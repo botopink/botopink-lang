@@ -1561,7 +1561,7 @@ const Emitter = struct {
         const lw = self.lowerings orelse return null;
         const type_name = switch (lw.get(loc) orelse return null) {
             .type_ => |n| n,
-            .prim => return null,
+            .prim, .field_of => return null,
         };
         if (self.imported_enums.contains(type_name)) return type_name;
         var buf: [256]u8 = undefined;
@@ -3903,7 +3903,7 @@ const Emitter = struct {
                             .string => "String",
                             else => break :blk null,
                         },
-                        .type_ => break :blk null,
+                        .type_, .field_of => break :blk null,
                     };
                     const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
                     for (iface.methods) |m| {
@@ -4017,7 +4017,7 @@ const Emitter = struct {
         const il = lw.get(loc) orelse return null;
         const kind = switch (il) {
             .prim => |k| k,
-            .type_ => return null,
+            .type_, .field_of => return null,
         };
         const receiver: jsPrelude.Receiver = switch (kind) {
             .string => .string,
@@ -4500,8 +4500,17 @@ const Emitter = struct {
                 // (`case x { i32 { … } string { … } }`), tested by §4.1's
                 // run-time test — the same one `x is T` builds.
                 if (primitiveTypeName(bare)) return try self.isTest(.{ .named = bare }, subject);
-                // A binding (`#(0, s)`'s `s`) matches anything.
+                // A binding (`#(0, s)`'s `s`) matches anything. It is asked
+                // BEFORE the type test below: a name the arm binds stays a
+                // binding even when a record of the module happens to share it.
                 if (self.isBindingName(n)) return null;
+                // Decision 8 §3.3 — an arm naming a `type` is chosen by the
+                // VALUE's own type: on this backend a record IS its class
+                // (decision 5), so the arm is the same `instanceof` `x is T`
+                // builds. Written as the `tag` test below it answered `false`
+                // for every class instance, and a `case` over `Person | Vec`
+                // fell through both arms to `undefined`.
+                if (self.class_names.contains(bare)) return try self.isTest(.{ .named = bare }, subject);
                 return try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });
             },
             .@"or" => |pats| {

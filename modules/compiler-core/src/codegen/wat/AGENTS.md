@@ -209,6 +209,58 @@ Now it is `subj >= low and subj <= high` (`emitRangeBound`), a float bound
 truncated like a `numberLit` pattern's; a string bound has no ordering here and
 answers `0`. `tests/language/run/case_range_value.bp` pins the five points.
 
+## The value knows its own declaration (2026-09-21, `13-module-identity` half 3)
+
+**Decision 22** put the box on every backend, wasm included. A value a
+declaration builds now carries a **descriptor header**: one `i32` holding the
+address of a data blob the emitter interned, written at the allocation's base
+with the VALUE being `base + 4`. The header is BEHIND the pointer on purpose —
+every field offset is what it was, so no read moved and nothing in the
+`optInfoOf`/`uniqueFieldOffset` family had to learn a new shape.
+
+The descriptor is length-prefixed, because a wasm loop reads a byte and
+advances:
+
+    'R' <n> Name       <k> [ <n> field <shape…> ] * k     a record
+    'V' <n> Enum.Var   <k> [ <n> field <shape…> ] * k     ONE variant
+
+A field's shape is the same self-delimiting code `$__print_shaped_raw` walks,
+and that function answers the address just past it, so the descriptor stores no
+length for it. A record's fields start at the pointer; a variant's start one
+slot in, because slot 0 holds the ordinal the `case` arms test. **One
+descriptor per variant, not per enum**: a variant IS a declaration for the
+purpose of identity, and that is what lets the printer name `Shape.Circle`
+without walking past the variants before it.
+
+* `$__print_tagged_raw` (in the `print_shaped` group, because the two call each
+  other) writes decision 8 §7's text: `Point(x: 1, y: 2)`, `Shape.Dot`,
+  `Shape.Circle(radius: 4)`. The shape walker gained a `T` arm that calls it, so
+  a container of records names each element's type — `[Point(x: 1, y: 2), …]` —
+  read from each element's own header, not from the print site.
+* `x is T` and a `case` arm naming a type are `subj >= 256 && load(subj - 4) ==
+  <descriptor>`, an enum's variants joined by `or` (`lowerIsCall`,
+  `emitNamedTypeTest`). The bounds guard is load-bearing: an `i32` that is not a
+  pointer would otherwise read four bytes of whatever sits below it.
+
+**What this backend still cannot do, and why it traps rather than guessing:**
+
+* **A variant of an ALL-UNIT enum has no header.** `Color.Red` is `i32.const 0`
+  with no allocation, so there is nothing four bytes behind it. `@print` of one
+  keeps the trap, and `is` over such an enum answers no test. Boxing it would
+  make `Color.Red == Color.Red` a pointer comparison, which is a worse answer
+  than none.
+* **`is` over a primitive.** Every value here is an `i32` in linear memory;
+  `is i32` and `is string` cannot be told apart at run time. `lowerIsCall`
+  traps with a note instead of answering `i32.const 0`, which would be a silent
+  wrong answer.
+* **§7's `Display` half.** `$__print_tagged_raw` would have to reach the type's
+  `display/1` through the value — the descriptor carrying its table index and
+  the printer using `call_indirect`. The table is built from the lifted-lambda
+  list, whose indices are handed out as lambdas are lifted, so an index interned
+  into a descriptor during lowering would shift. `tests/language/run/display_print.bp`
+  prints `Money(cents: 5)` where the other three backends print `$5`, and the
+  expected-failures line names `05-wasm` and this paragraph.
+
 ## Function values, and the lowering that is not there
 
 **This backend has function values.** A lambda used as a value is lifted into

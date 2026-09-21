@@ -12,13 +12,24 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
 %% type State: value, set
 
 make() ->
-    #{value => 0, set => fun(N) ->
+    {main__t__state, 0, fun(N) ->
         undefined
     end}.
 
 apply(S) ->
-    (maps:get(set, S))(maps:get(value, S)),
-    maps:get(value, S).
+    (element(3, S))(element(2, S)),
+    element(2, S).
+```
+
+----- ERLANG -- main__t__state.erl
+```erlang
+-module(main__t__state).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, value) -> element(2, V);
+'__bp_get'(V, set) -> element(3, V).
+
+'__bp_format'(V) -> {record, "State", [{"value", element(2, V)}, {"set", element(3, V)}]}.
 ```
 
 ----- RUN LOG -----

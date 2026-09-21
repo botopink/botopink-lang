@@ -14,9 +14,10 @@ fn f() {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (data (i32.const 256) "\04\00\00\00boom")
-  (data (i32.const 264) "\06\00\00\00failed")
-  (global $__heap_ptr (mut i32) (i32.const 276))
+  (data (i32.const 256) "\0d\00\00\00R\05Error\01\03msgs")
+  (data (i32.const 276) "\04\00\00\00boom")
+  (data (i32.const 284) "\06\00\00\00failed")
+  (global $__heap_ptr (mut i32) (i32.const 296))
   (func $fetch (result i32)
     (local $__mem0 i32)
     (local $_res0 i32)
@@ -33,13 +34,18 @@ fn f() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 256
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 276
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     i32.store offset=4 ;; payload
     local.get $_res0
     return
@@ -59,13 +65,18 @@ fn f() {
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem1
-    i32.const 264
+    i32.const 260
     i32.store
     local.get $__mem1
+    i32.const 284
+    i32.store offset=4
+    local.get $__mem1
+    i32.const 4
+    i32.add
     drop
     unreachable
       )

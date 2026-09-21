@@ -27,21 +27,29 @@ type Pipeline(
 ----- ERLANG -- main__t__list.erl
 ```erlang
 -module(main__t__list).
--export([each/2]).
+-export([each/2, '__bp_get'/2, '__bp_format'/1]).
 
 each(Items, F) ->
     Items.
+
+'__bp_get'(V, tag) -> element(2, V).
+
+'__bp_format'(V) -> {record, "List", [{"tag", element(2, V)}]}.
 ```
 
 ----- ERLANG -- main__t__pipeline.erl
 ```erlang
 -module(main__t__pipeline).
--export([doubled/1]).
+-export([doubled/1, '__bp_get'/2, '__bp_format'/1]).
 
 doubled(Self) ->
-    main__t__list:each(maps:get(items, Self), fun() ->
+    main__t__list:each(element(2, Self), fun() ->
         2
     end).
+
+'__bp_get'(V, items) -> element(2, V).
+
+'__bp_format'(V) -> {record, "Pipeline", [{"items", element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

@@ -12,8 +12,9 @@ fn validate(x: i32) {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (data (i32.const 256) "\08\00\00\00negative")
-  (global $__heap_ptr (mut i32) (i32.const 268))
+  (data (i32.const 256) "\16\00\00\00R\08AppError\02\04codei\03msgs")
+  (data (i32.const 284) "\08\00\00\00negative")
+  (global $__heap_ptr (mut i32) (i32.const 296))
   (func $validate (param $x i32) (result i32)
     (local $__mem0 i32)
     local.get $x
@@ -24,16 +25,21 @@ fn validate(x: i32) {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 400
+    i32.const 260
     i32.store
     local.get $__mem0
-    i32.const 256
+    i32.const 400
     i32.store offset=4
     local.get $__mem0
+    i32.const 284
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 4
+    i32.add
     drop
     unreachable
       )

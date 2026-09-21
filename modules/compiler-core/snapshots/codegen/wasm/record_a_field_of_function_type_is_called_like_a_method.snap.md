@@ -22,19 +22,23 @@ pub fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (table funcref (elem $__lambda0))
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\13\00\00\00R\04Cell\02\05valuei\03seti")
+  (global $__heap_ptr (mut i32) (i32.const 280))
   (func $mk (param $v i32) (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    local.get $v
+    i32.const 260
     i32.store
+    local.get $__mem0
+    local.get $v
+    i32.store offset=4
     local.get $__mem0
     global.get $__heap_ptr
     local.set $__mem1
@@ -49,8 +53,10 @@ pub fn main() {
     local.get $v
     i32.store offset=4 ;; capture v
     local.get $__mem1
-    i32.store offset=4
+    i32.store offset=8
     local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $main (export "main")

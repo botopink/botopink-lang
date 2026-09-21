@@ -111,11 +111,10 @@
 # they are cells that do not compile in this tree.
 commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
 erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
-erlang   | test/case_unknown.bp       | 01 step 4, 01 step 1, 01 step 3 | arm bodies are not unwrapped, `unknown` is not §2's type and `is` is not typed: "expected string, got union"
+erlang   | test/case_unknown.bp::§4.1 §5.2 an i32 arm matches 3.0 by value, converted ;; §4.1 if (x is i32) narrows and converts inside the block | C-07 | re-classified 2026-09-21 by running: `is` LOWERS on erlang since C-01 half 3 step 16, so the cell compiles and four of its six tests pass. What is left is decision 8 §4.1's numeric half, which is not identity's: an `i32` arm is `is_integer(X)`, and `3.0` is a float term on this backend, where commonJS's `Number.isInteger(3.0)` answers true — the arm has to match by VALUE and the binding has to be converted (`3.0` → `3`, so `n.toString()` is `"3"`). commonJS passes both
 *        | reject/case_shorthand_on_unknown.bp   | 01 step 1, 01 step 5 | rejected by `unknown` assignability, without the "full name" diagnostic
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
-erlang   | run/tuple_print.bp         | 02 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 commonJS | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 04 step 2 | a label is resolved to a position at the written type, and an element handed back by a generic method (`rs.at(0)`) has lost it: `rs.at(0).b` answers `undefined`. The element type is right, the label is not carried
 erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 02 step 4 | the same, louder: `rs.at(0).b` raises `bad map: {1,<<"x">>}` in `map_get/2` — the label is emitted as a map read against a tuple. (wasm answers `0`; no `test/` cell reaches wasm)
 
@@ -129,8 +128,6 @@ erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method 
 # ── §7 the formatter ──────────────────────────────────────────────────────────
 # The record and variant rows of §7's table need a value that knows its own type,
 # which is 13 step 18; each backend's step 1 closes the separator half only.
-erlang   | run/print_formatter.bp     | 02 step 1, 13 step 18 | §7 formatter: arrays/tuples print without spaces, records as maps, variants as raw tags
-erlang   | run/display_print.bp       | 02 step 1, 13 step 18 | §7: `@print` does not consult a type's `Display` implementation, nested or not
 
 # ── §9 effects ────────────────────────────────────────────────────────────────
 *        | reject/wrapper_without_annotation.bp | 01 step 8 | R9: `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
@@ -152,8 +149,7 @@ erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only
 # run/ and modules/ cells reach wasm. The rows below are the same defects the
 # commonJS and erlang lines above name, seen from the third backend.
-wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: arrays and tuples still print without spaces (`[1,2]`, `#(1,"a")`), and then `@print` of a record **traps** — `wasm trap: wasm `unreachable` instruction executed`, exit 134, after the first six lines. Two halves of the old text are false: it no longer prints a raw heap address, and `f64` no longer loses its decimal part (`5.0` is right)
-wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Money(cents: 5))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. Not a raw heap address: nothing is printed at all, so §7's `Display` half is unreachable behind the trap and cannot be measured from this cell yet
+wasm     | run/display_print.bp       | 05-wasm | re-measured 2026-09-21 by running, after C-01 half 3 step 17: the trap is GONE and the record prints — `Money(cents: 5)` and `[Money(cents: 1), Money(cents: 2)]`, decision 8 §7's record text read from the value's own header. What is left is §7's `Display` half, which on this backend needs a function the printer can reach through the value: the descriptor would have to carry the table index of `display/1` and `$__print_tagged_raw` would `call_indirect` it, and the table is built from the lifted-lambda list, whose indices are assigned as lambdas are lifted. 05-wasm owns the table; the other three backends answer `$5` / `[$1, $2]`
 
 # ── the forms front 15 landed, that nothing lowers or types yet ─────────────
 # `109f6c9` made five forms parse. Three of them run everywhere and are pinned by
@@ -175,14 +171,6 @@ erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell d
 # no second row any more: with front 01's step 4 written and measured (in its own
 # tree, not on `feat` yet) `test/type_identity_case.bp` compiles, and the two lines
 # it carries are `13 step 17` outright.
-erlang   | test/type_identity.bp::§4 two types with the same fields are different values | 13 step 15 | a record is a bare map on erlang, so `Person(name: "Ana", age: 30)` and `Vec(name: "Ana", age: 30)` are the same term and compare equal; the tag has to be in the value. Passes on commonJS, where a record is a class instance
-erlang   | test/type_identity_unknown.bp | 01 step 1, 13 step 17 | the same — "type mismatch: expected unknown, got Vec"
-erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "type mismatch: expected \|, got Person" (the diagnostic prints the bare union operator; escaped here, or the reason would be read as two fields)
-commonJS | test/type_identity_case.bp::§5.1 a case over a union of two named types needs no wildcard ;; §3.3 the arm is chosen by the value's own type | 13 step 17 | re-measured by front 01 in its step-4/5 tree on 2026-09-19: the cell compiles — the arm body is unwrapped — and what is left is identity, not the checker. A `case` arm that names a type has to dispatch on the value's own type, which needs the tag in the value, so `01 step 4` is off this line
-erlang   | test/type_identity_case.bp::§3.3 the arm is chosen by the value's own type | 13 step 17 | the same, and one test fewer: with the cell compiling, `§5.1 a case over a union of two named types needs no wildcard` passes on erlang and only the §3.3 arm-by-own-type row is left. `01 step 4` is off this line
-erlang   | run/type_identity_print.bp | 02 step 1, 13 step 18 | §7: a record prints `#{x => 1,y => 2}`, a variant `{'Circle',4}` / `'Dot'`, and an array without spaces
-wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Point(x: 1, y: 2))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. The `256` / `264` / `268` heap addresses this line used to name are gone
-beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang shapes seen from BEAM assembly — a record as a map, a variant as a tagged tuple or a bare atom
 
 # ── beam, the fourth executable target (decision 8) ───────────────────────────
 # `botopink run --target beam` writes `out/*.S`; `erlc +from_asm` then `erl` run
@@ -195,8 +183,6 @@ beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang 
 # cells, the last two of those thanks to front 13's half 1. The "9 results,
 # 2 passing" this comment carried was measured at `c2dd780` and is two milestone
 # merges out of date.
-beam     | run/print_formatter.bp     | 03 step 2, 13 step 18 | §7 formatter: arrays/tuples print as erlang terms, a record as `#{x => 1,y => 2}` and a variant as `{'Square',4}` / `'Nothing'`
-beam     | run/display_print.bp       | 03 step 2, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as `#{cents => 5}`
 
 # ── §5 range patterns (decision 53) ───────────────────────────────────────────
 # Decision 53 amended decisions 20 and 36 to Zig's split: `...` is inclusive in a

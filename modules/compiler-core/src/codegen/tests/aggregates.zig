@@ -407,7 +407,7 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
         \\  val s = "abcd";
         \\  @print(s[1..3]);
         \\}
-    , "[10,20]\n[20,30]\nbc\n", &.{ "'__bp_slice'(Xs, 0, 2)", "'__bp_slice'(Xs, 1, infinity)" });
+    , "[10, 20]\n[20, 30]\nbc\n", &.{ "'__bp_slice'(Xs, 0, 2)", "'__bp_slice'(Xs, 1, infinity)" });
 }
 
 // Decision 30's index expression, which the parser lands as the builtin call

@@ -27,17 +27,21 @@ val Color = type {
 ----- ERLANG -- main__t__color.erl
 ```erlang
 -module(main__t__color).
--export([name/0]).
+-export([name/0, '__bp_format'/1]).
 
 name() ->
     case Self of
-        'Red' ->
+        main__t__color__v__red ->
             <<"red">>;
-        'Green' ->
+        main__t__color__v__green ->
             <<"green">>;
-        'Blue' ->
+        main__t__color__v__blue ->
             <<"blue">>
     end.
+
+'__bp_format'(main__t__color__v__red) -> {variant, "Color.Red", []};
+'__bp_format'(main__t__color__v__green) -> {variant, "Color.Green", []};
+'__bp_format'(main__t__color__v__blue) -> {variant, "Color.Blue", []}.
 ```
 
 ----- RUN LOG -----

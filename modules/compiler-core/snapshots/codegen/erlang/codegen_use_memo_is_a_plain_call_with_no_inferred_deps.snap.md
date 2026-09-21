@@ -32,7 +32,15 @@ memo() ->
     Doubled = memo(fun() ->
         (Count * 2)
     end),
-    #{}.
+    {main__t__element}.
+```
+
+----- ERLANG -- main__t__element.erl
+```erlang
+-module(main__t__element).
+-export(['__bp_format'/1]).
+
+'__bp_format'(_) -> {record, "Element", []}.
 ```
 
 ----- RUN LOG -----

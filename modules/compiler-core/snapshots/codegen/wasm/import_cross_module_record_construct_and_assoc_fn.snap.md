@@ -17,19 +17,25 @@ pub type App(
 ```wasm
 (module
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\11\00\00\00R\08Response\01\04bodys")
+  (global $__heap_ptr (mut i32) (i32.const 280))
   (func $Response_ok (param $body i32) (result i32)
     (local $__mem0 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    local.get $body
+    i32.const 260
     i32.store
     local.get $__mem0
+    local.get $body
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
 )
@@ -56,28 +62,35 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\02\00\00\00hi")
-  (data (i32.const 264) "\01\00\00\00/")
-  (global $__heap_ptr (mut i32) (i32.const 272))
+  (data (i32.const 256) "\11\00\00\00R\08Response\01\04bodys")
+  (data (i32.const 280) "\02\00\00\00hi")
+  (data (i32.const 288) "\12\00\00\00R\03App\02\04porti\04paths")
+  (data (i32.const 312) "\01\00\00\00/")
+  (global $__heap_ptr (mut i32) (i32.const 320))
   (func $Response_ok (param $body i32) (result i32)
     (local $__mem0 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    local.get $body
+    i32.const 260
     i32.store
     local.get $__mem0
+    local.get $body
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $main
     (local $__mem0 i32)
     (local $r i32)
     (local $a i32)
-    i32.const 256
+    i32.const 280
     call $Response_ok
     local.set $r
     local.get $r
@@ -86,16 +99,21 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 8080
+    i32.const 292
     i32.store
     local.get $__mem0
-    i32.const 264
+    i32.const 8080
     i32.store offset=4
     local.get $__mem0
+    i32.const 312
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 4
+    i32.add
     local.set $a
     local.get $a
     i32.load ;; .port

@@ -624,8 +624,8 @@ codegen/
   would answer both receivers and read fields the other does not have. Such a
   module keeps the run-time abort until a receiver like that is typed (06 N15).
 - **A field of function type is applied, not called.** `c.set(9)` on
-  `type Cell(value: i32, set: fn(next: i32) -> i32)` reads the map field and
-  applies it (`(maps:get(set, C))(9)`); the record emits no `set/2`.
+  `type Cell(value: i32, set: fn(next: i32) -> i32)` reads the field and
+  applies it (`(element(3, C))(9)` since half 3); the record emits no `set/2`.
   `fn_typed_fields` (built in `collectTypeShapes`) carries the pairs, and the
   name-only set backs the untyped fallback, where inference records no lowering
   for a call on a field.
@@ -914,17 +914,51 @@ codegen/
   `%%`, `////` → `%%%`, `commentNode`), and the `%%` notes the backend writes
   (declaration headers, `continue`, unsupported field assignment) carry only
   their text.
-- **Records are maps**: constructors lower to `#{field => V, …}` (positional args
-  use the declared field order from `collectTypeShapes`); field access is
-  `maps:get(field, Recv)`; tuple index `t._N` and the bare `t.N` → `element(N+1, T)`. No `-record`
-  declarations are emitted. Optional chaining `?.` guards on `undefined` via an
-  immediate fun. A record destructuring (`val { x, y } = p`, a `{ name, .. }`
-  parameter, a `try` head) is therefore the exact map pattern
-  `#{x := X, y := Y}` (`destructPatternExpr`) — keys it does not name are
-  ignored, so `..` adds nothing; `#(a, b)` stays a tuple pattern. The names bind
-  through `patternBindVar` (versioned when already bound).
-- **Enums**: `Order.Lt` → the variant atom; `Color.Rgb(r, g, b)` →
-  `{'Rgb', R, G, B}`. A bare `.ident` case pattern is the atom when it names a
+- **A record is a tagged tuple** (13-module-identity half 3, decision 21's T2):
+  a constructor lowers to `{TypeAtom, F1, …, Fn}`, the fields in the DECLARED
+  order from `collectTypeShapes`, a field the call does not fill `undefined`, and
+  `TypeAtom` is `crossModule.typeAtom` of the module that DECLARES the type
+  (`typeOwnerPath` → `recordTagAtom`), so a consumer building an imported record
+  writes the owner's atom. Two types with the same fields are therefore two
+  terms — `Person(name:"a",age:1) == Vec(name:"a",age:1)` answers `false`, where
+  a bare map answered `true`. Field access is `element(N + 1, Recv)` whenever the
+  receiver's type can be placed — inference's `InstanceLowering.field_of`, `self`
+  inside the type's own module, or the one record declaring the name
+  (`recordTypeOfReceiver`) — and `'__bp_field'(Recv, name)` when it cannot, which
+  asks the tag's module (`'__bp_get'/2`) at run time and keeps the `maps:get` for
+  a map receiver (a `@Behavior(…)` literal, a `Dict`). Tuple index `t._N` and the
+  bare `t.N` → `element(N+1, T)`. No `-record` declarations are emitted. Optional
+  chaining `?.` guards on `undefined` via an immediate fun. A record
+  destructuring (`val { x, y } = p`, a `{ name, .. }` parameter, a `try` head) is
+  the tuple pattern `{TypeAtom, X, Y, _}` (`destructPatternExprOf`) — the slots
+  it does not name are `_`, so `..` adds nothing; the record is the parameter's
+  written type, else the one record declaring every named field
+  (`recordOfDestruct`), and a program where neither answers keeps the map pattern
+  it had. `#(a, b)` stays a tuple pattern. The names bind through
+  `patternBindVar` (versioned when already bound). **A comptime module keeps the
+  map shape** everywhere (`Emitter.untyped`): its values never leave the build.
+- **`x is T` and a `case` arm naming a type** (decision 8 §4.2 and §3.3):
+  `typeTestNode` writes ONE boolean expression that is also a legal erlang
+  guard, so the two share a lowering — `is_binary` / `is_boolean` / `is_float`
+  / `is_integer` plus a range for a primitive, `is_list` for an array, `true`
+  for `unknown`, `V =:= undefined orelse …` for `?T`, and for a named `type`
+  what half 3 made testable: a record is `is_tuple(V) andalso tuple_size(V)
+  =:= N andalso element(1, V) =:= <its atom>`, an enum every tag it builds
+  joined by `orelse` (`enum_variant_names` keeps the DECLARATION order, so one
+  program emits one test). `isTestNode` binds a non-variable subject through an
+  immediate fun, because the test reads it more than once. A `case` arm naming
+  a type appends the same expression to the arm's guards
+  (`patternNodeExtra`'s `.ident`): written as the bare binder it was, the first
+  arm of a `case` over `Person | Vec` matched every subject.
+- **Enums**: `Order.Lt` → the variant atom, `Color.Rgb(r, g, b)` →
+  `{VariantAtom, R, G, B}`, and since half 3 the tag is
+  `crossModule.variantAtom` — the enum's type atom plus `__v__` plus the variant,
+  `main__t__shape__v__circle` — rendered against the module that declares the
+  ENUM. `variantTag` is the one choke point (constructor, `case` pattern, guard
+  and the `.Variant` shorthand all go through it); `variant_enum` gives the enum
+  back from a bare `.Circle`, and a variant this module cannot place (a comptime
+  host enum) keeps the bare name. `Ok`/`Err` keep the `@Result` runtime tags.
+  A bare `.ident` case pattern is the atom when it names a
   known variant (`enum_variants`), else a variable. `enum_variants` also holds
   the variants of every `pub enum` the module imports — by name, or with its
   module (`import {order} from "std"` brings `std/order`'s `Lt`/`Eq`/`Gt`);
@@ -1061,15 +1095,28 @@ codegen/
   as `'__bp_show'(V, true)` renders it, joined by a space, then `~n`. The text is
   picked at run time: a top-level binary is its text (`hi`, not `<<"hi">>`); a
   nested binary is quoted with the source escapes (`"say \"hi\""`); a list is
-  `[E1,E2]` and a tuple `#(E1,E2)`, no spaces; a tuple opened by an atom other than
-  `true`/`false`/`undefined` (an enum variant `{'Circle', R}`, a Result `{ok, V}`)
-  and every other term keep `~p` — records, enums and maps are not decided by 1a.
-  A plain tuple whose first element is a payload-less enum variant (an atom) is
-  therefore printed as `~p` too. Numeric formatting stays divergent by design:
-  `~p` of `1.0` is `1.0` where commonJS writes `1`.
-- **Cross-module**: an imported record joins `record_fields` + `imported_types`
-  (`collectImportedTypes`), so construction inlines the owner's map shape
-  (records are maps — there is no constructor function to call remotely) and
+  `[E1, E2]` and a tuple `#(E1, E2)` — decision 8 §7's one separator, `", "`.
+  **A value that knows its own type prints as the source writes it** (§7, half 3):
+  a tagged tuple and a bare atom both reach `'__bp_tagged'/2`, which cuts any
+  `__v__` segment off the tag to get the declaring module, and — only when that
+  module is loadable and exports `'__bp_format'/1` — renders what it answers
+  through `'__bp_render'/1`: `{record, "Point", [{"x", 1}, …]}` →
+  `Point(x: 1, y: 2)`, `{variant, "Shape.Dot", []}` → `Shape.Dot`, and
+  `{text, …}` → a `Display` implementation's own string, nested containers
+  included. Everything else — a Result `{ok, V}`, a host tuple, a plain atom,
+  `true`/`false`/`undefined` — keeps the `~p` it had. Numeric formatting stays
+  divergent by design: `~p` of `1.0` is `1.0` where commonJS writes `1`.
+- **Every `type` has a module, and it answers about its own values** (half 3):
+  `recordIdentityForms` / `enumIdentityForms` put `'__bp_format'/1` — and
+  `'__bp_get'/2` for a record with fields — into the unit `openTypeUnit` opened,
+  so a `type` that declares no method is still a module: the tag has to name
+  something loadable for `'__bp_tagged'` to reach the formatter. A type whose
+  declaration carries a one-parameter `display` (decision 8 §7's `Display`)
+  formats as `{text, display(V)}`.
+- **Cross-module**: an imported record joins `record_fields` + `imported_types` +
+  `type_owner_path` (`collectImportedTypes`), so construction inlines the owner's
+  tuple shape carrying the OWNER's atom (there is no constructor function to call
+  remotely) and
   `Response.ok(…)` calls into the owner module atom (`http:ok(…)`); the owner
   exports a `pub` type's associated fns when another module imports it, and a
   `pub implement`/`extend` another module activates (`import {PatoNada*} …`) is
@@ -1174,7 +1221,11 @@ codegen/
   prints as `[115,287.5,460]` (`$__print_arr_f32`).
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
   `@print`, field access/assign, arrays, tuples, records/structs and behavior
-  literals (all `put_map_assoc` maps keyed by field name; the anonymous
+  literals (a `type`'s values are decision 21's tagged tuple
+  `{TypeAtom, F1, …}` — `put_tuple2` with the atom of the module that DECLARES
+  the type, a field the call does not fill `undefined`; a behavior literal and
+  an all-labelled anonymous construct have no declared order and stay
+  `put_map_assoc` maps keyed by field name; the anonymous
   `record { … }` literal is gone since front 12 step 4), case (all patterns + guards via
   `emitGuardPre`/`emitGuardPost`; a bare `.ident` arm naming a nullary enum
   variant — local, imported by name, or from a `from "std"` module — is a match
@@ -1188,7 +1239,9 @@ codegen/
   loops, pipeline, closures, `call_fun`, `@Result`/`@Option` ops
   (`lowerResultOptionOp`: `{ok, V}`/`{error, E}` and bare value / `undefined`,
   mirroring erlang), optional chaining (`lowerIdentAccess`: `is_eq` on
-  `undefined`, then `is_map` + `get_map_elements`), `comptime` nodes
+  `undefined`, then the tagged-tuple read below, or `is_map` +
+  `get_map_elements` for a receiver whose type this emit cannot place),
+  `comptime` nodes
   (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
   the value of `e`).
 - **`@print` / `@println` / `@debug`** (`lowerPrint`, `ensurePrintHelper`) lower
@@ -1199,16 +1252,50 @@ codegen/
   `'__bp_show'(V, true)` and `'__bp_show'(V, false)`). A top-level binary is its
   own text, a nested one `io_lib:write_string(unicode:characters_to_list(V))` —
   `"say \"hi\""`, source escapes and all, in one call instead of a per-character
-  walk — a list `[E1, E2]`, a tuple `#(E1, E2)`, and everything else `~p`: an
-  integer, a float (which keeps its `.0`), an atom, a record's map, and a tuple
-  opened by an atom other than `true`/`false`/`undefined`, which is an enum
-  variant or a `@Result`. Records (§7 F2), variants (F3) and `Display` (F4) need
-  a value that knows its own type, which is
-  [`13-module-identity`](../../../../specs/1.0.5-beta/13-module-identity/README.md) step 18.
+  walk — a list `[E1, E2]`, a tuple `#(E1, E2)`. **A value that knows its own
+  declaration prints as the source writes it** (§7 F2/F3/F4, half 3): a tagged
+  tuple and a bare atom both reach `'__bp_tagged'/2`, which cuts any `__v__`
+  segment off the tag with `string:split/2` to get the declaring module, loads
+  it and asks for `'__bp_format'/1` only when `erlang:function_exported/3` says
+  it answers; `'__bp_render'/1` turns the description into text
+  (`{record, "Point", [{"x", 1}, …]}` → `Point(x: 1, y: 2)`,
+  `{variant, "Shape.Dot", []}` → `Shape.Dot`, `{text, …}` → a `Display`
+  implementation's own string) with `'-bp_render_pair-'/1` rendering one
+  `label: value` through `'__bp_show'/2`. Everything else is `~p`: an integer, a
+  float (which keeps its `.0`), `true`/`false`/`undefined`, a `@Result`
+  `{ok, V}`, a host tuple, and any atom no loadable module formats.
   It replaced the per-value format-verb machinery (`'__bp_print_fmt'/1` +
   `'__bp_print_sep'/1`, `~ts` for a binary and `~p` for everything else), which
   printed every compound value as an **Erlang term** — decision 1a never reached
   this backend, so a nested string came out `<<"a">>` and a tuple `{1,<<"a">>}`.
+- **A record field is read positionally, never through a call** (half 3):
+  `is_tagged_tuple` on the receiver's own atom and arity, then
+  `get_tuple_element`. `erlang:element/2` is wrong here even though it is what
+  the tuple-index read uses — a `call_ext` frees every x-register, and
+  `self.side * self.side` holds the first read in `{x, 1}` across the second
+  (`{{x,1},not_live}` out of the loader's consistency check, measured on
+  `surface_type_and_behavior_…`). The record is placed by inference's
+  `InstanceLowering.field_of`, by `self` inside the type's own module, or by the
+  one record declaring the name (`recordTypeOfReceiver`); a destructuring
+  (`emitDestructFromX0`) resolves the same way from the parameter's written type
+  and binds each slot with `get_tuple_element`. A receiver that resolves to
+  nothing keeps the map read.
+- **`x is T` and a `case` arm naming a type** (decision 8 §4.2 and §3.3):
+  `emitTypeTestBranch` emits tests that FALL THROUGH on a match and jump to a
+  fail label otherwise, leaving `{x, 0}` untouched, so `lowerIsCall` (which
+  answers `true`/`false`) and the `.ident` case arm share one lowering. A
+  record is `is_tagged_tuple` on its own atom and arity; an enum is every tag it
+  builds, the unit ones by `is_ne_exact` (which branches when the two ARE
+  equal) and the payload ones by `is_tagged_tuple` + a jump. **One divergence
+  from the erlang twin, deliberate:** a TUPLE type is tested by `is_tuple` and
+  `test_arity` but NOT element by element — reading an element is a call, and a
+  call frees the register the remaining tests read; erlang tests the elements
+  because a guard may call `element/2`.
+- **Every `type`'s module answers about its own values** (`emitTypeIdentity`):
+  `'__bp_get'/2` turns a field name into its position for the reads the emitter
+  could not place, and `'__bp_format'/1` describes the value for
+  `'__bp_render'/1`. A `type` that declares no bodied method is still a module —
+  the tag has to name something loadable.
 - **The index expression** (`lowerIndexExpr`, `ensureIndexHelper`,
   `ensureSliceHelper`): decision 30 reaches every backend as the builtin call
   `"[]"` over `(receiver, index)` (`ast.zig:1717-1740`), so `xs[0]`, `d["k"]`,

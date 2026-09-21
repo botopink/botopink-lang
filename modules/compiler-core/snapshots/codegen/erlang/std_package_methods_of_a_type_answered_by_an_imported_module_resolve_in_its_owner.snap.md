@@ -247,7 +247,7 @@ test "dict empty boundary: size 0, at misses" {
 %% type Dict: pairs
 
 empty() ->
-    #{pairs => []}.
+    {std@dict__t__dict, []}.
 
 
 
@@ -276,7 +276,7 @@ empty() ->
 ```erlang
 -module(std@dict__t__dict).
 -compile({no_auto_import,[size/1]}).
--export([at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2]).
+-export([at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2, '__bp_get'/2, '__bp_format'/1]).
 
 at(Self, Key) ->
     % NOTE: written with `forEach` + accumulator rather than
@@ -288,58 +288,62 @@ at(Self, Key) ->
             true -> element(2, P);
             _ -> Found
         end
-    end, undefined, maps:get(pairs, Self)),
+    end, undefined, element(2, Self)),
     Found.
 
 hasKey(Self, Key) ->
     ((fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(lists:filter(fun(P) ->
         (element(1, P) =:= Key)
-    end, maps:get(pairs, Self)), 0) =/= undefined).
+    end, element(2, Self)), 0) =/= undefined).
 
 size(Self) ->
-    length(maps:get(pairs, Self)).
+    length(element(2, Self)).
 
 isEmpty(Self) ->
-    (length(maps:get(pairs, Self)) =:= 0).
+    (length(element(2, Self)) =:= 0).
 
 keys(Self) ->
     lists:map(fun(P) ->
         element(1, P)
-    end, maps:get(pairs, Self)).
+    end, element(2, Self)).
 
 values(Self) ->
     lists:map(fun(P) ->
         element(2, P)
-    end, maps:get(pairs, Self)).
+    end, element(2, Self)).
 
 insert(Self, Key, Value) ->
     Filtered = lists:filter(fun(P) ->
         (element(1, P) =/= Key)
-    end, maps:get(pairs, Self)),
-    #{pairs => (Filtered ++ [{Key, Value}])}.
+    end, element(2, Self)),
+    {std@dict__t__dict, (Filtered ++ [{Key, Value}])}.
 
 delete(Self, Key) ->
-    #{pairs => lists:filter(fun(P) ->
+    {std@dict__t__dict, lists:filter(fun(P) ->
         (element(1, P) =/= Key)
-    end, maps:get(pairs, Self))}.
+    end, element(2, Self))}.
 
 merge(Self, Other) ->
     Out = lists:foldl(fun(P, Out) ->
         insert(Out, element(1, P), element(2, P))
-    end, Self, maps:get(pairs, Other)),
+    end, Self, element(2, Other)),
     Out.
 
 fold(Self, Initial, F) ->
     Acc = lists:foldl(fun(P, Acc) ->
         F(Acc, element(1, P), element(2, P))
-    end, Initial, maps:get(pairs, Self)),
+    end, Initial, element(2, Self)),
     Acc.
 
 mapValues(Self, F) ->
     Out = lists:foldl(fun(P, Out) ->
         (Out ++ [{element(1, P), F(element(2, P))}])
-    end, [], maps:get(pairs, Self)),
-    #{pairs => Out}.
+    end, [], element(2, Self)),
+    {std@dict__t__dict, Out}.
+
+'__bp_get'(V, pairs) -> element(2, V).
+
+'__bp_format'(V) -> {record, "Dict", [{"pairs", element(2, V)}]}.
 ```
 
 ----- RUN LOG -----
@@ -374,10 +378,19 @@ main() ->
 
 '__bp_show'(V, true) when is_binary(V) -> V;
 '__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(",", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> io_lib:format("~p", [V]);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(",", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
+'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'__bp_tagged'(A, V) ->
+    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+
+'__bp_render'({text, T}) -> T;
+'__bp_render'({variant, N, []}) -> N;
+'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
 '_botopink_main'() ->
     main().

@@ -35,7 +35,8 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\03\00\00\00box")
-  (global $__heap_ptr (mut i32) (i32.const 264))
+  (data (i32.const 264) "\0d\00\00\00R\03Box\01\05itemsi")
+  (global $__heap_ptr (mut i32) (i32.const 284))
   (func $Box_total (param $self i32) (result i32)
     (local $sum i32)
     (local $__iter0 i32)
@@ -217,9 +218,12 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 268
+    i32.store
     local.get $__mem1
     global.get $__heap_ptr
     local.set $__mem2
@@ -237,8 +241,10 @@ fn main() {
     i32.const 4
     i32.store offset=8
     local.get $__mem2
-    i32.store
+    i32.store offset=4
     local.get $__mem1
+    i32.const 4
+    i32.add
     local.set $b
     local.get $b
     call $Box_total

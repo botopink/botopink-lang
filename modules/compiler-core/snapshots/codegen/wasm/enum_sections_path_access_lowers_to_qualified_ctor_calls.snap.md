@@ -14,35 +14,47 @@ fn red500() -> Token {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\16\00\00\00V\0bToken.Color\01\06_inneri")
+  (data (i32.const 284) "\1d\00\00\00V\12__Token__Color.Red\01\06_inneri")
+  (global $__heap_ptr (mut i32) (i32.const 320))
   (func $red500 (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 0
+    i32.const 260
     i32.store
+    local.get $__mem0
+    i32.const 0
+    i32.store offset=4
     local.get $__mem0
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem1
-    i32.const 0
+    i32.const 288
     i32.store
     local.get $__mem1
-    i32.const 1 ;; __Token__Color__Red.__500
+    i32.const 0
     i32.store offset=4
     local.get $__mem1
-    i32.store offset=4
+    i32.const 1 ;; __Token__Color__Red.__500
+    i32.store offset=8
+    local.get $__mem1
+    i32.const 4
+    i32.add
+    i32.store offset=8
     local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
 )

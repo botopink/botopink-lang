@@ -22,8 +22,9 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\09\00\00\00not found")
-  (global $__heap_ptr (mut i32) (i32.const 272))
+  (data (i32.const 256) "\11\00\00\00R\tLoadError\01\03msgs")
+  (data (i32.const 280) "\09\00\00\00not found")
+  (global $__heap_ptr (mut i32) (i32.const 296))
   (func $load (result i32)
     (local $__mem0 i32)
     (local $_res0 i32)
@@ -40,13 +41,18 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 256
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 280
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     i32.store offset=4 ;; payload
     local.get $_res0
     return

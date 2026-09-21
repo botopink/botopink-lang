@@ -17,9 +17,20 @@ fn validate(x: i32) {
 validate(X) ->
     case (X < 0) of
         true ->
-            erlang:throw(#{code => 400, msg => <<"negative">>});
+            erlang:throw({main__t__apperror, 400, <<"negative">>});
         _ -> ok
     end.
+```
+
+----- ERLANG -- main__t__apperror.erl
+```erlang
+-module(main__t__apperror).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, code) -> element(2, V);
+'__bp_get'(V, msg) -> element(3, V).
+
+'__bp_format'(V) -> {record, "AppError", [{"code", element(2, V)}, {"msg", element(3, V)}]}.
 ```
 
 ----- RUN LOG -----

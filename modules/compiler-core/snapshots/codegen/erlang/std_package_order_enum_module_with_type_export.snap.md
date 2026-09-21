@@ -84,19 +84,19 @@ test "order case over Order" {
 %%   Gt
 
 lt() ->
-    'Lt'.
+    std@order__t__order__v__lt.
 
 eq() ->
-    'Eq'.
+    std@order__t__order__v__eq.
 
 gt() ->
-    'Gt'.
+    std@order__t__order__v__gt.
 
 toInt(O) ->
     N = case O of
-        'Lt' ->
+        std@order__t__order__v__lt ->
             (-1);
-        'Eq' ->
+        std@order__t__order__v__eq ->
             0;
         _ ->
             1
@@ -105,17 +105,27 @@ toInt(O) ->
 
 reverse(O) ->
     R = case O of
-        'Lt' ->
-            'Gt';
-        'Gt' ->
-            'Lt';
+        std@order__t__order__v__lt ->
+            std@order__t__order__v__gt;
+        std@order__t__order__v__gt ->
+            std@order__t__order__v__lt;
         _ ->
-            'Eq'
+            std@order__t__order__v__eq
     end,
     R.
 
 
 
+```
+
+----- ERLANG -- std@order__t__order.erl
+```erlang
+-module(std@order__t__order).
+-export(['__bp_format'/1]).
+
+'__bp_format'(std@order__t__order__v__lt) -> {variant, "Order.Lt", []};
+'__bp_format'(std@order__t__order__v__eq) -> {variant, "Order.Eq", []};
+'__bp_format'(std@order__t__order__v__gt) -> {variant, "Order.Gt", []}.
 ```
 
 ----- RUN LOG -----
@@ -150,9 +160,9 @@ fn main() {
 
 describe(O) ->
     S = case O of
-        'Lt' ->
+        std@order__t__order__v__lt ->
             <<"less">>;
-        'Gt' ->
+        std@order__t__order__v__gt ->
             <<"greater">>;
         _ ->
             <<"equal">>
@@ -168,10 +178,19 @@ main() ->
 
 '__bp_show'(V, true) when is_binary(V) -> V;
 '__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(",", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> io_lib:format("~p", [V]);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(",", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
+'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'__bp_tagged'(A, V) ->
+    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+
+'__bp_render'({text, T}) -> T;
+'__bp_render'({variant, N, []}) -> N;
+'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
 '_botopink_main'() ->
     main().

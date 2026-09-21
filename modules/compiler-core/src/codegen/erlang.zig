@@ -651,6 +651,71 @@ const len_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_len", .clauses
     },
 } } };
 
+/// `'__bp_field'/2`: a record field read whose receiver type this emit could
+/// not place — a chained or generic receiver, or a body inference recorded
+/// nothing for. Under decision 21 a record is `{TypeAtom, F1, …}`, so the name
+/// is turned into its index by the type's own module, which the tag names:
+/// `apply(element(1, V), '__bp_get', [V, F])`. A map receiver (an anonymous
+/// record, a `Dict`) keeps the map read it had.
+const field_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_field", .clauses = &.{
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("F") },
+        .guards = &.{isA("map", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "get", .args = &.{ Ast.Expr.v("F"), Ast.Expr.v("V") } } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("F") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "apply", .args = &.{
+            .{ .call = .{ .name = "element", .args = &.{ .{ .number = "1" }, Ast.Expr.v("V") } } },
+            Ast.Expr.a("__bp_get"),
+            .{ .list = &.{ Ast.Expr.v("V"), Ast.Expr.v("F") } },
+        } } } }}),
+        .layout = .inline_,
+    },
+} } };
+
+/// `'__bp_render'/1`: decision 8 §7's text, from the description a type's
+/// module answers. `{text, T}` is a `Display` implementation's own string;
+/// `{variant, "Shape.Dot", []}` is a payload-less variant, written bare; a
+/// record and a variant with fields are written `Name(label: value, …)`, the
+/// values through `'__bp_show'/2` so a nested record names its type too.
+const render_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_render", .clauses = &.{
+    .{
+        .patterns = &.{.{ .tuple = &.{ Ast.Expr.a("text"), Ast.Expr.v("T") } }},
+        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("T") }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{.{ .tuple = &.{ Ast.Expr.a("variant"), Ast.Expr.v("N"), .{ .list = &.{} } } }},
+        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("N") }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{.{ .tuple = &.{ Ast.Expr.v("_"), Ast.Expr.v("N"), Ast.Expr.v("Fs") } }},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
+            Ast.Expr.v("N"),
+            .{ .number = "$(" },
+            .{ .call = .{ .module = "lists", .name = "join", .args = &.{
+                .{ .string = ", " },
+                .{ .list_comp = .{
+                    .element = &Ast.Expr{ .list = &.{
+                        Ast.Expr.v("K"),
+                        .{ .string = ": " },
+                        .{ .call = .{ .name = "__bp_show", .args = &.{ Ast.Expr.v("Val"), Ast.Expr.a("false") } } },
+                    } },
+                    .qualifiers = &.{.{ .generator = .{
+                        .pattern = .{ .tuple = &.{ Ast.Expr.v("K"), Ast.Expr.v("Val") } },
+                        .list = Ast.Expr.v("Fs"),
+                    } }},
+                } },
+            } } },
+            .{ .number = "$)" },
+        } } }}),
+        .layout = .inline_,
+    },
+} } };
+
 /// `Lhs <op> Rhs`, unparenthesised — a guard test or a bound's arithmetic in the
 /// index helpers below.
 fn binOpOf(comptime op: []const u8, comptime lhs: Ast.Expr, comptime rhs: Ast.Expr) Ast.Expr {
@@ -858,13 +923,20 @@ fn firstIsNot(comptime atom: []const u8) Ast.Expr {
 
 /// `'__bp_show'(Elem, false)` over `Elems`, joined by `,`.
 fn showJoined(comptime elems: Ast.Expr) Ast.Expr {
-    return .{ .call = .{ .module = "lists", .name = "join", .args = &.{
-        .{ .string = "," },
-        .{ .list_comp = .{
-            .element = &Ast.Expr{ .call = .{ .name = "__bp_show", .args = &.{ Ast.Expr.v("E"), Ast.Expr.a("false") } } },
-            .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("E"), .list = elems } }},
-        } },
-    } } };
+    return .{
+        .call = .{
+            .module = "lists",
+            .name = "join",
+            .args = &.{
+                // Decision 8 §7: one separator, `", "`, in every printed container.
+                .{ .string = ", " },
+                .{ .list_comp = .{
+                    .element = &Ast.Expr{ .call = .{ .name = "__bp_show", .args = &.{ Ast.Expr.v("E"), Ast.Expr.a("false") } } },
+                    .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("E"), .list = elems } }},
+                } },
+            },
+        },
+    };
 }
 
 /// `$C -> "Escaped"` — one clause of the nested-string escape `case`.
@@ -881,75 +953,166 @@ fn escapeClause(comptime char: []const u8, comptime escaped: []const u8) Ast.Cla
 ///     `{ok, V}`) and every other term (numbers, atoms, maps) keep `~p`: the
 ///     text of records, enums and maps is not decided by 1a. `true`, `false`
 ///     and `undefined` are values, not tags, so a tuple they open is a tuple.
-const show_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_show", .clauses = &.{
-    .{
-        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.a("true") },
-        .guards = &.{isA("binary", "V")},
-        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("V") }}),
-        .layout = .inline_,
-    },
-    .{
-        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
-        .guards = &.{isA("binary", "V")},
-        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
-            .{ .number = "$\"" },
-            .{ .list_comp = .{
-                .element = &Ast.Expr{ .case_ = .{
-                    .subject = &Ast.Expr.v("C"),
-                    .clauses = &.{
-                        escapeClause("$\"", "\\\""),
-                        escapeClause("$\\\\", "\\\\"),
-                        escapeClause("$\\n", "\\n"),
-                        escapeClause("$\\r", "\\r"),
-                        escapeClause("$\\t", "\\t"),
-                        .{ .patterns = &.{Ast.Expr.v("_")}, .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("C") }}), .layout = .inline_ },
-                    },
-                    .layout = .inline_,
-                } },
-                .qualifiers = &.{.{ .generator = .{
-                    .pattern = Ast.Expr.v("C"),
-                    .list = .{ .call = .{ .module = "unicode", .name = "characters_to_list", .args = &.{Ast.Expr.v("V")} } },
-                } }},
-            } },
-            .{ .number = "$\"" },
-        } } }}),
-        .layout = .inline_,
-    },
-    .{
-        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
-        .guards = &.{isA("list", "V")},
-        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{ .{ .number = "$[" }, showJoined(Ast.Expr.v("V")), .{ .number = "$]" } } } }}),
-        .layout = .inline_,
-    },
-    .{
-        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
-        .guards = &.{
-            isA("tuple", "V"),
-            .{ .binop = .{ .op = ">", .lhs = &Ast.Expr{ .call = .{ .name = "tuple_size", .args = &.{Ast.Expr.v("V")} } }, .rhs = &Ast.Expr{ .number = "0" }, .parens = false } },
-            .{ .call = .{ .name = "is_atom", .args = &.{show_first} } },
-            firstIsNot("true"),
-            firstIsNot("false"),
-            firstIsNot("undefined"),
+const show_helper_form: Ast.Form = .{
+    .function = .{
+        .name = "__bp_show",
+        .clauses = &.{
+            .{
+                .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.a("true") },
+                .guards = &.{isA("binary", "V")},
+                .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("V") }}),
+                .layout = .inline_,
+            },
+            .{
+                .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+                .guards = &.{isA("binary", "V")},
+                .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
+                    .{ .number = "$\"" },
+                    .{ .list_comp = .{
+                        .element = &Ast.Expr{ .case_ = .{
+                            .subject = &Ast.Expr.v("C"),
+                            .clauses = &.{
+                                escapeClause("$\"", "\\\""),
+                                escapeClause("$\\\\", "\\\\"),
+                                escapeClause("$\\n", "\\n"),
+                                escapeClause("$\\r", "\\r"),
+                                escapeClause("$\\t", "\\t"),
+                                .{ .patterns = &.{Ast.Expr.v("_")}, .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("C") }}), .layout = .inline_ },
+                            },
+                            .layout = .inline_,
+                        } },
+                        .qualifiers = &.{.{ .generator = .{
+                            .pattern = Ast.Expr.v("C"),
+                            .list = .{ .call = .{ .module = "unicode", .name = "characters_to_list", .args = &.{Ast.Expr.v("V")} } },
+                        } }},
+                    } },
+                    .{ .number = "$\"" },
+                } } }}),
+                .layout = .inline_,
+            },
+            .{
+                .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+                .guards = &.{isA("list", "V")},
+                .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{ .{ .number = "$[" }, showJoined(Ast.Expr.v("V")), .{ .number = "$]" } } } }}),
+                .layout = .inline_,
+            },
+            // A tagged value (decision 21): the tag names the module that formats it,
+            // and `'__bp_tagged'/2` falls back to `~p` for every other tagged tuple.
+            .{
+                .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+                .guards = &.{
+                    isA("tuple", "V"),
+                    .{ .binop = .{ .op = ">", .lhs = &Ast.Expr{ .call = .{ .name = "tuple_size", .args = &.{Ast.Expr.v("V")} } }, .rhs = &Ast.Expr{ .number = "0" }, .parens = false } },
+                    .{ .call = .{ .name = "is_atom", .args = &.{show_first} } },
+                    firstIsNot("true"),
+                    firstIsNot("false"),
+                    firstIsNot("undefined"),
+                },
+                .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "__bp_tagged", .args = &.{ show_first, Ast.Expr.v("V") } } } }}),
+                .layout = .inline_,
+            },
+            .{
+                .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+                .guards = &.{isA("tuple", "V")},
+                .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
+                    .{ .string = "#(" },
+                    showJoined(.{ .call = .{ .name = "tuple_to_list", .args = &.{Ast.Expr.v("V")} } }),
+                    .{ .number = "$)" },
+                } } }}),
+                .layout = .inline_,
+            },
+            // A unit variant is a bare atom (options § 4, "qualify the tag"), so the
+            // same dispatch reads it; `true`, `false` and `undefined` are not values
+            // any declaration builds and keep the `~p` they had.
+            .{
+                .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+                .guards = &.{
+                    isA("atom", "V"),
+                    valueIsNot("true"),
+                    valueIsNot("false"),
+                    valueIsNot("undefined"),
+                },
+                .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "__bp_tagged", .args = &.{ Ast.Expr.v("V"), Ast.Expr.v("V") } } } }}),
+                .layout = .inline_,
+            },
+            .{
+                .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+                .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io_lib", .name = "format", .args = &.{ .{ .string = "~p" }, .{ .list = &.{Ast.Expr.v("V")} } } } } }}),
+                .layout = .inline_,
+            },
         },
-        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io_lib", .name = "format", .args = &.{ .{ .string = "~p" }, .{ .list = &.{Ast.Expr.v("V")} } } } } }}),
-        .layout = .inline_,
     },
-    .{
-        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
-        .guards = &.{isA("tuple", "V")},
-        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
-            .{ .string = "#(" },
-            showJoined(.{ .call = .{ .name = "tuple_to_list", .args = &.{Ast.Expr.v("V")} } }),
-            .{ .number = "$)" },
-        } } }}),
-        .layout = .inline_,
-    },
-    .{
-        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
-        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io_lib", .name = "format", .args = &.{ .{ .string = "~p" }, .{ .list = &.{Ast.Expr.v("V")} } } } } }}),
-        .layout = .inline_,
-    },
-} } };
+};
+
+/// `V =/= 'name'` — a guard keeping the three atoms that are not values of a
+/// declaration out of the tagged-value dispatch.
+fn valueIsNot(comptime name: []const u8) Ast.Expr {
+    return .{ .binop = .{ .op = "=/=", .lhs = &Ast.Expr.v("V"), .rhs = &Ast.Expr.a(name), .parens = false } };
+}
+
+/// `'__bp_tagged'/2`: decision 8 §7's dispatch. `A` is the value's tag — the
+/// type's module atom for a record, the `__v__` variant atom for a variant —
+/// so the module that formats the value is the tag with any `__v__` segment
+/// cut off, and it answers `'__bp_format'/1`. Anything else (a `{ok, V}`
+/// Result, a host tuple, a plain atom) keeps the `~p` it printed before.
+const tagged_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_tagged", .clauses = &.{.{
+    .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("V") },
+    .body = Ast.Body.of(&.{
+        .{ .expr = .{ .match = .{ .pattern = &Ast.Expr.v("M"), .value = &Ast.Expr{ .case_ = .{
+            .subject = &Ast.Expr{ .call = .{ .module = "string", .name = "split", .args = &.{
+                .{ .call = .{ .name = "atom_to_list", .args = &.{Ast.Expr.v("A")} } },
+                .{ .string = "__v__" },
+            } } },
+            .clauses = &.{
+                .{
+                    .patterns = &.{.{ .list = &.{ Ast.Expr.v("P"), Ast.Expr.v("_") } }},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "list_to_atom", .args = &.{Ast.Expr.v("P")} } } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.v("_")},
+                    .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("A") }}),
+                    .layout = .inline_,
+                },
+            },
+            .layout = .inline_,
+        } } } } },
+        .{ .expr = .{ .case_ = .{
+            .subject = &Ast.Expr{ .binop = .{
+                .op = "andalso",
+                .lhs = &Ast.Expr{ .binop = .{
+                    .op = "=:=",
+                    .lhs = &Ast.Expr{ .call = .{ .module = "code", .name = "ensure_loaded", .args = &.{Ast.Expr.v("M")} } },
+                    .rhs = &Ast.Expr{ .tuple = &.{ Ast.Expr.a("module"), Ast.Expr.v("M") } },
+                    .parens = false,
+                } },
+                .rhs = &Ast.Expr{ .call = .{ .module = "erlang", .name = "function_exported", .args = &.{
+                    Ast.Expr.v("M"),
+                    Ast.Expr.a("__bp_format"),
+                    .{ .number = "1" },
+                } } },
+                .parens = false,
+            } },
+            .clauses = &.{
+                .{
+                    .patterns = &.{Ast.Expr.a("true")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "__bp_render", .args = &.{.{ .call = .{ .name = "apply", .args = &.{
+                        Ast.Expr.v("M"),
+                        Ast.Expr.a("__bp_format"),
+                        .{ .list = &.{Ast.Expr.v("V")} },
+                    } } }} } } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.a("false")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io_lib", .name = "format", .args = &.{ .{ .string = "~p" }, .{ .list = &.{Ast.Expr.v("V")} } } } } }}),
+                    .layout = .inline_,
+                },
+            },
+            .layout = .inline_,
+        } } },
+    }),
+}} } };
 
 /// Helpers every comptime module carries. Bodies are untyped (no inference ran
 /// over them), so type-directed lowerings dispatch at runtime — `+` →
@@ -1286,6 +1449,13 @@ fn emitErlangModule(
         em.enum_variant_of.deinit();
         em.enum_variants_known.deinit();
         em.imported_types.deinit();
+        em.type_owner_path.deinit();
+        em.variant_enum.deinit();
+        {
+            var evn_it = em.enum_variant_names.valueIterator();
+            while (evn_it.next()) |names| alloc.free(names.*);
+        }
+        em.enum_variant_names.deinit();
         em.imported_fns.deinit();
         var ftf_it = em.fn_typed_fields.keyIterator();
         while (ftf_it.next()) |k| alloc.free(k.*);
@@ -1539,10 +1709,11 @@ fn emitErlangModule(
     if (!listing_only) {
         if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
+        if (em.needs_field_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
         if (em.needs_index_helper) try forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
         if (em.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
         if (em.needs_text_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
-        if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form });
+        if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
     }
 
     if (comptime_module) |cm| {
@@ -1630,6 +1801,7 @@ const SavedUnitState = struct {
     needs_text_helper: bool,
     needs_print_helper: bool,
     needs_len_helper: bool,
+    needs_field_helper: bool,
     needs_index_helper: bool,
     needs_slice_helper: bool,
     needs_add_helper: bool,
@@ -1861,6 +2033,17 @@ fn isModuleRef(name: []const u8) bool {
     // letter). Recognise them as module refs so the codegen's enum_names
     // lookup matches and the qualified-ctor lowering fires.
     return name.len >= 3 and name[0] == '_' and name[1] == '_' and std.ascii.isUpper(name[2]);
+}
+
+/// The OUTER enum of a synthesised inner enum's F1 mangling:
+/// `__Token__Color` → `Token`, `__Token__Color__Shade` → `Token`. Null for
+/// every other name.
+fn sectionOuterEnum(name: []const u8) ?[]const u8 {
+    if (name.len < 3 or name[0] != '_' or name[1] != '_' or !std.ascii.isUpper(name[2])) return null;
+    const rest = name[2..];
+    const sep = std.mem.indexOf(u8, rest, "__") orelse return null;
+    if (sep == 0) return null;
+    return rest[0..sep];
 }
 
 /// Module atom for a type-like name (`List` → `list`), allocated by the caller's
@@ -2099,6 +2282,23 @@ const Emitter = struct {
     /// receiver names one (`Response.ok(...)` for an imported `Response`) lowers
     /// to a remote call into the owner (`http:ok(...)`), not a bare local fn.
     imported_types: std.StringHashMap([]const u8),
+    /// Type name → the module PATH that declares it (`app/models`), for every
+    /// type this module can name: its own and the imported ones. Half 3 renders
+    /// two atoms from one owner — the type atom `crossModule.typeAtom` that is
+    /// a record value's tag, and the `__v__` variant atoms of an enum — and
+    /// `imported_types` only kept the already-rendered type atom, which a
+    /// variant tag cannot be built from.
+    type_owner_path: std.StringHashMap([]const u8),
+    /// Enum name → its variant names in DECLARATION order. Decision 8 §4.2's
+    /// `x is Shape` enumerates them — every tag the enum builds, joined by
+    /// `orelse` — and the order has to be the source's, or the emitted test
+    /// would differ between two runs of the same program.
+    enum_variant_names: std.StringHashMap([]const []const u8),
+    /// Variant name → the enum that declares it, first declaration winning as
+    /// `enum_variants` does. A `.Circle` shorthand and a bare `case` pattern
+    /// write the variant without its enum, and half 3's tag is qualified by
+    /// both the enum and the enum's module.
+    variant_enum: std.StringHashMap([]const u8),
     /// Imported function name → owning module atom: a `pub fn` this module
     /// imports (`import {twice};`) and the methods of an imported record/enum.
     /// Erlang has no ambient scope, so a call to one of these is a remote call
@@ -2305,6 +2505,14 @@ const Emitter = struct {
     needs_print_helper: bool = false,
     /// Set when a typed-module field read fell back to `'__bp_len'/2`.
     needs_len_helper: bool = false,
+    /// The enum a `case` subject is of while its arms are lowered, so an
+    /// unqualified variant pattern (`.Color`, `Color`) is qualified by the
+    /// enum being matched rather than by declaration order. Null outside a
+    /// `case` and for a subject whose type this emit cannot place.
+    enum_hint: ?[]const u8 = null,
+    /// This module reached a record field read it could not place statically
+    /// and emits `'__bp_field'/2` (decision 21's dynamic fallback).
+    needs_field_helper: bool = false,
     /// Set when an index expression (decision 30's `[]` builtin) lowered to
     /// `'__bp_index'/2`; the module then emits `index_helper_form`.
     needs_index_helper: bool = false,
@@ -2345,6 +2553,9 @@ const Emitter = struct {
             .enum_variant_of = std.StringHashMap(void).init(alloc),
             .enum_variants_known = std.StringHashMap(void).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
+            .type_owner_path = std.StringHashMap([]const u8).init(alloc),
+            .variant_enum = std.StringHashMap([]const u8).init(alloc),
+            .enum_variant_names = std.StringHashMap([]const []const u8).init(alloc),
             .imported_fns = std.StringHashMap([]const u8).init(alloc),
             .fn_typed_fields = std.StringHashMap(void).init(alloc),
             .fn_typed_field_names = std.StringHashMap(void).init(alloc),
@@ -2803,8 +3014,9 @@ const Emitter = struct {
         // `type State<T>(value: T, set: fn(next: T))`): the record has no
         // `set/2` function — apply what the field holds.
         if (this.fnTypedField(tn, cc.callee)) {
+            const held = try this.fieldReadOf(b, tn, cc.callee, try this.exprNode(b, recv.*));
             return .{ .apply = .{
-                .fun = try b.ptr(try b.paren(try b.remote("maps", "get", &.{ Ast.Expr.a(cc.callee), try this.exprNode(b, recv.*) }))),
+                .fun = try b.ptr(try b.paren(held)),
                 .args = try this.callArgs(b, null, cc),
             } };
         }
@@ -2989,7 +3201,8 @@ const Emitter = struct {
     }
 
     /// Remembers a local's declared type name, for a receiver whose methods
-    /// only a `behavior` declares (`behaviorMethodNode`).
+    /// only a `behavior` declares (`behaviorMethodNode`) and for the `case`
+    /// subject whose enum decides an unqualified arm (`enumOfSubject`).
     fn rememberLocalType(this: *Emitter, name: []const u8, t: ast.TypeRef) void {
         if (t != .named) return;
         this.local_types.put(this.alloc, name, t.named) catch {};
@@ -3190,7 +3403,7 @@ const Emitter = struct {
                     (if (!this.locals.contains(n)) this.num_names.get(n) else null),
                 .identAccess => if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
                     .prim => .int,
-                    .type_ => null,
+                    .type_, .field_of => null,
                 } else null,
                 else => null,
             },
@@ -3303,6 +3516,9 @@ const Emitter = struct {
         for (program.decls) |decl| switch (decl) {
             .type_ => |tdecl| switch (tdecl.shape) {
                 .record => {
+                    // Half 3: this file declares it, so this file's path is the
+                    // owner every tag of it renders from.
+                    try self.type_owner_path.put(tdecl.name, self.module_name);
                     var names = try self.alloc.alloc([]const u8, tdecl.recordFields().len);
                     for (tdecl.recordFields(), 0..) |f, i| names[i] = f.name;
                     try self.record_fields.put(tdecl.name, names);
@@ -3320,8 +3536,11 @@ const Emitter = struct {
                 .enum_ => {
                     try self.enum_names.put(tdecl.name, {});
                     try self.enum_variants_known.put(tdecl.name, {});
+                    try self.type_owner_path.put(tdecl.name, self.module_name);
+                    try self.rememberVariantOrder(tdecl.name, tdecl.variants());
                     for (tdecl.variants()) |v| {
                         try self.enum_variants.put(v.name, {});
+                        _ = try self.variant_enum.getOrPutValue(v.name, tdecl.name);
                         try self.rememberEnumVariant(tdecl.name, v.name);
                         try self.rememberVariantFields(v);
                     }
@@ -3329,6 +3548,14 @@ const Emitter = struct {
             },
             else => {},
         };
+    }
+
+    /// Record an enum's variant names in declaration order (§4.2's `is`).
+    fn rememberVariantOrder(self: *Emitter, enum_name: []const u8, variants: []const ast.EnumVariant) !void {
+        if (self.enum_variant_names.contains(enum_name)) return;
+        const names = try self.alloc.alloc([]const u8, variants.len);
+        for (variants, 0..) |v, i| names[i] = v.name;
+        try self.enum_variant_names.put(enum_name, names);
     }
 
     /// Record `<Enum>.<Variant>` so `isEnumVariantOf` can answer precisely.
@@ -3380,8 +3607,11 @@ const Emitter = struct {
                     if (std.mem.eql(u8, ee.module, self.module_name)) continue;
                     if (!std.mem.eql(u8, ee.name, name) and !std.mem.eql(u8, crossModule.moduleBasename(ee.module), name)) continue;
                     try self.enum_variants_known.put(ee.name, {});
+                    _ = try self.type_owner_path.getOrPutValue(ee.name, ee.module);
+                    try self.rememberVariantOrder(ee.name, ee.variants);
                     for (ee.variants) |v| {
                         try self.enum_variants.put(v.name, {});
+                        _ = try self.variant_enum.getOrPutValue(v.name, ee.name);
                         try self.rememberEnumVariant(ee.name, v.name);
                         try self.rememberVariantFields(v);
                     }
@@ -3415,8 +3645,12 @@ const Emitter = struct {
                         // Its methods and associated fns are in the TYPE's
                         // module (policy 3), not the file's.
                         try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), name));
+                        _ = try self.type_owner_path.getOrPutValue(name, info.module);
                     },
-                    .@"enum" => try self.enum_names.put(name, {}),
+                    .@"enum" => {
+                        try self.enum_names.put(name, {});
+                        _ = try self.type_owner_path.getOrPutValue(name, info.module);
+                    },
                     .@"fn", .val => {},
                 }
                 // Names this module calls but never defines: an imported
@@ -3497,6 +3731,7 @@ const Emitter = struct {
             // The type's own module (policy 3), for its associated fns and its
             // methods alike.
             const owner = try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), e.key_ptr.*);
+            _ = try self.type_owner_path.getOrPutValue(e.key_ptr.*, info.module);
             if (info.kind == .record) try self.imported_types.put(e.key_ptr.*, owner);
             for (info.methods) |m| {
                 const gop = try self.imported_fns.getOrPut(m);
@@ -3876,8 +4111,9 @@ const Emitter = struct {
         var params: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         for (f.params) |p| {
             if (p.destruct) |d| switch (d) {
-                // `destructPatternExpr` binds each name as a local.
-                .names, .tuple_ => try params.append(b.arena, try this.destructPatternExpr(b, d)),
+                // `destructPatternExpr` binds each name as a local. The
+                // parameter's written type is the record the pattern is of.
+                .names, .tuple_ => try params.append(b.arena, try this.destructPatternExprOf(b, d, writtenTypeName(p.typeRef))),
                 // List / constructor parameter patterns are not lowered yet.
                 .list, .ctor => {},
             } else if (this.keep_self or !std.mem.eql(u8, p.name, "self")) {
@@ -4282,7 +4518,7 @@ const Emitter = struct {
         const il = this.instance_lowerings.get(e.call.loc) orelse return null;
         return switch (il) {
             .prim => |k| if (k == .array) name else null,
-            .type_ => null,
+            .type_, .field_of => null,
         };
     }
 
@@ -4940,8 +5176,30 @@ const Emitter = struct {
     /// Each name binds through `patternBindVar`, so a destructured name already
     /// bound in the function takes a fresh version instead of matching.
     fn destructPatternExpr(this: *Emitter, b: Ast.Builder, pattern: ast.ParamDestruct) anyerror!Ast.Expr {
+        return this.destructPatternExprOf(b, pattern, null);
+    }
+
+    /// `hint` names the record being destructured when the site knows it (a
+    /// parameter's written type). Under decision 21 a record is a tagged tuple,
+    /// so the pattern needs the type's arity and field order; without a hint
+    /// the one record declaring every named field answers, and a program where
+    /// that is ambiguous keeps the map pattern it had.
+    fn destructPatternExprOf(this: *Emitter, b: Ast.Builder, pattern: ast.ParamDestruct, hint: ?[]const u8) anyerror!Ast.Expr {
         switch (pattern) {
             .names => |n| {
+                if (!this.untyped) {
+                    if (this.recordOfDestruct(n.fields, hint)) |type_name| {
+                        const declared = this.record_fields.get(type_name).?;
+                        const slots = try b.arena.alloc(Ast.Expr, declared.len + 1);
+                        slots[0] = Ast.Expr.a(try this.recordTagAtom(type_name));
+                        for (slots[1..]) |*slot| slot.* = Ast.Expr.v("_");
+                        for (n.fields) |fld| {
+                            const at = fieldIndexOf(declared, fld.field_name) orelse continue;
+                            slots[at + 1] = Ast.Expr.v(try this.patternBindVar(b, fld.bind_name));
+                        }
+                        return .{ .tuple = slots };
+                    }
+                }
                 const fields = try b.arena.alloc(Ast.MapField, n.fields.len);
                 for (n.fields, 0..) |fld, i| {
                     fields[i] = Ast.exactField(fld.field_name, Ast.Expr.v(try this.patternBindVar(b, fld.bind_name)));
@@ -5102,7 +5360,8 @@ const Emitter = struct {
                     if (ia.receiver.* == .identifier and ia.receiver.*.identifier.kind == .ident and
                         this.enum_names.contains(ia.receiver.*.identifier.kind.ident))
                     {
-                        return A(ia.member);
+                        const en = ia.receiver.*.identifier.kind.ident;
+                        return A(this.qualifiedVariantTagOf(en, ia.member) orelse ia.member);
                     }
                     // Tuple index access: `t._N` → `element(N+1, T)` (1-based).
                     if (tupleIndexMember(ia.member)) |digits| {
@@ -5126,7 +5385,7 @@ const Emitter = struct {
                                 else => b.call("length", &.{recv}),
                             };
                         },
-                        .type_ => {},
+                        .type_, .field_of => {},
                     };
                     // Same field access on a `Self`-typed receiver inside an
                     // interface instance `default fn` (`self.length`), which
@@ -5162,15 +5421,16 @@ const Emitter = struct {
                         const n = this.try_seq;
                         this.try_seq += 1;
                         const opt = V(try std.fmt.allocPrint(b.arena, "_Opt{d}", .{n}));
-                        return this.optionalAccess(b, opt, try b.remote("maps", "get", &.{ A(ia.member), opt }), ia.receiver.*);
+                        return this.optionalAccess(b, opt, try this.fieldReadNode(b, id.loc, ia.receiver.*, ia.member, opt), ia.receiver.*);
                     }
-                    return b.remote("maps", "get", &.{ A(ia.member), try this.exprNode(b, ia.receiver.*) });
+                    const recv_node = try this.exprNode(b, ia.receiver.*);
+                    return this.fieldReadNode(b, id.loc, ia.receiver.*, ia.member, recv_node);
                 },
                 // Leading-dot shorthand for an enum member (`.Black`): the same
                 // variant atom the qualified form lowers to. Rendered raw it was
                 // the bare name — an unbound erlang VARIABLE for the usual
                 // PascalCase variant.
-                .dotIdent => |n| return A(n),
+                .dotIdent => |n| return A(this.variantTag(n)),
             },
 
             .binaryOp => |bin| {
@@ -5586,6 +5846,7 @@ const Emitter = struct {
                 return error.InvalidArgs;
             return b.applyParen(.{ .fun = .{ .params = &.{}, .body = body } }, &.{});
         }
+        if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) return this.isTestNode(b, cc);
         if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) return this.indexNode(b, cc);
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) return this.resultOptionNode(b, cc.callee, cc.args);
         return b.call(cc.callee, try this.callArgs(b, null, cc));
@@ -5655,12 +5916,30 @@ const Emitter = struct {
             // the beam backend's `put_map_assoc` maps). Labeled args use their
             // label; positional args follow the declared field order.
             if (this.record_fields.get(cc.callee)) |fields| {
-                const out = try b.arena.alloc(Ast.MapField, cc.args.len);
-                for (cc.args, 0..) |arg, ai| {
-                    const fname: []const u8 = if (arg.label) |lbl| lbl else if (ai < fields.len) fields[ai] else "_arg";
-                    out[ai] = Ast.field(fname, try this.exprNode(b, arg.value.*));
+                // A comptime module's values never leave the build and its
+                // helpers read maps: it keeps the untagged shape.
+                if (this.untyped) {
+                    const out = try b.arena.alloc(Ast.MapField, cc.args.len);
+                    for (cc.args, 0..) |arg, ai| {
+                        const fname: []const u8 = if (arg.label) |lbl| lbl else if (ai < fields.len) fields[ai] else "_arg";
+                        out[ai] = Ast.field(fname, try this.exprNode(b, arg.value.*));
+                    }
+                    return .{ .map = out };
                 }
-                return .{ .map = out };
+                // Decision 21 (T2): `{TypeAtom, F1, …, Fn}`, the fields in
+                // DECLARED order — the tag is the type's own module atom, so
+                // two records with the same fields are two terms and the value
+                // names the module that formats it. Labelled arguments name
+                // their slot; a field the call does not fill is `undefined`.
+                const items = try b.arena.alloc(Ast.Expr, fields.len + 1);
+                items[0] = Ast.Expr.a(try this.recordTagAtom(cc.callee));
+                for (items[1..]) |*slot| slot.* = Ast.Expr.a("undefined");
+                for (cc.args, 0..) |arg, ai| {
+                    const at = if (arg.label) |lbl| fieldIndexOf(fields, lbl) orelse ai else ai;
+                    if (at >= fields.len) continue;
+                    items[at + 1] = try this.exprNode(b, arg.value.*);
+                }
+                return .{ .tuple = items };
             }
             // `Ok(v)` / `Err(e)` / `new Error(msg)` build the runtime `@Result`
             // tuple the `#[@result]` transform and the `Ok`/`Err` case arms both
@@ -5760,7 +6039,7 @@ const Emitter = struct {
                 (this.isEnumVariantOf(name, cc.callee) or !this.enum_variants_known.contains(name)))
             {
                 const items = try b.arena.alloc(Ast.Expr, cc.args.len + 1);
-                items[0] = Ast.Expr.a(cc.callee);
+                items[0] = Ast.Expr.a(this.qualifiedVariantTagOf(name, cc.callee) orelse cc.callee);
                 for (cc.args, 1..) |arg, i| items[i] = try this.exprNode(b, arg.value.*);
                 return .{ .tuple = items };
             }
@@ -5796,6 +6075,8 @@ const Emitter = struct {
             // imported type. A method name shared by two records is mangled to
             // `<recordtype>_<method>` so the flat fn namespace stays unambiguous.
             .type_ => |tn| return this.typedMethodNode(b, tn, recv, cc),
+            // A field READ never reaches the call path.
+            .field_of => {},
         };
         // Inside an ADOPTED interface `default fn` body (`implement Sized`'s
         // `isEmpty`, emitted as one of the record's functions) inference records
@@ -5841,8 +6122,9 @@ const Emitter = struct {
             this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len + 1) == null and
             !this.local_fn_arities.contains(try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 })))
         {
+            const held = try this.fieldReadOf(b, null, cc.callee, try this.exprNode(b, recv.*));
             return .{ .apply = .{
-                .fun = try b.ptr(try b.paren(try b.remote("maps", "get", &.{ Ast.Expr.a(cc.callee), try this.exprNode(b, recv.*) }))),
+                .fun = try b.ptr(try b.paren(held)),
                 .args = try this.callArgs(b, null, cc),
             } };
         }
@@ -6029,6 +6311,11 @@ const Emitter = struct {
             break :blk .{ .tuple = items };
         };
         const body_indent = this.indent + 2;
+        const saved_hint = this.enum_hint;
+        defer this.enum_hint = saved_hint;
+        if (subjects.len == 1) {
+            if (this.enumOfSubject(subjects[0])) |en| this.enum_hint = en;
+        }
         var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
         for (arms) |arm| {
             switch (arm.pattern) {
@@ -6172,6 +6459,18 @@ const Emitter = struct {
                 if (primitiveTypeName(n)) {
                     if (extras) |ex| if (!std.mem.eql(u8, name.variable, "_")) {
                         try appendPrimTypeGuards(b, ex, n, name);
+                    };
+                    return name;
+                }
+                // Decision 8 §3.3 — an arm naming a `type` is chosen by the
+                // VALUE's own type, which half 3 put in the value. Emitted as
+                // the bare binder it was, the first arm of a `case` over
+                // `Person | Vec` swallowed every subject.
+                if (this.record_fields.contains(n) or this.enum_variant_names.contains(n)) {
+                    if (extras) |ex| if (!std.mem.eql(u8, name.variable, "_")) {
+                        if (try this.typeTestNode(b, .{ .named = n }, name)) |g| {
+                            try ex.guards.append(b.arena, g);
+                        }
                     };
                 }
                 return name;
@@ -6396,10 +6695,331 @@ const Emitter = struct {
     /// `{'.Some', V}`, which matches nothing, and a nullary `.None` rendered as
     /// the bare token `.None`, which is an erlang syntax error. The tag is
     /// therefore taken from the last `.`-separated segment (01's handover 1).
-    fn variantTag(this: *const Emitter, written: []const u8) []const u8 {
+    /// Half 3 (decision 21): a variant the emitter can place is tagged by
+    /// `crossModule.variantAtom` — its enum and the enum's module —
+    /// `main__t__shape__v__circle`. The bare name told five ecosystem `Circle`s
+    /// apart in no node. A variant this module cannot place keeps the bare
+    /// name: a comptime host enum has no declaration to read an enum off.
+    fn variantTag(this: *Emitter, written: []const u8) []const u8 {
         const name = bareVariantName(written);
-        if (this.enum_variants.contains(name)) return name;
+        if (this.enum_variants.contains(name)) return this.qualifiedVariantTag(written, name) orelse name;
         return resultTag(name) orelse name;
+    }
+
+    /// The qualified tag of a variant written as `Shape.Circle`, `.Circle` or
+    /// bare `Circle`. Null when this emit does not place variants (a comptime
+    /// module, whose values never leave the build) or when no enum here
+    /// declares the name.
+    fn qualifiedVariantTag(this: *Emitter, written: []const u8, bare: []const u8) ?[]const u8 {
+        if (this.untyped) return null;
+        const enum_name = this.enumOfVariantPath(written, bare) orelse return null;
+        return this.variantTagAtom(enum_name, bare) catch null;
+    }
+
+    /// The enum a `case` subject belongs to, when this emit can place it: the
+    /// type of the parameter it names, or the enum whose module is being
+    /// emitted for a `self` subject.
+    fn enumOfSubject(this: *const Emitter, subject: ast.Expr) ?[]const u8 {
+        const name = identName(subject) orelse return null;
+        if (std.mem.eql(u8, name, "self")) {
+            if (this.cur_type) |ct| if (this.enum_names.contains(ct)) return ct;
+            if (this.self_record_type) |rt| if (this.enum_names.contains(rt)) return rt;
+        }
+        const written = this.local_types.get(name) orelse return null;
+        if (this.enum_names.contains(written)) return written;
+        // A section path is WRITTEN dotted (`Token.Bg`) and DECLARED under the
+        // F1 mangling (`__Token__Bg`), which is the name `enum_names` holds.
+        if (std.mem.indexOfScalar(u8, written, '.') != null) {
+            var buf: [256]u8 = undefined;
+            var len: usize = 0;
+            var it = std.mem.splitScalar(u8, written, '.');
+            while (it.next()) |seg| {
+                if (len + 2 + seg.len > buf.len) return null;
+                buf[len] = '_';
+                buf[len + 1] = '_';
+                @memcpy(buf[len + 2 ..][0..seg.len], seg);
+                len += 2 + seg.len;
+            }
+            if (this.enum_names.getKey(buf[0..len])) |declared| return declared;
+        }
+        return null;
+    }
+
+    /// The tag of a variant whose enum the site already names
+    /// (`Shape.Circle(…)`, `Shape.Dot`). Separate from the path-parsing
+    /// resolver, which has to guess an enum for `.Circle` and a bare `Circle`.
+    fn qualifiedVariantTagOf(this: *Emitter, enum_name: []const u8, variant: []const u8) ?[]const u8 {
+        if (this.untyped) return null;
+        return this.variantTagAtom(enum_name, variant) catch null;
+    }
+
+    /// The enum a written variant path belongs to: the segment before the last
+    /// `.` when it names an enum (`Shape.Circle`), else the declaring enum
+    /// `collectTypeShapes` recorded for the bare name (`.Circle`, `Circle`).
+    fn enumOfVariantPath(this: *const Emitter, written: []const u8, bare: []const u8) ?[]const u8 {
+        if (std.mem.lastIndexOfScalar(u8, written, '.')) |dot| {
+            if (dot > 0) {
+                const head = written[0..dot];
+                const start = if (std.mem.lastIndexOfScalar(u8, head, '.')) |d| d + 1 else 0;
+                const seg = head[start..];
+                if (this.enum_names.contains(seg)) return seg;
+            }
+        }
+        // `.Color` inside `case t { … }` is the subject's enum, not whichever
+        // enum of the module happens to declare `Color` first — enum SECTIONS
+        // make that collision ordinary (`Token.Color` and `Token.Border.Color`
+        // in one file), and first-wins wrote an arm no value could match.
+        if (this.enum_hint) |hint| if (this.isEnumVariantOf(hint, bare)) return hint;
+        return this.variant_enum.get(bare);
+    }
+
+    /// The tag of `variant` declared by `enum_name` — `variantAtom` rendered
+    /// against the module that declares the enum, so a consumer builds the
+    /// owner's atom and not its own.
+    fn variantTagAtom(this: *Emitter, enum_name: []const u8, variant: []const u8) ![]const u8 {
+        return crossModule.variantAtom(this.atom_arena.allocator(), .of(this.typeOwnerPath(enum_name)), enum_name, variant);
+    }
+
+    /// The module path that DECLARES `type_name`: this file, unless the type
+    /// arrived through an import. Both of half 3's tags render from it, so an
+    /// imported type constructed here carries the owner's atom.
+    fn typeOwnerPath(this: *const Emitter, type_name: []const u8) []const u8 {
+        // §enum-sections F4: a synthesised inner enum (`__Token__Color`) is
+        // re-synthesised in EVERY module that writes the section path, so its
+        // own declaration is not its identity — the OUTER enum's owner is.
+        // Without this, a consumer builds `main__t__token_color__v__white` for
+        // a value the owner's `case` reads as `emilia@tokens__t__…`, and the
+        // arm answers `case_clause` (measured on `emilia-cascade`).
+        if (sectionOuterEnum(type_name)) |outer| return this.typeOwnerPath(outer);
+        if (this.type_owner_path.get(type_name)) |path| return path;
+        if (this.cross) |xc| if (xc.exports.get(type_name)) |info| switch (info.kind) {
+            .record, .@"enum" => return info.module,
+            else => {},
+        };
+        return this.module_name;
+    }
+
+    /// Decision 21's T2 tag: element 1 of every value `type_name` builds. It is
+    /// the type's own module atom, which is what lets `'__bp_show'` reach the
+    /// formatter through the value alone.
+    fn recordTagAtom(this: *Emitter, type_name: []const u8) ![]const u8 {
+        return crossModule.typeAtom(this.atom_arena.allocator(), .of(this.typeOwnerPath(type_name)), type_name);
+    }
+
+    /// A record field read under decision 21. A record is `{TypeAtom, F1, …}`,
+    /// so the read is `element(N + 1, Recv)` whenever this emit can place the
+    /// receiver's type; when it cannot, `'__bp_field'/2` asks the tag's own
+    /// module at run time. A comptime module keeps the map read.
+    fn fieldReadNode(
+        this: *Emitter,
+        b: Ast.Builder,
+        loc: ast.Loc,
+        receiver: ast.Expr,
+        member: []const u8,
+        recv_node: Ast.Expr,
+    ) anyerror!Ast.Expr {
+        if (this.untyped) return b.remote("maps", "get", &.{ Ast.Expr.a(member), recv_node });
+        if (this.recordTypeOfReceiver(loc, receiver, member)) |type_name| {
+            if (this.record_fields.get(type_name)) |fields| {
+                if (fieldIndexOf(fields, member)) |at| {
+                    return b.call("element", &.{ Ast.Expr.t(Term.int(@intCast(at + 2))), recv_node });
+                }
+            }
+        }
+        this.needs_field_helper = true;
+        return b.call("__bp_field", &.{ recv_node, Ast.Expr.a(member) });
+    }
+
+    /// A field read whose receiver type is already known (`type_name`) or has
+    /// to be found by the field's name alone. The value shape is decision 21's,
+    /// so it is `element(N + 1, Recv)` or the dynamic `'__bp_field'/2`.
+    fn fieldReadOf(this: *Emitter, b: Ast.Builder, type_name: ?[]const u8, member: []const u8, recv_node: Ast.Expr) anyerror!Ast.Expr {
+        if (this.untyped) return b.remote("maps", "get", &.{ Ast.Expr.a(member), recv_node });
+        const resolved = type_name orelse this.uniqueRecordWithField(member);
+        if (resolved) |tn| {
+            if (this.record_fields.get(tn)) |fields| {
+                if (fieldIndexOf(fields, member)) |at| {
+                    return b.call("element", &.{ Ast.Expr.t(Term.int(@intCast(at + 2))), recv_node });
+                }
+            }
+        }
+        this.needs_field_helper = true;
+        return b.call("__bp_field", &.{ recv_node, Ast.Expr.a(member) });
+    }
+
+    /// The one record of this module declaring `member`, or null when none or
+    /// more than one does.
+    fn uniqueRecordWithField(this: *const Emitter, member: []const u8) ?[]const u8 {
+        var found: ?[]const u8 = null;
+        var it = this.record_fields.iterator();
+        while (it.next()) |e| {
+            if (fieldIndexOf(e.value_ptr.*, member) == null) continue;
+            if (found != null) return null;
+            found = e.key_ptr.*;
+        }
+        return found;
+    }
+
+    /// The record type a field read is against: what inference recorded for
+    /// this access (`InstanceLowering.field_of`), else the type whose module is
+    /// being emitted when the receiver is `self`, else the one record of this
+    /// module that declares the name. The last is the reading the wasm backend
+    /// has used for its offsets since 1.0.4-beta; it answers null the moment
+    /// two records share the field, and the dynamic helper takes over.
+    fn recordTypeOfReceiver(this: *const Emitter, loc: ast.Loc, receiver: ast.Expr, member: []const u8) ?[]const u8 {
+        if (this.instance_lowerings.get(loc)) |il| switch (il) {
+            .field_of => |t| if (this.record_fields.contains(t)) return t,
+            else => {},
+        };
+        if (isSelfReceiver(receiver)) {
+            if (this.cur_type) |ct| if (this.record_fields.contains(ct)) return ct;
+            if (this.self_record_type) |rt| if (this.record_fields.contains(rt)) return rt;
+        }
+        return this.uniqueRecordWithField(member);
+    }
+
+    /// The record a `{ a, b }` destructuring is of: the written type when the
+    /// site has one, else the one record of this module declaring every field
+    /// the pattern names. Null when no record answers or two do.
+    fn recordOfDestruct(this: *const Emitter, fields: []const ast.FieldDestruct, hint: ?[]const u8) ?[]const u8 {
+        if (hint) |h| if (this.record_fields.contains(h)) return h;
+        if (fields.len == 0) return null;
+        var found: ?[]const u8 = null;
+        var it = this.record_fields.iterator();
+        candidates: while (it.next()) |e| {
+            for (fields) |fld| {
+                if (fieldIndexOf(e.value_ptr.*, fld.field_name) == null) continue :candidates;
+            }
+            if (found != null) return null;
+            found = e.key_ptr.*;
+        }
+        return found;
+    }
+
+    /// The name a written type reference spells, when it is a plain one.
+    fn writtenTypeName(ref: ast.TypeRef) ?[]const u8 {
+        return switch (ref) {
+            .named => |n| n,
+            .optional => |inner| writtenTypeName(inner.*),
+            else => null,
+        };
+    }
+
+    /// The position of `name` in a record's declared field order, or null when
+    /// the record does not declare it.
+    fn fieldIndexOf(fields: []const []const u8, name: []const u8) ?usize {
+        for (fields, 0..) |f, i| if (std.mem.eql(u8, f, name)) return i;
+        return null;
+    }
+
+    /// `self`, the receiver a method body reads its own fields through.
+    fn isSelfReceiver(receiver: ast.Expr) bool {
+        return receiver == .identifier and receiver.identifier.kind == .ident and
+            std.mem.eql(u8, receiver.identifier.kind.ident, "self");
+    }
+
+    /// Decision 8 §4.2 — the run-time test of `x is T`, as an expression that
+    /// is also a legal erlang GUARD, so a `case` arm naming a type and an `is`
+    /// in a condition share one lowering. Null when the type has no run-time
+    /// test (a function type, a comptime type parameter).
+    ///
+    /// A named `type` is what half 3 made testable: a record is
+    /// `element(1, V) =:= <its atom>` at the right arity, and an enum is every
+    /// tag it builds, joined by `orelse` — its unit variants as atoms and its
+    /// payload variants as tagged tuples.
+    fn typeTestNode(this: *Emitter, b: Ast.Builder, t: ast.TypeRef, subject: Ast.Expr) anyerror!?Ast.Expr {
+        switch (t) {
+            .named => |n| {
+                if (std.mem.eql(u8, n, "string")) return try b.call("is_binary", &.{subject});
+                if (std.mem.eql(u8, n, "bool")) return try b.call("is_boolean", &.{subject});
+                if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "float")) {
+                    return try b.call("is_float", &.{subject});
+                }
+                // Decision 8 §2: `unknown` is every value.
+                if (std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "any")) return Ast.Expr.a("true");
+                if (integerPatternRange(n)) |range| {
+                    var acc = try b.call("is_integer", &.{subject});
+                    if (range.lo) |lo| acc = try b.binop("andalso", acc, try b.binop(">=", subject, .{ .number = lo }));
+                    if (range.hi) |hi| acc = try b.binop("andalso", acc, try b.binop("=<", subject, .{ .number = hi }));
+                    return acc;
+                }
+                if (this.record_fields.get(n)) |fields| {
+                    return try this.taggedShapeTest(b, subject, try this.recordTagAtom(n), fields.len + 1);
+                }
+                if (this.enum_variant_names.get(n)) |variants| {
+                    var acc: ?Ast.Expr = null;
+                    for (variants) |v| {
+                        const tag = this.qualifiedVariantTagOf(n, v) orelse v;
+                        const arity = if (this.variant_fields.get(v)) |f| f.len + 1 else 0;
+                        const one = if (arity == 0)
+                            try b.binop("=:=", subject, Ast.Expr.a(tag))
+                        else
+                            try this.taggedShapeTest(b, subject, tag, arity);
+                        acc = if (acc) |a| try b.binop("orelse", a, one) else one;
+                    }
+                    return acc orelse Ast.Expr.a("false");
+                }
+                // A name this module cannot place — an imported type it never
+                // indexed, a generic parameter — has no test to write.
+                return null;
+            },
+            .array => return try b.call("is_list", &.{subject}),
+            .generic => |g| {
+                if (std.mem.eql(u8, g.name, "Array")) return try b.call("is_list", &.{subject});
+                return this.typeTestNode(b, .{ .named = g.name }, subject);
+            },
+            // `?T` is absent or a `T`.
+            .optional => |inner| {
+                const inner_test = try this.typeTestNode(b, inner.*, subject) orelse return null;
+                return try b.binop("orelse", try b.binop("=:=", subject, Ast.Expr.a("undefined")), inner_test);
+            },
+            .tuple_, .labeledTuple => {
+                const elems = t.tupleElems().?;
+                var acc = try b.binop(
+                    "andalso",
+                    try b.call("is_tuple", &.{subject}),
+                    try b.binop("=:=", try b.call("tuple_size", &.{subject}), Ast.Expr.t(Term.int(@intCast(elems.len)))),
+                );
+                for (elems, 0..) |e, i| {
+                    const at = try b.call("element", &.{ Ast.Expr.t(Term.int(@intCast(i + 1))), subject });
+                    const one = try this.typeTestNode(b, e, at) orelse continue;
+                    acc = try b.binop("andalso", acc, one);
+                }
+                return acc;
+            },
+            .function, .typeparam => return null,
+        }
+    }
+
+    /// `is_tuple(V) andalso tuple_size(V) =:= N andalso element(1, V) =:= Tag`
+    /// — decision 21's shape, tested.
+    fn taggedShapeTest(this: *Emitter, b: Ast.Builder, subject: Ast.Expr, tag: []const u8, arity: usize) anyerror!Ast.Expr {
+        _ = this;
+        const acc = try b.binop(
+            "andalso",
+            try b.call("is_tuple", &.{subject}),
+            try b.binop("=:=", try b.call("tuple_size", &.{subject}), Ast.Expr.t(Term.int(@intCast(arity)))),
+        );
+        const first = try b.call("element", &.{ Ast.Expr.t(Term.int(1)), subject });
+        return b.binop("andalso", acc, try b.binop("=:=", first, Ast.Expr.a(tag)));
+    }
+
+    /// `x is T` in expression position. The test reads the subject more than
+    /// once, so anything but a variable is bound by an immediate fun first.
+    fn isTestNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
+        const t = cc.isType orelse return error.InvalidArgs;
+        if (cc.args.len != 1) return error.InvalidArgs;
+        const subject = try this.exprNode(b, cc.args[0].value.*);
+        if (subject == .variable) {
+            return try this.typeTestNode(b, t, subject) orelse Ast.Expr.a("false");
+        }
+        const n = this.try_seq;
+        this.try_seq += 1;
+        const bound = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_Is{d}", .{n}));
+        const test_node = try this.typeTestNode(b, t, bound) orelse Ast.Expr.a("false");
+        return b.applyParen(.{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
+            try b.clause(&.{bound}, &.{}, &.{test_node}),
+        }) }, &.{subject});
     }
 
     /// The last `.`-separated segment of a variant path: `Shape.Circle` → `Circle`,
@@ -6889,7 +7509,102 @@ const Emitter = struct {
             try this.methodForms(b, target, m.name, m);
             if (unit) |*u| try u.exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
         }
-        if (unit) |*u| try this.closeTypeUnit(b, r.name, u);
+        if (unit) |*u| {
+            // Half 3: the type's module also answers about its own values.
+            try this.recordIdentityForms(b, u, r);
+            try this.closeTypeUnit(b, r.name, u);
+        }
+    }
+
+    /// Decision 8 §7, half 3: the two functions every `type`'s module answers
+    /// about its own values.
+    ///
+    ///   * `'__bp_get'/2` turns a field NAME into its position, for the reads
+    ///     the emitter could not place statically (`'__bp_field'/2` asks the
+    ///     tag's module).
+    ///   * `'__bp_format'/1` renders the value the way the source writes it —
+    ///     `Point(x: 1, y: 2)`, `Shape.Circle(radius: 4)`, `Shape.Dot` — and a
+    ///     type implementing `Display` renders as its `display()` instead.
+    ///
+    /// The field values go through the FILE module's `'__bp_show'/2`, which
+    /// `fileCall` exports on demand: one copy of the printer per file rather
+    /// than one per type.
+    fn recordIdentityForms(this: *Emitter, b: Ast.Builder, unit: *SavedUnitState, r: ast.TypeDecl) !void {
+        const fields = r.recordFields();
+        if (fields.len > 0) {
+            const clauses = try b.arena.alloc(Ast.Clause, fields.len);
+            for (fields, 0..) |f, i| {
+                clauses[i] = .{
+                    .patterns = try b.exprs(&.{ Ast.Expr.v("V"), Ast.Expr.a(f.name) }),
+                    .body = try b.body(&.{try b.call("element", &.{ Ast.Expr.t(Term.int(@intCast(i + 2))), Ast.Expr.v("V") })}),
+                    .layout = .inline_,
+                };
+            }
+            try unit.forms.appendSlice(b.arena, &.{ .blank, .{ .function = .{ .name = "__bp_get", .clauses = clauses } } });
+            try unit.exports.append(b.arena, .{ .name = "__bp_get", .arity = 2 });
+        }
+        const body_expr = if (this.typeRendersItselfAs(r)) |display|
+            try b.tuple(&.{ Ast.Expr.a("text"), try b.call(display, &.{Ast.Expr.v("V")}) })
+        else blk: {
+            const pairs = try b.arena.alloc(Ast.Expr, fields.len);
+            for (fields, 0..) |f, i| {
+                pairs[i] = try b.tuple(&.{
+                    .{ .string = f.name },
+                    try b.call("element", &.{ Ast.Expr.t(Term.int(@intCast(i + 2))), Ast.Expr.v("V") }),
+                });
+            }
+            break :blk try b.tuple(&.{ Ast.Expr.a("record"), .{ .string = r.name }, .{ .list = pairs } });
+        };
+        const arg: Ast.Expr = if (fields.len == 0 and this.typeRendersItselfAs(r) == null) Ast.Expr.v("_") else Ast.Expr.v("V");
+        try unit.forms.appendSlice(b.arena, &.{ .blank, .{ .function = .{ .name = "__bp_format", .clauses = try b.arena.dupe(Ast.Clause, &.{.{
+            .patterns = try b.exprs(&.{arg}),
+            .body = try b.body(&.{body_expr}),
+            .layout = .inline_,
+        }}) } } });
+        try unit.exports.append(b.arena, .{ .name = "__bp_format", .arity = 1 });
+    }
+
+    /// `'__bp_format'/1` for an enum: one clause per variant, the tag as the
+    /// pattern — a bare atom for a unit variant, the tagged tuple for one with
+    /// a payload — rendered `Enum.Variant(field: …)`.
+    fn enumIdentityForms(this: *Emitter, b: Ast.Builder, unit: *SavedUnitState, e: ast.TypeDecl) !void {
+        const variants = e.variants();
+        if (variants.len == 0) return;
+        const clauses = try b.arena.alloc(Ast.Clause, variants.len);
+        for (variants, 0..) |v, ci| {
+            const tag = Ast.Expr.a(this.variantTagAtom(e.name, v.name) catch v.name);
+            const written = try std.fmt.allocPrint(b.arena, "{s}.{s}", .{ e.name, v.name });
+            var pattern = tag;
+            const pairs = try b.arena.alloc(Ast.Expr, v.fields.len);
+            if (v.fields.len > 0) {
+                const slots = try b.arena.alloc(Ast.Expr, v.fields.len + 1);
+                slots[0] = tag;
+                for (v.fields, 0..) |f, i| {
+                    const slot = try std.fmt.allocPrint(b.arena, "F{d}", .{i});
+                    slots[i + 1] = Ast.Expr.v(slot);
+                    pairs[i] = try b.tuple(&.{ .{ .string = f.name }, Ast.Expr.v(slot) });
+                }
+                pattern = .{ .tuple = slots };
+            }
+            clauses[ci] = .{
+                .patterns = try b.exprs(&.{pattern}),
+                .body = try b.body(&.{try b.tuple(&.{ Ast.Expr.a("variant"), .{ .string = written }, .{ .list = pairs } })}),
+                .layout = .inline_,
+            };
+        }
+        try unit.forms.appendSlice(b.arena, &.{ .blank, .{ .function = .{ .name = "__bp_format", .clauses = clauses } } });
+        try unit.exports.append(b.arena, .{ .name = "__bp_format", .arity = 1 });
+    }
+
+    /// The method a type renders itself through (decision 8 §7's `Display`):
+    /// a one-parameter `display` the type declares or adopts. Null otherwise.
+    fn typeRendersItselfAs(this: *Emitter, r: ast.TypeDecl) ?[]const u8 {
+        for (r.methods) |m| {
+            if (m.is_declare) continue;
+            if (std.mem.eql(u8, m.name, "display") and m.params.len == 1) return m.name;
+        }
+        if (this.emitsAdoptedDefault(r.name, "display")) return "display";
+        return null;
     }
 
     /// Open the module of `type_name` (policy 3): its atom is rendered, the
@@ -6905,6 +7620,7 @@ const Emitter = struct {
             .needs_text_helper = this.needs_text_helper,
             .needs_print_helper = this.needs_print_helper,
             .needs_len_helper = this.needs_len_helper,
+            .needs_field_helper = this.needs_field_helper,
             .needs_index_helper = this.needs_index_helper,
             .needs_slice_helper = this.needs_slice_helper,
             .needs_add_helper = this.needs_add_helper,
@@ -6917,6 +7633,7 @@ const Emitter = struct {
         this.needs_text_helper = false;
         this.needs_print_helper = false;
         this.needs_len_helper = false;
+        this.needs_field_helper = false;
         this.needs_index_helper = false;
         this.needs_slice_helper = false;
         this.needs_add_helper = false;
@@ -6947,10 +7664,11 @@ const Emitter = struct {
         }
         if (this.needs_add_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (this.needs_len_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
+        if (this.needs_field_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
         if (this.needs_index_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
         if (this.needs_slice_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
         if (this.needs_text_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
-        if (this.needs_print_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form });
+        if (this.needs_print_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
 
         // The header: the type's atom, its exports, then the forms.
         const atom = try crossModule.typeAtom(this.alloc, .of(this.module_name), type_name);
@@ -6981,6 +7699,7 @@ const Emitter = struct {
         this.needs_text_helper = unit.needs_text_helper;
         this.needs_print_helper = unit.needs_print_helper;
         this.needs_len_helper = unit.needs_len_helper;
+        this.needs_field_helper = unit.needs_field_helper;
         this.needs_index_helper = unit.needs_index_helper;
         this.needs_slice_helper = unit.needs_slice_helper;
         this.needs_add_helper = unit.needs_add_helper;
@@ -7012,7 +7731,10 @@ const Emitter = struct {
             try this.methodForms(b, target, m.name, m);
             if (unit) |*u| try u.exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
         }
-        if (unit) |*u| try this.closeTypeUnit(b, e.name, u);
+        if (unit) |*u| {
+            try this.enumIdentityForms(b, u, e);
+            try this.closeTypeUnit(b, e.name, u);
+        }
     }
 
     fn interfaceForms(this: *Emitter, b: Ast.Builder, out: *Forms, i: ast.BehaviorDecl) !void {
