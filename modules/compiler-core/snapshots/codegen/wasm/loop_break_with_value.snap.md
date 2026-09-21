@@ -54,7 +54,7 @@ fn main() {
     local.get $x
     call $__arr_push
     local.set $__yield0
-    i32.const 0
+    br $__break
       )
       (else
         i32.const 0
@@ -404,5 +404,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-[15, 20]
+[15]
 ```

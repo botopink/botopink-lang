@@ -2497,8 +2497,13 @@ const Emitter = struct {
                             return .terminated;
                         }
                         if (self.yield_target != null) {
+                            // Decision 55: the value is appended and the loop
+                            // ends there — in a collection loop as much as in a
+                            // condition loop. Before, only the condition loop
+                            // left (`cond_break_depth`); a collection loop ran on
+                            // and `[20, 40, 99]` printed as `[20, 40, 99, 60]`.
                             try self.emitYield(v.*);
-                            if (self.cond_break_depth != null and self.cond_break_depth.? == self.loop_depth) {
+                            if (self.loop_depth > 0) {
                                 try self.emit(.{ .br = break_label });
                                 return .terminated;
                             }
@@ -2971,8 +2976,9 @@ const Emitter = struct {
                 .@"break" => |br| {
                     if (br.value) |v| {
                         if (self.yield_target != null) {
+                            // Decision 55 — see the statement-position arm above.
                             try self.emitYield(v.*);
-                            if (self.cond_break_depth != null and self.cond_break_depth.? == self.loop_depth) try self.emit(.{ .br = break_label });
+                            if (self.loop_depth > 0) try self.emit(.{ .br = break_label });
                         } else try self.lowerExpr(v.*);
                     } else if (self.loop_depth > 0) try self.emit(.{ .br = break_label });
                 },
@@ -3962,6 +3968,18 @@ const Emitter = struct {
                 }
             },
             .variant => |v| {
+                if (v.shape == .range) {
+                    // `A...B` (decision 53): both ends included. The bounds are
+                    // `payload.literals[0..2]`, low then high; the subject local
+                    // is an i32, so a float bound is compared as one. Before
+                    // this arm the shape fell into the variant path below, found
+                    // no variant named `""` and answered `0` for every value.
+                    const bounds = v.payload.literals;
+                    try self.emitRangeBound(bounds[0], subj, "ge_s");
+                    try self.emitRangeBound(bounds[1], subj, "le_s");
+                    try self.emit(opOf("i32", "and"));
+                    return;
+                }
                 const ref = self.variantRef(v.name) orelse {
                     try self.emitC(zero, "unknown variant pattern");
                     return;
@@ -3989,6 +4007,23 @@ const Emitter = struct {
                     else => {},
                 }
             },
+        }
+    }
+
+    /// One end of a range pattern: `subj <op> bound`, the bound a number
+    /// literal (a string bound has no wasm ordering yet and answers `0`).
+    fn emitRangeBound(self: *Emitter, bound: ast.Pattern, subj: []const u8, cmp: []const u8) anyerror!void {
+        switch (bound) {
+            .numberLit => |n| {
+                try self.emit(.{ .local_get = subj });
+                const t = numLitType(n);
+                if (t[0] == 'f') {
+                    try self.emit(constOf("f64", n));
+                    try self.emit(.{ .convert = "i32.trunc_f64_s" });
+                } else try self.emit(constOf(t, n));
+                try self.emit(opOf("i32", cmp));
+            },
+            else => try self.emitC(zero, "range pattern over a non-numeric bound"),
         }
     }
 

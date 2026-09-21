@@ -296,7 +296,6 @@ beam     | run/display_print.bp       | 03 step 2, 13 step 18 | §7: `@print` do
 # single-value probe decision 53 quotes reads beam's `1` as correct when it is a
 # false positive. commonJS passes.
 erlang   | run/case_range_value.bp     | 02 step 3 | decision 53: the `1...9` arm never matches — all five probes (5, 1, 9, 0, 10) answer the `_` arm's `0`
-wasm     | run/case_range_value.bp     | 05 step 2 | decision 53: the same, and not the `256` heap address the decision's single-value probe recorded — the arm never matches, so all five probes answer `0` (D4, `case` arms)
 beam     | run/case_range_value.bp     | 03 step 3 | decision 53: the opposite — the `1...9` arm **always** matches, so 0 and 10 answer `1` too. beam does run (run.sh § beam assembles and executes it); "beam emits only out/main.S" is no longer the measurement (D4, `case` arms)
 
 # ── §10 `yield` beside `break` in a collection loop (decision 55) ─────────────
@@ -324,11 +323,9 @@ beam     | run/case_range_value.bp     | 03 step 3 | decision 53: the opposite �
 # after the cell. Reported to the maintainer rather than filed against step 5.
 commonJS | run/loop_yield_then_break_value.bp | 04 step 3 | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` where `3` / `20,40,99` is owed
 erlang   | run/loop_yield_then_break_value.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the yielded values are lost — `3` / `ok,99,ok`: every non-breaking iteration answers the `ok` of its last statement. escript also prints a `the result of evaluating operator '*'/2 is ignored` warning on stdout, which is the same defect seen by the compiler
-wasm     | run/loop_yield_then_break_value.bp | 05 step 4 | decision 55: the break value is appended and the loop runs on — `4` / `20,40,99,60`
 beam     | run/loop_yield_then_break_value.bp | 03 step 3 | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` (D7, `break <value>`; measured here for the first time, which D7 asked for)
 commonJS | run/loop_break_value_then_yield.bp | 04 step 3 | decision 55: the loop runs on after the break — `3` / `20,99,60` where `2` / `20,99` is owed
 erlang   | run/loop_break_value_then_yield.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the break is ignored outright — `3` / `20,40,60`, the same answer the body without any `break` gives
-wasm     | run/loop_break_value_then_yield.bp | 05 step 4 | decision 55: the break value is appended and the loop runs on — `4` / `20,99,40,60`
 beam     | run/loop_break_value_then_yield.bp | 03 step 3 | decision 55: the loop runs on after the break — `3` / `20,99,60` (D7)
 commonJS | run/loop_yield_then_bare_break.bp | 04 step 3 | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` where `2` / `20,40` is owed
 erlang   | run/loop_yield_then_bare_break.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the loop answers the atom `ok`, so `length/1` is called on a non-list and the program dies — `escript: exception error: bad argument in function length/1 called as length(ok)`. The status is escript's **127** today and becomes `erl`'s **1** when front 13 lands decision 56's runner; the reason is the crash, not the number
