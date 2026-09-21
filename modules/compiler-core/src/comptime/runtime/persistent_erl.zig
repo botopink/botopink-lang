@@ -17,13 +17,19 @@
 //!             cmd 2 = compile+load `<path>`, answer the module atom
 //!             cmd 3 = call `<module>:main(<term>)`, where the payload is
 //!                     `<u16 BE namelen><module><external term>`
+//!             cmd 4 = load `.beam` bytes, answer the module atom; the payload is
+//!                     `<u16 BE namelen><module><beam bytes>` (no file, no compiler)
 //!   response: <u32 BE len><payload>        `main`'s iodata result, or an error
 //!             payload tagged `__BP_ERL_COMPILE_ERROR__:` /
 //!             `__BP_ERL_RUNTIME_ERROR__:` (raise, exit, non-iodata result, timeout)
 //!
 //! Cmd 2 + cmd 3 are what the evaluators use: the module is compiled once per
-//! declaration and every later call site sends cmd 3 alone. Cmd 1 stays as the
-//! one-shot fallback and is what this file's own regression tests drive.
+//! declaration and every later call site sends cmd 3 alone. Cmd 4 is cmd 2 for
+//! a module assembled in Zig (`codegen/beam/beam_file.zig`): the same `loaded`
+//! set, the same cmd 3 afterwards, and a `code:load_binary/3` rejection comes
+//! back on the `compile_error` channel so the evaluators read both the same
+//! way. Cmd 1 stays as the one-shot fallback and is what this file's own
+//! regression tests drive.
 //!
 //! `main` runs in a monitored process with a wall-clock budget
 //! (`eval_timeout_ms`), so a runaway body is killed instead of wedging the server.
@@ -46,6 +52,17 @@
 
 const std = @import("std");
 const preludeMod = @import("./prelude.zig");
+const beamFile = @import("../../codegen/beam/beam_file.zig");
+const etf = @import("./etf.zig");
+const Term = @import("../../codegen/beam/term.zig").Term;
+
+// The assembler and its opcode table are reached only from this file until
+// `codegen/tests.zig` lists them; the reference keeps their inline tests in
+// the suite whatever `-Dtest-filter` selects (a file referenced from a
+// filtered-out test alone is never analysed, and its tests silently vanish).
+comptime {
+    _ = beamFile;
+}
 
 const Io = std.Io;
 const Child = std.process.Child;
@@ -88,7 +105,24 @@ const server_body =
     \\            <<NameBin:NameLen/binary, ArgBin/binary>> = Rest,
     \\            Mod = binary_to_atom(NameBin, latin1),
     \\            write_frame(safe_call(Mod, [binary_to_term(ArgBin)])),
+    \\            loop();
+    \\        {4, Payload} ->  %% load: <<NameLen:16, Name, Beam>> -> code:load_binary, answer the atom
+    \\            <<NameLen:16/unsigned-big-integer, Rest/binary>> = Payload,
+    \\            <<NameBin:NameLen/binary, Beam/binary>> = Rest,
+    \\            write_frame(load_beam(binary_to_atom(NameBin, latin1), Beam)),
     \\            loop()
+    \\    end.
+    \\
+    \\%% Load `.beam` bytes assembled by the compiler (no source, no `compile:file`),
+    \\%% then answer the module atom. The loader's rejection (`badfile`, an opcode
+    \\%% above what this release knows) is reported on the compile-error channel:
+    \\%% to the evaluators it is the same event a rejected `.erl` was.
+    \\load_beam(Mod, Beam) ->
+    \\    _ = code:purge(Mod),
+    \\    case code:load_binary(Mod, "", Beam) of
+    \\        {module, Mod} -> atom_to_binary(Mod);
+    \\        {error, Reason} ->
+    \\            io_lib:format("__BP_ERL_COMPILE_ERROR__:~p", [{load_binary, Mod, Reason}])
     \\    end.
     \\
     \\%% Compile and load `Path`, then answer `Then(Mod)`; a compiler rejection is
@@ -513,12 +547,44 @@ pub fn evalWithArg(
     module: []const u8,
     arg: []const u8,
 ) !Response {
+    return evalLoaded(allocator, io, .{ .erl_path = erl_path }, module, arg);
+}
+
+/// `evalWithArg` for a module the compiler assembled itself
+/// (`codegen/beam/beam_file.zig`): `beam` is loaded with cmd 4 — bytes in the
+/// frame, no file, no `compile:file` — the first time this process sees
+/// `module`, then `main/1` is called exactly as for a source module.
+pub fn evalBeamWithArg(
+    allocator: std.mem.Allocator,
+    io: Io,
+    beam: []const u8,
+    module: []const u8,
+    arg: []const u8,
+) !Response {
+    return evalLoaded(allocator, io, .{ .beam = beam }, module, arg);
+}
+
+/// How a module reaches the node: a `.erl` path it compiles (cmd 2) or `.beam`
+/// bytes it loads (cmd 4). Either way the reply is the module atom.
+const Load = union(enum) {
+    erl_path: []const u8,
+    beam: []const u8,
+};
+
+fn evalLoaded(allocator: std.mem.Allocator, io: Io, load: Load, module: []const u8, arg: []const u8) !Response {
     try ensureSpawned(io, allocator);
     lock();
     defer unlock();
 
     if (!loaded.contains(module)) {
-        const response = try requestLocked(allocator, io, 2, erl_path);
+        const response = switch (load) {
+            .erl_path => |path| try requestLocked(allocator, io, 2, path),
+            .beam => |bytes| blk: {
+                const payload = try namedPayload(allocator, module, bytes);
+                defer allocator.free(payload);
+                break :blk try requestLocked(allocator, io, 4, payload);
+            },
+        };
         switch (response) {
             // The reply is the module atom; nothing needs it past this point.
             .ok => |atom| allocator.free(atom),
@@ -529,13 +595,20 @@ pub fn evalWithArg(
         try loaded.put(loaded_keys, key, {});
     }
 
-    // <u16 BE namelen><module><external term>
+    const payload = try namedPayload(allocator, module, arg);
+    defer allocator.free(payload);
+    return requestLocked(allocator, io, 3, payload);
+}
+
+/// `<u16 BE namelen><module><body>` — the payload shape of cmd 3 (body = the
+/// external term) and cmd 4 (body = the `.beam` bytes). Owned by the caller.
+fn namedPayload(allocator: std.mem.Allocator, module: []const u8, body: []const u8) ![]u8 {
     var payload: std.ArrayListUnmanaged(u8) = .empty;
-    defer payload.deinit(allocator);
+    errdefer payload.deinit(allocator);
     try payload.appendSlice(allocator, &.{ @intCast(module.len >> 8), @truncate(module.len) });
     try payload.appendSlice(allocator, module);
-    try payload.appendSlice(allocator, arg);
-    return requestLocked(allocator, io, 3, payload.items);
+    try payload.appendSlice(allocator, body);
+    return payload.toOwnedSlice(allocator);
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -685,6 +758,55 @@ test "persistent_erl: readFrame rejects a stray =INFO REPORT before allocating" 
     );
     const message = lastTransportError() orelse return error.TestExpectedTransportMessage;
     try std.testing.expect(std.mem.indexOf(u8, message, "length 1028214342 (prefix \"=INF\")") != null);
+}
+
+/// `-module(bp_persistent_erl_echo). -export([main/1]). main(X) -> X.` assembled
+/// by `codegen/beam/beam_file.zig` — the argument arrives in `{x, 0}` and is the
+/// reply, so the frame that comes back is the ETF-decoded term as iodata.
+fn echoBeam(allocator: std.mem.Allocator) ![]u8 {
+    const S = struct {
+        const m = "bp_persistent_erl_echo";
+        const code = [_]beamFile.Instr{
+            beamFile.Instr.of(.label, &.{beamFile.Arg.uint(1)}),
+            beamFile.Instr.of(.func_info, &.{ beamFile.Arg.atomOf(m), beamFile.Arg.atomOf("main"), beamFile.Arg.uint(1) }),
+            beamFile.Instr.of(.label, &.{beamFile.Arg.uint(2)}),
+            beamFile.Instr.of(.@"return", &.{}),
+        };
+        const functions = [_]beamFile.Function{.{ .name = "main", .arity = 1, .entry = 2, .code = &code }};
+    };
+    return beamFile.assemble(allocator, .{ .name = S.m, .functions = &S.functions });
+}
+
+test "persistent_erl: cmd 4 loads .beam bytes in-frame and cmd 3 calls main/1 on them" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    var arena_state = std.heap.ArenaAllocator.init(allocator);
+    defer arena_state.deinit();
+    const beam = try echoBeam(allocator);
+    defer allocator.free(beam);
+    const module = "bp_persistent_erl_echo";
+
+    // First call: load (cmd 4) then call (cmd 3). Second call: cmd 3 alone — the
+    // `loaded` set remembers the atom, and the reply must be the same.
+    for ([_][]const u8{ "echo", "again" }) |text| {
+        const arg = try etf.encode(arena_state.allocator(), Term.str(text));
+        const response = try evalBeamWithArg(allocator, io, beam, module, arg);
+        defer allocator.free(response.payload());
+        try std.testing.expectEqual(std.meta.Tag(Response).ok, std.meta.activeTag(response));
+        try std.testing.expectEqualStrings(text, response.payload());
+    }
+    try std.testing.expect(loaded.contains(module));
+
+    // Bytes the loader refuses come back on the compile-error channel — the same
+    // event a rejected `.erl` was to the evaluators — and the atom is not
+    // remembered as loaded.
+    const garbage = "FOR1\x00\x00\x00\x04BEAM";
+    const rejected = try evalBeamWithArg(allocator, io, garbage, "bp_persistent_erl_garbage", "\x83\x6a");
+    defer allocator.free(rejected.payload());
+    try std.testing.expectEqual(std.meta.Tag(Response).compile_error, std.meta.activeTag(rejected));
+    try std.testing.expect(std.mem.indexOf(u8, rejected.payload(), "load_binary") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rejected.payload(), "badfile") != null);
+    try std.testing.expect(!loaded.contains("bp_persistent_erl_garbage"));
 }
 
 test "persistent_erl: readFrame returns a payload under the cap" {
