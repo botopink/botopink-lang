@@ -271,11 +271,20 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
 - An `if (a < b || c > d)` condition does not parse today (the condition grammar stops at `||`); bind it to a `val` first (`asserts.between` does). A parser gap, not a std one.
 - **Measured 2026-09-20, consumer side** (`import {asserts, snapshots} from "std"` from a user package under `botopink test`): a primitive interface `default fn` (`Bool.negate`, `Array.contains`, `Array.isEmpty`, …) is emitted verbatim (`condition.negate is not a function`) when a std module is compiled as a consumer's **embedded** import — the project compile of `libs/std` itself lowers it. `asserts`/`snapshots` therefore use only host-backed primitives (`== false`, `indexOf`, `.length`, `split`/`join`/`slice`/`indexOf`/`startsWith`/`endsWith`/`contains` on strings). A std module written with a default fn passes its own tests and breaks its consumers. Core gap (commonJS cross-module emission of embedded std modules).
 - **Measured 2026-09-20, erlang consumer side**: any `from "std"` import from a user package under `botopink test --target erlang` is `{error,undef}` — `test_cmd.zig` writes the module as `std/<name>.erl` while its atom is `std@<name>`, and `erlc` refuses the mismatch (`Module name 'std@math' does not match file name 'math'`), so `__bp_load_siblings` never loads it. Pre-existing (`math` fails the same way); `botopink run` is not affected. Toolchain gap, owned by the CLI.
-- A trailing default on a behavior method is not expanded at the call site
-  yet: `s.slice(1)` fails to check (`'slice' expects 2 argument(s)`); pass both
-  bounds. `slice`'s `end` is `?i32`, so the open-ended form is
-  `s.slice(1, null)` — which is exactly what an index expression `s[1..]`
-  rewrites to (decision 63, amended).
+- A trailing default on a behavior method **is** expanded at the call site since
+  1.0.10-beta's C-04: `s.slice(1)` is the open-ended slice, because `slice`'s
+  `end` is `?i32 = null` and the declared default is what the method receives.
+  Measured 2026-09-21: `"hello".slice(2)` answers `llo` on commonJS, erlang and
+  beam. `s.slice(2, null)` still means the same thing, and is what an index
+  expression `s[1..]` rewrites to (decision 63, amended).
+- **An open end is a backend defect on wasm, and on beam for arrays** — and it is
+  not the default's: written out with no default involved, `s.slice(2, null)`
+  traps on wasm (`__str_slice`, out of bounds memory access) byte for byte as
+  `s.slice(2)` does, and `xs.slice(2, null)` on an ARRAY answers `0` on wasm and
+  `badarith` on beam where commonJS and erlang answer. Unowned; it is
+  `String.slice` / `Array.slice`'s lowering of a `null` bound. The wasm trap is
+  what `snapshots/codegen/wasm/string_slice_without_end_arg_slices_to_source_length.snap.md`
+  records since C-04 — the snapshot used to pin the arity error, which hid it.
 - A `val` bound to a generic call is not generalised: `val f = Function.constant(42)`
   accepts one argument type only.
 - Test an optional parameter with `!= null`, not truthiness: on commonJS

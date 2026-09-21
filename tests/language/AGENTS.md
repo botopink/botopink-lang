@@ -38,7 +38,7 @@ cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict
 `run/index_past_the_end_fails`, `run/index_at_optional`), `std_erlang_node` (decision 64),
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets), and the
-singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, the two `lambda_*` cells of
+singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults` (with `run/fn_defaults_values`, the VALUE on all four targets, and `reject/missing_required_argument`, N2 — both 1.0.10-beta's C-04), the two `lambda_*` cells of
 1.0.10-beta's `00 · 04-js` — `lambda_expression_body` (a lambda whose whole body is one expression
 answers that expression's value) and `lambda_element_method` (a primitive method on a lambda's
 parameter is the same method it is anywhere else), both measured by emilia's theme front and both
@@ -48,7 +48,12 @@ decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bod
 decisions 95 and 98: one `test/`, one `run/` and five `reject/` cells; front 20
 also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
 decision 96, and `run/option_unwrap_or` + `reject/option_expect_removed` to
-`optional*` for F11). One scenario group per
+`optional*` for F11), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
+leading-dot section path names — `run/enum_section_expected_type`, where two enums carry
+`.Color.Red.500` and every spelling is resolved by the type its position expects, and
+`reject/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
+candidates, and `run/enum_section_qualified_path`, where `Token.Color.Red.500` names its enum and
+needs no expectation at all). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -259,6 +264,78 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
   path that is not a `test/` cell (only a `test/` cell has tests).
 
 ## Status and the gate
+
+**Recounted on disk at C-04's landing (`fix/trailing-defaults`, merged onto
+`4aee802d`):**
+
+```bash
+ls test/*.bp    | wc -l   # 54
+ls run/*.bp     | wc -l   # 33   (each with its .out; 4 with an .exit, 4 with .<target>.expect; 1 with a .targets)
+ls reject/*.bp  | wc -l   # 42   (each with its .expect)
+ls -d modules/*/| wc -l   #  5
+find . -name '*.bp' | wc -l   # 144 — 134 cells, plus the 15 extra .bp of the modules/ projects
+```
+
+**134 cells.** The difference from the `fix/js-instanceof-boundary` block below
+is C-04's two, one new area row — and `test/fn_defaults.bp`, which grew from 3
+tests to 9 without being a new cell:
+
+| Area | Cells | Total |
+|---|---|---|
+| a declared parameter default is applied at the call site (1.0.10-beta C-04, 01 step 7, N1 and N2) | 1 run + 1 reject | 2 |
+
+`test/fn_defaults.bp` is the shape claim and runs where `botopink test` runs —
+commonJS and erlang. `run/fn_defaults_values.bp` is the VALUE claim and runs on
+all four targets, because the whole defect was that the declared value never
+arrived: a cell that merely compiles proves nothing. It holds the three shapes a
+default can be declared in — a free `fn`, a record constructor and an instance
+method — and `P(y: 2)` against `type P(x: i32 = 0, y: i32)`, which names the
+required trailing field and omits the leading one that has the default.
+`reject/missing_required_argument.bp` is N2, and it cannot live in the `test/`
+cell: a cell that does not compile asserts nothing.
+
+**`expected-failures.txt` loses 2 lines and keeps 62** — `commonJS |
+test/fn_defaults.bp` and `erlang | test/fn_defaults.bp`, both `01 step 7`.
+Checked by (target, key) against every side of both merges, never by count:
+C-08's six deletions stay gone, `fix/erlang-module-load`'s two
+`run/module_init_order.bp` additions are present, `fix/js-instanceof-boundary`
+added and deleted none, and no line of the 62 is a stray or a loss.
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on
+the tree `fix/trailing-defaults` made by merging `origin/feat` `4aee802d`:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 62 lines, 47 exercised by --target commonJS,erlang,wasm
+language tests: 452 passed, 47 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 62 lines, 21 exercised by --target beam
+language tests: 58 passed, 21 expected failures, 0 failed
+$ zig build test-libs
+test-libs: 23 passed, 0 failed, 0 known red   # with emilia at `ea0811d`
+```
+
+Re-derived from the files and a re-run after the merge — neither side's number
+was kept. The +22 on `--target all` over `fix/js-instanceof-boundary`'s 430
+accounts for itself exactly: a `test/` cell's result is one per NAMED TEST, so
+`test/fn_defaults.bp` going from two expected-failure lines to nine passing
+tests on two targets is +18 and −2; `run/fn_defaults_values.bp` is +3 (commonJS,
+erlang, wasm) and `reject/missing_required_argument.bp` is +1 (it runs once per
+invocation). Beam's +2 over 56 is the same run cell and the same reject cell;
+its expected count does not move, because both deleted lines were commonJS and
+erlang.
+
+`test-libs` reads `0 known red` here for a reason that is not C-04's:
+`fix/js-instanceof-boundary` listed `emilia-card commonJS` while its goldens
+still pinned the pre-fix text, and said the line goes with them. emilia landed
+them (`fc23760`, "the class bodies are goldens again, not a pinned defect"), so
+the cell passes and the line had to go — a listed cell that passes fails the
+gate until it is deleted, which is the rule working as written. `feat` reached
+the same deletion independently (`3b1e2468`), and the merged file is byte-identical
+to it. `test-libs`' `passed` follows the sibling libraries' own checkouts rather
+than this branch — emilia's cells went 21 → 23 between two runs of it here, with
+no compiler change in between — so the emilia commit it was measured at is named
+above and the number is reproducible only against that.
 
 **Recounted on disk at `fix/js-instanceof-boundary` (00 · 04-js round 2, merged onto
 `032fd765`):**

@@ -119,8 +119,11 @@ commonJS | test/tuple_labels.bp::§6 T4 a label survives a generic array method 
 erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 02 step 4 | the same, louder: `rs.at(0).b` raises `bad map: {1,<<"x">>}` in `map_get/2` — the label is emitted as a map read against a tuple. (wasm answers `0`; no `test/` cell reaches wasm)
 
 # ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
-commonJS | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section arms now parse; the failure is the arm-body one every other case cell has — "expected string, got void" at the `case`. A section is still not a type named by its path
-erlang   | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section arms now parse; the failure is the arm-body one every other case cell has — "expected string, got void" at the `case`. A section is still not a type named by its path
+# Both rows deleted by `00 · 01-checker`: `test/case_sections.bp` matches on
+# `Token.Text.Bold` and `Token.Color.Red`, and the checker refused the fully
+# qualified section path outright ("unknown field 'Bold' on type 'Token'"). It
+# resolves now — the root identifier names the enum the path is read in — and
+# the cell is green on commonJS and erlang.
 
 # ── §7 the formatter ──────────────────────────────────────────────────────────
 # The record and variant rows of §7's table need a value that knows its own type,
@@ -138,10 +141,6 @@ erlang   | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section 
 *        | reject/self_without_argument.bp    | 01 step 6 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
 
 # ── §8 host externals ─────────────────────────────────────────────────────────
-
-# ── trailing parameter defaults ───────────────────────────────────────────────
-commonJS | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
-erlang   | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
 
 # ── primitive methods ─────────────────────────────────────────────────────────
 erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined

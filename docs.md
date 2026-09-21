@@ -261,6 +261,66 @@ inside a `case` pattern the bare name is enough. A bare `Red` in expression
 position type-checks but no backend lowers it (the generated program reports an
 unbound `Red` at run time), so always write the qualified form.
 
+#### Sections of an enum
+
+An enum's body may group variants into **sections**, and a section may nest.
+A section is itself a type (`Token.Color`), and a leaf is reached by its path:
+
+```botopink
+type Token {
+    Color {
+        Red { 100, 500 }
+        Gray { 100, 500 }
+    }
+    Bold,
+}
+
+fn main() {
+    val t: Token = .Color.Red.500;
+    @print(case t { Color(_inner) -> "a colour"; Bold -> "bold"; });
+}
+```
+
+**Which enum a leading-dot path names is decided by the type the position
+expects.** More than one enum can carry the same path, so the answer is read
+from the position the path is written in — a `val`'s annotation, a declared
+parameter, the function's return type, the element type of an array literal:
+
+```botopink
+type Token  { Color { Red { 100, 500 } } }
+type Border { Color { Red { 100, 500 } } }
+
+fn onToken(t: Token) -> string { return "token"; }
+
+fn main() {
+    val a: Token = .Color.Red.500;      // Token
+    val b: Border = .Color.Red.500;     // Border
+    @print(onToken(.Color.Red.100));    // Token — the parameter says so
+}
+```
+
+A position that expects nothing (`val x = .Color.Red.500;`) leaves the path
+carried by two enums with nothing to choose between them, and the compiler
+refuses rather than pick one, naming both candidates:
+
+```
+error: the path ".Color.Red.500" is carried by more than one enum —
+       "Border" and "Token" — and nothing here says which
+```
+
+Give the position a type and it resolves — or write the path from its enum,
+which names the answer in the path itself and needs no type around it:
+
+```botopink
+type Token  { Color { Red { 100, 500 } } }
+type Border { Color { Red { 100, 500 } } }
+
+fn main() {
+    val a = Token.Color.Red.500;     // Token
+    val b = Border.Color.Red.500;    // Border
+}
+```
+
 ### behavior
 
 ```botopink
@@ -736,11 +796,47 @@ provider stack is not part of this section.
 fn greet(name: string, greeting: string = "hello") -> string {
     return greeting + ", " + name + "!";
 }
+
+fn main() {
+    @print(greet("world"));         // hello, world!  — `greeting` takes its default
+    @print(greet("world", "hi"));   // hi, world!
+}
 ```
 
-The default is **not applied yet**: every call still passes every argument
-(`greet("world")` reports `'greet' expects 2 argument(s), got 1`). 1.0.5-beta
-front `01-checker` step 7 closes it.
+A call **may leave out an argument whose parameter declares a default**, and the
+declared expression is what the function receives. A default may be declared on
+a free `fn`, on a record's fields (where it is the constructor's default) and on
+a method — including a `behavior`'s `default fn`, which is where `"hello"
+.slice(1)` gets its open end from (`slice(self, start: i32, end: ?i32 = null)`).
+
+```botopink
+type Port(number: i32 = 80, host: string) {
+    pub fn show(self: Self, separator: string = ":") -> string {
+        return self.host + separator + self.number.toString();
+    }
+}
+
+fn main() {
+    @print(Port(host: "a").number);   // 80
+    @print(Port(host: "a").show());   // a:80
+}
+```
+
+Only the parameters a call leaves out take their defaults. A parameter the call
+names by label keeps the argument it was given, whichever position it is in —
+`Port(host: "a")` names the second field and fills the first from its default —
+and a parameter with no default is still **required**: leaving one out is the
+arity error it has always been.
+
+<!-- docs-check: skip a call the compiler must REFUSE; compiling it is the opposite of the claim -->
+```botopink
+fn connect(host: string, port: i32 = 80) -> string { return host; }
+
+connect();   // error: 'connect' expects 2 argument(s), got 0
+```
+
+Defaults are filled in by the checker, so every backend receives a call with
+every argument written out; no backend emits a default of its own.
 
 ### Effects
 
@@ -1145,19 +1241,20 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | Rule | Today | Closes with |
 |---|---|---|
 | `break <value>` making the loop an expression | the loop's value is a **list** holding it: `val v = loop (0..10) { i -> if (i == 3) { break i; }; };` prints `[3]` on commonJS, on erlang and on wasm alike | 1.0.5-beta — three backends answer the same way, so the row is the rule's rather than one backend's; `01-checker` assigns the two commonJS suite lines to `04-js` |
-| A parameter default being applied at a call | every argument is required — `greet("world")` on `fn greet(name: string, greeting: string = "hello")` reports `'greet' expects 2 argument(s), got 1` | 1.0.5-beta `01-checker` step 7 |
 | `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.5-beta `01-checker` step 6 |
 | A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.5-beta `15-language-surface` step 2, with `16-formatter` (the formatter has to stop printing it in the same wave) |
 | A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value it answers something different on every backend: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, `0` on erlang and `256` on wasm | 1.0.5-beta — owner unassigned; the rule is decided (the `...` token, the diagnostic and the run-time semantics) |
 | `await` inside a `#[@context]` body (decision 95 — `@Context` extends `@Future`) | it type-checks, and it RUNS on erlang, wasm and beam (their `@Future<T>` is eager, so `await` is the identity). commonJS lowers `#[@context]` to a plain `function`, so the emitted `await` is `SyntaxError: await is only valid in async functions and the top level bodies of modules` | 1.0.10-beta — commonJS's own front: `fnKeyword` answering `async function` for a `#[@context]` body that awaits changes what a component's caller receives, which is a backend decision. Front 20 owns what is legal, not what is emitted |
 | An effect annotation on a record METHOD | ignored on commonJS: `fnKeyword` reads `ast.FnDecl.effect` and never sees a method, so `#[@iterator] fn iter(self: Self) -> @Iterator<T>` in a `type … implement Iterable<T> { … }` body emits as a plain `iter() { … }` and `loop (b.iter())` reds `b.iter is not a function or its return value is not iterable`. erlang runs it | 1.0.10-beta — owner unassigned; found by front 20 F12 while answering what `-> Iterator<T, E, C>` means on a behavior method |
 
-Six of the twelve rows this table carried before this revision left it because
+Seven of the twelve rows this table carried before this revision left it because
 the compiler now accepts the form: union types, the `unknown` type and its
 assignability rule, `x is <Type>` with narrowing, `case` arms written
 `Pattern { … }` with `when (…)` guards, `val assert <pattern> = <expr>;`
-(binding its names, and fatal when the match fails), and a `//` comment inside a
-`loop` body. Each is documented above, in the section that teaches the form.
+(binding its names, and fatal when the match fails), a `//` comment inside a
+`loop` body, and — since 1.0.10-beta's C-04 — a **parameter default applied at
+the call site**, on all four backends. Each is documented above, in the section
+that teaches the form.
 
 Two more left it because the form is **deliberately absent**, so that neither
 reads as unfinished work:

@@ -551,7 +551,10 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             const typedExpr = if (annType != null and v.value.* == .function)
                 try inferFunctionExprExpected(env, v.value.function, v.value.function.loc, annType, false)
             else
-                try inferExprTyped(env, v.value.*);
+                // 00 · 01-checker — the annotation is this position's expected
+                // type, so `val t: Token = .Color.Red.500;` resolves the path
+                // on `Token`.
+                try inferExprTypedExpecting(env, v.value.*, annType);
             const ty = typedExpr.getType();
             if (annType) |at| try unifyAt(env, at, ty, v.value.getLoc());
             // The annotation is the DECLARED type — bind it, not the RHS type
@@ -633,6 +636,10 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| {
             try env.bind(f.name, try buildFnSignatureType(env, f));
+            // C-04 — the signature type drops the `default` expressions; keep
+            // the parameters as written so a short call can be told from a
+            // call missing a required argument.
+            try env.fnParams.put(f.name, f.params);
             registerDecoratorSig(env, f.name, f.params, f);
             if (f.typeGuardParam) |paramName| {
                 var paramIndex: usize = 0;
@@ -1154,6 +1161,10 @@ fn registerInherentMethodTypes(
         // "std"` (which `registerExtensions` never sees — it only scans the
         // local program's decls).
         try env.addInherentMethod(typeName, im.name);
+        // C-04 — and its parameters as written. This runs BEFORE the
+        // return-type gate below: a method without an annotated return still
+        // has declared defaults, and its call sites still have to fill them.
+        try env.setInherentMethodParams(typeName, im.name, im.params);
 
         // Only methods with an explicit return-type annotation get a stored
         // signature. Without one the true return type comes from body inference
@@ -1627,6 +1638,13 @@ fn registerSynthesisedEnumDecl(
 /// Returns `null` when the chain doesn't root at a dotIdent or no enum
 /// matches the path. Takes the leaf member + receiver separately because the
 /// `identAccess` payload is an anonymous struct, not a nameable type.
+///
+/// 00 · 01-checker — WHICH enum carries the path is decided by the expected
+/// type (`env.expectedType`), never by the order `env.typeDefs` happens to
+/// hand the enums over: that map holds the synthesised section enums beside
+/// the declared ones, so `.Color.Red.500` is carried by emilia's `Token` and
+/// by `__Token__Border` alike and the winner used to change with the size of
+/// the typedef set.
 fn tryResolveEnumSectionPath(
     env: *Env,
     leaf_member: []const u8,
@@ -1645,6 +1663,8 @@ fn tryResolveEnumSectionPath(
     try segs.append(env.arena, leaf_member);
     try segLocs.append(env.arena, loc);
     var cur: *const ast.Expr = leaf_receiver;
+    // The enum a fully qualified chain names outright (`Token.Color.Red.500`).
+    var qualified_owner: ?envMod.TypeDef.Enum = null;
     while (true) {
         if (cur.* != .identifier) return null;
         switch (cur.*.identifier.kind) {
@@ -1658,20 +1678,44 @@ fn tryResolveEnumSectionPath(
                 try segLocs.append(env.arena, cur.*.getLoc());
                 break;
             },
-            .ident => return null, // a regular `Color.Red.X` chain — not a section path
+            .ident => |name| {
+                // 00 · 01-checker — the fully qualified spelling names its
+                // enum: `Token.Color.Red.500`. The root identifier is the
+                // owner and the rest of the chain is the path, so the one
+                // spelling that carries the answer in itself is not refused.
+                // A two-segment `Color.Red` is an ordinary variant access and
+                // stays on the regular identAccess path below.
+                if (segs.items.len < 2) return null;
+                const td = env.lookupTypeDef(name) orelse return null;
+                if (td != .enum_) return null;
+                qualified_owner = td.enum_;
+                break;
+            },
         }
     }
     // segs is leaf→head; reverse to head→leaf for path walking.
     std.mem.reverse([]const u8, segs.items);
     std.mem.reverse(ast.Loc, segLocs.items);
+
+    if (qualified_owner) |owner| {
+        // The enum is named, so there is no candidate set and nothing to be
+        // ambiguous about. A chain that turns out not to be a section path is
+        // handed back to the ordinary identAccess handling, which reports it.
+        if (!enumCarriesSectionPath(env, owner, segs.items)) return null;
+        return try resolveAndRecordSectionPath(env, owner, segs.items, loc);
+    }
+
     if (segs.items.len < 2) return null;
 
-    // Search every registered enum for one whose top-level variant matches
-    // the head segment AND whose section tree carries the rest of the path.
+    // Collect EVERY registered enum whose top-level variant matches the head
+    // segment AND whose section tree carries the rest of the path. The set,
+    // not the first hit, is what the choice is made from.
     // Also remember the enum whose HEAD segment matched (`enum_with_head`)
     // so a partial-match path (head OK, tail wrong: `.Color.Bogus`) can
     // raise ES4 with a focused message instead of bubbling a confusing
     // generic "unknown field" error from the fall-through code.
+    var candidates: std.ArrayList([]const u8) = .empty;
+    defer candidates.deinit(env.arena);
     var enum_with_head: ?[]const u8 = null;
     var enum_def_with_head: ?envMod.TypeDef.Enum = null;
     var it = env.typeDefs.iterator();
@@ -1679,16 +1723,9 @@ fn tryResolveEnumSectionPath(
         const td = entry.value_ptr.*;
         if (td != .enum_) continue;
         const en = td.enum_;
-        if (try resolveSectionPathInEnum(env, en, segs.items, loc)) |resolved| {
-            // Also build the equivalent UNTYPED rewrite and stash it under
-            // this chain's outermost loc. The post-inference rewrite pass
-            // (`withEnumSectionRewrites` in `comptime.zig`) walks the
-            // untyped AST and swaps the original `.dotIdent` chain for this
-            // qualified-ctor form so codegen emits the correct shape.
-            if (try buildSectionPathRewrite(env, en, segs.items)) |rewrite| {
-                try env.enumSectionRewrites.put(loc, rewrite);
-            }
-            return resolved;
+        if (enumCarriesSectionPath(env, en, segs.items)) {
+            if (!containsStr(candidates.items, en.name)) try candidates.append(env.arena, en.name);
+            continue;
         }
         // Did the head segment at least match a section wrapper on this
         // enum? If yes, the user intended a section path on this enum — a
@@ -1699,19 +1736,32 @@ fn tryResolveEnumSectionPath(
         }
     }
 
+    if (candidates.items.len > 0) {
+        // One carrier: the path names it. More than one: the expected type of
+        // this position is what decides — an annotation, a declared parameter,
+        // the return target, an array literal's element type.
+        const chosen: ?[]const u8 = if (candidates.items.len == 1)
+            candidates.items[0]
+        else
+            expectedEnumAmong(env.expectedType, candidates.items);
+        if (chosen) |name| {
+            const owner = env.lookupTypeDef(name).?.enum_;
+            return try resolveAndRecordSectionPath(env, owner, segs.items, loc);
+        }
+        // ES5 — more than one enum carries the path and nothing here says
+        // which. Refuse, naming every candidate: picking one is what made the
+        // answer a function of the hash order, and the position that cannot
+        // say what it expects is the position that has to spell it out.
+        return raiseAmbiguousSectionPath(env, candidates.items, segs.items, segLocs.items[0]);
+    }
+
     // ES4 — chain looks like a section path (`.<Section>.<more>` rooted at
     // a dotIdent, ≥ 2 segments) and the head matched a known section
     // wrapper, but the tail didn't resolve. Raise a focused error so the
     // user sees "enum 'Token' has no path '.Color.Bogus'" instead of the
     // generic fall-through diagnostic.
     if (enum_with_head) |owner| {
-        var pbuf: std.ArrayList(u8) = .empty;
-        defer pbuf.deinit(env.arena);
-        for (segs.items) |seg| {
-            try pbuf.append(env.arena, '.');
-            try pbuf.appendSlice(env.arena, seg);
-        }
-        const path_text = try pbuf.toOwnedSlice(env.arena);
+        const path_text = try sectionPathText(env, segs.items);
         const msg = try std.fmt.allocPrint(
             env.arena,
             "enum \"{s}\" has no path \"{s}\" (ES4 — enum-sections path resolution)",
@@ -1723,6 +1773,122 @@ fn tryResolveEnumSectionPath(
         return error.TypeError;
     }
     return null;
+}
+
+/// The chain as the user wrote it, leading dot and all: `.Color.Red.500`.
+fn sectionPathText(env: *Env, path: []const []const u8) InferError![]const u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(env.arena);
+    for (path) |seg| {
+        try buf.append(env.arena, '.');
+        try buf.appendSlice(env.arena, seg);
+    }
+    return buf.toOwnedSlice(env.arena);
+}
+
+/// ES5 — the path is carried by more than one enum and nothing at this
+/// position says which. Refuse, naming every candidate.
+///
+/// Picking one is what made the answer depend on `env.typeDefs`' hash order,
+/// and a pick cannot be right here: the two enums are different types and the
+/// program means one of them. The candidates are sorted so the message is the
+/// same on every run — the set comes off a hash map.
+fn raiseAmbiguousSectionPath(
+    env: *Env,
+    candidates: [][]const u8,
+    path: []const []const u8,
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    std.mem.sort([]const u8, candidates, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.lessThan);
+    var names: std.ArrayList(u8) = .empty;
+    defer names.deinit(env.arena);
+    for (candidates, 0..) |name, i| {
+        if (i > 0) try names.appendSlice(env.arena, if (i + 1 == candidates.len) " and " else ", ");
+        try names.append(env.arena, '"');
+        try names.appendSlice(env.arena, name);
+        try names.append(env.arena, '"');
+    }
+    const msg = try std.fmt.allocPrint(
+        env.arena,
+        "the path \"{s}\" is carried by more than one enum — {s} — and nothing here says which (ES5 — enum-sections path ambiguity)",
+        .{ try sectionPathText(env, path), names.items },
+    );
+    env.lastError = TypeError.custom(
+        msg,
+        "Give the position a type the path can be read against — a `val` annotation, a declared parameter, the function's return type — or write the path from its enum (`Token.Color.Red.500`).",
+    ).withLoc(loc);
+    return error.TypeError;
+}
+
+/// Resolve `path` in `en` and record the untyped rewrite for it.
+///
+/// The rewrite is the equivalent qualified-ctor form, stashed under this
+/// chain's outermost loc. The post-inference rewrite pass
+/// (`withEnumSectionRewrites` in `comptime.zig`) walks the untyped AST and
+/// swaps the original chain for it, so codegen — which reads the untyped AST —
+/// emits `Token.Color(__Token__Color.Red(…))` instead of the source text.
+fn resolveAndRecordSectionPath(
+    env: *Env,
+    en: envMod.TypeDef.Enum,
+    path: []const []const u8,
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    const resolved = try resolveSectionPathInEnum(env, en, path, loc) orelse return null;
+    if (try buildSectionPathRewrite(env, en, path)) |rewrite| {
+        try env.enumSectionRewrites.put(loc, rewrite);
+    }
+    return resolved;
+}
+
+/// The candidate `expected` names, or null when the expectation says nothing
+/// about the choice (there is none, it is still a type variable, or it names
+/// an enum that carries no such path). `?Token` answers `Token`: the
+/// expectation of an optional position is the optional's inner type.
+fn expectedEnumAmong(expected: ?*T.Type, candidates: []const []const u8) ?[]const u8 {
+    var ty = (expected orelse return null).deref();
+    if (ty.* == .named and std.mem.eql(u8, ty.named.name, "optional") and ty.named.args.len == 1) {
+        ty = ty.named.args[0].deref();
+    }
+    if (ty.* != .named) return null;
+    for (candidates) |c| if (std.mem.eql(u8, c, ty.named.name)) return c;
+    return null;
+}
+
+/// True when `en`'s section tree carries `path` all the way down to a unit
+/// variant — the predicate form of `resolveSectionPathInEnum`, so the set of
+/// carriers can be collected without building a typed node for each one. The
+/// two walk the same steps and must keep agreeing: a path this answers `true`
+/// for is a path `resolveSectionPathInEnum` resolves.
+fn enumCarriesSectionPath(env: *Env, en: envMod.TypeDef.Enum, path: []const []const u8) bool {
+    if (path.len == 0) return false;
+    var current = en;
+    for (path, 0..) |seg, i| {
+        var matched: ?envMod.VariantDef = null;
+        for (current.variants) |v| {
+            if (std.mem.eql(u8, v.name, seg) or
+                (looksNumeric(seg) and v.name.len > 1 and v.name[0] == '_' and v.name[1] == '_' and std.mem.eql(u8, v.name[2..], seg)))
+            {
+                matched = v;
+                break;
+            }
+        }
+        const variant = matched orelse return false;
+        // The leaf of a section path is a unit variant; a payload variant
+        // (`Hex(value: string)`) is a call, not the end of a chain.
+        if (i + 1 == path.len) return variant.fields.len == 0;
+        // Every inner segment must be a section wrapper.
+        if (variant.fields.len != 1 or !std.mem.eql(u8, variant.fields[0].name, "_inner")) return false;
+        const inner_type = variant.fields[0].type_.deref();
+        if (inner_type.* != .named) return false;
+        const inner_def = env.lookupTypeDef(inner_type.named.name) orelse return false;
+        if (inner_def != .enum_) return false;
+        current = inner_def.enum_;
+    }
+    return false;
 }
 
 /// Index of the first segment of `path` that does not name a variant or a
@@ -2169,14 +2335,16 @@ fn appendTypeRefStr(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocat
 fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
     switch (decl) {
         .val => |v| {
-            const ty = try inferExpr(env, v.value.*);
-            // Bind the DECLARED (annotated) type when present — see
+            // The annotation is resolved BEFORE the value so it can be this
+            // position's expected type (00 · 01-checker) — see
             // `inferDeclTyped`'s `.val` case.
+            const annType: ?*T.Type = if (v.typeAnnotation) |ann| try resolveTypeRef(env, ann) else null;
+            const ty = try inferExprExpecting(env, v.value.*, annType);
+            // Bind the DECLARED (annotated) type when present.
             var bindTy = ty;
-            if (v.typeAnnotation) |ann| {
-                const annType = try resolveTypeRef(env, ann);
-                try unifyAt(env, annType, ty, v.value.getLoc());
-                bindTy = annType;
+            if (annType) |at| {
+                try unifyAt(env, at, ty, v.value.getLoc());
+                bindTy = at;
             }
             try validateMemoryAnnotations(env, v, bindTy);
             if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
@@ -6803,6 +6971,16 @@ fn checkCaseExhaustiveness(
 /// pass.  Every child node is recursively typed before its parent is built, so
 /// no expression is visited more than once.  All allocations go into env.arena.
 pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
+    // 00 · 01-checker — an expectation belongs to the position it was set for.
+    // Only an identifier chain reads it (a leading-dot enum path) and only an
+    // array literal passes it on (to its elements); every other node clears it
+    // so a nested expression never inherits its parent's expected type.
+    const outer_expected = env.expectedType;
+    defer env.expectedType = outer_expected;
+    switch (expr) {
+        .identifier, .collection => {},
+        else => env.expectedType = null,
+    }
     return switch (expr) {
         // ── literals ──────────────────────────────────────────────────────────
         .literal => |l| inferLiteralExpr(env, l, l.loc),
@@ -6839,6 +7017,25 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         // ── comptime expressions ───────────────────────────────────────────────
         .comptime_ => |a| inferComptimeExpr(env, a, a.loc),
     };
+}
+
+/// Infer `expr` in a position whose type the site already knows (00 ·
+/// 01-checker). The expectation is only a hint — `tryResolveEnumSectionPath`
+/// is its one reader — and the caller's own expectation is restored on the way
+/// out, so a site can set one per sub-expression.
+fn inferExprTypedExpecting(env: *Env, expr: ast.Expr, expected: ?*T.Type) InferError!TypedExpr {
+    const prev = env.expectedType;
+    defer env.expectedType = prev;
+    env.expectedType = expected;
+    return inferExprTyped(env, expr);
+}
+
+/// `inferExprTypedExpecting` for the untyped inference path.
+fn inferExprExpecting(env: *Env, expr: ast.Expr, expected: ?*T.Type) InferError!*T.Type {
+    const prev = env.expectedType;
+    defer env.expectedType = prev;
+    env.expectedType = expected;
+    return inferExpr(env, expr);
 }
 
 // ── Helper functions for each expression category ───────────────────────────
@@ -7311,7 +7508,9 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     }
                 }
             }
-            const valPtr: ?*TypedExpr = if (r) |rv| try makeTypedPtr(env, try inferExprTyped(env, rv.*)) else null;
+            // 00 · 01-checker — the body's return target is the expected type
+            // of a returned value (`fn pick() -> Token { return .Color.Red.500; }`).
+            const valPtr: ?*TypedExpr = if (r) |rv| try makeTypedPtr(env, try inferExprTypedExpecting(env, rv.*, env.returnTarget)) else null;
             // Inside a `-> @Result<…>` fn, a returned plain value must be wrapped
             // into `{ok, V}` by the transform pass (`__bp_ok`). Skip values that
             // are already a `@Result` (passthrough) and `try`/`catch` forms —
@@ -7875,7 +8074,9 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             const valTyped = if (annType != null and lb.value.* == .function)
                 try inferFunctionExprExpected(env, lb.value.function, lb.value.function.loc, annType, false)
             else
-                try inferExprTyped(env, lb.value.*);
+                // 00 · 01-checker — the annotation is this position's expected
+                // type (`val t: Token = .Color.Red.500;`).
+                try inferExprTypedExpecting(env, lb.value.*, annType);
             const valPtr = try makeTypedPtr(env, valTyped);
             if (annType) |at| try unifyAt(env, at, valTyped.getType(), lb.value.getLoc());
             // The annotation is the DECLARED type — bind it, not the RHS type
@@ -8003,6 +8204,100 @@ fn nominalName(ty: *T.Type) ?[]const u8 {
     };
 }
 
+/// C-04 (01 step 7) — the callee's parameters AS WRITTEN, for a call whose
+/// arity is about to be judged. A `T.func` carries no `default` expressions, so
+/// this is the only thing that can tell an omitted trailing default (N1) from a
+/// missing required argument (N2). `null` when the declaration is not reachable
+/// from here — the arity check then stays exactly what it was.
+fn calleeParams(env: *Env, callee: []const u8) ?[]const ast.Param {
+    if (env.fnParams.get(callee)) |ps| return ps;
+    if (env.ctorParams.get(callee)) |ps| return ps;
+    if (env.stdlibFnDecls.get(callee)) |fd| return fd.params;
+    return null;
+}
+
+/// 00 · 01-checker — which parameter each ARGUMENT of a call lands in, when
+/// that is not simply its own index.
+///
+/// A label claims the parameter it names (C-04), so `f(y: <path>)` against
+/// `fn f(x: i32 = 0, y: Token)` writes the SECOND parameter from its FIRST
+/// argument. `planDefaultFill` is the one thing that knows that mapping, so
+/// this inverts its plan rather than working a second one out — the two could
+/// then disagree, and the expectation would name the wrong enum.
+///
+/// `null` is the ordinary answer and means "argument `i` is parameter `i`":
+/// every call that writes its arguments positionally, which is nearly all of
+/// them, allocates nothing here. A returned slice carries a parameter index
+/// per argument, or `params.len` for an argument whose parameter is not
+/// knowable — a full-arity labelled call, which the arity arm below zips
+/// positionally and which a reordered label would not survive either. Reading
+/// no expectation is right there: a wrong one would pick an enum.
+fn argumentParamSlots(
+    env: *Env,
+    params: []const ast.Param,
+    args: []const ast.CallArg,
+) InferError!?[]const usize {
+    var labelled = false;
+    for (args) |a| {
+        if (a.label != null) {
+            labelled = true;
+            break;
+        }
+    }
+    if (!labelled) return null;
+
+    const labels = try env.arena.alloc(?[]const u8, args.len);
+    for (args, 0..) |a, i| labels[i] = a.label;
+    const unknown = try env.arena.alloc(usize, args.len);
+    @memset(unknown, params.len);
+    const planned = envMod.planDefaultFill(env.arena, params, labels) catch return unknown;
+    const fill = planned orelse return unknown;
+
+    const slots = try env.arena.alloc(usize, args.len);
+    @memset(slots, params.len);
+    for (fill.slots, 0..) |slot, pi| {
+        const ai = slot orelse continue;
+        if (ai < slots.len) slots[ai] = pi;
+    }
+    return slots;
+}
+
+/// C-04 — plan the fill for a short call and record it under the call's loc for
+/// `transform.zig`. Answers the plan, or `null` when the call cannot be filled:
+/// that is N2, and the caller then raises the arity error it always raised.
+fn recordDefaultFill(
+    env: *Env,
+    loc: ast.Loc,
+    params: []const ast.Param,
+    typedArgs: []const ast.CallArgOf(.typed),
+) InferError!?envMod.DefaultFill {
+    const labels = try env.arena.alloc(?[]const u8, typedArgs.len);
+    for (typedArgs, 0..) |ta, i| labels[i] = ta.label;
+    const planned = envMod.planDefaultFill(env.arena, params, labels) catch |e| switch (e) {
+        error.CannotFill => return null,
+        else => |rest| return rest,
+    };
+    const fill = planned orelse return null;
+    try env.defaultInjections.put(loc, fill);
+    return fill;
+}
+
+/// C-04 — unify a filled call's arguments with the parameters they actually
+/// landed in. `P(y: 2)` against `type P(x: i32 = 0, y: i32)` puts its one
+/// argument in the SECOND slot; zipping positionally would check it against `x`.
+fn unifyFilledArgs(
+    env: *Env,
+    fill: envMod.DefaultFill,
+    paramTypes: []const *T.Type,
+    typedArgs: []ast.CallArgOf(.typed),
+) InferError!void {
+    for (fill.slots, 0..) |slot, pi| {
+        const ai = slot orelse continue;
+        if (pi >= paramTypes.len) continue;
+        try unifyAt(env, paramTypes[pi], typedArgs[ai].value.getType(), typedArgs[ai].value.getLoc());
+    }
+}
+
 /// Build a typed method-call node, preserving the surface `recv.callee(args)`
 /// shape (`recvPtr` is the typed receiver expression). External dispatch
 /// (rewriting to `Sym.callee(recv, args)`) is recorded separately in
@@ -8015,6 +8310,19 @@ fn makeMethodCall(
     typedTrailing: []ast.TrailingLambdaOf(.typed),
     loc: ast.Loc,
 ) InferError!TypedExpr {
+    // C-04 / N1 — an instance call may omit an argument whose parameter
+    // declares a default. Inference never arity-checked this shape, so there is
+    // no error to keep honest here; what was missing is the fill, and without it
+    // `b.bump()` reached node as `bump()` and answered `NaN`.
+    if (typedTrailing.len == 0) {
+        if (recvPtr) |rp| if (nominalName(rp.getType())) |tn| {
+            if (env.getInherentMethodParams(tn, callee)) |declared| {
+                if (declared.len > 0 and std.mem.eql(u8, declared[0].name, "self")) {
+                    _ = try recordDefaultFill(env, loc, declared[1..], typedArgs);
+                }
+            }
+        };
+    }
     const retType = try methodCallReturnType(env, recvPtr, callee, typedArgs, typedTrailing, loc);
     return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
         .receiver = recvPtr,
@@ -8062,6 +8370,10 @@ fn methodCallReturnType(
         for (typedArgs, rest) |ta, p| {
             try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
         }
+    } else if (typedTrailing.len == 0) {
+        // C-04 — a short call whose omitted parameters take their declared
+        // defaults: unify each argument with the parameter it landed in.
+        if (env.defaultInjections.get(loc)) |fill| try unifyFilledArgs(env, fill, rest, typedArgs);
     }
     return fn_.func.ret;
 }
@@ -8476,11 +8788,24 @@ fn resolveStdArrayMethod(
 
     const restParams = im.params[1..]; // drop `self`
     const total = typedArgs.len + typedTrailing.len;
+    // C-04 / N1 — `s.slice(1)` against `slice(self, start: i32, end: ?i32 = null)`.
+    // The interface declares the default; the call may omit it.
+    var fillPlan: ?envMod.DefaultFill = null;
     if (restParams.len != total) {
-        env.lastError = TypeError.arityMismatch(callee, restParams.len, total).withLoc(loc);
-        return error.TypeError;
+        if (typedTrailing.len == 0) fillPlan = try recordDefaultFill(env, loc, restParams, typedArgs);
+        // N2 — anything the defaults do not cover is still the arity error.
+        if (fillPlan == null) {
+            env.lastError = TypeError.arityMismatch(callee, restParams.len, total).withLoc(loc);
+            return error.TypeError;
+        }
     }
-    for (restParams[0..typedArgs.len], typedArgs) |p, ta| {
+    if (fillPlan) |fill| {
+        for (fill.slots, restParams) |slot, p| {
+            const ai = slot orelse continue;
+            const pType = try paramTypeInContext(env, p, gm);
+            try unifyAt(env, pType, typedArgs[ai].value.getType(), typedArgs[ai].value.getLoc());
+        }
+    } else for (restParams[0..typedArgs.len], typedArgs) |p, ta| {
         const pType = try paramTypeInContext(env, p, gm);
         try unifyAt(env, pType, ta.value.getType(), ta.value.getLoc());
     }
@@ -8972,6 +9297,31 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             else
                 null;
 
+            // C-04 — the callee's parameters AS WRITTEN, read once here and
+            // used twice: 00 · 01-checker's expectation just below, and the
+            // default fill the arity arm plans further down.
+            const declParamsAst: ?[]const ast.Param = calleeParams(env, call.callee);
+
+            // 00 · 01-checker — the DECLARED parameter types of a plain call,
+            // read only as the expectation an argument is inferred under
+            // (`tokenDeclarations(.Color.Red.500)` resolves the path on the
+            // parameter's enum). Nothing is unified from here — the arm that
+            // types the call still unifies each argument with its parameter.
+            const declParamTypes: ?[]*T.Type = blk: {
+                if (call.receiver != null or call.is_builtin) break :blk null;
+                const calleeTy = env.lookup(call.callee) orelse break :blk null;
+                const d = calleeTy.deref();
+                if (d.* != .func) break :blk null;
+                break :blk d.func.params;
+            };
+            // Which parameter each argument lands in. Null is the ordinary
+            // answer — argument `i` is parameter `i` — and a slice appears
+            // only when a label moved one (C-04).
+            const argParamIndex: ?[]const usize = if (declParamTypes != null)
+                if (declParamsAst) |ps| try argumentParamSlots(env, ps, call.args) else null
+            else
+                null;
+
             const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), call.args.len);
             for (call.args, 0..) |arg, i| {
                 // Only the declared PARAMETER types are pushed down
@@ -8991,10 +9341,18 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     for (d.func.params) |fp| if (!typeIsGround(fp, 0)) break :blk null;
                     break :blk ps[i];
                 } else null;
+                const argExpected: ?*T.Type = if (declParamTypes) |ps| blk: {
+                    const pi = if (argParamIndex) |slots|
+                        (if (i < slots.len) slots[i] else ps.len)
+                    else
+                        i;
+                    if (pi >= ps.len) break :blk null;
+                    break :blk ps[pi];
+                } else null;
                 const val = if (expected != null and arg.value.* == .function)
                     try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, expected.?, true)
                 else
-                    try inferExprTyped(env, arg.value.*);
+                    try inferExprTypedExpecting(env, arg.value.*, argExpected);
                 typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
             }
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
@@ -9363,6 +9721,28 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
 
                     if (spreadCount == 0) {
                         if (f.params.len != call.args.len) {
+                            // C-04 / N1 — a call may omit an argument whose
+                            // parameter declares a default. The fill is planned
+                            // here and materialised in `transform.zig`, so all
+                            // four backends see a complete call and none of them
+                            // learns a new rule. A comptime / `@Expr` / template
+                            // callee keeps the exact check: its own machinery is
+                            // driven by the argument INDEX, and a short call has
+                            // never reached it.
+                            const filled: ?envMod.DefaultFill = fillBlk: {
+                                if (call.args.len > f.params.len) break :fillBlk null;
+                                if (typeparams != null or exprParams != null) break :fillBlk null;
+                                if (env.templateFns.get(call.callee) != null) break :fillBlk null;
+                                const declared = declParamsAst orelse break :fillBlk null;
+                                if (declared.len != f.params.len) break :fillBlk null;
+                                break :fillBlk try recordDefaultFill(env, loc, declared, typedArgs);
+                            };
+                            if (filled) |fill| {
+                                try unifyFilledArgs(env, fill, f.params, typedArgs);
+                                break :blk f.ret;
+                            }
+                            // N2 — a missing REQUIRED argument is the arity
+                            // error it has always been, word for word.
                             env.lastError = TypeError.arityMismatch(call.callee, f.params.len, call.args.len).withLoc(loc);
                             return error.TypeError;
                         }
@@ -9918,9 +10298,18 @@ fn inferFunctionExprExpected(
 fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (col.kind) {
         .arrayLit => |al| {
+            // 00 · 01-checker — an expected `Array<T>` makes `T` the expected
+            // type of every element (`val ts: Array<Token> = [.Color.Red.500];`).
+            const elemExpected: ?*T.Type = blk: {
+                const want = (env.expectedType orelse break :blk null).deref();
+                if (want.* != .named) break :blk null;
+                if (!std.mem.eql(u8, want.named.name, "array") and !std.mem.eql(u8, want.named.name, "Array")) break :blk null;
+                if (want.named.args.len != 1) break :blk null;
+                break :blk want.named.args[0];
+            };
             const typedElems = try env.arena.alloc(ast.TypedExpr, al.elems.len);
             for (al.elems, 0..) |elem, i| {
-                typedElems[i] = try inferExprTyped(env, elem);
+                typedElems[i] = try inferExprTypedExpecting(env, elem, elemExpected);
             }
             const elemType = if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
             for (typedElems) |elem| {

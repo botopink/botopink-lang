@@ -1,0 +1,62 @@
+//// 00 · 01-checker — a leading-dot enum section path resolves by the EXPECTED
+//// TYPE of the position it is written in, never by the order the checker walks
+//// its type definitions. `Token` and `Border` carry the same path
+//// (`.Color.Red.500`), so every spelling below would otherwise mean whichever
+//// of the two the typedef hash map handed over first — and that answer changed
+//// with the number of enums in the program.
+////
+//// The positions that carry an expectation: a `val`'s annotation, a declared
+//// parameter, the body's return target, and an array literal's element type.
+////
+//// A LABELLED argument claims the parameter it names (C-04), so the parameter
+//// the expectation comes from is not always the one at the argument's own
+//// index: `P(y: .Color.Red.500)` writes the second parameter from its first
+//// argument, and the first parameter takes its declared default.
+
+type Token {
+    Color {
+        Red { 100, 500 }
+    }
+}
+
+type Border {
+    Color {
+        Red { 100, 500 }
+    }
+}
+
+fn tokenName(t: Token) -> string {
+    val s = case t {
+        Color(_inner) -> "token";
+    };
+    return s;
+}
+
+fn borderName(b: Border) -> string {
+    val s = case b {
+        Color(_inner) -> "border";
+    };
+    return s;
+}
+
+fn pickBorder() -> Border {
+    return .Color.Red.500;
+}
+
+type Boxed(weight: i32 = 7, tone: Token)
+
+pub fn main() {
+    val t: Token = .Color.Red.500;
+    val b: Border = .Color.Red.500;
+    val ts: Array<Token> = [.Color.Red.100];
+    val boxed = Boxed(tone: .Color.Red.100);
+
+    @print(tokenName(t));
+    @print(borderName(b));
+    @print(borderName(pickBorder()));
+    @print(tokenName(.Color.Red.100));
+    @print(borderName(.Color.Red.500));
+    @print(ts.length());
+    @print(tokenName(boxed.tone));
+    @print(boxed.weight);
+}
