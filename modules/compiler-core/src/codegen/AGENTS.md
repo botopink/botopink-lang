@@ -1020,6 +1020,24 @@ codegen/
   `instance_lowerings` table — `.record` → local (or `owner:`) call, `.prim` →
   `emitPrimMethod` (see [Primitive methods](#primitive-methods)).
   `arr.length`/`s.length` field access also lowers through `instance_lowerings`.
+- **A method on a host-supplied `behavior`** (`behaviorMethodNode`): a `behavior`
+  no type in the program implements is a runtime boundary — the host builds the
+  value — and decision 23 gives the behavior itself no run-time representation,
+  so there is no module to call into and inference records no lowering. The value
+  IS the dispatch table: a `val` member already reads as `maps:get(tag, G)`, so a
+  method reads the same way and applies what it finds,
+  `(maps:get(greet, G))(G, <<"ana">>)`. The receiver is passed explicitly — the
+  arity the declaration writes (`fn greet(self: Self, who: string)`) and the one
+  a botopink `@Greeter(…)` literal already builds on both backends — so a host
+  can store a plain `fun mod:f/2` instead of a per-value closure.
+  It fires last, only when the receiver is an identifier whose DECLARED type
+  (`local_types`, from a parameter annotation or `val x: T = …`) names a
+  `behavior`: one this module declares (`local_behaviors`, method present with no
+  body and matching arity) or one it imports that no module exports
+  (`imported_behaviors` — a behavior never reaches the cross-module index). A
+  local function of that name taking the receiver first, or a `method_owners`
+  entry, wins. Before this, such a call fell through to a bare local
+  `greet(G, …)` that no module defines and erlc refused the whole file.
 - **`forEach` accumulator fusion** (`detectFoldFusion`/`emitFoldFusion`):
   `var acc = init;` followed by `recv.forEach({ p -> <mutate acc> })` fuses into
   `Acc = lists:foldl(fun(P, Acc) -> <body> end, Init, Recv)` (a closure can't

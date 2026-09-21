@@ -244,34 +244,37 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 **Recounted on disk at `fix/erlang-module-load` (front 00 · 02-erlang, on `feat` `c748631e`):**
 
 ```bash
-ls test/*.bp    | wc -l   # 52
+ls test/*.bp    | wc -l   # 53
 ls run/*.bp     | wc -l   # 25   (each with its .out; 4 with an .exit, 2 with .<target>.expect; none with .targets)
 ls reject/*.bp  | wc -l   # 32   (each with its .expect)
 ls -d modules/*/| wc -l   #  4
 ```
 
-**113 cells.** The difference from the C-16 block below is this branch's two, one new area row:
+**114 cells.** The difference from the C-16 block below is this branch's three, one new area row:
 
 | Area | Cells | Total |
 |---|---|---|
-| the module body (front 00 · 02-erlang) | 1 test + 1 run | 2 |
+| the module body and a host-supplied `behavior` (front 00 · 02-erlang) | 2 test + 1 run | 3 |
 
 `test/module_init.bp` pins that a module-level `val` is evaluated once, in declaration order, at
 module load — before the first test, which is where `botopink run` evaluates it before `main`. It
 reads the order back through a host-side list (`globalThis` on node, the process dictionary on
 erlang: the escript runs the module body and the tests in one process). `run/module_init_order.bp`
-is the same claim on the build path, on all four targets.
+is the same claim on the build path, on all four targets. `test/behavior_host_dispatch.bp` pins a
+method on a `behavior` no type implements: each row's host writes the shape its backend calls with
+(node reaches the receiver through `this`, erlang takes it as the first argument), and the answer is
+the same.
 
 Measured there — this compiler, node v25.8.0, OTP 29:
 
 ```
 $ tests/language/run.sh                 # commonJS, erlang, wasm
-language tests: 383 passed, 54 expected failures, 0 failed
+language tests: 389 passed, 54 expected failures, 0 failed
 $ tests/language/run.sh --target beam
 language tests: 38 passed, 23 expected failures, 0 failed
 ```
 
-`expected-failures.txt` grows by **2 lines**, both `run/module_init_order.bp`: wasm drops a `_`-named
+`expected-failures.txt` grew by **2 lines** in the first of the branch's two commits, both `run/module_init_order.bp`: wasm drops a `_`-named
 top-level statement, and beam has the shape erlang had before this branch. Neither is this front's;
 each names the backend's own row.
 

@@ -1183,6 +1183,8 @@ fn emitErlangModule(
         em.iface_self_returns.deinit();
         // Keys and values borrow the program AST — nothing to free.
         em.local_behaviors.deinit();
+        em.local_types.deinit(em.alloc);
+        em.imported_behaviors.deinit(em.alloc);
     }
     defer em.nullable_locals.deinit();
     defer em.string_locals.deinit();
@@ -2317,6 +2319,15 @@ const Emitter = struct {
     /// half of the `persistent_term` key an effectful module-level `val` caches
     /// under, so two modules declaring the same `val` name keep two values.
     erl_atom: []const u8 = "",
+    /// The DECLARED type name of a local — a parameter's annotation or a
+    /// `val x: T = …`. Function-scoped, cleared by `resetLocals`; the keys and
+    /// values borrow the AST. Only a plain `named` annotation is recorded: a
+    /// receiver typed by anything else is not a `behavior` value.
+    local_types: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// PascalCase names this module imports that no module exports. A
+    /// `behavior` is the only such name: decision 23 gives it no run-time
+    /// representation, so it never reaches the cross-module link index.
+    imported_behaviors: std.StringHashMapUnmanaged(void) = .empty,
 
     fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
@@ -2974,6 +2985,14 @@ const Emitter = struct {
         this.nullable_locals.clearRetainingCapacity();
         this.string_locals.clearRetainingCapacity();
         this.num_locals.clearRetainingCapacity();
+        this.local_types.clearRetainingCapacity();
+    }
+
+    /// Remembers a local's declared type name, for a receiver whose methods
+    /// only a `behavior` declares (`behaviorMethodNode`).
+    fn rememberLocalType(this: *Emitter, name: []const u8, t: ast.TypeRef) void {
+        if (t != .named) return;
+        this.local_types.put(this.alloc, name, t.named) catch {};
     }
 
     /// True when `t` is the `string` primitive.
@@ -3375,8 +3394,13 @@ const Emitter = struct {
             .use => |u| for (u.imports) |imp| {
                 const name = imp.name();
                 const info = xc.exports.get(name) orelse {
-                    // Not a `pub` symbol: the import names a MODULE
-                    // (`import {dict} from "std"`, a sibling `import {geometry}`).
+                    // Not a `pub` symbol: either a MODULE (`import {dict} from
+                    // "std"`, a sibling `import {geometry}`) or a `behavior`,
+                    // which decision 23 leaves out of the index because it has
+                    // no run-time representation. A type-like name is the
+                    // second case — remember it, so a method call on a value of
+                    // that type dispatches through the value (`behaviorMethodNode`).
+                    if (isModuleRef(name)) try self.imported_behaviors.put(self.alloc, name, {});
                     try self.collectNamespaceModuleTypes(xc, name);
                     continue;
                 };
@@ -3859,6 +3883,7 @@ const Emitter = struct {
             } else if (this.keep_self or !std.mem.eql(u8, p.name, "self")) {
                 try params.append(b.arena, Ast.Expr.v(try this.arenaVar(b, p.name)));
                 this.addLocal(p.name);
+                this.rememberLocalType(p.name, p.typeRef);
                 if (isNullableParam(p)) try this.nullable_locals.put(p.name, {});
                 if (isStringType(p.typeRef)) try this.string_locals.put(p.name, {});
                 if (numTypeKind(p.typeRef)) |k| try this.num_locals.put(this.alloc, p.name, k);
@@ -4958,6 +4983,7 @@ const Emitter = struct {
             .binding => |bind| switch (bind.kind) {
                 .localBind => |lb| {
                     if (lb.mutable) try this.mutable_locals.put(this.alloc, lb.name, {});
+                    if (lb.typeAnnotation) |ann| this.rememberLocalType(lb.name, ann);
                     return this.bindExpr(b, lb.name, .bind, lb.value.*);
                 },
                 .assign => |a| switch (a.target) {
@@ -5829,7 +5855,59 @@ const Emitter = struct {
         }
         const recv_args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
         if (this.cur_type != null and this.isFileFn(cc.callee, recv_args.len)) return this.fileCall(b, cc.callee, recv_args);
+        // A method declared only by a `behavior` — the host builds the value, so
+        // no module of this program emits the function. Dispatch through the
+        // value, which is where commonJS finds it too.
+        if (try this.behaviorMethodNode(b, recv, cc, recv_args)) |node| return node;
         return b.call(cc.callee, recv_args);
+    }
+
+    /// `recv.m(args)` where `recv`'s declared type is a `behavior` no type in
+    /// this program implements: the value is host-supplied, and decision 23
+    /// gives the behavior itself no run-time representation, so there is no
+    /// module to call into. The value IS the dispatch table — a behavior `val`
+    /// member already reads as `maps:get(tag, G)` — so a method reads the same
+    /// way and applies what it finds: `(maps:get(m, Recv))(Recv, Args…)`.
+    ///
+    /// The receiver is passed explicitly, which is the arity the botopink
+    /// declaration writes (`fn param(self: Self, name: string)`) and the arity
+    /// every other instance method lowers to on this backend. A host can
+    /// therefore store a plain `fun mod:f/N` instead of a per-value closure.
+    ///
+    /// Null — the caller keeps the bare local call — unless the method name
+    /// belongs to a behavior and nothing else in the module answers it.
+    fn behaviorMethodNode(this: *Emitter, b: Ast.Builder, recv: *const ast.Expr, cc: anytype, recv_args: []const Ast.Expr) anyerror!?Ast.Expr {
+        if (this.untyped) return null;
+        const recv_name = identName(recv.*) orelse return null;
+        const type_name = this.local_types.get(recv_name) orelse return null;
+        if (!this.behaviorDeclares(type_name, cc.callee, recv_args.len)) return null;
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ cc.callee, recv_args.len }) catch return null;
+        // A function of that name taking the receiver first is a real method —
+        // an `implement` block in this module, say. It wins.
+        if (this.local_fn_arities.contains(key)) return null;
+        if (this.method_owners.contains(key)) return null;
+        return .{ .apply = .{
+            .fun = try b.ptr(try b.paren(try b.remote("maps", "get", &.{ Ast.Expr.a(cc.callee), try this.exprNode(b, recv.*) }))),
+            .args = recv_args,
+        } };
+    }
+
+    /// True when `type_name` is a `behavior` — declared here or imported — that
+    /// declares `method` at `arity` (the receiver included) with no body. A
+    /// `default fn` has a body and is emitted, so it is not a host seam.
+    /// An imported behavior's methods are not in this module's AST: the name
+    /// alone answers, which is as much as decision 23 leaves to go on.
+    fn behaviorDeclares(this: *Emitter, type_name: []const u8, method: []const u8, arity: usize) bool {
+        if (this.local_behaviors.get(type_name)) |iface| {
+            for (iface.methods) |m| {
+                if (!std.mem.eql(u8, m.name, method)) continue;
+                if (m.body != null) return false;
+                return m.params.len == arity;
+            }
+            return false;
+        }
+        return this.imported_behaviors.contains(type_name);
     }
 
     /// Call arguments: `first` (a receiver passed positionally), the positional

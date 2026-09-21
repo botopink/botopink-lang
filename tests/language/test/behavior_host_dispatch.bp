@@ -1,0 +1,40 @@
+//// A `behavior` no type in the program implements is a runtime boundary: the
+//// HOST builds the value. Decision 23 gives the behavior itself no run-time
+//// representation, so there is no module to call into — the value carries its
+//// own members, and a method is found on it exactly as a `val` member is.
+////
+//// Each row's host writes the shape its backend calls with: node reaches the
+//// receiver through `this`, erlang takes it as the first argument, which is the
+//// arity the declaration writes (`fn greet(self: Self, who: string)`) and the
+//// one a botopink `@Greeter(…)` literal already builds. The answer is the same.
+////
+//// The gap this pins (front 00 · 02-erlang): on erlang `g.greet("ana")` lowered
+//// to a bare LOCAL call `greet(G, <<"ana">>)`, which no module defines —
+//// `erlc` refused the whole file with `function greet/2 undefined`.
+
+behavior Greeter {
+    val tag: string;
+    fn greet(self: Self, who: string) -> string;
+}
+
+#[@External.Node("({ tag: $0, greet: function (who) { return this.tag + ', ' + who; } })"),
+  @External.Erlang("#{tag => $0, greet => fun(Self, Who) -> iolist_to_binary([maps:get(tag, Self), $,, 32, Who]) end}")]
+declare fn makeGreeter(tag: string) -> Greeter;
+
+fn shout(g: Greeter) -> string {
+    return g.greet("world");
+}
+
+test "a val member of a host-supplied behavior reads off the value" {
+    val g: Greeter = makeGreeter("hi");
+    assert g.tag == "hi";
+}
+
+test "a method of a host-supplied behavior dispatches through the value" {
+    val g: Greeter = makeGreeter("hi");
+    assert g.greet("ana") == "hi, ana";
+}
+
+test "the receiver is a parameter typed by the behavior" {
+    assert shout(makeGreeter("hey")) == "hey, world";
+}
