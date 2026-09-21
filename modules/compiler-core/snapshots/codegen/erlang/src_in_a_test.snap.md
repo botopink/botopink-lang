@@ -109,11 +109,43 @@ helper() ->
                 false ->
                     case compile:file(Src, [binary, return_errors, {i, Dir}]) of
                         {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
-                        _ -> ok
+                        Bad -> '__bp_dead_module'(Src, Bad)
                     end
             end
         end, filelib:wildcard(filename:join([Dir, "**", "*.erl"])))
     end)().
+
+'__bp_dead_module'(Src, Bad) ->
+    io:format(standard_error,
+        "error: ~ts does not compile — refusing to run the tests of ~ts~n",
+        [Src, escript:script_name()]),
+    case Bad of
+        {error, Errors, _Warnings} ->
+            lists:foreach(fun({File, Ds}) ->
+                lists:foreach(fun(D) ->
+                    io:format(standard_error, "  ~ts:~ts~n", [File, '__bp_error_text'(D)])
+                end, Ds)
+            end, Errors);
+        Other ->
+            io:format(standard_error, "  ~p~n", [Other])
+    end,
+    halt(1).
+
+'__bp_error_text'(D) ->
+    case D of
+        {Loc, Mod, Desc} ->
+            io_lib:format("~ts ~ts", ['__bp_error_loc'(Loc),
+                try Mod:format_error(Desc) catch _:_ -> io_lib:format("~p", [Desc]) end]);
+        Other ->
+            io_lib:format(" ~p", [Other])
+    end.
+
+'__bp_error_loc'(Loc) ->
+    case Loc of
+        {L, C} -> io_lib:format("~p:~p:", [L, C]);
+        L when is_integer(L) -> io_lib:format("~p:", [L]);
+        _ -> ""
+    end.
 
 main(Args) ->
     '__bp_load_siblings'(),
