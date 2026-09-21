@@ -302,3 +302,12 @@ erlang   | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same pars
 wasm     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
 beam     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
 *        | reject/optional_variant_pattern.bp | 01 step 4 | decision 54: `.Some(v)` / `.None` over a `?i32` is accepted (exit 0) and then answers four different things — `undefined` on commonJS, `0` on wasm, `5` on beam, and `no case clause matching 5` on erlang. The `.expect` phrase is a placeholder for the diagnostic this row writes, per AGENTS.md
+
+# ── the module body on wasm and on the BEAM ──────────────────────────────────
+# A module-level `val` is the module body: evaluated once, in declaration order,
+# at module load — before `main`. commonJS has always done that and erlang does
+# since `fix/erlang-module-load` (front 00 · 02-erlang), which is what
+# `run/module_init_order.bp` pins. The other two backends each miss a different
+# half of it, measured at that branch with OTP 29 / node v25.
+wasm     | run/module_init_order.bp | 05 (no step; the module body on wasm) | a `_`-named top-level statement is dropped: `first` / `main` / `1` / `1` — `second` never runs. The named `val` is already evaluated once at load, so only the statement half is owed
+beam     | run/module_init_order.bp | 03 (no step; the module body on the BEAM) | the shape erlang had before this branch: `main` / `first` / `1` / `first` / `1` — the named `val` is a 0-arity function evaluated on each READ, and the `_`-named statement never runs. `beam_asm.zig` carries its own copy of `isSyntheticMainEntrypointCall` and of the entrypoint wrapper

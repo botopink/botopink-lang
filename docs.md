@@ -151,6 +151,30 @@ val count: i32 = 42;
 val names: string[] = ["alice", "bob"];
 ```
 
+A `val` at module level is part of the **module body**: it is evaluated **once**,
+in declaration order, when the module loads — before `main` runs and before the
+first `test {}` block. Reading the name afterwards does not evaluate it again,
+and a `_`-named statement, which nothing reads, runs just the same. So a module
+whose initialisers have effects registers itself by being loaded:
+
+```botopink
+fn register(name: string) -> i32 {
+    @print(name);
+    return 1;
+}
+
+val _registered = register("Greeter");   // runs at module load, once
+val port = 8000 + 80;                    // read as many times as you like
+
+fn main() {
+    @print(port);
+}
+```
+
+`botopink test` and `botopink build` agree on this: the module body runs in both,
+at the same point relative to the program's own code. A backend that cannot run
+it is a gap in that backend, not a different meaning of `val`.
+
 ### var — mutable binding
 
 <!-- docs-check: body -->

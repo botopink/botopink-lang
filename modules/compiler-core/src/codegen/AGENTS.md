@@ -692,7 +692,8 @@ codegen/
   tuples, plain `yield` generators as lists), `recordForms`/`enumForms`/
   `interfaceForms`/`implementForms`/`extendForms` (a `%%` comment plus method
   functions), `use`/`delegate`/external-fn comments, `testFunction` — the comptime
-  helper and host forms, the `'_botopink_main'/0` + `main/1` entrypoint wrapper and,
+  helper and host forms, the `'_botopink_init'/0` module body (see **Module-level
+  `val`s** below), the `'_botopink_main'/0` + `main/1` entrypoint wrapper and,
   in test mode, the runner (`testRunnerForms`: `'__bp_run_one'/1`,
   `'__bp_run_tests'/1`, `main/1`).
 - **Bodies are `erl_ast` nodes**: `emitBodyFrom` builds an `Ast.Body` with
@@ -900,10 +901,30 @@ codegen/
   (`comptimeBlockBody`; no `break` → `ok`), and in expression position the same
   body as an applied `fun`. Each val function starts a fresh variable scope.
   Value-less jumps have a value node: `return;`/bare `try`/bare `yield` →
-  `undefined`, bare `throw;` → `erlang:throw(undefined)`. Only the `_`-named synthetic
-  statements (top-level expression statements) stay inside `'_botopink_main'/0`,
-  where they keep their single, ordered evaluation. The trade-off is that a named
-  `val`'s initialiser runs once per read.
+  `undefined`, bare `throw;` → `erlang:throw(undefined)`.
+- **The module body** (`'_botopink_init'/0`, `initForms`): a module-level `val` is
+  evaluated ONCE, in declaration order, at module load — `docs.md` § `val`, and
+  what `const x = f();` does on commonJS. `'_botopink_init'/0` is that body: a
+  `_`-named statement inline (it has no reader, and `val _ = …` twice would
+  collide on `'_'/0`), a named `val` as the call to its 0-arity reader. It is
+  emitted in EVERY mode and called from both entrypoints — `'_botopink_main'/0`
+  before `main/0`, and the test runner's `main/1` before the first test
+  (`testRunnerForms(…, run_init)`). A rule that held only in test mode is how the
+  gap was born: the wrapper was not emitted there at all, so a decorator's
+  `@emit`ted `val _scan_X = scan("X");` never ran and a library whose model is
+  module-load self-registration was untestable on this backend.
+  It is emitted only when some runtime `val`'s initialiser CAN have an effect
+  (`initialiserCanHaveEffect`: anything but literals, operators, collection
+  literals, field reads and a lambda *value*; an unrecognised node counts as
+  effectful). A constant initialiser evaluated per read cannot be told apart
+  from one evaluated once, so it needs neither the init nor the cache.
+  Such an effectful named `val` caches its value under
+  `persistent_term:{<module atom>, <name>}` on first evaluation
+  (`cachedValueExpr`) — node-wide, like the module-level binding it stands for,
+  not per process. `'_botopink_init'/0` is exported: a module with neither
+  `main/0` nor tests has nothing that calls it locally, and erlc would report it
+  unused. **Nothing calls it for that module** — cross-module module-load effects
+  wait on the build path having a sibling loader at all.
 - **Strings**: `+` over a `string` is binary concatenation, flattened into ONE
   construction — `a + b + c` → `<<"a", (b())/binary, C/binary>>` (`stringConcatNode`).
   `isStringExpr` decides: a string literal, a `+` chain with a string operand, a
@@ -1123,8 +1144,12 @@ codegen/
   (reserved, emitted and — when `pub` — exported whether or not the module has a
   `main/0`), so a read is a local call; a `val` holding a fun is read, parked on
   the stack and applied with `call_fun`. Only `_`-named synthetic statements run
-  in order inside `'_botopink_main'/0` before it calls `main/0`. Parity with the
-  erlang backend's `topValForms`.
+  in order inside `'_botopink_main'/0` before it calls `main/0`. This is the
+  shape erlang had before `'_botopink_init'/0` (§ **The module body**): the
+  statements run only when a `main/0` exists, a named `val`'s initialiser runs
+  once per READ rather than once at load, and neither runs under `botopink test`.
+  `tests/language/expected-failures.txt` carries the beam row of
+  `run/module_init_order.bp`.
 - **Emission**: `beam_asm.zig` writes no target text. It builds typed operands
   (`Op`/`Dst` = `beamEmitter.Operand`/`Dest`) and calls one `beam_emitter.write*`
   function per `.S` line, the module preamble included (`writeModuleForm` /

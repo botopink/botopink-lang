@@ -12,19 +12,27 @@ val parity = case 5 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
+-export(['_botopink_init'/0]).
 
 parity() ->
-    case 5 of
-        0 ->
-            <<"even">>;
-        2 ->
-            <<"even">>;
-        4 ->
-            <<"even">>;
-        _ ->
-            Value = <<"odd">>,
-            Value
+    case persistent_term:get({main, parity}, '__bp_unset') of
+        '__bp_unset' -> __BpV = case 5 of
+            0 ->
+                <<"even">>;
+            2 ->
+                <<"even">>;
+            4 ->
+                <<"even">>;
+            _ ->
+                Value = <<"odd">>,
+                Value
+        end, persistent_term:put({main, parity}, __BpV), __BpV;
+        __BpCached -> __BpCached
     end.
+
+'_botopink_init'() ->
+    parity(),
+    ok.
 ```
 
 ----- RUN LOG -----

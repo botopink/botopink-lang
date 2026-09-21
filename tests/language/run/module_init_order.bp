@@ -1,0 +1,22 @@
+//// A module-level `val` is part of the MODULE BODY: it is evaluated once, in
+//// declaration order, when the module loads — before `main`. Reading the name
+//// afterwards does not evaluate it again, and a `_`-named statement, which has
+//// no reader at all, runs just the same.
+////
+//// The erlang row used to emit a named `val` as a 0-arity function called on
+//// each READ, so `first` printed twice from `main` and `_second` never printed.
+//// (`fix/erlang-module-load`, front 00 · 02-erlang.)
+
+fn note(tag: string) -> i32 {
+    @print(tag);
+    return 1;
+}
+
+val first = note("first");
+val _second = note("second");
+
+pub fn main() {
+    @print("main");
+    @print(first);
+    @print(first);
+}
