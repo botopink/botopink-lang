@@ -1,15 +1,17 @@
 //! Persistent `erl` runner — one long-lived Erlang/OTP process per Zig process.
 //!
 //! Spawns `erl` lazily on the first request and keeps it alive. Comptime
-//! evaluators write a module to disk and ask the server to run it; evals after
-//! the first cost ~2ms (compile:file + code:load_binary + module call).
+//! evaluators hand the node a module — a `.erl` it compiles, or `.beam` bytes
+//! the compiler assembled — and ask it to run `main`; evals after the first
+//! cost ~2ms (load + module call).
 //!
-//! The hashed build directory holds three modules, compiled together by one
-//! `erlc` at warmup: this server and the two comptime preludes
-//! (`prelude.zig`), which carry the host glue every generated module used to
-//! copy. `erl -pa <dir>` finds all of them, and the directory's hash is taken
-//! over every source in it, so a changed server *or* a changed prelude gets a
-//! fresh directory rather than a stale `.beam`.
+//! The node runs three resident modules: this server (`server_source.zig`) and
+//! the two comptime preludes (`prelude.zig`), which carry the host glue every
+//! generated module used to copy. They are **`.beam` bytes embedded in the
+//! compiler** (decision 83): `erlc` compiles them at `zig build` time (root
+//! `build.zig`, "resident comptime modules") and the spawn bootstrap loads them
+//! into the node over stdin before the server loop starts — no `erlc` on any
+//! user's machine, no `-pa` directory, nothing written but the stderr log.
 //!
 //! Protocol (Zig ↔ erl), length-prefixed binary frames both ways:
 //!   request:  <u32 BE len><cmd:u8><payload>
@@ -23,6 +25,12 @@
 //!             payload tagged `__BP_ERL_COMPILE_ERROR__:` /
 //!             `__BP_ERL_RUNTIME_ERROR__:` (raise, exit, non-iodata result, timeout)
 //!
+//! Before the first request the same frame shape carries the handshake: the
+//! spawn sends one cmd-4 frame per resident module and reads one reply — `ok`,
+//! or `__BP_ERL_BELOW_FLOOR__:` (an `erl` older than `otp_floor`, decision 86) /
+//! `__BP_ERL_LOAD_ERROR__:` (a `.beam` this release cannot load), both reported
+//! through `lastTransportError`.
+//!
 //! Cmd 2 + cmd 3 are what the evaluators use: the module is compiled once per
 //! declaration and every later call site sends cmd 3 alone. Cmd 4 is cmd 2 for
 //! a module assembled in Zig (`codegen/beam/beam_file.zig`): the same `loaded`
@@ -32,8 +40,8 @@
 //! regression tests drive.
 //!
 //! `main` runs in a monitored process with a wall-clock budget
-//! (`eval_timeout_ms`), so a runaway body is killed instead of wedging the server.
-//! `evalDetailed` returns the reply classified as a `Response`.
+//! (`server_source.eval_timeout_ms`), so a runaway body is killed instead of
+//! wedging the server. `evalDetailed` returns the reply classified as a `Response`.
 //!
 //! stdout is the frame channel and nothing else may write to it: the server
 //! moves the default logger handler to `standard_error`, and `main` runs with
@@ -52,6 +60,7 @@
 
 const std = @import("std");
 const preludeMod = @import("./prelude.zig");
+const serverSource = @import("./server_source.zig");
 const beamFile = @import("../../codegen/beam/beam_file.zig");
 const etf = @import("./etf.zig");
 const Term = @import("../../codegen/beam/term.zig").Term;
@@ -68,137 +77,67 @@ const Io = std.Io;
 const Child = std.process.Child;
 const File = std.Io.File;
 
-/// Erlang server module. Compiled once at warmup, loaded into the persistent
-/// `erl`. Each `eval` request compiles and executes a comptime module via
-/// `compile:file/2` + `code:load_binary/3` + `Mod:main()`.
-const server_erl = server_header ++ std.fmt.comptimePrint("-define(EVAL_TIMEOUT_MS, {d}).\n", .{eval_timeout_ms}) ++ server_body;
+/// The three resident modules as `.beam` bytes — the server
+/// (`server_source.zig`) and the two comptime preludes (`prelude.zig`).
+/// `erlc +deterministic` compiled them at `zig build` time (root `build.zig`,
+/// "resident comptime modules") and the build hands them here as anonymous
+/// imports. Decision 83: the Erlang compiler is a dependency of building this
+/// compiler, not of running it. Their release is the `erlc`'s that built the
+/// binary — on CI OTP 28, decision 86's floor — and a `.beam` loads on the
+/// release that made it and later ones.
+const ResidentBeam = struct {
+    name: []const u8,
+    bytes: []const u8,
+};
 
-const server_header =
-    \\-module(botopink_comptime_server).
-    \\-export([start/0]).
-    \\
+const resident_beams = [_]ResidentBeam{
+    .{ .name = serverSource.module_name, .bytes = @embedFile("botopink_comptime_server.beam") },
+    .{ .name = preludeMod.template_module, .bytes = @embedFile("bp_comptime_template.beam") },
+    .{ .name = preludeMod.decorator_module, .bytes = @embedFile("bp_comptime_decorator.beam") },
+};
+
+/// Decision 86's floor: the oldest Erlang/OTP release the comptime runtime runs
+/// on. The spawn bootstrap refuses an older `erl` before loading anything, with
+/// a message naming both releases (`error.PersistentErlBelowFloor`); the
+/// assembled modules' `opcode_max` stamp (`codegen/beam/beam_file.zig`) makes
+/// the VM's own loader refuse them below it too.
+pub const otp_floor = 28;
+
+const below_floor_tag = "__BP_ERL_BELOW_FLOOR__:";
+const load_error_tag = "__BP_ERL_LOAD_ERROR__:";
+
+/// What `erl -noshell -eval` runs at spawn: check the floor, read
+/// `resident_beams.len` cmd-4 frames from stdin and `code:load_binary/3` each,
+/// answer one frame — `ok`, or a tagged refusal — and hand the pipes to the
+/// server's `start/0`. It is `erl_eval`-interpreted source, so it runs on any
+/// release and can report a floor violation the embedded `.beam`s could not
+/// (they would simply fail to load). The logger handler moves to stderr
+/// before the first load: a loader's `=ERROR REPORT` would otherwise land on
+/// stdout ahead of the refusal frame and read as a multi-GiB length. `halt()`
+/// after `start()` returns (stdin EOF — the parent exited) ends the VM;
+/// without it `-noshell` keeps an orphan `beam.smp` alive forever.
+const bootstrap_eval = bootstrap_bindings ++
+    \\ok = io:setopts(standard_io, [binary, {encoding, latin1}]),
+    \\_ = logger:remove_handler(default),
+    \\ok = logger:add_handler(default, logger_std_h, #{config => #{type => standard_error}}),
+    \\Rel = list_to_integer(erlang:system_info(otp_release)),
+    \\Read = fun(N) -> {ok, D} = file:read(standard_io, N), D end,
+    \\Reply = fun(Text) -> B = iolist_to_binary(Text), file:write(standard_io, <<(byte_size(B)):32, B/binary>>) end,
+    \\if Rel < Floor -> Reply(io_lib:format("__BP_ERL_BELOW_FLOOR__:erl is Erlang/OTP ~p; the compiler's embedded comptime runtime needs OTP ~p or later", [Rel, Floor])), halt(3); true -> ok end,
+    \\Load = fun() -> <<Len:32>> = Read(4), <<4:8, NL:16, Name:NL/binary, Beam/binary>> = Read(Len), Mod = binary_to_atom(Name, latin1), case code:load_binary(Mod, "", Beam) of {module, Mod} -> ok; {error, R} -> {Mod, R} end end,
+    \\case [E || E <- [Load() || _ <- lists:seq(1, Count)], E =/= ok] of
+    \\    [] -> Reply(<<"ok">>), Server:start();
+    \\    Errs -> Reply(io_lib:format("__BP_ERL_LOAD_ERROR__:~p; erl is Erlang/OTP ~p and the embedded modules were compiled by the erlc that built this compiler", [Errs, Rel])), halt(3)
+    \\end,
+    \\halt().
 ;
 
-const server_body =
-    \\start() ->
-    \\    %% Frames are raw bytes; `unicode` (the default) would UTF-8-encode the
-    \\    %% 4-byte length prefix and corrupt any payload >= 128 bytes.
-    \\    ok = io:setopts(standard_io, [{encoding, latin1}]),
-    \\    %% stdout is the frame channel, and the default logger handler writes to
-    \\    %% it: a SIGTERM notice or a `logger:error/1` in a comptime body would
-    \\    %% land between two frames. Send every log event to stderr instead.
-    \\    _ = logger:remove_handler(default),
-    \\    ok = logger:add_handler(default, logger_std_h, #{config => #{type => standard_error}}),
-    \\    loop().
-    \\
-    \\loop() ->
-    \\    case read_frame() of
-    \\        eof -> ok;
-    \\        {1, PathBin} ->  %% eval: compile .erl file, run main/0
-    \\            write_frame(compile_then(binary_to_list(PathBin), fun(Mod) -> safe_call(Mod, []) end)),
-    \\            loop();
-    \\        {2, PathBin} ->  %% load: compile .erl file, answer the module atom
-    \\            write_frame(compile_then(binary_to_list(PathBin), fun atom_to_binary/1)),
-    \\            loop();
-    \\        {3, Payload} ->  %% call: <<NameLen:16, Name, ExternalTerm>> -> main/1
-    \\            <<NameLen:16/unsigned-big-integer, Rest/binary>> = Payload,
-    \\            <<NameBin:NameLen/binary, ArgBin/binary>> = Rest,
-    \\            Mod = binary_to_atom(NameBin, latin1),
-    \\            write_frame(safe_call(Mod, [binary_to_term(ArgBin)])),
-    \\            loop();
-    \\        {4, Payload} ->  %% load: <<NameLen:16, Name, Beam>> -> code:load_binary, answer the atom
-    \\            <<NameLen:16/unsigned-big-integer, Rest/binary>> = Payload,
-    \\            <<NameBin:NameLen/binary, Beam/binary>> = Rest,
-    \\            write_frame(load_beam(binary_to_atom(NameBin, latin1), Beam)),
-    \\            loop()
-    \\    end.
-    \\
-    \\%% Load `.beam` bytes assembled by the compiler (no source, no `compile:file`),
-    \\%% then answer the module atom. The loader's rejection (`badfile`, an opcode
-    \\%% above what this release knows) is reported on the compile-error channel:
-    \\%% to the evaluators it is the same event a rejected `.erl` was.
-    \\load_beam(Mod, Beam) ->
-    \\    _ = code:purge(Mod),
-    \\    case code:load_binary(Mod, "", Beam) of
-    \\        {module, Mod} -> atom_to_binary(Mod);
-    \\        {error, Reason} ->
-    \\            io_lib:format("__BP_ERL_COMPILE_ERROR__:~p", [{load_binary, Mod, Reason}])
-    \\    end.
-    \\
-    \\%% Compile and load `Path`, then answer `Then(Mod)`; a compiler rejection is
-    \\%% the error frame instead. `code:purge/1` drops a previous version of the
-    \\%% same atom before it becomes old code: one module now serves every call
-    \\%% site of a declaration, so a reload means the declaration itself changed.
-    \\compile_then(Path, Then) ->
-    \\    case compile:file(Path, [binary, return]) of
-    \\        {ok, Mod, Beam} -> load_then(Mod, Beam, Then);
-    \\        {ok, Mod, Beam, _Warnings} -> load_then(Mod, Beam, Then);
-    \\        {error, Errors, Warnings} ->
-    \\            io_lib:format("__BP_ERL_COMPILE_ERROR__:~p", [{Errors, Warnings}])
-    \\    end.
-    \\
-    \\load_then(Mod, Beam, Then) ->
-    \\    _ = code:purge(Mod),
-    \\    {module, _} = code:load_binary(Mod, "", Beam),
-    \\    Then(Mod).
-    \\
-    \\%% `Mod:main(Args…)` runs in a monitored process so a runaway comptime body
-    \\%% (infinite loop, blocked receive) is killed after the timeout instead of
-    \\%% wedging the server — and with it every later eval of this compiler run.
-    \\%% Its group leader is `standard_error`, not the server's (`user`, the frame
-    \\%% channel): `io:format/1`, `io:get_line/1` and every process it spawns talk
-    \\%% to stderr, so a printing body cannot desynchronise the frame stream.
-    \\safe_call(Mod, Args) ->
-    \\    {Pid, Ref} = spawn_monitor(fun() ->
-    \\        group_leader(whereis(standard_error), self()),
-    \\        Result = try {ok, apply(Mod, main, Args)}
-    \\        catch
-    \\            Class:Reason:Stack ->
-    \\                {error, io_lib:format("__BP_ERL_RUNTIME_ERROR__:~p:~p~n~p", [Class, Reason, Stack])}
-    \\        end,
-    \\        exit({bp_result, Result})
-    \\    end),
-    \\    receive
-    \\        {'DOWN', Ref, process, Pid, {bp_result, {ok, Value}}} -> Value;
-    \\        {'DOWN', Ref, process, Pid, {bp_result, {error, Message}}} -> Message;
-    \\        {'DOWN', Ref, process, Pid, Other} ->
-    \\            io_lib:format("__BP_ERL_RUNTIME_ERROR__:exit:~p", [Other])
-    \\    after ?EVAL_TIMEOUT_MS ->
-    \\        exit(Pid, kill),
-    \\        receive {'DOWN', Ref, process, Pid, _} -> ok end,
-    \\        io_lib:format("__BP_ERL_RUNTIME_ERROR__:timeout:main did not return within ~pms", [?EVAL_TIMEOUT_MS])
-    \\    end.
-    \\
-    \\read_frame() ->
-    \\    case file:read(standard_io, 4) of
-    \\        {ok, RawLen} ->
-    \\            LenBin = if is_binary(RawLen) -> RawLen; true -> list_to_binary(RawLen) end,
-    \\            <<Len:32/unsigned-big-integer>> = LenBin,
-    \\            case file:read(standard_io, Len) of
-    \\                {ok, RawPayload} ->
-    \\                    PayloadBin = if is_binary(RawPayload) -> RawPayload; true -> list_to_binary(RawPayload) end,
-    \\                    <<Cmd:8, Rest/binary>> = PayloadBin,
-    \\                    {Cmd, Rest};
-    \\                eof -> eof;
-    \\                _ -> eof
-    \\            end;
-    \\        eof -> eof;
-    \\        _ -> eof
-    \\    end.
-    \\
-    \\%% Every response is exactly one frame. A `main` result that is not iodata
-    \\%% becomes a runtime error frame rather than crashing the server.
-    \\write_frame(Data) ->
-    \\    B = try iolist_to_binary(Data)
-    \\        catch _:_ ->
-    \\            iolist_to_binary(io_lib:format("__BP_ERL_RUNTIME_ERROR__:bad_result:~p", [Data]))
-    \\        end,
-    \\    Len = byte_size(B),
-    \\    file:write(standard_io, <<Len:32/unsigned-big-integer, B/binary>>).
-;
-
-/// Per-eval wall-clock budget enforced by the server (`safe_call`).
-const eval_timeout_ms = 10_000;
+/// The bootstrap's three constants, bound ahead of it: decision 86's floor, the
+/// number of resident modules to expect, and the server module to start.
+const bootstrap_bindings = std.fmt.comptimePrint(
+    "Floor = {d}, Count = {d}, Server = {s},\n",
+    .{ otp_floor, resident_beams.len, serverSource.module_name },
+);
 
 /// Largest reply frame `readFrame` accepts. A reply is a comptime body's
 /// generated code or JSON outcome — kilobytes. A prefix past this is text that
@@ -206,44 +145,9 @@ const eval_timeout_ms = 10_000;
 /// 1 028 214 342 bytes), so it fails as a transport error, not an allocation.
 pub const max_frame_len: u32 = 16 * 1024 * 1024;
 
-/// Root of the runtime's files, relative to the cwd.
+/// Root of the runtime's files, relative to the cwd. Only the stderr log lives
+/// here now; the resident modules never touch the disk.
 const server_dir = ".botopinkbuild/tmp/persistent_erl";
-
-const server_module_file = "botopink_comptime_server";
-
-/// Everything built into the hashed directory: the server, then the comptime
-/// evaluators' resident prelude modules (`prelude.zig`). They are compiled
-/// together, once, and `erl -pa <dir>` finds all of them.
-const ResidentModule = struct {
-    name: []const u8,
-    source: []const u8,
-};
-
-/// The build directory is `<server_dir>/<hash>/`, keyed by **every** source
-/// built into it: a warm directory skips `erlc`, and a changed server or a
-/// changed prelude never loads a stale `.beam`. The hash is taken at run time
-/// because the prelude source is rendered from the same `erl_ast` forms the
-/// generated modules are, not written out by hand.
-fn buildHash(modules: []const ResidentModule) [16]u8 {
-    var h = std.hash.Wyhash.init(0);
-    h.update(server_erl);
-    for (modules) |m| {
-        h.update(m.name);
-        h.update(m.source);
-    }
-    var out: [16]u8 = undefined;
-    _ = std.fmt.bufPrint(&out, "{x:0>16}", .{h.final()}) catch unreachable;
-    return out;
-}
-
-/// The server plus both preludes, built into `arena`.
-fn residentModules(arena: std.mem.Allocator) ![]const ResidentModule {
-    const preludes = try preludeMod.modules(arena);
-    const out = try arena.alloc(ResidentModule, 1 + preludes.len);
-    out[0] = .{ .name = server_module_file, .source = server_erl };
-    for (preludes, out[1..]) |p, *slot| slot.* = .{ .name = p.name, .source = p.source };
-    return out;
-}
 
 /// erl's stderr: the logger's output and everything a comptime body prints.
 /// Truncated at every spawn; nothing reads it back — transport errors name it.
@@ -271,8 +175,8 @@ fn unlock() void {
     io_mu.store(0, .release);
 }
 
-/// Lazy-spawn the persistent `erl` process. `prepareServer` builds the server into
-/// `.botopinkbuild/tmp/persistent_erl/<server_hash>/`; `erl` starts with it on the code path.
+/// Lazy-spawn the persistent `erl` process: `erl -noshell -eval <bootstrap>`,
+/// then the handshake that loads the embedded resident modules into it.
 fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
     while (true) {
         const s = init_state.load(.acquire);
@@ -284,23 +188,17 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
         if (s == 0) {
             if (init_state.cmpxchgStrong(0, 1, .acquire, .acquire)) |_| continue;
             errdefer init_state.store(3, .release);
+            transport_error_len = 0;
 
-            var build_arena = std.heap.ArenaAllocator.init(allocator);
-            defer build_arena.deinit();
-            const modules = try residentModules(build_arena.allocator());
-            const beam_dir = try prepareServer(io, allocator, server_dir, modules);
-            defer allocator.free(beam_dir);
-
-            // Spawn erl with the server module on its code path. `halt()` after
-            // `start()` returns (stdin EOF — the parent exited) ends the VM;
-            // without it `-noshell` keeps an orphan `beam.smp` alive forever.
             // stderr goes to a log file, never inherited: an orphan holding the
             // parent's stderr open blocks whoever waits for its EOF (the
             // `zig build test` runner reports "test runner failed to respond").
-            const stderr_log = try std.Io.Dir.cwd().createFile(io, stderr_log_path, .{});
+            const cwd = std.Io.Dir.cwd();
+            try cwd.createDirPath(io, server_dir);
+            const stderr_log = try cwd.createFile(io, stderr_log_path, .{});
             defer stderr_log.close(io);
             const child = try std.process.spawn(io, .{
-                .argv = &.{ "erl", "-noshell", "-pa", beam_dir, "-eval", "botopink_comptime_server:start(), halt()." },
+                .argv = &.{ "erl", "-noshell", "-eval", bootstrap_eval },
                 .stdin = .pipe,
                 .stdout = .pipe,
                 .stderr = .{ .file = stderr_log },
@@ -310,6 +208,10 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
                 .stdin = child.stdin orelse return error.NoStdin,
                 .stdout = child.stdout orelse return error.NoStdout,
             };
+            handshake(io, allocator) catch |err| {
+                state.child.kill(io);
+                return err;
+            };
             init_state.store(2, .release);
             return;
         }
@@ -317,66 +219,29 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
     }
 }
 
-/// Compile `modules` into `<base>/<hash of them all>/` unless they are already
-/// there, and return that directory (owned by the caller). Several compiler
-/// processes can share one cwd, so nothing is written in place: the sources and
-/// `.beam`s are built in a uniquely named staging directory that is renamed onto
-/// the final one. A process that loses the rename race uses the winner's
-/// (identical) `.beam`s; a truncated source or `.beam` is never visible.
-///
-/// The last module decides whether the directory is warm: `erlc` is given every
-/// source in one invocation, so either all of them are there or the staging
-/// directory never made it.
-fn prepareServer(io: Io, allocator: std.mem.Allocator, base: []const u8, modules: []const ResidentModule) ![]u8 {
-    const cwd = std.Io.Dir.cwd();
-    const hash = buildHash(modules);
-    const dir = try std.fs.path.join(allocator, &.{ base, &hash });
-    errdefer allocator.free(dir);
-    const last = try std.fmt.allocPrint(allocator, "{s}/{s}.beam", .{ dir, modules[modules.len - 1].name });
-    defer allocator.free(last);
-    if (cwd.access(io, last, .{})) |_| return dir else |_| {}
-
-    var nonce: [8]u8 = undefined;
-    io.random(&nonce);
-    const staging = try std.fmt.allocPrint(allocator, "{s}.{x:0>16}.tmp", .{ dir, std.mem.readInt(u64, &nonce, .little) });
-    defer allocator.free(staging);
-    try cwd.createDirPath(io, staging);
-    // After a successful rename `staging` no longer exists; this only reaps a
-    // failed build or a lost race.
-    defer cwd.deleteTree(io, staging) catch {};
-
-    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
-    defer {
-        for (argv.items[3..]) |p| allocator.free(p);
-        argv.deinit(allocator);
+/// Hand the embedded `.beam`s to the freshly spawned node and read its one
+/// handshake frame. `ok` means every resident module is loaded and the server
+/// loop owns the pipes; anything else is the bootstrap's refusal, kept in
+/// `lastTransportError` so the evaluators' diagnostic carries it.
+fn handshake(io: Io, allocator: std.mem.Allocator) !void {
+    for (resident_beams) |m| {
+        const payload = try namedPayload(allocator, m.name, m.bytes);
+        defer allocator.free(payload);
+        try sendFrame(io, 4, payload);
     }
-    try argv.appendSlice(allocator, &.{ "erlc", "-o", staging });
-    for (modules) |m| {
-        const source = try std.fmt.allocPrint(allocator, "{s}/{s}.erl", .{ staging, m.name });
-        errdefer allocator.free(source);
-        try cwd.writeFile(io, .{ .sub_path = source, .data = m.source });
-        try argv.append(allocator, source);
-    }
-
-    const compile_result = std.process.run(allocator, io, .{
-        .argv = argv.items,
-        .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = 120 * std.time.ns_per_s }, .clock = .real } },
-    }) catch |err| switch (err) {
-        error.FileNotFound => return error.PersistentErlNotFound,
-        else => return error.PersistentErlBroken,
+    const reply = readFrame(io, state.stdout, allocator) catch |err| {
+        if (transport_error_len == 0) setTransportError("{s} while the erl node loaded the embedded comptime runtime", .{@errorName(err)});
+        return error.PersistentErlBroken;
     };
-    defer allocator.free(compile_result.stdout);
-    defer allocator.free(compile_result.stderr);
-    if (compile_result.term != .exited or compile_result.term.exited != 0) {
-        return error.PersistentErlCompileError;
+    defer allocator.free(reply);
+    if (std.mem.eql(u8, reply, "ok")) return;
+    if (std.mem.startsWith(u8, reply, below_floor_tag)) {
+        setTransportError("{s}", .{reply[below_floor_tag.len..]});
+        return error.PersistentErlBelowFloor;
     }
-
-    cwd.rename(staging, cwd, dir, io) catch {
-        // Another process renamed its build in first (a non-empty target
-        // refuses the rename); anything else leaves no `.beam` behind.
-        cwd.access(io, last, .{}) catch return error.PersistentErlBroken;
-    };
-    return dir;
+    const detail = if (std.mem.startsWith(u8, reply, load_error_tag)) reply[load_error_tag.len..] else reply;
+    setTransportError("the erl node could not load the embedded comptime runtime: {s}", .{detail});
+    return error.PersistentErlBroken;
 }
 
 /// Fill `buf` completely from `src`. `readStreaming` may return short reads (a
@@ -520,7 +385,8 @@ fn requestLocked(allocator: std.mem.Allocator, io: Io, cmd: u8, payload: []const
 
 /// Compile and run the comptime module at `erl_path` (cmd=1), keeping the
 /// failure detail: the compiler diagnostics, or the runtime class/reason/stack.
-/// On the first call, lazy-spawns the erl process and compiles the server module.
+/// On the first call, lazy-spawns the erl process and loads the embedded
+/// resident modules into it.
 ///
 /// The one-shot path: it compiles on every call and calls `main/0`. The
 /// evaluators use `evalWithArg` instead; this stays for a caller that has a
@@ -685,62 +551,19 @@ test "persistent_erl: a reply frame over the length cap is a transport error, th
     try expectOk("clean reply", noisy_path);
 }
 
-const PrepareRace = struct {
-    base: []const u8,
-    modules: []const ResidentModule,
-    dir: ?[]u8 = null,
-    err: ?anyerror = null,
-
-    fn run(self: *PrepareRace) void {
-        self.dir = prepareServer(std.testing.io, std.heap.page_allocator, self.base, self.modules) catch |err| {
-            self.err = err;
-            return;
-        };
+test "persistent_erl: the embedded resident modules are .beam files of their atoms" {
+    // The server and both comptime preludes, compiled by `erlc` at `zig build`.
+    try std.testing.expectEqual(@as(usize, 3), resident_beams.len);
+    for (resident_beams) |m| {
+        try std.testing.expectEqualSlices(u8, "FOR1", m.bytes[0..4]);
+        try std.testing.expectEqualSlices(u8, "BEAM", m.bytes[8..12]);
+        // The module atom sits in the `AtU8` table.
+        try std.testing.expect(std.mem.indexOf(u8, m.bytes, m.name) != null);
     }
-};
-
-test "persistent_erl: concurrent server builds in one cwd all get a complete .beam" {
-    const io = std.testing.io;
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-    const modules = try residentModules(arena_state.allocator());
-    // The server and both comptime preludes, compiled in one `erlc`.
-    try std.testing.expectEqual(@as(usize, 3), modules.len);
-
-    var tmp = std.testing.tmpDir(.{ .iterate = true });
-    defer tmp.cleanup();
-    const base = try std.fs.path.join(std.testing.allocator, &.{ ".zig-cache", "tmp", &tmp.sub_path });
-    defer std.testing.allocator.free(base);
-
-    // Cold directory, several builders at once — the shape of parallel test
-    // binaries (or compiler runs) sharing a working directory.
-    var races: [6]PrepareRace = @splat(.{ .base = base, .modules = modules });
-    var threads: [races.len]std.Thread = undefined;
-    for (&races, &threads) |*race, *thread| thread.* = try std.Thread.spawn(.{}, PrepareRace.run, .{race});
-    for (threads) |thread| thread.join();
-
-    defer for (races) |race| if (race.dir) |dir| std.heap.page_allocator.free(dir);
-    for (races) |race| if (race.err) |err| return err;
-    for (races) |race| try std.testing.expectEqualStrings(races[0].dir.?, race.dir.?);
-
-    // Warm: the cached build is reused, and no staging directory is left.
-    const again = try prepareServer(io, std.testing.allocator, base, modules);
-    defer std.testing.allocator.free(again);
-    // Every resident module is there — the prelude is what a generated module
-    // `-import`s, so a directory with only the server in it would spawn an erl
-    // that compiles every comptime module and then fails to run it.
-    for (modules) |m| {
-        const beam = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}.beam", .{ again, m.name });
-        defer std.testing.allocator.free(beam);
-        try std.Io.Dir.cwd().access(io, beam, .{});
-    }
-    var it = tmp.dir.iterate();
-    var entries: usize = 0;
-    while (try it.next(io)) |entry| {
-        try std.testing.expectEqualStrings(&buildHash(modules), entry.name);
-        entries += 1;
-    }
-    try std.testing.expectEqual(@as(usize, 1), entries);
+    // The bootstrap names the floor, the count and the server it starts.
+    try std.testing.expect(std.mem.startsWith(u8, bootstrap_eval, "Floor = 28, Count = 3, Server = botopink_comptime_server,\n"));
+    try std.testing.expect(std.mem.indexOf(u8, bootstrap_eval, "if Rel < Floor ->") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bootstrap_eval, "Server:start()") != null);
 }
 
 test "persistent_erl: readFrame rejects a stray =INFO REPORT before allocating" {
