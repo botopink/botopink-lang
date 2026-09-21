@@ -38,7 +38,9 @@ cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict
 `run/index_past_the_end_is_null` — renamed from `…_fails` when C-02 landed, because the
 amendment makes an index past the end `null` and not a failure — `run/index_at_optional`,
 `run/index_tuple` with `reject/index_tuple_computed` and `reject/index_tuple_out_of_range`
-for the checker's one special case), `std_erlang_node` (decision 64),
+for the checker's one special case, and `run/index_user_type` — a `Matrix` and a `Registry`, the
+library types that become indexable by answering `at` / `slice` with no compiler change, which is
+the whole of what the rule is for), `std_erlang_node` (decision 64),
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets), and the
 singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults` (with `run/fn_defaults_values`, the VALUE on all four targets, and `reject/missing_required_argument`, N2 — both 1.0.10-beta's C-04), the two `lambda_*` cells of
