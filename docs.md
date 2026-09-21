@@ -847,6 +847,36 @@ provider stack is not part of this section.
 
 `use` and `#[@context]` (hooks and components) are under *Expressions › use*.
 
+### Recursion
+
+A function may call itself. When the call is the **whole** of a `return` — a
+*tail* call — it costs no stack: commonJS rewrites it into a loop, and erlang
+and beam run on VMs that drop the frame. The depth of a tail-recursive walk is
+bounded by the data, not by the runtime.
+
+```botopink
+fn sumDown(n: i32, acc: i32) -> i32 {
+    if (n == 0) return acc;
+    // A tail call: the whole of the `return`. A loop, not a frame.
+    return sumDown(n - 1, acc + n);
+}
+```
+
+Every other recursion uses the stack, and how deep it may go is the host's
+answer, not the language's:
+
+* a call that is not the whole of the `return` — `return 1 + f(n - 1)`;
+* **mutual** recursion: `a` calling `b` calling `a`;
+* a call through anything but the function's own name — a method on a value, a
+  function held in a binding;
+* a function that also makes a closure reading one of its own parameters, or
+  one with a destructuring or defaulted parameter;
+* an `#[@iterator]`, `#[@generator]` or `#[@future]` function.
+
+`wasm` recurses for every shape, tail call included — about 30 000 frames.
+Measured at 1.0.10-beta, with node's own ceiling for a two-parameter function
+between 10 000 and 20 000.
+
 ### Parameters with defaults
 
 ```botopink
@@ -1241,8 +1271,15 @@ assignability rule, `x is <Type>` with narrowing, `case` arms written
 `Pattern { … }` with `when (…)` guards, `val assert <pattern> = <expr>;`
 (binding its names, and fatal when the match fails), a `//` comment inside a
 `loop` body, and — since 1.0.10-beta's C-04 — a **parameter default applied at
-the call site**, on all four backends. Each is documented above, in the section
-that teaches the form.
+the call site**, on all four backends, **for a declaration in the calling
+module**. Each is documented above, in the section that teaches the form.
+
+The one limit worth stating here, because a library will meet it before it
+meets the rule: a default on an **imported** declaration is not filled. The
+checker fills from the parameter list it has, and the cross-module export
+registry carries no plain `fn` declaration, so `import { greet } from "helper";
+greet("w")` still reds `'greet' expects 2 argument(s), got 1` where the same
+`greet` called inside `helper` fills. Same for an imported record's field.
 
 Two more left it because the form is **deliberately absent**, so that neither
 reads as unfinished work:

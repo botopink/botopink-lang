@@ -1324,3 +1324,80 @@ test "js: lambda ---- a tail if whose branches return stays a statement" {
     });
     try h.assertJsRunLog(std.testing.allocator, src, "0,20,30\n");
 }
+
+// ── self tail calls (1.0.10-beta `00 · 04-js` D6) ────────────────────────────
+//
+// V8 has no tail-call elimination, so `return f(…)` inside `f` cost a stack
+// frame and a few thousand rounds killed the program — while erlang and beam,
+// whose VMs drop the frame, ran the same source to the end. `std`'s
+// `random.intInRange` is what found it. The whole-program behaviour is pinned
+// by `tests/language/run/self_tail_recursion.bp` on every target; these three
+// cells pin the JS SHAPE, which only this backend has, and each one RUNS.
+
+// A `return <self>(…)` becomes "give the parameters their next values and go
+// round again". The temporaries matter: `acc + n` still has to read the OLD
+// `n`, and the assignments happen in order.
+test "js: self tail call ---- a tail call is a round of a loop, not a frame" {
+    const src =
+        \\fn sumDown(n: i32, acc: i32) -> i32 {
+        \\    if (n == 0) return acc;
+        \\    return sumDown(n - 1, acc + n);
+        \\}
+        \\fn main() {
+        \\    @print(sumDown(20000, 0));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "    while (true) {",
+        "const __bp_tc0 = (n - 1);",
+        "const __bp_tc1 = (acc + n);",
+        "n = __bp_tc0;",
+        "acc = __bp_tc1;",
+        "continue;",
+    });
+    // 20 000 rounds: `RangeError: Maximum call stack size exceeded` before.
+    try h.assertJsRunLog(std.testing.allocator, src, "200010000\n");
+}
+
+// A tail call inside a loop of the function's OWN needs a labelled continue —
+// a bare `continue` would go round that inner loop instead, and the function
+// would never move on.
+test "js: self tail call ---- one inside the function's own loop is labelled" {
+    const src =
+        \\fn firstUnder(n: i32, limit: i32) -> i32 {
+        \\    loop (0..3) { k ->
+        \\        if (n + k > limit) { return firstUnder(n - 1, limit); };
+        \\    };
+        \\    return n;
+        \\}
+        \\fn main() {
+        \\    @print(firstUnder(9000, 10));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "__bp_tc: while (true) {",
+        "continue __bp_tc;",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src, "8\n");
+}
+
+// The limit, stated as a test: a closure in the body that READS a parameter
+// outlives the round that made it, so reassigning the parameter would change
+// what that closure sees. The function keeps its recursion, and the cell is
+// shallow on purpose.
+test "js: self tail call ---- a closure over a parameter keeps the recursion" {
+    const src =
+        \\fn tally(n: i32, acc: i32) -> i32 {
+        \\    if (n == 0) return acc;
+        \\    val xs = [1, 2].map({ x -> x * n });
+        \\    return tally(n - 1, acc + xs.length());
+        \\}
+        \\fn main() {
+        \\    @print(tally(3, 0));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "return tally((n - 1), (acc + xs.length));",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src, "6\n");
+}
