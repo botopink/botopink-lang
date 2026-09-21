@@ -926,7 +926,16 @@ codegen/
   inside the type's own module, or the one record declaring the name
   (`recordTypeOfReceiver`) — and `'__bp_field'(Recv, name)` when it cannot, which
   asks the tag's module (`'__bp_get'/2`) at run time and keeps the `maps:get` for
-  a map receiver (a `@Behavior(…)` literal, a `Dict`). Tuple index `t._N` and the
+  a map receiver (a `@Behavior(…)` literal, a `Dict`). **"The one record
+  declaring the name" is counted over the PROGRAM, not over this file**
+  (`uniqueRecordWithField`): `record_fields` holds what the module declares plus
+  what it imports BY NAME, so a file that imports one record carrying `rest`
+  while the value in hand is a different record carrying `rest` read at the wrong
+  offset — a neighbouring field's value when the offset is in range, `{error,
+  badarg}` when it is not. Every `pub` record of `CrossModule.exports` votes now,
+  and one dissenting declaration sends the read to `'__bp_field'/2`. Pinned by
+  `tests/language/modules/field_name_collision`, where the guess answered `1` on
+  erlang and `2` on commonJS. Tuple index `t._N` and the
   bare `t.N` → `element(N+1, T)`. No `-record` declarations are emitted. Optional
   chaining `?.` guards on `undefined` via an immediate fun. A record
   destructuring (`val { x, y } = p`, a `{ name, .. }` parameter, a `try` head) is
@@ -937,6 +946,26 @@ codegen/
   it had. `#(a, b)` stays a tuple pattern. The names bind through
   `patternBindVar` (versioned when already bound). **A comptime module keeps the
   map shape** everywhere (`Emitter.untyped`): its values never leave the build.
+- **The host boundary adopts** (`'__bp_adopt'/3`, `adoptHostResult`): a
+  `declare fn` bound to a host whose return type NAMES a record
+  (`external_record_returns`, filled in `collectExternals`; `recordNameOfReturn`
+  looks through `?T`, `T[]` and the builtin `@Result<T, E>` / `@Future<T>` /
+  `@Option<T>` / `Array<T>`, and deliberately NOT through a user generic) has its
+  answer adopted into decision 21's shape at the three places a host call is
+  written — the `pub` wrapper `externalWrapperForm` emits, and the
+  `externals` / `user_erlang_templates` branches of `plainCallNode`. A
+  `#{field => V}` map becomes `{TypeAtom, F1, …, Fn}` in declared field order (a
+  key the map omits is `undefined`), a list adopts element by element, an
+  `{ok, V}` adopts inside the ok arm, and a value that already carries its tag
+  passes through — so adopting twice is adopting once. **The host is the one
+  place the sweep cannot reach**: a consumer library ships an `.erl` sidecar this
+  compiler does not own, and every host that wrote a record before half 3 wrote a
+  map. Without this, a sidecar answering `#{status => 404, body => <<>>}` for a
+  two-field record was read as `element(2, …)` and died with `{error, badarg}`
+  and an empty RUN LOG — measured on the largest library outside this repository
+  — and `libs/std`'s own `fs.stat` and `http.fetch` still built maps after half 3
+  swept `os.userInfo` / `regex.match` / `regex.matchAll` by hand. Pinned by
+  `tests/language/run/external_host_record.bp`.
 - **`x is T` and a `case` arm naming a type** (decision 8 §4.2 and §3.3):
   `typeTestNode` writes ONE boolean expression that is also a legal erlang
   guard, so the two share a lowering — `is_binary` / `is_boolean` / `is_float`

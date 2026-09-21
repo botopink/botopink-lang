@@ -675,6 +675,67 @@ const field_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_field", .cla
     },
 } } };
 
+/// `'__bp_adopt'/3`: decision 21's shape, applied at the HOST boundary.
+///
+/// A `declare fn` bound to a host answers whatever the host builds, and the
+/// compiler cannot rewrite the host: an `.erl` sidecar in a consumer library is
+/// not its source. A host that hands back a bare `#{field => V}` map — which is
+/// what EVERY host writing a record did before half 3 — would then be read
+/// positionally by its caller and die with `{error, badarg}`. So the wrapper
+/// adopts the answer into the record the DECLARATION names: a map becomes
+/// `{TypeAtom, F1, …, Fn}` in declared field order (a key the map omits is
+/// `undefined`), a list adopts element by element (`Array<Match>`), an
+/// `{ok, V}` adopts inside the ok arm (`@Result<FileStat, string>`), and a
+/// value that already carries its tag passes through untouched — so adopting
+/// twice is adopting once, and a host template that builds the tuple itself
+/// pays one guard.
+const adopt_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_adopt", .clauses = &.{
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("T"), Ast.Expr.v("Ks") },
+        .guards = &.{isA("map", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "list_to_tuple", .args = &.{
+            .{ .cons = .{
+                .heads = &.{Ast.Expr.v("T")},
+                .tail = &Ast.Expr{ .list_comp = .{
+                    .element = &Ast.Expr{ .call = .{ .module = "maps", .name = "get", .args = &.{
+                        Ast.Expr.v("K"),
+                        Ast.Expr.v("V"),
+                        Ast.Expr.a("undefined"),
+                    } } },
+                    .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("K"), .list = Ast.Expr.v("Ks") } }},
+                } },
+            } },
+        } } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("T"), Ast.Expr.v("Ks") },
+        .guards = &.{isA("list", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .list_comp = .{
+            .element = &Ast.Expr{ .call = .{ .name = "__bp_adopt", .args = &.{
+                Ast.Expr.v("E"),
+                Ast.Expr.v("T"),
+                Ast.Expr.v("Ks"),
+            } } },
+            .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("E"), .list = Ast.Expr.v("V") } }},
+        } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ .{ .tuple = &.{ Ast.Expr.a("ok"), Ast.Expr.v("V") } }, Ast.Expr.v("T"), Ast.Expr.v("Ks") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .tuple = &.{
+            Ast.Expr.a("ok"),
+            .{ .call = .{ .name = "__bp_adopt", .args = &.{ Ast.Expr.v("V"), Ast.Expr.v("T"), Ast.Expr.v("Ks") } } },
+        } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_"), Ast.Expr.v("_") },
+        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("V") }}),
+        .layout = .inline_,
+    },
+} } };
+
 /// `'__bp_render'/1`: decision 8 §7's text, from the description a type's
 /// module answers. `{text, T}` is a `Display` implementation's own string;
 /// `{variant, "Shape.Dot", []}` is a payload-less variant, written bare; a
@@ -1318,6 +1379,7 @@ fn emitErlangModule(
     try em.collectExternals(program);
     defer em.externals.deinit();
     defer em.externals_missing.deinit();
+    defer em.external_record_returns.deinit();
     try em.collectStdImports(program);
     defer em.std_imports.deinit();
     defer em.locals.deinit();
@@ -1710,6 +1772,7 @@ fn emitErlangModule(
         if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (em.needs_field_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
+        if (em.needs_adopt_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, adopt_helper_form });
         if (em.needs_index_helper) try forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
         if (em.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
         if (em.needs_text_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
@@ -1802,6 +1865,7 @@ const SavedUnitState = struct {
     needs_print_helper: bool,
     needs_len_helper: bool,
     needs_field_helper: bool,
+    needs_adopt_helper: bool,
     needs_index_helper: bool,
     needs_slice_helper: bool,
     needs_add_helper: bool,
@@ -2215,6 +2279,11 @@ const Emitter = struct {
     externals: std.StringHashMap(ast.ExternalRef),
     /// `@[external(…)]` fns with no `erlang` target — calling one is an error.
     externals_missing: std.StringHashMap(void),
+    /// A host-backed `declare fn` whose declared return type NAMES a record:
+    /// fn name → record type name. The host builds the value, so the boundary
+    /// adopts it into decision 21's shape (`'__bp_adopt'/3`) rather than
+    /// trusting every host in the world to have been swept.
+    external_record_returns: std.StringHashMap([]const u8),
     /// §A2 user-fn per-callee template dispatch (erlang twin of the
     /// commonJS `user_node_templates`): a `declare fn` whose
     /// `@external(erlang, …)` symbol is a template (contains `$0`/`$1`/…)
@@ -2513,6 +2582,8 @@ const Emitter = struct {
     /// This module reached a record field read it could not place statically
     /// and emits `'__bp_field'/2` (decision 21's dynamic fallback).
     needs_field_helper: bool = false,
+    /// A host-boundary wrapper adopted an answer into a record (`'__bp_adopt'/3`).
+    needs_adopt_helper: bool = false,
     /// Set when an index expression (decision 30's `[]` builtin) lowered to
     /// `'__bp_index'/2`; the module then emits `index_helper_form`.
     needs_index_helper: bool = false,
@@ -2545,6 +2616,7 @@ const Emitter = struct {
             .ext_names = std.StringHashMap(void).init(alloc),
             .externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .externals_missing = std.StringHashMap(void).init(alloc),
+            .external_record_returns = std.StringHashMap([]const u8).init(alloc),
             .std_imports = std.StringHashMap(void).init(alloc),
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .enum_names = std.StringHashMap(void).init(alloc),
@@ -3949,10 +4021,52 @@ const Emitter = struct {
         return out.toOwnedSlice(this.alloc);
     }
 
+    /// The record a host-backed declaration's return type names, looked through
+    /// the containers a host answer can arrive in: `?T`, `T[]`, and the builtin
+    /// `@Result<T, E>` / `@Future<T>` / `@Option<T>` / `Array<T>` wrappers. A
+    /// user generic is NOT looked through — its payload is not the value the
+    /// host hands back, so adopting through it would reshape the wrong term.
+    fn recordNameOfReturn(t: ast.TypeRef) ?[]const u8 {
+        return switch (t) {
+            .named => |n| n,
+            .optional => |inner| recordNameOfReturn(inner.*),
+            .array => |inner| recordNameOfReturn(inner.*),
+            .generic => |g| {
+                if (g.args.len == 0) return null;
+                const looks_through = (g.is_builtin and (std.mem.eql(u8, g.name, "Result") or
+                    std.mem.eql(u8, g.name, "Future") or std.mem.eql(u8, g.name, "Option"))) or
+                    std.mem.eql(u8, g.name, "Array");
+                return if (looks_through) recordNameOfReturn(g.args[0]) else null;
+            },
+            else => null,
+        };
+    }
+
+    /// Adopt a host answer into the record its declaration names. A no-op when
+    /// the callee is not host-backed, when its return type names no record, or
+    /// when this emit cannot place the record's declared field order — in all
+    /// three the node is handed back untouched.
+    fn adoptHostResult(this: *Emitter, b: Ast.Builder, callee: []const u8, node: Ast.Expr) anyerror!Ast.Expr {
+        if (this.untyped) return node;
+        const rec = this.external_record_returns.get(callee) orelse return node;
+        const fields = this.record_fields.get(rec) orelse return node;
+        const keys = try b.arena.alloc(Ast.Expr, fields.len);
+        for (fields, 0..) |f, i| keys[i] = Ast.Expr.a(f);
+        this.needs_adopt_helper = true;
+        return b.call("__bp_adopt", &.{
+            node,
+            Ast.Expr.a(try this.recordTagAtom(rec)),
+            .{ .list = keys },
+        });
+    }
+
     fn collectExternals(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| {
                 if (!f.isExternal()) continue;
+                if (f.returnType) |rt| if (recordNameOfReturn(rt)) |rec| {
+                    try this.external_record_returns.put(f.name, rec);
+                };
                 // §A2 arity-branched template (`when(argc == N): "<tmpl>"`)
                 // on a top-level declare fn — the existing
                 // interface-method `primAnnotationNode` path already
@@ -5893,8 +6007,8 @@ const Emitter = struct {
                 // §A2 per-callee template / arity-branched annotation. With no
                 // matching branch, the bare local call surfaces the gap as an
                 // erlang "undefined function" instead of emitting nothing.
-                if (try this.userTemplateNode(b, cc.callee, cc)) |node| return node;
-                return b.call(cc.callee, try this.callArgs(b, null, cc));
+                if (try this.userTemplateNode(b, cc.callee, cc)) |node| return this.adoptHostResult(b, cc.callee, node);
+                return this.adoptHostResult(b, cc.callee, try b.call(cc.callee, try this.callArgs(b, null, cc)));
             }
             // A bare callee inside an inlined interface `default fn` body is a
             // std prelude helper the consuming module never declares
@@ -5905,7 +6019,7 @@ const Emitter = struct {
             }
             // `#[@external(erlang, "module", "symbol")]` fn → `module:symbol(…)`.
             if (this.externals.get(cc.callee)) |ref| {
-                return b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc));
+                return this.adoptHostResult(b, cc.callee, try b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc)));
             }
             // External fn with no `erlang` target — no symbol to call here.
             if (this.externals_missing.contains(cc.callee)) {
@@ -6847,8 +6961,20 @@ const Emitter = struct {
         return b.call("__bp_field", &.{ recv_node, Ast.Expr.a(member) });
     }
 
-    /// The one record of this module declaring `member`, or null when none or
+    /// The one record of the PROGRAM declaring `member`, or null when none or
     /// more than one does.
+    ///
+    /// The receiver of this read has no type inference could place, so the name
+    /// alone has to identify the record — and it only does when nothing else
+    /// declares it. `record_fields` is not that population: it holds what this
+    /// file declares plus what it imports BY NAME, so a record the file never
+    /// imports is invisible to the count, and a file that imports one record
+    /// carrying `rest` while the value in hand is a different record carrying
+    /// `rest` reads at the wrong offset — `{error, badarg}` when the offset is
+    /// past the tuple, a neighbouring field's value when it is not. So the
+    /// cross-module index (every `pub` record the program declares) votes too,
+    /// and one dissenting declaration is enough to fall back to the dynamic
+    /// `'__bp_field'/2`, which asks the value's own tag.
     fn uniqueRecordWithField(this: *const Emitter, member: []const u8) ?[]const u8 {
         var found: ?[]const u8 = null;
         var it = this.record_fields.iterator();
@@ -6857,7 +6983,15 @@ const Emitter = struct {
             if (found != null) return null;
             found = e.key_ptr.*;
         }
-        return found;
+        const name = found orelse return null;
+        const xc = this.cross orelse return name;
+        var xit = xc.exports.iterator();
+        while (xit.next()) |e| {
+            if (e.value_ptr.kind != .record) continue;
+            if (std.mem.eql(u8, e.key_ptr.*, name)) continue;
+            if (fieldIndexOf(e.value_ptr.fields, member) != null) return null;
+        }
+        return name;
     }
 
     /// The record type a field read is against: what inference recorded for
@@ -7189,12 +7323,13 @@ const Emitter = struct {
         const saved = this.indent;
         this.indent = 1;
         defer this.indent = saved;
-        const body: Ast.Expr = if (this.user_erlang_templates.contains(f.name))
+        const raw: Ast.Expr = if (this.user_erlang_templates.contains(f.name))
             (try this.userTemplateNode(b, f.name, cc)) orelse return null
         else if (this.externals.get(f.name)) |ref|
             try b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc))
         else
             return null;
+        const body = try this.adoptHostResult(b, f.name, raw);
         return try blockFunction(b, f.name, patterns, try b.body(&.{body}));
     }
 
@@ -7621,6 +7756,7 @@ const Emitter = struct {
             .needs_print_helper = this.needs_print_helper,
             .needs_len_helper = this.needs_len_helper,
             .needs_field_helper = this.needs_field_helper,
+            .needs_adopt_helper = this.needs_adopt_helper,
             .needs_index_helper = this.needs_index_helper,
             .needs_slice_helper = this.needs_slice_helper,
             .needs_add_helper = this.needs_add_helper,
@@ -7634,6 +7770,7 @@ const Emitter = struct {
         this.needs_print_helper = false;
         this.needs_len_helper = false;
         this.needs_field_helper = false;
+        this.needs_adopt_helper = false;
         this.needs_index_helper = false;
         this.needs_slice_helper = false;
         this.needs_add_helper = false;
@@ -7665,6 +7802,7 @@ const Emitter = struct {
         if (this.needs_add_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (this.needs_len_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (this.needs_field_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
+        if (this.needs_adopt_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, adopt_helper_form });
         if (this.needs_index_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
         if (this.needs_slice_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
         if (this.needs_text_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
@@ -7700,6 +7838,7 @@ const Emitter = struct {
         this.needs_print_helper = unit.needs_print_helper;
         this.needs_len_helper = unit.needs_len_helper;
         this.needs_field_helper = unit.needs_field_helper;
+        this.needs_adopt_helper = unit.needs_adopt_helper;
         this.needs_index_helper = unit.needs_index_helper;
         this.needs_slice_helper = unit.needs_slice_helper;
         this.needs_add_helper = unit.needs_add_helper;

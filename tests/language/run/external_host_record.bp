@@ -1,0 +1,63 @@
+//// Decision 8 §8 over decision 21's T2 — a host-backed `declare fn` whose
+//// return type NAMES a record. The host is the one place the compiler cannot
+//// sweep: a `.erl` sidecar shipped by a consumer library, or a template written
+//// before a record became `{TypeAtom, F1, …}`, hands back a bare `#{field => V}`
+//// map, and a positional read of it answers `{error, badarg}` with an empty RUN
+//// LOG. So the BOUNDARY adopts the answer into the record the declaration names
+//// — a map becomes the tagged tuple, a list adopts element by element, an
+//// `{ok, V}` adopts inside the ok arm, and a host that already builds the tuple
+//// passes through untouched.
+////
+//// Every erlang template here deliberately builds the MAP shape, which is the
+//// regression's own shape; the node templates build the object node has always
+//// built. Both rows must answer the same numbers.
+////
+//// wasm and beam are not in `.targets`: neither has a host vocabulary for these
+//// templates, and decision 67 makes the compiler refuse the program there
+//// rather than run it — which `run/external_erlang_only` already pins.
+
+pub type Point(x: i32, y: i32)
+
+// A record answered directly.
+#[@External.Node("""({ x: 7, y: 9 })""")]
+#[@External.Erlang("""#{x => 7, y => 9}""")]
+declare fn hostPoint() -> Point;
+
+// A record answered through `?T` — the absent case is not a map and has to
+// survive adoption unchanged.
+#[@External.Node("""({ x: 5, y: 6 })""")]
+#[@External.Erlang("""#{x => 5, y => 6}""")]
+declare fn hostMaybePoint() -> ?Point;
+
+// A list of records: every element is adopted, not the list.
+#[@External.Node("""[{ x: 1, y: 2 }, { x: 3, y: 4 }]""")]
+#[@External.Erlang("""[#{x => 1, y => 2}, #{x => 3, y => 4}]""")]
+declare fn hostPoints() -> Point[];
+
+// A host that already builds decision 21's shape: adopting it again must be
+// adopting it once.
+#[@External.Node("""({ x: 10, y: 20 })""")]
+#[@External.Erlang("""{'main__t__point', 10, 20}""")]
+declare fn hostTaggedPoint() -> Point;
+
+// The read goes through a TYPED parameter, so what this cell measures is the
+// value the host boundary produced and not which record a field name resolves to.
+fn sum(p: Point) -> i32 {
+    return p.x + p.y;
+}
+
+pub fn main() {
+    @print(sum(hostPoint()));
+    @print(hostPoint().x);
+
+    val m = hostMaybePoint();
+    if (m) { q -> @print(sum(q)); };
+
+    val ps = hostPoints();
+    @print(ps.length);
+    var total = 0;
+    loop (ps) { q -> total = total + sum(q); };
+    @print(total);
+
+    @print(sum(hostTaggedPoint()));
+}

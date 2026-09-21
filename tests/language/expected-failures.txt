@@ -294,3 +294,15 @@ beam     | run/lambda_expression_body.bp | 03 handover 01 | a lambda whose body 
 # half of it, measured at that branch with OTP 29 / node v25.
 wasm     | run/module_init_order.bp | 05 (no step; the module body on wasm) | a `_`-named top-level statement is dropped: `first` / `main` / `1` / `1` — `second` never runs. The named `val` is already evaluated once at load, so only the statement half is owed
 beam     | run/module_init_order.bp | 03 (no step; the module body on the BEAM) | the shape erlang had before this branch: `main` / `first` / `1` / `first` / `1` — the named `val` is a 0-arity function evaluated on each READ, and the `_`-named statement never runs. `beam_asm.zig` carries its own copy of `isSyntheticMainEntrypointCall` and of the entrypoint wrapper
+
+# ── a field read whose receiver lost its type, on wasm ───────────────────────
+# `modules/field_name_collision` pins decision 21's positional read against the
+# name-alone guess that places it: the name only identifies a record when nothing
+# else in the PROGRAM declares it, and counting only what one file imports read a
+# `Hit` at a `Ctx`'s offset (erlang answered `1` where commonJS answered `2`).
+# The wasm backend resolves a field to an offset the same way and has a wider gap
+# underneath it: measured on this branch with NO name collision at all — one
+# record in the program, one field called `rest` — wasm answers `0` for a read off
+# the optional binder and `2` for the same read through a typed parameter, so what
+# it is missing is the receiver's type at the binder, not this cell's collision.
+wasm     | modules/field_name_collision | 05-wasm | a field read off an optional binder answers `0`: `0` / `0` where the other two rows answer `2` / `0`. Measured with the collision removed as well, so it is the binder's lost type and not the offset guess

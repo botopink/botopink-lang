@@ -36,7 +36,10 @@ Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, �
 `context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, two test cells, one run
 cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
 `run/index_past_the_end_fails`, `run/index_at_optional`), `std_erlang_node` (decision 64),
-`panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4),
+`panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4), `external_host_record` (a host-backed `declare fn` whose return
+type names a record — the erlang templates deliberately build the pre-decision-21 `#{field => V}` map
+that an `.erl` sidecar in a consumer library still builds, and the boundary adopts it; `.targets` is
+`commonJS erlang` because neither wasm nor beam has a host vocabulary for these templates),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets), and the
 singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults` (with `run/fn_defaults_values`, the VALUE on all four targets, and `reject/missing_required_argument`, N2 — both 1.0.10-beta's C-04), the two `lambda_*` cells of
 1.0.10-beta's `00 · 04-js` — `lambda_expression_body` (a lambda whose whole body is one expression
@@ -103,6 +106,19 @@ module exports, so its classes are re-emitted per module and the consumer's valu
 `instanceof` the library's class — the `case` fell through every arm and printed `undefined`, at
 exit 0. The cell prints four values through one dispatcher: a uniquely-named variant, a repeated one
 (`Lg` is declared twice, which is why it always worked), and one of each section head.
+
+`modules/field_name_collision` is the third cell that needs two modules to say anything, and the
+defect it pins is **invisible in one file**. A record is a tagged tuple on erlang, so a field read is
+a POSITION, and the position comes from the field's NAME alone when the receiver's type was lost —
+at the optional binder of `if (hitOf()) { h -> … }`, for one. The name only identifies a record when
+nothing else declares it, and the emitter was counting "nothing else" over the records the FILE
+imports: `main` imports `Ctx` (whose `rest` is field 1) and never imports `Hit` (whose `rest` is
+field 0), so `rest` looked unique and the read landed one slot over — erlang printed `1`, the length
+of a neighbouring field, where commonJS printed `2`, at exit 0 with nothing said. Put the two
+declarations one slot further apart and the same guess reads past the tuple and the program dies with
+`{error, badarg}`; the cell keeps the quieter half, because a wrong answer is the harder one to
+notice. wasm is an expected failure here for a wider reason, measured with the collision removed: a
+field read off the optional binder answers `0` there whatever the names are.
 
 ### The sidecars of a `run/` cell
 

@@ -1,0 +1,11 @@
+//// Two records declaring the same field name at different positions, and a fn
+//// answering one of them through `?T` — which is where the value loses the type
+//// inference could have placed it.
+
+pub type Hit(rest: string[], entry: string)
+
+pub type Ctx(a: string, rest: string[])
+
+pub fn hitOf() -> ?Hit {
+    return Hit(rest: ["a", "b"], entry: "e");
+}
