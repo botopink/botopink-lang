@@ -133,7 +133,8 @@ integer ≥ 256 (the first data offset) or a bracketed list of them. Six files
 matched: the two above, `record_a_method_named_print_is_called_on_the_record`
 (`@print(d.print())` → `276`, fixed by the method-symbol registration above and
 now recording `doc:hi`), and three whose numbers are the value the program
-actually computes (`loop_filter_with_conditional_break` `[250, 400]`,
+actually computes (`loop_filter_with_conditional_break` `[250]` — it read
+`[250, 400]` until decision 55, below —,
 `template_end_to_end_generic_expr_via_code_builtin` `8081`,
 `template_end_to_end_yaml_model_computes_a_labeled_tuple` `8005`). **No fixture
 printed a record or a variant**, which is why the trap above re-recorded no
@@ -143,6 +144,28 @@ new fixture whose log holds such a number is worth re-reading against this table
 What is left in this class is the **generic-parameter limit** below, which is a
 different cause: there the declared type is a type parameter, so no shape exists
 to slice.
+
+## Two run-time rules this backend implements first (2026-09-19)
+
+**A value `break` ends a collection loop** ([decision 55](../../../../../specs/1.0.5-beta/decisions-taken.md)):
+`break <v>` inside `loop (xs) { x -> … }` appends `v` to the loop's array
+**and leaves** — `emitYield` then `br $__break`, exactly what the condition loop
+already did through `cond_break_depth`. Six `snapshots/codegen/wasm/loop_*`
+cells moved with it, all of the shape `loop (xs) { x -> break f(x); }`: their
+`RUN LOG` went from every element to the first (`[20, 40, 60]` → `[20]`), which
+is the decision's own row — the four backends agreeing on the old answer was the
+evidence it overrides. The three other backends still print the old lists
+(04 step 3, 02 has no step, 03 step 3), so those fixtures disagree across
+directories until they land. `tests/language/run/loop_yield_then_break_value.bp`
+and `loop_break_value_then_yield.bp` pin the two orderings.
+
+**A range pattern tests both ends** ([decision 53](../../../../../specs/1.0.5-beta/decisions-taken.md)):
+`1...9` arrives as a `.variant` whose `shape` is `.range` with the two bounds in
+`payload.literals`; before `emitPatternTest` read the shape it fell into the
+variant-tag path, found no variant named `""` and answered `0` for every value.
+Now it is `subj >= low and subj <= high` (`emitRangeBound`), a float bound
+truncated like a `numberLit` pattern's; a string bound has no ordering here and
+answers `0`. `tests/language/run/case_range_value.bp` pins the five points.
 
 ## Function values, and the lowering that is not there
 

@@ -126,7 +126,7 @@ fn main() {
     i32.mul
     call $__arr_push
     local.set $__yield1
-    i32.const 0
+    br $__break
       )
       (else
         i32.const 0

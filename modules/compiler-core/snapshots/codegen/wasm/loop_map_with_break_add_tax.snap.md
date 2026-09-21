@@ -87,6 +87,7 @@ fn main() {
     i32.reinterpret_f32
     call $__arr_push
     local.set $__yield0
+    br $__break
         local.get $__idx0
         i32.const 1
         i32.add
@@ -504,5 +505,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-[115.0, 287.5, 460.0]
+[115.0]
 ```

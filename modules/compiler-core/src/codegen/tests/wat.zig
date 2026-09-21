@@ -735,7 +735,9 @@ test "wat: loop ---- break with a value is the loop's value, not a one-element a
         \\    @print(collected);
         \\    @print(find([5, 15, 20]));
         \\}
-    , "3\n8\n[1, 2, 3, 4, 5]\n[15, 20]\n");
+        // `find` answers `[15]`, not `[15, 20]`: decision 55 — a value `break` in a
+        // collection loop contributes its value **and ends the loop**.
+    , "3\n8\n[1, 2, 3, 4, 5]\n[15]\n");
 }
 
 // §10 and decision 52 — a search that never breaks has no value to give, and

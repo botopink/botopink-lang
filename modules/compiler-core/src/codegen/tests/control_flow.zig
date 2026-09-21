@@ -279,6 +279,13 @@ test "js: loop ---- side-effect over range" {
     );
 }
 
+// KNOWN (wasm, decision 55): `break <v>` in a collection loop contributes `v`
+// and **ends the loop**, so the six fixtures below that break on every
+// iteration answer their first element on wasm — `[20]`, not `[20, 40, 60]`.
+// The four backends agreed on the old answer because they shared one
+// accumulator that never stopped; the agreement was the evidence the decision
+// overrides, not a proof. commonJS, erlang and beam still print the old lists
+// (04 step 3, 02 has no step, 03 step 3) and their snapshots say so.
 test "js: loop ---- map with break (add tax)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val precosBrutos = [100, 250, 400];

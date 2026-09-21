@@ -78,6 +78,7 @@ fn main() {
     i32.mul
     call $__arr_push
     local.set $__yield0
+    br $__break
         local.get $__idx0
         i32.const 1
         i32.add
@@ -394,5 +395,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-[20, 40, 60]
+[20]
 ```
