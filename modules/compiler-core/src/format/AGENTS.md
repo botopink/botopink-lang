@@ -19,7 +19,8 @@ format/
     ├── literals.zig     ← list/tuple/array/float/int/string literals
     ├── patterns.zig     ← case / pattern / assert
     ├── comments.zig     ← comments / doc / todo
-    └── idempotent.zig   ← idempotent round-trips
+    ├── idempotent.zig   ← idempotent round-trips
+    └── predicate.zig    ← `fits` / `fitsPinned` on hand-built documents (decision 65)
 ```
 
 ## Round-trip contract
@@ -27,23 +28,49 @@ format/
 `format(parse(src))` must produce output that re-parses to an equivalent AST,
 and running `format` twice in a row must produce identical text.
 
-## `fits` does not fit, and `Doc.widthChoice` is why
+## `fits` measures width; every group but one is still pinned
 
-The renderer's `fits` scan stops at the first `concat` and then answers "yes" to
-anything with a non-negative budget — its own comment calls that "suboptimal but
-safe". Since every non-trivial document *is* a `concat`, a `group` effectively
-always renders flat, and `LINE_WIDTH` only ever bites through a `hardline` or a
-`forceBreak` somebody placed by hand. That is why a `fn` signature could reach 104
-columns with a `group` around its parameter list.
+Two predicates decide a `group` ([decision 65](../../../../specs/1.0.5-beta/decisions-taken.md)).
+`fits` is the Wadler-Lindig one: it walks the candidate's flat spelling on its own
+stack, charging every `text`, one column per `line`, and what the render still owes
+the same line after the group (the `;`, the `)`, the ` {`) — a `hardline` or a
+`forceBreak` *inside* the candidate means the flat spelling does not exist, a break
+*after* it means the line ends there. A `group` asks it only when built with
+`groupMeasured`; a plain `group` asks `fitsPinned`, the scan this formatter always
+had, which stops at the first `concat` and answers "fits" for any non-negative
+budget — so every construct whose canonical broken form has not been written down
+renders exactly the text it always rendered. Pinning is a phase, not a setting:
+nothing in a source file, a flag or the environment reaches it, and the last
+construct to be enabled deletes `fitsPinned` and the `measured` field with it.
+`Doc.widthChoice { flat, broken, flatWidth }` predates the repair and stays for the
+`fn` signature (decision 61 rule 4): its flat width is measured when the node is
+built and compared against the real column. `tests/predicate.zig` exercises both
+predicates on hand-built documents — the exact boundary, the trailing text, the
+break after the group, the hardline inside it, and a pinned group past the width.
 
-`Doc.widthChoice { flat, broken, flatWidth }` is the way around it without
-rewriting the scan: `flatWidth` is measured when the node is built (render the flat
-spelling at an unbounded width) and includes what follows on the line, and the
-renderer compares it against the real `col`. Fixing `fits` itself would be the
-principled repair and is **not** a small change — every grouped construct in the
-language (array literals, calls, type unions, comma lists) would start breaking by
-width at once, which is a canonical-form decision per construct rather than a bug
-fix.
+**The method chain is the first construct enabled, and its landing was measured
+rather than assumed** (2026-09-20, C-12's acceptance). Three binaries — `d55a3b87`
+(before the repair), `f9cf2ace` (the repair + the chain, merged as-is) and HEAD —
+each formatted a scratch copy of the six trees (`libs/std` and the five libraries
+under `repository/`, their nested example projects included: 85 `.bp` files) and
+the copies were diffed: `d55a3b87 → f9cf2ace` moved **6 files** — `libs/std`'s
+`path.bp` and `querystring.bp`, and four in three of the five sibling libraries
+(a `src/` file in each, plus one nested example project's `main.bp`) — in **18
+hunks**, every one of them a chain opened by the rule: **29 chain sites** (`libs/std`
+2; the three libraries 1, 19 and 7; the other two 0) plus 3 in the compiler's own
+`examples/**` — and **0 hunks of any other kind**: each moved file is byte-equal to its `d55a3b87`
+output once whitespace is removed, so the pinned groups did not move. `f9cf2ace →
+HEAD` moved **0 bytes** in the six trees. Decision 65 predicted 44 chains from a
+grep of the lines past 80 columns; 32 opened, and the rest of that grep's lines
+are not chains the formatter can break: 8 are JavaScript inside
+`#[@External.Node("""…""")]` strings (std 7, emilia 1), 1 is a comment, and 1
+(`libs/std/src/asserts.bp:51`) is a chain in an `if` condition whose trailing
+`@panic(…)` arguments sit in a pinned group — `fits` reads a trailing group in
+the enclosing break mode, as Wadler's does, so the chain fits and the
+still-pinned argument list is what runs long. The HEAD output is idempotent
+(`format --check` over it reports only the files that never parsed) and every
+tree still parses. Commands: `zig build` in three worktrees, `find . -name '*.bp'
+| sort | xargs botopink format` per copy, `diff -ru`.
 
 ## Formatting rules
 
