@@ -9,7 +9,7 @@ const codegen = @import("../../codegen.zig");
 // The module+symbol form names a module that exists on each host (the node
 // builtin `node:path`, OTP's `filename`), so the RUN LOG is the call's value.
 test "js: external ---- call emits module symbol" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@External.Erlang("filename", "basename"),
         \\  @External.Node("node:path", "basename")]
         \\pub declare fn basename(p: string) -> string;
@@ -23,7 +23,7 @@ test "js: external ---- call emits module symbol" {
 test "js: external ---- global math" {
     // `Math` is a JS global, not a module — the node target must reference
     // it directly (`const floor = Math.floor;`), never `require("Math")`.
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@External.Erlang("math", "floor"),
         \\  @External.Node("Math", "floor")]
         \\pub declare fn floor(n: f64) -> f64;
@@ -35,7 +35,7 @@ test "js: external ---- global math" {
 }
 
 test "js: external ---- import binds symbol" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@External.Erlang("filename", "extension"),
         \\  @External.Node("node:path", "extname")]
         \\pub declare fn extname(p: string) -> string;
@@ -51,7 +51,7 @@ test "js: external ---- import binds symbol" {
 // form. Codegen reads `annotations[]` directly looking for `External.<target>`.
 
 test "js: External.<Target> ---- template equivalent to @external(target, template)" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@External.Erlang("filename", "dirname"),
         \\  @External.Node("node:path", "dirname")]
         \\pub declare fn dirname(p: string) -> string;
@@ -65,7 +65,7 @@ test "js: External.<Target> ---- template equivalent to @external(target, templa
 test "js: External.<Target> ---- mixed with @external() in one decl" {
     // Migration-friendly: a single decl may use the new form for one target
     // and the legacy form for another while a codebase migrates.
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@External.Erlang( "math", "floor"),
         \\  @External.Node("Math", "floor")]
         \\pub declare fn floor(n: f64) -> f64;
@@ -120,7 +120,7 @@ test "js: external ---- net-new: no target for the active backend errors" {
 // marker; the template body lives in `user_node_templates` and renders
 // inline (mirrors the erlang backend's existing template path).
 test "js: external ---- A2 chained host call renders verbatim" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@External.Erlang("base64:encode($0)"),
         \\  @External.Node("""Buffer.from($0, 'utf8').toString('base64')""")]
         \\pub declare fn b64encode(s: string) -> string;
@@ -138,7 +138,7 @@ test "js: external ---- A2 chained host call renders verbatim" {
 // Uses `JSON.stringify($0)` (rather than `performance.now(...)`) so the
 // run-log captures a deterministic value.
 test "js: external ---- A2 method-on-global template keeps receiver bound" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@External.Erlang("iolist_to_binary(io_lib:format(\"~p\", [$0]))"),
         \\  @External.Node("JSON.stringify($0)")]
         \\declare fn stringify(value: i32) -> string;
@@ -155,7 +155,7 @@ test "js: external ---- A2 method-on-global template keeps receiver bound" {
 // `{ ok: ... } | { error: ... }` shape on Node and `{ok, _} | {error, _}`
 // on Erlang. Without §A3 this declare reds at R1 (effect on declare).
 test "js: external ---- A3 result-template-owned declare fn" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@result]
         \\#[@External.Erlang( """(fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)($0)"""),
         \\  @External.Node("""(() => { const __n = Number($0); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })()""")]
@@ -205,7 +205,7 @@ test "js: external ---- 1-arg host expression declare fn emits no require" {
 // call site; as a `module:symbol` call with an empty module it came out
 // `:expr()()`, which stopped std's env, os and process from compiling.
 test "js: external ---- 1-arg host expression declare fn renders at the call site" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
         \\#[@External.Node("process.pid"),
         \\  @External.Erlang("list_to_integer(os:getpid())")]
         \\declare fn pid() -> i32;
@@ -232,7 +232,7 @@ test "js: external ---- 1-arg host expression declare fn renders at the call sit
 // RUN LOG is empty. Erlang runs and prints `42` / `2`; wasm is single-module
 // and traps on the host-backed call, as its `declare fn` comment says.
 test "js: external ---- an imported host-backed declare fn is wrapped by its owner" {
-    try h.assertJs(std.testing.allocator, @src(), &.{
+    try h.assertJsExpecting(std.testing.allocator, @src(), &.{
         .{
             .path = "hostlib",
             .source =
@@ -259,5 +259,5 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
             \\}
             ,
         },
-    });
+    }, .refused_on_wasm);
 }

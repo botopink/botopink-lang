@@ -281,7 +281,7 @@ erlang   | run/index_past_the_end_fails.bp | C-02 | decision 63: the same — `u
 wasm     | run/index_past_the_end_fails.bp | C-02 | decision 63: `$__arr_at` answers `0` out of range and the program runs on, exit 0
 beam     | run/index_past_the_end_fails.bp | C-02 | decision 63: `undefined`, exit 0 — the erlang shape through `erlc +from_asm`
 erlang   | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` prints the atom `undefined`, not `null` — `1` / `undefined` / `b` / `undefined`; `Dict.at` and `String.at` themselves answer correctly
-wasm     | run/index_at_optional.bp | C-18 | decision 47: a `null` optional prints as `0` (`d.at("zz")`), and then `s.at(1)` **traps** — `String.at` has no wasm lowering; the trap is a second defect no row owns (reported in AGENTS.md)
+wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent optional prints as `0` for `d.at("zz")` and as `undefined` for `s.at(7)`, where `null` is owed — re-measured at `fix/wasm-refusals`: `1` / `0` / `b` / `undefined`, exit 0. The second half this line used to carry is gone: `String.at` has a wasm lowering now (`$__str_at`), `s.at(1)` answers `b` instead of trapping, and `run/string_at.bp` pins that on all four targets
 beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `undefined` twice for the two absent probes
 
 # ── a qualified std host call on the BEAM (decision 64) ───────────────────────
@@ -302,3 +302,13 @@ erlang   | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same pars
 wasm     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
 beam     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
 *        | reject/optional_variant_pattern.bp | 01 step 4 | decision 54: `.Some(v)` / `.None` over a `?i32` is accepted (exit 0) and then answers four different things — `undefined` on commonJS, `0` on wasm, `5` on beam, and `no case clause matching 5` on erlang. The `.expect` phrase is a placeholder for the diagnostic this row writes, per AGENTS.md
+
+# ── a lambda's expression body is its value ─────────────────────────────────
+# `run/lambda_expression_body.bp` (04-js, this cell's commonJS half landed with
+# it). beam drops the lambda's tail expression the same way commonJS did: four
+# of the five rows answer the atom `ok` — the value of the arm's last statement
+# on erlang terms — and only the accumulator `loop` row survives. It is defect 2
+# of the three `01-checker` handed to the backends ("an arm whose value is its
+# final expression is emitted as a statement"), seen through the lambda rather
+# than through a `case` arm, and measured here for the first time.
+beam     | run/lambda_expression_body.bp | 03 handover 01 | a lambda whose body is an `if` / `case` / condition `loop` / `try … catch` answers the atom `ok`: `ok,ok,ok` on four of the five lines, `1,2,3` on the accumulator `loop`

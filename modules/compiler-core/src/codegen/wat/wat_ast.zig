@@ -430,6 +430,9 @@ pub const HelperGroup = enum {
     /// of `print_opt`: the two spell absence differently on purpose, because
     /// decision 52 settles the loop and the optional's spelling is still open.
     print_loop,
+    /// `$__str_at` — `s.at(i)` as a `?string`. Last in declaration order, so
+    /// every module that does not call it renders exactly as before it existed.
+    str_at,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -447,7 +450,7 @@ pub const HelperGroup = enum {
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
             .f64_to_str => &.{ .i32_to_str, .alloc },
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
-            .str_trim => &.{.str_slice},
+            .str_trim, .str_at => &.{.str_slice},
             .str_split => &.{ .arr_new, .mem_eq, .str_slice },
             .arr_slice, .arr_reverse, .arr_prepend, .arr_push, .arr_concat => &.{.arr_new},
             .arr_zip => &.{ .arr_new, .alloc },
@@ -526,6 +529,7 @@ pub const Helper = enum {
     print_null,
     print_loop_i32,
     print_loop_i32_raw,
+    str_at,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {

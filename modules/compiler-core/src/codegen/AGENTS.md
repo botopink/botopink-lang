@@ -336,6 +336,19 @@ codegen/
   lambda's single parameter is `const v = _s;` at the top of the arm — the only
   scope where the subject is in hand. The checker types it as the subject
   narrowed by the arm's pattern.
+- **A lambda's last statement is a return position** (`buildLambdaTail`): a JS
+  arrow block does not auto-return, so every expression form `buildExpr` gives a
+  value to is `return`ed there — the same rule `buildIfLast` applies one level
+  down, and the same rule a `val x = <e>;` binding already gets. The whitelist
+  that used to decide it (`isImplicitReturnExpr`) listed only the categories
+  that are *always* a value, so an `if`, a `loop` and a `try`/`catch` tail fell
+  through to `buildStmt` and were written as statements —
+  `(x) => { (() => { … })(); }` — and the arrow answered `undefined`. A `case`
+  never had the defect (it is a `.collection`). Still statements: a jump, a
+  binding, a `use` hook, and any `if`/`loop` whose body jumps out of the lambda
+  (`exprJumps`), because a `return` cannot cross the IIFE the value form wraps
+  it in. `try`/`catch` goes through `buildTryStmt` with the `.ret` head, not
+  `.discard`.
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
 - **None is loose**: botopink has one none value and JavaScript spells it two
@@ -1403,8 +1416,10 @@ first three are now enforced by the model, not by discipline:
 3. **No reference to a symbol the module does not define.** `registerSymbols`
    records every fn signature and global up front; a callee nothing resolves
    traps as `unreachable ;; unresolved call: f/N` (never a folded value — a
-   program that needs it fails loudly), a bodyless `declare fn` is skipped and
-   its calls trap as a host-backed declare fn. A single dangling `call`/`global.get` rejects the whole module, so
+   program that needs it fails loudly), and a bodyless `declare fn` is skipped:
+   a call to one that carries `#[@External.<Target>(…)]` for another target is
+   refused at compile time (decision 67, above), and one that carries no
+   external annotation at all traps. A single dangling `call`/`global.get` rejects the whole module, so
    `renderModule` validates every `call` against the module's functions and
    imports before writing anything. The runtime helpers go
    further: `Builder.helper` is the only way to name one and marks it for
@@ -1489,8 +1504,7 @@ first three are now enforced by the model, not by discipline:
   `primCallRes` is the table; a method missing from it emits
   `unreachable ;; prim method not lowered on wasm: <kind>.<name>/<argc>`.
   Audited against `libs/std/src/primitives.bp` on 2026-09-18 — not lowered, each
-  verified to trap under wasmtime: **string** `at` (`charAt` before decision 63,
-  amended), `charCodeAt`, `chars`,
+  verified to trap under wasmtime: **string** `charCodeAt`, `chars`,
   `lastIndexOf`, `lines`, `padEnd`, `padStart`, `replace`, `replaceAll`,
   `words`; **array** `chunked`, `find`, `pop`, `range`, `sliding`, `unique`;
   **float** `toString`; **Pair** `first`, `of`, `second`, `swap`.
@@ -1498,6 +1512,15 @@ first three are now enforced by the model, not by discipline:
   `toUpper` / `toLower` through `#[@External.Node(…)]`, which source writes and
   commonJS answers — used to be in that list and are now lowered to
   `$__str_case` like their botopink names.
+  **string `at`** left it on 2026-09-21: it is the reader decision 63's
+  amendment gave every indexable type (`charAt` before it), it is what `s[i]`
+  rewrites to, and commonJS, erlang and beam all answered it while `s.at(1)`
+  trapped here. It lowers to `$__str_at` — `$__str_slice(s, i, i + 1)` behind an
+  `i32.ge_u` bounds test — and answers a `?string` whose absence is the pointer
+  `0`, which `optInfoOf` routes to `$__print_opt_str`; printing it as a plain
+  string would read a length out of the WASI iovec at address 0 and answer
+  garbage with exit 0. `tests/language/run/string_at.bp` pins it on all four
+  targets.
 - **A `?T` box holding an `f32`** (`fs.at(0)` on a float array) prints through
   `$__print_opt_f32`, its own helper group. Read as a boxed `i32` it printed the
   float's **bits** — `1069547520` for `1.5`, exit 0, no diagnostic.
@@ -1731,13 +1754,25 @@ first three are now enforced by the model, not by discipline:
   (`emitPendingFns`, after the declarations and `$__init_globals`). A record's
   own fn called on the type (`Response.ok(…)`) calls `$<Record>_<fn>`.
 - **Host-backed `declare fn`** (`#[@External.<Target>(…)]`, no body) — *the
-  decision*: wasm has no host to bind one to, and no WASI call stands in for an
-  arbitrary host symbol, so a call to one is a **documented trap**:
-  `unreachable ;; host-backed declare fn <name>/<n>: no wasm host`. Not a
-  compile-time error: the other three targets compile the same module, and a
-  program that never reaches the call still runs. The primitive methods
-  `libs/std/src/primitives.bp` declares host-backed (`toUpper`, `join`, …) are
-  not in this class — they are lowered natively (`lowerPrimMethod`).
+  decision, reversed 2026-09-21 under decision 67*: wasm has no host to bind one
+  to and no WASI call stands in for an arbitrary host symbol, so a call to one
+  that names another target and no `wasm` one is a **compile-time refusal**,
+  located at the call site: `` `<name>` has no `#[@External.<Target>(…)]` for the
+  wasm backend `` — the same `moduleOutput.MissingExternal` diagnostic commonJS,
+  erlang and beam raise (06 C13), threaded out of `emitWat` by its `missing`
+  slot and collected by `codegenEmit`, so only that module fails. `registerSymbols`
+  fills `external_missing` (the `isExternal()` subset of `host_fns`) and
+  `lowerPlainCall` reads it. It used to be a **documented trap** —
+  `unreachable ;; host-backed declare fn <name>/<n>: no wasm host` — on the
+  argument that "the other three targets compile the same module, and a program
+  that never reaches the call still runs"; the first half is false (commonJS
+  refuses it, and erlang/beam only compile it because they *have* the host) and
+  the second made wasm the only backend that compiled such a program and then
+  died at run time with exit 134. A bodyless `declare fn` with **no**
+  `#[@External.<Target>(…)]` at all keeps the trap, which is the same cut
+  commonJS's `externals_missing` makes. The primitive methods
+  `libs/std/src/primitives.bp` declares host-backed (`toUpper`, `join`, `at`, …)
+  are not in this class — they are lowered natively (`lowerPrimMethod`).
 - **Record inherent methods** (`lowerRecordMethod`): a call inference tagged
   `.record` lowers to `call $<Record>_<method>` with the receiver as `self`. A
   record method with a declared return type always has a `(result …)`, even

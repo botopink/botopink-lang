@@ -1,0 +1,40 @@
+//// A primitive method on a lambda's parameter is the same method it is
+//// anywhere else. `xs.filter({ e -> e.name.contains("x") })` and
+//// `"box".contains("x")` ask for one thing, so they must lower to one thing.
+////
+//// Measured by emilia's theme front on commonJS, where the lambda form died at
+//// run time with `e.name.contains is not a function`. `String.contains` is
+//// declared `#[@External.Node("includes")]` in `libs/std/src/primitives.bp`,
+//// and the call-site rename that reads that annotation only fires on a
+//// receiver the inferencer has resolved to a primitive. A lambda ARGUMENT was
+//// inferred with fresh variables for its parameters — nothing pushed the
+//// receiver's element type down into it — so inside the lambda the receiver
+//// was an unresolved variable, the rename never fired, and commonJS emitted
+//// `.contains(…)` verbatim. erlang and wasm lower `contains` off the recorded
+//// primitive family instead, so the same source was green on them.
+////
+//// The direct receiver and the record field outside a lambda are the controls:
+//// both always worked, and they are here so a regression that fixes one and
+//// breaks the other is visible.
+////
+//// `startsWith` is a second method with the same annotation shape and no
+//// rename (the node symbol equals the botopink name), so it pins that the
+//// element type reaching the lambda is what dispatches, not the rename table.
+
+type Item(name: string)
+
+pub fn main() {
+    val names = ["box", "cup", "axe"];
+
+    @print("box".contains("x"));
+
+    val it = Item(name: "box");
+    @print(it.name.contains("x"));
+
+    @print(names.filter({ s -> s.contains("x") }).join(","));
+
+    @print(names.filter({ s -> s.startsWith("c") }).join(","));
+
+    val items = [Item(name: "box"), Item(name: "cup"), Item(name: "axe")];
+    @print(items.filter({ e -> e.name.contains("x") }).length);
+}

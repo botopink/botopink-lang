@@ -1263,3 +1263,64 @@ test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
         \\}
     , "12\n", &.{});
 }
+
+// 04-js — a lambda's single-expression body is a RETURN position, so every form
+// `buildExpr` gives a value to is returned there. `isImplicitReturnExpr` listed
+// only the always-a-value categories, so an `if`, a `loop` and a `try`/`catch`
+// tail fell through to `buildStmt` and were emitted as statements: the value
+// IIFE was written as `(x) => { (() => { … })(); }` and the arrow answered
+// `undefined` for every element. Measured by emilia's theme front, on `if`; the
+// other three rows are the same defect found while scoping it. `case` never had
+// it (it is a `.collection`) and is the control in the language cell.
+//
+// The `while` row is the condition loop: `buildLoopStmt` answers a statement for
+// it, so before the fix the lambda dropped it too.
+//
+// A RUN LOG plus the shapes, not a snapshot: the erlang, beam and wasm baselines
+// of this program are not this front's to record. The language cell
+// `tests/language/run/lambda_expression_body.bp` pins the same values on the
+// other backends.
+test "js: lambda ---- an expression body is the lambda's value" {
+    const src =
+        \\#[@result]
+        \\fn tenth(x: i32) -> @Result<i32, string> {
+        \\    if (x > 1) { return x * 10; } else { throw "too small"; }
+        \\}
+        \\fn main() {
+        \\    val xs = [1, 2, 3];
+        \\    @print(xs.map({ x -> if (x > 1) { x * 10 } else { x } }).join(","));
+        \\    @print(xs.map({ x -> (loop (0..x) { i -> yield i; }).length }).join(","));
+        \\    @print(xs.map({ x -> loop (x > 0) { x = x - 1; break x; } }).join(","));
+        \\    @print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "return (() => { if ((x > 1)) { return (x * 10); } else { return x; } })();",
+        "return \"error\" in _try0 ? (0) : _try0.ok;",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src,
+        \\1,20,30
+        \\1,2,3
+        \\0,1,2
+        \\0,20,30
+        \\
+    );
+}
+
+// The other half of the same rule: a lambda tail that JUMPS is still a
+// statement, because a `return` cannot cross the IIFE the value form wraps it
+// in. `exprJumps` is the guard, and this cell is what a wrong widening breaks.
+test "js: lambda ---- a tail if whose branches return stays a statement" {
+    const src =
+        \\fn pick(xs: i32[]) -> i32[] {
+        \\    return xs.map({ x -> if (x > 1) { return x * 10; } else { return 0; } });
+        \\}
+        \\fn main() {
+        \\    @print(pick([1, 2, 3]).join(","));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "if ((x > 1)) { return (x * 10); } else { return 0; }",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src, "0,20,30\n");
+}

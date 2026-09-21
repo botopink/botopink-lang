@@ -253,7 +253,7 @@ class Dict {
         // method dispatch). `.at(0)` here would type as array, not `?T`.;
         let found = null;
         this.pairs.forEach((p) => {
-    (() => { if ((p[0] === key)) { return found = p[1]; } })();
+    return (() => { if ((p[0] === key)) { return found = p[1]; } })();
 });
         return found;
     }
