@@ -1,0 +1,14 @@
+//// Front 19 row 4b — the static prefix of `use` is a rule over the statement's
+//// shape, not its first token: `val c = use …` after a `return` is refused at
+//// the `use`, like a bare `use …;` is.
+
+type Element(count: i32) implement @Context<Element, Element>
+fn state(initial: i32) -> @Context<Element, i32> { return initial; }
+
+#[@context]
+fn Widget() -> Element {
+    return Element(count: 1);
+    val c = use state(0);
+}
+
+pub fn main() { @print(Widget().count); }

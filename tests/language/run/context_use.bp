@@ -1,0 +1,69 @@
+//// Front 19 of 1.0.10-beta (C-27), decision 88 — `use f(x)` is `f(x)` on every
+//// backend, so a component's first-render value is the same on commonJS,
+//// erlang, wasm and beam. The owner type is declared here (no library).
+
+type Element(count: i32) implement @Context<Element, Element>
+type State(value: i32) implement @Context<Element, State>
+
+fn state(initial: i32) -> @Context<Element, State> {
+    return State(value: initial);
+}
+
+fn pair(a: i32, b: i32) -> @Context<Element, #(i32, i32)> {
+    return #(a, b);
+}
+
+fn effect(cb: fn() -> i32) -> @Context<Element, i32> {
+    return cb();
+}
+
+#[@context]
+fn counter(start: i32) -> @Context<Element, State> {
+    val s = use state(start * 2);
+    return s;
+}
+
+#[@context]
+fn Widget(n: i32) -> Element {
+    val c = use state(n);
+    return Element(count: c.value + 1);
+}
+
+#[@context]
+fn Fields() -> Element {
+    val {value} = use state(5);
+    return Element(count: value);
+}
+
+#[@context]
+fn Composed() -> Element {
+    val k = use counter(10);
+    return Element(count: k.value);
+}
+
+#[@context]
+fn Positional() -> Element {
+    val #(x, y) = use pair(3, 4);
+    return Element(count: x + y);
+}
+
+#[@context]
+fn Effectful() -> Element {
+    use effect({ -> return 9; });
+    val c = use state(1);
+    return Element(count: c.value);
+}
+
+fn Plain() -> Element {
+    val c = state(7);
+    return Element(count: c.value);
+}
+
+pub fn main() {
+    @print(Widget(41).count);
+    @print(Fields().count);
+    @print(Composed().count);
+    @print(Positional().count);
+    @print(Effectful().count);
+    @print(Plain().count);
+}

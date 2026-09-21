@@ -4,8 +4,13 @@ val Element = type implement @Context<Element, Element> { }
 fn state(initial: i32) -> @Context<Element, i32> {
     initial;
 }
+fn memo() -> @Context<Element, i32> {
+    0;
+}
+#[@context]
 fn Counter() -> Element {
     val {count, setCount} = use state(0);
+    val doubled = use memo { -> return count * 2; };
     Element();
 }
 ```
@@ -18,11 +23,15 @@ fn Counter() -> Element {
   (func $state (param $initial i32) (result i32)
     local.get $initial
   )
+  (func $memo (result i32)
+    i32.const 0
+  )
   (func $Counter (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $count i32)
     (local $setCount i32)
+    (local $doubled i32)
     i32.const 0
     call $state
     local.set $__mem0
@@ -32,6 +41,8 @@ fn Counter() -> Element {
     local.get $__mem0
     i32.load offset=4
     local.set $setCount
+    call $memo
+    local.set $doubled
     global.get $__heap_ptr
     local.set $__mem1
     local.get $__mem1

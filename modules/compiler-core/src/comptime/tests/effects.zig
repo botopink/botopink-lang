@@ -240,13 +240,17 @@ test "infer: net-new ---- compound @Future<@Result> return type-checks" {
     );
 }
 
+// Decision 88 (front 19 of 1.0.10-beta): a body activates a hook only under
+// `#[@context]`; the return type (`-> Element`, or `-> @Context<B, R>` for a
+// custom hook) still decides the owner every `use` must agree on.
 test "context: use with binding in @Context fn passes" {
     try h.assertInfersOk(std.testing.allocator,
         \\val Element = type implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
-        \\fn useThing() -> @Context<Element, i32> {
+        \\#[@context]
+        \\fn thing() -> @Context<Element, i32> {
         \\    val x = use state(0);
         \\    state(0);
         \\}
@@ -259,6 +263,7 @@ test "context: use void hook with discard binding passes" {
         \\fn effect(cb: i32) -> @Context<Element, i32> {
         \\    cb;
         \\}
+        \\#[@context]
         \\fn comp() -> @Context<Element, i32> {
         \\    use effect(0);
         \\    effect(0);
@@ -272,6 +277,7 @@ test "context: record implement @Context resolved via inline impl passes" {
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
+        \\#[@context]
         \\fn Counter() -> Element {
         \\    val n = use state(0);
         \\    Element();
@@ -288,12 +294,14 @@ test "context: custom hook propagates ContextBase transitively passes" {
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
-        \\fn useAuth() -> AuthState {
+        \\#[@context]
+        \\fn auth() -> AuthState {
         \\    val t = use state(0);
         \\    AuthState(loggedIn: true);
         \\}
+        \\#[@context]
         \\fn Dashboard() -> Element {
-        \\    val {loggedIn} = use useAuth();
+        \\    val {loggedIn} = use auth();
         \\    Element();
         \\}
     );
@@ -319,6 +327,7 @@ test "context error: ContextBase mismatch Element vs Http" {
         \\fn connection() -> @Context<Http, i32> {
         \\    0;
         \\}
+        \\#[@context]
         \\fn bad() -> @Context<Element, i32> {
         \\    val c = use connection();
         \\    state(0);
@@ -332,9 +341,48 @@ test "context error: record without @Context impl used with use" {
         \\fn make() -> Plain {
         \\    Plain(x: 0);
         \\}
+        \\#[@context]
         \\fn comp() -> @Context<Element, i32> {
         \\    val p = use make();
         \\    0;
+        \\}
+    );
+}
+
+// Decision 88: the return type implements `@Context` (a component's owner
+// type), but the fn is not `#[@context]` — a `use` in it is refused, naming
+// the annotation. A bare `-> Element` without the annotation is an ordinary fn.
+test "context error: use without #[@context] on a -> Element body" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\fn Counter() -> Element {
+        \\    val n = use state(0);
+        \\    Element();
+        \\}
+    );
+}
+
+// Decision 88: `#[@context]` on a fn whose return type is the owner type
+// (`Element` implements `@Context<Element, Element>`), not the `@Context<…>`
+// wrapper — the component form; the effect accepts either.
+test "context: #[@context] fn -> Element (owner type) passes" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\#[@context]
+        \\fn counter(n: i32) -> @Context<Element, i32> {
+        \\    val c = use state(n);
+        \\    return c;
+        \\}
+        \\#[@context]
+        \\fn Counter() -> Element {
+        \\    val n = use counter(0);
+        \\    return Element();
         \\}
     );
 }
@@ -372,6 +420,7 @@ test "context: {value, set} hook shape type-checks" {
         \\fn state<T>(initial: T) -> @Context<Element, State<T>> {
         \\    State(value: initial, set: { n -> });
         \\}
+        \\#[@context]
         \\fn Counter() -> Element {
         \\    val s = use state(0);
         \\    s.set(s.value);

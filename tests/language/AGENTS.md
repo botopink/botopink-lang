@@ -30,7 +30,8 @@ the rule; a capability decision 8 does not legislate gets a plain sentence.
 Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, §10), `effect_*`,
 `comptime_*` / `decorator_*`, `external_*`, `generic_*`, `string_*` / `array_*`, `type_identity_*`,
 `optional*` (`optional`, and decision 54's `optional_null_pattern` / `optional_variant_pattern`),
-and the singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
+`context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, one test cell, one run
+cell and six reject cells), and the singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
 `curried_call`, `index_expression`). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
@@ -184,6 +185,27 @@ ls reject/*.bp  | wc -l   # 24   (each with its .expect)
 ls -d modules/*/| wc -l   #  3
 find . -name '*.bp' | wc -l   # 95 — 91 cells, plus the 4 extra .bp of the modules/ projects
 ```
+
+**Recounted on disk at the landing of front 19 of 1.0.10-beta (`fix/use-activation`):**
+`ls test/*.bp` **50**, `ls run/*.bp` **16**, `ls reject/*.bp` **30**, `ls -d modules/*/` **3**,
+`find . -name '*.bp'` **103** — **99 cells**, 96 besides the three `smoke` files. The difference from
+the block above is exactly front 19's eight cells, one new area row:
+
+| Area | Cells | Total |
+|---|---|---|
+| `use` / `@Context` (1.0.10-beta front 19, decisions 87 and 88) | 1 test + 1 run + 6 reject | 8 |
+
+Measured there with the same compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+language tests: 348 passed, 45 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+language tests: 31 passed, 18 expected failures, 0 failed
+```
+
+`expected-failures.txt` did not change: none of the eight cells is listed, on any target.
+The block below is the `b09bf9c6` measurement, kept as the audit trail.
 
 **91 cells**, of which three are the `smoke` files (one per single-file kind) — so **88** besides
 them, by area:
@@ -390,8 +412,17 @@ it and no front owns it, so `test/type_identity.bp` states the omission in a com
 what **is** settled — that two *different* types with the same fields are different values. Reported
 to the maintainer; a sentence would turn the comment into two assertions.
 
-What cannot be tested from botopink at all, and why: `@Context` / `use` (lowers to React hooks on
-commonJS, no erlang lowering — it needs a host framework); `pub default mod` / `pub default fn` and
+**`@Context` / `use` is tested from botopink since front 19 of 1.0.10-beta** (decision 88 made
+`use f(x)` lower to `f(x)` on every backend, so no host framework is needed): `test/context_use.bp`,
+`run/context_use.bp` and six `reject/use_*.bp` cells declare their own owner type
+(`type Element(…) implement @Context<Element, Element>`) and pin the binding of `R`, field and
+positional destructuring, a custom hook composing hooks, a bare void `use`, the un-activated call,
+the static prefix (rows 4b and 4c as parse errors), `use-without-context-effect` (a `-> Element`
+body without `#[@context]`), `use-of-non-context-fn` (a `-> string` body, and a module-level `val` —
+decision 87), and `context-anchor-violation`. Green on commonJS, erlang, wasm and beam at the
+landing commit, with no line in `expected-failures.txt`.
+
+What cannot be tested from botopink at all, and why: `pub default mod` / `pub default fn` and
 `@ExprCustom` / `q.custom` (the package handle and the custom-AST carrier are a *dependency*'s
 surface); `.d.bp` files shipped through `botopink.json` `files` (same); "no external target for the
 active backend" (`reject/` runs `check`, which is target-independent); `@typeInfo` / `@makeRecord` /

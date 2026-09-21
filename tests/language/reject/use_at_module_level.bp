@@ -1,0 +1,10 @@
+//// Decision 87 — `use` never leaves a function body: there is no module-level
+//// activation and no `use client;` directive; the boundary markers are library
+//// decorators.
+
+type Element(count: i32) implement @Context<Element, Element>
+fn state(initial: i32) -> @Context<Element, i32> { return initial; }
+
+val c = use state(0);
+
+pub fn main() { @print(c); }
