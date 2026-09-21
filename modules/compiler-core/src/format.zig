@@ -33,7 +33,23 @@ pub const Doc = union(enum) {
     /// Increase the current indentation for the inner document.
     nest: struct { amount: usize, doc: *const Doc },
     /// Try to fit the inner document on one line (flat); fall back if it overflows.
-    group: *const Doc,
+    ///
+    /// `measured` says **which predicate decides**, and it exists because the two
+    /// answers differ. With `measured` the group asks `fits`, which walks the
+    /// document and charges every character of the flat spelling plus whatever
+    /// the render still owes the same line: that is the Wadler-Lindig group, and
+    /// a construct is enabled by building its group with `groupMeasured`. Without
+    /// it the group asks `fitsPinned`, which is the scan this formatter has always
+    /// had — it stops at the first `concat` and answers "fits" — so the group
+    /// renders flat exactly as it always has.
+    ///
+    /// Every group is pinned until its construct's canonical broken form has been
+    /// written down and turned on, one at a time
+    /// ([decision 65](../../../specs/1.0.5-beta/decisions-taken.md) part 4).
+    /// Pinning is a phase, not a setting: there is no way to reach it from a
+    /// source file, a flag or an environment variable, and the last construct to
+    /// be enabled takes `fitsPinned` and this field away with it.
+    group: struct { doc: *const Doc, measured: bool },
     /// Force break mode for the inner document regardless of enclosing group.
     forceBreak: *const Doc,
     /// Two spellings of one construct, chosen by the column the render has
@@ -104,8 +120,19 @@ pub const Formatter = struct {
         return this.alloc(.{ .nest = .{ .amount = amount, .doc = doc } });
     }
 
+    /// A group whose construct is not enabled yet: it keeps the answer the old
+    /// scan gave, which is flat for every non-trivial document. See `Doc.group`.
     pub fn group(this: *Formatter, doc: *const Doc) !*const Doc {
-        return this.alloc(.{ .group = doc });
+        return this.alloc(.{ .group = .{ .doc = doc, .measured = false } });
+    }
+
+    /// A group that breaks **by width**: `fits` measures its flat spelling and
+    /// what follows it on the line, and every `line`/`softline` inside it becomes
+    /// a newline together when it does not fit. All-or-nothing is the node, not
+    /// the caller — a construct that wants two of its elements to share a line
+    /// cannot express that through this.
+    pub fn groupMeasured(this: *Formatter, doc: *const Doc) !*const Doc {
+        return this.alloc(.{ .group = .{ .doc = doc, .measured = true } });
     }
 
     pub fn forceBreak(this: *Formatter, doc: *const Doc) !*const Doc {
@@ -1137,13 +1164,85 @@ pub const Formatter = struct {
     }
 
     fn fmtCall(this: *Formatter, c: anytype) anyerror!*const Doc {
+        if (try this.fmtMethodChain(c)) |doc| return doc;
+        return this.fmtCallWithReceiverDoc(c, null);
+    }
+
+    /// A **link** of a method chain: a method call written `recv.name(…)` /
+    /// `recv?.name(…)`. Not a link: a plain call (`of(people)`), a builtin
+    /// (`@print(x)`), a tagged call (`recv.callee "…"`) and `adder(3)(4)`,
+    /// whose callee is an expression and whose receiver is null by design.
+    fn callIsLink(c: anytype) bool {
+        if (c.receiver == null) return false;
+        if (c.is_builtin) return false;
+        if (@hasField(@TypeOf(c), "is_tagged") and c.is_tagged) return false;
+        if (@hasField(@TypeOf(c), "calleeExpr") and c.calleeExpr != null) return false;
+        return true;
+    }
+
+    /// The method chain ([decision 65](../../../specs/1.0.5-beta/decisions-taken.md)):
+    /// two or more links in a row are **one** group, all-or-nothing —
+    ///
+    ///     of(people).where({ p -> p.age >= 18 }).select({ p -> p.name });
+    ///
+    ///     of(people)
+    ///         .where({ p -> p.age >= 18 })
+    ///         .orderBy({ p -> p.name })
+    ///         .select({ p -> p.name })
+    ///         .toArray()
+    ///         .join(", ");
+    ///
+    /// — one line when its flat spelling fits (what follows it on the line, the
+    /// `;` or the `)`, counted), otherwise the root on the statement's line and
+    /// **every** call on a line of its own, `+4` from the statement and never
+    /// aligned under the receiver (rule 3: a rename must not re-indent a chain).
+    /// There is no middle: no two calls share a line in the broken form (rule
+    /// 1). The group is `groupMeasured`, so a link holding a lambda that
+    /// breaks — `.forEach({ x ->` with a statement body — breaks the whole
+    /// chain too, because its flat spelling does not exist.
+    ///
+    /// The output is a pure function of the content (rule 2): a chain the
+    /// author broke by hand and that fits is joined back, and one they wrote
+    /// on one line that does not fit is opened. `null` when `c` closes no
+    /// chain — fewer than two links — and `fmtCall` prints it as it always has.
+    fn fmtMethodChain(this: *Formatter, c: anytype) anyerror!?*const Doc {
+        if (!callIsLink(c)) return null;
+        // The links, outermost first; `root` is the first receiver that is
+        // not one — `of(people)`, `self.items`, `xs`.
+        var links: std.ArrayList(@TypeOf(c)) = .empty;
+        defer links.deinit(this.arena);
+        try links.append(this.arena, c);
+        var root = c.receiver.?;
+        while (root.* == .call and root.call.kind == .call and callIsLink(root.call.kind.call)) {
+            try links.append(this.arena, root.call.kind.call);
+            root = root.call.kind.call.receiver.?;
+        }
+        if (links.items.len < 2) return null;
+        var body: std.ArrayList(*const Doc) = .empty;
+        defer body.deinit(this.arena);
+        var i = links.items.len;
+        while (i > 0) {
+            i -= 1;
+            try body.append(this.arena, this.softline());
+            try body.append(this.arena, try this.fmtCallWithReceiverDoc(links.items[i], this.nil()));
+        }
+        return try this.groupMeasured(try this.concat(
+            try this.fmtExpr(root.*),
+            try this.nest(INDENT, try this.concatAll(body.items)),
+        ));
+    }
+
+    /// One call. `recvDoc` stands in for the receiver's own printing when the
+    /// caller has already placed it — a chain link prints `.name(…)` after a
+    /// `nil` receiver, the receiver having gone to the chain's root.
+    fn fmtCallWithReceiverDoc(this: *Formatter, c: anytype, recvDoc: ?*const Doc) anyerror!*const Doc {
         if (try this.fmtDesugaredBuiltin(c)) |doc| return doc;
         // Tagged-call sugar round-trip: `callee "..."` (single string arg, no parens)
         const is_tagged = if (@hasField(@TypeOf(c), "is_tagged")) c.is_tagged else false;
         if (is_tagged and c.args.len == 1 and c.args[0].label == null) {
             const head: *const Doc = if (c.receiver) |recv|
                 try this.concatAll(&.{
-                    try this.fmtExpr(recv.*),
+                    recvDoc orelse try this.fmtExpr(recv.*),
                     try this.text("."),
                     try this.text(c.callee),
                 })
@@ -1194,7 +1293,7 @@ pub const Formatter = struct {
             try this.fmtExpr(ce.*)
         else if (c.receiver) |recv|
             try this.concatAll(&.{
-                try this.fmtExpr(recv.*),
+                recvDoc orelse try this.fmtExpr(recv.*),
                 try this.text(if (is_optional) "?." else "."),
                 try this.text(c.callee),
             })
@@ -2585,9 +2684,17 @@ const Item = struct {
     doc: *const Doc,
 };
 
-/// Check whether the document fragment fits within `budget` remaining columns.
-/// Scans in flat mode, stopping at hardlines (which always break).
-fn fits(budget: isize, work: *std.ArrayList(Item)) bool {
+/// **The predicate a pinned group uses** — the scan this formatter has always
+/// had, kept verbatim so that a group which has not been enabled renders exactly
+/// the text it rendered before.
+///
+/// It stops at the first `concat` and then answers "fits" for any non-negative
+/// budget. Since every non-trivial document *is* a `concat`, that is the same as
+/// "always flat unless the column is already past the width", which is why no
+/// construct in the language has ever broken by width. `fits` below is the repair;
+/// this one exists only for as long as some construct is still waiting for its
+/// canonical broken form to be decided, and the last one to be enabled deletes it.
+fn fitsPinned(budget: isize, work: *std.ArrayList(Item)) bool {
     var remaining = budget;
     // Scan the current work stack backwards (top = last element) without modifying it.
     var i = work.items.len;
@@ -2615,12 +2722,102 @@ fn fits(budget: isize, work: *std.ArrayList(Item)) bool {
                 return remaining >= 0;
             },
             .nest => |n| _ = n,
-            .group => |d| _ = d,
+            .group => |g| _ = g,
             .forceBreak => return false,
             // Its flat spelling has a width that was measured, so — unlike every
             // other node here — this one can be charged for exactly.
             .widthChoice => |w| remaining -= @intCast(w.flatWidth),
         }
+    }
+    return remaining >= 0;
+}
+
+/// **Does `candidate`'s flat spelling fit on the line it starts?**
+///
+/// `budget` is the columns left at the current column, `trailing` is the render's
+/// work stack below the candidate — what still has to be printed, in reverse order,
+/// the top of the stack being what comes next. Both halves are needed: a group is
+/// too wide either because of its own text or because of the `;`, the `)` or the
+/// ` {` that follows it, and `fitsPinned` could see neither.
+///
+/// Two phases, because a break means opposite things on the two sides of the
+/// candidate:
+///
+///   - **inside** the candidate a `hardline` or a `forceBreak` says the flat
+///     spelling does not exist, so the answer is no. This is what makes a group
+///     holding a lambda that breaks — `xs.map({ x -> … })` with a multi-statement
+///     body — break too, rather than print its head flat and then a newline;
+///   - **after** the candidate a break says the line ends there, so everything
+///     beyond it is on another line and the answer is yes. Getting this one wrong
+///     is not academic: statements are joined with hardlines, so the very next
+///     item on the stack is usually a break, and charging for the rest of the
+///     file would make every group break.
+///
+/// `scratch` is the caller's work list, reused across calls so the scan allocates
+/// nothing per group; its contents on entry are discarded.
+fn fits(
+    wa: std.mem.Allocator,
+    scratch: *std.ArrayList(Item),
+    budget: isize,
+    candidate: Item,
+    trailing: []const Item,
+) !bool {
+    var remaining = budget;
+
+    // Phase 1 — the candidate, flat.
+    scratch.clearRetainingCapacity();
+    try scratch.append(wa, .{ .indent = candidate.indent, .mode = .flat, .doc = candidate.doc });
+    while (scratch.pop()) |item| {
+        switch (item.doc.*) {
+            .nil, .softline => {},
+            .text => |s| remaining -= @intCast(s.len),
+            .line => remaining -= 1, // flat: one space
+            .hardline, .forceBreak => return false,
+            .concat => |c| {
+                try scratch.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = c.right });
+                try scratch.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = c.left });
+            },
+            .nest => |n| try scratch.append(
+                wa,
+                .{ .indent = item.indent + n.amount, .mode = .flat, .doc = n.doc },
+            ),
+            // A group inside a flat scan is flat — its own choice is made later,
+            // at the column it really starts, and cannot be narrower than this.
+            .group => |g| try scratch.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = g.doc }),
+            // Measured when the node was built, so it is charged exactly.
+            .widthChoice => |w| remaining -= @intCast(w.flatWidth),
+        }
+        if (remaining < 0) return false;
+    }
+
+    // Phase 2 — what the render still owes this line, in the mode each item carries.
+    scratch.clearRetainingCapacity();
+    try scratch.appendSlice(wa, trailing);
+    while (scratch.pop()) |item| {
+        switch (item.doc.*) {
+            .nil => {},
+            .text => |s| remaining -= @intCast(s.len),
+            .line => if (item.mode == .flat) {
+                remaining -= 1;
+            } else return true,
+            .softline => if (item.mode == .break_) return true,
+            .hardline => return true,
+            .concat => |c| {
+                try scratch.append(wa, .{ .indent = item.indent, .mode = item.mode, .doc = c.right });
+                try scratch.append(wa, .{ .indent = item.indent, .mode = item.mode, .doc = c.left });
+            },
+            .nest => |n| try scratch.append(
+                wa,
+                .{ .indent = item.indent + n.amount, .mode = item.mode, .doc = n.doc },
+            ),
+            .group => |g| try scratch.append(wa, .{ .indent = item.indent, .mode = item.mode, .doc = g.doc }),
+            // Its content begins with a break of its own, so the line ends inside
+            // it — but the text before that break is still on this line, which is
+            // what descending in break mode charges for.
+            .forceBreak => |d| try scratch.append(wa, .{ .indent = item.indent, .mode = .break_, .doc = d }),
+            .widthChoice => |w| remaining -= @intCast(w.flatWidth),
+        }
+        if (remaining < 0) return false;
     }
     return remaining >= 0;
 }
@@ -2638,6 +2835,9 @@ pub fn render(allocator: std.mem.Allocator, doc: *const Doc, width: usize) ![]u8
 
     var work: std.ArrayList(Item) = .empty;
     try work.append(wa, .{ .indent = 0, .mode = .break_, .doc = doc });
+
+    // `fits`' own stack, reused across every measured group in the document.
+    var scratch: std.ArrayList(Item) = .empty;
 
     var col: usize = 0;
 
@@ -2691,18 +2891,28 @@ pub fn render(allocator: std.mem.Allocator, doc: *const Doc, width: usize) ![]u8
                 });
             },
 
-            .group => |d| {
-                // Try flat mode: scan remaining work to see if it fits.
+            .group => |g| {
                 const budget: isize = @as(isize, @intCast(width)) - @as(isize, @intCast(col));
-                // Push candidate in flat mode temporarily to check fits.
-                try work.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = d });
-                const ok = fits(budget, &work);
-                _ = work.pop().?; // remove the candidate we just pushed
-                if (ok) {
-                    try work.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = d });
-                } else {
-                    try work.append(wa, .{ .indent = item.indent, .mode = .break_, .doc = d });
-                }
+                const ok = if (g.measured)
+                    // `work.items` is the trailing half of the question; `fits`
+                    // copies it and never writes through it.
+                    try fits(wa, &scratch, budget, .{
+                        .indent = item.indent,
+                        .mode = .flat,
+                        .doc = g.doc,
+                    }, work.items)
+                else pinned: {
+                    // The old scan reads the candidate off the top of the stack.
+                    try work.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = g.doc });
+                    const answer = fitsPinned(budget, &work);
+                    _ = work.pop().?;
+                    break :pinned answer;
+                };
+                try work.append(wa, .{
+                    .indent = item.indent,
+                    .mode = if (ok) .flat else .break_,
+                    .doc = g.doc,
+                });
             },
 
             .forceBreak => |d| {

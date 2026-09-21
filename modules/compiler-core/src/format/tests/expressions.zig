@@ -819,3 +819,140 @@ test "format: call ---- a comment on an argument still opens the list" {
         \\}
     );
 }
+
+// ── method chains (decision 65) ───────────────────────────────────────────────
+
+test "format: method chain ---- fits, so it stays on one line" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn names() -> string[] {
+        \\    return of(people).where({ p -> p.age >= 18 }).select({ p -> p.name });
+        \\}
+    );
+}
+
+test "format: method chain ---- does not fit, so every call takes its own line at +4" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn names() -> string {
+        \\    return of(people)
+        \\        .where({ p -> p.age >= 18 })
+        \\        .orderBy({ p -> p.name })
+        \\        .select({ p -> p.name })
+        \\        .toArray()
+        \\        .join(", ");
+        \\}
+    );
+}
+
+test "format: method chain ---- a one-line chain past the width is opened" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn names() -> string {
+        \\    return of(people).where({ p -> p.age >= 18 }).orderBy({ p -> p.name }).select({ p -> p.name }).toArray().join(", ");
+        \\}
+    ,
+        \\fn names() -> string {
+        \\    return of(people)
+        \\        .where({ p -> p.age >= 18 })
+        \\        .orderBy({ p -> p.name })
+        \\        .select({ p -> p.name })
+        \\        .toArray()
+        \\        .join(", ");
+        \\}
+    );
+}
+
+test "format: method chain ---- no middle: two calls on a line become one per line" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn names() -> string {
+        \\    return of(people).where({ p -> p.age >= 18 }).orderBy({ p -> p.name })
+        \\        .select({ p -> p.name }).toArray().join(", ");
+        \\}
+    ,
+        \\fn names() -> string {
+        \\    return of(people)
+        \\        .where({ p -> p.age >= 18 })
+        \\        .orderBy({ p -> p.name })
+        \\        .select({ p -> p.name })
+        \\        .toArray()
+        \\        .join(", ");
+        \\}
+    );
+}
+
+test "format: method chain ---- a hand-broken chain that fits is joined (pure function of content)" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn names() -> string[] {
+        \\    return of(people)
+        \\        .where({ p -> p.age >= 18 })
+        \\        .select({ p -> p.name });
+        \\}
+    ,
+        \\fn names() -> string[] {
+        \\    return of(people).where({ p -> p.age >= 18 }).select({ p -> p.name });
+        \\}
+    );
+}
+
+test "format: method chain ---- the boundary is exact: 80 columns stay, 81 break" {
+    // The first `val` line is exactly 80 columns, the second 81.
+    try h.assertFormat(std.testing.allocator,
+        \\fn f() {
+        \\    val n = a.bbbbbbbbbb().cccccccccc().dddddddddd().eeeeeeeeee().fffffffffff();
+        \\}
+    );
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f() {
+        \\    val n = a.bbbbbbbbbb().cccccccccc().dddddddddd().eeeeeeeeee().ffffffffffff();
+        \\}
+    ,
+        \\fn f() {
+        \\    val n = a
+        \\        .bbbbbbbbbb()
+        \\        .cccccccccc()
+        \\        .dddddddddd()
+        \\        .eeeeeeeeee()
+        \\        .ffffffffffff();
+        \\}
+    );
+}
+
+test "format: method chain ---- a single method call is not a chain" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn f() {
+        \\    val n = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb();
+        \\}
+    );
+}
+
+test "format: method chain ---- a link whose lambda breaks opens the whole chain" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn f() {
+        \\    xs
+        \\        .map({ x -> x * 2 })
+        \\        .forEach({ x ->
+        \\            @print(x);
+        \\        });
+        \\}
+    );
+}
+
+test "format: method chain ---- round trip is idempotent and lossless" {
+    try h.assertIdempotent(std.testing.allocator,
+        \\fn names() -> string {
+        \\    return of(people)
+        \\        .where({ p -> p.age >= 18 })
+        \\        .orderBy({ p -> p.name })
+        \\        .select({ p -> p.name })
+        \\        .toArray()
+        \\        .join(", ");
+        \\}
+    );
+    try h.assertIdempotent(std.testing.allocator,
+        \\fn f() {
+        \\    xs
+        \\        .map({ x -> x * 2 })
+        \\        .forEach({ x ->
+        \\            @print(x);
+        \\        });
+        \\}
+    );
+}
