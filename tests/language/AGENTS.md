@@ -54,8 +54,18 @@ answers that expression's value) and `lambda_element_method` (a primitive method
 parameter is the same method it is anywhere else), both measured by emilia's theme front and both
 asserting the VALUE, because each defect was a wrong answer rather than a crash — and the
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
-`curried_call`, `index_expression`), and `effect_chain` (1.0.10-beta front 20,
-decisions 95 and 98: one `test/`, one `run/` and five `reject/` cells; front 20
+`curried_call`, `index_expression`, and the two 1.0.10-beta `00 · 04-js` cells
+`run/labelled_arguments` — a record constructor and an enum variant written out
+of declared order, the rule being `docs.md` § Parameters with defaults, "a
+parameter the call names by label keeps the argument it was given, whichever
+position it is in"; the values are asymmetric so a positional zip is a wrong
+ANSWER at exit 0 rather than a crash, which is how it hid — and
+`run/effect_method` — an effect annotation on a method, at its three
+declaration sites: a record's own body, a record's `implement` block and an
+enum's body; the fourth, a `behavior`'s `default fn`, cannot be written at all,
+because the checker refuses `effect-on-behavior-method-forbidden`), and
+`effect_chain` (1.0.10-beta front 20,
+decisions 95 and 98: one `test/`, two `run/` and five `reject/` cells; front 20
 also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
 decision 96, and `run/option_unwrap_or` + `reject/option_expect_removed` to
 `optional*` for F11), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
@@ -209,6 +219,42 @@ and dies with `{error, badarg}` — which is how it was measured here, on the fi
 wider reason, measured with the collision removed: a method call on a value an imported fn answered
 answers `0` there whatever the names are. The library measurement behind the cell is erika's
 `examples/erika-linq`, 1 passed / 8 failed → 9 / 0 on erlang.
+
+`modules/export_name_collision` and `modules/type_name_collision` are the fifth and sixth cells that
+need two modules, and they pin the root the two above sit on: **an exported name resolves by walk
+order**. Every index that answers "which module emits this name" was keyed by the bare symbol NAME
+— `CrossModule.exports`, the erlang / commonJS / beam / wasm import walks that read it, the
+checker's registry scan in `comptime.zig`, and the CLI's topological sort — and a name is unique
+inside a module, never over a program: `libs/std` declares `parse` in `json`, in `querystring` and
+in `url` today. The `from "<mod>"` clause, which is the answer, was consulted by none of them.
+
+`export_name_collision` is the `pub fn` half: `one` declares `parse/1` answering `1`, `two` declares
+`parse/2` answering `2`, and `main` imports `one`'s. commonJS emitted `require("./two.js")` and
+printed `2` at exit 0; wasm linked `two`'s body in and printed `2` at exit 0; erlang emitted a
+remote call into the other module and died with `undef`. Reversed — the consumer naming `two` — all
+four REFUSED the program quoting `one`'s arity ("'parse' expects 1 argument(s), got 2"), because
+the CLI drew its dependency edge to `one` and `two` was ordered after its own importer. The cell
+deliberately leaves `two` imported by nobody: wasm links every module of a program into one flat
+namespace, so a second module importing `two`'s `parse` as well would collide there for a reason
+that is wasm's and not this index's.
+
+`type_name_collision` is the `pub type` half, where a NAME is the whole identity (a record has no
+arity to tell two apart). `parser` and `net` each declare `pub type Outcome` with the same two field
+names in the OTHER order and a `describe` of its own, so the wrong declaration answers rather than
+crashes: erlang printed the NEIGHBOURING field (`net-note` for `.tag`, and `404` through the typed
+method call) at exit 0, where commonJS and wasm printed the right one. The cell walks all three
+axes — the field read, the method call and the construction — and every line asserts the VALUE.
+
+`run/variant_name_collision.bp` and `run/variant_name_ambiguous.bp` are the third axis, and the only
+one that fits in one file. Decision 21 puts the ENUM and the enum's module inside a variant's atom,
+and `variant_enum` answered "which enum declares `Circle`" by declaration order — first writer wins,
+mitigated for a `case` SUBJECT only. The first cell is the spelling that always had an answer (the
+enum is written) and asserts six values on every target; the second is the spelling that has none,
+and it is refused now instead of tagged with one of the two — `Hole`'s value written `.Circle` was
+tagged `main__t__shape__v__circle` and died with `{case_clause, …}` at run time. Its `.targets` is
+`erlang` alone, and neither omission is the cell's shape: commonJS cannot run a leading-dot variant
+AT ALL (measured with the collision removed — `ReferenceError: Circle is not defined`, `00 · 04-js`'s
+row), and wasm places it correctly from the expected type, so it has nothing to refuse.
 
 ### The sidecars of a `run/` cell
 
@@ -623,19 +669,25 @@ rows:
 
 | Area | Cells | Total |
 |---|---|---|
-| the effect chain (1.0.10-beta front 20, decisions 95 and 98) | 1 test + 1 run + 5 reject | 7 |
+| the effect chain (1.0.10-beta front 20, decisions 95 and 98) | 1 test + 2 run + 5 reject | 8 |
 | one `ContextBase` per body (front 20, decision 96) | 1 run + 1 reject | 2 |
 | `?T` has one unwrap (front 20, F11) | 1 run + 1 reject | 2 |
 
 `run/effect_chain.bp` holds the two rows of decision 95's table every backend
 runs (`#[@result]` with `try`, `#[@context]` with `use` and `try`);
 `test/effect_chain.bp` holds the two that need a target able to consume a future
-or an iterator. A third row — `await` inside a `#[@context]` body — is in
-neither, and the `run/` cell's header says why: it is legal, it runs on erlang,
-wasm and beam, and commonJS lowers `#[@context]` to a plain `function`, so the
-emitted `await` is a JS `SyntaxError`. That is a lowering row for the backend's
-own front, not a reason to leave the capability refused, and it is not an
-`expected-failures.txt` line because no cell of this suite claims it.
+or an iterator. The third row — `await` inside a `#[@context]` body — has a cell
+of its own, `run/effect_context_await.bp`, written by 1.0.10-beta's `00 · 04-js`
+when it took the lowering: it is legal, it always ran on erlang, wasm and beam,
+and commonJS lowered `#[@context]` to a plain `function`, so the emitted `await`
+was a JS `SyntaxError` and the module did not load. It is a cell of its own and
+not three more lines in `run/effect_chain.bp` because it needs care that one
+does not: on commonJS a suspending function hands its CALLER a promise — as
+`#[@future]` already does — while erlang and wasm hand it the value, so every
+value the cell pins is printed from **inside** the awaiting body, where all
+three agree. It covers both return shapes (`-> @Context<Element, i32>` and
+decision 88's `-> Element`) and a `#[@context]` body that awaits nothing, whose
+caller still reads the field off what it returns.
 
 `run/option_unwrap_or.bp` and `reject/option_expect_removed.bp` are F11's pair:
 `?T.expect(default)` was `unwrapOr` under a name that says the absent branch is

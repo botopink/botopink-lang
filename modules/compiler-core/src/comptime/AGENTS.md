@@ -224,6 +224,20 @@ full `TypeDef` (`implements`/`contextBase`/fields), not just the constructor
 binding; `resolveTypeName` (env.zig) maps a constructor binding back to its
 named type in annotations.
 
+**Which module an import resolves in.** Both registries are keyed by module
+PATH, and `resolveImports` used to walk them taking the first entry that held
+the name — so `from "<mod>"`, the one thing that says WHICH module the import
+means, was consulted by neither. A name is unique inside a module and never
+over a program: `libs/std` declares `parse` in `json`, in `querystring` and in
+`url` today. Measured, a module importing `Outcome` from `"parser"` was bound
+to `"net"`'s record and the program was refused against the wrong record's
+fields ("expected i32, got string"). Both loops run twice now
+(`ast.ImportSource.namesModule` — the full path or its last segment): the
+module the source NAMES answers first, and the old whole-registry scan is the
+second pass, so a `from "<pkg>"` handle covering several modules, a bare
+`import { … };` and a module not yet analysed all reach exactly the scan they
+reached before.
+
 **Package-default DSL**: a package may declare one `pub default mod <handle>;`
 (`ModDecl.isDefault`) and one `pub default fn` (`FnDecl.isDefault`), in any
 module. `registerExports` pairs them per package (`pkgKey` = module-path prefix
