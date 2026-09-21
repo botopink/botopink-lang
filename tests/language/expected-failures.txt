@@ -327,3 +327,15 @@ beam     | run/narrowing_null_guard_clause.bp | 03 (no step; two optional reader
 # the optional binder and `2` for the same read through a typed parameter, so what
 # it is missing is the receiver's type at the binder, not this cell's collision.
 wasm     | modules/field_name_collision | 05-wasm | a field read off an optional binder answers `0`: `0` / `0` where the other two rows answer `2` / `0`. Measured with the collision removed as well, so it is the binder's lost type and not the offset guess
+
+# ── a method call whose receiver lost its type, on wasm ──────────────────────
+# `modules/method_name_collision` is the method axis of the cell above: policy 3
+# puts a method in its type's module on erlang, so a call on a receiver inference
+# left untyped needs an owner, and the owner came from the method's name alone —
+# over the modules one file happens to import from, keyed by the name with no
+# arity and no dissent check, so the export index's hash iteration order picked
+# it. The wasm backend stays single-module and never reaches that question:
+# measured on this branch with NO name collision at all (`Grouping.toArray`
+# renamed to `toList`), wasm answers the same `0` / `0`, so what it is missing is
+# the imported receiver, not this cell's collision.
+wasm     | modules/method_name_collision | 05-wasm | a method call on a value answered by an imported fn answers `0`: `0` / `0` / `4` where the other two rows answer `3` / `2` / `4`. The local collision (the third line) is right on every row. Measured with the collision removed as well, so it is the imported receiver and not the owner guess

@@ -166,6 +166,21 @@ declarations one slot further apart and the same guess reads past the tuple and 
 notice. wasm is an expected failure here for a wider reason, measured with the collision removed: a
 field read off the optional binder answers `0` there whatever the names are.
 
+`modules/method_name_collision` is the same defect one axis over, and the fourth cell that needs two
+modules. Policy 3 puts a method in its TYPE's module on erlang, so a call on a receiver inference
+left untyped needs an OWNER, and the owner came from the method's NAME alone — keyed by the name
+with no arity, first writer wins, over the modules the file happens to import from, so the export
+index's hash iteration order picked it. `Query<T>` and `Grouping<K, V>` both declare `toArray`, and
+`main` reaches each through a generic return from the other module, which is where the type is lost.
+Both defect shapes follow from the one guess: `Grouping`'s body over a `Query` reads past the tuple
+and dies with `{error, badarg}` — which is how it was measured here, on the first line — while
+`Query`'s body over a `Grouping` reads the neighbouring `key` and answers `1` where commonJS answers
+`2`. The third line is the control: the same collision declared LOCALLY has always been counted by
+`name/arity` and cleared on dissent, and it is right on every row. wasm is an expected failure for a
+wider reason, measured with the collision removed: a method call on a value an imported fn answered
+answers `0` there whatever the names are. The library measurement behind the cell is erika's
+`examples/erika-linq`, 1 passed / 8 failed → 9 / 0 on erlang.
+
 ### The sidecars of a `run/` cell
 
 Three optional files beside `run/<name>.bp`, each a claim the cell makes (C-16, front 12 steps 4.3

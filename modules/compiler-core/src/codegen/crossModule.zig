@@ -22,6 +22,16 @@ const ComptimeOutput = comptimeMod.ComptimeOutput;
 /// lowering (a record name is constructed; a `fn`/`val` is referenced).
 pub const ExportKind = enum { record, @"enum", @"fn", val };
 
+/// One method a record/enum export declares, with the arity its lowering takes
+/// (the receiver included, as `m.params.len` counts it). The arity is half the
+/// identity of a method on the erlang backend: two types may share a name and
+/// the `name/arity` pair is what a call site can be matched against, exactly as
+/// the local `method_owners` index is keyed.
+pub const MethodSig = struct {
+    name: []const u8,
+    arity: usize,
+};
+
 /// Where a `pub` symbol is emitted, for resolving cross-module imports.
 /// `module` is the emitting module's path (e.g. `"web/http"`). `is_class`
 /// marks record/struct exports whose construction needs `new` (commonJS) or
@@ -33,10 +43,12 @@ pub const ExportInfo = struct {
     kind: ExportKind,
     is_class: bool,
     fields: []const []const u8 = &.{},
-    /// Method names a record/enum export declares (empty otherwise). A consumer
-    /// calling one on an imported value (`stub.thenReturn(v)`) emits no local
-    /// definition of it: erlang resolves the owning module from here.
-    methods: []const []const u8 = &.{},
+    /// The methods a record/enum export declares, name and arity (empty
+    /// otherwise). A consumer calling one on an imported value
+    /// (`stub.thenReturn(v)`) emits no local definition of it: erlang resolves
+    /// the owning module from here — and, when two types of the program declare
+    /// the same `name/arity`, resolves nothing and dispatches on the value.
+    methods: []const MethodSig = &.{},
     /// A host-backed `declare fn`: its owner emits no function of that name (the
     /// annotation's template renders at each call site), so it cannot be reached
     /// by a remote call.
@@ -73,11 +85,15 @@ pub const CrossModule = struct {
     fault_atoms: std.ArrayListUnmanaged([]u8) = .empty,
     /// Owns the `fields` arrays allocated for record/struct exports.
     field_arrays: std.ArrayListUnmanaged([]const []const u8) = .empty,
+    /// Owns the `methods` arrays allocated for record/enum exports.
+    method_arrays: std.ArrayListUnmanaged([]const MethodSig) = .empty,
     alloc: std.mem.Allocator,
 
     pub fn deinit(self: *CrossModule) void {
         for (self.field_arrays.items) |arr| self.alloc.free(arr);
         self.field_arrays.deinit(self.alloc);
+        for (self.method_arrays.items) |arr| self.alloc.free(arr);
+        self.method_arrays.deinit(self.alloc);
         var ait = self.atoms.valueIterator();
         while (ait.next()) |a| self.alloc.free(a.*);
         self.atoms.deinit();
@@ -497,6 +513,11 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
         for (field_arrays.items) |arr| alloc.free(arr);
         field_arrays.deinit(alloc);
     }
+    var method_arrays: std.ArrayListUnmanaged([]const MethodSig) = .empty;
+    errdefer {
+        for (method_arrays.items) |arr| alloc.free(arr);
+        method_arrays.deinit(alloc);
+    }
 
     // Every module's erlang/BEAM atom, rendered once, plus the check whose
     // absence is this front: a second path rendering the same atom, a RESERVED
@@ -596,9 +617,9 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
         };
         for (ok.transformed.decls) |decl| switch (decl) {
             .type_ => |r| if (r.isPub) {
-                const methods = try alloc.alloc([]const u8, r.methods.len);
-                for (r.methods, 0..) |m, i| methods[i] = m.name;
-                try field_arrays.append(alloc, methods);
+                const methods = try alloc.alloc(MethodSig, r.methods.len);
+                for (r.methods, 0..) |m, i| methods[i] = .{ .name = m.name, .arity = m.params.len };
+                try method_arrays.append(alloc, methods);
                 switch (r.shape) {
                     .record => |record_fields| {
                         const fields = try alloc.alloc([]const u8, record_fields.len);
@@ -635,7 +656,7 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
             else => {},
         };
     }
-    return .{ .exports = exports, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .alloc = alloc };
+    return .{ .exports = exports, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .method_arrays = method_arrays, .alloc = alloc };
 }
 
 // ── tests: the atom, its qualifier, its decoder and the collision check ───────

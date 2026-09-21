@@ -4692,7 +4692,7 @@ const Emitter = struct {
             else => return null,
         }
         for (info.methods) |m| {
-            if (std.mem.eql(u8, m, method)) return try self.typeModuleAtom(type_name);
+            if (std.mem.eql(u8, m.name, method)) return try self.typeModuleAtom(type_name);
         }
         return null;
     }

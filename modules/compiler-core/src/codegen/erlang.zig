@@ -675,6 +675,43 @@ const field_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_field", .cla
     },
 } } };
 
+/// `'__bp_method'/3`: a method call whose receiver type this emit could not
+/// place and whose `name/arity` more than one type of the program declares, so
+/// there is no one owner module to write into the call. It is the method axis
+/// of `'__bp_field'/2` and asks the same question the same way: under decision
+/// 21 a record/enum value is `{TypeAtom, …}` and a type module exports every
+/// method it emits, so the value names its own owner —
+/// `apply(element(1, V), M, [V | Args])`.
+///
+/// A map receiver keeps the dispatch `behaviorMethodNode` writes: a host-built
+/// `behavior` value IS its own table, and it carries no tag to ask.
+const method_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_method", .clauses = &.{
+    .{
+        .patterns = &.{ Ast.Expr.v("M"), Ast.Expr.v("V"), Ast.Expr.v("Args") },
+        .guards = &.{isA("map", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "apply", .args = &.{
+            .{ .call = .{ .module = "maps", .name = "get", .args = &.{ Ast.Expr.v("M"), Ast.Expr.v("V") } } },
+            .{ .cons = .{
+                .heads = &.{Ast.Expr.v("V")},
+                .tail = &Ast.Expr{ .variable = "Args" },
+            } },
+        } } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("M"), Ast.Expr.v("V"), Ast.Expr.v("Args") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "apply", .args = &.{
+            .{ .call = .{ .name = "element", .args = &.{ .{ .number = "1" }, Ast.Expr.v("V") } } },
+            Ast.Expr.v("M"),
+            .{ .cons = .{
+                .heads = &.{Ast.Expr.v("V")},
+                .tail = &Ast.Expr{ .variable = "Args" },
+            } },
+        } } } }}),
+        .layout = .inline_,
+    },
+} } };
+
 /// `'__bp_adopt'/3`: decision 21's shape, applied at the HOST boundary.
 ///
 /// A `declare fn` bound to a host answers whatever the host builds, and the
@@ -1772,6 +1809,7 @@ fn emitErlangModule(
         if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (em.needs_field_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
+        if (em.needs_method_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, method_helper_form });
         if (em.needs_adopt_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, adopt_helper_form });
         if (em.needs_index_helper) try forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
         if (em.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
@@ -1865,6 +1903,7 @@ const SavedUnitState = struct {
     needs_print_helper: bool,
     needs_len_helper: bool,
     needs_field_helper: bool,
+    needs_method_helper: bool,
     needs_adopt_helper: bool,
     needs_index_helper: bool,
     needs_slice_helper: bool,
@@ -2582,6 +2621,10 @@ const Emitter = struct {
     /// This module reached a record field read it could not place statically
     /// and emits `'__bp_field'/2` (decision 21's dynamic fallback).
     needs_field_helper: bool = false,
+    /// The same on the method axis: a call whose `name/arity` more than one
+    /// type of the program declares, on a receiver inference left untyped —
+    /// `'__bp_method'/3` asks the value's own tag.
+    needs_method_helper: bool = false,
     /// A host-boundary wrapper adopted an answer into a record (`'__bp_adopt'/3`).
     needs_adopt_helper: bool = false,
     /// Set when an index expression (decision 30's `[]` builtin) lowered to
@@ -3745,7 +3788,7 @@ const Emitter = struct {
                     .record, .@"enum" => {
                         const type_owner = try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), name);
                         for (info.methods) |m| {
-                            const gop = try self.imported_fns.getOrPut(m);
+                            const gop = try self.imported_fns.getOrPut(m.name);
                             if (!gop.found_existing) gop.value_ptr.* = type_owner;
                         }
                     },
@@ -3762,7 +3805,7 @@ const Emitter = struct {
                     if (other.kind != .record and other.kind != .@"enum") continue;
                     const other_owner = try crossModule.typeAtom(self.atom_arena.allocator(), .of(other.module), e.key_ptr.*);
                     for (other.methods) |m| {
-                        const gop = try self.imported_fns.getOrPut(m);
+                        const gop = try self.imported_fns.getOrPut(m.name);
                         if (!gop.found_existing) gop.value_ptr.* = other_owner;
                     }
                 }
@@ -3806,7 +3849,7 @@ const Emitter = struct {
             _ = try self.type_owner_path.getOrPutValue(e.key_ptr.*, info.module);
             if (info.kind == .record) try self.imported_types.put(e.key_ptr.*, owner);
             for (info.methods) |m| {
-                const gop = try self.imported_fns.getOrPut(m);
+                const gop = try self.imported_fns.getOrPut(m.name);
                 if (!gop.found_existing) gop.value_ptr.* = owner;
             }
         }
@@ -3820,6 +3863,53 @@ const Emitter = struct {
         var key_buf: [256]u8 = undefined;
         const key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ name, arity }) catch return owner;
         return if (self.local_fn_arities.contains(key)) null else owner;
+    }
+
+    /// True when more than one type of the PROGRAM declares `name/arity` as a
+    /// method, so the name cannot name an owner and only the receiver can.
+    ///
+    /// The imported half of this question used to be answered by
+    /// `imported_fns`, which cannot answer it: it is keyed by the method name
+    /// ALONE, the first writer wins, there is no dissent check, and it is
+    /// filled by walking the export index — so the index's hash iteration order
+    /// decided which record's function a call reached, and reordering the
+    /// declarations changed nothing. Two imported records sharing `toArray`
+    /// meant one of them ran the other's body over its tuple: `{error, badarg}`
+    /// when the field offset is past the tuple, a neighbouring field's value
+    /// when it is not.
+    ///
+    /// The local half has always been counted — `putMethodOwner` keys
+    /// `method_owners` by `name/arity` and clears the entry when a second type
+    /// claims it — and this is that count widened to the whole program, which
+    /// is exactly what `uniqueRecordWithField` did for the field axis in
+    /// `fcc0244b`: the two populations are this file's own declarations and
+    /// every `pub` record/enum in the cross-module index (a `pub` local type is
+    /// in both, so it is counted once), and one dissenting declaration is
+    /// enough. The call then goes through `'__bp_method'/3`, which asks the
+    /// value's own tag.
+    fn methodOwnerContested(self: *const Emitter, name: []const u8, arity: usize) bool {
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ name, arity }) catch return false;
+        var local: ?[]const u8 = null;
+        if (self.method_owners.get(key)) |owner| {
+            // Already cleared: two of this file's own types claim it.
+            local = owner orelse return true;
+        }
+        var count: usize = if (local == null) 0 else 1;
+        const xc = self.cross orelse return false;
+        var it = xc.exports.iterator();
+        while (it.next()) |e| {
+            const info = e.value_ptr.*;
+            if (info.kind != .record and info.kind != .@"enum") continue;
+            if (local) |tn| if (std.mem.eql(u8, tn, e.key_ptr.*)) continue;
+            for (info.methods) |m| {
+                if (m.arity != arity or !std.mem.eql(u8, m.name, name)) continue;
+                count += 1;
+                if (count > 1) return true;
+                break;
+            }
+        }
+        return false;
     }
 
     /// True when record `type_name` declares a field `name` of function type —
@@ -6224,6 +6314,13 @@ const Emitter = struct {
             var owner_key: [256]u8 = undefined;
             const key = std.fmt.bufPrint(&owner_key, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 }) catch "";
             if (this.method_owners.get(key)) |owner| if (owner) |tn| {
+                // One local type declares it, but a type the PROGRAM declares
+                // elsewhere may declare it too, and this file's own index
+                // cannot see that one: the receiver decides
+                // (`methodOwnerContested`).
+                if (this.methodOwnerContested(cc.callee, cc.args.len + cc.trailing.len + 1)) {
+                    return this.dynamicMethodNode(b, recv, cc);
+                }
                 return this.typeCall(b, tn, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
             };
         }
@@ -6247,6 +6344,12 @@ const Emitter = struct {
         // emits it as a bare function taking the receiver first, so reach it
         // there instead of calling a local this module never defines.
         if (this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len + 1)) |owner| {
+            // …unless more than one type of the program declares it at that
+            // arity, in which case no owner atom belongs in the call and the
+            // value's own tag answers instead.
+            if (this.methodOwnerContested(cc.callee, cc.args.len + cc.trailing.len + 1)) {
+                return this.dynamicMethodNode(b, recv, cc);
+            }
             return b.remote(owner, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
         }
         const recv_args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
@@ -6256,6 +6359,20 @@ const Emitter = struct {
         // value, which is where commonJS finds it too.
         if (try this.behaviorMethodNode(b, recv, cc, recv_args)) |node| return node;
         return b.call(cc.callee, recv_args);
+    }
+
+    /// `recv.m(args)` where inference left the receiver untyped and more than
+    /// one type of the program declares `m` at that arity: no module atom
+    /// belongs in the call, because the name does not name one. Decision 21
+    /// makes element 1 of every record/enum value its type's module atom, and
+    /// every type module exports the methods it emits, so the VALUE names the
+    /// owner — `'__bp_method'(m, Recv, [Args…])`. This is the field axis's
+    /// `'__bp_field'/2` fallback, one axis over.
+    fn dynamicMethodNode(this: *Emitter, b: Ast.Builder, recv: *const ast.Expr, cc: anytype) anyerror!Ast.Expr {
+        this.needs_method_helper = true;
+        const recv_node = try this.exprNode(b, recv.*);
+        const args = try this.callArgs(b, null, cc);
+        return b.call("__bp_method", &.{ Ast.Expr.a(cc.callee), recv_node, .{ .list = args } });
     }
 
     /// `recv.m(args)` where `recv`'s declared type is a `behavior` no type in
@@ -7756,6 +7873,7 @@ const Emitter = struct {
             .needs_print_helper = this.needs_print_helper,
             .needs_len_helper = this.needs_len_helper,
             .needs_field_helper = this.needs_field_helper,
+            .needs_method_helper = this.needs_method_helper,
             .needs_adopt_helper = this.needs_adopt_helper,
             .needs_index_helper = this.needs_index_helper,
             .needs_slice_helper = this.needs_slice_helper,
@@ -7770,6 +7888,7 @@ const Emitter = struct {
         this.needs_print_helper = false;
         this.needs_len_helper = false;
         this.needs_field_helper = false;
+        this.needs_method_helper = false;
         this.needs_adopt_helper = false;
         this.needs_index_helper = false;
         this.needs_slice_helper = false;
@@ -7802,6 +7921,7 @@ const Emitter = struct {
         if (this.needs_add_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (this.needs_len_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (this.needs_field_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, field_helper_form });
+        if (this.needs_method_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, method_helper_form });
         if (this.needs_adopt_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, adopt_helper_form });
         if (this.needs_index_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
         if (this.needs_slice_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
@@ -7838,6 +7958,7 @@ const Emitter = struct {
         this.needs_print_helper = unit.needs_print_helper;
         this.needs_len_helper = unit.needs_len_helper;
         this.needs_field_helper = unit.needs_field_helper;
+        this.needs_method_helper = unit.needs_method_helper;
         this.needs_adopt_helper = unit.needs_adopt_helper;
         this.needs_index_helper = unit.needs_index_helper;
         this.needs_slice_helper = unit.needs_slice_helper;
