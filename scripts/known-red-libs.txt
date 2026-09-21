@@ -20,3 +20,17 @@
 # assertions fail with the half-3 commonJS change reverted. 05-emilia owns the
 # selector; this line goes with it.
 emilia-modifiers commonJS 05-emilia two selector assertions of front 34's new example (main.bp:254 and :264) name text the library does not emit yet
+
+# `front/36-layout` in `repository/emilia`, landed WHILE this branch was gating
+# (emilia `c796ee4` 04:45 and `3d5bf3c` 04:55, merged as `e22cf80`). Both cells
+# fail on the front's own new assertions — `display — the eleven § 5.8 values`
+# at `emilia.bp:4403` and `regression — no Layout leaf resolves a length` at
+# `:4867` — and `emilia-layout` is the example that consumes them. Measured from
+# this checkout, which may not edit `repository/emilia/**`: neither assertion
+# touches a record, a variant, `is` or a `case` arm, and both were added after
+# `scripts/gate.sh --cold` ran green here at 05:05. 05-emilia owns them; these
+# two lines go with the front, and they are expected to be SHORT-LIVED — the
+# ledger fails the gate for a listed cell that passes, which is the signal to
+# delete them.
+emilia commonJS 05-emilia front 36's two new library tests (emilia.bp:4403 and :4867) assert values the dispatcher does not resolve yet
+emilia-layout commonJS 05-emilia the example of front 36, red for the same two library assertions
