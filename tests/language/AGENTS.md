@@ -6,7 +6,10 @@ patterns (§5), tuples and labels (§6), `loop` (§10), and the parts of `is` (�
 `unknown` (§2) and printing (§7) those scenarios use. Front 17
 (`specs/1.0.4-beta/17-language-test-expansion/README.md`) added the rest of the language surface —
 effects (§9), comptime parameters and `@Expr` templates, decorators and `@emit`, host externals (§8),
-generics and `behavior` dispatch, optionals, closures, primitive methods, and modules.
+generics and `behavior` dispatch, optionals, closures, primitive methods, and modules. 1.0.10-beta's
+C-16 (`specs/1.0.10-beta/00-compiler-carry-over/README.md`) added front 12's steps 4.2–4.4 — a local
+dependency, `@panic`/`@todo`, "no external target for the active backend" — and a cell per decision
+63–66, plus the runner's tally (decision 59 (b)).
 
 **Tests describe the language, not today's compiler.** A scenario the compiler gets wrong stays as
 written and is listed in `expected-failures.txt` with the row of the front that makes it pass. Never
@@ -17,9 +20,9 @@ rewrite a test to match current behaviour.
 | Path | Kind | Passes when |
 |---|---|---|
 | `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` | every test reports `ok` |
-| `run/<name>.bp` + `<name>.out` | a whole program (`pub fn main`), run by `botopink run --target <t>` | exit 0 and stdout equals `.out` byte for byte |
+| `run/<name>.bp` + `<name>.out` | a whole program (`pub fn main`), run by `botopink run --target <t>` | exit 0 and stdout equals `.out` byte for byte — or, with a sidecar, § the sidecars of a `run/` cell |
 | `reject/<name>.bp` + `<name>.expect` | a program that must not compile, run by `botopink check` | exit ≠ 0, stderr contains `.expect` line 1, and ` --> src/main.bp:<line 2>` when line 2 is present |
-| `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>` | exit 0 and stdout equals `expected.out` byte for byte |
+| `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a `deps/` directory inside it is a local library root | exit 0 and stdout equals `expected.out` byte for byte |
 | `expected-failures.txt` | the list of known failures | — |
 | `run.sh` | the runner | — |
 
@@ -31,7 +34,10 @@ Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, �
 `comptime_*` / `decorator_*`, `external_*`, `generic_*`, `string_*` / `array_*`, `type_identity_*`,
 `optional*` (`optional`, and decision 54's `optional_null_pattern` / `optional_variant_pattern`),
 `context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, one test cell, one run
-cell and six reject cells), and the singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
+cell and six reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
+`run/index_past_the_end_fails`, `run/index_at_optional`), `std_erlang_node` (decision 64),
+`panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4), and the
+singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
 `curried_call`, `index_expression`). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
@@ -42,8 +48,35 @@ unparseable annotation hides the other eight.
 The kind for what a single file cannot express: `pub mod`, `import … from "<module>"`, a folder index
 (`shapes/mod.bp`), a private `mod` leaf, and `from "std"` used from a *user* project rather than from
 inside `libs/std`. The directory **is** the project; the runner copies it whole and compares stdout
-with `expected.out`. A cell that needs a git dependency is deliberately out of scope — that is
-`zig build test-libs`' job, and this suite must not need the network.
+with `expected.out`. A cell that needs a **git** dependency is deliberately out of scope — that is
+`zig build test-libs`' job, and this suite must not need the network. A **local** dependency is in
+scope since C-16 (front 12 step 4.2): a `deps/` directory inside the cell is a second project, the
+runner prepends `<cell>/deps` to `BOTOPINK_LIB_ROOTS`, and `"dependencies": ["<lib>"]` in the cell's
+`botopink.json` resolves `deps/<lib>/botopink.json` from disk. `modules/local_dependency` is the one
+cell of that shape: `deps/shapesdsl/` ships `root.bp` (`pub default mod shapesdsl;`), `shapesdsl.bp`
+(`pub default fn … -> @ExprCustom<T>`, the handler returning `e.custom(ast, code)`) and `shapes.d.bp`
+(a record declared in a `.d.bp` listed in `files`); the program does `import shapesdsl, {area, Rect}
+from "shapesdsl"` and expands `shapesdsl "4, 5"` at compile time. Green on all four targets at
+`85f883bd`. A dependency ships only what `files` lists — `root.bp` included, or the handle never
+reaches the consumer.
+
+### The sidecars of a `run/` cell
+
+Three optional files beside `run/<name>.bp`, each a claim the cell makes (C-16, front 12 steps 4.3
+and 4.4). `run.sh`'s usage block is the reference; this is the why.
+
+| Sidecar | Claim | Passes when |
+|---|---|---|
+| `<name>.exit` holding `nonzero` | the program **aborts** after printing `.out` (`@panic`, `@todo`, a failed index under decision 63) | stdout equals `.out` **and** the status is not 0. The number is never pinned: node 1, erl 1, wasmtime 134 are the runtimes' (§ Never pin an erlang exit status) |
+| `<name>.<target>.expect` | on that target the compiler **refuses** the program — `reject/`'s shape, per target | exit ≠ 0 and the diagnostic contains line 1 (and ` --> src/main.bp:<L:C>` when line 2 is present). `run/external_erlang_only.commonJS.expect` and `run/std_erlang_node.{commonJS,wasm}.expect` are the live ones |
+| `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
+
+Any other content in `.exit` is a malformed claim and fails the cell. `.targets` exists for exactly
+one reason today: `run/external_erlang_only.bp` keeps wasm out, because wasm does not refuse a
+host-backed `declare fn` with no wasm host — `wat.zig`'s `lowerPlainCall` lowers it to `unreachable`
+on purpose ("so the module still loads") and the program traps at run time where commonJS, erlang and
+beam answer at compile time. No row in `00-compiler-carry-over` owns that divergence, so it is
+reported here rather than listed against an invented one.
 
 ## The targets
 
@@ -55,6 +88,11 @@ Measured at `c2dd780`, OTP 29, node v25.8.0.
 | erlang | yes | yes | every kind |
 | wasm | refused — "supports only the commonJS and erlang targets" | yes, it executes | `run/` and `modules/` only |
 | beam | refused — the same message | writes `out/*.S` and stops — BEAM Assembly is an artifact, not a run | `run/` and `modules/`, via `--target beam`; **not in `--target all` yet** |
+
+The `run/` sidecars (§ above) apply on every target the cell reaches, beam included: `run.sh`'s beam
+path returns the assembled program's status, so an `.exit` claim is checked there too
+(`run/panic_aborts.bp` and `run/todo_aborts.bp` pass on beam — the second for a different reason,
+§ Notes).
 
 `test/` cells therefore run on commonJS and erlang; `run/` and `modules/` cells run on those two and
 on wasm, and on beam when asked for; `reject/` runs once (target `*`, `botopink check` is
@@ -112,6 +150,27 @@ tests/language/run.sh --target beam                       # opt-in; needs erlc +
 
 A line whose target is not in the current run is skipped, not failed — which is what lets the beam
 rows sit in the file while beam stays out of `--target all`.
+
+**The tally is the runner's, not the header's** — decision 59 (b), landed by C-16 on 2026-09-20.
+Every run prints, before the results, one line recounted from the file:
+
+```
+expected-failures.txt: 67 lines, 53 exercised by --target commonJS,erlang,wasm — by target: erlang 25 · beam 14 · commonJS 13 · * 8 · wasm 7; by first owner row: 01 23 · C-06 15 · C-02 8 · 02 6 · 03 4 · 05 3 · 13 3 · C-18 3 · 04 1 · C-03 1; 7 name tests rather than a path; 13 name a second row
+```
+
+The header of `expected-failures.txt` carries no number any more; it carries the by-hand command
+that reproduces the runner's split (`|` not preceded by `\`; the owner field on `,` outside
+parentheses). The paragraph it replaced read **58 lines** while the file held **55** — two landings
+after it was written, which is the drift decision 59 was taken about. The measurement that goes with
+a commit is quoted in § Status and the gate, with the commit.
+
+**Two owner-row spellings are live.** A 1.0.5-beta front's step (`01 step 4`, `02 (no step; …)`,
+`03 handover 15`, § below) and, since 2026-09-20, a 1.0.10-beta carry-over item of
+`specs/1.0.10-beta/00-compiler-carry-over/README.md` — `C-02`, `C-03`, `C-18`, or
+`C-06 (<backend> half not landed)` when an item lands one backend at a time. C-16 repointed only the
+lines it re-measured (decisions 52/53/55 → C-06) and wrote the new ones against C-NN rows; the other
+1.0.5 lines were **not** repointed wholesale — that is the milestone's first-landing job and it has
+not happened, so `01 step 4` still means `specs/1.0.5-beta/01-checker`.
 
 ### The three shapes of `<key>`, and the `\|` escape
 
@@ -185,6 +244,45 @@ ls reject/*.bp  | wc -l   # 24   (each with its .expect)
 ls -d modules/*/| wc -l   #  3
 find . -name '*.bp' | wc -l   # 95 — 91 cells, plus the 4 extra .bp of the modules/ projects
 ```
+
+**Recounted on disk at C-16's landing (`fix/language-cells`, on `85f883bd`, 2026-09-20):**
+
+```bash
+ls test/*.bp    | wc -l   # 50
+ls run/*.bp     | wc -l   # 23   (each with its .out; 4 with an .exit, 2 with .<target>.expect, 1 with .targets)
+ls reject/*.bp  | wc -l   # 30   (each with its .expect)
+ls -d modules/*/| wc -l   #  4
+find . -name '*.bp' | wc -l   # 114 — 107 cells, plus the 7 extra .bp of the modules/ projects
+```
+
+**107 cells**, 104 besides the three `smoke` files. The difference from the front-19 block below is
+C-16's eight cells, two new area rows and one row grown:
+
+| Area | Cells | Total |
+|---|---|---|
+| an index is a method call (decision 63 as amended; C-02's compiler half open, `libs/std` half landed) | 3 run | 3 |
+| a qualified std host call (decision 64; C-03's erlang half landed, beam half open) | 1 run | 1 |
+| front 12 steps 4.2–4.4: a local dependency, `@panic`/`@todo`, "no external target" | 1 `modules/` + 3 run | 4 |
+
+Measured there — this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 67 lines, 53 exercised by --target commonJS,erlang,wasm — by target: erlang 25 · beam 14 · commonJS 13 · * 8 · wasm 7; by first owner row: 01 23 · C-06 15 · C-02 8 · 02 6 · 03 4 · 05 3 · 13 3 · C-18 3 · 04 1 · C-03 1; 7 name tests rather than a path; 13 name a second row
+language tests: 363 passed, 53 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 67 lines, 22 exercised by --target beam — …the same line…
+language tests: 35 passed, 22 expected failures, 0 failed
+```
+
+From 348 / 45 and 31 / 18 at `85f883bd` before C-16: **+12 lines** (8 `C-02`, 3 `C-18`, 1 `C-03`),
+**15 relabelled** (decisions 52/53/55's erlang, beam and commonJS halves, from `02 step 3` / `02 (no
+step; …)` / `02 step 5` / `03 step 3` / `04 step 3` to `C-06 (<backend> half not landed)`), none
+deleted — `8594e4ba` had already deleted the three wasm lines, and C-16 verified they stay deleted by
+running the cells and the six moved `loop_*` RUN LOGs under wasmtime. The eight new cells pass 15
+results and are listed on 12 (`run/index_dict` ×4, `run/index_past_the_end_fails` ×4,
+`run/index_at_optional` ×3, `run/std_erlang_node` on beam). The pre-C-16 tallies below are the audit
+trail.
 
 **Recounted on disk at the landing of front 19 of 1.0.10-beta (`fix/use-activation`):**
 `ls test/*.bp` **50**, `ls run/*.bp` **16**, `ls reject/*.bp` **30**, `ls -d modules/*/` **3**,
@@ -390,6 +488,19 @@ it means to assert is hidden behind it. The five `loop` cells above read the res
 is what makes `run/loop_yield_then_bare_break.bp` show that **wasm alone already answers decision
 55's fifth row**, as a pass, rather than as a §7 near-miss.
 
+**C-06's wasm half is verified by running, not by reading the diff.** `8594e4ba` landed
+`.tasks/wasm` as-is — the `A...B` range-pattern arm and `emitRangeBound` in `wat.zig`, a value `break`
+as `emitYield` then `br $__break`, six `loop_*` wasm snapshots' RUN LOGs moved (`[20]` where
+`[20, 40, 60]` was), three `expected-failures.txt` lines deleted — without its verification. C-16
+compiled each of the six fixtures' `SOURCE CODE` as a fresh project, ran it with `botopink run
+--target wasm` (wasmtime), and compared stdout with the snapshot's RUN LOG **byte for byte**: all six
+match (`1 2 3 [20]`, `[15]`, `[0]`, `[250]`, `[115.0]`, `[20]`), and `run/case_range_value.bp`,
+`run/loop_yield_then_break_value.bp`, `run/loop_break_value_then_yield.bp` and
+`run/loop_yield_then_bare_break.bp` pass on wasm in the suite, so the three deleted lines stay deleted.
+No defect was found and `wat.zig` was not touched. One note carried from the landing: a range pattern
+over a **string** bound has no wasm ordering and answers `0` (`emitRangeBound`'s `else` arm) — no cell
+asserts it, since decision 53 legislates numeric endpoints only.
+
 **Decision 55 turned a cell that passed on all four backends into one that fails on all four.**
 `test/loop_collection.bp`'s last test asserted `loop ([1, 2, 3]) { x -> break x * 2; }` → `[2, 4, 6]`,
 and every backend agreed, because they share one accumulator shape and none of them stops at a
@@ -398,12 +509,14 @@ is `[2]`; the assertion was rewritten to the language and now carries two lines.
 the top of this file working in the direction it is usually not noticed in: four backends agreeing is
 not evidence, and a decision can make a green cell red.
 
-**Where front 02 has no row for the collection loop.** Decision 55 says outright that the cell comes
-first and "then one row per backend against it". `04 step 3` and `05 step 4` are both titled
-`break <value>` and `03 step 3`'s D7 asks for exactly this measurement, so those three lines name
-steps. Front 02 has no §10 collection-loop step — its step 5 is the *condition* loop used as a value,
-a different shape — so its four lines read `02 (no step; decision 55, reported 2026-09-18)`, the shape
-§ expected-failures.txt documents for a certain front with a missing row. Reported to the maintainer.
+**Where front 02 has no row for the collection loop** — now moot: the rows are C-06's. Decision 55
+says outright that the cell comes first and "then one row per backend against it". `04 step 3` and
+`05 step 4` were both titled `break <value>` and `03 step 3`'s D7 asked for exactly this measurement;
+front 02 had no §10 collection-loop step — its step 5 is the *condition* loop used as a value — so its
+four lines read `02 (no step; decision 55, reported 2026-09-18)`, the shape § expected-failures.txt
+documents for a certain front with a missing row. 1.0.10-beta gathered the three decisions into
+`C-06`, and since 2026-09-20 every 52/53/55 line names `C-06 (<backend> half not landed)`; wasm's
+half is the one that landed.
 
 **Structural equality of two values of the same type is not legislated, so no cell asserts it.**
 `Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS (reference
@@ -422,9 +535,49 @@ body without `#[@context]`), `use-of-non-context-fn` (a `-> string` body, and a 
 decision 87), and `context-anchor-violation`. Green on commonJS, erlang, wasm and beam at the
 landing commit, with no line in `expected-failures.txt`.
 
-What cannot be tested from botopink at all, and why: `pub default mod` / `pub default fn` and
-`@ExprCustom` / `q.custom` (the package handle and the custom-AST carrier are a *dependency*'s
-surface); `.d.bp` files shipped through `botopink.json` `files` (same); "no external target for the
-active backend" (`reject/` runs `check`, which is target-independent); `@typeInfo` / `@makeRecord` /
-`partial` / `omit` / `pick` (they produce types, and asserting on emitted text is the snapshots' job);
-`@panic` / `@todo` (a cell that aborts reports no result through `--json`).
+**Decisions 63–66, one cell or one sentence each (C-16).**
+
+- **63** (an index is a method call, amended 2026-09-19) — `run/index_dict.bp` (present key → `1`;
+  `Dict<string, ?i32>` → `null`; absent key → the program **fails**, `.exit` = `nonzero`),
+  `run/index_past_the_end_fails.bp` (`xs[9]` fails after `10`) and `run/index_at_optional.bp`
+  (`Dict.at` / `String.at` by name answer `?V`, `null` for absent). The first two are C-02 on all four
+  backends — the compiler half is not landed: commonJS answers `undefined` even for the **present**
+  dict key, erlang dies at the present key (`bp_unsupported_index`), wasm traps there, and `xs[9]` is
+  `undefined` / `undefined` / `0` with exit 0. The third passes on commonJS (the `libs/std` half,
+  `e065b564`) and is C-18 (decision 47's `null` spelling) on erlang, wasm and beam. Two more defects
+  it turned up, reported rather than listed: `Array.at` past the end answers `undefined` on commonJS
+  (decision 47, C-18 — kept out of the cell so it would not hide the rename), and `String.at` has **no
+  wasm lowering** — `s.at(1)` traps — which no row owns. The cell C-16 names as
+  `index_an_index_past_the_end_answers_zero` is a `src/codegen/tests` fixture, not a cell of this suite;
+  `run/index_past_the_end_fails.bp` is this suite's statement of the same rule, third spelling.
+- **64** (a wrapper per host-bound std `declare fn`) — `run/std_erlang_node.bp`: `erlang.node()`
+  prints `nonode@nohost` on erlang (C-03's erlang half, `a8db11e4`); commonJS and wasm **refuse** it
+  with `std-unsupported-on-target` (two `.expect` sidecars); beam is `{undef, std@erlang:node/0}`,
+  listed against C-03. A wording defect in passing: the commonJS/wasm diagnostic names
+  `std/erlang.abs` — the module's first declaration — not the function that was called.
+- **65** (the formatter measures width) — **no cell here**, and none can be: the suite runs programs,
+  and decision 65 is about the text `botopink format` writes. Its evidence lives in the formatter's
+  own tests (`modules/compiler-core/src/format/`, C-12's rows). This suite meets it only as a
+  consumer: `deps/shapesdsl/src/shapesdsl.bp`'s `CustomNode(…)` line is broken the way today's
+  formatter breaks it (`fits` stops at the first `concat`), and will be re-broken when C-12 lands.
+- **66** (`format --check` over the whole project) — the three `modules/*` cells decision 66 named as
+  red (`mod_tree`, `std_import`, `two_modules`) are **formatted**: `botopink format` inside each
+  (brace bodies expanded, `import {a, b}` spacing) and `botopink format --check` exits 0 in all four
+  `modules/*` roots and in `deps/shapesdsl`. The cells' output did not move. Nothing in this suite
+  *calls* `format --check` — that caller is C-11's (`scripts/gate.sh`), and `reject/**`'s structural
+  exemption is `format_cmd.zig`'s arm — so the cells can drift again until it lands.
+
+**Two step-4.3 measurements worth keeping.** `@panic` and `@todo` abort with stdout intact and a
+non-zero status on all four backends (`run/panic_aborts.bp`, `run/todo_aborts.bp`, `.exit` =
+`nonzero`), so both cells pass everywhere — but on beam `@todo` passes for the wrong reason: a
+function whose whole body is `@todo()` is **not emitted**, and the abort is `{undef, main:notReady/0}`
+rather than the builtin's. Same observable pair, different cause; reported, no row.
+
+What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord` / `partial` / `omit`
+/ `pick` (they produce types, and asserting on emitted text is the snapshots' job). Struck from this
+list by C-16, each with the cell that covers it: `pub default mod` / `pub default fn`, `@ExprCustom` /
+`q.custom` and `.d.bp` via `files` (`modules/local_dependency`, a local dependency needs no network);
+"no external target for the active backend" (`run/external_erlang_only.bp`, a `run/` cell refused on
+one target through a `.<target>.expect` sidecar — `botopink run --target <t>` is not
+target-independent, which is what `reject/` lacked); `@panic` / `@todo` (`run/` compares stdout **and**
+the status through `.exit`, so an aborting program is exactly what it can assert).

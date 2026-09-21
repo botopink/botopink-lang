@@ -1,0 +1,19 @@
+//// Decision 64 — a *qualified* call to a host-bound std `declare fn`
+//// (`erlang.node()`, through `import { erlang } from "std"`) gets its wrapper and
+//// export on the erlang backend, so `std@erlang:node()` is a function and not an
+//// `undef`. Landed as C-03's erlang half (`a8db11e4`, 2026-09-20).
+////
+//// The value is the node's own name — `nonode@nohost` under a plain `erl` — so
+//// the cell prints it as is. commonJS and wasm **refuse** the program
+//// (`std-unsupported-on-target`, the two `.expect` sidecars): `std/erlang` is
+//// the BEAM's vocabulary and has no `@external` for either.
+////
+//// Measured at `85f883bd`: erlang prints `nonode@nohost`; beam dies at boot
+//// `{undef, [{'std@erlang', node, [], []}, …]}` — the beam twin
+//// (`hostDeclareWrapperNeeded`) is declared and not wired, C-03's beam half.
+
+import { erlang } from "std";
+
+pub fn main() {
+    @print(erlang.node());
+}
