@@ -1,0 +1,8 @@
+//// C-04, N2 — filling a declared default must not silence a real arity error.
+//// `port` has a default and `host` does not, so a call with no arguments at
+//// all is still short of a required one, and it still reds with the arity
+//// message it has always had.
+
+fn connect(host: string, port: i32 = 80) -> string { return host; }
+
+pub fn main() { @print(connect()); }

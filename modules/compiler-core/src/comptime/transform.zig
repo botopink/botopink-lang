@@ -39,6 +39,12 @@ pub const EnumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
 /// Decision 8 §10 — locs of loops inference typed as condition loops.
 pub const ConditionLoops = std.AutoHashMap(ast.Loc, void);
 
+/// C-04 (01 step 7, N1) — map of call sites (by source loc) to the argument
+/// fill inference planned for them. Written whenever a call omitted an argument
+/// whose parameter declares a default; the transform materialises the plan so
+/// every backend sees a complete call and none of them learns a new rule.
+pub const DefaultInjections = std.AutoHashMap(ast.Loc, envMod.DefaultFill);
+
 /// Aggregator: collects specialization info during scan/rewrite phases.
 const Aggregator = struct {
     spec_cache: specialize.SpecCache,
@@ -84,8 +90,12 @@ const Aggregator = struct {
     /// reads them when the callee misses `fn_decls` so `Config(host: "x")`
     /// / `Level.Error("boom")` get their trailing-default fields injected.
     ctor_params: std.StringHashMap([]const ast.Param),
+    /// C-04 — the argument fills inference planned, keyed by call loc. Applied
+    /// by BOTH aggregators, the `src_only` one included: a method body's call
+    /// sites need their defaults as much as a fn body's do.
+    default_injections: *const DefaultInjections,
 
-    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, condition_loops: *const ConditionLoops, ctor_params: std.StringHashMap([]const ast.Param)) Aggregator {
+    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, condition_loops: *const ConditionLoops, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
         return .{
             .spec_cache = specialize.SpecCache.init(allocator),
             .method_lowerings = method_lowerings,
@@ -101,6 +111,7 @@ const Aggregator = struct {
             .comptime_vals = comptime_vals,
             .val_ct_map = std.StringHashMap([]const u8).init(allocator),
             .ctor_params = ctor_params,
+            .default_injections = default_injections,
         };
     }
 
@@ -158,8 +169,9 @@ pub fn transform(
     enum_section_rewrites: *const EnumSectionRewrites,
     condition_loops: *const ConditionLoops,
     ctor_params: std.StringHashMap([]const ast.Param),
+    default_injections: *const DefaultInjections,
 ) !ast.Program {
-    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, condition_loops, ctor_params);
+    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, condition_loops, ctor_params, default_injections);
     defer agg.deinit(allocator);
 
     // The method-body aggregator (`src_only`): the `@src()` splice alone.
@@ -181,7 +193,7 @@ pub fn transform(
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, &empty_sa, &empty_es, &empty_cl, empty_ctor);
+    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, &empty_sa, &empty_es, &empty_cl, empty_ctor, default_injections);
     src_agg.src_only = true;
     defer src_agg.deinit(allocator);
 
@@ -699,6 +711,12 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             }
         }
     }
+    // C-04 — the same fill at statement position (`b.bump();`).
+    if (stmt.expr == .call and stmt.expr.call.kind == .call) {
+        if (agg.default_injections.get(stmt.expr.call.loc)) |fill| {
+            applyDefaultFill(agg, fill, &stmt.expr.call.kind.call) catch return ScanError.OutOfMemory;
+        }
+    }
     switch (stmt.expr) {
         .call => |*c| switch (c.kind) {
             .call => {
@@ -790,6 +808,15 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call and expr_ptr.call.kind.call.is_builtin) {
         if (agg.src_rewrites.get(expr_ptr.call.loc)) |rewrite| {
             expr_ptr.* = rewrite.*;
+        }
+    }
+    // C-04 / 01 step 7 N1 — a call that omitted an argument whose parameter
+    // declares a default. Inference accepted it and planned the fill under this
+    // loc; materialise it HERE, before the method and std-array lowerings, which
+    // reshape the argument list they are handed.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
+        if (agg.default_injections.get(expr_ptr.call.loc)) |fill| {
+            applyDefaultFill(agg, fill, &expr_ptr.call.kind.call) catch return ScanError.OutOfMemory;
         }
     }
     switch (expr_ptr.*) {
@@ -979,6 +1006,47 @@ fn expandTrailingDefaultsWithParams(agg: *Aggregator, params: []const ast.Param,
 
 fn expandTrailingDefaults(agg: *Aggregator, fn_decl: ast.FnDecl, c: anytype) !void {
     return expandTrailingDefaultsWithParams(agg, fn_decl.params, c);
+}
+
+/// C-04 (01 step 7, N1) — materialise the fill inference planned for this call.
+///
+/// The plan has one slot per parameter, in declaration order: the index of the
+/// argument the call wrote, or `null` for a parameter that takes its own
+/// declared default. The rebuilt list is therefore complete and in declaration
+/// order, which is what makes `P(y: 2)` answer `x == 0` on a backend that zips
+/// positionally as well as on one that reads the labels. Injected arguments
+/// carry `is_default_inj`, so teardown skips the `Expr` they point at — it is
+/// the parameter's own, not a copy.
+///
+/// Nothing is trusted: the plan is applied only when it still describes the
+/// call in front of us. Inference wrote it against this very AST, so a mismatch
+/// means something else rewrote the call first, and then the call is left alone.
+fn applyDefaultFill(agg: *Aggregator, fill: envMod.DefaultFill, c: anytype) !void {
+    if (c.args.len >= fill.params.len) return;
+    var written: usize = 0;
+    for (fill.slots) |slot| {
+        const ai = slot orelse continue;
+        if (ai >= c.args.len) return;
+        written += 1;
+    }
+    if (written != c.args.len) return;
+
+    const arena = agg.spec_cache.arena;
+    const ArgT = @TypeOf(c.args[0]);
+    var new_args = try arena.alloc(ArgT, fill.params.len);
+    for (fill.slots, 0..) |slot, pi| {
+        if (slot) |ai| {
+            new_args[pi] = c.args[ai];
+        } else {
+            new_args[pi] = .{
+                .label = null,
+                .value = @constCast(&fill.params[pi].default.?),
+                .comments = &.{},
+                .is_default_inj = true,
+            };
+        }
+    }
+    c.args = new_args;
 }
 
 fn rewriteCall(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), c: anytype) ScanError!void {

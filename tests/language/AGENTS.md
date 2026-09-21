@@ -38,7 +38,7 @@ cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict
 `run/index_past_the_end_fails`, `run/index_at_optional`), `std_erlang_node` (decision 64),
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets), and the
-singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, the two `lambda_*` cells of
+singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults` (with `run/fn_defaults_values`, the VALUE on all four targets, and `reject/missing_required_argument`, N2 — both 1.0.10-beta's C-04), the two `lambda_*` cells of
 1.0.10-beta's `00 · 04-js` — `lambda_expression_body` (a lambda whose whole body is one expression
 answers that expression's value) and `lambda_element_method` (a primitive method on a lambda's
 parameter is the same method it is anywhere else), both measured by emilia's theme front and both
@@ -248,6 +248,54 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
   path that is not a `test/` cell (only a `test/` cell has tests).
 
 ## Status and the gate
+
+**Recounted on disk at C-04's landing (`fix/trailing-defaults`, forked from
+`feat` `6cd50ff2`):**
+
+```bash
+ls test/*.bp    | wc -l   # 52
+ls run/*.bp     | wc -l   # 30
+ls reject/*.bp  | wc -l   # 40
+ls -d modules/*/| wc -l   #  4
+find . -name '*.bp' | wc -l   # 133
+```
+
+C-04 adds two cells and grows a third:
+
+| Area | Cells | Total |
+|---|---|---|
+| a declared parameter default is applied at the call site (1.0.10-beta C-04, 01 step 7, N1 and N2) | 1 run + 1 reject, and `test/fn_defaults.bp` grown from 3 tests to 9 | 2 |
+
+`test/fn_defaults.bp` is the shape claim and runs where `botopink test` runs —
+commonJS and erlang. `run/fn_defaults_values.bp` is the VALUE claim and runs on
+all four targets, because the whole defect was that the declared value never
+arrived: a cell that merely compiles proves nothing. It holds the three shapes a
+default can be declared in — a free `fn`, a record constructor and an instance
+method — and `P(y: 2)` against `type P(x: i32 = 0, y: i32)`, which names the
+required trailing field and omits the leading one that has the default.
+`reject/missing_required_argument.bp` is N2, and it cannot live in the `test/`
+cell: a cell that does not compile asserts nothing.
+
+**Its two `expected-failures.txt` lines are gone** — `commonJS | test/fn_defaults.bp`
+and `erlang | test/fn_defaults.bp`, both `01 step 7` — and the file is 66 lines
+where it was 68. Nothing else in it moved.
+
+Measured there — this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0 —
+against the same two commands run at the fork with the branch stashed:
+
+```
+                                    at the fork       at C-04
+$ tests/language/run.sh             401 / 53 / 0      423 / 51 / 0
+$ tests/language/run.sh --target beam 49 / 23 / 0      51 / 23 / 0
+$ zig build test-libs                21 / 0 / 0        21 / 0 / 0
+```
+
+The `--target all` difference is +22 passed and −2 expected, and it accounts for
+itself exactly: a `test/` cell's result is one per NAMED TEST, so
+`test/fn_defaults.bp` going from two expected-failure lines to nine passing tests
+on two targets is +18 and −2; `run/fn_defaults_values.bp` is +3 (commonJS,
+erlang, wasm) and `reject/missing_required_argument.bp` is +1 (it runs once per
+invocation, so it is the +1 on beam too, alongside the run cell's).
 
 **Recounted on disk at front 20's landing (`fix/effect-chain`, merged onto
 `78509dfa`):**

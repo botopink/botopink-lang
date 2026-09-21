@@ -143,10 +143,6 @@ erlang   | run/display_print.bp       | 02 step 1, 13 step 18 | §7: `@print` do
 
 # ── §8 host externals ─────────────────────────────────────────────────────────
 
-# ── trailing parameter defaults ───────────────────────────────────────────────
-commonJS | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
-erlang   | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
-
 # ── primitive methods ─────────────────────────────────────────────────────────
 erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
 
