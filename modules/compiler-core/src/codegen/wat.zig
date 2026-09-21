@@ -2247,9 +2247,12 @@ const Emitter = struct {
             try self.deferred_globals.append(self.alloc, v);
             return;
         }
+        // A `var` (front 17 step 2) is a mutable global on every path: the two
+        // constant paths below declared an immutable one, which `global.set`
+        // does not validate against.
         if (self.folded_globals.get(v.name)) |text| {
             if (isNumericLiteral(text)) {
-                try self.item(.{ .global = .{ .name = v.name, .ty = vt(t), .init = text } });
+                try self.item(.{ .global = .{ .name = v.name, .ty = vt(t), .mutable = v.mutable, .init = text } });
                 return;
             }
             if (quotedString(text)) |str| {
@@ -2275,6 +2278,7 @@ const Emitter = struct {
                         .name = v.name,
                         .exports = if (v.isPub) try self.arena().dupe([]const u8, &.{v.name}) else &.{},
                         .ty = vt(t),
+                        .mutable = v.mutable,
                         .init = n,
                     } });
                     return;
