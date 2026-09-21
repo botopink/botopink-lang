@@ -10,6 +10,17 @@ val Point = type(x: i32, y: i32)
 %% type Point: x, y
 ```
 
+----- ERLANG -- main__t__point.erl
+```erlang
+-module(main__t__point).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, x) -> element(2, V);
+'__bp_get'(V, y) -> element(3, V).
+
+'__bp_format'(V) -> {record, "Point", [{"x", element(2, V)}, {"y", element(3, V)}]}.
+```
+
 ----- RUN LOG -----
 ```logs
 ```

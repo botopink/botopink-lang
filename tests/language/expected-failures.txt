@@ -116,7 +116,6 @@ erlang   | test/case_unknown.bp       | 01 step 4, 01 step 1, 01 step 3 | arm bo
 *        | reject/case_arity_without_rest.bp     | 01 step 4 | rejected for the wrong reason: the missing-field diagnostic is not there
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
-erlang   | run/tuple_print.bp         | 02 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 commonJS | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 04 step 2 | a label is resolved to a position at the written type, and an element handed back by a generic method (`rs.at(0)`) has lost it: `rs.at(0).b` answers `undefined`. The element type is right, the label is not carried
 erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 02 step 4 | the same, louder: `rs.at(0).b` raises `bad map: {1,<<"x">>}` in `map_get/2` — the label is emitted as a map read against a tuple. (wasm answers `0`; no `test/` cell reaches wasm)
 
@@ -127,8 +126,6 @@ erlang   | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section 
 # ── §7 the formatter ──────────────────────────────────────────────────────────
 # The record and variant rows of §7's table need a value that knows its own type,
 # which is 13 step 18; each backend's step 1 closes the separator half only.
-erlang   | run/print_formatter.bp     | 02 step 1, 13 step 18 | §7 formatter: arrays/tuples print without spaces, records as maps, variants as raw tags
-erlang   | run/display_print.bp       | 02 step 1, 13 step 18 | §7: `@print` does not consult a type's `Display` implementation, nested or not
 
 # ── §9 effects ────────────────────────────────────────────────────────────────
 *        | reject/wrapper_without_annotation.bp | 01 step 8 | R9: `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
@@ -177,12 +174,10 @@ erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell d
 # no second row any more: with front 01's step 4 written and measured (in its own
 # tree, not on `feat` yet) `test/type_identity_case.bp` compiles, and the two lines
 # it carries are `13 step 17` outright.
-erlang   | test/type_identity.bp::§4 two types with the same fields are different values | 13 step 15 | a record is a bare map on erlang, so `Person(name: "Ana", age: 30)` and `Vec(name: "Ana", age: 30)` are the same term and compare equal; the tag has to be in the value. Passes on commonJS, where a record is a class instance
 erlang   | test/type_identity_unknown.bp | 01 step 1, 13 step 17 | the same — "type mismatch: expected unknown, got Vec"
 erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "type mismatch: expected \|, got Person" (the diagnostic prints the bare union operator; escaped here, or the reason would be read as two fields)
 commonJS | test/type_identity_case.bp::§5.1 a case over a union of two named types needs no wildcard ;; §3.3 the arm is chosen by the value's own type | 13 step 17 | re-measured by front 01 in its step-4/5 tree on 2026-09-19: the cell compiles — the arm body is unwrapped — and what is left is identity, not the checker. A `case` arm that names a type has to dispatch on the value's own type, which needs the tag in the value, so `01 step 4` is off this line
 erlang   | test/type_identity_case.bp::§3.3 the arm is chosen by the value's own type | 13 step 17 | the same, and one test fewer: with the cell compiling, `§5.1 a case over a union of two named types needs no wildcard` passes on erlang and only the §3.3 arm-by-own-type row is left. `01 step 4` is off this line
-erlang   | run/type_identity_print.bp | 02 step 1, 13 step 18 | §7: a record prints `#{x => 1,y => 2}`, a variant `{'Circle',4}` / `'Dot'`, and an array without spaces
 wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Point(x: 1, y: 2))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. The `256` / `264` / `268` heap addresses this line used to name are gone
 beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang shapes seen from BEAM assembly — a record as a map, a variant as a tagged tuple or a bare atom
 

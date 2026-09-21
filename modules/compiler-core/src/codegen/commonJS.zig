@@ -1310,7 +1310,7 @@ const Emitter = struct {
         const lw = self.lowerings orelse return null;
         const type_name = switch (lw.get(loc) orelse return null) {
             .type_ => |n| n,
-            .prim => return null,
+            .prim, .field_of => return null,
         };
         if (self.imported_enums.contains(type_name)) return type_name;
         var buf: [256]u8 = undefined;
@@ -3568,7 +3568,7 @@ const Emitter = struct {
                             .string => "String",
                             else => break :blk null,
                         },
-                        .type_ => break :blk null,
+                        .type_, .field_of => break :blk null,
                     };
                     const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
                     for (iface.methods) |m| {
@@ -3682,7 +3682,7 @@ const Emitter = struct {
         const il = lw.get(loc) orelse return null;
         const kind = switch (il) {
             .prim => |k| k,
-            .type_ => return null,
+            .type_, .field_of => return null,
         };
         const receiver: jsPrelude.Receiver = switch (kind) {
             .string => .string,

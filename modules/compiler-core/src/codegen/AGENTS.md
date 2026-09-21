@@ -826,17 +826,38 @@ codegen/
   `%%`, `////` → `%%%`, `commentNode`), and the `%%` notes the backend writes
   (declaration headers, `continue`, unsupported field assignment) carry only
   their text.
-- **Records are maps**: constructors lower to `#{field => V, …}` (positional args
-  use the declared field order from `collectTypeShapes`); field access is
-  `maps:get(field, Recv)`; tuple index `t._N` and the bare `t.N` → `element(N+1, T)`. No `-record`
-  declarations are emitted. Optional chaining `?.` guards on `undefined` via an
-  immediate fun. A record destructuring (`val { x, y } = p`, a `{ name, .. }`
-  parameter, a `try` head) is therefore the exact map pattern
-  `#{x := X, y := Y}` (`destructPatternExpr`) — keys it does not name are
-  ignored, so `..` adds nothing; `#(a, b)` stays a tuple pattern. The names bind
-  through `patternBindVar` (versioned when already bound).
-- **Enums**: `Order.Lt` → the variant atom; `Color.Rgb(r, g, b)` →
-  `{'Rgb', R, G, B}`. A bare `.ident` case pattern is the atom when it names a
+- **A record is a tagged tuple** (13-module-identity half 3, decision 21's T2):
+  a constructor lowers to `{TypeAtom, F1, …, Fn}`, the fields in the DECLARED
+  order from `collectTypeShapes`, a field the call does not fill `undefined`, and
+  `TypeAtom` is `crossModule.typeAtom` of the module that DECLARES the type
+  (`typeOwnerPath` → `recordTagAtom`), so a consumer building an imported record
+  writes the owner's atom. Two types with the same fields are therefore two
+  terms — `Person(name:"a",age:1) == Vec(name:"a",age:1)` answers `false`, where
+  a bare map answered `true`. Field access is `element(N + 1, Recv)` whenever the
+  receiver's type can be placed — inference's `InstanceLowering.field_of`, `self`
+  inside the type's own module, or the one record declaring the name
+  (`recordTypeOfReceiver`) — and `'__bp_field'(Recv, name)` when it cannot, which
+  asks the tag's module (`'__bp_get'/2`) at run time and keeps the `maps:get` for
+  a map receiver (a `@Behavior(…)` literal, a `Dict`). Tuple index `t._N` and the
+  bare `t.N` → `element(N+1, T)`. No `-record` declarations are emitted. Optional
+  chaining `?.` guards on `undefined` via an immediate fun. A record
+  destructuring (`val { x, y } = p`, a `{ name, .. }` parameter, a `try` head) is
+  the tuple pattern `{TypeAtom, X, Y, _}` (`destructPatternExprOf`) — the slots
+  it does not name are `_`, so `..` adds nothing; the record is the parameter's
+  written type, else the one record declaring every named field
+  (`recordOfDestruct`), and a program where neither answers keeps the map pattern
+  it had. `#(a, b)` stays a tuple pattern. The names bind through
+  `patternBindVar` (versioned when already bound). **A comptime module keeps the
+  map shape** everywhere (`Emitter.untyped`): its values never leave the build.
+- **Enums**: `Order.Lt` → the variant atom, `Color.Rgb(r, g, b)` →
+  `{VariantAtom, R, G, B}`, and since half 3 the tag is
+  `crossModule.variantAtom` — the enum's type atom plus `__v__` plus the variant,
+  `main__t__shape__v__circle` — rendered against the module that declares the
+  ENUM. `variantTag` is the one choke point (constructor, `case` pattern, guard
+  and the `.Variant` shorthand all go through it); `variant_enum` gives the enum
+  back from a bare `.Circle`, and a variant this module cannot place (a comptime
+  host enum) keeps the bare name. `Ok`/`Err` keep the `@Result` runtime tags.
+  A bare `.ident` case pattern is the atom when it names a
   known variant (`enum_variants`), else a variable. `enum_variants` also holds
   the variants of every `pub enum` the module imports — by name, or with its
   module (`import {order} from "std"` brings `std/order`'s `Lt`/`Eq`/`Gt`);
@@ -953,15 +974,28 @@ codegen/
   as `'__bp_show'(V, true)` renders it, joined by a space, then `~n`. The text is
   picked at run time: a top-level binary is its text (`hi`, not `<<"hi">>`); a
   nested binary is quoted with the source escapes (`"say \"hi\""`); a list is
-  `[E1,E2]` and a tuple `#(E1,E2)`, no spaces; a tuple opened by an atom other than
-  `true`/`false`/`undefined` (an enum variant `{'Circle', R}`, a Result `{ok, V}`)
-  and every other term keep `~p` — records, enums and maps are not decided by 1a.
-  A plain tuple whose first element is a payload-less enum variant (an atom) is
-  therefore printed as `~p` too. Numeric formatting stays divergent by design:
-  `~p` of `1.0` is `1.0` where commonJS writes `1`.
-- **Cross-module**: an imported record joins `record_fields` + `imported_types`
-  (`collectImportedTypes`), so construction inlines the owner's map shape
-  (records are maps — there is no constructor function to call remotely) and
+  `[E1, E2]` and a tuple `#(E1, E2)` — decision 8 §7's one separator, `", "`.
+  **A value that knows its own type prints as the source writes it** (§7, half 3):
+  a tagged tuple and a bare atom both reach `'__bp_tagged'/2`, which cuts any
+  `__v__` segment off the tag to get the declaring module, and — only when that
+  module is loadable and exports `'__bp_format'/1` — renders what it answers
+  through `'__bp_render'/1`: `{record, "Point", [{"x", 1}, …]}` →
+  `Point(x: 1, y: 2)`, `{variant, "Shape.Dot", []}` → `Shape.Dot`, and
+  `{text, …}` → a `Display` implementation's own string, nested containers
+  included. Everything else — a Result `{ok, V}`, a host tuple, a plain atom,
+  `true`/`false`/`undefined` — keeps the `~p` it had. Numeric formatting stays
+  divergent by design: `~p` of `1.0` is `1.0` where commonJS writes `1`.
+- **Every `type` has a module, and it answers about its own values** (half 3):
+  `recordIdentityForms` / `enumIdentityForms` put `'__bp_format'/1` — and
+  `'__bp_get'/2` for a record with fields — into the unit `openTypeUnit` opened,
+  so a `type` that declares no method is still a module: the tag has to name
+  something loadable for `'__bp_tagged'` to reach the formatter. A type whose
+  declaration carries a one-parameter `display` (decision 8 §7's `Display`)
+  formats as `{text, display(V)}`.
+- **Cross-module**: an imported record joins `record_fields` + `imported_types` +
+  `type_owner_path` (`collectImportedTypes`), so construction inlines the owner's
+  tuple shape carrying the OWNER's atom (there is no constructor function to call
+  remotely) and
   `Response.ok(…)` calls into the owner module atom (`http:ok(…)`); the owner
   exports a `pub` type's associated fns when another module imports it, and a
   `pub implement`/`extend` another module activates (`import {PatoNada*} …`) is

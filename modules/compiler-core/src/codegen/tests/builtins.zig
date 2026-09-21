@@ -546,7 +546,7 @@ test "erlang: src ---- run log" {
         \\    @print(@src().line);
         \\    @print(@src().column, @src().fnName);
         \\}
-    , "2\n12 main\n", &.{ "line => 2", "column => 12", "fnName => <<\"main\">>" });
+    , "2\n12 main\n", &.{ ", 2, 12, <<\"main\">>}", ", 3, 12, <<\"main\">>}", ", 3, 27, <<\"main\">>}" });
 }
 
 test "js: src ---- with an argument is refused" {

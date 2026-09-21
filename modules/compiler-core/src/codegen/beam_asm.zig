@@ -2138,7 +2138,7 @@ const Emitter = struct {
                 .ident => |n| nums.get(n) orelse self.num_names.get(n),
                 .identAccess => |ia| if (self.instanceLowering(id.loc, ia.receiver.*)) |il| switch (il) {
                     .prim => .int,
-                    .type_ => null,
+                    .type_, .field_of => null,
                 } else null,
                 else => null,
             },
@@ -3741,6 +3741,8 @@ const Emitter = struct {
                         } else |_| {}
                     } else |_| {}
                 },
+                // A field READ never reaches the call path.
+                .field_of => {},
             };
             // §D2 — `"std"` package qualified call: a lowercase receiver naming
             // an imported std module (`math`, `path`, …) lowers to a remote
@@ -7435,7 +7437,7 @@ const Emitter = struct {
                 }
                 return;
             },
-            .type_ => {},
+            .type_, .field_of => {},
         };
 
         try self.lowerExprIntoX0(ia.receiver.*);

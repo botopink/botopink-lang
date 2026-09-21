@@ -4492,7 +4492,7 @@ const Emitter = struct {
         const il = self.instance_lowerings.get(loc) orelse return null;
         return switch (il) {
             .prim => |k| k,
-            .type_ => null,
+            .type_, .field_of => null,
         };
     }
 
@@ -6033,7 +6033,7 @@ const Emitter = struct {
         const il = self.instance_lowerings.get(loc) orelse return null;
         const rec = switch (il) {
             .type_ => |r| r,
-            .prim => return null,
+            .prim, .field_of => return null,
         };
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
         if (!self.fn_sigs.contains(sym)) return null;

@@ -31,20 +31,25 @@ val HttpMethod = type {
 ----- ERLANG -- main__t__httpmethod.erl
 ```erlang
 -module(main__t__httpmethod).
--export([name/1]).
+-export([name/1, '__bp_format'/1]).
 
 name(M) ->
     Label = case M of
-        'Get' ->
+        main__t__httpmethod__v__get ->
             <<"GET">>;
-        'Post' ->
+        main__t__httpmethod__v__post ->
             <<"POST">>;
-        'Put' ->
+        main__t__httpmethod__v__put ->
             <<"PUT">>;
         _ ->
             <<"DELETE">>
     end,
     Label.
+
+'__bp_format'(main__t__httpmethod__v__get) -> {variant, "HttpMethod.Get", []};
+'__bp_format'(main__t__httpmethod__v__post) -> {variant, "HttpMethod.Post", []};
+'__bp_format'(main__t__httpmethod__v__put) -> {variant, "HttpMethod.Put", []};
+'__bp_format'(main__t__httpmethod__v__delete) -> {variant, "HttpMethod.Delete", []}.
 ```
 
 ----- RUN LOG -----

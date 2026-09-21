@@ -25,10 +25,25 @@ pub type App(
 ----- ERLANG -- http__t__response.erl
 ```erlang
 -module(http__t__response).
--export([ok/1]).
+-export([ok/1, '__bp_get'/2, '__bp_format'/1]).
 
 ok(Body) ->
-    #{body => Body}.
+    {http__t__response, Body}.
+
+'__bp_get'(V, body) -> element(2, V).
+
+'__bp_format'(V) -> {record, "Response", [{"body", element(2, V)}]}.
+```
+
+----- ERLANG -- http__t__app.erl
+```erlang
+-module(http__t__app).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, port) -> element(2, V);
+'__bp_get'(V, path) -> element(3, V).
+
+'__bp_format'(V) -> {record, "App", [{"port", element(2, V)}, {"path", element(3, V)}]}.
 ```
 
 ----- RUN LOG -----
@@ -56,19 +71,28 @@ fn main() {
 
 main() ->
     R = http__t__response:ok(<<"hi">>),
-    '__bp_print'([maps:get(body, R)]),
-    A = #{port => 8080, path => <<"/">>},
-    '__bp_print'([maps:get(port, A)]).
+    '__bp_print'([element(2, R)]),
+    A = {http__t__app, 8080, <<"/">>},
+    '__bp_print'([element(2, A)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
 
 '__bp_show'(V, true) when is_binary(V) -> V;
 '__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(",", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> io_lib:format("~p", [V]);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(",", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
+'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'__bp_tagged'(A, V) ->
+    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+
+'__bp_render'({text, T}) -> T;
+'__bp_render'({variant, N, []}) -> N;
+'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
 '_botopink_main'() ->
     main().

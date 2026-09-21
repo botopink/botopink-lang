@@ -16,10 +16,22 @@ fn lineNo() -> i32 {
 %% type Span: start, end, line
 
 span() ->
-    #{start => 4, 'end' => 9, line => 2}.
+    {main__t__span, 4, 9, 2}.
 
 lineNo() ->
-    maps:get(line, span()).
+    element(4, span()).
+```
+
+----- ERLANG -- main__t__span.erl
+```erlang
+-module(main__t__span).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, start) -> element(2, V);
+'__bp_get'(V, 'end') -> element(3, V);
+'__bp_get'(V, line) -> element(4, V).
+
+'__bp_format'(V) -> {record, "Span", [{"start", element(2, V)}, {"end", element(3, V)}, {"line", element(4, V)}]}.
 ```
 
 ----- RUN LOG -----

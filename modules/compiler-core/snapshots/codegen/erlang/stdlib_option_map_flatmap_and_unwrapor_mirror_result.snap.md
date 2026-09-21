@@ -34,6 +34,16 @@ greet(P) ->
 '__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 ```
 
+----- ERLANG -- main__t__person.erl
+```erlang
+-module(main__t__person).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, name) -> element(2, V).
+
+'__bp_format'(V) -> {record, "Person", [{"name", element(2, V)}]}.
+```
+
 ----- RUN LOG -----
 ```logs
 ```
