@@ -1,0 +1,20 @@
+//// Decision 90 leaves R5 unamended: one effect annotation per fn, so the
+//// server-component pair cannot be spelled. This is why the wrapper effect has
+//// to activate on its own — `#[@future] fn Page() -> @Future<Element>` needs no
+//// `#[@context]`, and may not carry one.
+////
+//// The `.expect` claims the message only: R5's caret points at the body's `{`
+//// rather than at the second annotation, and that drift is already owned by
+//// `reject/two_effect_markers.bp`'s row in `expected-failures.txt` (01 step 8).
+
+type Element(count: i32) implement @Context<Element, Element>
+fn state(initial: i32) -> @Context<Element, i32> { return initial; }
+
+#[@future]
+#[@context]
+fn Page() -> @Future<Element> {
+    val n = use state(0);
+    return Element(count: n);
+}
+
+pub fn main() { @print(0); }

@@ -2,7 +2,7 @@
 //// method called on the imported type.
 
 pub mod geometry;
-import { Point, origin } from "geometry";
+import {Point, origin} from "geometry";
 
 pub fn main() {
     @print(Point(x: 1, y: 2).norm());

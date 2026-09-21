@@ -13,6 +13,10 @@
 //// Two backends never take the arm and one always takes it, so the single-value
 //// probe decision 53 quotes (`case 9 …` → 1 / 0 / 256) reads beam's answer as
 //// right when it is a false positive. The endpoints are what separates the three.
+////
+//// Re-measured at `85f883bd` (2026-09-20), after C-06's wasm half (`8594e4ba`, the
+//// `A...B` arm in `wat.zig`): **wasm answers `1 1 1 0 0`** and its line is gone.
+//// erlang and beam are unchanged; their lines name `C-06 (<backend> half not landed)`.
 
 pub fn main() {
     @print(case 5 { 1...9 { 1 } _ { 0 } });

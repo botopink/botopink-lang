@@ -1,8 +1,12 @@
 pub mod circle;
 mod helpers;
-import { name } from "shapes.circle";
-import { seven } from "shapes.helpers";
+import {name} from "shapes.circle";
+import {seven} from "shapes.helpers";
 
-pub fn describe() -> string { return name(); }
+pub fn describe() -> string {
+    return name();
+}
 
-pub fn lucky() -> i32 { return seven(); }
+pub fn lucky() -> i32 {
+    return seven();
+}
