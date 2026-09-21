@@ -2,8 +2,13 @@
 #
 #   <target: commonJS | erlang | wasm | beam | *> | <key> | <owner row> | <reason>
 #
-# Every line names the row of the front that makes it pass. `*` is for reject/
-# files (target-independent).
+# Every line names the row that makes it pass. `*` is for reject/ files
+# (target-independent). Two row spellings are live: a 1.0.5-beta front's step
+# (`01 step 4`, `02 (no step; …)`, `03 handover 15` — `specs/1.0.5-beta/`) and a
+# 1.0.10-beta carry-over item (`C-02`, `C-06 (erlang half not landed)` —
+# `specs/1.0.10-beta/00-compiler-carry-over/README.md`). The 1.0.5 lines have not
+# been repointed wholesale; C-16 repointed only the lines it re-measured
+# (decisions 52/53/55 → C-06) and wrote the new ones against C-02, C-03 and C-18.
 #
 # **`<key>` has three shapes, and which shape it is *is* part of the claim.** One
 # example of each, and all three are live in this file:
@@ -60,40 +65,19 @@
 # Checked at `b09bf9c6`: the spelling survives in this comment and in no owner
 # cell, and 04's five lines are `04 step 2` (1) and `04 step 3` (4).
 #
-# Measured on `feat` after fronts 12, 13 and 05 merged (13's half 1 renames three std
-# module atoms and its runner reaches every module; 12 added the decision-52/53/54/55
-# cells; 05 landed §7's separator and decision 52's wasm row), node v25.8.0, OTP 29,
-# `zig version` 0.16.0:
-# Re-run after the six lines below were converted to the named-test shape: **byte for
-# byte the same two lines**, which is what a shape change must cost.
+# **The tally is not kept here.** `run.sh` recounts this file on every run and
+# prints one line before the results:
 #
-#   $ tests/language/run.sh                 # commonJS, erlang, wasm
-#   language tests: 270 passed, 64 expected failures, 0 failed
-#   $ tests/language/run.sh --target beam
-#   language tests: 19 passed, 23 expected failures, 0 failed
+#   expected-failures.txt: N lines, M exercised by --target … — by target: …;
+#   by first owner row: …; K name tests rather than a path; S name a second row
 #
-# Re-measured on `fix/checker` after front 01's steps 4 and 5 and, with front 02's
-# `fe87db51` merged under them, again (the two runs above stand as front 12's
-# measurement of `feat`):
-#
-#   $ tests/language/run.sh                 # commonJS, erlang, wasm
-#   language tests: 324 passed, 48 expected failures, 0 failed
-#   $ tests/language/run.sh --target beam
-#   language tests: 24 passed, 18 expected failures, 0 failed
-#
-# 314 → 324 and 52 → 48 between the two, and the two numbers move by different
-# amounts on purpose: deleting the four lines takes 4 off the expected count and
-# puts **10** named tests into the passing count, because the runner counts a
-# listed test once per name and a line once per line. Measured, not derived — the
-# first draft of this paragraph reasoned it out as "314 either way" and was wrong.
-#
-# **How the paragraph below is kept, and it is a rule, not a habit**
-# (decision 59 of `specs/1.0.5-beta/decisions-taken.md` in the meta workspace,
-# taken 2026-09-18):
-# whoever deletes a line from this file **recounts these numbers from the file**,
-# with a command, and never adjusts them by their own delta. Seven fronts share
-# the file and five deleted lines from it on one day; two of them re-tallied from
-# different baselines and were individually right and jointly wrong. The command:
+# That is decision 59 (b) of `specs/1.0.5-beta/decisions-taken.md` (2026-09-18,
+# landed by C-16 on 2026-09-20): a number seven fronts keep by hand in one file
+# drifts — the paragraph that used to sit here read 58 lines while the file held
+# 55, two landings after it was written. The runner's split is the file's: `|`
+# only where not escaped (`\|`), and the owner field on `,` outside parentheses,
+# so `02 (no step; decision 55, reported 2026-09-18)` is **one** row. The same
+# count by hand, when a reader wants to check the runner:
 #
 #   $ python3 - <<'EOF'
 #   import re
@@ -109,82 +93,11 @@
 #   print(len(d), dict(t), sorted(f.items()), second)
 #   EOF
 #
-# Both splits in that command are deliberate and both were wrong before this front
-# re-derived them.
-#   * `re.split(r'(?<!\\)\|', l)` and not `l.split('|')`, because a test name may
-#     carry an escaped `|`; a plain split miscounts that line's fields and, with
-#     them, its owner row. `run.sh` splits the same way.
-#   * `re.split(r',(?![^(]*\))', p[2])` and not `p[2].split(',')` for the owner
-#     field, because a comma inside a parenthesised cell is not a second row:
-#     `02 (no step; decision 55, reported 2026-09-18)` is **one** row, and the
-#     plain split read the four lines carrying it as naming two. That is the whole
-#     difference between the 20 a plain split answers and the 16 below.
-#
-# Re-derived from the file after every merge, never from either side's paragraph:
-# when fronts 12 and 13 merged, both sides' numbers were stale and the two
-# disagreed on the totals and on 13's share.
-#
-# **58 lines**: 48 exercised by `--target all`, 10 more only by `--target beam`
-# (the 8 `*` reject lines are counted by both runs). 7 of the 58 name tests
-# rather than a path. By the row that comes first on the line:
-# 01-checker 23 · 02-erlang 12 · 03-beam 9 · 05-wasm 6 · 04-js 5 ·
-# 13-module-identity 3. **13** lines name a second row that has to land before
-# the line goes (the §7 formatter's record and variant halves are 13 step 18, not
-# a backend's). Re-derived from the merged file on 2026-09-19 with the command
-# above, after front 02's `fe87db51` landed erlang's three `patternNode` defects
-# under front 01's committed step 4: the four `erlang | test/case_*.bp` lines are
-# gone, all **20** of the tests they named pass, and the four `::` keys that made
-# those tests nameable in the first place existed for about six hours. That is the
-# whole difference from the 62 below — 02's share 16 → 12, named-test lines 11 → 7 —
-# and it is the shape doing exactly what it was added for: a cell whose checker row
-# and whose backend row land hours apart is described honestly at every hour.
-#
-# Superseded, kept because the arithmetic between them is the audit trail:
-#
-# > **62 lines**: 52 exercised by `--target all`, 10 more only by `--target beam`
-# > (the 8 `*` reject lines are counted by both runs). 11 of the 62 name tests
-# > rather than a path. By the row that comes first on the line:
-# > 01-checker 23 · 02-erlang 16 · 03-beam 9 · 05-wasm 6 · 04-js 5 ·
-# > 13-module-identity 3. **13** lines name a second row … Re-derived from the
-# > merged file on 2026-09-19 with the command above, after front 01 committed its
-# > steps 4 and 5 and deleted the 13 lines they make pass: 5
-# > `commonJS | test/case_*.bp`, `run/case_values.bp` on all four targets, and 4
-# > `* | reject/case_*.bp`. That is the whole difference from the 75 below, and it
-# > is why 01's share drops 36 → 23 and the second-row figure 16 → 13.
-#
-# > **75 lines**: 64 exercised by `--target all`, 11 more only by `--target beam`
-# > (the 12 `*` reject lines are counted by both runs — which is why 64 and 23 are
-# > what the two runs above report). 11 of the 75 name tests rather than a path.
-# > By the row that comes first on the line:
-# > 01-checker 36 · 02-erlang 16 · 03-beam 9 · 05-wasm 6 · 04-js 5 ·
-# > 13-module-identity 3. **16** lines name a second row … Re-derived from the
-# > merged file on 2026-09-19 with the command above — 77 of them were front 12's
-# > tree, and front 05's landing then took `run/tuple_print.bp` and
-# > `run/loop_condition_no_break.bp`, which is the whole difference and also why
-# > 05's own share reads 6 rather than 8.
-#
-# Two movements are in those tallies and neither is a line leaving or arriving.
-# The fronts 12 × 13 merge took 80 lines to 77, and front 05's landing then took
-# 77 to 75: front 13's half 1 deleted the
-# three `modules/*` erlang rows its runner fixed. Then front 01 proved six owner
-# cells wrong — its step 4 does unwrap a lambda arm body and does resolve a
-# `.Variant` arm — so four `erlang | test/case_*.bp` lines moved from `01 step 4`
-# to `02 step 3` and the two `test/type_identity_case.bp` lines to `13 step 17`
-# alone: 42 → 36, 12 → 16, 1 → 3, and 19 → 16, because three of the six shed a
-# second row they no longer need. The second-row figure moved twice, and only once
-# for that reason: split on every comma the file answered 23 before and 20 after,
-# and both over-count the four `02 (no step; decision 55, …)` lines by one row
-# each. Paren-aware it is 19 before and **16** after. The 23 → 19 half of that is
-# the command being fixed, not a line moving.
-#
-# The sub-claim decision 59 flagged as stale — "24 lines name a second row" —
-# was already 19 at `b5a9b85d` and re-derives to 19 there. Nothing else in the
-# paragraph was stale: 56 lines / 51 / 5 and 37 · 6 · 4 · 4 · 4 · 1 all
-# re-derived exactly at `b5a9b85d`.
-#
-# For the record, since it changed inside this milestone: 04-js went to **zero**
-# lines when `c253965`, `7b6b5d3` and `17c5f8b` deleted all seven it had; the
-# five it carries now are rows measured after that, not survivors.
+# The measurement that goes with a commit — the runner's tally line and its
+# `language tests: … passed, … expected failures, 0 failed` on `--target all`
+# and on `--target beam` — is quoted in AGENTS.md § Status and the gate, with the
+# commit it was run at. Whoever deletes a line runs the suite and re-quotes it
+# there; nobody edits a number.
 
 # ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is closing ──
 # `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
@@ -292,11 +205,13 @@ beam     | run/display_print.bp       | 03 step 2, 13 step 18 | §7: `@print` do
 # pattern, `..` exclusive in a slice and a range, and no emitter moves. The
 # defect that survives the amendment is that `1...9` answers three different
 # things. `run/case_range_value.bp` probes the endpoints, which is what separates
-# them: erlang and wasm never take the arm and beam always takes it, so the
+# them: erlang never takes the arm and beam always takes it, so the
 # single-value probe decision 53 quotes reads beam's `1` as correct when it is a
-# false positive. commonJS passes.
-erlang   | run/case_range_value.bp     | 02 step 3 | decision 53: the `1...9` arm never matches — all five probes (5, 1, 9, 0, 10) answer the `_` arm's `0`
-beam     | run/case_range_value.bp     | 03 step 3 | decision 53: the opposite — the `1...9` arm **always** matches, so 0 and 10 answer `1` too. beam does run (run.sh § beam assembles and executes it); "beam emits only out/main.S" is no longer the measurement (D4, `case` arms)
+# false positive. commonJS passes, and **wasm passes since `8594e4ba`** (C-06's
+# wasm half: the `A...B` arm in `wat.zig`, verified by running at `361d255d`:
+# `1 1 1 0 0`). The two lines left are C-06's erlang and beam halves.
+erlang   | run/case_range_value.bp     | C-06 (erlang half not landed) | decision 53: the `1...9` arm never matches — all five probes (5, 1, 9, 0, 10) answer the `_` arm's `0`
+beam     | run/case_range_value.bp     | C-06 (beam half not landed) | decision 53: the opposite — the `1...9` arm **always** matches, so 0 and 10 answer `1` too. beam does run (run.sh § beam assembles and executes it); "beam emits only out/main.S" is no longer the measurement (D4, `case` arms)
 
 # ── §10 `yield` beside `break` in a collection loop (decision 55) ─────────────
 # Decision 55, taken 2026-09-18: `break <value>` in a collection loop contributes
@@ -317,30 +232,65 @@ beam     | run/case_range_value.bp     | 03 step 3 | decision 53: the opposite �
 # warning does not reach the program's stdout there. A front that fixes an erlang
 # lowering and still sees a byte mismatch should check which of the two moved.
 #
-# The erlang owner cell has no step number because front 02 has none for the
-# collection loop — its step 5 is the *condition* loop used as a value, a
-# different shape — and decision 55 says outright that the row per backend comes
-# after the cell. Reported to the maintainer rather than filed against step 5.
-commonJS | run/loop_yield_then_break_value.bp | 04 step 3 | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` where `3` / `20,40,99` is owed
-erlang   | run/loop_yield_then_break_value.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the yielded values are lost — `3` / `ok,99,ok`: every non-breaking iteration answers the `ok` of its last statement. escript also prints a `the result of evaluating operator '*'/2 is ignored` warning on stdout, which is the same defect seen by the compiler
-beam     | run/loop_yield_then_break_value.bp | 03 step 3 | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` (D7, `break <value>`; measured here for the first time, which D7 asked for)
-commonJS | run/loop_break_value_then_yield.bp | 04 step 3 | decision 55: the loop runs on after the break — `3` / `20,99,60` where `2` / `20,99` is owed
-erlang   | run/loop_break_value_then_yield.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the break is ignored outright — `3` / `20,40,60`, the same answer the body without any `break` gives
-beam     | run/loop_break_value_then_yield.bp | 03 step 3 | decision 55: the loop runs on after the break — `3` / `20,99,60` (D7)
-commonJS | run/loop_yield_then_bare_break.bp | 04 step 3 | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` where `2` / `20,40` is owed
-erlang   | run/loop_yield_then_bare_break.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the loop answers the atom `ok`, so `length/1` is called on a non-list and the program dies — `escript: exception error: bad argument in function length/1 called as length(ok)`. The status is escript's **127** today and becomes `erl`'s **1** when front 13 lands decision 56's runner; the reason is the crash, not the number
-beam     | run/loop_yield_then_bare_break.bp | 03 step 3 | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` (D7)
-commonJS | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | 04 step 3 | decision 55: `loop ([1, 2, 3]) { x -> break x * 2; }` answers all three doubled values; the first `break` must end the loop, so `[2]`. This assertion read `length == 3` / `"2,4,6"` and passed on all four backends until decision 55 was taken
-erlang   | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the same — `[2, 4, 6]` where `[2]` is owed
+# The rows are C-06's now (1.0.10-beta, `00-compiler-carry-over`), one half per
+# backend. **The wasm half landed** (`8594e4ba`: a value `break` is `emitYield`
+# then `br $__break`, six `loop_*` RUN LOGs moved with it) and C-16 verified it by
+# running the three cells and the six fixtures under wasmtime at `361d255d` —
+# `3` / `20,40,99`, `2` / `20,99`, `2` / `20,40`, `[2]` — so the three wasm lines
+# are gone for good. commonJS, erlang and beam still run the loop on; their owner
+# cell says which half is missing. (Before C-06 the erlang lines read `02 (no
+# step; decision 55, reported 2026-09-18)`: front 02 had no step for the
+# collection loop, and the missing row was reported rather than invented.)
+commonJS | run/loop_yield_then_break_value.bp | C-06 (commonJS half not landed) | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` where `3` / `20,40,99` is owed
+erlang   | run/loop_yield_then_break_value.bp | C-06 (erlang half not landed) | decision 55: the yielded values are lost — `3` / `ok,99,ok`: every non-breaking iteration answers the `ok` of its last statement. escript also prints a `the result of evaluating operator '*'/2 is ignored` warning on stdout, which is the same defect seen by the compiler
+beam     | run/loop_yield_then_break_value.bp | C-06 (beam half not landed) | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` (D7, `break <value>`; measured here for the first time, which D7 asked for)
+commonJS | run/loop_break_value_then_yield.bp | C-06 (commonJS half not landed) | decision 55: the loop runs on after the break — `3` / `20,99,60` where `2` / `20,99` is owed
+erlang   | run/loop_break_value_then_yield.bp | C-06 (erlang half not landed) | decision 55: the break is ignored outright — `3` / `20,40,60`, the same answer the body without any `break` gives
+beam     | run/loop_break_value_then_yield.bp | C-06 (beam half not landed) | decision 55: the loop runs on after the break — `3` / `20,99,60` (D7)
+commonJS | run/loop_yield_then_bare_break.bp | C-06 (commonJS half not landed) | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` where `2` / `20,40` is owed
+erlang   | run/loop_yield_then_bare_break.bp | C-06 (erlang half not landed) | decision 55: the loop answers the atom `ok`, so `length/1` is called on a non-list and the program dies — `escript: exception error: bad argument in function length/1 called as length(ok)`. The status is escript's **127** today and becomes `erl`'s **1** when front 13 lands decision 56's runner; the reason is the crash, not the number
+beam     | run/loop_yield_then_bare_break.bp | C-06 (beam half not landed) | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` (D7)
+commonJS | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | C-06 (commonJS half not landed) | decision 55: `loop ([1, 2, 3]) { x -> break x * 2; }` answers all three doubled values; the first `break` must end the loop, so `[2]`. This assertion read `length == 3` / `"2,4,6"` and passed on all four backends until decision 55 was taken
+erlang   | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | C-06 (erlang half not landed) | decision 55: the same — `[2, 4, 6]` where `[2]` is owed
 
 # ── §10 a condition loop that never breaks (decision 52) ─────────────────────
 # Decision 52, taken 2026-09-18: a loop with no `break <value>` has no value to
 # give, on every backend, and `null` is decision 47's one spelling for absent.
 # commonJS already answers it. Decision 52's "what it costs" paragraph says
 # erlang and beam print `undefined`; re-measured here, neither does — that is
-# what they print for a *value* break, a different row.
-erlang   | run/loop_condition_no_break.bp | 02 step 5 | decision 52: the loop's variable group leaks out as its value — prints `3`, not `null`. escript also prints a `variable 'I@3' is unused` warning on stdout
-beam     | run/loop_condition_no_break.bp | 03 step 3 | decision 52: prints the atom `ok` — the value of the loop body's last statement — not `null` (D6)
+# what they print for a *value* break, a different row. wasm's row landed as 05's
+# decision-52 commits (`13688675`, `0bc8051d`); the two lines left are C-06's.
+erlang   | run/loop_condition_no_break.bp | C-06 (erlang half not landed) | decision 52: the loop's variable group leaks out as its value — prints `3`, not `null`. escript also prints a `variable 'I@3' is unused` warning on stdout
+beam     | run/loop_condition_no_break.bp | C-06 (beam half not landed) | decision 52: prints the atom `ok` — the value of the loop body's last statement — not `null` (D6)
+
+# ── an index is a method call (decision 63, amended 2026-09-19) ──────────────
+# `xs[i]` is `xs.at(i)` and `d["k"]` is `d.at("k")` through the ambient `Index<K, V>`
+# behavior; the value is `T`, `null` comes out only where `V` is itself optional,
+# and an absent key or index **fails the program**. The `libs/std` half landed
+# (`e065b564`); the compiler half — the checker typing the index `T`, the four
+# backends routing it to `.at` and failing on its empty answer — is C-02. The two
+# cells below abort by claim (`<name>.exit` = `nonzero`); nothing aborts today.
+# `run/index_at_optional.bp` is the method called by name, which answers `?V`
+# and prints `null` for absent (decision 47): commonJS passes it.
+commonJS | run/index_dict.bp | C-02 | decision 63: the index never reaches `Dict.at` — `d["a"]` on a present key prints `undefined`, and so do the optional-valued and the absent probes; exit 0 where the absent key has to fail (measured at `85f883bd`)
+erlang   | run/index_dict.bp | C-02 | decision 63: dies at the **present** key — `{bp_unsupported_index, #{pairs => …}, <<"a">>}` thrown from `__bp_index/2`; a boot crash on the wrong probe, not a located failure on the absent one
+wasm     | run/index_dict.bp | C-02 | decision 63: traps (`unreachable`, exit 134) at the present key, stdout empty
+beam     | run/index_dict.bp | C-02 | decision 63: the commonJS shape seen from BEAM assembly — `undefined` four times, exit 0 (the index is dropped, 03 handover 15)
+commonJS | run/index_past_the_end_fails.bp | C-02 | decision 63: `xs[9]` answers `undefined` and the program runs on (`10` / `undefined` / `after`, exit 0) where it has to fail after `10`
+erlang   | run/index_past_the_end_fails.bp | C-02 | decision 63: the same — `undefined`, exit 0
+wasm     | run/index_past_the_end_fails.bp | C-02 | decision 63: `$__arr_at` answers `0` out of range and the program runs on, exit 0
+beam     | run/index_past_the_end_fails.bp | C-02 | decision 63: `undefined`, exit 0 — the erlang shape through `erlc +from_asm`
+erlang   | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` prints the atom `undefined`, not `null` — `1` / `undefined` / `b` / `undefined`; `Dict.at` and `String.at` themselves answer correctly
+wasm     | run/index_at_optional.bp | C-18 | decision 47: a `null` optional prints as `0` (`d.at("zz")`), and then `s.at(1)` **traps** — `String.at` has no wasm lowering; the trap is a second defect no row owns (reported in AGENTS.md)
+beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `undefined` twice for the two absent probes
+
+# ── a qualified std host call on the BEAM (decision 64) ───────────────────────
+# `import { erlang } from "std"` then `erlang.node()`: the erlang backend emits a
+# wrapper per `pub` host-bound std `declare fn` since `a8db11e4` (C-03's erlang
+# half) and the cell passes there. commonJS and wasm refuse the program with
+# `std-unsupported-on-target` (the cell's two `.expect` sidecars claim exactly
+# that). beam's twin helper is declared and not wired.
+beam     | run/std_erlang_node.bp | C-03 | decision 64: dies at boot — `{undef, [{'std@erlang', node, [], []}, …]}`; `hostDeclareWrapperNeeded` in `beam_asm.zig` is declared and not wired (C-03's beam half)
 
 # ── the optional's pattern form (decision 54) ────────────────────────────────
 # Decision 54, taken 2026-09-18: a `?T` is matched by `null` and a binder, and the
