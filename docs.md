@@ -802,6 +802,57 @@ test "t: a propagated error fails the test" {
 }
 ```
 
+### Mocks
+
+`std/mocks` is the Mockito-style double: `when(...)` stubs a return, the
+matchers `eq` / `anyInt` / `anyString` pick which call a stub answers, and
+`verify(mock, spec)` checks how many matching calls were recorded. It is the
+old `onze` library, retired into std (1.0.10-beta front 01-std, decision 71).
+commonJS and erlang only — its cells are `pub declare fn` with a Node and an
+Erlang template each, so `import {mocks} from "std"` is refused on beam and
+wasm, where `botopink test` does not run.
+
+```botopink
+import {mocks} from "std";
+
+behavior UserRepo {
+    fn find(self: Self, id: i32) -> string;
+}
+
+// The double: every method funnels through `mocks.invoke`, which records the
+// call and answers the matching stub value or the type-default.
+type MockUserRepo(__id: string) implement UserRepo {
+    fn find(self: Self, id: i32) -> string {
+        return mocks.invoke(self.__id, "find", [mocks.key(id)], "");
+    }
+}
+
+fn mockUserRepo() -> UserRepo { return MockUserRepo(__id: mocks.newMock()); }
+
+test "repo: eq(v) stubs only the matching argument" {
+    val repo = mockUserRepo();
+    val _s = mocks.when(repo.find(mocks.eq(7))).thenReturn("ana");
+    assert repo.find(7) == "ana";
+    assert repo.find(8) == "";
+    val _v = mocks.verify(repo, mocks.times(2)).find(mocks.anyInt());
+}
+```
+
+`#[mock]` writes that double for you — it reflects the annotated `behavior`'s
+methods through `@Decl` and `@emit`s the type plus a `mock<Name>()` factory.
+**It fires inside the module that declares it only.** `@emit` splices its text
+into the module that hosts the annotated behavior, and the text names the
+runtime bare (`invoke`, `key`, `newMock`), which resolves in `std/mocks` and
+nowhere else: a `from "std"` import binds the module handle (`mocks`), never
+its functions, and `#[mocks.mock]` is not looked up as a decorator at all. So a
+consumer writes the double by hand, as above. Recorded in
+`specs/1.0.10-beta/01-std/onze-migration.md` § *Language gaps*.
+
+Two more limits carried over from the old library: a matched `thenThrow` is a
+host throw, not an `@Result`, so the caller catches it with `asserts.throws`
+and not with `try … catch`; and there is no generic `any<T>()` matcher, because
+it would need a per-type default it cannot synthesize.
+
 ## Backends
 
 | Target     | Output | Runner                      |
