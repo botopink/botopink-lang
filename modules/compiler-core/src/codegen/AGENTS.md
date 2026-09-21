@@ -1011,6 +1011,32 @@ codegen/
 
 ### beam_asm
 
+- **One module per `type` — policy 3, the same split `erlang.zig` made.** A
+  source file emits its own `.S` plus one per `type` it declares
+  (`crossModule.typeAtom` → `main__t__contador`, `std@dict__t__dict`), carried
+  out as `GenerateResult.units`. This backend mangled **every** method as
+  `'<Owner>_<method>'`, not only a colliding one, so a unit both moves its
+  functions and renames them: `'Contador_atual'/1` in `main` becomes `atual/1`
+  in `main__t__contador`, and the call site becomes
+  `{call_ext, 1, {extfunc, main__t__contador, atual, 1}}`. `methodFnName` is
+  the one place the choice is made (bare inside that type's own module, mangled
+  everywhere else), `typeModuleAtom` answers the module and `typeMethodModule`
+  answers it **only when the type is what declares the method** — an
+  `implement` / `extend` block's method on the same type stays the file
+  module's mangled local, because `__im__` is reserved and emits nothing.
+  A `behavior`'s `default fn` likewise keeps `'<Iface>_<method>'` wherever
+  `emitNeededDefaults` puts it (decision 23).
+- **A unit is a whole module, so it gets a whole module's state**
+  (`openTypeUnit` / `closeTypeUnit`): its own writer, its own `fn_labels`, its
+  own `{labels, N}` counting from 1, its own `deferred_lambdas`,
+  `needed_defaults` and `needed_prim_shims` — drained into it before it closes,
+  so a unit carries exactly the helper shims its own bodies reached. The file
+  module gets all of it back. A `type` with no bodied method emits no unit.
+  Four call sites cross the new boundary — a module-level `val` read, the
+  value-receiver call, the bare local call and a `val` holding a fun — and each
+  goes through `tryFileCall`: a `call_ext` into the file module plus an entry in
+  `file_exports_needed`, which the `{exports, …}` header picks up because it is
+  written after pass 2.
 - **Comprehensions** (`lowerLoop`, `emitYield`): a `loop` whose body `yield`s
   or `break`s with a value (directly or in an `if`/`case` arm, not in a nested
   loop or lambda) appends each value to a fresh array (`$__arr_push`; a float
@@ -1300,18 +1326,18 @@ codegen/
   the tail accumulator on the stack. A length read uses the `length` gc_bif
   rather than `erlang:length/1`. A field assignment is `maps:update/3` (a call,
   so the receiver needs no static map type).
-- **An associated `fn` on an `enum`** (`Shape.unit()`): `reserveEnumMethods`
-  reserves an enum's methods under the mangled `'<Enum>_<method>'`, as a record's
-  are, so the call is a LOCAL call by label — `enum_names` is what tells a
-  PascalCase receiver that names a type from one that names a module. Without it
-  the receiver was lowercased into a module atom and the call was `shape:unit()`,
-  `{undef,[{shape,unit,[],[]}…]}` against a module nothing emits. (The erlang
-  backend emits the same method under its bare name; each backend calls its own
-  spelling.)
+- **An associated `fn` on a `type`** (`Shape.unit()`, `Response.ok(…)`):
+  `typeAssocCall` — a function of the TYPE's own module under policy 3, local
+  only while that module is the one being emitted. `record_fields` /
+  `enum_names` are what tell a PascalCase receiver that names a type from one
+  that names a module. Without that the receiver was lowercased into a module
+  atom and the call was `shape:unit()`, `{undef,[{shape,unit,[],[]}…]}` against
+  a module nothing emits.
 - **Cross-module**: the module atom is the whole module path joined with `@`
   (`crossModule.erlAtom`, read through `Emitter.atomOf`); an imported record
-  joins `record_fields` + `imported_types` (`collectRecordShapes`), its
-  associated fn lowers to `call_ext` into the owner (`http:'Response_ok'(…)`),
+  joins `record_fields` + `imported_types` (`collectRecordShapes`, which holds
+  the TYPE's atom under policy 3, not the owner file's), its associated fn
+  lowers to `call_ext` into that module (`http__t__response:ok(…)`),
   and the owner exports `'Type_method'/arity` when imported elsewhere. A field
   read on a `call_ext` result emits `is_map` before `get_map_elements` (the
   result is typed `any`, which the loader rejects otherwise). An imported

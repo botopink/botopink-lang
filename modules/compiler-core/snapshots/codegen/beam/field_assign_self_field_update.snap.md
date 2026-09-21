@@ -13,12 +13,20 @@ val Counter = type(
 {module, main}.
 {exports, []}.
 {attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- main__t__counter.S
+```erlang
+{module, main__t__counter}.
+{exports, [{inc, 1}]}.
+{attributes, []}.
 {labels, 5}.
 
-{function, 'Counter_inc', 1, 3}.
+{function, inc, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'Counter_inc'}, 1}.
+    {line, [{location, "main__t__counter.erl", 1}]}.
+    {func_info, {atom, main__t__counter}, {atom, inc}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.

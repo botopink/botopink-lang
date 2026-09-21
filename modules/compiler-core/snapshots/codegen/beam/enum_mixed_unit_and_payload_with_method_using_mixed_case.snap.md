@@ -17,12 +17,20 @@ val Maybe = type {
 {module, main}.
 {exports, []}.
 {attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- main__t__maybe.S
+```erlang
+{module, main__t__maybe}.
+{exports, [{check, 1}]}.
+{attributes, []}.
 {labels, 7}.
 
-{function, 'Maybe_check', 1, 3}.
+{function, check, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'Maybe_check'}, 1}.
+    {line, [{location, "main__t__maybe.erl", 1}]}.
+    {func_info, {atom, main__t__maybe}, {atom, check}, 1}.
   {label, 3}.
     {allocate, 3, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.

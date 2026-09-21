@@ -972,7 +972,7 @@ pub fn codegenEmit(
                 // 06 C13 — a host-backed fn with no beam or erlang target
                 // reaches the driver as a located diagnostic naming it.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const code = emitBeamAsm(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross, outputs, &missing) catch |err| {
+                const emitted = emitBeamAsm(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross, outputs, &missing) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -989,7 +989,8 @@ pub fn codegenEmit(
                     .name = ct.name,
                     .src = ct.src,
                     .result = .{
-                        .js = code,
+                        .js = emitted.code,
+                        .units = emitted.units,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
                         .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
                         .comptime_err = null,
@@ -1006,6 +1007,14 @@ pub fn codegenEmit(
 
 const ExportEntry = beamEmitter.Export;
 
+/// What one source file emits on this backend: its own `.S` module and, under
+/// policy 3 of `13-module-identity`, one per `type` it declares
+/// (`moduleOutput.Unit`). Both owned by the caller.
+pub const EmittedBeam = struct {
+    code: []u8,
+    units: []moduleOutput.Unit = &.{},
+};
+
 fn emitBeamAsm(
     alloc: std.mem.Allocator,
     module_name: []const u8,
@@ -1017,7 +1026,7 @@ fn emitBeamAsm(
     all_outputs: []const ComptimeOutput,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
-) ![]u8 {
+) !EmittedBeam {
     // Three passes:
     //   1. assign entry labels to every fn/top-val so wrappers can refer to
     //      them by `{f, N}`;
@@ -1044,6 +1053,7 @@ fn emitBeamAsm(
     defer alloc.free(module_atom);
 
     var em = Emitter.init(alloc, module_atom, &body_buf.writer, comptime_vals, rewrites);
+    em.module_path = module_name;
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
     };
@@ -1096,9 +1106,19 @@ fn emitBeamAsm(
             } else if (has_main_0 and !isSyntheticMainCall(v)) {
                 try em.entry_stmts.append(alloc, v);
             },
-            .type_ => |tdecl| switch (tdecl.shape) {
-                .record => try em.reserveRecordMethods(tdecl),
-                .enum_ => try em.reserveEnumMethods(tdecl),
+            // Policy 3: a `type`'s methods belong to the TYPE's module, which
+            // reserves its own labels when `emitTypeUnit` opens it. The file
+            // module only records that the name IS one of its types, so a call
+            // site can route into it instead of resolving a local label that no
+            // longer exists.
+            .type_ => |tdecl| {
+                try em.own_types.put(tdecl.name, {});
+                for (tdecl.methods) |m| {
+                    if (m.body == null or m.is_declare) continue;
+                    const key = try std.fmt.allocPrint(alloc, "{s}.{s}/{d}", .{ tdecl.name, m.name, methodArity(m) });
+                    const gop = try em.own_type_methods.getOrPut(key);
+                    if (gop.found_existing) alloc.free(key);
+                }
             },
             .behavior => |i| try em.reserveInterfaceMethods(i),
             .implement => |im| try em.reserveImplementMethods(im),
@@ -1135,10 +1155,8 @@ fn emitBeamAsm(
             .val => |v| if (v.isPub and !isSyntheticEntrypointVal(v)) {
                 try exports.append(alloc, .{ .name = v.name, .arity = 0 });
             },
-            .type_ => |tdecl| switch (tdecl.shape) {
-                .record => try collectMethodExports(alloc, &exports, &owned_export_names, tdecl.name, tdecl.methods, isCrossImported(cross, tdecl.name)),
-                .enum_ => try collectMethodExports(alloc, &exports, &owned_export_names, tdecl.name, tdecl.methods, isCrossImported(cross, tdecl.name)),
-            },
+            // Policy 3: the TYPE's module exports them (`closeTypeUnit`).
+            .type_ => {},
             .implement => |im| try collectImplementExports(alloc, &exports, &owned_export_names, im),
             .extend => |ex| try collectExtendExports(alloc, &exports, &owned_export_names, ex),
             else => {},
@@ -1200,6 +1218,14 @@ fn emitBeamAsm(
     // and remote calls carry an explicit `{extfunc, mod, fn, N}` triple,
     // so there is no name-resolution stage that could prefer a BIF over a
     // user fn. The `erlc +from_asm` pipeline does not re-resolve names.
+    // Every file-level function a type module reached remotely, now that all of
+    // them are lowered. Deduplicated against what is already exported.
+    for (em.file_exports_needed.values()) |ref| {
+        for (exports.items) |seen| {
+            if (seen.arity == ref.arity and std.mem.eql(u8, seen.name, ref.name)) break;
+        } else try exports.append(alloc, ref);
+    }
+
     var header: std.Io.Writer.Allocating = .init(alloc);
     defer header.deinit();
     try beamEmitter.writeModuleForm(&header.writer, module_atom);
@@ -1215,7 +1241,16 @@ fn emitBeamAsm(
     try sections.append(alloc, header.written());
     try sections.append(alloc, body_buf.written());
     try sections.appendSlice(alloc, em.deferred_lambdas.items);
-    return std.mem.concat(alloc, u8, sections.items);
+    const code = try std.mem.concat(alloc, u8, sections.items);
+    errdefer alloc.free(code);
+
+    // Policy 3: the per-type modules, rendered as each unit closed. Ownership
+    // moves to the caller, so `Emitter.deinit` must not free them again.
+    const units = try alloc.alloc(moduleOutput.Unit, em.type_units.items.len);
+    errdefer alloc.free(units);
+    for (em.type_units.items, 0..) |u, i| units[i] = u;
+    em.type_units.items.len = 0;
+    return .{ .code = code, .units = units };
 }
 
 // ── Emitter ──────────────────────────────────────────────────────────────────
@@ -1264,9 +1299,46 @@ fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bo
 
 const Emitter = struct {
     alloc: std.mem.Allocator,
+    /// The atom of the module being emitted — the FILE's own, or a `type`'s
+    /// while `cur_type` is set. `{module, …}`, `{func_info, …}` and every
+    /// `{line, …}` name it.
     module_name: []const u8,
+    /// The module PATH this file came from (`std/dict`), beside `module_name`,
+    /// which is the rendered atom. `crossModule.typeAtom` is given a path.
+    module_path: []const u8 = "",
     out: *std.Io.Writer,
     cv: std.StringHashMap([]const u8),
+
+    /// Policy 3 (`13-module-identity` half 2): every `type` declared in this
+    /// file is a BEAM module of its own, `crossModule.typeAtom` — its methods
+    /// live there under the names the programmer wrote, where the file's module
+    /// used to hold them all as `'<Owner>_<method>'`. One entry per type in
+    /// declaration order; `closeTypeUnit` renders it.
+    type_units: std.ArrayListUnmanaged(moduleOutput.Unit) = .empty,
+    /// The `type` whose module is being emitted, or null in the file's own.
+    cur_type: ?[]const u8 = null,
+    /// The `type`s THIS file declares — the ones whose methods moved out, so a
+    /// call site can tell "another module of mine" from "not a type at all".
+    own_types: std.StringHashMap(void),
+    /// `"<Type>.<method>/<arity>"` for every bodied method one of those types
+    /// declares. A method an `implement`/`extend` block gives the same type is
+    /// NOT here: those stay in the file's module (`__im__` is reserved and
+    /// emits nothing), so routing them into the type's module would name a
+    /// function the unit never defines.
+    own_type_methods: std.StringHashMap(void),
+    /// The file module's label table while a unit is open, so a call from
+    /// inside the unit can recognise one of the FILE's functions and reach it
+    /// remotely instead of failing to resolve. Null in the file's own module.
+    file_labels: ?*std.StringHashMap(FnLabels) = null,
+    /// The file module's atom while a unit is open (`module_name` is the
+    /// unit's then).
+    file_atom: []const u8 = "",
+    /// Every file-level function a unit reached remotely, so the file module
+    /// exports it. Filled during pass 2, read when the header is written —
+    /// which happens after pass 2, so the list is complete.
+    file_exports_needed: std.StringArrayHashMapUnmanaged(ExportEntry) = .empty,
+    /// Owns the type atoms this emitter renders.
+    atom_arena: std.heap.ArenaAllocator,
 
     /// Next available label index. Label 1 is reserved (BEAM convention).
     next_label: u32 = 2,
@@ -1464,6 +1536,9 @@ const Emitter = struct {
             .out = out,
             .cv = cv,
             .fn_labels = std.StringHashMap(FnLabels).init(alloc),
+            .own_types = std.StringHashMap(void).init(alloc),
+            .own_type_methods = std.StringHashMap(void).init(alloc),
+            .atom_arena = std.heap.ArenaAllocator.init(alloc),
             .reg_map = std.StringHashMap(Reg).init(alloc),
             .rewrites = rewrites,
             .ext_by_name = std.StringHashMap(ExtInfo).init(alloc),
@@ -1495,6 +1570,17 @@ const Emitter = struct {
         var it = self.fn_labels.iterator();
         while (it.next()) |kv| self.alloc.free(kv.key_ptr.*);
         self.fn_labels.deinit();
+        self.own_types.deinit();
+        var otm = self.own_type_methods.keyIterator();
+        while (otm.next()) |k| self.alloc.free(k.*);
+        self.own_type_methods.deinit();
+        for (self.type_units.items) |u| {
+            self.alloc.free(u.atom);
+            self.alloc.free(u.code);
+        }
+        self.type_units.deinit(self.alloc);
+        self.file_exports_needed.deinit(self.alloc);
+        self.atom_arena.deinit();
         self.reg_map.deinit();
         for (self.deferred_lambdas.items) |s| self.alloc.free(s);
         self.deferred_lambdas.deinit(self.alloc);
@@ -1843,12 +1929,13 @@ const Emitter = struct {
                 if (std.mem.eql(u8, owner, self.module_name)) continue;
                 switch (info.kind) {
                     // An imported record is built with the owner's field order,
-                    // and its associated fns are remote calls into the owner.
+                    // and its methods and associated fns are remote calls into
+                    // the TYPE's module (policy 3), not the owner file's.
                     .record => {
                         if (!self.record_fields.contains(name)) {
                             try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
                         }
-                        try self.imported_types.put(name, owner);
+                        try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), name));
                     },
                     // An imported enum's nullary variants are atoms a `case`
                     // arm tests against, exactly like a local enum's.
@@ -2312,10 +2399,147 @@ const Emitter = struct {
     }
 
     fn emitRecord(self: *Emitter, r: ast.TypeDecl) !void {
-        for (r.methods) |m| {
+        try self.emitTypeUnit(r.name, r.methods);
+    }
+
+    /// Policy 3: a `type`'s methods are emitted into the type's own module,
+    /// `<file atom>__t__<type>`, under the names the programmer wrote. Shared by
+    /// `emitRecord` and `emitEnum` — a record and an enum differ in how their
+    /// values are built, not in where their functions live.
+    fn emitTypeUnit(self: *Emitter, type_name: []const u8, methods: []const ast.BehaviorMethod) !void {
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        defer buf.deinit();
+        var unit = try self.openTypeUnit(type_name, &buf);
+        defer unit.exports.deinit(self.alloc);
+        // The file module's table has to be reachable from inside the unit, and
+        // `unit` is the frame that outlives `openTypeUnit` — taking the address
+        // there would dangle. Units never nest, so this is always the file's.
+        self.file_labels = &unit.fn_labels;
+        self.file_atom = unit.module_name;
+        for (methods) |m| {
             if (m.body == null or m.is_declare) continue;
-            try self.emitMethodAsFn(r.name, m);
+            try self.reserveFn(m.name, methodArity(m));
+            try unit.exports.append(self.alloc, .{ .name = m.name, .arity = methodArity(m) });
         }
+        for (methods) |m| {
+            if (m.body == null or m.is_declare) continue;
+            try self.emitMethodAsFn(type_name, m);
+        }
+        try self.closeTypeUnit(type_name, &unit, &buf);
+    }
+
+    /// The file-module emitter state a unit sets aside. Everything here is
+    /// per-MODULE: a unit's labels start at 1 like any module's, its lambdas
+    /// and helper shims are its own, and the file module gets back exactly what
+    /// it had.
+    const SavedBeamUnit = struct {
+        module_name: []const u8,
+        out: *std.Io.Writer,
+        next_label: u32,
+        lambda_count: u32,
+        cur_type: ?[]const u8,
+        file_labels: ?*std.StringHashMap(FnLabels),
+        file_atom: []const u8,
+        fn_labels: std.StringHashMap(FnLabels),
+        deferred_lambdas: std.ArrayListUnmanaged([]u8),
+        needed_defaults: std.StringArrayHashMapUnmanaged(IfaceDefault),
+        needed_prim_shims: std.StringArrayHashMapUnmanaged(PrimShim),
+        emitted_prim_shims: usize,
+        exports: std.ArrayListUnmanaged(ExportEntry),
+    };
+
+    /// Open `type_name`'s module: its bodies write into `buf`, its labels start
+    /// over, and `cur_type` makes a call to one of its own methods local while a
+    /// call into the file's functions becomes a `call_ext` the file module then
+    /// exports.
+    fn openTypeUnit(self: *Emitter, type_name: []const u8, buf: *std.Io.Writer.Allocating) !SavedBeamUnit {
+        const saved: SavedBeamUnit = .{
+            .module_name = self.module_name,
+            .out = self.out,
+            .next_label = self.next_label,
+            .lambda_count = self.lambda_count,
+            .cur_type = self.cur_type,
+            .file_labels = self.file_labels,
+            .file_atom = self.file_atom,
+            .fn_labels = self.fn_labels,
+            .deferred_lambdas = self.deferred_lambdas,
+            .needed_defaults = self.needed_defaults,
+            .needed_prim_shims = self.needed_prim_shims,
+            .emitted_prim_shims = self.emitted_prim_shims,
+            .exports = .empty,
+        };
+        self.module_name = try crossModule.typeAtom(self.atom_arena.allocator(), .of(self.module_path), type_name);
+        self.out = &buf.writer;
+        self.next_label = 2;
+        self.lambda_count = 0;
+        self.cur_type = type_name;
+        // `file_labels` / `file_atom` are set by the caller, which owns the
+        // frame the saved table lives in.
+        self.fn_labels = std.StringHashMap(FnLabels).init(self.alloc);
+        self.deferred_lambdas = .empty;
+        self.needed_defaults = .empty;
+        self.needed_prim_shims = .empty;
+        self.emitted_prim_shims = 0;
+        return saved;
+    }
+
+    /// Close `type_name`'s module: the defaults and shims its own bodies
+    /// reached are drained into it, the header is written, and the file module
+    /// gets its state back. A unit that emitted nothing is dropped — a `type`
+    /// with no bodied method is not worth a file holding one `{module, …}`
+    /// line, exactly as on the erlang backend.
+    fn closeTypeUnit(self: *Emitter, type_name: []const u8, unit: *SavedBeamUnit, buf: *std.Io.Writer.Allocating) !void {
+        _ = type_name;
+        try self.emitNeededDefaults();
+        while (self.needed_prim_shims.count() > self.emitted_prim_shims) {
+            try self.emitNeededPrimShims();
+            try self.emitNeededDefaults();
+        }
+
+        const empty = buf.written().len == 0 and self.deferred_lambdas.items.len == 0;
+        if (!empty) {
+            var header: std.Io.Writer.Allocating = .init(self.alloc);
+            defer header.deinit();
+            try beamEmitter.writeModuleForm(&header.writer, self.module_name);
+            try beamEmitter.writeExports(&header.writer, unit.exports.items);
+            try beamEmitter.writeAttributes(&header.writer);
+            try beamEmitter.writeLabels(&header.writer, self.next_label);
+
+            var sections: std.ArrayListUnmanaged([]const u8) = .empty;
+            defer sections.deinit(self.alloc);
+            try sections.append(self.alloc, header.written());
+            try sections.append(self.alloc, buf.written());
+            try sections.appendSlice(self.alloc, self.deferred_lambdas.items);
+            const code = try std.mem.concat(self.alloc, u8, sections.items);
+            errdefer self.alloc.free(code);
+            const atom = try self.alloc.dupe(u8, self.module_name);
+            errdefer self.alloc.free(atom);
+            try self.type_units.append(self.alloc, .{ .atom = atom, .code = code });
+        }
+
+        // The unit's own tables go; the file module's come back.
+        var it = self.fn_labels.iterator();
+        while (it.next()) |kv| self.alloc.free(kv.key_ptr.*);
+        self.fn_labels.deinit();
+        for (self.deferred_lambdas.items) |l| self.alloc.free(l);
+        self.deferred_lambdas.deinit(self.alloc);
+        self.needed_defaults.deinit(self.alloc);
+        for (self.needed_prim_shims.keys()) |k| self.alloc.free(k);
+        for (self.needed_prim_shims.values()) |v| self.alloc.free(v.name);
+        self.needed_prim_shims.deinit(self.alloc);
+
+        self.module_name = unit.module_name;
+        self.out = unit.out;
+        self.next_label = unit.next_label;
+        self.lambda_count = unit.lambda_count;
+        self.cur_type = unit.cur_type;
+        self.file_labels = unit.file_labels;
+        self.file_atom = unit.file_atom;
+        self.fn_labels = unit.fn_labels;
+        self.deferred_lambdas = unit.deferred_lambdas;
+        self.needed_defaults = unit.needed_defaults;
+        self.needed_prim_shims = unit.needed_prim_shims;
+        self.emitted_prim_shims = unit.emitted_prim_shims;
     }
 
     fn emitStruct(self: *Emitter, s: ast.StructDecl) !void {
@@ -2331,10 +2555,7 @@ const Emitter = struct {
     }
 
     fn emitEnum(self: *Emitter, e: ast.TypeDecl) !void {
-        for (e.methods) |m| {
-            if (m.body == null or m.is_declare) continue;
-            try self.emitMethodAsFn(e.name, m);
-        }
+        try self.emitTypeUnit(e.name, e.methods);
     }
 
     fn emitImplement(self: *Emitter, im: ast.ImplementDecl) !void {
@@ -2354,7 +2575,7 @@ const Emitter = struct {
     fn emitMethodAsFn(self: *Emitter, owner: []const u8, m: ast.BehaviorMethod) !void {
         const arity = methodArity(m);
         var name_buf: [256]u8 = undefined;
-        const mangled = try std.fmt.bufPrint(&name_buf, "'{s}_{s}'", .{ owner, m.name });
+        const mangled = try self.methodFnName(&name_buf, owner, m.name);
         const labels = try self.fnLabelsFor(mangled, arity);
 
         self.resetFnState(@intCast(arity));
@@ -2941,8 +3162,10 @@ const Emitter = struct {
                         return;
                     }
                     // A named module-level `val` of this module is a 0-arity
-                    // function: a read is a local call.
+                    // function: a read is a local call — a `call_ext` into the
+                    // file's module from inside a type's (policy 3).
                     if (self.top_vals.contains(n)) {
+                        if (try self.tryFileCall(n, 0, .non_tail, 0)) return;
                         const labels = try self.fnLabelsFor(n, 0);
                         try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = labels.entry }, 0);
                         return;
@@ -3479,36 +3702,43 @@ const Emitter = struct {
                     // value-receiver local-call path below — parity with the
                     // erlang backend's bare-`callee(Recv, …)` fallthrough.
                 },
-                // A record/struct/enum receiver: its method is the mangled
-                // `'<Type>_<method>'` function taking the receiver first.
+                // A record/struct/enum receiver: its method is a function
+                // taking the receiver first, in the TYPE's own module under
+                // policy 3 — local when that module is the one being emitted,
+                // a `call_ext` from anywhere else, and a `call_ext` is also
+                // what reaches a type another module declares. It used to fall
+                // into the fun-field heuristic below for the imported case,
+                // read `norm` out of the record's map and `call_fun` the
+                // `undefined` it found (`{badfun, #{x => 1, y => 2}}` at run
+                // time).
                 .type_ => |type_name| {
                     var nbuf: [256]u8 = undefined;
-                    if (std.fmt.bufPrint(&nbuf, "'{s}_{s}'", .{ type_name, cc.callee })) |mangled| {
-                        if (self.fnLabelsFor(mangled, 1 + cc.args.len)) |_| {
-                            try self.lowerExtCall(mangled, recv_expr, cc.args, mode);
-                            return;
-                        } else |_| {}
-                        // A method whose owning type came from ANOTHER module.
-                        // The owner emits and exports it (`geometry.S`:
-                        // `{exports, [{'Point_norm', 1}, …]}`), so the call is
-                        // remote — it used to fall into the fun-field heuristic
-                        // below, read `norm` out of the record's map and
-                        // `call_fun` the `undefined` it found
-                        // (`{badfun, #{x => 1, y => 2}}` at run time). Parity
-                        // with the associated-fn path above and with the erlang
-                        // backend's landing (`7783fd6`, `1193d3c`).
-                        if (self.methodOwnerModule(type_name, cc.callee)) |owner| {
+                    if (self.methodFnName(&nbuf, type_name, cc.callee)) |name| {
+                        if (self.cur_type) |ct| if (std.mem.eql(u8, ct, type_name)) {
+                            if (self.fnLabelsFor(name, 1 + cc.args.len)) |_| {
+                                try self.lowerExtCall(name, recv_expr, cc.args, mode);
+                                return;
+                            } else |_| {}
+                        };
+                        if (try self.typeMethodModule(type_name, cc.callee, 1 + cc.args.len)) |owner| {
                             const st = try self.stageCall(recv_expr, cc.args, &[_]ast.TrailingLambda{});
                             try self.placeStaged(&st);
                             try beamEmitter.writeCall(
                                 self.out,
                                 if (mode == .tail) .last else .normal,
                                 1 + cc.args.len,
-                                .{ .ext = .{ .module = owner, .function = mangled } },
+                                .{ .ext = .{ .module = owner, .function = cc.callee } },
                                 self.num_y,
                             );
                             return;
                         }
+                        // Not a type with a module of its own (an `implement`
+                        // or `extend` block's target, which stays in the file's
+                        // module): the mangled local, as before.
+                        if (self.fnLabelsFor(name, 1 + cc.args.len)) |_| {
+                            try self.lowerExtCall(name, recv_expr, cc.args, mode);
+                            return;
+                        } else |_| {}
                     } else |_| {}
                 },
             };
@@ -3559,54 +3789,15 @@ const Emitter = struct {
                         return;
                     }
                     // A lowercase callee on a PascalCase record/struct receiver
-                    // is an associated fn (`Response.ok(...)`), emitted by
-                    // `emitMethodAsFn` as `'<Type>_<callee>'`. A LOCAL record
-                    // calls that fn directly by label; an IMPORTED record
-                    // (`from "web"`) calls it remotely in the owning module —
-                    // never the lowercased type name (`response:ok`).
-                    if (cc.trailing.len == 0 and self.record_fields.contains(rn)) {
-                        var nbuf: [256]u8 = undefined;
-                        const mangled = std.fmt.bufPrint(&nbuf, "'{s}_{s}'", .{ rn, cc.callee }) catch return;
-                        const arity = cc.args.len;
-                        if (self.imported_types.get(rn)) |owner| {
-                            try self.materializeCallArgs(cc.args, cc.trailing);
-                            try beamEmitter.writeCall(
-                                self.out,
-                                if (mode == .tail) .last else .normal,
-                                arity,
-                                .{ .ext = .{ .module = owner, .function = mangled } },
-                                self.num_y,
-                            );
-                            return;
-                        }
-                        if (self.fnLabelsFor(mangled, arity)) |labels| {
-                            try self.materializeCallArgs(cc.args, cc.trailing);
-                            switch (mode) {
-                                .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),
-                                .tail => try beamEmitter.writeCall(self.out, .last, arity, .{ .local = labels.entry }, self.num_y),
-                            }
-                            return;
-                        } else |_| {}
-                    }
-                    // An associated `fn` of a LOCAL enum (`Shape.unit()`): the
-                    // enum's methods are emitted as plain local functions under
-                    // their own names, so this is a local call. It used to fall
-                    // through to the lowercased-receiver remote below and die with
-                    // `{undef,[{shape,unit,[],[]}…]}` — a module named after the
-                    // type, which nothing emits.
-                    if (cc.trailing.len == 0 and self.enum_names.contains(rn)) {
-                        var ebuf: [256]u8 = undefined;
-                        // `reserveEnumMethods` reserves an enum's methods under
-                        // the mangled `'<Enum>_<method>'`, as records are.
-                        const emangled = std.fmt.bufPrint(&ebuf, "'{s}_{s}'", .{ rn, cc.callee }) catch return;
-                        if (self.fnLabelsFor(emangled, cc.args.len)) |labels| {
-                            try self.materializeCallArgs(cc.args, cc.trailing);
-                            switch (mode) {
-                                .non_tail => try beamEmitter.writeCall(self.out, .normal, cc.args.len, .{ .local = labels.entry }, 0),
-                                .tail => try beamEmitter.writeCall(self.out, .last, cc.args.len, .{ .local = labels.entry }, self.num_y),
-                            }
-                            return;
-                        } else |_| {}
+                    // is an associated fn (`Response.ok(...)`, `Shape.unit()`)
+                    // — a function of the TYPE's own module under policy 3,
+                    // local only while that module is the one being emitted.
+                    // It used to be the file module's `'<Type>_<callee>'`, and
+                    // for an imported type a remote call to the owner FILE —
+                    // never the lowercased type name (`response:ok`), which
+                    // names a module nothing emits.
+                    if (cc.trailing.len == 0 and (self.record_fields.contains(rn) or self.enum_names.contains(rn))) {
+                        if (try self.typeAssocCall(rn, cc, mode)) return;
                     }
                     // Associated `default fn` of an interface (`Array.range`, `Pair.of`):
                     // emitted as the local mangled fn `'<Interface>_<callee>'` by
@@ -3642,6 +3833,14 @@ const Emitter = struct {
                 }
             }
             const total_arity = 1 + cc.args.len;
+            // A value-receiver call answered by one of the FILE module's
+            // functions, made from inside a type's: a `call_ext`, because
+            // policy 3 put the two in separate modules.
+            if (self.cur_type != null and self.isFileFn(cc.callee, total_arity)) {
+                const st = try self.stageCall(recv_expr, cc.args, &[_]ast.TrailingLambda{});
+                try self.placeStaged(&st);
+                if (try self.tryFileCall(cc.callee, total_arity, mode, self.num_y)) return;
+            }
             const labels = self.fnLabelsFor(cc.callee, total_arity) catch {
                 // A record field holding a fun (`s.set(v)` on
                 // `record State { set: fn(next: T) }`): read it, apply it.
@@ -3723,6 +3922,12 @@ const Emitter = struct {
             return;
         }
 
+        // One of the FILE module's functions, called from inside a type's: the
+        // two are separate modules under policy 3.
+        if (self.cur_type != null and self.isFileFn(cc.callee, arity)) {
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            if (try self.tryFileCall(cc.callee, arity, mode, self.num_y)) return;
+        }
         // A top-level function resolves to a reserved label pair → direct call.
         if (self.fnLabelsFor(cc.callee, arity)) |labels| {
             try self.materializeCallArgs(cc.args, cc.trailing);
@@ -3751,8 +3956,10 @@ const Emitter = struct {
         // it (a 0-arity local call), park it on the stack while the arguments
         // are staged — staging may call and free the x-file — then `call_fun`.
         if (self.top_vals.contains(cc.callee)) {
-            const val_labels = try self.fnLabelsFor(cc.callee, 0);
-            try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = val_labels.entry }, 0);
+            if (!try self.tryFileCall(cc.callee, 0, .non_tail, 0)) {
+                const val_labels = try self.fnLabelsFor(cc.callee, 0);
+                try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = val_labels.entry }, 0);
+            }
             const fun_y = self.next_y;
             self.next_y += 1;
             try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(fun_y));
@@ -3830,14 +4037,17 @@ const Emitter = struct {
         try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
     }
 
-    /// The module atom that emits `'<type_name>_<method>'`, when the type came
-    /// from another module. Two sources, because a consumer reaches an imported
-    /// type two ways: by naming it in an `import { … }` (`imported_types`), and
-    /// through a value some other import answers (`dict.empty()` gives a `Dict`
-    /// nothing in this module named), which only the link index knows about.
-    /// Null when the type is this module's own — then the method is a local
-    /// label and the caller has already found it.
-    fn methodOwnerModule(self: *const Emitter, type_name: []const u8, method: []const u8) ?[]const u8 {
+    /// The module atom holding `type_name`'s methods under policy 3 — this
+    /// file's own type module (`own_types`), or the owner's for an imported
+    /// type, which a consumer reaches two ways: by naming it in an
+    /// `import { … }` (`imported_types`), and through a value some other import
+    /// answers (`dict.empty()` gives a `Dict` nothing in this module named),
+    /// which only the link index knows about. Null when the name is not a type
+    /// with a module at all. The BEAM twin of `erlang.zig`'s `typeModuleAtom`.
+    fn typeModuleAtom(self: *Emitter, type_name: []const u8) !?[]const u8 {
+        if (self.own_types.contains(type_name)) {
+            return try crossModule.typeAtom(self.atom_arena.allocator(), .of(self.module_path), type_name);
+        }
         if (self.imported_types.get(type_name)) |owner| return owner;
         const xc = self.cross orelse return null;
         const info = xc.exports.get(type_name) orelse return null;
@@ -3845,12 +4055,123 @@ const Emitter = struct {
             .record, .@"enum" => {},
             else => return null,
         }
-        const owner = self.atomOf(info.module);
-        if (std.mem.eql(u8, owner, self.module_name)) return null;
+        return try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), type_name);
+    }
+
+    /// A call from inside a type module to one of the FILE module's functions
+    /// — policy 3 split them into two modules, so the local label is gone.
+    /// Emits the `call_ext`, records the export the file module then needs, and
+    /// answers true; false when there is no unit open or the name is not one of
+    /// the file's, and the caller keeps its own path.
+    fn tryFileCall(self: *Emitter, name: []const u8, arity: usize, mode: CallMode, live: u32) anyerror!bool {
+        if (self.cur_type == null) return false;
+        if (!self.isFileFn(name, arity)) return false;
+        const owner = try self.fileCallTarget(name, arity);
+        var fn_buf: [256]u8 = undefined;
+        const fn_atom = atomName(name, &fn_buf) catch name;
+        try beamEmitter.writeCall(
+            self.out,
+            if (mode == .tail) .last else .normal,
+            arity,
+            .{ .ext = .{ .module = owner, .function = fn_atom } },
+            live,
+        );
+        return true;
+    }
+
+    /// An associated `fn` of `type_name` called as `Type.f(args)`: local inside
+    /// that type's own module, a `call_ext` into it from anywhere else. True
+    /// when it was lowered, false to let the caller keep looking.
+    fn typeAssocCall(self: *Emitter, type_name: []const u8, cc: anytype, mode: CallMode) anyerror!bool {
+        const arity = cc.args.len;
+        var nbuf: [256]u8 = undefined;
+        const name = self.methodFnName(&nbuf, type_name, cc.callee) catch return false;
+        if (self.cur_type) |ct| if (std.mem.eql(u8, ct, type_name)) {
+            if (self.fnLabelsFor(name, arity)) |labels| {
+                try self.materializeCallArgs(cc.args, cc.trailing);
+                switch (mode) {
+                    .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),
+                    .tail => try beamEmitter.writeCall(self.out, .last, arity, .{ .local = labels.entry }, self.num_y),
+                }
+                return true;
+            } else |_| {}
+        };
+        if (try self.typeMethodModule(type_name, cc.callee, arity)) |owner| {
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            try beamEmitter.writeCall(
+                self.out,
+                if (mode == .tail) .last else .normal,
+                arity,
+                .{ .ext = .{ .module = owner, .function = cc.callee } },
+                self.num_y,
+            );
+            return true;
+        }
+        // Not the type's own function (an `implement` block's, say): the file
+        // module's mangled local, as before.
+        if (self.fnLabelsFor(name, arity)) |labels| {
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            switch (mode) {
+                .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),
+                .tail => try beamEmitter.writeCall(self.out, .last, arity, .{ .local = labels.entry }, self.num_y),
+            }
+            return true;
+        } else |_| {}
+        return false;
+    }
+
+    /// The module of `type_name`'s `method/arity`, when the TYPE is what
+    /// declares it — a local type's own unit, or an imported type's module, the
+    /// link index being the source that knows an imported type's method names.
+    /// Null when it is not the type's method, so an `implement`/`extend` method
+    /// on the same type keeps the file module's mangled local.
+    fn typeMethodModule(self: *Emitter, type_name: []const u8, method: []const u8, arity: usize) !?[]const u8 {
+        if (self.own_types.contains(type_name)) {
+            var key_buf: [256]u8 = undefined;
+            const key = std.fmt.bufPrint(&key_buf, "{s}.{s}/{d}", .{ type_name, method, arity }) catch return null;
+            if (!self.own_type_methods.contains(key)) return null;
+            return try self.typeModuleAtom(type_name);
+        }
+        const xc = self.cross orelse return null;
+        const info = xc.exports.get(type_name) orelse return null;
+        switch (info.kind) {
+            .record, .@"enum" => {},
+            else => return null,
+        }
         for (info.methods) |m| {
-            if (std.mem.eql(u8, m, method)) return owner;
+            if (std.mem.eql(u8, m, method)) return try self.typeModuleAtom(type_name);
         }
         return null;
+    }
+
+    /// The function name `method` of type `owner` is DEFINED and CALLED under:
+    /// the bare name inside that type's own module (policy 3 — the module
+    /// boundary replaced the prefix), the `'<Owner>_<method>'` mangling
+    /// everywhere else. A behavior's `default fn` keeps the mangling wherever it
+    /// is emitted, because a behavior has no module (decision 23).
+    fn methodFnName(self: *const Emitter, buf: []u8, owner: []const u8, method: []const u8) ![]const u8 {
+        if (self.cur_type) |ct| {
+            if (std.mem.eql(u8, ct, owner)) return std.fmt.bufPrint(buf, "{s}", .{method});
+        }
+        return std.fmt.bufPrint(buf, "'{s}_{s}'", .{ owner, method });
+    }
+
+    /// True when a unit is open and `name/arity` is one of the FILE module's
+    /// functions — a call to it is a `call_ext` the file module has to export.
+    fn isFileFn(self: *Emitter, name: []const u8, arity: usize) bool {
+        const labels = self.file_labels orelse return false;
+        const key = fnKey(self.alloc, name, arity) catch return false;
+        defer self.alloc.free(key);
+        return labels.contains(key);
+    }
+
+    /// Note that the file module must export `name/arity`, reached from inside
+    /// a type module, and answer the file's atom to call it in.
+    fn fileCallTarget(self: *Emitter, name: []const u8, arity: usize) ![]const u8 {
+        const key = try fnKey(self.atom_arena.allocator(), name, arity);
+        const gop = try self.file_exports_needed.getOrPut(self.alloc, key);
+        if (!gop.found_existing) gop.value_ptr.* = .{ .name = name, .arity = arity };
+        return self.file_atom;
     }
 
     /// Owning module atom for a cross-module export of the given kind, or null

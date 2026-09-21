@@ -12,12 +12,20 @@ type Unimplemented(id: i32) {
 {module, main}.
 {exports, []}.
 {attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- main__t__unimplemented.S
+```erlang
+{module, main__t__unimplemented}.
+{exports, [{process, 1}]}.
+{attributes, []}.
 {labels, 4}.
 
-{function, 'Unimplemented_process', 1, 3}.
+{function, process, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'Unimplemented_process'}, 1}.
+    {line, [{location, "main__t__unimplemented.erl", 1}]}.
+    {func_info, {atom, main__t__unimplemented}, {atom, process}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.

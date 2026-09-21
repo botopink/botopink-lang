@@ -14,12 +14,20 @@ type Vec2(
 {module, main}.
 {exports, []}.
 {attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- main__t__vec2.S
+```erlang
+{module, main__t__vec2}.
+{exports, [{dot, 2}]}.
+{attributes, []}.
 {labels, 8}.
 
-{function, 'Vec2_dot', 2, 3}.
+{function, dot, 2, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'Vec2_dot'}, 2}.
+    {line, [{location, "main__t__vec2.erl", 1}]}.
+    {func_info, {atom, main__t__vec2}, {atom, dot}, 2}.
   {label, 3}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

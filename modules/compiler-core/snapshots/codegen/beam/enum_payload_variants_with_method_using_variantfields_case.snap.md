@@ -20,12 +20,20 @@ val Shape = type {
 {module, main}.
 {exports, []}.
 {attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- main__t__shape.S
+```erlang
+{module, main__t__shape}.
+{exports, [{area, 1}]}.
+{attributes, []}.
 {labels, 8}.
 
-{function, 'Shape_area', 1, 3}.
+{function, area, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'Shape_area'}, 1}.
+    {line, [{location, "main__t__shape.erl", 1}]}.
+    {func_info, {atom, main__t__shape}, {atom, area}, 1}.
   {label, 3}.
     {allocate, 5, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.

@@ -17,12 +17,20 @@ val Invoice = type(
 {module, main}.
 {exports, []}.
 {attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- main__t__invoice.S
+```erlang
+{module, main__t__invoice}.
+{exports, [{total, 1}, {validate, 1}]}.
+{attributes, []}.
 {labels, 9}.
 
-{function, 'Invoice_total', 1, 3}.
+{function, total, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'Invoice_total'}, 1}.
+    {line, [{location, "main__t__invoice.erl", 1}]}.
+    {func_info, {atom, main__t__invoice}, {atom, total}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -46,10 +54,10 @@ val Invoice = type(
     {deallocate, 1}.
     return.
 
-{function, 'Invoice_validate', 1, 5}.
+{function, validate, 1, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, 'Invoice_validate'}, 1}.
+    {line, [{location, "main__t__invoice.erl", 2}]}.
+    {func_info, {atom, main__t__invoice}, {atom, validate}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.

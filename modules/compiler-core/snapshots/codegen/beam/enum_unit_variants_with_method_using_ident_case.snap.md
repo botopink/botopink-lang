@@ -22,12 +22,20 @@ val HttpMethod = type {
 {module, main}.
 {exports, []}.
 {attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- main__t__httpmethod.S
+```erlang
+{module, main__t__httpmethod}.
+{exports, [{name, 1}]}.
+{attributes, []}.
 {labels, 8}.
 
-{function, 'HttpMethod_name', 1, 3}.
+{function, name, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'HttpMethod_name'}, 1}.
+    {line, [{location, "main__t__httpmethod.erl", 1}]}.
+    {func_info, {atom, main__t__httpmethod}, {atom, name}, 1}.
   {label, 3}.
     {allocate, 5, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
