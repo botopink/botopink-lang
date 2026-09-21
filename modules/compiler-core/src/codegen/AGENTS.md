@@ -336,6 +336,19 @@ codegen/
   lambda's single parameter is `const v = _s;` at the top of the arm — the only
   scope where the subject is in hand. The checker types it as the subject
   narrowed by the arm's pattern.
+- **A lambda's last statement is a return position** (`buildLambdaTail`): a JS
+  arrow block does not auto-return, so every expression form `buildExpr` gives a
+  value to is `return`ed there — the same rule `buildIfLast` applies one level
+  down, and the same rule a `val x = <e>;` binding already gets. The whitelist
+  that used to decide it (`isImplicitReturnExpr`) listed only the categories
+  that are *always* a value, so an `if`, a `loop` and a `try`/`catch` tail fell
+  through to `buildStmt` and were written as statements —
+  `(x) => { (() => { … })(); }` — and the arrow answered `undefined`. A `case`
+  never had the defect (it is a `.collection`). Still statements: a jump, a
+  binding, a `use` hook, and any `if`/`loop` whose body jumps out of the lambda
+  (`exprJumps`), because a `return` cannot cross the IIFE the value form wraps
+  it in. `try`/`catch` goes through `buildTryStmt` with the `.ret` head, not
+  `.discard`.
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
 - **None is loose**: botopink has one none value and JavaScript spells it two

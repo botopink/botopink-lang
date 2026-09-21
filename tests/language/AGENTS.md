@@ -37,8 +37,10 @@ Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, �
 cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
 `run/index_past_the_end_fails`, `run/index_at_optional`), `std_erlang_node` (decision 64),
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4), and the
-singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
-decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
+singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, `lambda_expression_body`
+(1.0.10-beta's `00 · 04-js`: a lambda whose whole body is one expression answers that expression's
+value — measured by emilia's theme front, and asserting the VALUE, because the defect was a wrong
+answer rather than a crash), and the decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
 `curried_call`, `index_expression`). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
