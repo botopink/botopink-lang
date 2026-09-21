@@ -240,6 +240,20 @@ codegen/
   `import {env} from "std"`) resolves; calls in the owning module still inline
   the template. A fn with no `node` target raises
   `MissingExternalTarget` when called.
+- **A template on a BEHAVIOR method is a prototype patch, not a call-site
+  render** (`buildInterface`): it becomes `<Owner>.prototype.<m> =
+  function(…){ return <template with $0 = this[.valueOf()]> }` and every call
+  site dispatches through it. So the template must not call the method it
+  patches — it would call the patch. `String.charCodeAt` read
+  `(($0.charCodeAt($1) ?? -1) | 0)`, and since the whole `String` prelude is
+  installed into any module using a member that needs a patch (`slice` does;
+  `split`/`indexOf`/`startsWith` do not), one `s.slice(…)` made every
+  `.charCodeAt(…)` in the PROGRAM blow the stack. The template body is opaque
+  host text (`js_ast.Expr.host`), so there is nothing to rewrite into a call of
+  the original; the rule is instead **gated** by
+  `codegen/tests/externals.zig`'s `no prelude template calls the method it
+  patches`, which walks the embedded prelude. Pinned end to end by
+  `tests/language/run/string_char_code_after_slice.bp`.
 - **`assert`** (semantics decision 4): outside test mode it is always fatal —
   `__bp_assert_fatal(cond, msg, "<module>.bp:<line>")`, a prelude helper that
   throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a

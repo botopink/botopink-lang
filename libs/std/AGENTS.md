@@ -137,7 +137,18 @@ erlang and commonJS. A template on a behavior method
 becomes a `<Owner>.prototype.<m>` patch on commonJS, so it must not call the
 native method of the same name (the patch would call itself), and a
 `default fn` body is patched the same way — `stringSlice*`/`arraySlice*`
-therefore cut without `.slice`. `@External.Beam` bodies are `.S`
+therefore cut without `.slice`. **That rule is now gated**, because it was
+written here and broken anyway: `String.charCodeAt` read
+`(($0.charCodeAt($1) ?? -1) | 0)`, and since the `String` prelude is installed
+into any module using a member that needs a patch (one `s.slice(…)` is enough),
+every `.charCodeAt(…)` in the program blew the stack — a library adopted "never
+call `String.slice`" as a house rule rather than find it. `js: external ---- no
+prelude template calls the method it patches`
+(`codegen/tests/externals.zig`) walks the embedded prelude and fails on the
+shape. `charCodeAt` names native `codePointAt`, which no behavior member
+patches, and which is also what the `?? -1` was written for: out of range it
+answers `undefined` where `charCodeAt` answers `NaN`, which `??` does not catch
+and `| 0` turned into `0` — commonJS answered `0` where erlang answered `-1`. `@External.Beam` bodies are `.S`
 instructions: the receiver arrives in `{x, 0}`, argument N in `{x, N+1}`, the
 result leaves in `{x, 0}`, and a `gc_bif` live count must cover every
 register it reads or that is read later. Arity branching
