@@ -383,6 +383,50 @@ fn read(raw: unknown) -> string {
 (`Circle(radius) -> …`, below) and an optional with `if (x) { n -> … }`;
 `assert x is Some(v)` is a located error.
 
+### Narrowing
+
+A test that proves something about a **name** rebinds that name for the code the
+test guards. Narrowing is a rebinding, so only a plain name narrows: there is
+nothing to rebind for `o.inner` or `f().x`, and those stay whatever they were.
+
+These shapes narrow:
+
+| Shape | Where the name is narrowed |
+|---|---|
+| `if (x is T) { … }` | the branch |
+| `if (guard(x)) { … }`, for a `fn guard(x: …) -> x is T` | the branch |
+| `if (x != null) { … }` — and `null != x` | the branch, to the `?T`'s payload |
+| `if (x == null) { … } else { … }` | the `else` branch |
+| `if (x == null) { return …; }` — a guard clause | the REST of the block, for a `val` |
+| `if (a != null && b != null)` | both names, in the branch |
+| `if (a == null \|\| b == null) { return …; }` | both names, below the guard |
+| `if (x) { v -> … }` | `v` is the payload; `x` itself is untouched |
+| `case x { null { … } v { … } }` | `v` is the payload |
+
+```botopink
+type Entry(key: string) {}
+
+fn firstKeyLength(entries: Entry[]) -> i32 {
+    val first = entries.at(0);
+    if (first == null) { return 0; };
+    return first.key.length();     // `first` is an `Entry` here, not a `?Entry`
+}
+
+pub fn main() {
+    @print(firstKeyLength([Entry(key: "abc")]));
+}
+```
+
+Three shapes do **not** narrow, and each for its own reason:
+
+* `if (x)` on a `?T` with no binder is refused — "type mismatch: expected bool,
+  got optional". There is no truthiness on an optional; write `if (x) { v -> … }`
+  or `if (x != null)`.
+* `loop (x != null) { … }` leaves its body alone. A condition loop reassigns the
+  name it tests, and a narrowed name could not be assigned the optional again.
+* A guard clause narrows a `val` and not a `var`, for the same reason: a `var`
+  can be assigned below the guard.
+
 ## Expressions
 
 ### Literals
