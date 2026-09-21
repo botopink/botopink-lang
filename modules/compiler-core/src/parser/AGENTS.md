@@ -122,6 +122,19 @@ not copy the loop.** The semicolon policy is per block and is what each copy
 already applied — they are recorded above rather than unified, because
 tightening one would refuse a program that compiles today.
 
+## The `if` condition parses at `prec.lowest` (C-08)
+
+The condition parses at **`prec.lowest`**, not `prec.equality`: `if (a && b)`
+and `if (a || b)` are the conditions they look like, and no compound boolean has
+to be bound to a `val` first. This is the one `prec.equality` call site the
+widening reaches, and the reason is the delimiter — the grammar's own `(` … `)`
+closes the condition, so a looser operator has nowhere to run to. The other
+eleven sites (`comptime <expr>`, the value after `yield [:label]`,
+`ident.field = / += <expr>`, both ends of `parseRangeExpr`, three default-value
+sites in `parser/decls.zig`, the two `case`-subject sites in `parser/patterns.zig`)
+are open-ended and **stay at `prec.equality`**; widening one of them would swallow
+the token that ends the form.
+
 ## A bodyless `fn` declares its return type (decision 33 (b))
 
 A top-level `fn` with no `{ … }` body is a **declaration**, and it is accepted

@@ -156,7 +156,12 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         this.useBranchSeen = true;
 
         _ = try this.consume(.leftParenthesis);
-        const cond = try this.parseBinaryExpr(alloc, prec.equality);
+        // `prec.lowest`, not `prec.equality`: an `if` condition is delimited by
+        // the grammar's own parentheses, so `&&` and `||` have nowhere to run
+        // to and `if (a && b)` reads as the one condition it looks like. This
+        // is the only `prec.equality` call site the delimiter argument reaches;
+        // the other eleven are open-ended and stay where they are.
+        const cond = try this.parseBinaryExpr(alloc, prec.lowest);
         errdefer @constCast(&cond).deinit(alloc);
         _ = try this.consume(.rightParenthesis);
         const condPtr = try this.boxExpr(alloc, cond);

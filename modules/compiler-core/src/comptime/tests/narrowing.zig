@@ -282,12 +282,12 @@ test "infer: narrow ---- type guard narrowing in if" {
 
 // ── AND condition narrowing ────────────────────────────────────────────────────
 
-// DOCUMENTED SKIP — `if (a && b)` does not parse (the `if` condition parser
-// stops before `&&`/`||`; `if ((a && b))` is needed) and, once parenthesised,
-// `?Box && …` is rejected because an optional is not a bool: narrowing through
-// an `&&` chain does not exist. Missing feature: `&&`-guarded narrowing;
-// owner: spec 02 (parser + checker). `narrow ---- if null check record field
-// access` covers the nested-`if` form that does work.
+// DOCUMENTED SKIP — `if (a && b)` parses since C-08 widened the `if`
+// condition to `prec.lowest`, so what is left is the checker half: `?Box && …`
+// is rejected because an optional is not a bool, and narrowing through an `&&`
+// chain does not exist. Missing feature: `&&`-guarded narrowing; owner: spec
+// 02 (checker). `narrow ---- if null check record field access` covers the
+// nested-`if` form that does work.
 test "infer: narrow ---- and condition field access" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
         \\val Box = type(weight: i32)
@@ -297,7 +297,9 @@ test "infer: narrow ---- and condition field access" {
         \\    };
         \\    return "light or none";
         \\}
-        \\@print(describe(Box(weight: 20)));
+        \\fn main() {
+        \\    @print(describe(Box(weight: 20)));
+        \\}
     );
 }
 

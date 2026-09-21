@@ -205,11 +205,11 @@ test "js: narrow ---- case option some none" {
 
 // ── AND condition narrowing ────────────────────────────────────────────────────
 
-// DOCUMENTED SKIP — `if (a && b)` does not parse (the `if` condition parser
-// stops before `&&`/`||`) and, parenthesised, `?Box && …` is rejected because
-// an optional is not a bool. Missing feature: `&&`-guarded narrowing; owner:
-// spec 02 (parser + checker). `narrow ---- early return with print` covers the
-// nested/guard form that does work.
+// DOCUMENTED SKIP — `if (a && b)` parses since C-08 widened the `if`
+// condition to `prec.lowest`; what is left is the checker half, `?Box && …`
+// being rejected because an optional is not a bool. Missing feature:
+// `&&`-guarded narrowing; owner: spec 02 (checker). `narrow ---- early return
+// with print` covers the nested/guard form that does work.
 test "js: narrow ---- and condition field access" {
     try h.assertJsCompileError(std.testing.allocator, @src(),
         \\val Box = type(weight: i32)

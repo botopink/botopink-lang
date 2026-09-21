@@ -348,6 +348,16 @@ val x = 1;
 val s = if (x > 0) { "positive" } else { "negative" };
 ```
 
+A condition is a whole expression, `&&` and `||` included — the grammar's own
+parentheses close it, so nothing has to be bound to a `val` first:
+
+<!-- docs-check: body -->
+```botopink
+val a = true;
+val b = false;
+if (a && b) { @print("both"); } else if (a || b) { @print("either"); };
+```
+
 `if` on an optional unwraps it in the then-branch:
 
 ```botopink
