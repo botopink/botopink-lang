@@ -66,6 +66,23 @@ pub fn codegenEmit(
                 });
             },
             .ok => |*ok| {
+                // An import this program cannot resolve to one module: the
+                // index is keyed by the bare symbol name and two modules
+                // export it. Backend-agnostic — every backend reads the same
+                // index — so every backend's driver reports it, the way the
+                // erlang atom fault is reported.
+                if (cross.exportFault(ct.name)) |contest| {
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = .{ .type = .{ .message = try contest.message(alloc), .loc = null } },
+                        },
+                    });
+                    continue;
+                }
                 // `"std"` package copies are dependencies — never emit their
                 // test blocks (a project's `botopink test` runs only its own
                 // tests; the stdlib's inline tests run from `libs/std` itself).
@@ -1160,7 +1177,10 @@ const Emitter = struct {
     variant_fields: std.StringHashMap([]const []const u8),
     /// Payload variant name → the enum that declares it. `Shape.Rect(width: …)`
     /// may claim `Rect`'s slots by label only through `Shape` itself
-    /// (`variantSlotsFor`).
+    /// (`variantSlotsFor`). `""` when two enums of this module declare the
+    /// name: `variant_fields` is keyed by the bare name and keeps one entry, so
+    /// a contested name has no slot list that is certainly its own, and it
+    /// claims nothing by label (decision 67).
     variant_owner: std.StringHashMap([]const u8),
     /// Every payload-less variant name declared by an enum in this module
     /// (`Nothing`, `X3xl`). It says "this bare name is a variant, not a
@@ -1582,7 +1602,12 @@ const Emitter = struct {
             // construction here (`App(8080, "/")`) still needs `new`.
             .use => |u| if (self.cross) |xc| {
                 for (u.imports) |imp| {
-                    if (xc.exports.get(imp.name())) |info| {
+                    // `picked`, not a name-keyed `get`: the import's own
+                    // `from "<mod>"` says which module's record this is, so
+                    // the slot names a labelled constructor claims come from
+                    // the declaration the import names and never from
+                    // whichever module the walk reached last.
+                    if (xc.picked(imp.name(), u.source, null)) |info| {
                         if (info.is_class) {
                             try self.class_names.put(imp.name(), {});
                             if (info.fields.len > 0) try self.record_fields.put(imp.name(), info.fields);
@@ -1618,7 +1643,13 @@ const Emitter = struct {
                     const names = try self.arena().alloc([]const u8, v.fields.len);
                     for (v.fields, 0..) |f, i| names[i] = f.name;
                     try self.variant_fields.put(v.name, names);
-                    try self.variant_owner.put(v.name, e.name);
+                    // A second enum of this module declaring the same variant
+                    // name contests it — neither owns it for the purpose of a
+                    // labelled payload.
+                    const owner = try self.variant_owner.getOrPut(v.name);
+                    if (owner.found_existing) {
+                        if (!std.mem.eql(u8, owner.value_ptr.*, e.name)) owner.value_ptr.* = "";
+                    } else owner.value_ptr.* = e.name;
                 }
                 for (e.methods) |m| {
                     if (m.is_declare or !enumMethodTakesReceiver(m)) continue;
@@ -1628,7 +1659,7 @@ const Emitter = struct {
             .behavior => |i| try self.local_interfaces.put(i.name, i),
             .use => |u| if (self.cross) |xc| {
                 for (u.imports) |imp| {
-                    const info = xc.exports.get(imp.name()) orelse continue;
+                    const info = xc.picked(imp.name(), u.source, null) orelse continue;
                     if (info.kind == .@"enum") try self.imported_enums.put(imp.name(), {});
                 }
             },
@@ -2557,18 +2588,23 @@ const Emitter = struct {
         // It resolves the same way a `from "<pkg>"` import does — name by name
         // through the cross-module export index — so both enter here.
         if (self.cross != null) {
-            const xm = &self.cross.?.exports;
+            const xm = self.cross.?;
             var seen = std.StringHashMap(void).init(self.alloc);
             defer seen.deinit();
             for (u.imports) |imp| {
-                const info = xm.get(imp.name()) orelse continue;
+                // Which module emits this name — asked of the import's own
+                // `from "<mod>"`, not of a name-keyed `get` whose winner was
+                // the walk order. Measured before this: `import {parse} from
+                // "one"` emitted `require("./two.js")` and node printed the
+                // other module's answer at exit 0.
+                const info = xm.picked(imp.name(), u.source, null) orelse continue;
                 if (seen.contains(info.module)) continue;
                 try seen.put(info.module, {});
                 // Names from this module not already bound here — `const {…}` for
                 // exactly those. If every one is already bound, emit no line.
                 var props: std.ArrayListUnmanaged(js.ObjectPattern.Prop) = .empty;
                 for (u.imports) |imp2| {
-                    const info2 = xm.get(imp2.name()) orelse continue;
+                    const info2 = xm.picked(imp2.name(), u.source, null) orelse continue;
                     if (!std.mem.eql(u8, info2.module, info.module)) continue;
                     if (self.seen_imports.contains(imp2.name())) continue;
                     try self.seen_imports.put(imp2.name(), {});
@@ -2601,7 +2637,7 @@ const Emitter = struct {
                     break;
                 }
             }
-            if (names_lib and xm.get(lib_name) == null) {
+            if (names_lib and xm.exports.get(lib_name) == null) {
                 // Distinct modules emitted under the lib's `<lib>/` path prefix,
                 // sorted for deterministic output (the export map is unordered).
                 var mods: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -2610,7 +2646,7 @@ const Emitter = struct {
                 defer mseen.deinit();
                 const mod_prefix = try std.fmt.allocPrint(self.alloc, "{s}/", .{lib_name});
                 defer self.alloc.free(mod_prefix);
-                var it = xm.valueIterator();
+                var it = xm.exports.valueIterator();
                 while (it.next()) |info| {
                     const m = info.module;
                     if (!std.mem.startsWith(u8, m, mod_prefix)) continue;
@@ -4215,6 +4251,7 @@ const Emitter = struct {
             else => return null,
         };
         const declared = self.variant_owner.get(name) orelse return null;
+        if (declared.len == 0) return null; // two enums declare it — see `variant_owner`
         if (!std.mem.eql(u8, declared, owner)) return null;
         return self.variant_fields.get(name);
     }
