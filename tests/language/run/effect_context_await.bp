@@ -1,0 +1,61 @@
+//// Decision 95 — `@Context` ⊃ `@Future` ⊃ `@Result`, so `await` is legal in a
+//// `#[@context]` body. `run/effect_chain.bp` carries `use` and `try`, the two
+//// capabilities every backend runs the same way; this cell carries the third,
+//// which was left out of that one because commonJS lowered a `#[@context]`
+//// body to a plain `function` and the emitted `await` was a JS `SyntaxError`
+//// — the module did not load at all, while erlang and wasm printed the value.
+////
+//// Both shapes decision 88 and decision 96 allow for the return are here: the
+//// explicit wrapper `-> @Context<Element, i32>`, and a type that IMPLEMENTS
+//// `@Context` (`-> Element`, the component). They are two paths through the
+//// emitter, not one.
+////
+//// Every value is printed from INSIDE the awaiting body. That is the cell's
+//// one piece of care and the reason it reads the way it does: commonJS hands
+//// a suspending function's CALLER a promise — exactly as it already does for
+//// `#[@future]`, measured — while erlang and wasm hand it the value, so a
+//// `@print` at the call site would compare a promise with `41`. What every
+//// target does agree on is the body: it runs, in order, with the awaited value
+//// in hand. The `#[@context]` prints therefore come last, after `main`'s own.
+
+type Element(count: i32) implement @Context<Element, Element>
+
+fn state(initial: i32) -> @Context<Element, i32> {
+    return initial;
+}
+
+#[@future]
+fn answer(n: i32) -> @Future<i32> {
+    return n;
+}
+
+// The explicit wrapper: `await` two levels down the chain.
+#[@context]
+fn page(n: i32) -> @Context<Element, i32> {
+    val v = await answer(n);
+    @print(v);
+    return v;
+}
+
+// The component shape — `use` and `await` in one body.
+#[@context]
+fn Widget(n: i32) -> Element {
+    val c = use state(1);
+    val v = await answer(n);
+    @print(c + v);
+    return Element(count: c + v);
+}
+
+// A `#[@context]` body that awaits NOTHING keeps answering its value directly,
+// on every target: its caller reads the field off what it returns.
+#[@context]
+fn Plain(n: i32) -> Element {
+    val c = use state(1);
+    return Element(count: c + n);
+}
+
+pub fn main() {
+    @print(Plain(40).count);
+    page(41);
+    Widget(41);
+}

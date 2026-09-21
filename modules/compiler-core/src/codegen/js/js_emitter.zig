@@ -622,6 +622,9 @@ fn writeClass(w: *Writer, c: Ast.Class, indent: usize) Error!void {
             .getter => try w.writeAll("get "),
             .setter => try w.writeAll("set "),
         }
+        // JS fixes the order of a method's modifiers: `static async *name`.
+        if (m.is_async) try w.writeAll("async ");
+        if (m.is_generator) try w.writeByte('*');
         try w.writeAll(m.name);
         try writeParams(w, m.params, indent);
         try w.writeByte(' ');

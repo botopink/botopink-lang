@@ -496,9 +496,37 @@ codegen/
   `todo`, …) applies only to a call with no receiver — `d.print()` on a record
   is the record's method.
 - **Tuple index**: `t._N` and the bare `t.N` are `t[N]`.
-- **Effects**: `fnKeyword` picks `async function` / `function*` /
-  `async function*`; inside a generator, `return <iter>` becomes
-  `yield* <iter>; return;` and `loop (xs) { x -> yield x }` becomes `for…of`.
+- **Effects**: `effectShape` is the one table — it answers the two JS
+  modifiers (`is_async`, `is_generator`) an effect asks for, and `FnShape
+  .keyword()` spells them as `async function` / `function*` /
+  `async function*` for a declaration. A **method** carries its effect on its
+  annotation list, not on an `effect` field (`ast.BehaviorMethod` has none), so
+  `methodEffect` reads it back: a record's own body, a record's `implement`
+  block and an enum's body all route through it, and a class member spells the
+  same two modifiers without the `function` word (`static async *name`,
+  `js/js_ast.zig`'s `ClassMember.is_async` / `.is_generator`). Reading
+  `ast.FnDecl.effect` alone is what made `#[@iterator] fn each(self: Self)`
+  emit a plain method whose `loop … yield` lowered to a value-dropping
+  `.map()`. A `behavior`'s `default fn` is the one method kind that never
+  carries one — the checker refuses `effect-on-behavior-method-forbidden`.
+  Inside a generator, `return <iter>` becomes `yield* <iter>; return;` and
+  `loop (xs) { x -> yield x }` becomes `for…of`.
+- **A labelled argument claims its slot**: `docs.md` § Parameters with defaults
+  — "a parameter the call names by label keeps the argument it was given,
+  whichever position it is in". `labelledArgs` places the arguments of a
+  **fully-written labelled call** into the slots their labels name, for the two
+  call shapes whose slot names this backend knows: a record constructor
+  (`record_fields`, its own records and, through `crossModule.ExportInfo
+  .fields`, the ones it imports) and an enum variant reached through its own
+  enum (`variant_fields` + `variant_owner`, guarded by `variantSlotsFor` so a
+  method that happens to share a variant's spelling is never re-ordered).
+  Anything else — a call mixing labelled and positional arguments, a label
+  naming no declared field, a trailing lambda, an arity that is not the slot
+  count — keeps the positional path byte-identical rather than placing on a
+  guess (decision 67). **A free function's and a method's parameters are not
+  claimable here**: the checker still types a labelled call by position
+  (1.0.10-beta `00 · 01-checker`, the full-arity labelled row), so re-ordering
+  them in one backend would type against one parameter and pass another.
 - **Control flow (no statement in expression position)**: a jump is a
   statement, so every position that can hold one is lowered by `buildStmt`:
   - an `if` in statement position whose branches `return` / `break` /
@@ -2279,12 +2307,32 @@ SyntaxError: await is only valid in async functions and the top level bodies of 
 ```
 
 while erlang, wasm and beam run it (their `@Future<T>` is eager, so `await` is
-the identity and the row needs nothing). The fix is commonJS's `fnKeyword`
-answering `async function` for a `#[@context]` body that awaits — which changes
-what a component's caller receives, and is therefore a backend decision, not a
-legality one. Front 20 owns what is legal and explicitly does not touch
-`codegen/**` lowering; this row is the handoff. `tests/language/run/effect_chain.bp`
-carries the other rows and its header says why this one is absent.
+the identity and the row needs nothing).
+
+**Taken by `00 · 04-js` (2026-09-21), narrowly.** `contextShape` raises the
+`async` flag for a `#[@context]` function whose **built body** carries an
+`await` of its own (`AwaitScan`: a nested arrow, function or class member owns
+its own `await` and stops the walk). JavaScript has exactly one legal home for
+an `await`, so a body that emits one has to be `async` or the module is not
+JavaScript; and reading the built body rather than the declared effect means
+the only programs whose output moves are the ones node refused to load at all.
+A `#[@context] fn … -> Element` that awaits nothing — decision 88's component,
+which is every one written today — keeps its plain `function`, and its caller
+keeps receiving an `Element`.
+
+**What was deliberately NOT taken**: making every `#[@context]` an `async
+function` regardless of its body, which is the wider and more readable
+contract (a caller could tell from the signature). It would change what every
+component's caller receives, and that is the maintainer's call. The cost of
+the narrow rule is that two `#[@context]` functions with the same signature can
+have different call contracts; the cost of the wide one is every component.
+
+What a caller receives on commonJS is unchanged in kind: a suspending function
+hands back a promise, exactly as `#[@future]` already does (`@print(f())` prints
+`Promise { <pending> }` on commonJS and the value on erlang and wasm — measured,
+pre-existing, and not this row's). `tests/language/run/effect_context_await.bp`
+pins the row and prints every value from inside the awaiting body for that
+reason; `run/effect_chain.bp` carries `use` and `try`.
 
 Effect rejection diagnostics (R*, RF*, RI*, RC*, RG* codes) live in
 `comptime/diagnostics.zig`; `comptime/infer.zig`'s `inEffectContext` uses the

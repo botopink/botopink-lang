@@ -69,6 +69,7 @@ backend emits**, so the value's prototype is its identity:
 | `Shape.Circle(5)` | `Shape.Circle(5)` — a `static` factory returning `new Shape$Circle(5)` |
 | `Shape.Dot` | a **singleton**, `Shape.Dot = new Shape$Dot()` — no longer the bare string `"Dot"` |
 | an enum method | a `static` of the enum's class (`Shape.area(value)`) |
+| a method carrying an effect | the same member with `ClassMember.is_async` / `.is_generator` — `async name()`, `*name()`, `static async *name()` |
 
 Two prototype properties carry what the instance itself does not:
 
@@ -97,6 +98,14 @@ be an `instanceof`.
 
 `Object.freeze` is gone with the enum object: an enum is a class, and its
 payload-less singletons are assigned onto it after its subclasses exist.
+
+A method's effect is **two flags, not a keyword string.** A declaration spells
+its modifiers as one word (`async function*`); a method spells the same two
+without the `function` word and in a fixed order — `static`, then `async`, then
+`*` — so `ClassMember` carries `is_async` and `is_generator` and `writeClass`
+writes them in that order. The backend fills them from one table
+(`commonJS.zig`'s `effectShape` / `methodEffect`), which is what makes
+`#[@iterator] fn each(self: Self)` the `*each()` a `for…of` can consume.
 
 `__bp` is what the §7 formatter tests, and it is the reason the formatter needs
 no `constructor` sniffing: a `Map`, a `@Result`'s `{ ok }` and any host object

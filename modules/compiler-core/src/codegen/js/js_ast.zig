@@ -416,6 +416,13 @@ pub const Class = struct {
         name: []const u8,
         params: []const Param = &.{},
         body: Block,
+        /// `async name(…) { … }` — the method's body may `await`. A method
+        /// carries the flag rather than a keyword string because JS spells a
+        /// method's modifiers in a fixed order and without the `function`
+        /// word: `static async *name()`.
+        is_async: bool = false,
+        /// `*name(…) { … }` — the method's body may `yield`.
+        is_generator: bool = false,
 
         pub const Kind = enum { method, static_method, getter, setter };
     };
