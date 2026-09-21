@@ -318,11 +318,21 @@ pub fn CaseArmOf(comptime phase: Phase) type {
         guard: ?ExprOf(phase) = null,
         /// Number of empty lines before this arm in the source
         emptyLinesBefore: u32 = 0,
+        /// Where the arm's pattern starts. `Pattern` carries no location of its
+        /// own, so a diagnostic about the pattern — decision 54's "an optional
+        /// is matched by `null`", for one — has nowhere else to point. Left out
+        /// of the dump: a location is a diagnostic aid, not surface, and the AST
+        /// dumps are snapshot-compared.
+        patternLoc: Loc = .{ .line = 0, .col = 0 },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             this.pattern.deinit(allocator);
             this.body.deinit(allocator);
             if (this.guard) |*g| g.deinit(allocator);
+        }
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            return stringifyOmitting(this, jws, &.{"patternLoc"}, &.{});
         }
     };
 }
@@ -423,7 +433,7 @@ pub fn JumpExprOf(comptime phase: Phase) type {
         await_: *ExprOf(phase),
         /// `break [:label] [expr]` ---- exit a block/loop/iterator early.
         /// `value=null` is bare `break`; the optional `:label` targets a named
-        /// outer loop or `#[@iterator]` / `#[@asyncGenerator]` fn scope (§1I
+        /// outer loop or `#[@iterator]` / `#[@futureGenerator]` fn scope (§1I
         /// REGRAS DE ESCOPO: an unlabelled `break` inside a nested loop binds
         /// to the loop, not the iterator).
         @"break": struct {
@@ -433,7 +443,7 @@ pub fn JumpExprOf(comptime phase: Phase) type {
         /// `continue` ---- skip the rest of this loop iteration
         @"continue",
         /// `yield [:label] expr` ---- in a generator (`#[@iterator]` /
-        /// `#[@generator]` / `#[@asyncGenerator]` fn), suspend emitting `expr`;
+        /// `#[@generator]` / `#[@futureGenerator]` fn), suspend emitting `expr`;
         /// in a plain loop, accumulate `expr` into the loop's result list. The
         /// optional `:label` disambiguates which generator/loop scope the yield
         /// targets.
@@ -513,7 +523,7 @@ pub fn LoopExprOf(comptime phase: Phase) type {
         /// comptime transform for any `iter` inference typed `bool`.
         condition: bool = false,
         body: []StmtOf(phase),
-        /// `loop await (iter) { ... }` ---- iterate an `@AsyncIterator`, awaiting each item.
+        /// `loop await (iter) { ... }` ---- iterate an `@FutureGenerator`, awaiting each item.
         awaitLoop: bool = false,
         /// Optional loop label (`loop :acc (iter) { ... }`) for `yield :label` disambiguation.
         label: ?[]const u8 = null,
@@ -2053,8 +2063,13 @@ pub const EffectKind = enum {
     future,
     generator,
     iterator,
-    asyncGenerator,
+    futureGenerator,
     context,
+
+    /// Every effect, in declaration order. The one list: `fromAnnotationName`
+    /// and `comptime/effect_chain.zig` both walk it, so a seventh effect is a
+    /// value here and nowhere else.
+    pub const all = [_]EffectKind{ .result, .future, .generator, .iterator, .futureGenerator, .context };
 
     /// The annotation spelling — `#[@<name>]` — for this effect.
     pub fn annotationName(self: EffectKind) []const u8 {
@@ -2063,7 +2078,7 @@ pub const EffectKind = enum {
             .future => "future",
             .generator => "generator",
             .iterator => "iterator",
-            .asyncGenerator => "asyncGenerator",
+            .futureGenerator => "futureGenerator",
             .context => "context",
         };
     }
@@ -2075,7 +2090,7 @@ pub const EffectKind = enum {
             .future => "Future",
             .generator => "Generator",
             .iterator => "Iterator",
-            .asyncGenerator => "AsyncIterator",
+            .futureGenerator => "FutureGenerator",
             .context => "Context",
         };
     }
@@ -2083,7 +2098,6 @@ pub const EffectKind = enum {
     /// Map a builtin annotation name (`future`, …) to its effect, or null when
     /// the name is not one of the builtin effect markers.
     pub fn fromAnnotationName(name: []const u8) ?EffectKind {
-        const all = [_]EffectKind{ .result, .future, .generator, .iterator, .asyncGenerator, .context };
         for (all) |kind| {
             if (std.mem.eql(u8, kind.annotationName(), name)) return kind;
         }

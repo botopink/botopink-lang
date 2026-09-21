@@ -1030,6 +1030,7 @@ pub fn renderTypeErrorBody(
         .useNotAllowed => "use-of-non-context-fn: `use` not allowed",
         .useNotContext => "use-of-non-context-fn: `use` requires @Context",
         .contextMismatch => "context-anchor-violation: ContextBase mismatch",
+        .contextBaseMixed => "context-anchor-violation: two ContextBases in one body",
         .useWithoutContextEffect => "use-without-context-effect: `use` needs `#[@context]` on the enclosing fn",
         .throwWithoutResult => "throw outside @Result",
         .missingMethod => "missing interface method",
@@ -1176,6 +1177,13 @@ pub fn renderTypeErrorBody(
                 tmp,
                 "\n  function returns @Context<{s}, _>\n  but the `use` expression returns @Context<{s}, _>\n",
                 .{ m.fnBase, m.useBase },
+            ));
+        },
+        .contextBaseMixed => |m| {
+            try out.appendSlice(allocator, try std.fmt.allocPrint(
+                tmp,
+                "\n  this body's ContextBase is @Context<{s}, _>, fixed by the `use` on line {d}\n  but this `use` returns @Context<{s}, _>\n",
+                .{ m.anchorBase, m.anchorLine, m.useBase },
             ));
         },
         .useWithoutContextEffect => |u| {

@@ -1,0 +1,17 @@
+//// Decision 95 — the top of the chain still cannot yield. `#[@context]` grants
+//// `use`, `await` and `try`, and `yield` is not below any of them; the same
+//// missing star context that accepted `reject/yield_in_result.bp` accepted
+//// this one.
+////
+//// A `yield` inside a `loop (…) { … }` body is a different construct — decision
+//// 8 §10's comprehension, which feeds the loop's array and is legal in any body
+//// — and `run/loop_yield_and_break.bp` is where that one lives.
+
+type Element(count: i32) implement @Context<Element, Element>
+
+#[@context]
+fn Bad(n: i32) -> Element {
+    yield n;
+}
+
+pub fn main() { @print(1); }

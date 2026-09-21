@@ -8,8 +8,8 @@ pub fn loadOne(x: i32) -> @Future<i32> {
 pub fn count() -> @Iterator<i32> {
     yield 1;
 }
-#[@asyncGenerator]
-pub fn pulses() -> @AsyncIterator<i32, string> {
+#[@futureGenerator]
+pub fn pulses() -> @FutureGenerator<i32, string> {
     yield 1;
 }
 ```
@@ -19,15 +19,15 @@ pub fn pulses() -> @AsyncIterator<i32, string> {
 -module(main).
 -export([loadOne/1, count/0, pulses/0]).
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 loadOne(X) ->
     X.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 count() ->
     [1].
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 pulses() ->
     [1].
 ```

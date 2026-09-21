@@ -19,11 +19,11 @@ val extract = fn(c: Container) -> i32 {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: parse error (unexpectedToken)
-  ┌─ :6:18
+error: parse error (fieldNeedsName)
+  ┌─ :6:12
   │
 6 │     Single(Result<i32, string>),
 
-  unexpected `<`
+  unexpected `Result`
 ```
 

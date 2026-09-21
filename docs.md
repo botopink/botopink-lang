@@ -151,6 +151,30 @@ val count: i32 = 42;
 val names: string[] = ["alice", "bob"];
 ```
 
+A `val` at module level is part of the **module body**: it is evaluated **once**,
+in declaration order, when the module loads — before `main` runs and before the
+first `test {}` block. Reading the name afterwards does not evaluate it again,
+and a `_`-named statement, which nothing reads, runs just the same. So a module
+whose initialisers have effects registers itself by being loaded:
+
+```botopink
+fn register(name: string) -> i32 {
+    @print(name);
+    return 1;
+}
+
+val _registered = register("Greeter");   // runs at module load, once
+val port = 8000 + 80;                    // read as many times as you like
+
+fn main() {
+    @print(port);
+}
+```
+
+`botopink test` and `botopink build` agree on this: the module body runs in both,
+at the same point relative to the program's own code. A backend that cannot run
+it is a gap in that backend, not a different meaning of `val`.
+
 ### var — mutable binding
 
 <!-- docs-check: body -->
@@ -250,6 +274,12 @@ type Person(name: string) implement Printable {
     }
 }
 ```
+
+A `behavior` no type in the program implements is a **runtime boundary**: the
+host builds the value. Such a value carries its own members — a `val` member is
+read off it, and a method is found on it the same way and applied to the
+receiver and the arguments. That is what lets a host hand a program a request,
+a connection or a handle without the program naming a concrete type.
 
 ### Generics
 
@@ -352,12 +382,30 @@ val x = 1;
 val s = if (x > 0) { "positive" } else { "negative" };
 ```
 
+A condition is a whole expression, `&&` and `||` included — the grammar's own
+parentheses close it, so nothing has to be bound to a `val` first:
+
+<!-- docs-check: body -->
+```botopink
+val a = true;
+val b = false;
+if (a && b) { @print("both"); } else if (a || b) { @print("either"); };
+```
+
 `if` on an optional unwraps it in the then-branch:
 
 ```botopink
 fn show(x: ?i32) {
     if (x) { n -> @print(n); };
 }
+```
+
+Write the binder `_` when the branch only asks whether the value is there:
+
+<!-- docs-check: body -->
+```botopink
+val x: ?i32 = 5;
+if (x) { _ -> @print("present"); } else { @print("absent"); };
 ```
 
 ### Case (pattern matching)
@@ -427,12 +475,55 @@ fn grade(n: i32) {
 }
 ```
 
+A variant pattern names **every** field of its variant, or ends with `..`:
+
+```botopink
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+}
+
+fn describe(s: Shape) -> i32 {
+    return case s {
+        .Rect(width: w, ..) { w }
+        .Circle(r) { r }
+    };
+}
+```
+
+`.Rect(width: w)` without the `..` is `error: missing required field 'height' on
+type 'Rect'`, at the arm — the fields a pattern does not name are dropped, and
+`..` is how you say so.
+
 A range in a pattern is `..`, exclusive, exactly as in a loop. The compiler is
 behind that rule and still asks for `...` — see
 [Decided, not yet implemented](#decided-not-yet-implemented).
 
 A name alone is not a pattern: to give the matched value a name, bind it in the
-body (`_ { n -> … }`).
+body (`_ { n -> … }`). The one exception is the optional, below, where the name
+after the `null` arm *is* the pattern.
+
+#### An optional is matched by `null` and a binder
+
+A `?T` has exactly one pattern form — `null` for the absent value, then a name
+that binds what is there, already unwrapped:
+
+<!-- docs-check: body -->
+```botopink
+val x: ?i32 = 5;
+val a = case x { null { "absent" } v { "present " + v.toString() } };
+@print(a);
+```
+
+Two arms, in that order, and no guards. `null` comes first because a binder
+written first would match the absent value too. The binder may be `_` when the
+body does not read the value, and the arms cover the `?T` between them, so no
+`_` arm is needed and none is allowed.
+
+An optional is **not** a variant: `case x { .Some(v) { … } .None { … } }` is
+`error: an optional is matched by ``null``, not by a variant`, located at the
+arm. `Some` and `None` are not spellings this language has — `??` and `?.` read
+an optional the same way this does.
 
 ### Loop
 
@@ -595,10 +686,21 @@ The rules, each with its diagnostic:
 - **The operand is a hook.** `use plain()` where `plain : -> User` is
   `` use-of-non-context-fn: `use` requires @Context: 'User' does not implement
   @Context ``.
-- **One owner per body.** `use connection()` with `connection : ->
+- **One owner per body** (decision 96). The owner is a property of the
+  FUNCTION, not of each activation: the first `use` fixes it and every later
+  one resolves against the same one. Two refusals say so, and they are
+  different rules. A single `use` anchored at an owner the return type never
+  named is the DECLARATION's: `use connection()` with `connection : ->
   @Context<Http, _>` inside a body owned by `Element` is
   `` context-anchor-violation: function returns @Context<Element, _> but `use`
-  returns @Context<Http, _> ``.
+  returns @Context<Http, _> ``. A second `use` disagreeing with the first is
+  the BODY's, refused at its own site with both owners and the line that fixed
+  the anchor: `` context-anchor-violation: every `use` in one function resolves
+  against the same ContextBase: this body's is @Context<Element, _>, fixed by
+  the `use` on line 9, and this one is @Context<Http, _> ``. Two hooks that are
+  each legal alone are still refused together; there is no flag (decision 67).
+  Each body starts over — a sibling `fn` may anchor wherever its own return
+  type says.
 - **The static prefix.** Every `use` of a function body comes before its first
   `if`, `case`, `loop` or `return`, at any nesting: `val c = use …` after a
   `return`, and a `use` inside an `if`'s own block, are both parse errors —
@@ -639,6 +741,52 @@ fn greet(name: string, greeting: string = "hello") -> string {
 The default is **not applied yet**: every call still passes every argument
 (`greet("world")` reports `'greet' expects 2 argument(s), got 1`). 1.0.5-beta
 front `01-checker` step 7 closes it.
+
+### Effects
+
+A function's effect is named by one `#[@<effect>]` annotation — at most one per
+`fn` — and the return wrapper is the annotation with its first letter
+capitalised, in all six rows and with no exception: `#[@result]` → `@Result`,
+`#[@future]` → `@Future`, `#[@generator]` → `@Generator`, `#[@iterator]` →
+`@Iterator`, `#[@futureGenerator]` → `@FutureGenerator`, `#[@context]` →
+`@Context`.
+
+The six effects form a **chain** (decision 95): a wrapper extends the one
+below it, and an annotation grants every body operation at or below its own
+level.
+
+| Body | May write | Because the wrapper extends |
+|---|---|---|
+| `#[@context] fn … -> @Context<B, R>` (or a type implementing it, e.g. `Element`) | `use` · `await` · `try` | `@Context` ⊃ `@Future` ⊃ `@Result` |
+| `#[@futureGenerator] fn … -> @FutureGenerator<T, E, C>` | `await` · `try` · `yield` | `@FutureGenerator` ⊃ `@Future` ⊃ `@Result` |
+| `#[@future] fn … -> @Future<T, E>` | `await` · `try` | `@Future` ⊃ `@Result` |
+| `#[@iterator] fn … -> @Iterator<T, E, C>` | `try` · `yield` | `@Iterator` ⊃ `@Result` |
+| `#[@generator] fn … -> @Generator<T, R>` | `yield` | — no error channel |
+| `#[@result] fn … -> @Result<T, E>` | `try` | — it is the base |
+
+Every effectful body can fail, so every wrapper but one extends `@Result`; a
+wrapper that suspends extends `@Future`. The chain grants **downwards and never
+upwards**: `yield` stays exclusive to the three generator-shaped wrappers and
+`use` to `@Context`, and neither is a level anything else reaches.
+`@Generator<T, R>` is the exception — it has no error channel, so `throw` and
+`try` are both refused in a `#[@generator]` body.
+
+A capability written above the body's level is refused, located, naming the
+level it would need — there is no flag:
+
+```
+error: effect-try-without-fallible-channel: `try` needs an effect that
+implements `@Result` — `#[@result]`, `#[@future]`, `#[@iterator]`,
+`#[@futureGenerator]` or `#[@context]`; `#[@generator]` is `@Generator`,
+which does not
+```
+
+Two forms are **not** gated by the chain, because neither leaves the body.
+`try <e> catch <f>` handles the error on the spot, so it needs no channel and
+is legal in a plain `fn` — it is bare `try`, which returns the `Error` out of
+the enclosing function, that needs one. And a `yield` inside a `loop (…) { … }`
+body feeds that loop's array rather than the function (see *Loop*), so it is
+legal in any body, effect or not.
 
 ### Results
 
@@ -932,6 +1080,8 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.5-beta `01-checker` step 6 |
 | A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.5-beta `15-language-surface` step 2, with `16-formatter` (the formatter has to stop printing it in the same wave) |
 | A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value it answers something different on every backend: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, `0` on erlang and `256` on wasm | 1.0.5-beta — owner unassigned; the rule is decided (the `...` token, the diagnostic and the run-time semantics) |
+| `await` inside a `#[@context]` body (decision 95 — `@Context` extends `@Future`) | it type-checks, and it RUNS on erlang, wasm and beam (their `@Future<T>` is eager, so `await` is the identity). commonJS lowers `#[@context]` to a plain `function`, so the emitted `await` is `SyntaxError: await is only valid in async functions and the top level bodies of modules` | 1.0.10-beta — commonJS's own front: `fnKeyword` answering `async function` for a `#[@context]` body that awaits changes what a component's caller receives, which is a backend decision. Front 20 owns what is legal, not what is emitted |
+| An effect annotation on a record METHOD | ignored on commonJS: `fnKeyword` reads `ast.FnDecl.effect` and never sees a method, so `#[@iterator] fn iter(self: Self) -> @Iterator<T>` in a `type … implement Iterable<T> { … }` body emits as a plain `iter() { … }` and `loop (b.iter())` reds `b.iter is not a function or its return value is not iterable`. erlang runs it | 1.0.10-beta — owner unassigned; found by front 20 F12 while answering what `-> Iterator<T, E, C>` means on a behavior method |
 
 Six of the twelve rows this table carried before this revision left it because
 the compiler now accepts the form: union types, the `unknown` type and its
@@ -946,4 +1096,5 @@ reads as unfinished work:
 | Form | What the compiler says |
 |---|---|
 | `assert x is Some(n)` — `is` binding a payload | `error[is-variant-binding]`: `is` tests a type; it does not bind. Read the payload in a `case` arm |
+| `type Shape { Circle(i32) }` — a variant payload with no field name | `error[field-needs-name]`: a field with no name, at the payload, naming `Variant(field: T)`. A payload nobody can name is a payload no `case` arm can bind |
 | `val assert Ok(v) = parse("42") catch 0` | ``a `val assert` over a `@Result` takes no `catch` `` — the match is fatal, and `try … catch` is the form that supplies a fallback |

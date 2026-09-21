@@ -1398,7 +1398,7 @@ const Emitter = struct {
     ///   `#[@future]`         → `async function`
     ///   `#[@iterator]`       → `function*`
     ///   `#[@generator]`      → `function*`
-    ///   `#[@asyncGenerator]` → `async function*`
+    ///   `#[@futureGenerator]` → `async function*`
     ///   `#[@result]`         → `function` (checked-Result effect — plain fn)
     ///   `#[@context]` / none → `function`
     fn fnKeyword(f: ast.FnDecl) []const u8 {
@@ -1407,7 +1407,7 @@ const Emitter = struct {
             .future => "async function",
             .iterator => "function*",
             .generator => "function*",
-            .asyncGenerator => "async function*",
+            .futureGenerator => "async function*",
             .result => "function",
             .context => "function",
         };
@@ -2866,7 +2866,7 @@ const Emitter = struct {
                 .await_ => |av| return self.b.await_(try self.buildExpr(av.*)),
                 // Generator `yield` (loop-accumulator yields are lowered at
                 // the `.loop` site, so reaching here means an `#[@iterator]`
-                // / `#[@generator]` / `#[@asyncGenerator]` body).
+                // / `#[@generator]` / `#[@futureGenerator]` body).
                 .yield => |y| return self.b.yield_(if (y.value) |val| try self.buildExpr(val.*) else null),
             },
 

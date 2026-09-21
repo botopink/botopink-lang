@@ -340,10 +340,13 @@ test "pattern: assign pattern in record" {
     );
 }
 
-// DOCUMENTED SKIP — two parser gaps: an unnamed variant payload
-// (`Single(Result<i32, string>)` — payloads need `name: Type`) and nested
-// constructor patterns (`Single(Ok(v))`, `Multiple([Ok(v), ..])`).
-// Owner: spec 02 (parser gaps). The snapshot pins the parse error.
+// DOCUMENTED SKIP, half closed. The unnamed variant payload
+// (`Single(Result<i32, string>)`) is **decided**, not missing: decision 12 says
+// a payload nobody can name is a payload no `case` arm can bind, and C-08 made
+// it `error[field-needs-name]` at the payload itself, naming `Variant(field: T)`
+// — which is what this snapshot now records. The remaining gap is the nested
+// constructor pattern (`Single(Ok(v))`, `Multiple([Ok(v), ..])`), which this
+// cell cannot reach while its declaration is refused; owner: spec 02.
 test "pattern: complex nested patterns" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
         \\val Result = type <T, E> {

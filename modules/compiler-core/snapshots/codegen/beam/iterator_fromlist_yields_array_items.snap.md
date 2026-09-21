@@ -27,7 +27,7 @@ fn main() {
 {attributes, []}.
 {labels, 35}.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, fromList, 1, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.

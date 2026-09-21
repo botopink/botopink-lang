@@ -226,22 +226,22 @@ pub const TypeparamConstraint = struct {
 
 /// Context active while inferring the body of an effect fn (async /
 /// generator — i.e. one marked `#[@future]` / `#[@iterator]` / `#[@generator]`
-/// / `#[@asyncGenerator]`). Drives validation of `await` and `yield`; `null`
+/// / `#[@futureGenerator]`). Drives validation of `await` and `yield`; `null`
 /// inside normal functions and at the top level. (The type keeps its
 /// historical name `StarFnCtx` for the field on `Env`; the `*fn` prefix it
 /// alludes to was removed in v0.beta.19.)
 pub const StarFnCtx = struct {
     /// `await` is permitted here — async function (`@Future`) or async
-    /// generator (`@AsyncIterator`).
+    /// generator (`@FutureGenerator`).
     allowsAwait: bool,
     /// `yield` (and generator delegation) is permitted here — `@Iterator` /
-    /// `@Generator` / `@AsyncIterator`. False for a pure `@Future`.
+    /// `@Generator` / `@FutureGenerator`. False for a pure `@Future`.
     allowsYield: bool,
-    /// `@Iterator<T>` / `@Generator<T, _>` / `@AsyncIterator<T, _>` item type
+    /// `@Iterator<T>` / `@Generator<T, _>` / `@FutureGenerator<T, _>` item type
     /// that `yield` values must unify with; `null` when unknown or absent
     /// (`@Future`).
     iterItem: ?*T.Type,
-    /// `@Iterator<T, E, C>` / `@AsyncIterator<T, E, C>` completion type that
+    /// `@Iterator<T, E, C>` / `@FutureGenerator<T, E, C>` completion type that
     /// `break <expr>` values must unify with (§1I RI2/RI3). `null` for
     /// effects without a completion channel (`@Future`, `@Generator`'s `R`
     /// rides on `return` instead).
@@ -253,7 +253,7 @@ pub const StarFnCtx = struct {
     fnLabel: ?[]const u8,
     /// The specific effect kind this context was built from. Drives effect-
     /// specific rejections (RF1/RF2/RF5 fire only inside `#[@future]`, RI*
-    /// only inside `#[@iterator]` / `#[@asyncGenerator]`, etc.).
+    /// only inside `#[@iterator]` / `#[@futureGenerator]`, etc.).
     effect: ast.EffectKind,
 };
 
@@ -340,7 +340,7 @@ pub const ResultJumpLowering = enum { wrap_ok, wrap_error, unwrap_passthrough };
 /// Other backends (erlang/beam) consume the same uniform AST form.
 pub const FutureJumpLowering = enum { wrap_resolved, wrap_rejected };
 
-/// §1I F4I-tail — `break`/`throw` jumps inside `#[@iterator]` / `#[@asyncGenerator]`
+/// §1I F4I-tail — `break`/`throw` jumps inside `#[@iterator]` / `#[@futureGenerator]`
 /// fns. The transform rewrites:
 ///   - `break <c>;` (targeting the FSM, per RI2/RI3 scoping) → `return @IteratorStep.Done(<c>);`
 ///   - `break;` (bare, targeting the FSM)                    → `return @IteratorStep.Done();`
@@ -452,7 +452,7 @@ pub const Env = struct {
     /// wrapper calls. Keyed by the jump's source location.
     future_jump_lowerings: std.AutoHashMap(ast.Loc, FutureJumpLowering),
     /// §1I F4I-tail — `break`/`throw` jumps inside `#[@iterator]` /
-    /// `#[@asyncGenerator]` fns that target the FSM (top-level `break`/`throw`
+    /// `#[@futureGenerator]` fns that target the FSM (top-level `break`/`throw`
     /// or `break :label` with the fn's signature label, per RI2/RI3 scoping).
     /// The transform pass rewrites each entry into a `return @IteratorStep.<v>(…)`
     /// call so the backend's existing enum-constructor codegen materialises the
@@ -500,7 +500,24 @@ pub const Env = struct {
     /// ESCOPO: an unlabelled `break` inside a nested loop targets the loop,
     /// not the enclosing iterator fn, so RI2/RI3 only fire when `loopDepth`
     /// is 0 (or the break is labelled with the fn's `StarFnCtx.fnLabel`).
+    /// The `.yield` handler reads it the same way and for the same reason: a
+    /// `yield` inside a loop feeds that loop's array (decision 8 § 10's
+    /// comprehension, condition loops included — `loop (j < 5) { j = j + 1;
+    /// yield j; }` collects), so only a `yield` that reaches the function is
+    /// the effect's and gated by the chain.
     loopDepth: u32 = 0,
+    /// Decision 96 — the `ContextBase` this body resolved its FIRST `use`
+    /// against, with the line that fixed it. The anchor is a property of the
+    /// FUNCTION, not of each activation: every later `use` must agree with it,
+    /// and one that does not reds at its own site naming both bases. Set and
+    /// cleared by `inferFnDecl` around each body, so a nested lambda or a
+    /// sibling fn starts over.
+    useAnchor: ?struct { base: []const u8, line: usize } = null,
+    /// The effect annotation of the fn whose body is being inferred, or null
+    /// for a plain `fn` (and at module level). Read by the `try` gate, which
+    /// has to ask the chain a question `env.starFn` cannot answer: a
+    /// `#[@result]` body has no star context and still answers `try`.
+    fnEffect: ?ast.EffectKind = null,
     /// Registered `implement`/`extend` blocks, keyed by activation symbol name.
     extensions: std.StringHashMap(ExtEntry),
     /// Activation set: symbols enabled for extension dispatch in this file
@@ -535,6 +552,13 @@ pub const Env = struct {
     /// (`loop (flag) { … }`); the comptime transform marks them
     /// `LoopExpr.condition` for the backends, which read the untyped AST.
     conditionLoops: std.AutoHashMap(ast.Loc, void),
+    /// Decision 54 — locs of the `case`s that are the optional's pattern form
+    /// (`case x { null { … } v { … } }`), with the binder's name. Inference
+    /// validates the shape and narrows the binder; the comptime transform
+    /// rewrites the node into the equivalent `if (x) { v -> … } else { … }`,
+    /// which is the lowering all four backends already have for an optional.
+    /// Nothing below inference learns a new pattern.
+    optionalNullCases: std.AutoHashMap(ast.Loc, []const u8),
     /// Interface declarations that expose associated functions (`default fn` with
     /// no `self`), keyed by name. Includes stdlib primitives (`Pair`, `Function`,
     /// `Array`) registered before user inference. Used to emit their namespace
@@ -659,6 +683,7 @@ pub const Env = struct {
             .synthesisedEnumDecls = std.StringHashMap(ast.TypeDecl).init(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
+            .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = std.StringHashMap(ast.BehaviorDecl).init(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -730,6 +755,7 @@ pub const Env = struct {
             .synthesisedEnumDecls = try tmpl.synthesisedEnumDecls.cloneWithAllocator(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
+            .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = try tmpl.assocInterfaceDecls.cloneWithAllocator(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -803,6 +829,7 @@ pub const Env = struct {
         self.typeGuardFns.deinit();
         self.synthesisedEnumDecls.deinit();
         self.enumSectionRewrites.deinit();
+        self.optionalNullCases.deinit();
     }
 
     // ── extension dispatch helpers ────────────────────────────────────────────

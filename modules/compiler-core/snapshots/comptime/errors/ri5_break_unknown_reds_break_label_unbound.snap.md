@@ -12,4 +12,4 @@ error: break-label-unbound: `break :<label>` targets an unknown label
 4 │     break :nonsense 42;
   │     ^
 
-  hint: Label a loop (`loop :name (...)`) or an iterator/asyncGenerator fn (`#[@iterator] fn … -> @Iterator<…> :name`).
+  hint: Label a loop (`loop :name (...)`) or an iterator/futureGenerator fn (`#[@iterator] fn … -> @Iterator<…> :name`).

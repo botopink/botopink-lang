@@ -44,7 +44,11 @@ answers that expression's value) and `lambda_element_method` (a primitive method
 parameter is the same method it is anywhere else), both measured by emilia's theme front and both
 asserting the VALUE, because each defect was a wrong answer rather than a crash — and the
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
-`curried_call`, `index_expression`). One scenario group per
+`curried_call`, `index_expression`), and `effect_chain` (1.0.10-beta front 20,
+decisions 95 and 98: one `test/`, one `run/` and five `reject/` cells; front 20
+also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
+decision 96, and `run/option_unwrap_or` + `reject/option_expect_removed` to
+`optional*` for F11). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -87,15 +91,17 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.<target>.expect` | on that target the compiler **refuses** the program — `reject/`'s shape, per target | exit ≠ 0 and the diagnostic contains line 1 (and ` --> src/main.bp:<L:C>` when line 2 is present). `run/external_erlang_only.{commonJS,wasm}.expect` and `run/std_erlang_node.{commonJS,wasm}.expect` are the live ones |
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **No cell carries `.targets`
-today.** The one that did was `run/external_erlang_only.bp`, which kept wasm out because wasm did
+Any other content in `.exit` is a malformed claim and fails the cell. **One cell carries
+`.targets` today**: `run/string_char_code_after_slice.bp` names `commonJS erlang`, because
+`String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
+(`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it
+the only one was `run/external_erlang_only.bp`, which kept wasm out because wasm did
 not refuse a host-backed `declare fn` with no wasm host — `wat.zig`'s `lowerPlainCall` lowered it to
 `unreachable` on purpose ("so the module still loads") and the program trapped at run time where
 commonJS, erlang and beam answered at compile time. That divergence was reported here for want of an
 owner row; it was closed on `fix/wasm-refusals` under decision 67 (a located refusal, no flag), so
 the sidecar is gone, `external_erlang_only.wasm.expect` carries wasm's half of the diagnostic and
-the cell runs on all four targets. The sidecar stays documented: the next divergence of that shape
-is written down the same way.
+the cell runs on all four targets.
 
 ## The targets
 
@@ -254,6 +260,209 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 
 ## Status and the gate
 
+**Recounted on disk at `fix/js-instanceof-boundary` (00 · 04-js round 2, merged onto
+`032fd765`):**
+
+```bash
+ls test/*.bp    | wc -l   # 54
+ls run/*.bp     | wc -l   # 32   (each with its .out; 4 with an .exit, 4 with .<target>.expect; 1 with a .targets)
+ls reject/*.bp  | wc -l   # 41   (each with its .expect)
+ls -d modules/*/| wc -l   #  5
+find . -name '*.bp' | wc -l   # 142 — 132 cells, plus the 10 extra .bp of the modules/ projects
+```
+
+**132 cells.** The difference from the `fix/erlang-module-load` block below is this branch's three,
+one per defect emilia's front 56 measured while writing real code, and one new area row. It is also
+the first `.targets` sidecar in the suite, which that block records as "none":
+
+| Area | Cells | Total |
+|---|---|---|
+| the three commonJS defects of 00 · 04-js round 2 | 1 `modules/` + 2 run | 3 |
+
+| Cell | What it pins |
+|---|---|
+| `modules/package_variant_identity` | a variant's identity across a package boundary: the value is built in the consumer and the `case` that reads it lives in the dependency. commonJS tested a uniquely-named arm with `instanceof`, which does not cross the boundary, and the `case` answered `undefined` at exit 0. The second local-dependency cell, and one package cannot express it |
+| `run/string_char_code_after_slice.bp` | `s.slice(…)` installs the `String` prelude, whose `charCodeAt` patch called itself — every `.charCodeAt(…)` in the program blew the stack. `commonJS erlang` only, by a `.targets` sidecar: `charCodeAt` has no wasm or beam lowering and traps on wasm |
+| `run/array_reverse_answers_a_new_array.bp` | `xs.reverse()` answers a new array and leaves the receiver alone — native `reverse` is in-place, so commonJS alone reversed the receiver too |
+
+**`expected-failures.txt` does not move**: 64 lines, byte for byte the file at `032fd765`. All three
+cells pass on every target they are scheduled on, nothing was added and nothing was deleted —
+checked by (target, key), not by count, with the six lines C-08 turned green still gone.
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on the tree
+`fix/js-instanceof-boundary` made by merging `origin/feat` `032fd765`:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 64 lines, 49 exercised by --target commonJS,erlang,wasm
+language tests: 430 passed, 49 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 64 lines, 21 exercised by --target beam
+language tests: 56 passed, 21 expected failures, 0 failed
+```
+
+Re-derived from the files and a re-run after the merge — neither side's number was kept. The **+8**
+on `--target all` is the `modules/` cell on three targets, the `reverse` cell on three, and the
+`charCodeAt` cell on the two its `.targets` names. Beam's **+2** is the two of them that reach it.
+
+**Recounted on disk at `fix/erlang-module-load` (front 00 · 02-erlang, merged onto
+`9c230065`):**
+
+```bash
+ls test/*.bp    | wc -l   # 54
+ls run/*.bp     | wc -l   # 30   (each with its .out; 4 with an .exit, 4 with .<target>.expect; none with .targets)
+ls reject/*.bp  | wc -l   # 41   (each with its .expect)
+ls -d modules/*/| wc -l   #  4
+find . -name '*.bp' | wc -l   # 136
+```
+
+**129 cells.** The difference from the C-08 block below is this branch's three, one new area row:
+
+| Area | Cells | Total |
+|---|---|---|
+| the module body and a host-supplied `behavior` (front 00 · 02-erlang) | 2 test + 1 run | 3 |
+
+`test/module_init.bp` pins that a module-level `val` is evaluated once, in declaration order, at
+module load — before the first test, which is where `botopink run` evaluates it before `main`. It
+reads the order back through a host-side list (`globalThis` on node, the process dictionary on
+erlang: the escript runs the module body and the tests in one process). `run/module_init_order.bp`
+is the same claim on the build path, on all four targets. `test/behavior_host_dispatch.bp` pins a
+method on a `behavior` no type implements: each row's host writes the shape its backend calls with
+(node reaches the receiver through `this`, erlang takes it as the first argument), and the answer is
+the same.
+
+**`expected-failures.txt` grows by 2 lines**, both `run/module_init_order.bp` and neither this
+front's: wasm drops the `_`-named top-level statement (its named `val` is already once-at-load), and
+beam still has the shape erlang had before this branch. Each names the backend's own row. The six
+lines C-08 turned green stay gone, and no line of the 62 at `9c230065` was lost — checked by
+(target, key), not by count.
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on the tree
+`fix/erlang-module-load` made by merging `origin/feat` `9c230065`:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 64 lines, 49 exercised by --target commonJS,erlang,wasm
+language tests: 422 passed, 49 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 64 lines, 21 exercised by --target beam
+language tests: 54 passed, 21 expected failures, 0 failed
+```
+
+Re-derived from the files and a re-run after the merge — neither side's number was kept. The +14 on
+`--target all` is this branch's three cells: six test results each from `test/module_init.bp` and
+`test/behavior_host_dispatch.bp` (3 tests × commonJS and erlang), and the two passing rows of
+`run/module_init_order.bp`. Beam's `passed` does not move: the one cell that reaches it is an
+expected failure there.
+
+**Recounted on disk at C-08's landing (`fix/parser-gaps`, merged onto
+`6cd50ff2`):**
+
+```bash
+ls test/*.bp    | wc -l   # 52
+ls run/*.bp     | wc -l   # 29
+ls reject/*.bp  | wc -l   # 41
+ls -d modules/*/| wc -l   #  4
+find . -name '*.bp' | wc -l   # 133
+```
+
+The difference from the block below is C-08's two `reject/` cells, one new area
+row:
+
+| Area | Cells | Total |
+|---|---|---|
+| the parser gaps that are inference-side (1.0.10-beta C-08, decisions 11, 12 and 54) | 2 reject | 2 |
+
+`reject/assert_is_pattern.bp` pins the refusal `assert <expr> is <Pattern>`
+keeps giving now that the form is **decided absent** rather than missing —
+three DOCUMENTED SKIPs used to pin a parse error and promise it, and a
+deliberate refusal belongs here instead. `reject/variant_payload_without_name.bp`
+pins decision 12: an unnamed variant payload is `error[field-needs-name]` at the
+payload, naming `Variant(field: T)`, where before C-08 it reached the generic
+"this token cannot appear here" two tokens past the mistake.
+
+**Six `expected-failures.txt` lines left the file**, each turned green by
+running, none of them a line front 20 touched: the four `run/optional_null_pattern.bp`
+rows (commonJS, erlang, wasm, beam — decision 54's spelling parses, types and
+runs), `reject/optional_variant_pattern.bp` (rejected for its own reason now,
+its `.expect` phrase and location unchanged) and
+`reject/case_arity_without_rest.bp` (§5.1 P7 — re-measured before it was
+touched, the cell did not "reject for the wrong reason", it **compiled at exit
+0** while silently dropping a field).
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on
+the tree `fix/parser-gaps` made by merging `origin/feat` `6cd50ff2`:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 62 lines, 48 exercised by --target commonJS,erlang,wasm
+language tests: 408 passed, 48 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 62 lines, 20 exercised by --target beam
+language tests: 54 passed, 20 expected failures, 0 failed
+```
+
+Re-derived from the files and a re-run after the merge — neither side's number
+was kept.
+
+**Recounted on disk at front 20's landing (`fix/effect-chain`, merged onto
+`78509dfa`):**
+
+```bash
+ls test/*.bp    | wc -l   # 52
+ls run/*.bp     | wc -l   # 29
+ls reject/*.bp  | wc -l   # 39
+ls -d modules/*/| wc -l   #  4
+find . -name '*.bp' | wc -l   # 131
+```
+
+The difference from the block below is front 20's eleven cells, three new area
+rows:
+
+| Area | Cells | Total |
+|---|---|---|
+| the effect chain (1.0.10-beta front 20, decisions 95 and 98) | 1 test + 1 run + 5 reject | 7 |
+| one `ContextBase` per body (front 20, decision 96) | 1 run + 1 reject | 2 |
+| `?T` has one unwrap (front 20, F11) | 1 run + 1 reject | 2 |
+
+`run/effect_chain.bp` holds the two rows of decision 95's table every backend
+runs (`#[@result]` with `try`, `#[@context]` with `use` and `try`);
+`test/effect_chain.bp` holds the two that need a target able to consume a future
+or an iterator. A third row — `await` inside a `#[@context]` body — is in
+neither, and the `run/` cell's header says why: it is legal, it runs on erlang,
+wasm and beam, and commonJS lowers `#[@context]` to a plain `function`, so the
+emitted `await` is a JS `SyntaxError`. That is a lowering row for the backend's
+own front, not a reason to leave the capability refused, and it is not an
+`expected-failures.txt` line because no cell of this suite claims it.
+
+`run/option_unwrap_or.bp` and `reject/option_expect_removed.bp` are F11's pair:
+`?T.expect(default)` was `unwrapOr` under a name that says the absent branch is
+unreachable, and is gone; `unwrapOr` is the one spelling, and reaching for the
+old one is refused rather than typed permissively and broken at run time.
+
+`run/use_one_base.bp` and `reject/use_two_bases.bp` are decision 96's pair: a
+body whose hooks share an owner compiles and composes, and a second `use`
+anchored elsewhere is refused at its own site with both owners and the line
+that fixed the first. `reject/use_owner_mismatch.bp`, which front 19 wrote, is
+the other refusal and a different rule — ONE `use` anchored at an owner the
+return type never named, caught before any anchor exists.
+
+The five `reject/` cells are the refusals decision 95 adds or repairs:
+`try_in_generator` (question 97 — the generator stays infallible),
+`try_in_plain_fn`, `yield_in_result`, `yield_in_context` (the last three were
+silently ACCEPTED before this front) and `await_in_iterator` (one level above
+the body). `expected-failures.txt` did not change: none of the seven is listed,
+on any target.
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+language tests: 401 passed, 53 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+language tests: 49 passed, 23 expected failures, 0 failed
+```
+
 Counted on disk at `b09bf9c6` — local `feat` after the fronts 12 × 13 merge:
 
 ```bash
@@ -307,44 +516,6 @@ language tests: 38 passed, 22 expected failures, 0 failed
 and **one was relabelled**: `wasm | run/index_at_optional.bp` lost the `String.at` trap half it
 carried (the method has a wasm lowering now) and names only decision 47's absent-optional spelling,
 still C-18.
-
-**Recounted on disk by `fix/js-instanceof-boundary` (00 · 04-js round 2, forked from `feat`
-`78509dfa`):**
-
-```bash
-ls test/*.bp    | wc -l   # 51
-ls run/*.bp     | wc -l   # 28   (1 with a .targets — string_char_code_after_slice)
-ls reject/*.bp  | wc -l   # 32
-ls -d modules/*/| wc -l   #  5
-find . -name '*.bp' | wc -l   # 126 — 116 cells, plus the 10 extra .bp of the modules/ projects
-```
-
-**116 cells** (51 `test/`, 28 `run/`, 32 `reject/`, 5 `modules/`). Three added, one per defect
-emilia's front 56 measured while writing real code:
-
-| Cell | What it pins |
-|---|---|
-| `modules/package_variant_identity` | a variant's identity across a package boundary: the value is built in the consumer and the `case` that reads it lives in the dependency. commonJS tested a uniquely-named arm with `instanceof` and the `case` answered `undefined` |
-| `run/string_char_code_after_slice.bp` | `s.slice(…)` installs the `String` prelude, whose `charCodeAt` patch called itself — every `.charCodeAt(…)` in the program blew the stack. `commonJS erlang` only: `charCodeAt` has no wasm or beam lowering, and traps on wasm |
-| `run/array_reverse_answers_a_new_array.bp` | `xs.reverse()` answers a new array and leaves the receiver alone — native `reverse` is in-place, so commonJS alone reversed the receiver too |
-
-The C-16 block above reads `24` for `run/` and "none with `.targets`"; both were already behind when
-it was written — the prose under it reads 26, which is what the files said then.
-
-Measured on this branch — the same compiler, node v25.8.0, OTP 29, `zig version` 0.16.0. The fork
-`78509dfa` was re-measured here and answers `381 passed, 53 expected failures, 0 failed`, not the
-`377` the front's row carried, so the first line below is `+3` for the `modules/` cell on three
-targets, `+3` for the `reverse` cell and `+2` for the `charCodeAt` cell (two targets, its
-`.targets` keeps it off wasm) and nothing else. On beam the two cells that run there add `+2`:
-
-```
-$ tests/language/run.sh                 # commonJS, erlang, wasm
-language tests: 389 passed, 53 expected failures, 0 failed
-$ tests/language/run.sh --target beam
-language tests: 41 passed, 23 expected failures, 0 failed
-```
-
-`expected-failures.txt` is untouched: all three cells pass on every target they are scheduled on.
 
 Where the results came from, since C-16's 363 / 53 and 35 / 22. `fix/wasm-refusals` adds **+4** on
 `--target all` and **+1** on beam: `run/string_at.bp` is new and passes on all four targets (+3 and

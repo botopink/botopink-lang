@@ -254,15 +254,6 @@ test "js: stdlib ---- Option map, flatMap and unwrapOr mirror Result" {
     );
 }
 
-test "js: stdlib ---- Option.expect lowers to the same shape as unwrapOr" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn firstChar(s: string) -> ?string { @todo(); }
-        \\fn main() {
-        \\    val s = firstChar("abc").expect("");
-        \\}
-    );
-}
-
 test "js: stdlib ---- chain map flatMap unwrapOr types correctly" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\#[@result]

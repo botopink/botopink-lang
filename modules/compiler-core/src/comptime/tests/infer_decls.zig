@@ -578,11 +578,17 @@ test "infer: builtin result namespace ---- qualified calls typecheck" {
     );
 }
 
-test "infer: ?T.expect ---- proven-in-bounds unwrap returns inner type" {
+// Front 20 F11 — `?T` has no `expect`. It was `unwrapOr` under a name that
+// says the absent branch is unreachable; one spelling survives, and the
+// removed one is refused rather than typed permissively (which is what an
+// unknown method on a `?T` gets, and would have turned the alias into a
+// run-time failure). `tests/language/reject/option_expect_removed.bp` carries
+// the diagnostic.
+test "infer: ?T.unwrapOr ---- the one unwrap returns the inner type" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn firstChar(s: string) -> ?string { @todo(); }
         \\fn main() {
-        \\    val s = firstChar("abc").expect("");
+        \\    val s = firstChar("abc").unwrapOr("");
         \\    @print(s);
         \\}
     );
