@@ -15,6 +15,7 @@ const Env = @import("env.zig").Env;
 const envMod = @import("env.zig");
 const TypeError = @import("error.zig").TypeError;
 const diagnostics = @import("diagnostics.zig");
+const effectChain = @import("effect_chain.zig");
 const template = @import("template.zig");
 const primOpTemplate = @import("primOpTemplate.zig");
 const templateEval = @import("template_eval.zig");
@@ -548,7 +549,7 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             // When binding a lambda to a `fn(...) -> ...` annotation, feed the
             // annotation into the lambda so its params are typed from context.
             const typedExpr = if (annType != null and v.value.* == .function)
-                try inferFunctionExprExpected(env, v.value.function, v.value.function.loc, annType)
+                try inferFunctionExprExpected(env, v.value.function, v.value.function.loc, annType, false)
             else
                 try inferExprTyped(env, v.value.*);
             const ty = typedExpr.getType();
@@ -3183,12 +3184,12 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             }
         }
         // R6 (§2) — `throw` belongs to a fallible-channel effect. Allow it in
-        // `#[@future]` / `#[@iterator]` / `#[@asyncGenerator]` bodies too — the
+        // `#[@future]` / `#[@iterator]` / `#[@futureGenerator]` bodies too — the
         // auto-wrap in `transform.zig` rewrites each form to the right wrapper.
         // `#[@generator]` and `#[@context]` keep `.plain` (they have no error
         // channel — throwing reds with `effect-throw-without-fallible-channel`).
         if (eff) |e| switch (e) {
-            .future, .iterator, .asyncGenerator => throwCtx = .unchecked,
+            .future, .iterator, .futureGenerator => throwCtx = .unchecked,
             else => {},
         };
     }
@@ -3200,7 +3201,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // An effect annotation must match its return wrapper (`#[@future]` →
     // `@Future<…>`, etc.); a plain `fn` must NOT return one of the async
     // wrappers (those need an effect annotation).
-    const asyncKind = classifyAsyncReturn(retType);
+    const wrapperKind = classifyWrapperReturn(retType);
     const fnLoc: ?ast.Loc = if (f.body.len > 0) f.body[0].expr.getLoc() else null;
     if (eff) |e| {
         if (!effectMatchesReturn(env, e, retType)) {
@@ -3222,10 +3223,10 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             env.lastError = err;
             return error.TypeError;
         }
-    } else if (asyncKind != .none) {
+    } else if (wrapperKind != .none) {
         var err = TypeError.custom(
-            "a function returning `@Future`/`@Iterator`/`@AsyncIterator` needs an effect annotation",
-            "Mark it `#[@future]` / `#[@iterator]` / `#[@asyncGenerator]`.",
+            "a function returning `@Future`/`@Iterator`/`@FutureGenerator` needs an effect annotation",
+            "Mark it `#[@future]` / `#[@iterator]` / `#[@futureGenerator]`.",
         );
         if (fnLoc) |l| err = err.withLoc(l);
         env.lastError = err;
@@ -3258,16 +3259,28 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         env.starFn = prevStarFn;
         env.labelStack.shrinkRetainingCapacity(prevLabelsLen);
     }
-    if (if (eff) |e| starCtxFromEffect(e, retType, f.label) else null) |ctx| {
-        env.starFn = ctx;
+    if (eff) |e| {
+        // Every effect gets a body context, whatever it grants: the chain
+        // decides `allowsAwait` / `allowsYield`, and a capability it does not
+        // grant is REFUSED at the site rather than skipped for want of a
+        // context (decision 95 + 67).
+        env.starFn = starCtxFromEffect(e, retType, f.label);
         if (f.label) |lbl| try env.labelStack.append(env.arena, lbl);
     } else {
-        // A normal function body (and a `#[@result]`/`#[@context]` body) sees no
-        // async context and no outer labels — `await`/`yield` stay exclusive to
-        // the future/iterator/generator/asyncGenerator effects.
+        // A plain function body sees no effect context and no outer labels.
         env.starFn = null;
         env.labelStack.shrinkRetainingCapacity(0);
     }
+    // The `try` gate reads the effect directly: a `#[@result]` body answers
+    // `try` and carries no star context worth asking.
+    const savedFnEffect = env.fnEffect;
+    env.fnEffect = eff;
+    defer env.fnEffect = savedFnEffect;
+    // Decision 96 — the body's `ContextBase` is fixed by its first `use`, so
+    // the anchor starts empty at every body and is restored on the way out.
+    const savedUseAnchor = env.useAnchor;
+    env.useAnchor = null;
+    defer env.useAnchor = savedUseAnchor;
     // §1C — `@getContex(T)` is only valid inside a `#[@context]` fn body
     // (RC5). Save/restore the flag around the body so nested non-context
     // closures fall back to false correctly.
@@ -3461,18 +3474,18 @@ fn inferTypeMethods(
     }
 }
 
-const AsyncReturnKind = enum { none, future, iterator, asyncIterator };
+const WrapperReturnKind = enum { none, future, iterator, futureGenerator };
 
-/// Classify a resolved return type as `@Future` / `@Iterator` / `@AsyncIterator`.
-fn classifyAsyncReturn(ty: *T.Type) AsyncReturnKind {
+/// Classify a resolved return type as `@Future` / `@Iterator` / `@FutureGenerator`.
+fn classifyWrapperReturn(ty: *T.Type) WrapperReturnKind {
     const t = ty.deref();
     return switch (t.*) {
         .named => |n| if (std.mem.eql(u8, n.name, "Future"))
             .future
         else if (std.mem.eql(u8, n.name, "Iterator"))
             .iterator
-        else if (std.mem.eql(u8, n.name, "AsyncIterator"))
-            .asyncIterator
+        else if (std.mem.eql(u8, n.name, "FutureGenerator"))
+            .futureGenerator
         else
             .none,
         else => .none,
@@ -3495,8 +3508,11 @@ fn effectMatchesReturn(env: *Env, eff: ast.EffectKind, retType: *T.Type) bool {
 }
 
 /// Build the effect body context (drives `await`/`yield` validation) from the
-/// effect kind and its return type. Returns null for effects with no async /
-/// generator body operations (`#[@result]`, `#[@context]`).
+/// effect kind and its return type. EVERY effect gets one — `env.starFn` is
+/// null only in a plain `fn` — so a capability the chain does not grant is
+/// refused rather than falling through an absent context (decision 95 + 67;
+/// before this, `yield` in a `#[@result]` or `#[@context]` body was accepted
+/// because the guard was written `if (env.starFn) |ctx|`).
 /// C1 — the type a `return <value>` unifies with inside a fn whose declared
 /// return type is `retType`: the wrapper's inner channel for an effect body
 /// (`#[@result]` → R of `@Result<R, E>`, `#[@future]` → T, `#[@generator]` → R of
@@ -3521,30 +3537,38 @@ fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Ty
         // (handled above) returns its owner type as written — a component's
         // `-> Element` (decision 88).
         .context => retType,
-        .iterator, .asyncGenerator => null,
+        .iterator, .futureGenerator => null,
     };
 }
 
-fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8) ?envMod.StarFnCtx {
+fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8) envMod.StarFnCtx {
     const t = retType.deref();
     const item: ?*T.Type = switch (t.*) {
         .named => |n| if (n.args.len >= 1) n.args[0] else null,
         else => null,
     };
-    // §1I — `@Iterator<T, E, C>` / `@AsyncIterator<T, E, C>` carry the
+    // §1I — `@Iterator<T, E, C>` / `@FutureGenerator<T, E, C>` carry the
     // completion type in the third argument. Default-fill (`C = void`) lands
     // via `builtinDefaultFilledArgs` before this point, so `args.len >= 3`
-    // is reliable for iterator/asyncGenerator.
+    // is reliable for iterator/futureGenerator.
     const completion: ?*T.Type = switch (t.*) {
         .named => |n| if (n.args.len >= 3) n.args[2] else null,
         else => null,
     };
-    return switch (eff) {
-        .future => .{ .allowsAwait = true, .allowsYield = false, .iterItem = null, .iterCompletion = null, .fnLabel = fnLabel, .effect = eff },
-        .iterator => .{ .allowsAwait = false, .allowsYield = true, .iterItem = item, .iterCompletion = completion, .fnLabel = fnLabel, .effect = eff },
-        .generator => .{ .allowsAwait = false, .allowsYield = true, .iterItem = item, .iterCompletion = null, .fnLabel = fnLabel, .effect = eff },
-        .asyncGenerator => .{ .allowsAwait = true, .allowsYield = true, .iterItem = item, .iterCompletion = completion, .fnLabel = fnLabel, .effect = eff },
-        .result, .context => null,
+    // `iterItem` / `iterCompletion` are the iterator channels: only the three
+    // generator-shaped wrappers carry them, and `.iterator` / `.futureGenerator`
+    // are the two the `break` handler reads for RI2/RI3.
+    const yields = effectChain.grants(eff, .yield_);
+    return .{
+        .allowsAwait = effectChain.grants(eff, .await_),
+        .allowsYield = yields,
+        .iterItem = if (yields) item else null,
+        .iterCompletion = switch (eff) {
+            .iterator, .futureGenerator => completion,
+            else => null,
+        },
+        .fnLabel = fnLabel,
+        .effect = eff,
     };
 }
 
@@ -5293,12 +5317,12 @@ fn unwrapFutureType(ty: *T.Type) ?*T.Type {
     };
 }
 
-/// `@Iterator<T>` / `@AsyncIterator<T, E>` -> `T`. Returns null when `ty` is not an iterator.
+/// `@Iterator<T>` / `@FutureGenerator<T, E>` -> `T`. Returns null when `ty` is not an iterator.
 fn unwrapIteratorType(ty: *T.Type) ?*T.Type {
     const t = ty.deref();
     return switch (t.*) {
         .named => |n| if ((std.mem.eql(u8, n.name, "Iterator") or
-            std.mem.eql(u8, n.name, "AsyncIterator")) and n.args.len >= 1)
+            std.mem.eql(u8, n.name, "FutureGenerator")) and n.args.len >= 1)
             n.args[0]
         else
             null,
@@ -5336,7 +5360,7 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 ///   - `@Future<T, E = any>`            → 1 required
 ///   - `@Generator<T, R = void>`        → 1 required
 ///   - `@Iterator<T, E = any, C = void>`→ 1 required
-///   - `@AsyncIterator<T, E = any, C = void>` → 1 required
+///   - `@FutureGenerator<T, E = any, C = void>` → 1 required
 ///   - `@Result<R, E>`                  → 2 required
 ///   - `@Context<Base, T>`              → 2 required
 ///   - `@Expr<T>` / `@ExprCustom<T>`    → 1 required
@@ -5345,7 +5369,7 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     if (eq(u8, name, "Future")) return 1;
     if (eq(u8, name, "Generator")) return 1;
     if (eq(u8, name, "Iterator")) return 1;
-    if (eq(u8, name, "AsyncIterator")) return 1;
+    if (eq(u8, name, "FutureGenerator")) return 1;
     if (eq(u8, name, "Result")) return 2;
     if (eq(u8, name, "Context")) return 2;
     if (eq(u8, name, "Expr")) return 1;
@@ -5363,7 +5387,7 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
 ///   - `Future<T, E = any>`              → `["any"]` for the E slot
 ///   - `Generator<T, R = void>`          → `["void"]` for the R slot
 ///   - `Iterator<T, E = any, C = void>`  → `["any", "void"]` for the E/C slots
-///   - `AsyncIterator<T, E = any, C = void>` → same as Iterator
+///   - `FutureGenerator<T, E = any, C = void>` → same as Iterator
 ///
 /// The returned slice always has the FULL declared arity (so the caller
 /// allocates an args slice sized to it and indexes positions
@@ -5383,7 +5407,7 @@ fn builtinDefaultFilledArgs(env: *Env, name: []const u8, given: usize) ?[]const 
     if (eq(u8, name, "Iterator") and given < 3) {
         return &.{ "", "any", "void" };
     }
-    if (eq(u8, name, "AsyncIterator") and given < 3) {
+    if (eq(u8, name, "FutureGenerator") and given < 3) {
         return &.{ "", "any", "void" };
     }
     return null;
@@ -7243,13 +7267,13 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 }
             }
             // RI1 (§1I / §2 R14) — `return <expr>;` inside `#[@iterator]` /
-            // `#[@asyncGenerator]` is forbidden: the iterator/asyncGenerator
+            // `#[@futureGenerator]` is forbidden: the iterator/futureGenerator
             // protocol carries no `R` channel. The author uses `break` for a
             // clean end and `break <C>` for a completion value. Bare `return;`
             // (no value, an implicit clean end) stays legal.
             if (r != null and
                 (inEffectContext(env, .iterator) or
-                    inEffectContext(env, .asyncGenerator)))
+                    inEffectContext(env, .futureGenerator)))
             {
                 env.lastError = TypeError.custom(
                     diagnostics.iterator_return_forbidden ++
@@ -7435,7 +7459,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             if (e != null and inEffectContext(env, .future)) {
                 try env.future_jump_lowerings.put(loc, .wrap_rejected);
             }
-            // §1I F4I-tail — inside `#[@iterator]` / `#[@asyncGenerator]`, a
+            // §1I F4I-tail — inside `#[@iterator]` / `#[@futureGenerator]`, a
             // `throw <e>;` lands in the iterator-error channel. The transform
             // rewrites it as `return @IteratorStep.Error(<e>);` so the
             // consumer can pattern-match on the step variant; the existing
@@ -7443,7 +7467,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             if (e != null and inEffectContext(env, .iterator)) {
                 try env.iterator_jump_lowerings.put(loc, .wrap_error);
             }
-            if (e != null and inEffectContext(env, .asyncGenerator)) {
+            if (e != null and inEffectContext(env, .futureGenerator)) {
                 try env.iterator_jump_lowerings.put(loc, .wrap_error);
             }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .throw_ = valPtr } } };
@@ -7452,11 +7476,32 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             const valPtr: ?*TypedExpr = if (e) |ev| try makeTypedPtr(env, try inferExprTyped(env, ev.*)) else null;
             const rawTy = if (valPtr) |vp| vp.getType() else try env.freshVar();
             const ty = try tryUnwrapOrError(env, rawTy, loc);
+            // Decision 95 — bare `try` PROPAGATES: it returns the `Error` out of
+            // the enclosing function, so the body needs an error channel, which
+            // is `@Result` and everything that extends it. `#[@generator]` does
+            // not (question 97 — `@Generator<T, R>` has no error channel) and a
+            // plain `fn` does not either. `try … catch` is a different node
+            // (`branch.tryCatch`): it supplies its own fallback, propagates
+            // nothing and is not gated here. The check runs AFTER the operand
+            // is known to be a `@Result`, so `try <non-result>` keeps its own,
+            // more specific refusal.
+            //
+            // The gate reads `throwContext` for the same reason `throw` does: it
+            // is `.plain` exactly where a declared return type carries no error
+            // channel, and `.unchecked` in a body with no declared return type
+            // (a lambda, a `test` block), which stays lenient.
+            if (env.throwContext == .plain and !effectChain.grants(env.fnEffect, .try_)) {
+                env.lastError = TypeError.custom(
+                    try effectChain.refusal(env.arena, diagnostics.effect_try_without_fallible_channel, .try_, env.fnEffect),
+                    "Use `try <expr> catch <fallback>`, which handles the error here and needs no channel, or give the enclosing fn one.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .try_ = valPtr } } };
         },
         .@"break" => |b| {
             // RI5 (§1I) — `break :label` must name an enclosing labelled scope
-            // (a loop or `#[@iterator]` / `#[@asyncGenerator]` fn). The label
+            // (a loop or `#[@iterator]` / `#[@futureGenerator]` fn). The label
             // stack is shared with `yield`; an unbound label here is a parse-
             // visible typo, not a backend issue.
             if (b.label) |lbl| {
@@ -7464,19 +7509,19 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     env.lastError = TypeError.custom(
                         diagnostics.break_label_unbound ++
                             ": `break :<label>` targets an unknown label",
-                        "Label a loop (`loop :name (...)`) or an iterator/asyncGenerator fn (`#[@iterator] fn … -> @Iterator<…> :name`).",
+                        "Label a loop (`loop :name (...)`) or an iterator/futureGenerator fn (`#[@iterator] fn … -> @Iterator<…> :name`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
             }
             const typedPtr: ?*TypedExpr = if (b.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
             // RI2 / RI3 (§1I) — when `break <expr>` targets the enclosing
-            // iterator/asyncGenerator (top-level position OR labelled with
+            // iterator/futureGenerator (top-level position OR labelled with
             // the fn's signature label), the value type must satisfy the
             // wrapper's `C` parameter. An unlabelled break inside a nested
             // loop targets the loop, not the FSM — skip.
             if (env.starFn) |ctx| {
-                if (ctx.effect == .iterator or ctx.effect == .asyncGenerator) {
+                if (ctx.effect == .iterator or ctx.effect == .futureGenerator) {
                     const targetsIterator = blk: {
                         if (b.label) |lbl| {
                             if (ctx.fnLabel) |fl| break :blk std.mem.eql(u8, lbl, fl);
@@ -7493,7 +7538,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                                 env.lastError = TypeError.custom(
                                     diagnostics.iterator_break_without_completion_type ++
                                         ": this iterator declares C = void; bare `break` is the only valid form",
-                                    "Extend the wrapper to opt into completion values: `@Iterator<T, E, <C-type>>` (or `@AsyncIterator<…>`).",
+                                    "Extend the wrapper to opt into completion values: `@Iterator<T, E, <C-type>>` (or `@FutureGenerator<…>`).",
                                 ).withLoc(loc);
                                 return error.TypeError;
                             }
@@ -7520,13 +7565,13 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = typedPtr } } } };
         },
         .await_ => |e| {
-            // R7 — `await` is only valid inside an async effect fn
-            // (`#[@future]` / `#[@asyncGenerator]`).
+            // R7, as decision 95 rewrites it — `await` belongs to `@Future`,
+            // so every effect whose wrapper extends `@Future` answers it:
+            // `#[@future]`, `#[@futureGenerator]` and `#[@context]`.
             if (env.starFn == null or !env.starFn.?.allowsAwait) {
                 env.lastError = TypeError.custom(
-                    diagnostics.effect_await_without_future ++
-                        ": `await` is only valid inside a `#[@future]` / `#[@asyncGenerator]` fn",
-                    "Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@asyncGenerator]` (`-> @AsyncIterator<…>`).",
+                    try effectChain.refusal(env.arena, diagnostics.effect_await_without_future, .await_, env.fnEffect),
+                    "Mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@context]`.",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -7559,18 +7604,38 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 }
             }
             const typedPtr: ?*TypedExpr = if (y.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
-            // R8 — `yield` belongs to a generator effect (`#[@generator]` /
-            // `#[@iterator]` / `#[@asyncGenerator]`); a `#[@future]` body cannot
-            // yield. Each yielded value unifies with the iterator item type `T`.
-            if (env.starFn) |ctx| {
-                if (!ctx.allowsYield) {
+            // A `yield` has two possible targets, and only one of them is the
+            // effect's. Inside a loop an unlabelled `yield` feeds that loop's
+            // array — decision 8 § 10's comprehension, `loop (xs) { x -> yield
+            // … }` and `loop (i < n) { … yield i; }` alike — and a labelled one
+            // feeds whichever labelled scope it names; both are legal in any
+            // body, effect or not. A `yield` that reaches the FUNCTION is the
+            // effect's, and that is the one the chain gates. This is the same
+            // §1I REGRAS DE ESCOPO rule the `.@"break"` handler above applies,
+            // read off the same counter.
+            const targetsFn = blk: {
+                if (y.label) |lbl| {
+                    const ctx = env.starFn orelse break :blk false;
+                    const fl = ctx.fnLabel orelse break :blk false;
+                    break :blk std.mem.eql(u8, lbl, fl);
+                }
+                break :blk env.loopDepth == 0;
+            };
+            // R8, as decision 95 rewrites it — `yield` is exclusive to the three
+            // generator-shaped wrappers (`@Generator`, `@Iterator`,
+            // `@FutureGenerator`) and is granted by no level of the chain: a
+            // `#[@future]`, `#[@result]` or `#[@context]` body cannot yield, and
+            // neither can a plain `fn`.
+            if (targetsFn) {
+                if (env.starFn == null or !env.starFn.?.allowsYield) {
                     env.lastError = TypeError.custom(
-                        diagnostics.yield_without_generator ++
-                            ": `yield` is only valid inside a `#[@generator]` / `#[@iterator]` / `#[@asyncGenerator]` fn",
-                        "A `#[@future]` fn awaits; mark the fn `#[@iterator]` (`-> @Iterator<T>`) to yield.",
+                        try effectChain.refusal(env.arena, diagnostics.yield_without_generator, .yield_, env.fnEffect),
+                        "A `yield` that is not inside a `loop (…) { … }` body is the function's: mark the fn `#[@iterator]` (`-> @Iterator<T>`), `#[@generator]` or `#[@futureGenerator]`.",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
+            }
+            if (env.starFn) |ctx| {
                 if (ctx.iterItem) |item| {
                     if (typedPtr) |vp| try unifyAt(env, vp.getType(), item, loc);
                 }
@@ -7729,23 +7794,23 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
     const iterPtr = try makeTypedPtr(env, iterTyped);
     const indexRangePtr = if (lp.indexRange) |ir| try makeTypedPtr(env, try inferExprTyped(env, ir.*)) else null;
 
-    // `loop await (iter)` requires an async context and an `@AsyncIterator<T, E>`
+    // `loop await (iter)` requires an async context and an `@FutureGenerator<T, E>`
     // iterable; the loop param binds to the item type `T`.
     var awaitItem: ?*T.Type = null;
     if (lp.awaitLoop) {
         if (env.starFn == null or !env.starFn.?.allowsAwait) {
             env.lastError = TypeError.custom(
-                "`loop await` can only be used inside a `#[@future]` / `#[@asyncGenerator]` fn",
-                "Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@asyncGenerator]` (`-> @AsyncIterator<…>`).",
+                try effectChain.refusal(env.arena, diagnostics.effect_await_without_future, .await_, env.fnEffect),
+                "`loop await` suspends: mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@context]`.",
             ).withLoc(loc);
             return error.TypeError;
         }
         const iterTy = iterTyped.getType().deref();
-        if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "AsyncIterator") and iterTy.named.args.len >= 1) {
+        if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "FutureGenerator") and iterTy.named.args.len >= 1) {
             awaitItem = iterTy.named.args[0];
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
-                "`loop await` expects an `@AsyncIterator<T, E>` value",
+                "`loop await` expects an `@FutureGenerator<T, E>` value",
                 null,
             ).withLoc(loc);
             return error.TypeError;
@@ -7778,7 +7843,6 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
     // iterator fn. RI2/RI3 in the `.@"break"` handler reads this counter.
     env.loopDepth += 1;
     defer env.loopDepth -= 1;
-
     const typedBody = try inferStmtsTyped(env, lp.body);
     const loopArrayArgs = try env.arena.alloc(*T.Type, 1);
     loopArrayArgs[0] = try env.freshVar();
@@ -7804,7 +7868,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             // Feed a `fn(...) -> ...` annotation into a lambda RHS so its
             // params are typed from context (mirrors `inferDeclTyped`).
             const valTyped = if (annType != null and lb.value.* == .function)
-                try inferFunctionExprExpected(env, lb.value.function, lb.value.function.loc, annType)
+                try inferFunctionExprExpected(env, lb.value.function, lb.value.function.loc, annType, false)
             else
                 try inferExprTyped(env, lb.value.*);
             const valPtr = try makeTypedPtr(env, valTyped);
@@ -8133,8 +8197,21 @@ fn inferResultOptionMethod(
     const isOption = std.mem.eql(u8, named.name, "optional");
     if (!isResult and !isOption) return null;
 
+    // F11 — `expect` was `unwrapOr` under a name that says the opposite, and
+    // is gone. The refusal is explicit because the fallback for an unknown
+    // method on a `?T` is permissive typing: without it, `.expect(…)` would
+    // still compile and fail at run time, which is worse than the alias was.
+    if (isOption and std.mem.eql(u8, callee, "expect")) {
+        env.lastError = TypeError.custom(
+            diagnostics.option_expect_removed ++
+                ": `?T` has no `expect` — it was an alias of `unwrapOr` under a name that says the absent branch is unreachable",
+            "Write `unwrapOr(<default>)`, which is what it did. There is no assert-shaped unwrap on `?T`: `case` the optional, or `@panic` in the absent arm.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+
     const op: envMod.MethodLowering.Op =
-        if (std.mem.eql(u8, callee, "map")) .map else if (std.mem.eql(u8, callee, "flatMap")) .flatMap else if (std.mem.eql(u8, callee, "unwrapOr")) .unwrapOr else if (isOption and std.mem.eql(u8, callee, "expect")) .unwrapOr else if (isResult and std.mem.eql(u8, callee, "isOk")) .isOk else if (isResult and std.mem.eql(u8, callee, "isError")) .isError else return null;
+        if (std.mem.eql(u8, callee, "map")) .map else if (std.mem.eql(u8, callee, "flatMap")) .flatMap else if (std.mem.eql(u8, callee, "unwrapOr")) .unwrapOr else if (isResult and std.mem.eql(u8, callee, "isOk")) .isOk else if (isResult and std.mem.eql(u8, callee, "isError")) .isError else return null;
 
     // The success-payload type: `R` for `Result<R, E>`, `T` for `Option<T>`.
     const okTy: *T.Type = if (named.args.len >= 1) named.args[0] else try env.freshVar();
@@ -8228,9 +8305,11 @@ fn inferTemplateMethod(
             op = .source;
             retType = try env.namedType("Source");
         } else if (std.mem.eql(u8, callee, "context")) {
-            // The full second-layer input: source + text + shape.
+            // The full second-layer input: source + text + shape. The record is
+            // `ExprContext`, not `Context`: `@Context<Base, Return>` is the hook
+            // wrapper and one name cannot mean both (front 20 F1).
             op = .context;
-            retType = try env.namedType("Context");
+            retType = try env.namedType("ExprContext");
         } else if (std.mem.eql(u8, callee, "bindings")) {
             // Enumerate the origin scope (top-level decls + imports, V1).
             op = .bindings;
@@ -8488,6 +8567,85 @@ fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8)
     return null;
 }
 
+/// The declared parameter types of a builtin-primitive method, `self` dropped
+/// and resolved against the receiver: `Array<Item>.filter` answers
+/// `[fn(Item) -> bool]`. Same interface walk and same generic substitution as
+/// `primMethodReturnTypeFromIface` — `Self` is the receiver, `T` its first type
+/// argument, a method-level `<U>` a fresh var. Null when the receiver is not a
+/// builtin primitive or the interface does not declare `callee`.
+///
+/// Read before the call's arguments are inferred, so a lambda argument's
+/// parameters are bound to the element type instead of a fresh var. Without it
+/// `xs.filter({ e -> e.name.contains("x") })` typed `e` as an unresolved
+/// variable, the `contains` receiver never reached `.named`, and the
+/// `@External.Node("includes")` rename never fired — commonJS emitted
+/// `.contains(…)`, which node refuses.
+fn primMethodParamTypes(env: *Env, recvTy: *T.Type, callee: []const u8) InferError!?[]*T.Type {
+    const rt = recvTy.deref();
+    if (rt.* != .named) return null;
+    if (primKindOfName(rt.named.name) == null) return null;
+    const ifaceName = primitiveInterfaceName(rt.named.name) orelse return null;
+    var current: ?[]const u8 = ifaceName;
+    var guard: usize = 0;
+    while (current) |cname| {
+        if (guard >= 16) break;
+        guard += 1;
+        const decl = env.assocInterfaceDecls.get(cname) orelse return null;
+        for (decl.methods) |m| {
+            if (!std.mem.eql(u8, m.name, callee)) continue;
+            if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+            var gm = std.StringHashMap(*T.Type).init(env.arena);
+            defer gm.deinit();
+            try gm.put("Self", rt);
+            if (rt.named.args.len >= 1) try gm.put("T", rt.named.args[0]);
+            for (m.genericParams) |gp| try gm.put(gp.name, try env.freshVar());
+            const out = try env.arena.alloc(*T.Type, m.params.len - 1);
+            // `paramTypeInContext` — not `resolveTypeRefInContext` — because a
+            // fn-typed param (`pred: fn(item: T) -> bool`) carries its
+            // signature in `Param.fnType`, not in `typeRef`.
+            for (m.params[1..], 0..) |p, i| {
+                out[i] = try paramTypeInContext(env, p, gm);
+            }
+            return out;
+        }
+        current = if (decl.extends.len > 0) decl.extends[0] else null;
+    }
+    return null;
+}
+
+/// True when `ty` carries no type variable anywhere — the receiver's element
+/// type is actually KNOWN. `primMethodParamTypes`' answer is only pushed into a
+/// lambda when the declared PARAMETERS are ground: an element type that is
+/// still a variable tells the lambda nothing it did not already have, and
+/// unifying the lambda's parameter with it adds edges that are not the method's
+/// meaning — `Query<T>.min`'s `var best = keys.at(0); keys.forEach({ k -> …
+/// best = k; })` becomes `?K = K` and reds "recursive type detected". The
+/// declared RETURN is not checked: `map<U>(self, transform: fn(item: T) -> U)`
+/// has a fresh `U` by construction, and `params_only` drops it anyway.
+fn typeIsGround(ty: *T.Type, depth: usize) bool {
+    if (depth > 8) return false;
+    const d = ty.deref();
+    return switch (d.*) {
+        .typeVar => false,
+        .named => |n| blk: {
+            for (n.args) |a| if (!typeIsGround(a, depth + 1)) break :blk false;
+            break :blk true;
+        },
+        .func => |f| blk: {
+            for (f.params) |a| if (!typeIsGround(a, depth + 1)) break :blk false;
+            break :blk typeIsGround(f.ret, depth + 1);
+        },
+        .union_ => |ms| blk: {
+            for (ms) |m| if (!typeIsGround(m, depth + 1)) break :blk false;
+            break :blk true;
+        },
+        .record => |fs| blk: {
+            for (fs) |f| if (!typeIsGround(f.type_, depth + 1)) break :blk false;
+            break :blk true;
+        },
+    };
+}
+
 /// Record how a value-receiver instance call `recv.callee(args)` lowers on the
 /// backends without native method dispatch (erlang/beam/wasm). A primitive
 /// receiver records its `PrimKind`; any other nominal type records as a record
@@ -8652,19 +8810,44 @@ fn isUseHookValue(value: *const ast.ExprOf(.untyped)) bool {
     return value.* == .useHook;
 }
 
-/// Verify a `use` expression returns `@Context<B, _>` whose `B` matches the
-/// enclosing function's ContextBase.
+/// Verify a `use` expression returns `@Context<B, _>` whose `B` is the one
+/// base this body resolves every `use` against (decision 96).
+///
+/// Two questions, in this order. RC2 first: the enclosing function DECLARED a
+/// base in its return type, and a hook anchored elsewhere disagrees with the
+/// declaration — that is the older refusal and the one a single `use` hits.
+/// Then decision 96's: the anchor is a property of the BODY, fixed by its first
+/// `use`, so a second `use` anchored elsewhere reds at its own site with both
+/// bases and the line that fixed the first. The two coincide whenever the
+/// return type names a base, which is every shape that parses today; the anchor
+/// is what holds the rule up where the declaration cannot answer, and it is
+/// what makes the diagnostic say which `use` the body is committed to.
 fn validateUseBase(env: *Env, valTy: *T.Type, fc: envMod.FnContext, loc: ast.Loc) InferError!void {
     const useBase = contextBaseOfType(env, valTy) orelse {
         const disp = baseNameOfType(valTy) orelse "value";
         env.lastError = TypeError.useNotContext(disp).withLoc(loc);
         return error.TypeError;
     };
-    const fnBase = fc.base orelse return; // implements @Context but base unconstrained
-    if (!std.mem.eql(u8, fnBase, useBase)) {
-        env.lastError = TypeError.contextMismatch(fnBase, useBase).withLoc(loc);
-        return error.TypeError;
+    if (env.useAnchor) |anchor| {
+        // Decision 96 — the body is already committed. This is the refusal the
+        // decision legislates, and it is the one a reader meets: both bases,
+        // and the `use` that chose the first.
+        if (!std.mem.eql(u8, anchor.base, useBase)) {
+            env.lastError = TypeError.contextBaseMixed(anchor.base, anchor.line, useBase).withLoc(loc);
+            return error.TypeError;
+        }
+        return;
     }
+    // The first `use` of the body. It fixes the anchor, and before it may do so
+    // it has to agree with the base the return type DECLARED — RC2, the older
+    // refusal, which is what a single misanchored `use` hits.
+    if (fc.base) |fnBase| {
+        if (!std.mem.eql(u8, fnBase, useBase)) {
+            env.lastError = TypeError.contextMismatch(fnBase, useBase).withLoc(loc);
+            return error.TypeError;
+        }
+    }
+    env.useAnchor = .{ .base = useBase, .line = loc.line };
 }
 
 /// Bind the names introduced by a destructuring `use { ... } = expr` against the
@@ -8774,9 +8957,39 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 break :blk try makeTypedPtr(env, try inferExprTyped(env, recvExpr.*));
             } else null;
 
+            // A builtin-primitive receiver declares its own signature in
+            // `primitives.bp`, and the receiver is already inferred here — so a
+            // lambda argument can be typed from the receiver's element type
+            // BEFORE its body is inferred. Anything else keeps the permissive
+            // fresh-var path.
+            const primParams: ?[]*T.Type = if (typedReceiver) |rp|
+                try primMethodParamTypes(env, rp.getType(), call.callee)
+            else
+                null;
+
             const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), call.args.len);
             for (call.args, 0..) |arg, i| {
-                const val = try inferExprTyped(env, arg.value.*);
+                // Only the declared PARAMETER types are pushed down
+                // (`params_only`). The declared RETURN is not a constraint the
+                // lambda has to meet here — `Array.forEach`'s `action` is
+                // declared `fn(item: T)`, and every `xs.forEach({ p -> <value> })`
+                // in `libs/std` would red against its `void` — and the call's
+                // own type is `primMethodReturnTypeFromIface`'s answer anyway.
+                // Ground only: every parameter of the declared fn-typed param
+                // must mention no type variable (`typeIsGround`). An element
+                // type still unresolved tells the lambda nothing, and unifying
+                // against it adds edges the method never meant.
+                const expected: ?*T.Type = if (primParams) |ps| blk: {
+                    if (i >= ps.len) break :blk null;
+                    const d = ps[i].deref();
+                    if (d.* != .func) break :blk null;
+                    for (d.func.params) |fp| if (!typeIsGround(fp, 0)) break :blk null;
+                    break :blk ps[i];
+                } else null;
+                const val = if (expected != null and arg.value.* == .function)
+                    try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, expected.?, true)
+                else
+                    try inferExprTyped(env, arg.value.*);
                 typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
             }
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
@@ -9393,7 +9606,7 @@ fn inferCaseArmBody(
     const subjectTy = typedSubjects[0].getType();
     const narrowed = (try typePatternType(env, arm.pattern, subjectTy)) orelse subjectTy;
     const expected = try env.funcType(&.{narrowed}, try env.freshVar());
-    return inferFunctionExprExpected(env, body.function, body.getLoc(), expected);
+    return inferFunctionExprExpected(env, body.function, body.getLoc(), expected, false);
 }
 
 /// C2a — the value an arm contributes to its `case`'s type, or null when it
@@ -9594,7 +9807,7 @@ fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
 
 /// Infer type for function definition expressions (lambdas and anonymous functions)
 fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
-    return inferFunctionExprExpected(env, func, loc, null);
+    return inferFunctionExprExpected(env, func, loc, null, false);
 }
 
 /// Infer a lambda / anonymous-function expression. When `expected` is a
@@ -9603,7 +9816,21 @@ fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
 /// parameter types *before* the body is inferred — so the body can resolve
 /// member calls and operators against the annotated types — and the body's
 /// result is unified with the expected return type.
-fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc, expected: ?*T.Type) InferError!TypedExpr {
+///
+/// `params_only` keeps the parameter half and drops the return half: the
+/// lambda's return type stays free. A caller that only wants the parameters
+/// typed (a builtin-primitive method's declared signature — see
+/// `primMethodParamTypes`) must use it, because a body whose every path
+/// `return`s types its TAIL as void while the `return`s have already fixed the
+/// return target, and unifying the two would red a correct lambda
+/// (`xs.map({ x -> if (c) { return a; } else { return b; } })`).
+fn inferFunctionExprExpected(
+    env: *Env,
+    func: ast.FunctionExprOf(.untyped),
+    loc: ast.Loc,
+    expected: ?*T.Type,
+    params_only: bool,
+) InferError!TypedExpr {
     // A nested function expression has no declared return type, so `throw`
     // inside it is not checked against the enclosing fn's `E`.
     const savedThrowCtx = env.throwContext;
@@ -9635,7 +9862,7 @@ fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc:
         const d = e.deref();
         if (d.* == .func and d.func.params.len == fk.params.len) {
             expParams = d.func.params;
-            expRet = d.func.ret;
+            if (!params_only) expRet = d.func.ret;
         }
     }
 

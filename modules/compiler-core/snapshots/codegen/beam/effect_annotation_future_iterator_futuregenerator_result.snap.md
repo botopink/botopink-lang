@@ -9,8 +9,8 @@ fn counter() -> @Iterator<i32> {
     yield 1;
     yield 2;
 }
-#[@asyncGenerator]
-fn stream() -> @AsyncIterator<i32, string> {
+#[@futureGenerator]
+fn stream() -> @FutureGenerator<i32, string> {
     yield 1;
 }
 #[@result]
@@ -27,7 +27,7 @@ fn parse(n: i32) -> @Result<i32, string> {
 {attributes, []}.
 {labels, 11}.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, fetch, 1, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.
@@ -40,7 +40,7 @@ fn parse(n: i32) -> @Result<i32, string> {
     {deallocate, 1}.
     return.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, counter, 0, 5}.
   {label, 4}.
     {line, [{location, "main.erl", 2}]}.
@@ -54,7 +54,7 @@ fn parse(n: i32) -> @Result<i32, string> {
     {deallocate, 0}.
     return.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, stream, 0, 7}.
   {label, 6}.
     {line, [{location, "main.erl", 3}]}.

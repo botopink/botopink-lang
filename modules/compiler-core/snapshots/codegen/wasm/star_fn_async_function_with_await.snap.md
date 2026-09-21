@@ -16,12 +16,12 @@ fn loadTwice(x: i32) -> @Future<i32> {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $fetch (param $x i32) (result i32)
     local.get $x
     return
   )
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $loadTwice (param $x i32) (result i32)
     (local $a i32)
     local.get $x

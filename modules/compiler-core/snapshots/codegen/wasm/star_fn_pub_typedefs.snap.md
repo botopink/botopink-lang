@@ -8,8 +8,8 @@ pub fn loadOne(x: i32) -> @Future<i32> {
 pub fn count() -> @Iterator<i32> {
     yield 1;
 }
-#[@asyncGenerator]
-pub fn pulses() -> @AsyncIterator<i32, string> {
+#[@futureGenerator]
+pub fn pulses() -> @FutureGenerator<i32, string> {
     yield 1;
 }
 ```
@@ -19,12 +19,12 @@ pub fn pulses() -> @AsyncIterator<i32, string> {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $loadOne (export "loadOne") (param $x i32) (result i32)
     local.get $x
     return
   )
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $count (export "count") (result i32)
     (local $__yield_fn i32)
     i32.const 0
@@ -36,7 +36,7 @@ pub fn pulses() -> @AsyncIterator<i32, string> {
     local.set $__yield_fn
     local.get $__yield_fn ;; everything the body yielded
   )
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $pulses (export "pulses") (result i32)
     (local $__yield_fn i32)
     i32.const 0

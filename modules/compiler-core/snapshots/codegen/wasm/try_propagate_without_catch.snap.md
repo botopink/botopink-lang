@@ -4,7 +4,8 @@
 fn fetch() -> @Result<i32, string> {
     @todo();
 }
-fn process() -> i32 {
+#[@result]
+fn process() -> @Result<i32, string> {
     val r = try fetch();
     @print(r);
     return r;
@@ -24,6 +25,7 @@ fn process() -> i32 {
   (func $process (result i32)
     (local $_try0 i32)
     (local $r i32)
+    (local $_res0 i32)
     call $fetch
     local.set $_try0
     local.get $_try0
@@ -39,7 +41,19 @@ fn process() -> i32 {
     local.set $r
     local.get $r
     call $__print_i32
+    global.get $__heap_ptr
+    local.set $_res0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $_res0
+    i32.const 0
+    i32.store ;; Result tag (Ok)
+    local.get $_res0
     local.get $r
+    i32.store offset=4 ;; payload
+    local.get $_res0
     return
   )
   ;; Scratch layout below the data section (which starts at 256):

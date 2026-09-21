@@ -2297,7 +2297,7 @@ const Emitter = struct {
         // eager body, with full process-based lowering left as future work.
         // `#[@context]` is a plain function too (decision 88: it gates `use`).
         if (f.effect != null and f.effect.? != .result and f.effect.? != .context) {
-            try beamEmitter.writeTopComment(self.out, "#[@future] / #[@asyncGenerator] — eager lowering", .{});
+            try beamEmitter.writeTopComment(self.out, "#[@future] / #[@futureGenerator] — eager lowering", .{});
         }
         var fn_buf: [256]u8 = undefined;
         const fn_atom = try atomName(f.name, &fn_buf);

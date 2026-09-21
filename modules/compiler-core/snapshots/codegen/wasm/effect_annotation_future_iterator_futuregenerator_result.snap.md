@@ -9,8 +9,8 @@ fn counter() -> @Iterator<i32> {
     yield 1;
     yield 2;
 }
-#[@asyncGenerator]
-fn stream() -> @AsyncIterator<i32, string> {
+#[@futureGenerator]
+fn stream() -> @FutureGenerator<i32, string> {
     yield 1;
 }
 #[@result]
@@ -26,12 +26,12 @@ fn parse(n: i32) -> @Result<i32, string> {
   (memory (export "memory") 1)
   (data (i32.const 256) "\08\00\00\00negative")
   (global $__heap_ptr (mut i32) (i32.const 268))
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $fetch (param $x i32) (result i32)
     local.get $x
     return
   )
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $counter (result i32)
     (local $__yield_fn i32)
     i32.const 0
@@ -47,7 +47,7 @@ fn parse(n: i32) -> @Result<i32, string> {
     local.set $__yield_fn
     local.get $__yield_fn ;; everything the body yielded
   )
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $stream (result i32)
     (local $__yield_fn i32)
     i32.const 0

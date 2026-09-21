@@ -4,7 +4,8 @@
 fn fetch() -> @Result<i32, string> {
     @todo();
 }
-fn process() -> i32 {
+#[@result]
+fn process() -> @Result<i32, string> {
     val r = try fetch();
     return r;
 }
@@ -32,7 +33,7 @@ val x = process();
       "name": "process",
       "is_pub": false,
       "params": [],
-      "return_type": "i32",
+      "return_type": "Result<i32,string>",
       "body": [
         {
           "source": "val r = try fetch();"
@@ -45,11 +46,11 @@ val x = process();
     {
       "ast": "val",
       "ident": "x",
-      "return_type": "i32",
+      "return_type": "Result<i32,string>",
       "expr": {
         "ast": "call",
         "params": [],
-        "return_type": "i32"
+        "return_type": "Result<i32,string>"
       }
     }
   ]

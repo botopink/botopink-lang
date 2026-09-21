@@ -5,10 +5,10 @@ fn notAsync() -> i32 {
 }
 
 ----- ERROR
-error: effect-await-without-future: `await` is only valid inside a `#[@future]` / `#[@asyncGenerator]` fn
+error: effect-await-without-future: `await` needs an effect that implements `@Future` — `#[@future]`, `#[@futureGenerator]` or `#[@context]`; this fn carries no effect annotation
   ┌─ :2:13
   │
 2 │     val x = await ready();
   │             ^
 
-  hint: Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@asyncGenerator]` (`-> @AsyncIterator<…>`).
+  hint: Mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@context]`.

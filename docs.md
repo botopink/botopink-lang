@@ -652,10 +652,21 @@ The rules, each with its diagnostic:
 - **The operand is a hook.** `use plain()` where `plain : -> User` is
   `` use-of-non-context-fn: `use` requires @Context: 'User' does not implement
   @Context ``.
-- **One owner per body.** `use connection()` with `connection : ->
+- **One owner per body** (decision 96). The owner is a property of the
+  FUNCTION, not of each activation: the first `use` fixes it and every later
+  one resolves against the same one. Two refusals say so, and they are
+  different rules. A single `use` anchored at an owner the return type never
+  named is the DECLARATION's: `use connection()` with `connection : ->
   @Context<Http, _>` inside a body owned by `Element` is
   `` context-anchor-violation: function returns @Context<Element, _> but `use`
-  returns @Context<Http, _> ``.
+  returns @Context<Http, _> ``. A second `use` disagreeing with the first is
+  the BODY's, refused at its own site with both owners and the line that fixed
+  the anchor: `` context-anchor-violation: every `use` in one function resolves
+  against the same ContextBase: this body's is @Context<Element, _>, fixed by
+  the `use` on line 9, and this one is @Context<Http, _> ``. Two hooks that are
+  each legal alone are still refused together; there is no flag (decision 67).
+  Each body starts over — a sibling `fn` may anchor wherever its own return
+  type says.
 - **The static prefix.** Every `use` of a function body comes before its first
   `if`, `case`, `loop` or `return`, at any nesting: `val c = use …` after a
   `return`, and a `use` inside an `if`'s own block, are both parse errors —
@@ -696,6 +707,52 @@ fn greet(name: string, greeting: string = "hello") -> string {
 The default is **not applied yet**: every call still passes every argument
 (`greet("world")` reports `'greet' expects 2 argument(s), got 1`). 1.0.5-beta
 front `01-checker` step 7 closes it.
+
+### Effects
+
+A function's effect is named by one `#[@<effect>]` annotation — at most one per
+`fn` — and the return wrapper is the annotation with its first letter
+capitalised, in all six rows and with no exception: `#[@result]` → `@Result`,
+`#[@future]` → `@Future`, `#[@generator]` → `@Generator`, `#[@iterator]` →
+`@Iterator`, `#[@futureGenerator]` → `@FutureGenerator`, `#[@context]` →
+`@Context`.
+
+The six effects form a **chain** (decision 95): a wrapper extends the one
+below it, and an annotation grants every body operation at or below its own
+level.
+
+| Body | May write | Because the wrapper extends |
+|---|---|---|
+| `#[@context] fn … -> @Context<B, R>` (or a type implementing it, e.g. `Element`) | `use` · `await` · `try` | `@Context` ⊃ `@Future` ⊃ `@Result` |
+| `#[@futureGenerator] fn … -> @FutureGenerator<T, E, C>` | `await` · `try` · `yield` | `@FutureGenerator` ⊃ `@Future` ⊃ `@Result` |
+| `#[@future] fn … -> @Future<T, E>` | `await` · `try` | `@Future` ⊃ `@Result` |
+| `#[@iterator] fn … -> @Iterator<T, E, C>` | `try` · `yield` | `@Iterator` ⊃ `@Result` |
+| `#[@generator] fn … -> @Generator<T, R>` | `yield` | — no error channel |
+| `#[@result] fn … -> @Result<T, E>` | `try` | — it is the base |
+
+Every effectful body can fail, so every wrapper but one extends `@Result`; a
+wrapper that suspends extends `@Future`. The chain grants **downwards and never
+upwards**: `yield` stays exclusive to the three generator-shaped wrappers and
+`use` to `@Context`, and neither is a level anything else reaches.
+`@Generator<T, R>` is the exception — it has no error channel, so `throw` and
+`try` are both refused in a `#[@generator]` body.
+
+A capability written above the body's level is refused, located, naming the
+level it would need — there is no flag:
+
+```
+error: effect-try-without-fallible-channel: `try` needs an effect that
+implements `@Result` — `#[@result]`, `#[@future]`, `#[@iterator]`,
+`#[@futureGenerator]` or `#[@context]`; `#[@generator]` is `@Generator`,
+which does not
+```
+
+Two forms are **not** gated by the chain, because neither leaves the body.
+`try <e> catch <f>` handles the error on the spot, so it needs no channel and
+is legal in a plain `fn` — it is bare `try`, which returns the `Error` out of
+the enclosing function, that needs one. And a `yield` inside a `loop (…) { … }`
+body feeds that loop's array rather than the function (see *Loop*), so it is
+legal in any body, effect or not.
 
 ### Results
 
@@ -989,6 +1046,8 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.5-beta `01-checker` step 6 |
 | A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.5-beta `15-language-surface` step 2, with `16-formatter` (the formatter has to stop printing it in the same wave) |
 | A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value it answers something different on every backend: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, `0` on erlang and `256` on wasm | 1.0.5-beta — owner unassigned; the rule is decided (the `...` token, the diagnostic and the run-time semantics) |
+| `await` inside a `#[@context]` body (decision 95 — `@Context` extends `@Future`) | it type-checks, and it RUNS on erlang, wasm and beam (their `@Future<T>` is eager, so `await` is the identity). commonJS lowers `#[@context]` to a plain `function`, so the emitted `await` is `SyntaxError: await is only valid in async functions and the top level bodies of modules` | 1.0.10-beta — commonJS's own front: `fnKeyword` answering `async function` for a `#[@context]` body that awaits changes what a component's caller receives, which is a backend decision. Front 20 owns what is legal, not what is emitted |
+| An effect annotation on a record METHOD | ignored on commonJS: `fnKeyword` reads `ast.FnDecl.effect` and never sees a method, so `#[@iterator] fn iter(self: Self) -> @Iterator<T>` in a `type … implement Iterable<T> { … }` body emits as a plain `iter() { … }` and `loop (b.iter())` reds `b.iter is not a function or its return value is not iterable`. erlang runs it | 1.0.10-beta — owner unassigned; found by front 20 F12 while answering what `-> Iterator<T, E, C>` means on a behavior method |
 
 Six of the twelve rows this table carried before this revision left it because
 the compiler now accepts the form: union types, the `unknown` type and its

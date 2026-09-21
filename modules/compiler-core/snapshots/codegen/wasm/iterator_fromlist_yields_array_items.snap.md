@@ -27,7 +27,7 @@ fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\01\00\00\00,")
   (global $__heap_ptr (mut i32) (i32.const 264))
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $fromList (param $xs i32) (result i32)
     (local $item i32)
     (local $__yield_fn i32)

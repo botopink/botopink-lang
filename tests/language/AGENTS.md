@@ -38,9 +38,17 @@ cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict
 `run/index_past_the_end_fails`, `run/index_at_optional`), `std_erlang_node` (decision 64),
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets), and the
-singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
+singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, the two `lambda_*` cells of
+1.0.10-beta's `00 · 04-js` — `lambda_expression_body` (a lambda whose whole body is one expression
+answers that expression's value) and `lambda_element_method` (a primitive method on a lambda's
+parameter is the same method it is anywhere else), both measured by emilia's theme front and both
+asserting the VALUE, because each defect was a wrong answer rather than a crash — and the
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
-`curried_call`, `index_expression`). One scenario group per
+`curried_call`, `index_expression`), and `effect_chain` (1.0.10-beta front 20,
+decisions 95 and 98: one `test/`, one `run/` and five `reject/` cells; front 20
+also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
+decision 96, and `run/option_unwrap_or` + `reject/option_expect_removed` to
+`optional*` for F11). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -241,6 +249,114 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 
 ## Status and the gate
 
+**Recounted on disk at C-08's landing (`fix/parser-gaps`, merged onto
+`6cd50ff2`):**
+
+```bash
+ls test/*.bp    | wc -l   # 52
+ls run/*.bp     | wc -l   # 29
+ls reject/*.bp  | wc -l   # 41
+ls -d modules/*/| wc -l   #  4
+find . -name '*.bp' | wc -l   # 133
+```
+
+The difference from the block below is C-08's two `reject/` cells, one new area
+row:
+
+| Area | Cells | Total |
+|---|---|---|
+| the parser gaps that are inference-side (1.0.10-beta C-08, decisions 11, 12 and 54) | 2 reject | 2 |
+
+`reject/assert_is_pattern.bp` pins the refusal `assert <expr> is <Pattern>`
+keeps giving now that the form is **decided absent** rather than missing —
+three DOCUMENTED SKIPs used to pin a parse error and promise it, and a
+deliberate refusal belongs here instead. `reject/variant_payload_without_name.bp`
+pins decision 12: an unnamed variant payload is `error[field-needs-name]` at the
+payload, naming `Variant(field: T)`, where before C-08 it reached the generic
+"this token cannot appear here" two tokens past the mistake.
+
+**Six `expected-failures.txt` lines left the file**, each turned green by
+running, none of them a line front 20 touched: the four `run/optional_null_pattern.bp`
+rows (commonJS, erlang, wasm, beam — decision 54's spelling parses, types and
+runs), `reject/optional_variant_pattern.bp` (rejected for its own reason now,
+its `.expect` phrase and location unchanged) and
+`reject/case_arity_without_rest.bp` (§5.1 P7 — re-measured before it was
+touched, the cell did not "reject for the wrong reason", it **compiled at exit
+0** while silently dropping a field).
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on
+the tree `fix/parser-gaps` made by merging `origin/feat` `6cd50ff2`:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 62 lines, 48 exercised by --target commonJS,erlang,wasm
+language tests: 408 passed, 48 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 62 lines, 20 exercised by --target beam
+language tests: 54 passed, 20 expected failures, 0 failed
+```
+
+Re-derived from the files and a re-run after the merge — neither side's number
+was kept.
+
+**Recounted on disk at front 20's landing (`fix/effect-chain`, merged onto
+`78509dfa`):**
+
+```bash
+ls test/*.bp    | wc -l   # 52
+ls run/*.bp     | wc -l   # 29
+ls reject/*.bp  | wc -l   # 39
+ls -d modules/*/| wc -l   #  4
+find . -name '*.bp' | wc -l   # 131
+```
+
+The difference from the block below is front 20's eleven cells, three new area
+rows:
+
+| Area | Cells | Total |
+|---|---|---|
+| the effect chain (1.0.10-beta front 20, decisions 95 and 98) | 1 test + 1 run + 5 reject | 7 |
+| one `ContextBase` per body (front 20, decision 96) | 1 run + 1 reject | 2 |
+| `?T` has one unwrap (front 20, F11) | 1 run + 1 reject | 2 |
+
+`run/effect_chain.bp` holds the two rows of decision 95's table every backend
+runs (`#[@result]` with `try`, `#[@context]` with `use` and `try`);
+`test/effect_chain.bp` holds the two that need a target able to consume a future
+or an iterator. A third row — `await` inside a `#[@context]` body — is in
+neither, and the `run/` cell's header says why: it is legal, it runs on erlang,
+wasm and beam, and commonJS lowers `#[@context]` to a plain `function`, so the
+emitted `await` is a JS `SyntaxError`. That is a lowering row for the backend's
+own front, not a reason to leave the capability refused, and it is not an
+`expected-failures.txt` line because no cell of this suite claims it.
+
+`run/option_unwrap_or.bp` and `reject/option_expect_removed.bp` are F11's pair:
+`?T.expect(default)` was `unwrapOr` under a name that says the absent branch is
+unreachable, and is gone; `unwrapOr` is the one spelling, and reaching for the
+old one is refused rather than typed permissively and broken at run time.
+
+`run/use_one_base.bp` and `reject/use_two_bases.bp` are decision 96's pair: a
+body whose hooks share an owner compiles and composes, and a second `use`
+anchored elsewhere is refused at its own site with both owners and the line
+that fixed the first. `reject/use_owner_mismatch.bp`, which front 19 wrote, is
+the other refusal and a different rule — ONE `use` anchored at an owner the
+return type never named, caught before any anchor exists.
+
+The five `reject/` cells are the refusals decision 95 adds or repairs:
+`try_in_generator` (question 97 — the generator stays infallible),
+`try_in_plain_fn`, `yield_in_result`, `yield_in_context` (the last three were
+silently ACCEPTED before this front) and `await_in_iterator` (one level above
+the body). `expected-failures.txt` did not change: none of the seven is listed,
+on any target.
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+language tests: 401 passed, 53 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+language tests: 49 passed, 23 expected failures, 0 failed
+```
+
 Counted on disk at `b09bf9c6` — local `feat` after the fronts 12 × 13 merge:
 
 ```bash
@@ -259,11 +375,12 @@ ls test/*.bp    | wc -l   # 51
 ls run/*.bp     | wc -l   # 24   (each with its .out; 4 with an .exit, 2 with .<target>.expect — 4 files, one per refusing target; none with .targets)
 ls reject/*.bp  | wc -l   # 32   (each with its .expect)
 ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 118 — 111 cells, plus the 7 extra .bp of the modules/ projects
+find . -name '*.bp' | wc -l   # 120 — 113 cells, plus the 7 extra .bp of the modules/ projects
 ```
 
-**111 cells**, 108 besides the three `smoke` files. Recounted from the files after
-`fix/wasm-refusals` merged `origin/feat` — neither side's number was kept. Since C-16's block above:
+**113 cells** (51 `test/`, 26 `run/`, 32 `reject/`, 4 `modules/`), 110 besides the three `smoke`
+files. Recounted from the files after `00 · 04-js` merged `origin/feat`, which had itself been
+recounted after `fix/wasm-refusals` merged it — neither side's number has ever been kept. Since C-16's block above:
 `run/string_at.bp` is `fix/wasm-refusals`' (`String.at` had no wasm lowering and `s.at(1)` trapped
 there while the other three answered, so the cell pins the present-index reader on all four targets
 — absent indexes stay out of it, they are decision 47's spelling row, C-18, measured by

@@ -1,0 +1,40 @@
+//// A lambda whose WHOLE body is one expression answers that expression's
+//// value. The lambda's last statement is its return position, and every form
+//// the language gives a value to lands there: an `if`, a `case`, a `loop`, a
+//// `try … catch`.
+////
+//// Measured by emilia's theme front on commonJS, where `{ x -> if (c) { a }
+//// else { b } }` answered `undefined` for every element: the emitter wrapped
+//// the `if` in the value IIFE it uses everywhere else and then emitted that
+//// IIFE as a STATEMENT — `(x) => { (() => { … })(); }` — so the arrow returned
+//// nothing. erlang and wasm were unaffected, which is why the same source was
+//// green on one target and silently wrong on another. The workaround a library
+//// had to write was binding the `if` to a `val` and yielding that.
+////
+//// The `case` row is the control: it never had the defect, and it is here so a
+//// regression that fixes one form and breaks the other is visible.
+////
+//// Each result is read as `join(",")` rather than printed as an array on
+//// purpose: `@print` of an array is decision 8 §7's separator row, which two
+//// backends still get wrong, and a §7 row must not hide this one. A cell that
+//// only checked the program RAN would have passed before the fix — the defect
+//// is a wrong answer, not a crash — so every line asserts the VALUE.
+
+#[@result]
+fn tenth(x: i32) -> @Result<i32, string> {
+    if (x > 1) { return x * 10; } else { throw "too small"; }
+}
+
+pub fn main() {
+    val xs = [1, 2, 3];
+
+    @print(xs.map({ x -> if (x > 1) { x * 10 } else { x } }).join(","));
+
+    @print(xs.map({ x -> case x { 1 { 100 } _ { 200 } } }).join(","));
+
+    @print(xs.map({ x -> (loop (0..x) { i -> yield i; }).length }).join(","));
+
+    @print(xs.map({ x -> loop (x > 0) { x = x - 1; break x; } }).join(","));
+
+    @print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
+}

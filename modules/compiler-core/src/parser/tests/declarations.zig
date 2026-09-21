@@ -963,10 +963,10 @@ test "parser: effect fn ---- #[@iterator] declaration" {
     );
 }
 
-test "parser: effect fn ---- #[@asyncGenerator] declaration" {
+test "parser: effect fn ---- #[@futureGenerator] declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@asyncGenerator]
-        \\pub fn stream() -> @AsyncIterator<Int, Error> {
+        \\#[@futureGenerator]
+        \\pub fn stream() -> @FutureGenerator<Int, Error> {
         \\    yield 1;
         \\}
     );

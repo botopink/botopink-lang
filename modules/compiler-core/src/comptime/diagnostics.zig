@@ -41,13 +41,28 @@ pub const effect_missing_annotation: []const u8 = "effect-missing-annotation";
 /// R5 — more than one `#[@<effect>]` annotation on the same fn.
 pub const effect_duplicate_annotation: []const u8 = "effect-duplicate-annotation";
 
-/// R6 — `throw` outside a fallible-channel effect (result/future/iterator/asyncGenerator).
+/// R6 — `throw` outside a fallible-channel effect (result/future/iterator/futureGenerator).
 pub const effect_throw_without_fallible_channel: []const u8 = "effect-throw-without-fallible-channel";
 
-/// R7 — `await` outside `#[@future]` / `#[@asyncGenerator]`.
+/// Decision 95 — bare `try` (the propagating form) in a body whose effect does
+/// not implement `@Result`: a `#[@generator]` body (question 97 — `@Generator`
+/// has no error channel) or a plain `fn`. The `try … catch` form supplies its
+/// own fallback and needs no channel, so it is not gated. Sibling of
+/// `effect-throw-without-fallible-channel`, which asks the same question of the
+/// other half of the pair.
+pub const effect_try_without_fallible_channel: []const u8 = "effect-try-without-fallible-channel";
+
+/// Front 20 F11 — `.expect(default)` on a `?T`. It was an alias of `unwrapOr`
+/// under a name that says the absent branch is unreachable, which is the
+/// loosest reading of the stricter word (decision 67). There is one spelling
+/// now, and reaching for the old one is refused rather than typed permissively
+/// and broken at run time.
+pub const option_expect_removed: []const u8 = "option-expect-removed";
+
+/// R7 — `await` outside `#[@future]` / `#[@futureGenerator]`.
 pub const effect_await_without_future: []const u8 = "effect-await-without-future";
 
-/// R8 — `yield` outside a yielding effect (generator/iterator/asyncGenerator).
+/// R8 — `yield` outside a yielding effect (generator/iterator/futureGenerator).
 pub const yield_without_generator: []const u8 = "yield-without-generator";
 
 /// R9 — alias of R7 (`await` inside `#[@result]` body).
@@ -77,7 +92,7 @@ pub const result_error_type_incompatible: []const u8 = "result-error-type-incomp
 /// R13 — `break <expr>` inside an iterator whose wrapper has `C = void`.
 pub const iterator_break_without_completion_type: []const u8 = "iterator-break-without-completion-type";
 
-/// R14 — `return <expr>` inside `#[@iterator]` / `#[@asyncGenerator]`.
+/// R14 — `return <expr>` inside `#[@iterator]` / `#[@futureGenerator]`.
 pub const iterator_return_forbidden: []const u8 = "iterator-return-forbidden";
 
 /// R15 — `yield :label <expr>` where the label is not bound.
@@ -117,7 +132,7 @@ pub const future_manual_construction_forbidden_alias: []const u8 = future_manual
 
 // ── RI1–RI6: §1I `#[@iterator]` syntax diagnostics ──────────────────────────
 
-/// RI1 — `return <expr>` inside `#[@iterator]` / `#[@asyncGenerator]`.
+/// RI1 — `return <expr>` inside `#[@iterator]` / `#[@futureGenerator]`.
 /// Identical to R14 (the §2 alias).
 pub const iterator_return_forbidden_alias: []const u8 = iterator_return_forbidden;
 
@@ -244,6 +259,7 @@ pub const all_codes = [_][]const u8{
     effect_missing_annotation,
     effect_duplicate_annotation,
     effect_throw_without_fallible_channel,
+    effect_try_without_fallible_channel,
     effect_await_without_future,
     yield_without_generator,
     return_must_be_bare_R,
@@ -281,6 +297,7 @@ pub const all_codes = [_][]const u8{
     enum_variant_arity_mismatch,
     fn_param_default_trailing_only_parse,
     fn_param_arity_exceeded,
+    option_expect_removed,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

@@ -4,10 +4,10 @@ fn bad() -> @Future<i32> {
 }
 
 ----- ERROR
-error: a function returning `@Future`/`@Iterator`/`@AsyncIterator` needs an effect annotation
+error: a function returning `@Future`/`@Iterator`/`@FutureGenerator` needs an effect annotation
   ┌─ :2:5
   │
 2 │     return 0;
   │     ^
 
-  hint: Mark it `#[@future]` / `#[@iterator]` / `#[@asyncGenerator]`.
+  hint: Mark it `#[@future]` / `#[@iterator]` / `#[@futureGenerator]`.

@@ -1403,7 +1403,7 @@ const Emitter = struct {
     ///   `#[@future]`         → `async function`
     ///   `#[@iterator]`       → `function*`
     ///   `#[@generator]`      → `function*`
-    ///   `#[@asyncGenerator]` → `async function*`
+    ///   `#[@futureGenerator]` → `async function*`
     ///   `#[@result]`         → `function` (checked-Result effect — plain fn)
     ///   `#[@context]` / none → `function`
     fn fnKeyword(f: ast.FnDecl) []const u8 {
@@ -1412,7 +1412,7 @@ const Emitter = struct {
             .future => "async function",
             .iterator => "function*",
             .generator => "function*",
-            .asyncGenerator => "async function*",
+            .futureGenerator => "async function*",
             .result => "function",
             .context => "function",
         };
@@ -2501,13 +2501,43 @@ const Emitter = struct {
     fn buildLambdaBody(self: *Emitter, body: []const ast.Stmt) ![]const js.Stmt {
         const out = try self.arena().alloc(js.Stmt, body.len);
         for (body, 0..) |st, i| {
-            if (i == body.len - 1 and isImplicitReturnExpr(st.expr)) {
-                out[i] = .{ .return_ = try self.buildExpr(st.expr) };
-            } else {
-                out[i] = try self.buildStmt(st);
-            }
+            out[i] = if (i == body.len - 1)
+                try self.buildLambdaTail(st)
+            else
+                try self.buildStmt(st);
         }
         return out;
+    }
+
+    /// The lambda's LAST statement is its return position, so every expression
+    /// form `buildExpr` can give a value to is `return`ed there — the same rule
+    /// `buildIfLast` applies one level down, and the same rule a `val x = <e>;`
+    /// binding already gets.
+    ///
+    /// `isImplicitReturnExpr` alone was not that rule: it lists only the
+    /// categories that are *always* a value, so an `if`, a `loop` and a
+    /// `try`/`catch` tail fell through to `buildStmt` and were emitted as
+    /// statements — `(x) => { (() => { … })(); }` — dropping the value. A
+    /// `case` never had the defect: it is a `.collection`.
+    ///
+    /// Still statements: a jump (`return`/`throw`/`break`/`continue`/`yield`),
+    /// a binding, a `use` hook, and any `if`/`loop` whose body jumps out of the
+    /// lambda — a `return` cannot cross the IIFE the value form wraps it in.
+    fn buildLambdaTail(self: *Emitter, st: ast.Stmt) anyerror!js.Stmt {
+        const e = st.expr;
+        // `try f()` / `try f() catch v` — the Result lowering, with the Ok
+        // value landing in `return` instead of being discarded.
+        if (classifyTry(e)) |form| return self.buildTryStmt(form, .ret);
+        if (isImplicitReturnExpr(e)) return .{ .return_ = try self.buildExpr(e) };
+        switch (e) {
+            // `buildArrow` reset `loop_ctx` to `.none`, so no accumulator
+            // `yield` is in scope here — `exprJumps`' third argument is false.
+            .branch, .loop => if (!exprJumps(e, false, false)) {
+                return .{ .return_ = try self.buildExpr(e) };
+            },
+            else => {},
+        }
+        return self.buildStmt(st);
     }
 
     /// `(params) => { body }` with implicit tail return.
@@ -2841,7 +2871,7 @@ const Emitter = struct {
                 .await_ => |av| return self.b.await_(try self.buildExpr(av.*)),
                 // Generator `yield` (loop-accumulator yields are lowered at
                 // the `.loop` site, so reaching here means an `#[@iterator]`
-                // / `#[@generator]` / `#[@asyncGenerator]` body).
+                // / `#[@generator]` / `#[@futureGenerator]` body).
                 .yield => |y| return self.b.yield_(if (y.value) |val| try self.buildExpr(val.*) else null),
             },
 

@@ -9,8 +9,8 @@ fn counter() -> @Iterator<i32> {
     yield 1;
     yield 2;
 }
-#[@asyncGenerator]
-fn stream() -> @AsyncIterator<i32, string> {
+#[@futureGenerator]
+fn stream() -> @FutureGenerator<i32, string> {
     yield 1;
 }
 #[@result]
