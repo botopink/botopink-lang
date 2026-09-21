@@ -6233,6 +6233,177 @@ fn checkAssertPatternSubject(
     return error.TypeError;
 }
 
+/// Decision 54 — the `null` pattern. The parser lands it as `.ident` carrying
+/// the keyword's own lexeme (`parser/patterns.zig`), so `null` is never a
+/// binding: no source can spell a binder with that name, `null` being a keyword
+/// token. This predicate is the only reader of that spelling.
+fn isNullPattern(pattern: ast.Pattern) bool {
+    return pattern == .ident and std.mem.eql(u8, pattern.ident, "null");
+}
+
+/// The `T` of a `?T`, or null when the type is not an optional.
+fn optionalInner(ty: *T.Type) ?*T.Type {
+    const d = ty.deref();
+    if (d.* != .named) return null;
+    if (!std.mem.eql(u8, d.named.name, "optional") or d.named.args.len != 1) return null;
+    return d.named.args[0];
+}
+
+/// The name a pattern binds when it is the binder half of decision 54's `?T`
+/// form: a plain lower-case name, or `""` for `_`. Null when the pattern is
+/// anything else.
+fn optionalBinderName(pattern: ast.Pattern) ?[]const u8 {
+    return switch (pattern) {
+        .wildcard => "",
+        .ident => |n| if (isNullPattern(pattern) or std.mem.indexOfScalar(u8, n, '.') != null)
+            null
+        else
+            n,
+        else => null,
+    };
+}
+
+/// Decision 54 — a `case` over a `?T` has exactly one spelling:
+/// `case x { null { … } v { … } }`. This validates it and answers the binder's
+/// name, or reds with a located diagnostic. Called only when an arm's pattern
+/// is `null`; the arms are the untyped ones, since the shape is a property of
+/// what was written.
+///
+/// Three things are refused here, and each names the form it wants:
+///   * a `null` arm over a subject that is not an optional;
+///   * a `case` over a `?T` whose arms are not exactly `null` then a binder
+///     (a third arm, a guard, a reversed order, a payload pattern);
+///   * the arms' bodies taking a parameter (`v { n -> … }`) — §5.1 P1's
+///     whole-value binder means nothing here, where the binder is the payload.
+fn optionalNullCaseBinder(
+    env: *Env,
+    subjectType: *T.Type,
+    arms: []const ast.CaseArm,
+    loc: ast.Loc,
+) InferError!?[]const u8 {
+    var nullArm: ?usize = null;
+    for (arms, 0..) |arm, i| {
+        if (isNullPattern(arm.pattern)) {
+            nullArm = i;
+            break;
+        }
+    }
+    const nullIdx = nullArm orelse return null;
+
+    if (optionalInner(subjectType) == null) {
+        env.lastError = TypeError.custom(
+            "`null` is a pattern only over an optional",
+            "`case x { null { … } v { … } }` matches a `?T` (decision 54). This subject is not one.",
+        ).withLoc(arms[nullIdx].patternLoc);
+        return error.TypeError;
+    }
+
+    const shapeError = "an optional is matched by `null` and a binder, in that order";
+    const shapeHint = "Decision 54: a `?T` has one pattern form — `case x { null { … } v { … } }`, two arms, no guards. `null` first, because a binder written first would match the absent value too.";
+
+    if (arms.len != 2 or nullIdx != 0 or arms[0].guard != null or arms[1].guard != null) {
+        env.lastError = TypeError.custom(shapeError, shapeHint).withLoc(loc);
+        return error.TypeError;
+    }
+    const binder = optionalBinderName(arms[1].pattern) orelse {
+        env.lastError = TypeError.custom(shapeError, shapeHint).withLoc(arms[1].patternLoc);
+        return error.TypeError;
+    };
+    for (arms) |arm| {
+        if (arm.body == .function and arm.body.function.kind.params.len > 0) {
+            env.lastError = TypeError.custom(
+                "an arm of a `?T` `case` takes no parameter",
+                "The binder is the payload already: `case x { null { … } v { … } }` binds `v` to the value inside the optional.",
+            ).withLoc(arm.body.getLoc());
+            return error.TypeError;
+        }
+    }
+    return binder;
+}
+
+/// Decision 54 — `.Some(v)` / `.None` over a `?T` is a **located error**. The
+/// optional is not a variant: the checker still models `?T` as having `Some`
+/// and `None` (`variantPayloadTypes`), which is why the spelling compiled and
+/// then answered four different things on four backends. It is refused here,
+/// at the arm, naming the form the language does have.
+fn refuseVariantPatternOverOptional(
+    env: *Env,
+    subjectType: *T.Type,
+    arms: []const ast.CaseArm,
+) InferError!void {
+    if (optionalInner(subjectType) == null) return;
+    for (arms) |arm| {
+        const isVariantShaped = switch (arm.pattern) {
+            // A path is never a binder (§5.1 P8), and a bare `Some` / `None`
+            // is the spelling the decision names: both are variant patterns
+            // over a value that has no variants.
+            .ident => |n| isVariantPath(n) or
+                std.mem.eql(u8, n, "Some") or std.mem.eql(u8, n, "None"),
+            // `.Some(v)`, `Option.Some(value: v)`, `Circle(r)` — a payload
+            // pattern. `#(a, b)` and `1...9` ride the same node under `shape`
+            // and are not variants, so they are left alone.
+            .variant => |v| v.shape == .variant and v.name.len > 0,
+            else => false,
+        };
+        if (!isVariantShaped) continue;
+        env.lastError = TypeError.custom(
+            "an optional is matched by `null`, not by a variant",
+            "Decision 54: write `case x { null { … } v { … } }` — the shape `??` and `?.` already use. `Some` and `None` are not spellings this language has.",
+        ).withLoc(arm.patternLoc);
+        return error.TypeError;
+    }
+}
+
+/// Decision 8 §5.1 P7 — without a trailing `..` a variant pattern names every
+/// field of the variant. `.Rect(width: w)` over `Rect(width: i32, height: i32)`
+/// is a missing field, not a shorthand: the fields it does not name would be
+/// silently dropped, and `..` is the spelling that says "drop them".
+///
+/// Only a written variant payload is judged. A whole-payload binding (`Ok ok`)
+/// stands for the payload entire, a tuple or range rides the same node under
+/// `shape`, and a variant whose declaration is not resolvable is left alone.
+fn checkCaseArmArity(
+    env: *Env,
+    subjectType: *T.Type,
+    arms: []const ast.CaseArm,
+) InferError!void {
+    for (arms) |arm| {
+        const v = switch (arm.pattern) {
+            .variant => |vv| vv,
+            else => continue,
+        };
+        if (v.shape != .variant or v.rest or v.name.len == 0) continue;
+        const written: usize = switch (v.payload) {
+            .fields => |f| f.len,
+            .literals => |l| l.len,
+            .binding => continue,
+        };
+        const declared = (try variantPayloadFieldNames(env, subjectType, v.name)) orelse continue;
+        if (written >= declared.len) continue;
+        env.lastError = TypeError
+            .missingField(bareVariantName(v.name), declared[written])
+            .withLoc(arm.patternLoc);
+        return error.TypeError;
+    }
+}
+
+/// The declared field names of `writtenName`'s variant on `subjectType`, or
+/// null when the subject's type or the variant is not resolvable.
+fn variantPayloadFieldNames(env: *Env, subjectType: *T.Type, writtenName: []const u8) InferError!?[]const []const u8 {
+    const st = subjectType.deref();
+    if (st.* != .named) return null;
+    const td = env.lookupTypeDef(st.named.name) orelse return null;
+    if (td != .enum_) return null;
+    const variantName = bareVariantName(writtenName);
+    for (td.enum_.variants) |vd| {
+        if (!std.mem.eql(u8, vd.name, variantName)) continue;
+        const out = try env.arena.alloc([]const u8, vd.fields.len);
+        for (vd.fields, 0..) |f, i| out[i] = f.name;
+        return out;
+    }
+    return null;
+}
+
 fn bindCaseArmPatternNames(
     env: *Env,
     pattern: ast.Pattern,
@@ -9916,11 +10087,39 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                 typedSubjects[i] = try inferExprTyped(env, subj);
             }
 
+            // Decision 54 — the optional's pattern form. `optionalNullCaseBinder`
+            // validates the whole `case` when any arm is `null` and answers the
+            // binder's name; `refuseVariantPatternOverOptional` refuses the
+            // spelling the decision rejected. Both run before the arms are
+            // typed, so a wrong shape reds at the shape rather than inside a
+            // body that was never going to mean anything.
+            const subjectTy: ?*T.Type = if (typedSubjects.len == 1) typedSubjects[0].getType() else null;
+            var optionalBinder: ?[]const u8 = null;
+            if (subjectTy) |st| {
+                optionalBinder = try optionalNullCaseBinder(env, st, c.arms, loc);
+                if (optionalBinder == null) try refuseVariantPatternOverOptional(env, st, c.arms);
+            } else for (c.arms) |arm| {
+                if (isNullPattern(arm.pattern)) {
+                    env.lastError = TypeError.custom(
+                        "`null` is a pattern only over an optional",
+                        "`case x { null { … } v { … } }` matches one `?T` subject (decision 54).",
+                    ).withLoc(arm.patternLoc);
+                    return error.TypeError;
+                }
+            }
+
             const typedArms = try env.arena.alloc(ast.CaseArmOf(.typed), c.arms.len);
             for (c.arms, 0..) |arm, i| {
                 var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
                 defer snapshots.deinit(env.arena);
-                try bindCaseArmPatternNames(env, arm.pattern, typedSubjects, &snapshots);
+                if (optionalBinder) |binder| {
+                    // The binder is the payload, narrowed (decision 54): `v` is
+                    // the `T` of the `?T`, not the optional itself. The `null`
+                    // arm binds nothing.
+                    if (i == 1 and binder.len > 0) {
+                        try saveAndBindPatternName(env, &snapshots, binder, optionalInner(subjectTy.?).?);
+                    }
+                } else try bindCaseArmPatternNames(env, arm.pattern, typedSubjects, &snapshots);
 
                 // A guard clause must type-check to a boolean, with the
                 // pattern's bindings in scope.
@@ -9964,9 +10163,14 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
 
             // A single-subject `case` on an enum or string must cover every
             // possibility (or carry a wildcard), and no arm may be unreachable.
-            if (typedSubjects.len == 1) {
+            // Decision 54's form covers its `?T` by construction — `null` and a
+            // binder are the two halves of an optional — and its `null` arm is
+            // not a catch-all, so the walk would read it as uncovered.
+            if (typedSubjects.len == 1 and optionalBinder == null) {
+                try checkCaseArmArity(env, typedSubjects[0].getType(), c.arms);
                 try checkCaseExhaustiveness(env, typedSubjects[0].getType(), c.arms, loc);
             }
+            if (optionalBinder) |binder| try env.optionalNullCases.put(loc, binder);
             // C2a — the `case` is typed from its arms: arms that agree unify,
             // arms of different types make a union (decision 8 §3.2). A jump arm
             // (`return`/`throw`/`break`/`continue`) and a statement arm (`void`, a

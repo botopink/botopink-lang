@@ -45,6 +45,12 @@ pub const ConditionLoops = std.AutoHashMap(ast.Loc, void);
 /// every backend sees a complete call and none of them learns a new rule.
 pub const DefaultInjections = std.AutoHashMap(ast.Loc, envMod.DefaultFill);
 
+/// Decision 54 — locs of the `case`s that are the optional's pattern form,
+/// mapped to the binder's name (`""` for `_`). Produced by inference, which
+/// validated the shape and narrowed the binder; `rewriteExpr` replaces each
+/// with the `if (x) { v -> … } else { … }` the backends already lower.
+pub const OptionalNullCases = std.AutoHashMap(ast.Loc, []const u8);
+
 /// Aggregator: collects specialization info during scan/rewrite phases.
 const Aggregator = struct {
     spec_cache: specialize.SpecCache,
@@ -69,6 +75,7 @@ const Aggregator = struct {
     enum_section_rewrites: *const EnumSectionRewrites,
     /// Decision 8 §10 — loops to mark `condition` (their `iter` is a `bool`).
     condition_loops: *const ConditionLoops,
+    optional_null_cases: *const OptionalNullCases,
     /// True for the aggregator that walks method bodies: every map but
     /// `src_rewrites` is empty and the one unconditional rewrite (the `${}`
     /// template desugar) is skipped, so a method body lowers byte-for-byte as
@@ -95,7 +102,7 @@ const Aggregator = struct {
     /// sites need their defaults as much as a fn body's do.
     default_injections: *const DefaultInjections,
 
-    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, condition_loops: *const ConditionLoops, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
+    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, condition_loops: *const ConditionLoops, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
         return .{
             .spec_cache = specialize.SpecCache.init(allocator),
             .method_lowerings = method_lowerings,
@@ -106,6 +113,7 @@ const Aggregator = struct {
             .std_array_lowerings = std_array_lowerings,
             .enum_section_rewrites = enum_section_rewrites,
             .condition_loops = condition_loops,
+            .optional_null_cases = optional_null_cases,
             .total_calls = std.StringHashMap(usize).init(allocator),
             .specialized_calls = std.StringHashMap(usize).init(allocator),
             .comptime_vals = comptime_vals,
@@ -168,10 +176,11 @@ pub fn transform(
     std_array_lowerings: *const StdArrayLowerings,
     enum_section_rewrites: *const EnumSectionRewrites,
     condition_loops: *const ConditionLoops,
+    optional_null_cases: *const OptionalNullCases,
     ctor_params: std.StringHashMap([]const ast.Param),
     default_injections: *const DefaultInjections,
 ) !ast.Program {
-    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, condition_loops, ctor_params, default_injections);
+    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, condition_loops, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
 
     // The method-body aggregator (`src_only`): the `@src()` splice alone.
@@ -189,11 +198,13 @@ pub fn transform(
     defer empty_es.deinit();
     var empty_cl = ConditionLoops.init(allocator);
     defer empty_cl.deinit();
+    var empty_onc = OptionalNullCases.init(allocator);
+    defer empty_onc.deinit();
     const empty_vals = std.StringHashMap([]const u8).init(allocator);
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, &empty_sa, &empty_es, &empty_cl, empty_ctor, default_injections);
+    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, &empty_sa, &empty_es, &empty_cl, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
     defer src_agg.deinit(allocator);
 
@@ -769,11 +780,76 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             for (lp.body) |*s| rewriteStmt(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
         },
         .comptime_ => rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr) catch return ScanError.OutOfMemory,
+        // Decision 54's `?T` pattern form at statement position. Only that one
+        // swap: `rewriteStmt` has never walked into a `case`'s arms, and giving
+        // it a general `.collection` arm would start lowering things inside
+        // them that no snapshot has ever recorded. The `if` it becomes is
+        // re-dispatched through this same function, so its branches are walked
+        // exactly as a written `if`'s are.
+        .collection => |*col| if (col.kind == .case) {
+            if (agg.optional_null_cases.get(col.loc)) |binder| {
+                try rewriteOptionalNullCase(agg, &stmt.expr, binder);
+                rewriteStmt(agg, fn_decls, comptime_arrays, stmt) catch return ScanError.OutOfMemory;
+            }
+        },
         else => {},
     }
 }
 
+/// The statements an arm's body contributes to an `if` branch. Decision 8's
+/// `Pattern { body }` arm is a parameterless lambda, so its statements are the
+/// branch's; the older `pattern -> value` arm is one expression.
+fn armBodyStmts(allocator: std.mem.Allocator, body: ast.Expr) ScanError![]ast.Stmt {
+    if (body == .function) return body.function.kind.body;
+    const stmts = allocator.alloc(ast.Stmt, 1) catch return ScanError.OutOfMemory;
+    stmts[0] = .{ .expr = body };
+    return stmts;
+}
+
+/// Decision 54 — `case x { null { A } v { B } }` becomes
+/// `if (x) { v -> B } else { A }`. Inference validated the shape (exactly two
+/// arms, `null` first, a binder second, the subject a `?T`) and narrowed `v` to
+/// the payload; all that is left is the node swap, and it is done here rather
+/// than in the backends because the `if`-binder lowering is one every backend
+/// already has. Nothing below inference learns a new pattern.
+fn rewriteOptionalNullCase(
+    agg: *Aggregator,
+    expr_ptr: *ast.Expr,
+    binder: []const u8,
+) ScanError!void {
+    const c = expr_ptr.collection.kind.case;
+    if (c.subjects.len != 1 or c.arms.len != 2) return;
+    const arena = agg.spec_cache.arena;
+    const loc = expr_ptr.collection.loc;
+    const cond = arena.create(ast.Expr) catch return ScanError.OutOfMemory;
+    cond.* = c.subjects[0];
+    expr_ptr.* = .{
+        .branch = .{
+            .loc = loc,
+            .kind = .{
+                .if_ = .{
+                    .cond = cond,
+                    // `_` binds the name `_`, never a null binding: a null `binding` is
+                    // "this `if` has no binder at all", which makes the condition a `bool`
+                    // and the optional's absence a truthiness test. The discard is the one
+                    // `val _ = …` and `if (x) { _ -> … }` already record.
+                    .binding = if (binder.len > 0) binder else "_",
+                    .then_ = try armBodyStmts(arena, c.arms[1].body),
+                    .else_ = try armBodyStmts(arena, c.arms[0].body),
+                },
+            },
+        },
+    };
+}
+
 fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), expr_ptr: *ast.Expr) ScanError!void {
+    // Decision 54's `?T` pattern form — swapped before the other dispatches so
+    // the `if` it becomes rides through the same recursive walker.
+    if (expr_ptr.* == .collection and expr_ptr.collection.kind == .case) {
+        if (agg.optional_null_cases.get(expr_ptr.collection.loc)) |binder| {
+            try rewriteOptionalNullCase(agg, expr_ptr, binder);
+        }
+    }
     // §enum-sections F2 — swap dot-shorthand path-access chains
     // (`.Color.Red.500`) with the qualified-ctor rewrite that F2 stashed
     // under the outer-identAccess loc. Runs before the other dispatches so
@@ -814,6 +890,11 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // declares a default. Inference accepted it and planned the fill under this
     // loc; materialise it HERE, before the method and std-array lowerings, which
     // reshape the argument list they are handed.
+    //
+    // It and decision 54's `optional_null_cases` swap above are both loc-keyed
+    // and neither can skip the other: they act on disjoint node kinds (a `.call`
+    // and a `case` `.collection`), and the `if` the swap produces is walked by
+    // this same function, so a call inside a swapped arm still reaches its fill.
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
         if (agg.default_injections.get(expr_ptr.call.loc)) |fill| {
             applyDefaultFill(agg, fill, &expr_ptr.call.kind.call) catch return ScanError.OutOfMemory;

@@ -318,11 +318,21 @@ pub fn CaseArmOf(comptime phase: Phase) type {
         guard: ?ExprOf(phase) = null,
         /// Number of empty lines before this arm in the source
         emptyLinesBefore: u32 = 0,
+        /// Where the arm's pattern starts. `Pattern` carries no location of its
+        /// own, so a diagnostic about the pattern — decision 54's "an optional
+        /// is matched by `null`", for one — has nowhere else to point. Left out
+        /// of the dump: a location is a diagnostic aid, not surface, and the AST
+        /// dumps are snapshot-compared.
+        patternLoc: Loc = .{ .line = 0, .col = 0 },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             this.pattern.deinit(allocator);
             this.body.deinit(allocator);
             if (this.guard) |*g| g.deinit(allocator);
+        }
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            return stringifyOmitting(this, jws, &.{"patternLoc"}, &.{});
         }
     };
 }

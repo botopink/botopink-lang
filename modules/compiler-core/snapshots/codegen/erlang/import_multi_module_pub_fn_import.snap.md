@@ -27,11 +27,19 @@ val result = double(21);
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
+-export(['_botopink_init'/0]).
 
 %% import double
 
 result() ->
-    bp@math:double(21).
+    case persistent_term:get({main, result}, '__bp_unset') of
+        '__bp_unset' -> __BpV = bp@math:double(21), persistent_term:put({main, result}, __BpV), __BpV;
+        __BpCached -> __BpCached
+    end.
+
+'_botopink_init'() ->
+    result(),
+    ok.
 ```
 
 ----- RUN LOG -----

@@ -11,11 +11,15 @@ fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
+-export(['_botopink_init'/0]).
 
 %% type SourceLocation: file, line, column, fnName
 
 top() ->
-    #{file => <<"main.bp">>, line => 1, column => 11, fnName => <<"">>}.
+    case persistent_term:get({main, top}, '__bp_unset') of
+        '__bp_unset' -> __BpV = #{file => <<"main.bp">>, line => 1, column => 11, fnName => <<"">>}, persistent_term:put({main, top}, __BpV), __BpV;
+        __BpCached -> __BpCached
+    end.
 
 main() ->
     '__bp_print'([maps:get(file, top()), maps:get(line, top()), maps:get(column, top())]),
@@ -31,7 +35,12 @@ main() ->
 '__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(",", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
 
+'_botopink_init'() ->
+    top(),
+    ok.
+
 '_botopink_main'() ->
+    '_botopink_init'(),
     main().
 
 main(_Args) ->

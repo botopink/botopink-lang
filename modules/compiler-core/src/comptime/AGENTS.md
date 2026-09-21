@@ -671,6 +671,49 @@ and the sized integers are the same kind of unbounded domain, so
 `case x { 0 { … } 1 { … } }` on an `f64` still compiles; widening the list is a language rule and is
 reported rather than assumed. Measured: `test-libs` is 11/0 with `i32` in, so it costs no migration.
 
+## Decision 8 §5.1 P7 — a variant pattern names every field, or ends with `..`
+
+`checkCaseArmArity` runs beside `checkCaseExhaustiveness`, over the same single
+subject. For an arm whose pattern is a written variant payload (`shape ==
+.variant`, no `rest`, a resolvable declaration), fewer elements than the variant
+declares is `missing required field '<name>' on type '<Variant>'` at
+`arm.patternLoc` — the first field the pattern does not reach. The fields a
+pattern does not name are dropped at run time, and `..` is the spelling that
+says so; without the rule `.Rect(width: w)` silently dropped `height`.
+
+A whole-payload binding (`Ok ok`) stands for the payload entire and is skipped,
+as are the tuple and range shapes that ride the same node, and any variant whose
+declaration the env cannot resolve. `variantPayloadFieldNames` is the lookup —
+the names beside `variantPayloadTypes`' types.
+
+## Decision 54 — an optional is matched by `null` and a binder
+
+`case x { null { A } v { B } }` is the **one** pattern form a `?T` has, and it
+is settled here because it is the subject's type that decides it. The parser
+reads `null` as a pattern and lets a bare name follow it
+(`parser/AGENTS.md` § decision 54); everything below is `infer.zig`'s:
+
+| Function | What it settles |
+|---|---|
+| `isNullPattern` | the `.ident "null"` spelling the parser lands; `null` is a keyword token, so nothing else can carry that name |
+| `optionalInner` | the `T` of a `?T` |
+| `optionalNullCaseBinder` | the subject is an optional; the arms are exactly two, unguarded, `null` then a binder; neither body takes a parameter (§5.1 P1's whole-value binder means nothing where the binder *is* the payload). Answers the binder's name, `""` for `_` |
+| `refuseVariantPatternOverOptional` | `.Some(v)` / `.None` — and any variant-shaped arm — over a `?T` is a located error naming the `null` form |
+
+The binder is bound to the **payload**, narrowed, not to the optional, and the
+exhaustiveness walk is skipped for the form: `null` and a binder are the two
+halves of an optional, so it is covered by construction, and `null` is not a
+catch-all the walk would count.
+
+**The lowering is a rewrite, not a backend feature.** Inference records the
+`case`'s loc and its binder in `Env.optionalNullCases`; `transform.zig`'s
+`rewriteOptionalNullCase` swaps the whole node for
+`if (<subject>) { <binder> -> B } else { A }` before codegen reads the AST. That
+is a lowering all four backends already have, so no code generator learned a
+pattern — and the formatter, which reads the parser's AST, still writes the
+`case` the author wrote. The channel is `conditionLoops`' (decision 8 §10):
+inference decides, the transform edits, codegen is told nothing new.
+
 ## The inline `implement <Behavior> { }` is checked (decision 58)
 
 `validateProgram` collects the program's behaviors and then validates **both** implementing forms.

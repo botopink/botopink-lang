@@ -552,6 +552,13 @@ pub const Env = struct {
     /// (`loop (flag) { … }`); the comptime transform marks them
     /// `LoopExpr.condition` for the backends, which read the untyped AST.
     conditionLoops: std.AutoHashMap(ast.Loc, void),
+    /// Decision 54 — locs of the `case`s that are the optional's pattern form
+    /// (`case x { null { … } v { … } }`), with the binder's name. Inference
+    /// validates the shape and narrows the binder; the comptime transform
+    /// rewrites the node into the equivalent `if (x) { v -> … } else { … }`,
+    /// which is the lowering all four backends already have for an optional.
+    /// Nothing below inference learns a new pattern.
+    optionalNullCases: std.AutoHashMap(ast.Loc, []const u8),
     /// Interface declarations that expose associated functions (`default fn` with
     /// no `self`), keyed by name. Includes stdlib primitives (`Pair`, `Function`,
     /// `Array`) registered before user inference. Used to emit their namespace
@@ -693,6 +700,7 @@ pub const Env = struct {
             .synthesisedEnumDecls = std.StringHashMap(ast.TypeDecl).init(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
+            .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = std.StringHashMap(ast.BehaviorDecl).init(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -767,6 +775,7 @@ pub const Env = struct {
             .synthesisedEnumDecls = try tmpl.synthesisedEnumDecls.cloneWithAllocator(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
+            .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = try tmpl.assocInterfaceDecls.cloneWithAllocator(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -846,6 +855,7 @@ pub const Env = struct {
         self.typeGuardFns.deinit();
         self.synthesisedEnumDecls.deinit();
         self.enumSectionRewrites.deinit();
+        self.optionalNullCases.deinit();
     }
 
     // ── extension dispatch helpers ────────────────────────────────────────────

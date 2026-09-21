@@ -151,6 +151,30 @@ val count: i32 = 42;
 val names: string[] = ["alice", "bob"];
 ```
 
+A `val` at module level is part of the **module body**: it is evaluated **once**,
+in declaration order, when the module loads — before `main` runs and before the
+first `test {}` block. Reading the name afterwards does not evaluate it again,
+and a `_`-named statement, which nothing reads, runs just the same. So a module
+whose initialisers have effects registers itself by being loaded:
+
+```botopink
+fn register(name: string) -> i32 {
+    @print(name);
+    return 1;
+}
+
+val _registered = register("Greeter");   // runs at module load, once
+val port = 8000 + 80;                    // read as many times as you like
+
+fn main() {
+    @print(port);
+}
+```
+
+`botopink test` and `botopink build` agree on this: the module body runs in both,
+at the same point relative to the program's own code. A backend that cannot run
+it is a gap in that backend, not a different meaning of `val`.
+
 ### var — mutable binding
 
 <!-- docs-check: body -->
@@ -251,6 +275,12 @@ type Person(name: string) implement Printable {
 }
 ```
 
+A `behavior` no type in the program implements is a **runtime boundary**: the
+host builds the value. Such a value carries its own members — a `val` member is
+read off it, and a method is found on it the same way and applied to the
+receiver and the arguments. That is what lets a host hand a program a request,
+a connection or a handle without the program naming a concrete type.
+
 ### Generics
 
 ```botopink
@@ -348,12 +378,30 @@ val x = 1;
 val s = if (x > 0) { "positive" } else { "negative" };
 ```
 
+A condition is a whole expression, `&&` and `||` included — the grammar's own
+parentheses close it, so nothing has to be bound to a `val` first:
+
+<!-- docs-check: body -->
+```botopink
+val a = true;
+val b = false;
+if (a && b) { @print("both"); } else if (a || b) { @print("either"); };
+```
+
 `if` on an optional unwraps it in the then-branch:
 
 ```botopink
 fn show(x: ?i32) {
     if (x) { n -> @print(n); };
 }
+```
+
+Write the binder `_` when the branch only asks whether the value is there:
+
+<!-- docs-check: body -->
+```botopink
+val x: ?i32 = 5;
+if (x) { _ -> @print("present"); } else { @print("absent"); };
 ```
 
 ### Case (pattern matching)
@@ -423,12 +471,55 @@ fn grade(n: i32) {
 }
 ```
 
+A variant pattern names **every** field of its variant, or ends with `..`:
+
+```botopink
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+}
+
+fn describe(s: Shape) -> i32 {
+    return case s {
+        .Rect(width: w, ..) { w }
+        .Circle(r) { r }
+    };
+}
+```
+
+`.Rect(width: w)` without the `..` is `error: missing required field 'height' on
+type 'Rect'`, at the arm — the fields a pattern does not name are dropped, and
+`..` is how you say so.
+
 A range in a pattern is `..`, exclusive, exactly as in a loop. The compiler is
 behind that rule and still asks for `...` — see
 [Decided, not yet implemented](#decided-not-yet-implemented).
 
 A name alone is not a pattern: to give the matched value a name, bind it in the
-body (`_ { n -> … }`).
+body (`_ { n -> … }`). The one exception is the optional, below, where the name
+after the `null` arm *is* the pattern.
+
+#### An optional is matched by `null` and a binder
+
+A `?T` has exactly one pattern form — `null` for the absent value, then a name
+that binds what is there, already unwrapped:
+
+<!-- docs-check: body -->
+```botopink
+val x: ?i32 = 5;
+val a = case x { null { "absent" } v { "present " + v.toString() } };
+@print(a);
+```
+
+Two arms, in that order, and no guards. `null` comes first because a binder
+written first would match the absent value too. The binder may be `_` when the
+body does not read the value, and the arms cover the `?T` between them, so no
+`_` arm is needed and none is allowed.
+
+An optional is **not** a variant: `case x { .Some(v) { … } .None { … } }` is
+`error: an optional is matched by ``null``, not by a variant`, located at the
+arm. `Some` and `None` are not spellings this language has — `??` and `?.` read
+an optional the same way this does.
 
 ### Loop
 
@@ -1038,4 +1129,5 @@ reads as unfinished work:
 | Form | What the compiler says |
 |---|---|
 | `assert x is Some(n)` — `is` binding a payload | `error[is-variant-binding]`: `is` tests a type; it does not bind. Read the payload in a `case` arm |
+| `type Shape { Circle(i32) }` — a variant payload with no field name | `error[field-needs-name]`: a field with no name, at the payload, naming `Variant(field: T)`. A payload nobody can name is a payload no `case` arm can bind |
 | `val assert Ok(v) = parse("42") catch 0` | ``a `val assert` over a `@Result` takes no `catch` `` — the match is fatal, and `try … catch` is the form that supplies a fallback |

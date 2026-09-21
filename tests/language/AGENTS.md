@@ -249,22 +249,24 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 
 ## Status and the gate
 
-**Recounted on disk at C-04's landing (`fix/trailing-defaults`, forked from
-`feat` `6cd50ff2`):**
+**Recounted on disk at C-04's landing (`fix/trailing-defaults`, merged onto
+`032fd765`):**
 
 ```bash
-ls test/*.bp    | wc -l   # 52
-ls run/*.bp     | wc -l   # 30
-ls reject/*.bp  | wc -l   # 40
+ls test/*.bp    | wc -l   # 54
+ls run/*.bp     | wc -l   # 31   (each with its .out; 4 with an .exit, 4 with .<target>.expect; none with .targets)
+ls reject/*.bp  | wc -l   # 42   (each with its .expect)
 ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 133
+find . -name '*.bp' | wc -l   # 138
 ```
 
-C-04 adds two cells and grows a third:
+**131 cells.** The difference from the `fix/erlang-module-load` block below is
+C-04's two, one new area row — and `test/fn_defaults.bp`, which grew from 3
+tests to 9 without being a new cell:
 
 | Area | Cells | Total |
 |---|---|---|
-| a declared parameter default is applied at the call site (1.0.10-beta C-04, 01 step 7, N1 and N2) | 1 run + 1 reject, and `test/fn_defaults.bp` grown from 3 tests to 9 | 2 |
+| a declared parameter default is applied at the call site (1.0.10-beta C-04, 01 step 7, N1 and N2) | 1 run + 1 reject | 2 |
 
 `test/fn_defaults.bp` is the shape claim and runs where `botopink test` runs —
 commonJS and erlang. `run/fn_defaults_values.bp` is the VALUE claim and runs on
@@ -276,26 +278,136 @@ required trailing field and omits the leading one that has the default.
 `reject/missing_required_argument.bp` is N2, and it cannot live in the `test/`
 cell: a cell that does not compile asserts nothing.
 
-**Its two `expected-failures.txt` lines are gone** — `commonJS | test/fn_defaults.bp`
-and `erlang | test/fn_defaults.bp`, both `01 step 7` — and the file is 66 lines
-where it was 68. Nothing else in it moved.
+**`expected-failures.txt` loses 2 lines and keeps 62** — `commonJS |
+test/fn_defaults.bp` and `erlang | test/fn_defaults.bp`, both `01 step 7`.
+Checked by (target, key) against all three sides of the merge, never by count:
+C-08's six deletions stay gone, `fix/erlang-module-load`'s two
+`run/module_init_order.bp` additions are present, and no line of the 62 is a
+stray or a loss.
 
-Measured there — this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0 —
-against the same two commands run at the fork with the branch stashed:
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on
+the tree `fix/trailing-defaults` made by merging `origin/feat` `032fd765`:
 
 ```
-                                    at the fork       at C-04
-$ tests/language/run.sh             401 / 53 / 0      423 / 51 / 0
-$ tests/language/run.sh --target beam 49 / 23 / 0      51 / 23 / 0
-$ zig build test-libs                21 / 0 / 0        21 / 0 / 0
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 62 lines, 47 exercised by --target commonJS,erlang,wasm
+language tests: 444 passed, 47 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 62 lines, 21 exercised by --target beam
+language tests: 56 passed, 21 expected failures, 0 failed
+$ zig build test-libs
+test-libs: 21 passed, 0 failed, 0 known red
 ```
 
-The `--target all` difference is +22 passed and −2 expected, and it accounts for
-itself exactly: a `test/` cell's result is one per NAMED TEST, so
-`test/fn_defaults.bp` going from two expected-failure lines to nine passing tests
-on two targets is +18 and −2; `run/fn_defaults_values.bp` is +3 (commonJS,
+Re-derived from the files and a re-run after the merge — neither side's number
+was kept. The +22 on `--target all` over `fix/erlang-module-load`'s 422 accounts
+for itself exactly: a `test/` cell's result is one per NAMED TEST, so
+`test/fn_defaults.bp` going from two expected-failure lines to nine passing
+tests on two targets is +18 and −2; `run/fn_defaults_values.bp` is +3 (commonJS,
 erlang, wasm) and `reject/missing_required_argument.bp` is +1 (it runs once per
-invocation, so it is the +1 on beam too, alongside the run cell's).
+invocation). Beam's +2 over 54 is the same run cell and the same reject cell;
+its expected count does not move, because both deleted lines were commonJS and
+erlang.
+
+**Recounted on disk at `fix/erlang-module-load` (front 00 · 02-erlang, merged onto
+`9c230065`):**
+
+```bash
+ls test/*.bp    | wc -l   # 54
+ls run/*.bp     | wc -l   # 30   (each with its .out; 4 with an .exit, 4 with .<target>.expect; none with .targets)
+ls reject/*.bp  | wc -l   # 41   (each with its .expect)
+ls -d modules/*/| wc -l   #  4
+find . -name '*.bp' | wc -l   # 136
+```
+
+**129 cells.** The difference from the C-08 block below is this branch's three, one new area row:
+
+| Area | Cells | Total |
+|---|---|---|
+| the module body and a host-supplied `behavior` (front 00 · 02-erlang) | 2 test + 1 run | 3 |
+
+`test/module_init.bp` pins that a module-level `val` is evaluated once, in declaration order, at
+module load — before the first test, which is where `botopink run` evaluates it before `main`. It
+reads the order back through a host-side list (`globalThis` on node, the process dictionary on
+erlang: the escript runs the module body and the tests in one process). `run/module_init_order.bp`
+is the same claim on the build path, on all four targets. `test/behavior_host_dispatch.bp` pins a
+method on a `behavior` no type implements: each row's host writes the shape its backend calls with
+(node reaches the receiver through `this`, erlang takes it as the first argument), and the answer is
+the same.
+
+**`expected-failures.txt` grows by 2 lines**, both `run/module_init_order.bp` and neither this
+front's: wasm drops the `_`-named top-level statement (its named `val` is already once-at-load), and
+beam still has the shape erlang had before this branch. Each names the backend's own row. The six
+lines C-08 turned green stay gone, and no line of the 62 at `9c230065` was lost — checked by
+(target, key), not by count.
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on the tree
+`fix/erlang-module-load` made by merging `origin/feat` `9c230065`:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 64 lines, 49 exercised by --target commonJS,erlang,wasm
+language tests: 422 passed, 49 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 64 lines, 21 exercised by --target beam
+language tests: 54 passed, 21 expected failures, 0 failed
+```
+
+Re-derived from the files and a re-run after the merge — neither side's number was kept. The +14 on
+`--target all` is this branch's three cells: six test results each from `test/module_init.bp` and
+`test/behavior_host_dispatch.bp` (3 tests × commonJS and erlang), and the two passing rows of
+`run/module_init_order.bp`. Beam's `passed` does not move: the one cell that reaches it is an
+expected failure there.
+
+**Recounted on disk at C-08's landing (`fix/parser-gaps`, merged onto
+`6cd50ff2`):**
+
+```bash
+ls test/*.bp    | wc -l   # 52
+ls run/*.bp     | wc -l   # 29
+ls reject/*.bp  | wc -l   # 41
+ls -d modules/*/| wc -l   #  4
+find . -name '*.bp' | wc -l   # 133
+```
+
+The difference from the block below is C-08's two `reject/` cells, one new area
+row:
+
+| Area | Cells | Total |
+|---|---|---|
+| the parser gaps that are inference-side (1.0.10-beta C-08, decisions 11, 12 and 54) | 2 reject | 2 |
+
+`reject/assert_is_pattern.bp` pins the refusal `assert <expr> is <Pattern>`
+keeps giving now that the form is **decided absent** rather than missing —
+three DOCUMENTED SKIPs used to pin a parse error and promise it, and a
+deliberate refusal belongs here instead. `reject/variant_payload_without_name.bp`
+pins decision 12: an unnamed variant payload is `error[field-needs-name]` at the
+payload, naming `Variant(field: T)`, where before C-08 it reached the generic
+"this token cannot appear here" two tokens past the mistake.
+
+**Six `expected-failures.txt` lines left the file**, each turned green by
+running, none of them a line front 20 touched: the four `run/optional_null_pattern.bp`
+rows (commonJS, erlang, wasm, beam — decision 54's spelling parses, types and
+runs), `reject/optional_variant_pattern.bp` (rejected for its own reason now,
+its `.expect` phrase and location unchanged) and
+`reject/case_arity_without_rest.bp` (§5.1 P7 — re-measured before it was
+touched, the cell did not "reject for the wrong reason", it **compiled at exit
+0** while silently dropping a field).
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on
+the tree `fix/parser-gaps` made by merging `origin/feat` `6cd50ff2`:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 62 lines, 48 exercised by --target commonJS,erlang,wasm
+language tests: 408 passed, 48 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 62 lines, 20 exercised by --target beam
+language tests: 54 passed, 20 expected failures, 0 failed
+```
+
+Re-derived from the files and a re-run after the merge — neither side's number
+was kept.
 
 **Recounted on disk at front 20's landing (`fix/effect-chain`, merged onto
 `78509dfa`):**

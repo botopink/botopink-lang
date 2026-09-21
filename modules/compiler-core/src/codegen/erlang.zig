@@ -181,6 +181,59 @@ fn isSyntheticMainEntrypointCall(v: ast.ValDecl) bool {
     return std.mem.startsWith(u8, v.name, "_") and isZeroArgMainCallExpr(v.value.*);
 }
 
+/// The atom a module-level `val` caches under before it has a value. A `val`
+/// that evaluates to this atom recomputes its initialiser on every read, which
+/// is only observable for an initialiser that is both effectful and returns it.
+const TOP_VAL_UNSET: []const u8 = "__bp_unset";
+
+/// True when EVALUATING this expression can be observed — it calls something,
+/// branches, loops, binds, or is a host/comptime construct whose shape this
+/// walk does not model. A constant expression (literals, operators, collection
+/// literals, a lambda *value*) cannot be: whether it runs once at module init
+/// or once per read, the program behaves the same.
+///
+/// The default is `true` — a node this walk does not recognise is treated as
+/// effectful, so the worst a new AST shape can cause is a module-level `val`
+/// that is initialised and cached when it did not have to be.
+fn initialiserCanHaveEffect(e: ast.Expr) bool {
+    return switch (e) {
+        .literal => |lit| switch (lit.kind) {
+            .stringLit, .numberLit, .null_, .comment => false,
+            // A hole splices an expression into the template at run time.
+            .stringTemplate => |t| for (t.parts) |p| {
+                if (p == .expr and initialiserCanHaveEffect(p.expr.*)) break true;
+            } else false,
+        },
+        // A name or a field read — nothing runs.
+        .identifier => |id| switch (id.kind) {
+            .ident, .dotIdent => false,
+            .identAccess => |a| initialiserCanHaveEffect(a.receiver.*),
+        },
+        .binaryOp => |op| initialiserCanHaveEffect(op.lhs.*) or initialiserCanHaveEffect(op.rhs.*),
+        .unaryOp => |op| initialiserCanHaveEffect(op.expr.*),
+        // A lambda is a value: its body runs when it is APPLIED, not here.
+        .function => false,
+        .collection => |col| switch (col.kind) {
+            .arrayLit => |al| blk: {
+                if (al.spreadExpr) |se| {
+                    if (initialiserCanHaveEffect(se.*)) break :blk true;
+                }
+                break :blk for (al.elems) |el| {
+                    if (initialiserCanHaveEffect(el)) break true;
+                } else false;
+            },
+            .tupleLit => |tl| for (tl.elems) |el| {
+                if (initialiserCanHaveEffect(el)) break true;
+            } else false,
+            .range => |r| initialiserCanHaveEffect(r.start.*) or
+                (r.end != null and initialiserCanHaveEffect(r.end.?.*)),
+            .grouped => |inner| initialiserCanHaveEffect(inner.*),
+            .case, .behaviorLit => true,
+        },
+        else => true,
+    };
+}
+
 // Auto-imported Erlang BIF table — driven by `@External.Erlang("erlang", "<symbol>")`
 // annotations in the std `erlang` module (`libs/std/src/erlang.bp`,
 // surfaced through `prelude.pkg_modules`).
@@ -1130,6 +1183,8 @@ fn emitErlangModule(
         em.iface_self_returns.deinit();
         // Keys and values borrow the program AST — nothing to free.
         em.local_behaviors.deinit();
+        em.local_types.deinit(em.alloc);
+        em.imported_behaviors.deinit(em.alloc);
     }
     defer em.nullable_locals.deinit();
     defer em.string_locals.deinit();
@@ -1254,14 +1309,26 @@ fn emitErlangModule(
     // Test mode never auto-runs `main/0` — the escript entry is the test runner.
     const emit_entrypoint_wrapper = has_main_0 and !test_mode;
 
+    // The module body: every runtime module-level `val` whose initialiser can
+    // have an effect, in declaration order. `'_botopink_init'/0` evaluates them
+    // once — see `initForms`. Emitted in EVERY mode, so `botopink test` and
+    // `botopink build` run the same statements in the same order.
+    var module_body: std.ArrayListUnmanaged(ast.ValDecl) = .empty;
+    defer module_body.deinit(alloc);
+    for (top_runtime_vals.items) |v| {
+        if (initialiserCanHaveEffect(v.value.*)) try module_body.append(alloc, v);
+    }
+    const emit_init = module_body.items.len > 0;
+
     // A *named* runtime module-level `val` is always emitted as a 0-arity function
     // (`topValForms`), so a bare reference to it lowers to the call `name()`.
-    // Erlang has no module-level storage: binding them as locals of the generated
+    // Erlang has no module-level storage, so an effectful one caches its value on
+    // first evaluation (`topValForms`) and `'_botopink_init'/0` performs that
+    // evaluation at module init — binding them as locals of the generated
     // `'_botopink_main'/0` (what the entrypoint wrapper used to do) left every read
     // from `main/0` — or from any other function — as an unbound variable.
-    // The trade-off is that the initialiser runs once per read instead of once at
-    // startup; `_`-named synthetic statements (top-level expression statements)
-    // keep their single, ordered evaluation inside the wrapper.
+    // `_`-named statements (top-level expression statements) are never functions:
+    // `val _ = …` twice would collide on `'_'/0`. They are inlined into the init.
     for (program.decls) |decl| {
         const v = switch (decl) {
             .val => |x| x,
@@ -1290,6 +1357,7 @@ fn emitErlangModule(
     // `crossModule.erlAtom` is the one renderer; `outputStem` names the file
     // from the same rule, because `erlc` refuses an atom that differs from it.
     const erl_module_name = try crossModule.erlAtom(b.arena, .of(module_name));
+    em.erl_atom = erl_module_name;
     try forms.append(b.arena, .{ .module = erl_module_name });
 
     // `-compile({no_auto_import,[fn/arity, ...]}).` for any user function whose
@@ -1328,6 +1396,9 @@ fn emitErlangModule(
     // types → single-module programs are unchanged.
     var exports: std.ArrayListUnmanaged(Ast.FnRef) = .empty;
     if (comptime_module) |cm| try exports.appendSlice(b.arena, cm.exports);
+    // The module body is exported: a module with no entrypoint of its own has
+    // nothing that calls it locally, and erlc would report it unused.
+    if (emit_init) try exports.append(b.arena, .{ .name = "_botopink_init", .arity = 0 });
     for (pub_fns.items) |f| try exports.append(b.arena, .{ .name = f.name, .arity = fnArityNoSelf(f) });
     // A host-backed `declare fn` another module imports is answered by the
     // wrapper the decl loop emits, so it is exported like any other pub fn.
@@ -1382,9 +1453,11 @@ fn emitErlangModule(
     for (program.decls) |decl| {
         try forms.append(b.arena, .blank);
         switch (decl) {
-            // Only the `_`-named synthetic statements move into the entrypoint
-            // wrapper; every named `val` keeps its 0-arity form (see `top_vals`).
-            .val => |v| if (!emit_entrypoint_wrapper or v.value.isComptimeExpr() or
+            // A `_`-named statement has no reader and no unique atom, so it lives
+            // in `'_botopink_init'/0` alone (see `initForms`); every named `val`
+            // keeps its 0-arity form (see `top_vals`). This does not depend on
+            // the mode: test and build emit the same forms.
+            .val => |v| if (v.value.isComptimeExpr() or
                 !std.mem.startsWith(u8, v.name, "_")) try em.topValForms(b, &forms, v),
             .@"fn" => |f| {
                 if (!f.isExternal()) {
@@ -1484,19 +1557,17 @@ fn emitErlangModule(
         for (cm.forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
     }
 
+    // The module body — `'_botopink_init'/0`. Emitted before the entrypoints
+    // that call it, in every mode.
+    if (emit_init) try em.initForms(b, &forms, module_body.items);
+
     if (emit_entrypoint_wrapper) {
-        // `'_botopink_main'() -> Stmt1, …, main().` runs the top-level
-        // expression statements in order, then `main/0`. Named vals are 0-arity
-        // functions instead, so they stay reachable from every function.
-        const saved_indent = em.indent;
-        em.indent = 1;
+        // `'_botopink_main'() -> '_botopink_init'(), main().` — the module body
+        // first, then `main/0`, which is what `require`ing a commonJS module and
+        // letting it call `main()` does.
         var stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
-        for (top_runtime_vals.items) |v| {
-            if (!std.mem.startsWith(u8, v.name, "_")) continue;
-            try stmts.append(b.arena, try em.topValEntryExpr(b, v));
-        }
+        if (emit_init) try stmts.append(b.arena, try b.call("_botopink_init", &.{}));
         try stmts.append(b.arena, try b.call("main", &.{}));
-        em.indent = saved_indent;
         try forms.appendSlice(b.arena, &.{
             .blank,
             try blockFunction(b, "_botopink_main", &.{}, try b.body(stmts.items)),
@@ -1520,7 +1591,7 @@ fn emitErlangModule(
         // single-module project's runner stays exactly as it was.
         // A file with a type module calls into it, so the runner has to load
         // the siblings the emitter wrote beside it.
-        try testRunnerForms(b, &forms, tests, em.imported_fns.count() > 0 or em.imported_types.count() > 0 or em.type_units.items.len > 0);
+        try testRunnerForms(b, &forms, tests, em.imported_fns.count() > 0 or em.imported_types.count() > 0 or em.type_units.items.len > 0, emit_init);
     }
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -1624,7 +1695,12 @@ fn comments(b: Ast.Builder, lines: []const []const u8) ![]const Ast.Stmt {
 /// the `----- RUN LOG -----` envelope, `'__bp_run_tests'/1` runs the registry
 /// (`tests`, filtered by name) and halts non-zero on failure, and `main/1` is the
 /// escript entry.
-fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool) !void {
+///
+/// `run_init` is the module-body call: `main/1` runs `'_botopink_init'/0` before
+/// the first test, exactly where `'_botopink_main'/0` runs it before `main/0` in
+/// a build. A module-level `val` therefore has the same effect in both modes —
+/// the divergence that made module-load self-registration untestable on erlang.
+fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool, run_init: bool) !void {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const monotonic = try b.remote("erlang", "monotonic_time", &.{A("millisecond")});
@@ -1734,7 +1810,8 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
     // Compile and load every other module the runner wrote beside this one,
     // once, before the tests run. A module that does not compile is skipped:
     // its own cell reports the error.
-    const main_body = if (load_siblings) blk: {
+    var main_stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+    if (load_siblings) {
         const loader: Ast.Expr = .{ .raw =
             \\(fun() ->
             \\        Dir = filename:dirname(escript:script_name()),
@@ -1755,12 +1832,14 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
             .blank,
             try blockFunction(b, "__bp_load_siblings", &.{}, try b.body(&.{loader})),
         });
-        break :blk try b.body(&.{
-            try b.call("__bp_load_siblings", &.{}),
-            try b.match(V("Filter"), filter),
-            try b.call("__bp_run_tests", &.{V("Filter")}),
-        });
-    } else try b.body(&.{ try b.match(V("Filter"), filter), try b.call("__bp_run_tests", &.{V("Filter")}) });
+        try main_stmts.append(b.arena, try b.call("__bp_load_siblings", &.{}));
+    }
+    if (run_init) try main_stmts.append(b.arena, try b.call("_botopink_init", &.{}));
+    try main_stmts.appendSlice(b.arena, &.{
+        try b.match(V("Filter"), filter),
+        try b.call("__bp_run_tests", &.{V("Filter")}),
+    });
+    const main_body = try b.body(main_stmts.items);
 
     try forms.appendSlice(b.arena, &.{
         .blank,
@@ -2236,6 +2315,19 @@ const Emitter = struct {
     /// no recorded lowering stays the bare local call when one of these answers
     /// it, and dispatches on the receiver at runtime otherwise.
     local_fn_arities: std.StringHashMapUnmanaged(void) = .empty,
+    /// This module's rendered Erlang atom (`"std/math"` → `"std@math"`). It is
+    /// half of the `persistent_term` key an effectful module-level `val` caches
+    /// under, so two modules declaring the same `val` name keep two values.
+    erl_atom: []const u8 = "",
+    /// The DECLARED type name of a local — a parameter's annotation or a
+    /// `val x: T = …`. Function-scoped, cleared by `resetLocals`; the keys and
+    /// values borrow the AST. Only a plain `named` annotation is recorded: a
+    /// receiver typed by anything else is not a `behavior` value.
+    local_types: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// PascalCase names this module imports that no module exports. A
+    /// `behavior` is the only such name: decision 23 gives it no run-time
+    /// representation, so it never reaches the cross-module link index.
+    imported_behaviors: std.StringHashMapUnmanaged(void) = .empty,
 
     fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
@@ -2893,6 +2985,14 @@ const Emitter = struct {
         this.nullable_locals.clearRetainingCapacity();
         this.string_locals.clearRetainingCapacity();
         this.num_locals.clearRetainingCapacity();
+        this.local_types.clearRetainingCapacity();
+    }
+
+    /// Remembers a local's declared type name, for a receiver whose methods
+    /// only a `behavior` declares (`behaviorMethodNode`).
+    fn rememberLocalType(this: *Emitter, name: []const u8, t: ast.TypeRef) void {
+        if (t != .named) return;
+        this.local_types.put(this.alloc, name, t.named) catch {};
     }
 
     /// True when `t` is the `string` primitive.
@@ -3294,8 +3394,13 @@ const Emitter = struct {
             .use => |u| for (u.imports) |imp| {
                 const name = imp.name();
                 const info = xc.exports.get(name) orelse {
-                    // Not a `pub` symbol: the import names a MODULE
-                    // (`import {dict} from "std"`, a sibling `import {geometry}`).
+                    // Not a `pub` symbol: either a MODULE (`import {dict} from
+                    // "std"`, a sibling `import {geometry}`) or a `behavior`,
+                    // which decision 23 leaves out of the index because it has
+                    // no run-time representation. A type-like name is the
+                    // second case — remember it, so a method call on a value of
+                    // that type dispatches through the value (`behaviorMethodNode`).
+                    if (isModuleRef(name)) try self.imported_behaviors.put(self.alloc, name, {});
                     try self.collectNamespaceModuleTypes(xc, name);
                     continue;
                 };
@@ -3671,6 +3776,13 @@ const Emitter = struct {
     /// A module-level `val` is a 0-arity function. A comptime one keeps its
     /// `%% comptime val x` header and carries the FOLDED value as its body —
     /// the comment alone left every reader of the name unbound.
+    ///
+    /// A RUNTIME one whose initialiser can have an effect caches its value the
+    /// first time it is evaluated, so the initialiser runs exactly once however
+    /// many times the name is read — what `const x = f();` does on commonJS.
+    /// `'_botopink_init'/0` is what performs that one evaluation (`initForms`).
+    /// A constant initialiser needs no cache: evaluating it per read cannot be
+    /// told apart from evaluating it once, and the reader stays a plain body.
     fn topValForms(this: *Emitter, b: Ast.Builder, out: *Forms, v: ast.ValDecl) !void {
         if (v.value.isComptimeExpr()) {
             try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "comptime val {s}", .{v.name})) });
@@ -3686,15 +3798,55 @@ const Emitter = struct {
             const body = try this.comptimeBlockBody(b, v.value.comptime_.kind.comptimeBlock.body, 1);
             return out.append(b.arena, try blockFunction(b, v.name, &.{}, body));
         }
-        try out.append(b.arena, try blockFunction(b, v.name, &.{}, try b.body(&.{try this.exprNode(b, v.value.*)})));
+        const value = try this.exprNode(b, v.value.*);
+        if (v.value.isComptimeExpr() or !initialiserCanHaveEffect(v.value.*)) {
+            return out.append(b.arena, try blockFunction(b, v.name, &.{}, try b.body(&.{value})));
+        }
+        try out.append(b.arena, try blockFunction(b, v.name, &.{}, try b.body(&.{try this.cachedValueExpr(b, v.name, value)})));
     }
 
-    /// A runtime module-level `val` inside `'_botopink_main'/0`: `Name = Value`,
-    /// or the bare value for a synthetic `_`-named statement.
-    fn topValEntryExpr(this: *Emitter, b: Ast.Builder, v: ast.ValDecl) !Ast.Expr {
-        if (std.mem.startsWith(u8, v.name, "_")) return this.exprNode(b, v.value.*);
-        const name = Ast.Expr.v(try this.arenaVar(b, v.name));
-        return b.match(name, try this.exprNode(b, v.value.*));
+    /// The memoised body of an effectful module-level `val`: the cached value if
+    /// `'_botopink_init'/0` (or an earlier read) already produced one, else the
+    /// initialiser, stored under `{<module>, <name>}` before it is returned.
+    /// `persistent_term` rather than the process dictionary: a module-level
+    /// binding is one value for the whole node, not one per process.
+    fn cachedValueExpr(this: *Emitter, b: Ast.Builder, name: []const u8, value: Ast.Expr) !Ast.Expr {
+        const key = try b.tuple(&.{ Ast.Expr.a(this.erl_atom), Ast.Expr.a(name) });
+        const unset = Ast.Expr.a(TOP_VAL_UNSET);
+        const fresh = Ast.Expr.v("__BpV");
+        return b.caseOf(try b.remote("persistent_term", "get", &.{ key, unset }), &.{
+            try b.clause(&.{unset}, &.{}, &.{
+                try b.match(fresh, value),
+                try b.remote("persistent_term", "put", &.{ key, fresh }),
+                fresh,
+            }),
+            try b.clause(&.{Ast.Expr.v("__BpCached")}, &.{}, &.{Ast.Expr.v("__BpCached")}),
+        });
+    }
+
+    /// `'_botopink_init'/0` — the module body. Each runtime module-level `val`
+    /// whose initialiser can have an effect, in DECLARATION order: a `_`-named
+    /// statement inline (it has no reader, and `val _ = …` twice would collide
+    /// on `'_'/0`), a named one as the call to its 0-arity reader, which caches.
+    /// The trailing `ok` keeps the return value independent of the last `val`.
+    fn initForms(this: *Emitter, b: Ast.Builder, out: *Forms, body: []const ast.ValDecl) !void {
+        const saved = this.indent;
+        this.indent = 1;
+        defer this.indent = saved;
+        this.resetLocals();
+        var stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        for (body) |v| {
+            if (std.mem.startsWith(u8, v.name, "_")) {
+                try stmts.append(b.arena, try this.exprNode(b, v.value.*));
+            } else {
+                try stmts.append(b.arena, try b.call(v.name, &.{}));
+            }
+        }
+        try stmts.append(b.arena, Ast.Expr.a("ok"));
+        try out.appendSlice(b.arena, &.{
+            .blank,
+            try blockFunction(b, "_botopink_init", &.{}, try b.body(stmts.items)),
+        });
     }
 
     // ── fn ────────────────────────────────────────────────────────────────────
@@ -3731,6 +3883,7 @@ const Emitter = struct {
             } else if (this.keep_self or !std.mem.eql(u8, p.name, "self")) {
                 try params.append(b.arena, Ast.Expr.v(try this.arenaVar(b, p.name)));
                 this.addLocal(p.name);
+                this.rememberLocalType(p.name, p.typeRef);
                 if (isNullableParam(p)) try this.nullable_locals.put(p.name, {});
                 if (isStringType(p.typeRef)) try this.string_locals.put(p.name, {});
                 if (numTypeKind(p.typeRef)) |k| try this.num_locals.put(this.alloc, p.name, k);
@@ -4830,6 +4983,7 @@ const Emitter = struct {
             .binding => |bind| switch (bind.kind) {
                 .localBind => |lb| {
                     if (lb.mutable) try this.mutable_locals.put(this.alloc, lb.name, {});
+                    if (lb.typeAnnotation) |ann| this.rememberLocalType(lb.name, ann);
                     return this.bindExpr(b, lb.name, .bind, lb.value.*);
                 },
                 .assign => |a| switch (a.target) {
@@ -5701,7 +5855,59 @@ const Emitter = struct {
         }
         const recv_args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
         if (this.cur_type != null and this.isFileFn(cc.callee, recv_args.len)) return this.fileCall(b, cc.callee, recv_args);
+        // A method declared only by a `behavior` — the host builds the value, so
+        // no module of this program emits the function. Dispatch through the
+        // value, which is where commonJS finds it too.
+        if (try this.behaviorMethodNode(b, recv, cc, recv_args)) |node| return node;
         return b.call(cc.callee, recv_args);
+    }
+
+    /// `recv.m(args)` where `recv`'s declared type is a `behavior` no type in
+    /// this program implements: the value is host-supplied, and decision 23
+    /// gives the behavior itself no run-time representation, so there is no
+    /// module to call into. The value IS the dispatch table — a behavior `val`
+    /// member already reads as `maps:get(tag, G)` — so a method reads the same
+    /// way and applies what it finds: `(maps:get(m, Recv))(Recv, Args…)`.
+    ///
+    /// The receiver is passed explicitly, which is the arity the botopink
+    /// declaration writes (`fn param(self: Self, name: string)`) and the arity
+    /// every other instance method lowers to on this backend. A host can
+    /// therefore store a plain `fun mod:f/N` instead of a per-value closure.
+    ///
+    /// Null — the caller keeps the bare local call — unless the method name
+    /// belongs to a behavior and nothing else in the module answers it.
+    fn behaviorMethodNode(this: *Emitter, b: Ast.Builder, recv: *const ast.Expr, cc: anytype, recv_args: []const Ast.Expr) anyerror!?Ast.Expr {
+        if (this.untyped) return null;
+        const recv_name = identName(recv.*) orelse return null;
+        const type_name = this.local_types.get(recv_name) orelse return null;
+        if (!this.behaviorDeclares(type_name, cc.callee, recv_args.len)) return null;
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ cc.callee, recv_args.len }) catch return null;
+        // A function of that name taking the receiver first is a real method —
+        // an `implement` block in this module, say. It wins.
+        if (this.local_fn_arities.contains(key)) return null;
+        if (this.method_owners.contains(key)) return null;
+        return .{ .apply = .{
+            .fun = try b.ptr(try b.paren(try b.remote("maps", "get", &.{ Ast.Expr.a(cc.callee), try this.exprNode(b, recv.*) }))),
+            .args = recv_args,
+        } };
+    }
+
+    /// True when `type_name` is a `behavior` — declared here or imported — that
+    /// declares `method` at `arity` (the receiver included) with no body. A
+    /// `default fn` has a body and is emitted, so it is not a host seam.
+    /// An imported behavior's methods are not in this module's AST: the name
+    /// alone answers, which is as much as decision 23 leaves to go on.
+    fn behaviorDeclares(this: *Emitter, type_name: []const u8, method: []const u8, arity: usize) bool {
+        if (this.local_behaviors.get(type_name)) |iface| {
+            for (iface.methods) |m| {
+                if (!std.mem.eql(u8, m.name, method)) continue;
+                if (m.body != null) return false;
+                return m.params.len == arity;
+            }
+            return false;
+        }
+        return this.imported_behaviors.contains(type_name);
     }
 
     /// Call arguments: `first` (a receiver passed positionally), the positional
