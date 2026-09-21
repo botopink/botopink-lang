@@ -1,0 +1,388 @@
+//// std/mocks — Mockito-style mocks over a `behavior`: `#[mock]` synthesizes
+//// the double, `when(...)` stubs a return, `verify(...)` checks call counts
+//// (1.0.10-beta front 01-std, `onze-migration.md`; decision 71).
+////
+//// Lifted 100 % from the retired `onze` mocking library (`botopink/onze`, tag
+//// `mocking-lib-final`). The Erlang templates are the old ones; the Node
+//// templates inline what `onze.mjs` held as module globals. Only three things
+//// changed with the move: the module name, the two renamed cells (`whenCall`,
+//// `thenReturnCell`, `thenThrowCell` — `when`/`thenReturn`/`thenThrow` are the
+//// public surface's names), and the private state keys (`'__onze_*'` →
+//// `'__bp_mocks_*'`, `"onze#"` → `"mock#"`, `onze.verify:` → `mocks.verify:`).
+//// Semantics are byte-for-byte the old ones, asserted by the eight tests at the
+//// foot of this file — the old `test/onze_test.bp`, re-spelled.
+////
+//// **No sidecar.** `onze.mjs` existed because the recorder needs mutable,
+//// identity-based state; the Erlang side never needed one (its tables live in
+//// the process dictionary, inside each template). The Node side does the same
+//// with a lazily created cell on `globalThis`, the shape
+//// `emilia/modules/emilia/src/emilia.bp:24` uses for its stylesheet:
+////
+////     globalThis.__bp_mocks ||= { counter, calls, stubs, pending,
+////                                 pendingStub, verifyMode }
+////
+//// One cell per host process, shared by every mock in the run; mock ids are
+//// unique per `newMock()`, so two mocks never collide in the shared tables.
+//// `libs/std/src/sidecars/` therefore still holds exactly one file
+//// (`random.mjs`).
+////
+//// **STD-001.** Unlike `asserts` and `snapshots`, the eight cells here are
+//// `pub declare fn`: the body `#[mock]` emits into the CONSUMER's module calls
+//// `invoke`/`key`/`newMock`, so they have to be exported. They carry Node and
+//// Erlang templates only, so `import {mocks} from "std"` is refused on beam and
+//// wasm — honestly, since `botopink test` runs on neither.
+////
+//// Two layers, as in the old library:
+////   • the RUNTIME (matchers / `when` / `verify` / the host cells) — ordinary
+////     botopink over the cells below.
+////   • the SYNTHESIS (`#[mock]`) — a comptime decorator that reflects a
+////     behavior's methods via `@Decl` and `@emit`s the mock type plus a
+////     `mockXxx()` factory. The compiler core learns nothing about mocking
+////     (no lib-specific surface in core); every rule here is botopink.
+
+// ── host cells (the one mutable seam) ────────────────────────────────────────
+//
+// Node: one lazily created object on `globalThis`. Erlang: the same six tables
+// in the process dictionary, one key each. The two have to be kept in step by
+// hand — that is the reason there is one copy of this module and not one per
+// `<lib>-test` submodule (`onze-migration.md` § Where the mocking surface goes).
+
+// A fresh, unique mock id. `"mock#<n>"`, `n` counted per host process.
+#[@External.Node("""(function(){ var __M = (globalThis.__bp_mocks ||= { counter: 0, calls: [], stubs: [], pending: [], pendingStub: null, verifyMode: null }); __M.counter += 1; return "mock#" + __M.counter; })()""")]
+#[@External.Erlang("""(fun() -> OzN__ = case get('__bp_mocks_counter') of undefined -> 1; OzC__ -> OzC__ + 1 end, put('__bp_mocks_counter', OzN__), iolist_to_binary([<<"mock#">>, integer_to_binary(OzN__)]) end)()""")]
+pub declare fn newMock() -> string;
+
+// Canonical, comparable key for any argument value (string/int/array/record).
+// The same cell `asserts.canonical` carries privately, for the same reason: two
+// values that render the same on a host are structurally equal there. Two
+// copies rather than one, because a std module does not import another.
+#[@External.Node("""JSON.stringify($0)""")]
+#[@External.Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))""")]
+pub declare fn key<T>(v: T) -> string;
+
+// Push one matcher descriptor onto the pending stack that the next mock call
+// consumes. `kind` is `"eq"` (match `k`) or `"any"` (match anything).
+#[@External.Node("""(function(__K, __V){ var __M = (globalThis.__bp_mocks ||= { counter: 0, calls: [], stubs: [], pending: [], pendingStub: null, verifyMode: null }); __M.pending.push({ kind: __K, key: __V }); return 0; })($0, $1)""")]
+#[@External.Erlang("""(fun(OzK__, OzV__) -> OzP__ = case get('__bp_mocks_pending') of undefined -> []; OzL__ -> OzL__ end, put('__bp_mocks_pending', OzP__ ++ [{OzK__, OzV__}]), 0 end)($0, $1)""")]
+pub declare fn pushMatcher(kind: string, k: string) -> i32;
+
+// The single entry every synthesized mock method calls: record the invocation
+// (or, in verify mode, assert its count), then answer the matching stub value —
+// or `def`, the caller-supplied type-default of the method's return type. A
+// matched `thenThrow` stub raises here, on the host.
+#[@External.Node("""(function(__Id, __Me, __Ks, __Df){ var __M = (globalThis.__bp_mocks ||= { counter: 0, calls: [], stubs: [], pending: [], pendingStub: null, verifyMode: null }); var __Ms; if (__M.pending.length === __Ks.length) { __Ms = __M.pending.slice(); } else { __Ms = __Ks.map(function(__K){ return { kind: "eq", key: __K }; }); } __M.pending = []; var __Mt = function(__A, __B){ if (__A.length !== __B.length) { return false; } for (var __I = 0; __I < __B.length; __I++) { if (__A[__I].kind === "any") { continue; } if (__A[__I].key !== __B[__I]) { return false; } } return true; }; if (__M.verifyMode !== null) { var __Sp = __M.verifyMode.spec; __M.verifyMode = null; var __C = 0; for (var __J = 0; __J < __M.calls.length; __J++) { var __Cl = __M.calls[__J]; if (__Cl.id === __Id && __Cl.method === __Me && __Mt(__Ms, __Cl.keys)) { __C += 1; } } var __Ok = __Sp === -1 ? __C >= 1 : __C === __Sp; if (!__Ok) { var __W = __Sp === -1 ? "at least 1" : "exactly " + __Sp; var __R = __M.calls.filter(function(__Cl){ return __Cl.id === __Id && __Cl.method === __Me; }).map(function(__Cl){ return __Me + "(" + __Cl.keys.join(", ") + ")"; }); throw new Error("mocks.verify: " + __Me + " - expected " + __W + " matching call(s), got " + __C + (__R.length ? " [recorded: " + __R.join("; ") + "]" : " [no calls recorded]")); } return __Df; } __M.calls.push({ id: __Id, method: __Me, keys: __Ks, matchers: __Ms }); for (var __I2 = __M.stubs.length - 1; __I2 >= 0; __I2--) { var __St = __M.stubs[__I2]; if (__St.id === __Id && __St.method === __Me && __Mt(__St.matchers, __Ks)) { if (__St.action.kind === "throw") { throw new Error(__St.action.value); } return __St.action.value; } } return __Df; })($0, $1, $2, $3)""")]
+#[@External.Erlang("""(fun(OzId__, OzM__, OzKs__, OzDef__) -> OzP__ = case get('__bp_mocks_pending') of undefined -> []; OzL1__ -> OzL1__ end, put('__bp_mocks_pending', []), OzMs__ = case length(OzP__) =:= length(OzKs__) of true -> OzP__; false -> [{<<"eq">>, OzK__} || OzK__ <- OzKs__] end, OzMatch__ = fun(OzMx__, OzKx__) -> length(OzMx__) =:= length(OzKx__) andalso lists:all(fun({{OzKind__, OzKey__}, OzArg__}) -> OzKind__ =:= <<"any">> orelse OzKey__ =:= OzArg__ end, lists:zip(OzMx__, OzKx__)) end, OzCalls__ = case get('__bp_mocks_calls') of undefined -> []; OzL2__ -> OzL2__ end, case erase('__bp_mocks_verify') of undefined -> put('__bp_mocks_calls', OzCalls__ ++ [{OzId__, OzM__, OzKs__, OzMs__}]), OzHit__ = [OzSt__ || {OzSId__, OzSM__, OzSMs__, _, _} = OzSt__ <- lists:reverse(case get('__bp_mocks_stubs') of undefined -> []; OzL3__ -> OzL3__ end), OzSId__ =:= OzId__, OzSM__ =:= OzM__, OzMatch__(OzSMs__, OzKs__)], case OzHit__ of [] -> OzDef__; [{_, _, _, return, OzRv__} | _] -> OzRv__; [{_, _, _, throw, OzMsg__} | _] -> erlang:error(OzMsg__) end; OzSpec__ -> OzCount__ = length([x || {OzCId__, OzCM__, OzCKs__, _} <- OzCalls__, OzCId__ =:= OzId__, OzCM__ =:= OzM__, OzMatch__(OzMs__, OzCKs__)]), case (case OzSpec__ of -1 -> OzCount__ >= 1; _ -> OzCount__ =:= OzSpec__ end) of true -> OzDef__; false -> erlang:error(iolist_to_binary([<<"mocks.verify: ">>, OzM__, <<" - expected ">>, case OzSpec__ of -1 -> <<"at least 1">>; _ -> [<<"exactly ">>, integer_to_binary(OzSpec__)] end, <<" matching call(s), got ">>, integer_to_binary(OzCount__)])) end end end)($0, $1, $2, $3)""")]
+pub declare fn invoke<T>(
+    id: string,
+    method: string,
+    keys: Array<string>,
+    def: T,
+) -> T;
+
+// Arm verify mode: the next mock call asserts its count instead of recording.
+#[@External.Node("""(function(__S){ var __M = (globalThis.__bp_mocks ||= { counter: 0, calls: [], stubs: [], pending: [], pendingStub: null, verifyMode: null }); __M.verifyMode = { spec: __S }; return 0; })($0)""")]
+#[@External.Erlang("""(fun(OzS__) -> put('__bp_mocks_verify', OzS__), 0 end)($0)""")]
+pub declare fn beginVerify(spec: i32) -> i32;
+
+// Pop the call `when(mock.m(args))` just recorded inside its own argument and
+// hold it as the stub target the builder writes to. Named `whenCall` because
+// `when` is the public function's name.
+#[@External.Node("""(function(){ var __M = (globalThis.__bp_mocks ||= { counter: 0, calls: [], stubs: [], pending: [], pendingStub: null, verifyMode: null }); var __C = __M.calls.pop(); __M.pendingStub = __C ? { id: __C.id, method: __C.method, matchers: __C.matchers } : null; return 0; })()""")]
+#[@External.Erlang("""(fun() -> case case get('__bp_mocks_calls') of undefined -> []; OzL__ -> OzL__ end of [] -> put('__bp_mocks_pending_stub', undefined); OzCs__ -> {OzId__, OzM__, _, OzMs__} = lists:last(OzCs__), put('__bp_mocks_calls', lists:droplast(OzCs__)), put('__bp_mocks_pending_stub', {OzId__, OzM__, OzMs__}) end, 0 end)()""")]
+pub declare fn whenCall() -> i32;
+
+// Write a `return` action for the pending stub target. Named `thenReturnCell`
+// because `thenReturn` is `Stub`'s method.
+#[@External.Node("""(function(__V){ var __M = (globalThis.__bp_mocks ||= { counter: 0, calls: [], stubs: [], pending: [], pendingStub: null, verifyMode: null }); if (__M.pendingStub) { __M.stubs.push({ id: __M.pendingStub.id, method: __M.pendingStub.method, matchers: __M.pendingStub.matchers, action: { kind: "return", value: __V } }); } __M.pendingStub = null; return 0; })($0)""")]
+#[@External.Erlang("""(fun(OzV__) -> case get('__bp_mocks_pending_stub') of undefined -> ok; {OzId__, OzM__, OzMs__} -> put('__bp_mocks_stubs', case get('__bp_mocks_stubs') of undefined -> []; OzL__ -> OzL__ end ++ [{OzId__, OzM__, OzMs__, return, OzV__}]) end, put('__bp_mocks_pending_stub', undefined), 0 end)($0)""")]
+pub declare fn thenReturnCell<T>(v: T) -> i32;
+
+// Write a `throw` action for the pending stub target. Named `thenThrowCell`
+// because `thenThrow` is `Stub`'s method.
+#[@External.Node("""(function(__V){ var __M = (globalThis.__bp_mocks ||= { counter: 0, calls: [], stubs: [], pending: [], pendingStub: null, verifyMode: null }); if (__M.pendingStub) { __M.stubs.push({ id: __M.pendingStub.id, method: __M.pendingStub.method, matchers: __M.pendingStub.matchers, action: { kind: "throw", value: __V } }); } __M.pendingStub = null; return 0; })($0)""")]
+#[@External.Erlang("""(fun(OzV__) -> case get('__bp_mocks_pending_stub') of undefined -> ok; {OzId__, OzM__, OzMs__} -> put('__bp_mocks_stubs', case get('__bp_mocks_stubs') of undefined -> []; OzL__ -> OzL__ end ++ [{OzId__, OzM__, OzMs__, throw, OzV__}]) end, put('__bp_mocks_pending_stub', undefined), 0 end)($0)""")]
+pub declare fn thenThrowCell(msg: string) -> i32;
+
+// ── argument matchers ────────────────────────────────────────────────────────
+//
+// A matcher answers a dummy value of the right type (so `mock.m(matcher)`
+// type-checks) and pushes a descriptor onto the host matcher stack. When the
+// mock method runs, the stack decides how each argument is matched; a literal
+// argument (no matcher) means exact equality on its key. Matchers compose
+// across parameters — all of them, or none.
+//
+// These three are MATCHERS, not assertions: they push and return, they never
+// answer a `@Result`. They stay here rather than joining `std/asserts`
+// (`onze-migration.md` § Where the assertion surface goes — the old library
+// exported no assertion at all).
+
+// `eq(v)` — match exactly `v` (the default for a literal argument, made explicit).
+pub fn eq<T>(v: T) -> T {
+    val _m = pushMatcher("eq", key(v));
+    return v;
+}
+
+// `anyInt()` — match any `i32` argument. A fully generic `any<T>()` would need
+// a per-type default it cannot produce (`onze-migration.md` § Language gaps),
+// so the concrete matchers ship per type; add one where a type needs it.
+pub fn anyInt() -> i32 {
+    val _m = pushMatcher("any", "*");
+    return 0;
+}
+
+// `anyString()` — match any `string` argument.
+pub fn anyString() -> string {
+    val _m = pushMatcher("any", "*");
+    return "";
+}
+
+// ── verification specs ───────────────────────────────────────────────────────
+//
+// Encoded as an i32: -1 = at least once, n >= 0 = exactly n (0 = never).
+
+// At least one matching call.
+pub fn atLeastOnce() -> i32 {
+    return -1;
+}
+
+// Exactly `n` matching calls.
+pub fn times(n: i32) -> i32 {
+    return n;
+}
+
+// No matching call at all — `times(0)`, spelled.
+pub fn never() -> i32 {
+    return 0;
+}
+
+// ── stubbing: when(...).thenReturn / thenThrow ───────────────────────────────
+//
+// `when(mock.m(args))` evaluates `mock.m(args)` first — that records the call
+// and captures it, with its matchers, as the pending stub target. The returned
+// builder then writes the action. The last stub registered wins on overlap.
+
+// The `when(...)` builder. `tag` carries nothing: the captured call lives in
+// the host cell, and a record needs at least one field.
+pub type Stub(tag: string) {
+    // Make the captured call answer `v` for every later matching invocation.
+    pub fn thenReturn<T>(self: Self, v: T) -> bool {
+        val _r = thenReturnCell(v);
+        return true;
+    }
+
+    // Make the captured call raise `message` (a host-side throw) when matched.
+    pub fn thenThrow(self: Self, message: string) -> bool {
+        val _r = thenThrowCell(message);
+        return true;
+    }
+}
+
+// Open a stub over the call just made in the argument position.
+pub fn when<T>(value: T) -> Stub {
+    val _w = whenCall();
+    return Stub(tag: "");
+}
+
+// ── verification entry ───────────────────────────────────────────────────────
+//
+// `verify(mock, spec).m(args)` runs `m` in verify mode: instead of recording,
+// the synthesized method asserts the count of matching prior calls against
+// `spec` and raises when it disagrees. The two-argument form is uniform —
+// botopink has neither fn overloading nor default parameters:
+//   verify(repo, atLeastOnce()).all();
+//   verify(repo, times(1)).find(eq(7));
+//   verify(repo, never()).find(eq(99));
+pub fn verify<T>(mock: T, spec: i32) -> T {
+    val _v = beginVerify(spec);
+    return mock;
+}
+
+// ── mock synthesis (`#[mock]`) ───────────────────────────────────────────────
+//
+// A comptime annotation processor: reflect the annotated behavior's methods via
+// `@Decl` and `@emit` (a) `type Mock<Name>(__id: string) implement <Name>` whose
+// every method funnels through `invoke`, and (b) a `pub fn mock<Name>() ->
+// <Name>` factory. The compiler core provides only the protocol (recognise →
+// reflect → run the body); every rule below is botopink. The generated method
+// records its call and answers the stub value, or the per-return-type default
+// (`""` / `false` / `0` / `[]`).
+//
+// `@emit` splices its text into the module that hosts the annotated behavior,
+// so the names it writes must resolve THERE. It writes the bare `invoke`,
+// `key` and `newMock`, which resolves in this module and nowhere else — so
+// **`#[mock]` fires inside `mocks.bp` only**, which is where the tests below
+// use it. Measured 2026-09-21, both halves of the consumer path:
+//   • `import {mocks} from "std"` binds the module handle, never its functions
+//     — a bare `import {mock, invoke, …} from "std"` is refused outright with
+//     `unknown "std" module in import` (`comptime/infer.zig` `markStdImports`
+//     reads the last segment as a MODULE name), so the emitted bare names
+//     cannot resolve in a consumer;
+//   • `#[mocks.mock]` parses (the annotation name lands as `"mocks.mock"`) but
+//     is never registered: a std import puts nothing into `env.decorators`, so
+//     the marker silently does nothing and `mock<Name>()` comes out unbound.
+// A consumer therefore writes the double by hand over the qualified runtime,
+// which works in full (`docs.md` § Tests ---- Mocks). Closing the gap needs
+// both a lookup fix and an emission that is bare here and qualified there:
+// `onze-migration.md` § Language gaps carries the row.
+//
+// Comptime-body constraints (`libs/std/AGENTS.md`, `reference` gotchas): `if` is
+// an expression (needs `else`, `;`-terminated branches); a bare `if {…}`
+// statement is only legal as the last statement in a block; and the body cannot
+// call sibling fns — only this one is lowered into the decorator eval script —
+// so the return-type default is inlined rather than factored out.
+pub fn mock(comptime decl: @Decl) {
+    var methods = "";
+    decl.methods.forEach({ m ->
+        var paramList: Array<string> = [];
+        var keyList: Array<string> = [];
+        m.params.forEach({ p ->
+            if (p.name != "self") {
+                paramList.push(p.name + ": " + p.typeName);
+                keyList.push("key(" + p.name + ")");
+            };
+        });
+        val params = paramList.join(", ");
+        val sig = if (params == "") "self: Self" else "self: Self, " + params;
+        val keys = keyList.join(", ");
+        val def = if (m.returnType == "string") "\"\"" else if (m.returnType == "bool") "false" else if (m.returnType.startsWith(
+            "Array"
+        )) "[]" else "0";
+        methods = methods + "  fn " + m.name + "(" + sig + ") -> " + m.returnType + " { return invoke(self.__id, \"" + m.name + "\", [" + keys + "], " + def + "); }\n";
+    });
+    @emit("type Mock" + decl.name + "(__id: string) implement " + decl.name + " {\n" + methods + "}");
+    @emit("pub fn mock" + decl.name + "() -> " + decl.name + " { return Mock" + decl.name + "(__id: newMock()); }");
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+// The eight tests of the retired `repository/onze/test/onze_test.bp`, re-spelled
+// against this module. They drive the whole surface end to end: `#[mock]`
+// synthesizes the double from the behavior, a mock records its calls, `when(…)`
+// stubs returns, the matchers pick the right stub, and `verify(…)` checks
+// counts. Arrays are compared with `.join(",")` because `==` on arrays is
+// reference equality on commonJS (a language trait, not a mocking one).
+
+#[mock]
+behavior UserRepo {
+    fn find(self: Self, id: i32) -> string;
+    fn all(self: Self) -> Array<string>;
+}
+
+// A unit under test that depends only on the behavior.
+type UserService(repo: UserRepo) {
+    pub fn list(self: Self) -> Array<string> {
+        return self.repo.all();
+    }
+    pub fn name(self: Self, id: i32) -> string {
+        return self.repo.find(id);
+    }
+}
+
+test "mocks: an unstubbed method returns the type-default" {
+    val repo = mockUserRepo();
+    assert repo.all().join(",") == "";
+    assert repo.find(1) == "";
+}
+
+test "mocks: when(...).thenReturn stubs a return value" {
+    val repo = mockUserRepo();
+    val _s = when(repo.all()).thenReturn(["ana", "bob"]);
+    val svc = UserService(repo: repo);
+    assert svc.list().join(",") == "ana,bob";
+}
+
+test "mocks: eq(v) stubs only the matching argument" {
+    val repo = mockUserRepo();
+    val _s = when(repo.find(eq(7))).thenReturn("ana");
+    val svc = UserService(repo: repo);
+    assert svc.name(7) == "ana";
+    assert svc.name(8) == "";
+}
+
+test "mocks: anyInt() matches any argument" {
+    val repo = mockUserRepo();
+    val _s = when(repo.find(anyInt())).thenReturn("x");
+    val svc = UserService(repo: repo);
+    assert svc.name(1) == "x";
+    assert svc.name(42) == "x";
+}
+
+test "mocks: the last matching stub wins" {
+    val repo = mockUserRepo();
+    val _a = when(repo.find(anyInt())).thenReturn("default");
+    val _b = when(repo.find(eq(7))).thenReturn("seven");
+    val svc = UserService(repo: repo);
+    assert svc.name(7) == "seven";
+    assert svc.name(1) == "default";
+}
+
+test "mocks: verify atLeastOnce / times / never" {
+    val repo = mockUserRepo();
+    val _s = when(repo.find(eq(7))).thenReturn("ana");
+    val svc = UserService(repo: repo);
+    val _1 = svc.name(7);
+    val _2 = svc.list();
+
+    val _v1 = verify(repo, atLeastOnce()).all();
+    val _v2 = verify(repo, times(1)).find(eq(7));
+    val _v3 = verify(repo, never()).find(eq(99));
+}
+
+test "mocks: thenThrow raises when the call is matched" {
+    val repo = mockUserRepo();
+    val _s = when(repo.find(eq(0))).thenThrow("not found");
+    val svc = UserService(repo: repo);
+    // A non-matching call still answers the default rather than raising.
+    assert svc.name(5) == "";
+}
+
+test "mocks: verify checks each matcher independently after different-arg calls" {
+    val repo = mockUserRepo();
+    val _s = when(repo.find(anyInt())).thenReturn("x");
+    val svc = UserService(repo: repo);
+    val _1 = svc.name(7);
+    val _2 = svc.name(7);
+    val _3 = svc.name(9);
+    // Each verify matcher is checked independently against the call log:
+    // find(7) twice, find(9) once, find(99) never, any-int three times.
+    val _v1 = verify(repo, times(2)).find(eq(7));
+    val _v2 = verify(repo, times(1)).find(eq(9));
+    val _v3 = verify(repo, never()).find(eq(99));
+    val _v4 = verify(repo, times(3)).find(anyInt());
+}
+
+// `anyString()` is the ninth test: the old suite covered it from the example
+// app rather than from `test/onze_test.bp`, and the inventory asks every row to
+// be exercised where it now lives.
+
+#[mock]
+behavior Greeter {
+    fn greet(self: Self, name: string) -> string;
+}
+
+test "mocks: anyString() matches any argument" {
+    val g = mockGreeter();
+    val _s = when(g.greet(anyString())).thenReturn("hi");
+    assert g.greet("ana") == "hi";
+    assert g.greet("bob") == "hi";
+    val _v = verify(g, times(2)).greet(anyString());
+    val _w = verify(g, times(1)).greet(eq("ana"));
+}
+
+// The two rows the old suite recorded as limitations, carried here unchanged
+// (`onze-migration.md` § Language gaps holds the proposed surfaces):
+//
+// LIMITATION: a `thenThrow` stub matched at run time raises a HOST throw from
+// `invoke`. botopink's `try … catch …` only unwraps an `@Result` produced by a
+// `#[@result]` fn — it does not catch a host throw from a plain (non-effect)
+// method call, so `try svc.name(0) catch …` does not compile: the callee is not
+// `-> @Result`. Modelling the throw as an effect (the synthesized method
+// answering `@Result<R, string>`) is a design change, not a port. The covered
+// surface is what the test above asserts: a matched `thenThrow` raises, and a
+// non-matching call answers the default. A caller that must observe the raise
+// uses `asserts.throws` from its own module, where `std/asserts` is importable.
+//
+// LIMITATION: there is no fully generic `any<T>()` matcher and no argument
+// captor. `any<T>()` needs a per-type default it cannot synthesize, so the
+// concrete `anyInt()` / `anyString()` ship instead (both exercised above, and
+// composed independently across parameters); a captor needs a ninth host cell
+// that records and reads back the captured argument.
