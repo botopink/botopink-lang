@@ -138,18 +138,32 @@ tree still parses. Commands: `zig build` in three worktrees, `find . -name '*.bp
 - None of these fields reach the parser snapshots: `jsonStringify` omits them when empty/false
   (`Program.blankLineBefore` always).
 
-`botopink format --check` passes on `examples/**` and — since `09-ecosystem-residuals` committed the
-formatted text (2026-09-18) — on all five sibling libraries under `repository/`: formatted, they
-compile, pass the same tests, and a second pass changes nothing. **`libs/std` has two files that
-would be reformatted** as of `f8d97f95`: `src/primitives.bp:549` (a braced single-statement `if`
-inside a `loop`) and `src/querystring.bp:37` (a method chain that now fits on one line). Both are the
-canonical rules below and neither loses text; the drift is from edits made after the last sweep, and
-`libs/std` is not this front's directory. Canonical rewrites that remain (no content lost): a
-`#[a, b]` annotation list prints as one `#[…]` per annotation, a method chain split over lines
-joins onto one, a single-expression `if` block drops its braces, a `\\` line string prints as
-`"""…"""`. `.d.bp` files are not reached by `format` (the loader never scans them into the
-module tree); `libs/std/src/builtins.d.bp` does not parse (`fn await(…)`, `fn module() module`
-shortforms) and is documentation only.
+`botopink format --check` at a project root reaches **every** `.bp` and `.d.bp` the project owns —
+`src/**`, `test/**`, `examples/**` and the projects nested inside — and structurally leaves out hidden
+directories, `node_modules` and a `reject/<n>.bp` beside its `<n>.expect` (decision 66;
+`modules/compiler-cli/src/cli/format_cmd.zig`). Measured with that walk at HEAD (2026-09-20), the
+reds and their causes: **`libs/std`** — `src/path.bp:82` and `src/querystring.bp:38` are method
+chains decision 65 opens (09's reformat), and `src/builtins.d.bp:116` does not parse (`fn
+await(self: Self) -> Result<T, E>;` — `await` as a method name, C-11's parser defect, not the
+formatter's). **`examples/generic-loader-binding`** (two chains) and **`examples/stdlib-tour`** (one
+chain and two lambda arguments that hug the call, decision 61 rule 1). **`tests/language`** — never
+formatted: `modules/*` 7 of 7 files (C-16's row), `run/` 8 of 15, `test/` 41 of 49; two cells do not
+parse, `run/optional_null_pattern.bp:21` (`null` as a `case` pattern) and `test/case_arms.bp:21`
+(`1..9`, the named error `pattern-range-exclusive`) — the suite's rows. **`modules/compiler-cli/tests`**
+— 5 fixtures at two-space indent. Of the five sibling libraries under `repository/`, two are
+canonical whole and three are red, none of it losing text: the CSS library (one chain in `src/`; its
+example project's `main.bp` — import spacing, blank lines between declarations, an array-literal
+argument's indent), the query library (12 chains in `src/`, 4 in its example project) and the frontend
+library (7 chains in `src/html.bp`; its `test/html_test.bp` and three example projects — import
+spacing, an `html """…"""` with no newline printed `html "…"`, single-statement `if` braces,
+array-literal argument indent). Three files of the frontend library's `examples/*-app/app/**` cannot
+be formatted at all: `h1 { "my blog" }` — a trailing lambda whose one-line body is a statement block
+— answers *unexpected `}`* (the `arrow_when_empty` row below; front 15's parser surface). `scripts/format-check.sh`, stage
+3 of the gate, calls `format --check` over the trees that are canonical (`examples/modules` today)
+and names the rest with their owners. Canonical rewrites that remain (no content lost): a `#[a, b]`
+annotation list prints as one `#[…]` per annotation, a method chain that fits joins onto one line and
+one that does not opens, a single-expression `if` block drops its braces, a `\\` line string prints
+as `"""…"""`.
 
 ## Layout the parser does not record (formatter cannot keep)
 

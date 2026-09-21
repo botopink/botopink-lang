@@ -15,7 +15,8 @@ scripts/
 ├── install.sh         ← POSIX one-liner installer
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
-├── gate.sh            ← the ordered local gate (staged checks, build, test, test-bpmp, beam export audit, test-cli, test-libs, test-language, test-docs)
+├── gate.sh            ← the ordered local gate (staged checks, build, format-check, test, test-bpmp, beam export audit, test-cli, test-libs, test-language, test-docs)
+├── format-check.sh    ← `botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; the red trees and their causes are in its header
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper with known reds (`zig build test-libs`)
 ├── known-red-libs.txt ← library cells known red, each with its owning front
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
@@ -107,7 +108,9 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 
 `scripts/gate.sh [--cold] [--staged]` — one ordered run, stopping at the first
 failing stage: staged-file checks (`--staged`: conflict markers, `zig fmt
---check` on staged `.zig`), `zig build`, `zig build test` (`--cold` deletes
+--check` on staged `.zig`), `zig build`, `scripts/format-check.sh` (`botopink
+format --check` over the compiler's canonical `.bp` trees — decision 66's
+caller), `zig build test` (`--cold` deletes
 `modules/compiler-core/.botopinkbuild/runtime-cache` first), `zig build
 test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs`, `zig build test-language` (`tests/language/`, expected failures in
@@ -118,6 +121,22 @@ that decides a merge adds `--cold`. After the staged checks the script unsets
 every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
 `GIT_INDEX_FILE`, …): a stage that runs `git` in a scratch repository (bpmp's
 install tests) would otherwise act on the committing repository.
+
+## format-check.sh
+
+`scripts/format-check.sh` — stage 3 of `gate.sh` and a step of CI's `test` job:
+`zig-out/bin/botopink format --check <tree>` for every tree in its `TREES`
+array, which names the trees the gate holds canonical (`examples/modules`
+today). `format --check` on a directory reaches every `.bp` and `.d.bp` under it
+(nested projects included) and structurally leaves out hidden directories,
+`node_modules` and a `reject/<n>.bp` beside its `<n>.expect`
+(`modules/compiler-cli/src/cli/format_cmd.zig`); the list is not a skip list
+and there is no other way to exempt a file (decision 67). A tree that is red
+today — `libs/std`, `examples/generic-loader-binding`, `examples/stdlib-tour`,
+`tests/language`, `modules/compiler-cli/tests` — is named in the script's header
+with its cause and the row that owns it, and joins `TREES` when that row
+lands. Exit `0` when every listed tree is canonical; `1` naming the tree and
+the files, with the `Unchanged` lines filtered out.
 
 ## git-hooks/
 
@@ -238,7 +257,7 @@ RUN LOG; this audit makes it a rejection. Each rejected module prints
 `REJECTED <slug> <module>` plus the validator's function, offset and reason;
 the last line is `beam_export_audit: <ok>/<total> modules assembled`. Exit `0`
 when every module assembled, `1` on any rejection, `2` on an argument error or
-a missing `erlc`. Stage 5 of `gate.sh`, and a step of CI's `test` job on
+a missing `erlc`. Stage 6 of `gate.sh`, and a step of CI's `test` job on
 ubuntu and macos.
 
 ## See also
