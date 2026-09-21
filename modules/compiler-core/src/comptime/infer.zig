@@ -548,7 +548,7 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             // When binding a lambda to a `fn(...) -> ...` annotation, feed the
             // annotation into the lambda so its params are typed from context.
             const typedExpr = if (annType != null and v.value.* == .function)
-                try inferFunctionExprExpected(env, v.value.function, v.value.function.loc, annType)
+                try inferFunctionExprExpected(env, v.value.function, v.value.function.loc, annType, false)
             else
                 try inferExprTyped(env, v.value.*);
             const ty = typedExpr.getType();
@@ -7633,7 +7633,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             // Feed a `fn(...) -> ...` annotation into a lambda RHS so its
             // params are typed from context (mirrors `inferDeclTyped`).
             const valTyped = if (annType != null and lb.value.* == .function)
-                try inferFunctionExprExpected(env, lb.value.function, lb.value.function.loc, annType)
+                try inferFunctionExprExpected(env, lb.value.function, lb.value.function.loc, annType, false)
             else
                 try inferExprTyped(env, lb.value.*);
             const valPtr = try makeTypedPtr(env, valTyped);
@@ -8317,6 +8317,85 @@ fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8)
     return null;
 }
 
+/// The declared parameter types of a builtin-primitive method, `self` dropped
+/// and resolved against the receiver: `Array<Item>.filter` answers
+/// `[fn(Item) -> bool]`. Same interface walk and same generic substitution as
+/// `primMethodReturnTypeFromIface` — `Self` is the receiver, `T` its first type
+/// argument, a method-level `<U>` a fresh var. Null when the receiver is not a
+/// builtin primitive or the interface does not declare `callee`.
+///
+/// Read before the call's arguments are inferred, so a lambda argument's
+/// parameters are bound to the element type instead of a fresh var. Without it
+/// `xs.filter({ e -> e.name.contains("x") })` typed `e` as an unresolved
+/// variable, the `contains` receiver never reached `.named`, and the
+/// `@External.Node("includes")` rename never fired — commonJS emitted
+/// `.contains(…)`, which node refuses.
+fn primMethodParamTypes(env: *Env, recvTy: *T.Type, callee: []const u8) InferError!?[]*T.Type {
+    const rt = recvTy.deref();
+    if (rt.* != .named) return null;
+    if (primKindOfName(rt.named.name) == null) return null;
+    const ifaceName = primitiveInterfaceName(rt.named.name) orelse return null;
+    var current: ?[]const u8 = ifaceName;
+    var guard: usize = 0;
+    while (current) |cname| {
+        if (guard >= 16) break;
+        guard += 1;
+        const decl = env.assocInterfaceDecls.get(cname) orelse return null;
+        for (decl.methods) |m| {
+            if (!std.mem.eql(u8, m.name, callee)) continue;
+            if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+            var gm = std.StringHashMap(*T.Type).init(env.arena);
+            defer gm.deinit();
+            try gm.put("Self", rt);
+            if (rt.named.args.len >= 1) try gm.put("T", rt.named.args[0]);
+            for (m.genericParams) |gp| try gm.put(gp.name, try env.freshVar());
+            const out = try env.arena.alloc(*T.Type, m.params.len - 1);
+            // `paramTypeInContext` — not `resolveTypeRefInContext` — because a
+            // fn-typed param (`pred: fn(item: T) -> bool`) carries its
+            // signature in `Param.fnType`, not in `typeRef`.
+            for (m.params[1..], 0..) |p, i| {
+                out[i] = try paramTypeInContext(env, p, gm);
+            }
+            return out;
+        }
+        current = if (decl.extends.len > 0) decl.extends[0] else null;
+    }
+    return null;
+}
+
+/// True when `ty` carries no type variable anywhere — the receiver's element
+/// type is actually KNOWN. `primMethodParamTypes`' answer is only pushed into a
+/// lambda when the declared PARAMETERS are ground: an element type that is
+/// still a variable tells the lambda nothing it did not already have, and
+/// unifying the lambda's parameter with it adds edges that are not the method's
+/// meaning — `Query<T>.min`'s `var best = keys.at(0); keys.forEach({ k -> …
+/// best = k; })` becomes `?K = K` and reds "recursive type detected". The
+/// declared RETURN is not checked: `map<U>(self, transform: fn(item: T) -> U)`
+/// has a fresh `U` by construction, and `params_only` drops it anyway.
+fn typeIsGround(ty: *T.Type, depth: usize) bool {
+    if (depth > 8) return false;
+    const d = ty.deref();
+    return switch (d.*) {
+        .typeVar => false,
+        .named => |n| blk: {
+            for (n.args) |a| if (!typeIsGround(a, depth + 1)) break :blk false;
+            break :blk true;
+        },
+        .func => |f| blk: {
+            for (f.params) |a| if (!typeIsGround(a, depth + 1)) break :blk false;
+            break :blk typeIsGround(f.ret, depth + 1);
+        },
+        .union_ => |ms| blk: {
+            for (ms) |m| if (!typeIsGround(m, depth + 1)) break :blk false;
+            break :blk true;
+        },
+        .record => |fs| blk: {
+            for (fs) |f| if (!typeIsGround(f.type_, depth + 1)) break :blk false;
+            break :blk true;
+        },
+    };
+}
+
 /// Record how a value-receiver instance call `recv.callee(args)` lowers on the
 /// backends without native method dispatch (erlang/beam/wasm). A primitive
 /// receiver records its `PrimKind`; any other nominal type records as a record
@@ -8603,9 +8682,39 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 break :blk try makeTypedPtr(env, try inferExprTyped(env, recvExpr.*));
             } else null;
 
+            // A builtin-primitive receiver declares its own signature in
+            // `primitives.bp`, and the receiver is already inferred here — so a
+            // lambda argument can be typed from the receiver's element type
+            // BEFORE its body is inferred. Anything else keeps the permissive
+            // fresh-var path.
+            const primParams: ?[]*T.Type = if (typedReceiver) |rp|
+                try primMethodParamTypes(env, rp.getType(), call.callee)
+            else
+                null;
+
             const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), call.args.len);
             for (call.args, 0..) |arg, i| {
-                const val = try inferExprTyped(env, arg.value.*);
+                // Only the declared PARAMETER types are pushed down
+                // (`params_only`). The declared RETURN is not a constraint the
+                // lambda has to meet here — `Array.forEach`'s `action` is
+                // declared `fn(item: T)`, and every `xs.forEach({ p -> <value> })`
+                // in `libs/std` would red against its `void` — and the call's
+                // own type is `primMethodReturnTypeFromIface`'s answer anyway.
+                // Ground only: every parameter of the declared fn-typed param
+                // must mention no type variable (`typeIsGround`). An element
+                // type still unresolved tells the lambda nothing, and unifying
+                // against it adds edges the method never meant.
+                const expected: ?*T.Type = if (primParams) |ps| blk: {
+                    if (i >= ps.len) break :blk null;
+                    const d = ps[i].deref();
+                    if (d.* != .func) break :blk null;
+                    for (d.func.params) |fp| if (!typeIsGround(fp, 0)) break :blk null;
+                    break :blk ps[i];
+                } else null;
+                const val = if (expected != null and arg.value.* == .function)
+                    try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, expected.?, true)
+                else
+                    try inferExprTyped(env, arg.value.*);
                 typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
             }
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
@@ -9222,7 +9331,7 @@ fn inferCaseArmBody(
     const subjectTy = typedSubjects[0].getType();
     const narrowed = (try typePatternType(env, arm.pattern, subjectTy)) orelse subjectTy;
     const expected = try env.funcType(&.{narrowed}, try env.freshVar());
-    return inferFunctionExprExpected(env, body.function, body.getLoc(), expected);
+    return inferFunctionExprExpected(env, body.function, body.getLoc(), expected, false);
 }
 
 /// C2a — the value an arm contributes to its `case`'s type, or null when it
@@ -9423,7 +9532,7 @@ fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
 
 /// Infer type for function definition expressions (lambdas and anonymous functions)
 fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
-    return inferFunctionExprExpected(env, func, loc, null);
+    return inferFunctionExprExpected(env, func, loc, null, false);
 }
 
 /// Infer a lambda / anonymous-function expression. When `expected` is a
@@ -9432,7 +9541,21 @@ fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc
 /// parameter types *before* the body is inferred — so the body can resolve
 /// member calls and operators against the annotated types — and the body's
 /// result is unified with the expected return type.
-fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc, expected: ?*T.Type) InferError!TypedExpr {
+///
+/// `params_only` keeps the parameter half and drops the return half: the
+/// lambda's return type stays free. A caller that only wants the parameters
+/// typed (a builtin-primitive method's declared signature — see
+/// `primMethodParamTypes`) must use it, because a body whose every path
+/// `return`s types its TAIL as void while the `return`s have already fixed the
+/// return target, and unifying the two would red a correct lambda
+/// (`xs.map({ x -> if (c) { return a; } else { return b; } })`).
+fn inferFunctionExprExpected(
+    env: *Env,
+    func: ast.FunctionExprOf(.untyped),
+    loc: ast.Loc,
+    expected: ?*T.Type,
+    params_only: bool,
+) InferError!TypedExpr {
     // A nested function expression has no declared return type, so `throw`
     // inside it is not checked against the enclosing fn's `E`.
     const savedThrowCtx = env.throwContext;
@@ -9464,7 +9587,7 @@ fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc:
         const d = e.deref();
         if (d.* == .func and d.func.params.len == fk.params.len) {
             expParams = d.func.params;
-            expRet = d.func.ret;
+            if (!params_only) expRet = d.func.ret;
         }
     }
 
