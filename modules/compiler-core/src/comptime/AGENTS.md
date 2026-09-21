@@ -501,10 +501,64 @@ error — a run-time test can see that a value is a `Box` and cannot see what is
 `Box<i32>` would be a promise the test does not keep, while `Box<unknown>` says exactly what it can
 answer. Each member of a union is checked in turn.
 
-Narrowing has one channel, not two: `if (x is T)` writes into the same
-`guardArgName` / `guardNarrowedType` pair C5 built for the type-guard fn form (`-> x is T`), so the
-branch rebinds the name exactly as a guard call does. Only a plain **name** narrows — narrowing is a
-rebinding, and there is nothing to rebind for `f().x`.
+Narrowing has one channel, not two: `if (x is T)` writes into the same channel C5 built for the
+type-guard fn form (`-> x is T`), so the branch rebinds the name exactly as a guard call does. Only
+a plain **name** narrows — narrowing is a rebinding, and there is nothing to rebind for `f().x` or
+for `o.inner`.
+
+The channel is a **list** (`CondNarrowing`, one entry per name, with the type the name takes on each
+SIDE of the condition), not the single `guardArgName` / `guardNarrowedType` pair it started as. One
+slot could only ever narrow the last name a condition tested, and `if (a != null && b != null)`
+tests two.
+
+## The null test narrows (`x != null`, `x == null`)
+
+The form a reader reaches for first, and the one that did not narrow at all: `if (first != null)`
+did not rebind `first`, so the body still saw a `?Record`, a field read off it was a fresh type
+variable, and commonJS — which needs the receiver's type to know `.length()` is JavaScript's
+`length` PROPERTY — emitted a call on a number (`TypeError: first.key.length is not a function`,
+exit 1) where erlang, needing no receiver type to lower a primitive method, printed `3`. Four
+library fronts of this milestone wrote `.at(i) ?? fallback` or an annotated `val` around it and
+recorded a local gotcha instead.
+
+`collectCondNarrowings` reads the condition and answers the list above. The leaf is the null test in
+either operand order (`x != null`, `null != x`, and the two `==` spellings); the combinators take
+exactly one side each, which is the whole of their rule:
+
+| Condition | Narrowed where | Why |
+|---|---|---|
+| `x != null` | the then branch | it holds only when `x` does |
+| `x == null` | the **else** branch | the mirror; the negative form is one field, not a second mechanism |
+| `a && b` | then, both halves | `&&` holds only when both do. Its failure names neither half, so an `&&` narrows nothing on the else side |
+| `a \|\| b` | else, both halves | `\|\|` FAILS only when both fail — the shape `if (a == null \|\| b == null) { return …; }` needs |
+| `not a` | the two sides swapped | — |
+
+A name whose type is not an `optional` is skipped rather than refused (`optionalPayloadOf`): `x !=
+null` on a non-optional is a comparison this rule has no opinion about, and an unresolved type
+VARIABLE is an inference gap that must not be narrowed to a guess.
+
+**The guard clause outlives its `if`** — `if (x == null) { return …; }` and then the rest of the
+block. That is not a branch narrowing, so it is not `inferBranchExpr`'s: `narrowAfterEarlyExit` is
+applied by the statement walk, for an `if` with no `else` whose then-branch cannot fall through
+(`stmtsAlwaysExit` — a `return`, `throw`, `break` or `continue` in tail position), and it is
+restored when the block ends. Only a **`val`** narrows this way: a `var` can be assigned below the
+guard, and a narrowing that outlives the statement would carry a type the name no longer has. A
+narrowed `val` stays a `val` (`bindNarrowed`), or decision 38 would stop refusing it as an
+assignment target.
+
+Three statement walks had to agree, and each was its own `for` loop: `inferStmtsTyped` (branch
+bodies, loop bodies, lambda and trailing-lambda bodies, `comptime` blocks) and `inferBodyStmts`,
+which is the shared walk a plain `fn`, a record method and a `test` block now go through for exactly
+this reason.
+
+**What does NOT narrow**, each measured rather than assumed:
+
+| Shape | Today |
+|---|---|
+| `if (x)` on a `?T`, no binder | refused — "type mismatch: expected bool, got optional". There is no truthiness on an optional; `if (x) { v -> … }` is the form (`reject/if_optional_needs_a_binder.bp`) |
+| `loop (x != null) { … }` | the body is NOT narrowed. A condition loop's whole point is that the body reassigns the name it tests (`cur = es.at(i)`), and a narrowed `cur` would red that assignment — narrowing the body would break the programs that work today. `?string` and `?T[]` bodies run anyway, because the `.length()` rename unwraps one optional layer by itself; a `?Record` field read in one is still a call on commonJS |
+| `o.inner != null` | only a plain NAME narrows, above. `o.inner.v` answers on commonJS and erlang today, by accident: nothing the rename touches is on that path |
+| `case x { null { … } v { … } }` | narrows already, and not through this channel — a 1-parameter arm binds the whole matched value narrowed by its own pattern (§ `case` and `comptime` block types), which is why the `null` arm leaves `v` the payload |
 
 **Not implemented.** §4.3 (`a is string` on a statically-known `i32` is a *warning*, always false)
 needs the warning channel `comptime/**` does not have — the same gap §2.4 and §1.4 hit. §4.1's
@@ -793,12 +847,12 @@ whatever the branches below it give it. `?string` and `?array` are the only fami
 and `.length` is the same answer for either with or without the `?` — a null value throws on the
 read exactly where it threw on the call.
 
-**The gap this does not close**, measured and left named for the front that owns narrowing: a field
-read off a `?Record` receiver is still a fresh variable. `es.at(0)` is `?Entry`, the member-access
-path finds no `TypeDef` for `optional`, and `if (first != null)` does not rebind `first` inside the
-block — narrowing has one channel (`guardArgName` / `guardNarrowedType`, above) and it has no
-`!= null` arm. So `val first = es.at(0); if (first != null) { first.key.length() }` is still a call
-on commonJS (exit 1) and `3` on erlang. The fix is narrowing's, not this rename's.
+**The gap this did not close is closed**, by narrowing rather than by this rename: a field read off
+a `?Record` receiver was a fresh variable, because the member-access path finds no `TypeDef` for
+`optional` and `if (first != null)` did not rebind `first`. It does now (§ The null test narrows),
+so `val first = es.at(0); if (first != null) { first.key.length() }` answers `3` on commonJS,
+erlang and beam. What is still this rename's and not narrowing's: a receiver that stays an optional
+because no test was written — `xs.at(0)?.length()` — which is what the unwrap above is for.
 
 ## Enum sections
 

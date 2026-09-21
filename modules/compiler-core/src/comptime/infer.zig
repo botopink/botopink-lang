@@ -2428,9 +2428,7 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
     };
     env.labelStack.shrinkRetainingCapacity(0);
 
-    for (t.body) |stmt| {
-        _ = try inferExpr(env, stmt.expr);
-    }
+    try inferBodyStmts(env, t.body);
 }
 
 /// Targets accepted by the `external` annotation builtin — must match
@@ -3504,9 +3502,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     defer env.fnGenericMap = savedFnGenericMap;
     env.returnBareIsVoid = env.returnTarget != null and (eff == null or eff.? == .result or eff.? == .future);
 
-    for (f.body) |stmt| {
-        _ = try inferExpr(env, stmt.expr);
-    }
+    try inferBodyStmts(env, f.body);
 
     // Generalize (HM let-polymorphism): declared generic params still unbound
     // after the body is inferred become `.generic`. Every use site then gets a
@@ -3611,8 +3607,13 @@ fn inferTypeMethods(
         // used to swallow `error.TypeError` into `lastError = null`, so a real
         // mismatch inside a method compiled and only failed at run time.
         var inferredReturn: ?*T.Type = null;
+        // The early-exit narrowing (`narrowAfterEarlyExit`) lives as long as
+        // the block does, so it is collected here and restored below.
+        var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+        defer narrowed.deinit(env.arena);
         for (body) |stmt| {
             const typed = try inferExprTyped(env, stmt.expr);
+            try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
             // 06 C9 — the return type of a method that annotates none comes
             // from its body. `registerInherentMethodTypes` stores a signature
             // only for an annotated method ("rather than mis-typing them as
@@ -3631,6 +3632,7 @@ fn inferTypeMethods(
                 }
             }
         }
+        if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
         if (m.returnType == null) {
             const params = try env.arena.alloc(*T.Type, m.params.len);
             for (m.params, 0..) |p, i| {
@@ -5813,9 +5815,34 @@ fn makeTypedPtr(env: *Env, node: TypedExpr) !*TypedExpr {
 }
 
 /// Convert a slice of untyped statements to typed ones (arena-allocated).
+/// The statement walk for a body that needs no typed nodes back — a plain
+/// `fn`, a method and a `test` block. It exists so those three apply the
+/// early-exit narrowing the same way `inferStmtsTyped` does: `if (x == null) {
+/// return …; }` narrows `x` for the REST of the block, and a body walked with a
+/// bare `for` loop would have been the one shape where it did not.
+fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
+    var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    defer narrowed.deinit(env.arena);
+    for (body) |stmt| {
+        _ = try inferExpr(env, stmt.expr);
+        try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
+    }
+    if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
+}
+
 fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
     const out = try env.arena.alloc(TypedStmt, stmts.len);
-    for (stmts, 0..) |s, i| out[i] = .{ .expr = try inferExprTyped(env, s.expr) };
+    // The early-exit narrowing (`narrowAfterEarlyExit`) outlives the `if` that
+    // states it, so this is where it is applied and where it ends: a name
+    // narrowed by a guard clause is narrowed for the REST of this block and
+    // restored when the block does.
+    var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    defer narrowed.deinit(env.arena);
+    for (stmts, 0..) |s, i| {
+        out[i] = .{ .expr = try inferExprTyped(env, s.expr) };
+        try narrowAfterEarlyExit(env, s.expr, &narrowed);
+    }
+    if (narrowed.items.len > 0) try restorePatternBindings(env, narrowed.items);
     return out;
 }
 
@@ -6303,6 +6330,167 @@ fn isNarrowingOf(cond: ast.Expr) ?IsNarrowing {
     const arg = cc.args[0].value.*;
     if (arg != .identifier or arg.identifier.kind != .ident) return null;
     return .{ .name = arg.identifier.kind.ident, .ref = tested };
+}
+
+/// Decision 8 §4, as the null test extends it — one name a condition narrows,
+/// and the type it takes on each SIDE of that condition. `then_` is the type
+/// the name has where the condition held, `else_` the type it has where it did
+/// not; either may be null, which means "that side leaves the name's own type
+/// alone". `x is T` fills `then_` only; `x != null` fills `then_`, `x == null`
+/// fills `else_`, and that symmetry is the whole of the negative form.
+const CondNarrowing = struct {
+    name: []const u8,
+    then_: ?*T.Type = null,
+    else_: ?*T.Type = null,
+};
+
+/// The payload of a `?T`, or null for every other type — an unresolved type
+/// VARIABLE included, because an inference gap must not narrow a name to a
+/// guess. `optional` is the named type the parser lands `?T` as.
+fn optionalPayloadOf(ty: *T.Type) ?*T.Type {
+    const t = ty.deref();
+    if (t.* != .named) return null;
+    const n = t.named;
+    if (!std.mem.eql(u8, n.name, "optional") or n.args.len != 1) return null;
+    return n.args[0];
+}
+
+/// The name of a plain identifier expression, or null. Only a NAME narrows,
+/// for the same reason `x is T` only narrows one: narrowing is a rebinding,
+/// and there is nothing to rebind for `o.inner` or `f().x`.
+fn plainIdentName(expr: ast.Expr) ?[]const u8 {
+    if (expr != .identifier or expr.identifier.kind != .ident) return null;
+    return expr.identifier.kind.ident;
+}
+
+fn isNullLiteral(expr: ast.Expr) bool {
+    return expr == .literal and expr.literal.kind == .null_;
+}
+
+/// `x != null` / `x == null`, in either operand order. `present_when_true` says
+/// which side of the test holds the value.
+fn nullTestOf(cond: ast.Expr) ?struct { name: []const u8, present_when_true: bool } {
+    if (cond != .binaryOp) return null;
+    const b = cond.binaryOp;
+    const present = switch (b.op) {
+        .ne => true,
+        .eq => false,
+        else => return null,
+    };
+    const name = if (isNullLiteral(b.rhs.*))
+        plainIdentName(b.lhs.*)
+    else if (isNullLiteral(b.lhs.*))
+        plainIdentName(b.rhs.*)
+    else
+        null;
+    return .{ .name = name orelse return null, .present_when_true = present };
+}
+
+/// Every name a condition narrows, appended to `out`. The null test is the leaf
+/// (`x != null`, `x == null`); `&&`, `||` and `not` combine leaves, and each
+/// combines exactly one side:
+///
+///   * `a && b` HOLDS only when both hold, so the then side keeps both halves'
+///     narrowings. Its failure says nothing — either half may be the one that
+///     failed — so the else side of an `&&` narrows nothing.
+///   * `a || b` FAILS only when both fail: the mirror, and the shape a library
+///     writes as `if (a == null || b == null) { return …; }`.
+///   * `not a` swaps the two sides.
+///
+/// A name whose type is not an optional is skipped rather than refused: `x !=
+/// null` on a non-optional is a comparison this function has no opinion about.
+fn collectCondNarrowings(
+    env: *Env,
+    cond: ast.Expr,
+    out: *std.ArrayListUnmanaged(CondNarrowing),
+) InferError!void {
+    // Only the narrowings THIS call appends may be rewritten by the combinator
+    // below it: `a && (b || c)` must not let the `||` clear `a`'s half.
+    const start = out.items.len;
+    switch (cond) {
+        .binaryOp => |b| switch (b.op) {
+            .@"and", .@"or" => {
+                try collectCondNarrowings(env, b.lhs.*, out);
+                try collectCondNarrowings(env, b.rhs.*, out);
+                for (out.items[start..]) |*n| {
+                    if (b.op == .@"and") n.else_ = null else n.then_ = null;
+                }
+            },
+            .eq, .ne => {
+                const test_ = nullTestOf(cond) orelse return;
+                const bound = env.lookup(test_.name) orelse return;
+                const inner = optionalPayloadOf(bound) orelse return;
+                try out.append(env.arena, if (test_.present_when_true)
+                    .{ .name = test_.name, .then_ = inner }
+                else
+                    .{ .name = test_.name, .else_ = inner });
+            },
+            else => {},
+        },
+        .unaryOp => |u| {
+            if (u.op != .not) return;
+            try collectCondNarrowings(env, u.expr.*, out);
+            for (out.items[start..]) |*n| {
+                const held = n.then_;
+                n.then_ = n.else_;
+                n.else_ = held;
+            }
+        },
+        else => {},
+    }
+}
+
+/// Rebind `name` to its narrowed type for one branch, remembering what it was.
+/// A `val` stays a `val`: `env.bind` drops the marker decision 38 reads, and a
+/// narrowed name is still the same binding, not a new assignable one.
+fn bindNarrowed(
+    env: *Env,
+    name: []const u8,
+    ty: *T.Type,
+    snapshots: *std.ArrayListUnmanaged(PatternBindingSnapshot),
+) InferError!void {
+    try snapshots.append(env.arena, .{ .name = name, .previous = env.lookup(name) });
+    if (env.isVal(name)) try env.bindVal(name, ty) else try env.bind(name, ty);
+}
+
+/// A statement list that cannot fall through: its last statement is a `return`,
+/// `throw`, `break` or `continue`. That is all the early-return shape needs —
+/// a body ending any other way reaches the code below its `if`.
+fn stmtsAlwaysExit(stmts: []const ast.Stmt) bool {
+    if (stmts.len == 0) return false;
+    const last = stmts[stmts.len - 1].expr;
+    if (last != .jump) return false;
+    return switch (last.jump.kind) {
+        .@"return", .throw_, .@"break", .@"continue" => true,
+        else => false,
+    };
+}
+
+/// The early-exit shape: `if (x == null) { return …; }` and then the REST of
+/// the block, where `x` holds a value because the branch that did not left.
+/// The narrowing outlives the `if`, so unlike the two branch shapes it is
+/// applied by the statement walker and restored at the end of the block.
+///
+/// Only a `val` narrows here. A `var` may be assigned below the `if` — the
+/// branch shapes restore before the next statement and never meet that, this
+/// one would carry a type the name no longer has.
+fn narrowAfterEarlyExit(
+    env: *Env,
+    stmt: ast.Expr,
+    snapshots: *std.ArrayListUnmanaged(PatternBindingSnapshot),
+) InferError!void {
+    if (stmt != .branch or stmt.branch.kind != .if_) return;
+    const i = stmt.branch.kind.if_;
+    if (i.binding != null or i.else_ != null) return;
+    if (!stmtsAlwaysExit(i.then_)) return;
+    var narrowings: std.ArrayListUnmanaged(CondNarrowing) = .empty;
+    defer narrowings.deinit(env.arena);
+    try collectCondNarrowings(env, i.cond.*, &narrowings);
+    for (narrowings.items) |n| {
+        const ty = n.else_ orelse continue;
+        if (!env.isVal(n.name)) continue;
+        try bindNarrowed(env, n.name, ty, snapshots);
+    }
 }
 
 fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferError!void {
@@ -7859,8 +8047,13 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             const condTyped = try inferExprTyped(env, i.cond.*);
             const condPtr = try makeTypedPtr(env, condTyped);
 
-            var guardArgName: ?[]const u8 = null;
-            var guardNarrowedType: ?*T.Type = null;
+            // Every name this condition narrows, and the type it takes on
+            // each side of it. It is still ONE channel — `x is T`, a type-guard
+            // call and the null test all write here — but it holds a LIST now:
+            // `if (a != null && b != null)` narrows two names, and one slot
+            // could only ever have narrowed the last of them.
+            var narrowings: std.ArrayListUnmanaged(CondNarrowing) = .empty;
+            defer narrowings.deinit(env.arena);
 
             if (i.binding) |binding_name| {
                 // Null-check form: `if (x) { e -> ... }` — condition is optional, not bool.
@@ -7880,19 +8073,27 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 // Decision 8 §4 — `if (x is T)` narrows `x` to `T` inside the
                 // branch. It is the same channel C5 built for the type-guard fn
                 // form (`-> x is T`), which is why both write into
-                // `guardArgName` / `guardNarrowedType` rather than growing a
-                // second narrowing mechanism.
+                // `narrowings` rather than growing a second narrowing
+                // mechanism — and so does the null test below it.
                 if (isNarrowingOf(i.cond.*)) |n| {
-                    guardArgName = n.name;
-                    guardNarrowedType = try resolveTypeRef(env, n.ref);
+                    try narrowings.append(env.arena, .{ .name = n.name, .then_ = try resolveTypeRef(env, n.ref) });
                 }
+                // The null test: `if (x != null)` rebinds `x` to the `?T`'s
+                // payload inside the branch, `if (x == null)` rebinds it in the
+                // ELSE branch, and `&&` / `||` / `not` combine them. Before
+                // this the body still saw a `?Record`, so a field read off it
+                // was a fresh type variable and commonJS — which needs the
+                // receiver's type to know `.length()` is a PROPERTY — emitted a
+                // call on a number where erlang, dispatching dynamically,
+                // happened to answer.
+                try collectCondNarrowings(env, i.cond.*, &narrowings);
                 if (i.cond.* == .call) {
                     const ci = i.cond.call.kind.call;
                     if (env.typeGuardFns.get(ci.callee)) |guardInfo| {
                         if (guardInfo.paramIndex < ci.args.len) {
                             const argExpr = ci.args[guardInfo.paramIndex].value.*;
                             if (argExpr == .identifier and argExpr.identifier.kind == .ident) {
-                                guardArgName = argExpr.identifier.kind.ident;
+                                const guardArgName = argExpr.identifier.kind.ident;
                                 const argTyped = try inferExprTyped(env, argExpr);
                                 const argTy = argTyped.getType().deref();
                                 const narrowed: *T.Type = switch (argTy.*) {
@@ -7904,7 +8105,7 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                                         try env.namedType(guardInfo.narrowedTypeName),
                                     else => try env.namedType(guardInfo.narrowedTypeName),
                                 };
-                                guardNarrowedType = narrowed;
+                                try narrowings.append(env.arena, .{ .name = guardArgName, .then_ = narrowed });
                             }
                         }
                     }
@@ -7912,24 +8113,27 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 try unifyAt(env, try env.namedType("bool"), condTyped.getType(), loc);
             }
 
-            // Narrow the argument in the then-branch for type guards.
+            // Narrow for the then-branch, restore, then narrow for the else.
             var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
             defer snapshots.deinit(env.arena);
-            if (guardArgName) |argName| {
-                if (guardNarrowedType) |narrowedTy| {
-                    const old = env.lookup(argName);
-                    try snapshots.append(env.arena, .{ .name = argName, .previous = old });
-                    try env.bind(argName, narrowedTy);
-                }
+            for (narrowings.items) |n| {
+                if (n.then_) |ty| try bindNarrowed(env, n.name, ty, &snapshots);
             }
 
             const thenTyped = try inferStmtsTyped(env, i.then_);
 
-            // Restore bindings after then-branch for type guards.
             try restorePatternBindings(env, snapshots.items);
             snapshots.clearAndFree(env.arena);
 
-            const elseTyped = if (i.else_) |els| try inferStmtsTyped(env, els) else null;
+            const elseTyped = if (i.else_) |els| blk: {
+                for (narrowings.items) |n| {
+                    if (n.else_) |ty| try bindNarrowed(env, n.name, ty, &snapshots);
+                }
+                const typed = try inferStmtsTyped(env, els);
+                try restorePatternBindings(env, snapshots.items);
+                snapshots.clearAndFree(env.arena);
+                break :blk typed;
+            } else null;
 
             const bodyType = if (thenTyped.len > 0) thenTyped[thenTyped.len - 1].expr.getType() else try env.namedType("void");
             const elseType = if (elseTyped) |els| blk: {
