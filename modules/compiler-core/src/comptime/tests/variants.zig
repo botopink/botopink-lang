@@ -557,6 +557,24 @@ test "enum sections: the expected type picks among the enums carrying one path" 
     );
 }
 
+test "enum sections ES5: a path two enums carry, with nothing to say which, is refused" {
+    // Not a pick — a located refusal naming both candidates. Picking is what
+    // made the answer a function of `env.typeDefs`' hash order.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Token {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\type Border {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\val x = .Color.Red.500;
+    );
+}
+
 test "enum sections F3 ES4: path-access with bad tail raises focused error" {
     // The head segment `Color` matches Token's section wrapper, so the
     // resolver knows the user intended a section path — but `Bogus` isn't

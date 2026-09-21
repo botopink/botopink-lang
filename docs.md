@@ -299,6 +299,17 @@ fn main() {
 }
 ```
 
+A position that expects nothing (`val x = .Color.Red.500;`) leaves the path
+carried by two enums with nothing to choose between them, and the compiler
+refuses rather than pick one, naming both candidates:
+
+```
+error: the path ".Color.Red.500" is carried by more than one enum —
+       "Border" and "Token" — and nothing here says which
+```
+
+Give the position a type and it resolves.
+
 ### behavior
 
 ```botopink

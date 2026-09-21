@@ -1709,12 +1709,19 @@ fn tryResolveEnumSectionPath(
         // One carrier: the path names it. More than one: the expected type of
         // this position is what decides — an annotation, a declared parameter,
         // the return target, an array literal's element type.
-        const chosen: []const u8 = if (candidates.items.len == 1)
+        const chosen: ?[]const u8 = if (candidates.items.len == 1)
             candidates.items[0]
         else
-            expectedEnumAmong(env.expectedType, candidates.items) orelse candidates.items[0];
-        const owner = env.lookupTypeDef(chosen).?.enum_;
-        return try resolveAndRecordSectionPath(env, owner, segs.items, loc);
+            expectedEnumAmong(env.expectedType, candidates.items);
+        if (chosen) |name| {
+            const owner = env.lookupTypeDef(name).?.enum_;
+            return try resolveAndRecordSectionPath(env, owner, segs.items, loc);
+        }
+        // ES5 — more than one enum carries the path and nothing here says
+        // which. Refuse, naming every candidate: picking one is what made the
+        // answer a function of the hash order, and the position that cannot
+        // say what it expects is the position that has to spell it out.
+        return raiseAmbiguousSectionPath(env, candidates.items, segs.items, segLocs.items[0]);
     }
 
     // ES4 — chain looks like a section path (`.<Section>.<more>` rooted at
@@ -1723,13 +1730,7 @@ fn tryResolveEnumSectionPath(
     // user sees "enum 'Token' has no path '.Color.Bogus'" instead of the
     // generic fall-through diagnostic.
     if (enum_with_head) |owner| {
-        var pbuf: std.ArrayList(u8) = .empty;
-        defer pbuf.deinit(env.arena);
-        for (segs.items) |seg| {
-            try pbuf.append(env.arena, '.');
-            try pbuf.appendSlice(env.arena, seg);
-        }
-        const path_text = try pbuf.toOwnedSlice(env.arena);
+        const path_text = try sectionPathText(env, segs.items);
         const msg = try std.fmt.allocPrint(
             env.arena,
             "enum \"{s}\" has no path \"{s}\" (ES4 — enum-sections path resolution)",
@@ -1741,6 +1742,55 @@ fn tryResolveEnumSectionPath(
         return error.TypeError;
     }
     return null;
+}
+
+/// The chain as the user wrote it, leading dot and all: `.Color.Red.500`.
+fn sectionPathText(env: *Env, path: []const []const u8) InferError![]const u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(env.arena);
+    for (path) |seg| {
+        try buf.append(env.arena, '.');
+        try buf.appendSlice(env.arena, seg);
+    }
+    return buf.toOwnedSlice(env.arena);
+}
+
+/// ES5 — the path is carried by more than one enum and nothing at this
+/// position says which. Refuse, naming every candidate.
+///
+/// Picking one is what made the answer depend on `env.typeDefs`' hash order,
+/// and a pick cannot be right here: the two enums are different types and the
+/// program means one of them. The candidates are sorted so the message is the
+/// same on every run — the set comes off a hash map.
+fn raiseAmbiguousSectionPath(
+    env: *Env,
+    candidates: [][]const u8,
+    path: []const []const u8,
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    std.mem.sort([]const u8, candidates, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.lessThan);
+    var names: std.ArrayList(u8) = .empty;
+    defer names.deinit(env.arena);
+    for (candidates, 0..) |name, i| {
+        if (i > 0) try names.appendSlice(env.arena, if (i + 1 == candidates.len) " and " else ", ");
+        try names.append(env.arena, '"');
+        try names.appendSlice(env.arena, name);
+        try names.append(env.arena, '"');
+    }
+    const msg = try std.fmt.allocPrint(
+        env.arena,
+        "the path \"{s}\" is carried by more than one enum — {s} — and nothing here says which (ES5 — enum-sections path ambiguity)",
+        .{ try sectionPathText(env, path), names.items },
+    );
+    env.lastError = TypeError.custom(
+        msg,
+        "Give the position a type the path can be read against — a `val` annotation, a declared parameter, the function's return type.",
+    ).withLoc(loc);
+    return error.TypeError;
 }
 
 /// Resolve `path` in `en` and record the untyped rewrite for it.

@@ -50,7 +50,9 @@ also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
 decision 96, and `run/option_unwrap_or` + `reject/option_expect_removed` to
 `optional*` for F11), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
 leading-dot section path names — `run/enum_section_expected_type`, where two enums carry
-`.Color.Red.500` and every spelling is resolved by the type its position expects). One scenario group per
+`.Color.Red.500` and every spelling is resolved by the type its position expects, and
+`reject/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
+candidates). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 

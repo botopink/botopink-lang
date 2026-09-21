@@ -797,6 +797,14 @@ type set it around that sub-expression — a `val`'s annotation (`inferDecl`,
 parameters (`inferCallExpr`), the body's return target (`inferJumpExpr`) and an
 expected `Array<T>`'s element type (`inferCollectionExpr`).
 
+**ES5** — when two enums carry the path and the expectation says nothing,
+`raiseAmbiguousSectionPath` refuses at the head segment, naming every candidate
+(sorted, because the set comes off a hash map). It is not a pick: the candidates
+are different types, the program means one of them, and picking is the defect
+this closed. ES4 (a head that matched, a tail that did not) is unchanged and
+still names the FIRST enum whose head segment is a section wrapper — that
+choice is the iterator's, and it decides only which enum the message blames.
+
 Tuple labels (decision 8 §6) ride the same map: a `tuple` type carries
 `named.labels` (from a written `#(name: T, …)` type — `ast.TypeRef.labeledTuple`
 — or, T1, from the plain variables a `#(…)` literal is built from; `unify` never
