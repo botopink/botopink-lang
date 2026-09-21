@@ -26,14 +26,17 @@
 //// null)`: § the loop shape of `comptime/AGENTS.md`.
 ////
 //// wasm is in `.targets` and FAILS, with its line in `expected-failures.txt`:
-//// it answers heap addresses (`256`, `364`, `401`) for every family but the
+//// it answers heap addresses (`276`, `388`, `425`) for every family but the
 //// `?string`. The narrowing is the checker's and wasm's `?T` is a BOX
 //// (05 step 2 D1): the optional-binding form `if (es.at(0)) { f -> … }`
 //// unboxes and answers `3` there, a narrowed NAME is never unboxed. Before
 //// this front wasm trapped on the same lines (`unreachable`, exit 134),
 //// because the field read off a fresh type variable lowered to `unreachable`;
 //// a wrong answer at exit 0 replaces a trap, and both are the same missing
-//// unbox.
+//// unbox. C-01 half 3 (`a8087490`) MOVED every one of these numbers and
+//// changed nothing else: each box now carries its declaration, so the
+//// addresses grew (`256`/`364`/`401` → `276`/`388`/`425`) and the narrowed
+//// name is read off the box exactly as before. Re-measured at that merge.
 
 type Entry(key: string) {}
 

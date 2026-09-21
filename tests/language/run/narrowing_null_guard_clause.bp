@@ -22,9 +22,11 @@
 //// TWO targets fail, each for a reason that is not this cell's and each with a
 //// line in `expected-failures.txt`:
 ////
-////   wasm  heap addresses (`272`, `288`) where `3` and `5` are owed — wasm's
+////   wasm  heap addresses (`292`, `328`) where `3` and `5` are owed — wasm's
 ////         `?T` is a box and a narrowed NAME is not unboxed (05 step 2 D1),
-////         the same row `run/narrowing_null_check.bp` carries.
+////         the same row `run/narrowing_null_check.bp` carries. C-01 half 3
+////         (`a8087490`) moved the numbers and nothing else (`272`/`288` →
+////         `292`/`328`: a box carries its declaration now); re-measured there.
 ////   beam  the module does not compile: `UnknownFunction`, no location. It is
 ////         not narrowing's — the same program written with `??` instead of a
 ////         guard clause fails identically. The minimal shape is an optional
