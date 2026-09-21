@@ -4,7 +4,6 @@ const tsEmit = @import("./typescript.zig");
 const moduleOutput = @import("./moduleOutput.zig");
 const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
-const specialize = @import("../comptime/specialize.zig");
 const crossModule = @import("./crossModule.zig");
 const patternFacts = @import("./patterns.zig");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
@@ -153,14 +152,6 @@ pub fn isComptimeExpr(te: ast.TypedExpr) bool {
     return switch (te.kind) {
         .@"comptime", .comptimeBlock => true,
         else => false,
-    };
-}
-
-/// If `e` is a `use`-hook prefix, return the wrapped hook-call expression.
-pub fn useHookInner(e: ast.Expr) ?*ast.Expr {
-    return switch (e) {
-        .useHook => |uh| uh.kind.inner,
-        else => null,
     };
 }
 
@@ -371,8 +362,10 @@ fn emitProgramOptsX(
     try em.collectExternals(program);
     try em.collectClassNames(program);
     try em.collectDeclIndexes(program);
-    try em.collectPrimNodeRenames(program);
+    // The dispatch scan first: it parses the embedded std registry and fills
+    // `ambiguous_prim_renames`, which the rename collector consults.
     try em.collectBuiltinNodeDispatch();
+    try em.collectPrimNodeRenames(program);
 
     const arena_alloc = arena.allocator();
     var items: std.ArrayListUnmanaged(js.Item) = .empty;
@@ -809,10 +802,6 @@ const Emitter = struct {
     /// statements (`buildReturnCaseStmt`): a value arm then returns
     /// `({ ok: v })`, while an arm that already returns keeps its own value.
     case_ok_wrap: bool = false,
-    /// Names bound by `use` hooks seen so far in the current function body, in
-    /// source order. Used to infer the dependency array of `useMemo`/`useEffect`:
-    /// a hook's lambda dep list is the reactive names it references.
-    hook_state: std.ArrayListUnmanaged([]const u8) = .empty,
     /// `botopink test` compilation: `assert` lowers to the throwing
     /// `__bp_assert` helper instead of `console.assert`.
     test_mode: bool = false,
@@ -855,6 +844,18 @@ const Emitter = struct {
     /// host methods the prelude binds, so `buildInterface` falls back to these.
     /// Keys and strings live in the node arena.
     prelude_iface_externals: std.StringHashMap(ast.ExternalRef),
+    /// Method name → the host symbol an UNTYPED call of it emits on node, over
+    /// every behavior of the embedded std registry (`scanDeclareFnExternal`),
+    /// and the names two behaviors disagree on. `at` is `String.at` → native
+    /// `charAt` and `Array.at` → native `at` (decision 63, amended), so it has
+    /// no type-naive rename: `collectPrimNodeRenames` skips `ambiguous_prim_renames`.
+    /// Computed over the registry rather than the program because the program
+    /// the emitter scans may carry ONE of the two behaviors (a String `default
+    /// fn` in use materialises the String behavior alone) and `at → charAt`
+    /// then looked unambiguous — `parts.at(0)` on a `string[]` emitted
+    /// `parts.charAt(0)` in `libs/std`'s `querystring.bp`.
+    prim_symbol_of: std.StringHashMap([]const u8),
+    ambiguous_prim_renames: std.StringHashMap(void),
     /// Every interface this module declares, by name. A user interface has no
     /// JS object to patch, so its instance `default fn`s are copied into each
     /// local record that implements it (`buildRecord`).
@@ -917,6 +918,8 @@ const Emitter = struct {
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
             .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
+            .prim_symbol_of = std.StringHashMap([]const u8).init(alloc),
+            .ambiguous_prim_renames = std.StringHashMap(void).init(alloc),
             .local_interfaces = std.StringHashMap(ast.BehaviorDecl).init(alloc),
             .fn_return_types = std.StringHashMap(ast.TypeRef).init(alloc),
             .print_shapes = std.StringHashMap(js.Expr).init(alloc),
@@ -940,7 +943,6 @@ const Emitter = struct {
     }
 
     fn deinit(self: *Emitter) void {
-        self.hook_state.deinit(self.alloc);
         self.externals.deinit();
         self.externals_missing.deinit();
         self.class_names.deinit();
@@ -949,6 +951,8 @@ const Emitter = struct {
         self.enum_recv_methods.deinit();
         self.imported_enums.deinit();
         self.prelude_iface_externals.deinit();
+        self.prim_symbol_of.deinit();
+        self.ambiguous_prim_renames.deinit();
         self.local_interfaces.deinit();
         self.fn_return_types.deinit();
         self.print_shapes.deinit();
@@ -1023,6 +1027,7 @@ const Emitter = struct {
             if (decl == .behavior) {
                 const iface = decl.behavior;
                 for (iface.methods) |m| {
+                    if (std.mem.eql(u8, target, "node")) try self.noteUntypedNodeSymbol(m);
                     const ref = m.externalFor(target) orelse continue;
                     const key = try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ iface.name, m.name });
                     if (self.prelude_iface_externals.contains(key)) continue;
@@ -1135,6 +1140,21 @@ const Emitter = struct {
             .type_ => |r| if (r.isRecord()) for (r.methods) |m| try record_methods.put(m.name, {}),
             else => {},
         };
+        // A name two primitive behaviors send to DIFFERENT host symbols has no
+        // type-naive rename: `String.at` is native `charAt` while `Array.at` is
+        // native `at` (decision 63's amendment gave both readers one name), and
+        // whichever won here rewrote the other receiver's default-fn bodies —
+        // `Array.first`'s `self.at(0)` was emitted `this.charAt(0)` on an array,
+        // `TypeError: this.charAt is not a function` on node. Such a call keeps
+        // its own name unless inference's per-loc rename typed the receiver.
+        // The disagreement is read off the whole embedded std registry
+        // (`ambiguous_prim_renames`, filled by `collectBuiltinNodeDispatch`)
+        // AND this program's own behaviors: the program may carry one of the
+        // two (see the field).
+        for (program.decls) |decl| {
+            if (decl != .behavior) continue;
+            for (decl.behavior.methods) |m| try self.noteUntypedNodeSymbol(m);
+        }
         for (program.decls) |decl| {
             if (decl != .behavior) continue;
             for (decl.behavior.methods) |m| {
@@ -1143,6 +1163,7 @@ const Emitter = struct {
                 if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) continue;
                 if (std.mem.eql(u8, ref.symbol, m.name)) continue;
                 if (record_methods.contains(m.name)) continue;
+                if (self.ambiguous_prim_renames.contains(m.name)) continue;
                 try self.prim_node_renames.put(m.name, ref.symbol);
             }
         }
@@ -1498,8 +1519,6 @@ const Emitter = struct {
         const params = try self.buildParams(f.params);
         const prev_fn_indent = self.current_indent;
         self.current_indent = 1;
-        // Each function body gets a fresh reactive-name scope for hook deps.
-        self.hook_state.clearRetainingCapacity();
         const body = try self.buildStmts(f.body);
         self.current_indent = prev_fn_indent;
         const decl = js.Stmt{ .function = .{
@@ -1524,7 +1543,6 @@ const Emitter = struct {
         self.try_seq = 0;
         const prev_fn_indent = self.current_indent;
         self.current_indent = 1;
-        self.hook_state.clearRetainingCapacity();
         const body = try self.buildStmts(t.body);
         self.current_indent = prev_fn_indent;
         return .{ .function = .{
@@ -1608,7 +1626,6 @@ const Emitter = struct {
             if (defined) continue;
             const params = try self.buildParams(m.params);
             self.current_indent = 2;
-            self.hook_state.clearRetainingCapacity();
             const body = try self.buildStmts(body_src);
             self.current_indent = 0;
             try members.append(self.arena(), .{
@@ -1819,7 +1836,6 @@ const Emitter = struct {
                 const params = try self.buildParams(m.params);
                 const prev = self.current_indent;
                 self.current_indent = 1;
-                self.hook_state.clearRetainingCapacity();
                 const body = try self.buildStmts(body_src);
                 self.current_indent = prev;
                 try stmts.append(self.arena(), .{ .expr = try self.b.assign(
@@ -1892,7 +1908,6 @@ const Emitter = struct {
                 } else {
                     self.self_is_param = false; // bare `self` → `this`
                 }
-                self.hook_state.clearRetainingCapacity();
                 for (body_src) |s| try body.append(self.arena(), try self.buildStmt(s));
                 self.current_indent = prev;
                 try stmts.append(self.arena(), try self.prototypeAssign(owner, m.name, .{
@@ -1923,6 +1938,24 @@ const Emitter = struct {
             }
         }
         return self.b.group(try stmts.toOwnedSlice(self.arena()));
+    }
+
+    /// The symbol an UNTYPED call of behavior method `m` emits on node: the
+    /// plain 2-arg `Node` symbol, else the method's own name (a template, a
+    /// `(module, symbol)` external, a `default fn` and an unannotated method
+    /// all keep it). Two behaviors disagreeing on a name make it ambiguous.
+    fn noteUntypedNodeSymbol(self: *Emitter, m: ast.BehaviorMethod) !void {
+        const sym: []const u8 = blk: {
+            const ref = m.externalFor("node") orelse break :blk m.name;
+            if (ref.module.len != 0) break :blk m.name;
+            if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) break :blk m.name;
+            break :blk ref.symbol;
+        };
+        if (self.prim_symbol_of.get(m.name)) |prev| {
+            if (!std.mem.eql(u8, prev, sym)) try self.ambiguous_prim_renames.put(try self.arena().dupe(u8, m.name), {});
+        } else {
+            try self.prim_symbol_of.put(try self.arena().dupe(u8, m.name), try self.arena().dupe(u8, sym));
+        }
     }
 
     /// The std prelude's `#[@External.Node]` for `iface.method`, if any.
@@ -2246,15 +2279,6 @@ const Emitter = struct {
         };
     }
 
-    /// Record the names introduced by a destructuring `use` as reactive deps.
-    fn trackDestructNames(self: *Emitter, pattern: ast.ParamDestruct) !void {
-        switch (pattern) {
-            .names => |n| for (n.fields) |nm| try self.hook_state.append(self.alloc, nm.bind_name),
-            .tuple_ => |t| for (t) |nm| try self.hook_state.append(self.alloc, nm),
-            else => {},
-        }
-    }
-
     /// The runtime test a botopink pattern becomes, over `value`.
     fn buildPatternCheck(self: *Emitter, pat: *const ast.Pattern, value: []const u8) anyerror!js.Expr {
         const subject = js.Expr{ .name = value };
@@ -2373,24 +2397,17 @@ const Emitter = struct {
                     if (classifyTry(lb.value.*)) |form| {
                         return self.buildTryStmt(form, .{ .decl = .{ .kw = kw, .name = lb.name } });
                     }
-                    // `val d = use memo { … }` → `const d = useMemo(…, [deps])`.
-                    const value = if (useHookInner(lb.value.*)) |inner| blk: {
-                        const hook = try self.buildHookCall(inner.*);
-                        try self.hook_state.append(self.alloc, lb.name);
-                        break :blk hook;
-                    } else try self.buildExpr(lb.value.*);
+                    // `val d = use memo(…)` → `const d = memo(…)`: the `use`
+                    // prefix is transparent (decision 88), `buildExpr` drops it.
+                    const value = try self.buildExpr(lb.value.*);
                     return .{ .decl = .{ .kw = kw, .pattern = .{ .ident = lb.name }, .value = value } };
                 },
                 .localBindDestruct => |lb| {
                     if (classifyTry(lb.value.*)) |form| {
                         return self.buildTryStmt(form, .{ .destruct = .{ .mutable = lb.mutable, .pattern = lb.pattern } });
                     }
-                    // `val {v, s} = use state(0)` → `const { v, s } = useState(0)`.
-                    const value = if (useHookInner(lb.value.*)) |inner| blk: {
-                        const hook = try self.buildHookCall(inner.*);
-                        try self.trackDestructNames(lb.pattern);
-                        break :blk hook;
-                    } else try self.buildExpr(lb.value.*);
+                    // `val {v, s} = use state(0)` → `const { v, s } = state(0)`.
+                    const value = try self.buildExpr(lb.value.*);
                     return .{ .decl = .{
                         .kw = if (lb.mutable) .let_ else .const_,
                         .pattern = try self.buildDestructPattern(lb.pattern),
@@ -2399,8 +2416,9 @@ const Emitter = struct {
                 },
                 else => return .{ .expr = try self.buildExpr(e) },
             },
-            // A bare `use <hookcall>;` statement is a void hook (e.g. `use effect { … }`).
-            .useHook => |uh| return .{ .expr = try self.buildHookCall(uh.kind.inner.*) },
+            // A bare `use <hookcall>;` statement is a void hook (`use effect(…)`):
+            // the call itself, the prefix is transparent (decision 88).
+            .useHook => |uh| return .{ .expr = try self.buildExpr(uh.kind.inner.*) },
             // An `if` whose branches jump out (`return`, `break`, `continue`)
             // is a JS `if` statement: a jump cannot leave the IIFE the value
             // form wraps it in.
@@ -2466,103 +2484,6 @@ const Emitter = struct {
                 return .{ .expr = try self.buildExpr(e) };
             },
         }
-    }
-
-    // ── use-hooks (React-like target) ─────────────────────────────────────────
-
-    /// Hooks whose lambda argument is wrapped with an inferred dependency array,
-    /// matching React's `useMemo`/`useEffect`/`useCallback` calling convention.
-    fn hookTakesDeps(callee: []const u8) bool {
-        const with_deps = [_][]const u8{ "memo", "effect", "callback", "layoutEffect", "imperativeHandle" };
-        for (with_deps) |h| if (std.mem.eql(u8, callee, h)) return true;
-        return false;
-    }
-
-    /// A hook's JS name. Bare capability names map by the React convention
-    /// `state` → `useState`, `memo` → `useMemo`. Names already in `useXxx` form
-    /// (custom hooks like `useAuth`) pass through unchanged.
-    fn hookName(self: *Emitter, callee: []const u8) ![]const u8 {
-        const is_custom = callee.len > 3 and
-            std.mem.startsWith(u8, callee, "use") and
-            std.ascii.isUpper(callee[3]);
-        if (is_custom) return callee;
-        if (callee.len == 0) return "use";
-        return std.fmt.allocPrint(self.arena(), "use{c}{s}", .{ std.ascii.toUpper(callee[0]), callee[1..] });
-    }
-
-    /// A `use`-hook's value expression as a React hook call: map the hook
-    /// name and, for dependency-taking hooks, append the inferred deps array.
-    fn buildHookCall(self: *Emitter, value: ast.Expr) anyerror!js.Expr {
-        const cc = switch (value) {
-            .call => |c| switch (c.kind) {
-                .call => |call| call,
-                else => return self.buildExpr(value),
-            },
-            else => return self.buildExpr(value),
-        };
-
-        const callee: js.Expr = if (cc.receiver) |recv|
-            try self.b.member(try self.buildExpr(recv.*), cc.callee)
-        else
-            .{ .name = try self.hookName(cc.callee) };
-
-        var args: std.ArrayListUnmanaged(js.Expr) = .empty;
-        for (cc.args) |arg| try args.append(self.arena(), try self.buildExpr(arg.value.*));
-        for (cc.trailing) |tl| try args.append(self.arena(), try self.buildLambda(tl.params, tl.body));
-        if (hookTakesDeps(cc.callee)) {
-            try args.append(self.arena(), .{ .array = .{ .elems = try self.buildHookDeps(cc) } });
-        }
-        return self.b.call(callee, try args.toOwnedSlice(self.arena()));
-    }
-
-    /// The inferred dependency array contents: the reactive names (bound by
-    /// prior hooks) referenced inside this hook's lambda argument, in source order.
-    fn buildHookDeps(self: *Emitter, cc: anytype) ![]const js.Expr {
-        var out: std.ArrayListUnmanaged(js.Expr) = .empty;
-        const body = hookLambdaBody(cc) orelse return out.toOwnedSlice(self.arena());
-        for (self.hook_state.items) |name| {
-            for (body) |s| {
-                if (specialize.identInExpr(s.expr, name)) {
-                    try out.append(self.arena(), .{ .name = name });
-                    break;
-                }
-            }
-        }
-        return out.toOwnedSlice(self.arena());
-    }
-
-    /// Find the lambda body among a hook call's arguments (the dependency source).
-    fn hookLambdaBody(cc: anytype) ?[]ast.Stmt {
-        for (cc.args) |arg| switch (arg.value.*) {
-            .function => |f| return f.kind.body,
-            else => {},
-        };
-        if (cc.trailing.len > 0) return cc.trailing[0].body;
-        return null;
-    }
-
-    /// A `params => { body }` arrow function (for trailing-lambda hook args).
-    fn buildLambda(self: *Emitter, params: []const []const u8, body: []ast.Stmt) !js.Expr {
-        // A nested arrow is not a generator — its `return` stays `return` —
-        // and no jump crosses it.
-        const prev_in_generator = self.in_generator;
-        const prev_ctx = self.loop_ctx;
-        const prev_wrap = self.case_ok_wrap;
-        self.in_generator = false;
-        self.loop_ctx = .none;
-        self.case_ok_wrap = false;
-        defer {
-            self.in_generator = prev_in_generator;
-            self.loop_ctx = prev_ctx;
-            self.case_ok_wrap = prev_wrap;
-        }
-        const ps = try self.arena().alloc(js.Param, params.len);
-        for (params, 0..) |p, i| ps[i] = .{ .pattern = .{ .ident = p } };
-        return self.b.arrowBlock(ps, .{
-            .stmts = try self.buildStmts(body),
-            .layout = .fixed,
-            .indent = self.current_indent,
-        });
     }
 
     /// A trailing/inline lambda body: the tail value expression is its result,
@@ -2967,8 +2888,11 @@ const Emitter = struct {
                 },
             },
 
-            // A `use` hook used in value position: the underlying hook call.
-            .useHook => |uh| return self.buildHookCall(uh.kind.inner.*),
+            // `use <call>` in value position is the call: the prefix is the
+            // activation the checker validated, not a rename (decision 88 —
+            // `use state(0)` is `state(0)` on every backend; the client
+            // runtime supplies hook semantics through what `state` does).
+            .useHook => |uh| return self.buildExpr(uh.kind.inner.*),
 
             .call => |c| switch (c.kind) {
                 .call => |cc| return self.buildCall(c.loc, cc),

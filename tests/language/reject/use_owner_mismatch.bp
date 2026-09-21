@@ -1,0 +1,14 @@
+//// Every `use` in one body agrees on the owner the return type names: a hook
+//// owned by `Http` cannot be activated in a body owned by `Element`.
+
+type Element(count: i32) implement @Context<Element, Element>
+type Http(port: i32) implement @Context<Http, Http>
+fn connection() -> @Context<Http, i32> { return 8080; }
+
+#[@context]
+fn Widget() -> Element {
+    val c = use connection();
+    return Element(count: c);
+}
+
+pub fn main() { @print(Widget().count); }

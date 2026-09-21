@@ -4,10 +4,10 @@
 /// stale". It never rewrites the lockfile.
 ///
 /// Each dependency is resolved from its **own declared source**: the `git:`
-/// URL of an object-form entry (`dependencies.<name>.git`). A legacy bare-name
-/// entry has no source; it resolves under `$BPMP_DEFAULT_ORG` (`<org>/<name>`)
-/// when that variable is set and is reported as "no source" otherwise. No org
-/// name is built in.
+/// URL of its entry (`dependencies.<name>.git`). A `path:` dependency and a
+/// `{ "workspace": true }` member have nothing to re-resolve. Every entry has
+/// a source (decision 76), so no org name is built in and none is read from
+/// the environment.
 const std = @import("std");
 const cli = @import("../cli.zig");
 const common = @import("./common.zig");
@@ -22,8 +22,8 @@ const HELP =
     \\
     \\Re-resolves each dependency's `requires` constraint against the tags of
     \\its declared `git:` source and reports drift from botopink.lock.json
-    \\(exit 1 on drift). Bare-name dependencies resolve under
-    \\$BPMP_DEFAULT_ORG/<name> when that variable is set.
+    \\(exit 1 on drift). `path:` and `{ "workspace": true }` dependencies
+    \\have nothing to re-resolve.
     \\
 ;
 
@@ -33,30 +33,24 @@ pub const Source = union(enum) {
     github: registry.RepoSpec,
     /// A `path:` dependency — nothing to re-resolve.
     path,
+    /// A `{ "workspace": true }` dependency — a sibling member, nothing to re-resolve.
+    workspace,
     /// A `git:` URL on a host `registry` cannot list tags for.
     unsupported: []const u8,
-    /// A bare-name entry and no `$BPMP_DEFAULT_ORG` to place it under.
-    no_source,
 };
 
-/// Resolve `entry`'s tag source from its own declaration. `default_org` only
-/// applies to entries that declare no source at all. Strings in the result
-/// point into `entry` or are allocated from `arena`.
-pub fn resolveSource(arena: std.mem.Allocator, entry: dep_spec.DepEntry, default_org: ?[]const u8) !Source {
-    if (entry.spec) |sp| {
-        if (sp.git) |git| {
-            if (!isGithubUrl(git)) return .{ .unsupported = git };
-            const repo = registry.RepoSpec.parse(git) catch return .{ .unsupported = git };
-            return .{ .github = repo };
-        }
-        if (sp.path != null) return .path;
-        return .no_source;
+/// Resolve `entry`'s tag source from its own declaration. Strings in the
+/// result point into `entry`.
+pub fn resolveSource(entry: dep_spec.DepEntry) Source {
+    const sp = entry.spec;
+    if (sp.workspace) return .workspace;
+    if (sp.git) |git| {
+        if (!isGithubUrl(git)) return .{ .unsupported = git };
+        const repo = registry.RepoSpec.parse(git) catch return .{ .unsupported = git };
+        return .{ .github = repo };
     }
-    const org = default_org orelse return .no_source;
-    if (org.len == 0) return .no_source;
-    const joined = try std.fmt.allocPrint(arena, "{s}/{s}", .{ org, entry.name });
-    const repo = registry.RepoSpec.parse(joined) catch return .no_source;
-    return .{ .github = repo };
+    // The parser admits exactly one source per entry; the third is `path`.
+    return .path;
 }
 
 /// `registry.RepoSpec.parse` accepts any `<a>/<b>`; only a GitHub URL is a
@@ -115,24 +109,23 @@ pub fn run(ctx: cli.Context, args: []const []const u8) anyerror!u8 {
 
     const env = ctx.env_map;
     const auth = if (env) |e| e.get("GITHUB_TOKEN") else null;
-    const default_org = if (env) |e| e.get("BPMP_DEFAULT_ORG") else null;
     var live_ctx: registry.LiveCtx = .{ .io = ctx.io, .auth_token = auth };
 
     var drift_count: usize = 0;
     for (deps) |entry| {
         const d = entry.name;
-        const repo = switch (try resolveSource(arena, entry, default_org)) {
+        const repo = switch (resolveSource(entry)) {
             .github => |r| r,
             .path => {
                 common.printf(ctx, "  • {s: <14} path dependency — nothing to re-resolve\n", .{d});
                 continue;
             },
-            .unsupported => |url| {
-                common.printf(ctx, "  • {s: <14} tags can only be listed for GitHub sources ({s}) — skipping\n", .{ d, url });
+            .workspace => {
+                common.printf(ctx, "  • {s: <14} workspace member — nothing to re-resolve\n", .{d});
                 continue;
             },
-            .no_source => {
-                common.printf(ctx, "  • {s: <14} no source declared (add `git:` or set BPMP_DEFAULT_ORG) — skipping\n", .{d});
+            .unsupported => |url| {
+                common.printf(ctx, "  • {s: <14} tags can only be listed for GitHub sources ({s}) — skipping\n", .{ d, url });
                 continue;
             },
         };
@@ -196,44 +189,30 @@ test "resolveSource: a git: dep resolves to its own GitHub owner, not a built-in
         \\  "widgets": { "git": "https://github.com/acme/widgets.git", "branch": "main" }
         \\}}
     );
-    const src = try resolveSource(arena.allocator(), deps[0], "botopink");
+    const src = resolveSource(deps[0]);
     try testing.expectEqualStrings("acme", src.github.owner);
     try testing.expectEqualStrings("widgets", src.github.repo);
 }
 
 test "resolveSource: ssh-style GitHub URLs resolve too" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
     const entry: dep_spec.DepEntry = .{ .name = "w", .spec = .{ .git = "git@github.com:acme/widgets.git" } };
-    const src = try resolveSource(arena.allocator(), entry, null);
+    const src = resolveSource(entry);
     try testing.expectEqualStrings("acme", src.github.owner);
     try testing.expectEqualStrings("widgets", src.github.repo);
 }
 
 test "resolveSource: a non-GitHub git: host is unsupported, never re-owned" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
     const entry: dep_spec.DepEntry = .{ .name = "w", .spec = .{ .git = "https://gitlab.com/acme/widgets.git" } };
-    const src = try resolveSource(arena.allocator(), entry, "botopink");
+    const src = resolveSource(entry);
     try testing.expectEqualStrings("https://gitlab.com/acme/widgets.git", src.unsupported);
 }
 
 test "resolveSource: a path: dep has nothing to sync" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
     const entry: dep_spec.DepEntry = .{ .name = "w", .spec = .{ .path = "../w" } };
-    try testing.expectEqual(Source.path, try resolveSource(arena.allocator(), entry, "botopink"));
+    try testing.expectEqual(Source.path, resolveSource(entry));
 }
 
-test "resolveSource: a bare name needs BPMP_DEFAULT_ORG" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const deps = try parseDeps(arena.allocator(),
-        \\{ "name": "p", "dependencies": ["erika"] }
-    );
-    try testing.expectEqual(Source.no_source, try resolveSource(arena.allocator(), deps[0], null));
-    try testing.expectEqual(Source.no_source, try resolveSource(arena.allocator(), deps[0], ""));
-    const src = try resolveSource(arena.allocator(), deps[0], "someorg");
-    try testing.expectEqualStrings("someorg", src.github.owner);
-    try testing.expectEqualStrings("erika", src.github.repo);
+test "resolveSource: a workspace member has nothing to sync" {
+    const entry: dep_spec.DepEntry = .{ .name = "w", .spec = .{ .workspace = true } };
+    try testing.expectEqual(Source.workspace, resolveSource(entry));
 }

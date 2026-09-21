@@ -27,4 +27,10 @@ assertions — no snapshots — and compares the JSON dump of each old spelling 
 the binding with its `keyed` label, and an unlabelled argument having no label —
 structural assertions, no snapshot.
 
+`errors.zig` carries the static-prefix cells of `use` (front 19 of 1.0.10-beta): the
+bare `use …;` after a `return`, row 4b (`val c = use …` after a `return`, refused at the
+`use` token) and row 4c (a `use` inside an `if`'s own block); `expressions.zig`'s
+`use multiple hooks in function` and `errors.zig`'s `lambda return does not end the
+enclosing static prefix` pin what still parses — a lambda body is a fresh scope.
+
 When adding a test file here, register it in `../tests.zig` or it will not run.

@@ -25,6 +25,9 @@ modules/
 │   └── snapshots/lsp/       ← LSP feature snapshots
 ├── lib-test-runner/         ← `botopink-lib-test` — per-lib/per-backend test gate
 │   └── src/                 ← discovery + fan-out + matrix (self-contained)
+├── manifest/                ← the shared `botopink.json` model (packages, workspaces, dependencies)
+│   ├── src/                 ← root.zig — parser, workspace expansion, discovery, resolution
+│   └── tests/fixtures/      ← the manifests its unit tests read
 └── bpmp/                    ← `bpmp` — Boto Pink Package Manager + toolchain manager
     ├── build.zig.zon        ← no own build.zig; built by the workspace build.zig
     └── src/                 ← manifest + lockfiles + semver + resolver + commands
@@ -34,11 +37,12 @@ modules/
 
 | Package | Output | Depends on | AGENTS |
 |---|---|---|---|
-| `compiler-cli/` | `botopink` executable | `compiler-core` | [link](compiler-cli/AGENTS.md) |
+| `compiler-cli/` | `botopink` executable | `compiler-core`, `manifest` | [link](compiler-cli/AGENTS.md) |
 | `compiler-core/` | library (lexer → codegen) | [`libs/std`](../libs/std/AGENTS.md) | [link](compiler-core/AGENTS.md) |
-| `language-server/` | `botopink-lsp` executable | `compiler-core` | [link](language-server/AGENTS.md) |
-| `lib-test-runner/` | `botopink-lib-test` executable | none (shells out to `botopink`) | [link](lib-test-runner/AGENTS.md) |
-| `bpmp/` | `bpmp` executable | none (spawns `botopink`) | [link](bpmp/AGENTS.md) |
+| `language-server/` | `botopink-lsp` executable | `compiler-core`, `manifest` | [link](language-server/AGENTS.md) |
+| `lib-test-runner/` | `botopink-lib-test` executable | `manifest` only (shells out to `botopink`) | [link](lib-test-runner/AGENTS.md) |
+| `manifest/` | library (the `botopink.json` model) | `std` only | [link](manifest/AGENTS.md) |
+| `bpmp/` | `bpmp` executable | `manifest` only (spawns `botopink`) | [link](bpmp/AGENTS.md) |
 | `../../vscode-extension/` | VS Code `.vsix` extension (sibling project) | `language-server` (runtime) | [link](../../vscode-extension/AGENTS.md) |
 
 ## Commands
@@ -49,7 +53,7 @@ The workspace [`../build.zig`](../build.zig) builds every executable
 ```bash
 zig build                  # build all four executables into zig-out/bin/
 zig build run -- <args>    # build + run the botopink CLI
-zig build test             # compiler-core + language-server + compiler-cli + lib-test-runner tests
+zig build test             # compiler-core + language-server + compiler-cli + lib-test-runner + manifest tests
                            # (+ lib-agnostic grep gate over compiler-core/src)
 zig build test -Dtest-filter=<substr>
 zig build test-bpmp        # bpmp unit tests          (not part of `test`)

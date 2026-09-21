@@ -21,7 +21,7 @@ fn first3() -> string {
 //   fn trimEnd(...)
 //   fn replace(...)
 //   default fn slice(...)
-//   fn charAt(...)
+//   fn at(...)
 //   fn indexOf(...)
 //   default fn toString(...)
 //   fn padStart(...)

@@ -69,12 +69,16 @@ Every handler compiles the active document **together with its module graph**
 (`Server.compileWithGraph` → `buildModuleEntries`). `src/project_graph.zig`
 resolves the dependency set with the same rules the CLI driver uses:
 
-- `from "<lib>"` → the lib's own `botopink.json` (`src` + `files`), read from the
-  first root of the resolved **root list** that carries `<lib>`
-  (`BOTOPINK_LIB_ROOTS` env entries, then for each ancestor `D` of the project:
+- `from "<lib>"` → the lib's own `botopink.json` (`src` + `files`), found by the
+  shared `manifest.resolveDependency` (`modules/manifest`, the CLI's resolver):
+  a `{ "path": … }` dependency from the project directory, `{ "workspace": true }`
+  from the enclosing workspace, a `{ "git": … }` one by name across the resolved
+  **root list** (`BOTOPINK_LIB_ROOTS` env entries, then for each ancestor `D` of
+  the project: `D` itself when it holds a workspace manifest,
   `D/repository/botopink-lang/libs`, `D/repository`, `D/libs`; de-duped
-  first-occurrence-wins). `.d.bp` declaration files are kept for go-to-def but
-  excluded from the compile (the CLI drops them too).
+  first-occurrence-wins; every workspace found there contributes its members)
+  and then `<project>/.botopinkbuild/deps/`. `.d.bp` declaration files are kept
+  for go-to-def but excluded from the compile (the CLI drops them too).
 - `mod` / `pub mod` siblings → every `.bp` under the project's `src/`.
 - `from "std"` → embedded, expanded inside the compiler.
 
@@ -103,6 +107,10 @@ symbol kind here without the consumer's commit in the same sweep.
 **A source the graph cannot follow is a diagnostic, not a silent gap.** Three
 reads were `catch continue`: a dependency no root carries, a `files` entry that
 cannot be read, and a `.bp` under the project's own `src` that cannot be read.
+A fourth is a manifest the shared model refuses (the string-array
+`dependencies`, a `path` to a sibling member, a workspace where a package is
+needed, … — `docs/botopink-json.md`): the same located error the CLI prints,
+published on the manifest it is in (`problemFromLocated`).
 Each left the graph a module short and the editor blamed the *user's* file —
 every symbol the missing module exports "unbound", pointing nowhere near the line
 that is actually wrong. `ProjectGraph` collects all three as `Problem`s; the two

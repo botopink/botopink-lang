@@ -183,7 +183,22 @@ codegen/
   loc-keyed `dispatch_rewrites` map.
 - **Method renames**: the loc-keyed `js_method_renames` map (from inference) is
   consulted first, then the annotation-derived `prim_node_renames`
-  (`s.contains` → `s.includes`). A rename to `length` on a no-arg call emits
+  (`s.contains` → `s.includes`). That type-naive map skips a name that two
+  primitive behaviors send to different host symbols — `at` is `String.at` →
+  native `charAt` and `Array.at` → native `at` since decision 63's amendment —
+  because it is what the `Array` default-fn bodies materialised as prototype
+  patches are emitted with (`first`'s `self.at(0)` became `this.charAt(0)` on an
+  array and threw on node); such a call keeps its own name unless inference typed
+  the receiver. The disagreement is read off the WHOLE embedded std registry
+  (`ambiguous_prim_renames`, filled while `collectBuiltinNodeDispatch` parses
+  `primitives.bp`), not only the program's behaviors: with a String `default fn`
+  in use the scanned program carries the String behavior alone, `at → charAt`
+  looked unambiguous there, and `parts.at(0)` on a typed `string[]` — whose
+  per-loc rename is "none", `Array.at` being its own host symbol — fell through
+  to it as `parts.charAt(0)` (`libs/std`'s `querystring.bp`, caught by
+  test-libs). The type-naive map is still what `append → concat` rides on for a
+  typed receiver (a `default fn` with a `Node` symbol takes the default-fn
+  path, which records no per-loc rename), so it is not gated on typing. A rename to `length` on a no-arg call emits
   the native `.length` **property** without parens (a `member` node, not a
   `call`); inference
   records it only for typed array/string receivers, so a record `length()`
@@ -231,10 +246,10 @@ codegen/
 - **Prelude helpers** (`js/js_prelude.zig`): a call `recv.m(args)` whose
   receiver inference recorded as a primitive (`instance_lowerings` `.prim`)
   and whose native JS method disagrees with the declaration calls a helper
-  instead — `s.charAt(i)` is `__bp_string_char_at(s, i)` (`null` out of
+  instead — `s.at(i)` is `__bp_string_char_at(s, i)` (`null` out of
   range). An open-ended range is `__bp_range_from(start)`. `Emitter.helper` marks it, and only marked helpers are declared at
   the top of the module. Interface default-fn bodies are not inferred, so a
-  `charAt` inside one stays native.
+  `at` inside one stays native.
 - **Duplicate test names**: two `test "x"` blocks in one module print
   `warning: duplicate test name "x" in <mod>.bp:<line>` to stderr; both run.
 - **Cross-module linking** (`crossModule.zig`): `from "<pkg>"` imports become
@@ -331,7 +346,7 @@ codegen/
   JS index, which answers an array's element, a tuple's member (a tuple is a JS
   array) and a string's character alike. **A `Dict` read `d["k"]` is not
   lowered**: a `Dict` is a botopink record over a `pairs` association list, so
-  the read is `d.lookup("k")`, and choosing that needs the *receiver's type* —
+  the read is `d.at("k")`, and choosing that needs the *receiver's type* —
   which this backend does not have (`instanceLowerings` carries a kind only for
   call sites `comptime/infer.zig` recorded, and it does not type this call at
   all yet: `xs[0]` is still `void`). Today `d["k"]` emits the JS property read
@@ -448,10 +463,18 @@ codegen/
   (`hostKey(V) -> iolist_to_binary(io_lib:format("~0tp", [V])).`, a
   `(module, symbol)` external `hostLen(Xs) -> erlang:length(Xs).`) — the erlang
   twin of the commonJS `exports.name = name` re-export. The wrapper is emitted
-  and exported only for a `pub` external `CrossModule.imported` names, so
-  single-module programs and unconsumed declarations are byte-identical; the
-  export pass and the decl loop share `externalWrapperEmits`, so `-export` never
-  names a wrapper that was skipped. A declaration with no `erlang` target (or an
+  and exported for **every** `pub` host-backed `declare fn` (`externalWrapperNeeded`:
+  `isPub and isExternal() and body.len == 0`) — decision 64. It used to ask
+  `CrossModule.imported` (the BARE-name import route), which is why a *qualified*
+  std host call (`import { erlang } from "std"` then `erlang.self()`) resolved,
+  type-checked, emitted `'std@erlang':self()` and died `undef`: the import names
+  the module, never the symbol, and `out/erl/std@erlang.erl` was two lines of
+  code. `pub` is the promise that the name is callable from outside; whether this
+  build reaches it does not decide whether the module is complete, so a
+  single-module program with a `pub declare fn` now carries the wrapper too
+  (`snapshots/codegen/erlang/external_*` moved by exactly that function and its
+  export). The export pass and the decl loop share `externalWrapperEmits`, so
+  `-export` never names a wrapper that was skipped. A declaration with no `erlang` target (or an
   arity-branched one with no branch for its parameter count) gets no wrapper and
   is not marked `erlang_backed` in the cross index: the consumer keeps its bare
   call, and erlc names the gap.
@@ -510,7 +533,7 @@ codegen/
   and an open end (`xs[0..]`) keeps the atom `infinity` that lowering already
   writes. **A `Dict` is deliberately not a clause:** it is the map
   `#{pairs => …}`, so `maps:get/3` would answer `undefined` for a key that is
-  present; `d["k"]` has to reach `Dict.lookup`, which is a lowering only the
+  present; `d["k"]` has to reach `Dict.at`, which is a lowering only the
   checker can record once it types the receiver.
 - **A `case` pattern's variant name is the last segment of its written path.**
   `ast.Pattern` carries the name exactly as written — `Shape.Circle`, `.Some`,
@@ -1132,6 +1155,14 @@ codegen/
   (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`)
   — correct but interpreted on every call (≈ 50× a direct call); its cost and
   the open keep-or-compile decision are in [`beam/AGENTS.md`](beam/AGENTS.md).
+  A module that only DECLARES a `pub` host-backed fn therefore exports nothing
+  and defines nothing, and a qualified call from another module
+  (`erlang.self()` → `{call_ext, 0, {extfunc, std@erlang, self, 0}}`) is `undef`
+  — decision 64's beam half. `hostDeclareWrapperNeeded(f)` (`isPub and
+  isHostDeclare`) is the predicate, **declared and not wired**: the three
+  `isHostDeclare` sites (reserve, export, emit) still skip every host declare,
+  and the wrapper body (parameters in `x` registers, then `lowerExternalCall`)
+  is C-03's open beam bullet.
   No beam or erlang target raises `MissingExternalTarget`. A call to an
   external another module declares lowers the same way.
 - **Primitive methods** (`emitPrimMethod`), walking the receiver kind's
@@ -1386,7 +1417,8 @@ first three are now enforced by the model, not by discipline:
   `primCallRes` is the table; a method missing from it emits
   `unreachable ;; prim method not lowered on wasm: <kind>.<name>/<argc>`.
   Audited against `libs/std/src/primitives.bp` on 2026-09-18 — not lowered, each
-  verified to trap under wasmtime: **string** `charAt`, `charCodeAt`, `chars`,
+  verified to trap under wasmtime: **string** `at` (`charAt` before decision 63,
+  amended), `charCodeAt`, `chars`,
   `lastIndexOf`, `lines`, `padEnd`, `padStart`, `replace`, `replaceAll`,
   `words`; **array** `chunked`, `find`, `pop`, `range`, `sliding`, `unique`;
   **float** `toString`; **Pair** `first`, `of`, `second`, `swap`.
@@ -1824,11 +1856,15 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
   too; their bodies run in the persistent `erl` comptime runtime
   (`comptime/decorator_eval.zig`). Decls a body contributes via `@emit` are
   spliced into the module and emitted as ordinary declarations.
-- `use` hooks: `use` is a transparent prefix; `val`/`var` does the binding.
-  CommonJS maps hooks to React (`state` → `useState`, …) via `writeHookName`;
-  `memo`/`effect`/`callback` get an inferred dependency array from the reactive
-  names (`hook_state`) the lambda reads (`identInExpr`). Erlang/BEAM/WAT lower
-  `use` transparently. Phantom `@Context` base structs
+- `use` hooks: `use f(x)` lowers to `f(x)` on every backend (decision 88 of
+  1.0.10-beta, front 19); `val`/`var` does the binding. CommonJS used to map
+  hooks to React (`state` → `useState`, an inferred dependency array for
+  `memo`/`effect`/… from the names earlier hooks bound) — `hookName`,
+  `hookTakesDeps`, `buildHookCall`, `buildHookDeps`, `hook_state` are gone: the
+  emitted name was never declared, and the client runtime supplies hook
+  semantics through what `f` does. `#[@context]` is a plain function on every
+  backend (the annotation gates `use` in the checker; the three eager-lowering
+  comments exclude it beside `#[@result]`). Phantom `@Context` base structs
   (`isPhantomContextStruct`: implements `@Context`, no members) emit no runtime
   code. A record/struct with fields (incl. `record implement … { fields }`)
   emits a real constructor (`emitStruct` — field initializers become param

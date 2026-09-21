@@ -2,7 +2,8 @@
 //!
 //! Most primitive methods lower to a native JS method or an inline host
 //! template. A few native methods disagree with the botopink signature
-//! (`"ab".charAt(5)` is `""` where `String.charAt` says `?string`), and those
+//! (`"ab".at(5)` is `undefined` — and native `charAt` is `""` — where
+//! `String.at` says `?string`), and those
 //! need JavaScript of our own. It is never a shipped runtime file: only the
 //! helper a module actually calls is written into that module, as a plain
 //! function declaration built from `js_ast` nodes like any other.
@@ -12,7 +13,7 @@
 //! **and** marks the helper for emission in one call, so a module cannot call a
 //! helper it does not define.
 //!
-//! A helper answers a primitive *declaration* (`String.charAt`), which is the
+//! A helper answers a primitive *declaration* (`String.at`), which is the
 //! identity every backend's lowering of that method shares.
 
 const std = @import("std");
@@ -22,7 +23,10 @@ pub const Helper = enum {
     /// `assert cond, msg` outside test mode: always fatal, naming the message
     /// and the `file:line` (cross-backend semantics decision 4).
     assert_fatal,
-    /// `String.charAt(i) -> ?string`: the character, or `null` out of range.
+    /// `String.at(i) -> ?string`: the character, or `null` out of range.
+    /// Named `string_char_at` for the native JS method it wraps — the
+    /// botopink declaration was renamed `charAt` -> `at` by decision 63's
+    /// amendment, which gave every indexable type one reader name.
     string_char_at,
     /// An open-ended range `a..` used as a value: the lazy, unbounded
     /// sequence `a, a + 1, …` as a generator (a finite array cannot hold it).
@@ -60,7 +64,11 @@ pub const Receiver = enum { string, array, other };
 /// value, or null when the native method (or the annotation's template)
 /// already matches the signature.
 pub fn forMethod(receiver: Receiver, method: []const u8, argc: usize) ?Helper {
-    if (receiver == .string and argc == 1 and std.mem.eql(u8, method, "charAt")) return .string_char_at;
+    // `at`, not `charAt`: the botopink declaration is `String.at` (decision
+    // 63, amended). `Array.at` is NOT wrapped — native `Array.prototype.at`
+    // already answers `undefined` for an out-of-range index, which is the
+    // language's absent value on JS.
+    if (receiver == .string and argc == 1 and std.mem.eql(u8, method, "at")) return .string_char_at;
     return null;
 }
 
@@ -558,7 +566,7 @@ test "js_prelude: a failed assert throws with its message and location" {
     );
 }
 
-test "js_prelude: charAt answers null out of range" {
+test "js_prelude: string at answers null out of range" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
     try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.string_char_at), 0);
@@ -566,6 +574,9 @@ test "js_prelude: charAt answers null out of range" {
         "function __bp_string_char_at(s, i) { return (i >= 0 && i < s.length) ? s.charAt(i) : null; }",
         aw.written(),
     );
-    try std.testing.expectEqual(Helper.string_char_at, forMethod(.string, "charAt", 1).?);
-    try std.testing.expect(forMethod(.array, "charAt", 1) == null);
+    try std.testing.expectEqual(Helper.string_char_at, forMethod(.string, "at", 1).?);
+    try std.testing.expect(forMethod(.array, "at", 1) == null);
+    // The old spelling answers nothing: `charAt` is the HOST symbol the
+    // template names, not a botopink declaration any more.
+    try std.testing.expect(forMethod(.string, "charAt", 1) == null);
 }

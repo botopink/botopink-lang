@@ -140,6 +140,13 @@ pub const FnContext = struct {
     base: ?[]const u8 = null,
     /// Rendered return type, used in the "`use` not allowed" diagnostic.
     returnDisplay: []const u8 = "void",
+    /// True when the enclosing fn carries `#[@context]` (decision 88): the
+    /// effect under which a body activates a hook. A return type that
+    /// implements `@Context` without the annotation is an ordinary fn — a `use`
+    /// in it is `useWithoutContextEffect`, which names the annotation.
+    annotated: bool = false,
+    /// The enclosing fn's name, for that diagnostic.
+    fnName: []const u8 = "",
 };
 
 /// How `throw` should be type-checked in the current function scope.

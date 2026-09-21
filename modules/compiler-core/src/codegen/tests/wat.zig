@@ -926,7 +926,7 @@ test "wat: print ---- a record and a variant have no printed form yet, so they t
     );
 }
 
-// ── step 3: the two halves of `Dict.lookup` answering the fallback ───────────
+// ── step 3: the two halves of `Dict.at` answering the fallback ───────────
 //
 // `modules/std_import` printed `0` where `1` is stored, exit 0, no diagnostic.
 // The suspect named in the step was the closure — a `forEach` writing an outer
@@ -938,7 +938,7 @@ test "wat: print ---- a record and a variant have no printed form yet, so they t
 //                                  binding that declares the slot boxes, the
 //                                  assignment did not. `@print(h)` then read
 //                                  offset 5 as a box: `16777216`.
-//   `d.lookup("a").unwrapOr(0)`    `-> ?V` is unboxed (a type parameter is not a
+//   `d.at("a").unwrapOr(0)`    `-> ?V` is unboxed (a type parameter is not a
 //                                  known scalar) and the reader assumed a box.
 //                                  A method's declared return type was not
 //                                  registered under the symbol its call emits,

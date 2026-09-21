@@ -122,6 +122,13 @@ pub const TypeErrorKind = union(enum) {
         fnBase: []const u8,
         useBase: []const u8,
     },
+    /// `use` in a body whose return type implements `@Context` but whose fn does
+    /// not carry `#[@context]` (decision 88). Payload: the fn's name and its
+    /// rendered return type.
+    useWithoutContextEffect: struct {
+        fnName: []const u8,
+        returnType: []const u8,
+    },
     /// `throw` used in a function whose return type is not `@Result<D, E>`.
     throwWithoutResult,
     /// An `implement` block does not provide a method required by an interface.
@@ -261,6 +268,10 @@ pub const TypeError = struct {
         return .{ .kind = .{ .contextMismatch = .{ .fnBase = fnBase, .useBase = useBase } } };
     }
 
+    pub fn useWithoutContextEffect(fnName: []const u8, returnType: []const u8) TypeError {
+        return .{ .kind = .{ .useWithoutContextEffect = .{ .fnName = fnName, .returnType = returnType } } };
+    }
+
     pub fn throwWithoutResult() TypeError {
         return .{ .kind = .throwWithoutResult };
     }
@@ -335,6 +346,7 @@ pub const TypeError = struct {
             .useNotAllowed => |r| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` not allowed: function returns '{s}' which does not implement @Context", .{r}),
             .useNotContext => |e| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` requires @Context: '{s}' does not implement @Context", .{e}),
             .contextMismatch => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: function returns @Context<{s}, _> but `use` returns @Context<{s}, _>", .{ m.fnBase, m.useBase }),
+            .useWithoutContextEffect => |u| std.fmt.allocPrint(gpa, "use-without-context-effect: `use` needs `#[@context]` on the enclosing fn '{s}': its return type '{s}' implements @Context, but only a `#[@context]` body activates a hook", .{ u.fnName, u.returnType }),
             .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-throw-without-fallible-channel: `throw` is only valid inside a fn whose effect declares an error channel: #[@result], #[@future], #[@iterator], or #[@asyncGenerator]", .{}),
             .methodNotActive => |m| std.fmt.allocPrint(gpa, "'{s}' has no active method '{s}' — activate the extension with `{s}*`", .{ m.typeName, m.method, m.hintSym }),
             .ambiguousExtension => |a| std.fmt.allocPrint(gpa, "'{s}.{s}' is provided by both '{s}' and '{s}' — qualify the call, e.g. `{s}.{s}(obj)`", .{ a.typeName, a.method, a.symA, a.symB, a.symA, a.method }),

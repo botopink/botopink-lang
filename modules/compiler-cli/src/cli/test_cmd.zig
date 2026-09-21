@@ -11,6 +11,7 @@ const std = @import("std");
 const bp = @import("botopink");
 const reporter = @import("./reporter.zig");
 const config = @import("./config.zig");
+const manifest = @import("manifest");
 const scanner = @import("./scanner.zig");
 const sources = @import("./sources.zig");
 const libs = @import("./libs.zig");
@@ -51,11 +52,20 @@ pub fn run(
     const proj = config.load(arena, io) catch |err| {
         switch (err) {
             error.ConfigNotFound => reporter.errMsg("botopink.json not found — are you in a botopink project?"),
-            error.ConfigInvalid => reporter.errMsg("botopink.json is invalid JSON"),
+            error.ConfigInvalid => {}, // refused — the located diagnostic is already printed
             else => reporter.errMsg("failed to load botopink.json"),
         }
         return 1;
     };
+
+    // A workspace member that is a library and lists no `files` ships nothing
+    // to a consumer (decision 75): its own tests fail, they do not skip.
+    if (proj.workspace != null) {
+        if (manifest.shipsNothing(io, proj.manifest)) |refusal| {
+            refusal.print();
+            return 1;
+        }
+    }
 
     const target = opts.target orelse proj.parsedTarget() orelse {
         build_cmd.reportUnsupportedTarget(proj.target);
@@ -93,7 +103,7 @@ pub fn run(
     // so a consumer's tests can `import … from "<lib>"`. Dependency modules are
     // compiled first (their types/exports must resolve before the project), but
     // their OWN `test {}` blocks are not run — only the project's are.
-    const dep_modules = libs.loadDependencies(gpa, io, proj.dependencies, env_map) catch |err| {
+    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
         build_cmd.reportDependencyError(err);
         return 1;
     };
