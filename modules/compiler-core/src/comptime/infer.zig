@@ -1655,6 +1655,8 @@ fn tryResolveEnumSectionPath(
     try segs.append(env.arena, leaf_member);
     try segLocs.append(env.arena, loc);
     var cur: *const ast.Expr = leaf_receiver;
+    // The enum a fully qualified chain names outright (`Token.Color.Red.500`).
+    var qualified_owner: ?envMod.TypeDef.Enum = null;
     while (true) {
         if (cur.* != .identifier) return null;
         switch (cur.*.identifier.kind) {
@@ -1668,12 +1670,33 @@ fn tryResolveEnumSectionPath(
                 try segLocs.append(env.arena, cur.*.getLoc());
                 break;
             },
-            .ident => return null, // a regular `Color.Red.X` chain — not a section path
+            .ident => |name| {
+                // 00 · 01-checker — the fully qualified spelling names its
+                // enum: `Token.Color.Red.500`. The root identifier is the
+                // owner and the rest of the chain is the path, so the one
+                // spelling that carries the answer in itself is not refused.
+                // A two-segment `Color.Red` is an ordinary variant access and
+                // stays on the regular identAccess path below.
+                if (segs.items.len < 2) return null;
+                const td = env.lookupTypeDef(name) orelse return null;
+                if (td != .enum_) return null;
+                qualified_owner = td.enum_;
+                break;
+            },
         }
     }
     // segs is leaf→head; reverse to head→leaf for path walking.
     std.mem.reverse([]const u8, segs.items);
     std.mem.reverse(ast.Loc, segLocs.items);
+
+    if (qualified_owner) |owner| {
+        // The enum is named, so there is no candidate set and nothing to be
+        // ambiguous about. A chain that turns out not to be a section path is
+        // handed back to the ordinary identAccess handling, which reports it.
+        if (!enumCarriesSectionPath(env, owner, segs.items)) return null;
+        return try resolveAndRecordSectionPath(env, owner, segs.items, loc);
+    }
+
     if (segs.items.len < 2) return null;
 
     // Collect EVERY registered enum whose top-level variant matches the head
@@ -1788,7 +1811,7 @@ fn raiseAmbiguousSectionPath(
     );
     env.lastError = TypeError.custom(
         msg,
-        "Give the position a type the path can be read against — a `val` annotation, a declared parameter, the function's return type.",
+        "Give the position a type the path can be read against — a `val` annotation, a declared parameter, the function's return type — or write the path from its enum (`Token.Color.Red.500`).",
     ).withLoc(loc);
     return error.TypeError;
 }

@@ -308,7 +308,18 @@ error: the path ".Color.Red.500" is carried by more than one enum —
        "Border" and "Token" — and nothing here says which
 ```
 
-Give the position a type and it resolves.
+Give the position a type and it resolves — or write the path from its enum,
+which names the answer in the path itself and needs no type around it:
+
+```botopink
+type Token  { Color { Red { 100, 500 } } }
+type Border { Color { Red { 100, 500 } } }
+
+fn main() {
+    val a = Token.Color.Red.500;     // Token
+    val b = Border.Color.Red.500;    // Border
+}
+```
 
 ### behavior
 

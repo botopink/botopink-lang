@@ -557,6 +557,25 @@ test "enum sections: the expected type picks among the enums carrying one path" 
     );
 }
 
+test "enum sections: the fully qualified path names its enum, so no expectation is read" {
+    // The escape hatch from the ambiguity above: the path carries the answer,
+    // so it resolves where nothing else says which enum is meant.
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\type Token {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\type Border {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\val a = Token.Color.Red.500;
+        \\val b = Border.Color.Red.500;
+    );
+}
+
 test "enum sections ES5: a path two enums carry, with nothing to say which, is refused" {
     // Not a pick — a located refusal naming both candidates. Picking is what
     // made the answer a function of `env.typeDefs`' hash order.

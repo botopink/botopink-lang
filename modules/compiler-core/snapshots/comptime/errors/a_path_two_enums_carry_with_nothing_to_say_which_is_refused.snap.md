@@ -18,4 +18,4 @@ error: the path ".Color.Red.500" is carried by more than one enum — "Border" a
 11 │ val x = .Color.Red.500;
   │         ^
 
-  hint: Give the position a type the path can be read against — a `val` annotation, a declared parameter, the function's return type.
+  hint: Give the position a type the path can be read against — a `val` annotation, a declared parameter, the function's return type — or write the path from its enum (`Token.Color.Red.500`).

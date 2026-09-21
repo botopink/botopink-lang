@@ -774,8 +774,13 @@ the type-def table only; their variant names are not bound at top level.
 Path access (`.Color.Red.500`): `tryResolveEnumSectionPath` collects a
 `dotIdent`-rooted chain (≥ 2 segments) and `resolveSectionPathInEnum` walks
 registered enums through `_inner` fields, returning qualified nested ctor calls
-typed against the parent enum. A chain rooted at a plain `.ident`
-(`Color.Red.X`) keeps the normal identAccess path. `buildSectionPathRewrite`
+typed against the parent enum. A chain rooted at a plain `.ident` is a section
+path too when that identifier names an enum and at least two segments follow it
+(`Token.Color.Red.500`, 00 · 01-checker): the root IS the owner, so the path is
+resolved in that enum alone — no candidate set, no expectation read, and a
+chain that does not resolve is handed back to the normal identAccess path
+(which is also where the two-segment `Color.Red` variant access stays).
+`buildSectionPathRewrite`
 builds the equivalent untyped ctor chain into `env.enumSectionRewrites` (keyed by
 the outer identAccess loc) and `transform.zig rewriteExpr` substitutes it;
 synthesised nodes carry loc `{line=0, col=0}` so the rewrite is not re-triggered.
@@ -804,6 +809,8 @@ are different types, the program means one of them, and picking is the defect
 this closed. ES4 (a head that matched, a tail that did not) is unchanged and
 still names the FIRST enum whose head segment is a section wrapper — that
 choice is the iterator's, and it decides only which enum the message blames.
+The refusal's hint names the fully qualified spelling, which is the way out of
+an ambiguity a position cannot type.
 
 Tuple labels (decision 8 §6) ride the same map: a `tuple` type carries
 `named.labels` (from a written `#(name: T, …)` type — `ast.TypeRef.labeledTuple`

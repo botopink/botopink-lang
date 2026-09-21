@@ -52,7 +52,8 @@ decision 96, and `run/option_unwrap_or` + `reject/option_expect_removed` to
 leading-dot section path names — `run/enum_section_expected_type`, where two enums carry
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
 `reject/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
-candidates). One scenario group per
+candidates, and `run/enum_section_qualified_path`, where `Token.Color.Red.500` names its enum and
+needs no expectation at all). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
