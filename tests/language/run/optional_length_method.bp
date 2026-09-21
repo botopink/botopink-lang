@@ -16,10 +16,11 @@
 //// fixed here. The other two lines are right on wasm (`5`, `2`).
 ////
 //// NOT here, and deliberately: a field read off a `?Record` receiver. `val
-//// first = es.at(0); if (first != null) { first.key.length(); }` is still a
-//// call on commonJS, because `!= null` does not rebind `first` inside the
-//// block and field access through `?T` is not modelled — that is narrowing's
-//// row, not this one (`comptime/AGENTS.md` § `x is T`, and narrowing).
+//// first = es.at(0); if (first != null) { first.key.length(); }` is narrowing's
+//// row, not this rename's — it was a call on commonJS until `!= null` learned
+//// to rebind `first`, and `run/narrowing_null_check.bp` is where it is pinned
+//// (`comptime/AGENTS.md` § The null test narrows). This cell stays the receiver
+//// that was never tested at all.
 
 type Entry(key: string) {}
 
