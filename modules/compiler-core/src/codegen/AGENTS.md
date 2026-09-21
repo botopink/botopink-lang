@@ -218,7 +218,18 @@ codegen/
   the native `.length` **property** without parens (a `member` node, not a
   `call`); inference
   records it only for typed array/string receivers, so a record `length()`
-  method is untouched.
+  method is untouched. **A rename names a native method that matches the
+  SIGNATURE**, not one that shares the botopink name: `Array.reverse` answers a
+  reversed array and leaves the receiver alone (`lists:reverse/1` on erlang, a
+  fresh array on wasm), and native `Array.prototype.reverse` reverses in place,
+  so while the annotation read `#[@External.Node("reverse")]` commonJS alone
+  also reversed the receiver — a fold that read it again answered one thing
+  there and another everywhere else, at exit 0. It names `toReversed`
+  (ES2023, node 20) since `fix/js-instanceof-boundary`, and the rename is
+  type-naive, so it reaches every `.reverse()` call site and not only the ones
+  inference typed. Pinned by
+  `tests/language/run/array_reverse_answers_a_new_array.bp`, which reads the
+  receiver AFTER the call — no commonJS snapshot exercises `reverse` at all.
 - **The only external spelling is `#[@External.<Target>(…)]`.** `FnDecl.isExternal`
   (`ast.zig`) matches on the `External.` prefix, so the retired lowercase
   `#[@external(<target>, …)]` and the retired bracket form `@[external(…)]` match

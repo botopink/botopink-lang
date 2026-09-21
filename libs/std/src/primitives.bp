@@ -402,9 +402,17 @@ behavior Array<T> {
     #[@External.Node("join")]
     fn join(self: Self, sep: string) -> string;
 
+    // `reverse` ANSWERS a reversed array and leaves the receiver alone, on
+    // every target. Native `Array.prototype.reverse` reverses in place and
+    // answers the same array, so on commonJS alone `val rev = xs.reverse();`
+    // also reversed `xs` — every fold that read the receiver again after
+    // reversing it answered one thing there and another on erlang and wasm,
+    // at exit 0. `toReversed` is the §A4 rename to the engine's own copying
+    // reader (ES2023; node 20, which is the floor CI installs), so the answer
+    // is the same shape with no prototype patch and no helper.
     #[@External.Erlang("lists", "reverse")]
     #[@External.Beam("""    {call_ext, 1, {extfunc, lists, reverse, 1}}.""")]
-    #[@External.Node("reverse")]
+    #[@External.Node("toReversed")]
     fn reverse(self: Self) -> Self;
 
     #[@External.Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)($0, $1)")]

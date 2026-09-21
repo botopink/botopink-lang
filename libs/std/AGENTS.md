@@ -89,9 +89,13 @@ Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
 - **Module + symbol** — `#[@External.Erlang("erlang", "abs")]`: call
   `module:symbol(args)` with args in declaration order.
 - **Single string** — `module` comes back empty from `externalFor` (`ast.zig`).
-  On a behavior method it names the native method (`#[@External.Node("reverse")]`,
-  a call-site rename when it differs from the method name, never a prototype
-  patch). On a `declare fn` it is a host expression
+  On a behavior method it names the native method (`#[@External.Node("toReversed")]`
+  for `Array.reverse`, a call-site rename when it differs from the method name,
+  never a prototype patch). The native method it names has to MATCH the
+  signature: `Array.reverse` answers a reversed array and leaves the receiver
+  alone on erlang and wasm, and named native `reverse`, which reverses in
+  place, so commonJS alone also reversed the receiver — `toReversed` is the
+  copying reader that answers what the signature says. On a `declare fn` it is a host expression
   (`#[@External.Node("process.cwd()")]`) that commonJS renders verbatim at each
   call site, and the erlang backend renders the same way — the `:expr()()`
   lowering that used to keep `env`, `os` and `process` off erlang is gone

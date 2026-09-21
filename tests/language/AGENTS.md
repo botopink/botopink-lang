@@ -308,6 +308,44 @@ and **one was relabelled**: `wasm | run/index_at_optional.bp` lost the `String.a
 carried (the method has a wasm lowering now) and names only decision 47's absent-optional spelling,
 still C-18.
 
+**Recounted on disk by `fix/js-instanceof-boundary` (00 · 04-js round 2, forked from `feat`
+`78509dfa`):**
+
+```bash
+ls test/*.bp    | wc -l   # 51
+ls run/*.bp     | wc -l   # 28   (1 with a .targets — string_char_code_after_slice)
+ls reject/*.bp  | wc -l   # 32
+ls -d modules/*/| wc -l   #  5
+find . -name '*.bp' | wc -l   # 126 — 116 cells, plus the 10 extra .bp of the modules/ projects
+```
+
+**116 cells** (51 `test/`, 28 `run/`, 32 `reject/`, 5 `modules/`). Three added, one per defect
+emilia's front 56 measured while writing real code:
+
+| Cell | What it pins |
+|---|---|
+| `modules/package_variant_identity` | a variant's identity across a package boundary: the value is built in the consumer and the `case` that reads it lives in the dependency. commonJS tested a uniquely-named arm with `instanceof` and the `case` answered `undefined` |
+| `run/string_char_code_after_slice.bp` | `s.slice(…)` installs the `String` prelude, whose `charCodeAt` patch called itself — every `.charCodeAt(…)` in the program blew the stack. `commonJS erlang` only: `charCodeAt` has no wasm or beam lowering, and traps on wasm |
+| `run/array_reverse_answers_a_new_array.bp` | `xs.reverse()` answers a new array and leaves the receiver alone — native `reverse` is in-place, so commonJS alone reversed the receiver too |
+
+The C-16 block above reads `24` for `run/` and "none with `.targets`"; both were already behind when
+it was written — the prose under it reads 26, which is what the files said then.
+
+Measured on this branch — the same compiler, node v25.8.0, OTP 29, `zig version` 0.16.0. The fork
+`78509dfa` was re-measured here and answers `381 passed, 53 expected failures, 0 failed`, not the
+`377` the front's row carried, so the first line below is `+3` for the `modules/` cell on three
+targets, `+3` for the `reverse` cell and `+2` for the `charCodeAt` cell (two targets, its
+`.targets` keeps it off wasm) and nothing else. On beam the two cells that run there add `+2`:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+language tests: 389 passed, 53 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+language tests: 41 passed, 23 expected failures, 0 failed
+```
+
+`expected-failures.txt` is untouched: all three cells pass on every target they are scheduled on.
+
 Where the results came from, since C-16's 363 / 53 and 35 / 22. `fix/wasm-refusals` adds **+4** on
 `--target all` and **+1** on beam: `run/string_at.bp` is new and passes on all four targets (+3 and
 +1), and `run/external_erlang_only.bp` lost its `.targets` sidecar so it now runs — and is refused
