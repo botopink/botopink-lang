@@ -22,6 +22,11 @@ hoisting is that the arms which already worked keep working, so the two are asse
 `surface.zig` holds the front-12 step-2 acceptance cases (`type`, `behavior`, field lists, separators) as structural
 assertions — no snapshots — and compares the JSON dump of each old spelling with its new spelling.
 
+`declarations.zig` ends with front 17's rows (decision 38): `var` at module level
+(`ValDecl.mutable`), `#[@BeamMemory.Ets(keyed = true)] var` carrying the annotation on
+the binding with its `keyed` label, and an unlabelled argument having no label —
+structural assertions, no snapshot.
+
 `errors.zig` carries the static-prefix cells of `use` (front 19 of 1.0.10-beta): the
 bare `use …;` after a `return`, row 4b (`val c = use …` after a `return`, refused at the
 `use` token) and row 4c (a `use` inside an `if`'s own block); `expressions.zig`'s

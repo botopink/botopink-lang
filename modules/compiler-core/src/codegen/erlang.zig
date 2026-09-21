@@ -1300,7 +1300,7 @@ fn emitErlangModule(
     // export list never names a wrapper that was skipped (erlc rejects an
     // exported undefined function).
     for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| if (externalWrapperNeeded(f, cross) and em.externalWrapperEmits(f)) {
+        .@"fn" => |f| if (externalWrapperNeeded(f) and em.externalWrapperEmits(f)) {
             // A top-level `declare fn` takes no `self`, so the declared
             // parameter count is the wrapper's arity.
             try exports.append(b.arena, .{ .name = f.name, .arity = f.params.len });
@@ -1382,7 +1382,7 @@ fn emitErlangModule(
                 try forms.append(b.arena, .{ .comment = Ast.Comment.doc(text) });
                 // …and, when another module imports it, the wrapper that module
                 // calls (`hostlib:hostKey(V)`).
-                if (externalWrapperNeeded(f, cross)) {
+                if (externalWrapperNeeded(f)) {
                     if (try em.externalWrapperForm(b, f)) |form| try forms.append(b.arena, form);
                 }
             },
@@ -1497,13 +1497,23 @@ fn emitErlangModule(
 const Forms = std.ArrayListUnmanaged(Ast.Form);
 
 /// True when this module must answer `f` — a `pub` host-backed `declare fn` —
-/// with a callable wrapper: some other module imports the name, and erlang
-/// resolves a bare call in the CALLING module. Single-module builds and
-/// declarations nobody imports emit the comment alone, as before.
-fn externalWrapperNeeded(f: ast.FnDecl, cross: ?*const crossModule.CrossModule) bool {
-    if (!f.isPub or !f.isExternal()) return false;
-    const xc = cross orelse return false;
-    return xc.imported.contains(f.name);
+/// with a callable wrapper. Every `pub` host-backed declaration gets one:
+/// `pub` IS the promise that the name is callable from outside the module, and
+/// whether the current build happens to reach it must not decide whether the
+/// module is complete.
+///
+/// This used to ask `cross.imported.contains(f.name)` — the BARE-name import
+/// route — and that is precisely the defect
+/// [decision 64](../../../../specs/1.0.5-beta/decisions-taken.md) records: a
+/// QUALIFIED std host call (`import { erlang } from "std"` then
+/// `erlang.self()`) resolves, type-checks, emits `'std@erlang':self()` and dies
+/// with `{undef,[{'std@erlang',self,[],[]}, …]}`, because the import names the
+/// MODULE and never the symbol, so the predicate looked in the wrong place.
+/// `out/erl/std@erlang.erl` was two lines of code and `out/erl/std@beam.erl`
+/// one. `cross` is no longer read: a module that declares a `pub` external is
+/// incomplete without the wrapper whether or not anything is compiled beside it.
+fn externalWrapperNeeded(f: ast.FnDecl) bool {
+    return f.isPub and f.isExternal() and f.body.len == 0;
 }
 
 /// `name(Patterns) ->` + block body.

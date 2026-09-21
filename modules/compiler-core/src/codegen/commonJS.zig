@@ -1347,8 +1347,13 @@ const Emitter = struct {
 
     // ── declarations ──────────────────────────────────────────────────────────
 
+    /// A module-level binding: `const` for a `val`, `let` for a `var` — the
+    /// same choice `buildStmt` makes for a local from `localBind.mutable`
+    /// (front 17 step 2). Node throws `Assignment to constant variable` on a
+    /// `const`, which is what made decision 38 a compile-time rule.
     fn buildValDecl(self: *Emitter, v: ast.ValDecl) !js.Stmt {
         return .{ .decl = .{
+            .kw = if (v.mutable) .let_ else .const_,
             .pattern = .{ .ident = v.name },
             .value = try self.buildExpr(v.value.*),
         } };

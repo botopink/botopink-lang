@@ -193,6 +193,21 @@ fn isHostDeclare(f: ast.FnDecl) bool {
     return f.isExternal() and f.body.len == 0;
 }
 
+/// True when this module must answer a `pub` host-backed `declare fn` with a
+/// callable wrapper of its own. The BEAM twin of `erlang.zig`'s
+/// `externalWrapperNeeded`, and the same reason: a bare call inlines the host
+/// target at the CALL SITE, so a module that only DECLARES the function exported
+/// nothing and defined nothing — `{exports, []}` in `std@erlang.S` — and a
+/// qualified call from another module (`import { erlang } from "std"` then
+/// `erlang.self()`) emitted `{call_ext, 0, {extfunc, std@erlang, self, 0}}`
+/// against a module with no such function. `pub` IS the promise that the name
+/// is callable from outside; whether this particular build reaches it must not
+/// decide whether the module is complete
+/// ([decision 64](../../../../specs/1.0.5-beta/decisions-taken.md)).
+fn hostDeclareWrapperNeeded(f: ast.FnDecl) bool {
+    return f.isPub and isHostDeclare(f);
+}
+
 fn isMain0(f: ast.FnDecl) bool {
     return std.mem.eql(u8, f.name, "main") and fnArityNoSelf(f) == 0;
 }

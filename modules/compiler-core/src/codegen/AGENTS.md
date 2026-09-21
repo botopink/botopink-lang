@@ -85,6 +85,11 @@ codegen/
   Nodes are built in one arena that is freed once the module is rendered. The
   only text this file still composes is a comment's wording, a `require` path
   and the fixed test-harness source (`Item.runtime`).
+- **Module-level `val` / `var`** (`buildValDecl`, front 17 step 2, decision 38):
+  `const` for a `val`, `let` for a `var` — the choice `buildStmt` already made
+  for a local from `localBind.mutable`. Node's `Assignment to constant variable`
+  on a reassigned `const` is what made decision 38 a compile-time rule; the
+  front's problem program prints `2` on node.
 - **`@print` / `@println` / `@debug`** (decision 8 §7, `buildPrintCall`) lower to
   the on-demand prelude helper `__bp_print(a, b)`, not to `console.log`: each
   argument is written by `__bp_show` — a top-level string bare, a nested string
@@ -443,10 +448,18 @@ codegen/
   (`hostKey(V) -> iolist_to_binary(io_lib:format("~0tp", [V])).`, a
   `(module, symbol)` external `hostLen(Xs) -> erlang:length(Xs).`) — the erlang
   twin of the commonJS `exports.name = name` re-export. The wrapper is emitted
-  and exported only for a `pub` external `CrossModule.imported` names, so
-  single-module programs and unconsumed declarations are byte-identical; the
-  export pass and the decl loop share `externalWrapperEmits`, so `-export` never
-  names a wrapper that was skipped. A declaration with no `erlang` target (or an
+  and exported for **every** `pub` host-backed `declare fn` (`externalWrapperNeeded`:
+  `isPub and isExternal() and body.len == 0`) — decision 64. It used to ask
+  `CrossModule.imported` (the BARE-name import route), which is why a *qualified*
+  std host call (`import { erlang } from "std"` then `erlang.self()`) resolved,
+  type-checked, emitted `'std@erlang':self()` and died `undef`: the import names
+  the module, never the symbol, and `out/erl/std@erlang.erl` was two lines of
+  code. `pub` is the promise that the name is callable from outside; whether this
+  build reaches it does not decide whether the module is complete, so a
+  single-module program with a `pub declare fn` now carries the wrapper too
+  (`snapshots/codegen/erlang/external_*` moved by exactly that function and its
+  export). The export pass and the decl loop share `externalWrapperEmits`, so
+  `-export` never names a wrapper that was skipped. A declaration with no `erlang` target (or an
   arity-branched one with no branch for its parameter count) gets no wrapper and
   is not marked `erlang_backed` in the cross index: the consumer keeps its bare
   call, and erlc names the gap.
@@ -1127,6 +1140,14 @@ codegen/
   (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`)
   — correct but interpreted on every call (≈ 50× a direct call); its cost and
   the open keep-or-compile decision are in [`beam/AGENTS.md`](beam/AGENTS.md).
+  A module that only DECLARES a `pub` host-backed fn therefore exports nothing
+  and defines nothing, and a qualified call from another module
+  (`erlang.self()` → `{call_ext, 0, {extfunc, std@erlang, self, 0}}`) is `undef`
+  — decision 64's beam half. `hostDeclareWrapperNeeded(f)` (`isPub and
+  isHostDeclare`) is the predicate, **declared and not wired**: the three
+  `isHostDeclare` sites (reserve, export, emit) still skip every host declare,
+  and the wrapper body (parameters in `x` registers, then `lowerExternalCall`)
+  is C-03's open beam bullet.
   No beam or erlang target raises `MissingExternalTarget`. A call to an
   external another module declares lowers the same way.
 - **Primitive methods** (`emitPrimMethod`), walking the receiver kind's
@@ -1354,6 +1375,11 @@ first three are now enforced by the model, not by discipline:
   initialiser declares a zeroed mutable global and is evaluated in
   `$__init_globals`, which the module's `(start …)` runs ahead of `_start`.
   These used to stay at the `(i32.const 0)` placeholder, so every read saw `0`.
+- **Module-level `var`** (front 17 step 2, decision 38): `emitGlobalVal` sets
+  `.mutable` from `ValDecl.mutable` on the folded-numeric and `numberLit` paths
+  too (the other three already declared a mutable global), so `global.set $hits`
+  validates; a `val` keeps its immutable global. Verified by running: the
+  front's problem program prints `2` under wasmtime.
 - **`val x = comptime { … break v; }`** (`folded_globals`): the comptime pass
   folds the block into `comptime_vals["ct_<N>"]`, N counting the module's
   `val`s and `fn`s in order (commonJS reads it the same way). A folded numeral

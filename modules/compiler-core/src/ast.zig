@@ -1064,6 +1064,7 @@ fn stringifyOmitting(value: anytype, jws: anytype, comptime omitAlways: []const 
         }
         const empty = if (!ifEmpty) false else switch (@typeInfo(f.type)) {
             .optional => @field(value, f.name) == null,
+            .bool => !@field(value, f.name),
             else => @field(value, f.name).len == 0,
         };
         if (!always and !empty) {
@@ -1345,8 +1346,23 @@ pub const Annotation = struct {
     /// to the renderers' receiver convention (`parser/template_markers.zig`).
     /// `args` and its strings are then owned; `source_args` borrows the source.
     source_args: ?[]const []const u8 = null,
+    /// The label written before each argument — `keyed` in
+    /// `#[@BeamMemory.Ets(keyed = true)]`, `inline` in `inline = true` — parallel
+    /// to `args`, `""` where the argument had none. Empty when no argument was
+    /// labelled, so an unlabelled annotation dumps and frees as before. The
+    /// value still lands positionally in `args`; the label is what a validator
+    /// checks (decision 41) and what the formatter prints back — before this
+    /// field it printed `#[@External.Node("charAt", true)]` for `inline = true`.
+    labels: []const []const u8 = &.{},
+
+    /// The label of argument `i`, or null when it was written bare.
+    pub fn labelOf(this: Annotation, i: usize) ?[]const u8 {
+        if (i >= this.labels.len or this.labels[i].len == 0) return null;
+        return this.labels[i];
+    }
 
     pub fn deinit(this: *Annotation, allocator: std.mem.Allocator) void {
+        if (this.labels.len > 0) allocator.free(this.labels);
         if (this.source_args) |src| {
             for (this.args) |a| allocator.free(a);
             allocator.free(src);
@@ -1366,6 +1382,10 @@ pub const Annotation = struct {
         try jws.write(this.name);
         try jws.objectField("args");
         try jws.write(this.writtenArgs());
+        if (this.labels.len > 0) {
+            try jws.objectField("labels");
+            try jws.write(this.labels);
+        }
         try jws.objectField("is_builtin");
         try jws.write(this.is_builtin);
         try jws.endObject();
@@ -1887,10 +1907,18 @@ pub const TypeRef = union(enum) {
 
 // ── top-level program ─────────────────────────────────────────────────────────
 
-/// Top-level constant binding: `val name = expr` or `val name: Type = expr`
+/// Top-level binding: `val name = expr`, `val name: Type = expr` — or, since
+/// decision 38 / front 17, `var name: Type = expr`, the module-level `var`
+/// that a `#[@BeamMemory.<mode>]` annotation gives storage on the BEAM.
 pub const ValDecl = struct {
     name: []const u8,
     isPub: bool = false,
+    /// `var` rather than `val`: the binding may be assigned. The local form
+    /// keeps the same bit on `localBind.mutable`; this is it one level up.
+    mutable: bool = false,
+    /// `#[…]` written above the declaration — `#[@BeamMemory.Ets]`. Empty for
+    /// the plain form; only a `var` may carry one (checked by inference).
+    annotations: []Annotation = &.{},
     docComment: ?[]const u8 = null,
     /// `//` regular comment (last one before the declaration)
     comment: ?[]const u8 = null,
@@ -1903,8 +1931,17 @@ pub const ValDecl = struct {
 
     pub fn deinit(this: *ValDecl, allocator: std.mem.Allocator) void {
         if (this.typeAnnotation) |*ann| ann.deinit(allocator);
+        for (this.annotations) |*ann| ann.deinit(allocator);
+        allocator.free(this.annotations);
         this.value.deinit(allocator);
         allocator.destroy(this.value);
+    }
+
+    /// `mutable` (false) and `annotations` (empty) are left out of the AST
+    /// dump, so a `val` written today dumps exactly as it did before the two
+    /// fields existed and no parser snapshot moves.
+    pub fn jsonStringify(this: @This(), jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{ "mutable", "annotations" });
     }
 };
 

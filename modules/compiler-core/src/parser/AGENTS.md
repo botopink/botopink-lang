@@ -32,7 +32,7 @@ parser/
 ├── AGENTS.md      ← you are here
 ├── types.zig      ← type-ref sub-grammar: parseTypeRef/BaseTypeRef/GenericParams/ImplementClause
 ├── patterns.zig   ← case/pattern sub-grammar: parseCaseExpr/parsePattern/SimplePattern/ListPattern
-├── decls.zig      ← declaration sub-grammar: val/fn/test/type/behavior/implement/extend/delegate/import + params;
+├── decls.zig      ← declaration sub-grammar: val/var/fn/test/type/behavior/implement/extend/delegate/import + params;
 │                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
@@ -373,10 +373,22 @@ shapes (vocabulary in `libs/std/AGENTS.md`):
 - **Arity branches** — `when($argc == N): "<template>"` spans the balanced parens,
   the `:` and the value into one lexeme (`spanLexemes`).
 - **Labels** — a leading `identifier :` or `identifier =` (`module:`,
-  `inline = true`) is dropped; the value lands positionally.
+  `inline = true`) lands in `Annotation.labels[i]` (`labelOf(i)`, front 17
+  step 3 — the validator and the formatter read it); the value still lands
+  positionally in `args`.
 - **Enum/member chains** — `.Erlang`, `Target.Erlang`: adjacent `.`/identifier
   tokens fold into one lexeme spanning the source bytes. A bare identifier or
   string literal goes through unchanged.
+
+## Module-level `var` (front 17, decision 38)
+
+`parseValDecl` reads `var name[: T] = v;` as a `ValDecl` with `mutable = true`;
+`parseValForm` sends `var` straight there (no `val Name = fn …`-style shorthand
+reads it). An annotated binding — `#[@BeamMemory.Ets(keyed = true)] var hits:
+i32 = 0;` — is dispatched from the annotation branch of the top-level loop, and
+the annotations land on `ValDecl.annotations`; only the plain form takes them
+(an annotated shorthand is `UnexpectedToken`). What the annotation may say is
+checked by inference, not here.
 
 ## Comments and declaration ids
 

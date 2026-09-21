@@ -39,7 +39,7 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 | `infer_exprs.zig` | Literal / binary / case / control-flow inference. |
 | `infer_decls.zig` | fn / record / interface / implement / test-block inference. |
 | `infer_generics.zig` | Type meta-kind + generic inference (regression guards). |
-| `infer_errors.zig` | Inference type errors (`infer error: …`). |
+| `infer_errors.zig` | Inference type errors (`infer error: …`). The decision 38 / front 17 rows (`val` assignment, `@BeamMemory` validation) assert the message by content through `typeErrorMessage` — no cell under `snapshots/comptime/errors/`. |
 | `types.zig` | Types / type unification. |
 | `variants.zig` | Variants, record update, patterns, `@print`, AST probes. |
 | `narrowing.zig` | Null-check / case-variant / type-guard narrowing. |
