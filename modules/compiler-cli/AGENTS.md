@@ -71,15 +71,26 @@ bash modules/compiler-cli/tests/backend_exec.sh      # numeric/records/modules p
 ## External libs (generic loader)
 
 `cli/libs.zig` is the driver-side half of the lib-agnostic package mechanism. A
-project's `botopink.json` `dependencies` are resolved from disk against an
-ordered **root list** (`resolveLibRoots`): `BOTOPINK_LIB_ROOTS` entries first,
-then, walking up from cwd, each ancestor `D` contributes — when present —
+project's `botopink.json` `dependencies` — the object form only (decision 76;
+`docs/botopink-json.md`) — are resolved by the shared
+`manifest.resolveDependency` (`modules/manifest`): `{ "path": … }` from the
+project directory (must hold a package of that name; a sibling member of the
+enclosing workspace is refused with `use { "workspace": true }`);
+`{ "workspace": true }` to the sibling member of the enclosing workspace
+(`config.load` finds it — `ProjectConfig.workspace`); `{ "git": … }` by name
+against an ordered **root list** (`resolveLibRoots`): `BOTOPINK_LIB_ROOTS`
+entries first, then, walking up from cwd, each ancestor `D` contributes — when
+present — `D` itself when its `botopink.json` is a workspace (its members),
 `D/repository/botopink-lang/libs` (bundled libs), `D/repository` (sibling
 projects), and `D/libs` (flat tree), de-duplicated first-occurrence-wins. After
 those, `resolveFallbackRoots` adds `<project>/.botopinkbuild/deps/` (the symlink
-store written by `bpmp install`). `<name>` resolves to the **first root** holding
-`<name>/botopink.json`; the loader reads its `{src, files}` (`LibManifest`) and
-feeds the lib's modules into compilation prefixed by name (`<name>/<module>`).
+store written by `bpmp install`). `manifest.scanRoots` turns the roots into
+entries — a root's child holding a manifest, or every **member** of a workspace
+found there, named by its manifest — and `<name>` resolves to the first entry so
+named (a workspace by that name is refused with its member list; a name two
+members declare is refused on both). The loader reads the resolved manifest's
+`{src, files}` and feeds the lib's modules into compilation prefixed by name
+(`<name>/<module>`).
 The compiler core never names a lib — it sees ordinary `Module[]` and resolves
 `from "<name>"` through the shared import registry. `std` is embedded and not
 loaded here. `shipMjsSidecars` resolves an owning lib's `.mjs` through the same
@@ -133,11 +144,19 @@ escript's `127` to `erl`'s `1`.
 `cli/run.zig` belongs to front `13-module-identity`, together with the `-pa` row
 of its output-layout step — so this is recorded here, not fixed here.
 
-**Unknown `botopink.json` fields are ignored.** `LibManifest` reads only `src`
-and `files`; the project loader (`config.zig`) reads `name`/`version`/`target`/
-`entry`/`dependencies`. Anything else — including the bpmp-facing `botopink`
-(compiler version constraint) and `requires` (per-dep version constraint) —
-passes through untouched, so adding an optional field needs no change here.
+**Unknown `botopink.json` fields are ignored; known ones are checked.** The
+shared `manifest` model (`modules/manifest/src/root.zig`, schema in
+`docs/botopink-json.md`) is the one parser: `config.zig` projects it into
+`ProjectConfig` (`name`/`version`/`target`/`entry`/`dependencies`/`files`, the
+enclosing `workspace`) and `libs.zig` reads a dependency's `src`/`files` from
+it. The bpmp-facing `botopink` (compiler version constraint) and `requires`
+(per-dep version constraint) pass through untouched. A refused manifest — not
+JSON, the retired string-array `dependencies`, a dependency without a source, a
+workspace where a package is needed — is a located diagnostic printed by
+`config.load`/`libs.loadDependencies` before `ConfigInvalid`/`LibManifestInvalid`,
+and the commands add nothing after it. `botopink test` inside a workspace member
+that is a library and lists no `files` fails with `ships nothing: manifest has
+no "files"` (decision 75).
 
 ## Env
 
@@ -177,8 +196,8 @@ What each command promises. A row the code does not meet yet is marked
 | `run [--target T] [--module M] [--out D] [-- args…]` | what `build` reads | what `build` writes, into `D` | `node` / `wasmtime` on `D/M.<ext>`; on **erlang** `erlc -o D/erl` over every emitted `.erl` and then `erl -noshell -pa D/erl -eval "M:main([]), halt()."` (`beam` only prints the `erlc +from_asm` hint) | the program's own 0 | `build`'s code, or the program's — on erlang a **crash is `1`**, `erl`'s status, where `escript` used to exit `127` (see "the erlang runner reaches one module") |
 | `check [<path>]` | `botopink.json`, `src/` **and** `test/`, dependencies — in `<path>` when given | nothing | `erl` (comptime) | every module type-checks | at least one diagnostic, each with file, line and excerpt; failing modules named |
 | `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/**`, emptied first | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed | a module failed to compile, or a test failed; the modules that compiled still ran their tests and are reported |
-| `format [files…]` | the files, else `src/` | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
-| `format --check [files…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change, or could not be read, lexed or parsed |
+| `format [paths…]` | the files and directories named, else the current directory — every `.bp` **and** `.d.bp` under it (`src/**`, `test/**`, `examples/**`, the projects nested inside), not entering hidden directories or `node_modules`, and not reaching a `reject/<n>.bp` that has its `<n>.expect` beside it (the language suite's rejected program — decision 66; the exemption is the directory's shape, decision 67: no skip list, pragma or environment variable) | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
+| `format --check [paths…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change (one `Formatted <path>` line each, then `N file(s) would be reformatted`), or could not be read, lexed or parsed. `scripts/format-check.sh` (gate stage 3, CI) calls it over the compiler's canonical trees |
 | `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
 | `clean` | nothing | deletes `out/` and `.botopinkbuild/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
 | `migrate [--dry-run]` | the `src/` tree | index files (`root.bp`/`main.bp`/`mod.bp`) — **none** under `--dry-run` | nothing | the tree is covered | `src/` unreadable |
@@ -247,6 +266,13 @@ Cross-command rules:
   located at the entry in the dependency's `botopink.json`
   (`--> <lib>/botopink.json:L:C`), and the commands add nothing after it.
   Pinned by `tests/cli_contract.sh`.
+- **Workspaces and the dependency object.** Pinned by `tests/cli_contract.sh`:
+  a member builds and tests against a sibling declared `{ "workspace": true }`
+  with no root export; a library member without `files` fails its own `test`
+  with `ships nothing`; `build`/`check`/`test` on the umbrella are refused
+  naming the members; a `path` to a sibling is refused naming the fix; the
+  string-array `dependencies` is refused naming the rewrite; a `path`
+  dependency resolves with no library root at all.
 
 ### `botopink test` output format
 

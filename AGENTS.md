@@ -18,6 +18,7 @@ botopink-lang/                 ← language core (this project)
 ├── AGENTS.md                  ← you are here
 ├── README.md                  ← public-facing intro
 ├── docs.md                    ← language reference (.bp syntax + semantics); every fence compiles (`zig build test-docs`)
+├── docs/                      ← botopink-json.md — the manifest schema (packages, workspaces, the dependency object) — see docs/AGENTS.md
 ├── build.zig                  ← workspace build graph
 ├── .github/workflows/         ← test.yml (push/PR) + release.yml (tags)
 ├── modules/                   ← all Zig packages — see modules/AGENTS.md
@@ -25,7 +26,8 @@ botopink-lang/                 ← language core (this project)
 │   ├── compiler-cli/          ← `botopink` CLI
 │   ├── compiler-core/         ← lexer, parser, AST, infer, comptime, codegen
 │   ├── language-server/       ← `botopink-lsp` LSP server
-│   └── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
+│   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
+│   └── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
 ├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
 │   └── std/                   ← standard library
 ├── examples/                  ← non-framework .bp example programs
@@ -42,7 +44,7 @@ Golden snapshots live inside the owning package (`modules/compiler-core/snapshot
 
 ```bash
 zig build               # botopink + botopink-lsp + botopink-lib-test + bpmp
-zig build test          # compiler-core + language-server + compiler-cli tests
+zig build test          # compiler-core + language-server + compiler-cli + lib-test-runner + manifest tests
 zig build test -Dtest-filter=<name>   # only tests whose name matches
 zig build run           # build and run the CLI
 zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, recursion, backend parity)
@@ -58,8 +60,13 @@ zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `
 `zig build test` also runs a lib-agnostic gate: it fails if
 `modules/compiler-core/src` names a non-std library (`rakun|jhonstart|erika`).
 
-Comptime evaluation spawns a persistent `erl`, so `erl`/`erlc` (OTP 27+) must be
-on `PATH` for `zig build test`; codegen snapshot RUN LOGs also use `node`.
+Comptime evaluation spawns a persistent `erl`, so `erl` (OTP 28+, decision 86's
+floor) must be on `PATH` for `zig build test`; codegen snapshot RUN LOGs also use
+`node`. `erlc` is a dependency of **`zig build` itself** (decision 83): it compiles
+the comptime node's three resident modules once per source change and the
+`.beam`s are embedded in the compiler, so a machine that only *runs* `botopink`
+needs `erl` and never `erlc` — and a machine (or CI runner) that builds it needs
+`erlc` on `PATH`, or the build stops at `run erlc`.
 
 Per-test scratch dirs live under `modules/compiler-core/.botopinkbuild/tmp/<hex>/`
 (one root for every `executeJavaScript` / `executeErlang` / `executeBeamAsm`
@@ -70,7 +77,8 @@ invocation). See
 `test-libs` is the lib ecosystem gate (`botopink-lib-test`): it runs
 `botopink test --target <t>` in `libs/std` and in every sibling library the
 checkout can see (`<ancestor>/repository/*` — the meta workspace, or the repos CI
-checks out), and reports each cell as pass, FAIL (with the failing module's
+checks out) and in every **member** of a workspace among them (a `botopink.json`
+with `"workspaces"`, one row per member, examples included), and reports each cell as pass, FAIL (with the failing module's
 diagnostic), known red, skipped (with the reason) or no tests — a library with
 no `test` block is still compiled (`botopink build --target <t>`), so it fails
 its cell when it does not compile. A cell listed in
@@ -111,6 +119,7 @@ does not mirror them. Entry points:
 | Examples | [`examples/AGENTS.md`](examples/AGENTS.md) |
 | Scripts | [`scripts/AGENTS.md`](scripts/AGENTS.md) |
 | `.bp` language reference (user-facing) | [`docs.md`](docs.md) |
+| `botopink.json` schema (user-facing) | [`docs/botopink-json.md`](docs/botopink-json.md) · model: [`modules/manifest/AGENTS.md`](modules/manifest/AGENTS.md) |
 
 ## Release pipeline
 
@@ -182,13 +191,14 @@ run is [`scripts/gate.sh`](scripts/gate.sh):
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files;
 2. `zig build`;
-3. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
-4. `zig build test-bpmp` (the package manager's unit suite);
-5. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
-6. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
-7. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled);
-8. `zig build test-language` (tests/language — decision 8's `case`, tuples and `loop`; expected failures named);
-9. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles).
+3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; the trees, and the red ones with their causes, are named in the script);
+4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
+5. `zig build test-bpmp` (the package manager's unit suite);
+6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
+7. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
+8. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled);
+9. `zig build test-language` (tests/language — decision 8's `case`, tuples and `loop`; expected failures named);
+10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles).
 
 `scripts/git-hooks/pre-commit` is the tracked pre-commit hook, self-contained in
 every checkout (standalone clone or meta submodule): it sources
@@ -212,9 +222,11 @@ Do not use `--no-verify`.
 Decorator and template bodies run in one long-lived `erl` process speaking
 length-prefixed binary frames over stdin/stdout: `cmd 1` = compile+run `.erl`
 (one-shot), `cmd 2` = compile+load `.erl` and answer the module atom, `cmd 3` =
-call `<module>:main(<external term>)`. The evaluators use 2 + 3, so a module is
-compiled once per **declaration** and every later call site sends cmd 3 alone
-with its own capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
+call `<module>:main(<external term>)`, `cmd 4` = load `.beam` **bytes** carried
+in the frame and answer the module atom (what `codegen/beam/beam_file.zig`
+assembles). The evaluators use 2 + 3, so a module is compiled once per
+**declaration** and every later call site sends cmd 3 alone with its own
+capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
 
 - **`file:read/2` on `standard_io` can return a list, not a binary.** `read_frame/0`
   converts with `list_to_binary/1` before matching `<<Len:32/unsigned-big-integer>>`;
@@ -226,32 +238,37 @@ with its own capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
   `.botopinkbuild/tmp/persistent_erl/erl.stderr.log` (write-only, truncated at
   each spawn). A reply length above `max_frame_len` (16 MiB) fails as
   `error.PersistentErlFrameTooLarge` with a message in `lastTransportError()`.
-- **Timeouts.** `main` runs under `EVAL_TIMEOUT_MS` (10 s) inside erl; the
-  server's `erlc` compile is bounded at 120 s. The Zig-side `readFrame` itself
-  blocks without a timeout, so a wedged erl process still hangs the caller —
-  wrap manual runs in `timeout`.
-- **Three modules live in the hashed directory, not one.** The server source is a
-  Zig string literal (`botopink_comptime_server`); beside it are the two comptime
-  preludes `bp_comptime_template` and `bp_comptime_decorator`
+- **Timeouts.** `main` runs under `EVAL_TIMEOUT_MS` (10 s) inside erl. The
+  Zig-side `readFrame` itself blocks without a timeout, so a wedged erl process
+  still hangs the caller — wrap manual runs in `timeout`.
+- **The three resident modules are embedded `.beam`s, not files** (decision 83).
+  The server source is a Zig string (`comptime/runtime/server_source.zig`,
+  `botopink_comptime_server`); beside it are the two comptime preludes
+  `bp_comptime_template` and `bp_comptime_decorator`
   (`comptime/runtime/prelude.zig`), which carry the host glue every generated
-  module used to copy. They are compiled together by one `erlc` into
-  `.botopinkbuild/tmp/persistent_erl/<hash>/`, keyed by the hash of **every**
-  source in it, so editing the server *or* the prelude invalidates the build by
-  itself and a warm directory skips `erlc`. A generated module reaches the
-  prelude through `-import`, so a missing prelude is a run-time failure of every
-  comptime evaluation, not a compile error. The build happens in a uniquely named
-  staging directory renamed onto `<hash>/`, so compiler processes or test
-  binaries sharing a cwd never compile or load a half-written file. Clearing it
-  is safe:
-  ```bash
-  rm -rf .botopinkbuild/tmp/persistent_erl
-  ```
+  module used to copy. `zig build` renders the three `.erl` with
+  `render_resident.zig` (host target), compiles them with `erlc +deterministic`
+  and hands the `.beam`s to compiler-core as anonymous imports;
+  `persistent_erl.zig` `@embedFile`s them and the spawn bootstrap
+  (`erl -noshell -eval …`) loads them from stdin — one cmd-4 frame each — before
+  `start/0` runs. Editing the server or a prelude re-runs `erlc` at the next
+  build, nothing else; `.botopinkbuild/tmp/persistent_erl/` holds only
+  `erl.stderr.log`. A generated module reaches the prelude through `-import`,
+  so a missing prelude would be a run-time failure of every comptime
+  evaluation, not a compile error. An `erl` below OTP 28 is refused by the
+  bootstrap with both releases in the message (`error.PersistentErlBelowFloor`,
+  decision 86); a `.beam` the running release cannot load is
+  `__BP_ERL_LOAD_ERROR__` — the compiler was built with a newer `erlc` than the
+  machine's `erl`.
 - **Manual testing.** Frame = `struct.pack('>I', len(payload)) + payload`, payload
   = `b'\x01' + b'/path/to/mod.erl'` for the one-shot path (cmd 2 is the same
-  payload with `b'\x02'`, and cmd 3 is
-  `b'\x03' + struct.pack('>H', len(mod)) + mod + term_to_binary_bytes`). Pipe into
-  `erl -noshell -pa .botopinkbuild/tmp/persistent_erl/<hash> -eval 'botopink_comptime_server:start()'`.
-  Never use `-noinput` — it disables stdin reading.
+  payload with `b'\x02'`, cmd 3 is
+  `b'\x03' + struct.pack('>H', len(mod)) + mod + term_to_binary_bytes`, and cmd 4
+  is `b'\x04' + struct.pack('>H', len(mod)) + mod + beam_bytes`). Pipe three cmd-4
+  frames of the resident `.beam`s (find them under
+  `.zig-cache/o/*/resident-beam/`) and then the request into
+  `erl -noshell -eval "<bootstrap_eval of persistent_erl.zig>"`; the first reply
+  frame is the handshake (`ok`). Never use `-noinput` — it disables stdin reading.
 
 ### Comptime specialization (`comptime/transform.zig`)
 

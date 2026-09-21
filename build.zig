@@ -1,7 +1,7 @@
 /// Workspace build — coordinates compiler-core, compiler-cli and language-server.
 ///
 ///   zig build          → builds botopink + botopink-lsp
-///   zig build test     → runs every compiler-core, language-server, CLI and lib-test-runner unit test
+///   zig build test     → runs every compiler-core, language-server, CLI, lib-test-runner and manifest unit test
 ///   zig build test -Dtest-filter=<substr> → runs only matching tests
 ///   zig build test-cli → runs every modules/compiler-cli/tests/*.sh end to end
 ///   zig build test-libs → compiles and tests every visible `.bp` library per target
@@ -21,25 +21,6 @@ pub fn build(b: *std.Build) void {
     const target_for_libc = libcResolvedTarget(b, target);
 
     // ── std prelude ───────────────────────────────────────────────────────────
-
-    const std_prelude = b.addModule("std_prelude", .{
-        .root_source_file = b.path("modules/compiler-core/src/comptime/stdlib/prelude.zig"),
-        .target = target,
-    });
-
-    // Core controller files flattened into the global type env. These are NOT
-    // importable "std" packages — `prelude.zig` embeds them by name, so they are
-    // anonymous imports on the std_prelude module.
-    const std_core_files = [_][]const u8{
-        "primitives.bp",
-        "builtins.d.bp",
-        "builtins_fns.d.bp",
-    };
-    for (std_core_files) |f| {
-        std_prelude.addAnonymousImport(f, .{
-            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
-        });
-    }
 
     // "std" package modules — importable via `import {…} from "std"`. The set is
     // derived from the std module tree: `libs/std/src/root.bp` declares one
@@ -70,16 +51,29 @@ pub fn build(b: *std.Build) void {
 
     const wf = b.addWriteFiles();
     const pkg_table_file = wf.add("std_pkg_modules.zig", pkg_table_src);
-    const std_pkg = b.createModule(.{
-        .root_source_file = pkg_table_file,
+    const std_prelude = stdPreludeModule(b, target, std_pkg_files, pkg_table_file);
+
+    const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
+
+    // ── manifest (shared `botopink.json` model) ───────────────────────────────
+    // The one reading of the manifest — packages, workspaces, the dependency
+    // object — imported by the CLI, the LSP, the lib-test runner and bpmp.
+    // `std` only: the runner and bpmp keep their "no compiler-core" contract.
+
+    const manifest_mod = b.addModule("manifest", .{
+        .root_source_file = b.path("modules/manifest/src/root.zig"),
         .target = target,
     });
-    for (std_pkg_files) |f| {
-        std_pkg.addAnonymousImport(f, .{
-            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
-        });
-    }
-    std_prelude.addImport("std_pkg", std_pkg);
+    const manifest_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/manifest/src/root.zig"),
+            .target = target,
+        }),
+        .filters = test_filters,
+    });
+    const run_manifest_tests = b.addRunArtifact(manifest_tests);
+    // Fixtures under modules/manifest/tests/fixtures are read relative to cwd.
+    run_manifest_tests.setCwd(b.path("modules/manifest"));
 
     // ── compiler-core (library) ───────────────────────────────────────────────
 
@@ -100,7 +94,49 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
+    // ── resident comptime modules: `.erl` → `erlc` → `.beam`, embedded ───────
+    // Decision 83 (front 18 step 1c): the comptime node's server and its two
+    // preludes are compiled by `erlc` HERE, once per source change, and reach
+    // `comptime/runtime/persistent_erl.zig` as `@embedFile`s — so `erlc` is a
+    // dependency of building the compiler and of nothing a user runs. The
+    // renderer runs on the HOST (a cross-build still renders here), so it gets
+    // a host-targeted `std_prelude`; `erlc` must be on PATH (OTP 28+, the
+    // floor decision 86 pins), or this step fails the build — deliberately.
+    //
+    // The renderer's imports reach `codegen/`, so its module root has to be
+    // compiler-core's `src/`: the tree's `.zig` files are copied into the cache
+    // with a one-line root beside them, and nothing is added to the source tree
+    // for the tool's sake.
+    const render_tree = b.addWriteFiles();
+    _ = render_tree.addCopyDirectory(b.path("modules/compiler-core/src"), "src", .{ .include_extensions = &.{".zig"} });
+    const render_root = render_tree.add(
+        "src/render_resident_main.zig",
+        "pub const main = @import(\"comptime/runtime/render_resident.zig\").main;\n",
+    );
+    const render_resident = b.addExecutable(.{
+        .name = "render-resident",
+        .root_module = b.createModule(.{
+            .root_source_file = render_root,
+            .target = b.graph.host,
+            .imports = &.{
+                .{ .name = "std_prelude", .module = stdPreludeModule(b, b.graph.host, std_pkg_files, pkg_table_file) },
+            },
+        }),
+    });
+    const render_run = b.addRunArtifact(render_resident);
+    const resident_erl = render_run.addOutputDirectoryArg("resident-erl");
+    const erlc_run = b.addSystemCommand(&.{ "erlc", "+deterministic", "-o" });
+    const resident_beam = erlc_run.addOutputDirectoryArg("resident-beam");
+    const resident_modules = [_][]const u8{ "botopink_comptime_server", "bp_comptime_template", "bp_comptime_decorator" };
+    for (resident_modules) |m| erlc_run.addFileArg(resident_erl.path(b, b.fmt("{s}.erl", .{m})));
+    for ([_]*std.Build.Module{ core_mod, core_test_mod }) |mod| {
+        for (resident_modules) |m| {
+            mod.addAnonymousImport(b.fmt("{s}.beam", .{m}), .{
+                .root_source_file = resident_beam.path(b, b.fmt("{s}.beam", .{m})),
+            });
+        }
+    }
+
     const core_tests = b.addTest(.{
         .root_module = core_test_mod,
         .filters = test_filters,
@@ -131,8 +167,9 @@ pub fn build(b: *std.Build) void {
     // never accumulate beyond a day.
     run_core_tests.step.dependOn(&clean_tmp_run.step);
 
-    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner)");
+    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner, manifest)");
     test_step.dependOn(&run_core_tests.step);
+    test_step.dependOn(&run_manifest_tests.step);
 
     // ── lib-agnostic gate (annotation-processors P0) ──────────────────────────
     // HARD RULE: the compiler core must name no specific NON-std library. Fail
@@ -156,6 +193,7 @@ pub fn build(b: *std.Build) void {
         .target = target_for_libc,
         .imports = &.{
             .{ .name = "botopink", .module = core_mod },
+            .{ .name = "manifest", .module = manifest_mod },
         },
     });
 
@@ -175,6 +213,7 @@ pub fn build(b: *std.Build) void {
         .target = target_for_libc,
         .imports = &.{
             .{ .name = "botopink", .module = core_mod },
+            .{ .name = "manifest", .module = manifest_mod },
         },
     });
 
@@ -195,6 +234,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "botopink", .module = core_mod },
+                .{ .name = "manifest", .module = manifest_mod },
             },
         }),
     });
@@ -211,6 +251,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "botopink", .module = core_mod },
+                .{ .name = "manifest", .module = manifest_mod },
             },
         }),
     });
@@ -219,7 +260,8 @@ pub fn build(b: *std.Build) void {
 
     // ── lib-test-runner (botopink-lib-test executable) ────────────────────────
     // Fully self-contained orchestrator — shells out to the installed `botopink`
-    // binary, so it carries no `compiler-core` import.
+    // binary, so it carries no `compiler-core` import (only the std-only
+    // `manifest` module, for the shared reading of `botopink.json`).
 
     const lib_test_exe = b.addExecutable(.{
         .name = "botopink-lib-test",
@@ -227,6 +269,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("modules/lib-test-runner/src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "manifest", .module = manifest_mod },
+            },
         }),
     });
 
@@ -237,6 +282,9 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("modules/lib-test-runner/src/main.zig"),
             .target = target,
+            .imports = &.{
+                .{ .name = "manifest", .module = manifest_mod },
+            },
         }),
         .filters = test_filters,
     });
@@ -253,6 +301,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("modules/bpmp/src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "manifest", .module = manifest_mod },
+        },
     });
     const bpmp_exe = b.addExecutable(.{ .name = "bpmp", .root_module = bpmp_mod });
     b.installArtifact(bpmp_exe);
@@ -265,6 +316,9 @@ pub fn build(b: *std.Build) void {
     const bpmp_test_mod = b.createModule(.{
         .root_source_file = b.path("modules/bpmp/src/main.zig"),
         .target = target,
+        .imports = &.{
+            .{ .name = "manifest", .module = manifest_mod },
+        },
     });
     const bpmp_tests = b.addTest(.{ .root_module = bpmp_test_mod, .filters = test_filters });
     const run_bpmp_tests = b.addRunArtifact(bpmp_tests);
@@ -388,6 +442,51 @@ fn cliScript(b: *std.Build, script: []const u8) *std.Build.Step.Run {
     run.step.dependOn(b.getInstallStep());
     run.has_side_effects = true; // spawns child runtimes — never cache
     return run;
+}
+
+/// The `std_prelude` module for one target: the stdlib prelude with the core
+/// controller files and the generated "std" package registry embedded. Built
+/// for the build target (compiler-core) and again for the host (the resident
+/// renderer, which runs during the build).
+fn stdPreludeModule(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    std_pkg_files: []const []const u8,
+    pkg_table_file: std.Build.LazyPath,
+) *std.Build.Module {
+    const std_prelude = b.createModule(.{
+        .root_source_file = b.path("modules/compiler-core/src/comptime/stdlib/prelude.zig"),
+        .target = target,
+    });
+
+    // Core controller files flattened into the global type env. These are NOT
+    // importable "std" packages — `prelude.zig` embeds them by name, so they are
+    // anonymous imports on the std_prelude module.
+    const std_core_files = [_][]const u8{
+        "primitives.bp",
+        "builtins.d.bp",
+        "builtins_fns.d.bp",
+    };
+    for (std_core_files) |f| {
+        std_prelude.addAnonymousImport(f, .{
+            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
+        });
+    }
+
+    // The generated registry lives in its own module so its `@embedFile`s
+    // resolve against the package `.bp` anonymous imports; `std_prelude`
+    // re-exports the table for compiler-core to consume.
+    const std_pkg = b.createModule(.{
+        .root_source_file = pkg_table_file,
+        .target = target,
+    });
+    for (std_pkg_files) |f| {
+        std_pkg.addAnonymousImport(f, .{
+            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
+        });
+    }
+    std_prelude.addImport("std_pkg", std_pkg);
+    return std_prelude;
 }
 
 /// Re-resolve the user-requested target with an explicit bundled-glibc version

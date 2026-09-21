@@ -201,7 +201,9 @@ test "project graph: a dependency no root carries is a diagnostic on the project
         \\{
         \\  "name": "app",
         \\  "src": "src/",
-        \\  "dependencies": ["ghostlib"]
+        \\  "dependencies": {
+        \\    "ghostlib": { "git": "https://example.invalid/ghostlib.git" }
+        \\  }
         \\}
         ,
     });
@@ -219,9 +221,9 @@ test "project graph: a dependency no root carries is a diagnostic on the project
         p.message,
     );
     try std.testing.expect(std.mem.endsWith(u8, p.uri, ws ++ "/botopink.json"));
-    // `"ghostlib"` sits on the 4th line (0-based 3), after `"dependencies": [`.
-    try std.testing.expectEqual(@as(u32, 3), p.line);
-    try std.testing.expectEqual(@as(u32, 19), p.character);
+    // `"ghostlib"` sits on the 5th line (0-based 4), the key of its object entry.
+    try std.testing.expectEqual(@as(u32, 4), p.line);
+    try std.testing.expectEqual(@as(u32, 4), p.character);
     try std.testing.expectEqual(@as(u32, 10), p.length); // `"ghostlib"` with its quotes
 
     // The project's own `src` tree still loads — a broken dependency degrades
@@ -242,7 +244,7 @@ test "project graph: an unreadable `files` entry is a diagnostic on the library 
     try std.Io.Dir.cwd().writeFile(io, .{
         .sub_path = ws ++ "/botopink.json",
         .data =
-        \\{"name": "app", "src": "src/", "dependencies": ["halflib"]}
+        \\{"name": "app", "src": "src/", "dependencies": {"halflib": {"git": "https://example.invalid/halflib.git"}}}
         ,
     });
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });

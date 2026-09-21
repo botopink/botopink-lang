@@ -7,12 +7,20 @@ Package that builds the `botopink-lib-test` executable: the CI gate that runs
 every discovered project's test suite on each requested backend and aggregates
 the results into a lib×target matrix. Projects are discovered across the resolved
 **root list** (`discovery.resolveRoots`: `BOTOPINK_LIB_ROOTS` env entries → for
-each ancestor `D` of cwd, `D/repository/botopink-lang/libs`, `D/repository`,
-`D/libs` → any `--lib-root` flag entries; de-duped first-occurrence-wins;
-first-root-wins by name). It **shells out to the installed `botopink` binary** (`botopink test
---target <t>` with `cwd` set to each lib's own directory) and touches no compiler
-internals — so it carries **no `compiler-core` dependency**. Its job is discovery
-+ fan-out + aggregation + exit code, nothing the compiler already does.
+each ancestor `D` of cwd, `D` itself when it holds a workspace manifest,
+`D/repository/botopink-lang/libs`, `D/repository`, `D/libs` → any `--lib-root`
+flag entries; de-duped first-occurrence-wins) by the shared
+`manifest.scanRoots` (`modules/manifest`): a root's child holding a
+`botopink.json` is a lib, and a child (or root) whose manifest declares
+`"workspaces"` contributes every **member** it expands to — `modules/*`,
+`examples/*` — as a lib named by its manifest, one row each; the umbrella is not
+a row (decision 75). Two plain packages with one name keep first-root-wins; two
+members with one name are both `✗` with a located error. It **shells out to the
+installed `botopink` binary** (`botopink test --target <t>` with `cwd` set to
+each lib's own directory) and touches no compiler internals — so it carries
+**no `compiler-core` dependency** (only the std-only `manifest` module). Its
+job is discovery + fan-out + aggregation + exit code, nothing the compiler
+already does.
 
 ## Tree
 
@@ -22,7 +30,7 @@ lib-test-runner/
 └── src/                 ← built and tested by the workspace build.zig (no build.zig of its own)
     ├── main.zig         ← entry: resolve roots/binary → discover → run cells → matrix → exit
     ├── args.zig         ← CLI parsing (Target enum, node alias, =-form, all)  + unit tests
-    ├── discovery.zig    ← enumerate <root>/*/ with botopink.json across roots, "has tests" probe + unit tests
+    ├── discovery.zig    ← `manifest.scanRoots` over the roots (packages + workspace members), "has tests" probe, problems + unit tests (fixtures: ../manifest/tests/fixtures)
     ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib) + status classification
     └── matrix.zig       ← Status enum, lib×target matrix render, summary + unit tests
 ```
@@ -69,7 +77,7 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
 | Symbol | Meaning |
 |---|---|
 | `✓` | `botopink test` passed |
-| `✗` | a red `.bp` test — the **only** status that fails the run |
+| `✗` | a red `.bp` test — the **only** status that fails the run. Also every cell of a lib with a **problem**, printed once per cell without a spawn: a refused manifest (`docs/botopink-json.md`), a workspace that does not expand, a name declared by two libraries, or a library member of a workspace that lists no `files` (`error: ships nothing: manifest has no "files" — …`, located on its manifest) |
 | `–` | lib has no test blocks and **compiled** (`botopink build --target <t>`); nothing ran |
 | `~` | target skipped: either not-yet-runnable (beam/wasm), or excluded by the lib's `"targets"` whitelist (see below). `--strict` flips the not-yet-runnable case to fail; the per-lib whitelist always skips. |
 
@@ -85,14 +93,17 @@ array in its `botopink.json`:
 }
 ```
 
-The runner reads this during discovery (`discovery.readManifestTargets`)
-and reports `~` for any requested target not in the list — without
-spawning `botopink test`. Used by commonJS-only libs. The single-string
-`"target"` field (canonical build target) is separate; the array field is
-only the runner-side filter.
+The runner reads this during discovery (the shared `manifest` parser) and
+reports `~` for any requested target not in the list — without spawning
+`botopink test`. Used by commonJS-only libs. The single-string `"target"`
+field (canonical build target) is separate; the array field is only the
+runner-side filter. A workspace member without `"targets"` inherits its
+workspace's list and may only restrict it (a wider list is a located error
+and a `✗` row).
 
-Absent `"targets"` → every requested target is attempted. A malformed list (non-array, mixed types) is silently
-dropped to absent — a typo must not narrow the matrix without warning.
+Absent `"targets"` → every requested target is attempted. A malformed list
+(non-array, a non-string entry) is a refused manifest — `✗` with the located
+error, never silently widened.
 
 **Exit non-zero iff at least one cell is `✗`.** A skipped target (`~`) never
 reddens the gate. A lib with no `test` block is still **compiled** on each
@@ -175,7 +186,8 @@ a key should ignore it.
   `botopink test` learns `beam`/`wasm`, that target stops being skipped here with
   no change — only the default/`all` set widens (`args.Target.supported`).
 - **No lib coupling, no core code.** The runner names no specific lib and imports
-  nothing from `compiler-core`.
+  nothing from `compiler-core`; its only import is the std-only `manifest`
+  module, so its reading of `botopink.json` is the compiler's.
 
 ## Env
 

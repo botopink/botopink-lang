@@ -5,21 +5,25 @@
 #
 #   1. staged files: no conflict markers, `zig fmt --check` on staged .zig (--staged)
 #   2. zig build            the CLI, the LSP and the runners link
-#   3. zig build test       compiler-core + language-server + CLI +
+#   3. format-check.sh      `botopink format --check` over the compiler's own
+#                           canonical `.bp` trees (decision 66 — the scan has a
+#                           caller); the trees, and the red ones with their
+#                           causes, are named in scripts/format-check.sh
+#   4. zig build test       compiler-core + language-server + CLI +
 #                           lib-test-runner unit suites
 #                           (--cold deletes the runtime cache first)
-#   4. zig build test-bpmp  the package manager's unit suite
-#   5. beam_export_audit.sh every beam snapshot module assembles with every
+#   5. zig build test-bpmp  the package manager's unit suite
+#   6. beam_export_audit.sh every beam snapshot module assembles with every
 #                           function exported (needs erlc)
-#   6. zig build test-cli   modules/compiler-cli/tests/*.sh — the command
+#   7. zig build test-cli   modules/compiler-cli/tests/*.sh — the command
 #                           contract, test tooling, recursion, backend parity
-#   7. zig build test-libs  every `.bp` library the checkout can see, per target
+#   8. zig build test-libs  every `.bp` library the checkout can see, per target
 #                           (a library without tests is still compiled);
 #                           known reds named by scripts/known-red-libs.txt
-#   8. zig build test-language  tests/language — decision 8's `case`, tuples and
+#   9. zig build test-language  tests/language — decision 8's `case`, tuples and
 #                           `loop` in botopink, on commonJS and erlang; expected
 #                           failures named by tests/language/expected-failures.txt
-#   9. zig build test-docs  every `botopink` fence of docs.md and README.md is
+#  10. zig build test-docs  every `botopink` fence of docs.md and README.md is
 #                           compiled (scripts/check-docs.sh)
 #
 # Usage:
@@ -39,7 +43,7 @@ for a in "$@"; do
     case "$a" in
         --cold) cold=1 ;;
         --staged) staged=1 ;;
-        -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
         *) echo "gate: unknown argument '$a'" >&2; exit 1 ;;
     esac
 done
@@ -80,6 +84,10 @@ unset $(git rev-parse --local-env-vars)
 stage "zig build"
 zig build || fail "zig build"
 pass "zig build"
+
+stage "botopink format --check (scripts/format-check.sh)"
+bash scripts/format-check.sh || fail "scripts/format-check.sh (the tree and its files are named above; the script's header names the trees that are red today and why)"
+pass "botopink format --check"
 
 stage "zig build test$([ "$cold" -eq 1 ] && echo ' (cold runtime cache)')"
 if [ "$cold" -eq 1 ]; then

@@ -48,8 +48,10 @@ botopink-lang/
 │   ├── compiler-cli/      botopink CLI
 │   ├── compiler-core/     lexer, parser, type inference, comptime, codegen
 │   ├── language-server/   botopink-lsp
-│   └── lib-test-runner/   cross-backend lib test runner
+│   ├── lib-test-runner/   cross-backend lib test runner
+│   └── manifest/          the shared botopink.json model (std only)
 ├── libs/std/              standard library
+├── docs/                  botopink-json.md — the manifest schema (packages, workspaces, dependencies)
 ├── examples/              example .bp programs
 ├── scripts/               installers, release packing, test wrappers
 ├── build.zig              workspace build graph

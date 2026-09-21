@@ -133,7 +133,7 @@ BP
 greet(Name) -> <<"hello from the host, ", Name/binary>>.
 ERL
   cat >"$ERLWORK/app/botopink.json" <<'JSON'
-{ "name": "app", "version": "0.0.1", "target": "erlang", "dependencies": ["hostlib"] }
+{ "name": "app", "version": "0.0.1", "target": "erlang", "dependencies": { "hostlib": { "git": "https://example.invalid/hostlib.git" } } }
 JSON
   cat >"$ERLWORK/app/src/main.bp" <<'BP'
 import {greet} from "hostlib";
