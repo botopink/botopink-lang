@@ -895,3 +895,38 @@ test "format: fn ---- 81 columns breaks" {
         \\}
     );
 }
+
+// ── module-level `var` (front 17, decision 48) ────────────────────────────────
+
+test "format: module-level `var` keeps its keyword and its annotation" {
+    try h.assertFormat(std.testing.allocator,
+        \\var hits: i32 = 0;
+        \\
+        \\#[@BeamMemory.Ets]
+        \\pub var cache: i32 = 0;
+        \\
+        \\val fixed = 2;
+    );
+    try h.assertIdempotent(std.testing.allocator,
+        \\#[@BeamMemory.Ets]
+        \\var cache: i32 = 0;
+    );
+}
+
+test "format: an annotation argument keeps its label" {
+    try h.assertFormat(std.testing.allocator,
+        \\#[@BeamMemory.Ets(keyed = true)]
+        \\var cache: i32 = 0;
+        \\
+        \\#[@External.Node("charAt", inline = true)]
+        \\pub declare fn f(s: string) -> string;
+    );
+    // `label: value` is read too, and printed in the one canonical form.
+    try h.assertFormatAs(std.testing.allocator,
+        \\#[@External.Node("charAt", inline: true)]
+        \\pub declare fn f(s: string) -> string;
+    ,
+        \\#[@External.Node("charAt", inline = true)]
+        \\pub declare fn f(s: string) -> string;
+    );
+}

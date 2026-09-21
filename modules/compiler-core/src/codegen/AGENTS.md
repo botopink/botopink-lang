@@ -85,6 +85,11 @@ codegen/
   Nodes are built in one arena that is freed once the module is rendered. The
   only text this file still composes is a comment's wording, a `require` path
   and the fixed test-harness source (`Item.runtime`).
+- **Module-level `val` / `var`** (`buildValDecl`, front 17 step 2, decision 38):
+  `const` for a `val`, `let` for a `var` — the choice `buildStmt` already made
+  for a local from `localBind.mutable`. Node's `Assignment to constant variable`
+  on a reassigned `const` is what made decision 38 a compile-time rule; the
+  front's problem program prints `2` on node.
 - **`@print` / `@println` / `@debug`** (decision 8 §7, `buildPrintCall`) lower to
   the on-demand prelude helper `__bp_print(a, b)`, not to `console.log`: each
   argument is written by `__bp_show` — a top-level string bare, a nested string
@@ -1354,6 +1359,11 @@ first three are now enforced by the model, not by discipline:
   initialiser declares a zeroed mutable global and is evaluated in
   `$__init_globals`, which the module's `(start …)` runs ahead of `_start`.
   These used to stay at the `(i32.const 0)` placeholder, so every read saw `0`.
+- **Module-level `var`** (front 17 step 2, decision 38): `emitGlobalVal` sets
+  `.mutable` from `ValDecl.mutable` on the folded-numeric and `numberLit` paths
+  too (the other three already declared a mutable global), so `global.set $hits`
+  validates; a `val` keeps its immutable global. Verified by running: the
+  front's problem program prints `2` under wasmtime.
 - **`val x = comptime { … break v; }`** (`folded_globals`): the comptime pass
   folds the block into `comptime_vals["ct_<N>"]`, N counting the module's
   `val`s and `fn`s in order (commonJS reads it the same way). A folded numeral

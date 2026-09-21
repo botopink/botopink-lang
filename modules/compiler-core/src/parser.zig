@@ -433,7 +433,7 @@ pub const Parser = struct {
                 const ePtr = try this.boxExpr(alloc, .{ .loop = e });
                 _ = this.match(.semicolon);
                 break :blk DeclKind{ .val = ast.ValDecl{ .name = "_loop", .value = ePtr } };
-            } else if (this.checkShorthand(.val)) blk: {
+            } else if (this.checkShorthand(.val) or this.checkShorthand(.@"var")) blk: {
                 const decl = try this.parseValForm(alloc);
                 // Optional semicolon after top-level val declaration
                 _ = this.match(.semicolon);
@@ -455,6 +455,24 @@ pub const Parser = struct {
                     },
                     .type => DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) },
                     .behavior => DeclKind{ .behavior = try this.parseShorthandBehaviorDecl(alloc) },
+                    // `#[@BeamMemory.Ets] var hits: i32 = 0;` (front 17): the
+                    // annotations land on the binding. Only the plain form takes
+                    // them — `val Name = fn …` and the other `val` shorthands do
+                    // not, and are refused where the annotation is.
+                    .val, .@"var" => blk2: {
+                        const anns = try this.parseAnnotations(alloc);
+                        var decl = try this.parseValForm(alloc);
+                        switch (decl) {
+                            .val => |*v| v.annotations = anns,
+                            else => {
+                                decl.deinit(alloc);
+                                for (anns) |*ann| ann.deinit(alloc);
+                                alloc.free(anns);
+                                return ParseError.UnexpectedToken;
+                            },
+                        }
+                        break :blk2 decl;
+                    },
                     // An ANNOTATED `declare fn` is the FFI declaration form
                     // (`@[external(…)] pub declare fn …;`), not a delegate.
                     .declare => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
@@ -529,6 +547,8 @@ pub const Parser = struct {
     /// Dispatches `val [pub] Name = <kind> ...` to the appropriate sub-parser.
     /// Uses pure lookahead ---- no state mutation.
     pub fn parseValForm(this: *This, alloc: std.mem.Allocator) ParseError!DeclKind {
+        // `var` has the plain form only — no shorthand reads it.
+        if (this.checkShorthand(.@"var")) return .{ .val = try this.parseValDecl(alloc) };
         // Check if we have `val Name : Type = Value` (type annotation) or `val Name = Value`
         var offset: usize = 0;
         if (this.peekAt(offset).kind == .@"pub") offset += 1; // optional pub
@@ -913,6 +933,10 @@ pub const Parser = struct {
 
         var args: std.ArrayList([]const u8) = .empty;
         errdefer args.deinit(alloc);
+        // One entry per argument: the label written before it, or `""`.
+        var labels: std.ArrayList([]const u8) = .empty;
+        defer labels.deinit(alloc);
+        var any_label = false;
         if (this.match(.leftParenthesis)) {
             while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
                 // `prim-op-annotation` arity-branch label: `when($argc == N): "..."`
@@ -947,6 +971,7 @@ pub const Parser = struct {
                         }
                     }
                     try args.append(alloc, spanLexemes(first, last));
+                    try labels.append(alloc, "");
                     if (!this.match(.comma)) break;
                     continue;
                 }
@@ -958,12 +983,15 @@ pub const Parser = struct {
                 // annotation's reader (`FnDecl.externalFor` / `BehaviorMethod.externalFor`
                 // + `hasExternalInline`, `parseExternalCallTemplate`, …) interprets it. See the
                 // `#[@External.<targert>(...)]` vocabulary in `libs/std/AGENTS.md`.
+                var label: []const u8 = "";
                 if (this.check(.identifier) and
                     (this.peekAt(1).kind == .colon or this.peekAt(1).kind == .equal))
                 {
-                    _ = this.advance(); // label name
+                    label = this.advance().lexeme; // label name
                     _ = this.advance(); // `:` or `=`
+                    any_label = true;
                 }
+                try labels.append(alloc, label);
                 if ((this.check(.dot) or this.check(.identifier)) and
                     (this.peekAt(1).kind == .dot or this.peekAt(1).kind == .identifier))
                 {
@@ -984,6 +1012,7 @@ pub const Parser = struct {
         return Annotation{
             .name = name,
             .args = try args.toOwnedSlice(alloc),
+            .labels = if (any_label) try labels.toOwnedSlice(alloc) else &.{},
             .is_builtin = is_builtin,
             .loc = .{ .line = name_start.line, .col = name_start.col },
         };

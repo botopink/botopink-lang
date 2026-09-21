@@ -555,7 +555,8 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             // (`val head: ?i32 = 5;` must bind `?i32`, or a later
             // `option.map(head, f)` sees a bare `i32`).
             const bindTy = annType orelse ty;
-            try env.bind(v.name, bindTy);
+            try validateMemoryAnnotations(env, v, bindTy);
+            if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
             return .{ .name = v.name, .type_ = bindTy, .typedExpr = typedExpr, .decl = decl };
         },
         .@"fn" => |f| {
@@ -2135,7 +2136,8 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
                 try unifyAt(env, annType, ty, v.value.getLoc());
                 bindTy = annType;
             }
-            try env.bind(v.name, bindTy);
+            try validateMemoryAnnotations(env, v, bindTy);
+            if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
             return .{ .name = v.name, .type_ = bindTy };
         },
         .@"fn" => |f| {
@@ -2779,6 +2781,94 @@ fn instantiateGenericType(env: *Env, ty: *T.Type) InferError!*T.Type {
 /// Only the `@`-prefixed builtin form is caught. `#[external(…)]` without the
 /// `@` is a user-defined attribute — a decorator's own name — and means
 /// something else entirely.
+/// Decision 38 — a `val` is **immutable**, local or module-level. `val x = 0;
+/// x = 1;` checked and then threw on node (`const`) and ran on the other three
+/// targets; the rule moves to compile time, and the error names `var`.
+fn refuseValAssign(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
+    if (!env.isVal(name)) return;
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "`{s}` is a `val` and cannot be assigned", .{name}),
+        try std.fmt.allocPrint(env.arena, "Declare it `var {s} = …` to reassign it, or bind the new value to a new name.", .{name}),
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+/// `#[@BeamMemory.<member>(…)]` on a module binding — front 17 step 3,
+/// decisions 41 and 51. A misread memory annotation does not fail, it moves
+/// where the state lives, so every part is checked in the commit the carrier
+/// was born in: the binding is a `var`; the member is one of `ProcessDict`
+/// (the default, said out loud), `Ets` or `PersistentTerm`; every argument is
+/// the one the annotation takes, `keyed`, with a `true`/`false` value; and
+/// `keyed = true` names a `Dict` — an `i32` has no key, and neither has a
+/// list (51).
+fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferError!void {
+    const members = [_][]const u8{ "ProcessDict", "Ets", "PersistentTerm" };
+    for (v.annotations) |a| {
+        if (!std.mem.startsWith(u8, a.name, "BeamMemory.")) continue;
+        const loc = a.loc orelse v.value.getLoc();
+        if (!v.mutable) return failAt(
+            env,
+            loc,
+            try std.fmt.allocPrint(env.arena, "`#[@{s}]` needs a `var` — `{s}` is a `val`", .{ a.name, v.name }),
+            try std.fmt.allocPrint(env.arena, "Write `#[@{s}] var {s}: T = …;`.", .{ a.name, v.name }),
+        );
+        const member = a.name["BeamMemory.".len..];
+        var known = false;
+        for (members) |m| known = known or std.mem.eql(u8, m, member);
+        if (!known) return failAt(
+            env,
+            loc,
+            try std.fmt.allocPrint(env.arena, "unknown member `{s}` in `@BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`", .{member}),
+            "The member names where the `var` lives on the BEAM; `ProcessDict` is what a `var` with no annotation means.",
+        );
+        for (a.writtenArgs(), 0..) |arg, i| {
+            const label = a.labelOf(i) orelse arg;
+            if (!std.mem.eql(u8, label, "keyed")) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "unknown argument `{s}` — expected `keyed`", .{label}),
+                try std.fmt.allocPrint(env.arena, "Write `#[@{s}(keyed = true)]`.", .{a.name}),
+            );
+            const is_true = std.mem.eql(u8, arg, "true");
+            if (!is_true and !std.mem.eql(u8, arg, "false")) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "`keyed` takes `true` or `false`, not `{s}`", .{arg}),
+                null,
+            );
+            if (is_true and !typeIsDict(bindTy)) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "`keyed` needs a keyed container — {s} has no key", .{try describeForKeyed(env, bindTy)}),
+                "Only a `Dict<K, V>` is keyed; a list stores its whole value (decision 51).",
+            );
+        }
+    }
+}
+
+fn failAt(env: *Env, loc: ast.Loc, msg: []const u8, hint: ?[]const u8) InferError {
+    var e = TypeError.custom(msg, hint);
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+/// Is `t` the standard library's `Dict<K, V>`?
+fn typeIsDict(t: *T.Type) bool {
+    const d = t.deref();
+    return switch (d.*) {
+        .named => |n| std.mem.eql(u8, n.name, "Dict") or std.mem.startsWith(u8, n.name, "Dict<"),
+        else => false,
+    };
+}
+
+/// `an \`i32\`` / `a \`string[]\`` — the type in the `keyed` diagnostic.
+fn describeForKeyed(env: *Env, t: *T.Type) ![]const u8 {
+    const rendered = try snapshotMod.typeNameOf(env.arena, t);
+    const article: []const u8 = if (rendered.len > 0 and std.mem.indexOfScalar(u8, "aeiouAEIOU", rendered[0]) != null) "an" else "a";
+    return std.fmt.allocPrint(env.arena, "{s} `{s}`", .{ article, rendered });
+}
+
 /// Decision 37 — a record is **immutable**. `p.age = 31` and `self.count += 1`
 /// both checked and both mutated in place; the decided form is a new value,
 /// `Person(..p, age: 31)`, which the constructor's `..` spread already builds
@@ -7323,7 +7413,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             // The annotation is the DECLARED type — bind it, not the RHS type
             // (`val head: ?i32 = 5;` must bind `?i32`).
             const bindTy = annType orelse valTyped.getType();
-            try env.bind(lb.name, bindTy);
+            if (lb.mutable) try env.bind(lb.name, bindTy) else try env.bindVal(lb.name, bindTy);
             return TypedExpr{ .binding = .{ .loc = loc, .type_ = bindTy, .kind = .{ .localBind = .{
                 .name = lb.name,
                 .value = valPtr,
@@ -7340,6 +7430,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                 .target = switch (a.target) {
                     .name => |name| blk: {
                         if (env.lookup(name)) |ty| {
+                            try refuseValAssign(env, name, loc);
                             try unifyAt(env, ty, valTyped.getType(), loc);
                         } else {
                             env.lastError = TypeError.unboundVariable(name).withLoc(loc);

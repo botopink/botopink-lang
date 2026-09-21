@@ -19,6 +19,10 @@
               "\"lists\"",
               "\"reverse(self)\""
             ],
+            "labels": [
+              "module",
+              "method"
+            ],
             "is_builtin": true
           }
         ],
