@@ -564,6 +564,21 @@ pub const Env = struct {
     /// so the codegen — which reads the untyped AST — emits the byte-correct
     /// shape instead of the bare `Color.Red.500` source-text fallback.
     enumSectionRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// C-02 (decision 63, amended 2026-09-19) — the untyped rewrite of an index
+    /// expression, keyed by the index node's own loc.
+    ///
+    /// `xs[k]` **is** `xs.at(k)`, `xs[a..b]` is `xs.slice(a, b)` and `xs[1..]`
+    /// is `xs.slice(1, null)`: the index has no typing rule of its own, so
+    /// `inferIndexExpr` builds the method call, types THAT, and leaves the call
+    /// here for `comptime/transform.zig` to splice. Kept apart from
+    /// `enumSectionRewrites` for the reason `srcRewrites` is kept apart from
+    /// `templateExpansions`: one channel, one meaning.
+    ///
+    /// A tuple is the one receiver the `Index<K, V>` behavior cannot express —
+    /// it needs a CONSTANT index and answers a type PER POSITION — so its
+    /// rewrite is the positional member access every backend already emits
+    /// (`t[0]` → `t._0`) rather than a method call.
+    indexRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
     /// Decision 8 §10 — locs of the `loop`s whose `iter` inference typed `bool`
     /// (`loop (flag) { … }`); the comptime transform marks them
     /// `LoopExpr.condition` for the backends, which read the untyped AST.
@@ -715,6 +730,7 @@ pub const Env = struct {
             .inherentMethodTypes = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena),
             .synthesisedEnumDecls = std.StringHashMap(ast.TypeDecl).init(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .indexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
             .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = std.StringHashMap(ast.BehaviorDecl).init(arena),
@@ -790,6 +806,7 @@ pub const Env = struct {
             .inherentMethodTypes = try cloneNestedTypeMap(tmpl.inherentMethodTypes, arena),
             .synthesisedEnumDecls = try tmpl.synthesisedEnumDecls.cloneWithAllocator(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .indexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
             .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = try tmpl.assocInterfaceDecls.cloneWithAllocator(arena),
@@ -871,6 +888,7 @@ pub const Env = struct {
         self.typeGuardFns.deinit();
         self.synthesisedEnumDecls.deinit();
         self.enumSectionRewrites.deinit();
+        self.indexRewrites.deinit();
         self.optionalNullCases.deinit();
     }
 

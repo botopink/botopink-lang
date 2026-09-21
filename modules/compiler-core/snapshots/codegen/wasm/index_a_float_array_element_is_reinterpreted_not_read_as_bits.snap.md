@@ -35,10 +35,8 @@ fn main() {
     local.set $fs
     local.get $fs
     i32.const 0
-    call $__arr_at
-    f32.reinterpret_i32
-    f64.promote_f32
-    call $__print_f64
+    call $__arr_at_box
+    call $__print_opt_f32
     local.get $fs
     i32.const 0
     call $__arr_at_box
@@ -368,29 +366,6 @@ fn main() {
         i32.const 1
         i32.add
         call $__write_bytes
-      )
-    )
-  )
-  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    local.get $i
-    local.get $xs
-    i32.load
-    i32.ge_s
-    i32.or
-    (if (result i32)
-      (then i32.const 0)
-      (else
-        local.get $xs
-        local.get $i
-        i32.const 1
-        i32.add
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
       )
     )
   )

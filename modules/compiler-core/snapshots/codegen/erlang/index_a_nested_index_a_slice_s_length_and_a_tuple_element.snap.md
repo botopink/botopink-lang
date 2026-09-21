@@ -12,8 +12,6 @@ fn main() {
     @print(sl.length);
     val ps = [#(1, "a"), #(2, "b")];
     @print(ps[1]);
-    val s = "hello";
-    @print(s[1..3].length);
 }
 ```
 
@@ -22,37 +20,57 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+%% behavior Array
+
+array_range(Start, Stop) ->
+    case (Start >= Stop) of
+        true ->
+            [];
+        false ->
+            Head = Start,
+            [Head] ++ (array_range((Start + 1), Stop))
+    end.
+
+array_repeat(Value, Times) ->
+    case (Times =< 0) of
+        true ->
+            [];
+        false ->
+            Head = Value,
+            [Head] ++ (array_repeat(Value, (Times - 1)))
+    end.
+
 main() ->
     Rows = [[1, 2], [3, 4]],
     '__bp_print'([Rows]),
-    '__bp_print'(['__bp_index'(Rows, 1)]),
-    '__bp_print'(['__bp_index'('__bp_index'(Rows, 1), 0)]),
-    '__bp_print'(['__bp_len'('__bp_index'(Rows, 0), length)]),
+    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Rows, 1)]),
+    '__bp_print'(['__bp_prim_at'((fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Rows, 1), 0)]),
+    '__bp_print'(['__bp_len'((fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Rows, 0), length)]),
     Xs = [10, 20, 30],
-    '__bp_print'(['__bp_len'('__bp_slice'(Xs, 0, 2), length)]),
-    Sl = '__bp_slice'(Xs, 0, 2),
-    '__bp_print'(['__bp_len'(Sl, length)]),
+    '__bp_print'([length(array_slice(Xs, 0, 2))]),
+    Sl = array_slice(Xs, 0, 2),
+    '__bp_print'([length(Sl)]),
     Ps = [{1, <<"a">>}, {2, <<"b">>}],
-    '__bp_print'(['__bp_index'(Ps, 1)]),
-    S = <<"hello">>,
-    '__bp_print'(['__bp_len'('__bp_slice'(S, 1, 3), length)]).
+    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Ps, 1)]).
+
+array_slice(Self, Start, End) ->
+    case (End =/= undefined) of
+        true ->
+            lists:sublist(Self, (Start) + 1, ((End) - (Start)));
+        false ->
+            lists:nthtail(Start, Self)
+    end.
+
+'__bp_prim_at'(Recv, Arg0) when is_list(Recv) ->
+    (fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Recv, Arg0);
+'__bp_prim_at'(Recv, Arg0) when is_binary(Recv) ->
+    (fun(__S, __I) -> case (__I >= 0) andalso (__I < string:length(__S)) of true -> string:slice(__S, __I, 1); false -> undefined end end)(Recv, Arg0);
+'__bp_prim_at'(Recv, _) ->
+    erlang:error({bp_unsupported_method, <<"at">>, 1, Recv}).
 
 '__bp_len'(X, _) when is_list(X) -> length(X);
 '__bp_len'(X, _) when is_binary(X) -> string:length(X);
 '__bp_len'(X, Field) -> maps:get(Field, X).
-
-'__bp_index'(Recv, I) when is_list(Recv), is_integer(I), I >= 0, I < length(Recv) -> lists:nth(I + 1, Recv);
-'__bp_index'(Recv, I) when is_binary(Recv), is_integer(I), I >= 0 -> string:slice(Recv, I, 1);
-'__bp_index'(Recv, I) when is_tuple(Recv), is_integer(I), I >= 0, I < tuple_size(Recv) -> element(I + 1, Recv);
-'__bp_index'(Recv, I) when is_list(Recv), is_integer(I) -> undefined;
-'__bp_index'(Recv, I) when is_tuple(Recv), is_integer(I) -> undefined;
-'__bp_index'(Recv, I) -> erlang:error({bp_unsupported_index, Recv, I}).
-
-'__bp_slice'(Recv, From, infinity) when is_list(Recv) -> lists:nthtail(min(max(From, 0), length(Recv)), Recv);
-'__bp_slice'(Recv, From, infinity) when is_binary(Recv) -> string:slice(Recv, max(From, 0));
-'__bp_slice'(Recv, From, To) when is_list(Recv) -> lists:sublist(Recv, max(From, 0) + 1, max(To - max(From, 0), 0));
-'__bp_slice'(Recv, From, To) when is_binary(Recv) -> string:slice(Recv, max(From, 0), max(To - max(From, 0), 0));
-'__bp_slice'(Recv, From, To) -> erlang:error({bp_unsupported_slice, Recv, From, To}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -89,5 +107,4 @@ main(_Args) ->
 2
 2
 #(2, "b")
-2
 ```

@@ -20,31 +20,56 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+%% behavior String
+
+%% behavior Array
+
+array_range(Start, Stop) ->
+    case (Start >= Stop) of
+        true ->
+            [];
+        false ->
+            Head = Start,
+            [Head] ++ (array_range((Start + 1), Stop))
+    end.
+
+array_repeat(Value, Times) ->
+    case (Times =< 0) of
+        true ->
+            [];
+        false ->
+            Head = Value,
+            [Head] ++ (array_repeat(Value, (Times - 1)))
+    end.
+
 main() ->
     Xs = [10, 20, 30],
     I = 1,
-    '__bp_print'(['__bp_index'(Xs, 0)]),
-    '__bp_print'(['__bp_index'(Xs, (I + 1))]),
+    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Xs, 0)]),
+    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Xs, (I + 1))]),
     Names = [<<"ana">>, <<"bo">>],
-    '__bp_print'(['__bp_index'(Names, 1)]),
+    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Names, 1)]),
     S = <<"hello">>,
-    '__bp_print'(['__bp_index'(S, 1)]),
-    '__bp_print'(['__bp_slice'(S, 1, 3)]),
-    '__bp_print'(['__bp_slice'(S, 3, infinity)]),
-    '__bp_print'(['__bp_slice'(Xs, 1, infinity)]).
+    '__bp_print'([(fun(__S, __I) -> case (__I >= 0) andalso (__I < string:length(__S)) of true -> string:slice(__S, __I, 1); false -> undefined end end)(S, 1)]),
+    '__bp_print'([string_slice(S, 1, 3)]),
+    '__bp_print'([string_slice(S, 3, undefined)]),
+    '__bp_print'([array_slice(Xs, 1, undefined)]).
 
-'__bp_index'(Recv, I) when is_list(Recv), is_integer(I), I >= 0, I < length(Recv) -> lists:nth(I + 1, Recv);
-'__bp_index'(Recv, I) when is_binary(Recv), is_integer(I), I >= 0 -> string:slice(Recv, I, 1);
-'__bp_index'(Recv, I) when is_tuple(Recv), is_integer(I), I >= 0, I < tuple_size(Recv) -> element(I + 1, Recv);
-'__bp_index'(Recv, I) when is_list(Recv), is_integer(I) -> undefined;
-'__bp_index'(Recv, I) when is_tuple(Recv), is_integer(I) -> undefined;
-'__bp_index'(Recv, I) -> erlang:error({bp_unsupported_index, Recv, I}).
+string_slice(Self, Start, End) ->
+    case (End =/= undefined) of
+        true ->
+            string:slice(Self, Start, ((End) - (Start)));
+        false ->
+            string:slice(Self, Start)
+    end.
 
-'__bp_slice'(Recv, From, infinity) when is_list(Recv) -> lists:nthtail(min(max(From, 0), length(Recv)), Recv);
-'__bp_slice'(Recv, From, infinity) when is_binary(Recv) -> string:slice(Recv, max(From, 0));
-'__bp_slice'(Recv, From, To) when is_list(Recv) -> lists:sublist(Recv, max(From, 0) + 1, max(To - max(From, 0), 0));
-'__bp_slice'(Recv, From, To) when is_binary(Recv) -> string:slice(Recv, max(From, 0), max(To - max(From, 0), 0));
-'__bp_slice'(Recv, From, To) -> erlang:error({bp_unsupported_slice, Recv, From, To}).
+array_slice(Self, Start, End) ->
+    case (End =/= undefined) of
+        true ->
+            lists:sublist(Self, (Start) + 1, ((End) - (Start)));
+        false ->
+            lists:nthtail(Start, Self)
+    end.
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

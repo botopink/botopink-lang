@@ -1,27 +1,24 @@
-//// Decision 63 (amended 2026-09-19) — an index is a method call: `d["k"]` **is**
-//// `d.at("k")` through the ambient `Index<K, V>` behavior `Dict<K, V>` answers,
-//// and the value of the expression is `V`, not `?V`. Three rules, one probe each:
+//// Decision 63 (amended 2026-09-19) — an index is a method call: `d["k"]`
+//// **is** `d.at("k")` through the ambient `Index<K, V>` behavior that
+//// `Dict<K, V>` answers on its declaration, and the value of the expression is
+//// whatever `at` answers — `?V`. Three rules, one probe each:
 ////
 ////   1. a present key answers the value — `d["a"]` is `1`;
-////   2. `null` comes out only where the declared value type is itself optional —
-////      `Dict<string, ?i32>` indexes to `?i32`, so `o["missing"]` prints `null`;
-////   3. where `V` is not optional and the key is absent, the program **fails**
-////      (`index_dict.exit` says `nonzero`) — it answers neither `undefined` nor
-////      `null`. TypeScript's default answers `undefined` and says nothing; this
-////      language closes that hole (decision 67).
+////   2. an absent key is `null` (decision 47's one spelling of absent), and it
+////      is an ANSWER, not a failure: the index has no typing rule of its own,
+////      so it cannot be stricter than the method it is;
+////   3. a `Dict<string, ?i32>` indexes to an optional too — `o["missing"]` is
+////      `null` for the same reason its present values would be.
 ////
-//// The `libs/std` half landed (`e065b564`: the behaviors, `Dict.lookup` → `at`);
-//// the compiler half — the checker typing the index `T` and the four backends
-//// routing it to `.at` and failing on its empty answer — is C-02, and no backend
-//// has it. Measured at `85f883bd` (2026-09-20):
+//// Decision 46 dissolves into this: the route to `Dict.at` IS the call, and
+//// there is one exit point for absent instead of one per backend.
 ////
-////   commonJS  `undefined` for the PRESENT key too, and `undefined` for the
-////             absent one, exit 0 — the index never reaches `at`
-////   erlang    dies at the present key: `{bp_unsupported_index, #{pairs => …},
-////             <<"a">>}` from `__bp_index/2` — a crash, not a located failure,
-////             and on the wrong probe
-////   wasm      traps (`unreachable`) at the present key, stdout empty
-////   beam      the erlang shape through `erlc +from_asm`
+//// Both halves have landed — `libs/std` at `e065b564` (the behaviors, `Dict`'s
+//// `lookup` → `at`) and the checker's rewrite (C-02) — and the PRESENT key
+//// answers `1` on all four backends, measured 2026-09-21. What the three
+//// non-commonJS targets still get wrong is how an empty optional PRINTS
+//// (`undefined` on erlang and beam, `0` on wasm), which is decision 47's own
+//// row, C-18, and is listed per target in `expected-failures.txt`.
 
 import {dict} from "std";
 
@@ -33,5 +30,5 @@ pub fn main() {
     @print(o["missing"]);
 
     @print(d["zz"]);
-    @print("unreachable");
+    @print("after");
 }

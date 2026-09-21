@@ -4374,6 +4374,15 @@ const Emitter = struct {
             std.mem.eql(u8, name, "float");
     }
 
+    /// True when a bare name is declared as an enum VARIANT by this module —
+    /// payload-less (`Block`) or carrying one (`Position`). A variant name
+    /// wins over every other meaning the spelling has in scope: a `case` arm
+    /// naming it is decision 8 §5.2's variant arm, never §3.3's type test,
+    /// because the type it would name cannot inhabit the enum being cased.
+    fn isDeclaredVariantName(self: *Emitter, bare: []const u8) bool {
+        return self.unit_variant_names.contains(bare) or self.variant_fields.contains(bare);
+    }
+
     /// True when a `Pattern.ident` **binds** rather than tests: it is not a
     /// path, not a primitive type spelling, not a variant this module declares,
     /// and it is not capitalised — which is how decision 8 §5 tells `Red` and
@@ -4510,8 +4519,27 @@ const Emitter = struct {
                 // builds. Written as the `tag` test below it answered `false`
                 // for every class instance, and a `case` over `Person | Vec`
                 // fell through both arms to `undefined`.
-                if (self.class_names.contains(bare)) return try self.isTest(.{ .named = bare }, subject);
-                return try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });
+                //
+                // One spelling can be BOTH — a `type Block(…)` in scope and a
+                // `Block` variant of an enum this module declares. §5.3b says
+                // which one an arm means: the SUBJECT's type does, and a
+                // section's variants are written bare (`Bold`, `Size(s)`), so
+                // the arm over `Token.Layout` is the variant even where a
+                // record `Block` is in scope. This emitter walks the untyped
+                // AST and has no subject type, so it tests BOTH: the subject's
+                // own type makes at most one of the two possible — a variant
+                // singleton is not `instanceof` any class, and a class
+                // instance carries no `tag`. Emitted as the `instanceof`
+                // alone, emilia's `Token.Layout` arm never fired and
+                // `tokenDeclarations(.Layout.Block)` answered `undefined` at
+                // exit 0, where erlang and wasm answered `display:block`.
+                const tag_test = try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });
+                if (self.class_names.contains(bare)) {
+                    const class_test = try self.isTest(.{ .named = bare }, subject);
+                    if (!self.isDeclaredVariantName(bare)) return class_test;
+                    return try self.b.paren(try self.b.binaryBare("||", class_test, tag_test));
+                }
+                return tag_test;
             },
             .@"or" => |pats| {
                 if (pats.len == 0) return js.Expr{ .name = "false" };

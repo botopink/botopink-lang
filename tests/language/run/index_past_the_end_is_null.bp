@@ -1,0 +1,26 @@
+//// Decision 63 (amended 2026-09-19) — `xs[i]` **is** `xs.at(i)` through the
+//// ambient `Index<i32, T>` behavior, and the expression's type is whatever the
+//// method answers: `?T`. An index past the end therefore has an answer, and it
+//// is decision 47's one spelling of absent — `null`. Not `undefined`, not `0`,
+//// and not a failure: the earlier reading of decision 63 (the index answers `T`
+//// and an absent one aborts) is the one the amendment replaced, and this cell
+//// is the third spelling C-16 lists as `index_an_index_past_the_end_answers_zero`
+//// — the slug said `zero`, the next text said `undefined`, and the rule says
+//// `null`.
+////
+//// `xs.at(9)` — the method called by name — is the SAME feature now, which is
+//// the whole point: there is one reader, and the index is its syntax.
+////
+//// Measured 2026-09-21 with C-02's rewrite landed: the route is right on all
+//// four backends (`xs[9]` reaches `Array.at`, where it used to reach each
+//// backend's own decision-30 lowering) and every one of them prints
+//// `undefined` rather than `null`. That last step is decision 47's spelling of
+//// an empty optional — C-18's row, listed per target in
+//// `expected-failures.txt`, not this one's.
+
+pub fn main() {
+    val xs = [10, 20, 30];
+    @print(xs[0]);
+    @print(xs[9]);
+    @print("after");
+}

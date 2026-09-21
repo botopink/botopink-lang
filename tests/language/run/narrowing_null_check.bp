@@ -1,0 +1,79 @@
+//// 1.0.10-beta `00 · 01-checker` — `if (x != null)` NARROWS `x`.
+////
+//// Measured by the commonJS tail-call front, and worked around by four
+//// library fronts before it got one of its own: `es.at(0)` is a `?Entry`, and
+//// `if (first != null)` did not rebind `first` inside the branch. Narrowing
+//// had exactly one channel — the pair `x is T` and the type-guard fn form
+//// (C5) write into — and no `!= null` arm, so the body still saw a `?Record`,
+//// a field read off it was a fresh type variable, and commonJS — which needs
+//// the receiver's type to know `.length()` is JavaScript's `length` PROPERTY
+//// — emitted a call on a number: `TypeError: first.key.length is not a
+//// function`, exit 1. erlang printed `3`: it needs no receiver type to lower a
+//// primitive method, so it merely happened to work. A silent backend
+//// divergence, which is why every line here asserts the VALUE.
+////
+//// The cell walks the shapes the null test takes, each over a different
+//// optional family — a `?Record` whose FIELD is read (the measured defect), a
+//// `?string`, a `?T[]` and a `?i32` — then the three spellings that reach the
+//// same rule: the reversed operand order (`null != x`), `&&` (which narrows
+//// BOTH names), and the else side of `== null`. The last line is the limit in
+//// the other direction: outside the branch the name is the optional again, so
+//// `??` still has something to default.
+////
+//// `if (x)` with no binder is NOT here: an optional condition without `{ e ->
+//// … }` is refused ("type mismatch: expected bool, got optional") and that
+//// refusal is `reject/if_optional_needs_a_binder.bp`. Neither is `loop (x !=
+//// null)`: § the loop shape of `comptime/AGENTS.md`.
+////
+//// wasm is in `.targets` and FAILS, with its line in `expected-failures.txt`:
+//// it answers heap addresses (`276`, `388`, `425`) for every family but the
+//// `?string`. The narrowing is the checker's and wasm's `?T` is a BOX
+//// (05 step 2 D1): the optional-binding form `if (es.at(0)) { f -> … }`
+//// unboxes and answers `3` there, a narrowed NAME is never unboxed. Before
+//// this front wasm trapped on the same lines (`unreachable`, exit 134),
+//// because the field read off a fresh type variable lowered to `unreachable`;
+//// a wrong answer at exit 0 replaces a trap, and both are the same missing
+//// unbox. C-01 half 3 (`a8087490`) MOVED every one of these numbers and
+//// changed nothing else: each box now carries its declaration, so the
+//// addresses grew (`256`/`364`/`401` → `276`/`388`/`425`) and the narrowed
+//// name is read off the box exactly as before. Re-measured at that merge.
+
+type Entry(key: string) {}
+
+pub fn main() {
+    // A `?Record` whose field is read — the shape that crashed commonJS.
+    val es = [Entry(key: "abc")];
+    val first = es.at(0);
+    if (first != null) { @print(first.key.length().toString()); };
+
+    // A `?string`.
+    val ws = ["alpha", "be"];
+    val w = ws.at(1);
+    if (w != null) { @print(w.length().toString()); };
+
+    // A `?T[]`.
+    val rows = [[1, 2, 3]];
+    val row = rows.at(0);
+    if (row != null) { @print(row.length().toString()); };
+
+    // A `?i32`, where what the narrowing buys is the arithmetic.
+    val ns = [7];
+    val n = ns.at(0);
+    if (n != null) { @print((n + 1).toString()); };
+
+    // Either operand order is the same test.
+    if (null != first) { @print(first.key.length().toString()); };
+
+    // `&&` holds only when both halves do, so both names narrow.
+    if (first != null && w != null) {
+        @print(first.key.length().toString() + "/" + w.length().toString());
+    };
+
+    // `== null` is the same rule read from the other side: the ELSE branch is
+    // where the value is.
+    if (first == null) { @print("absent"); } else { @print(first.key.length().toString()); };
+
+    // And the narrowing ends with the branch: out here `first` is `?Entry`
+    // again, which is what gives `??` something to default.
+    @print((first ?? Entry(key: "zz")).key.length().toString());
+}

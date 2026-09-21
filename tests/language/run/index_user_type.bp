@@ -1,0 +1,54 @@
+//// Decision 63 (amended 2026-09-19) — **this cell is the point of the rule.**
+//// The index expression has no typing rule of its own and no privileged list of
+//// receivers: it rewrites to a method call, so a library's own type becomes
+//// indexable by ANSWERING `at` / `slice`, with **no compiler change**. Nothing
+//// below names `Array`, `string` or `Dict`, and the compiler knows nothing
+//// about `Matrix` or `Registry`.
+////
+//// `Index<K, V>` and `Slice<V>` are ambient, like `Display` (decision 27) and
+//// for the same reason: the syntax has to find the method without the author
+//// having imported anything. There is no `from "std"` line in this file.
+////
+////   `Matrix` answers both — `m[1]` is `m.at(1)` and `m[0..2]` is
+////   `m.slice(0, 2)`. `slice` takes two arguments rather than one range because
+////   there is no `Range` type in the language: `start..end` is an AST node, not
+////   a value.
+////
+////   `Registry` answers `Index<string, i32>`, so `K` is not tied to `i32` and
+////   an absent key is decision 47's `null` — the same one exit point a `Dict`
+////   comes out of, because it IS the same mechanism.
+////
+//// Measured 2026-09-21. commonJS is right throughout. erlang and beam differ in
+//// ONE way — an empty optional prints the atom `undefined` rather than `null`,
+//// decision 47's row (C-18) — and wasm carries a `?T` whose `T` is not a scalar
+//// badly (a raw heap address for `?i32[]`, `16777216` for a `?i32`), which is
+//// the same answer it gives when the two methods are called BY NAME, byte for
+//// byte: the index expression only reaches them.
+
+type Matrix(rows: i32[][]) implement Index<i32, i32[]>, Slice<Matrix> {
+    pub fn at(self: Self, key: i32) -> ?i32[] {
+        return self.rows.at(key);
+    }
+
+    pub fn slice(self: Self, start: i32, end: ?i32) -> Matrix {
+        return Matrix(rows: self.rows.slice(start, end));
+    }
+}
+
+type Registry(names: string[]) implement Index<string, i32> {
+    pub fn at(self: Self, key: string) -> ?i32 {
+        val found = self.names.indexOf(key);
+        if (found < 0) return null;
+        return found;
+    }
+}
+
+pub fn main() {
+    val m = Matrix(rows: [[1, 2], [3, 4], [5, 6]]);
+    @print(m[1]);
+    @print(m[0..2].rows.length);
+
+    val r = Registry(names: ["ana", "bo"]);
+    @print(r["bo"]);
+    @print(r["zz"]);
+}
