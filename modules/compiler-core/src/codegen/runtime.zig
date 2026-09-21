@@ -236,7 +236,7 @@ pub const CACHE_ROOT = ".botopinkbuild/runtime-cache";
 /// (the exit-status contract, compile-error capture, the cwd of the spawns).
 /// Folded into `cacheKey` so entries written by an older harness miss instead
 /// of masking the change — a warm cache must never hide a harness defect.
-pub const HARNESS_VERSION = "3-wasm-runs";
+pub const HARNESS_VERSION = "4-type-units";
 
 /// Hash (harness version + target_tag + module_name + code + aux entries)
 /// into a 64-char hex SHA256 key. Each component is length-prefixed so two
@@ -314,7 +314,19 @@ pub fn makeScratchDir(io: anytype, buf: *[96]u8) ![]const u8 {
 pub const AuxFile = struct {
     name: []const u8,
     code: []const u8,
+    /// The module atom, already rendered, when the aux is a per-`type` module
+    /// (`GenerateResult.units`) — its name IS an atom, not a module path, so it
+    /// must not go through `erlModuleAtom` again (`__` would collapse to `_`).
+    /// Null for a sibling source module, whose path is rendered here.
+    atom: ?[]const u8 = null,
 };
+
+/// The scratch-file atom of an aux module: the pre-rendered one of a per-type
+/// unit, else the module path's.
+fn auxAtom(allocator: std.mem.Allocator, a: AuxFile) ![]u8 {
+    if (a.atom) |atom| return allocator.dupe(u8, atom);
+    return erlModuleAtom(allocator, a.name);
+}
 
 /// Execute JavaScript code using Node.js and capture stdout/stderr.
 /// `aux` modules are written as `<scratch>/<name>.js` (subdirs created) so the
@@ -580,7 +592,7 @@ pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_
         }
     }
     for (aux) |a| {
-        const aux_module = try erlModuleAtom(allocator, a.name);
+        const aux_module = try auxAtom(allocator, a);
         defer allocator.free(aux_module);
         if (std.mem.eql(u8, aux_module, entry_module)) continue;
         if (seen.get(aux_module)) |first| {
@@ -688,7 +700,7 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
 
     // Assemble sibling modules the entry calls into (cross-module `call_ext`).
     for (aux) |a| {
-        const aux_module = try erlModuleAtom(allocator, a.name);
+        const aux_module = try auxAtom(allocator, a);
         defer allocator.free(aux_module);
         if (std.mem.eql(u8, aux_module, entry_module)) continue;
         if (seen.get(aux_module)) |first| {

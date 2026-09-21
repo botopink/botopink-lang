@@ -52,6 +52,18 @@ fn writeComptimeSections(alloc: std.mem.Allocator, buf: *std.ArrayListUnmanaged(
 }
 
 /// Builds the full snapshot text for a single codegen module output.
+/// One section per extra module the file produced (`GenerateResult.units`,
+/// policy 3's per-`type` modules): `----- <kind> -- <atom><ext>` in the same
+/// fence as the file's own module, so the snapshot shows every module the
+/// program loads and `beam_export_audit.sh` assembles each of them.
+fn writeUnitSections(alloc: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), kind: []const u8, ext: []const u8, result: GenerateResult) !void {
+    for (result.units) |u| {
+        try buf.print(alloc, "\n----- {s} -- {s}{s}\n```erlang\n", .{ kind, u.atom, ext });
+        try buf.appendSlice(alloc, u.code);
+        try buf.appendSlice(alloc, "```\n");
+    }
+}
+
 pub fn buildSnapshot(
     alloc: std.mem.Allocator,
     name: []const u8,
@@ -128,6 +140,7 @@ pub fn buildSnapshot(
             try buf.appendSlice(alloc, erlHdr);
             try buf.appendSlice(alloc, result.js);
             try buf.appendSlice(alloc, "```\n");
+            try writeUnitSections(alloc, &buf, "ERLANG", ".erl", result);
 
             // RUN LOG section (if any)
             if (result.run_output) |output| {
@@ -147,6 +160,7 @@ pub fn buildSnapshot(
             try buf.appendSlice(alloc, asmHdr);
             try buf.appendSlice(alloc, result.js);
             try buf.appendSlice(alloc, "```\n");
+            try writeUnitSections(alloc, &buf, "BEAM ASSEMBLY", ".S", result);
 
             if (result.run_output) |output| {
                 const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
