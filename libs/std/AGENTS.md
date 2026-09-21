@@ -43,7 +43,7 @@ std/
 | `string_builder` | `type StringBuilder`: `empty`, `fromString`, `fromStrings`, `append`, `prepend`, `toString`, `length`, `isEmpty` |
 | `queue` | `type Queue<T>` (FIFO): `empty`, `fromList`, `size`, `isEmpty`, `enqueue`, `dequeue`, `peek`, `toList` |
 | `math` | constants `pi`/`e`/`tau`/`sqrt2`/`ln2`/`ln10`/`log2e`/`log10e`; `abs`/`floor`/`round`/`trunc`/`ceil`/`sign`/`minF`/`maxF`/`clamp`; `sqrt`/`pow`/`cbrt`/`exp`/`ln`/`log2`/`log10`/`hypot`; trig + hyperbolic |
-| `asserts` | `truthy`, `falsy`, `equal`, `notEqual`, `approxEqual`, `contains`, `throws`, `matches`, `type AssertError` (named `asserts` — `assert` is a keyword) |
+| `asserts` | The canonical assertion API (1.0.10-beta front 01-std, `asserts-api.md`): every fn is `#[@result] -> @Result<void, string>`, consumed with `try`, `actual` first, one literal message `asserts.<fn>: <what>` each — `isTrue`, `isFalse`, `equals`, `notEquals`, `approxEquals`, `deepEquals`, `isNil`, `isNotNil`, `isOk`, `isError`, `contains`, `notContains`, `startsWith`, `endsWith`, `matches(actual, pattern)`, `isEmpty`, `isNotEmpty`, `lengthIs`, `includes`, `notIncludes`, `between`, `greaterThan`, `lessThan`, `throws(body)`, `throwsWith(body, needle)`, `fail(message)`, plus `errorText(r) -> string` (the `Error` payload, `""` for `Ok`). No `pub declare fn` (STD-001-clean on every target); `matches`/`deepEquals`/`throws`/`throwsWith` sit on the private cells `regexMatches`/`canonical`/`tryCatch` (Node + Erlang). The old panicking `truthy`/`falsy`/`equal`/`notEqual`/`approxEqual`/`AssertError` are gone. Named `asserts` — `assert` is a keyword |
 | `path` | `separator`, `delimiter`, `split`, `isAbsolute`, `basename`, `dirname`, `extname`, `join`, `normalize`, `relative(src, dst)`, `resolve` (posix only) |
 | `random` | `float`, `coin`, `bool`, `intInRange`, `pick`, `shuffle`, `seed`, `seededFloat` |
 | `querystring` | `parse`, `stringify` |
@@ -212,7 +212,8 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
   error (`await` is a keyword), which is a parser row, not a formatter one.
 - No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`.
 - `get`/`set`/`test`/`from`/`assert` are keywords (`new`, `delegate` and `const` are identifiers since 06 N27) — pick other names (`empty`/`lookup`/`insert`, `matches`, `src`, `asserts`).
-- Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS).
+- Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS) — or `asserts.deepEquals`, which renders both sides on the same host.
+- An `if (a < b || c > d)` condition does not parse today (the condition grammar stops at `||`); bind it to a `val` first (`asserts.between` does). A parser gap, not a std one.
 - A trailing default on a behavior method is not expanded at the call site
   yet: `s.slice(1)` fails to check (`'slice' expects 2 argument(s)`); pass both
   bounds.
