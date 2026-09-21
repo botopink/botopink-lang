@@ -44,6 +44,14 @@ pub const effect_duplicate_annotation: []const u8 = "effect-duplicate-annotation
 /// R6 — `throw` outside a fallible-channel effect (result/future/iterator/futureGenerator).
 pub const effect_throw_without_fallible_channel: []const u8 = "effect-throw-without-fallible-channel";
 
+/// Decision 95 — bare `try` (the propagating form) in a body whose effect does
+/// not implement `@Result`: a `#[@generator]` body (question 97 — `@Generator`
+/// has no error channel) or a plain `fn`. The `try … catch` form supplies its
+/// own fallback and needs no channel, so it is not gated. Sibling of
+/// `effect-throw-without-fallible-channel`, which asks the same question of the
+/// other half of the pair.
+pub const effect_try_without_fallible_channel: []const u8 = "effect-try-without-fallible-channel";
+
 /// R7 — `await` outside `#[@future]` / `#[@futureGenerator]`.
 pub const effect_await_without_future: []const u8 = "effect-await-without-future";
 

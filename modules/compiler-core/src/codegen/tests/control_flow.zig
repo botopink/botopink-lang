@@ -101,12 +101,16 @@ test "js: if ---- conditional with else branch" {
 }
 
 test "js: try ---- propagate without catch" {
+    // The propagating form returns the `Error` out of the enclosing function,
+    // so that function needs an error channel of its own (decision 95): a plain
+    // `fn process() -> i32` is `effect-try-without-fallible-channel`.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\#[@result]
         \\fn fetch() -> @Result<i32, string> {
         \\    @todo();
         \\}
-        \\fn process() -> i32 {
+        \\#[@result]
+        \\fn process() -> @Result<i32, string> {
         \\    val r = try fetch();
         \\    @print(r);
         \\    return r;

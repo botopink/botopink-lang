@@ -1957,10 +1957,32 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 | `#[@futureGenerator]` | `async function*` | eager | eager body | eager body |
 | `#[@context]` | plain `function` | plain fun | plain local | plain func |
 
+**Open, measured 2026-09-21 at front 20's landing: a `#[@context]` body may now
+`await`, and commonJS cannot emit it.** Decision 95 made the effects a chain —
+`@Context` extends `@Future` extends `@Result` — so `await` inside a
+`#[@context]` body is legal, and `try` with it. `try` lowers everywhere (it is
+the same propagate/`catch` shape the `#[@result]` row describes). `await` does
+not: the `#[@context]` row above is a plain `function` on commonJS, so the
+emitted `await` is
+
+```
+SyntaxError: await is only valid in async functions and the top level bodies of modules
+```
+
+while erlang, wasm and beam run it (their `@Future<T>` is eager, so `await` is
+the identity and the row needs nothing). The fix is commonJS's `fnKeyword`
+answering `async function` for a `#[@context]` body that awaits — which changes
+what a component's caller receives, and is therefore a backend decision, not a
+legality one. Front 20 owns what is legal and explicitly does not touch
+`codegen/**` lowering; this row is the handoff. `tests/language/run/effect_chain.bp`
+carries the other rows and its header says why this one is absent.
+
 Effect rejection diagnostics (R*, RF*, RI*, RC*, RG* codes) live in
 `comptime/diagnostics.zig`; `comptime/infer.zig`'s `inEffectContext` uses the
 `effect` field of `comptime/env.zig`'s `StarFnCtx` so each family's rejections
-fire only inside the right effect body.
+fire only inside the right effect body. Which body operations each effect may
+hold is `comptime/effect_chain.zig`, not a table here: the four checks
+(`try`/`await`/`use`/`yield`) ask it the same question.
 
 ## Tuple labels (decision 8 §6)
 

@@ -85,7 +85,7 @@ pub type Result<R, E> {
 // is the lazy pull-based protocol — each call returns one of the three
 // variants below. F4I-tail's `transform.zig → @IteratorStep` rewrite
 // targets this same enum.
-pub behavior Iterator<T, E = any, C = void> {
+pub behavior Iterator<T, E = any, C = void> extends Result {
     fn next(self: Self) -> IteratorStep<T, E, C>;
 }
 
@@ -112,7 +112,7 @@ pub behavior Generator<T, R> {
 
 // ── future ───────────────────────────────────────────────────────────────────
 
-pub behavior Future<T, E = any> {
+pub behavior Future<T, E = any> extends Result {
     // F5 — `await` is the UNWRAP, not the proof. What says a future can fail
     // is the `implement` clause on the declaration line; `await` is only how a
     // body reads the value out of one.
@@ -129,7 +129,7 @@ pub behavior Future<T, E = any> {
 // `#[@futureGenerator]` annotation and the `@FutureGenerator<T, E, C>` wrapper
 // share a name exactly as the other five pairs do (§ effect annotations below).
 
-pub behavior FutureGenerator<T, E = any, C = void> {
+pub behavior FutureGenerator<T, E = any, C = void> extends Future {
     fn next(self: Self) -> Future<IteratorStep<T, E, C>, E>;
 }
 
@@ -183,7 +183,7 @@ pub behavior Slice<V> {
 
 // ── context (hooks) ──────────────────────────────────────────────────────────
 
-pub behavior Context<ContextBase, Return> { }
+pub behavior Context<ContextBase, Return> extends Future { }
 
 // ── annotation marker ────────────────────────────────────────────────────────
 //
@@ -299,6 +299,46 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // express the effect through the return wrapper alone, with NO annotation
 // (using one there is the R1/R2 error).
 //
+// §95 — THE CHAIN. The six wrappers are not six unrelated types: they form a
+// subsumption order, and an annotation grants every body operation at or below
+// its own level. The order is on the declarations above, as `extends` clauses
+// (a `behavior` carries `extends`, not the `implement` a `type` writes — the
+// same grammar limit § index / slice records of `primitives.bp`), and `extends`
+// cannot carry type arguments, so the full clauses are:
+//
+//   Future<T, E>             extends Result<T, E>
+//   Iterator<T, E, C>        extends Result<T, E>
+//   FutureGenerator<T, E, C> extends Future<IteratorStep<T, E, C>, E>
+//   Context<Base, Return>    extends Future<Return, any>
+//   Generator<T, R>          — NO clause. See below.
+//
+// What each body may therefore write:
+//
+//   #[context]         use · await · try     Context ⊃ Future ⊃ Result
+//   #[futureGenerator] await · try · yield   FutureGenerator ⊃ Future ⊃ Result
+//   #[future]          await · try           Future ⊃ Result
+//   #[iterator]        try · yield           Iterator ⊃ Result
+//   #[generator]       yield                 — no error channel
+//   #[result]          try                   — it is the base
+//
+// The chain grants DOWNWARDS and never upwards: `yield` stays exclusive to the
+// three generator-shaped wrappers and `use` to `@Context`, neither of which is
+// a level anything else reaches. `@Future<T, E = any>` already carries the
+// error channel this needs, so `extends Result` adds no parameter and invents
+// no error type; the same holds for `@Iterator<T, E = any, C = void>`.
+//
+// `@Generator<T, R>` is the exception and is left out on purpose: it has no
+// error channel, and whether a generator should answer `try` is open question
+// 97. Until it is answered, `throw` and `try` are BOTH refused in a
+// `#[generator]` body — a defaulted parameter can be added later and never
+// removed.
+//
+// The compiler reads this order from `comptime/effect_chain.zig`, which
+// restates it and carries a test that reads THIS FILE and fails if the two
+// drift: the file is not parsed into the type env (the whole `.d.bp` is
+// documentation, and `comptime.zig`'s embedded mirrors exist for the same
+// reason), so the drift gate is what keeps one declaration.
+//
 // §1 — `#[result]` auto-wrap. The compiler intercepts `return r;` (where
 // `r: R`) inside a `#[result]` body and lowers it to `return Result.Ok(r)`;
 // `throw e;` (where `e: E`) lowers to `return Result.Error(e)`. Manual
@@ -323,11 +363,15 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //
 // §1C — `#[context]` Anchor + `getContex`. The wrapper is
 // `Context<Base, T>`; `Base` is the Anchor that gates every `use` inside
-// the body. `use <hook>()` requires the hook's wrapper to be anchored at a
-// subtype of `Base` (RC2); `use getContex(T)` requires `T` to be in the
-// Anchor's inheritance tree (RC3) and finds the active provider by
-// inside-out walk of the activation stack (RC1 when missing). `yield`,
-// `await`, `throw` are all forbidden inside a `#[context]` body.
+// the body. EVERY `use` in one body resolves against the SAME `Base`
+// (decision 96): the first one fixes it, and a second anchored elsewhere is
+// refused at its own site with both bases named (RC2). `use getContex(T)`
+// requires `T` to be in the Anchor's inheritance tree (RC3) and finds the
+// active provider by inside-out walk of the activation stack (RC1 when
+// missing). `await` and `try` ARE legal here — `Context` extends `Future`
+// extends `Result` (§95 above); `yield` is not, and neither is `throw`,
+// whose auto-wrap has no wrapper to build in a body whose return type is
+// the owner.
 //
 // §1G — default generic parameters. A generic parameter may carry a
 // default type (`<T, U = string>`). Defaults must occupy the trailing

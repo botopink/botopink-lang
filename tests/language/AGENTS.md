@@ -39,7 +39,8 @@ cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4), and the
 singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
-`curried_call`, `index_expression`). One scenario group per
+`curried_call`, `index_expression`), and `effect_chain` (1.0.10-beta front 20,
+decisions 95 and 98: one `test/`, one `run/` and five `reject/` cells). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -236,6 +237,46 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
   path that is not a `test/` cell (only a `test/` cell has tests).
 
 ## Status and the gate
+
+**Recounted on disk at front 20's landing (`fix/effect-chain`, on `cbd5f1ec`):**
+
+```bash
+ls test/*.bp    | wc -l   # 52
+ls run/*.bp     | wc -l   # 24
+ls reject/*.bp  | wc -l   # 37
+ls -d modules/*/| wc -l   #  4
+find . -name '*.bp' | wc -l   # 124
+```
+
+The difference from the block below is front 20's seven cells, one new area row:
+
+| Area | Cells | Total |
+|---|---|---|
+| the effect chain (1.0.10-beta front 20, decisions 95 and 98) | 1 test + 1 run + 5 reject | 7 |
+
+`run/effect_chain.bp` holds the two rows of decision 95's table every backend
+runs (`#[@result]` with `try`, `#[@context]` with `use` and `try`);
+`test/effect_chain.bp` holds the two that need a target able to consume a future
+or an iterator. A third row — `await` inside a `#[@context]` body — is in
+neither, and the `run/` cell's header says why: it is legal, it runs on erlang,
+wasm and beam, and commonJS lowers `#[@context]` to a plain `function`, so the
+emitted `await` is a JS `SyntaxError`. That is a lowering row for the backend's
+own front, not a reason to leave the capability refused, and it is not an
+`expected-failures.txt` line because no cell of this suite claims it.
+
+The five `reject/` cells are the refusals decision 95 adds or repairs:
+`try_in_generator` (question 97 — the generator stays infallible),
+`try_in_plain_fn`, `yield_in_result`, `yield_in_context` (the last three were
+silently ACCEPTED before this front) and `await_in_iterator` (one level above
+the body). `expected-failures.txt` did not change: none of the seven is listed,
+on any target.
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+language tests: 383 passed, 53 expected failures, 0 failed
+```
 
 Counted on disk at `b09bf9c6` — local `feat` after the fronts 12 × 13 merge:
 

@@ -1,0 +1,17 @@
+//// Question 97 of 1.0.10-beta — `@Generator<T, R>` is the one wrapper with no
+//// error channel, and decision 95 leaves it out of the chain on purpose. So a
+//// `#[@generator]` body may not `try`: this cell asserts the refusal, not a
+//// capability. Its sibling `throw` has always been refused here; before this
+//// front `try` was not, which is the half of the status quo that was written
+//// down but not enforced.
+
+#[@result]
+fn parse(n: i32) -> @Result<i32, string> { return n; }
+
+#[@generator]
+fn counted(n: i32) -> @Generator<i32, void> {
+    val v = try parse(n);
+    yield v;
+}
+
+pub fn main() { @print(1); }

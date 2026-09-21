@@ -515,3 +515,173 @@ test "context: Element[] coerces into Children" {
         \\val text = div("hello");
     );
 }
+
+// ── decision 95: the effects are a chain ──────────────────────────────────────
+//
+// `@Context` ⊃ `@Future` ⊃ `@Result`, `@FutureGenerator` ⊃ `@Future`,
+// `@Iterator` ⊃ `@Result`, and an annotation grants every body operation at or
+// below its own level. The order itself is `comptime/effect_chain.zig`'s unit
+// tests (and its drift gate against `libs/std/src/builtins.d.bp`); what follows
+// is the order as the CHECKER applies it — one cell per granted capability and
+// one per refusal, since a rule that only a table believes is not a rule.
+//
+// `tests/language` carries the half of this that RUNS. One row cannot: `await`
+// inside a `#[@context]` body is legal here and executes on erlang, wasm and
+// beam, but commonJS lowers `#[@context]` to a plain `function` and the emitted
+// `await` is a JS SyntaxError. The legality is this front's; the `async`
+// keyword is the backend's, and the row is a handoff rather than a capability
+// left refused.
+
+const chain_preamble =
+    \\val Element = type implement @Context<Element, Element> { }
+    \\fn state(initial: i32) -> @Context<Element, i32> {
+    \\    initial;
+    \\}
+    \\#[@result]
+    \\fn parse(n: i32) -> @Result<i32, string> {
+    \\    return n;
+    \\}
+    \\#[@future]
+    \\fn fetch(n: i32) -> @Future<i32> {
+    \\    return n;
+    \\}
+    \\
+;
+
+test "chain: #[@result] is the base — it answers `try`" {
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\#[@result]
+        \\fn doubled(n: i32) -> @Result<i32, string> {
+        \\    val v = try parse(n);
+        \\    return v * 2;
+        \\}
+    );
+}
+
+test "chain: #[@future] implements @Result — it answers `try` and `await`" {
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\#[@future]
+        \\fn load(n: i32) -> @Future<i32> {
+        \\    val v = try parse(n);
+        \\    val w = await fetch(v);
+        \\    return w;
+        \\}
+    );
+}
+
+test "chain: #[@iterator] implements @Result — it answers `try` and `yield`" {
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\#[@iterator]
+        \\fn upTo(n: i32) -> @Iterator<i32> {
+        \\    val limit = try parse(n);
+        \\    yield limit;
+        \\}
+    );
+}
+
+test "chain: #[@futureGenerator] implements @Future — `try`, `await`, `yield`" {
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\#[@futureGenerator]
+        \\fn stream(n: i32) -> @FutureGenerator<i32, string> {
+        \\    val v = try parse(n);
+        \\    val w = await fetch(v);
+        \\    yield w;
+        \\}
+    );
+}
+
+test "chain: #[@context] implements @Future implements @Result — `use`, `await`, `try`" {
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\#[@context]
+        \\fn Widget(n: i32) -> Element {
+        \\    val c = use state(0);
+        \\    val v = try parse(n);
+        \\    val w = await fetch(v);
+        \\    return Element();
+        \\}
+    );
+}
+
+// Question 97 — `@Generator<T, R>` has no error channel and stays out of the
+// chain. Its cell asserts the REFUSAL, not a capability: the recommendation is
+// to keep the generator infallible until a body needs otherwise, since the
+// defaulted parameter can be added later and never removed.
+test "chain error: `try` inside #[@generator] — question 97 keeps it refused" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
+        \\#[@generator]
+        \\fn counted(n: i32) -> @Generator<i32, void> {
+        \\    val v = try parse(n);
+        \\    yield v;
+        \\}
+    );
+}
+
+// The chain grants downwards and never upwards: one cell per capability written
+// one level above the body that holds it.
+test "chain error: `try` in a plain fn — no effect, no error channel" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
+        \\fn plain(n: i32) -> i32 {
+        \\    val v = try parse(n);
+        \\    return v;
+        \\}
+    );
+}
+
+test "chain error: `await` inside #[@iterator] — @Iterator does not implement @Future" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
+        \\#[@iterator]
+        \\fn bad(n: i32) -> @Iterator<i32> {
+        \\    val w = await fetch(n);
+        \\    yield w;
+        \\}
+    );
+}
+
+test "chain error: `yield` inside #[@result] — `yield` is no level of the chain" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
+        \\#[@result]
+        \\fn bad(n: i32) -> @Result<i32, string> {
+        \\    yield n;
+        \\}
+    );
+}
+
+test "chain error: `yield` inside #[@context] — the top of the chain still cannot yield" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
+        \\#[@context]
+        \\fn Bad(n: i32) -> Element {
+        \\    yield n;
+        \\}
+    );
+}
+
+// The `yield` gate asks which scope the `yield` targets before it asks the
+// chain, exactly as the `break` gate does (§1I REGRAS DE ESCOPO). A `yield`
+// inside a loop feeds that loop's array — decision 8 § 10's comprehension —
+// and is legal in any body, which is what these two cells pin from both sides.
+test "chain: a loop comprehension yields in a body the chain grants no `yield`" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\#[@future]
+        \\fn collected() -> @Future<i32[]> {
+        \\    val xs = loop ([1, 2, 3]) { x -> yield x * 2; };
+        \\    return xs;
+        \\}
+        \\#[@result]
+        \\fn counted() -> @Result<i32[], string> {
+        \\    var i = 0;
+        \\    val xs = loop (i < 3) { i = i + 1; yield i; };
+        \\    return xs;
+        \\}
+    );
+}
+
+test "chain: `try … catch` needs no channel — it propagates nothing" {
+    // The gated form is bare `try`, which RETURNS the error out of the body.
+    // `try <e> catch <f>` handles it on the spot, so a plain `fn` may hold it.
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\fn plain(n: i32) -> i32 {
+        \\    val v = try parse(n) catch 0;
+        \\    return v;
+        \\}
+    );
+}

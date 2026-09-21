@@ -500,7 +500,17 @@ pub const Env = struct {
     /// ESCOPO: an unlabelled `break` inside a nested loop targets the loop,
     /// not the enclosing iterator fn, so RI2/RI3 only fire when `loopDepth`
     /// is 0 (or the break is labelled with the fn's `StarFnCtx.fnLabel`).
+    /// The `.yield` handler reads it the same way and for the same reason: a
+    /// `yield` inside a loop feeds that loop's array (decision 8 § 10's
+    /// comprehension, condition loops included — `loop (j < 5) { j = j + 1;
+    /// yield j; }` collects), so only a `yield` that reaches the function is
+    /// the effect's and gated by the chain.
     loopDepth: u32 = 0,
+    /// The effect annotation of the fn whose body is being inferred, or null
+    /// for a plain `fn` (and at module level). Read by the `try` gate, which
+    /// has to ask the chain a question `env.starFn` cannot answer: a
+    /// `#[@result]` body has no star context and still answers `try`.
+    fnEffect: ?ast.EffectKind = null,
     /// Registered `implement`/`extend` blocks, keyed by activation symbol name.
     extensions: std.StringHashMap(ExtEntry),
     /// Activation set: symbols enabled for extension dispatch in this file

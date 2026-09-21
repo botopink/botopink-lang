@@ -2056,6 +2056,11 @@ pub const EffectKind = enum {
     futureGenerator,
     context,
 
+    /// Every effect, in declaration order. The one list: `fromAnnotationName`
+    /// and `comptime/effect_chain.zig` both walk it, so a seventh effect is a
+    /// value here and nowhere else.
+    pub const all = [_]EffectKind{ .result, .future, .generator, .iterator, .futureGenerator, .context };
+
     /// The annotation spelling — `#[@<name>]` — for this effect.
     pub fn annotationName(self: EffectKind) []const u8 {
         return switch (self) {
@@ -2083,7 +2088,6 @@ pub const EffectKind = enum {
     /// Map a builtin annotation name (`future`, …) to its effect, or null when
     /// the name is not one of the builtin effect markers.
     pub fn fromAnnotationName(name: []const u8) ?EffectKind {
-        const all = [_]EffectKind{ .result, .future, .generator, .iterator, .futureGenerator, .context };
         for (all) |kind| {
             if (std.mem.eql(u8, kind.annotationName(), name)) return kind;
         }

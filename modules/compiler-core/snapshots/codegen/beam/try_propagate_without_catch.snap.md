@@ -4,7 +4,8 @@
 fn fetch() -> @Result<i32, string> {
     @todo();
 }
-fn process() -> i32 {
+#[@result]
+fn process() -> @Result<i32, string> {
     val r = try fetch();
     @print(r);
     return r;
@@ -51,6 +52,9 @@ fn process() -> i32 {
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 9}}.
     {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 1}.
     return.
 

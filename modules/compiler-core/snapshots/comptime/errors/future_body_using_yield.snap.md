@@ -5,10 +5,10 @@ fn bad() -> @Future<i32> {
 }
 
 ----- ERROR
-error: yield-without-generator: `yield` is only valid inside a `#[@generator]` / `#[@iterator]` / `#[@futureGenerator]` fn
+error: yield-without-generator: `yield` needs a generator effect — `#[@generator]`, `#[@iterator]` or `#[@futureGenerator]`; `#[@future]` is `@Future`, which does not
   ┌─ :3:5
   │
 3 │     yield 1;
   │     ^
 
-  hint: A `#[@future]` fn awaits; mark the fn `#[@iterator]` (`-> @Iterator<T>`) to yield.
+  hint: A `yield` that is not inside a `loop (…) { … }` body is the function's: mark the fn `#[@iterator]` (`-> @Iterator<T>`), `#[@generator]` or `#[@futureGenerator]`.

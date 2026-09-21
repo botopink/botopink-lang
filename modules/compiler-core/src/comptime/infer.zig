@@ -15,6 +15,7 @@ const Env = @import("env.zig").Env;
 const envMod = @import("env.zig");
 const TypeError = @import("error.zig").TypeError;
 const diagnostics = @import("diagnostics.zig");
+const effectChain = @import("effect_chain.zig");
 const template = @import("template.zig");
 const primOpTemplate = @import("primOpTemplate.zig");
 const templateEval = @import("template_eval.zig");
@@ -3258,16 +3259,23 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         env.starFn = prevStarFn;
         env.labelStack.shrinkRetainingCapacity(prevLabelsLen);
     }
-    if (if (eff) |e| starCtxFromEffect(e, retType, f.label) else null) |ctx| {
-        env.starFn = ctx;
+    if (eff) |e| {
+        // Every effect gets a body context, whatever it grants: the chain
+        // decides `allowsAwait` / `allowsYield`, and a capability it does not
+        // grant is REFUSED at the site rather than skipped for want of a
+        // context (decision 95 + 67).
+        env.starFn = starCtxFromEffect(e, retType, f.label);
         if (f.label) |lbl| try env.labelStack.append(env.arena, lbl);
     } else {
-        // A normal function body (and a `#[@result]`/`#[@context]` body) sees no
-        // async context and no outer labels — `await`/`yield` stay exclusive to
-        // the future/iterator/generator/futureGenerator effects.
+        // A plain function body sees no effect context and no outer labels.
         env.starFn = null;
         env.labelStack.shrinkRetainingCapacity(0);
     }
+    // The `try` gate reads the effect directly: a `#[@result]` body answers
+    // `try` and carries no star context worth asking.
+    const savedFnEffect = env.fnEffect;
+    env.fnEffect = eff;
+    defer env.fnEffect = savedFnEffect;
     // §1C — `@getContex(T)` is only valid inside a `#[@context]` fn body
     // (RC5). Save/restore the flag around the body so nested non-context
     // closures fall back to false correctly.
@@ -3495,8 +3503,11 @@ fn effectMatchesReturn(env: *Env, eff: ast.EffectKind, retType: *T.Type) bool {
 }
 
 /// Build the effect body context (drives `await`/`yield` validation) from the
-/// effect kind and its return type. Returns null for effects with no async /
-/// generator body operations (`#[@result]`, `#[@context]`).
+/// effect kind and its return type. EVERY effect gets one — `env.starFn` is
+/// null only in a plain `fn` — so a capability the chain does not grant is
+/// refused rather than falling through an absent context (decision 95 + 67;
+/// before this, `yield` in a `#[@result]` or `#[@context]` body was accepted
+/// because the guard was written `if (env.starFn) |ctx|`).
 /// C1 — the type a `return <value>` unifies with inside a fn whose declared
 /// return type is `retType`: the wrapper's inner channel for an effect body
 /// (`#[@result]` → R of `@Result<R, E>`, `#[@future]` → T, `#[@generator]` → R of
@@ -3525,7 +3536,7 @@ fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Ty
     };
 }
 
-fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8) ?envMod.StarFnCtx {
+fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8) envMod.StarFnCtx {
     const t = retType.deref();
     const item: ?*T.Type = switch (t.*) {
         .named => |n| if (n.args.len >= 1) n.args[0] else null,
@@ -3539,12 +3550,20 @@ fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8
         .named => |n| if (n.args.len >= 3) n.args[2] else null,
         else => null,
     };
-    return switch (eff) {
-        .future => .{ .allowsAwait = true, .allowsYield = false, .iterItem = null, .iterCompletion = null, .fnLabel = fnLabel, .effect = eff },
-        .iterator => .{ .allowsAwait = false, .allowsYield = true, .iterItem = item, .iterCompletion = completion, .fnLabel = fnLabel, .effect = eff },
-        .generator => .{ .allowsAwait = false, .allowsYield = true, .iterItem = item, .iterCompletion = null, .fnLabel = fnLabel, .effect = eff },
-        .futureGenerator => .{ .allowsAwait = true, .allowsYield = true, .iterItem = item, .iterCompletion = completion, .fnLabel = fnLabel, .effect = eff },
-        .result, .context => null,
+    // `iterItem` / `iterCompletion` are the iterator channels: only the three
+    // generator-shaped wrappers carry them, and `.iterator` / `.futureGenerator`
+    // are the two the `break` handler reads for RI2/RI3.
+    const yields = effectChain.grants(eff, .yield_);
+    return .{
+        .allowsAwait = effectChain.grants(eff, .await_),
+        .allowsYield = yields,
+        .iterItem = if (yields) item else null,
+        .iterCompletion = switch (eff) {
+            .iterator, .futureGenerator => completion,
+            else => null,
+        },
+        .fnLabel = fnLabel,
+        .effect = eff,
     };
 }
 
@@ -7281,6 +7300,27 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             const valPtr: ?*TypedExpr = if (e) |ev| try makeTypedPtr(env, try inferExprTyped(env, ev.*)) else null;
             const rawTy = if (valPtr) |vp| vp.getType() else try env.freshVar();
             const ty = try tryUnwrapOrError(env, rawTy, loc);
+            // Decision 95 — bare `try` PROPAGATES: it returns the `Error` out of
+            // the enclosing function, so the body needs an error channel, which
+            // is `@Result` and everything that extends it. `#[@generator]` does
+            // not (question 97 — `@Generator<T, R>` has no error channel) and a
+            // plain `fn` does not either. `try … catch` is a different node
+            // (`branch.tryCatch`): it supplies its own fallback, propagates
+            // nothing and is not gated here. The check runs AFTER the operand
+            // is known to be a `@Result`, so `try <non-result>` keeps its own,
+            // more specific refusal.
+            //
+            // The gate reads `throwContext` for the same reason `throw` does: it
+            // is `.plain` exactly where a declared return type carries no error
+            // channel, and `.unchecked` in a body with no declared return type
+            // (a lambda, a `test` block), which stays lenient.
+            if (env.throwContext == .plain and !effectChain.grants(env.fnEffect, .try_)) {
+                env.lastError = TypeError.custom(
+                    try effectChain.refusal(env.arena, diagnostics.effect_try_without_fallible_channel, .try_, env.fnEffect),
+                    "Use `try <expr> catch <fallback>`, which handles the error here and needs no channel, or give the enclosing fn one.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .try_ = valPtr } } };
         },
         .@"break" => |b| {
@@ -7349,13 +7389,13 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = typedPtr } } } };
         },
         .await_ => |e| {
-            // R7 — `await` is only valid inside an async effect fn
-            // (`#[@future]` / `#[@futureGenerator]`).
+            // R7, as decision 95 rewrites it — `await` belongs to `@Future`,
+            // so every effect whose wrapper extends `@Future` answers it:
+            // `#[@future]`, `#[@futureGenerator]` and `#[@context]`.
             if (env.starFn == null or !env.starFn.?.allowsAwait) {
                 env.lastError = TypeError.custom(
-                    diagnostics.effect_await_without_future ++
-                        ": `await` is only valid inside a `#[@future]` / `#[@futureGenerator]` fn",
-                    "Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@futureGenerator]` (`-> @FutureGenerator<…>`).",
+                    try effectChain.refusal(env.arena, diagnostics.effect_await_without_future, .await_, env.fnEffect),
+                    "Mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@context]`.",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -7388,18 +7428,38 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 }
             }
             const typedPtr: ?*TypedExpr = if (y.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
-            // R8 — `yield` belongs to a generator effect (`#[@generator]` /
-            // `#[@iterator]` / `#[@futureGenerator]`); a `#[@future]` body cannot
-            // yield. Each yielded value unifies with the iterator item type `T`.
-            if (env.starFn) |ctx| {
-                if (!ctx.allowsYield) {
+            // A `yield` has two possible targets, and only one of them is the
+            // effect's. Inside a loop an unlabelled `yield` feeds that loop's
+            // array — decision 8 § 10's comprehension, `loop (xs) { x -> yield
+            // … }` and `loop (i < n) { … yield i; }` alike — and a labelled one
+            // feeds whichever labelled scope it names; both are legal in any
+            // body, effect or not. A `yield` that reaches the FUNCTION is the
+            // effect's, and that is the one the chain gates. This is the same
+            // §1I REGRAS DE ESCOPO rule the `.@"break"` handler above applies,
+            // read off the same counter.
+            const targetsFn = blk: {
+                if (y.label) |lbl| {
+                    const ctx = env.starFn orelse break :blk false;
+                    const fl = ctx.fnLabel orelse break :blk false;
+                    break :blk std.mem.eql(u8, lbl, fl);
+                }
+                break :blk env.loopDepth == 0;
+            };
+            // R8, as decision 95 rewrites it — `yield` is exclusive to the three
+            // generator-shaped wrappers (`@Generator`, `@Iterator`,
+            // `@FutureGenerator`) and is granted by no level of the chain: a
+            // `#[@future]`, `#[@result]` or `#[@context]` body cannot yield, and
+            // neither can a plain `fn`.
+            if (targetsFn) {
+                if (env.starFn == null or !env.starFn.?.allowsYield) {
                     env.lastError = TypeError.custom(
-                        diagnostics.yield_without_generator ++
-                            ": `yield` is only valid inside a `#[@generator]` / `#[@iterator]` / `#[@futureGenerator]` fn",
-                        "A `#[@future]` fn awaits; mark the fn `#[@iterator]` (`-> @Iterator<T>`) to yield.",
+                        try effectChain.refusal(env.arena, diagnostics.yield_without_generator, .yield_, env.fnEffect),
+                        "A `yield` that is not inside a `loop (…) { … }` body is the function's: mark the fn `#[@iterator]` (`-> @Iterator<T>`), `#[@generator]` or `#[@futureGenerator]`.",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
+            }
+            if (env.starFn) |ctx| {
                 if (ctx.iterItem) |item| {
                     if (typedPtr) |vp| try unifyAt(env, vp.getType(), item, loc);
                 }
@@ -7564,8 +7624,8 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
     if (lp.awaitLoop) {
         if (env.starFn == null or !env.starFn.?.allowsAwait) {
             env.lastError = TypeError.custom(
-                "`loop await` can only be used inside a `#[@future]` / `#[@futureGenerator]` fn",
-                "Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@futureGenerator]` (`-> @FutureGenerator<…>`).",
+                try effectChain.refusal(env.arena, diagnostics.effect_await_without_future, .await_, env.fnEffect),
+                "`loop await` suspends: mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@context]`.",
             ).withLoc(loc);
             return error.TypeError;
         }
@@ -7607,7 +7667,6 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
     // iterator fn. RI2/RI3 in the `.@"break"` handler reads this counter.
     env.loopDepth += 1;
     defer env.loopDepth -= 1;
-
     const typedBody = try inferStmtsTyped(env, lp.body);
     const loopArrayArgs = try env.arena.alloc(*T.Type, 1);
     loopArrayArgs[0] = try env.freshVar();
