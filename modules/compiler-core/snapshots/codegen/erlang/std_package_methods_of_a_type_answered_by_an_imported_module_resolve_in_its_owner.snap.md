@@ -208,8 +208,7 @@ test "dict empty boundary: size 0, at misses" {
 ----- ERLANG -- std/dict.erl
 ```erlang
 -module(std@dict).
--compile({no_auto_import,[size/1]}).
--export([empty/0, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2]).
+-export([empty/0]).
 
 %%% Gleam-inspired `dict` module — a `type Dict<K, V>` wrapping an
 
@@ -246,6 +245,38 @@ test "dict empty boundary: size 0, at misses" {
 %%% one method name.
 
 %% type Dict: pairs
+
+empty() ->
+    #{pairs => []}.
+
+
+
+
+
+
+
+
+
+
+
+
+
+% ── option method API over `at`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
+
+
+
+
+
+
+% ── empty-collection boundary (B1) ──
+
+```
+
+----- ERLANG -- std@dict__t__dict.erl
+```erlang
+-module(std@dict__t__dict).
+-compile({no_auto_import,[size/1]}).
+-export([at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2]).
 
 at(Self, Key) ->
     % NOTE: written with `forEach` + accumulator rather than
@@ -309,31 +340,6 @@ mapValues(Self, F) ->
         (Out ++ [{element(1, P), F(element(2, P))}])
     end, [], maps:get(pairs, Self)),
     #{pairs => Out}.
-
-empty() ->
-    #{pairs => []}.
-
-
-
-
-
-
-
-
-
-
-
-
-
-% ── option method API over `at`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
-
-
-
-
-
-
-% ── empty-collection boundary (B1) ──
-
 ```
 
 ----- RUN LOG -----
@@ -359,9 +365,9 @@ fn main() {
 %% import dict
 
 main() ->
-    D = std@dict:insert(std@dict:empty(), <<"a">>, 1),
-    '__bp_print'([(fun(O) -> case O of undefined -> (0); V -> V end end)(std@dict:at(D, <<"a">>))]),
-    '__bp_print'([std@dict:size(std@dict:insert(D, <<"b">>, 2))]).
+    D = std@dict__t__dict:insert(std@dict:empty(), <<"a">>, 1),
+    '__bp_print'([(fun(O) -> case O of undefined -> (0); V -> V end end)(std@dict__t__dict:at(D, <<"a">>))]),
+    '__bp_print'([std@dict__t__dict:size(std@dict__t__dict:insert(D, <<"b">>, 2))]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

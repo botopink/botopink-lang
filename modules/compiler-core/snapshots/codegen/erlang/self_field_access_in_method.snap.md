@@ -14,6 +14,12 @@ val Point = type(
 -module(main).
 
 %% type Point: x, y
+```
+
+----- ERLANG -- main__t__point.erl
+```erlang
+-module(main__t__point).
+-export([sum/0]).
 
 sum() ->
     '__bp_add'(maps:get(x, Self), maps:get(y, Self)).

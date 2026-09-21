@@ -17,6 +17,12 @@ val Vec2 = type(
 -module(main).
 
 %% type Vec2: x, y
+```
+
+----- ERLANG -- main__t__vec2.erl
+```erlang
+-module(main__t__vec2).
+-export([lengthSq/1, scale/2]).
 
 lengthSq(Self) ->
     ((maps:get(x, Self) * maps:get(x, Self)) + (maps:get(y, Self) * maps:get(y, Self))).

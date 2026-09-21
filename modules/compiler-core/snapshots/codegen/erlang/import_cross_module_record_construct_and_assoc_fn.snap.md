@@ -16,14 +16,19 @@ pub type App(
 ----- ERLANG -- http.erl
 ```erlang
 -module(http).
--export([ok/1]).
 
 %% type Response: body
 
+%% type App: port, path
+```
+
+----- ERLANG -- http__t__response.erl
+```erlang
+-module(http__t__response).
+-export([ok/1]).
+
 ok(Body) ->
     #{body => Body}.
-
-%% type App: port, path
 ```
 
 ----- RUN LOG -----
@@ -50,7 +55,7 @@ fn main() {
 %% import Response, App
 
 main() ->
-    R = http:ok(<<"hi">>),
+    R = http__t__response:ok(<<"hi">>),
     '__bp_print'([maps:get(body, R)]),
     A = #{port => 8080, path => <<"/">>},
     '__bp_print'([maps:get(port, A)]).

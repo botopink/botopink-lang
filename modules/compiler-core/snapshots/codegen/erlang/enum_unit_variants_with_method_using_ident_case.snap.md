@@ -26,6 +26,12 @@ val HttpMethod = type {
 %%   Post
 %%   Put
 %%   Delete
+```
+
+----- ERLANG -- main__t__httpmethod.erl
+```erlang
+-module(main__t__httpmethod).
+-export([name/1]).
 
 name(M) ->
     Label = case M of

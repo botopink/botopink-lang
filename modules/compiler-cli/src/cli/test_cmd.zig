@@ -186,6 +186,16 @@ pub fn run(
             };
         }
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = sub_path, .data = o.result.js });
+
+        // Policy 3 (`13-module-identity`): a `type` of the module is an erlang
+        // module of its own, and the emitted test runner loads every `.erl` it
+        // finds beside itself — so the units have to be there. Named by their
+        // atom, flat at the root of the test output, the way `build` writes
+        // them under `out/erl/`.
+        for (o.result.units) |u| {
+            const unit_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}{s}", .{ u.atom, ext });
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
+        }
     }
 
     // Ship runtime `.mjs` sidecars (G2): a dependency's `#[@External.<targert>(...)]` modules

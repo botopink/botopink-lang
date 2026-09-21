@@ -14,6 +14,12 @@ type Vec2(
 -module(main).
 
 %% type Vec2: x, y
+```
+
+----- ERLANG -- main__t__vec2.erl
+```erlang
+-module(main__t__vec2).
+-export([dot/2]).
 
 dot(Self, Other) ->
     ((maps:get(x, Self) * maps:get(x, Other)) + (maps:get(y, Self) * maps:get(y, Other))).

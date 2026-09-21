@@ -26,26 +26,14 @@ fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
--export([unit/0, area/1]).
 
 %% type Shape
 %%   Circle(radius)
 %%   Square(side)
 
-unit() ->
-    {'Square', 1}.
-
-area(Self) ->
-    case Self of
-        {'Circle', R} ->
-            ((R * R) * 3);
-        {'Square', S} ->
-            (S * S)
-    end.
-
 main() ->
-    S = unit(),
-    '__bp_print'([area(S)]).
+    S = main__t__shape:unit(),
+    '__bp_print'([main__t__shape:area(S)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -62,6 +50,23 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+```
+
+----- ERLANG -- main__t__shape.erl
+```erlang
+-module(main__t__shape).
+-export([unit/0, area/1]).
+
+unit() ->
+    {'Square', 1}.
+
+area(Self) ->
+    case Self of
+        {'Circle', R} ->
+            ((R * R) * 3);
+        {'Square', S} ->
+            (S * S)
+    end.
 ```
 
 ----- RUN LOG -----

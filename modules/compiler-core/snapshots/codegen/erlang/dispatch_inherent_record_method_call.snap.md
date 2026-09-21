@@ -19,12 +19,9 @@ fn main() {
 
 %% type Contador: n
 
-atual(Self) ->
-    maps:get(n, Self).
-
 main() ->
     C = #{n => 5},
-    '__bp_print'([atual(C)]).
+    '__bp_print'([main__t__contador:atual(C)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -41,6 +38,15 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+```
+
+----- ERLANG -- main__t__contador.erl
+```erlang
+-module(main__t__contador).
+-export([atual/1]).
+
+atual(Self) ->
+    maps:get(n, Self).
 ```
 
 ----- RUN LOG -----

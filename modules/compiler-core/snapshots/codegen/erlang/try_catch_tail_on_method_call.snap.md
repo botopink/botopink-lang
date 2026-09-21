@@ -20,12 +20,9 @@ fn run(p: Parser) -> i32 {
 
 %% type Parser: 
 
-parse(Self) ->
-    erlang:throw(#{msg => <<"bad input">>}).
-
 run(P) ->
     Result = case try
-        parse(P)
+        main__t__parser:parse(P)
     catch
         error:_TryR0 -> {error, _TryR0}
     end of
@@ -34,6 +31,15 @@ run(P) ->
             0
     end,
     Result.
+```
+
+----- ERLANG -- main__t__parser.erl
+```erlang
+-module(main__t__parser).
+-export([parse/1]).
+
+parse(Self) ->
+    erlang:throw(#{msg => <<"bad input">>}).
 ```
 
 ----- RUN LOG -----

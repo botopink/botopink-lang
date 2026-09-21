@@ -23,19 +23,34 @@ pub fn make() -> Counter { return Counter(n: 41); }
 ----- ERLANG -- geometry.erl
 ```erlang
 -module(geometry).
--export([make/0, zero/0, bump/1, area/1]).
+-export([make/0]).
 
 %% type Counter: n
+
+%% type Shape
+%%   Circle(radius)
+%%   Square(side)
+
+make() ->
+    #{n => 41}.
+```
+
+----- ERLANG -- geometry__t__counter.erl
+```erlang
+-module(geometry__t__counter).
+-export([zero/0, bump/1]).
 
 zero() ->
     #{n => 0}.
 
 bump(Self) ->
     (maps:get(n, Self) + 1).
+```
 
-%% type Shape
-%%   Circle(radius)
-%%   Square(side)
+----- ERLANG -- geometry__t__shape.erl
+```erlang
+-module(geometry__t__shape).
+-export([area/1]).
 
 area(Self) ->
     case Self of
@@ -44,9 +59,6 @@ area(Self) ->
         {'Square', S} ->
             (S * S)
     end.
-
-make() ->
-    #{n => 41}.
 ```
 
 ----- RUN LOG -----
@@ -72,10 +84,10 @@ fn main() {
 %% import Counter, Shape, make
 
 main() ->
-    C = geometry:zero(),
-    '__bp_print'([geometry:bump(C)]),
-    '__bp_print'([geometry:area({'Square', 4})]),
-    '__bp_print'([geometry:bump(geometry:make())]).
+    C = geometry__t__counter:zero(),
+    '__bp_print'([geometry__t__counter:bump(C)]),
+    '__bp_print'([geometry__t__shape:area({'Square', 4})]),
+    '__bp_print'([geometry__t__counter:bump(geometry:make())]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

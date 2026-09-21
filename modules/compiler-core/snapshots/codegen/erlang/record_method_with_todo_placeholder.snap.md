@@ -12,6 +12,12 @@ type Unimplemented(id: i32) {
 -module(main).
 
 %% type Unimplemented: id
+```
+
+----- ERLANG -- main__t__unimplemented.erl
+```erlang
+-module(main__t__unimplemented).
+-export([process/1]).
 
 process(Self) ->
     erlang:error({todo, "not implemented"}).

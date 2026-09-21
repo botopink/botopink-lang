@@ -418,6 +418,40 @@ codegen/
 
 ### erlang
 
+- **One module per `type` — policy 3 of `13-module-identity`.** A source file
+  emits its own module plus one per `type` it declares
+  (`crossModule.typeAtom` → `main__t__person`, `std@dict__t__dict`), carried out
+  as `GenerateResult.units`. A type's instance methods, its associated fns and
+  the behavior `default fn`s it adopts are that module's, exported under **the
+  names the programmer wrote** — the module boundary is what erlang's flat
+  function namespace lacked, so `recordMethodAtom`, `record_method_collisions`,
+  `isRecordMethodCollision` and `collectRecordMethodCollisions` are **gone**:
+  two types can each declare `greet/1` and there is no collision left to mangle.
+  `openTypeUnit` / `closeTypeUnit` bracket a unit: the file module's helper state
+  (`needs_*`, `prim_shims`, `needed_instance_defaults`) is set aside for its
+  duration, so each module carries exactly the helpers its own bodies reached,
+  and `cur_type` decides the shape of every call made inside — a call to this
+  type's own methods is local, one into the file's functions is a remote call
+  the file module then exports (`fileCall` → `file_exports_needed`, which is why
+  the `-export` form is written into a placeholder and filled once every
+  declaration is lowered). `typeCall` is the single site that spells a method
+  call: local inside that type's module, `atom:m(Recv, …)` everywhere else,
+  with `typeModuleAtom` answering the owner's atom for an imported type.
+  A receiver inference left untyped (a behavior's `default fn` records no
+  lowering) routes through `method_owners` — `method/arity` → the one local type
+  declaring or adopting it; two claimants leave no entry and the bare call
+  stands, which is what the receiver's own tag will decide in half 3.
+  **A `type` with no bodied method emits no module**: an artifact holding one
+  `-module` line is not written and no snapshot section shows one. Half 3 gives
+  every type a `format/1` and the unit stops being empty then.
+  **A `behavior` emits no module of its own** (decision 23: `__b__` is reserved
+  and has no run-time representation). That is a deliberate departure from
+  policy 3 §2.2, which would put a behavior's associated `default fn` in
+  `<path>__b__<decl>` and emit it once: the assoc default keeps
+  `interfaceAssocAtom`'s mangled local (`array_range/2`) in **every** consuming
+  module, as it always has. Decision 23 is newer than §2.2 and wins; §2.2's
+  "emitted once" is therefore still open, and it is the behavior module that
+  would close it.
 - **Cross-module calls are remote calls.** Erlang resolves a bare `f(X)` in the
   CALLING module, so a name this module imports but never defines must name its
   owner: `imported_fns` (built in `collectImportedTypes` from the cross index)
@@ -426,9 +460,10 @@ codegen/
   owner atom is `Emitter.atomOf(path)`, i.e. `CrossModule.atomFor` — the whole
   module path joined with `@` (`std@dict:insert/3`), never the basename.
   A local definition of the same name and arity wins (an `@emit`ed body can
-  define `find/2` beside an imported `find`). The owner exports the methods of
-  its `pub` types (under the mangled name where two types share a method name),
-  so the consumer's remote call resolves. **An import that names a MODULE, not a
+  define `find/2` beside an imported `find`). A method is reached in **the
+  TYPE's** module, not the file's (policy 3, below): `imported_fns` maps it to
+  `crossModule.typeAtom(owner path, type)`, so `stub.thenReturn(v)` is
+  `lib__t__stub:thenReturn/2` and the owner's type module exports it. **An import that names a MODULE, not a
   symbol, registers that module's types too.** `import {dict} from "std"` binds
   the module `std/dict`; `Dict` is never named by the consumer, so the cross
   index was never consulted for it and `dict.empty().insert("a", 1)` emitted a
@@ -485,9 +520,9 @@ codegen/
   primitive shim and aborted at run time with
   `{bp_unsupported_method, <<"isEmpty">>, 0, #{items => []}}` while commonJS
   answered. `recordForms` now emits each adopted default (following `extends`)
-  beside the record's own methods, and `self_record_type` makes `self.size()`
-  inside such a body resolve through the record — so it reaches `bag_size/1`
-  where a record-method collision mangled `size/1` away. Which ones are emitted
+  in the record's own module beside its methods, and `self_record_type` makes
+  `self.size()` inside such a body resolve through the record — a local call
+  there, since both are that module's. Which ones are emitted
   is decided once, in `collectAdoptedIfaceDefaults`, after `collectLocalFnArities`:
   **only a default whose `<name>/<arity>` is free in the module and claimed by
   exactly one record.** Inference records no lowering for a call to an adopted

@@ -19,6 +19,12 @@ val Maybe = type {
 %% type Maybe
 %%   Nothing
 %%   Just(value)
+```
+
+----- ERLANG -- main__t__maybe.erl
+```erlang
+-module(main__t__maybe).
+-export([check/1]).
 
 check(M) ->
     case M of

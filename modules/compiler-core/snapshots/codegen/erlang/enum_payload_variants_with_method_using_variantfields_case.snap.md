@@ -23,6 +23,12 @@ val Shape = type {
 %%   Circle(radius)
 %%   Square(side)
 %%   Triangle(base, height)
+```
+
+----- ERLANG -- main__t__shape.erl
+```erlang
+-module(main__t__shape).
+-export([area/1]).
 
 area(Shape) ->
     case Shape of

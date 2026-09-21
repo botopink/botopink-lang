@@ -13,6 +13,12 @@ val Counter = type(
 -module(main).
 
 %% type Counter: count
+```
+
+----- ERLANG -- main__t__counter.erl
+```erlang
+-module(main__t__counter).
+-export([inc/0]).
 
 inc() ->
     %% field assignment is not directly supported in Erlang.

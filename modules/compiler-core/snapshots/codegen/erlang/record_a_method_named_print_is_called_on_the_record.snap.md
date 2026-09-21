@@ -21,15 +21,9 @@ fn main() {
 
 %% type Doc: title
 
-print(Self) ->
-    <<"doc:", ('__bp_text'(maps:get(title, Self)))/binary>>.
-
 main() ->
     D = #{title => <<"hi">>},
-    '__bp_print'([print(D)]).
-
-'__bp_text'(Value) when is_binary(Value) -> Value;
-'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+    '__bp_print'([main__t__doc:print(D)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -46,6 +40,18 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+```
+
+----- ERLANG -- main__t__doc.erl
+```erlang
+-module(main__t__doc).
+-export([print/1]).
+
+print(Self) ->
+    <<"doc:", ('__bp_text'(maps:get(title, Self)))/binary>>.
+
+'__bp_text'(Value) when is_binary(Value) -> Value;
+'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 ```
 
 ----- RUN LOG -----

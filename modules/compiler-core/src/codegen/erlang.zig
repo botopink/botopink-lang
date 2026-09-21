@@ -306,13 +306,29 @@ fn parseAutoImportedBifs(alloc: std.mem.Allocator) anyerror![]const AutoImported
     return out.items;
 }
 
+/// `noAutoImportRefs` over an explicit function list — a type module's own
+/// exports (policy 3), which the decl walk below no longer reaches.
+fn noAutoImportRefsOf(b: Ast.Builder, fns: []const Ast.FnRef, bif_table: []const AutoImportedBif) ![]const Ast.FnRef {
+    var refs: std.ArrayListUnmanaged(Ast.FnRef) = .empty;
+    for (fns) |f| {
+        for (bif_table) |bif| {
+            if (bif.arity != f.arity or !std.mem.eql(u8, bif.name, f.name)) continue;
+            for (refs.items) |seen| {
+                if (seen.arity == f.arity and std.mem.eql(u8, seen.name, f.name)) break;
+            } else try refs.append(b.arena, .{ .name = try b.arena.dupe(u8, f.name), .arity = f.arity });
+            break;
+        }
+    }
+    return refs.items;
+}
+
 /// `name/arity` of every user function whose name + arity shadows an Erlang
 /// auto-imported BIF, deduplicated in declaration order. Walks every surface
 /// emitted as a bare erlang fn: top-level fns plus methods of records, enums,
 /// `extend` and `implement` (sharing the global atom namespace). Interface
 /// assoc fns are mangled (`'Interface_name'`) and cannot collide with a
 /// lowercase BIF, so they are excluded.
-fn noAutoImportRefs(b: Ast.Builder, decls: []ast.DeclKind, bif_table: []const AutoImportedBif) ![]const Ast.FnRef {
+fn noAutoImportRefs(b: Ast.Builder, decls: []ast.DeclKind, bif_table: []const AutoImportedBif, inline_methods: bool) ![]const Ast.FnRef {
     var refs: std.ArrayListUnmanaged(Ast.FnRef) = .empty;
     const Collect = struct {
         fn run(arena: std.mem.Allocator, out: *std.ArrayListUnmanaged(Ast.FnRef), table: []const AutoImportedBif, name: []const u8, arity: usize) !void {
@@ -329,7 +345,9 @@ fn noAutoImportRefs(b: Ast.Builder, decls: []ast.DeclKind, bif_table: []const Au
         .@"fn" => |f| try Collect.run(b.arena, &refs, bif_table, f.name, f.params.len),
         // Record / enum methods keep `params.len` as the erlang arity (instance
         // methods include the receiver); `is_declare` methods emit no body.
-        .type_ => |tdecl| switch (tdecl.shape) {
+        // Under policy 3 they are in the TYPE's module, whose own directive is
+        // `noAutoImportRefsOf`; a comptime module (`inline_methods`) keeps them.
+        .type_ => |tdecl| if (inline_methods) switch (tdecl.shape) {
             .record => for (tdecl.methods) |m| {
                 if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
             },
@@ -416,7 +434,7 @@ pub fn codegenEmit(
                 // the driver as a located diagnostic naming the function now,
                 // like a type error: only this module fails.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const code = emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, &missing) catch |err| {
+                const emitted = emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, &missing) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -433,7 +451,8 @@ pub fn codegenEmit(
                     .name = ct.name,
                     .src = ct.src,
                     .result = .{
-                        .js = code,
+                        .js = emitted.code,
+                        .units = emitted.units,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
                         .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
                         .comptime_err = null,
@@ -963,7 +982,10 @@ pub fn emitComptimeModule(
     defer rewrites.deinit();
     var instance_lowerings = std.AutoHashMap(ast.Loc, envMod.InstanceLowering).init(alloc);
     defer instance_lowerings.deinit();
-    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, module, null);
+    // A comptime module keeps its methods inline (`Emitter.type_units`), so
+    // it never has units to hand back.
+    const emitted = try emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, module, null);
+    return emitted.code;
 }
 
 /// How many `<Iface>.<method>` entries the primitive dispatch table holds for a
@@ -1017,9 +1039,17 @@ fn emitErlang(
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
     /// the caller reports the function and the call site, not the error name.
     missing: ?*?moduleOutput.MissingExternal,
-) ![]u8 {
+) !EmittedModule {
     return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, null, missing);
 }
+
+/// What one source file emits on this backend: its own module and, under
+/// policy 3, one module per `type` it declares (`moduleOutput.Unit`). Both
+/// owned by the caller.
+pub const EmittedModule = struct {
+    code: []u8,
+    units: []moduleOutput.Unit = &.{},
+};
 
 fn emitErlangModule(
     alloc: std.mem.Allocator,
@@ -1033,7 +1063,7 @@ fn emitErlangModule(
     enum_exports: []const EnumExport,
     comptime_module: ?ComptimeModule,
     missing: ?*?moduleOutput.MissingExternal,
-) ![]u8 {
+) !EmittedModule {
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
@@ -1114,11 +1144,16 @@ fn emitErlangModule(
     var prelude_arena = std.heap.ArenaAllocator.init(alloc);
     defer prelude_arena.deinit();
     if (comptime_module != null) try em.collectPreludeInstanceDefaults(prelude_arena.allocator());
-    try em.collectRecordMethodCollisions(program);
+    defer em.atom_arena.deinit();
+    defer em.type_units.deinit(alloc);
+    defer em.file_exports_needed.deinit(alloc);
     defer {
-        var rit = em.record_method_collisions.iterator();
-        while (rit.next()) |entry| em.alloc.free(entry.key_ptr.*);
-        em.record_method_collisions.deinit();
+        var fit = em.file_fns.keyIterator();
+        while (fit.next()) |k| alloc.free(k.*);
+        em.file_fns.deinit(alloc);
+        var mit = em.method_owners.keyIterator();
+        while (mit.next()) |k| alloc.free(k.*);
+        em.method_owners.deinit(alloc);
     }
     defer {
         var pit = em.prim_iface_chain.iterator();
@@ -1263,7 +1298,7 @@ fn emitErlangModule(
     // diagnostic an error, and the directive keeps the generated code
     // OTP-version-independent. The (name, arity) catalog comes from
     // `prelude.erlang_bifs` (`libs/std/src/erlang_bifs.d.bp`).
-    const shadows = try noAutoImportRefs(b, program.decls, prelude_cache.autoImportedBifs());
+    const shadows = try noAutoImportRefs(b, program.decls, prelude_cache.autoImportedBifs(), comptime_module != null);
     if (shadows.len > 0) try forms.append(b.arena, .{ .no_auto_import = shadows });
 
     // Collect public function names for export.
@@ -1307,31 +1342,10 @@ fn emitErlangModule(
         },
         else => {},
     };
+    // A type's methods are exported by the TYPE's module (policy 3), never by
+    // the file's — see `closeTypeUnit`. A comptime module keeps them inline
+    // and exports nothing of them, as before.
     if (cross) |xc| {
-        for (program.decls) |decl| {
-            // A `pub` type's methods are reachable from another module even when
-            // that module never names the type itself (a method called on a
-            // value some imported fn answered), so the owner exports them in any
-            // multi-module build.
-            const tdecl = switch (decl) {
-                .type_ => |t| if (t.isPub or xc.imported.contains(t.name)) t else continue,
-                else => continue,
-            };
-            for (tdecl.methods) |m| {
-                if (m.is_declare) continue;
-                // Both shapes are bare local functions here: an assoc fn takes
-                // only its declared parameters, an instance method takes the
-                // receiver as `params[0]`. A method name two types share is
-                // emitted under its mangled name (`grouping_toArray`), so the
-                // export must name what the module actually defines.
-                var mn_buf: [256]u8 = undefined;
-                const mn: []const u8 = if (em.isRecordMethodCollision(tdecl.name, m.name))
-                    try b.arena.dupe(u8, try Emitter.recordMethodAtom(&mn_buf, tdecl.name, m.name))
-                else
-                    m.name;
-                try exports.append(b.arena, .{ .name = mn, .arity = m.params.len });
-            }
-        }
         // A `pub implement` / `pub extend` another module activates
         // (`import {PatoNada*} from "pond"`) is reached as a remote call, so the
         // owner exports each method. Extension methods keep the receiver as
@@ -1346,7 +1360,11 @@ fn emitErlangModule(
             for (ext.methods) |m| try exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
         }
     }
-    if (exports.items.len > 0) try forms.append(b.arena, .{ .exports = exports.items });
+    // The `-export` form is appended after the declarations are lowered: a
+    // type module reaching one of this file's functions adds it to the list
+    // (`file_exports_needed`), and the slice must be complete when rendered.
+    const exports_at = forms.items.len;
+    try forms.append(b.arena, .blank);
 
     // A comptime module reaches its host glue in the resident prelude by its
     // bare name, so the lowered body reads the same whether the glue is
@@ -1358,8 +1376,9 @@ fn emitErlangModule(
         }
     }
 
-    // Declarations, each after an empty line.
-    const decls_start = forms.items.len;
+    // Declarations, each after an empty line. Not `const`: dropping the unused
+    // `-export` placeholder below shifts every form after it down by one.
+    var decls_start = forms.items.len;
     for (program.decls) |decl| {
         try forms.append(b.arena, .blank);
         switch (decl) {
@@ -1414,6 +1433,23 @@ fn emitErlangModule(
 
     // Interface instance `default fn`s reached by some call site above.
     try em.instanceDefaultForms(b, &forms);
+
+    // Every function a type module reached remotely, now that all of them are
+    // lowered. Deduplicated against what is already exported.
+    for (em.file_exports_needed.values()) |ref| {
+        for (exports.items) |seen| {
+            if (seen.arity == ref.arity and std.mem.eql(u8, seen.name, ref.name)) break;
+        } else try exports.append(b.arena, ref);
+    }
+    if (exports.items.len > 0) {
+        forms.items[exports_at] = .{ .exports = exports.items };
+    } else {
+        // Nothing to export: the placeholder goes, so a module without an
+        // `-export` reads exactly as it did before the form was deferred. It
+        // sat before the declarations, so their start moves with it.
+        _ = forms.orderedRemove(exports_at);
+        decls_start -= 1;
+    }
 
     // Runtime helpers a lowering reached. A comptime module always carries
     // `'__bp_text'/1` (`comptime_helper_forms`); a listing renders no helper.
@@ -1482,7 +1518,9 @@ fn emitErlangModule(
         }
         // Only a module that calls into another needs the sibling loader: a
         // single-module project's runner stays exactly as it was.
-        try testRunnerForms(b, &forms, tests, em.imported_fns.count() > 0 or em.imported_types.count() > 0);
+        // A file with a type module calls into it, so the runner has to load
+        // the siblings the emitter wrote beside it.
+        try testRunnerForms(b, &forms, tests, em.imported_fns.count() > 0 or em.imported_types.count() > 0 or em.type_units.items.len > 0);
     }
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -1491,8 +1529,44 @@ fn emitErlangModule(
     // A listing starts at the first decl, past its leading blank line.
     const written = if (listing) forms.items[@min(decls_start + 1, forms.items.len)..] else forms.items;
     try erlEmitter.writeForms(&aw.writer, written);
-    return aw.toOwnedSlice();
+    const code = try aw.toOwnedSlice();
+    errdefer alloc.free(code);
+
+    // Policy 3: the per-type modules, rendered when their unit closed.
+    const units = try alloc.alloc(moduleOutput.Unit, em.type_units.items.len);
+    errdefer alloc.free(units);
+    for (em.type_units.items, 0..) |u, i| units[i] = .{ .atom = u.atom, .code = u.code };
+    em.type_units.items.len = 0;
+    return .{ .code = code, .units = units };
 }
+
+/// One `type`'s module while its methods are lowered (`openTypeUnit` …
+/// `closeTypeUnit`): the atom `crossModule.typeAtom` rendered, the forms its
+/// methods produced, the functions to export, and the helper state the file
+/// module's emitter had before — every `needs_*` flag, the reached primitive
+/// shims and behavior instance defaults are the UNIT's while it is open, so
+/// the unit carries exactly the helpers its own bodies reached and the file
+/// module keeps exactly its own. `atom` and `code` are owned by the caller's
+/// allocator once the unit is closed.
+const TypeUnit = struct {
+    atom: []u8,
+    code: []u8,
+};
+
+/// The file-module emitter state `openTypeUnit` sets aside.
+const SavedUnitState = struct {
+    cur_type: ?[]const u8,
+    needs_text_helper: bool,
+    needs_print_helper: bool,
+    needs_len_helper: bool,
+    needs_index_helper: bool,
+    needs_slice_helper: bool,
+    needs_add_helper: bool,
+    prim_shims: @FieldType(Emitter, "prim_shims"),
+    needed_instance_defaults: @FieldType(Emitter, "needed_instance_defaults"),
+    forms: Forms,
+    exports: std.ArrayListUnmanaged(Ast.FnRef),
+};
 
 const Forms = std.ArrayListUnmanaged(Ast.Form);
 
@@ -2107,14 +2181,35 @@ const Emitter = struct {
     /// `Integer` lights up via an `I32` receiver. Populated by
     /// `collectPrimErlangDispatch` alongside the dispatch map.
     prim_iface_chain: std.StringHashMap([]const u8),
-    /// Set of `<RecordType>.<method>` keys whose method name collides with
-    /// at least one other record's method of the same arity. Emitted as
-    /// the mangled top-level fn `<recordtype>_<method>(Self, args)`; the
-    /// call site (when the receiver's `.record` lowering names `<tn>` and
-    /// `(<tn>, callee)` is in this set) routes to the mangled name. Empty
-    /// means no collision detected — every record method stays bare.
-    /// Populated by `collectRecordMethodCollisions` before any emit.
-    record_method_collisions: std.StringHashMap(void),
+    /// Policy 3 (`13-module-identity` half 2): every `type` declared in this
+    /// file is a BEAM module of its own, `crossModule.typeAtom` — the type's
+    /// methods, its adopted behavior defaults and its associated fns live
+    /// there, NEVER mangled, because the module boundary is what erlang's flat
+    /// function namespace lacked (`recordMethodAtom` used to spell
+    /// `pessoa_greet/1` for the second type declaring `greet/1`; it is gone).
+    /// One entry per type in declaration order; `closeTypeUnit` renders it.
+    /// A comptime module (`untyped`) keeps its methods inline: it is one
+    /// declaration evaluated once, nothing loads a sibling beside it.
+    type_units: std.ArrayListUnmanaged(TypeUnit) = .empty,
+    /// The type whose module is being lowered, or null in the file's module.
+    /// A call into the file's own functions from here is a remote call the
+    /// file module exports (`file_exports_needed`); a call to this type's own
+    /// methods stays local.
+    cur_type: ?[]const u8 = null,
+    /// `name/arity` of every file-level function (and 0-arity `val`) some type
+    /// module reached, so the file module exports it. Keys borrow the AST.
+    file_exports_needed: std.StringArrayHashMapUnmanaged(Ast.FnRef) = .empty,
+    /// `name/arity` of the file's own top-level `fn`s — the ones a type module
+    /// reaches remotely. `local_fn_arities` also holds every method, which is
+    /// the wrong answer inside a type module.
+    file_fns: std.StringHashMapUnmanaged(void) = .empty,
+    /// `method/arity` → the ONE local type declaring it, for a value receiver
+    /// inference left untyped: the call is routed into that type's module.
+    /// Two types declaring the same method/arity leave no entry (the
+    /// receiver's tag decides at run time, half 3).
+    method_owners: std.StringHashMapUnmanaged(?[]const u8) = .empty,
+    /// Owns the atoms this emitter renders (type modules, imported owners).
+    atom_arena: std.heap.ArenaAllocator,
     /// Set when a lowering called `'__bp_text'/1` (a string `+` operand that
     /// is not provably a string). A typed module then emits `text_helper_form`;
     /// a comptime module always carries it.
@@ -2170,69 +2265,8 @@ const Emitter = struct {
             .builtin_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
             .user_erlang_templates = std.StringHashMap(PrimErlangCall).init(alloc),
             .prim_iface_chain = std.StringHashMap([]const u8).init(alloc),
-            .record_method_collisions = std.StringHashMap(void).init(alloc),
+            .atom_arena = std.heap.ArenaAllocator.init(alloc),
         };
-    }
-
-    /// Pre-pass: detect record/struct method names that appear on more than
-    /// one nominal type with the same arity. Those collisions get mangled
-    /// at emit time (`Query.count` → `query_count`) and at the call site
-    /// (`.type_ => |"Query"|` of `count` routes to `query_count`),
-    /// because erlang's top-level fn namespace has no record-scoped
-    /// disambiguation.
-    fn collectRecordMethodCollisions(this: *Emitter, program: ast.Program) !void {
-        var arena = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena.deinit();
-        const aa = arena.allocator();
-        // First pass: map (method, arity) → first type that declares it.
-        // A second occurrence triggers collision recording for BOTH the
-        // existing entry's type and the new type.
-        const FirstOf = struct { type_name: []const u8 };
-        var seen = std.StringHashMap(FirstOf).init(aa);
-        for (program.decls) |decl| {
-            const type_name: []const u8 = switch (decl) {
-                .type_ => |r| if (r.isRecord()) r.name else continue,
-                else => continue,
-            };
-            const methods: []const ast.BehaviorMethod = switch (decl) {
-                .type_ => |r| if (r.isRecord()) r.methods else continue,
-                else => continue,
-            };
-            for (methods) |m| {
-                if (m.is_declare) continue;
-                if (m.params.len == 0) continue;
-                if (!std.mem.eql(u8, m.params[0].name, "self")) continue;
-                const key = try std.fmt.allocPrint(aa, "{s}/{d}", .{ m.name, m.params.len });
-                if (seen.get(key)) |first| {
-                    try this.recordCollision(first.type_name, m.name);
-                    try this.recordCollision(type_name, m.name);
-                } else {
-                    try seen.put(key, .{ .type_name = type_name });
-                }
-            }
-        }
-    }
-
-    fn recordCollision(this: *Emitter, type_name: []const u8, method: []const u8) !void {
-        const key = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ type_name, method });
-        const gop = try this.record_method_collisions.getOrPut(key);
-        if (gop.found_existing) this.alloc.free(key);
-    }
-
-    /// Mangle a record method as `<lowercased-typename>_<method>`. Mirrors
-    /// `interfaceAssocAtom`'s shape so the resulting atom is unquoted-safe
-    /// when the type name's first char is alphabetic.
-    fn recordMethodAtom(buf: []u8, type_name: []const u8, method: []const u8) ![]const u8 {
-        if (type_name.len == 0) return std.fmt.bufPrint(buf, "{s}", .{method});
-        return std.fmt.bufPrint(buf, "{c}{s}_{s}", .{ std.ascii.toLower(type_name[0]), type_name[1..], method });
-    }
-
-    /// True when `(type_name, method)` lives in the collision set (the
-    /// mangled name is required both at emit and at call site).
-    fn isRecordMethodCollision(this: *const Emitter, type_name: []const u8, method: []const u8) bool {
-        var b: [256]u8 = undefined;
-        const key = std.fmt.bufPrint(&b, "{s}.{s}", .{ type_name, method }) catch return false;
-        return this.record_method_collisions.contains(key);
     }
 
     /// `prim-op-annotation`: index top-level `fn` decls in `builtins.d.bp`
@@ -2675,13 +2709,47 @@ const Emitter = struct {
                 .args = try this.callArgs(b, null, cc),
             } };
         }
-        var mn_buf: [256]u8 = undefined;
-        const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
-            try b.arena.dupe(u8, try recordMethodAtom(&mn_buf, tn, cc.callee))
-        else
-            cc.callee;
         const args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
-        return if (this.methodOwnerModule(tn, cc.callee)) |owner| b.remote(owner, mn, args) else b.call(mn, args);
+        return this.typeCall(b, tn, cc.callee, args);
+    }
+
+    /// A call to `method` of type `type_name`: local inside that type's own
+    /// module, a remote call into it from anywhere else — this file's module,
+    /// another type's module, or a consumer of an imported type
+    /// (`typeModuleAtom`). Policy 3 makes every method call one of these two
+    /// shapes; nothing is mangled and nothing is inlined.
+    fn typeCall(this: *Emitter, b: Ast.Builder, type_name: []const u8, method: []const u8, args: []const Ast.Expr) !Ast.Expr {
+        if (this.cur_type) |ct| if (std.mem.eql(u8, ct, type_name)) return b.call(method, args);
+        const owner = try this.typeModuleAtom(type_name);
+        return b.remote(owner, method, args);
+    }
+
+    /// The module atom of `type_name`'s methods (`crossModule.typeAtom`): the
+    /// owner's module path for an imported type — named in an `import { … }`
+    /// (`imported_types`), or reached through the link index, which is the only
+    /// source that knows an imported ENUM owns a method — and this file's for a
+    /// local one. The erlang twin of `beam_asm.zig`'s `typeModuleAtom`.
+    fn typeModuleAtom(this: *Emitter, type_name: []const u8) ![]const u8 {
+        if (this.imported_types.get(type_name)) |owner| return owner;
+        if (this.cross) |xc| if (xc.exports.get(type_name)) |info| switch (info.kind) {
+            .record, .@"enum" => if (!std.mem.eql(u8, info.module, this.module_name)) {
+                return try crossModule.typeAtom(this.atom_arena.allocator(), .of(info.module), type_name);
+            },
+            else => {},
+        };
+        return try crossModule.typeAtom(this.atom_arena.allocator(), .of(this.module_name), type_name);
+    }
+
+    /// A call to `name` of the FILE's module: local there, a remote call the
+    /// file module then exports (`file_exports_needed`) from inside a type
+    /// module — the file's functions are one module and the type's methods
+    /// another under policy 3.
+    fn fileCall(this: *Emitter, b: Ast.Builder, name: []const u8, args: []const Ast.Expr) !Ast.Expr {
+        if (this.cur_type == null) return b.call(name, args);
+        const key = try std.fmt.allocPrint(this.atom_arena.allocator(), "{s}/{d}", .{ name, args.len });
+        const gop = try this.file_exports_needed.getOrPut(this.alloc, key);
+        if (!gop.found_existing) gop.value_ptr.* = .{ .name = name, .arity = args.len };
+        return b.remote(this.atomOf(this.module_name), name, args);
     }
 
     /// The name a `implement` clause refers to (`implement Sized`,
@@ -2938,7 +3006,7 @@ const Emitter = struct {
     /// A bare botopink name as a read: the local variable at its current
     /// version, or the call `name()` when it is a module-level `val`.
     fn nameRefNode(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror!Ast.Expr {
-        if (!this.locals.contains(name) and this.top_vals.contains(name)) return b.call(name, &.{});
+        if (!this.locals.contains(name) and this.top_vals.contains(name)) return this.fileCall(b, name, &.{});
         return Ast.Expr.v(try this.varRef(b, name));
     }
 
@@ -3232,7 +3300,9 @@ const Emitter = struct {
                         if (!self.record_fields.contains(name)) {
                             try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
                         }
-                        try self.imported_types.put(name, self.atomOf(info.module));
+                        // Its methods and associated fns are in the TYPE's
+                        // module (policy 3), not the file's.
+                        try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), name));
                     },
                     .@"enum" => try self.enum_names.put(name, {}),
                     .@"fn", .val => {},
@@ -3253,9 +3323,13 @@ const Emitter = struct {
                     // unresolved one is a loud erlc error naming the function
                     // (see AGENTS.md).
                     .@"fn" => if (!info.is_external or info.erlang_backed) try self.imported_fns.put(name, owner),
-                    .record, .@"enum" => for (info.methods) |m| {
-                        const gop = try self.imported_fns.getOrPut(m);
-                        if (!gop.found_existing) gop.value_ptr.* = owner;
+                    // A method is reached in the TYPE's module (policy 3).
+                    .record, .@"enum" => {
+                        const type_owner = try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), name);
+                        for (info.methods) |m| {
+                            const gop = try self.imported_fns.getOrPut(m);
+                            if (!gop.found_existing) gop.value_ptr.* = type_owner;
+                        }
                     },
                     .val => {},
                 }
@@ -3268,9 +3342,10 @@ const Emitter = struct {
                     const other = e.value_ptr.*;
                     if (!std.mem.eql(u8, other.module, info.module)) continue;
                     if (other.kind != .record and other.kind != .@"enum") continue;
+                    const other_owner = try crossModule.typeAtom(self.atom_arena.allocator(), .of(other.module), e.key_ptr.*);
                     for (other.methods) |m| {
                         const gop = try self.imported_fns.getOrPut(m);
-                        if (!gop.found_existing) gop.value_ptr.* = owner;
+                        if (!gop.found_existing) gop.value_ptr.* = other_owner;
                     }
                 }
             },
@@ -3307,7 +3382,9 @@ const Emitter = struct {
             if (info.kind != .record and info.kind != .@"enum") continue;
             if (!std.mem.eql(u8, crossModule.moduleBasename(info.module), ns)) continue;
             if (std.mem.eql(u8, info.module, self.module_name)) continue;
-            const owner = self.atomOf(info.module);
+            // The type's own module (policy 3), for its associated fns and its
+            // methods alike.
+            const owner = try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), e.key_ptr.*);
             if (info.kind == .record) try self.imported_types.put(e.key_ptr.*, owner);
             for (info.methods) |m| {
                 const gop = try self.imported_fns.getOrPut(m);
@@ -3324,46 +3401,6 @@ const Emitter = struct {
         var key_buf: [256]u8 = undefined;
         const key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ name, arity }) catch return owner;
         return if (self.local_fn_arities.contains(key)) null else owner;
-    }
-
-    /// The module atom a method on `type_name` has to be called in, when the
-    /// type came from another module; null when the type is this module's own,
-    /// where the method is a local function. The erlang twin of `beam_asm.zig`'s
-    /// `methodOwnerModule` (`448b935`), with the same two sources, because a
-    /// consumer reaches an imported type two ways:
-    ///
-    ///   * by naming it in an `import { … }` — `imported_types`, which
-    ///     `collectImportedTypes` fills for a **record** and
-    ///     `collectNamespaceModuleTypes` for a module-shaped import;
-    ///   * through the link index, which is the only source that knows an
-    ///     imported **enum** owns the method: an enum's `import { … }` arm
-    ///     registers its variants (`enum_names`) and never its owner, because a
-    ///     tagged tuple is module-independent while its methods are not.
-    ///
-    /// Both kinds are consulted (`record` *or* `enum`) and the method has to be
-    /// one the exported type actually declares, so a name this module owns is
-    /// never redirected into a module that does not answer it.
-    fn methodOwnerModule(self: *const Emitter, type_name: []const u8, method: []const u8) ?[]const u8 {
-        if (self.imported_types.get(type_name)) |owner| return owner;
-        const xc = self.cross orelse return null;
-        const info = xc.exports.get(type_name) orelse return null;
-        switch (info.kind) {
-            .record, .@"enum" => {},
-            else => return null,
-        }
-        // A module never calls into itself remotely. `module_name` is the source
-        // path (`std/dict`) while the module atom is its basename (`dict`), so
-        // both have to be compared: the path catches this module's own type, and
-        // the basename catches a sibling that would emit the same atom — a
-        // remote self-call either way. The sites above compare paths for the same
-        // reason.
-        if (std.mem.eql(u8, info.module, self.module_name)) return null;
-        const owner = crossModule.moduleBasename(info.module);
-        if (std.mem.eql(u8, owner, crossModule.moduleBasename(self.module_name))) return null;
-        for (info.methods) |m| {
-            if (std.mem.eql(u8, m, method)) return owner;
-        }
-        return null;
     }
 
     /// True when record `type_name` declares a field `name` of function type —
@@ -3386,10 +3423,18 @@ const Emitter = struct {
     /// name, with its Erlang arity.
     fn collectLocalFnArities(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .@"fn" => |f| try self.putLocalFn(f.name, fnArityNoSelf(f)),
-            .type_ => |tdecl| switch (tdecl.shape) {
-                .record => for (tdecl.methods) |m| try self.putLocalFn(m.name, m.params.len),
-                .enum_ => for (tdecl.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            .@"fn" => |f| {
+                try self.putLocalFn(f.name, fnArityNoSelf(f));
+                if (!f.isExternal()) {
+                    const key = try std.fmt.allocPrint(self.alloc, "{s}/{d}", .{ f.name, fnArityNoSelf(f) });
+                    const gop = try self.file_fns.getOrPut(self.alloc, key);
+                    if (gop.found_existing) self.alloc.free(key);
+                }
+            },
+            .type_ => |tdecl| for (tdecl.methods) |m| {
+                try self.putLocalFn(m.name, m.params.len);
+                if (m.is_declare) continue;
+                try self.putMethodOwner(m.name, m.params.len, tdecl.name);
             },
             .implement => |im| for (im.methods) |m| try self.putLocalFn(m.name, m.params.len),
             .extend => |ex| for (ex.methods) |m| try self.putLocalFn(m.name, m.params.len),
@@ -3442,6 +3487,13 @@ const Emitter = struct {
                     if (self.local_fn_arities.contains(arity_key)) continue;
                     if ((claims.get(arity_key) orelse 0) != 1) continue;
                     try self.putLocalFn(m.name, m.params.len);
+                    // The record's module owns it under policy 3, so a call on
+                    // a receiver inference left untyped (a behavior `default
+                    // fn` is declared on the behavior, so inference records no
+                    // lowering for it) routes there like a declared method.
+                    // Unambiguous by construction: pass 1 kept only the
+                    // defaults exactly one record claims.
+                    try self.putMethodOwner(m.name, m.params.len, r.name);
                     const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ r.name, m.name });
                     const gop = try self.adopted_defaults.getOrPut(key);
                     if (gop.found_existing) self.alloc.free(key);
@@ -3457,6 +3509,31 @@ const Emitter = struct {
         var b: [256]u8 = undefined;
         const key = std.fmt.bufPrint(&b, "{s}.{s}", .{ type_name, method }) catch return false;
         return this.adopted_defaults.contains(key);
+    }
+
+    /// Record that type `owner` declares (or adopts) `name/arity`, for a call
+    /// on a receiver inference left untyped: policy 3 moved the function into
+    /// the type's module, so the bare local call would not resolve. A second
+    /// type claiming the same `name/arity` clears the entry — the receiver's
+    /// tag is what decides then, and it does not carry one until half 3.
+    fn putMethodOwner(self: *Emitter, name: []const u8, arity: usize, owner: []const u8) !void {
+        const key = try std.fmt.allocPrint(self.alloc, "{s}/{d}", .{ name, arity });
+        const gop = try self.method_owners.getOrPut(self.alloc, key);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = owner;
+            return;
+        }
+        self.alloc.free(key);
+        if (gop.value_ptr.*) |first| {
+            if (!std.mem.eql(u8, first, owner)) gop.value_ptr.* = null;
+        }
+    }
+
+    /// True when the file's module defines `name/arity` as a top-level `fn`.
+    fn isFileFn(self: *const Emitter, name: []const u8, arity: usize) bool {
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ name, arity }) catch return false;
+        return self.file_fns.contains(key);
     }
 
     fn putLocalFn(self: *Emitter, name: []const u8, arity: usize) !void {
@@ -4837,7 +4914,7 @@ const Emitter = struct {
                     // A module-level `val` emitted as a 0-arity function: a bare
                     // reference is the call `name()`. A local of the same name
                     // shadows it.
-                    if (!this.locals.contains(n) and this.top_vals.contains(n)) return b.call(n, &.{});
+                    if (!this.locals.contains(n) and this.top_vals.contains(n)) return this.fileCall(b, n, &.{});
                     return V(try this.varRef(b, n));
                 },
                 .identAccess => |ia| {
@@ -5425,7 +5502,7 @@ const Emitter = struct {
             // `add/2` the module never defines.
             if (this.top_vals.contains(cc.callee)) {
                 return .{ .apply = .{
-                    .fun = try b.ptr(try b.paren(try b.call(cc.callee, &.{}))),
+                    .fun = try b.ptr(try b.paren(try this.fileCall(b, cc.callee, &.{}))),
                     .args = try this.callArgs(b, null, cc),
                 } };
             }
@@ -5436,7 +5513,11 @@ const Emitter = struct {
             if (this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len)) |owner| {
                 return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
             }
-            return b.call(cc.callee, try this.callArgs(b, null, cc));
+            // A bare call to one of this file's own functions — remote from
+            // inside a type module (policy 3), local everywhere else.
+            const bare_args = try this.callArgs(b, null, cc);
+            if (this.cur_type != null and this.isFileFn(cc.callee, bare_args.len)) return this.fileCall(b, cc.callee, bare_args);
+            return b.call(cc.callee, bare_args);
         };
 
         // 06 N24 — a tuple element of function type applied by its position
@@ -5474,12 +5555,12 @@ const Emitter = struct {
                     return b.remote(owner, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
                 };
             }
-            return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+            return this.fileCall(b, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
         }
         if (mod_name) |name| {
             // Qualified extension call `Sym.m(obj)`: the receiver names the
             // extension block, not a module — the local `m(obj)`.
-            if (this.ext_names.contains(name)) return b.call(cc.callee, try this.callArgs(b, null, cc));
+            if (this.ext_names.contains(name)) return this.fileCall(b, cc.callee, try this.callArgs(b, null, cc));
             // Qualified enum payload constructor `Color.Rgb(r, g, b)` → the tagged
             // tuple `{'Rgb', R, G, B}` (the case-arm constructor pattern shape).
             //
@@ -5499,25 +5580,24 @@ const Emitter = struct {
                 for (cc.args, 1..) |arg, i| items[i] = try this.exprNode(b, arg.value.*);
                 return .{ .tuple = items };
             }
-            // An associated `fn` of a LOCAL enum (`Shape.unit()`): `enumForms`
-            // emits the enum's methods as plain local functions under their own
-            // names, so this is a local call — not a variant, and not a module.
+            // An associated `fn` of a LOCAL enum (`Shape.unit()`): the enum's
+            // methods are in the enum's module (policy 3) — not a variant, and
+            // not a module named after the type.
             if (this.enum_names.contains(name) and this.enum_variants_known.contains(name)) {
-                return b.call(cc.callee, try this.callArgs(b, null, cc));
+                return this.typeCall(b, name, cc.callee, try this.callArgs(b, null, cc));
             }
-            // Associated fn of an IMPORTED record (`Response.ok(...)` from
-            // `"web"`): a remote call into the owning module (`http:ok(...)`).
-            if (this.imported_types.get(name)) |owner| {
-                return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
+            // Associated fn of a record, imported (`Response.ok(...)` from
+            // `"web"`) or local: a call into the type's own module.
+            if (this.imported_types.contains(name) or this.record_fields.contains(name)) {
+                return this.typeCall(b, name, cc.callee, try this.callArgs(b, null, cc));
             }
-            // Associated fn of a LOCAL record: a local function of this module.
-            if (this.record_fields.contains(name)) return b.call(cc.callee, try this.callArgs(b, null, cc));
             // Associated `default fn` of an interface (`Array.range`): the mangled
-            // local `'<Interface>_<method>'` that `interfaceForms` emits.
+            // local `'<Interface>_<method>'` that `interfaceForms` emits into the
+            // FILE's module (decision 23: a behavior has no module of its own).
             if (this.isInterfaceAssoc(name, cc.callee)) {
                 var mraw: [256]u8 = undefined;
                 const mname = try interfaceAssocAtom(&mraw, name, cc.callee);
-                return b.call(try b.arena.dupe(u8, mname), try this.callArgs(b, null, cc));
+                return this.fileCall(b, try b.arena.dupe(u8, mname), try this.callArgs(b, null, cc));
             }
             // Any other PascalCase receiver is a module: `List.map(xs, f)` →
             // `list:map(Xs, F)`.
@@ -5557,6 +5637,17 @@ const Emitter = struct {
         if (this.untyped or !this.local_fn_arities.contains(try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 }))) {
             if (try this.untypedPrimCallNode(b, loc, recv, cc)) |node| return node;
         }
+        // A method exactly one local type declares, on a receiver inference
+        // left untyped: the call goes into that type's module (policy 3 moved
+        // the function out of this one). Two types declaring it leave the bare
+        // call — the receiver's tag decides at run time once it carries one.
+        if (!this.untyped) {
+            var owner_key: [256]u8 = undefined;
+            const key = std.fmt.bufPrint(&owner_key, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 }) catch "";
+            if (this.method_owners.get(key)) |owner| if (owner) |tn| {
+                return this.typeCall(b, tn, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+            };
+        }
         if (std.mem.eql(u8, cc.callee, "toString") and cc.args.len == 0) return this.formatNode(b, recv);
         // A field of function type called like a method on a receiver inference
         // left untyped (`c.set(9)` where some record declares `set: fn(…)`):
@@ -5578,7 +5669,9 @@ const Emitter = struct {
         if (this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len + 1)) |owner| {
             return b.remote(owner, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
         }
-        return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+        const recv_args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
+        if (this.cur_type != null and this.isFileFn(cc.callee, recv_args.len)) return this.fileCall(b, cc.callee, recv_args);
+        return b.call(cc.callee, recv_args);
     }
 
     /// Call arguments: `first` (a receiver passed positionally), the positional
@@ -6532,24 +6625,24 @@ const Emitter = struct {
             try text.appendSlice(b.arena, f.name);
         }
         try out.append(b.arena, .{ .comment = Ast.Comment.doc(text.items) });
+        // Policy 3: the record's functions go to the record's own module,
+        // `<file atom>__t__<record>`, under their own names — the module
+        // boundary replaces the `<recordtype>_<method>` mangling two records
+        // declaring `greet/1` used to need. A comptime module keeps them here.
+        var unit = try this.openTypeUnit(b, r.name);
+        const target: *Forms = if (unit) |*u| &u.forms else out;
         // Instance methods take the receiver positionally (`recv.m(args)` →
-        // `m(Recv, args)`). A method whose name collides with another record's
-        // method is mangled to `<recordtype>_<method>` so erlang's flat
-        // top-level fn namespace doesn't double-define it.
+        // `m(Recv, args)`).
         for (r.methods) |m| {
             if (m.is_declare) continue;
-            var mname_buf: [256]u8 = undefined;
-            const mname: []const u8 = if (this.isRecordMethodCollision(r.name, m.name))
-                try recordMethodAtom(&mname_buf, r.name, m.name)
-            else
-                m.name;
-            try this.methodForms(b, out, mname, m);
+            try this.methodForms(b, target, m.name, m);
+            if (unit) |*u| try u.exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
         }
         // The bodied instance `default fn`s the record adopts with `implement`
         // and does not declare itself: the behavior contract is part of the
         // record's surface, exactly as commonJS puts them on the class.
         // `self` is the record inside those bodies, so `self.size()` reaches the
-        // record's own (possibly mangled) method rather than a bare `size/1`.
+        // record's own method rather than a bare `size/1`.
         var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
         try this.adoptedIfaceDefaults(b.arena, r, &adopted);
         const saved_self_record = this.self_record_type;
@@ -6557,8 +6650,106 @@ const Emitter = struct {
         this.self_record_type = r.name;
         for (adopted.items) |m| {
             if (!this.emitsAdoptedDefault(r.name, m.name)) continue;
-            try this.methodForms(b, out, m.name, m);
+            try this.methodForms(b, target, m.name, m);
+            if (unit) |*u| try u.exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
         }
+        if (unit) |*u| try this.closeTypeUnit(b, r.name, u);
+    }
+
+    /// Open the module of `type_name` (policy 3): its atom is rendered, the
+    /// emitter's helper state is set aside so the unit collects only what its
+    /// own bodies reach, and `cur_type` routes calls (a call to this type's
+    /// methods is local, one into the file's functions is remote). Null when
+    /// this emit keeps methods inline (a comptime module).
+    fn openTypeUnit(this: *Emitter, b: Ast.Builder, type_name: []const u8) !?SavedUnitState {
+        if (this.untyped) return null;
+        _ = b;
+        const saved: SavedUnitState = .{
+            .cur_type = this.cur_type,
+            .needs_text_helper = this.needs_text_helper,
+            .needs_print_helper = this.needs_print_helper,
+            .needs_len_helper = this.needs_len_helper,
+            .needs_index_helper = this.needs_index_helper,
+            .needs_slice_helper = this.needs_slice_helper,
+            .needs_add_helper = this.needs_add_helper,
+            .prim_shims = this.prim_shims,
+            .needed_instance_defaults = this.needed_instance_defaults,
+            .forms = .empty,
+            .exports = .empty,
+        };
+        this.cur_type = type_name;
+        this.needs_text_helper = false;
+        this.needs_print_helper = false;
+        this.needs_len_helper = false;
+        this.needs_index_helper = false;
+        this.needs_slice_helper = false;
+        this.needs_add_helper = false;
+        this.prim_shims = .empty;
+        this.needed_instance_defaults = .empty;
+        return saved;
+    }
+
+    /// Close the module of `type_name`: the reached behavior defaults, shims
+    /// and helpers are appended to ITS forms, the module is rendered under its
+    /// `-module`/`-export` header into `type_units`, and the file module's
+    /// helper state comes back exactly as `openTypeUnit` found it.
+    fn closeTypeUnit(this: *Emitter, b: Ast.Builder, type_name: []const u8, unit: *SavedUnitState) !void {
+        // A `type` that declares no bodied method and adopts no default has
+        // nothing to put in a module — no artifact is written for it and no
+        // snapshot section shows one, rather than a file holding one
+        // `-module` line. Half 3 gives every type a `format/1`, and the unit
+        // stops being empty then.
+        if (unit.forms.items.len == 0) {
+            this.restoreFromUnit(unit);
+            return;
+        }
+        // The unit's own tail, in the file module's order.
+        try this.instanceDefaultForms(b, &unit.forms);
+        if (this.prim_shims.count() > 0) {
+            try this.primShimForms(b, &unit.forms);
+            if (this.prim_shims.contains("toString/0")) this.needs_text_helper = true;
+        }
+        if (this.needs_add_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
+        if (this.needs_len_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
+        if (this.needs_index_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
+        if (this.needs_slice_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
+        if (this.needs_text_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
+        if (this.needs_print_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form });
+
+        // The header: the type's atom, its exports, then the forms.
+        const atom = try crossModule.typeAtom(this.alloc, .of(this.module_name), type_name);
+        errdefer this.alloc.free(atom);
+        var forms: Forms = .empty;
+        try forms.append(b.arena, .{ .module = atom });
+        const shadows = try noAutoImportRefsOf(b, unit.exports.items, prelude_cache.autoImportedBifs());
+        if (shadows.len > 0) try forms.append(b.arena, .{ .no_auto_import = shadows });
+        if (unit.exports.items.len > 0) try forms.append(b.arena, .{ .exports = unit.exports.items });
+        try forms.appendSlice(b.arena, unit.forms.items);
+        var aw: std.Io.Writer.Allocating = .init(this.alloc);
+        defer aw.deinit();
+        try erlEmitter.writeForms(&aw.writer, forms.items);
+        const code = try aw.toOwnedSlice();
+        errdefer this.alloc.free(code);
+        try this.type_units.append(this.alloc, .{ .atom = atom, .code = code });
+
+        this.restoreFromUnit(unit);
+    }
+
+    /// Give the file module back the helper state `openTypeUnit` set aside,
+    /// dropping what the unit gathered of its own.
+    fn restoreFromUnit(this: *Emitter, unit: *SavedUnitState) void {
+        for (this.prim_shims.keys()) |k| this.alloc.free(k);
+        this.prim_shims.deinit(this.alloc);
+        this.needed_instance_defaults.deinit(this.alloc);
+        this.cur_type = unit.cur_type;
+        this.needs_text_helper = unit.needs_text_helper;
+        this.needs_print_helper = unit.needs_print_helper;
+        this.needs_len_helper = unit.needs_len_helper;
+        this.needs_index_helper = unit.needs_index_helper;
+        this.needs_slice_helper = unit.needs_slice_helper;
+        this.needs_add_helper = unit.needs_add_helper;
+        this.prim_shims = unit.prim_shims;
+        this.needed_instance_defaults = unit.needed_instance_defaults;
     }
 
     fn enumForms(this: *Emitter, b: Ast.Builder, out: *Forms, e: ast.TypeDecl) !void {
@@ -6576,10 +6767,16 @@ const Emitter = struct {
             }
             try out.append(b.arena, .{ .comment = Ast.Comment.doc(text.items) });
         }
+        // Policy 3: an enum's methods live in the enum's module, like a
+        // record's (`recordForms`).
+        var unit = try this.openTypeUnit(b, e.name);
+        const target: *Forms = if (unit) |*u| &u.forms else out;
         for (e.methods) |m| {
             if (m.is_declare) continue;
-            try this.methodForms(b, out, m.name, m);
+            try this.methodForms(b, target, m.name, m);
+            if (unit) |*u| try u.exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
         }
+        if (unit) |*u| try this.closeTypeUnit(b, e.name, u);
     }
 
     fn interfaceForms(this: *Emitter, b: Ast.Builder, out: *Forms, i: ast.BehaviorDecl) !void {
