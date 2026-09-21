@@ -1,0 +1,16 @@
+//// The other `Outcome`: the same two field NAMES in the other ORDER, and a
+//// `describe` of its own. Policy 3 puts each `describe` in its own type's
+//// module, so the method axis and the field axis are both on this page.
+
+pub type Outcome(
+    note: string,
+    tag: string,
+) {
+    pub fn describe(self: Self) -> string {
+        return self.tag;
+    }
+}
+
+pub fn netOutcome() -> Outcome {
+    return Outcome(note: "net-note", tag: "net-tag");
+}

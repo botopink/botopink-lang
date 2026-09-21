@@ -231,7 +231,13 @@ fn collectLinks(
         };
         for (u.imports) |imp| {
             for (outputs) |*o| {
-                const owns = if (cross.exports.get(imp.name())) |info|
+                // Which module actually defines this name, asked of the
+                // import's own `from "<mod>"`. `exports.get` is keyed by the
+                // bare name, so two modules exporting one name linked whichever
+                // the index's walk reached last INTO the consumer: measured,
+                // `import {parse} from "one"` linked `two`'s body and the
+                // program printed the other module's answer at exit 0.
+                const owns = if (cross.picked(imp.name(), u.source, null)) |info|
                     std.mem.eql(u8, info.module, o.name)
                 else
                     std.mem.eql(u8, crossModule.moduleBasename(o.name), imp.segments[imp.segments.len - 1]);

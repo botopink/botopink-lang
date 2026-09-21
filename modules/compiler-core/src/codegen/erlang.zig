@@ -469,6 +469,23 @@ pub fn codegenEmit(
                 // silent shadow across two output directories), which is the
                 // failure this front exists to remove. Fail exactly the modules
                 // involved, with a diagnostic, like a type error.
+                // An import this program cannot resolve to one module. Not
+                // erlang's question — the index it reads is backend-agnostic —
+                // but reported the same way the atom fault beside it is: the
+                // module that wrote the import fails with a diagnostic instead
+                // of one of the candidates quietly winning.
+                if (cross.exportFault(ct.name)) |contest| {
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = .{ .type = .{ .message = try contest.message(alloc), .loc = null } },
+                        },
+                    });
+                    continue;
+                }
                 if (cross.atomFault(ct.name)) |fault| {
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -487,15 +504,21 @@ pub fn codegenEmit(
                 // the driver as a located diagnostic naming the function now,
                 // like a type error: only this module fails.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const emitted = emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, &missing) catch |err| {
-                    const me = missing orelse return err;
+                var ambiguous: ?moduleOutput.AmbiguousVariant = null;
+                const emitted = emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, &missing, &ambiguous) catch |err| {
+                    const diag: moduleOutput.Diagnostic = if (missing) |me|
+                        try me.diagnostic(alloc)
+                    else if (ambiguous) |av|
+                        try av.diagnostic(alloc)
+                    else
+                        return err;
                     try results.append(alloc, .{
                         .name = ct.name,
                         .src = ct.src,
                         .result = .{
                             .js = try alloc.dupe(u8, ""),
                             .comptime_script = null,
-                            .diagnostic = try me.diagnostic(alloc),
+                            .diagnostic = diag,
                         },
                     });
                     continue;
@@ -1298,7 +1321,7 @@ pub fn emitComptimeModule(
     defer instance_lowerings.deinit();
     // A comptime module keeps its methods inline (`Emitter.type_units`), so
     // it never has units to hand back.
-    const emitted = try emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, module, null);
+    const emitted = try emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, module, null, null);
     return emitted.code;
 }
 
@@ -1353,8 +1376,11 @@ fn emitErlang(
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
     /// the caller reports the function and the call site, not the error name.
     missing: ?*?moduleOutput.MissingExternal,
+    /// Set when the emit fails with `error.AmbiguousVariant`: a bare variant
+    /// name two enums of the program declare, written where nothing says which.
+    ambiguous: ?*?moduleOutput.AmbiguousVariant,
 ) !EmittedModule {
-    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, null, missing);
+    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, null, missing, ambiguous);
 }
 
 /// What one source file emits on this backend: its own module and, under
@@ -1377,10 +1403,14 @@ fn emitErlangModule(
     enum_exports: []const EnumExport,
     comptime_module: ?ComptimeModule,
     missing: ?*?moduleOutput.MissingExternal,
+    ambiguous: ?*?moduleOutput.AmbiguousVariant,
 ) !EmittedModule {
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
+    };
+    errdefer if (ambiguous) |slot| {
+        slot.* = em.ambiguous_variant;
     };
     em.enum_exports = enum_exports;
     em.instance_lowerings = instance_lowerings;
@@ -1557,6 +1587,7 @@ fn emitErlangModule(
         em.imported_types.deinit();
         em.type_owner_path.deinit();
         em.variant_enum.deinit();
+        em.variant_contested.deinit(alloc);
         {
             var evn_it = em.enum_variant_names.valueIterator();
             while (evn_it.next()) |names| alloc.free(names.*);
@@ -1895,6 +1926,10 @@ fn emitErlangModule(
     errdefer alloc.free(units);
     for (em.type_units.items, 0..) |u, i| units[i] = .{ .atom = u.atom, .code = u.code };
     em.type_units.items.len = 0;
+    // A variant path this emit could not place: the code is written, and
+    // written wrong — refuse the module instead of shipping a tag no `case`
+    // over the right enum can match.
+    if (em.ambiguous_variant != null) return error.AmbiguousVariant;
     return .{ .code = code, .units = units };
 }
 
@@ -2361,6 +2396,11 @@ const Emitter = struct {
     /// filled at the throw site so `codegenEmit` can turn
     /// `error.MissingExternalTarget` into a located diagnostic naming it.
     missing_external: ?moduleOutput.MissingExternal = null,
+    /// Set when a written variant path could not be placed: two enums declare
+    /// the bare name and neither the written form nor a `case` subject says
+    /// which. The emit fails with a diagnostic naming both, because decision
+    /// 21's atom carries the enum — a guess is a value nothing can match.
+    ambiguous_variant: ?moduleOutput.AmbiguousVariant = null,
     /// While set, `patternBindVar` renders every binder as `_`: the pattern is
     /// being lowered as a pure test (`assertPatternStmts`'s `case` arm) and
     /// nothing reads its names.
@@ -2684,6 +2724,10 @@ const Emitter = struct {
     /// enum being matched rather than by declaration order. Null outside a
     /// `case` and for a subject whose type this emit cannot place.
     enum_hint: ?[]const u8 = null,
+    /// Bare variant names more than one enum of this emit declares. A name in
+    /// here is NOT an owner question `variant_enum` can answer — see
+    /// `rememberVariantOwner`.
+    variant_contested: std.StringHashMapUnmanaged(void) = .empty,
     /// This module reached a record field read it could not place statically
     /// and emits `'__bp_field'/2` (decision 21's dynamic fallback).
     needs_field_helper: bool = false,
@@ -3725,7 +3769,7 @@ const Emitter = struct {
                     try self.rememberVariantOrder(tdecl.name, tdecl.variants());
                     for (tdecl.variants()) |v| {
                         try self.enum_variants.put(v.name, {});
-                        _ = try self.variant_enum.getOrPutValue(v.name, tdecl.name);
+                        try self.rememberVariantOwner(v.name, tdecl.name);
                         try self.rememberEnumVariant(tdecl.name, v.name);
                         try self.rememberVariantFields(v);
                     }
@@ -3733,6 +3777,28 @@ const Emitter = struct {
             },
             else => {},
         };
+    }
+
+    /// Record which enum declares a bare variant name — and whether a SECOND
+    /// one does.
+    ///
+    /// `variant_enum` was filled with `getOrPutValue`: first writer wins, no
+    /// dissent check, no diagnostic. So a bare `.Circle` outside a `case`,
+    /// where the subject hint cannot answer, was qualified by whichever enum
+    /// the decl walk indexed first — measured, a `Hole` value written
+    /// `.Circle` was tagged `main__t__shape__v__circle` and the `case` over it
+    /// died with `case_clause` at run time, while wasm answered correctly.
+    /// A name two enums declare names neither, so `variant_enum` keeps the
+    /// first ONLY as a witness and `variant_contested` records that it is not
+    /// an answer.
+    fn rememberVariantOwner(self: *Emitter, variant: []const u8, enum_name: []const u8) !void {
+        const gop = try self.variant_enum.getOrPut(variant);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = enum_name;
+            return;
+        }
+        if (std.mem.eql(u8, gop.value_ptr.*, enum_name)) return;
+        try self.variant_contested.put(self.alloc, variant, {});
     }
 
     /// Record an enum's variant names in declaration order (§4.2's `is`).
@@ -3796,7 +3862,7 @@ const Emitter = struct {
                     try self.rememberVariantOrder(ee.name, ee.variants);
                     for (ee.variants) |v| {
                         try self.enum_variants.put(v.name, {});
-                        _ = try self.variant_enum.getOrPutValue(v.name, ee.name);
+                        try self.rememberVariantOwner(v.name, ee.name);
                         try self.rememberEnumVariant(ee.name, v.name);
                         try self.rememberVariantFields(v);
                     }
@@ -3808,7 +3874,16 @@ const Emitter = struct {
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
                 const name = imp.name();
-                const info = xc.exports.get(name) orelse {
+                // `pick`, not `exports.get`: the index is keyed by the bare
+                // name and several modules of a program may export one
+                // (`libs/std` declares `parse` in `json`, `querystring` and
+                // `url`), so the `from "<mod>"` this import wrote is what says
+                // which. Measured before this: a module importing `parse` from
+                // "one" emitted a remote call into "two" (`undef` at run time
+                // on erlang, the other module's ANSWER at exit 0 on commonJS).
+                // A contest is not resolved here — `export_faults` already
+                // failed this module in the driver.
+                const info = xc.picked(name, u.source, null) orelse {
                     // Not a `pub` symbol: either a MODULE (`import {dict} from
                     // "std"`, a sibling `import {geometry}`) or a `behavior`,
                     // which decision 23 leaves out of the index because it has
@@ -3967,16 +4042,25 @@ const Emitter = struct {
         }
         var count: usize = if (local == null) 0 else 1;
         const xc = self.cross orelse return false;
-        var it = xc.exports.iterator();
+        // `owners`, not `exports`: the export index keeps ONE entry per name,
+        // so two modules declaring `pub type Outcome` — each with its own
+        // `describe/1` — voted once between them and the method resolved to
+        // whichever declaration the walk kept. Measured: erlang answered `404`,
+        // the other record's field, where commonJS and wasm answered `net`.
+        var it = xc.owners.iterator();
         while (it.next()) |e| {
-            const info = e.value_ptr.*;
-            if (info.kind != .record and info.kind != .@"enum") continue;
-            if (local) |tn| if (std.mem.eql(u8, tn, e.key_ptr.*)) continue;
-            for (info.methods) |m| {
-                if (m.arity != arity or !std.mem.eql(u8, m.name, name)) continue;
-                count += 1;
-                if (count > 1) return true;
-                break;
+            for (e.value_ptr.*) |info| {
+                if (info.kind != .record and info.kind != .@"enum") continue;
+                // This file's own declaration is in both populations; it is
+                // skipped by MODULE, not by name, so a second module declaring
+                // the same type name still votes.
+                if (local != null and std.mem.eql(u8, info.module, self.module_name)) continue;
+                for (info.methods) |m| {
+                    if (m.arity != arity or !std.mem.eql(u8, m.name, name)) continue;
+                    count += 1;
+                    if (count > 1) return true;
+                    break;
+                }
             }
         }
         return false;
@@ -6348,7 +6432,19 @@ const Emitter = struct {
             // first — local `m(Recv, args)`, or `owner:m(Recv, args)` for an
             // imported type. A method name shared by two records is mangled to
             // `<recordtype>_<method>` so the flat fn namespace stays unambiguous.
-            .type_ => |tn| return this.typedMethodNode(b, tn, recv, cc),
+            // …unless the PROGRAM declares that type name more than once.
+            // Inference records the name and nothing else, and a name is
+            // unique inside a module, never over a program: `parser` and `net`
+            // may each declare `pub type Outcome` with a `describe/1` of its
+            // own, and policy 3 puts each in its OWN module. The call went to
+            // whichever declaration the export index kept, so erlang ran
+            // `parser__t__outcome:describe/1` over a `net` tuple and printed
+            // the neighbouring field (`404`) at exit 0. The value carries its
+            // own tag (decision 21), so it answers instead.
+            .type_ => |tn| return if (this.typeNameContested(tn))
+                this.dynamicMethodNode(b, recv, cc)
+            else
+                this.typedMethodNode(b, tn, recv, cc),
             // A field READ never reaches the call path.
             .field_of => {},
         };
@@ -7003,8 +7099,34 @@ const Emitter = struct {
     /// name: a comptime host enum has no declaration to read an enum off.
     fn variantTag(this: *Emitter, written: []const u8) []const u8 {
         const name = bareVariantName(written);
-        if (this.enum_variants.contains(name)) return this.qualifiedVariantTag(written, name) orelse name;
+        if (this.enum_variants.contains(name)) {
+            // A name two enums declare, written with nothing that says which:
+            // there is no tag to render. Recorded here and raised by
+            // `emitErlangModule`, which is where a diagnostic can be returned.
+            if (this.ambiguous_variant == null and this.variantPathUnplaceable(written, name)) {
+                this.ambiguous_variant = .{
+                    .variant = name,
+                    .a = this.variant_enum.get(name) orelse "",
+                    .b = this.otherEnumWithVariant(name) orelse "",
+                };
+            }
+            return this.qualifiedVariantTag(written, name) orelse name;
+        }
         return resultTag(name) orelse name;
+    }
+
+    /// An enum declaring `variant` that is NOT the one `variant_enum` witnessed
+    /// — the second name the ambiguity diagnostic quotes.
+    fn otherEnumWithVariant(this: *const Emitter, variant: []const u8) ?[]const u8 {
+        const first = this.variant_enum.get(variant) orelse return null;
+        var it = this.enum_variant_names.iterator();
+        while (it.next()) |e| {
+            if (std.mem.eql(u8, e.key_ptr.*, first)) continue;
+            for (e.value_ptr.*) |v| {
+                if (std.mem.eql(u8, v, variant)) return e.key_ptr.*;
+            }
+        }
+        return null;
     }
 
     /// The qualified tag of a variant written as `Shape.Circle`, `.Circle` or
@@ -7071,7 +7193,22 @@ const Emitter = struct {
         // make that collision ordinary (`Token.Color` and `Token.Border.Color`
         // in one file), and first-wins wrote an arm no value could match.
         if (this.enum_hint) |hint| if (this.isEnumVariantOf(hint, bare)) return hint;
+        // Two enums declaring the name means the name identifies neither: the
+        // site has to say which, and nothing here may pick one.
+        if (this.variant_contested.contains(bare)) return null;
         return this.variant_enum.get(bare);
+    }
+
+    /// True when the bare variant name cannot be placed here: two enums declare
+    /// it, the written form carries no enum qualifier and no `case` subject
+    /// hint answers. The emit refuses instead of tagging it with one of the two.
+    fn variantPathUnplaceable(this: *const Emitter, written: []const u8, bare: []const u8) bool {
+        // A comptime module places no variant at all — every one of them keeps
+        // its bare name by design, so there is nothing here to be ambiguous
+        // about and nothing to refuse.
+        if (this.untyped) return false;
+        if (!this.variant_contested.contains(bare)) return false;
+        return this.enumOfVariantPath(written, bare) == null;
     }
 
     /// The tag of `variant` declared by `enum_name` — `variantAtom` rendered
@@ -7172,13 +7309,36 @@ const Emitter = struct {
         }
         const name = found orelse return null;
         const xc = this.cross orelse return name;
-        var xit = xc.exports.iterator();
+        var xit = xc.owners.iterator();
         while (xit.next()) |e| {
-            if (e.value_ptr.kind != .record) continue;
-            if (std.mem.eql(u8, e.key_ptr.*, name)) continue;
-            if (fieldIndexOf(e.value_ptr.fields, member) != null) return null;
+            for (e.value_ptr.*) |info| {
+                if (info.kind != .record) continue;
+                if (std.mem.eql(u8, e.key_ptr.*, name)) continue;
+                if (fieldIndexOf(info.fields, member) != null) return null;
+            }
         }
         return name;
+    }
+
+    /// True when the PROGRAM declares this type name more than once, so the
+    /// name does not identify a record and nothing can be placed from it.
+    ///
+    /// Inference records a field read's receiver type as a NAME
+    /// (`InstanceLowering.field_of`), and a name is unique inside a module,
+    /// never over a program — `parser` and `net` may each declare
+    /// `pub type Outcome`, one field order each. The offset was taken from
+    /// whichever declaration the export index's walk kept, so erlang read
+    /// `net`'s `.tag` at `parser`'s offset and printed the NEIGHBOURING field
+    /// at exit 0, where commonJS and wasm printed the right one. The value
+    /// itself still knows: decision 21's tag is the type's own module atom, so
+    /// a contested name goes to `'__bp_field'/2`, which asks it — the same
+    /// answer `uniqueRecordWithField` gives a contested field name.
+    fn typeNameContested(this: *const Emitter, name: []const u8) bool {
+        const xc = this.cross orelse return false;
+        return switch (xc.pick(name, null, null)) {
+            .contested => true,
+            .none, .one => false,
+        };
     }
 
     /// The record type a field read is against: what inference recorded for
@@ -7189,14 +7349,18 @@ const Emitter = struct {
     /// two records share the field, and the dynamic helper takes over.
     fn recordTypeOfReceiver(this: *const Emitter, loc: ast.Loc, receiver: ast.Expr, member: []const u8) ?[]const u8 {
         if (this.instance_lowerings.get(loc)) |il| switch (il) {
-            .field_of => |t| if (this.record_fields.contains(t)) return t,
+            .field_of => |t| if (this.record_fields.contains(t) and !this.typeNameContested(t)) return t,
             else => {},
         };
         if (isSelfReceiver(receiver)) {
+            // `self` inside a method body is the emitting module's own type, so
+            // the name is not being used to pick between two declarations — no
+            // contest check here.
             if (this.cur_type) |ct| if (this.record_fields.contains(ct)) return ct;
             if (this.self_record_type) |rt| if (this.record_fields.contains(rt)) return rt;
         }
-        return this.uniqueRecordWithField(member);
+        const by_field = this.uniqueRecordWithField(member) orelse return null;
+        return if (this.typeNameContested(by_field)) null else by_field;
     }
 
     /// The record a `{ a, b }` destructuring is of: the written type when the

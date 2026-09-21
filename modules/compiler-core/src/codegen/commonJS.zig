@@ -66,6 +66,23 @@ pub fn codegenEmit(
                 });
             },
             .ok => |*ok| {
+                // An import this program cannot resolve to one module: the
+                // index is keyed by the bare symbol name and two modules
+                // export it. Backend-agnostic — every backend reads the same
+                // index — so every backend's driver reports it, the way the
+                // erlang atom fault is reported.
+                if (cross.exportFault(ct.name)) |contest| {
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = .{ .type = .{ .message = try contest.message(alloc), .loc = null } },
+                        },
+                    });
+                    continue;
+                }
                 // `"std"` package copies are dependencies — never emit their
                 // test blocks (a project's `botopink test` runs only its own
                 // tests; the stdlib's inline tests run from `libs/std` itself).
@@ -871,6 +888,76 @@ const NameScan = struct {
     }
 };
 
+/// True when a built JS subtree carries an `await` that belongs to the
+/// function being built. A nested arrow, function, class member or object
+/// method owns its own `await`, so the walk stops at one — a nested closure
+/// that awaits is that closure's problem, not its enclosing function's.
+const AwaitScan = struct {
+    fn expr(e: js.Expr) bool {
+        return switch (e) {
+            .lexeme_string, .quoted, .number, .null_, .this, .comment, .ident, .name => false,
+            .await_ => true,
+            .member => |m| expr(m.object.*),
+            .index => |ix| expr(ix.object.*) or expr(ix.index.*),
+            .call, .new_ => |cl| expr(cl.callee.*) or exprs(cl.args),
+            .binary => |b| expr(b.lhs.*) or expr(b.rhs.*),
+            .unary => |u| expr(u.operand.*),
+            .ternary => |t| expr(t.cond.*) or expr(t.then.*) or expr(t.else_.*),
+            .assign => |a| expr(a.target.*) or expr(a.value.*),
+            .paren => |p| expr(p.*),
+            // A closure owns its own `await`.
+            .arrow, .function => false,
+            .array => |a| exprs(a.elems) or (if (a.spread) |sp| switch (sp) {
+                .name => false,
+                .expr => |x| expr(x.*),
+            } else false),
+            .object => |o| blk: {
+                for (o.props) |pr| switch (pr) {
+                    .kv => |kv| if (expr(kv.value)) break :blk true,
+                    // A method of an object literal is its own function.
+                    .shorthand, .method => {},
+                };
+                break :blk false;
+            },
+            .host => |parts| blk: {
+                for (parts) |pt| switch (pt) {
+                    .text => {},
+                    .expr => |x| if (expr(x)) break :blk true,
+                };
+                break :blk false;
+            },
+            .yield_ => |x| if (x) |v| expr(v.*) else false,
+        };
+    }
+
+    fn exprs(xs: []const js.Expr) bool {
+        for (xs) |x| if (expr(x)) return true;
+        return false;
+    }
+
+    fn stmt(st: js.Stmt) bool {
+        return switch (st) {
+            .continue_, .continue_label, .break_, .comment => false,
+            .expr, .throw_, .yield_delegate => |e| expr(e),
+            .decl => |d| expr(d.value),
+            .return_ => |e| if (e) |v| expr(v) else false,
+            .if_ => |i| expr(i.cond) or stmt(i.then.*) or
+                (if (i.else_) |el| stmt(el.*) else false),
+            .for_of => |f| expr(f.iter) or stmts(f.body.stmts),
+            .while_ => |wh| expr(wh.cond) or stmts(wh.body.stmts),
+            .block => |b| stmts(b.stmts),
+            // A nested declaration and a class member each own their `await`.
+            .function, .class => false,
+            .group => |g| stmts(g),
+        };
+    }
+
+    fn stmts(list: []const js.Stmt) bool {
+        for (list) |st| if (stmt(st)) return true;
+        return false;
+    }
+};
+
 /// Rewrites every `return <self>(args);` of one function into "assign the
 /// parameters and go round again". Statement positions only: a `return` inside
 /// a nested arrow or function belongs to THAT function, and the walk never
@@ -1078,11 +1165,23 @@ const Emitter = struct {
     /// Names that emit as JS classes (record/struct decls, incl. the
     /// `val X = record { … }` shorthand) — constructor calls need `new`.
     class_names: std.StringHashMap(void),
+    /// Record name → its declared field names, in declaration order, for every
+    /// record this module can construct (its own, and the ones it imports —
+    /// `crossModule.ExportInfo.fields` carries the owner's order). The slots a
+    /// labelled constructor argument claims (`labelledArgs`).
+    record_fields: std.StringHashMap([]const []const u8),
     /// Payload variant name → its declared field names, in declaration order,
     /// for every enum declared in this module. A `case` arm `Circle(r)` binds
     /// positionally, so `r` is read from the declared field (`radius`), never
     /// from a property named after the binding.
     variant_fields: std.StringHashMap([]const []const u8),
+    /// Payload variant name → the enum that declares it. `Shape.Rect(width: …)`
+    /// may claim `Rect`'s slots by label only through `Shape` itself
+    /// (`variantSlotsFor`). `""` when two enums of this module declare the
+    /// name: `variant_fields` is keyed by the bare name and keeps one entry, so
+    /// a contested name has no slot list that is certainly its own, and it
+    /// claims nothing by label (decision 67).
+    variant_owner: std.StringHashMap([]const u8),
     /// Every payload-less variant name declared by an enum in this module
     /// (`Nothing`, `X3xl`). It says "this bare name is a variant, not a
     /// binding" — nothing more. The JS class the variant's singleton is an
@@ -1174,7 +1273,9 @@ const Emitter = struct {
             .externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .externals_missing = std.StringHashMap(void).init(alloc),
             .class_names = std.StringHashMap(void).init(alloc),
+            .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
+            .variant_owner = std.StringHashMap([]const u8).init(alloc),
             .unit_variant_names = std.StringHashMap(void).init(alloc),
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
@@ -1207,7 +1308,9 @@ const Emitter = struct {
         self.externals.deinit();
         self.externals_missing.deinit();
         self.class_names.deinit();
+        self.record_fields.deinit();
         self.variant_fields.deinit();
+        self.variant_owner.deinit();
         self.unit_variant_names.deinit();
         self.enum_recv_methods.deinit();
         self.imported_enums.deinit();
@@ -1489,13 +1592,26 @@ const Emitter = struct {
     /// shorthand normalize to `.record` decls in the parser.
     fn collectClassNames(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .type_ => |r| if (r.isRecord()) try self.class_names.put(r.name, {}),
+            .type_ => |r| if (r.isRecord()) {
+                try self.class_names.put(r.name, {});
+                const names = try self.arena().alloc([]const u8, r.recordFields().len);
+                for (r.recordFields(), 0..) |f, i| names[i] = f.name;
+                try self.record_fields.put(r.name, names);
+            },
             // An imported record is a class in its own module — a
             // construction here (`App(8080, "/")`) still needs `new`.
             .use => |u| if (self.cross) |xc| {
                 for (u.imports) |imp| {
-                    if (xc.exports.get(imp.name())) |info| {
-                        if (info.is_class) try self.class_names.put(imp.name(), {});
+                    // `picked`, not a name-keyed `get`: the import's own
+                    // `from "<mod>"` says which module's record this is, so
+                    // the slot names a labelled constructor claims come from
+                    // the declaration the import names and never from
+                    // whichever module the walk reached last.
+                    if (xc.picked(imp.name(), u.source, null)) |info| {
+                        if (info.is_class) {
+                            try self.class_names.put(imp.name(), {});
+                            if (info.fields.len > 0) try self.record_fields.put(imp.name(), info.fields);
+                        }
                     }
                 }
             },
@@ -1527,6 +1643,13 @@ const Emitter = struct {
                     const names = try self.arena().alloc([]const u8, v.fields.len);
                     for (v.fields, 0..) |f, i| names[i] = f.name;
                     try self.variant_fields.put(v.name, names);
+                    // A second enum of this module declaring the same variant
+                    // name contests it — neither owns it for the purpose of a
+                    // labelled payload.
+                    const owner = try self.variant_owner.getOrPut(v.name);
+                    if (owner.found_existing) {
+                        if (!std.mem.eql(u8, owner.value_ptr.*, e.name)) owner.value_ptr.* = "";
+                    } else owner.value_ptr.* = e.name;
                 }
                 for (e.methods) |m| {
                     if (m.is_declare or !enumMethodTakesReceiver(m)) continue;
@@ -1536,7 +1659,7 @@ const Emitter = struct {
             .behavior => |i| try self.local_interfaces.put(i.name, i),
             .use => |u| if (self.cross) |xc| {
                 for (u.imports) |imp| {
-                    const info = xc.exports.get(imp.name()) orelse continue;
+                    const info = xc.picked(imp.name(), u.source, null) orelse continue;
                     if (info.kind == .@"enum") try self.imported_enums.put(imp.name(), {});
                 }
             },
@@ -1650,23 +1773,71 @@ const Emitter = struct {
         } };
     }
 
-    /// JS function keyword for a botopink function, driven by its effect kind.
-    ///   `#[@future]`         → `async function`
-    ///   `#[@iterator]`       → `function*`
-    ///   `#[@generator]`      → `function*`
+    /// The two JS modifiers a botopink effect asks of the function that
+    /// carries it. A `function` declaration spells them as one keyword
+    /// (`async function*`); a class member spells the same two without the
+    /// `function` word (`static async *name`), so both read this one table.
+    const FnShape = struct {
+        is_async: bool = false,
+        is_generator: bool = false,
+
+        /// `function`, `async function`, `function*` or `async function*`.
+        fn keyword(self: FnShape) []const u8 {
+            if (self.is_async) return if (self.is_generator) "async function*" else "async function";
+            return if (self.is_generator) "function*" else "function";
+        }
+    };
+
+    /// The JS shape a botopink effect asks for.
+    ///   `#[@future]`          → `async function`
+    ///   `#[@iterator]`        → `function*`
+    ///   `#[@generator]`       → `function*`
     ///   `#[@futureGenerator]` → `async function*`
-    ///   `#[@result]`         → `function` (checked-Result effect — plain fn)
-    ///   `#[@context]` / none → `function`
-    fn fnKeyword(f: ast.FnDecl) []const u8 {
-        const eff = f.effect orelse return "function";
-        return switch (eff) {
-            .future => "async function",
-            .iterator => "function*",
-            .generator => "function*",
-            .futureGenerator => "async function*",
-            .result => "function",
-            .context => "function",
+    ///   `#[@result]`          → `function` (checked-Result effect — plain fn)
+    ///   `#[@context]` / none  → `function`, unless the body awaits (`contextShape`)
+    fn effectShape(eff: ?ast.EffectKind) FnShape {
+        const e = eff orelse return .{};
+        return switch (e) {
+            .future => .{ .is_async = true },
+            .iterator => .{ .is_generator = true },
+            .generator => .{ .is_generator = true },
+            .futureGenerator => .{ .is_async = true, .is_generator = true },
+            .result => .{},
+            .context => .{},
         };
+    }
+
+    /// The effect a METHOD declares. `ast.FnDecl` carries a parsed `effect`
+    /// field; `ast.BehaviorMethod` — a record's or an enum's method, and a
+    /// `behavior`'s `default fn` — carries only its annotation list, so the
+    /// effect is read back from it. Reading `FnDecl.effect` alone is what made
+    /// `#[@iterator] fn iter(self: Self)` emit as a plain method whose
+    /// `loop … yield` lowered to a value-dropping `.map()`.
+    fn methodEffect(m: ast.BehaviorMethod) ?ast.EffectKind {
+        for (m.annotations) |a| {
+            if (!a.is_builtin) continue;
+            if (ast.EffectKind.fromAnnotationName(a.name)) |k| return k;
+        }
+        return null;
+    }
+
+    /// Decision 95 — `@Context` ⊃ `@Future`, so a `#[@context]` body may
+    /// `await`. JavaScript has exactly one legal home for an `await`, so a
+    /// context body that emits one has to be `async`; without this the module
+    /// is not JavaScript and node refuses to load it
+    /// (`SyntaxError: await is only valid in async functions`).
+    ///
+    /// The flag is raised from the BUILT body, not from the declared effect:
+    /// a `#[@context] fn … -> Element` that awaits nothing — decision 88's
+    /// component, which is every one written today — keeps the plain
+    /// `function` it has and its caller keeps receiving an `Element`. Making
+    /// every `#[@context]` async regardless is the wider answer and is NOT
+    /// taken here: it would change what every component's caller receives,
+    /// which is the maintainer's call, not the emitter's.
+    fn contextShape(eff: ?ast.EffectKind, shape: FnShape, body: []const js.Stmt) FnShape {
+        if (eff != .context or shape.is_async) return shape;
+        if (!AwaitScan.stmts(body)) return shape;
+        return .{ .is_async = true, .is_generator = shape.is_generator };
     }
 
     /// A top-level `fn` decl: an external alias/template breadcrumb, or a real
@@ -1816,19 +1987,21 @@ const Emitter = struct {
 
     fn buildFn(self: *Emitter, f: ast.FnDecl) anyerror!js.Stmt {
         self.try_seq = 0;
-        const kw = fnKeyword(f);
+        var shape = effectShape(f.effect);
         const prev_in_generator = self.in_generator;
-        self.in_generator = std.mem.endsWith(u8, kw, "function*");
+        self.in_generator = shape.is_generator;
         defer self.in_generator = prev_in_generator;
         const params = try self.buildParams(f.params);
         const prev_fn_indent = self.current_indent;
         self.current_indent = 1;
         var body = try self.buildStmts(f.body);
         self.current_indent = prev_fn_indent;
+        shape = contextShape(f.effect, shape, body);
+        const kw = shape.keyword();
         // A plain `function` only: a generator's `return f(…)` resumes an
         // iterator rather than ending one, and an `async` one's answer is a
         // promise the caller of the round would have to await.
-        if (std.mem.eql(u8, kw, "function")) {
+        if (!shape.is_async and !shape.is_generator) {
             if (try self.selfTailLoop(f.name, params, body)) |looped| body = looped;
         }
         const decl = js.Stmt{ .function = .{
@@ -1890,14 +2063,22 @@ const Emitter = struct {
             // resolves on the class itself, not an instance prototype.
             const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
             const params = try self.buildParams(m.params);
+            const eff = methodEffect(m);
+            var shape = effectShape(eff);
+            const prev_in_generator = self.in_generator;
+            self.in_generator = shape.is_generator;
             self.current_indent = 2;
             const body = try self.buildStmts(m.body orelse &.{});
             self.current_indent = 0;
+            self.in_generator = prev_in_generator;
+            shape = contextShape(eff, shape, body);
             try members.append(self.arena(), .{
                 .kind = if (has_self) .method else .static_method,
                 .name = m.name,
                 .params = params,
                 .body = .{ .stmts = body, .indent = 1 },
+                .is_async = shape.is_async,
+                .is_generator = shape.is_generator,
             });
         }
         for (r.implement) |im| switch (im) {
@@ -1939,6 +2120,9 @@ const Emitter = struct {
                 if (std.mem.eql(u8, existing.name, m.name)) break true;
             } else false;
             if (defined) continue;
+            // No effect flags here: `#[@<effect>]` on a `behavior` member is
+            // refused by the checker (`effect-on-behavior-method-forbidden`),
+            // so a default body never carries one — the implementing `fn` does.
             const params = try self.buildParams(m.params);
             self.current_indent = 2;
             const body = try self.buildStmts(body_src);
@@ -2070,14 +2254,22 @@ const Emitter = struct {
                 break :blk ps;
             } else try self.buildParams(m.params);
             self.self_is_param = recv_first;
+            const eff = methodEffect(m);
+            var shape = effectShape(eff);
+            const prev_in_generator = self.in_generator;
+            self.in_generator = shape.is_generator;
             self.current_indent = 2;
             const body = try self.buildStmts(m.body orelse &.{});
             self.current_indent = 0;
+            self.in_generator = prev_in_generator;
+            shape = contextShape(eff, shape, body);
             try members.append(self.arena(), .{
                 .kind = .static_method,
                 .name = m.name,
                 .params = params,
                 .body = .{ .stmts = body, .indent = 1 },
+                .is_async = shape.is_async,
+                .is_generator = shape.is_generator,
             });
         }
 
@@ -2396,18 +2588,23 @@ const Emitter = struct {
         // It resolves the same way a `from "<pkg>"` import does — name by name
         // through the cross-module export index — so both enter here.
         if (self.cross != null) {
-            const xm = &self.cross.?.exports;
+            const xm = self.cross.?;
             var seen = std.StringHashMap(void).init(self.alloc);
             defer seen.deinit();
             for (u.imports) |imp| {
-                const info = xm.get(imp.name()) orelse continue;
+                // Which module emits this name — asked of the import's own
+                // `from "<mod>"`, not of a name-keyed `get` whose winner was
+                // the walk order. Measured before this: `import {parse} from
+                // "one"` emitted `require("./two.js")` and node printed the
+                // other module's answer at exit 0.
+                const info = xm.picked(imp.name(), u.source, null) orelse continue;
                 if (seen.contains(info.module)) continue;
                 try seen.put(info.module, {});
                 // Names from this module not already bound here — `const {…}` for
                 // exactly those. If every one is already bound, emit no line.
                 var props: std.ArrayListUnmanaged(js.ObjectPattern.Prop) = .empty;
                 for (u.imports) |imp2| {
-                    const info2 = xm.get(imp2.name()) orelse continue;
+                    const info2 = xm.picked(imp2.name(), u.source, null) orelse continue;
                     if (!std.mem.eql(u8, info2.module, info.module)) continue;
                     if (self.seen_imports.contains(imp2.name())) continue;
                     try self.seen_imports.put(imp2.name(), {});
@@ -2440,7 +2637,7 @@ const Emitter = struct {
                     break;
                 }
             }
-            if (names_lib and xm.get(lib_name) == null) {
+            if (names_lib and xm.exports.get(lib_name) == null) {
                 // Distinct modules emitted under the lib's `<lib>/` path prefix,
                 // sorted for deterministic output (the export map is unordered).
                 var mods: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -2449,7 +2646,7 @@ const Emitter = struct {
                 defer mseen.deinit();
                 const mod_prefix = try std.fmt.allocPrint(self.alloc, "{s}/", .{lib_name});
                 defer self.alloc.free(mod_prefix);
-                var it = xm.valueIterator();
+                var it = xm.exports.valueIterator();
                 while (it.next()) |info| {
                     const m = info.module;
                     if (!std.mem.startsWith(u8, m, mod_prefix)) continue;
@@ -4035,6 +4232,66 @@ const Emitter = struct {
         return tmpl.finish();
     }
 
+    /// The index of `name` in `names`, or null.
+    fn slotIndexOf(names: []const []const u8, name: []const u8) ?usize {
+        for (names, 0..) |n, i| if (std.mem.eql(u8, n, name)) return i;
+        return null;
+    }
+
+    /// The declared fields of the variant `name`, when `recv` is the very enum
+    /// that declares it (`Shape.Rect`). A variant's slots are only claimable
+    /// by label through its own enum: any other receiver is a value, and the
+    /// callee is then a method that happens to share the spelling.
+    fn variantSlotsFor(self: *Emitter, recv: ast.Expr, name: []const u8) ?[]const []const u8 {
+        const owner = switch (recv) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| n,
+                else => return null,
+            },
+            else => return null,
+        };
+        const declared = self.variant_owner.get(name) orelse return null;
+        if (declared.len == 0) return null; // two enums declare it — see `variant_owner`
+        if (!std.mem.eql(u8, declared, owner)) return null;
+        return self.variant_fields.get(name);
+    }
+
+    /// `docs.md` § Parameters with defaults — "a parameter the call names by
+    /// label keeps the argument it was given, **whichever position it is in**".
+    /// The arguments of a fully-written labelled call, moved into the slots
+    /// their labels name; null when the call is not that shape, and the
+    /// positional path then emits exactly what it emitted before.
+    ///
+    /// Every argument must carry a label, every label must name a distinct
+    /// declared slot, and the call must fill every slot. Anything else — a
+    /// call mixing labelled and positional arguments, a label naming no field,
+    /// a trailing lambda — is left alone rather than placed on a guess
+    /// (decision 67). A partly-labelled call reaches here after the checker's
+    /// default fill, whose injected arguments are already in declared order.
+    ///
+    /// A re-ordered call evaluates its arguments in DECLARED order, not
+    /// written order: JS evaluates an argument list left to right, and the
+    /// list this writes is the declared one. Erlang and wasm place a labelled
+    /// argument the same way and evaluate the same order, so the three agree;
+    /// it is worth knowing only for an argument expression with a side effect.
+    fn labelledArgs(self: *Emitter, slots: []const []const u8, cc: anytype) !?[]js.Expr {
+        if (cc.trailing.len > 0) return null;
+        if (slots.len == 0 or cc.args.len != slots.len) return null;
+        const at = try self.arena().alloc(usize, cc.args.len);
+        var filled = try self.arena().alloc(bool, slots.len);
+        @memset(filled, false);
+        for (cc.args, 0..) |arg, i| {
+            const label = arg.label orelse return null;
+            const idx = slotIndexOf(slots, label) orelse return null;
+            if (filled[idx]) return null;
+            filled[idx] = true;
+            at[i] = idx;
+        }
+        const out = try self.arena().alloc(js.Expr, slots.len);
+        for (cc.args, 0..) |arg, i| out[at[i]] = try self.buildExpr(arg.value.*);
+        return out;
+    }
+
     fn buildCall(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
         if (cc.is_builtin) return self.buildBuiltinCall(cc);
         // builtin_node_dispatch: `declare fn` with `#[@External.Node]`.
@@ -4051,6 +4308,11 @@ const Emitter = struct {
         var args: std.ArrayListUnmanaged(js.Expr) = .empty;
         var callee: js.Expr = undefined;
         var is_new = false;
+        // The declared slot names of the call's target, when this backend
+        // knows them — what a labelled argument claims (`labelledArgs`). Left
+        // null on every path that PREPENDS a receiver to `args`, because the
+        // names would then no longer line up with the argument list.
+        var slots: ?[]const []const u8 = null;
 
         if (cc.receiver) |recv| {
             // Static extension dispatch: lower `recv.m(args)` to
@@ -4097,6 +4359,12 @@ const Emitter = struct {
                 const len_prop = cc.args.len == 0 and cc.trailing.len == 0 and
                     if (loc_rename) |rn| std.mem.eql(u8, rn, "length") else false;
                 if (len_prop) return self.b.memberOpt(recv_node, "length", cc.optional);
+                // `Shape.Rect(width: 5, height: 2)` — an enum variant reached
+                // through its own enum. The variant's declared fields are the
+                // slots; the guard is that the receiver names the enum that
+                // DECLARES the variant, so a record method that happens to be
+                // spelled `Rect` is never re-ordered.
+                if (self.variantSlotsFor(recv.*, cc.callee)) |names| slots = names;
                 callee = try self.b.memberOpt(recv_node, method, cc.optional);
             }
         } else if (self.externals_missing.contains(cc.callee)) {
@@ -4118,11 +4386,20 @@ const Emitter = struct {
             // `new`.
             callee = .{ .name = cc.callee };
             is_new = true;
+            slots = self.record_fields.get(cc.callee);
         } else {
             callee = .{ .ident = cc.callee };
+            // A variant named bare (`Rect(width: 5, height: 2)`), which the
+            // enum's static factory answers under the same slot names.
+            if (self.variant_fields.get(cc.callee)) |names| slots = names;
         }
 
-        for (cc.args) |arg| try args.append(self.arena(), try self.buildExpr(arg.value.*));
+        const by_label: ?[]js.Expr = if (slots) |names| try self.labelledArgs(names, cc) else null;
+        if (by_label) |placed| {
+            try args.appendSlice(self.arena(), placed);
+        } else {
+            for (cc.args) |arg| try args.append(self.arena(), try self.buildExpr(arg.value.*));
+        }
         for (cc.trailing) |tl| try args.append(self.arena(), try self.buildArrow(tl.params, tl.body));
 
         const arg_slice = try args.toOwnedSlice(self.arena());

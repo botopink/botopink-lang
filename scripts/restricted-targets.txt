@@ -78,4 +78,4 @@ rakun-messaging         commonJS  0      03-rakun/F15          `"targets": ["erl
 rakun-scheduling        commonJS  0      03-rakun/F16          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
 rakun-security          commonJS  0      03-rakun/F10          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
 rakun-session           commonJS  0      03-rakun/F18          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
-rakun-web               commonJS  0      03-rakun/F07          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-web               commonJS  0      03-rakun/F07          `"targets": ["erlang"]`; front 07 landed the filter chain — **83 pass, 0 red on this row** (the chain, CORS and the problem-detail cells all answer on commonJS). Only the FAILED count is pinned, so the 0 is unchanged and the line stays until F07 widens the array

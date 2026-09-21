@@ -53,6 +53,31 @@ pub const Diagnostic = union(enum) {
 /// raises `error.MissingExternalTarget` fills one first, so the failure reaches
 /// the driver as a LOCATED diagnostic naming the function and the target
 /// instead of the bare error name (06 C13).
+/// A bare variant name more than one enum of the program declares, written
+/// where nothing says which enum is meant. The emit refuses instead of tagging
+/// it with one of the two: decision 21 gives every variant its enum's module in
+/// its atom, so picking the wrong enum is a value no `case` over the right one
+/// can match (`case_clause` at run time, measured), and the WRITER is the only
+/// one who knows which was meant.
+pub const AmbiguousVariant = struct {
+    /// The bare variant name (`Circle`).
+    variant: []const u8,
+    /// Two of the enums declaring it.
+    a: []const u8,
+    b: []const u8,
+
+    pub fn diagnostic(self: AmbiguousVariant, allocator: std.mem.Allocator) !Diagnostic {
+        return .{ .type = .{
+            .message = try std.fmt.allocPrint(
+                allocator,
+                "`{s}` is a variant of `{s}` and of `{s}`, and nothing here says which — write `{s}.{s}` or `{s}.{s}`",
+                .{ self.variant, self.a, self.b, self.a, self.variant, self.b, self.variant },
+            ),
+            .loc = null,
+        } };
+    }
+};
+
 pub const MissingExternal = struct {
     /// The called function's name.
     name: []const u8,

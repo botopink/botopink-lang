@@ -61,8 +61,8 @@ codegen/
 | File | Role |
 |---|---|
 | `config.zig` | `Config` (`targetSource`, `typeDefLanguage`, `build_root`, `test_mode`), `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `TypeDefLang` |
-| `moduleOutput.zig` | `MissingExternal` (06 C13 — the host-backed fn a backend has no `#[@External.<Target>(…)]` for: name, target and call site; `diagnostic(alloc)` renders it as a `Diagnostic.type`, so the failure reaches the driver LOCATED and only that module fails, instead of `error.MissingExternalTarget` aborting the build with its own name). `GenerateResult` (`js`, `typedef`, `units`, `comptime_script`, `comptime_err`, `diagnostic`, `run_output`; `failed()`) and `ModuleOutput` — shared between targets. `Unit` is one EXTRA module a source file produced on a BEAM target — policy 3 of `13-module-identity`: a `type` declared in the file is a module of its own, `atom` (`crossModule.typeAtom`, `app@models__t__person`) being both the `-module` and the artifact's basename, `code` its text. commonJS and wasm produce none — a class already is the type's identity there (decision 5) and wasm is single-module. Everywhere the file's own module goes, its units go with it: `cli/build.zig` writes them, `runtime.zig` compiles and loads them as `AuxFile`s, `snapshot.zig` renders one section each. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
-| `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external, erlang_backed}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its methods as `MethodSig{name, arity}` — the arity is half a method's identity, so a consumer can ask whether two types of the program claim one `name/arity`, whether a `fn` export is host-backed, and whether that host-backed one carries an `erlang` target usable at its declared arity — the erlang backend routes such an import to the owner's wrapper, see [erlang](#erlang)); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports. **It also owns the Erlang/BEAM module atom** (option A + A2): `erlAtom(alloc, ModuleId)` renders the whole module path as a legal UNQUOTED atom (lowercase · `/` → `@` · anything outside `[a-z0-9_@]` → `_` · a run of `_` collapsed to one so `__` stays free for the qualifier · `bp@` prefixed when the first character is not `[a-z]` or when a single-segment name is in `RESERVED`), so `main` stays `main`, `std/math` is `std@math` and `web/api/http` is `web@api@http`. It was the path's BASENAME, which made `models/user` and `services/user` the same module and let eleven `libs/std` modules shadow the OTP module of the same name node-wide. `erlDeclAtom(alloc, id, Kind, decl, ?hash)` names an EXTRA module one source file produces (`<atom>__<t|b|im|tpl|dec>__<decl>[__<16 hex>]`), `decodeAtom` reads either shape back to its origin, `typeAtom(alloc, id, decl)` is the identity of a `type` — `erlDeclAtom(id, .t, decl)`, so `type Person` in `app/models.bp` is `app@models__t__person`: the module policy 3 puts its methods in AND the tag half 3 puts inside every value it builds, one renderer because the tag has to name the module that formats it — and `variantAtom(alloc, id, decl, variant)` appends `__v__<variant>` so the five `Circle`s of the ecosystem stay five atoms (`decodeAtom` reads that fifth segment back as `.variant`), `outputStem(target, alloc, id)` gives the artifact's basename (the atom for erlang/beam, the module path for commonJS/wasm), `RESERVED`/`isReserved` are the frozen OTP name list and `ATOM_MAX_BYTES` is 250 (the `<atom>.bea#` filename limit, not the atom limit). `CrossModule.atomFor(path)` reads the atom `build` rendered once per module and `ownerModuleAtom(name)` the owning module's; `atomFault(path)` is the **collision check** — two paths rendering one atom, a `RESERVED` hit or an over-long atom, which the erlang and BEAM `codegenEmit`s turn into a located diagnostic instead of letting one module silently overwrite the other. The same check runs over each module's **type** atoms (`duplicate_decl`, `too_long`): a type atom lowercases the declaration name and folds every other character to `_`, so `Person`/`person` and `Foo_Bar`/`FooBar` would be one module and one value tag for two types — across modules the path already tells them apart, so this half is per module and fails the module as a whole. `moduleBasename(path)` survives for the places that compare a SOURCE-level name (an `import { order } from "std"` namespace, a `wat.zig` import segment) and is no longer a module atom |
+| `moduleOutput.zig` | `AmbiguousVariant` (a bare variant name more than one enum of the program declares, written where nothing says which — `variant`, and two of the enums; `diagnostic(alloc)` renders the refusal with both qualified spellings, and the erlang emitter raises it through the same errdefer slot pattern `MissingExternal` uses). `MissingExternal` (06 C13 — the host-backed fn a backend has no `#[@External.<Target>(…)]` for: name, target and call site; `diagnostic(alloc)` renders it as a `Diagnostic.type`, so the failure reaches the driver LOCATED and only that module fails, instead of `error.MissingExternalTarget` aborting the build with its own name). `GenerateResult` (`js`, `typedef`, `units`, `comptime_script`, `comptime_err`, `diagnostic`, `run_output`; `failed()`) and `ModuleOutput` — shared between targets. `Unit` is one EXTRA module a source file produced on a BEAM target — policy 3 of `13-module-identity`: a `type` declared in the file is a module of its own, `atom` (`crossModule.typeAtom`, `app@models__t__person`) being both the `-module` and the artifact's basename, `code` its text. commonJS and wasm produce none — a class already is the type's identity there (decision 5) and wasm is single-module. Everywhere the file's own module goes, its units go with it: `cli/build.zig` writes them, `runtime.zig` compiles and loads them as `AuxFile`s, `snapshot.zig` renders one section each. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
+| `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external, erlang_backed, arity}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its methods as `MethodSig{name, arity}` — the arity is half a method's identity, so a consumer can ask whether two types of the program claim one `name/arity`, whether a `fn` export is host-backed, and whether that host-backed one carries an `erlang` target usable at its declared arity — the erlang backend routes such an import to the owner's wrapper, see [erlang](#erlang)); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. **`exports` is keyed by the bare symbol NAME, and a name is unique inside a module and never over a program** — `libs/std` declares `parse` in `json`, in `querystring` and in `url` today — so a plain `get` answered with whichever module the walk reached last, no dissent check and no diagnostic. `owners` is the population that collapse threw away: EVERY `pub` declaration of a name, in walk order. `pick(name, source, arity)` asks the question properly — the module the import's own `from "<mod>"` NAMES answers first (`ast.ImportSource.namesModule`: the full path or its last segment; a PACKAGE handle names the package and narrows nothing), then the arity the CALL takes (`ExportInfo.arity`, the `MethodSig` widening on the plain-`fn` axis), and when neither separates the candidates the answer is `.contested`, never the first one (decision 67). `picked` is the same for a caller with a dynamic fallback: a contest reads as absent. `export_faults` keys a `Contested` by the CONSUMER module path — a name several modules export is not itself the defect (refusing the declaration would refuse `libs/std`, thirteen of whose names collide), what cannot be answered is a consumer reaching for the bare name with nothing saying which — and every backend's `codegenEmit` turns it into a located diagnostic exactly as `atomFault` is turned, because the collapse is in this index and not in any one emitter. Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports and to pick which module it links in. **It also owns the Erlang/BEAM module atom** (option A + A2): `erlAtom(alloc, ModuleId)` renders the whole module path as a legal UNQUOTED atom (lowercase · `/` → `@` · anything outside `[a-z0-9_@]` → `_` · a run of `_` collapsed to one so `__` stays free for the qualifier · `bp@` prefixed when the first character is not `[a-z]` or when a single-segment name is in `RESERVED`), so `main` stays `main`, `std/math` is `std@math` and `web/api/http` is `web@api@http`. It was the path's BASENAME, which made `models/user` and `services/user` the same module and let eleven `libs/std` modules shadow the OTP module of the same name node-wide. `erlDeclAtom(alloc, id, Kind, decl, ?hash)` names an EXTRA module one source file produces (`<atom>__<t|b|im|tpl|dec>__<decl>[__<16 hex>]`), `decodeAtom` reads either shape back to its origin, `typeAtom(alloc, id, decl)` is the identity of a `type` — `erlDeclAtom(id, .t, decl)`, so `type Person` in `app/models.bp` is `app@models__t__person`: the module policy 3 puts its methods in AND the tag half 3 puts inside every value it builds, one renderer because the tag has to name the module that formats it — and `variantAtom(alloc, id, decl, variant)` appends `__v__<variant>` so the five `Circle`s of the ecosystem stay five atoms (`decodeAtom` reads that fifth segment back as `.variant`), `outputStem(target, alloc, id)` gives the artifact's basename (the atom for erlang/beam, the module path for commonJS/wasm), `RESERVED`/`isReserved` are the frozen OTP name list and `ATOM_MAX_BYTES` is 250 (the `<atom>.bea#` filename limit, not the atom limit). `CrossModule.atomFor(path)` reads the atom `build` rendered once per module and `ownerModuleAtom(name)` the owning module's; `atomFault(path)` is the **collision check** — two paths rendering one atom, a `RESERVED` hit or an over-long atom, which the erlang and BEAM `codegenEmit`s turn into a located diagnostic instead of letting one module silently overwrite the other. The same check runs over each module's **type** atoms (`duplicate_decl`, `too_long`): a type atom lowercases the declaration name and folds every other character to `_`, so `Person`/`person` and `Foo_Bar`/`FooBar` would be one module and one value tag for two types — across modules the path already tells them apart, so this half is per module and fails the module as a whole. `moduleBasename(path)` survives for the places that compare a SOURCE-level name (an `import { order } from "std"` namespace, a `wat.zig` import segment) and is no longer a module atom |
 | `patterns.zig` | **Backend-agnostic pattern facts.** `bindsNames(pattern, ctx, isVariant)` answers whether a pattern binds at least one name — the question every backend asks before lowering a `val assert P = e [catch h];` (decision 8 § 9), which binds `P`'s names in the ENCLOSING scope. A pattern that binds nothing (`val assert 42 = answer catch 0;`) is a pure check and keeps the single-expression lowering it always had. `isVariant` is the backend's own variant table (a bare identifier is a binding only when it names no variant) |
 | `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The remaining `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
 | `beam/` | BEAM term model + emitters shared by `erlang.zig`, `beam_asm.zig` and the comptime evaluators: `term.zig` (`Term`), `erl_emitter.zig` (Erlang source: atom quoting incl. reserved words, variables, module names, binaries), `beam_emitter.zig` (`.S` operands and `move`s). One quoting rule for `.erl` and `.S`. See [`beam/AGENTS.md`](beam/AGENTS.md) |
@@ -496,9 +496,42 @@ codegen/
   `todo`, …) applies only to a call with no receiver — `d.print()` on a record
   is the record's method.
 - **Tuple index**: `t._N` and the bare `t.N` are `t[N]`.
-- **Effects**: `fnKeyword` picks `async function` / `function*` /
-  `async function*`; inside a generator, `return <iter>` becomes
-  `yield* <iter>; return;` and `loop (xs) { x -> yield x }` becomes `for…of`.
+- **Effects**: `effectShape` is the one table — it answers the two JS
+  modifiers (`is_async`, `is_generator`) an effect asks for, and `FnShape
+  .keyword()` spells them as `async function` / `function*` /
+  `async function*` for a declaration. A **method** carries its effect on its
+  annotation list, not on an `effect` field (`ast.BehaviorMethod` has none), so
+  `methodEffect` reads it back: a record's own body, a record's `implement`
+  block and an enum's body all route through it, and a class member spells the
+  same two modifiers without the `function` word (`static async *name`,
+  `js/js_ast.zig`'s `ClassMember.is_async` / `.is_generator`). Reading
+  `ast.FnDecl.effect` alone is what made `#[@iterator] fn each(self: Self)`
+  emit a plain method whose `loop … yield` lowered to a value-dropping
+  `.map()`. A `behavior`'s `default fn` is the one method kind that never
+  carries one — the checker refuses `effect-on-behavior-method-forbidden`.
+  Inside a generator, `return <iter>` becomes `yield* <iter>; return;` and
+  `loop (xs) { x -> yield x }` becomes `for…of`.
+- **A labelled argument claims its slot**: `docs.md` § Parameters with defaults
+  — "a parameter the call names by label keeps the argument it was given,
+  whichever position it is in". `labelledArgs` places the arguments of a
+  **fully-written labelled call** into the slots their labels name, for the two
+  call shapes whose slot names this backend knows: a record constructor
+  (`record_fields`, its own records and — through
+  `CrossModule.picked(name, u.source, null)`, so the declaration the import
+  NAMES answers and not whichever module the walk reached last — the ones it
+  imports) and an enum variant reached through its own enum (`variant_fields`
+  + `variant_owner`, guarded by `variantSlotsFor` so a method that happens to
+  share a variant's spelling is never re-ordered, and so a variant name TWO
+  enums of the module declare claims nothing: `variant_fields` is keyed by the
+  bare name and keeps one entry, so there is no slot list that is certainly its
+  own).
+  Anything else — a call mixing labelled and positional arguments, a label
+  naming no declared field, a trailing lambda, an arity that is not the slot
+  count — keeps the positional path byte-identical rather than placing on a
+  guess (decision 67). **A free function's and a method's parameters are not
+  claimable here**: the checker still types a labelled call by position
+  (1.0.10-beta `00 · 01-checker`, the full-arity labelled row), so re-ordering
+  them in one backend would type against one parameter and pass another.
 - **Control flow (no statement in expression position)**: a jump is a
   statement, so every position that can hold one is lowered by `buildStmt`:
   - an `if` in statement position whose branches `return` / `break` /
@@ -565,8 +598,11 @@ codegen/
   `Query` tuple, which is `{error, badarg}` when the field offset is past the
   tuple and a neighbouring field's value when it is not. Both populations vote
   now — this file's `method_owners` entry and every `pub` record/enum of
-  `CrossModule.exports`, matched on `name/arity` (`ExportInfo.methods` is
-  `crossModule.MethodSig{name, arity}`, not a bare name) — and one dissenting
+  `CrossModule.owners`, matched on `name/arity` (`ExportInfo.methods` is
+  `crossModule.MethodSig{name, arity}`, not a bare name; `owners` rather than
+  `exports` because two modules declaring one type NAME are one entry there,
+  and the second `describe/1` never got to vote), skipping this file's own
+  declaration by MODULE rather than by name for the same reason — and one dissenting
   declaration sends the call to `'__bp_method'/3` (`dynamicMethodNode`,
   `method_helper_form`), which applies `element(1, V)`'s module, keeping the
   `maps:get` dispatch for a map receiver exactly as `'__bp_field'/2` does.
@@ -990,10 +1026,22 @@ codegen/
   what it imports BY NAME, so a file that imports one record carrying `rest`
   while the value in hand is a different record carrying `rest` read at the wrong
   offset — a neighbouring field's value when the offset is in range, `{error,
-  badarg}` when it is not. Every `pub` record of `CrossModule.exports` votes now,
+  badarg}` when it is not. Every `pub` record of `CrossModule.owners` votes now
+  (`exports` keeps ONE entry per name and could not see the second declaration),
   and one dissenting declaration sends the read to `'__bp_field'/2`. Pinned by
   `tests/language/modules/field_name_collision`, where the guess answered `1` on
-  erlang and `2` on commonJS. Tuple index `t._N` and the
+  erlang and `2` on commonJS.
+  **The TYPE NAME is counted the same way** (`typeNameContested`): inference
+  records a receiver's type as a NAME (`InstanceLowering.field_of` / `.type_`)
+  and a name the program declares twice places nothing — `parser` and `net` may
+  each declare `pub type Outcome` with its own field order and its own
+  `describe`. The offset came from whichever declaration the index kept, so
+  erlang read `net`'s `.tag` at `parser`'s offset and printed the NEIGHBOURING
+  field at exit 0 where commonJS and wasm printed the right one, and the typed
+  method call ran `parser__t__outcome:describe/1` over a `net` tuple. A
+  contested name sends the read to `'__bp_field'/2` and the call to
+  `'__bp_method'/3`, which ask the value's own tag. Pinned by
+  `tests/language/modules/type_name_collision`. Tuple index `t._N` and the
   bare `t.N` → `element(N+1, T)`. No `-record` declarations are emitted. Optional
   chaining `?.` guards on `undefined` via an immediate fun. A record
   destructuring (`val { x, y } = p`, a `{ name, .. }` parameter, a `try` head) is
@@ -1044,7 +1092,25 @@ codegen/
   ENUM. `variantTag` is the one choke point (constructor, `case` pattern, guard
   and the `.Variant` shorthand all go through it); `variant_enum` gives the enum
   back from a bare `.Circle`, and a variant this module cannot place (a comptime
-  host enum) keeps the bare name. `Ok`/`Err` keep the `@Result` runtime tags.
+  host enum) keeps the bare name.
+  **Which enum a bare name belongs to is a counted question**
+  (`rememberVariantOwner` / `variant_contested`). `variant_enum` was filled with
+  `getOrPutValue` — first writer wins, no dissent check, no diagnostic — and its
+  own comment mitigated the hazard for a `case` SUBJECT only, so outside a
+  `case` a bare `.Circle` took whichever enum the decl walk indexed first. With
+  `Shape` and `Hole` both declaring `Circle`, a `Hole` value written `.Circle`
+  was tagged `main__t__shape__v__circle` and the `case` over it died with
+  `case_clause` at run time, from a program that compiled without a word — and
+  wasm answered correctly from the same source. A name two enums declare names
+  neither now: `enumOfVariantPath` refuses to answer from it (the written
+  qualifier and the `case` subject hint still do), and a written path that
+  nothing places sets `Emitter.ambiguous_variant`, which `emitErlangModule`
+  raises as `error.AmbiguousVariant` and the driver renders through
+  `moduleOutput.AmbiguousVariant` — a diagnostic naming both enums and both
+  qualified spellings. Decision 67: refuse rather than guess. Pinned by
+  `tests/language/run/variant_name_collision.bp` (the qualified spelling, on
+  every target) and `run/variant_name_ambiguous.bp` (the refusal, erlang only —
+  see its header for why the other three rows are not this cell's shape). `Ok`/`Err` keep the `@Result` runtime tags.
   A bare `.ident` case pattern is the atom when it names a
   known variant (`enum_variants`), else a variable. `enum_variants` also holds
   the variants of every `pub enum` the module imports — by name, or with its
@@ -2296,12 +2362,32 @@ SyntaxError: await is only valid in async functions and the top level bodies of 
 ```
 
 while erlang, wasm and beam run it (their `@Future<T>` is eager, so `await` is
-the identity and the row needs nothing). The fix is commonJS's `fnKeyword`
-answering `async function` for a `#[@context]` body that awaits — which changes
-what a component's caller receives, and is therefore a backend decision, not a
-legality one. Front 20 owns what is legal and explicitly does not touch
-`codegen/**` lowering; this row is the handoff. `tests/language/run/effect_chain.bp`
-carries the other rows and its header says why this one is absent.
+the identity and the row needs nothing).
+
+**Taken by `00 · 04-js` (2026-09-21), narrowly.** `contextShape` raises the
+`async` flag for a `#[@context]` function whose **built body** carries an
+`await` of its own (`AwaitScan`: a nested arrow, function or class member owns
+its own `await` and stops the walk). JavaScript has exactly one legal home for
+an `await`, so a body that emits one has to be `async` or the module is not
+JavaScript; and reading the built body rather than the declared effect means
+the only programs whose output moves are the ones node refused to load at all.
+A `#[@context] fn … -> Element` that awaits nothing — decision 88's component,
+which is every one written today — keeps its plain `function`, and its caller
+keeps receiving an `Element`.
+
+**What was deliberately NOT taken**: making every `#[@context]` an `async
+function` regardless of its body, which is the wider and more readable
+contract (a caller could tell from the signature). It would change what every
+component's caller receives, and that is the maintainer's call. The cost of
+the narrow rule is that two `#[@context]` functions with the same signature can
+have different call contracts; the cost of the wide one is every component.
+
+What a caller receives on commonJS is unchanged in kind: a suspending function
+hands back a promise, exactly as `#[@future]` already does (`@print(f())` prints
+`Promise { <pending> }` on commonJS and the value on erlang and wasm — measured,
+pre-existing, and not this row's). `tests/language/run/effect_context_await.bp`
+pins the row and prints every value from inside the awaiting body for that
+reason; `run/effect_chain.bp` carries `use` and `try`.
 
 Effect rejection diagnostics (R*, RF*, RI*, RC*, RG* codes) live in
 `comptime/diagnostics.zig`; `comptime/infer.zig`'s `inEffectContext` uses the

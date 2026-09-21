@@ -1,0 +1,51 @@
+//// `docs.md` § Parameters with defaults — "a parameter the call names by label
+//// keeps the argument it was given, **whichever position it is in**". The two
+//// call shapes whose slot names a backend knows are a record constructor and
+//// an enum variant, and this cell writes each one out of declared order, in
+//// declared order, and positionally, so a backend that zips by position is
+//// visible as a WRONG ANSWER rather than a crash: `Point(y: 2, x: 1)` built
+//// `Point(x: 2, y: 1)` on commonJS and `Point(x: 1, y: 2)` on erlang and wasm,
+//// at exit 0, with nothing said on either side.
+////
+//// The values are asymmetric on purpose — `width * 100 + height` tells the two
+//// orders apart, where an area would not.
+////
+//// Every argument of a re-ordered call carries a label here. A call that MIXES
+//// labelled and positional arguments is deliberately absent: the checker still
+//// types a labelled call by position (1.0.10-beta `00 · 01-checker`, the
+//// full-arity labelled row), so `Port(host: "a", number: 8080)` is refused
+//// `type mismatch: expected i32, got string` on every target — the refusal is
+//// that front's, not this cell's claim.
+
+type Point(x: i32, y: i32)
+
+type Shape { Rect(width: i32, height: i32), Dot }
+
+type Port(number: i32 = 80, host: string)
+
+fn shown(s: Shape) -> i32 {
+    return case s {
+        Shape.Rect(w, h) -> w * 100 + h;
+        Shape.Dot -> 0;
+    };
+}
+
+pub fn main() {
+    // A record constructor, written out of declared order.
+    val p = Point(y: 2, x: 1);
+    @print(p.x);
+    @print(p.y);
+
+    // The same constructor in declared order, and positionally.
+    @print(Point(x: 1, y: 2).x);
+    @print(Point(1, 2).x);
+
+    // An enum variant through its own enum, all three ways.
+    @print(shown(Shape.Rect(height: 2, width: 5)));
+    @print(shown(Shape.Rect(width: 5, height: 2)));
+    @print(shown(Shape.Rect(5, 2)));
+
+    // A label naming the second field leaves the first to its default.
+    @print(Port(host: "a").number);
+    @print(Port(host: "a").host);
+}
