@@ -18,6 +18,7 @@ botopink-lang/                 ← language core (this project)
 ├── AGENTS.md                  ← you are here
 ├── README.md                  ← public-facing intro
 ├── docs.md                    ← language reference (.bp syntax + semantics); every fence compiles (`zig build test-docs`)
+├── docs/                      ← botopink-json.md — the manifest schema (packages, workspaces, the dependency object) — see docs/AGENTS.md
 ├── build.zig                  ← workspace build graph
 ├── .github/workflows/         ← test.yml (push/PR) + release.yml (tags)
 ├── modules/                   ← all Zig packages — see modules/AGENTS.md
@@ -25,7 +26,8 @@ botopink-lang/                 ← language core (this project)
 │   ├── compiler-cli/          ← `botopink` CLI
 │   ├── compiler-core/         ← lexer, parser, AST, infer, comptime, codegen
 │   ├── language-server/       ← `botopink-lsp` LSP server
-│   └── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
+│   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
+│   └── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
 ├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
 │   └── std/                   ← standard library
 ├── examples/                  ← non-framework .bp example programs
@@ -42,7 +44,7 @@ Golden snapshots live inside the owning package (`modules/compiler-core/snapshot
 
 ```bash
 zig build               # botopink + botopink-lsp + botopink-lib-test + bpmp
-zig build test          # compiler-core + language-server + compiler-cli tests
+zig build test          # compiler-core + language-server + compiler-cli + lib-test-runner + manifest tests
 zig build test -Dtest-filter=<name>   # only tests whose name matches
 zig build run           # build and run the CLI
 zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, recursion, backend parity)
@@ -70,7 +72,8 @@ invocation). See
 `test-libs` is the lib ecosystem gate (`botopink-lib-test`): it runs
 `botopink test --target <t>` in `libs/std` and in every sibling library the
 checkout can see (`<ancestor>/repository/*` — the meta workspace, or the repos CI
-checks out), and reports each cell as pass, FAIL (with the failing module's
+checks out) and in every **member** of a workspace among them (a `botopink.json`
+with `"workspaces"`, one row per member, examples included), and reports each cell as pass, FAIL (with the failing module's
 diagnostic), known red, skipped (with the reason) or no tests — a library with
 no `test` block is still compiled (`botopink build --target <t>`), so it fails
 its cell when it does not compile. A cell listed in
@@ -111,6 +114,7 @@ does not mirror them. Entry points:
 | Examples | [`examples/AGENTS.md`](examples/AGENTS.md) |
 | Scripts | [`scripts/AGENTS.md`](scripts/AGENTS.md) |
 | `.bp` language reference (user-facing) | [`docs.md`](docs.md) |
+| `botopink.json` schema (user-facing) | [`docs/botopink-json.md`](docs/botopink-json.md) · model: [`modules/manifest/AGENTS.md`](modules/manifest/AGENTS.md) |
 
 ## Release pipeline
 

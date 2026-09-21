@@ -7,7 +7,10 @@
 #
 # Discovery is the runner's: `libs/` (std) plus every sibling project under an
 # ancestor's `repository/` (emilia, erika, jhonstart, onze, rakun, … in the meta
-# workspace, or the repos CI checks out next to botopink-lang).
+# workspace, or the repos CI checks out next to botopink-lang) — and every
+# member of a workspace found there (a `botopink.json` with `"workspaces"`,
+# decision 75): `repository/rakun/modules/*` and `examples/*` are cells by their
+# own `name`, one row each, with no root export from this script.
 #
 # The run is reported cell by cell:
 #   pass          the library compiled and every test passed

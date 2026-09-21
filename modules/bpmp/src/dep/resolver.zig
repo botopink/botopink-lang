@@ -29,7 +29,10 @@ pub const Action = struct {
     /// it a first install of a `branch:`/`tag:` dep would clone default HEAD.
     ref: spec.DepRef = .none,
 
-    pub const Kind = enum { clone, reuse_cas, path_symlink, skip_legacy };
+    /// `skip_workspace`: a `{ "workspace": true }` entry — the sibling member
+    /// of the enclosing workspace, which the compiler resolves from the tree;
+    /// there is nothing to fetch or link.
+    pub const Kind = enum { clone, reuse_cas, path_symlink, skip_workspace };
 
     /// The `DepSpec` the cloner materialises for this action — git source plus
     /// the ref the action carries.
@@ -97,17 +100,18 @@ pub fn plan(
     var actions = try a.alloc(Action, entries.len);
     var i: usize = 0;
     for (entries) |entry| {
-        const sp = entry.spec orelse {
-            // Legacy bare-name entry — `bpmp install` skips, the resolver
-            // still finds it through `libs/<name>/` lookup.
+        const sp = entry.spec;
+        if (sp.workspace) {
+            // A sibling member of the enclosing workspace: the compiler reads
+            // it from the tree (decision 75); nothing to materialise.
             actions[i] = .{
                 .name = try a.dupe(u8, entry.name),
-                .kind = .skip_legacy,
+                .kind = .skip_workspace,
                 .store_path = "",
             };
             i += 1;
             continue;
-        };
+        }
 
         if (sp.isPath()) {
             actions[i] = .{
@@ -198,12 +202,12 @@ fn lockWith(rev: []const u8) !lock.Lockfile {
     return lock.Lockfile{ .arena = arena, .generated_by = "bpmp test", .lockfile_version = 1, .entries = ent };
 }
 
-test "plan: legacy bare-name skips" {
-    const entries = [_]spec.DepEntry{.{ .name = "x" }};
+test "plan: a workspace member skips — the compiler resolves it from the tree" {
+    const entries = [_]spec.DepEntry{.{ .name = "x", .spec = .{ .workspace = true } }};
     var p = try plan(testing.allocator, testing.io, &entries, "/store", .{});
     defer p.deinit();
     try testing.expectEqual(@as(usize, 1), p.actions.len);
-    try testing.expectEqual(Action.Kind.skip_legacy, p.actions[0].kind);
+    try testing.expectEqual(Action.Kind.skip_workspace, p.actions[0].kind);
 }
 
 test "plan: path: → path_symlink" {

@@ -1,0 +1,1 @@
+{ "name": "rakun-web", "version": "0.0.1", "entry": "root.bp", "files": ["root.bp"], "dependencies": { "rakun": { "workspace": true } } }

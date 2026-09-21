@@ -1,7 +1,7 @@
 /// Workspace build — coordinates compiler-core, compiler-cli and language-server.
 ///
 ///   zig build          → builds botopink + botopink-lsp
-///   zig build test     → runs every compiler-core, language-server, CLI and lib-test-runner unit test
+///   zig build test     → runs every compiler-core, language-server, CLI, lib-test-runner and manifest unit test
 ///   zig build test -Dtest-filter=<substr> → runs only matching tests
 ///   zig build test-cli → runs every modules/compiler-cli/tests/*.sh end to end
 ///   zig build test-libs → compiles and tests every visible `.bp` library per target
@@ -81,6 +81,28 @@ pub fn build(b: *std.Build) void {
     }
     std_prelude.addImport("std_pkg", std_pkg);
 
+    const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
+
+    // ── manifest (shared `botopink.json` model) ───────────────────────────────
+    // The one reading of the manifest — packages, workspaces, the dependency
+    // object — imported by the CLI, the LSP, the lib-test runner and bpmp.
+    // `std` only: the runner and bpmp keep their "no compiler-core" contract.
+
+    const manifest_mod = b.addModule("manifest", .{
+        .root_source_file = b.path("modules/manifest/src/root.zig"),
+        .target = target,
+    });
+    const manifest_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/manifest/src/root.zig"),
+            .target = target,
+        }),
+        .filters = test_filters,
+    });
+    const run_manifest_tests = b.addRunArtifact(manifest_tests);
+    // Fixtures under modules/manifest/tests/fixtures are read relative to cwd.
+    run_manifest_tests.setCwd(b.path("modules/manifest"));
+
     // ── compiler-core (library) ───────────────────────────────────────────────
 
     const core_mod = b.addModule("botopink", .{
@@ -100,7 +122,6 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
     const core_tests = b.addTest(.{
         .root_module = core_test_mod,
         .filters = test_filters,
@@ -131,8 +152,9 @@ pub fn build(b: *std.Build) void {
     // never accumulate beyond a day.
     run_core_tests.step.dependOn(&clean_tmp_run.step);
 
-    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner)");
+    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner, manifest)");
     test_step.dependOn(&run_core_tests.step);
+    test_step.dependOn(&run_manifest_tests.step);
 
     // ── lib-agnostic gate (annotation-processors P0) ──────────────────────────
     // HARD RULE: the compiler core must name no specific NON-std library. Fail
@@ -156,6 +178,7 @@ pub fn build(b: *std.Build) void {
         .target = target_for_libc,
         .imports = &.{
             .{ .name = "botopink", .module = core_mod },
+            .{ .name = "manifest", .module = manifest_mod },
         },
     });
 
@@ -175,6 +198,7 @@ pub fn build(b: *std.Build) void {
         .target = target_for_libc,
         .imports = &.{
             .{ .name = "botopink", .module = core_mod },
+            .{ .name = "manifest", .module = manifest_mod },
         },
     });
 
@@ -195,6 +219,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "botopink", .module = core_mod },
+                .{ .name = "manifest", .module = manifest_mod },
             },
         }),
     });
@@ -211,6 +236,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "botopink", .module = core_mod },
+                .{ .name = "manifest", .module = manifest_mod },
             },
         }),
     });
@@ -219,7 +245,8 @@ pub fn build(b: *std.Build) void {
 
     // ── lib-test-runner (botopink-lib-test executable) ────────────────────────
     // Fully self-contained orchestrator — shells out to the installed `botopink`
-    // binary, so it carries no `compiler-core` import.
+    // binary, so it carries no `compiler-core` import (only the std-only
+    // `manifest` module, for the shared reading of `botopink.json`).
 
     const lib_test_exe = b.addExecutable(.{
         .name = "botopink-lib-test",
@@ -227,6 +254,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("modules/lib-test-runner/src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "manifest", .module = manifest_mod },
+            },
         }),
     });
 
@@ -237,6 +267,9 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("modules/lib-test-runner/src/main.zig"),
             .target = target,
+            .imports = &.{
+                .{ .name = "manifest", .module = manifest_mod },
+            },
         }),
         .filters = test_filters,
     });
@@ -253,6 +286,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("modules/bpmp/src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "manifest", .module = manifest_mod },
+        },
     });
     const bpmp_exe = b.addExecutable(.{ .name = "bpmp", .root_module = bpmp_mod });
     b.installArtifact(bpmp_exe);
@@ -265,6 +301,9 @@ pub fn build(b: *std.Build) void {
     const bpmp_test_mod = b.createModule(.{
         .root_source_file = b.path("modules/bpmp/src/main.zig"),
         .target = target,
+        .imports = &.{
+            .{ .name = "manifest", .module = manifest_mod },
+        },
     });
     const bpmp_tests = b.addTest(.{ .root_module = bpmp_test_mod, .filters = test_filters });
     const run_bpmp_tests = b.addRunArtifact(bpmp_tests);
