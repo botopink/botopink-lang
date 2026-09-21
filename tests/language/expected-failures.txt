@@ -113,7 +113,6 @@ commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the on
 erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
 erlang   | test/case_unknown.bp       | 01 step 4, 01 step 1, 01 step 3 | arm bodies are not unwrapped, `unknown` is not §2's type and `is` is not typed: "expected string, got union"
 *        | reject/case_shorthand_on_unknown.bp   | 01 step 1, 01 step 5 | rejected by `unknown` assignability, without the "full name" diagnostic
-*        | reject/case_arity_without_rest.bp     | 01 step 4 | rejected for the wrong reason: the missing-field diagnostic is not there
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
 erlang   | run/tuple_print.bp         | 02 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`

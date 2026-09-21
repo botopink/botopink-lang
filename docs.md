@@ -441,6 +441,26 @@ fn grade(n: i32) {
 }
 ```
 
+A variant pattern names **every** field of its variant, or ends with `..`:
+
+```botopink
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+}
+
+fn describe(s: Shape) -> i32 {
+    return case s {
+        .Rect(width: w, ..) { w }
+        .Circle(r) { r }
+    };
+}
+```
+
+`.Rect(width: w)` without the `..` is `error: missing required field 'height' on
+type 'Rect'`, at the arm — the fields a pattern does not name are dropped, and
+`..` is how you say so.
+
 A range in a pattern is `..`, exclusive, exactly as in a loop. The compiler is
 behind that rule and still asks for `...` — see
 [Decided, not yet implemented](#decided-not-yet-implemented).

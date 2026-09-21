@@ -6322,6 +6322,56 @@ fn refuseVariantPatternOverOptional(
     }
 }
 
+/// Decision 8 §5.1 P7 — without a trailing `..` a variant pattern names every
+/// field of the variant. `.Rect(width: w)` over `Rect(width: i32, height: i32)`
+/// is a missing field, not a shorthand: the fields it does not name would be
+/// silently dropped, and `..` is the spelling that says "drop them".
+///
+/// Only a written variant payload is judged. A whole-payload binding (`Ok ok`)
+/// stands for the payload entire, a tuple or range rides the same node under
+/// `shape`, and a variant whose declaration is not resolvable is left alone.
+fn checkCaseArmArity(
+    env: *Env,
+    subjectType: *T.Type,
+    arms: []const ast.CaseArm,
+) InferError!void {
+    for (arms) |arm| {
+        const v = switch (arm.pattern) {
+            .variant => |vv| vv,
+            else => continue,
+        };
+        if (v.shape != .variant or v.rest or v.name.len == 0) continue;
+        const written: usize = switch (v.payload) {
+            .fields => |f| f.len,
+            .literals => |l| l.len,
+            .binding => continue,
+        };
+        const declared = (try variantPayloadFieldNames(env, subjectType, v.name)) orelse continue;
+        if (written >= declared.len) continue;
+        env.lastError = TypeError
+            .missingField(bareVariantName(v.name), declared[written])
+            .withLoc(arm.patternLoc);
+        return error.TypeError;
+    }
+}
+
+/// The declared field names of `writtenName`'s variant on `subjectType`, or
+/// null when the subject's type or the variant is not resolvable.
+fn variantPayloadFieldNames(env: *Env, subjectType: *T.Type, writtenName: []const u8) InferError!?[]const []const u8 {
+    const st = subjectType.deref();
+    if (st.* != .named) return null;
+    const td = env.lookupTypeDef(st.named.name) orelse return null;
+    if (td != .enum_) return null;
+    const variantName = bareVariantName(writtenName);
+    for (td.enum_.variants) |vd| {
+        if (!std.mem.eql(u8, vd.name, variantName)) continue;
+        const out = try env.arena.alloc([]const u8, vd.fields.len);
+        for (vd.fields, 0..) |f, i| out[i] = f.name;
+        return out;
+    }
+    return null;
+}
+
 fn bindCaseArmPatternNames(
     env: *Env,
     pattern: ast.Pattern,
@@ -9782,6 +9832,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             // binder are the two halves of an optional — and its `null` arm is
             // not a catch-all, so the walk would read it as uncovered.
             if (typedSubjects.len == 1 and optionalBinder == null) {
+                try checkCaseArmArity(env, typedSubjects[0].getType(), c.arms);
                 try checkCaseExhaustiveness(env, typedSubjects[0].getType(), c.arms, loc);
             }
             if (optionalBinder) |binder| try env.optionalNullCases.put(loc, binder);
