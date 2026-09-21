@@ -1214,8 +1214,15 @@ assignability rule, `x is <Type>` with narrowing, `case` arms written
 `Pattern { … }` with `when (…)` guards, `val assert <pattern> = <expr>;`
 (binding its names, and fatal when the match fails), a `//` comment inside a
 `loop` body, and — since 1.0.10-beta's C-04 — a **parameter default applied at
-the call site**, on all four backends. Each is documented above, in the section
-that teaches the form.
+the call site**, on all four backends, **for a declaration in the calling
+module**. Each is documented above, in the section that teaches the form.
+
+The one limit worth stating here, because a library will meet it before it
+meets the rule: a default on an **imported** declaration is not filled. The
+checker fills from the parameter list it has, and the cross-module export
+registry carries no plain `fn` declaration, so `import { greet } from "helper";
+greet("w")` still reds `'greet' expects 2 argument(s), got 1` where the same
+`greet` called inside `helper` fills. Same for an imported record's field.
 
 Two more left it because the form is **deliberately absent**, so that neither
 reads as unfinished work:
