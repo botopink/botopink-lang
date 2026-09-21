@@ -408,6 +408,63 @@ val back = xs.reverse();              // [3, 2, 1] — and xs is still [1, 2, 3]
 An array method **answers a value and leaves its receiver alone**, on every
 target: `reverse`, `slice`, `map` and `filter` all hand back a new array.
 
+### Indexing and slicing
+
+**An index is a method call.** `xs[k]` *is* `xs.at(k)`, `xs[a..b]` *is*
+`xs.slice(a, b)`, and an open end passes `null` — `xs[1..]` *is*
+`xs.slice(1, null)`, because `start..end` is a form and not a value, so there is
+nothing else to hand the method. The index expression has **no typing rule of
+its own**: its type is whatever the method answers, which for `at` is `?T`.
+
+<!-- docs-check: body -->
+```botopink
+val xs = [10, 20, 30];
+val first: ?i32 = xs[0];         // xs.at(0)
+val none: ?i32 = xs[9];          // null — absent has one spelling
+val tail: i32[] = xs[1..];       // xs.slice(1, null)
+val head: i32[] = xs[0..2];      // xs.slice(0, 2)
+val s = "hello";
+val c: ?string = s[1];           // "e"
+```
+
+Which methods those are comes from two **ambient** behaviors — ambient like
+`Display`, so the syntax finds them with nothing imported:
+
+<!-- docs-check: skip the two behaviors as libs/std declares them, not a module -->
+```botopink
+pub behavior Index<K, V> { fn at(self: Self, key: K) -> ?V; }
+pub behavior Slice<V>    { fn slice(self: Self, start: i32, end: ?i32) -> V; }
+```
+
+So indexing is not a privilege of the three built-in collections. `Array<T>`
+answers `Index<i32, T>` and `Slice<T[]>`, `string` answers `Index<i32, string>`
+and `Slice<string>`, `Dict<K, V>` answers `Index<K, V>` — and **your own type
+becomes indexable by answering them**, with nothing added to the compiler:
+
+```botopink
+type Matrix(rows: i32[][]) implement Index<i32, i32[]> {
+    pub fn at(self: Self, key: i32) -> ?i32[] {
+        return self.rows.at(key);
+    }
+}
+
+val m = Matrix(rows: [[1, 2], [3, 4]]);
+val row: ?i32[] = m[1];          // [3, 4]
+```
+
+A **tuple** is the one exception, and its reason is the rule's: `t[0]` needs a
+*constant* index and answers a type *per position*, which `at(key: K) -> ?V`
+cannot say with a single `V`. A tuple index is checked directly — `t[0]` is
+`i32` and `t[1]` is `string` below, neither of them optional, and an index the
+type has no position for is refused where it is written.
+
+<!-- docs-check: body -->
+```botopink
+val t = #(1, "a");
+val n: i32 = t[0];
+val label: string = t[1];
+```
+
 ### Operators
 
 <!-- docs-check: skip an operator table, not a module -->
