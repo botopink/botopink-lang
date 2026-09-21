@@ -767,3 +767,36 @@ test "anchor: each body starts over — a sibling fn may anchor elsewhere" {
         \\}
     );
 }
+
+// ── front 20 F12: what `-> Iterator<T, E, C>` means on a behavior method ──────
+//
+// `Iterable.iter(self: Self) -> Iterator<T, E, C>` looked like a behavior
+// escaping into value position, and is not: every effect wrapper IS a
+// `behavior` (`Future`, `Generator`, `Iterator`, `FutureGenerator`, `Context`),
+// and returning one is what every effect signature in the language does. What
+// makes the line look unlike its neighbours is only that a `behavior` method is
+// DECLARATIVE — it expresses its effect through the return wrapper alone and
+// carries no `#[@iterator]` (using one there is the R1/R2 error) — so the
+// wrapper appears without the marker that usually accompanies it. The
+// annotation belongs to the implementation.
+//
+// This is a comptime cell rather than a `tests/language` one because the shape
+// does not RUN on commonJS: an effect annotation on a record METHOD is ignored
+// by `commonJS.zig`'s `fnKeyword`, which reads `ast.FnDecl.effect` and never
+// sees a method, so `#[@iterator] fn iter` emits as a plain `iter() { … }`
+// rather than `*iter() { … }` and the caller's `for (const x of b.iter())`
+// reds at run time. erlang runs it. That is a lowering gap and belongs to the
+// backend's own front; front 20 records it here and in the report rather than
+// committing a cell it would have to list against an owner row that does not
+// exist.
+
+test "F12: a type satisfies Iterable with a #[@iterator] fn iter" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Bag(items: i32[]) implement Iterable<i32> {
+        \\    #[@iterator]
+        \\    fn iter(self: Self) -> @Iterator<i32> {
+        \\        loop (self.items) { x -> yield x; };
+        \\    }
+        \\}
+    );
+}

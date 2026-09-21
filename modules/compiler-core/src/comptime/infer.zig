@@ -8026,8 +8026,21 @@ fn inferResultOptionMethod(
     const isOption = std.mem.eql(u8, named.name, "optional");
     if (!isResult and !isOption) return null;
 
+    // F11 — `expect` was `unwrapOr` under a name that says the opposite, and
+    // is gone. The refusal is explicit because the fallback for an unknown
+    // method on a `?T` is permissive typing: without it, `.expect(…)` would
+    // still compile and fail at run time, which is worse than the alias was.
+    if (isOption and std.mem.eql(u8, callee, "expect")) {
+        env.lastError = TypeError.custom(
+            diagnostics.option_expect_removed ++
+                ": `?T` has no `expect` — it was an alias of `unwrapOr` under a name that says the absent branch is unreachable",
+            "Write `unwrapOr(<default>)`, which is what it did. There is no assert-shaped unwrap on `?T`: `case` the optional, or `@panic` in the absent arm.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+
     const op: envMod.MethodLowering.Op =
-        if (std.mem.eql(u8, callee, "map")) .map else if (std.mem.eql(u8, callee, "flatMap")) .flatMap else if (std.mem.eql(u8, callee, "unwrapOr")) .unwrapOr else if (isOption and std.mem.eql(u8, callee, "expect")) .unwrapOr else if (isResult and std.mem.eql(u8, callee, "isOk")) .isOk else if (isResult and std.mem.eql(u8, callee, "isError")) .isError else return null;
+        if (std.mem.eql(u8, callee, "map")) .map else if (std.mem.eql(u8, callee, "flatMap")) .flatMap else if (std.mem.eql(u8, callee, "unwrapOr")) .unwrapOr else if (isResult and std.mem.eql(u8, callee, "isOk")) .isOk else if (isResult and std.mem.eql(u8, callee, "isError")) .isError else return null;
 
     // The success-payload type: `R` for `Result<R, E>`, `T` for `Option<T>`.
     const okTy: *T.Type = if (named.args.len >= 1) named.args[0] else try env.freshVar();

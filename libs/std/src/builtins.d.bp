@@ -65,11 +65,18 @@ pub type Result<R, E> {
 //   fn flatMap(self, transform: fn(value: T) -> ?T2) -> ?T2
 //   fn unwrapOr(self, default: T) -> T
 //       The present value, or `default` when absent.
-//   fn expect(self, default: T) -> T
-//       Identical runtime behaviour to `unwrapOr`; the name signals to the
-//       reader that the absent branch is unreachable (a bounds-checked
-//       `xs.at(i)`, a guarded null, …) and the default is a sentinel —
-//       not a meaningful fallback.
+//
+// F11 — there is NO `expect`. It existed, declared `expect(self, default: T)
+// -> T` and lowered to `unwrapOr` on every backend, with the prose saying the
+// two were identical and the name signalling that the absent branch was
+// unreachable. A name that reads as an assertion over a signature that is a
+// fallback is the loosest reading of the stricter word, which is the shape
+// decision 67 refuses: the reader who trusts the name writes a sentinel where
+// the value may genuinely be absent, and nothing says so. The strict reading
+// — `expect(self, message: string) -> T`, failing when absent — has to invent
+// a failure the option surface does not have and lower it on four backends,
+// so it is not this front's to add. What is left is one spelling for one
+// behaviour: `unwrapOr`. `.expect(…)` on a `?T` is now an unknown method.
 //
 // There is deliberately NO `option` namespace — the ergonomic surface for
 // optionals is JS-style optional chaining (planned):
@@ -94,6 +101,24 @@ pub type IteratorStep<T, E, C> {
     Done(completion: C),
     Error(error: E),
 }
+
+// F12 — `iter` answering `Iterator<T, E, C>` is NOT a behavior escaping into
+// value position: `Iterator` is a `behavior` because every effect wrapper is
+// (`Future`, `Generator`, `FutureGenerator`, `Context` — all of them above),
+// and returning one is what every effect signature in the language already
+// does. `#[@iterator] fn upTo(n: i32) -> @Iterator<i32>` is the same shape.
+// What makes this line look unlike its neighbours is only that a `behavior`
+// method is DECLARATIVE — it expresses its effect through the return wrapper
+// alone and carries no `#[@iterator]` annotation (using one there is the R1/R2
+// error) — so the wrapper appears without the marker that usually accompanies
+// it. A type satisfies `Iterable` with a `#[@iterator] fn iter(self: Self) ->
+// @Iterator<T, E, C>`; the annotation belongs to the implementation, never to
+// the declaration.
+//
+// Nothing in this tree implements or consumes `Iterable` today. It is kept
+// because it is the one name for "a thing you can iterate" and `loop` will
+// want it; if it is still unimplemented when something else needs the name, it
+// goes rather than drifts.
 
 pub behavior Iterable<T, E = any, C = void> {
     fn iter(self: Self) -> Iterator<T, E, C>;
@@ -223,10 +248,31 @@ pub behavior Annotation {
 // The `inline` flag opts a `(target, method)` pair out of the dispatch table
 // so the backend's hand-coded shape keeps emitting (used only for arms whose
 // lowering escapes the template grammar — list-cons / BIF aliases / etc.).
+//
+// F9 — it is declared on `Erlang` and `Beam` and NOWHERE ELSE, because those
+// are the two emitters that read it: each has a `hasExternalInline` that skips
+// the dispatch entry when the flag is set. `Node` declared it too and no JS
+// path ever consulted it, so `#[@External.Node("charAt", inline = true)]` was
+// a switch that silently did nothing — a configuration that looks like it
+// bypasses the dispatch table and does not, which decision 67 refuses in
+// exactly those words. `Wasm` and `Typescript` do not gain it for the same
+// reason. A backend that grows a hand-coded shape worth opting out of adds the
+// parameter in the same change as the `hasExternalInline` that honours it.
+//
+// F9, the other half — these five variants are the five `Target` values under
+// another name, and they stay two declarations. `Target` is DATA: a value a
+// program holds, compares and passes (`Target.Node`). `External.<T>` is a
+// MARKER whose variants each carry a payload — the template, and on two of
+// them the flag — and whose meaning is per variant, which is what the
+// annotation model spells (`type … implement Annotation`, one annotation key
+// per variant) and what a plain enum of five names cannot. Collapsing them
+// would mean either an annotation with no payload or a data enum carrying
+// per-value parameters nobody reads. The names coincide because there are five
+// backends; that is the only thing they share.
 
 pub type External implement Annotation {
     Erlang(template: string, inline: bool = false),
-    Node(template: string, inline: bool = false),
+    Node(template: string),
     Beam(template: string, inline: bool = false),
     Wasm(template: string),
     Typescript(template: string),

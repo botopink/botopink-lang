@@ -52,6 +52,13 @@ pub const effect_throw_without_fallible_channel: []const u8 = "effect-throw-with
 /// other half of the pair.
 pub const effect_try_without_fallible_channel: []const u8 = "effect-try-without-fallible-channel";
 
+/// Front 20 F11 — `.expect(default)` on a `?T`. It was an alias of `unwrapOr`
+/// under a name that says the absent branch is unreachable, which is the
+/// loosest reading of the stricter word (decision 67). There is one spelling
+/// now, and reaching for the old one is refused rather than typed permissively
+/// and broken at run time.
+pub const option_expect_removed: []const u8 = "option-expect-removed";
+
 /// R7 — `await` outside `#[@future]` / `#[@futureGenerator]`.
 pub const effect_await_without_future: []const u8 = "effect-await-without-future";
 
@@ -252,6 +259,7 @@ pub const all_codes = [_][]const u8{
     effect_missing_annotation,
     effect_duplicate_annotation,
     effect_throw_without_fallible_channel,
+    effect_try_without_fallible_channel,
     effect_await_without_future,
     yield_without_generator,
     return_must_be_bare_R,
@@ -289,6 +297,7 @@ pub const all_codes = [_][]const u8{
     enum_variant_arity_mismatch,
     fn_param_default_trailing_only_parse,
     fn_param_arity_exceeded,
+    option_expect_removed,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

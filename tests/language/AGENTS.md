@@ -42,7 +42,8 @@ decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bod
 `curried_call`, `index_expression`), and `effect_chain` (1.0.10-beta front 20,
 decisions 95 and 98: one `test/`, one `run/` and five `reject/` cells; front 20
 also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
-decision 96). One scenario group per
+decision 96, and `run/option_unwrap_or` + `reject/option_expect_removed` to
+`optional*` for F11). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -244,19 +245,20 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 
 ```bash
 ls test/*.bp    | wc -l   # 52
-ls run/*.bp     | wc -l   # 25
-ls reject/*.bp  | wc -l   # 38
+ls run/*.bp     | wc -l   # 26
+ls reject/*.bp  | wc -l   # 39
 ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 126
+find . -name '*.bp' | wc -l   # 128
 ```
 
-The difference from the block below is front 20's nine cells, one new area row
-and one grown:
+The difference from the block below is front 20's eleven cells, three new area
+rows:
 
 | Area | Cells | Total |
 |---|---|---|
 | the effect chain (1.0.10-beta front 20, decisions 95 and 98) | 1 test + 1 run + 5 reject | 7 |
 | one `ContextBase` per body (front 20, decision 96) | 1 run + 1 reject | 2 |
+| `?T` has one unwrap (front 20, F11) | 1 run + 1 reject | 2 |
 
 `run/effect_chain.bp` holds the two rows of decision 95's table every backend
 runs (`#[@result]` with `try`, `#[@context]` with `use` and `try`);
@@ -267,6 +269,11 @@ wasm and beam, and commonJS lowers `#[@context]` to a plain `function`, so the
 emitted `await` is a JS `SyntaxError`. That is a lowering row for the backend's
 own front, not a reason to leave the capability refused, and it is not an
 `expected-failures.txt` line because no cell of this suite claims it.
+
+`run/option_unwrap_or.bp` and `reject/option_expect_removed.bp` are F11's pair:
+`?T.expect(default)` was `unwrapOr` under a name that says the absent branch is
+unreachable, and is gone; `unwrapOr` is the one spelling, and reaching for the
+old one is refused rather than typed permissively and broken at run time.
 
 `run/use_one_base.bp` and `reject/use_two_bases.bp` are decision 96's pair: a
 body whose hooks share an owner compiles and composes, and a second `use`
@@ -286,7 +293,7 @@ Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
 
 ```
 $ tests/language/run.sh                 # commonJS, erlang, wasm
-language tests: 387 passed, 53 expected failures, 0 failed
+language tests: 391 passed, 53 expected failures, 0 failed
 ```
 
 Counted on disk at `b09bf9c6` — local `feat` after the fronts 12 × 13 merge:
