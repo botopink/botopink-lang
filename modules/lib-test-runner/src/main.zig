@@ -4,6 +4,7 @@
 /// Usage:
 ///   botopink-lib-test [--target <t>[,<t>…] | --target all]
 ///                     [--lib <name>] [--filter <s>] [--strict] [--bin <path>]
+///                     [--include-unsupported]
 ///
 /// It discovers every project carrying a `botopink.json` across the resolved root
 /// list (bundled `repository/botopink-lang/libs`, sibling `repository/`, legacy
@@ -38,6 +39,11 @@ const HELP =
     \\  --lib <name>          Restrict to one project by name across roots (default: all).
     \\  --filter <s>          Forwarded to `botopink test --filter`.
     \\  --strict              Treat an unsupported target as a failure, not a skip.
+    \\  --include-unsupported Run a cell the lib's botopink.json "targets" list
+    \\                        excludes, instead of skipping it, and mark it
+    \\                        "restricted":true in --json. Measures what a
+    \\                        restriction hides; scripts/test-libs.sh pins the
+    \\                        result in scripts/restricted-targets.txt.
     \\  --bin <path>          Path to the `botopink` binary (env: BOTOPINK_BIN;
     \\                        default: ./zig-out/bin/botopink, else PATH).
     \\  --lib-root <dir>      Extra root to scan; repeatable. Appended after env
@@ -125,6 +131,12 @@ fn run(init: std.process.Init) !u8 {
         lib_names[r] = lib.name;
         cells[r] = try arena.alloc(matrix.Status, opts.targets.len);
         for (opts.targets, 0..) |target, c| {
+            // The lib's own `"targets"` whitelist excludes this target. The
+            // verdict is computed either way: it decides the skip below, and
+            // it is carried into every cell summary so a consumer can tell a
+            // restricted cell from an ordinary one (`scripts/test-libs.sh`
+            // reads those against `scripts/restricted-targets.txt`).
+            const restricted = !discovery.libSupportsTarget(lib, target.toString());
             const status: matrix.Status = if (lib.problem) |problem| blk: {
                 // The lib cannot be used at all — a refused manifest, a name
                 // declared twice, a library member that ships nothing. Every
@@ -132,26 +144,28 @@ fn run(init: std.process.Init) !u8 {
                 // nothing is spawned. Stderr in both modes, so `--json` stdout
                 // stays pure JSONL.
                 std.debug.print("\n\x1b[36m── {s} · {s} ──\x1b[0m\n{s}", .{ lib.name, target.toString(), problem });
-                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, target.toString(), .fail);
+                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, target.toString(), .fail, restricted);
                 break :blk .fail;
-            } else if (!discovery.libSupportsTarget(lib, target.toString())) blk: {
+            } else if (!discovery.libRunsTarget(lib, target.toString(), opts.include_unsupported)) blk: {
                 // Lib's botopink.json `"targets": [...]` whitelist excludes
                 // this target — skip without spawning. Marks `~` in the matrix,
                 // never fails the run (even under --strict; the lib opted out
                 // explicitly, unlike a CLI-side unsupported target).
-                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, target.toString(), .skipped_unsupported);
+                // `--include-unsupported` takes this arm away: the cell runs
+                // and is measured instead.
+                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, target.toString(), .skipped_unsupported, restricted);
                 break :blk .skipped_unsupported;
             } else if (!lib.has_tests and !lib.has_sources) blk: {
                 // A manifest with no botopink source: nothing to compile.
-                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, target.toString(), .no_tests);
+                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, target.toString(), .no_tests, restricted);
                 break :blk .no_tests;
             } else if (!lib.has_tests)
                 // No `test` block: still compiled per target (`botopink
                 // build`), so a test-less lib that does not compile fails
                 // its cell; one that compiles is `–`.
-                try runner.compileCell(arena, io, bin, lib.dir, lib.name, target, opts.strict, opts.json)
+                try runner.compileCell(arena, io, bin, lib.dir, lib.name, target, opts.strict, opts.json, restricted)
             else
-                try runner.runCell(arena, io, bin, lib.dir, lib.name, target, opts.filter, opts.strict, opts.json);
+                try runner.runCell(arena, io, bin, lib.dir, lib.name, target, opts.filter, opts.strict, opts.json, restricted);
             cells[r][c] = status;
             summary.tally(status);
         }

@@ -1,0 +1,80 @@
+# Every cell `zig build test-libs` would not run at all, because the member's
+# `botopink.json` declares a `"targets"` list that excludes the target. One
+# cell per line:
+#
+#   <lib> <target> <n-failed> <owner> <reason…>
+#
+# A restriction is an opt-out from the gate, and an opt-out with no line here
+# is refused. `test-libs.sh` passes `--include-unsupported` to the runner, so
+# every restricted cell RUNS on every gate, and its measured failed count is
+# compared with `<n-failed>`.
+#
+# `<n-failed>` is the number of FAILING TESTS the cell has, or the token
+# `build` when the cell does not compile at all — no test ran, so it has no
+# count, and reading that as "0 failed" is exactly the blindness this file
+# closes. Writing a line is a MEASUREMENT: run the cell
+# (`zig build test-libs -- --lib <lib> --target <target>`) and copy what it
+# prints. Never a guess.
+#
+# Only the FAILED count is pinned, never the passed one. A library that adds a
+# green test moves nothing here, so an ordinary library commit never has to
+# touch this repository — that is what makes a gate shared by seven fronts
+# livable.
+#
+# The gate is strict in BOTH directions:
+#
+#   · a restricted cell with no line here      → FAIL. A new restriction has to
+#                                                 be measured before it lands.
+#   · a line whose member no longer restricts
+#     that target                              → FAIL. Delete the line; the
+#                                                 cell became an ordinary
+#                                                 assert. (On an unfiltered
+#                                                 run, a line with no cell at
+#                                                 all is stale too.)
+#   · a count that moved, UP or DOWN           → FAIL. Up is a regression; down
+#                                                 is a fix, and it is banked by
+#                                                 editing the number here in the
+#                                                 same commit.
+#
+# There is no warning row and no flag that turns a line into a warning
+# (decision 67): fail beats warn.
+#
+# `<owner>` is the front that owns the member's `targets` array, taken from
+# `specs/1.0.10-beta/fronts.md` — the front that will delete the line by
+# widening the array, not whoever measured it.
+#
+# A restricted cell never consults `known-red-libs.txt`: its verdict is this
+# file's, and only this file's.
+#
+# Measured 2026-09-21 against botopink-lang ef2604af, with each library
+# checkout at its own `feat` tip, by `botopink-lib-test --json
+# --include-unsupported`. 18 cells, 17 members.
+
+# ── examples that declare one target (`02-packaging`'s examples row) ─────────
+emilia-card             erlang    0      02-packaging          `"targets": ["commonJS"]`; the erlang row is green today — the restriction outlived its reason
+jhonstart-counter       erlang    build  02-packaging          `"targets": ["commonJS"]`; the example does not compile on erlang at all (0 tests ran, 0 passed)
+jhonstart-todo          erlang    build  02-packaging          `"targets": ["commonJS"]`; the example does not compile on erlang at all (0 tests ran, 0 passed)
+rakun-example           erlang    0      02-packaging          `"targets": ["commonJS"]`; no `test {}` block — `botopink build --target erlang` is clean
+rakun-container-example erlang    0      03-rakun/F06          `"targets": ["commonJS"]`; the container showcase F06 added — no `test {}` block, and it compiles on erlang
+
+# ── erika (no track this milestone; `09-ecosystem-residuals` keeps the tree) ─
+erika-linq              erlang    8      00/09-ecosystem-residuals  `"targets": ["commonJS"]` hides 8 red erlang tests in the LINQ example — the largest thing any restriction here hides, and no front owns the fix
+
+# ── rakun core: the erlang row the restriction hid (`03-rakun`'s F04) ────────
+rakun                   erlang    2      03-rakun/F04          `modules/rakun` declares `"targets": ["commonJS"]`; 265 pass, 2 red (`test/server_test.bp:74,80`, `{badkey,params}` on the live request). F04 owns the `targets` array and deletes this line when it appends `"erlang"`
+
+# ── rakun submodules that declare erlang only: the commonJS row is hidden ────
+# Each is `"targets": ["erlang"]` with no `test {}` block yet, so the line
+# asserts exactly "still compiles on commonJS". The owner is the lowest-numbered
+# front in that module (fronts.md, Track B), which owns its botopink.json.
+rakun-actuator          commonJS  0      03-rakun/F11          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-cache             commonJS  0      03-rakun/F12          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-client            commonJS  0      03-rakun/F13          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-data              commonJS  0      03-rakun/F08          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-hateoas           commonJS  0      03-rakun/F21          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-logging           commonJS  0      03-rakun/F17          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-messaging         commonJS  0      03-rakun/F15          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-scheduling        commonJS  0      03-rakun/F16          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-security          commonJS  0      03-rakun/F10          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-session           commonJS  0      03-rakun/F18          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean
+rakun-web               commonJS  0      03-rakun/F07          `"targets": ["erlang"]`; no tests yet — `botopink build --target commonJS` is clean

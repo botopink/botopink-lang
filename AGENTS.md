@@ -79,12 +79,22 @@ invocation). See
 checkout can see (`<ancestor>/repository/*` — the meta workspace, or the repos CI
 checks out) and in every **member** of a workspace among them (a `botopink.json`
 with `"workspaces"`, one row per member, examples included), and reports each cell as pass, FAIL (with the failing module's
-diagnostic), known red, skipped (with the reason) or no tests — a library with
+diagnostic), known red, restricted, skipped (with the reason) or no tests — a library with
 no `test` block is still compiled (`botopink build --target <t>`), so it fails
 its cell when it does not compile. A cell listed in
 [`scripts/known-red-libs.txt`](scripts/known-red-libs.txt) is named with its
 owning front and does not fail the run; an unlisted failure does, and so does a
-listed cell that passes (delete its line). It is **not** part of `zig build
+listed cell that passes (delete its line).
+
+A member may exclude a backend with `"targets"` in its `botopink.json`. That
+used to make the cell invisible — skipped, `~`, failing nothing even under
+`--strict`. It no longer can: the wrapper passes `--include-unsupported`, so
+every restricted cell **runs**, and its failed-test count is pinned in
+[`scripts/restricted-targets.txt`](scripts/restricted-targets.txt), strict in
+both directions — an unlisted restriction fails, a line whose member no longer
+restricts fails, and a count that moves either way fails. Only the *failed*
+count is pinned, so a library adding a green test never has to touch this
+repository. It is **not** part of `zig build
 test` — it needs host runtimes on `PATH`:
 
 | Backend    | Tool                     | Install hint                                     |
@@ -220,7 +230,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh):
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
 7. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
-8. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled);
+8. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled; every `"targets"`-restricted cell runs and is checked against `scripts/restricted-targets.txt`);
 9. `zig build test-language` (tests/language — decision 8's `case`, tuples and `loop`; expected failures named);
 10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles).
 

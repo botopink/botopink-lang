@@ -30,6 +30,12 @@ const UNSUPPORTED_MARK = "currently supports only";
 /// untouched for spawn/compile errors. After the per-test stream the runner
 /// emits one `{"event":"cell_summary",…}` record so consumers can tally
 /// cells without re-parsing the text matrix.
+///
+/// `restricted` says this cell's target is excluded by the lib's
+/// `botopink.json` `"targets"` list and only runs because
+/// `--include-unsupported` lifted the skip. It is carried into the cell
+/// summary so the ledger (`scripts/restricted-targets.txt`) reads the cell's
+/// failure count instead of the ordinary pass/fail verdict.
 pub fn runCell(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -40,6 +46,7 @@ pub fn runCell(
     filter: ?[]const u8,
     strict: bool,
     json: bool,
+    restricted: bool,
 ) !Status {
     var argv: std.ArrayListUnmanaged([]const u8) = .empty;
     try argv.append(arena, bin);
@@ -87,9 +94,48 @@ pub fn runCell(
     const status = classifyWith(.pass, code, result.stdout, result.stderr, strict);
 
     if (json) {
-        try emitCellSummary(arena, io, lib_name, target.toString(), status);
+        // The child's own `{"event":"summary",…}` record carries the test
+        // tally; a cell that never compiled has none, which is `ran = false`
+        // and NOT "zero failures" — the distinction is the whole point of the
+        // ledger (a cell that does not build must never read as green).
+        const counts = parseChildSummary(result.stdout);
+        try emitCellSummary(arena, io, lib_name, target.toString(), status, restricted, counts);
     }
     return status;
+}
+
+/// The test tally of one cell, read from the child's JSONL.
+pub const CellCounts = struct {
+    /// `"failed"` of the child's `{"event":"summary",…}` record.
+    failed: usize = 0,
+    /// Whether such a record was seen at all. False for a cell that did not
+    /// compile, was not spawned, or ran `botopink build` instead of `test`.
+    ran: bool = false,
+};
+
+/// Scan a child's `--json` stdout for its terminating
+/// `{"event":"summary","passed":P,"failed":F}` record and return `F`.
+/// Last record wins (there is one per `botopink test` run). A stdout with no
+/// such record yields `.{ .failed = 0, .ran = false }`.
+fn parseChildSummary(child_stdout: []const u8) CellCounts {
+    var counts: CellCounts = .{};
+    var it = std.mem.splitScalar(u8, child_stdout, '\n');
+    while (it.next()) |line| {
+        if (line.len == 0 or line[0] != '{') continue;
+        if (std.mem.indexOf(u8, line, "\"event\":\"summary\"") == null) continue;
+        const key = "\"failed\":";
+        const at = std.mem.indexOf(u8, line, key) orelse continue;
+        var i = at + key.len;
+        var n: usize = 0;
+        var digits: usize = 0;
+        while (i < line.len and line[i] >= '0' and line[i] <= '9') : (i += 1) {
+            n = n * 10 + (line[i] - '0');
+            digits += 1;
+        }
+        if (digits == 0) continue;
+        counts = .{ .failed = n, .ran = true };
+    }
+    return counts;
 }
 
 /// Build directory, relative to the lib's own directory, that `compileCell`
@@ -114,6 +160,7 @@ pub fn compileCell(
     target: Target,
     strict: bool,
     json: bool,
+    restricted: bool,
 ) !Status {
     const out_dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ COMPILE_OUT_DIR, target.toString() });
     const argv = [_][]const u8{ bin, "build", "--target", target.toString(), "--out", out_dir };
@@ -141,7 +188,9 @@ pub fn compileCell(
         .signal, .stopped, .unknown => 1,
     };
     const status = classifyWith(.no_tests, code, result.stdout, result.stderr, strict);
-    if (json) try emitCellSummary(arena, io, lib_name, target.toString(), status);
+    // No test ran: `ran = false`, so a compile red is never reported as
+    // "0 failures" by the ledger.
+    if (json) try emitCellSummary(arena, io, lib_name, target.toString(), status, restricted, .{});
     return status;
 }
 
@@ -199,16 +248,25 @@ fn emitJsonlWithCellFields(
     if (out.items.len > 0) std.Io.File.stdout().writeStreamingAll(io, out.items) catch {};
 }
 
-/// Emit one `{"event":"cell_summary","lib":"…","target":"…","status":"…"}`
+/// Emit one
+/// `{"event":"cell_summary","lib":…,"target":…,"status":…,"restricted":…,"failed":…,"ran":…}`
 /// record so a JSON consumer can correlate every spawned cell with its
 /// outcome without re-parsing the text matrix. `status` mirrors `Status`
 /// stringified for downstream readability.
+///
+/// `restricted` marks a cell the lib's `"targets"` list excludes (it only ran
+/// because of `--include-unsupported`); `failed`/`ran` carry the child's own
+/// test tally, which is what `scripts/restricted-targets.txt` pins. `ran:false`
+/// means no test tally exists — a compile red, a build-only cell, or a cell
+/// that was never spawned — and must never be read as "zero failures".
 fn emitCellSummary(
     arena: std.mem.Allocator,
     io: std.Io,
     lib_name: []const u8,
     target_str: []const u8,
     status: Status,
+    restricted: bool,
+    counts: CellCounts,
 ) !void {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     defer buf.deinit(arena);
@@ -219,7 +277,13 @@ fn emitCellSummary(
     try buf.appendSlice(arena, target_str);
     try buf.appendSlice(arena, "\",\"status\":\"");
     try buf.appendSlice(arena, statusName(status));
-    try buf.appendSlice(arena, "\"}\n");
+    try buf.appendSlice(arena, "\",\"restricted\":");
+    try buf.appendSlice(arena, if (restricted) "true" else "false");
+    try buf.appendSlice(arena, ",\"failed\":");
+    try appendDecimal(arena, &buf, counts.failed);
+    try buf.appendSlice(arena, ",\"ran\":");
+    try buf.appendSlice(arena, if (counts.ran) "true" else "false");
+    try buf.appendSlice(arena, "}\n");
 
     std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
 }
@@ -242,8 +306,9 @@ pub fn emitCellSummaryFor(
     lib_name: []const u8,
     target_str: []const u8,
     status: Status,
+    restricted: bool,
 ) !void {
-    try emitCellSummary(arena, io, lib_name, target_str, status);
+    try emitCellSummary(arena, io, lib_name, target_str, status, restricted, .{});
 }
 
 /// Final `{"event":"run_summary",…}` record — one per `botopink-lib-test`
@@ -325,6 +390,33 @@ test "statusName covers every Status variant" {
     try testing.expectEqualStrings("fail", statusName(.fail));
     try testing.expectEqualStrings("skipped_unsupported", statusName(.skipped_unsupported));
     try testing.expectEqualStrings("no_tests", statusName(.no_tests));
+}
+
+test "parseChildSummary: the child's summary record carries the failure count" {
+    const stdout =
+        "{\"event\":\"test\",\"name\":\"a\",\"status\":\"ok\"}\n" ++
+        "{\"event\":\"test\",\"name\":\"b\",\"status\":\"fail\"}\n" ++
+        "{\"event\":\"summary\",\"passed\":1,\"failed\":9}\n";
+    const counts = parseChildSummary(stdout);
+    try testing.expect(counts.ran);
+    try testing.expectEqual(@as(usize, 9), counts.failed);
+}
+
+test "parseChildSummary: a green cell is 0 failures, and it ran" {
+    const counts = parseChildSummary("{\"event\":\"summary\",\"passed\":17,\"failed\":0}\n");
+    try testing.expect(counts.ran);
+    try testing.expectEqual(@as(usize, 0), counts.failed);
+}
+
+test "parseChildSummary: no summary record is `did not run`, not zero failures" {
+    // A cell that did not compile prints diagnostics on stderr and no summary.
+    // `ran = false` is what keeps the ledger from reading it as green.
+    const counts = parseChildSummary("error: parse error\n");
+    try testing.expect(!counts.ran);
+    try testing.expectEqual(@as(usize, 0), counts.failed);
+
+    const empty = parseChildSummary("");
+    try testing.expect(!empty.ran);
 }
 
 test "classifyWith: exit 0 is the ok status, the unsupported mark a skip unless strict, else a fail" {

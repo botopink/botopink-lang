@@ -30,8 +30,8 @@ lib-test-runner/
 └── src/                 ← built and tested by the workspace build.zig (no build.zig of its own)
     ├── main.zig         ← entry: resolve roots/binary → discover → run cells → matrix → exit
     ├── args.zig         ← CLI parsing (Target enum, node alias, =-form, all)  + unit tests
-    ├── discovery.zig    ← `manifest.scanRoots` over the roots (packages + workspace members), "has tests" probe, problems + unit tests (fixtures: ../manifest/tests/fixtures)
-    ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib) + status classification
+    ├── discovery.zig    ← `manifest.scanRoots` over the roots (packages + workspace members), "has tests" probe, `libSupportsTarget`/`libRunsTarget`, problems + unit tests (fixtures: ../manifest/tests/fixtures)
+    ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib) + status classification + the cell's failed-test tally
     └── matrix.zig       ← Status enum, lib×target matrix render, summary + unit tests
 ```
 
@@ -43,6 +43,7 @@ lib-test-runner/
 zig build test-libs                                   # every lib, commonJS+erlang
 zig build test-libs -- --target erlang --lib rakun    # one target, one lib
 zig build test-libs -- --target all --strict          # supported targets, strict
+zig build test-libs -- --lib rakun --target erlang    # measure one restricted cell
 zig build               # produces zig-out/bin/botopink-lib-test among the workspace executables
 zig build test          # includes the args + discovery + matrix + runner unit tests (38)
 ```
@@ -51,8 +52,8 @@ zig build test          # includes the args + discovery + matrix + runner unit t
 
 ```
 botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
-                  [--filter <s>] [--strict] [--bin <path>] [--lib-root <dir>]
-                  [--json]
+                  [--filter <s>] [--strict] [--include-unsupported]
+                  [--bin <path>] [--lib-root <dir>] [--json]
 ```
 
 `--json` switches output from the text matrix to JSONL — see
@@ -66,6 +67,13 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
 - `--filter <s>` — forwarded to `botopink test --filter`.
 - `--strict` — treat an unsupported target (beam/wasm) as a **failure** instead of
   a skip (default: skip with `~`, keeping the gate green until those backends run).
+- `--include-unsupported` — run a cell the lib's `"targets"` whitelist excludes,
+  instead of skipping it, and flag it `"restricted":true` in `--json`. The
+  restriction is **measured**, not lifted: the lib's manifest is untouched and
+  the cell's verdict is read against `scripts/restricted-targets.txt` by
+  `scripts/test-libs.sh`, which always passes this flag. Orthogonal to
+  `--strict`, which governs the *CLI-side* unsupported mark (beam/wasm) and is
+  unaffected.
 - `--bin <path>` — `botopink` binary path. Also read from `BOTOPINK_BIN`; defaults
   to `./zig-out/bin/botopink`, else the bare name `botopink` on `PATH`.
 - `--lib-root <dir>` — extra root to scan; repeatable. Appended **after**
@@ -79,7 +87,7 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
 | `✓` | `botopink test` passed |
 | `✗` | a red `.bp` test — the **only** status that fails the run. Also every cell of a lib with a **problem**, printed once per cell without a spawn: a refused manifest (`docs/botopink-json.md`), a workspace that does not expand, a name declared by two libraries, or a library member of a workspace that lists no `files` (`error: ships nothing: manifest has no "files" — …`, located on its manifest) |
 | `–` | lib has no test blocks and **compiled** (`botopink build --target <t>`); nothing ran |
-| `~` | target skipped: either not-yet-runnable (beam/wasm), or excluded by the lib's `"targets"` whitelist (see below). `--strict` flips the not-yet-runnable case to fail; the per-lib whitelist always skips. |
+| `~` | target skipped: either not-yet-runnable (beam/wasm), or excluded by the lib's `"targets"` whitelist (see below). `--strict` flips the not-yet-runnable case to fail; the per-lib whitelist skips unless `--include-unsupported` is given, which runs the cell and marks it `restricted` instead. |
 
 ### Per-lib `"targets"` whitelist (`botopink.json`)
 
@@ -104,6 +112,17 @@ and a `✗` row).
 Absent `"targets"` → every requested target is attempted. A malformed list
 (non-array, a non-string entry) is a refused manifest — `✗` with the located
 error, never silently widened.
+
+**A restriction is never silent.** `--include-unsupported` takes the skip away:
+the cell is spawned like any other, and its `cell_summary` carries
+`"restricted":true` plus the child's own `"failed"`/`"ran"` tally.
+`scripts/test-libs.sh` passes the flag on every run and checks that tally
+against [`../../scripts/restricted-targets.txt`](../../scripts/restricted-targets.txt)
+— the ledger that pins each hidden cell's **failed** count (never its passed
+count), refusing an unlisted restriction, a stale line, and a count that moved
+in either direction. The runner itself knows nothing of the ledger: with the
+flag, a restricted cell that fails is an ordinary `✗` and the process exits
+non-zero. Only the wrapper reads the pin.
 
 **Exit non-zero iff at least one cell is `✗`.** A skipped target (`~`) never
 reddens the gate. A lib with no `test` block is still **compiled** on each
@@ -155,8 +174,22 @@ can match every spawned cell to its outcome without re-parsing the
 text matrix):
 
 ```
-{"event":"cell_summary","lib":"<name>","target":"<t>","status":"pass|fail|skipped_unsupported|no_tests"}
+{"event":"cell_summary","lib":"<name>","target":"<t>",
+ "status":"pass|fail|skipped_unsupported|no_tests",
+ "restricted":<bool>,"failed":<n>,"ran":<bool>}
 ```
+
+- `restricted` — the lib's `"targets"` list excludes this target. `true` both on
+  the skipped cell (without `--include-unsupported`) and on the cell that ran
+  because of it, so a consumer can tell a restricted cell from an ordinary one
+  in either mode.
+- `failed` — the `"failed"` of the child's own terminating
+  `{"event":"summary",…}` record: the number of red tests in this cell.
+- `ran` — whether such a record existed at all. `false` for a cell that did not
+  compile, one that ran `botopink build` (no `test` block), and one that was
+  never spawned. `"ran":false` is **not** "zero failures": a cell that does not
+  build has no test count, and conflating the two is what let a restricted
+  erlang row read as green.
 
 The run terminates with a single aggregated record:
 

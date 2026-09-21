@@ -288,6 +288,18 @@ pub fn libSupportsTarget(lib: Lib, target: []const u8) bool {
     return false;
 }
 
+/// True when the runner should spawn this `(lib, target)` cell.
+///
+/// The whitelist normally decides (`libSupportsTarget`). `include_unsupported`
+/// overrides it so a restricted cell runs anyway — the restriction is then
+/// *measured* rather than obeyed, which is what turns it into a ledger line
+/// (`scripts/restricted-targets.txt`) instead of a silent opt-out. The cell is
+/// still flagged `restricted` in the JSON so its verdict is read against the
+/// ledger and not against the ordinary pass/fail tally.
+pub fn libRunsTarget(lib: Lib, target: []const u8, include_unsupported: bool) bool {
+    return include_unsupported or libSupportsTarget(lib, target);
+}
+
 // ── "Has tests" detection ───────────────────────────────────────────────────────
 
 /// True when `lib_dir` has a `test/` suite (`*.bp`) or a `src/**/*.bp` with a
@@ -421,6 +433,25 @@ test "libSupportsTarget: empty whitelist rejects every target" {
     const lib: Lib = .{ .name = "stub", .dir = "/x", .has_tests = true, .targets = &list };
     try testing.expect(!libSupportsTarget(lib, "commonJS"));
     try testing.expect(!libSupportsTarget(lib, "erlang"));
+}
+
+test "libRunsTarget: --include-unsupported runs what the whitelist excludes" {
+    const list = [_][]const u8{"commonJS"};
+    const lib: Lib = .{ .name = "rakun", .dir = "/x", .has_tests = true, .targets = &list };
+    // Default: the whitelist decides.
+    try testing.expect(libRunsTarget(lib, "commonJS", false));
+    try testing.expect(!libRunsTarget(lib, "erlang", false));
+    // Lifted: every requested target runs, and the whitelist verdict stays
+    // readable through `libSupportsTarget` so the cell can be marked restricted.
+    try testing.expect(libRunsTarget(lib, "commonJS", true));
+    try testing.expect(libRunsTarget(lib, "erlang", true));
+    try testing.expect(!libSupportsTarget(lib, "erlang"));
+}
+
+test "libRunsTarget: an unrestricted lib is unaffected by the flag" {
+    const lib: Lib = .{ .name = "std", .dir = "/x", .has_tests = true, .targets = null };
+    try testing.expect(libRunsTarget(lib, "erlang", false));
+    try testing.expect(libRunsTarget(lib, "erlang", true));
 }
 
 test "containsTestBlock detects named test" {

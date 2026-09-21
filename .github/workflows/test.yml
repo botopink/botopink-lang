@@ -16,7 +16,11 @@
 #         (a library without tests is still compiled).
 #         A failing library fails the job by name, with its diagnostic in the
 #         log; the cells listed in scripts/known-red-libs.txt are reported with
-#         their owning front and do not fail it until they pass.
+#         their owning front and do not fail it until they pass. A cell a
+#         member's "targets" list excludes is NOT skipped: it runs, and its
+#         failed-test count must equal the one pinned in
+#         scripts/restricted-targets.txt — a restriction is a measured ledger
+#         line, never a silent opt-out.
 name: test
 
 on:

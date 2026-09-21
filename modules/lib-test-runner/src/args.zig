@@ -2,6 +2,7 @@
 ///
 ///   botopink-lib-test [--target <t>[,<t>…] | --target all]
 ///                     [--lib <name>] [--filter <s>] [--strict] [--bin <path>]
+///                     [--include-unsupported]
 ///
 /// `--target` is repeatable and comma-separated. It accepts every codegen target
 /// plus the alias `node` → `commonJS`, and both the `--target <t>` and
@@ -55,6 +56,13 @@ pub const Options = struct {
     filter: ?[]const u8 = null,
     /// Treat an unsupported target as a failure instead of a skip.
     strict: bool = false,
+    /// Run a cell whose target the lib's `botopink.json` `"targets"` list
+    /// excludes, instead of skipping it. The restriction is *measured*, not
+    /// lifted: the cell still reports `"restricted":true` in `--json` mode so
+    /// the ledger (`scripts/restricted-targets.txt`) can pin what it hides.
+    /// Does not affect the CLI-side unsupported mark (beam/wasm) — that stays
+    /// `--strict`'s business.
+    include_unsupported: bool = false,
     /// Override the `botopink` binary path (flag form; env var handled by caller).
     bin: ?[]const u8 = null,
     /// Extra lib roots appended to the discovery walker after env-derived roots
@@ -119,6 +127,8 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
             opts.bin = args[i];
         } else if (std.mem.eql(u8, a, "--strict")) {
             opts.strict = true;
+        } else if (std.mem.eql(u8, a, "--include-unsupported")) {
+            opts.include_unsupported = true;
         } else if (std.mem.eql(u8, a, "--json")) {
             opts.json = true;
         } else {
@@ -274,6 +284,19 @@ test "missing argument rejected" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     try testing.expectError(error.MissingArgument, parse(arena.allocator(), &.{"--lib"}));
+}
+
+test "--include-unsupported is off by default and set by the flag" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const off = try parse(arena.allocator(), &.{});
+    try testing.expect(!off.include_unsupported);
+    const on = try parse(arena.allocator(), &.{"--include-unsupported"});
+    try testing.expect(on.include_unsupported);
+    // Orthogonal to --strict: neither implies the other.
+    try testing.expect(!on.strict);
+    const strict = try parse(arena.allocator(), &.{"--strict"});
+    try testing.expect(!strict.include_unsupported);
 }
 
 test "unknown flag rejected" {
