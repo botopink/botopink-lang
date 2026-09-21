@@ -53,6 +53,10 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
         arms.deinit(alloc);
     }
 
+    // Decision 54 — set by a `null` arm, read by `rejectNonPatternArm`: the
+    // arm after it may be the bare binder the `?T` form is written with.
+    var sawNullArm = false;
+
     var trailingComments: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (trailingComments.items) |c| alloc.free(c);
@@ -113,7 +117,7 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
         // shape the pre-decision-8 block arm already produced. An arm body with
         // one parameter can only come from this form.
         const body = if (this.check(.leftBrace)) blk: {
-            try rejectNonPatternArm(this, pattern, patTok);
+            try rejectNonPatternArm(this, pattern, patTok, sawNullArm);
             _ = this.advance(); // `{`
             break :blk Expr{ .function = try this.parseLambdaBody(alloc) };
         } else blk: {
@@ -145,7 +149,14 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
         if (!this.match(.semicolon)) {
             _ = this.match(.comma); // fallback to comma
         }
-        try arms.append(alloc, .{ .pattern = pattern, .body = body, .guard = guard, .emptyLinesBefore = emptyLinesBefore });
+        if (pattern == .ident and std.mem.eql(u8, pattern.ident, "null")) sawNullArm = true;
+        try arms.append(alloc, .{
+            .pattern = pattern,
+            .body = body,
+            .guard = guard,
+            .emptyLinesBefore = emptyLinesBefore,
+            .patternLoc = locFromToken(patTok),
+        });
     }
 
     _ = try this.consume(.rightBrace);
@@ -188,6 +199,16 @@ pub fn parseSimplePattern(this: *This, alloc: std.mem.Allocator) ParseError!Patt
     if (this.check(.underscore)) {
         _ = this.advance();
         return Pattern.wildcard;
+    }
+
+    // `null` ---- decision 54's optional pattern. It lands as `.ident` carrying
+    // the keyword's own lexeme, the way `true` and `false` already do: no new
+    // `Pattern` variant, so no consumer has to learn one, and `null` is a
+    // keyword token, so no binding can ever carry this name and be confused
+    // with it. `isNullPattern` (`comptime/infer.zig`) is the one reader.
+    if (this.check(.null)) {
+        _ = this.advance();
+        return Pattern{ .ident = "null" };
     }
 
     // `#(a, b)` ---- tuple pattern (decision 8 §5.1 P6), positional only.
@@ -448,21 +469,32 @@ fn checkWhenGuard(this: *This) bool {
 ///
 /// Only this arm form is judged: the pre-decision-8 `pattern -> value;` arm
 /// binds the matched value with a bare name and `libs/std` is written that way.
-fn rejectNonPatternArm(this: *This, pat: Pattern, tok: Token) ParseError!void {
+fn rejectNonPatternArm(this: *This, pat: Pattern, tok: Token, afterNullArm: bool) ParseError!void {
     switch (pat) {
         .multi, .@"or" => |pats| {
-            for (pats) |p| try rejectNonPatternArm(this, p, tok);
+            for (pats) |p| try rejectNonPatternArm(this, p, tok, afterNullArm);
         },
         .ident => |name| {
             if (name.len == 0) return;
             // `Maybe.None`, `.None` — a variant path, never a binding.
             if (std.mem.indexOfScalar(u8, name, '.') != null) return;
             if (std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false")) return;
+            // Decision 54 — `null` is the optional's pattern, and the arm after
+            // a `null` arm is its binder: `case x { null { … } v { … } }` is the
+            // one spelling a `?T` has. The binder is a pattern only there, and
+            // only after the `null` arm: written first it would match the absent
+            // value too, so the order is the form. Whether the subject really is
+            // a `?T`, and whether the two arms are the only two, is the
+            // checker's (`optionalNullCase` in `comptime/infer.zig`).
+            if (std.mem.eql(u8, name, "null")) return;
             if (isPrimitiveTypeName(name)) return;
             if (isConstantName(name)) {
                 this.parseError = ParseErrorInfo.fromTokenDetail(.caseConstantPattern, tok, name);
                 return ParseError.UnexpectedToken;
             }
+            // The binder of decision 54's `?T` form — a lower-case name is a
+            // pattern here and only here. A constant is still refused above.
+            if (afterNullArm) return;
             if (std.ascii.isLower(name[0])) {
                 this.parseError = ParseErrorInfo.fromTokenDetail(.caseBareNameArm, tok, name);
                 return ParseError.UnexpectedToken;

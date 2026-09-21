@@ -292,13 +292,3 @@ beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `
 # that). beam's twin helper is declared and not wired.
 beam     | run/std_erlang_node.bp | C-03 | decision 64: dies at boot — `{undef, [{'std@erlang', node, [], []}, …]}`; `hostDeclareWrapperNeeded` in `beam_asm.zig` is declared and not wired (C-03's beam half)
 
-# ── the optional's pattern form (decision 54) ────────────────────────────────
-# Decision 54, taken 2026-09-18: a `?T` is matched by `null` and a binder, and the
-# variant spelling `.Some(v)` / `.None` over a `?T` becomes a located error. Both
-# halves are one row of 01-checker: step 4 owns pattern grammar as well as arm
-# resolution (the same place decision 36's range edit lands).
-commonJS | run/optional_null_pattern.bp | 01 step 4 | decision 54: the decided spelling does not parse — `error: this token cannot appear here` at `21:22`, `^^^^ unexpected \`null\``. The whole file reds, so the failure is the file's
-erlang   | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error; the file does not compile on any target
-wasm     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
-beam     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
-*        | reject/optional_variant_pattern.bp | 01 step 4 | decision 54: `.Some(v)` / `.None` over a `?i32` is accepted (exit 0) and then answers four different things — `undefined` on commonJS, `0` on wasm, `5` on beam, and `no case clause matching 5` on erlang. The `.expect` phrase is a placeholder for the diagnostic this row writes, per AGENTS.md

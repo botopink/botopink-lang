@@ -446,7 +446,30 @@ behind that rule and still asks for `...` — see
 [Decided, not yet implemented](#decided-not-yet-implemented).
 
 A name alone is not a pattern: to give the matched value a name, bind it in the
-body (`_ { n -> … }`).
+body (`_ { n -> … }`). The one exception is the optional, below, where the name
+after the `null` arm *is* the pattern.
+
+#### An optional is matched by `null` and a binder
+
+A `?T` has exactly one pattern form — `null` for the absent value, then a name
+that binds what is there, already unwrapped:
+
+<!-- docs-check: body -->
+```botopink
+val x: ?i32 = 5;
+val a = case x { null { "absent" } v { "present " + v.toString() } };
+@print(a);
+```
+
+Two arms, in that order, and no guards. `null` comes first because a binder
+written first would match the absent value too. The binder may be `_` when the
+body does not read the value, and the arms cover the `?T` between them, so no
+`_` arm is needed and none is allowed.
+
+An optional is **not** a variant: `case x { .Some(v) { … } .None { … } }` is
+`error: an optional is matched by ``null``, not by a variant`, located at the
+arm. `Some` and `None` are not spellings this language has — `??` and `?.` read
+an optional the same way this does.
 
 ### Loop
 

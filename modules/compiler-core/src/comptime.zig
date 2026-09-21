@@ -1372,6 +1372,7 @@ pub fn compileTypesOnly(
                         &succ.env.stdArrayLowerings,
                         &succ.env.enumSectionRewrites,
                         &succ.env.conditionLoops,
+                        &succ.env.optionalNullCases,
                         succ.env.ctorParams,
                     ) catch break :blk_t program_for_transform;
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, t, &succ.env) catch break :blk_t t;
@@ -1554,7 +1555,7 @@ pub fn compile(
                 };
                 const transformed = try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.future_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.conditionLoops, succ.env.ctorParams), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.future_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.conditionLoops, &succ.env.optionalNullCases, succ.env.ctorParams), &succ.env),
                     &succ.env,
                 ), &succ.env);
 

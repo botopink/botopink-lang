@@ -351,6 +351,33 @@ mirrors `Env.registerBuiltins` in `comptime/env.zig`, as the language server's
 `isPrimitiveType` does; keep the three in step. The arrow arm is never judged:
 binding the matched value with a bare name is exactly how it is written today.
 
+### Decision 54 — an optional is matched by `null` and a binder
+
+`null` is a pattern: `parseSimplePattern` lands it as `.ident` carrying the
+keyword's own lexeme, the way `true` and `false` already do. No new `Pattern`
+variant, so no consumer has to learn one — and `null` is a keyword token, so no
+binding can ever carry that name and be mistaken for it.
+
+The arm after a `null` arm is the optional's binder, which is the one place a
+bare lower-case name *is* a pattern. `parseCaseExpr` carries `sawNullArm` and
+passes it to `rejectNonPatternArm`; only the bare-name rewrite is lifted (a
+constant arm is still `case-constant-pattern`). The order is the form: a binder
+written first would match the absent value too, so `null` comes first and the
+parser accepts the binder only after it.
+
+Everything else about the form is the checker's, because it needs the subject's
+type: `optionalNullCaseBinder` (`comptime/infer.zig`) requires the subject to be
+a `?T` and the arms to be exactly two, unguarded, `null` then a binder, and
+narrows the binder to the payload; `refuseVariantPatternOverOptional` refuses
+`.Some(v)` / `.None`. Below inference nothing learns a new pattern at all — the
+comptime transform swaps the whole `case` for the `if (x) { v -> … } else { … }`
+that every backend already lowers (`comptime/transform.zig`
+`rewriteOptionalNullCase`), so the four code generators were not touched.
+
+`CaseArm.patternLoc` exists for this: `Pattern` carries no location, and each of
+the refusals above has to point at the arm. It is left out of the AST dump
+(`jsonStringify`, `omitAlways`), so no `case` snapshot moved.
+
 ### What the formatter does with an arm
 
 `format.zig` writes an arm back in the form its body carries: a lambda body is
