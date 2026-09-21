@@ -3183,12 +3183,12 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             }
         }
         // R6 (§2) — `throw` belongs to a fallible-channel effect. Allow it in
-        // `#[@future]` / `#[@iterator]` / `#[@asyncGenerator]` bodies too — the
+        // `#[@future]` / `#[@iterator]` / `#[@futureGenerator]` bodies too — the
         // auto-wrap in `transform.zig` rewrites each form to the right wrapper.
         // `#[@generator]` and `#[@context]` keep `.plain` (they have no error
         // channel — throwing reds with `effect-throw-without-fallible-channel`).
         if (eff) |e| switch (e) {
-            .future, .iterator, .asyncGenerator => throwCtx = .unchecked,
+            .future, .iterator, .futureGenerator => throwCtx = .unchecked,
             else => {},
         };
     }
@@ -3200,7 +3200,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // An effect annotation must match its return wrapper (`#[@future]` →
     // `@Future<…>`, etc.); a plain `fn` must NOT return one of the async
     // wrappers (those need an effect annotation).
-    const asyncKind = classifyAsyncReturn(retType);
+    const wrapperKind = classifyWrapperReturn(retType);
     const fnLoc: ?ast.Loc = if (f.body.len > 0) f.body[0].expr.getLoc() else null;
     if (eff) |e| {
         if (!effectMatchesReturn(env, e, retType)) {
@@ -3222,10 +3222,10 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             env.lastError = err;
             return error.TypeError;
         }
-    } else if (asyncKind != .none) {
+    } else if (wrapperKind != .none) {
         var err = TypeError.custom(
-            "a function returning `@Future`/`@Iterator`/`@AsyncIterator` needs an effect annotation",
-            "Mark it `#[@future]` / `#[@iterator]` / `#[@asyncGenerator]`.",
+            "a function returning `@Future`/`@Iterator`/`@FutureGenerator` needs an effect annotation",
+            "Mark it `#[@future]` / `#[@iterator]` / `#[@futureGenerator]`.",
         );
         if (fnLoc) |l| err = err.withLoc(l);
         env.lastError = err;
@@ -3264,7 +3264,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     } else {
         // A normal function body (and a `#[@result]`/`#[@context]` body) sees no
         // async context and no outer labels — `await`/`yield` stay exclusive to
-        // the future/iterator/generator/asyncGenerator effects.
+        // the future/iterator/generator/futureGenerator effects.
         env.starFn = null;
         env.labelStack.shrinkRetainingCapacity(0);
     }
@@ -3461,18 +3461,18 @@ fn inferTypeMethods(
     }
 }
 
-const AsyncReturnKind = enum { none, future, iterator, asyncIterator };
+const WrapperReturnKind = enum { none, future, iterator, futureGenerator };
 
-/// Classify a resolved return type as `@Future` / `@Iterator` / `@AsyncIterator`.
-fn classifyAsyncReturn(ty: *T.Type) AsyncReturnKind {
+/// Classify a resolved return type as `@Future` / `@Iterator` / `@FutureGenerator`.
+fn classifyWrapperReturn(ty: *T.Type) WrapperReturnKind {
     const t = ty.deref();
     return switch (t.*) {
         .named => |n| if (std.mem.eql(u8, n.name, "Future"))
             .future
         else if (std.mem.eql(u8, n.name, "Iterator"))
             .iterator
-        else if (std.mem.eql(u8, n.name, "AsyncIterator"))
-            .asyncIterator
+        else if (std.mem.eql(u8, n.name, "FutureGenerator"))
+            .futureGenerator
         else
             .none,
         else => .none,
@@ -3521,7 +3521,7 @@ fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Ty
         // (handled above) returns its owner type as written — a component's
         // `-> Element` (decision 88).
         .context => retType,
-        .iterator, .asyncGenerator => null,
+        .iterator, .futureGenerator => null,
     };
 }
 
@@ -3531,10 +3531,10 @@ fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8
         .named => |n| if (n.args.len >= 1) n.args[0] else null,
         else => null,
     };
-    // §1I — `@Iterator<T, E, C>` / `@AsyncIterator<T, E, C>` carry the
+    // §1I — `@Iterator<T, E, C>` / `@FutureGenerator<T, E, C>` carry the
     // completion type in the third argument. Default-fill (`C = void`) lands
     // via `builtinDefaultFilledArgs` before this point, so `args.len >= 3`
-    // is reliable for iterator/asyncGenerator.
+    // is reliable for iterator/futureGenerator.
     const completion: ?*T.Type = switch (t.*) {
         .named => |n| if (n.args.len >= 3) n.args[2] else null,
         else => null,
@@ -3543,7 +3543,7 @@ fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8
         .future => .{ .allowsAwait = true, .allowsYield = false, .iterItem = null, .iterCompletion = null, .fnLabel = fnLabel, .effect = eff },
         .iterator => .{ .allowsAwait = false, .allowsYield = true, .iterItem = item, .iterCompletion = completion, .fnLabel = fnLabel, .effect = eff },
         .generator => .{ .allowsAwait = false, .allowsYield = true, .iterItem = item, .iterCompletion = null, .fnLabel = fnLabel, .effect = eff },
-        .asyncGenerator => .{ .allowsAwait = true, .allowsYield = true, .iterItem = item, .iterCompletion = completion, .fnLabel = fnLabel, .effect = eff },
+        .futureGenerator => .{ .allowsAwait = true, .allowsYield = true, .iterItem = item, .iterCompletion = completion, .fnLabel = fnLabel, .effect = eff },
         .result, .context => null,
     };
 }
@@ -5293,12 +5293,12 @@ fn unwrapFutureType(ty: *T.Type) ?*T.Type {
     };
 }
 
-/// `@Iterator<T>` / `@AsyncIterator<T, E>` -> `T`. Returns null when `ty` is not an iterator.
+/// `@Iterator<T>` / `@FutureGenerator<T, E>` -> `T`. Returns null when `ty` is not an iterator.
 fn unwrapIteratorType(ty: *T.Type) ?*T.Type {
     const t = ty.deref();
     return switch (t.*) {
         .named => |n| if ((std.mem.eql(u8, n.name, "Iterator") or
-            std.mem.eql(u8, n.name, "AsyncIterator")) and n.args.len >= 1)
+            std.mem.eql(u8, n.name, "FutureGenerator")) and n.args.len >= 1)
             n.args[0]
         else
             null,
@@ -5336,7 +5336,7 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 ///   - `@Future<T, E = any>`            → 1 required
 ///   - `@Generator<T, R = void>`        → 1 required
 ///   - `@Iterator<T, E = any, C = void>`→ 1 required
-///   - `@AsyncIterator<T, E = any, C = void>` → 1 required
+///   - `@FutureGenerator<T, E = any, C = void>` → 1 required
 ///   - `@Result<R, E>`                  → 2 required
 ///   - `@Context<Base, T>`              → 2 required
 ///   - `@Expr<T>` / `@ExprCustom<T>`    → 1 required
@@ -5345,7 +5345,7 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     if (eq(u8, name, "Future")) return 1;
     if (eq(u8, name, "Generator")) return 1;
     if (eq(u8, name, "Iterator")) return 1;
-    if (eq(u8, name, "AsyncIterator")) return 1;
+    if (eq(u8, name, "FutureGenerator")) return 1;
     if (eq(u8, name, "Result")) return 2;
     if (eq(u8, name, "Context")) return 2;
     if (eq(u8, name, "Expr")) return 1;
@@ -5363,7 +5363,7 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
 ///   - `Future<T, E = any>`              → `["any"]` for the E slot
 ///   - `Generator<T, R = void>`          → `["void"]` for the R slot
 ///   - `Iterator<T, E = any, C = void>`  → `["any", "void"]` for the E/C slots
-///   - `AsyncIterator<T, E = any, C = void>` → same as Iterator
+///   - `FutureGenerator<T, E = any, C = void>` → same as Iterator
 ///
 /// The returned slice always has the FULL declared arity (so the caller
 /// allocates an args slice sized to it and indexes positions
@@ -5383,7 +5383,7 @@ fn builtinDefaultFilledArgs(env: *Env, name: []const u8, given: usize) ?[]const 
     if (eq(u8, name, "Iterator") and given < 3) {
         return &.{ "", "any", "void" };
     }
-    if (eq(u8, name, "AsyncIterator") and given < 3) {
+    if (eq(u8, name, "FutureGenerator") and given < 3) {
         return &.{ "", "any", "void" };
     }
     return null;
@@ -7072,13 +7072,13 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 }
             }
             // RI1 (§1I / §2 R14) — `return <expr>;` inside `#[@iterator]` /
-            // `#[@asyncGenerator]` is forbidden: the iterator/asyncGenerator
+            // `#[@futureGenerator]` is forbidden: the iterator/futureGenerator
             // protocol carries no `R` channel. The author uses `break` for a
             // clean end and `break <C>` for a completion value. Bare `return;`
             // (no value, an implicit clean end) stays legal.
             if (r != null and
                 (inEffectContext(env, .iterator) or
-                    inEffectContext(env, .asyncGenerator)))
+                    inEffectContext(env, .futureGenerator)))
             {
                 env.lastError = TypeError.custom(
                     diagnostics.iterator_return_forbidden ++
@@ -7264,7 +7264,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             if (e != null and inEffectContext(env, .future)) {
                 try env.future_jump_lowerings.put(loc, .wrap_rejected);
             }
-            // §1I F4I-tail — inside `#[@iterator]` / `#[@asyncGenerator]`, a
+            // §1I F4I-tail — inside `#[@iterator]` / `#[@futureGenerator]`, a
             // `throw <e>;` lands in the iterator-error channel. The transform
             // rewrites it as `return @IteratorStep.Error(<e>);` so the
             // consumer can pattern-match on the step variant; the existing
@@ -7272,7 +7272,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             if (e != null and inEffectContext(env, .iterator)) {
                 try env.iterator_jump_lowerings.put(loc, .wrap_error);
             }
-            if (e != null and inEffectContext(env, .asyncGenerator)) {
+            if (e != null and inEffectContext(env, .futureGenerator)) {
                 try env.iterator_jump_lowerings.put(loc, .wrap_error);
             }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .throw_ = valPtr } } };
@@ -7285,7 +7285,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
         },
         .@"break" => |b| {
             // RI5 (§1I) — `break :label` must name an enclosing labelled scope
-            // (a loop or `#[@iterator]` / `#[@asyncGenerator]` fn). The label
+            // (a loop or `#[@iterator]` / `#[@futureGenerator]` fn). The label
             // stack is shared with `yield`; an unbound label here is a parse-
             // visible typo, not a backend issue.
             if (b.label) |lbl| {
@@ -7293,19 +7293,19 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     env.lastError = TypeError.custom(
                         diagnostics.break_label_unbound ++
                             ": `break :<label>` targets an unknown label",
-                        "Label a loop (`loop :name (...)`) or an iterator/asyncGenerator fn (`#[@iterator] fn … -> @Iterator<…> :name`).",
+                        "Label a loop (`loop :name (...)`) or an iterator/futureGenerator fn (`#[@iterator] fn … -> @Iterator<…> :name`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
             }
             const typedPtr: ?*TypedExpr = if (b.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
             // RI2 / RI3 (§1I) — when `break <expr>` targets the enclosing
-            // iterator/asyncGenerator (top-level position OR labelled with
+            // iterator/futureGenerator (top-level position OR labelled with
             // the fn's signature label), the value type must satisfy the
             // wrapper's `C` parameter. An unlabelled break inside a nested
             // loop targets the loop, not the FSM — skip.
             if (env.starFn) |ctx| {
-                if (ctx.effect == .iterator or ctx.effect == .asyncGenerator) {
+                if (ctx.effect == .iterator or ctx.effect == .futureGenerator) {
                     const targetsIterator = blk: {
                         if (b.label) |lbl| {
                             if (ctx.fnLabel) |fl| break :blk std.mem.eql(u8, lbl, fl);
@@ -7322,7 +7322,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                                 env.lastError = TypeError.custom(
                                     diagnostics.iterator_break_without_completion_type ++
                                         ": this iterator declares C = void; bare `break` is the only valid form",
-                                    "Extend the wrapper to opt into completion values: `@Iterator<T, E, <C-type>>` (or `@AsyncIterator<…>`).",
+                                    "Extend the wrapper to opt into completion values: `@Iterator<T, E, <C-type>>` (or `@FutureGenerator<…>`).",
                                 ).withLoc(loc);
                                 return error.TypeError;
                             }
@@ -7350,12 +7350,12 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
         },
         .await_ => |e| {
             // R7 — `await` is only valid inside an async effect fn
-            // (`#[@future]` / `#[@asyncGenerator]`).
+            // (`#[@future]` / `#[@futureGenerator]`).
             if (env.starFn == null or !env.starFn.?.allowsAwait) {
                 env.lastError = TypeError.custom(
                     diagnostics.effect_await_without_future ++
-                        ": `await` is only valid inside a `#[@future]` / `#[@asyncGenerator]` fn",
-                    "Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@asyncGenerator]` (`-> @AsyncIterator<…>`).",
+                        ": `await` is only valid inside a `#[@future]` / `#[@futureGenerator]` fn",
+                    "Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@futureGenerator]` (`-> @FutureGenerator<…>`).",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -7389,13 +7389,13 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             }
             const typedPtr: ?*TypedExpr = if (y.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
             // R8 — `yield` belongs to a generator effect (`#[@generator]` /
-            // `#[@iterator]` / `#[@asyncGenerator]`); a `#[@future]` body cannot
+            // `#[@iterator]` / `#[@futureGenerator]`); a `#[@future]` body cannot
             // yield. Each yielded value unifies with the iterator item type `T`.
             if (env.starFn) |ctx| {
                 if (!ctx.allowsYield) {
                     env.lastError = TypeError.custom(
                         diagnostics.yield_without_generator ++
-                            ": `yield` is only valid inside a `#[@generator]` / `#[@iterator]` / `#[@asyncGenerator]` fn",
+                            ": `yield` is only valid inside a `#[@generator]` / `#[@iterator]` / `#[@futureGenerator]` fn",
                         "A `#[@future]` fn awaits; mark the fn `#[@iterator]` (`-> @Iterator<T>`) to yield.",
                     ).withLoc(loc);
                     return error.TypeError;
@@ -7558,23 +7558,23 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
     const iterPtr = try makeTypedPtr(env, iterTyped);
     const indexRangePtr = if (lp.indexRange) |ir| try makeTypedPtr(env, try inferExprTyped(env, ir.*)) else null;
 
-    // `loop await (iter)` requires an async context and an `@AsyncIterator<T, E>`
+    // `loop await (iter)` requires an async context and an `@FutureGenerator<T, E>`
     // iterable; the loop param binds to the item type `T`.
     var awaitItem: ?*T.Type = null;
     if (lp.awaitLoop) {
         if (env.starFn == null or !env.starFn.?.allowsAwait) {
             env.lastError = TypeError.custom(
-                "`loop await` can only be used inside a `#[@future]` / `#[@asyncGenerator]` fn",
-                "Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@asyncGenerator]` (`-> @AsyncIterator<…>`).",
+                "`loop await` can only be used inside a `#[@future]` / `#[@futureGenerator]` fn",
+                "Mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@futureGenerator]` (`-> @FutureGenerator<…>`).",
             ).withLoc(loc);
             return error.TypeError;
         }
         const iterTy = iterTyped.getType().deref();
-        if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "AsyncIterator") and iterTy.named.args.len >= 1) {
+        if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "FutureGenerator") and iterTy.named.args.len >= 1) {
             awaitItem = iterTy.named.args[0];
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
-                "`loop await` expects an `@AsyncIterator<T, E>` value",
+                "`loop await` expects an `@FutureGenerator<T, E>` value",
                 null,
             ).withLoc(loc);
             return error.TypeError;
@@ -8057,9 +8057,11 @@ fn inferTemplateMethod(
             op = .source;
             retType = try env.namedType("Source");
         } else if (std.mem.eql(u8, callee, "context")) {
-            // The full second-layer input: source + text + shape.
+            // The full second-layer input: source + text + shape. The record is
+            // `ExprContext`, not `Context`: `@Context<Base, Return>` is the hook
+            // wrapper and one name cannot mean both (front 20 F1).
             op = .context;
-            retType = try env.namedType("Context");
+            retType = try env.namedType("ExprContext");
         } else if (std.mem.eql(u8, callee, "bindings")) {
             // Enumerate the origin scope (top-level decls + imports, V1).
             op = .bindings;

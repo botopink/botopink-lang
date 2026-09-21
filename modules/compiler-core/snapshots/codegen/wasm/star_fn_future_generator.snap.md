@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@asyncGenerator]
-fn stream() -> @AsyncIterator<i32, string> {
+#[@futureGenerator]
+fn stream() -> @FutureGenerator<i32, string> {
     yield 1;
     yield 2;
 }
@@ -12,7 +12,7 @@ fn stream() -> @AsyncIterator<i32, string> {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $stream (result i32)
     (local $__yield_fn i32)
     i32.const 0

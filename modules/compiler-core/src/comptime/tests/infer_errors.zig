@@ -374,7 +374,7 @@ test "infer error: yield targets an unknown label" {
     );
 }
 
-test "infer error: loop await on a non-async-iterable" {
+test "infer error: loop await on a non-future-generator" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@future]
         \\fn bad() -> @Future<i32> {
@@ -609,10 +609,10 @@ test "infer error: RI1 ---- return <expr> inside #[@iterator] reds iterator-retu
     );
 }
 
-test "infer error: RI1 ---- return <expr> inside #[@asyncGenerator] reds iterator-return-forbidden" {
+test "infer error: RI1 ---- return <expr> inside #[@futureGenerator] reds iterator-return-forbidden" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@asyncGenerator]
-        \\fn nums() -> @AsyncIterator<i32, string, i32> {
+        \\#[@futureGenerator]
+        \\fn nums() -> @FutureGenerator<i32, string, i32> {
         \\    yield 1;
         \\    return 42;
         \\}

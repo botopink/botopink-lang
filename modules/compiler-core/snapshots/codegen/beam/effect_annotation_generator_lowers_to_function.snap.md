@@ -14,7 +14,7 @@ fn range(a: i32, b: i32) -> @Generator<i32> {
 {attributes, []}.
 {labels, 4}.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, range, 2, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.

@@ -11,7 +11,7 @@ fn range(a: i32, b: i32) -> @Generator<i32> {
 ```erlang
 -module(main).
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 range(A, B) ->
     [A, B].
 ```

@@ -15,7 +15,7 @@ fn counter() -> @Iterator<i32> {
 {attributes, []}.
 {labels, 4}.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, counter, 0, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.

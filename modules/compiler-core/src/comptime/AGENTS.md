@@ -60,7 +60,7 @@ comptime/
 ## Effect annotations (`#[@<effect>]`)
 
 A function's effect is `ast.FnDecl.effect: ?EffectKind` (`result` / `future` /
-`generator` / `iterator` / `asyncGenerator` / `context`), set by the parser from
+`generator` / `iterator` / `futureGenerator` / `context`), set by the parser from
 a `#[@<effect>]` builtin annotation. The `*fn` prefix is rejected by the parser
 (`deprecated-star-fn`). `inferFnDecl` validates the effect: it must match the
 return wrapper (`effectMatchesReturn`); an effect on an interface method is an
@@ -79,25 +79,21 @@ spells the target capitalised. It fires on the `@`-prefixed builtin form only: `
 without the `@` is a user-defined attribute and means something else.
 
 **The wrapper without its annotation is an error too** (06 N25, decision 8 § 9).
-`@Future` / `@Iterator` / `@AsyncIterator` already demanded one; `@Result` did not — a plain
+`@Future` / `@Iterator` / `@FutureGenerator` already demanded one; `@Result` did not — a plain
 `fn f() -> @Result<D, E>` was accepted and deliberately given NO special treatment (`return` did
 not wrap, `throw` stayed a raw host exception), which is a second, unwritten Result calculus.
 `inferFnDecl` now reds it with `effect-missing-annotation`. Every `-> @Result` in `libs/std` already
 carried `#[@result]`, so nothing there moved.
 
-Spelling note for the maintainer: decision 8 § 9's table writes `#[@asyncGenerator]` →
-`@AsyncGenerator<T>`, while the compiler, `libs/std/src/builtins.d.bp` (`behavior AsyncIterator`)
-and 38 other sites write `@AsyncIterator`. The enforcement here uses the spelling that exists.
-
 The body context `starCtxFromEffect` → `env.starFn: ?StarFnCtx{ allowsAwait,
-allowsYield, iterItem, effect }` gates `await` (future/asyncGenerator), `yield`
-(generator/iterator/asyncGenerator) and `throw` (via `env.throwContext` for
+allowsYield, iterItem, effect }` gates `await` (future/futureGenerator), `yield`
+(generator/iterator/futureGenerator) and `throw` (via `env.throwContext` for
 `#[@result]`). `inEffectContext(env, .future)` fires `#[@future]`-only
 rejections (RF1/RF2/RF5) without firing inside other effects.
 `resultVariantCallName` / `futureConstructorCallName` /
 `builtinRequiredGenericArgs` drive the syntactic rejections. Codegen reads
 `f.effect` directly (`commonJS.zig fnKeyword`: future → `async function`,
-generator/iterator → `function*`, asyncGenerator → `async function*`,
+generator/iterator → `function*`, futureGenerator → `async function*`,
 result/context → plain `function`).
 
 Default-parameter diagnostics: D5 (defaulted param followed by a required one)
@@ -231,7 +227,7 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   `declare fn` slice: `todo`/`panic`/`trap`/`emit`/…) into `env.stdlibFnDecls`,
   which `compile`/`compileTypesOnly` merge into transform's `fn_decls` so
   trailing defaults are injected at bare `todo()`/`panic()` calls. The synthetic
-  `Result`/`Future`/`Iterator`/`Generator`/`AsyncIterator`/`Context` interfaces
+  `Result`/`Future`/`Iterator`/`Generator`/`FutureGenerator`/`Context` interfaces
   stay doc-only in `builtins.d.bp` (they are pre-registered by
   `Env.registerBuiltins`).
 - `@compilerError(message)` — generic compile-time rejection usable from a

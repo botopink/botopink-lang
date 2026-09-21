@@ -1954,7 +1954,7 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 | `#[@result]` | plain `function`; `__bp_ok`/`__bp_error` build `{ok: V}`/`{error: E}`; `try`/`catch` via `"error" in _r` | plain fun; `{ok, V}`/`{error, E}`; `try`/`catch` → `case … of` | plain local; `put_tuple2` pair; `try`/`catch` → `is_tagged_tuple` | `[tag, payload]` in linear memory; `try`/`catch` → `if` on the tag |
 | `#[@future]` | `async function`; resolved/rejected markers → native `return`/`throw` | eager (`@Future<T>` is `T`); rejected → `throw` | eager; rejected → `erlang:throw/1` | eager; rejected → `unreachable` |
 | `#[@generator]` / `#[@iterator]` | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
-| `#[@asyncGenerator]` | `async function*` | eager | eager body | eager body |
+| `#[@futureGenerator]` | `async function*` | eager | eager body | eager body |
 | `#[@context]` | plain `function` | plain fun | plain local | plain func |
 
 Effect rejection diagnostics (R*, RF*, RI*, RC*, RG* codes) live in

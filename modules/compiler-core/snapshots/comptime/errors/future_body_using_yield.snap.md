@@ -5,7 +5,7 @@ fn bad() -> @Future<i32> {
 }
 
 ----- ERROR
-error: yield-without-generator: `yield` is only valid inside a `#[@generator]` / `#[@iterator]` / `#[@asyncGenerator]` fn
+error: yield-without-generator: `yield` is only valid inside a `#[@generator]` / `#[@iterator]` / `#[@futureGenerator]` fn
   ┌─ :3:5
   │
 3 │     yield 1;

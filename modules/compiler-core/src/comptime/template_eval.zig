@@ -444,7 +444,7 @@ const host_records = [_]erlang.HostRecord{
     .{ .name = "CustomNode", .fields = &.{ "kind", "span", "label", "ref", "children" } },
     .{ .name = "Binding", .fields = &.{ "name", "kind" } },
     .{ .name = "Source", .fields = &.{ "file", "line", "col" } },
-    .{ .name = "Context", .fields = &.{ "source", "text", "multiline" } },
+    .{ .name = "ExprContext", .fields = &.{ "source", "text", "multiline" } },
 };
 
 /// `main/1` — the evaluator entry: it destructures the argument tuple, calls the

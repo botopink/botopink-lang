@@ -18,7 +18,7 @@ fn loadTwice(x: i32) -> @Future<i32> {
 {attributes, []}.
 {labels, 9}.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, fetch, 1, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.
@@ -31,7 +31,7 @@ fn loadTwice(x: i32) -> @Future<i32> {
     {deallocate, 1}.
     return.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, loadTwice, 1, 5}.
   {label, 4}.
     {line, [{location, "main.erl", 2}]}.

@@ -8,8 +8,8 @@ pub fn loadOne(x: i32) -> @Future<i32> {
 pub fn count() -> @Iterator<i32> {
     yield 1;
 }
-#[@asyncGenerator]
-pub fn pulses() -> @AsyncIterator<i32, string> {
+#[@futureGenerator]
+pub fn pulses() -> @FutureGenerator<i32, string> {
     yield 1;
 }
 ```
@@ -40,7 +40,7 @@ export declare function loadOne(x: number): Promise<number>;
 export declare function count(): IterableIterator<number>;
 
 
-export declare function pulses(): AsyncIterableIterator<number>;
+export declare function pulses(): AsyncGenerator<number>;
 
 ```
 

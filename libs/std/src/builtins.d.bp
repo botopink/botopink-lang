@@ -110,17 +110,26 @@ pub behavior Generator<T, R> {
     fn next(self: Self) -> Yield<T, R>;
 }
 
-// ── async ────────────────────────────────────────────────────────────────────
+// ── future ───────────────────────────────────────────────────────────────────
 
 pub behavior Future<T, E = any> {
+    // F5 — `await` is the UNWRAP, not the proof. What says a future can fail
+    // is the `implement` clause on the declaration line; `await` is only how a
+    // body reads the value out of one.
     fn await(self: Self) -> Result<T, E>;
     fn map<R>(self: Self, transform: fn(value: T) -> R) -> Future<R, E>;
     fn flatMap<R>(self: Self, transform: fn(value: T) -> Future<R, E>) -> Future<R, E>;
 }
 
-// ── async iterator ───────────────────────────────────────────────────────────
+// ── future generator (decision 98) ───────────────────────────────────────────
+//
+// A `Generator` whose steps are `Future`s: `next` answers a future of one step
+// rather than a step. The language spells suspension ONE way — `Future` — so
+// this wrapper borrows that noun rather than inventing a second one; the
+// `#[@futureGenerator]` annotation and the `@FutureGenerator<T, E, C>` wrapper
+// share a name exactly as the other five pairs do (§ effect annotations below).
 
-pub behavior AsyncIterator<T, E = any, C = void> {
+pub behavior FutureGenerator<T, E = any, C = void> {
     fn next(self: Self) -> Future<IteratorStep<T, E, C>, E>;
 }
 
@@ -225,7 +234,13 @@ pub type External implement Annotation {
 
 // ── type reflection ──────────────────────────────────────────────────────────
 
-fn field<T, F>(obj: T, comptime name: string) F
+// F10 — the five intrinsics below are written in the file's own dialect:
+// `pub declare fn`, `->` before the return type, a closing `;`. They are
+// bodyless because the compiler IS the body — each is reached as a builtin
+// call (`@field`, `@trap`, `@emit`, `@module`, `@getContex`), never as a
+// plain name — and `declare fn` is the language's bodyless form. They carry
+// no `#[@External.<Target>]` because no host supplies them.
+pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
 
 // ── runtime ──────────────────────────────────────────────────────────────────
 //
@@ -234,7 +249,7 @@ fn field<T, F>(obj: T, comptime name: string) F
 // literal default that `expandTrailingDefaults` injects at the call site).
 // `trap` carries no default, so its decl stays here doc-only.
 
-fn trap() noreturn
+pub declare fn trap() -> noreturn;
 
 // Contribute generated top-level declarations to the program from a decorator
 // body. `@emit("pub val userServiceSingleton = …")` parses `source` as botopink
@@ -242,12 +257,12 @@ fn trap() noreturn
 // decorator can build wiring (singletons, a DI graph, a router table) as
 // ordinary code. May be called any number of times; each call appends.
 // Comptime-only.
-fn emit(source: string)
+pub declare fn emit(source: string);
 
 
 // ── module imports ───────────────────────────────────────────────────────────
 
-fn module() module
+pub declare fn module() -> module;
 
 // ── target enum ──────────────────────────────────────────────────────────────
 
@@ -260,30 +275,34 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // An effect annotation names a function's effect — the implementation marker
 // (the `*fn` prefix it replaced was deprecated in v0.beta.12 and removed in
 // v0.beta.19). Each takes no arguments and pairs with the matching return
-// wrapper, which carries the effect's type parameters. The canonical
-// signatures (§4):
+// wrapper, which carries the effect's type parameters. The pairing is a
+// SPELLING rule, not a lookup table: the wrapper is the annotation with its
+// first letter capitalised, in all six rows and with no exception — decision
+// 98 renamed the one pair that used to break the rule, and named the reason
+// it broke, which is that the language spells suspension `Future` and nothing
+// else. The canonical signatures (§4):
 //
-//   #[result]         fn parse(n: i32) -> Result<i32, string>
-//   #[future]         fn fetchUser(id: u64) -> Future<User, NetworkError>
-//   #[generator]      fn range(a: i32, b: i32) -> Generator<i32, void>
-//   #[iterator]       fn lazyMap<T, U>(it: Iterator<T>, f: fn(T) -> U) -> Iterator<U, string, i32> :a
-//   #[asyncGenerator] fn stream() -> AsyncIterator<T, NetworkError, i32>
-//   #[context]        fn processarPagamento() -> Context<BasePagamento, bool>
+//   #[result]          fn parse(n: i32) -> Result<i32, string>
+//   #[future]          fn fetchUser(id: u64) -> Future<User, NetworkError>
+//   #[generator]       fn range(a: i32, b: i32) -> Generator<i32, void>
+//   #[iterator]        fn lazyMap<T, U>(it: Iterator<T>, f: fn(T) -> U) -> Iterator<U, string, i32> :a
+//   #[futureGenerator] fn stream() -> FutureGenerator<T, NetworkError, i32>
+//   #[context]         fn processarPagamento() -> Context<BasePagamento, bool>
 //
 // The annotation marks an IMPLEMENTATION (a `fn` with a body): it gates the
-// body operations (`await` under future/asyncGenerator; `yield` under
-// generator/iterator/asyncGenerator; `throw`/`try` under result, future,
-// iterator, asyncGenerator — the fallible-channel effects) and drives codegen
+// body operations (`await` under future/futureGenerator; `yield` under
+// generator/iterator/futureGenerator; `throw`/`try` under result, future,
+// iterator, futureGenerator — the fallible-channel effects) and drives codegen
 // (future → `async function`, generator/iterator → `function*`,
-// asyncGenerator → `async function*`, result/context → plain `function`).
+// futureGenerator → `async function*`, result/context → plain `function`).
 // Interface methods and `declare fn` declarations are declarative — they
 // express the effect through the return wrapper alone, with NO annotation
 // (using one there is the R1/R2 error).
 //
 // §1 — `#[result]` auto-wrap. The compiler intercepts `return r;` (where
-// `r: R`) inside a `#[result]` body and lowers it to `return Result::Ok(r)`;
-// `throw e;` (where `e: E`) lowers to `return Result::Err(e)`. Manual
-// `Result::Ok(…)` / `Result::Err(…)` construction inside the body is
+// `r: R`) inside a `#[result]` body and lowers it to `return Result.Ok(r)`;
+// `throw e;` (where `e: E`) lowers to `return Result.Error(e)`. Manual
+// `Result.Ok(…)` / `Result.Error(…)` construction inside the body is
 // rejected (R11/R12) — the wrapper variants are only constructed via the
 // `return`/`throw` sigils. Callers see `Result<R, E>` at the type level;
 // inline methods (`map`/`flatMap`/`unwrapOr`/`isOk`/`isError`) read it.
@@ -334,7 +353,7 @@ pub type Host implement Annotation {
     host,
 }
 
-// The markers (`result`, `future`, `generator`, `iterator`, `asyncGenerator`,
+// The markers (`result`, `future`, `generator`, `iterator`, `futureGenerator`,
 // `context`) are recognized as core builtins by the compiler — they are
 // lib-agnostic and take no arguments, so they need no signature here.
 //
@@ -351,7 +370,7 @@ pub type Host implement Annotation {
 // Declared `comptime` in its sole type argument because the Anchor check
 // runs at compile time; the runtime side is the inside-out walk inserted
 // by the lowering.
-fn getContex<T>(comptime _: type) Context<T, any>
+pub declare fn getContex<T>(comptime _: type) -> Context<T, any>;
 
 // ── Expr template model (std.syntax) ─────────────────────────────────────────
 // Data model for `Expr` templates. Interfaces are pure behaviour contracts, so
@@ -401,7 +420,13 @@ pub type Source(
 // function) needs about its input in one object: where the template was
 // declared, its raw text, and its shape. The origin scope is reached via
 // `lookup`/`bindings`; the segmented view via `parts`.
-pub type Context(
+//
+// F1 — this record is `ExprContext`, not `Context`: `@Context<ContextBase, Return>`
+// above is the hook wrapper, and one module may not declare one name twice. The
+// template model is the narrower audience of the two, so it is the half that
+// moved; `q.context()` still reads `context`, because a method names the
+// receiver's own input rather than a type.
+pub type ExprContext(
     source: Source,
     text: string,
     multiline: bool,
@@ -436,7 +461,7 @@ pub behavior Expr<E> {
     fn text(self: Self) -> string;
     fn parts(self: Self) -> Part[];
     fn source(self: Self) -> Source;
-    fn context(self: Self) -> Context;
+    fn context(self: Self) -> ExprContext;
     fn lookup(self: Self, name: string) -> ?Binding;
     fn bindings(self: Self) -> Binding[];
     fn build<R>(self: Self, source: string) -> Expr<R>;

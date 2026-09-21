@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-#[@asyncGenerator]
-fn nums() -> @AsyncIterator<i32, string, i32> {
+#[@futureGenerator]
+fn nums() -> @FutureGenerator<i32, string, i32> {
     yield 1;
     return 42;
 }

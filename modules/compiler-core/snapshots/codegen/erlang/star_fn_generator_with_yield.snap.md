@@ -12,7 +12,7 @@ fn counter() -> @Iterator<i32> {
 ```erlang
 -module(main).
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 counter() ->
     [1, 2, 3].
 ```

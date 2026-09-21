@@ -39,10 +39,10 @@ test "js: star fn ---- generator with yield" {
     );
 }
 
-test "js: star fn ---- async generator" {
+test "js: star fn ---- future generator" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@asyncGenerator]
-        \\fn stream() -> @AsyncIterator<i32, string> {
+        \\#[@futureGenerator]
+        \\fn stream() -> @FutureGenerator<i32, string> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -59,8 +59,8 @@ test "js: star fn ---- pub typedefs" {
         \\pub fn count() -> @Iterator<i32> {
         \\    yield 1;
         \\}
-        \\#[@asyncGenerator]
-        \\pub fn pulses() -> @AsyncIterator<i32, string> {
+        \\#[@futureGenerator]
+        \\pub fn pulses() -> @FutureGenerator<i32, string> {
         \\    yield 1;
         \\}
     );
@@ -68,7 +68,7 @@ test "js: star fn ---- pub typedefs" {
 
 // ── effect annotations (`#[@<effect>]`) ──────────────────────────────────────
 
-test "js: effect annotation ---- future/iterator/asyncGenerator/result" {
+test "js: effect annotation ---- future/iterator/futureGenerator/result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\#[@future]
         \\fn fetch(x: i32) -> @Future<i32> {
@@ -79,8 +79,8 @@ test "js: effect annotation ---- future/iterator/asyncGenerator/result" {
         \\    yield 1;
         \\    yield 2;
         \\}
-        \\#[@asyncGenerator]
-        \\fn stream() -> @AsyncIterator<i32, string> {
+        \\#[@futureGenerator]
+        \\fn stream() -> @FutureGenerator<i32, string> {
         \\    yield 1;
         \\}
         \\#[@result]

@@ -8,8 +8,8 @@ pub fn loadOne(x: i32) -> @Future<i32> {
 pub fn count() -> @Iterator<i32> {
     yield 1;
 }
-#[@asyncGenerator]
-pub fn pulses() -> @AsyncIterator<i32, string> {
+#[@futureGenerator]
+pub fn pulses() -> @FutureGenerator<i32, string> {
     yield 1;
 }
 ```
@@ -21,7 +21,7 @@ pub fn pulses() -> @AsyncIterator<i32, string> {
 {attributes, []}.
 {labels, 8}.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, loadOne, 1, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.
@@ -34,7 +34,7 @@ pub fn pulses() -> @AsyncIterator<i32, string> {
     {deallocate, 1}.
     return.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, count, 0, 5}.
   {label, 4}.
     {line, [{location, "main.erl", 2}]}.
@@ -45,7 +45,7 @@ pub fn pulses() -> @AsyncIterator<i32, string> {
     {deallocate, 0}.
     return.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, pulses, 0, 7}.
   {label, 6}.
     {line, [{location, "main.erl", 3}]}.

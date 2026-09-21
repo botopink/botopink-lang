@@ -226,22 +226,22 @@ pub const TypeparamConstraint = struct {
 
 /// Context active while inferring the body of an effect fn (async /
 /// generator — i.e. one marked `#[@future]` / `#[@iterator]` / `#[@generator]`
-/// / `#[@asyncGenerator]`). Drives validation of `await` and `yield`; `null`
+/// / `#[@futureGenerator]`). Drives validation of `await` and `yield`; `null`
 /// inside normal functions and at the top level. (The type keeps its
 /// historical name `StarFnCtx` for the field on `Env`; the `*fn` prefix it
 /// alludes to was removed in v0.beta.19.)
 pub const StarFnCtx = struct {
     /// `await` is permitted here — async function (`@Future`) or async
-    /// generator (`@AsyncIterator`).
+    /// generator (`@FutureGenerator`).
     allowsAwait: bool,
     /// `yield` (and generator delegation) is permitted here — `@Iterator` /
-    /// `@Generator` / `@AsyncIterator`. False for a pure `@Future`.
+    /// `@Generator` / `@FutureGenerator`. False for a pure `@Future`.
     allowsYield: bool,
-    /// `@Iterator<T>` / `@Generator<T, _>` / `@AsyncIterator<T, _>` item type
+    /// `@Iterator<T>` / `@Generator<T, _>` / `@FutureGenerator<T, _>` item type
     /// that `yield` values must unify with; `null` when unknown or absent
     /// (`@Future`).
     iterItem: ?*T.Type,
-    /// `@Iterator<T, E, C>` / `@AsyncIterator<T, E, C>` completion type that
+    /// `@Iterator<T, E, C>` / `@FutureGenerator<T, E, C>` completion type that
     /// `break <expr>` values must unify with (§1I RI2/RI3). `null` for
     /// effects without a completion channel (`@Future`, `@Generator`'s `R`
     /// rides on `return` instead).
@@ -253,7 +253,7 @@ pub const StarFnCtx = struct {
     fnLabel: ?[]const u8,
     /// The specific effect kind this context was built from. Drives effect-
     /// specific rejections (RF1/RF2/RF5 fire only inside `#[@future]`, RI*
-    /// only inside `#[@iterator]` / `#[@asyncGenerator]`, etc.).
+    /// only inside `#[@iterator]` / `#[@futureGenerator]`, etc.).
     effect: ast.EffectKind,
 };
 
@@ -340,7 +340,7 @@ pub const ResultJumpLowering = enum { wrap_ok, wrap_error, unwrap_passthrough };
 /// Other backends (erlang/beam) consume the same uniform AST form.
 pub const FutureJumpLowering = enum { wrap_resolved, wrap_rejected };
 
-/// §1I F4I-tail — `break`/`throw` jumps inside `#[@iterator]` / `#[@asyncGenerator]`
+/// §1I F4I-tail — `break`/`throw` jumps inside `#[@iterator]` / `#[@futureGenerator]`
 /// fns. The transform rewrites:
 ///   - `break <c>;` (targeting the FSM, per RI2/RI3 scoping) → `return @IteratorStep.Done(<c>);`
 ///   - `break;` (bare, targeting the FSM)                    → `return @IteratorStep.Done();`
@@ -452,7 +452,7 @@ pub const Env = struct {
     /// wrapper calls. Keyed by the jump's source location.
     future_jump_lowerings: std.AutoHashMap(ast.Loc, FutureJumpLowering),
     /// §1I F4I-tail — `break`/`throw` jumps inside `#[@iterator]` /
-    /// `#[@asyncGenerator]` fns that target the FSM (top-level `break`/`throw`
+    /// `#[@futureGenerator]` fns that target the FSM (top-level `break`/`throw`
     /// or `break :label` with the fn's signature label, per RI2/RI3 scoping).
     /// The transform pass rewrites each entry into a `return @IteratorStep.<v>(…)`
     /// call so the backend's existing enum-constructor codegen materialises the

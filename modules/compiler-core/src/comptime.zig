@@ -1084,7 +1084,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     // here so a bare `todo()` / `panic()` call at user code resolves to the
     // declared `FnDecl` and `expandTrailingDefaults` injects the trailing
     // literal default into `c.args` before dispatch. The full doc surface
-    // (Result / Future / Iterator / Generator / AsyncIterator / Context
+    // (Result / Future / Iterator / Generator / FutureGenerator / Context
     // interfaces) stays in `builtins.d.bp` — re-parsing it here would red
     // on the synthetic interfaces already registered by `registerBuiltins`.
     {

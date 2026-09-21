@@ -4,7 +4,7 @@
     {
       "fn": {
         "isPub": true,
-        "effect": "asyncGenerator",
+        "effect": "futureGenerator",
         "isDeclare": false,
         "isDefault": false,
         "label": null,
@@ -14,7 +14,7 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "asyncGenerator",
+            "name": "futureGenerator",
             "args": [],
             "is_builtin": true
           }
@@ -23,7 +23,7 @@
         "params": [],
         "returnType": {
           "generic": {
-            "name": "AsyncIterator",
+            "name": "FutureGenerator",
             "args": [
               {
                 "named": "Int"

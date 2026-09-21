@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@asyncGenerator]
-fn stream() -> @AsyncIterator<i32, string> {
+#[@futureGenerator]
+fn stream() -> @FutureGenerator<i32, string> {
     yield 1;
     yield 2;
 }
@@ -14,7 +14,7 @@ fn stream() -> @AsyncIterator<i32, string> {
 {attributes, []}.
 {labels, 4}.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 {function, stream, 0, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.

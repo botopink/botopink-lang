@@ -41,13 +41,13 @@ pub const effect_missing_annotation: []const u8 = "effect-missing-annotation";
 /// R5 — more than one `#[@<effect>]` annotation on the same fn.
 pub const effect_duplicate_annotation: []const u8 = "effect-duplicate-annotation";
 
-/// R6 — `throw` outside a fallible-channel effect (result/future/iterator/asyncGenerator).
+/// R6 — `throw` outside a fallible-channel effect (result/future/iterator/futureGenerator).
 pub const effect_throw_without_fallible_channel: []const u8 = "effect-throw-without-fallible-channel";
 
-/// R7 — `await` outside `#[@future]` / `#[@asyncGenerator]`.
+/// R7 — `await` outside `#[@future]` / `#[@futureGenerator]`.
 pub const effect_await_without_future: []const u8 = "effect-await-without-future";
 
-/// R8 — `yield` outside a yielding effect (generator/iterator/asyncGenerator).
+/// R8 — `yield` outside a yielding effect (generator/iterator/futureGenerator).
 pub const yield_without_generator: []const u8 = "yield-without-generator";
 
 /// R9 — alias of R7 (`await` inside `#[@result]` body).
@@ -77,7 +77,7 @@ pub const result_error_type_incompatible: []const u8 = "result-error-type-incomp
 /// R13 — `break <expr>` inside an iterator whose wrapper has `C = void`.
 pub const iterator_break_without_completion_type: []const u8 = "iterator-break-without-completion-type";
 
-/// R14 — `return <expr>` inside `#[@iterator]` / `#[@asyncGenerator]`.
+/// R14 — `return <expr>` inside `#[@iterator]` / `#[@futureGenerator]`.
 pub const iterator_return_forbidden: []const u8 = "iterator-return-forbidden";
 
 /// R15 — `yield :label <expr>` where the label is not bound.
@@ -117,7 +117,7 @@ pub const future_manual_construction_forbidden_alias: []const u8 = future_manual
 
 // ── RI1–RI6: §1I `#[@iterator]` syntax diagnostics ──────────────────────────
 
-/// RI1 — `return <expr>` inside `#[@iterator]` / `#[@asyncGenerator]`.
+/// RI1 — `return <expr>` inside `#[@iterator]` / `#[@futureGenerator]`.
 /// Identical to R14 (the §2 alias).
 pub const iterator_return_forbidden_alias: []const u8 = iterator_return_forbidden;
 

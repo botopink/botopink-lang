@@ -251,7 +251,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     //
     // §1I (`frente-b-rules-tooling.md`) extends `break` with an optional
     // `:label` targeting an enclosing labelled loop or `#[@iterator]` /
-    // `#[@asyncGenerator]` fn scope. The bare and value forms keep their old
+    // `#[@futureGenerator]` fn scope. The bare and value forms keep their old
     // shape; `break :name` (no expr) and `break :name <expr>` are the new
     // surface. Unbound labels are caught by the comptime body walk (RI5).
     if (this.check(.@"break")) {
@@ -1788,7 +1788,7 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
 pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
     const loopTok = this.advance(); // consume 'loop'
 
-    // `loop await (iter)` — iterate an `@AsyncIterator`, awaiting each item.
+    // `loop await (iter)` — iterate an `@FutureGenerator`, awaiting each item.
     const awaitLoop = this.match(.await);
 
     // Optional loop label: `loop :acc (iter) { ... }`.

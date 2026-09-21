@@ -9,8 +9,8 @@ fn counter() -> @Iterator<i32> {
     yield 1;
     yield 2;
 }
-#[@asyncGenerator]
-fn stream() -> @AsyncIterator<i32, string> {
+#[@futureGenerator]
+fn stream() -> @FutureGenerator<i32, string> {
     yield 1;
 }
 #[@result]
@@ -24,15 +24,15 @@ fn parse(n: i32) -> @Result<i32, string> {
 ```erlang
 -module(main).
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 fetch(X) ->
     X.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 counter() ->
     [1, 2].
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 stream() ->
     [1].
 

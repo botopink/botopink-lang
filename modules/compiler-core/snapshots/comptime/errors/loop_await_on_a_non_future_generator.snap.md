@@ -7,7 +7,7 @@ fn bad() -> @Future<i32> {
 }
 
 ----- ERROR
-error: `loop await` expects an `@AsyncIterator<T, E>` value
+error: `loop await` expects an `@FutureGenerator<T, E>` value
   ┌─ :3:5
   │
 3 │     loop await (5) { x ->
