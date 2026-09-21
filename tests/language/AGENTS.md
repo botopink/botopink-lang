@@ -249,14 +249,15 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 
 ## Status and the gate
 
-**Recounted on disk at front 20's landing (`fix/effect-chain`, on `cbd5f1ec`):**
+**Recounted on disk at front 20's landing (`fix/effect-chain`, merged onto
+`78509dfa`):**
 
 ```bash
 ls test/*.bp    | wc -l   # 52
-ls run/*.bp     | wc -l   # 26
+ls run/*.bp     | wc -l   # 29
 ls reject/*.bp  | wc -l   # 39
 ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 128
+find . -name '*.bp' | wc -l   # 131
 ```
 
 The difference from the block below is front 20's eleven cells, three new area
@@ -301,9 +302,9 @@ Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
 
 ```
 $ tests/language/run.sh                 # commonJS, erlang, wasm
-language tests: 391 passed, 53 expected failures, 0 failed
+language tests: 401 passed, 53 expected failures, 0 failed
 $ tests/language/run.sh --target beam
-language tests: 47 passed, 22 expected failures, 0 failed
+language tests: 49 passed, 23 expected failures, 0 failed
 ```
 
 Counted on disk at `b09bf9c6` — local `feat` after the fronts 12 × 13 merge:
