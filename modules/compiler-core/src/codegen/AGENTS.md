@@ -708,10 +708,20 @@ codegen/
   for a call on a field.
 - **Test mode loads its siblings.** `escript <module>.erl` compiles and loads
   that module only, so a cross-module call would be `undef` at run time: in test
-  mode a module that imports from another emits `'__bp_load_siblings'/0`, which
+  mode a module that reaches another one emits `'__bp_load_siblings'/0`, which
   compiles and loads every other `.erl` the runner wrote beside it before the
-  tests run (a module that does not compile is skipped — its own cell reports
-  it).
+  tests run. "Reaches another one" is `imported_fns`, `imported_types`,
+  **`std_imports`** and a type module of its own — the std route was missing, so
+  `import {querystring} from "std"` emitted the remote `std@querystring:parse/1`
+  in a module whose runner never loaded `std@querystring` and the test died
+  `{error,undef}`.
+  A sibling that does **not** compile refuses the run (decision 67):
+  `'__bp_dead_module'/2` names the file, prints `compile:file/2`'s own
+  diagnostic on `standard_error` (so `--json`'s stdout stays pure JSONL) and
+  `halt(1)`s before a single test runs. It used to be skipped in silence on the
+  reading that "its own cell reports it", which holds only for a module of the
+  project under test — a DEPENDENCY module has no cell, so a dead one was
+  indistinguishable from an absent one.
 - **Single-assignment versioning:** Erlang variables bind once, so a name already
   bound in the function gets a fresh variable on every later binding — `=`, `+=`
   or a shadowing `val i = i - 1` lowers to `Count@1 = Count + 1` and later reads
@@ -967,9 +977,16 @@ codegen/
   instance `default fn` with omitted trailing params filled from their declared
   defaults), then a clause raising `{bp_unsupported_method, <<"m">>, Argc, Recv}`
   (`toString/0` formats through `'__bp_text'` instead). The prelude's bodied
-  instance defaults (`String.slice`, `Array.first`) are indexed for comptime
-  modules by `collectPreludeInstanceDefaults` (the parse lives until the module is
-  rendered); shims and the defaults they reach drain to a fixpoint. So BIF-named
+  instance defaults (`String.slice`, `Array.first`) are indexed by
+  `collectPreludeInstanceDefaults` for **every** module, off the process-wide
+  `prelude_cache` (whose arena outlives the emit, so a reached body may be
+  lowered from it); shims and the defaults they reach drain to a fixpoint.
+  It was guarded on `comptime_module != null`, and an ordinary module holds
+  `primitives.bp`'s `behavior` decls only when its own compile unit carries them
+  — which a `libs/std` module compiled as a DEPENDENCY (`from "std"`) does not.
+  Five std modules emitted a bare local `slice/3` nothing defines and were
+  refused by `erlc`: `path`, `querystring`, `queue`, `snapshots`, `url`
+  (`tests/language/run/std_default_fn_in_a_std_module.bp`). So BIF-named
   methods (`length`, `abs`, `floor`) dispatch on the receiver too. A call nothing
   answers is recorded in `unsupported_method` (when set, compilable emit only)
   and the emit fails with `error.UnsupportedComptimeMethod`; the evaluators turn

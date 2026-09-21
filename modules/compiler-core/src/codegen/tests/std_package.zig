@@ -161,3 +161,65 @@ test "js: std package ---- methods of a type answered by an imported module reso
         \\}
     );
 }
+
+// ── `from "std"` on the erlang row: the shim, the loader and the dead module ──
+
+// 1.0.10-beta `00 · 02-erlang` — `String.slice` is a primitive-interface
+// `default fn` of `primitives.bp`, not a bare-symbol prim-op, so the erlang
+// backend reaches it through `collectPreludeInstanceDefaults`. That indexing
+// was guarded on `comptime_module != null`, so a `libs/std` module compiled as
+// an ordinary DEPENDENCY — which is what `from "std"` makes of it — never had
+// `String.slice` in its table and `query.slice(1, query.length)` fell through
+// to a bare local `slice/3` the module never defines. Five std modules were
+// dead on this row at once (`path`, `querystring`, `queue`, `snapshots`,
+// `url`); `erlc` refused each of them with `function slice/3 undefined`.
+//
+// RUNNING is the assertion: the entry module compiled fine, so a snapshot of it
+// showed nothing. `querystring.parse` is the shortest std entry point that
+// reaches the shim.
+test "erlang: std package ---- a String.slice default fn inside a std module" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\import {querystring} from "std";
+        \\
+        \\fn main() {
+        \\    @print(querystring.parse("?a=1&b=2").length);
+        \\}
+    , "2\n", &.{
+        "std@querystring:parse(<<\"?a=1&b=2\">>)",
+    });
+}
+
+// The `botopink test` runner of a module that reaches another one. Two claims
+// no `test { }` block can make from the inside, because they are about the
+// runner's own preamble:
+//
+//   1. `from "std"` counts as reaching out. The loader was emitted for
+//      `imported_fns` / `imported_types` / a type module only, and a std import
+//      fills `std_imports` — so `std@querystring:parse/1` was a remote call
+//      into a module the escript never loaded, and the test died `{error,undef}`
+//      with the failure pinned to the test rather than to the missing module.
+//   2. A sibling that does not compile REFUSES THE RUN (decision 67). It used
+//      to be skipped (`_ -> ok`) on the reading that "its own cell reports the
+//      error" — true for a module of the project under test, never true for a
+//      dependency, which has no cell. That silence is what kept the dead
+//      `slice/3` above invisible.
+test "erlang: std package ---- the test runner loads a std sibling and refuses a dead one" {
+    try h.assertErlangTestModeContains(std.testing.allocator,
+        \\import {querystring} from "std";
+        \\
+        \\test "reaches a std module" {
+        \\    assert querystring.parse("?a=1").length == 1;
+        \\}
+    , &.{
+        // 1 — the loader is emitted at all, and `main/1` calls it.
+        "'__bp_load_siblings'()",
+        "filelib:wildcard(filename:join([Dir, \"**\", \"*.erl\"]))",
+        // 2 — a module `compile:file/2` refused is named, reported and halts.
+        "Bad -> '__bp_dead_module'(Src, Bad)",
+        "refusing to run the tests of",
+        "halt(1)",
+    }, &.{
+        // The skip this replaced. The arm is gone, not demoted to a warning.
+        "{ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);\n                        _ -> ok",
+    });
+}
