@@ -33,8 +33,8 @@ the rule; a capability decision 8 does not legislate gets a plain sentence.
 Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, §10), `effect_*`,
 `comptime_*` / `decorator_*`, `external_*`, `generic_*`, `string_*` / `array_*`, `type_identity_*`,
 `optional*` (`optional`, and decision 54's `optional_null_pattern` / `optional_variant_pattern`),
-`context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, one test cell, one run
-cell and six reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
+`context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, two test cells, one run
+cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
 `run/index_past_the_end_fails`, `run/index_at_optional`), `std_erlang_node` (decision 64),
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4), and the
 singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
@@ -537,6 +537,15 @@ the static prefix (rows 4b and 4c as parse errors), `use-without-context-effect`
 body without `#[@context]`), `use-of-non-context-fn` (a `-> string` body, and a module-level `val` —
 decision 87), and `context-anchor-violation`. Green on commonJS, erlang, wasm and beam at the
 landing commit, with no line in `expected-failures.txt`.
+
+Step 2 (decisions 89 and 90) added three more, also with no line in `expected-failures.txt`:
+`test/use_future_context.bp` — a `#[@future] fn Page() -> @Future<Element>` activates a hook with no
+`#[@context]`, because `@Future<T>` is looked through to `T`'s owner, and the future still chains
+through `await`; `reject/use_future_without_owner.bp` — the same wrapper effect over `@Future<i32>`
+is still `use-of-non-context-fn`, so the dispensation switches no refusal off; and
+`reject/use_future_context_duplicate.bp` — `#[@future] #[@context]` is still refused (R5), which is
+why the wrapper effect has to activate on its own. The last claims the message only: R5's caret
+drift is already owned by `reject/two_effect_markers.bp`'s row in `expected-failures.txt`.
 
 **Decisions 63–66, one cell or one sentence each (C-16).**
 

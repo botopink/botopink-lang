@@ -16,4 +16,4 @@ error: use-without-context-effect: `use` needs `#[@context]` on the enclosing fn
   │             ^
 
   fn 'Counter' returns 'Element', which implements @Context,
-  but only a `#[@context]` body activates a hook (decision 88)
+  but a body with no effect annotation does not activate a hook (decisions 88, 90)

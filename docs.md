@@ -519,8 +519,13 @@ activation. `val x = use <hook>(…)` activates the hook and binds `R`; a bare
 by name. The activating body is a `#[@context]` function whose return type is
 the owner — a **component**, `#[@context] fn Widget() -> Element`, where
 `Element` is a type that `implement @Context<Element, Element>` — or is itself
-`@Context<Owner, _>` — a **custom hook** composing hooks. Every `use` in one
-body agrees on the one `Owner` its return type names.
+`@Context<Owner, _>` — a **custom hook** composing hooks. A body that carries a
+**wrapper effect** instead (`#[@future]` today) and whose return type *unwraps*
+to the owner activates too, with no second annotation: `@Future<T>` is looked
+through to `T`, so `#[@future] fn Page() -> @Future<Element>` is owned by
+`Element` (and one fn carries one effect annotation — `#[@future] #[@context]`
+is `effect-duplicate-annotation`). Every `use` in one body agrees on the one
+`Owner` its return type names.
 
 ```botopink
 type Element(count: i32) implement @Context<Element, Element>
@@ -546,6 +551,13 @@ fn Widget(n: i32) -> Element {
     return Element(count: c.value + value);
 }
 
+// A wrapper effect activates on its own: `@Future<Element>` unwraps to the owner.
+#[@future]
+fn Page() -> @Future<Element> {
+    val c = use state(1);
+    return Element(count: c.value);
+}
+
 // Without `use` the same call is an ordinary call — the first-render value.
 fn Plain() -> Element {
     val c = state(7);
@@ -555,17 +567,27 @@ fn Plain() -> Element {
 
 The rules, each with its diagnostic:
 
-- **The body needs the effect.** A `use` in a body whose fn is not
-  `#[@context]` is refused at the `use`: when the return type implements
+- **The body needs an effect.** A `use` in a body that carries **no** effect
+  annotation is refused at the `use`: when the return type implements
   `@Context` (the owner type, or the `@Context<…>` wrapper) the message names
   the annotation — `` use-without-context-effect: `use` needs `#[@context]` on
   the enclosing fn 'Widget': its return type 'Element' implements @Context, but
-  only a `#[@context]` body activates a hook `` — and a bare `fn … -> Element`
-  without it is an ordinary function. When the return type does not implement
-  `@Context` at all (`-> string`, `-> void`, a module-level `val`) it is
-  `` use-of-non-context-fn: `use` not allowed: function returns 'string' which
-  does not implement @Context ``. `#[@context]` itself accepts either return
-  shape: `-> @Context<B, R>` or a named type implementing `@Context<B, _>`.
+  a body with no effect annotation does not activate a hook `` — and a bare
+  `fn … -> Element` without it is an ordinary function. When the return type
+  does not implement `@Context` at all (`-> string`, `-> void`, a module-level
+  `val`) it is `` use-of-non-context-fn: `use` not allowed: function returns
+  'string' which does not implement @Context ``. `#[@context]` itself accepts
+  either return shape: `-> @Context<B, R>` or a named type implementing
+  `@Context<B, _>`.
+- **A wrapper effect is enough when its return owns the context.** The
+  dispensation above is the return type answering the question the annotation
+  would have: `#[@future] fn Page() -> @Future<Element>` activates, because
+  `@Future<Element>` unwraps to the owner. It switches no refusal off —
+  `#[@future] fn … -> @Future<i32>` with a `use` is still
+  `` use-of-non-context-fn: `use` not allowed ``, and `#[@context]` over a
+  return type that owns no context is still
+  `` effect-wrapper-mismatch: `#[@context]` requires a `-> @Context<…>` return
+  type ``.
 - **The operand is a hook.** `use plain()` where `plain : -> User` is
   `` use-of-non-context-fn: `use` requires @Context: 'User' does not implement
   @Context ``.
