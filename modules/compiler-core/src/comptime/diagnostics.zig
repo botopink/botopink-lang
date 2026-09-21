@@ -149,6 +149,13 @@ pub const context_anchor_violation: []const u8 = "context-anchor-violation";
 /// RC3 — `@getContex(T)` whose T is outside the enclosing fn's Anchor tree.
 pub const context_getcontex_anchor_violation: []const u8 = "context-getcontex-anchor-violation";
 
+// ── `@src()` (1.0.10-beta front 01-std, decision 73) ─────────────────────────
+/// `@src(…)` was given an argument or a trailing lambda — the builtin takes none.
+pub const src_takes_no_arguments: []const u8 = "src-takes-no-arguments";
+/// A `@name(…)` call no builtin arm recognises. Replaces the silent `void`
+/// fallback that let a typo (`@pritn`) compile (decision 67: refuse).
+pub const unknown_builtin: []const u8 = "unknown-builtin";
+
 /// RC4 — `@getContex(<value>)` (the argument must be a type).
 pub const context_getcontex_expects_type: []const u8 = "context-getcontex-expects-type";
 

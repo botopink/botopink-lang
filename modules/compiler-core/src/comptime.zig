@@ -214,6 +214,49 @@ fn withUsedAssocInterfaces(arena: std.mem.Allocator, prog: ast.Program, env: *co
 /// only `.sections`). The synthesised decls land BEFORE the user-written
 /// decls so the parent enum's payload types resolve without forward-ref
 /// juggling.
+/// `@src().file` for a module (1.0.10-beta decision 73): the driver's
+/// package-relative `Module.srcPath` when it supplied one, else `<name>.bp` —
+/// the spelling the test runners already print (`main.bp:12`), so the
+/// compiler's own harness (which passes `.path = ""`) answers `main.bp`.
+fn displaySrcPath(arena: std.mem.Allocator, mod: Module) ![]const u8 {
+    if (mod.srcPath.len > 0) return mod.srcPath;
+    const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
+    return std.fmt.allocPrint(arena, "{s}.bp", .{name});
+}
+
+/// The builtin `SourceLocation` record as a program declaration. `@src()` is
+/// rewritten into `SourceLocation(file: …, line: …, column: …, fnName: …)`
+/// during inference (`infer.zig`, `inferSrcBuiltin`), and the record itself is
+/// declared in `decl_reflection_src` — a prelude the backends never see. When a
+/// module referenced the record (`env.usesSourceLocation`) this prepends its
+/// declaration to the transformed program, so every backend registers the field
+/// list through the record path it already has (commonJS `class`, erlang/beam
+/// map, wat layout) and no codegen file learns the name. A module that never
+/// touches it emits byte-for-byte what it emitted before.
+fn withSourceLocationDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+    if (!env.usesSourceLocation) return prog;
+    for (prog.decls) |d| switch (d) {
+        .type_ => |t| if (std.mem.eql(u8, t.name, "SourceLocation")) return prog,
+        else => {},
+    };
+    var lx = Lexer.init(source_location_decl_src);
+    const tokens = try lx.scanAll(arena);
+    var p = Parser.init(tokens);
+    const decl_prog = try p.parse(arena);
+    if (decl_prog.decls.len != 1) return prog;
+    const new_decls = try arena.alloc(ast.DeclKind, 1 + prog.decls.len);
+    new_decls[0] = decl_prog.decls[0];
+    @memcpy(new_decls[1..], prog.decls);
+    return ast.Program{ .decls = new_decls };
+}
+
+/// The declaration `withSourceLocationDecl` splices: private (the record is
+/// per-module — only its fields matter, never its identity), the same four
+/// fields as the `decl_reflection_src` entry. Keep the two in sync.
+const source_location_decl_src =
+    \\type SourceLocation(file: string, line: i32, column: i32, fnName: string)
+;
+
 fn withSynthesisedEnumDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
     if (env.synthesisedEnumDecls.count() == 0) return prog;
 
@@ -368,6 +411,10 @@ fn analyzeMerged(
 ) anyerror!AnalysisResult {
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
     env.modulePath = mod.path;
+    env.srcPath = try displaySrcPath(arena, mod);
+    // The prelude registration may have named `SourceLocation`; only the
+    // program's own references count (`withSourceLocationDecl`).
+    env.usesSourceLocation = false;
     env.templateEval = templateEvalCtx;
     env.skipDecoratorInvoke = true;
     env.target = target_name;
@@ -463,6 +510,11 @@ fn analyzeSource(
     var env = try infer.freshEnv(arena, std.heap.page_allocator);
     // Capture provenance for `expr` templates: which file is being inferred.
     env.modulePath = mod.path;
+    // `@src().file` (decision 73): the package-relative display path.
+    env.srcPath = try displaySrcPath(arena, mod);
+    // The prelude registration may have named `SourceLocation`; only the
+    // program's own references count (`withSourceLocationDecl`).
+    env.usesSourceLocation = false;
     // Runtime-backed template expansion (F6-full) — null in tooling paths.
     env.templateEval = templateEvalCtx;
     env.skipDecoratorInvoke = skip_invoke;
@@ -576,6 +628,7 @@ pub const std_pkg_modules = @import("std_prelude").pkg_modules;
 const decl_reflection_src =
     \\pub type DeclKind { Type, Behavior, Fn, Method, Field }
     \\pub type Span(start: i32, end: i32, line: i32)
+    \\pub type SourceLocation(file: string, line: i32, column: i32, fnName: string)
     \\pub type Annotation(name: string, args: string[])
     \\pub type Param(name: string, typeName: string)
     \\pub type Field(name: string, typeName: string, annotations: Annotation[])
@@ -694,7 +747,13 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module) ![]const 
 
     var out: std.ArrayListUnmanaged(Module) = .empty;
     for (std_pkg_modules, 0..) |spm, i| {
-        if (needed[i]) try out.append(arena, .{ .path = spm.path, .source = spm.source });
+        // An embedded std module is `libs/std/src/<name>.bp` inside its own
+        // package, so that is what its `@src().file` answers (decision 73).
+        if (needed[i]) try out.append(arena, .{
+            .path = spm.path,
+            .source = spm.source,
+            .srcPath = try std.fmt.allocPrint(arena, "src/{s}.bp", .{spm.path["std/".len..]}),
+        });
     }
     try out.appendSlice(arena, modules);
     return out.toOwnedSlice(arena);
@@ -1297,6 +1356,7 @@ pub fn compileTypesOnly(
                         empty_vals,
                         &succ.env.method_lowerings,
                         &succ.env.templateExpansions,
+                        &succ.env.srcRewrites,
                         &succ.env.result_jump_lowerings,
                         &succ.env.future_jump_lowerings,
                         &succ.env.stdArrayLowerings,
@@ -1305,7 +1365,8 @@ pub fn compileTypesOnly(
                         succ.env.ctorParams,
                     ) catch break :blk_t program_for_transform;
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, t, &succ.env) catch break :blk_t t;
-                    break :blk_t withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
+                    const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
+                    break :blk_t withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
                 };
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
@@ -1481,11 +1542,11 @@ pub fn compile(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try withSynthesisedEnumDecls(
+                const transformed = try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.result_jump_lowerings, &succ.env.future_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.conditionLoops, succ.env.ctorParams), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.future_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.conditionLoops, succ.env.ctorParams), &succ.env),
                     &succ.env,
-                );
+                ), &succ.env);
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
                 for (succ.bindings) |b| {

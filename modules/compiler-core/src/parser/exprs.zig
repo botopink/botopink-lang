@@ -205,9 +205,17 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         } } } };
     }
 
-    // return expr
+    // return [expr]
+    //
+    // A bare `return;` (or `return` closing a block) carries no value — the
+    // `ok` position of a `-> @Result<void, E>` fn (1.0.10-beta decision 74).
+    // Only `;`, `}` and end of input end it: `return` followed by a newline
+    // still takes the expression on the next line, as it always did.
     if (this.check(.@"return")) {
         const retTok = this.advance();
+        if (this.check(.semicolon) or this.check(.rightBrace) or this.check(.endOfFile)) {
+            return this.makeJump(alloc, retTok, .@"return", null);
+        }
         const inner = try this.parseExpr(alloc);
         return this.makeJump(alloc, retTok, .@"return", inner);
     }
@@ -1171,7 +1179,13 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             alloc.free(trailing);
         }
 
-        return makeCall(nameTok, null, nameTok.lexeme[1..], true, args, trailing);
+        // A builtin call is a value like any other call: `@src().line`,
+        // `@field(x, "a").b` continue with the postfix chain (1.0.10-beta
+        // decision 73 — `@src()` answers a record whose fields are read
+        // in place). Before this the chain was a parse error, so no program
+        // that compiled changes.
+        const call = makeCall(nameTok, null, nameTok.lexeme[1..], true, args, trailing);
+        return parsePostfixChain(this, alloc, call);
     }
 
     if (this.check(.stringLiteral)) {

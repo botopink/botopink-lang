@@ -1890,6 +1890,13 @@ const Emitter = struct {
     /// Module name, used for `<module>.bp:<line>` source locations in
     /// test-mode assert failures.
     module_name: []const u8 = "main",
+    /// True while emitting a `test { … }` body (decision 74): a `try` whose
+    /// operand is `{error, E}` there raises `{bp_assert, E, Loc}` — the shape
+    /// the runner already catches — instead of becoming the function's value.
+    /// Reset inside every `fun`.
+    in_test_body: bool = false,
+    /// The `<module>.bp:<line>` of the test being emitted, for that raise.
+    test_loc: []const u8 = "",
     /// Record/struct constructors: name → ordered field names. A constructor
     /// call (`AppError(code: 1, msg: "x")`) lowers to a map literal
     /// `#{code => 1, msg => <<"x">>}` (mirrors the beam backend's
@@ -3664,6 +3671,16 @@ const Emitter = struct {
         this.indent = 1;
         defer this.indent = saved;
         this.try_seq = 0;
+        // Decision 74 — the body is a fallible context whose failure channel
+        // is the runner (`propagateTryExpr`).
+        const saved_in_test = this.in_test_body;
+        const saved_test_loc = this.test_loc;
+        this.in_test_body = true;
+        this.test_loc = try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ this.module_name, t.loc.line });
+        defer {
+            this.in_test_body = saved_in_test;
+            this.test_loc = saved_test_loc;
+        }
         const name = try std.fmt.allocPrint(b.arena, "__bp_test_{d}", .{idx});
         return blockFunction(b, name, &.{}, try this.bodyNode(b, t.body, 0, 1));
     }
@@ -4658,9 +4675,18 @@ const Emitter = struct {
         };
         const err_var = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryE{d}", .{n}));
         const err = try b.tuple(&.{ Ast.Expr.a("error"), err_var });
+        // Inside a `test` body (decision 74) the Error ends the test: raise the
+        // `{bp_assert, E, Loc}` the runner's first catch clause already
+        // understands, so it prints `FAIL <name>  (<E>)  at <Loc>` — `~s` for a
+        // binary `E`, `~p` for anything else. Elsewhere the Error is the
+        // function's value.
+        const on_error: Ast.Expr = if (this.in_test_body)
+            try b.remote("erlang", "error", &.{try b.tuple(&.{ Ast.Expr.a("bp_assert"), err_var, .{ .lexeme_binary = this.test_loc } })})
+        else
+            err;
         return b.caseOf(subject, &.{
             .{ .patterns = try b.exprs(&.{try b.tuple(&.{ Ast.Expr.a("ok"), bound })}), .body = ok_body },
-            try b.clause(&.{err}, &.{}, &.{err}),
+            try b.clause(&.{err}, &.{}, &.{on_error}),
         });
     }
 
@@ -4955,6 +4981,10 @@ const Emitter = struct {
                 const saved_cond_loop = this.cond_loop;
                 this.cond_loop = null;
                 defer this.cond_loop = saved_cond_loop;
+                // A `fun` is not the test body: its `try` is its own.
+                const saved_in_test = this.in_test_body;
+                this.in_test_body = false;
+                defer this.in_test_body = saved_in_test;
                 const params = try b.arena.alloc(Ast.Expr, func.kind.params.len);
                 for (func.kind.params, 0..) |p, i| {
                     params[i] = V(try this.arenaVar(b, p));

@@ -181,6 +181,16 @@ places, and the reason is trailing lambdas:
 
 The links are `.field`, `?.field`, `.method(args)`, `(args)` and `[index]`.
 
+A **builtin call** (`@name(args)`) continues with `parsePostfixChain` too
+(1.0.10-beta decision 73 — `@src().line` reads a field of the record `@src()`
+answers). Before that the chain after a builtin call was a parse error, so no
+program that compiled changed.
+
+A bare **`return;`** (or `return` closing a block) parses with no operand — the
+`ok` position of a `-> @Result<void, E>` fn (decision 74). Only `;`, `}` and end
+of input end it: `return` followed by a newline still takes the expression on
+the next line.
+
 **A link added to one must be added to the other.** `adder(3)(4)` is the case
 that proved it: adding the `(` link to `parsePostfixChain` alone closed
 `("ab").length(…)` and not `adder(3)(4)`, because the two forms reach two

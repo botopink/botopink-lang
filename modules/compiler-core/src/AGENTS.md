@@ -15,7 +15,7 @@ src/
 ├── main.zig              ← empty CLI stub used by `zig build run`
 ├── test_root.zig         ← aggregates each stage's tests.zig barrel
 ├── test_warmup.zig       ← pre-warms the stdlib template env before other tests
-├── module.zig            ← `Module` struct — input module representation
+├── module.zig            ← `Module` struct — input module representation (`srcPath`: the package-relative display path `@src().file` answers)
 ├── ast.zig               ← AST node types (categorised)
 ├── lexer.zig             ← Lexer (delegates to lexer/token.zig)
 ├── parser.zig            ← Parser struct + token cursor + shared helpers (sub-grammars in parser/)

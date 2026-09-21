@@ -133,6 +133,7 @@ fn appendImportBindings(
 
 pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     var list: std.ArrayListUnmanaged(Binding) = .empty;
+    env.testIndex = 0;
 
     try validateUniqueDefaults(env, program);
 
@@ -204,6 +205,7 @@ fn validateUniqueDefaults(env: *Env, program: ast.Program) InferError!void {
 
 pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBinding {
     var list: std.ArrayListUnmanaged(TypedBinding) = .empty;
+    env.testIndex = 0;
 
     try validateUniqueDefaults(env, program);
 
@@ -2188,6 +2190,14 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
     env.throwContext = .unchecked;
     defer env.throwContext = savedThrowCtx;
 
+    // `@src().fnName` inside a test body is the test name, verbatim (decision
+    // 73); an anonymous `test { … }` gets the `test_<idx>` fallback the
+    // commonJS registry gives it (`codegen/commonJS.zig`, `test_entries`).
+    const savedFnName = env.currentFnName;
+    env.currentFnName = t.name orelse try std.fmt.allocPrint(env.arena, "test_{d}", .{env.testIndex});
+    env.testIndex += 1;
+    defer env.currentFnName = savedFnName;
+
     const prevStarFn = env.starFn;
     const prevLabelsLen = env.labelStack.items.len;
     defer {
@@ -3009,6 +3019,12 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     env.fnContext = try contextInfoFromReturn(env, f.returnType);
     defer env.fnContext = savedFnCtx;
 
+    // `@src().fnName` inside this body (decision 73). A lambda in the body does
+    // not change it — a lambda has no name.
+    const savedFnName = env.currentFnName;
+    env.currentFnName = f.name;
+    defer env.currentFnName = savedFnName;
+
     // A `-> @Expr<…>` (or `-> @ExprCustom<…>`) return marks a template
     // function: its body runs at comptime, enabling the `@expr`/`@code`
     // construction builtins (and, for the custom carrier, `q.custom`).
@@ -3234,6 +3250,11 @@ fn inferTypeMethods(
     for (methods) |m| {
         const body = m.body orelse continue;
         if (m.is_declare) continue;
+
+        // `@src().fnName` inside a method is `Type.method` (decision 73).
+        const savedFnName = env.currentFnName;
+        env.currentFnName = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ typeName, m.name });
+        defer env.currentFnName = savedFnName;
 
         var genericMap = std.StringHashMap(*T.Type).init(env.arena);
         defer genericMap.deinit();
@@ -4245,6 +4266,7 @@ fn inferBuiltinCallReturnType(
     callee: []const u8,
     typedArgs: []ast.CallArgOf(.typed),
     typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
 ) InferError!*T.Type {
     // `@block { … }` — the value of the block is what its `return`s carry
     // (C1: those returns target the block, not the enclosing fn); a block
@@ -4437,7 +4459,156 @@ fn inferBuiltinCallReturnType(
         );
         return error.TypeError;
     }
-    return env.namedType("void");
+    // The runtime builtins (`@print`, `@panic`, `@todo`, …) are typed by the
+    // backends; here they are `void` placeholders. Anything else is a typo —
+    // refuse it (decision 67) instead of compiling it to `void` in silence.
+    if (isKnownBuiltinName(env, callee)) return env.namedType("void");
+    env.lastError = TypeError.custom(
+        try unknownBuiltinMessage(env, callee),
+        "Builtin names are exact and lowercase (`@print`, `@panic`, `@src`); see `libs/std/src/builtins.d.bp` for the list.",
+    ).withLoc(loc);
+    return error.TypeError;
+}
+
+/// The type name `@src()` answers with (decision 73). Declared in
+/// `comptime.zig`'s `decl_reflection_src`; spliced into a program that names it
+/// by `withSourceLocationDecl`.
+const source_location_type_name = "SourceLocation";
+
+/// The builtin fns that reach `inferBuiltinCallReturnType`'s fallback by
+/// design: runtime builtins the backends lower natively (`@print`, `@debug`,
+/// `@trap`, …), plus the `declare fn`s of `builtins_fns.d.bp` (`@panic`,
+/// `@todo`) and the `print`/`println` bindings `registerBuiltins` seeds.
+const runtime_builtin_names = [_][]const u8{
+    "print", "println", "debug", "panic", "todo", "trap", "compilerError", "module", "emit", "is",
+};
+
+/// Every `@name` the checker or a backend understands — the arms of
+/// `inferBuiltinCallReturnType` and the intercepts in `inferCallExpr` included.
+/// Only read to suggest a spelling in `unknown-builtin`.
+const all_builtin_names = runtime_builtin_names ++ [_][]const u8{
+    "src",        "block",      "expr",  "code",      "typeInfo",      "TypeOf",
+    "makeRecord", "RecordKeys", "field", "getContex", "comptimeError",
+};
+
+fn isKnownBuiltinName(env: *Env, callee: []const u8) bool {
+    for (runtime_builtin_names) |n| {
+        if (std.mem.eql(u8, n, callee)) return true;
+    }
+    // The parser's own sugar: `xs[i]` lands as the `[]` builtin call.
+    if (std.mem.eql(u8, callee, ast.index_builtin_name)) return true;
+    return env.stdlibFnDecls.contains(callee);
+}
+
+/// `unknown-builtin: unknown builtin \`@name\`` — with the nearest known name
+/// when one is an edit away (`@pritn` → `@print`), the way `removedBuiltinType`
+/// points at a replacement.
+fn unknownBuiltinMessage(env: *Env, callee: []const u8) ![]const u8 {
+    for (all_builtin_names) |candidate| {
+        if (editDistanceIsOne(callee, candidate)) {
+            return std.fmt.allocPrint(
+                env.arena,
+                "{s}: unknown builtin `@{s}` — did you mean `@{s}`?",
+                .{ diagnostics.unknown_builtin, callee, candidate },
+            );
+        }
+    }
+    return std.fmt.allocPrint(env.arena, "{s}: unknown builtin `@{s}`", .{ diagnostics.unknown_builtin, callee });
+}
+
+/// True when `a` becomes `b` by one substitution, one insertion, one deletion
+/// or one adjacent transposition (case-insensitive: `@Src` is one edit from
+/// `@src`).
+fn editDistanceIsOne(a: []const u8, b: []const u8) bool {
+    if (std.ascii.eqlIgnoreCase(a, b)) return a.len > 0 and !std.mem.eql(u8, a, b);
+    if (a.len == b.len) {
+        var diffs: usize = 0;
+        var first: ?usize = null;
+        for (a, b, 0..) |ca, cb, i| {
+            if (std.ascii.toLower(ca) != std.ascii.toLower(cb)) {
+                diffs += 1;
+                if (first == null) first = i;
+            }
+        }
+        if (diffs == 1) return true;
+        if (diffs == 2) {
+            const i = first.?;
+            return i + 1 < a.len and
+                std.ascii.toLower(a[i]) == std.ascii.toLower(b[i + 1]) and
+                std.ascii.toLower(a[i + 1]) == std.ascii.toLower(b[i]);
+        }
+        return false;
+    }
+    const long, const short = if (a.len > b.len) .{ a, b } else .{ b, a };
+    if (long.len != short.len + 1) return false;
+    var i: usize = 0;
+    var j: usize = 0;
+    var skipped = false;
+    while (i < long.len and j < short.len) {
+        if (std.ascii.toLower(long[i]) == std.ascii.toLower(short[j])) {
+            i += 1;
+            j += 1;
+        } else {
+            if (skipped) return false;
+            skipped = true;
+            i += 1;
+        }
+    }
+    return true;
+}
+
+/// `@src()` (1.0.10-beta front 01-std, decision 73): a `SourceLocation(file,
+/// line, column, fnName)` naming the call site, evaluated here and never at
+/// run time. The call is rewritten into the ordinary constructor call
+/// `SourceLocation(file: "<env.srcPath>", line: L, column: C, fnName: "<env.currentFnName>")`
+/// with four literal arguments: the typed node is that call (so the typed AST
+/// carries the record type) and the untyped rewrite is recorded in
+/// `env.srcRewrites` for the transform pass to splice, the way `@makeRecord`
+/// and template expansions are. Every backend then lowers it through the
+/// record-constructor path it already has — no codegen file knows `@src`.
+///
+/// `line`/`column` are the 1-based position of the `@` token — the numbers a
+/// diagnostic prints; `file` is the package-relative path (`env.srcPath`);
+/// `fnName` is the enclosing fn / `Type.method` / test name, `""` at module
+/// level. Zero arguments, no trailing lambda: anything else is
+/// `src-takes-no-arguments`.
+fn inferSrcBuiltin(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    if (call.args.len != 0 or call.trailing.len != 0) {
+        env.lastError = TypeError.custom(
+            diagnostics.src_takes_no_arguments ++ ": `@src()` takes no arguments",
+            "Write `@src()` — the location is the call site's own; there is nothing to pass.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    env.usesSourceLocation = true;
+
+    const strLit = struct {
+        fn make(e: *Env, l: ast.Loc, text: []const u8) !*ast.Expr {
+            const node = try e.arena.create(ast.Expr);
+            node.* = .{ .literal = .{ .loc = l, .kind = .{ .stringLit = text } } };
+            return node;
+        }
+        fn number(e: *Env, l: ast.Loc, n: usize) !*ast.Expr {
+            const node = try e.arena.create(ast.Expr);
+            node.* = .{ .literal = .{ .loc = l, .kind = .{ .numberLit = try std.fmt.allocPrint(e.arena, "{d}", .{n}) } } };
+            return node;
+        }
+    };
+    const args = try env.arena.alloc(ast.CallArg, 4);
+    args[0] = .{ .label = "file", .value = try strLit.make(env, loc, env.srcPath) };
+    args[1] = .{ .label = "line", .value = try strLit.number(env, loc, loc.line) };
+    args[2] = .{ .label = "column", .value = try strLit.number(env, loc, loc.col) };
+    args[3] = .{ .label = "fnName", .value = try strLit.make(env, loc, env.currentFnName) };
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = source_location_type_name,
+        .is_builtin = false,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+    try env.srcRewrites.put(loc, rewrite);
+    return inferExprTyped(env, rewrite.*);
 }
 
 /// Evaluate `@makeRecord(fields)` at inference time when `fields` is a literal
@@ -5115,7 +5286,13 @@ fn resolveReturnType(
 /// Used when the type ref appears inside a generic context (record/enum registration).
 fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHashMap(*T.Type)) InferError!*T.Type {
     switch (ref) {
-        .named => |n| return env.resolveTypeName(n, genericMap),
+        .named => |n| {
+            // The builtin record is declared in a prelude the backends never
+            // see; a module that names it gets its declaration spliced in
+            // (`comptime.zig`, `withSourceLocationDecl`).
+            if (std.mem.eql(u8, n, source_location_type_name)) env.usesSourceLocation = true;
+            return env.resolveTypeName(n, genericMap);
+        },
         .array => |elem| {
             const elemTy = try resolveTypeRefInContext(env, elem.*, genericMap);
             const args = try env.arena.alloc(*T.Type, 1);
@@ -6817,6 +6994,10 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     } else if (!isCatchForm and !valIsResult) {
                         try env.result_jump_lowerings.put(loc, .wrap_ok);
                     }
+                } else {
+                    // A bare `return;` is the `ok` position of a
+                    // `-> @Result<void, E>` (decision 74): `{ok, null}`.
+                    try env.result_jump_lowerings.put(loc, .wrap_ok);
                 }
             }
             // §1F F4F-T1 — inside `#[@future]`, a bare `return <t>;` is the
@@ -8228,6 +8409,16 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
     }
     return switch (c.kind) {
         .call => |call| {
+            // `@src()` (1.0.10-beta decision 73) — before the arguments are
+            // inferred, so `@src(x)` reports the builtin's rule and not `x`.
+            if (call.is_builtin and std.mem.eql(u8, call.callee, "src")) {
+                return inferSrcBuiltin(env, call, loc);
+            }
+            // A hand-written `SourceLocation(file: …, …)` needs the record
+            // declaration spliced in exactly like the rewrite does.
+            if (call.receiver == null and !call.is_builtin and std.mem.eql(u8, call.callee, source_location_type_name)) {
+                env.usesSourceLocation = true;
+            }
             // Method calls carry a receiver expression — infer it first.
             // Exception: a `"std"` module receiver (`bool.negate(x)`) or the
             // builtin `result` namespace (`result.map(r, f)`) is a namespace,
@@ -8305,7 +8496,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         return result;
                     }
                 }
-                const retType = try inferBuiltinCallReturnType(env, call.callee, typedArgs, typedTrailing);
+                const retType = try inferBuiltinCallReturnType(env, call.callee, typedArgs, typedTrailing, loc);
                 return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
                     .receiver = null,
                     .callee = call.callee,

@@ -211,6 +211,7 @@ pub fn loadDependencies(
         for (modules.items) |m| {
             gpa.free(m.path);
             gpa.free(m.source);
+            gpa.free(m.srcPath);
         }
         modules.deinit(gpa);
     }
@@ -325,8 +326,13 @@ fn loadOne(
         const stem = stripSourceExt(file);
         const mod_path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ dep, stem });
         errdefer gpa.free(mod_path);
+        // `@src().file` (decision 73) is relative to the dependency's own
+        // package root: `<manifest.src>/<file>`.
+        const src_path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ manifest.src, file });
+        errdefer gpa.free(src_path);
+        std.mem.replaceScalar(u8, src_path, '\\', '/');
 
-        try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file) });
+        try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file), .srcPath = src_path });
     }
 }
 
@@ -388,6 +394,7 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
     for (modules) |m| {
         gpa.free(m.path);
         gpa.free(m.source);
+        gpa.free(m.srcPath);
     }
     gpa.free(modules);
 }
@@ -1018,6 +1025,7 @@ test "loadOne: std resolves from the bundled root, rakun from the sibling root; 
         for (out.items) |m| {
             gpa.free(m.path);
             gpa.free(m.source);
+            gpa.free(m.srcPath);
         }
         out.deinit(gpa);
     }
@@ -1054,6 +1062,7 @@ test "loadOne: falls back to fallback_roots when not in regular roots" {
         for (out.items) |m| {
             gpa.free(m.path);
             gpa.free(m.source);
+            gpa.free(m.srcPath);
         }
         out.deinit(gpa);
     }
@@ -1084,6 +1093,7 @@ test "loadOne: a files entry that does not exist is LibFileNotFound, located in 
         for (out.items) |m| {
             gpa.free(m.path);
             gpa.free(m.source);
+            gpa.free(m.srcPath);
         }
         out.deinit(gpa);
     }

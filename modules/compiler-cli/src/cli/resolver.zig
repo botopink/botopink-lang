@@ -149,9 +149,18 @@ pub fn resolve(
             gpa.free(source);
             return Error.OutOfMemory;
         };
-        modules.append(gpa, .{ .path = logical, .source = source }) catch {
+        // `@src().file` (1.0.10-beta decision 73): `item.file` is already the
+        // package-root-relative path with its extension (`src/shapes/circle.bp`).
+        const src_path = gpa.dupe(u8, item.file) catch {
             gpa.free(source);
             gpa.free(logical);
+            return Error.OutOfMemory;
+        };
+        std.mem.replaceScalar(u8, src_path, '\\', '/');
+        modules.append(gpa, .{ .path = logical, .source = source, .srcPath = src_path }) catch {
+            gpa.free(source);
+            gpa.free(logical);
+            gpa.free(src_path);
             return Error.OutOfMemory;
         };
         try nodes.append(sa, .{ .is_pub = item.is_pub, .parent = item.parent });
@@ -805,6 +814,7 @@ fn freeAccumulated(gpa: std.mem.Allocator, modules: *std.ArrayListUnmanaged(Modu
     for (modules.items) |m| {
         gpa.free(m.path);
         gpa.free(m.source);
+        gpa.free(m.srcPath);
     }
     modules.deinit(gpa);
 }
@@ -814,6 +824,7 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
     for (modules) |m| {
         gpa.free(m.path);
         gpa.free(m.source);
+        gpa.free(m.srcPath);
     }
     gpa.free(modules);
 }

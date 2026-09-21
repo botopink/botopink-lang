@@ -56,5 +56,11 @@ cli/
 
 - Project `src/` is loaded through `sources.zig` (explicit module tree); the flat
   `test/` suite dir keeps the deterministic `scanner.zig` walk (sort by path).
+- Every loader fills `Module.srcPath` — the package-root-relative path with its
+  extension and forward slashes, which is what `@src().file` answers (1.0.10-beta
+  decision 73): `resolver.zig` uses the file it read (`src/shapes/circle.bp`),
+  `scanner.zig` the scan dir plus the entry (`test/color_test.bp`), `libs.zig`
+  `<manifest.src>/<file>` relative to the dependency's own root. It is gpa-owned
+  like `path`/`source`; every `freeModules`/`free` releases it.
 - Errors, warnings, and hints go through `reporter.zig` so output style stays
   consistent (`error: …` / `warning: …` / `hint: …`).

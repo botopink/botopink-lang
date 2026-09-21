@@ -592,7 +592,42 @@ fn notReady() -> i32 { @todo(); }
 ```
 
 Other builtins (`@panic`, `@field`, `@emit`, …) are declared in
-`libs/std/src/builtins.d.bp` and `libs/std/src/builtins_fns.d.bp`.
+`libs/std/src/builtins.d.bp` and `libs/std/src/builtins_fns.d.bp`. Builtin
+names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
+(with the nearest name when one is an edit away), never a silent `void`.
+
+### `@src()` and `SourceLocation`
+
+```botopink
+// A builtin record every module sees:
+//   type SourceLocation(file: string, line: i32, column: i32, fnName: string)
+
+fn where() -> SourceLocation {
+    return @src();
+}
+
+test "src: a test knows its own name" {
+    val loc = @src();
+    @print(loc.file, loc.line, loc.column, loc.fnName);
+    // src/example.bp 10 15 src: a test knows its own name
+}
+```
+
+`@src()` is the place it is written, evaluated at compile time: the four
+fields are literals at the call site and the expression costs nothing at run
+time — every backend emits the same code it emits for the constructor call
+`SourceLocation(file: "…", line: N, column: C, fnName: "…")`.
+
+| Field | Value |
+|---|---|
+| `file` | the source file relative to the root of its package, forward slashes, with extension (`src/emilia.bp`, `test/color_test.bp`) |
+| `line`, `column` | 1-based position of the `@` — the numbers a diagnostic prints |
+| `fnName` | the enclosing `fn`'s name; `Type.method` inside a method; the test name inside `test "…" { }` (`test_<idx>` for an anonymous block); `""` at module level. A lambda does not change it |
+
+`@src()` takes no arguments and no trailing lambda (`@src(1)` is
+`error[src-takes-no-arguments]`). It is a value like any other: `@src().line`
+reads a field in place. Its consumer is the test contract — `std/asserts`
+messages and `std/snapshots` paths are computed from the caller's `@src()`.
 
 ## Tests
 
@@ -604,6 +639,26 @@ test "addition works" {
 
 Test blocks are declared at module level. Run with `botopink test`
 (`--target`, `--filter <substring>`).
+
+A test body is a **fallible context**: a `try` whose operand is an `Error(e)`
+ends the test as `FAIL <name>  (<e>)  at <file>:<line>` — `e` is the message
+(a non-string `e` is rendered) and the `at` is the test's own line. The
+statements after the failed `try` do not run; a `try` inside a lambda is the
+lambda's, not the test's. An assertion helper is therefore an ordinary
+`#[@result] fn … -> @Result<void, string>` whose `ok` position is the empty
+`return;`:
+
+```botopink
+#[@result]
+fn isPositive(n: i32) -> @Result<void, string> {
+    if (n <= 0) { throw "asserts.isPositive: value not positive"; };
+    return;
+}
+
+test "t: a propagated error fails the test" {
+    try isPositive(-1);     // FAIL t: a propagated error fails the test  (asserts.isPositive: value not positive)  at src/main.bp:12
+}
+```
 
 ## Backends
 

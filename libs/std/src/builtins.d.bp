@@ -412,6 +412,36 @@ pub behavior Expr<E> {
     fn failAt(self: Self, span: Span, message: string);
 }
 
+// ── Source location (`@src()`) ───────────────────────────────────────────────
+// The place a `@src()` is written, as a value (1.0.10-beta decision 73). The
+// builtin is evaluated at compile time: the checker rewrites `@src()` into the
+// ordinary constructor call `SourceLocation(file: "…", line: N, column: C,
+// fnName: "…")` with four literals, so every backend lowers it through its
+// record-constructor path and nothing runs at run time.
+//
+//   file    — the source file relative to the root of the package it belongs
+//             to, forward slashes, extension included (`src/emilia.bp`,
+//             `test/color_test.bp`); `main.bp` in the compiler's own harness.
+//   line    — 1-based line of the `@` character.
+//   column  — 1-based column of the `@` character (what a diagnostic prints).
+//   fnName  — the enclosing fn's name; `Type.method` inside a method; the test
+//             name inside `test "…" { }` (`test_<idx>` for an anonymous
+//             block); `""` at module level. A lambda does not change it.
+//
+// `@src()` takes no arguments and no trailing lambda — `@src(x)` is
+// `error[src-takes-no-arguments]`. It is a value like any other, so
+// `@src().line` reads a field in place. `std/asserts` and `std/snapshots`
+// are written against the caller's `@src()`: a helper never takes its own.
+//
+// The declaration the checker registers is the one in `comptime.zig`'s
+// `decl_reflection_src`; keep the two in sync.
+pub type SourceLocation(
+    file: string,
+    line: i32,
+    column: i32,
+    fnName: string,
+)
+
 // ── Decl reflection model (annotation processors) ────────────────────────────
 // Read-only reflection of the declaration a decorator is attached to. A decorator
 // is an ordinary comptime function whose first parameter is `comptime _: Decl`;
