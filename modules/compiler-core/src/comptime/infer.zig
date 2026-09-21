@@ -1906,29 +1906,38 @@ fn looksNumeric(s: []const u8) bool {
 
 // ── pass 2: declaration inference ────────────────────────────────────────────
 
-/// Build a signature name for a record declaration binding.
-/// Format: `"record { f1: T1, f2: T2 }"` ---- fields inline, body omitted.
+/// Build a signature name for a record declaration binding — the 1.0.3
+/// surface, which is what hover, completion and signature help print for the
+/// constructor: `"type Name<G>(f1: T1, f2: T2)"`, fields inline, body omitted.
+/// It is the name of the binding's *type*, not of the record — the instances
+/// are `named` by `r.name` alone — so the spelling is free to follow the
+/// document; `record { … }` was the pre-1.0.3 surface, which no longer parses.
 fn buildRecordDeclName(env: *Env, r: ast.TypeDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(env.arena, "record");
-    if (r.genericParams.len > 0) {
-        try buf.appendSlice(env.arena, " <");
-        for (r.genericParams, 0..) |gp, i| {
-            if (i > 0) try buf.appendSlice(env.arena, ", ");
-            try buf.appendSlice(env.arena, gp.name);
-        }
-        try buf.append(env.arena, '>');
-    }
-    try buf.appendSlice(env.arena, " { ");
+    try buf.appendSlice(env.arena, "type ");
+    try buf.appendSlice(env.arena, r.name);
+    try appendGenericParamsStr(&buf, env.arena, r.genericParams);
+    try buf.append(env.arena, '(');
     for (r.recordFields(), 0..) |f, i| {
         if (i > 0) try buf.appendSlice(env.arena, ", ");
         try buf.appendSlice(env.arena, f.name);
         try buf.appendSlice(env.arena, ": ");
         try appendTypeRefStr(&buf, env.arena, f.typeRef);
     }
-    try buf.append(env.arena, ' ');
-    try buf.appendSlice(env.arena, "}");
+    try buf.append(env.arena, ')');
     return try buf.toOwnedSlice(env.arena);
+}
+
+/// `<A, B>` after a declaration's name, or nothing when it has no generics —
+/// the 1.0.3 spelling shared by the three declaration-name builders.
+fn appendGenericParamsStr(buf: *std.ArrayList(u8), arena: std.mem.Allocator, params: anytype) !void {
+    if (params.len == 0) return;
+    try buf.append(arena, '<');
+    for (params, 0..) |gp, i| {
+        if (i > 0) try buf.appendSlice(arena, ", ");
+        try buf.appendSlice(arena, gp.name);
+    }
+    try buf.append(arena, '>');
 }
 
 /// Build a signature name for a struct declaration binding.
@@ -1965,19 +1974,13 @@ fn buildStructDeclName(env: *Env, s: ast.StructDecl) ![]const u8 {
     return try buf.toOwnedSlice(env.arena);
 }
 
-/// Build a signature name for an interface declaration binding.
-/// Format: `"interface {\n    fn method(params)\n}"` ---- methods and fields.
+/// Build a signature name for a behavior declaration binding — the 1.0.3
+/// surface: `"behavior Name<G> {\n    val x: T;\n    fn method(params);\n}"`.
 fn buildInterfaceDeclName(env: *Env, d: ast.BehaviorDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(env.arena, "interface");
-    if (d.genericParams.len > 0) {
-        try buf.appendSlice(env.arena, " <");
-        for (d.genericParams, 0..) |gp, i| {
-            if (i > 0) try buf.appendSlice(env.arena, ", ");
-            try buf.appendSlice(env.arena, gp.name);
-        }
-        try buf.append(env.arena, '>');
-    }
+    try buf.appendSlice(env.arena, "behavior ");
+    try buf.appendSlice(env.arena, d.name);
+    try appendGenericParamsStr(&buf, env.arena, d.genericParams);
     try buf.appendSlice(env.arena, " {\n");
     for (d.fields) |f| {
         try buf.appendSlice(env.arena, "    val ");
@@ -2008,22 +2011,17 @@ fn buildInterfaceDeclName(env: *Env, d: ast.BehaviorDecl) ![]const u8 {
     return try buf.toOwnedSlice(env.arena);
 }
 
-/// Build a signature name for an enum declaration binding.
-/// Format: `"enum {\n    Variant,\n    Variant(field: Type),\n}\n"`
+/// Build a signature name for an enum declaration binding — the 1.0.3
+/// surface, compact as the formatter prints it:
+/// `"type Name<G> { Variant, Variant(field: Type) }"`.
 fn buildEnumDeclName(env: *Env, e: ast.TypeDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(env.arena, "enum");
-    if (e.genericParams.len > 0) {
-        try buf.appendSlice(env.arena, " <");
-        for (e.genericParams, 0..) |gp, i| {
-            if (i > 0) try buf.appendSlice(env.arena, ", ");
-            try buf.appendSlice(env.arena, gp.name);
-        }
-        try buf.append(env.arena, '>');
-    }
-    try buf.appendSlice(env.arena, " {\n");
-    for (e.variants()) |v| {
-        try buf.appendSlice(env.arena, "    ");
+    try buf.appendSlice(env.arena, "type ");
+    try buf.appendSlice(env.arena, e.name);
+    try appendGenericParamsStr(&buf, env.arena, e.genericParams);
+    try buf.appendSlice(env.arena, " { ");
+    for (e.variants(), 0..) |v, vi| {
+        if (vi > 0) try buf.appendSlice(env.arena, ", ");
         try buf.appendSlice(env.arena, v.name);
         if (v.fields.len > 0) {
             try buf.append(env.arena, '(');
@@ -2035,9 +2033,8 @@ fn buildEnumDeclName(env: *Env, e: ast.TypeDecl) ![]const u8 {
             }
             try buf.append(env.arena, ')');
         }
-        try buf.appendSlice(env.arena, ",\n");
     }
-    try buf.append(env.arena, '}');
+    try buf.appendSlice(env.arena, " }");
     return try buf.toOwnedSlice(env.arena);
 }
 

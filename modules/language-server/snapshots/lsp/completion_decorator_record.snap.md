@@ -14,5 +14,5 @@ val usePost = PostService;
 
 ----- COMPLETION at (line 8, char 14)
 service  [Function]  detail: fn(Decl) -> void
-PostService  [Struct]  detail: record { name: string, count: i32 }
+PostService  [Struct]  detail: type PostService(name: string, count: i32)
 other  [Variable]  detail: i32
