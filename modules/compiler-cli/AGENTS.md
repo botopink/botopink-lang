@@ -195,7 +195,7 @@ What each command promises. A row the code does not meet yet is marked
 | `build [--target T] [--out D] [--typescript]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<stem><ext>` for every module that compiled (+ `.d.ts`, + `.mjs` sidecars on commonJS); the previous artifact of a module that did not compile is deleted. The **stem** is the module ATOM under `D/erl/` or `D/beam/` for the erlang and BEAM targets (`std/math` → `D/erl/std@math.erl`), because `erlc` refuses a `-module` atom that differs from its file's basename; commonJS, its `.d.ts` and wasm keep the mirrored `D/<module path>` tree, because a `require` target and a wasm import segment ARE the module path (`cli/build.zig` `artifactPath`/`targetSubdir`) | nothing — `codegen.generateWith(…, .{ .execute = false })` emits without running the program | every module compiled and its artifact is on disk | no project, unsupported target, unresolvable tree or dependency, or **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` |
 | `run [--target T] [--module M] [--out D] [-- args…]` | what `build` reads | what `build` writes, into `D` | `node` / `wasmtime` on `D/M.<ext>`; on **erlang** `erlc -o D/erl` over every emitted `.erl` and then `erl -noshell -pa D/erl -eval "M:main([]), halt()."` (`beam` only prints the `erlc +from_asm` hint) | the program's own 0 | `build`'s code, or the program's — on erlang a **crash is `1`**, `erl`'s status, where `escript` used to exit `127` (see "the erlang runner reaches one module") |
 | `check [<path>]` | `botopink.json`, `src/` **and** `test/`, dependencies — in `<path>` when given | nothing | `erl` (comptime) | every module type-checks | at least one diagnostic, each with file, line and excerpt; failing modules named |
-| `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/**`, emptied first | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed | a module failed to compile, or a test failed; the modules that compiled still ran their tests and are reported |
+| `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/<target>/<id>/**` — one directory per RUN and per TARGET (`id` is 64 random bits), removed again when the run ends. Never the shared `test-out/` root: `botopink-lib-test` runs every cell with `cwd = <lib dir>`, so two gates over one library checkout used to empty each other's output mid-run and red a library nobody owned | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed | a module failed to compile, or a test failed; the modules that compiled still ran their tests and are reported |
 | `format [paths…]` | the files and directories named, else the current directory — every `.bp` **and** `.d.bp` under it (`src/**`, `test/**`, `examples/**`, the projects nested inside), not entering hidden directories or `node_modules`, and not reaching a `reject/<n>.bp` that has its `<n>.expect` beside it (the language suite's rejected program — decision 66; the exemption is the directory's shape, decision 67: no skip list, pragma or environment variable) | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
 | `format --check [paths…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change (one `Formatted <path>` line each, then `N file(s) would be reformatted`), or could not be read, lexed or parsed. `scripts/format-check.sh` (gate stage 3, CI) calls it over the compiler's canonical trees |
 | `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
@@ -254,6 +254,18 @@ Cross-command rules:
   each test module once, through its runner). Only the codegen snapshot harness
   executes (`codegen.generate`, which sets the flag). Pinned by
   `tests/cli_contract.sh`.
+- **Two runs in one checkout do not empty each other's output.** `botopink test`
+  writes to `.botopinkbuild/test-out/<target>/<id>/` — per target and per run,
+  `id` being 64 random bits — and removes that directory when the run ends; the
+  shared `test-out/` root is never written to directly. `botopink-lib-test`
+  runs every cell with `cwd = <lib dir>`, so two gates over one library checkout
+  (two worktrees, or a gate and a hand-run `botopink test`) used to empty each
+  other's output mid-run and leave the loser reporting a library red owned by
+  nobody: `Cannot find module …/x_test.js` under node, or an `{error,undef}`
+  storm under escript once the `.erl` siblings its runner loads had been
+  replaced by the other target's `.js`. Pinned by row C3b of
+  `tests/cli_contract.sh`, which reds against a pre-fix binary
+  (`BOTOPINK_BIN=<old>`).
 - **The scaffold runs.** `botopink new` writes a program whose `main` calls
   `@print`. A block's value is its `break` (semantics decision 2), so the old
   template — a body whose only statement was the literal `"Hello, world!"` —

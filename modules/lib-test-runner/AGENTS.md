@@ -212,8 +212,12 @@ a key should ignore it.
 
 - **Orchestrate, don't reimplement.** Per-lib isolation falls out of spawning a
   child with `cwd = <lib_dir>` (the lib's own directory, under any resolved root):
-  `botopink test` reads that lib's `botopink.json` and writes its own
-  `.botopinkbuild/test-out/`. No global-cwd juggling.
+  `botopink test` reads that lib's `botopink.json` and writes under that lib's
+  own `.botopinkbuild/test-out/`. No global-cwd juggling. Per-lib is NOT
+  per-run, though: that directory belongs to the checkout, which two gates
+  share, so the child scopes its output one level further — per target and per
+  run, `.botopinkbuild/test-out/<target>/<id>/`, the way `compileCell` already
+  writes `.botopinkbuild/lib-test-build/<target>`.
 - **Unsupported-target detection is child-driven**, not a hard-coded list: the
   runner scans the child's output for `"currently supports only"`. The moment
   `botopink test` learns `beam`/`wasm`, that target stops being skipped here with
