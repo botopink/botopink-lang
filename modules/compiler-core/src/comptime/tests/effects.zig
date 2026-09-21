@@ -515,3 +515,288 @@ test "context: Element[] coerces into Children" {
         \\val text = div("hello");
     );
 }
+
+// ── decision 95: the effects are a chain ──────────────────────────────────────
+//
+// `@Context` ⊃ `@Future` ⊃ `@Result`, `@FutureGenerator` ⊃ `@Future`,
+// `@Iterator` ⊃ `@Result`, and an annotation grants every body operation at or
+// below its own level. The order itself is `comptime/effect_chain.zig`'s unit
+// tests (and its drift gate against `libs/std/src/builtins.d.bp`); what follows
+// is the order as the CHECKER applies it — one cell per granted capability and
+// one per refusal, since a rule that only a table believes is not a rule.
+//
+// `tests/language` carries the half of this that RUNS. One row cannot: `await`
+// inside a `#[@context]` body is legal here and executes on erlang, wasm and
+// beam, but commonJS lowers `#[@context]` to a plain `function` and the emitted
+// `await` is a JS SyntaxError. The legality is this front's; the `async`
+// keyword is the backend's, and the row is a handoff rather than a capability
+// left refused.
+
+const chain_preamble =
+    \\val Element = type implement @Context<Element, Element> { }
+    \\fn state(initial: i32) -> @Context<Element, i32> {
+    \\    initial;
+    \\}
+    \\#[@result]
+    \\fn parse(n: i32) -> @Result<i32, string> {
+    \\    return n;
+    \\}
+    \\#[@future]
+    \\fn fetch(n: i32) -> @Future<i32> {
+    \\    return n;
+    \\}
+    \\
+;
+
+test "chain: #[@result] is the base — it answers `try`" {
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\#[@result]
+        \\fn doubled(n: i32) -> @Result<i32, string> {
+        \\    val v = try parse(n);
+        \\    return v * 2;
+        \\}
+    );
+}
+
+test "chain: #[@future] implements @Result — it answers `try` and `await`" {
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\#[@future]
+        \\fn load(n: i32) -> @Future<i32> {
+        \\    val v = try parse(n);
+        \\    val w = await fetch(v);
+        \\    return w;
+        \\}
+    );
+}
+
+test "chain: #[@iterator] implements @Result — it answers `try` and `yield`" {
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\#[@iterator]
+        \\fn upTo(n: i32) -> @Iterator<i32> {
+        \\    val limit = try parse(n);
+        \\    yield limit;
+        \\}
+    );
+}
+
+test "chain: #[@futureGenerator] implements @Future — `try`, `await`, `yield`" {
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\#[@futureGenerator]
+        \\fn stream(n: i32) -> @FutureGenerator<i32, string> {
+        \\    val v = try parse(n);
+        \\    val w = await fetch(v);
+        \\    yield w;
+        \\}
+    );
+}
+
+test "chain: #[@context] implements @Future implements @Result — `use`, `await`, `try`" {
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\#[@context]
+        \\fn Widget(n: i32) -> Element {
+        \\    val c = use state(0);
+        \\    val v = try parse(n);
+        \\    val w = await fetch(v);
+        \\    return Element();
+        \\}
+    );
+}
+
+// Question 97 — `@Generator<T, R>` has no error channel and stays out of the
+// chain. Its cell asserts the REFUSAL, not a capability: the recommendation is
+// to keep the generator infallible until a body needs otherwise, since the
+// defaulted parameter can be added later and never removed.
+test "chain error: `try` inside #[@generator] — question 97 keeps it refused" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
+        \\#[@generator]
+        \\fn counted(n: i32) -> @Generator<i32, void> {
+        \\    val v = try parse(n);
+        \\    yield v;
+        \\}
+    );
+}
+
+// The chain grants downwards and never upwards: one cell per capability written
+// one level above the body that holds it.
+test "chain error: `try` in a plain fn — no effect, no error channel" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
+        \\fn plain(n: i32) -> i32 {
+        \\    val v = try parse(n);
+        \\    return v;
+        \\}
+    );
+}
+
+test "chain error: `await` inside #[@iterator] — @Iterator does not implement @Future" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
+        \\#[@iterator]
+        \\fn bad(n: i32) -> @Iterator<i32> {
+        \\    val w = await fetch(n);
+        \\    yield w;
+        \\}
+    );
+}
+
+test "chain error: `yield` inside #[@result] — `yield` is no level of the chain" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
+        \\#[@result]
+        \\fn bad(n: i32) -> @Result<i32, string> {
+        \\    yield n;
+        \\}
+    );
+}
+
+test "chain error: `yield` inside #[@context] — the top of the chain still cannot yield" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
+        \\#[@context]
+        \\fn Bad(n: i32) -> Element {
+        \\    yield n;
+        \\}
+    );
+}
+
+// The `yield` gate asks which scope the `yield` targets before it asks the
+// chain, exactly as the `break` gate does (§1I REGRAS DE ESCOPO). A `yield`
+// inside a loop feeds that loop's array — decision 8 § 10's comprehension —
+// and is legal in any body, which is what these two cells pin from both sides.
+test "chain: a loop comprehension yields in a body the chain grants no `yield`" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\#[@future]
+        \\fn collected() -> @Future<i32[]> {
+        \\    val xs = loop ([1, 2, 3]) { x -> yield x * 2; };
+        \\    return xs;
+        \\}
+        \\#[@result]
+        \\fn counted() -> @Result<i32[], string> {
+        \\    var i = 0;
+        \\    val xs = loop (i < 3) { i = i + 1; yield i; };
+        \\    return xs;
+        \\}
+    );
+}
+
+test "chain: `try … catch` needs no channel — it propagates nothing" {
+    // The gated form is bare `try`, which RETURNS the error out of the body.
+    // `try <e> catch <f>` handles it on the spot, so a plain `fn` may hold it.
+    try h.assertInfersOk(std.testing.allocator, chain_preamble ++
+        \\fn plain(n: i32) -> i32 {
+        \\    val v = try parse(n) catch 0;
+        \\    return v;
+        \\}
+    );
+}
+
+// ── decision 96: one ContextBase per function ─────────────────────────────────
+//
+// The anchor is a property of the BODY, not of each activation: the first `use`
+// fixes it and every later one must agree. Two refusals live here and they are
+// not the same rule —
+//
+//   RC2 (`context-anchor-violation: function returns …`) is the DECLARATION's:
+//   one `use` anchored at a base the return type never named. It fires before
+//   any anchor exists, which is why a single misanchored `use` still meets it.
+//
+//   Decision 96's (`… every `use` in one function resolves against the same
+//   ContextBase`) is the BODY's: a second `use` disagreeing with the first,
+//   refused at its own site with both bases and the line that fixed the anchor.
+//
+// Measured while implementing this: the premise decision 96 corrects —
+// "today RC2 asks only that a hook be anchored at a SUBTYPE of the body's
+// Base, so two different subtypes can meet in one function" — was true of the
+// documentation (`builtins.d.bp` § 1C, which front 20 step 2 rewrote) and never
+// of the checker, which has always compared the two names for equality. What
+// this step adds is the anchor as a thing the body owns, and the refusal that
+// says which `use` committed it.
+
+test "anchor: a body whose hooks share a base compiles" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\fn memo(value: i32) -> @Context<Element, i32> {
+        \\    value;
+        \\}
+        \\#[@context]
+        \\fn Widget() -> Element {
+        \\    val a = use state(0);
+        \\    val b = use memo(a);
+        \\    return Element();
+        \\}
+    );
+}
+
+test "anchor error: two `use`s at different bases in one body (decision 96)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\val Http = type implement @Context<Http, Http> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\fn connection() -> @Context<Http, i32> {
+        \\    initial;
+        \\}
+        \\#[@context]
+        \\fn Mixed() -> Element {
+        \\    val a = use state(0);
+        \\    val b = use connection();
+        \\    return Element();
+        \\}
+    );
+}
+
+test "anchor: each body starts over — a sibling fn may anchor elsewhere" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Element = type implement @Context<Element, Element> { }
+        \\val Http = type implement @Context<Http, Http> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\fn connection() -> @Context<Http, i32> {
+        \\    initial;
+        \\}
+        \\#[@context]
+        \\fn Widget() -> Element {
+        \\    val a = use state(0);
+        \\    return Element();
+        \\}
+        \\#[@context]
+        \\fn Server() -> Http {
+        \\    val c = use connection();
+        \\    return Http();
+        \\}
+    );
+}
+
+// ── front 20 F12: what `-> Iterator<T, E, C>` means on a behavior method ──────
+//
+// `Iterable.iter(self: Self) -> Iterator<T, E, C>` looked like a behavior
+// escaping into value position, and is not: every effect wrapper IS a
+// `behavior` (`Future`, `Generator`, `Iterator`, `FutureGenerator`, `Context`),
+// and returning one is what every effect signature in the language does. What
+// makes the line look unlike its neighbours is only that a `behavior` method is
+// DECLARATIVE — it expresses its effect through the return wrapper alone and
+// carries no `#[@iterator]` (using one there is the R1/R2 error) — so the
+// wrapper appears without the marker that usually accompanies it. The
+// annotation belongs to the implementation.
+//
+// This is a comptime cell rather than a `tests/language` one because the shape
+// does not RUN on commonJS: an effect annotation on a record METHOD is ignored
+// by `commonJS.zig`'s `fnKeyword`, which reads `ast.FnDecl.effect` and never
+// sees a method, so `#[@iterator] fn iter` emits as a plain `iter() { … }`
+// rather than `*iter() { … }` and the caller's `for (const x of b.iter())`
+// reds at run time. erlang runs it. That is a lowering gap and belongs to the
+// backend's own front; front 20 records it here and in the report rather than
+// committing a cell it would have to list against an owner row that does not
+// exist.
+
+test "F12: a type satisfies Iterable with a #[@iterator] fn iter" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Bag(items: i32[]) implement Iterable<i32> {
+        \\    #[@iterator]
+        \\    fn iter(self: Self) -> @Iterator<i32> {
+        \\        loop (self.items) { x -> yield x; };
+        \\    }
+        \\}
+    );
+}

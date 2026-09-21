@@ -449,3 +449,37 @@ test "js: record ---- a field of function type is called like a method" {
         \\}
     );
 }
+
+// 04-js — the same rename, on a lambda's parameter. `String.contains` is
+// declared `#[@External.Node("includes")]`, and the call-site rename that reads
+// that annotation fires only on a receiver inference resolved to a primitive. A
+// lambda ARGUMENT was inferred with fresh variables for its parameters —
+// nothing pushed the receiver's element type down into it — so inside the
+// lambda the receiver was an unresolved variable, the rename never fired, and
+// node died with `e.name.contains is not a function`. Measured by emilia's
+// theme front; the fix reads the method's declared signature out of
+// `libs/std/src/primitives.bp` (`filter(self, pred: fn(item: T) -> bool)`)
+// before the arguments are inferred.
+//
+// A RUN LOG plus the shapes, not a snapshot: only commonJS renames, and the
+// other backends' baselines of this program are not this front's to record.
+test "js: dispatch ---- a string method on a lambda's parameter renames too" {
+    const src =
+        \\type Item(name: string)
+        \\fn main() {
+        \\    val names = ["box", "cup", "axe"];
+        \\    @print(names.filter({ s -> s.contains("x") }).join(","));
+        \\    val items = [Item(name: "box"), Item(name: "cup"), Item(name: "axe")];
+        \\    @print(items.filter({ e -> e.name.contains("x") }).length);
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "return s.includes(\"x\");",
+        "return e.name.includes(\"x\");",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src,
+        \\box,axe
+        \\2
+        \\
+    );
+}

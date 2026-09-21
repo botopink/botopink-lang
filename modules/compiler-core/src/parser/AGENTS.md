@@ -93,7 +93,7 @@ block that reads something between the `{` and its first statement — a prologu
 |---|---|---|---|
 | fn / `test` body, `fn (…) { … }` expression | — (`parseFnBodyInBraces`) | `requiredExceptLast` | fresh |
 | `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` | inherits |
-| `if` then-branch | `{ x -> ` — the branch's value binding | `requiredExceptLast` | inherits |
+| `if` then-branch | `{ x -> ` or `{ _ -> ` — the branch's value binding | `requiredExceptLast` | inherits |
 | lambda `{ a, b -> … }` | the parameter list | `optional` | fresh |
 | trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `required` | fresh |
 | `loop (…) { x -> … }` body | the parameter list | `required` | inherits |
@@ -122,6 +122,25 @@ not copy the loop.** The semicolon policy is per block and is what each copy
 already applied — they are recorded above rather than unified, because
 tightening one would refuse a program that compiles today.
 
+## The `if` condition and its binder (C-08)
+
+The condition parses at **`prec.lowest`**, not `prec.equality`: `if (a && b)`
+and `if (a || b)` are the conditions they look like, and no compound boolean has
+to be bound to a `val` first. This is the one `prec.equality` call site the
+widening reaches, and the reason is the delimiter — the grammar's own `(` … `)`
+closes the condition, so a looser operator has nowhere to run to. The other
+eleven sites (`comptime <expr>`, the value after `yield [:label]`,
+`ident.field = / += <expr>`, both ends of `parseRangeExpr`, three default-value
+sites in `parser/decls.zig`, the two `case`-subject sites in `parser/patterns.zig`)
+are open-ended and **stay at `prec.equality`**; widening one of them would swallow
+the token that ends the form.
+
+The then-branch's binder accepts `_` as well as a name, and `_` binds the name
+`"_"` — the same discard `val _ = …` records. It is deliberately not a null
+`binding`: a null binding means "this `if` has no binder", and that is what makes
+an `?T` condition the type error `expected bool, got optional`. An author who
+writes `_` is saying the payload is unwanted, not that the condition is a `bool`.
+
 ## A bodyless `fn` declares its return type (decision 33 (b))
 
 A top-level `fn` with no `{ … }` body is a **declaration**, and it is accepted
@@ -143,6 +162,21 @@ The arrowless shortform also stops swallowing a `fn` that is not followed by
 `(`: `fn` begins a `fn(…) -> R` type, so `fn emit(source: string)` followed by
 `fn main() …` used to parse the *next declaration* as this one's return type
 and report the failure there.
+
+## A field and a variant payload are `name: Type` (decision 12, C-08)
+
+`parseFieldList` serves both `type Name(…)` and a variant payload `Variant(…)`,
+and it refuses an element that is not `name: Type` **where the element starts**,
+with `fieldNeedsName` — the diagnostic names `Variant(field: T)`. The test is
+"the current token is a member name AND the one after it is `:`", so the bare
+type (`Circle(i32)`, `Circle(Point)`, `Circle(Box<i32>)`) and the forms that
+cannot even begin with a name (`Circle(?i32)`, `Circle(#(a, b))`) are refused
+alike. Reading past the element instead would report the missing `:` as a stray
+token, which is the unlocated-in-practice diagnostic this replaced: `Circle(i32)`
+used to red at the `)` two tokens later, naming nothing.
+
+The rule is the decision's own reason: a payload nobody can name is a payload no
+`case` arm can bind.
 
 ## Type-ref grammar (`types.zig`)
 
@@ -272,6 +306,14 @@ is `is-missing-type`; the payload-binding form `x is Some(v)` (§4.2) is
 `is-variant-binding`, located at the `(` — the node carries a type, so the
 binding form is refused where it starts instead of failing further along.
 
+`assert <expr> is <Pattern>` has **no production and is not getting one**
+(C-08). `is` answers a `bool`; the form that binds a pattern's names into the
+enclosing scope is `val assert <Pattern> = <expr>;` (decision 8 §9), and a
+second spelling for one meaning is what decision 67 refuses. Three DOCUMENTED
+SKIPs used to pin the parse error and promise the form —
+`comptime/tests/narrowing.zig` ×2 and `codegen/tests/narrowing.zig` ×1; they are
+gone, and `tests/language/reject/assert_is_pattern.bp` pins the refusal instead.
+
 ## `case` arms and patterns (decision 8 §5, 06 N22)
 
 Two arm forms coexist, told apart by the token after the pattern and its
@@ -308,6 +350,33 @@ is a constant; any other lower-case name is a variable. `isPrimitiveTypeName`
 mirrors `Env.registerBuiltins` in `comptime/env.zig`, as the language server's
 `isPrimitiveType` does; keep the three in step. The arrow arm is never judged:
 binding the matched value with a bare name is exactly how it is written today.
+
+### Decision 54 — an optional is matched by `null` and a binder
+
+`null` is a pattern: `parseSimplePattern` lands it as `.ident` carrying the
+keyword's own lexeme, the way `true` and `false` already do. No new `Pattern`
+variant, so no consumer has to learn one — and `null` is a keyword token, so no
+binding can ever carry that name and be mistaken for it.
+
+The arm after a `null` arm is the optional's binder, which is the one place a
+bare lower-case name *is* a pattern. `parseCaseExpr` carries `sawNullArm` and
+passes it to `rejectNonPatternArm`; only the bare-name rewrite is lifted (a
+constant arm is still `case-constant-pattern`). The order is the form: a binder
+written first would match the absent value too, so `null` comes first and the
+parser accepts the binder only after it.
+
+Everything else about the form is the checker's, because it needs the subject's
+type: `optionalNullCaseBinder` (`comptime/infer.zig`) requires the subject to be
+a `?T` and the arms to be exactly two, unguarded, `null` then a binder, and
+narrows the binder to the payload; `refuseVariantPatternOverOptional` refuses
+`.Some(v)` / `.None`. Below inference nothing learns a new pattern at all — the
+comptime transform swaps the whole `case` for the `if (x) { v -> … } else { … }`
+that every backend already lowers (`comptime/transform.zig`
+`rewriteOptionalNullCase`), so the four code generators were not touched.
+
+`CaseArm.patternLoc` exists for this: `Pattern` carries no location, and each of
+the refusals above has to point at the arm. It is left out of the AST dump
+(`jsonStringify`, `omitAlways`), so no `case` snapshot moved.
 
 ### What the formatter does with an arm
 

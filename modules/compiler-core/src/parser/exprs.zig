@@ -156,7 +156,12 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         this.useBranchSeen = true;
 
         _ = try this.consume(.leftParenthesis);
-        const cond = try this.parseBinaryExpr(alloc, prec.equality);
+        // `prec.lowest`, not `prec.equality`: an `if` condition is delimited by
+        // the grammar's own parentheses, so `&&` and `||` have nowhere to run
+        // to and `if (a && b)` reads as the one condition it looks like. This
+        // is the only `prec.equality` call site the delimiter argument reaches;
+        // the other eleven are open-ended and stay where they are.
+        const cond = try this.parseBinaryExpr(alloc, prec.lowest);
         errdefer @constCast(&cond).deinit(alloc);
         _ = try this.consume(.rightParenthesis);
         const condPtr = try this.boxExpr(alloc, cond);
@@ -169,8 +174,16 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
         const then_ = if (this.check(.leftBrace)) blk: {
             _ = this.advance(); // consume `{`
-            if (this.check(.identifier) and this.peekAt(1).kind == .rightArrow) {
-                binding = this.advance().lexeme;
+            // `_ ->` is the binder written to say the payload is not wanted.
+            // It binds the name `_`, the same discard `val _ = …` already
+            // binds (`parseLocalBindExpr`), rather than leaving `binding`
+            // null: a null binding is "this `if` has no binder at all", and
+            // that is what licenses an `?T` condition to be a type error. The
+            // author who writes `_` is saying the payload is unwanted, not
+            // that the condition is a `bool`.
+            if ((this.check(.identifier) or this.check(.underscore)) and this.peekAt(1).kind == .rightArrow) {
+                const binderTok = this.advance();
+                binding = if (binderTok.kind == .underscore) "_" else binderTok.lexeme;
                 _ = this.advance(); // consume `->`
             }
             // The shared block body — same options as `parseStmtListInBraces`,
@@ -251,7 +264,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     //
     // §1I (`frente-b-rules-tooling.md`) extends `break` with an optional
     // `:label` targeting an enclosing labelled loop or `#[@iterator]` /
-    // `#[@asyncGenerator]` fn scope. The bare and value forms keep their old
+    // `#[@futureGenerator]` fn scope. The bare and value forms keep their old
     // shape; `break :name` (no expr) and `break :name <expr>` are the new
     // surface. Unbound labels are caught by the comptime body walk (RI5).
     if (this.check(.@"break")) {
@@ -1788,7 +1801,7 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
 pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
     const loopTok = this.advance(); // consume 'loop'
 
-    // `loop await (iter)` — iterate an `@AsyncIterator`, awaiting each item.
+    // `loop await (iter)` — iterate an `@FutureGenerator`, awaiting each item.
     const awaitLoop = this.match(.await);
 
     // Optional loop label: `loop :acc (iter) { ... }`.

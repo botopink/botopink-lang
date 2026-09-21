@@ -914,19 +914,22 @@ test "format: module-level `var` keeps its keyword and its annotation" {
 }
 
 test "format: an annotation argument keeps its label" {
+    // `inline` is written on the two targets that read it (front 20 F9 —
+    // `erlang.zig` and `beam_asm.zig` each have a `hasExternalInline`; no JS
+    // path ever consulted the one `External.Node` used to declare).
     try h.assertFormat(std.testing.allocator,
         \\#[@BeamMemory.Ets(keyed = true)]
         \\var cache: i32 = 0;
         \\
-        \\#[@External.Node("charAt", inline = true)]
+        \\#[@External.Erlang("string:slice($0, 0, 1)", inline = true)]
         \\pub declare fn f(s: string) -> string;
     );
     // `label: value` is read too, and printed in the one canonical form.
     try h.assertFormatAs(std.testing.allocator,
-        \\#[@External.Node("charAt", inline: true)]
+        \\#[@External.Erlang("string:slice($0, 0, 1)", inline: true)]
         \\pub declare fn f(s: string) -> string;
     ,
-        \\#[@External.Node("charAt", inline = true)]
+        \\#[@External.Erlang("string:slice($0, 0, 1)", inline = true)]
         \\pub declare fn f(s: string) -> string;
     );
 }

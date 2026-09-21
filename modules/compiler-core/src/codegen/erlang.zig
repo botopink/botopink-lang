@@ -3869,7 +3869,7 @@ const Emitter = struct {
         // `#[@context]` is a plain function too: the annotation gates `use`
         // in the body (decision 88); nothing about it is async.
         if (f.effect != null and f.effect.? != .result and f.effect.? != .context) {
-            try out.append(b.arena, .{ .comment = Ast.Comment.doc("#[@future] / #[@asyncGenerator] — eager lowering") });
+            try out.append(b.arena, .{ .comment = Ast.Comment.doc("#[@future] / #[@futureGenerator] — eager lowering") });
         }
         // Fresh local scope for this function (erlang vars are function-scoped).
         this.resetLocals();

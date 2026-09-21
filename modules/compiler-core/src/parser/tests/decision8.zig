@@ -145,11 +145,21 @@ test "decision 8 N21: is does not bind a variant payload" {
         \\1 | fn f(a: unknown) -> bool { return a is Some(v); }
         \\  |                                            ^ remove the payload pattern
         \\  |
-        \\  = hint: Test the variant with `x is Option` and read the payload in a `case` arm: `case x { Option.Some(value: v) { … } }`.
+        \\  = hint: Test the variant with `x is Shape` and read the payload in a `case` arm: `case x { Shape.Circle(radius: r) { … } }`. An optional is not a variant — a `?T` is read with `case x { null { … } v { … } }` (decision 54).
         \\
         \\
     ,
         \\fn f(a: unknown) -> bool { return a is Some(v); }
+    );
+}
+
+// ── decision 54 — the optional's pattern form ────────────────────────────────
+
+test "decision 54: a ?T is matched by null and a binder" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn describe(x: ?i32) -> string {
+        \\    return case x { null { "absent" } v { "present" } };
+        \\}
     );
 }
 

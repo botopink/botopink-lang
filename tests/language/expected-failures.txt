@@ -113,7 +113,6 @@ commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the on
 erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
 erlang   | test/case_unknown.bp       | 01 step 4, 01 step 1, 01 step 3 | arm bodies are not unwrapped, `unknown` is not §2's type and `is` is not typed: "expected string, got union"
 *        | reject/case_shorthand_on_unknown.bp   | 01 step 1, 01 step 5 | rejected by `unknown` assignability, without the "full name" diagnostic
-*        | reject/case_arity_without_rest.bp     | 01 step 4 | rejected for the wrong reason: the missing-field diagnostic is not there
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
 erlang   | run/tuple_print.bp         | 02 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
@@ -292,16 +291,15 @@ beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `
 # that). beam's twin helper is declared and not wired.
 beam     | run/std_erlang_node.bp | C-03 | decision 64: dies at boot — `{undef, [{'std@erlang', node, [], []}, …]}`; `hostDeclareWrapperNeeded` in `beam_asm.zig` is declared and not wired (C-03's beam half)
 
-# ── the optional's pattern form (decision 54) ────────────────────────────────
-# Decision 54, taken 2026-09-18: a `?T` is matched by `null` and a binder, and the
-# variant spelling `.Some(v)` / `.None` over a `?T` becomes a located error. Both
-# halves are one row of 01-checker: step 4 owns pattern grammar as well as arm
-# resolution (the same place decision 36's range edit lands).
-commonJS | run/optional_null_pattern.bp | 01 step 4 | decision 54: the decided spelling does not parse — `error: this token cannot appear here` at `21:22`, `^^^^ unexpected \`null\``. The whole file reds, so the failure is the file's
-erlang   | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error; the file does not compile on any target
-wasm     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
-beam     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
-*        | reject/optional_variant_pattern.bp | 01 step 4 | decision 54: `.Some(v)` / `.None` over a `?i32` is accepted (exit 0) and then answers four different things — `undefined` on commonJS, `0` on wasm, `5` on beam, and `no case clause matching 5` on erlang. The `.expect` phrase is a placeholder for the diagnostic this row writes, per AGENTS.md
+# ── a lambda's expression body is its value ─────────────────────────────────
+# `run/lambda_expression_body.bp` (04-js, this cell's commonJS half landed with
+# it). beam drops the lambda's tail expression the same way commonJS did: four
+# of the five rows answer the atom `ok` — the value of the arm's last statement
+# on erlang terms — and only the accumulator `loop` row survives. It is defect 2
+# of the three `01-checker` handed to the backends ("an arm whose value is its
+# final expression is emitted as a statement"), seen through the lambda rather
+# than through a `case` arm, and measured here for the first time.
+beam     | run/lambda_expression_body.bp | 03 handover 01 | a lambda whose body is an `if` / `case` / condition `loop` / `try … catch` answers the atom `ok`: `ok,ok,ok` on four of the five lines, `1,2,3` on the accumulator `loop`
 
 # ── the module body on wasm and on the BEAM ──────────────────────────────────
 # A module-level `val` is the module body: evaluated once, in declaration order,

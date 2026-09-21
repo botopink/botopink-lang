@@ -41,10 +41,11 @@ comptime/
 |---|---|
 | `types.zig` | All type representations as `union(enum)`. |
 | `env.zig` | Type environment — scopes, builtins + stdlib, `TypeDef.contextBase`, `FnContext`, `TemplateEvalCtx` (`{ io, build_root }`), the `@src()` state (`srcPath` — the package-relative file `Module.srcPath` or `<name>.bp`; `currentFnName` — fn / `Type.method` / test name, set by `inferFnDecl`, `inferTypeMethods`, `inferTestDecl`; `srcRewrites` — call loc → the `SourceLocation(…)` constructor call the transform splices; `usesSourceLocation` — the program named the prelude record, so `comptime.zig` prepends its declaration; `testIndex` — the `test_<idx>` fallback counter), static-extension-dispatch tables (`extensions`, `activations`, `inherentMethods`, `dispatchRewrites`), the `"std"` package tables (`stdModules`: module → fn exports; `stdModuleTypes`: module → pub type decls, registered into the importer by `markStdImports`; `stdModuleFns`: module → fn decls, used by `markStdImports` to reject a `from "std"` import whose `declare fn`s have no `@external` for `Env.target` (`std-unsupported-on-target`); `stdImports`: names imported via `from "std"`, which win over same-named value bindings like the primitive `bool`), the `decorators` table (name → `DecoratorSig{ params, fn_decl }`), and the loc-keyed lowering maps `method_lowerings` (`@Result`/`@Option` methods + the builtin `result` namespace), `result_jump_lowerings` (`return`/`throw` → `__bp_ok`/`__bp_error` in `#[@result]` fns), `jsMethodRenames` (type-directed JS-only renames, e.g. `string.contains` → `includes`, recorded only when the receiver's static type makes a global rename unsafe — `Set` also declares `contains`), and `instanceLowerings` (see `infer.zig`). `valNames` / `bindVal` / `isVal` (decision 38): `bindVal` binds a `val` — local or module-level — and marks the name; `bind` (a `var`, a parameter, a pattern) clears it, and `infer.zig` refuses an assignment to a marked name. |
-| `infer.zig` | Main HM inference: `inferProgramTyped(...) → []TypedBinding`. `registerExtensions` + `resolveReceiverCall` implement static extension dispatch. `registerFnSignatures` (via `buildFnSignatureType`) binds every top-level `fn` signature before any body is inferred, so mutually-recursive / forward-referenced fns resolve. Ends with `validateProgram` — `implement`/interface coverage + getter/setter checks. Top-level `test { … }` bodies type-check like void fn bodies via `inferTestDecl`; `assert cond` unifies `cond` with `bool`. **`@src()`** (1.0.10-beta decision 73): `inferSrcBuiltin` — intercepted in `inferCallExpr` before the arguments are inferred — refuses any argument or trailing lambda (`src-takes-no-arguments`, at the `@`), builds the untyped `SourceLocation(file: env.srcPath, line: L, column: C, fnName: env.currentFnName)` call with four literals, records it in `env.srcRewrites` and infers **it**, so the typed AST carries the record type; a hand-written `SourceLocation(…)` call or annotation sets `env.usesSourceLocation` too. `inferBuiltinCallReturnType`'s fallback is no longer a silent `void`: a name outside `runtime_builtin_names` (`print`/`println`/`debug`/`panic`/`todo`/`trap`/`compilerError`/`module`/`emit`/`is`), the parser's `[]` index sugar and `env.stdlibFnDecls` is `unknown-builtin`, located at the `@`, suggesting the nearest known name when one is an edit away (`editDistanceIsOne`). A bare `return;` inside a `#[@result]` body records `.wrap_ok` too (decision 74 — `-> @Result<void, E>`). `inferTypeMethods` walks record/enum method bodies (generics, `Self`, params) to type the calls and record their lowerings; it is **strict** (06 C9 — it used to swallow `error.TypeError` into `lastError = null`, so a real mismatch inside a method only failed at run time), and it stores the signature of a method that annotates NO return type, taking the return from its body's `return`s (`registerInherentMethodTypes` stores one only for an annotated method). It runs from the TYPED `inferDeclTyped` only — the untyped `inferDecl` never walks method bodies, which is why a method-body row asserts through `assertComptimeCompileError`, not `assertTypeErrorSnap`. A method call on a receiver whose type is a nominal `Env.lookupTypeDef` knows, that no inherent method, behavior member, fn-typed field or primitive dispatch answers, is `unknownMethod` — or `methodNotActive` when a non-activated `implement` block declares it (`typeAnswersMember` / `behaviorDeclaresMember` are what keep an adopted `default fn` and a `#(value, set)`-shaped fn field legal). Everything else stays the permissive fresh var: an unresolved type variable, and a named type the env cannot open (an imported record, a wrapper, a forward reference). Value-receiver instance calls are recorded in `env.instanceLowerings`: `.record <typeName>` or `.prim <PrimKind>` (array/string/bool/int/float — non-JS backends map it to a host op); commonJS ignores the table. `primMethodReturnTypeFromIface` derives a primitive method's return type from its interface signature so chains (`xs.filter(f).at(0)` → `?T`) keep tracking; `length`/`len`/`size` read the interface field. Generic-inference regression guards live in `tests/infer_generics.zig`. A generic enum's unit variant (`Option.None`) carries one fresh var per generic param (C7). `lhs |> f` with `f` a function value types as `f(lhs)`; a pipeline whose RHS arity does not take the piped value is an `arityMismatch` at the RHS (C12). **Tuple labels** (decision 8 §6, 06 N24) live on the `named` type node (`Type.named.labels`), so `instantiateType` carries them — a generic signature (`fn ref<T>() -> #(current: T)`) used to lose them and `r.current` red "this tuple has no element labeled". `row.pop` records a positional rewrite (`row._1`) under `env.enumSectionRewrites`; `inferTupleLabelCall` does the same for a labelled element of FUNCTION type CALLED like a method (`#(value, set: fn(…))`, `c.set(9)` → `c._1(9)`), which the member-access path never saw, and the backends lower `._N(…)` as an index/`element/2`/`call_fun` apply. A constructor call with a `..` spread is a record update: the spread unifies with the record, each labelled arg with the field it names, an unknown label reds at the label (C11). `@RecordKeys(T)` is `array<string>` and `@field(v, "x")` has the field's type (C6). `&&` / `||` / `!` unify TARGET-first and locate at the OPERAND (06 C3): they passed the operand as `unifyAt`'s `a`, so `1 && true` read "expected i32, got bool" with the caret on the whole expression. `-` and `*`/`/`/`%`/`-` constrain their operands to a numeric type (`requireNumericOperand`, permissive for an unresolved type variable and for any name it does not know to be non-numeric): `"a" * "b"` and `-"s"` used to check, since unifying two strings with each other succeeds and `-` constrained nothing. `+` keeps its string concatenation. The branches of an `if` unify only when BOTH end in something that has a value (`stmtsYieldValue`): decision 2 makes a block not-a-value, and unifying a branch that ends in an assignment or a `val`/`var` reds `if (p) { out = …; } else { taking = false; }` with "expected array, got bool" — a shape a library in this repository writes in a `takeWhile`, and the same in a plain fn. Deleting the unification outright waits for the row that removes block-as-value. A condition loop (`loop (cond)` / `loop { … }`, iter typed `bool`) with a parameter is an error at the parameter (N26); a loop that is one only by its type is recorded in `env.conditionLoops`, which `transform.zig` turns into `LoopExpr.condition` for the backends. An unresolved enum-section path points its caret at the first segment that does not resolve (N17). **Decision 38 — a `val` is immutable**, local or module-level: `refuseValAssign` (at the assignment's `.name` target) reds `` `x` is a `val` and cannot be assigned `` with a hint naming `var x = …`; it used to check and then throw on node (`const`), not compile on erlang and not validate on wasm. **Front 17 step 3** — `validateMemoryAnnotations` checks every `#[@BeamMemory.<member>]` on a module binding: the binding is a `var`; the member is `ProcessDict`, `Ets` or `PersistentTerm`; every argument is `keyed` with `true`/`false`; and `keyed = true` needs a `Dict` (decision 51 — an `i32` or a list has no key). Steps 4–5 (the BEAM lowering) are not started. |
+| `infer.zig` | Main HM inference: `inferProgramTyped(...) → []TypedBinding`. `registerExtensions` + `resolveReceiverCall` implement static extension dispatch. `registerFnSignatures` (via `buildFnSignatureType`) binds every top-level `fn` signature before any body is inferred, so mutually-recursive / forward-referenced fns resolve. Ends with `validateProgram` — `implement`/interface coverage + getter/setter checks. Top-level `test { … }` bodies type-check like void fn bodies via `inferTestDecl`; `assert cond` unifies `cond` with `bool`. **`@src()`** (1.0.10-beta decision 73): `inferSrcBuiltin` — intercepted in `inferCallExpr` before the arguments are inferred — refuses any argument or trailing lambda (`src-takes-no-arguments`, at the `@`), builds the untyped `SourceLocation(file: env.srcPath, line: L, column: C, fnName: env.currentFnName)` call with four literals, records it in `env.srcRewrites` and infers **it**, so the typed AST carries the record type; a hand-written `SourceLocation(…)` call or annotation sets `env.usesSourceLocation` too. `inferBuiltinCallReturnType`'s fallback is no longer a silent `void`: a name outside `runtime_builtin_names` (`print`/`println`/`debug`/`panic`/`todo`/`trap`/`compilerError`/`module`/`emit`/`is`), the parser's `[]` index sugar and `env.stdlibFnDecls` is `unknown-builtin`, located at the `@`, suggesting the nearest known name when one is an edit away (`editDistanceIsOne`). A bare `return;` inside a `#[@result]` body records `.wrap_ok` too (decision 74 — `-> @Result<void, E>`). `inferTypeMethods` walks record/enum method bodies (generics, `Self`, params) to type the calls and record their lowerings; it is **strict** (06 C9 — it used to swallow `error.TypeError` into `lastError = null`, so a real mismatch inside a method only failed at run time), and it stores the signature of a method that annotates NO return type, taking the return from its body's `return`s (`registerInherentMethodTypes` stores one only for an annotated method). It runs from the TYPED `inferDeclTyped` only — the untyped `inferDecl` never walks method bodies, which is why a method-body row asserts through `assertComptimeCompileError`, not `assertTypeErrorSnap`. A method call on a receiver whose type is a nominal `Env.lookupTypeDef` knows, that no inherent method, behavior member, fn-typed field or primitive dispatch answers, is `unknownMethod` — or `methodNotActive` when a non-activated `implement` block declares it (`typeAnswersMember` / `behaviorDeclaresMember` are what keep an adopted `default fn` and a `#(value, set)`-shaped fn field legal). Everything else stays the permissive fresh var: an unresolved type variable, and a named type the env cannot open (an imported record, a wrapper, a forward reference). Value-receiver instance calls are recorded in `env.instanceLowerings`: `.record <typeName>` or `.prim <PrimKind>` (array/string/bool/int/float — non-JS backends map it to a host op); commonJS ignores the table. `primMethodReturnTypeFromIface` derives a primitive method's return type from its interface signature so chains (`xs.filter(f).at(0)` → `?T`) keep tracking; `length`/`len`/`size` read the interface field. `primMethodParamTypes` is its mirror on the argument side and is read **before** the call's arguments are inferred: a lambda argument over a builtin-primitive receiver is typed from the method's declared signature (`filter(self, pred: fn(item: T) -> bool)`) instead of fresh vars, so `xs.filter({ e -> e.name.contains("x") })` resolves `e` and the `contains` → `includes` JS rename fires inside the lambda — it used to emit `.contains(…)` verbatim and die at run time. Only the PARAMETERS are pushed down (`inferFunctionExprExpected`'s `params_only`): the declared return is not a constraint the lambda must meet, because `Array.forEach`'s `action` is declared `-> void` and a body whose every path `return`s types its tail as void while the `return`s have already fixed the return target. Generic-inference regression guards live in `tests/infer_generics.zig`. A generic enum's unit variant (`Option.None`) carries one fresh var per generic param (C7). `lhs |> f` with `f` a function value types as `f(lhs)`; a pipeline whose RHS arity does not take the piped value is an `arityMismatch` at the RHS (C12). **Tuple labels** (decision 8 §6, 06 N24) live on the `named` type node (`Type.named.labels`), so `instantiateType` carries them — a generic signature (`fn ref<T>() -> #(current: T)`) used to lose them and `r.current` red "this tuple has no element labeled". `row.pop` records a positional rewrite (`row._1`) under `env.enumSectionRewrites`; `inferTupleLabelCall` does the same for a labelled element of FUNCTION type CALLED like a method (`#(value, set: fn(…))`, `c.set(9)` → `c._1(9)`), which the member-access path never saw, and the backends lower `._N(…)` as an index/`element/2`/`call_fun` apply. A constructor call with a `..` spread is a record update: the spread unifies with the record, each labelled arg with the field it names, an unknown label reds at the label (C11). `@RecordKeys(T)` is `array<string>` and `@field(v, "x")` has the field's type (C6). `&&` / `||` / `!` unify TARGET-first and locate at the OPERAND (06 C3): they passed the operand as `unifyAt`'s `a`, so `1 && true` read "expected i32, got bool" with the caret on the whole expression. `-` and `*`/`/`/`%`/`-` constrain their operands to a numeric type (`requireNumericOperand`, permissive for an unresolved type variable and for any name it does not know to be non-numeric): `"a" * "b"` and `-"s"` used to check, since unifying two strings with each other succeeds and `-` constrained nothing. `+` keeps its string concatenation. The branches of an `if` unify only when BOTH end in something that has a value (`stmtsYieldValue`): decision 2 makes a block not-a-value, and unifying a branch that ends in an assignment or a `val`/`var` reds `if (p) { out = …; } else { taking = false; }` with "expected array, got bool" — a shape a library in this repository writes in a `takeWhile`, and the same in a plain fn. Deleting the unification outright waits for the row that removes block-as-value. A condition loop (`loop (cond)` / `loop { … }`, iter typed `bool`) with a parameter is an error at the parameter (N26); a loop that is one only by its type is recorded in `env.conditionLoops`, which `transform.zig` turns into `LoopExpr.condition` for the backends. An unresolved enum-section path points its caret at the first segment that does not resolve (N17). **Decision 38 — a `val` is immutable**, local or module-level: `refuseValAssign` (at the assignment's `.name` target) reds `` `x` is a `val` and cannot be assigned `` with a hint naming `var x = …`; it used to check and then throw on node (`const`), not compile on erlang and not validate on wasm. **Front 17 step 3** — `validateMemoryAnnotations` checks every `#[@BeamMemory.<member>]` on a module binding: the binding is a `var`; the member is `ProcessDict`, `Ets` or `PersistentTerm`; every argument is `keyed` with `true`/`false`; and `keyed = true` needs a `Dict` (decision 51 — an `i32` or a list has no key). Steps 4–5 (the BEAM lowering) are not started. |
 | `unify.zig` | Unification with substitution + occurs check. `unify(env, a, b)` is **target-first**: `a` is what the context expects and `b` what was written, which is what makes its two one-way rules sound — an expected `?T` accepting a plain `T`, and decision 8 §2.1's `unknown` (`isUnknown`), which accepts every type **into** it and none **out** of it. The `unknown` rule sits above the kind match because it holds against every kind on the other side, not only `.named`; an unbound variable on either side still links, so inference deciding a type is never mistaken for a use. |
 | `error.zig` | Structured type errors with source ranges and hints (incl. `missingMethod`/`unknownMethod`/`unknownInterface`/`ambiguousMethod`), plus `validateComptime` — the gate that decides what may appear inside `comptime` / `comptime { … }`: literals, arithmetic, comparisons and `&&`/`||`, `not`/`-`, array literals, pipelines, `if`, `break`, and identifiers that the block itself declared. `validateBody` threads that scope on the Zig stack (a `val`/`var` validates its initialiser in the scope before it, then validates the rest of the block with the new name in scope) and mirrors the `Scope` `eval.zig` builds with real values. A ctor or any other call stays rejected on purpose — see the `comptime record lit` skip in `tests/eval_pipeline.zig` for why (one literal text has no cross-backend record form). Two structurally legal folds are refused too, located at the expression (`ComptimeError.reason`): a constant zero divisor (`divisionByZero`, C4b) and negating a string (`negatedNonNumber`). |
-| `diagnostics.zig` | Stable diagnostic-code constants (R1–R21, RF1–RF5, RI1–RI6, RC1–RC6, RG1–RG4, D1–D6, `std-unsupported-on-target`, `src-takes-no-arguments`, `unknown-builtin`) plus the `all_codes` table. Messages live at the firing site. |
+| `effect_chain.zig` | The effect chain (decision 95 of 1.0.10-beta). `clauses` restates the `extends` clauses `libs/std/src/builtins.d.bp` declares on the six wrappers; `wrapperImplements` closes them transitively; `grants(eff, cap)` answers whether a body carrying `eff` may write `try` / `await` / `use` / `yield`, and is the ONE question all four legality checks ask. `refusal` builds the diagnostic, which names the level the body would need (decision 67). Its drift test reads `builtins.d.bp` through `std_prelude` and fails in both directions — a clause here that the file does not declare, and one the file declares that is not here — because the file is documentation the compiler does not parse and a copy nobody checks is a copy that drifts. `@Generator` carries no clause on purpose (question 97). |
+| `diagnostics.zig` | Stable diagnostic-code constants (R1–R21, RF1–RF5, RI1–RI6, RC1–RC6, RG1–RG4, D1–D6, `std-unsupported-on-target`, `src-takes-no-arguments`, `unknown-builtin`, `effect-try-without-fallible-channel`, `option-expect-removed`) plus the `all_codes` table. Messages live at the firing site. |
 | `eval.zig` | `ComptimeEntry` / `RunResult` / `evaluate(allocator, entries)` — folds each comptime `val` in Zig (`valueOf`: literals, arithmetic, `not`/`-`, `@TypeOf` name, `@typeInfo`/record literals as objects, a comptime block's / `if`'s / `case`'s / loop's `break` value) and writes the literal backends splice in (`3`, `6.28`, `"text"`, `[1, 2]`, `true`, `null`; objects and nested lists are `null`). **Every operand carries its kind** (`Value`): `binary` folds int arithmetic as int, promotes to `f64` as soon as one side is a float (`3.14 * 2.0 → 6.28`), concatenates two strings on `+`, and returns a `boolean` for `==`/`!=`/`<`/`<=`/`>`/`>=`/`&&`/`||` — so an `if` inside a folded block takes the arm its condition really selects. Anything irreducible (a record operand, a non-constant zero divisor) folds to `null`, never to a stand-in `0`; a constant zero divisor or a negated string never gets here (`validateComptime` refuses it). A `comptime { … }` block has a `Scope`: `blockResult`/`execStmt` declare its `val`/`var` locals, apply `=`/`+=`, and follow an `if` into the arm that `break`s; a nested arm gets a child scope. `RunResult.script` is the listing shown in snapshots as `COMPTIME VALUES`: one `ct_N: <declaration> → literal` per entry, the declaration formatted by `comptime.zig` `evaluateComptime` (`ComptimeEntry.source`; continuation lines aligned). An identifier that is neither a block local nor `true`/`false`/`null` is `error.UnsupportedComptimeValue`. |
 | `render.zig` | `extractLine` / `padSpaces` / `digitWidth` helpers for diagnostic rendering. |
 | `specialize.zig` | Pure AST specialization — unroll loops, fold static if/case. |
@@ -60,7 +61,7 @@ comptime/
 ## Effect annotations (`#[@<effect>]`)
 
 A function's effect is `ast.FnDecl.effect: ?EffectKind` (`result` / `future` /
-`generator` / `iterator` / `asyncGenerator` / `context`), set by the parser from
+`generator` / `iterator` / `futureGenerator` / `context`), set by the parser from
 a `#[@<effect>]` builtin annotation. The `*fn` prefix is rejected by the parser
 (`deprecated-star-fn`). `inferFnDecl` validates the effect: it must match the
 return wrapper (`effectMatchesReturn`); an effect on an interface method is an
@@ -79,26 +80,69 @@ spells the target capitalised. It fires on the `@`-prefixed builtin form only: `
 without the `@` is a user-defined attribute and means something else.
 
 **The wrapper without its annotation is an error too** (06 N25, decision 8 § 9).
-`@Future` / `@Iterator` / `@AsyncIterator` already demanded one; `@Result` did not — a plain
+`@Future` / `@Iterator` / `@FutureGenerator` already demanded one; `@Result` did not — a plain
 `fn f() -> @Result<D, E>` was accepted and deliberately given NO special treatment (`return` did
 not wrap, `throw` stayed a raw host exception), which is a second, unwritten Result calculus.
 `inferFnDecl` now reds it with `effect-missing-annotation`. Every `-> @Result` in `libs/std` already
 carried `#[@result]`, so nothing there moved.
 
-Spelling note for the maintainer: decision 8 § 9's table writes `#[@asyncGenerator]` →
-`@AsyncGenerator<T>`, while the compiler, `libs/std/src/builtins.d.bp` (`behavior AsyncIterator`)
-and 38 other sites write `@AsyncIterator`. The enforcement here uses the spelling that exists.
+**One `ContextBase` per function** (decision 96 of 1.0.10-beta). The anchor is
+a property of the BODY, not of each activation: `env.useAnchor` records the
+base the first `use` resolved against, with its line, and is cleared by
+`inferFnDecl` around every body. `validateUseBase` asks two questions in order
+— the anchor's, which reds a second `use` anchored elsewhere
+(`contextBaseMixed`, naming both bases and the line that fixed the first), and
+then, only for the first `use` of a body, RC2's, which reds a `use` anchored at
+a base the RETURN TYPE never named (`contextMismatch`). The two coincide
+wherever the return type names a base, which is every shape that parses today.
+Measured at front 20's landing: the premise decision 96 corrects — "RC2 asks
+only that a hook be anchored at a subtype of the body's base" — was true of the
+DOCUMENTATION (`builtins.d.bp` § 1C, now rewritten) and never of this checker,
+which has always compared the two names for equality. The library half — the
+owner type of a component declaring a base type of its own, instead of being
+its own base — belongs to the framework that declares that type, and is
+written up in the root `AGENTS.md` § Open handoffs. Nothing here changes when
+it lands: the anchor reads whatever the first type argument says.
+
+**The effects are a chain** (decision 95 of 1.0.10-beta). `effect_chain.zig`
+owns the order — `@Future` and `@Iterator` extend `@Result`, `@FutureGenerator`
+and `@Context` extend `@Future`, `@Generator` extends nothing (question 97: no
+error channel, so no `try` and no `throw`) — and every legality check asks
+`effectChain.grants(eff, cap)` instead of switching on an effect kind. The
+clauses are declared in `libs/std/src/builtins.d.bp` on the wrapper
+declarations; that file is not parsed into the type env, so `effect_chain.zig`
+restates them and carries a drift test that reads the file and fails if the two
+disagree. Adding a wrapper is a row in `clauses` and nothing else. The refusals
+are built by `effectChain.refusal`, which names the level the body would need
+(decision 67 — located, no flag).
 
 The body context `starCtxFromEffect` → `env.starFn: ?StarFnCtx{ allowsAwait,
-allowsYield, iterItem, effect }` gates `await` (future/asyncGenerator), `yield`
-(generator/iterator/asyncGenerator) and `throw` (via `env.throwContext` for
-`#[@result]`). `inEffectContext(env, .future)` fires `#[@future]`-only
+allowsYield, iterItem, effect }` is built for **every** effect (it is null only
+in a plain `fn`), with `allowsAwait` / `allowsYield` read off the chain. Before
+1.0.10-beta it was null for `#[@result]` and `#[@context]`, and the `yield`
+guard was written `if (env.starFn) |ctx|` — so a `yield` in either body was
+accepted rather than refused. `throw` is gated separately, by
+`env.throwContext`, and bare `try` — the propagating form, which returns the
+`Error` out of the body — asks the chain through `env.fnEffect`, guarded by the
+same `throwContext == .plain` test `throw` uses so a lambda and a `test` block
+stay lenient. `try … catch` propagates nothing and is not gated.
+
+**Which scope a `yield` targets is asked before the chain is**, exactly as
+`break`'s §1I REGRAS DE ESCOPO rule does and off the same `env.loopDepth`: a
+`yield` inside a loop feeds that loop's array (decision 8 § 10's comprehension,
+condition loops included), a labelled one feeds the scope it names, and only a
+`yield` that reaches the function is the effect's.
+
+`inEffectContext(env, .future)` fires `#[@future]`-only
 rejections (RF1/RF2/RF5) without firing inside other effects.
 `resultVariantCallName` / `futureConstructorCallName` /
 `builtinRequiredGenericArgs` drive the syntactic rejections. Codegen reads
 `f.effect` directly (`commonJS.zig fnKeyword`: future → `async function`,
-generator/iterator → `function*`, asyncGenerator → `async function*`,
-result/context → plain `function`).
+generator/iterator → `function*`, futureGenerator → `async function*`,
+result/context → plain `function`) — which is why `await` inside a
+`#[@context]` body, legal since decision 95, runs on erlang, wasm and beam and
+is a JS `SyntaxError` on commonJS. The legality is front 20's and the keyword is
+the backend's; the row is written up as a handoff in `tests/language/run/effect_chain.bp`.
 
 Default-parameter diagnostics: D5 (defaulted param followed by a required one)
 fires from `parser/decls.parseParamList`; D2 (positional arg after a named one)
@@ -231,7 +275,7 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   `declare fn` slice: `todo`/`panic`/`trap`/`emit`/…) into `env.stdlibFnDecls`,
   which `compile`/`compileTypesOnly` merge into transform's `fn_decls` so
   trailing defaults are injected at bare `todo()`/`panic()` calls. The synthetic
-  `Result`/`Future`/`Iterator`/`Generator`/`AsyncIterator`/`Context` interfaces
+  `Result`/`Future`/`Iterator`/`Generator`/`FutureGenerator`/`Context` interfaces
   stay doc-only in `builtins.d.bp` (they are pre-registered by
   `Env.registerBuiltins`).
 - `@compilerError(message)` — generic compile-time rejection usable from a
@@ -626,6 +670,49 @@ two domains and returned before looking at an arm for anything else, which is wh
 and the sized integers are the same kind of unbounded domain, so
 `case x { 0 { … } 1 { … } }` on an `f64` still compiles; widening the list is a language rule and is
 reported rather than assumed. Measured: `test-libs` is 11/0 with `i32` in, so it costs no migration.
+
+## Decision 8 §5.1 P7 — a variant pattern names every field, or ends with `..`
+
+`checkCaseArmArity` runs beside `checkCaseExhaustiveness`, over the same single
+subject. For an arm whose pattern is a written variant payload (`shape ==
+.variant`, no `rest`, a resolvable declaration), fewer elements than the variant
+declares is `missing required field '<name>' on type '<Variant>'` at
+`arm.patternLoc` — the first field the pattern does not reach. The fields a
+pattern does not name are dropped at run time, and `..` is the spelling that
+says so; without the rule `.Rect(width: w)` silently dropped `height`.
+
+A whole-payload binding (`Ok ok`) stands for the payload entire and is skipped,
+as are the tuple and range shapes that ride the same node, and any variant whose
+declaration the env cannot resolve. `variantPayloadFieldNames` is the lookup —
+the names beside `variantPayloadTypes`' types.
+
+## Decision 54 — an optional is matched by `null` and a binder
+
+`case x { null { A } v { B } }` is the **one** pattern form a `?T` has, and it
+is settled here because it is the subject's type that decides it. The parser
+reads `null` as a pattern and lets a bare name follow it
+(`parser/AGENTS.md` § decision 54); everything below is `infer.zig`'s:
+
+| Function | What it settles |
+|---|---|
+| `isNullPattern` | the `.ident "null"` spelling the parser lands; `null` is a keyword token, so nothing else can carry that name |
+| `optionalInner` | the `T` of a `?T` |
+| `optionalNullCaseBinder` | the subject is an optional; the arms are exactly two, unguarded, `null` then a binder; neither body takes a parameter (§5.1 P1's whole-value binder means nothing where the binder *is* the payload). Answers the binder's name, `""` for `_` |
+| `refuseVariantPatternOverOptional` | `.Some(v)` / `.None` — and any variant-shaped arm — over a `?T` is a located error naming the `null` form |
+
+The binder is bound to the **payload**, narrowed, not to the optional, and the
+exhaustiveness walk is skipped for the form: `null` and a binder are the two
+halves of an optional, so it is covered by construction, and `null` is not a
+catch-all the walk would count.
+
+**The lowering is a rewrite, not a backend feature.** Inference records the
+`case`'s loc and its binder in `Env.optionalNullCases`; `transform.zig`'s
+`rewriteOptionalNullCase` swaps the whole node for
+`if (<subject>) { <binder> -> B } else { A }` before codegen reads the AST. That
+is a lowering all four backends already have, so no code generator learned a
+pattern — and the formatter, which reads the parser's AST, still writes the
+`case` the author wrote. The channel is `conditionLoops`' (decision 8 §10):
+inference decides, the transform edits, codegen is told nothing new.
 
 ## The inline `implement <Behavior> { }` is checked (decision 58)
 

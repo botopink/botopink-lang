@@ -105,7 +105,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "deprecated-star-fn",
             .message = "the `*fn` prefix was removed in v0.beta.19",
             .caretCaption = "use a `#[@<effect>]` annotation instead",
-            .note = "the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@Iterator<…>` to `#[@iterator]`, `@AsyncIterator<…>` to `#[@asyncGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to `#[@context]`",
+            .note = "the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@Iterator<…>` to `#[@iterator]`, `@FutureGenerator<…>` to `#[@futureGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to `#[@context]`",
             .hint = "rewrite as `#[@<effect>] fn <name>(...) -> @<Wrapper><...> { ... }`",
         },
         .effectOnDeclareForbidden => .{
@@ -126,7 +126,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         },
         .yieldBreakRemoved => .{
             .message = "yield-break-removed: use `break <C>` to end an iterator with a completion value. The `yield break` form was removed in v0.beta.19.",
-            .hint = "Inside a #[@iterator] / #[@asyncGenerator] body, write `break <C>` to deliver a completion value, or bare `break` for a clean end.",
+            .hint = "Inside a #[@iterator] / #[@futureGenerator] body, write `break <C>` to deliver a completion value, or bare `break` for a clean end.",
         },
         .genericArgSkipForbidden => .{
             .message = "generic-arg-skip-forbidden: cannot skip a defaulted argument while providing a later one.",
@@ -205,7 +205,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "is-variant-binding",
             .message = "`is` tests a type; it does not bind a variant's payload",
             .caretCaption = "remove the payload pattern",
-            .hint = "Test the variant with `x is Option` and read the payload in a `case` arm: `case x { Option.Some(value: v) { … } }`.",
+            .hint = "Test the variant with `x is Shape` and read the payload in a `case` arm: `case x { Shape.Circle(radius: r) { … } }`. An optional is not a variant — a `?T` is read with `case x { null { … } v { … } }` (decision 54).",
         },
         .patternRangeExclusive => .{
             .code = "pattern-range-exclusive",
@@ -263,6 +263,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "a field list takes no `val` prefix",
             .caretCaption = "remove `val`",
             .hint = "Fields are immutable already: `type Point(x: i32, y: i32)`.",
+        },
+        .fieldNeedsName => .{
+            .code = "field-needs-name",
+            .message = "a field with no name",
+            .caretCaption = "write `name: Type` here",
+            .hint = "Every field and every variant payload is named: `type Point(x: i32, y: i32)`, `Variant(field: T)`. A payload nobody can name is a payload no `case` arm can bind.",
         },
         .memberCommaSeparator => .{
             .code = "member-comma-separator",

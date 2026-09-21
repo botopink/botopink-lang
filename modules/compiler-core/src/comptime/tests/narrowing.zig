@@ -208,36 +208,15 @@ test "infer: narrow ---- case guard variant field" {
     );
 }
 
-// ── assert pattern narrowing ───────────────────────────────────────────────────
-
-// DOCUMENTED SKIP — `assert <expr> is <Pattern>` is in `docs.md` ("Assert")
-// but the parser only implements the `assert <Pattern> = <expr> catch …` form
-// (`parser/exprs.zig` `parseAssertPattern`). Missing feature: assert-`is`
-// narrowing; owner: spec 02 (parser/checker gaps). The snapshot pins the parse
-// error so the test starts failing the day the form lands.
-test "infer: narrow ---- assert pattern after assert" {
-    try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\fn process(x: ?i32) -> i32 {
-        \\    assert x is Some(n);
-        \\    return n + 1;
-        \\}
-        \\fn main() {
-        \\    @print(process(42));
-        \\}
-    );
-}
-
-// DOCUMENTED SKIP — same missing `assert <expr> is <Pattern>` form as above;
-// owner: spec 02.
-test "infer: narrow ---- assert pattern enum variant" {
-    try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\type Status { Ready, Busy(count: i32), Down }
-        \\fn work(s: Status) -> i32 {
-        \\    assert s is Busy(n);
-        \\    return n;
-        \\}
-    );
-}
+// `assert <expr> is <Pattern>` was a DOCUMENTED SKIP here and in
+// `codegen/tests/narrowing.zig`, pinning a parse error "so the test starts
+// failing the day the form lands". C-08 decided the form does not land: `is`
+// answers a `bool` and does not bind (decision 8 §4), `val assert <Pattern> =
+// <expr>;` is the form that binds a pattern's names into the enclosing scope,
+// and `docs.md` already lists `assert x is Some(n)` as deliberately absent. The
+// refusal it must keep giving — `error[is-variant-binding]` — is pinned at the
+// language level by `tests/language/reject/assert_is_pattern.bp`, which is where
+// a deliberate refusal belongs.
 
 // ── early return narrowing ─────────────────────────────────────────────────────
 
@@ -282,12 +261,12 @@ test "infer: narrow ---- type guard narrowing in if" {
 
 // ── AND condition narrowing ────────────────────────────────────────────────────
 
-// DOCUMENTED SKIP — `if (a && b)` does not parse (the `if` condition parser
-// stops before `&&`/`||`; `if ((a && b))` is needed) and, once parenthesised,
-// `?Box && …` is rejected because an optional is not a bool: narrowing through
-// an `&&` chain does not exist. Missing feature: `&&`-guarded narrowing;
-// owner: spec 02 (parser + checker). `narrow ---- if null check record field
-// access` covers the nested-`if` form that does work.
+// DOCUMENTED SKIP — `if (a && b)` parses since C-08 widened the `if`
+// condition to `prec.lowest`, so what is left is the checker half: `?Box && …`
+// is rejected because an optional is not a bool, and narrowing through an `&&`
+// chain does not exist. Missing feature: `&&`-guarded narrowing; owner: spec
+// 02 (checker). `narrow ---- if null check record field access` covers the
+// nested-`if` form that does work.
 test "infer: narrow ---- and condition field access" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
         \\val Box = type(weight: i32)
@@ -297,7 +276,9 @@ test "infer: narrow ---- and condition field access" {
         \\    };
         \\    return "light or none";
         \\}
-        \\@print(describe(Box(weight: 20)));
+        \\fn main() {
+        \\    @print(describe(Box(weight: 20)));
+        \\}
     );
 }
 

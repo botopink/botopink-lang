@@ -1589,7 +1589,7 @@ const Emitter = struct {
         // generator state-machine lowering is not yet implemented.
         // `#[@context]` is a plain function too (decision 88: it gates `use`).
         if (f.effect != null and f.effect.? != .result and f.effect.? != .context) {
-            try self.itemComment("#[@future] / #[@asyncGenerator] — eager lowering");
+            try self.itemComment("#[@future] / #[@futureGenerator] — eager lowering");
         }
         // Params, and the locals the body needs, are registered *before* the
         // body is rendered so identifier lowering can tell a local from a global.
@@ -1612,7 +1612,7 @@ const Emitter = struct {
         // An `#[@iterator]` / `#[@generator]` body runs eagerly: every `yield`
         // is appended to one array, which is what the fn returns.
         const accumulates = if (f.effect) |e|
-            (e == .iterator or e == .generator or e == .asyncGenerator) and has_result and bodyYieldsDeep(f.body)
+            (e == .iterator or e == .generator or e == .futureGenerator) and has_result and bodyYieldsDeep(f.body)
         else
             false;
         const body = if (accumulates) try self.renderAccumulatingBody(f.body) else try self.renderBody(f.body, f);
@@ -5032,7 +5032,7 @@ const Emitter = struct {
             .array => |inner| inner.*,
             // An iterator runs eagerly here: it is the array of what it yields.
             .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
-                std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "AsyncIterator")))
+                std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "FutureGenerator")))
                 g.args[0]
             else
                 return null,

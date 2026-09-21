@@ -65,11 +65,18 @@ pub type Result<R, E> {
 //   fn flatMap(self, transform: fn(value: T) -> ?T2) -> ?T2
 //   fn unwrapOr(self, default: T) -> T
 //       The present value, or `default` when absent.
-//   fn expect(self, default: T) -> T
-//       Identical runtime behaviour to `unwrapOr`; the name signals to the
-//       reader that the absent branch is unreachable (a bounds-checked
-//       `xs.at(i)`, a guarded null, …) and the default is a sentinel —
-//       not a meaningful fallback.
+//
+// F11 — there is NO `expect`. It existed, declared `expect(self, default: T)
+// -> T` and lowered to `unwrapOr` on every backend, with the prose saying the
+// two were identical and the name signalling that the absent branch was
+// unreachable. A name that reads as an assertion over a signature that is a
+// fallback is the loosest reading of the stricter word, which is the shape
+// decision 67 refuses: the reader who trusts the name writes a sentinel where
+// the value may genuinely be absent, and nothing says so. The strict reading
+// — `expect(self, message: string) -> T`, failing when absent — has to invent
+// a failure the option surface does not have and lower it on four backends,
+// so it is not this front's to add. What is left is one spelling for one
+// behaviour: `unwrapOr`. `.expect(…)` on a `?T` is now an unknown method.
 //
 // There is deliberately NO `option` namespace — the ergonomic surface for
 // optionals is JS-style optional chaining (planned):
@@ -85,7 +92,7 @@ pub type Result<R, E> {
 // is the lazy pull-based protocol — each call returns one of the three
 // variants below. F4I-tail's `transform.zig → @IteratorStep` rewrite
 // targets this same enum.
-pub behavior Iterator<T, E = any, C = void> {
+pub behavior Iterator<T, E = any, C = void> extends Result {
     fn next(self: Self) -> IteratorStep<T, E, C>;
 }
 
@@ -94,6 +101,24 @@ pub type IteratorStep<T, E, C> {
     Done(completion: C),
     Error(error: E),
 }
+
+// F12 — `iter` answering `Iterator<T, E, C>` is NOT a behavior escaping into
+// value position: `Iterator` is a `behavior` because every effect wrapper is
+// (`Future`, `Generator`, `FutureGenerator`, `Context` — all of them above),
+// and returning one is what every effect signature in the language already
+// does. `#[@iterator] fn upTo(n: i32) -> @Iterator<i32>` is the same shape.
+// What makes this line look unlike its neighbours is only that a `behavior`
+// method is DECLARATIVE — it expresses its effect through the return wrapper
+// alone and carries no `#[@iterator]` annotation (using one there is the R1/R2
+// error) — so the wrapper appears without the marker that usually accompanies
+// it. A type satisfies `Iterable` with a `#[@iterator] fn iter(self: Self) ->
+// @Iterator<T, E, C>`; the annotation belongs to the implementation, never to
+// the declaration.
+//
+// Nothing in this tree implements or consumes `Iterable` today. It is kept
+// because it is the one name for "a thing you can iterate" and `loop` will
+// want it; if it is still unimplemented when something else needs the name, it
+// goes rather than drifts.
 
 pub behavior Iterable<T, E = any, C = void> {
     fn iter(self: Self) -> Iterator<T, E, C>;
@@ -110,17 +135,26 @@ pub behavior Generator<T, R> {
     fn next(self: Self) -> Yield<T, R>;
 }
 
-// ── async ────────────────────────────────────────────────────────────────────
+// ── future ───────────────────────────────────────────────────────────────────
 
-pub behavior Future<T, E = any> {
+pub behavior Future<T, E = any> extends Result {
+    // F5 — `await` is the UNWRAP, not the proof. What says a future can fail
+    // is the `implement` clause on the declaration line; `await` is only how a
+    // body reads the value out of one.
     fn await(self: Self) -> Result<T, E>;
     fn map<R>(self: Self, transform: fn(value: T) -> R) -> Future<R, E>;
     fn flatMap<R>(self: Self, transform: fn(value: T) -> Future<R, E>) -> Future<R, E>;
 }
 
-// ── async iterator ───────────────────────────────────────────────────────────
+// ── future generator (decision 98) ───────────────────────────────────────────
+//
+// A `Generator` whose steps are `Future`s: `next` answers a future of one step
+// rather than a step. The language spells suspension ONE way — `Future` — so
+// this wrapper borrows that noun rather than inventing a second one; the
+// `#[@futureGenerator]` annotation and the `@FutureGenerator<T, E, C>` wrapper
+// share a name exactly as the other five pairs do (§ effect annotations below).
 
-pub behavior AsyncIterator<T, E = any, C = void> {
+pub behavior FutureGenerator<T, E = any, C = void> extends Future {
     fn next(self: Self) -> Future<IteratorStep<T, E, C>, E>;
 }
 
@@ -174,7 +208,7 @@ pub behavior Slice<V> {
 
 // ── context (hooks) ──────────────────────────────────────────────────────────
 
-pub behavior Context<ContextBase, Return> { }
+pub behavior Context<ContextBase, Return> extends Future { }
 
 // ── annotation marker ────────────────────────────────────────────────────────
 //
@@ -214,10 +248,31 @@ pub behavior Annotation {
 // The `inline` flag opts a `(target, method)` pair out of the dispatch table
 // so the backend's hand-coded shape keeps emitting (used only for arms whose
 // lowering escapes the template grammar — list-cons / BIF aliases / etc.).
+//
+// F9 — it is declared on `Erlang` and `Beam` and NOWHERE ELSE, because those
+// are the two emitters that read it: each has a `hasExternalInline` that skips
+// the dispatch entry when the flag is set. `Node` declared it too and no JS
+// path ever consulted it, so `#[@External.Node("charAt", inline = true)]` was
+// a switch that silently did nothing — a configuration that looks like it
+// bypasses the dispatch table and does not, which decision 67 refuses in
+// exactly those words. `Wasm` and `Typescript` do not gain it for the same
+// reason. A backend that grows a hand-coded shape worth opting out of adds the
+// parameter in the same change as the `hasExternalInline` that honours it.
+//
+// F9, the other half — these five variants are the five `Target` values under
+// another name, and they stay two declarations. `Target` is DATA: a value a
+// program holds, compares and passes (`Target.Node`). `External.<T>` is a
+// MARKER whose variants each carry a payload — the template, and on two of
+// them the flag — and whose meaning is per variant, which is what the
+// annotation model spells (`type … implement Annotation`, one annotation key
+// per variant) and what a plain enum of five names cannot. Collapsing them
+// would mean either an annotation with no payload or a data enum carrying
+// per-value parameters nobody reads. The names coincide because there are five
+// backends; that is the only thing they share.
 
 pub type External implement Annotation {
     Erlang(template: string, inline: bool = false),
-    Node(template: string, inline: bool = false),
+    Node(template: string),
     Beam(template: string, inline: bool = false),
     Wasm(template: string),
     Typescript(template: string),
@@ -225,7 +280,13 @@ pub type External implement Annotation {
 
 // ── type reflection ──────────────────────────────────────────────────────────
 
-fn field<T, F>(obj: T, comptime name: string) F
+// F10 — the five intrinsics below are written in the file's own dialect:
+// `pub declare fn`, `->` before the return type, a closing `;`. They are
+// bodyless because the compiler IS the body — each is reached as a builtin
+// call (`@field`, `@trap`, `@emit`, `@module`, `@getContex`), never as a
+// plain name — and `declare fn` is the language's bodyless form. They carry
+// no `#[@External.<Target>]` because no host supplies them.
+pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
 
 // ── runtime ──────────────────────────────────────────────────────────────────
 //
@@ -234,7 +295,7 @@ fn field<T, F>(obj: T, comptime name: string) F
 // literal default that `expandTrailingDefaults` injects at the call site).
 // `trap` carries no default, so its decl stays here doc-only.
 
-fn trap() noreturn
+pub declare fn trap() -> noreturn;
 
 // Contribute generated top-level declarations to the program from a decorator
 // body. `@emit("pub val userServiceSingleton = …")` parses `source` as botopink
@@ -242,12 +303,12 @@ fn trap() noreturn
 // decorator can build wiring (singletons, a DI graph, a router table) as
 // ordinary code. May be called any number of times; each call appends.
 // Comptime-only.
-fn emit(source: string)
+pub declare fn emit(source: string);
 
 
 // ── module imports ───────────────────────────────────────────────────────────
 
-fn module() module
+pub declare fn module() -> module;
 
 // ── target enum ──────────────────────────────────────────────────────────────
 
@@ -260,30 +321,74 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // An effect annotation names a function's effect — the implementation marker
 // (the `*fn` prefix it replaced was deprecated in v0.beta.12 and removed in
 // v0.beta.19). Each takes no arguments and pairs with the matching return
-// wrapper, which carries the effect's type parameters. The canonical
-// signatures (§4):
+// wrapper, which carries the effect's type parameters. The pairing is a
+// SPELLING rule, not a lookup table: the wrapper is the annotation with its
+// first letter capitalised, in all six rows and with no exception — decision
+// 98 renamed the one pair that used to break the rule, and named the reason
+// it broke, which is that the language spells suspension `Future` and nothing
+// else. The canonical signatures (§4):
 //
-//   #[result]         fn parse(n: i32) -> Result<i32, string>
-//   #[future]         fn fetchUser(id: u64) -> Future<User, NetworkError>
-//   #[generator]      fn range(a: i32, b: i32) -> Generator<i32, void>
-//   #[iterator]       fn lazyMap<T, U>(it: Iterator<T>, f: fn(T) -> U) -> Iterator<U, string, i32> :a
-//   #[asyncGenerator] fn stream() -> AsyncIterator<T, NetworkError, i32>
-//   #[context]        fn processarPagamento() -> Context<BasePagamento, bool>
+//   #[result]          fn parse(n: i32) -> Result<i32, string>
+//   #[future]          fn fetchUser(id: u64) -> Future<User, NetworkError>
+//   #[generator]       fn range(a: i32, b: i32) -> Generator<i32, void>
+//   #[iterator]        fn lazyMap<T, U>(it: Iterator<T>, f: fn(T) -> U) -> Iterator<U, string, i32> :a
+//   #[futureGenerator] fn stream() -> FutureGenerator<T, NetworkError, i32>
+//   #[context]         fn processarPagamento() -> Context<BasePagamento, bool>
 //
 // The annotation marks an IMPLEMENTATION (a `fn` with a body): it gates the
-// body operations (`await` under future/asyncGenerator; `yield` under
-// generator/iterator/asyncGenerator; `throw`/`try` under result, future,
-// iterator, asyncGenerator — the fallible-channel effects) and drives codegen
+// body operations (`await` under future/futureGenerator; `yield` under
+// generator/iterator/futureGenerator; `throw`/`try` under result, future,
+// iterator, futureGenerator — the fallible-channel effects) and drives codegen
 // (future → `async function`, generator/iterator → `function*`,
-// asyncGenerator → `async function*`, result/context → plain `function`).
+// futureGenerator → `async function*`, result/context → plain `function`).
 // Interface methods and `declare fn` declarations are declarative — they
 // express the effect through the return wrapper alone, with NO annotation
 // (using one there is the R1/R2 error).
 //
+// §95 — THE CHAIN. The six wrappers are not six unrelated types: they form a
+// subsumption order, and an annotation grants every body operation at or below
+// its own level. The order is on the declarations above, as `extends` clauses
+// (a `behavior` carries `extends`, not the `implement` a `type` writes — the
+// same grammar limit § index / slice records of `primitives.bp`), and `extends`
+// cannot carry type arguments, so the full clauses are:
+//
+//   Future<T, E>             extends Result<T, E>
+//   Iterator<T, E, C>        extends Result<T, E>
+//   FutureGenerator<T, E, C> extends Future<IteratorStep<T, E, C>, E>
+//   Context<Base, Return>    extends Future<Return, any>
+//   Generator<T, R>          — NO clause. See below.
+//
+// What each body may therefore write:
+//
+//   #[context]         use · await · try     Context ⊃ Future ⊃ Result
+//   #[futureGenerator] await · try · yield   FutureGenerator ⊃ Future ⊃ Result
+//   #[future]          await · try           Future ⊃ Result
+//   #[iterator]        try · yield           Iterator ⊃ Result
+//   #[generator]       yield                 — no error channel
+//   #[result]          try                   — it is the base
+//
+// The chain grants DOWNWARDS and never upwards: `yield` stays exclusive to the
+// three generator-shaped wrappers and `use` to `@Context`, neither of which is
+// a level anything else reaches. `@Future<T, E = any>` already carries the
+// error channel this needs, so `extends Result` adds no parameter and invents
+// no error type; the same holds for `@Iterator<T, E = any, C = void>`.
+//
+// `@Generator<T, R>` is the exception and is left out on purpose: it has no
+// error channel, and whether a generator should answer `try` is open question
+// 97. Until it is answered, `throw` and `try` are BOTH refused in a
+// `#[generator]` body — a defaulted parameter can be added later and never
+// removed.
+//
+// The compiler reads this order from `comptime/effect_chain.zig`, which
+// restates it and carries a test that reads THIS FILE and fails if the two
+// drift: the file is not parsed into the type env (the whole `.d.bp` is
+// documentation, and `comptime.zig`'s embedded mirrors exist for the same
+// reason), so the drift gate is what keeps one declaration.
+//
 // §1 — `#[result]` auto-wrap. The compiler intercepts `return r;` (where
-// `r: R`) inside a `#[result]` body and lowers it to `return Result::Ok(r)`;
-// `throw e;` (where `e: E`) lowers to `return Result::Err(e)`. Manual
-// `Result::Ok(…)` / `Result::Err(…)` construction inside the body is
+// `r: R`) inside a `#[result]` body and lowers it to `return Result.Ok(r)`;
+// `throw e;` (where `e: E`) lowers to `return Result.Error(e)`. Manual
+// `Result.Ok(…)` / `Result.Error(…)` construction inside the body is
 // rejected (R11/R12) — the wrapper variants are only constructed via the
 // `return`/`throw` sigils. Callers see `Result<R, E>` at the type level;
 // inline methods (`map`/`flatMap`/`unwrapOr`/`isOk`/`isError`) read it.
@@ -304,11 +409,15 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //
 // §1C — `#[context]` Anchor + `getContex`. The wrapper is
 // `Context<Base, T>`; `Base` is the Anchor that gates every `use` inside
-// the body. `use <hook>()` requires the hook's wrapper to be anchored at a
-// subtype of `Base` (RC2); `use getContex(T)` requires `T` to be in the
-// Anchor's inheritance tree (RC3) and finds the active provider by
-// inside-out walk of the activation stack (RC1 when missing). `yield`,
-// `await`, `throw` are all forbidden inside a `#[context]` body.
+// the body. EVERY `use` in one body resolves against the SAME `Base`
+// (decision 96): the first one fixes it, and a second anchored elsewhere is
+// refused at its own site with both bases named (RC2). `use getContex(T)`
+// requires `T` to be in the Anchor's inheritance tree (RC3) and finds the
+// active provider by inside-out walk of the activation stack (RC1 when
+// missing). `await` and `try` ARE legal here — `Context` extends `Future`
+// extends `Result` (§95 above); `yield` is not, and neither is `throw`,
+// whose auto-wrap has no wrapper to build in a body whose return type is
+// the owner.
 //
 // §1G — default generic parameters. A generic parameter may carry a
 // default type (`<T, U = string>`). Defaults must occupy the trailing
@@ -334,7 +443,7 @@ pub type Host implement Annotation {
     host,
 }
 
-// The markers (`result`, `future`, `generator`, `iterator`, `asyncGenerator`,
+// The markers (`result`, `future`, `generator`, `iterator`, `futureGenerator`,
 // `context`) are recognized as core builtins by the compiler — they are
 // lib-agnostic and take no arguments, so they need no signature here.
 //
@@ -351,7 +460,7 @@ pub type Host implement Annotation {
 // Declared `comptime` in its sole type argument because the Anchor check
 // runs at compile time; the runtime side is the inside-out walk inserted
 // by the lowering.
-fn getContex<T>(comptime _: type) Context<T, any>
+pub declare fn getContex<T>(comptime _: type) -> Context<T, any>;
 
 // ── Expr template model (std.syntax) ─────────────────────────────────────────
 // Data model for `Expr` templates. Interfaces are pure behaviour contracts, so
@@ -401,7 +510,13 @@ pub type Source(
 // function) needs about its input in one object: where the template was
 // declared, its raw text, and its shape. The origin scope is reached via
 // `lookup`/`bindings`; the segmented view via `parts`.
-pub type Context(
+//
+// F1 — this record is `ExprContext`, not `Context`: `@Context<ContextBase, Return>`
+// above is the hook wrapper, and one module may not declare one name twice. The
+// template model is the narrower audience of the two, so it is the half that
+// moved; `q.context()` still reads `context`, because a method names the
+// receiver's own input rather than a type.
+pub type ExprContext(
     source: Source,
     text: string,
     multiline: bool,
@@ -436,7 +551,7 @@ pub behavior Expr<E> {
     fn text(self: Self) -> string;
     fn parts(self: Self) -> Part[];
     fn source(self: Self) -> Source;
-    fn context(self: Self) -> Context;
+    fn context(self: Self) -> ExprContext;
     fn lookup(self: Self, name: string) -> ?Binding;
     fn bindings(self: Self) -> Binding[];
     fn build<R>(self: Self, source: string) -> Expr<R>;

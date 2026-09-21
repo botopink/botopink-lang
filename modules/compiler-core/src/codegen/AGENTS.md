@@ -336,6 +336,19 @@ codegen/
   lambda's single parameter is `const v = _s;` at the top of the arm — the only
   scope where the subject is in hand. The checker types it as the subject
   narrowed by the arm's pattern.
+- **A lambda's last statement is a return position** (`buildLambdaTail`): a JS
+  arrow block does not auto-return, so every expression form `buildExpr` gives a
+  value to is `return`ed there — the same rule `buildIfLast` applies one level
+  down, and the same rule a `val x = <e>;` binding already gets. The whitelist
+  that used to decide it (`isImplicitReturnExpr`) listed only the categories
+  that are *always* a value, so an `if`, a `loop` and a `try`/`catch` tail fell
+  through to `buildStmt` and were written as statements —
+  `(x) => { (() => { … })(); }` — and the arrow answered `undefined`. A `case`
+  never had the defect (it is a `.collection`). Still statements: a jump, a
+  binding, a `use` hook, and any `if`/`loop` whose body jumps out of the lambda
+  (`exprJumps`), because a `return` cannot cross the IIFE the value form wraps
+  it in. `try`/`catch` goes through `buildTryStmt` with the `.ret` head, not
+  `.discard`.
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
 - **None is loose**: botopink has one none value and JavaScript spells it two
@@ -2019,13 +2032,35 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 | `#[@result]` | plain `function`; `__bp_ok`/`__bp_error` build `{ok: V}`/`{error: E}`; `try`/`catch` via `"error" in _r` | plain fun; `{ok, V}`/`{error, E}`; `try`/`catch` → `case … of` | plain local; `put_tuple2` pair; `try`/`catch` → `is_tagged_tuple` | `[tag, payload]` in linear memory; `try`/`catch` → `if` on the tag |
 | `#[@future]` | `async function`; resolved/rejected markers → native `return`/`throw` | eager (`@Future<T>` is `T`); rejected → `throw` | eager; rejected → `erlang:throw/1` | eager; rejected → `unreachable` |
 | `#[@generator]` / `#[@iterator]` | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
-| `#[@asyncGenerator]` | `async function*` | eager | eager body | eager body |
+| `#[@futureGenerator]` | `async function*` | eager | eager body | eager body |
 | `#[@context]` | plain `function` | plain fun | plain local | plain func |
+
+**Open, measured 2026-09-21 at front 20's landing: a `#[@context]` body may now
+`await`, and commonJS cannot emit it.** Decision 95 made the effects a chain —
+`@Context` extends `@Future` extends `@Result` — so `await` inside a
+`#[@context]` body is legal, and `try` with it. `try` lowers everywhere (it is
+the same propagate/`catch` shape the `#[@result]` row describes). `await` does
+not: the `#[@context]` row above is a plain `function` on commonJS, so the
+emitted `await` is
+
+```
+SyntaxError: await is only valid in async functions and the top level bodies of modules
+```
+
+while erlang, wasm and beam run it (their `@Future<T>` is eager, so `await` is
+the identity and the row needs nothing). The fix is commonJS's `fnKeyword`
+answering `async function` for a `#[@context]` body that awaits — which changes
+what a component's caller receives, and is therefore a backend decision, not a
+legality one. Front 20 owns what is legal and explicitly does not touch
+`codegen/**` lowering; this row is the handoff. `tests/language/run/effect_chain.bp`
+carries the other rows and its header says why this one is absent.
 
 Effect rejection diagnostics (R*, RF*, RI*, RC*, RG* codes) live in
 `comptime/diagnostics.zig`; `comptime/infer.zig`'s `inEffectContext` uses the
 `effect` field of `comptime/env.zig`'s `StarFnCtx` so each family's rejections
-fire only inside the right effect body.
+fire only inside the right effect body. Which body operations each effect may
+hold is `comptime/effect_chain.zig`, not a table here: the four checks
+(`try`/`await`/`use`/`yield`) ask it the same question.
 
 ## Tuple labels (decision 8 §6)
 

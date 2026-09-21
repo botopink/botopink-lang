@@ -393,7 +393,7 @@ pub fn parseFnBody(
 
     // Optional generator/iterator label after the return type. Spec §1I
     // (`frente-b-rules-tooling.md`) extends the form from `#[@generator]` to
-    // `#[@iterator]` / `#[@asyncGenerator]` — both can declare a label that a
+    // `#[@iterator]` / `#[@futureGenerator]` — both can declare a label that a
     // nested `yield :label …` / `break :label …` then targets. The parser
     // accepts the form on any fn; the comptime body walk validates that the
     // label is only consumed inside a yielding effect.
@@ -1232,6 +1232,15 @@ pub fn parseFieldList(this: *This, alloc: std.mem.Allocator) ParseError!FieldLis
         const annotations = try this.parseAnnotations(alloc);
         errdefer freeAnnotations(alloc, annotations);
         if (this.check(.val)) return failAt(this, .typeFieldValPrefix, this.peek());
+        // Decision 12 — a field and a variant payload are `name: Type`, always.
+        // Anything else in this position is an unnamed payload: the bare type
+        // (`Circle(i32)`, `Circle(Point)`, `Circle(Box<i32>)`) and the forms
+        // that cannot even start with a name (`Circle(?i32)`, `Circle(#(a, b))`)
+        // alike. Refused here, where it starts, with the field form named —
+        // reading past it would report the missing `:` as a stray token.
+        if (!This.isMemberName(this.peek().kind) or this.peekAt(1).kind != .colon) {
+            return failAt(this, .fieldNeedsName, this.peek());
+        }
         const nameTok = try this.consumeMemberName();
         _ = try this.consume(.colon);
         const fieldTypeTok = this.peek();

@@ -4,7 +4,8 @@
 fn fetch() -> @Result<i32, string> {
     @todo();
 }
-fn process() -> i32 {
+#[@result]
+fn process() -> @Result<i32, string> {
     val r = try fetch();
     @print(r);
     return r;
@@ -22,7 +23,7 @@ process() ->
     case fetch() of
         {ok, R} ->
             '__bp_print'([R]),
-            R;
+            {ok, R};
         {error, _TryE0} -> {error, _TryE0}
     end.
 
