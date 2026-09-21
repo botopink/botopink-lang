@@ -83,6 +83,30 @@ test "erlang: std package ---- a std math import and the OTP math module in one 
     });
 }
 
+// Decision 64 — a qualified std host call. `import { erlang } from "std"` names
+// the MODULE, never the symbol, so the owner-side wrapper predicate that asked
+// the bare-name import route (`cross.imported`) never fired: `std@erlang.erl`
+// defined nothing and `'std@erlang':node()` was `{undef, …}` at run time — the
+// program resolved, type-checked and emitted a correct call. Every `pub`
+// host-backed `declare fn` now gets its wrapper and export whether or not the
+// build reaches it. RUNNING is the assertion: the snapshot of an attribute-only
+// module looks fine. `node/0` is chosen because `erlang.bp` types every
+// parameter `any`, a closed type no botopink value unifies with (`erlang.abs(-3)`
+// is `expected any, got i32`), and because `nonode@nohost` is deterministic
+// where `self()` is not; it is also an auto-imported BIF, so the wrapper is the
+// shadow case `erlang.bp` exists to detect.
+test "erlang: std package ---- a qualified std host call reaches its owner's wrapper" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\import {erlang} from "std";
+        \\
+        \\fn main() {
+        \\    @print(erlang.node());
+        \\}
+    , "nonode@nohost\n", &.{
+        "std@erlang:node()",
+    });
+}
+
 test "js: std package ---- order enum module with type export" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\import {order} from "std";
