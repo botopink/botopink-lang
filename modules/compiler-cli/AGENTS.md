@@ -273,6 +273,16 @@ Cross-command rules:
   naming the members; a `path` to a sibling is refused naming the fix; the
   string-array `dependencies` is refused naming the rewrite; a `path`
   dependency resolves with no library root at all.
+- **A host sidecar ships through the resolved dependency, or the build fails.**
+  The `.mjs` a `#[@External.Node("./x.mjs", …)]` requires is copied from the
+  directory the dependency resolved to — a `{ "workspace": true }` member, a
+  `{ "path": … }` package outside every library root, a name a second checkout
+  also declares — and never from whichever entry of that name the roots happen
+  to carry. A sidecar a module requires and the build cannot ship is a located
+  error on the `dependencies` entry and exit 1, never a silent exit 0
+  (decision 67 of 1.0.10-beta: no flag reduces it to a warning). Pinned by
+  `tests/cli_contract.sh`, whose four rows red against a pre-fix binary
+  (`BOTOPINK_BIN=<old>`).
 
 ### `botopink test` output format
 

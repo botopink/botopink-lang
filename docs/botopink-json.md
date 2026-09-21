@@ -115,6 +115,33 @@ Refusals at resolution time (the compiler and the LSP, located on the project's
 | `{ "git": … }` whose name is a workspace under a root | `"x" is a workspace, not a package — import one of its members: a, b, c` |
 | `{ "git": … }` whose name no root carries | `dependency 'x' was not found under any library root` |
 | a `files` entry of the resolved dependency that does not exist | `dependency 'x' lists "gone.bp" in ` files `, but <path> does not exist` (located on the dependency's manifest) |
+| a host sidecar the resolved dependency does not carry | `dependency 'x' requires "./x.mjs" from module 'x/root', but no such file is in its sources (looked at <src>/sidecars/x.mjs, then <src>/x.mjs)` |
+
+### Host sidecars
+
+A `#[@External.Node("./x.mjs", "f")]` lowers to a relative `require("./x.mjs")`
+in the emitted module. The file is the library's, not the consumer's, so
+`botopink build` and `botopink test` copy it next to the emitted JS —
+`<out>/<name>/x.mjs` for a dependency's module, `<out>/x.mjs` for the project's
+own — and rewrite the `require` when the authored path would escape the output
+directory. The `.erl` host module of an `#[@External.Erlang("host", "f")]` is
+copied the same way.
+
+Which directory a sidecar is copied *from* is the dependency this manifest
+resolved, by the rules of the table above — **not** a directory of that name
+under the library roots. A `{ "path": … }` dependency outside every root, and a
+name two checkouts of one library both declare (which the roots refuse to
+resolve, deliberately), are therefore shipped correctly. Inside that directory
+the file is looked for under the dependency's own `src`, first as
+`<src>/sidecars/<file>` and then as `<src>/<file>`. Only a library the project
+does not declare as a dependency — the embedded `std` — is found by name across
+the roots.
+
+A sidecar a module requires and the build cannot ship ends the build with a
+located error on the `dependencies` entry that named the library. There is no
+flag, environment variable or manifest field that reduces it to a warning: a
+build that exits 0 having shipped nothing is a program that dies on its first
+run instead.
 
 ## A workspace (decision 75)
 

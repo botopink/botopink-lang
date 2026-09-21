@@ -691,6 +691,16 @@ error naming the capitalised form (`` `#[@external]` binds no host — an extern
 target is written `External.<Target>` ``), rather than a function left silently
 without a host.
 
+A relative path (`"./helpers.mjs"`, `"helpers"` on erlang) names a **sidecar** the
+library keeps beside its sources, in `<src>/sidecars/` or `<src>/`. `botopink
+build` and `botopink test` copy it next to the emitted module, from the
+directory the dependency resolved to — so it ships the same whether the library
+is a workspace member, a `{ "path": … }` package outside every library root, or
+one of two checkouts declaring the name. A sidecar the build cannot ship is a
+located error on the `dependencies` entry that named the library, never a
+silent exit 0. See [`docs/botopink-json.md`](./docs/botopink-json.md) § Host
+sidecars.
+
 ## Builtins
 
 ```botopink

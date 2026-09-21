@@ -334,14 +334,213 @@ fn loadOne(
     }
 }
 
-/// The directory of the library named `lib` across `roots` — a plain package
-/// directory or a workspace member — for the sidecar shippers. Null when no
-/// root carries it (or it is a workspace, which ships nothing).
-fn libDirByName(arena: std.mem.Allocator, io: std.Io, roots: []const []const u8, lib: []const u8) !?[]const u8 {
+/// The package a sidecar is shipped from: the directory, and the manifest whose
+/// `src` says where inside it the sidecar lives.
+const SidecarOwner = struct {
+    dir: []const u8,
+    package: manifest.Manifest,
+
+    /// Where the owner keeps its sources — `<dir>/<src>`.
+    fn srcDir(self: SidecarOwner, arena: std.mem.Allocator) ![]const u8 {
+        return std.fs.path.join(arena, &.{ self.dir, self.package.src });
+    }
+};
+
+/// The owner of the sidecars of the emitted modules prefixed `<lib>/`.
+///
+/// A sidecar shipper sees only the emitted module name, whose first segment is
+/// the **import name** of a dependency (`rakun/http` → `rakun`). Which
+/// directory that name meant was already decided, by `manifest.resolveDependency`,
+/// when `loadDependencies` compiled the modules: `{ "path" }` from the project's
+/// directory, `{ "workspace": true }` from the enclosing workspace, `{ "git" }`
+/// by name across the roots. Asking the roots for the name a second time asks a
+/// different question and gets a different answer — a `path` dependency outside
+/// every root has no entry at all, and a name two checkouts of one library both
+/// declare is a located problem rather than a directory. So the dependency is
+/// resolved again, the same way, from the project's own manifest.
+///
+/// Only an owner the project does not declare falls back to the by-name entry:
+/// that is the embedded `std`, whose modules are emitted as `std/<mod>` and
+/// which never appears in `dependencies`.
+///
+/// Null with `out_err` set is a located problem; null without one is "no such
+/// package" — the caller decides whether that is fatal.
+fn sidecarOwner(
+    gpa: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    io: std.Io,
+    roots: []const []const u8,
+    env_map: EnvMap,
+    project: ?manifest.Manifest,
+    lib: []const u8,
+    out_err: *?manifest.Located,
+) !?SidecarOwner {
+    if (project) |proj| {
+        for (proj.dependencies) |dep| {
+            if (!std.mem.eql(u8, dep.name, lib)) continue;
+
+            const fallback_roots = try resolveFallbackRoots(gpa, io, env_map);
+            defer freeRoots(gpa, fallback_roots);
+            const entries = try manifest.scanRoots(arena, io, roots);
+            const fallback_entries = try manifest.scanRoots(arena, io, fallback_roots);
+
+            var buf: [std.fs.max_path_bytes]u8 = undefined;
+            const n = try std.process.currentPath(io, &buf);
+            const resolved = manifest.resolveDependency(arena, io, proj, buf[0..n], dep, entries, fallback_entries, out_err) catch |e| switch (e) {
+                // The build already compiled this dependency, so a refusal here
+                // is not reachable through `build`/`test`; it is still a located
+                // problem and never a silent null.
+                error.Invalid => return null,
+                error.OutOfMemory => return error.OutOfMemory,
+            };
+            const r = resolved orelse return null;
+            return .{ .dir = r.dir, .package = r.manifest };
+        }
+    }
+
     const entries = try manifest.scanRoots(arena, io, roots);
     const e = manifest.find(entries, lib) orelse return null;
-    if (e.is_workspace or e.problem != null) return null;
-    return e.dir;
+    if (e.problem) |pr| {
+        out_err.* = pr;
+        return null;
+    }
+    if (e.is_workspace) return null;
+    return .{ .dir = e.dir, .package = e.manifest.? };
+}
+
+/// The project's own manifest, read once per shipper run and only when a
+/// relative sidecar require is actually seen. A project whose manifest cannot
+/// be read is not diagnosed here — `build` and `test` already refused before
+/// reaching a shipper — it simply has no dependency to resolve through.
+const ProjectManifest = struct {
+    value: ?manifest.Manifest = null,
+    read: bool = false,
+
+    fn get(self: *ProjectManifest, arena: std.mem.Allocator, io: std.Io) ?manifest.Manifest {
+        if (self.read) return self.value;
+        self.read = true;
+        // Parsed under the bare `botopink.json`, the name every other CLI
+        // diagnostic gives the project's manifest (`config.zig`), so a located
+        // refusal reads `--> botopink.json:L:C` like the rest.
+        const text = std.Io.Dir.cwd().readFileAlloc(io, manifest.FILENAME, arena, .unlimited) catch return null;
+        var err: ?manifest.Located = null;
+        self.value = manifest.parse(arena, text, manifest.FILENAME, &err) catch null;
+        return self.value;
+    }
+};
+
+/// A sidecar the build cannot ship ends the build, after the located
+/// diagnostic. It is not a `return error`: both shippers are called as
+/// `shipMjsSidecars(…) catch {}` from `build` and `test`, so a returned error
+/// would be swallowed and the build would still exit 0 — the silence this front
+/// closes. There is no flag, environment variable or manifest field that turns
+/// the refusal off (decision 67 of 1.0.10-beta).
+fn refuseSidecar(loc: manifest.Located) noreturn {
+    loc.print();
+    std.process.exit(1);
+}
+
+/// True when the project's manifest declares `lib` under `dependencies`.
+fn declaresDependency(proj: ?manifest.Manifest, lib: ?[]const u8) bool {
+    const p = proj orelse return false;
+    const name = lib orelse return false;
+    for (p.dependencies) |dep| {
+        if (std.mem.eql(u8, dep.name, name)) return true;
+    }
+    return false;
+}
+
+/// Where a sidecar refusal points: the `dependencies` entry that named the
+/// owning library, when the project declares one — the line a reader can act on
+/// — and otherwise the `"src"` of the manifest the file was looked for under
+/// (a project-own sidecar, or an owner the project does not declare, such as the
+/// embedded `std`). A project whose manifest could not be read leaves the
+/// diagnostic on the first byte of `botopink.json` rather than unreported.
+fn sidecarLocation(
+    proj: ?manifest.Manifest,
+    lib: ?[]const u8,
+    owner_pkg: ?manifest.Manifest,
+    message: []const u8,
+) manifest.Located {
+    if (declaresDependency(proj, lib)) return proj.?.locateEntryAt("dependencies", lib.?, message);
+    if (owner_pkg) |pkg| return pkg.locateAt("src", message);
+    if (proj) |p| return p.locateAt("src", message);
+    return .{ .message = message, .file = manifest.FILENAME, .source = "", .line = 1, .col = 1, .span = 1 };
+}
+
+/// The owning library of an emitted module resolves to no package directory:
+/// the project declares no dependency of that name and no root carries it
+/// either, so there is nowhere to ship the sidecar from.
+fn unresolvedOwner(
+    arena: std.mem.Allocator,
+    proj: ?manifest.Manifest,
+    lib: []const u8,
+    module: []const u8,
+    req_path: []const u8,
+) !manifest.Located {
+    const message = try std.fmt.allocPrint(
+        arena,
+        "module '{s}' requires \"{s}\", but its library '{s}' resolves to no package directory — the sidecar cannot be shipped",
+        .{ module, req_path, lib },
+    );
+    return sidecarLocation(proj, lib, null, message);
+}
+
+/// The owner resolved, but neither of the two places a sidecar may live under
+/// its `src` holds the file the emitted module requires.
+fn missingSidecar(
+    arena: std.mem.Allocator,
+    proj: ?manifest.Manifest,
+    lib: []const u8,
+    owner_pkg: manifest.Manifest,
+    module: []const u8,
+    req_path: []const u8,
+    probed_sidecar: []const u8,
+    probed_flat: []const u8,
+) !manifest.Located {
+    const message = try std.fmt.allocPrint(
+        arena,
+        "dependency '{s}' requires \"{s}\" from module '{s}', but no such file is in its sources (looked at {s}, then {s})",
+        .{ lib, req_path, module, probed_sidecar, probed_flat },
+    );
+    return sidecarLocation(proj, lib, owner_pkg, message);
+}
+
+/// The same for a module of the project itself, whose sidecars come from the
+/// project's own `src`.
+fn missingOwnSidecar(
+    arena: std.mem.Allocator,
+    proj: ?manifest.Manifest,
+    module: []const u8,
+    req_path: []const u8,
+    probed_sidecar: []const u8,
+    probed_flat: []const u8,
+) !manifest.Located {
+    const message = try std.fmt.allocPrint(
+        arena,
+        "module '{s}' requires \"{s}\", but no such file is in this project's sources (looked at {s}, then {s})",
+        .{ module, req_path, probed_sidecar, probed_flat },
+    );
+    return sidecarLocation(proj, null, null, message);
+}
+
+/// The sidecar is where it should be and still could not be read (permissions,
+/// a dangling symlink, an I/O error).
+fn unreadableSidecar(
+    arena: std.mem.Allocator,
+    proj: ?manifest.Manifest,
+    lib: ?[]const u8,
+    module: []const u8,
+    req_path: []const u8,
+    src: []const u8,
+    err: anyerror,
+) !manifest.Located {
+    const message = try std.fmt.allocPrint(
+        arena,
+        "module '{s}' requires \"{s}\", but {s} could not be read ({s})",
+        .{ module, req_path, src, @errorName(err) },
+    );
+    return sidecarLocation(proj, lib, null, message);
 }
 
 /// A dependency's `files` entry that could not be read: the path looked for,
@@ -441,6 +640,9 @@ pub fn shipMjsSidecars(
     // Resolved lazily on the first relative `.mjs` require (most builds have none).
     var roots: ?[][]const u8 = null;
     defer if (roots) |r| freeRoots(gpa, r);
+    // The project's own manifest — how a dependency's directory is resolved, and
+    // where a refusal is located. Read on the same first require.
+    var project: ProjectManifest = .{};
 
     const out_norm = try std.fs.path.resolve(arena, &.{out_dir});
 
@@ -501,30 +703,42 @@ pub fn shipMjsSidecars(
             }
             if (fileExists(io, target)) continue;
 
-            // std-tail F2: when a sidecar lives under `<lib>/src/sidecars/<base>`
+            // std-tail F2: when a sidecar lives under `<lib>/<src>/sidecars/<base>`
             // (the convention for std's `#\[@External\.node(…)]` adapters that
             // need a sibling `.mjs`/`.erl` file), the search also probes that
-            // subdirectory before falling back to the flat `<lib>/src/<base>`.
-            const src_path: ?[]const u8 = blk: {
+            // subdirectory before falling back to the flat `<lib>/<src>/<base>`.
+            //
+            // The owner's directory is the one the build resolved the dependency
+            // to (`sidecarOwner`), and `<src>` is that package's own — never a
+            // basename match across the roots. A sidecar that is named and
+            // cannot be found is the end of the build, not a silent skip.
+            const src: []const u8 = blk: {
                 if (owner) |lib| {
                     if (roots == null) roots = try resolveLibRoots(gpa, io, env_map);
-                    // The owning lib is the entry of that name across the roots
-                    // (a package directory, or a workspace member).
-                    const lib_dir = (try libDirByName(arena, io, roots.?, lib)) orelse break :blk null;
-                    const sidecar = try std.fs.path.join(arena, &.{ lib_dir, "src", "sidecars", base });
+                    const proj = project.get(arena, io);
+                    var oerr: ?manifest.Located = null;
+                    const found = try sidecarOwner(gpa, arena, io, roots.?, env_map, proj, lib, &oerr);
+                    const pkg = found orelse refuseSidecar(oerr orelse
+                        try unresolvedOwner(arena, proj, lib, o.name, req_path));
+                    const src_dir = try pkg.srcDir(arena);
+                    const sidecar = try std.fs.path.join(arena, &.{ src_dir, "sidecars", base });
                     if (fileExists(io, sidecar)) break :blk sidecar;
-                    const cand = try std.fs.path.join(arena, &.{ lib_dir, "src", base });
+                    const cand = try std.fs.path.join(arena, &.{ src_dir, base });
                     if (fileExists(io, cand)) break :blk cand;
-                    break :blk null;
+                    refuseSidecar(try missingSidecar(arena, proj, lib, pkg.package, o.name, req_path, sidecar, cand));
                 }
                 // Project-own module: probe sidecars/ first, then flat src/.
-                const sidecar = try std.fs.path.join(arena, &.{ "src", "sidecars", base });
+                const proj = project.get(arena, io);
+                const own_src = if (proj) |p| p.src else "src/";
+                const sidecar = try std.fs.path.join(arena, &.{ own_src, "sidecars", base });
                 if (fileExists(io, sidecar)) break :blk sidecar;
-                break :blk try std.fs.path.join(arena, &.{ "src", base });
+                const cand = try std.fs.path.join(arena, &.{ own_src, base });
+                if (fileExists(io, cand)) break :blk cand;
+                refuseSidecar(try missingOwnSidecar(arena, proj, o.name, req_path, sidecar, cand));
             };
-            const src = src_path orelse continue;
 
-            const data = std.Io.Dir.cwd().readFileAlloc(io, src, arena, .unlimited) catch continue;
+            const data = std.Io.Dir.cwd().readFileAlloc(io, src, arena, .unlimited) catch |err|
+                refuseSidecar(try unreadableSidecar(arena, project.get(arena, io), owner, o.name, req_path, src, err));
             if (std.fs.path.dirname(target)) |parent| {
                 std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
                     error.PathAlreadyExists => {},
@@ -597,6 +811,7 @@ pub fn shipErlSidecars(
     // Resolved lazily on the first unknown qualifier (most builds have none).
     var roots: ?[][]const u8 = null;
     defer if (roots) |r| freeRoots(gpa, r);
+    var project: ProjectManifest = .{};
 
     var shipped = std.StringHashMapUnmanaged(void){};
     for (outputs) |o| {
@@ -616,20 +831,28 @@ pub fn shipErlSidecars(
             const src_path: ?[]const u8 = blk: {
                 if (owner) |lib| {
                     if (roots == null) roots = try resolveLibRoots(gpa, io, env_map);
-                    const lib_dir = (try libDirByName(arena, io, roots.?, lib)) orelse break :blk null;
-                    const sidecar = try std.fs.path.join(arena, &.{ lib_dir, "src", "sidecars", base });
+                    // Same owner lookup as the `.mjs` shipper: the directory the
+                    // build resolved the dependency to, and that package's `src`.
+                    var oerr: ?manifest.Located = null;
+                    const found = try sidecarOwner(gpa, arena, io, roots.?, env_map, project.get(arena, io), lib, &oerr);
+                    const pkg = found orelse break :blk null;
+                    const src_dir = try pkg.srcDir(arena);
+                    const sidecar = try std.fs.path.join(arena, &.{ src_dir, "sidecars", base });
                     if (fileExists(io, sidecar)) break :blk sidecar;
-                    const cand = try std.fs.path.join(arena, &.{ lib_dir, "src", base });
+                    const cand = try std.fs.path.join(arena, &.{ src_dir, base });
                     if (fileExists(io, cand)) break :blk cand;
                     break :blk null;
                 }
-                const sidecar = try std.fs.path.join(arena, &.{ "src", "sidecars", base });
+                const own_src = if (project.get(arena, io)) |p| p.src else "src/";
+                const sidecar = try std.fs.path.join(arena, &.{ own_src, "sidecars", base });
                 if (fileExists(io, sidecar)) break :blk sidecar;
-                const cand = try std.fs.path.join(arena, &.{ "src", base });
+                const cand = try std.fs.path.join(arena, &.{ own_src, base });
                 if (fileExists(io, cand)) break :blk cand;
                 break :blk null;
             };
-            const src = src_path orelse continue; // OTP or unknown — not ours to ship
+            // An unresolved atom here is an OTP or unknown module, not a sidecar
+            // the library named — the `.mjs` shipper's refusal has no twin here.
+            const src = src_path orelse continue;
 
             const data = std.Io.Dir.cwd().readFileAlloc(io, src, arena, .unlimited) catch continue;
             if (std.fs.path.dirname(target)) |parent| {
