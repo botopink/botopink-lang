@@ -187,9 +187,9 @@ test "string replace swaps the first occurrence" {
     assert s.replace("a", "o") == "bonana";
 }
 
-test "string charAt in range" {
+test "string at in range" {
     val s = "abc";
-    assert s.charAt(1).unwrapOr("none") == "b";
+    assert s.at(1).unwrapOr("none") == "b";
 }
 
 test "string split length" {

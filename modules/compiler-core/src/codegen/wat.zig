@@ -934,10 +934,10 @@ const Emitter = struct {
             });
             // A method's declared return type, under the symbol the call
             // emits. `typeRefOf` asks for it so the *reader* of a `?T` agrees
-            // with the writer: `Dict.lookup` answers `?V`, which is unboxed
+            // with the writer: `Dict.at` answers `?V`, which is unboxed
             // here (a type parameter is not a known scalar), and without this
             // the reader assumed a box and loaded through the payload as if it
-            // were an address — `d.lookup("a").unwrapOr(0)` answered `0` for a
+            // were an address — `d.at("a").unwrapOr(0)` answered `0` for a
             // key that is present, exit 0, no diagnostic.
             // The same registration the top-level `fn` arm makes, for the same
             // reason: `@print` picks its printer from the recovered shape, and a
@@ -3359,7 +3359,7 @@ const Emitter = struct {
     /// one helper swap (`.arr_at` → `.arr_at_box`) and the fixtures move with it.
     ///
     /// A receiver that is neither an array nor a string — a `Dict`, above all —
-    /// has no lowering here: `d["k"]` is `Dict.lookup` through a std record, and
+    /// has no lowering here: `d["k"]` is `Dict.at` through a std record, and
     /// this backend inlines std rather than linking it. It traps rather than
     /// answering a number nothing put there.
     /// The `(receiver, index)` of an index call, and whether the index is a
@@ -5832,9 +5832,9 @@ const Emitter = struct {
                 .call => |cc| blk: {
                     if (cc.is_builtin) break :blk null;
                     // A method on a record value: its declared return type is
-                    // registered under the emitted symbol (`Dict_lookup`), and
+                    // registered under the emitted symbol (`Dict_at`), and
                     // asking for it is what keeps the *reader* of a `?T` in step
-                    // with the writer. `d.lookup("a")` returns a `?V` — a type
+                    // with the writer. `d.at("a")` returns a `?V` — a type
                     // parameter, so unboxed here — while the reader guessed
                     // "boxed" and loaded through the payload as an address.
                     if (cc.receiver != null) {
@@ -5844,7 +5844,7 @@ const Emitter = struct {
                         // The same question one step lower: the symbol the call
                         // actually emits — a `rewrites` entry the comptime pass
                         // left, an interface `default fn`, or a method already
-                        // flattened to `Dict_lookup` by the specialisation pass.
+                        // flattened to `Dict_at` by the specialisation pass.
                         const sym = self.calleeSymbol(cc, c.loc) orelse break :blk null;
                         break :blk self.fn_ret_typerefs.get(sym);
                     }

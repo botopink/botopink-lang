@@ -21,7 +21,7 @@ std/
     ├── root.bp              ← module-tree root: one `pub mod <name>;` per importable std module
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
     ├── primitives.bp        ← primitive behavior registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array); no tests (see `test/`)
-    ├── builtins.d.bp        ← builtin surface: print, @Result/@Iterator/@Future…, `Display` (decision 8 §7), `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `CustomNode`, …), `@Decl` reflection, effect-annotation rules
+    ├── builtins.d.bp        ← builtin surface: print, @Result/@Iterator/@Future…, `Display` (decision 8 §7), `Index`/`Slice` (decision 63, amended), `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `CustomNode`, …), `@Decl` reflection, effect-annotation rules
     ├── builtins_fns.d.bp    ← builtin fns with literal defaults (`todo`, `panic`)
     │                        — importable modules (declared in root.bp):
     ├── order.bp  dict.bp  sets.bp  string_builder.bp  queue.bp
@@ -38,7 +38,7 @@ std/
 | Module | Surface |
 |---|---|
 | `order` | `type Order`, `lt`, `eq`, `gt`, `toInt`, `reverse` |
-| `dict` | `type Dict<K, V>` (association list): `empty`, `lookup`, `hasKey`, `insert`, `delete`, `size`, `isEmpty`, `keys`, `values`, `fold`, `merge`, `mapValues` |
+| `dict` | `type Dict<K, V>` (association list, `implement Index<K, V>`): `empty`, `at`, `hasKey`, `insert`, `delete`, `size`, `isEmpty`, `keys`, `values`, `fold`, `merge`, `mapValues` |
 | `sets` | `type Set<T>`: `empty`, `fromList`, `contains`, `size`, `isEmpty`, `insert`, `delete`, `toList`, `union`, `intersection`, `difference` (named `sets` — `set` is a keyword) |
 | `string_builder` | `type StringBuilder`: `empty`, `fromString`, `fromStrings`, `append`, `prepend`, `toString`, `length`, `isEmpty` |
 | `queue` | `type Queue<T>` (FIFO): `empty`, `fromList`, `size`, `isEmpty`, `enqueue`, `dequeue`, `peek`, `toList` |
@@ -211,11 +211,13 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
   cannot be formatted at all — `fn await(self: Self)` at line 116 is a parse
   error (`await` is a keyword), which is a parser row, not a formatter one.
 - No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`.
-- `get`/`set`/`test`/`from`/`assert` are keywords (`new`, `delegate` and `const` are identifiers since 06 N27) — pick other names (`empty`/`lookup`/`insert`, `matches`, `src`, `asserts`).
+- `get`/`set`/`test`/`from`/`assert` are keywords (`new`, `delegate` and `const` are identifiers since 06 N27) — pick other names (`empty`/`at`/`insert`, `matches`, `src`, `asserts`).
 - Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS).
 - A trailing default on a behavior method is not expanded at the call site
   yet: `s.slice(1)` fails to check (`'slice' expects 2 argument(s)`); pass both
-  bounds.
+  bounds. `slice`'s `end` is `?i32`, so the open-ended form is
+  `s.slice(1, null)` — which is exactly what an index expression `s[1..]`
+  rewrites to (decision 63, amended).
 - A `val` bound to a generic call is not generalised: `val f = Function.constant(42)`
   accepts one argument type only.
 - Test an optional parameter with `!= null`, not truthiness: on commonJS
@@ -224,6 +226,35 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
   `math:round/1` do not exist in OTP, `string:str/2` rejects binaries,
   `string:trim/1` strips both ends. Every host binding carries a test that
   asserts the value.
+
+## `behavior Index` / `behavior Slice` (decision 63, amended)
+
+`builtins.d.bp` declares both, ambient like `Display` and for the same reason: an index expression
+has **no typing rule of its own** — `xs[0]` IS `xs.at(0)`, `d["k"]` IS `d.at("k")`, `xs[0..2]` IS
+`xs.slice(0, 2)` and `xs[1..]` IS `xs.slice(1, null)` — so the syntax has to find the method without
+the author having imported anything. `slice` takes two arguments rather than a range because there
+is no `Range` type: `start..end` is an AST node, not a value.
+
+`libs/std` answers them three times, in two different spellings, and the difference is a grammar
+limit rather than a choice:
+
+| type | behaviors | how it is written |
+|---|---|---|
+| `Dict<K, V>` (`dict.bp`) | `Index<K, V>` | `pub type Dict<K, V>(…) implement Index<K, V>` — the real clause; `lookup` was renamed `at` |
+| `Array<T>` (`primitives.bp`) | `Index<i32, T>`, `Slice<T[]>` | a comment naming the conformance |
+| `string` (`primitives.bp`) | `Index<i32, string>`, `Slice<string>` | a comment; `charAt` was renamed `at` |
+
+**Why the last two are comments.** `Array` and `string` are `behavior` declarations — the primitive
+registry — and `parseBehaviorDecl` reads only an `extends` clause, whose members are bare
+identifiers (`parser/decls.zig:593`), so neither `behavior Array<T> implement Index<i32, T>` nor
+`extends Index<i32, T>` parses. The separate block form does parse for a builtin target
+(`ArrayIndex implement Index<i32, T> for Array { … }`) but it is not a conformance *declaration*: it
+requires the methods **in its own body** (`comptime/infer.zig:463-486`) and does not consult the
+target's existing members, so `for string { }` reds with *'string' does not implement 'at'* even
+though `String.at` is declared two hundred lines above. A type's inline clause is not checked against
+an ambient behavior either (`validateInlineImplements` skips an interface the program does not
+declare), so `Dict`'s clause is documentation the compiler does not yet verify — the same blind spot
+decision 58's note already records.
 
 ## `behavior Display` (decision 8 §7, decision 27)
 

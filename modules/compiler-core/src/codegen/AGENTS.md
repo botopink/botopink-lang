@@ -183,7 +183,22 @@ codegen/
   loc-keyed `dispatch_rewrites` map.
 - **Method renames**: the loc-keyed `js_method_renames` map (from inference) is
   consulted first, then the annotation-derived `prim_node_renames`
-  (`s.contains` → `s.includes`). A rename to `length` on a no-arg call emits
+  (`s.contains` → `s.includes`). That type-naive map skips a name that two
+  primitive behaviors send to different host symbols — `at` is `String.at` →
+  native `charAt` and `Array.at` → native `at` since decision 63's amendment —
+  because it is what the `Array` default-fn bodies materialised as prototype
+  patches are emitted with (`first`'s `self.at(0)` became `this.charAt(0)` on an
+  array and threw on node); such a call keeps its own name unless inference typed
+  the receiver. The disagreement is read off the WHOLE embedded std registry
+  (`ambiguous_prim_renames`, filled while `collectBuiltinNodeDispatch` parses
+  `primitives.bp`), not only the program's behaviors: with a String `default fn`
+  in use the scanned program carries the String behavior alone, `at → charAt`
+  looked unambiguous there, and `parts.at(0)` on a typed `string[]` — whose
+  per-loc rename is "none", `Array.at` being its own host symbol — fell through
+  to it as `parts.charAt(0)` (`libs/std`'s `querystring.bp`, caught by
+  test-libs). The type-naive map is still what `append → concat` rides on for a
+  typed receiver (a `default fn` with a `Node` symbol takes the default-fn
+  path, which records no per-loc rename), so it is not gated on typing. A rename to `length` on a no-arg call emits
   the native `.length` **property** without parens (a `member` node, not a
   `call`); inference
   records it only for typed array/string receivers, so a record `length()`
@@ -231,10 +246,10 @@ codegen/
 - **Prelude helpers** (`js/js_prelude.zig`): a call `recv.m(args)` whose
   receiver inference recorded as a primitive (`instance_lowerings` `.prim`)
   and whose native JS method disagrees with the declaration calls a helper
-  instead — `s.charAt(i)` is `__bp_string_char_at(s, i)` (`null` out of
+  instead — `s.at(i)` is `__bp_string_char_at(s, i)` (`null` out of
   range). An open-ended range is `__bp_range_from(start)`. `Emitter.helper` marks it, and only marked helpers are declared at
   the top of the module. Interface default-fn bodies are not inferred, so a
-  `charAt` inside one stays native.
+  `at` inside one stays native.
 - **Duplicate test names**: two `test "x"` blocks in one module print
   `warning: duplicate test name "x" in <mod>.bp:<line>` to stderr; both run.
 - **Cross-module linking** (`crossModule.zig`): `from "<pkg>"` imports become
@@ -331,7 +346,7 @@ codegen/
   JS index, which answers an array's element, a tuple's member (a tuple is a JS
   array) and a string's character alike. **A `Dict` read `d["k"]` is not
   lowered**: a `Dict` is a botopink record over a `pairs` association list, so
-  the read is `d.lookup("k")`, and choosing that needs the *receiver's type* —
+  the read is `d.at("k")`, and choosing that needs the *receiver's type* —
   which this backend does not have (`instanceLowerings` carries a kind only for
   call sites `comptime/infer.zig` recorded, and it does not type this call at
   all yet: `xs[0]` is still `void`). Today `d["k"]` emits the JS property read
@@ -518,7 +533,7 @@ codegen/
   and an open end (`xs[0..]`) keeps the atom `infinity` that lowering already
   writes. **A `Dict` is deliberately not a clause:** it is the map
   `#{pairs => …}`, so `maps:get/3` would answer `undefined` for a key that is
-  present; `d["k"]` has to reach `Dict.lookup`, which is a lowering only the
+  present; `d["k"]` has to reach `Dict.at`, which is a lowering only the
   checker can record once it types the receiver.
 - **A `case` pattern's variant name is the last segment of its written path.**
   `ast.Pattern` carries the name exactly as written — `Shape.Circle`, `.Some`,
@@ -1402,7 +1417,8 @@ first three are now enforced by the model, not by discipline:
   `primCallRes` is the table; a method missing from it emits
   `unreachable ;; prim method not lowered on wasm: <kind>.<name>/<argc>`.
   Audited against `libs/std/src/primitives.bp` on 2026-09-18 — not lowered, each
-  verified to trap under wasmtime: **string** `charAt`, `charCodeAt`, `chars`,
+  verified to trap under wasmtime: **string** `at` (`charAt` before decision 63,
+  amended), `charCodeAt`, `chars`,
   `lastIndexOf`, `lines`, `padEnd`, `padStart`, `replace`, `replaceAll`,
   `words`; **array** `chunked`, `find`, `pop`, `range`, `sliding`, `unique`;
   **float** `toString`; **Pair** `first`, `of`, `second`, `swap`.

@@ -16,11 +16,11 @@ fn wordCounts() -> Dict<string, i32> {
     return dict.empty().insert("ann", 1).insert("bob", 2).insert("ann", 3); // right-biased: overwrites
 }
 
-test "dict tour: insert overwrites + lookup returns Option" {
+test "dict tour: insert overwrites + at returns Option" {
     val d = wordCounts();
     assert d.size() == 2;
-    assert d.lookup("ann").unwrapOr(0) == 3;
-    assert d.lookup("missing").map({ n -> n * 10 }).unwrapOr(-1) == -1;
+    assert d.at("ann").unwrapOr(0) == 3;
+    assert d.at("missing").map({ n -> n * 10 }).unwrapOr(-1) == -1;
 }
 
 // ── tour: queue (FIFO) ──────────────────────────────────────────────────────
@@ -123,7 +123,7 @@ test "queue BFS: visits the graph in level order" {
 // LIMITATION (recorded, not a forced test): `==` on records is *reference*
 // equality today (a freshly-built `Point(x:1,y:2)` is NOT equal to a previously
 // stored one). `Dict`/`Set` rely on `==` for their key/membership tests, so
-// STRUCTURAL record keys do not work — a structural lookup misses and a list of
+// STRUCTURAL record keys do not work — a structural read misses and a list of
 // structurally-equal records does not dedup. Structural record equality is a
 // separate compiler feature (would need a generated value-equality lowering).
 // These tests assert the CURRENT identity semantics so they stay an honest
@@ -134,9 +134,9 @@ test "dict with record keys: identity-keyed (same binding hits, rebuild misses)"
     val k = Point(x: 1, y: 2);
     val d: Dict<Point, string> = dict.empty().insert(k, "a");
     // The very same key value resolves.
-    assert d.lookup(k).unwrapOr("?") == "a";
+    assert d.at(k).unwrapOr("?") == "a";
     // A structurally-equal but freshly-built key misses (reference equality).
-    assert d.lookup(Point(x: 1, y: 2)).unwrapOr("?") == "?";
+    assert d.at(Point(x: 1, y: 2)).unwrapOr("?") == "?";
 }
 
 test "set of records: no structural dedup under reference equality" {

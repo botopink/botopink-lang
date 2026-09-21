@@ -2,7 +2,7 @@
 ```botopink
 //// Gleam-inspired `dict` module — a `type Dict<K, V>` wrapping an
 //// association list `pairs: Array<#(K, V)>` for full backend portability
-//// (no host-backing). O(n) lookup; camelCase convention.
+//// (no host-backing). O(n) read; camelCase convention.
 ////
 //// Instance operations are `self`-methods on the record; `empty` is a
 //// top-level constructor (records hold state and are constructed — unlike
@@ -10,12 +10,18 @@
 ////
 //// `==` / `!=` on generic K uses structural equality (string/numeric keys —
 //// the common case). API naming note: `new`/`get` are keyword tokens — use
-//// `empty`/`lookup`.
+//// `empty`/`at`.
+////
+//// `Dict<K, V>` answers the ambient `Index<K, V>` of `builtins.d.bp`
+//// (decision 63, amended), which is what makes `d["k"]` legal: the index
+//// expression has no typing rule of its own and rewrites to `d.at("k")`. The
+//// reader was spelled `lookup` until that amendment gave every indexable type
+//// one method name.
 
 pub type Dict<K, V>(
     pairs: Array<#(K, V)>,
-) {
-    pub fn lookup(self: Self, key: K) -> ?V {
+) implement Index<K, V> {
+    pub fn at(self: Self, key: K) -> ?V {
         // NOTE: written with `forEach` + accumulator rather than
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is
         // not lowered yet (tracked in tasks/v0.beta.4 Part A: primitive/option
@@ -92,17 +98,17 @@ test "dict empty is empty" {
     assert d.size() == 0;
 }
 
-test "dict insert and lookup" {
+test "dict insert and at" {
     val d = empty().insert("a", 1);
-    assert d.lookup("a").unwrapOr(0) == 1;
-    assert d.lookup("z").unwrapOr(-1) == -1;
+    assert d.at("a").unwrapOr(0) == 1;
+    assert d.at("z").unwrapOr(-1) == -1;
 }
 
 test "dict pipeline: insert chain" {
     val d = empty().insert("x", 10).insert("y", 20).insert("z", 30);
-    assert d.lookup("x").unwrapOr(0) == 10;
-    assert d.lookup("y").unwrapOr(0) == 20;
-    assert d.lookup("z").unwrapOr(0) == 30;
+    assert d.at("x").unwrapOr(0) == 10;
+    assert d.at("y").unwrapOr(0) == 20;
+    assert d.at("z").unwrapOr(0) == 30;
 }
 
 test "dict hasKey" {
@@ -114,13 +120,13 @@ test "dict hasKey" {
 test "dict delete removes key" {
     val d = empty().insert("a", 1).insert("b", 2).delete("a");
     assert !d.hasKey("a");
-    assert d.lookup("b").unwrapOr(0) == 2;
+    assert d.at("b").unwrapOr(0) == 2;
 }
 
 test "dict insert overwrites duplicate" {
     val d = empty().insert("k", 1).insert("k", 99);
     assert d.size() == 1;
-    assert d.lookup("k").unwrapOr(0) == 99;
+    assert d.at("k").unwrapOr(0) == 99;
 }
 
 test "dict size counts unique keys" {
@@ -148,51 +154,51 @@ test "dict merge right-biased" {
     val a = empty().insert("k", 1);
     val b = empty().insert("k", 99);
     val m = a.merge(b);
-    assert m.lookup("k").unwrapOr(0) == 99;
+    assert m.at("k").unwrapOr(0) == 99;
 }
 
 test "dict mapValues transforms values" {
     val d = empty().insert("a", 3).insert("b", 7);
     val doubled = d.mapValues({ v -> v * 2 });
-    assert doubled.lookup("a").unwrapOr(0) == 6;
-    assert doubled.lookup("b").unwrapOr(0) == 14;
+    assert doubled.at("a").unwrapOr(0) == 6;
+    assert doubled.at("b").unwrapOr(0) == 14;
 }
 
-// ── option method API over `lookup`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
+// ── option method API over `at`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
 
-test "option map over a present lookup" {
-    val some = empty().insert("a", 1).lookup("a");
+test "option map over a present at" {
+    val some = empty().insert("a", 1).at("a");
     assert some.map({ x -> x + 9 }).unwrapOr(0) == 10;
 }
 
 test "option map propagates absence" {
-    val none = empty().insert("a", 1).lookup("z");
+    val none = empty().insert("a", 1).at("z");
     assert none.map({ x -> x + 9 }).unwrapOr(-1) == -1;
 }
 
 test "option flatMap chains present" {
     val d = empty().insert("a", 1);
-    val r = d.lookup("a").flatMap({ x -> d.lookup("a").map({ y -> x + y }) });
+    val r = d.at("a").flatMap({ x -> d.at("a").map({ y -> x + y }) });
     assert r.unwrapOr(0) == 2;
 }
 
 test "option flatMap short-circuits on absence" {
     val d = empty().insert("a", 1);
-    val r = d.lookup("missing").flatMap({ x -> d.lookup("a") });
+    val r = d.at("missing").flatMap({ x -> d.at("a") });
     assert r.unwrapOr(-7) == -7;
 }
 
 test "option unwrapOr returns present value" {
-    assert empty().insert("a", 42).lookup("a").unwrapOr(0) == 42;
+    assert empty().insert("a", 42).at("a").unwrapOr(0) == 42;
 }
 
 // ── empty-collection boundary (B1) ──
 
-test "dict empty boundary: size 0, lookup misses" {
+test "dict empty boundary: size 0, at misses" {
     val d: Dict<string, i32> = empty();
     assert d.size() == 0;
     assert !d.hasKey("anything");
-    assert d.lookup("anything").unwrapOr(-1) == -1;
+    assert d.at("anything").unwrapOr(-1) == -1;
     assert d.keys().length == 0;
     assert d.values().length == 0;
 }
@@ -203,13 +209,13 @@ test "dict empty boundary: size 0, lookup misses" {
 ```erlang
 -module(std@dict).
 -compile({no_auto_import,[size/1]}).
--export([empty/0, lookup/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2]).
+-export([empty/0, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2]).
 
 %%% Gleam-inspired `dict` module — a `type Dict<K, V>` wrapping an
 
 %%% association list `pairs: Array<#(K, V)>` for full backend portability
 
-%%% (no host-backing). O(n) lookup; camelCase convention.
+%%% (no host-backing). O(n) read; camelCase convention.
 
 %%% 
 
@@ -225,11 +231,23 @@ test "dict empty boundary: size 0, lookup misses" {
 
 %%% the common case). API naming note: `new`/`get` are keyword tokens — use
 
-%%% `empty`/`lookup`.
+%%% `empty`/`at`.
+
+%%% 
+
+%%% `Dict<K, V>` answers the ambient `Index<K, V>` of `builtins.d.bp`
+
+%%% (decision 63, amended), which is what makes `d["k"]` legal: the index
+
+%%% expression has no typing rule of its own and rewrites to `d.at("k")`. The
+
+%%% reader was spelled `lookup` until that amendment gave every indexable type
+
+%%% one method name.
 
 %% type Dict: pairs
 
-lookup(Self, Key) ->
+at(Self, Key) ->
     % NOTE: written with `forEach` + accumulator rather than
     % `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is
     % not lowered yet (tracked in tasks/v0.beta.4 Part A: primitive/option
@@ -307,7 +325,7 @@ empty() ->
 
 
 
-% ── option method API over `lookup`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
+% ── option method API over `at`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
 
 
 
@@ -328,7 +346,7 @@ import {dict} from "std";
 
 fn main() {
     val d = dict.empty().insert("a", 1);
-    @print(d.lookup("a").unwrapOr(0));
+    @print(d.at("a").unwrapOr(0));
     @print(d.insert("b", 2).size());
 }
 ```
@@ -342,7 +360,7 @@ fn main() {
 
 main() ->
     D = std@dict:insert(std@dict:empty(), <<"a">>, 1),
-    '__bp_print'([(fun(O) -> case O of undefined -> (0); V -> V end end)(std@dict:lookup(D, <<"a">>))]),
+    '__bp_print'([(fun(O) -> case O of undefined -> (0); V -> V end end)(std@dict:at(D, <<"a">>))]),
     '__bp_print'([std@dict:size(std@dict:insert(D, <<"b">>, 2))]).
 
 '__bp_print'(Values) ->
