@@ -64,7 +64,10 @@ commonJS answer differently from erlang, or not answer at all, with nothing said
 plain JS call and node has no tail-call elimination, so the program died with `RangeError: Maximum
 call stack size exceeded` while erlang, a tail-recursive VM, printed the sum. Its bound is a
 VARIABLE on purpose — a literal one could be folded and hide the depth — and the cell's header
-records the ceiling each backend still has.
+records the ceiling each backend still has. `loop_item_method` (D7/D8) calls `.length()` on what a
+`loop` binds — the item, a field of it, and a `val` bound from it inside the body: the loop
+parameter used to bind a fresh type variable, and commonJS, which needs the receiver's type to know
+that `.length()` is JavaScript's `length` PROPERTY, emitted a CALL on a number.
 
 ### The `modules/` kind
 

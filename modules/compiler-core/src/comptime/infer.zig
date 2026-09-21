@@ -8028,8 +8028,35 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         return error.TypeError;
     }
 
-    for (lp.params) |p| {
-        try env.bind(p, awaitItem orelse try env.freshVar());
+    // The loop parameter binds the ITEM of what is iterated. It used to bind a
+    // fresh variable with no link to the collection, so nothing inside the body
+    // had a type: `loop (xs) { x -> x.length() }` over an `Array<string>` left
+    // commonJS with no receiver type to rename the call with, and it emitted a
+    // CALL on JavaScript's `length` PROPERTY — `TypeError: x.length is not a
+    // function`, at exit 1 — while erlang, which needs no receiver type to
+    // lower a primitive method, printed the right answer. A `val` bound from
+    // the parameter inherited the same nothing, and so did a field read off it.
+    const itemTy: ?*T.Type = if (awaitItem) |ai| ai else blk: {
+        if (isCondition) break :blk null;
+        const iter = iterTyped.getType().deref();
+        if (iter.* != .named) break :blk null;
+        // `loop (a..b) { i -> … }` — a range has no element argument to read,
+        // and decision 8 §10 counts it in integers.
+        if (std.mem.eql(u8, iter.named.name, "Range")) break :blk try env.namedType("i32");
+        if (iter.named.args.len == 1 and
+            (std.mem.eql(u8, iter.named.name, "array") or
+                std.mem.eql(u8, iter.named.name, "Iterator") or
+                std.mem.eql(u8, iter.named.name, "Generator")))
+            break :blk iter.named.args[0];
+        break :blk null;
+    };
+    for (lp.params, 0..) |p, i| {
+        // `loop (xs) { x, i -> … }` — the second parameter is the index.
+        const bound: *T.Type = if (i == 0)
+            itemTy orelse try env.freshVar()
+        else
+            try env.freshVar();
+        try env.bind(p, bound);
     }
 
     // A `loop :label (...)` adds its label to scope for `yield :label` inside it.

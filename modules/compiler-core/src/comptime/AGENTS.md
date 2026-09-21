@@ -760,6 +760,27 @@ carries **no return-type annotation** (none is stored, and the true type comes f
 which is not available at registration), nor under a trailing lambda, nor on an arity mismatch —
 the plain-call path owns that diagnostic.
 
+## A `loop` parameter binds the ITEM (decision 8 §10)
+
+`inferLoopExpr` bound every parameter of a `loop` to `env.freshVar()` with no link to what was
+being iterated, so nothing inside the body had a type — and nothing derived from the parameter did
+either: a field read off it, a `val` bound from it, a chain starting at it.
+
+What that cost was one backend, not the checker's own answer. commonJS records the `.length()` →
+native `length` PROPERTY rename only for a receiver inference resolved as a named `string` or
+`array`, so an untyped receiver kept its call parens and the emitted module called a number:
+`loop (xs) { x -> x.length() }` over an `Array<string>` was `TypeError: x.length is not a function`
+at exit 1, while erlang — which needs no receiver type to lower a primitive method — printed the
+length. Measured by a consuming library while it wrote a configuration reader; pinned by
+`tests/language/run/loop_item_method.bp`, which asserts the VALUE.
+
+The parameter binds the collection's element: `array` / `Iterator` / `Generator` give their single
+type argument, a `Range` gives `i32` (§10 counts a range in integers), `loop await` keeps the
+`@FutureGenerator<T, E>` item it already resolved, and everything else keeps the fresh variable —
+a condition loop, which binds nothing at all, and an iterated expression still a type variable,
+where a fresh one is exactly right. The SECOND parameter is the index and still binds a fresh
+variable: nothing has measured it, and giving it `i32` would newly red a body that widens it.
+
 ## Enum sections
 
 `registerEnum` desugars an enum `TypeDecl`'s `sections()` into enum-of-enum form: each section
