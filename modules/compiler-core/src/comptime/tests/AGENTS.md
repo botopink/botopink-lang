@@ -44,7 +44,7 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 | `variants.zig` | Variants, record update, patterns, `@print`, AST probes. |
 | `narrowing.zig` | Null-check / case-variant / type-guard narrowing. |
 | `exhaustiveness.zig` | `case` exhaustiveness + reachability errors. |
-| `effects.zig` | throw / context / `@Result` effect checking. The `context:` cells carry `#[@context]` on every body that writes `use` (decision 88 of 1.0.10-beta); `use without #[@context] on a -> Element body` pins the `use-without-context-effect` diagnostic and `#[@context] fn -> Element (owner type) passes` the component form. |
+| `effects.zig` | throw / context / `@Result` effect checking. The `context:` cells carry `#[@context]` on every body that writes `use` (decision 88 of 1.0.10-beta); `use without #[@context] on a -> Element body` pins the `use-without-context-effect` diagnostic and `#[@context] fn -> Element (owner type) passes` the component form. Decisions 89 + 90: `#[@future] fn -> @Future<Element> activates without #[@context]` pins the wrapper-effect dispensation, and the three refusals it must not switch off are `#[@future] fn -> @Future<i32> still refuses use` (no owner after the unwrap), `#[@context] on a return type that owns no context` (`effect-wrapper-mismatch`) and `#[@future] fn -> @Future<Element> owner mismatch` (`context-anchor-violation`). |
 | `effect_result.zig` | `#[@result]` contract (R-codes). |
 | `effect_future.zig` | `#[@future]` contract (RF-codes). |
 | `effect_generator.zig` | `#[@generator]` contract (`yield`, labels). |

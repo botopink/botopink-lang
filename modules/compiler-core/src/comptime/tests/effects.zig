@@ -387,6 +387,70 @@ test "context: #[@context] fn -> Element (owner type) passes" {
     );
 }
 
+// Decisions 89 + 90: `contextInfoFromReturn` looks through `@Future<T>` to
+// `T`'s owner, and a wrapper effect (`#[@future]`) whose unwrapped return type
+// owns a context activates hooks on its own — R5 forbids a second annotation,
+// so `#[@future] #[@context]` is not a way to spell this.
+test "context: #[@future] fn -> @Future<Element> activates without #[@context]" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Element = type implement @Context<Element, Element> { }
+        \\val Request = type(path: string) implement @Context<Element, Request>
+        \\fn request() -> @Context<Element, Request> {
+        \\    Request(path: "/");
+        \\}
+        \\#[@future]
+        \\fn Page() -> @Future<Element> {
+        \\    val r = use request();
+        \\    return Element();
+        \\}
+    );
+}
+
+// Decision 90 is a dispensation, not a way to switch a refusal off: the
+// wrapper effect is there, but `@Future<i32>` unwraps to a type that owns no
+// context, so there is no owner for the `use` to agree on — `use-of-non-context-fn`.
+test "context error: #[@future] fn -> @Future<i32> still refuses use" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\#[@future]
+        \\fn Page() -> @Future<i32> {
+        \\    val n = use state(0);
+        \\    return 0;
+        \\}
+    );
+}
+
+// Decision 90 keeps decision 67's other refusal: `#[@context]` over a return
+// type that owns no context is `effect-wrapper-mismatch` — the annotation and
+// the return wrapper must name the same effect.
+test "context error: #[@context] on a return type that owns no context" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@context]
+        \\fn bad() -> i32 {
+        \\    return 0;
+        \\}
+    );
+}
+
+// Decision 90 does not widen the owner check either: a `#[@future]` body whose
+// unwrapped owner is `Element` may not activate a hook anchored elsewhere.
+test "context error: #[@future] fn -> @Future<Element> owner mismatch" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn connection() -> @Context<Http, i32> {
+        \\    0;
+        \\}
+        \\#[@future]
+        \\fn Page() -> @Future<Element> {
+        \\    val c = use connection();
+        \\    return Element();
+        \\}
+    );
+}
+
 // ── record/array ergonomics the hook/builder model needs ──────────────────────
 //
 // The features a `@Context` hook + markup-builder model relies on: records with

@@ -283,23 +283,32 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
 `use` is a **prefix operator** (`use <hookcall>`); bindings come from the
 enclosing `val`/`var` (`val {v, s} = use state(0)`, `use effect(…)` for void).
 AST node: `Expr.useHook { inner }`. It is gated by the function's return type
-**and** its effect annotation (decision 88 of 1.0.10-beta, front 19):
+**and** its effect annotation (decisions 88, 89 and 90 of 1.0.10-beta, front 19):
 
 - The return must implement `@Context<ContextBase, Return>` — directly
   (`fn f() -> @Context<Element, R>`, a custom hook) or via a named type whose
   `implement` clause lists `@Context<…>` (`fn Widget() -> Element`, a component
-  whose owner type is `Element`).
-- The fn must be `#[@context]`: only the annotated body activates a hook. A
-  `-> Element` without it is an ordinary fn; a `-> @Context<B, R>` without it
-  is a hook declaration whose body activates nothing.
+  whose owner type is `Element`). The return is read through `@Future<T>` first
+  (`unwrapContextOwner`, decision 89 — **only** `@Future`, one level), so
+  `-> @Future<Element>` is owned by `Element`.
+- The fn must carry an effect annotation: `#[@context]`, or (decision 90) a
+  **wrapper effect** — every effect but `#[@context]`, `#[@future]` in practice
+  — whose unwrapped return type owns the context; `isWrapperEffect` is the
+  predicate. A body with **no** annotation activates nothing: a `-> Element`
+  without one is an ordinary fn; a `-> @Context<B, R>` without one is a hook
+  declaration whose body activates nothing. R5 is unamended — one annotation per
+  fn, so `#[@future] #[@context]` stays `effect-duplicate-annotation`, which is
+  why the wrapper effect has to be enough on its own.
 - Every `use` in the body must return `@Context<B, _>` with the **same**
   `ContextBase` (transitive through custom hooks).
 
 Wiring in `infer.zig`: `contextBaseFromImplements` computes `TypeDef.contextBase`;
 `inferFnDecl` records the body's capability in `env.fnContext`
 (`contextInfoFromReturn(env, returnType, effect, name)` → `FnContext
-{implementsContext, base, annotated, fnName}`); `inferUseHookExpr` checks
-`implementsContext` (else `useNotAllowed`), then `annotated` (else
+{implementsContext, base, annotated, fnName}`, where `annotated` is the
+`#[@context]`-or-wrapper-effect test above and `returnDisplay` stays the return
+type **as written**, `@Future<Element>` and not `Element`); `inferUseHookExpr`
+checks `implementsContext` (else `useNotAllowed`), then `annotated` (else
 `useWithoutContextEffect` — `use-without-context-effect`, RC7 in
 `diagnostics.zig`, located at the `use` and naming the fn and its return type),
 then `validateUseBase` (`useNotContext`, `contextMismatch`) and types the prefix

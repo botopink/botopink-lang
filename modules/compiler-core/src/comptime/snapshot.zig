@@ -1181,7 +1181,7 @@ pub fn renderTypeErrorBody(
         .useWithoutContextEffect => |u| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  fn '{s}' returns '{s}', which implements @Context,\n  but only a `#[@context]` body activates a hook (decision 88)\n",
+                "\n  fn '{s}' returns '{s}', which implements @Context,\n  but a body with no effect annotation does not activate a hook (decisions 88, 90)\n",
                 .{ u.fnName, u.returnType },
             ));
         },

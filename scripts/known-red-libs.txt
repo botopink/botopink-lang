@@ -11,12 +11,7 @@
 # Owners are the 1.0.4-beta fronts (specs/1.0.4-beta/fronts.md).
 
 
-# ── decision 88 (1.0.10-beta, front 19 `use` activation) ────────────────────
-# A body activates a hook only under `#[@context]` (use-without-context-effect).
-# jhonstart's `src/hooks.bp:104-117` writes `fn Counter() -> Element { val c = use
-# state(0); … }` without the annotation; the library front adds `#[@context]` to
-# its components and custom hooks (and, per the same decision, provides
-# `state`/`effect`/`memo` as cells on the client build). Owner: the 1.0.10-beta
-# jhonstart library front (`specs/1.0.10-beta/04-jhonstart`, decision 88 sweep).
-jhonstart commonJS 04-jhonstart hooks.bp:109 `use state(0)` in `Counter() -> Element` without `#[@context]` — use-without-context-effect (decision 88)
-jhonstart erlang 04-jhonstart hooks.bp:109 `use state(0)` in `Counter() -> Element` without `#[@context]` — use-without-context-effect (decision 88)
+# No cell is red today. The decision-88 rows (jhonstart · commonJS and · erlang)
+# were deleted when the jhonstart library front landed `#[@context]` on its
+# components (`repository/jhonstart` b89c787): both cells pass, and the gate
+# refuses a listed red that passes.
