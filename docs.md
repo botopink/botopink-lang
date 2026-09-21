@@ -959,6 +959,28 @@ test "two types with the same fields are different values" {
 The declaration is inside the value on every backend: erlang and BEAM tag the
 term with the module the type is declared in, commonJS makes it a class.
 
+`is` and a `case` arm read it back — the arm is chosen by the value's own type,
+not by the annotation it arrived under:
+
+```botopink
+type Person(name: string, age: i32)
+type Vec(name: string, age: i32)
+
+fn nameOf(v: Person | Vec) -> string {
+    return case v {
+        Person { "person" }
+        Vec { "vec" }
+    };
+}
+
+test "the value decides" {
+    val u: unknown = Vec(name: "Ana", age: 30);
+    assert u is Vec;
+    assert (u is Person) == false;
+    assert nameOf(Vec(name: "Ana", age: 30)) == "vec";
+}
+```
+
 ### `@src()` and `SourceLocation`
 
 ```botopink

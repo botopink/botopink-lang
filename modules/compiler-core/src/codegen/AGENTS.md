@@ -904,6 +904,19 @@ codegen/
   it had. `#(a, b)` stays a tuple pattern. The names bind through
   `patternBindVar` (versioned when already bound). **A comptime module keeps the
   map shape** everywhere (`Emitter.untyped`): its values never leave the build.
+- **`x is T` and a `case` arm naming a type** (decision 8 §4.2 and §3.3):
+  `typeTestNode` writes ONE boolean expression that is also a legal erlang
+  guard, so the two share a lowering — `is_binary` / `is_boolean` / `is_float`
+  / `is_integer` plus a range for a primitive, `is_list` for an array, `true`
+  for `unknown`, `V =:= undefined orelse …` for `?T`, and for a named `type`
+  what half 3 made testable: a record is `is_tuple(V) andalso tuple_size(V)
+  =:= N andalso element(1, V) =:= <its atom>`, an enum every tag it builds
+  joined by `orelse` (`enum_variant_names` keeps the DECLARATION order, so one
+  program emits one test). `isTestNode` binds a non-variable subject through an
+  immediate fun, because the test reads it more than once. A `case` arm naming
+  a type appends the same expression to the arm's guards
+  (`patternNodeExtra`'s `.ident`): written as the bare binder it was, the first
+  arm of a `case` over `Person | Vec` matched every subject.
 - **Enums**: `Order.Lt` → the variant atom, `Color.Rgb(r, g, b)` →
   `{VariantAtom, R, G, B}`, and since half 3 the tag is
   `crossModule.variantAtom` — the enum's type atom plus `__v__` plus the variant,
@@ -1234,6 +1247,17 @@ codegen/
   (`emitDestructFromX0`) resolves the same way from the parameter's written type
   and binds each slot with `get_tuple_element`. A receiver that resolves to
   nothing keeps the map read.
+- **`x is T` and a `case` arm naming a type** (decision 8 §4.2 and §3.3):
+  `emitTypeTestBranch` emits tests that FALL THROUGH on a match and jump to a
+  fail label otherwise, leaving `{x, 0}` untouched, so `lowerIsCall` (which
+  answers `true`/`false`) and the `.ident` case arm share one lowering. A
+  record is `is_tagged_tuple` on its own atom and arity; an enum is every tag it
+  builds, the unit ones by `is_ne_exact` (which branches when the two ARE
+  equal) and the payload ones by `is_tagged_tuple` + a jump. **One divergence
+  from the erlang twin, deliberate:** a TUPLE type is tested by `is_tuple` and
+  `test_arity` but NOT element by element — reading an element is a call, and a
+  call frees the register the remaining tests read; erlang tests the elements
+  because a guard may call `element/2`.
 - **Every `type`'s module answers about its own values** (`emitTypeIdentity`):
   `'__bp_get'/2` turns a field name into its position for the reads the emitter
   could not place, and `'__bp_format'/1` describes the value for

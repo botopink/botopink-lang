@@ -4190,6 +4190,13 @@ const Emitter = struct {
                 // (`case x { i32 { … } string { … } }`), tested by §4.1's
                 // run-time test — the same one `x is T` builds.
                 if (primitiveTypeName(bare)) return try self.isTest(.{ .named = bare }, subject);
+                // Decision 8 §3.3 — an arm naming a `type` is chosen by the
+                // VALUE's own type: on this backend a record IS its class
+                // (decision 5), so the arm is the same `instanceof` `x is T`
+                // builds. Written as the `tag` test below it answered `false`
+                // for every class instance, and a `case` over `Person | Vec`
+                // fell through both arms to `undefined`.
+                if (self.class_names.contains(bare)) return try self.isTest(.{ .named = bare }, subject);
                 // A binding (`#(0, s)`'s `s`) matches anything.
                 if (self.isBindingName(n)) return null;
                 return try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });

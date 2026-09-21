@@ -1402,6 +1402,11 @@ const Emitter = struct {
     type_owner_path: std.StringHashMap([]const u8),
     /// Variant name → the enum that declares it, first declaration winning.
     variant_enum: std.StringHashMap([]const u8),
+    /// Enum name → its variants in DECLARATION order, each with the payload
+    /// arity its tagged tuple carries. Decision 8 §4.2's `x is Shape`
+    /// enumerates every tag the enum builds; the order has to be the source's,
+    /// or one program would assemble two ways.
+    enum_variant_names: std.StringHashMap([]const VariantShape),
     /// `"<Enum>.<Variant>"` for every enum whose variants this emit has seen.
     enum_variant_of: std.StringHashMap(void),
     /// Parameter name → its written type, for this function only: what tells a
@@ -1559,6 +1564,7 @@ const Emitter = struct {
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .type_owner_path = std.StringHashMap([]const u8).init(alloc),
             .variant_enum = std.StringHashMap([]const u8).init(alloc),
+            .enum_variant_names = std.StringHashMap([]const VariantShape).init(alloc),
             .enum_variant_of = std.StringHashMap(void).init(alloc),
             .local_types = std.StringHashMap([]const u8).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
@@ -1608,6 +1614,11 @@ const Emitter = struct {
         self.record_fields.deinit();
         self.type_owner_path.deinit();
         self.variant_enum.deinit();
+        {
+            var evn_it = self.enum_variant_names.valueIterator();
+            while (evn_it.next()) |names| self.alloc.free(names.*);
+        }
+        self.enum_variant_names.deinit();
         {
             var evo_it = self.enum_variant_of.keyIterator();
             while (evo_it.next()) |k| self.alloc.free(k.*);
@@ -1914,6 +1925,7 @@ const Emitter = struct {
                 .enum_ => {
                     try self.enum_names.put(tdecl.name, {});
                     try self.type_owner_path.put(tdecl.name, self.module_path);
+                    try self.rememberVariantOrder(tdecl.name, tdecl.variants());
                     for (tdecl.variants()) |v| {
                         try self.enum_variants.put(v.name, {});
                         _ = try self.variant_enum.getOrPutValue(v.name, tdecl.name);
@@ -1947,6 +1959,7 @@ const Emitter = struct {
                             .type_ => |e| {
                                 if (e.isRecord()) continue;
                                 _ = try self.type_owner_path.getOrPutValue(e.name, other.name);
+                                try self.rememberVariantOrder(e.name, e.variants());
                                 for (e.variants()) |v| {
                                     try self.enum_variants.put(v.name, {});
                                     _ = try self.variant_enum.getOrPutValue(v.name, e.name);
@@ -1989,6 +2002,7 @@ const Emitter = struct {
                         for (ok.transformed.decls) |d| switch (d) {
                             .type_ => |e| if (!e.isRecord() and std.mem.eql(u8, e.name, name)) {
                                 _ = try self.type_owner_path.getOrPutValue(e.name, info.module);
+                                try self.rememberVariantOrder(e.name, e.variants());
                                 for (e.variants()) |v| {
                                     try self.enum_variants.put(v.name, {});
                                     _ = try self.variant_enum.getOrPutValue(v.name, e.name);
@@ -2106,11 +2120,156 @@ const Emitter = struct {
         return self.enum_variant_of.contains(key);
     }
 
+    /// Record an enum's variant names in declaration order (§4.2's `is`).
+    fn rememberVariantOrder(self: *Emitter, enum_name: []const u8, variants: []const ast.EnumVariant) !void {
+        if (self.enum_variant_names.contains(enum_name)) return;
+        const shapes = try self.alloc.alloc(VariantShape, variants.len);
+        for (variants, 0..) |v, i| shapes[i] = .{ .name = v.name, .fields = v.fields.len };
+        try self.enum_variant_names.put(enum_name, shapes);
+    }
+
     /// Record `<Enum>.<Variant>`; the key is duped, as the erlang backend's is.
     fn rememberEnumVariant(self: *Emitter, enum_name: []const u8, variant: []const u8) !void {
         const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ enum_name, variant });
         const gop = try self.enum_variant_of.getOrPut(key);
         if (gop.found_existing) self.alloc.free(key);
+    }
+
+    /// One variant of an enum: its written name and the number of payload
+    /// fields its tagged tuple carries (0 for a unit variant, an atom).
+    const VariantShape = struct { name: []const u8, fields: usize };
+
+    /// The range an integer spelling admits, or null when the name is not an
+    /// integer type. The beam twin of `erlang.zig`'s `integerPatternRange`.
+    fn integerPatternRange(name: []const u8) ?struct { lo: ?[]const u8, hi: ?[]const u8 } {
+        const table = .{
+            .{ "i8", "-128", "127" },                .{ "i16", "-32768", "32767" },
+            .{ "i32", "-2147483648", "2147483647" }, .{ "u8", "0", "255" },
+            .{ "u16", "0", "65535" },                .{ "u32", "0", "4294967295" },
+        };
+        inline for (table) |row| {
+            if (std.mem.eql(u8, name, row[0])) return .{ .lo = row[1], .hi = row[2] };
+        }
+        if (std.mem.eql(u8, name, "i64") or std.mem.eql(u8, name, "int") or
+            std.mem.eql(u8, name, "isize")) return .{ .lo = null, .hi = null };
+        if (std.mem.eql(u8, name, "u64") or std.mem.eql(u8, name, "uint") or
+            std.mem.eql(u8, name, "usize")) return .{ .lo = "0", .hi = null };
+        return null;
+    }
+
+    /// Decision 8 §4.2 — the run-time test of `T` against the value in
+    /// `{x, 0}`, as a branch: the emitted tests FALL THROUGH when the value is
+    /// a `T` and jump to `fail` when it is not, leaving `{x, 0}` untouched.
+    /// A named `type` is what half 3 made testable — a record by its tag and
+    /// arity, an enum by every tag it builds. Answers false when the type has
+    /// no run-time test (a function type, a comptime type parameter), and the
+    /// caller then jumps to `fail` unconditionally.
+    fn emitTypeTestBranch(self: *Emitter, t: ast.TypeRef, fail: u32) anyerror!bool {
+        switch (t) {
+            .named => |n| {
+                if (std.mem.eql(u8, n, "string")) {
+                    try beamEmitter.writeTest(self.out, .is_binary, fail, &.{Op.xr(0)});
+                    return true;
+                }
+                if (std.mem.eql(u8, n, "bool")) {
+                    try beamEmitter.writeTest(self.out, .is_boolean, fail, &.{Op.xr(0)});
+                    return true;
+                }
+                if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "float")) {
+                    try beamEmitter.writeTest(self.out, .is_float, fail, &.{Op.xr(0)});
+                    return true;
+                }
+                // Decision 8 §2: `unknown` is every value.
+                if (std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "any")) return true;
+                if (integerPatternRange(n)) |range| {
+                    try beamEmitter.writeTest(self.out, .is_integer, fail, &.{Op.xr(0)});
+                    if (range.lo) |lo| try beamEmitter.writeTest(self.out, .is_ge, fail, &.{ Op.xr(0), Op.num(lo) });
+                    if (range.hi) |hi| try beamEmitter.writeTest(self.out, .is_ge, fail, &.{ Op.num(hi), Op.xr(0) });
+                    return true;
+                }
+                if (self.record_fields.get(n)) |fields| {
+                    var tag_buf: [512]u8 = undefined;
+                    const tag = try atomName(try self.recordTagAtom(n), &tag_buf);
+                    try beamEmitter.writeTest(self.out, .is_tagged_tuple, fail, &.{
+                        Op.xr(0),
+                        .{ .untagged = @as(i64, @intCast(fields.len + 1)) },
+                        Op.atom(tag),
+                    });
+                    return true;
+                }
+                if (self.enum_variant_names.get(n)) |variants| {
+                    const ok_l = self.allocLabel();
+                    for (variants) |v| {
+                        const tag = self.qualifiedVariantTagOf(n, v.name) orelse v.name;
+                        var tag_buf: [512]u8 = undefined;
+                        const tag_atom = try atomName(tag, &tag_buf);
+                        if (v.fields > 0) {
+                            const skip = self.allocLabel();
+                            try beamEmitter.writeTest(self.out, .is_tagged_tuple, skip, &.{
+                                Op.xr(0),
+                                .{ .untagged = @as(i64, @intCast(v.fields + 1)) },
+                                Op.atom(tag_atom),
+                            });
+                            try beamEmitter.writeJump(self.out, ok_l);
+                            try beamEmitter.writeLabel(self.out, skip);
+                        } else {
+                            // `is_ne_exact` branches when the two ARE equal.
+                            try beamEmitter.writeTest(self.out, .is_ne_exact, ok_l, &.{ Op.xr(0), Op.atom(tag_atom) });
+                        }
+                    }
+                    try beamEmitter.writeJump(self.out, fail);
+                    try beamEmitter.writeLabel(self.out, ok_l);
+                    return true;
+                }
+                return false;
+            },
+            .array => {
+                try beamEmitter.writeTest(self.out, .is_list, fail, &.{Op.xr(0)});
+                return true;
+            },
+            .generic => |g| {
+                if (std.mem.eql(u8, g.name, "Array")) {
+                    try beamEmitter.writeTest(self.out, .is_list, fail, &.{Op.xr(0)});
+                    return true;
+                }
+                return self.emitTypeTestBranch(.{ .named = g.name }, fail);
+            },
+            .optional => |inner| {
+                const ok_l = self.allocLabel();
+                try beamEmitter.writeTest(self.out, .is_ne_exact, ok_l, &.{ Op.xr(0), Op.atom("undefined") });
+                const ok = try self.emitTypeTestBranch(inner.*, fail);
+                try beamEmitter.writeLabel(self.out, ok_l);
+                return ok;
+            },
+            .tuple_, .labeledTuple => {
+                const elems = t.tupleElems().?;
+                try beamEmitter.writeTest(self.out, .is_tuple, fail, &.{Op.xr(0)});
+                try beamEmitter.writeTest(self.out, .test_arity, fail, &.{ Op.xr(0), .{ .untagged = @as(i64, @intCast(elems.len)) } });
+                // The ELEMENT types are not tested: reading one is a call, and a
+                // call frees the register the remaining tests read. The erlang
+                // twin does test them (a guard may call `element/2`), so a
+                // tuple `is` is narrower here — written down in `AGENTS.md`,
+                // not passed off as the same test.
+                return true;
+            },
+            .function, .typeparam => return false,
+        }
+    }
+
+    /// `x is T` in expression position: `true` or `false` in `{x, 0}`.
+    fn lowerIsCall(self: *Emitter, cc: anytype) anyerror!void {
+        const t = cc.isType orelse return error.InvalidArgs;
+        if (cc.args.len != 1) return error.InvalidArgs;
+        try self.lowerExprIntoX0(cc.args[0].value.*);
+        const fail = self.allocLabel();
+        const end = self.allocLabel();
+        const testable = try self.emitTypeTestBranch(t, fail);
+        if (!testable) try beamEmitter.writeJump(self.out, fail);
+        try beamEmitter.writeMoveOp(self.out, Op.atom("true"), Dst.xr(0));
+        try beamEmitter.writeJump(self.out, end);
+        try beamEmitter.writeLabel(self.out, fail);
+        try beamEmitter.writeMoveOp(self.out, Op.atom("false"), Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, end);
     }
 
     /// The position of `name` in a record's declared field order.
@@ -5829,6 +5988,11 @@ const Emitter = struct {
             try self.lowerPrint(cc.args, mode);
             return;
         }
+        if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) {
+            try self.lowerIsCall(cc);
+            if (mode == .tail) try self.emitReturn();
+            return;
+        }
         if (std.mem.eql(u8, cc.callee, "block")) {
             if (cc.trailing.len > 0) {
                 const body = cc.trailing[0];
@@ -7066,6 +7230,16 @@ const Emitter = struct {
                         const vatom = try atomName(self.variantTag(written), &vbuf);
                         const next = self.allocLabel();
                         try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.atom(vatom) });
+                        try self.emitArmTail(arm, subj_y, end_label);
+                        try beamEmitter.writeLabel(self.out, next);
+                    } else if (self.record_fields.contains(name) or self.enum_variant_names.contains(name)) {
+                        // Decision 8 §3.3 — an arm naming a `type` is chosen by
+                        // the VALUE's own type, which half 3 put in the value.
+                        // Emitted as the bare binder it was, the first arm of a
+                        // `case` over `Person | Vec` swallowed every subject.
+                        const next = self.allocLabel();
+                        const testable = try self.emitTypeTestBranch(.{ .named = name }, next);
+                        if (!testable) try beamEmitter.writeJump(self.out, next);
                         try self.emitArmTail(arm, subj_y, end_label);
                         try beamEmitter.writeLabel(self.out, next);
                     } else if (std.mem.eql(u8, name, "_")) {

@@ -1451,6 +1451,11 @@ fn emitErlangModule(
         em.imported_types.deinit();
         em.type_owner_path.deinit();
         em.variant_enum.deinit();
+        {
+            var evn_it = em.enum_variant_names.valueIterator();
+            while (evn_it.next()) |names| alloc.free(names.*);
+        }
+        em.enum_variant_names.deinit();
         em.imported_fns.deinit();
         var ftf_it = em.fn_typed_fields.keyIterator();
         while (ftf_it.next()) |k| alloc.free(k.*);
@@ -2284,6 +2289,11 @@ const Emitter = struct {
     /// `imported_types` only kept the already-rendered type atom, which a
     /// variant tag cannot be built from.
     type_owner_path: std.StringHashMap([]const u8),
+    /// Enum name → its variant names in DECLARATION order. Decision 8 §4.2's
+    /// `x is Shape` enumerates them — every tag the enum builds, joined by
+    /// `orelse` — and the order has to be the source's, or the emitted test
+    /// would differ between two runs of the same program.
+    enum_variant_names: std.StringHashMap([]const []const u8),
     /// Variant name → the enum that declares it, first declaration winning as
     /// `enum_variants` does. A `.Circle` shorthand and a bare `case` pattern
     /// write the variant without its enum, and half 3's tag is qualified by
@@ -2545,6 +2555,7 @@ const Emitter = struct {
             .imported_types = std.StringHashMap([]const u8).init(alloc),
             .type_owner_path = std.StringHashMap([]const u8).init(alloc),
             .variant_enum = std.StringHashMap([]const u8).init(alloc),
+            .enum_variant_names = std.StringHashMap([]const []const u8).init(alloc),
             .imported_fns = std.StringHashMap([]const u8).init(alloc),
             .fn_typed_fields = std.StringHashMap(void).init(alloc),
             .fn_typed_field_names = std.StringHashMap(void).init(alloc),
@@ -3526,6 +3537,7 @@ const Emitter = struct {
                     try self.enum_names.put(tdecl.name, {});
                     try self.enum_variants_known.put(tdecl.name, {});
                     try self.type_owner_path.put(tdecl.name, self.module_name);
+                    try self.rememberVariantOrder(tdecl.name, tdecl.variants());
                     for (tdecl.variants()) |v| {
                         try self.enum_variants.put(v.name, {});
                         _ = try self.variant_enum.getOrPutValue(v.name, tdecl.name);
@@ -3536,6 +3548,14 @@ const Emitter = struct {
             },
             else => {},
         };
+    }
+
+    /// Record an enum's variant names in declaration order (§4.2's `is`).
+    fn rememberVariantOrder(self: *Emitter, enum_name: []const u8, variants: []const ast.EnumVariant) !void {
+        if (self.enum_variant_names.contains(enum_name)) return;
+        const names = try self.alloc.alloc([]const u8, variants.len);
+        for (variants, 0..) |v, i| names[i] = v.name;
+        try self.enum_variant_names.put(enum_name, names);
     }
 
     /// Record `<Enum>.<Variant>` so `isEnumVariantOf` can answer precisely.
@@ -3588,6 +3608,7 @@ const Emitter = struct {
                     if (!std.mem.eql(u8, ee.name, name) and !std.mem.eql(u8, crossModule.moduleBasename(ee.module), name)) continue;
                     try self.enum_variants_known.put(ee.name, {});
                     _ = try self.type_owner_path.getOrPutValue(ee.name, ee.module);
+                    try self.rememberVariantOrder(ee.name, ee.variants);
                     for (ee.variants) |v| {
                         try self.enum_variants.put(v.name, {});
                         _ = try self.variant_enum.getOrPutValue(v.name, ee.name);
@@ -5825,6 +5846,7 @@ const Emitter = struct {
                 return error.InvalidArgs;
             return b.applyParen(.{ .fun = .{ .params = &.{}, .body = body } }, &.{});
         }
+        if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) return this.isTestNode(b, cc);
         if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) return this.indexNode(b, cc);
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) return this.resultOptionNode(b, cc.callee, cc.args);
         return b.call(cc.callee, try this.callArgs(b, null, cc));
@@ -6438,6 +6460,18 @@ const Emitter = struct {
                     if (extras) |ex| if (!std.mem.eql(u8, name.variable, "_")) {
                         try appendPrimTypeGuards(b, ex, n, name);
                     };
+                    return name;
+                }
+                // Decision 8 §3.3 — an arm naming a `type` is chosen by the
+                // VALUE's own type, which half 3 put in the value. Emitted as
+                // the bare binder it was, the first arm of a `case` over
+                // `Person | Vec` swallowed every subject.
+                if (this.record_fields.contains(n) or this.enum_variant_names.contains(n)) {
+                    if (extras) |ex| if (!std.mem.eql(u8, name.variable, "_")) {
+                        if (try this.typeTestNode(b, .{ .named = n }, name)) |g| {
+                            try ex.guards.append(b.arena, g);
+                        }
+                    };
                 }
                 return name;
             },
@@ -6882,6 +6916,110 @@ const Emitter = struct {
     fn isSelfReceiver(receiver: ast.Expr) bool {
         return receiver == .identifier and receiver.identifier.kind == .ident and
             std.mem.eql(u8, receiver.identifier.kind.ident, "self");
+    }
+
+    /// Decision 8 §4.2 — the run-time test of `x is T`, as an expression that
+    /// is also a legal erlang GUARD, so a `case` arm naming a type and an `is`
+    /// in a condition share one lowering. Null when the type has no run-time
+    /// test (a function type, a comptime type parameter).
+    ///
+    /// A named `type` is what half 3 made testable: a record is
+    /// `element(1, V) =:= <its atom>` at the right arity, and an enum is every
+    /// tag it builds, joined by `orelse` — its unit variants as atoms and its
+    /// payload variants as tagged tuples.
+    fn typeTestNode(this: *Emitter, b: Ast.Builder, t: ast.TypeRef, subject: Ast.Expr) anyerror!?Ast.Expr {
+        switch (t) {
+            .named => |n| {
+                if (std.mem.eql(u8, n, "string")) return try b.call("is_binary", &.{subject});
+                if (std.mem.eql(u8, n, "bool")) return try b.call("is_boolean", &.{subject});
+                if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "float")) {
+                    return try b.call("is_float", &.{subject});
+                }
+                // Decision 8 §2: `unknown` is every value.
+                if (std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "any")) return Ast.Expr.a("true");
+                if (integerPatternRange(n)) |range| {
+                    var acc = try b.call("is_integer", &.{subject});
+                    if (range.lo) |lo| acc = try b.binop("andalso", acc, try b.binop(">=", subject, .{ .number = lo }));
+                    if (range.hi) |hi| acc = try b.binop("andalso", acc, try b.binop("=<", subject, .{ .number = hi }));
+                    return acc;
+                }
+                if (this.record_fields.get(n)) |fields| {
+                    return try this.taggedShapeTest(b, subject, try this.recordTagAtom(n), fields.len + 1);
+                }
+                if (this.enum_variant_names.get(n)) |variants| {
+                    var acc: ?Ast.Expr = null;
+                    for (variants) |v| {
+                        const tag = this.qualifiedVariantTagOf(n, v) orelse v;
+                        const arity = if (this.variant_fields.get(v)) |f| f.len + 1 else 0;
+                        const one = if (arity == 0)
+                            try b.binop("=:=", subject, Ast.Expr.a(tag))
+                        else
+                            try this.taggedShapeTest(b, subject, tag, arity);
+                        acc = if (acc) |a| try b.binop("orelse", a, one) else one;
+                    }
+                    return acc orelse Ast.Expr.a("false");
+                }
+                // A name this module cannot place — an imported type it never
+                // indexed, a generic parameter — has no test to write.
+                return null;
+            },
+            .array => return try b.call("is_list", &.{subject}),
+            .generic => |g| {
+                if (std.mem.eql(u8, g.name, "Array")) return try b.call("is_list", &.{subject});
+                return this.typeTestNode(b, .{ .named = g.name }, subject);
+            },
+            // `?T` is absent or a `T`.
+            .optional => |inner| {
+                const inner_test = try this.typeTestNode(b, inner.*, subject) orelse return null;
+                return try b.binop("orelse", try b.binop("=:=", subject, Ast.Expr.a("undefined")), inner_test);
+            },
+            .tuple_, .labeledTuple => {
+                const elems = t.tupleElems().?;
+                var acc = try b.binop(
+                    "andalso",
+                    try b.call("is_tuple", &.{subject}),
+                    try b.binop("=:=", try b.call("tuple_size", &.{subject}), Ast.Expr.t(Term.int(@intCast(elems.len)))),
+                );
+                for (elems, 0..) |e, i| {
+                    const at = try b.call("element", &.{ Ast.Expr.t(Term.int(@intCast(i + 1))), subject });
+                    const one = try this.typeTestNode(b, e, at) orelse continue;
+                    acc = try b.binop("andalso", acc, one);
+                }
+                return acc;
+            },
+            .function, .typeparam => return null,
+        }
+    }
+
+    /// `is_tuple(V) andalso tuple_size(V) =:= N andalso element(1, V) =:= Tag`
+    /// — decision 21's shape, tested.
+    fn taggedShapeTest(this: *Emitter, b: Ast.Builder, subject: Ast.Expr, tag: []const u8, arity: usize) anyerror!Ast.Expr {
+        _ = this;
+        const acc = try b.binop(
+            "andalso",
+            try b.call("is_tuple", &.{subject}),
+            try b.binop("=:=", try b.call("tuple_size", &.{subject}), Ast.Expr.t(Term.int(@intCast(arity)))),
+        );
+        const first = try b.call("element", &.{ Ast.Expr.t(Term.int(1)), subject });
+        return b.binop("andalso", acc, try b.binop("=:=", first, Ast.Expr.a(tag)));
+    }
+
+    /// `x is T` in expression position. The test reads the subject more than
+    /// once, so anything but a variable is bound by an immediate fun first.
+    fn isTestNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
+        const t = cc.isType orelse return error.InvalidArgs;
+        if (cc.args.len != 1) return error.InvalidArgs;
+        const subject = try this.exprNode(b, cc.args[0].value.*);
+        if (subject == .variable) {
+            return try this.typeTestNode(b, t, subject) orelse Ast.Expr.a("false");
+        }
+        const n = this.try_seq;
+        this.try_seq += 1;
+        const bound = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_Is{d}", .{n}));
+        const test_node = try this.typeTestNode(b, t, bound) orelse Ast.Expr.a("false");
+        return b.applyParen(.{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
+            try b.clause(&.{bound}, &.{}, &.{test_node}),
+        }) }, &.{subject});
     }
 
     /// The last `.`-separated segment of a variant path: `Shape.Circle` → `Circle`,

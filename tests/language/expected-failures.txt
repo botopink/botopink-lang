@@ -111,7 +111,7 @@
 # they are cells that do not compile in this tree.
 commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
 erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
-erlang   | test/case_unknown.bp       | 01 step 4, 01 step 1, 01 step 3 | arm bodies are not unwrapped, `unknown` is not §2's type and `is` is not typed: "expected string, got union"
+erlang   | test/case_unknown.bp::§4.1 §5.2 an i32 arm matches 3.0 by value, converted ;; §4.1 if (x is i32) narrows and converts inside the block | C-07 | re-classified 2026-09-21 by running: `is` LOWERS on erlang since C-01 half 3 step 16, so the cell compiles and four of its six tests pass. What is left is decision 8 §4.1's numeric half, which is not identity's: an `i32` arm is `is_integer(X)`, and `3.0` is a float term on this backend, where commonJS's `Number.isInteger(3.0)` answers true — the arm has to match by VALUE and the binding has to be converted (`3.0` → `3`, so `n.toString()` is `"3"`). commonJS passes both
 *        | reject/case_shorthand_on_unknown.bp   | 01 step 1, 01 step 5 | rejected by `unknown` assignability, without the "full name" diagnostic
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
@@ -173,10 +173,6 @@ erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell d
 # no second row any more: with front 01's step 4 written and measured (in its own
 # tree, not on `feat` yet) `test/type_identity_case.bp` compiles, and the two lines
 # it carries are `13 step 17` outright.
-erlang   | test/type_identity_unknown.bp | 01 step 1, 13 step 17 | the same — "type mismatch: expected unknown, got Vec"
-erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "type mismatch: expected \|, got Person" (the diagnostic prints the bare union operator; escaped here, or the reason would be read as two fields)
-commonJS | test/type_identity_case.bp::§5.1 a case over a union of two named types needs no wildcard ;; §3.3 the arm is chosen by the value's own type | 13 step 17 | re-measured by front 01 in its step-4/5 tree on 2026-09-19: the cell compiles — the arm body is unwrapped — and what is left is identity, not the checker. A `case` arm that names a type has to dispatch on the value's own type, which needs the tag in the value, so `01 step 4` is off this line
-erlang   | test/type_identity_case.bp::§3.3 the arm is chosen by the value's own type | 13 step 17 | the same, and one test fewer: with the cell compiling, `§5.1 a case over a union of two named types needs no wildcard` passes on erlang and only the §3.3 arm-by-own-type row is left. `01 step 4` is off this line
 wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Point(x: 1, y: 2))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. The `256` / `264` / `268` heap addresses this line used to name are gone
 
 # ── beam, the fourth executable target (decision 8) ───────────────────────────

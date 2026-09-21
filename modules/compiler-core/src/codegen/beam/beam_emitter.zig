@@ -126,6 +126,10 @@ pub const TestOp = enum {
     is_ge,
     is_lt,
     is_tagged_tuple,
+    /// `{test, test_arity, {f, F}, [Src, N]}` — a tuple of exactly `N`
+    /// elements. `is_tuple` alone leaves the arity unknown, which is what
+    /// decision 8 §4.2's `x is #(i32, string)` has to answer about.
+    test_arity,
 };
 
 /// The `gc_bif` selector. `add`/`sub`/… spell the quoted operator atoms.
