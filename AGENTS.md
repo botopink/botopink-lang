@@ -186,13 +186,14 @@ run is [`scripts/gate.sh`](scripts/gate.sh):
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files;
 2. `zig build`;
-3. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
-4. `zig build test-bpmp` (the package manager's unit suite);
-5. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
-6. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
-7. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled);
-8. `zig build test-language` (tests/language — decision 8's `case`, tuples and `loop`; expected failures named);
-9. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles).
+3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; the trees, and the red ones with their causes, are named in the script);
+4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
+5. `zig build test-bpmp` (the package manager's unit suite);
+6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
+7. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
+8. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled);
+9. `zig build test-language` (tests/language — decision 8's `case`, tuples and `loop`; expected failures named);
+10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles).
 
 `scripts/git-hooks/pre-commit` is the tracked pre-commit hook, self-contained in
 every checkout (standalone clone or meta submodule): it sources

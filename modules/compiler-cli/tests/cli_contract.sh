@@ -291,6 +291,46 @@ printf 'pub fn main() {\n    print("unterminated);\n}\n' >"$P/src/main.bp"
 run "$P" format --check
 expect_code 1 "format --check on a lex error"
 
+# ── decision 66 — format --check reaches the whole project; reject/ is exempt by shape ──
+# No argument: every `.bp` and `.d.bp` under the project — src/, test/, examples/
+# and the projects nested inside — is checked. Not entered: hidden directories and
+# node_modules. Not reached: `reject/<n>.bp` beside its `<n>.expect`, the language
+# suite's rejected program (decision 67: the exemption is the directory's shape,
+# never a skip list, a pragma or an environment variable).
+echo "==> format --check walks src/, test/, examples/ and nested projects; reject/<n>.bp beside <n>.expect is exempt"
+P="$(project fmt66)"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+mkdir -p "$P/test" "$P/examples/nested/src" "$P/reject" "$P/.botopinkbuild" "$P/node_modules/dep"
+printf 'test "t" {\n    assert 1 == 1;\n}\n' >"$P/test/main_test.bp"
+printf '{ "name": "nested", "version": "0.1.0", "target": "commonJS" }\n' >"$P/examples/nested/botopink.json"
+printf 'pub fn f() {\n  print("x");\n}\n' >"$P/examples/nested/src/main.bp"   # two-space indent: not canonical
+printf 'pub fn g( {\n' >"$P/reject/bad.bp"                                     # refused on purpose …
+printf 'this token cannot appear here\n' >"$P/reject/bad.expect"               # … and paired: the fixture
+printf 'pub fn h() {\n  print("y");\n}\n' >"$P/.botopinkbuild/scratch.bp"
+printf 'pub fn h() {\n  print("y");\n}\n' >"$P/node_modules/dep/dep.bp"
+before="$(cd "$P" && find . -type f | sort | xargs cat | cksum)"
+run "$P" format --check
+expect_code 1 "format --check with one non-canonical file in a nested project"
+expect_out "examples/nested/src/main.bp" "the nested project's file is named"
+expect_out "1 file(s) would be reformatted" "exactly one file is counted"
+expect_out "test/main_test.bp" "test/ is reached"
+expect_no_out "reject/bad.bp" "reject/<n>.bp beside its .expect is not reached"
+expect_no_out ".botopinkbuild" "a hidden directory is not entered"
+expect_no_out "node_modules" "node_modules is not entered"
+after="$(cd "$P" && find . -type f | sort | xargs cat | cksum)"
+[[ "$before" == "$after" ]] && ok "--check wrote nothing" || fail "--check wrote into the project"
+run "$P" format
+expect_code 0 "format rewrites the whole project"
+run "$P" format --check
+expect_code 0 "format --check is green after format"
+printf 'pub fn g( {\n' >"$P/reject/lone.bp"                                    # no .expect: not the fixture
+run "$P" format --check
+expect_code 1 "a reject/ .bp without its .expect is not the fixture and is reached"
+expect_out "--> reject/lone.bp:" "and its parse error is located"
+run "$P" format --check examples/nested
+expect_code 0 "a directory argument is walked the same way"
+expect_out "examples/nested/src/main.bp" "the walked path keeps the argument as its prefix"
+
 # ── C10 — check <path> ───────────────────────────────────────────────────────
 echo "==> C10 check forwards its path argument"
 P="$(project c10)"
