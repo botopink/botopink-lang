@@ -72,7 +72,7 @@ codegen/
 | `wat/` | WebAssembly-text code model and the only writer of `.wat`: `wat_ast.zig` (`Module`/`Item`/`Func`/`Seq`/`Instr` + `Builder` + the invariants), `wat_emitter.zig` (s-expression layout, `$` names, data escaping), `wat_prelude.zig` (the runtime helpers as built nodes). See [`wat/AGENTS.md`](wat/AGENTS.md) |
 | `wat.zig` | WAT backend: builds `wat/wat_ast.zig` nodes and hands them to the emitter. See [wat](#wat) below |
 | `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **Decision 8 §3's union `A | B`** rides on `TypeRef.generic` under the reserved name `ast.union_type_name` (`"|"`), and takes TypeScript's own union (`TsType.union_`) rather than the generic path's `|<A, B>`, which is not TypeScript. **The `import { … };` shorthand** resolves through `CrossModule.exports` here too, one `import` per owning file, where it used to write the literal `from "./module"` |
-| `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below |
+| `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below. `executeTestModule` runs a **test-mode** module the way `botopink test` does (`node main.js` / `escript main.erl`) and answers its output whatever the exit status — the decision-74 FAIL line is a non-zero exit, which the snapshot path records as an empty RUN LOG, and `executeErlang` never runs a test module (no `_botopink_main`) |
 | `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertJsNotContains`, `assertJsRunLog`, `assertDtsContains`, `assertConsumerJs`, `configs` — one config per target). The snapshot-free helpers are what a **single backend's** row uses: a snapshot carries the same program through all four, so a commonJS-only fixture would write into the erlang, beam and wasm snapshot directories other fronts own |
 
@@ -229,6 +229,12 @@ codegen/
   throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a
   message), so node exits non-zero naming both. Test mode is unchanged: the
   `__bp_assert` harness helper throws for the runner to catch per test.
+- **`try` inside a `test` body** (1.0.10-beta decision 74): `buildTryStmt`'s
+  `.propagate` arm emits `throw new Error(typeof e === "string" ? e :
+  JSON.stringify(e))` while `Emitter.in_test_body` is set (by `buildTestFn`;
+  cleared in `buildArrow`/`buildLambda`), so the runner's `catch` prints
+  `FAIL <name>  (<e>)  at <file>:<line>`. Everywhere else the arm keeps its
+  `return _tryN;`.
 - **`val assert P = e [catch h];`** (decision 8 § 9): the IIFE the construct has
   always lowered to — the pattern check, then the subject or the handler's value
   — is bound to `_assert<N>` and `appendPatternBinds` declares the pattern's own
@@ -673,6 +679,11 @@ codegen/
   forms (`comptimeNode`: `assert` as an inline `case` raising
   `erlang:error({bp_assert, Msg, <<"mod.bp:Line">>})` — always fatal, in and out of
   test mode (semantics decision 4); the test runner is what catches it).
+  A `try` without `catch` inside a `test` body (`Emitter.in_test_body`, set by
+  `testFunction`, cleared in a `fun`) raises the same shape on its Error arm —
+  `{error, E} -> erlang:error({bp_assert, E, <<"mod.bp:Line">>})` with the test's
+  own line (`test_loc`) — so the runner prints `FAIL <name>  (<E>)  at …`
+  (1.0.10-beta decision 74); elsewhere the arm stays `{error, E}`.
   A `val assert P = e [catch h];` whose pattern binds names is lowered at STATEMENT
   position (`assertPatternStmts`): the subject is staged in `BpAssert<line>_<col>`,
   a `case` over it decides the value (the subject when the pattern matched, the

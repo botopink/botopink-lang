@@ -24,6 +24,16 @@ contains/omits given substrings — used by the disk-lib namespace test in
 Golden outputs live in `modules/compiler-core/snapshots/codegen/<target>/<slug>.snap.md` (`commonJS`, `erlang`, `beam`, `wasm`), comptime validation errors in `codegen/errors/<target>/`.
 The four `codegen ---- use … is a plain call` cells of `features.zig` record decision 88 (1.0.10-beta, front 19): `val c = use state(0)` is `const c = state(0)` on commonJS, as it already was on erlang, beam and wasm — their components carry `#[@context]`, the effect that lets a body activate a hook. They replaced the `… to useState` / `… infers dependency array` / `… empty deps` cells, whose snapshots recorded the React rename.
 
+`assertTestModeRunLog(src, expected)` compiles `src` in **test mode** for both
+`botopink test` targets, runs each module the way the CLI does
+(`runtime.executeTestModule`: `node main.js` / `escript main.erl`) and asserts the
+runner's output — `duration` lines dropped — equals `expected` on both, whatever the
+exit status. It exists for 1.0.10-beta decision 74: a failing test exits non-zero,
+which `assertJsTestMode`'s RUN LOG records as empty, and the snapshot harness never
+executes an erlang test module. The `@src()` fixtures (`src_*`,
+`test_body_try_on_an_error_fails_the_test`, `unknown_builtin_*`) live in
+`builtins.zig`; the located diagnostics use `assertJsCompileError`.
+
 `assertWasmRunLog(src, expected)` is the wasm twin of `assertJsRunLog`, for the
 programs an all-backend snapshot cannot hold: decision 8 §10's `break <value>`
 out of a condition loop does not compile on erlang at all

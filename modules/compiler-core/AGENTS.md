@@ -62,6 +62,23 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
   (“`botopink test` output format”); emitters are `__bp_run_tests` in
   `src/codegen/commonJS.zig` and `__bp_run_one` / `__bp_run_tests` in
   `src/codegen/erlang.zig`.
+- **A test body is a fallible context** (1.0.10-beta decision 74): a `try`
+  whose operand is `Error(e)` inside a `test { … }` ends the test as
+  `FAIL <name>  (<e>)  at <file>:<line>` — commonJS `throw new Error(e)`
+  (`buildTryStmt`, `in_test_body`), erlang `erlang:error({bp_assert, E, Loc})`
+  (`propagateTryExpr`, `in_test_body`) — instead of returning the Result the
+  runner would ignore. A `try` inside a lambda is the lambda's. A bare
+  `return;` is the `ok` position of a `-> @Result<void, E>` (parser +
+  `transform.zig` `wrap_ok` over `null`).
+- **`@src()`** (1.0.10-beta decision 73) is a comptime builtin answering the
+  prelude record `SourceLocation(file, line, column, fnName)`: `infer.zig`
+  `inferSrcBuiltin` rewrites the call into the constructor call with four
+  literals (`env.srcRewrites`, spliced by `transform.zig`) and
+  `comptime.zig` `withSourceLocationDecl` prepends the record's declaration to
+  a program that names it, so no `src/codegen/*.zig` knows the builtin.
+  `file` is `Module.srcPath` (package-relative, set by the CLI loaders) or
+  `<name>.bp`; `fnName` is `env.currentFnName`. An unrecognised `@name(…)` is
+  `unknown-builtin` now, not a silent `void`.
 
 ## Tagging
 

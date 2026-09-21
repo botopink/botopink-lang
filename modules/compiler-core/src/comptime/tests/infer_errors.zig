@@ -1016,6 +1016,35 @@ test "infer: unknown type ---- a behavior names a type in annotation position" {
     );
 }
 
+// ── `@src()` (1.0.10-beta front 01-std, decision 73) ─────────────────────────
+
+test "infer error: src takes no arguments" {
+    // `src-takes-no-arguments`, located at the `@`.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val loc = @src(1);
+        \\}
+    );
+}
+
+test "infer error: unknown builtin is refused" {
+    // The silent `void` fallback for an unrecognised `@name(…)` is gone
+    // (decision 67); the nearest known name is suggested when one is an edit away.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    @pritn("x");
+        \\}
+    );
+}
+
+test "infer error: unknown builtin without a near name" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    @frobnicate(1, 2);
+        \\}
+    );
+}
+
 // ── decision 38: a `val` is immutable ─────────────────────────────────────────
 
 /// The error `inferProgram` raises for `src`, rendered — no snapshot: the

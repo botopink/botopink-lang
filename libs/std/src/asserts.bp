@@ -1,160 +1,680 @@
-//// std/asserts — runtime assertions, cross-backend (pure botopink + @panic).
+//// std/asserts — the canonical assertion API every test is written against
+//// (1.0.10-beta front 01-std, `asserts-api.md`; decisions 74 and 67).
 ////
 //// Reference:
 ////   Node.js  — https://nodejs.org/api/assert.html
 ////   Erlang   — (no equivalent module; pattern matching does the same job)
 ////
-//// Pure botopink — every fn lowers to a comparison + `@panic("…")` on
-//// failure, with no host binding. Works on every backend, wat included.
-//// Failure messages are short string literals (no string interpolation):
-//// the call site documents what was being checked.
+//// Every assertion is `#[@result]` and answers `@Result<void, string>`:
+//// success is `Ok`, failure is `Error(message)`. The caller writes
+//// `try asserts.equals(a, b);` and a failure propagates to the enclosing
+//// `test` body, which ends as `FAIL <name>  (<message>)  at <file>:<line>`
+//// (the test body is a fallible context — `docs.md` § Tests). A `-test`
+//// helper that is itself `-> @Result<void, string>` composes an assertion
+//// with `try` and nothing else; nothing here panics.
+////
+//// Five rules (`asserts-api.md` § The shape of every function):
+////   1. `#[@result]`, `-> @Result<void, string>`; the `ok` position is `return;`.
+////   2. `actual` first, `expected` second — everywhere (`matches(actual, pattern)`).
+////   3. One literal message per function, `asserts.<fn>: <what>`; no value
+////      rendering (a generic `T` has no `toString`). The call site's `@src()`
+////      and the runner's `at <file>:<line>` say where; the message says which.
+////   4. Pure botopink on the path that runs everywhere: `==`, `!=`, `== false`,
+////      `.length`, `.contains()`, `.startsWith()`, `.endsWith()`, `.indexOf()`,
+////      `.isOk()`, `.isError()`, `!= null` — host-backed primitives only. A
+////      primitive `default fn` (`Bool.negate`, `Array.contains`) is not lowered
+////      when a std module is compiled as a consumer's embedded import today,
+////      so none is used here (measured 2026-09-20; `libs/std/AGENTS.md`).
+////   5. No `pub declare fn` in the file, so `import {asserts} from "std"`
+////      passes STD-001 on every target. The four functions that need a host
+////      — `matches`, `deepEquals`, `throws`, `throwsWith` — sit on the three
+////      PRIVATE cells `regexMatches`, `canonical` and `tryCatch`, which carry
+////      Node and Erlang templates: on beam and wasm those four are unresolved
+////      at lowering, which does not matter because `botopink test` does not
+////      run there (`asserts-api.md` § Backend notes).
 ////
 //// The module is named `asserts` (plural) because the unqualified `assert`
 //// is a reserved keyword statement; `import {asserts} from "std";` then
-//// `asserts.truthy(x)` keeps the qualified-call style.
+//// `asserts.isTrue(x)` keeps the qualified-call style.
+////
+//// `==` is the language's rule: structural for primitives, reference for
+//// arrays and records on commonJS (`===`) and structural on erlang (`=:=`).
+//// `equals` on two arrays therefore passes on erlang and fails on commonJS;
+//// `deepEquals` is the cross-target answer (both sides are rendered by the
+//// same host, so key order agrees).
 
-// True-or-panic. Use to guard arbitrary boolean conditions.
-pub fn truthy(condition: bool) {
-    if (condition.negate()) @panic("asserts.truthy: condition was false");
+// ── boolean ──────────────────────────────────────────────────────────────────
+
+// Fails when `condition` is false.
+#[@result]
+pub fn isTrue(condition: bool) -> @Result<void, string> {
+    if (condition == false) {
+        throw "asserts.isTrue: condition was false";
+    };
+    return;
 }
 
-// False-or-panic. The dual of `truthy` — handy for "this must not happen"
-// branches that you'd otherwise spell as `truthy(!cond)`.
-pub fn falsy(condition: bool) {
-    if (condition) @panic("asserts.falsy: condition was true");
+// Fails when `condition` is true — the dual of `isTrue`, for "this must not
+// happen" branches you would otherwise spell as `isTrue(!cond)`.
+#[@result]
+pub fn isFalse(condition: bool) -> @Result<void, string> {
+    if (condition) {
+        throw "asserts.isFalse: condition was true";
+    };
+    return;
 }
 
-// Strict equality. `a == b` uses the language's structural-equality rule
-// for primitives (numbers / booleans / strings); reference-equality falls
-// back to JS-style `===` on Node and `=:=` on Erlang.
-pub fn equal<T>(a: T, b: T) {
-    if (a != b) @panic("asserts.equal: values differ");
+// ── equality ─────────────────────────────────────────────────────────────────
+
+// Fails when `actual != expected` (the language's `==`; see the docblock).
+#[@result]
+pub fn equals<T>(actual: T, expected: T) -> @Result<void, string> {
+    if (actual != expected) {
+        throw "asserts.equals: values differ";
+    };
+    return;
 }
 
-pub fn notEqual<T>(a: T, b: T) {
-    if (a == b) @panic("asserts.notEqual: values match");
+// Fails when `actual == expected`.
+#[@result]
+pub fn notEquals<T>(actual: T, expected: T) -> @Result<void, string> {
+    if (actual == expected) {
+        throw "asserts.notEquals: values match";
+    };
+    return;
 }
 
-// Approximate equality for floats: `|a - b| <= tolerance`. The expected
-// idiom is `approxEqual(measured, expected, 1e-6)` — pick a tolerance that
-// fits the operation's numerical-stability budget, not 0. Implemented with
-// an inline `if` (instead of importing `math.abs`) to keep this module's
-// surface lib-self-contained — pure-botopink, no host hops.
-pub fn approxEqual(a: f64, b: f64, tolerance: f64) {
-    val diff = a - b;
+// Fails when `|actual - expected| > tolerance`. Pick a tolerance that fits the
+// operation's numerical budget, not `0.0`. The absolute value is an inline
+// `if` rather than `math.abs` — a std module does not import another.
+#[@result]
+pub fn approxEquals(actual: f64, expected: f64, tolerance: f64) -> @Result<void, string> {
+    val diff = actual - expected;
     val absDiff = if (diff >= 0.0) diff else 0.0 - diff;
-    if (absDiff > tolerance) @panic("asserts.approxEqual: values differ by more than tolerance");
+    if (absDiff > tolerance) {
+        throw "asserts.approxEquals: values differ by more than tolerance";
+    };
+    return;
 }
 
-// Substring containment over strings (delegates to `String.contains`).
-pub fn contains(haystack: string, needle: string) {
-    if (haystack.contains(needle).negate()) @panic("asserts.contains: needle not in haystack");
+// Private: a value rendered canonically by the host — `JSON.stringify` on
+// Node, `io_lib:format("~0tp")` on Erlang. Lifted from the old onze's
+// `onzeKey`, where it keyed the call log for the same reason: two values that
+// render the same are structurally equal on that host.
+#[@External.Node("""JSON.stringify($0)""")]
+#[@External.Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))""")]
+declare fn canonical<T>(v: T) -> string;
+
+// Fails when the two values differ structurally — arrays and records by
+// content, on every target. Needs Node or Erlang at run time (`canonical`).
+#[@result]
+pub fn deepEquals<T>(actual: T, expected: T) -> @Result<void, string> {
+    if (canonical(actual) != canonical(expected)) {
+        throw "asserts.deepEquals: values differ structurally";
+    };
+    return;
 }
 
-// A structured panic message: the failed assertion's text plus the
-// file/line where it fired. Test runners that catch a `@panic` value
-// at the host level can rehydrate this shape for nicer reporting
-// (the value is delivered verbatim — the panic stays the host-level
-// exit mechanism). `throws`/`matches` will produce these once the
-// host-level catch hook lands (see the deferral note below).
-pub type AssertError(
-    message: string,
-    file: string,
-    line: i32,
-)
+// ── nil ──────────────────────────────────────────────────────────────────────
+
+// Fails when the optional holds a value. `!= null`, never truthiness — on
+// commonJS `if (x)` is false for `0`.
+#[@result]
+pub fn isNil<T>(value: ?T) -> @Result<void, string> {
+    if (value != null) {
+        throw "asserts.isNil: value was present";
+    };
+    return;
+}
+
+// Fails when the optional is absent.
+#[@result]
+pub fn isNotNil<T>(value: ?T) -> @Result<void, string> {
+    if (value == null) {
+        throw "asserts.isNotNil: value was null";
+    };
+    return;
+}
+
+// ── result ───────────────────────────────────────────────────────────────────
+
+// Fails when `result` is `Error`. Read the payload at the call site with the
+// builtin methods (`try equals(r.unwrapOr(0), 42);`).
+#[@result]
+pub fn isOk<T, E>(result: @Result<T, E>) -> @Result<void, string> {
+    if (result.isError()) {
+        throw "asserts.isOk: result was Error";
+    };
+    return;
+}
+
+// Fails when `result` is `Ok`. To assert that a `@Result`-returning body
+// fails, this is the tool — `throws` is for a `@panic` or a host throw.
+#[@result]
+pub fn isError<T, E>(result: @Result<T, E>) -> @Result<void, string> {
+    if (result.isOk()) {
+        throw "asserts.isError: result was Ok";
+    };
+    return;
+}
+
+// ── string ───────────────────────────────────────────────────────────────────
+
+// Fails when `needle` is not a substring of `actual`.
+#[@result]
+pub fn contains(actual: string, needle: string) -> @Result<void, string> {
+    if (actual.contains(needle) == false) {
+        throw "asserts.contains: needle not in actual";
+    };
+    return;
+}
+
+// Fails when `needle` is a substring of `actual`.
+#[@result]
+pub fn notContains(actual: string, needle: string) -> @Result<void, string> {
+    if (actual.contains(needle)) {
+        throw "asserts.notContains: needle found in actual";
+    };
+    return;
+}
+
+// Fails when `actual` does not start with `prefix`.
+#[@result]
+pub fn startsWith(actual: string, prefix: string) -> @Result<void, string> {
+    if (actual.startsWith(prefix) == false) {
+        throw "asserts.startsWith: prefix does not match";
+    };
+    return;
+}
+
+// Fails when `actual` does not end with `suffix`.
+#[@result]
+pub fn endsWith(actual: string, suffix: string) -> @Result<void, string> {
+    if (actual.endsWith(suffix) == false) {
+        throw "asserts.endsWith: suffix does not match";
+    };
+    return;
+}
+
+// Private `regex.matches` twin, actual-first: inlined here rather than via a
+// cross-module call so this file stays self-contained (std-internal modules
+// do not import each other). PCRE-ish on both hosts.
+#[@External.Node("""(new RegExp($1).test($0))""")]
+#[@External.Erlang("""(re:run($0, $1) =/= nomatch)""")]
+declare fn regexMatches(actual: string, pattern: string) -> bool;
+
+// Fails when the regular expression `pattern` (the host's native flavour)
+// does not match `actual`. Use `contains` for a literal needle. Needs Node or
+// Erlang at run time (`regexMatches`).
+#[@result]
+pub fn matches(actual: string, pattern: string) -> @Result<void, string> {
+    if (regexMatches(actual, pattern) == false) {
+        throw "asserts.matches: pattern did not match";
+    };
+    return;
+}
+
+// ── collection ───────────────────────────────────────────────────────────────
+
+// Fails when the array has elements.
+#[@result]
+pub fn isEmpty<T>(actual: T[]) -> @Result<void, string> {
+    if (actual.length != 0) {
+        throw "asserts.isEmpty: array was not empty";
+    };
+    return;
+}
+
+// Fails when the array is empty.
+#[@result]
+pub fn isNotEmpty<T>(actual: T[]) -> @Result<void, string> {
+    if (actual.length == 0) {
+        throw "asserts.isNotEmpty: array was empty";
+    };
+    return;
+}
+
+// Fails when the array's length is not `expected`.
+#[@result]
+pub fn lengthIs<T>(actual: T[], expected: i32) -> @Result<void, string> {
+    if (actual.length != expected) {
+        throw "asserts.lengthIs: length differs";
+    };
+    return;
+}
+
+// Fails when no element `==` `element` (`Array.indexOf` — reference equality
+// for records on commonJS; extract with `.at(i)` and `deepEquals` instead).
+#[@result]
+pub fn includes<T>(actual: T[], element: T) -> @Result<void, string> {
+    if (actual.indexOf(element) < 0) {
+        throw "asserts.includes: element not found";
+    };
+    return;
+}
+
+// Fails when some element `==` `element`.
+#[@result]
+pub fn notIncludes<T>(actual: T[], element: T) -> @Result<void, string> {
+    if (actual.indexOf(element) >= 0) {
+        throw "asserts.notIncludes: element found";
+    };
+    return;
+}
+
+// ── numeric ──────────────────────────────────────────────────────────────────
+
+// Fails when `actual` is outside `[low, high]` (both ends included). `i32`
+// only: a generic `T` cannot be compared with `<`, and `f64` callers have
+// `approxEquals`. `positive`/`negative` are `greaterThan(x, 0)`/`lessThan(x, 0)`.
+#[@result]
+pub fn between(actual: i32, low: i32, high: i32) -> @Result<void, string> {
+    // Bound first: an `if (a < b || c > d)` condition does not parse today
+    // (the condition grammar stops at `||`; a `val` initialiser takes the
+    // whole expression) — a parser gap, recorded by the front that owns it.
+    val outside = actual < low || actual > high;
+    if (outside) {
+        throw "asserts.between: value out of range";
+    };
+    return;
+}
+
+// Fails when `actual <= bound`.
+#[@result]
+pub fn greaterThan(actual: i32, bound: i32) -> @Result<void, string> {
+    if (actual <= bound) {
+        throw "asserts.greaterThan: value not greater";
+    };
+    return;
+}
+
+// Fails when `actual >= bound`.
+#[@result]
+pub fn lessThan(actual: i32, bound: i32) -> @Result<void, string> {
+    if (actual >= bound) {
+        throw "asserts.lessThan: value not less";
+    };
+    return;
+}
+
+// ── exceptions ───────────────────────────────────────────────────────────────
 
 // Private host-level try/catch wrapper (§A3 — `#[@result] declare fn`
 // template-owned). Runs `body` (no-arg fn returning a discardable `i32`
-// sentinel) and returns `{ok, 0}` on normal exit, `{error, …}` when the
-// body throws/panics. The sentinel `i32` (instead of `unit`/`void`) lets
-// the caller pass a closure whose final expression is an integer so the
-// type checker can unify the return — `unit`-bodied closures don't
-// type-check when the only body statement is `@panic("…")` (noreturn ≠
-// unit). Callers wrap the body with a trailing `0;` to satisfy the
-// signature.
+// sentinel) and answers `{ok, 0}` on normal exit, `{error, <message>}` when
+// the body throws/panics. The sentinel `i32` (instead of `void`) lets the
+// caller pass a closure whose final expression is an integer so the checker
+// can unify the return — a closure whose only statement is `@panic("…")` does
+// not unify with `void` (noreturn ≠ void). Callers end the body with `0;`.
 #[@result]
 #[@External.Node("""(() => { try { $0(); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__B) -> try __B(), {ok, 0} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
 declare fn tryCatch(body: fn() -> i32) -> @Result<i32, string>;
 
-// `throws(body, message)`: asserts that `body` raises (a `@panic` or any
-// host-level throw). Panics with `asserts.throws: …` when the body
-// completed normally. Built on the §A3 `tryCatch` wrapper — pure bp at
-// the call site, the host catch lives entirely inside the template.
-// Callers pass a closure whose body ends with `0;` (sentinel — only
-// reached if the panic-path doesn't fire, in which case the assertion
-// itself fires).
-pub fn throws(body: fn() -> i32, message: string) {
-    val r = tryCatch(body);
-    if (r.isOk()) @panic("asserts.throws: body did not raise");
+// Private: the message `tryCatch` caught, or `""` for a body that completed.
+fn caughtMessage(r: @Result<i32, string>) -> string {
+    val text = case r {
+        Ok(v) -> "";
+        Error(e) -> e;
+    };
+    return text;
 }
 
-// Private regex.matches twin: inlined here rather than via a cross-
-// module call so this file stays self-contained (std-internal modules
-// do not import each other today). The annotation is byte-identical
-// to `regex.matches`.
-#[@External.Node("""(new RegExp($0).test($1))""")]
-#[@External.Erlang("""(re:run($1, $0) =/= nomatch)""")]
-declare fn regexMatches(pattern: string, input: string) -> bool;
+// Fails when `body` completes normally — for a `@panic` or a host throw from
+// code that is not `#[@result]` (a failing `@Result` is `isError`). Needs Node
+// or Erlang at run time (`tryCatch`). End the body with `0;` (see `tryCatch`).
+#[@result]
+pub fn throws(body: fn() -> i32) -> @Result<void, string> {
+    val r = tryCatch(body);
+    if (r.isOk()) {
+        throw "asserts.throws: body did not raise";
+    };
+    return;
+}
 
-// Substring-or-regex match. The `pattern` is a regular expression in
-// the host's native flavour (PCRE-ish on every supported backend); use
-// `contains` when you want a literal needle.
-pub fn matches(pattern: string, actual: string) {
-    if (regexMatches(pattern, actual).negate()) @panic("asserts.matches: pattern did not match");
+// Fails when `body` completes normally, or when the caught message does not
+// contain `needle`. On Erlang the caught message is `Class:Reason`
+// (`error:{panic,<<"boom">>}`), so match on the text you raised, not on the
+// wrapping.
+#[@result]
+pub fn throwsWith(body: fn() -> i32, needle: string) -> @Result<void, string> {
+    val r = tryCatch(body);
+    if (r.isOk()) {
+        throw "asserts.throwsWith: body did not raise";
+    };
+    if (caughtMessage(r).contains(needle) == false) {
+        throw "asserts.throwsWith: message does not contain needle";
+    };
+    return;
+}
+
+// ── utility ──────────────────────────────────────────────────────────────────
+
+// Always `Error("asserts.fail: <message>")` — the one function whose message
+// carries caller text; the escape for a branch the test asserts is unreachable.
+#[@result]
+pub fn fail(message: string) -> @Result<void, string> {
+    throw "asserts.fail: " + message;
+}
+
+// The `Error` payload of an assertion's result, or `""` for `Ok`. Not
+// `#[@result]`: it is how a test reads a failure message to compare or
+// snapshot it (`test-snap.md`), matching over the builtin `Result` enum in a
+// function the manual-construction rule does not apply to.
+pub fn errorText(r: @Result<void, string>) -> string {
+    val text = case r {
+        Ok(v) -> "";
+        Error(e) -> e;
+    };
+    return text;
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
+// One test per function per path, written with `try`; a fail path asserts
+// `isError` over the assertion's own result and pins the literal message
+// through `errorText` (no host cell, no panic).
 
-test "asserts.truthy passes when the condition is true" {
-    truthy(true);
-    truthy(1 == 1);
+#[@result]
+fn parsePort(s: string) -> @Result<i32, string> {
+    if (s == "") {
+        throw "empty input";
+    };
+    return 8080;
 }
 
-test "asserts.falsy passes when the condition is false" {
-    falsy(false);
-    falsy(1 == 2);
+fn explode() -> i32 {
+    @panic("boom: the widget is on fire");
+    return 0;
 }
 
-test "asserts.equal passes for equal primitives" {
-    equal(42, 42);
-    equal("hello", "hello");
-    equal(true, true);
+// boolean
+
+test "asserts: isTrue passes on true" {
+    try isTrue(true);
+    try isTrue(1 + 1 == 2);
 }
 
-test "asserts.notEqual passes when values differ" {
-    notEqual(1, 2);
-    notEqual("a", "b");
+test "asserts: isTrue fails on false" {
+    val r = isTrue(1 == 2);
+    try isError(r);
+    try equals(errorText(r), "asserts.isTrue: condition was false");
 }
 
-test "asserts.approxEqual accepts values within tolerance" {
-    approxEqual(1.0, 1.00001, 0.001);
-    approxEqual(0.0, 0.0, 0.0);
+test "asserts: isFalse passes on false" {
+    try isFalse(false);
+    try isFalse("abc".startsWith("z"));
 }
 
-test "asserts.contains finds a substring" {
-    contains("hello world", "world");
-    contains("foobar", "oob");
+test "asserts: isFalse fails on true" {
+    val r = isFalse(true);
+    try isError(r);
+    try equals(errorText(r), "asserts.isFalse: condition was true");
 }
 
-test "asserts.matches accepts a digit pattern over digits" {
-    matches("[0-9]+", "abc123def");
+// equality
+
+test "asserts: equals passes on equal primitives" {
+    try equals(42, 42);
+    try equals("hello", "hello");
+    try equals(true, true);
 }
 
-test "asserts.matches accepts a literal pattern" {
-    matches("hello", "say hello there");
+test "asserts: equals fails on different values" {
+    val r = equals("ana", "bob");
+    try isError(r);
+    try equals(errorText(r), "asserts.equals: values differ");
 }
 
-test "asserts.throws catches a panicking body" {
-    throws({ ->
-        @panic("expected");
+test "asserts: notEquals passes when the values differ" {
+    try notEquals(1, 2);
+    try notEquals("a", "b");
+}
+
+test "asserts: notEquals fails on equal values" {
+    val r = notEquals(7, 7);
+    try isError(r);
+    try equals(errorText(r), "asserts.notEquals: values match");
+}
+
+test "asserts: approxEquals accepts a value inside the tolerance" {
+    try approxEquals(3.14159, 3.14, 0.01);
+    try approxEquals(0.0, 0.0, 0.0);
+}
+
+test "asserts: approxEquals fails outside the tolerance" {
+    val r = approxEquals(1.0, 2.0, 0.5);
+    try isError(r);
+    try equals(errorText(r), "asserts.approxEquals: values differ by more than tolerance");
+}
+
+test "asserts: deepEquals compares arrays by content on every target" {
+    val left = [1, 2, 3];
+    val right = [1, 2, 3];
+    try deepEquals(left, right);
+}
+
+test "asserts: deepEquals fails on structurally different values" {
+    val r = deepEquals([1, 2], [2, 1]);
+    try isError(r);
+    try equals(errorText(r), "asserts.deepEquals: values differ structurally");
+}
+
+// nil
+
+test "asserts: isNil and isNotNil read an optional" {
+    val xs = [10, 20, 30];
+    try isNotNil(xs.at(1));
+    try isNil(xs.at(9));
+}
+
+test "asserts: isNil fails on a present value" {
+    val xs = [10];
+    val r = isNil(xs.at(0));
+    try isError(r);
+    try equals(errorText(r), "asserts.isNil: value was present");
+}
+
+test "asserts: isNotNil fails on null" {
+    val xs = [10];
+    val r = isNotNil(xs.at(5));
+    try isError(r);
+    try equals(errorText(r), "asserts.isNotNil: value was null");
+}
+
+// result
+
+test "asserts: isOk and isError read a Result" {
+    try isOk(parsePort("8080"));
+    try isError(parsePort(""));
+}
+
+test "asserts: the Ok payload is read with unwrapOr" {
+    val port = parsePort("8080").unwrapOr(0);
+    try equals(port, 8080);
+}
+
+test "asserts: isOk fails on an Error" {
+    val r = isOk(parsePort(""));
+    try isError(r);
+    try equals(errorText(r), "asserts.isOk: result was Error");
+}
+
+test "asserts: isError fails on an Ok" {
+    val r = isError(parsePort("1"));
+    try isError(r);
+    try equals(errorText(r), "asserts.isError: result was Ok");
+}
+
+// string
+
+test "asserts: contains, startsWith and endsWith over a string" {
+    try contains("hello world", "o w");
+    try notContains("hello world", "xyz");
+    try startsWith("/api/users", "/api");
+    try endsWith("page.bp", ".bp");
+}
+
+test "asserts: contains fails on a missing needle" {
+    val r = contains("hello", "xyz");
+    try isError(r);
+    try equals(errorText(r), "asserts.contains: needle not in actual");
+}
+
+test "asserts: notContains fails on a present needle" {
+    val r = notContains("hello", "ell");
+    try isError(r);
+    try equals(errorText(r), "asserts.notContains: needle found in actual");
+}
+
+test "asserts: startsWith fails on another prefix" {
+    val r = startsWith("/api", "/v2");
+    try isError(r);
+    try equals(errorText(r), "asserts.startsWith: prefix does not match");
+}
+
+test "asserts: endsWith fails on another suffix" {
+    val r = endsWith("page.bp", ".js");
+    try isError(r);
+    try equals(errorText(r), "asserts.endsWith: suffix does not match");
+}
+
+test "asserts: matches takes the actual first and the pattern second" {
+    try matches("555-1234", "^[0-9]{3}-[0-9]{4}$");
+    try matches("abc123def", "[0-9]+");
+}
+
+test "asserts: matches fails when the pattern does not match" {
+    val r = matches("abc", "^[0-9]+$");
+    try isError(r);
+    try equals(errorText(r), "asserts.matches: pattern did not match");
+}
+
+// collection
+
+test "asserts: isEmpty, isNotEmpty and lengthIs over an array" {
+    val none: i32[] = [];
+    try isEmpty(none);
+    try isNotEmpty([1]);
+    try lengthIs([1, 2, 3], 3);
+    try lengthIs(none, 0);
+}
+
+test "asserts: isEmpty fails on elements" {
+    val r = isEmpty([1]);
+    try isError(r);
+    try equals(errorText(r), "asserts.isEmpty: array was not empty");
+}
+
+test "asserts: isNotEmpty fails on an empty array" {
+    val none: i32[] = [];
+    val r = isNotEmpty(none);
+    try isError(r);
+    try equals(errorText(r), "asserts.isNotEmpty: array was empty");
+}
+
+test "asserts: lengthIs fails on another length" {
+    val r = lengthIs([1, 2], 3);
+    try isError(r);
+    try equals(errorText(r), "asserts.lengthIs: length differs");
+}
+
+test "asserts: includes and notIncludes over an array" {
+    try includes([1, 2, 3], 2);
+    try notIncludes(["a", "b"], "z");
+}
+
+test "asserts: includes fails on a missing element" {
+    val r = includes([1, 2, 3], 4);
+    try isError(r);
+    try equals(errorText(r), "asserts.includes: element not found");
+}
+
+test "asserts: notIncludes fails on a present element" {
+    val r = notIncludes([1, 2, 3], 2);
+    try isError(r);
+    try equals(errorText(r), "asserts.notIncludes: element found");
+}
+
+// numeric
+
+test "asserts: between is inclusive on both ends" {
+    try between(5, 1, 10);
+    try between(1, 1, 10);
+    try between(10, 1, 10);
+}
+
+test "asserts: between fails outside the range" {
+    val r = between(0, 1, 10);
+    try isError(r);
+    try equals(errorText(r), "asserts.between: value out of range");
+}
+
+test "asserts: greaterThan and lessThan are strict" {
+    try greaterThan(3, 2);
+    try lessThan(2, 3);
+}
+
+test "asserts: greaterThan fails on an equal value" {
+    val r = greaterThan(2, 2);
+    try isError(r);
+    try equals(errorText(r), "asserts.greaterThan: value not greater");
+}
+
+test "asserts: lessThan fails on a greater value" {
+    val r = lessThan(3, 2);
+    try isError(r);
+    try equals(errorText(r), "asserts.lessThan: value not less");
+}
+
+// exceptions
+
+test "asserts: throws catches a panicking body" {
+    try throws({ ->
+        explode();
         0;
-    }, "expected panic");
+    });
 }
 
-test "asserts.AssertError carries the failed-assertion shape" {
-    val err = AssertError(message: "expected positive", file: "asserts.bp", line: 0);
-    assert err.message == "expected positive";
-    assert err.file == "asserts.bp";
-    assert err.line == 0;
+test "asserts: throws fails when the body completes" {
+    val r = throws({ ->
+        0;
+    });
+    try isError(r);
+    try equals(errorText(r), "asserts.throws: body did not raise");
+}
+
+test "asserts: throwsWith checks the message" {
+    try throwsWith({ ->
+        explode();
+        0;
+    }, "on fire");
+}
+
+test "asserts: throwsWith fails when the body completes" {
+    val r = throwsWith({ ->
+        0;
+    }, "anything");
+    try isError(r);
+    try equals(errorText(r), "asserts.throwsWith: body did not raise");
+}
+
+test "asserts: throwsWith fails on a message without the needle" {
+    val r = throwsWith({ ->
+        explode();
+        0;
+    }, "not in the message");
+    try isError(r);
+    try equals(errorText(r), "asserts.throwsWith: message does not contain needle");
+}
+
+// utility
+
+test "asserts: fail always answers Error and carries the caller's text" {
+    val r = fail("this branch is unreachable");
+    try isError(r);
+    try equals(errorText(r), "asserts.fail: this branch is unreachable");
+}
+
+test "asserts: errorText answers the empty string for Ok" {
+    try equals(errorText(isTrue(true)), "");
 }

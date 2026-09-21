@@ -603,6 +603,64 @@ pub fn assertErlangRunLog(
     return error.ModuleDidNotCompile;
 }
 
+/// The test-mode twin of `assertJsRunLog` (1.0.10-beta decision 74): compiles
+/// `src` in **test mode** for both `botopink test` targets (commonJS + erlang),
+/// runs each module the way the CLI does (`runtime.executeTestModule`) and
+/// asserts that the runner's output equals `expected` on both — whatever the
+/// exit status, because the output a failing test prints is the point. The
+/// nondeterministic `  duration <ms>ms` lines are dropped before comparing.
+/// Writes no snapshot: `assertJsTestMode` records the code; this records what
+/// running it prints, which the snapshot harness cannot (a non-zero exit is an
+/// empty RUN LOG there, and erlang test modules are never executed by it).
+pub fn assertTestModeRunLog(allocator: Allocator, src: []const u8, expected: []const u8) !void {
+    const io = std.testing.io;
+    const runtime = @import("../runtime.zig");
+    var first_err: ?anyerror = null;
+    for (configs[0..2]) |c| {
+        var cfg = c;
+        cfg.test_mode = true;
+        cfg.build_root = ".botopinkbuild/codegen/test_mode_run_log";
+        var outputs = try codegen.generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg);
+        defer {
+            for (outputs.items) |*o| o.result.deinit(allocator);
+            outputs.deinit(allocator);
+        }
+        var ran_one = false;
+        for (outputs.items) |o| {
+            if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+            if (o.result.failed()) break;
+            ran_one = true;
+            const target: runtime.TestTarget = if (cfg.targetSource == .commonJS) .commonJS else .erlang;
+            const raw = try runtime.executeTestModule(allocator, io, target, o.result.js);
+            defer allocator.free(raw);
+            const got = try stripDurationLines(allocator, raw);
+            defer allocator.free(got);
+            if (!std.mem.eql(u8, got, expected)) {
+                std.debug.print("\n=== generated {s} (test mode) ===\n{s}\n=== RUN LOG ===\n{s}\n=== expected ===\n{s}\n", .{ @tagName(cfg.targetSource), o.result.js, got, expected });
+                if (first_err == null) first_err = error.RunLogMismatch;
+            }
+        }
+        if (!ran_one and first_err == null) first_err = error.ModuleDidNotCompile;
+    }
+    if (first_err) |err| return err;
+}
+
+/// `text` without its `  duration <ms>ms` lines (the one nondeterministic line
+/// of the `botopink test` envelope).
+fn stripDurationLines(allocator: Allocator, text: []const u8) ![]u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(allocator);
+    var it = std.mem.splitScalar(u8, text, '\n');
+    var first = true;
+    while (it.next()) |line| {
+        if (std.mem.startsWith(u8, line, "  duration ") and std.mem.endsWith(u8, line, "ms")) continue;
+        if (!first) try out.append(allocator, '\n');
+        first = false;
+        try out.appendSlice(allocator, line);
+    }
+    return out.toOwnedSlice(allocator);
+}
+
 /// Asserts that none of `needles` appear in the generated commonJS output.
 pub fn assertJsNotContains(allocator: Allocator, src: []const u8, needles: []const []const u8) !void {
     const io = std.testing.io;
