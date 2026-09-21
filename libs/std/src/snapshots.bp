@@ -141,8 +141,17 @@ declare fn removeFile(p: string) -> @Result<i32, string>;
 #[@External.Erlang("""filelib:is_file($0)""")]
 declare fn exists(p: string) -> bool;
 
+// Remove a directory tree — the inline tests' scratch directories, so a run
+// leaves nothing under the host's tmpdir. A tree that is not there is `Ok`
+// too, so the tests can assert the removal succeeded.
+#[@result]
+#[@External.Node("""(() => { try { require('fs').rmSync($0, { recursive: true, force: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__P) -> case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+declare fn removeTree(p: string) -> @Result<i32, string>;
+
 // A fresh, empty scratch directory under the host's tmpdir — for the inline
-// tests only, so the package tree is never written to. The Erlang name carries
+// tests only, so the package tree is never written to; each test removes it
+// again with `removeTree`. The Erlang name carries
 // the OS pid: `erlang:unique_integer` restarts with the VM, so a bare counter
 // collided (`eexist`) with the directories an earlier run left behind.
 #[@External.Node("""require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bpsnap-'))""")]
@@ -350,6 +359,8 @@ test "snapshots: engine ---- missing writes a .new and answers Error" {
     assert errorText(r).startsWith("snapshots: missing ");
     val candidate = readFile([path(loc), ".new"].join("")).unwrapOr("");
     assert candidate == "botopink-snap 1\ntest: e: missing\nsubject: text\n\nhello\n";
+    val cleaned = removeTree(dir);
+    assert cleaned.isOk();
 }
 
 test "snapshots: engine ---- mismatch writes a .new and answers Error" {
@@ -363,6 +374,8 @@ test "snapshots: engine ---- mismatch writes a .new and answers Error" {
     assert errorText(r).contains("(first difference at body line 1)");
     val candidate = readFile([path(loc), ".new"].join("")).unwrapOr("");
     assert candidate == "botopink-snap 1\ntest: e: mismatch\nsubject: text\n\nnew\n";
+    val cleaned = removeTree(dir);
+    assert cleaned.isOk();
 }
 
 test "snapshots: engine ---- the differing line is counted from the body" {
@@ -372,6 +385,8 @@ test "snapshots: engine ---- the differing line is counted from the body" {
     assert w.isOk();
     val r = assertAs(loc, "text", "a\nb\nd");
     assert errorText(r).contains("(first difference at body line 3)");
+    val cleaned = removeTree(dir);
+    assert cleaned.isOk();
 }
 
 test "snapshots: engine ---- match answers Ok and removes a stale .new" {
@@ -383,6 +398,8 @@ test "snapshots: engine ---- match answers Ok and removes a stale .new" {
     assert stale.isOk();
     try assertAs(loc, "text", "same");
     assert exists([path(loc), ".new"].join("")) == false;
+    val cleaned = removeTree(dir);
+    assert cleaned.isOk();
 }
 
 test "snapshots: engine ---- header must match too" {
@@ -393,6 +410,8 @@ test "snapshots: engine ---- header must match too" {
     val r = assertAs(loc, "text", "body");
     assert r.isError();
     assert errorText(r).contains("(header differs)");
+    val cleaned = removeTree(dir);
+    assert cleaned.isOk();
 }
 
 test "snapshots: engine ---- CRLF in the recorded file still matches" {
@@ -401,6 +420,8 @@ test "snapshots: engine ---- CRLF in the recorded file still matches" {
     val w = writeFile(path(loc), "botopink-snap 1\r\ntest: e: crlf\r\nsubject: text\r\n\r\nline one\r\nline two\r\n");
     assert w.isOk();
     try assertAs(loc, "text", "line one\nline two");
+    val cleaned = removeTree(dir);
+    assert cleaned.isOk();
 }
 
 test "snapshots: engine ---- trailing newlines of the body do not matter" {
@@ -409,6 +430,8 @@ test "snapshots: engine ---- trailing newlines of the body do not matter" {
     val w = writeFile(path(loc), render("e: trailing", "text", "body\n\n"));
     assert w.isOk();
     try assertAs(loc, "text", "body");
+    val cleaned = removeTree(dir);
+    assert cleaned.isOk();
 }
 
 test "snapshots: engine ---- not a snapshot file" {
@@ -420,6 +443,8 @@ test "snapshots: engine ---- not a snapshot file" {
     assert r.isError();
     assert errorText(r).startsWith("snapshots: not a snapshot file");
     assert exists([path(loc), ".new"].join("")) == false;
+    val cleaned = removeTree(dir);
+    assert cleaned.isOk();
 }
 
 test "snapshots: engine ---- the header keeps the full test name" {
@@ -431,6 +456,8 @@ test "snapshots: engine ---- the header keeps the full test name" {
     assert text.contains("test: css: modifiers ---- hover on md breakpoint");
     assert text.contains("subject: css");
     assert path(loc).endsWith("/__snapshots__/css/modifiers_hover_on_md_breakpoint.snap");
+    val cleaned = removeTree(dir);
+    assert cleaned.isOk();
 }
 
 test "snapshots: engine ---- a named snapshot lives beside the unnamed one" {
@@ -443,6 +470,8 @@ test "snapshots: engine ---- a named snapshot lives beside the unnamed one" {
     val empty = assertNamedAs(loc, "", "text", "x");
     assert empty.isError();
     assert errorText(empty).startsWith("snapshots: a named snapshot needs a name");
+    val cleaned = removeTree(dir);
+    assert cleaned.isOk();
 }
 
 test "snapshots: engine ---- a module-level location is refused" {
