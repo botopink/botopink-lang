@@ -114,6 +114,14 @@ pub const CompileExpectation = enum {
     /// `COMPILE DIAGNOSTIC` section is the assertion. Used for documented
     /// skips — always with a comment naming the missing feature.
     expect_compile_error,
+    /// The program compiles on commonJS, erlang and beam and is **refused** on
+    /// wasm. The shape of a host-backed `declare fn` that names another target
+    /// and no `wasm` one: there is no symbol on this backend and none was ever
+    /// promised, so decision 67 refuses the call where it is written instead of
+    /// lowering it to a trap the program only meets at run time. The wasm
+    /// snapshot records the `COMPILE DIAGNOSTIC` section; the other three still
+    /// have to compile, and the test fails if wasm ever starts accepting it.
+    refused_on_wasm,
 };
 
 /// The name `comptime.compile` gives a module (mirrors `comptime.zig`).
@@ -151,6 +159,58 @@ fn collectCompileDiagnostics(
         const body = (try ctSnapshot.renderOutcomeDiagnostic(allocator, o.src, o.outcome)) orelse continue;
         try out.append(allocator, .{ .name = o.name, .src = o.src, .text = body });
     }
+    if (out.items.len > 0) return;
+
+    // The module compiled through the front end and was refused by the
+    // **backend** — a host-backed `declare fn` with no target for it (06 C13's
+    // `MissingExternal`, which every backend raises and wasm raises under
+    // decision 67). `codegen.generate` drops such a module, so the harness sees
+    // it as "missing" with nothing to say; `generateWith` hands it back with the
+    // diagnostic attached. Without this the snapshot recorded "no diagnostic
+    // available", which is exactly the text a refusal must not be recorded as.
+    var full = try codegen.generateWith(allocator, modules, io, cfg, .{ .execute = false });
+    defer {
+        for (full.items) |*o| o.result.deinit(allocator);
+        full.deinit(allocator);
+    }
+    for (full.items) |o| {
+        const d = o.result.diagnostic orelse continue;
+        const text = switch (d) {
+            .type => |t| try renderLocatedMessage(allocator, o.src, t.message, t.loc),
+            .syntax => continue,
+        };
+        try out.append(allocator, .{ .name = o.name, .src = o.src, .text = text });
+    }
+}
+
+/// A backend diagnostic (`moduleOutput.Diagnostic.type`) in the layout
+/// `renderTypeErrorBody` gives a checker one — the message, then the location
+/// box. It is its own renderer because a backend refusal is not a `TypeError`:
+/// it carries a rendered message and a location, and nothing else.
+fn renderLocatedMessage(
+    allocator: Allocator,
+    src: []const u8,
+    message: []const u8,
+    loc: anytype,
+) ![]u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try out.appendSlice(allocator, "error: ");
+    try out.appendSlice(allocator, message);
+    try out.append(allocator, '\n');
+    if (loc) |l| {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const tmp = arena.allocator();
+        const line_text = ctSnapshot.getSourceLine(src, l.line);
+        try out.appendSlice(allocator, try std.fmt.allocPrint(tmp, "  \u{250c}\u{2500} :{d}:{d}\n", .{ l.line, l.col }));
+        try out.appendSlice(allocator, "  \u{2502}\n");
+        try out.appendSlice(allocator, try std.fmt.allocPrint(tmp, "{d} \u{2502} {s}\n", .{ l.line, line_text }));
+        try out.appendSlice(allocator, "  \u{2502} ");
+        for (0..(if (l.col > 0) l.col - 1 else 0)) |_| try out.append(allocator, ' ');
+        try out.appendSlice(allocator, "^\n");
+    }
+    return out.toOwnedSlice(allocator);
 }
 
 pub fn assertJs(
@@ -178,6 +238,23 @@ pub fn assertJsCompileError(
     );
 }
 
+/// `assertJsSingle` for a program that compiles on commonJS, erlang and beam
+/// and is **refused** on wasm — a call to a host-backed `declare fn` that names
+/// another target and no `wasm` one (decision 67). The wasm snapshot records
+/// the refusal as its `COMPILE DIAGNOSTIC` section.
+pub fn assertJsRefusedOnWasm(
+    allocator: Allocator,
+    comptime loc: std.builtin.SourceLocation,
+    src: []const u8,
+) !void {
+    return assertJsExpecting(
+        allocator,
+        loc,
+        &.{.{ .path = "", .source = src }},
+        .refused_on_wasm,
+    );
+}
+
 pub fn assertJsExpecting(
     allocator: Allocator,
     comptime loc: std.builtin.SourceLocation,
@@ -194,10 +271,21 @@ pub fn assertJsExpecting(
     // every `.snap.md.new` instead of stopping at the first mismatch.
     var first_err: ?anyerror = null;
     var any_module_failed = false;
+    // `refused_on_wasm` splits the verdict per backend, so it keeps its own two
+    // flags and leaves `any_module_failed` meaning exactly what it did.
+    var must_compile_failed = false;
+    var wasm_refused = false;
 
     for (configs) |c| {
         var cfg = c;
         cfg.build_root = build_root_path;
+        const eff: CompileExpectation = switch (expectation) {
+            .refused_on_wasm => if (cfg.targetSource == .wasm) .expect_compile_error else .must_compile,
+            else => expectation,
+        };
+        // Whether THIS backend failed. `any_module_failed` is cumulative across
+        // backends, and `refused_on_wasm` needs the per-backend answer.
+        var backend_failed = false;
         var outputs = try codegen.generate(
             allocator,
             modules,
@@ -220,7 +308,10 @@ pub fn assertJsExpecting(
                 .src = o.src,
                 .result = o.result,
             });
-            if (o.result.comptime_err != null) any_module_failed = true;
+            if (o.result.comptime_err != null) {
+                any_module_failed = true;
+                backend_failed = true;
+            }
         }
 
         // H3 — every module the backend dropped (parse / type error) still gets
@@ -241,6 +332,7 @@ pub fn assertJsExpecting(
         }
         if (missing) {
             any_module_failed = true;
+            backend_failed = true;
             try collectCompileDiagnostics(allocator, modules, cfg, &diagnostics);
             for (modules) |m| {
                 const name = moduleName(m);
@@ -259,7 +351,7 @@ pub fn assertJsExpecting(
                     .result = null,
                     .diagnostic = text,
                 });
-                if (expectation == .must_compile) {
+                if (eff == .must_compile) {
                     std.debug.print(
                         "\n{s} [{s}]: module '{s}' did not compile:\n{s}\n" ++
                             "(use `assertJsCompileError` if the failure is the point of the test)\n",
@@ -269,6 +361,11 @@ pub fn assertJsExpecting(
             }
         }
 
+        if (backend_failed) {
+            if (eff == .must_compile) must_compile_failed = true;
+            if (cfg.targetSource == .wasm) wasm_refused = true;
+        }
+
         snap.assertCodegen(allocator, slug, snapOutputs.items, c) catch |err| {
             if (first_err == null) first_err = err;
         };
@@ -276,12 +373,21 @@ pub fn assertJsExpecting(
 
     // H3/H9 — a program that does not compile must not pass as a snapshot of
     // "nothing", whichever backend noticed.
-    if (any_module_failed and expectation == .must_compile) {
-        if (first_err == null) first_err = error.ModuleDidNotCompile;
-    }
-    if (!any_module_failed and expectation == .expect_compile_error) {
-        std.debug.print("\n{s}: expected a compile error, but every module compiled\n", .{slug});
-        if (first_err == null) first_err = error.ExpectedCompileError;
+    switch (expectation) {
+        .must_compile => if (any_module_failed and first_err == null) {
+            first_err = error.ModuleDidNotCompile;
+        },
+        .expect_compile_error => if (!any_module_failed) {
+            std.debug.print("\n{s}: expected a compile error, but every module compiled\n", .{slug});
+            if (first_err == null) first_err = error.ExpectedCompileError;
+        },
+        .refused_on_wasm => {
+            if (must_compile_failed and first_err == null) first_err = error.ModuleDidNotCompile;
+            if (!wasm_refused) {
+                std.debug.print("\n{s}: expected wasm to refuse the program, but it compiled\n", .{slug});
+                if (first_err == null) first_err = error.ExpectedCompileError;
+            }
+        },
     }
 
     if (first_err) |err| return err;

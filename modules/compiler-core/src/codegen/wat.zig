@@ -158,7 +158,23 @@ pub fn codegenEmit(
                 defer visited.deinit();
                 try visited.put(ct.name, {});
                 try collectLinks(alloc, outputs, &cross, ok.transformed, &visited, &linked);
-                const code = try emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items);
+                // 06 C13 — a host-backed fn with no `wasm` target reaches the
+                // driver as a located diagnostic naming the function, not as
+                // the bare error name that would abort the whole build.
+                var missing: ?moduleOutput.MissingExternal = null;
+                const code = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &missing) catch |err| {
+                    const me = missing orelse return err;
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = try me.diagnostic(alloc),
+                        },
+                    });
+                    continue;
+                };
                 try results.append(alloc, .{
                     .name = ct.name,
                     .src = ct.src,
@@ -251,9 +267,14 @@ fn emitWat(
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     linked: []const Linked,
+    /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
+    missing: ?*?moduleOutput.MissingExternal,
 ) ![]u8 {
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     defer em.deinit();
+    errdefer if (missing) |slot| {
+        slot.* = em.missing_external;
+    };
     em.module_name = module_name;
     em.instance_lowerings = own_instance_lowerings;
 
@@ -650,6 +671,15 @@ const Emitter = struct {
     /// Bodyless `declare fn`s — host-backed (`#[@External.<Target>(…)]`). wasm
     /// has no host to bind them to; a call traps (see `lowerPlainCall`).
     host_fns: std.StringHashMap(void),
+    /// The subset of `host_fns` that carries `#[@External.<Target>(…)]` for
+    /// some target and **none** for wasm: there is no host symbol to call and
+    /// none was ever promised. Decision 67 — calling one is refused where it is
+    /// written, not lowered to a trap (see `lowerPlainCall`).
+    external_missing: std.StringHashMap(void),
+    /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
+    /// the driver gets a located diagnostic naming the fn and this backend
+    /// instead of the bare error name.
+    missing_external: ?moduleOutput.MissingExternal = null,
     assoc_needed: std.ArrayListUnmanaged([]const u8) = .empty,
     assoc_emitted: std.StringHashMap(void),
     /// Extension block name → target type + methods (for resolving the mangled
@@ -706,6 +736,7 @@ const Emitter = struct {
             .fn_refs = std.StringHashMap(u32).init(alloc),
             .iface_assoc = std.StringHashMap(ast.BehaviorMethod).init(alloc),
             .host_fns = std.StringHashMap(void).init(alloc),
+            .external_missing = std.StringHashMap(void).init(alloc),
             .aliases = std.StringHashMap([]const u8).init(alloc),
             .pattern_locals = std.StringHashMap(void).init(alloc),
             .assoc_emitted = std.StringHashMap(void).init(alloc),
@@ -775,6 +806,7 @@ const Emitter = struct {
         self.fn_refs.deinit();
         self.iface_assoc.deinit();
         self.host_fns.deinit();
+        self.external_missing.deinit();
         self.aliases.deinit();
         self.pattern_locals.deinit();
         self.assoc_needed.deinit(self.alloc);
@@ -818,6 +850,12 @@ const Emitter = struct {
             .@"fn" => |f| {
                 if (f.isHost() or f.isDeclare or f.body.len == 0) {
                     try self.host_fns.put(f.name, {});
+                    // Decision 67 — a host-backed `declare fn` that names some
+                    // other target and no `wasm` one has no symbol here and
+                    // never claimed to: `lowerPlainCall` refuses the call
+                    // rather than lowering it to a trap.
+                    if (f.isExternal() and f.externalFor("wasm") == null)
+                        try self.external_missing.put(f.name, {});
                     continue;
                 }
                 const has_result = fnHasResult(f);
@@ -2935,7 +2973,7 @@ const Emitter = struct {
                                 try self.lowerEnumCtor(cc, fv.tag, fv.variant);
                             }
                         },
-                        .plain => try self.lowerPlainCall(cc),
+                        .plain => try self.lowerPlainCall(cc, c.loc),
                     }
                 },
                 .pipeline => |pl| {
@@ -4369,14 +4407,23 @@ const Emitter = struct {
     /// are coerced to the callee's declared parameter types and a short call is
     /// padded with zeros, so the emitted `call` always type-checks.
     ///
-    /// Two callees lower to `unreachable` instead — a trap, never a folded
-    /// value, so a program that needs them fails loudly and the module still
-    /// loads (`call $undefined` would reject the whole module):
-    ///   * a host-backed `declare fn` (`#[@External.<Target>(…)]`): wasm has no
-    ///     host, so there is nothing to call (`;; host-backed declare fn …`);
-    ///   * a name nothing in the module, its linked imports, the primitive
-    ///     method table or a function value resolves (`;; unresolved call: …`).
-    fn lowerPlainCall(self: *Emitter, cc: anytype) anyerror!void {
+    /// A **host-backed `declare fn` that names another target and no `wasm`
+    /// one is refused here**, at the call site, with the diagnostic commonJS,
+    /// erlang and beam already print (06 C13's `MissingExternal`). It used to
+    /// lower to `unreachable` "so the module still loads", which made wasm the
+    /// only backend where such a program compiled and then trapped at run time
+    /// — a silent divergence decision 67 rules out, and no flag turns it back
+    /// on.
+    ///
+    /// One callee still lowers to `unreachable` — a trap, never a folded value,
+    /// so a program that needs it fails loudly and the module still loads
+    /// (`call $undefined` would reject the whole module): a name nothing in the
+    /// module, its linked imports, the primitive method table or a function
+    /// value resolves (`;; unresolved call: …`). A bodyless `declare fn` with
+    /// no `#[@External.<Target>(…)]` at all keeps the old trap too, which is
+    /// the same cut commonJS makes (`externals_missing` is filled only for an
+    /// `isExternal()` fn).
+    fn lowerPlainCall(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!void {
         if (self.fn_sigs.get(cc.callee)) |sig| {
             var base: usize = 0;
             // `recv.m(a)` against a top-level `fn m(self, a)`: the receiver is
@@ -4406,6 +4453,10 @@ const Emitter = struct {
         }
         if (try self.lowerCollectionMethod(cc)) return;
         if (try self.lowerValueCall(cc)) return;
+        if (cc.receiver == null and self.external_missing.contains(cc.callee)) {
+            self.missing_external = .{ .name = cc.callee, .target = "wasm", .loc = loc };
+            return error.MissingExternalTarget;
+        }
         if (cc.receiver == null and self.host_fns.contains(cc.callee)) {
             try self.emitCf(.@"unreachable", "host-backed declare fn {s}/{d}: no wasm host", .{ cc.callee, cc.args.len });
             return;
@@ -4477,6 +4528,11 @@ const Emitter = struct {
                 // answers them because they are JavaScript's own, and this
                 // backend used to trap on an unlowered primitive method.
                 .{ "toUpperCase", 0, .str }, .{ "toLowerCase", 0, .str },
+                // `Index<i32, string>.at` (decision 63's amendment) — a
+                // `?string`, absent as the pointer 0. `.str` is its stack
+                // shape; `optInfoOf` is what routes the print through
+                // `$__print_opt_str`, and `$__str_at` is the lowering.
+                 .{ "at", 1, .str },
             },
             .bool => &.{
                 .{ "negate", 0, .bool_ },      .{ "nor", 1, .bool_ },          .{ "nand", 1, .bool_ },
@@ -4638,7 +4694,9 @@ const Emitter = struct {
             // already the string
         } else {
             try self.lowerCoerced(callArg(cc, 0).?, "i32");
-            if (eq(u8, name, "contains")) {
+            if (eq(u8, name, "at")) {
+                try self.emit(b.helper(.str_at));
+            } else if (eq(u8, name, "contains")) {
                 try self.emit(b.helper(.str_index_of));
                 try self.emit(try self.constInt(-1));
                 try self.emit(opOf("i32", "ne"));
@@ -5875,14 +5933,24 @@ const Emitter = struct {
             },
 
             .call => |c| switch (c.kind) {
-                .call => |cc| if (self.primKindAt(cc, c.loc)) |k| if (k == .array and
-                    (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first")))
-                {
-                    return switch (self.elemKindOf(cc.receiver.?.*)) {
-                        .str => .{ .boxed = false, .str = true },
-                        .f32 => .{ .boxed = true, .float_ = true },
-                        .i32 => .{ .boxed = true },
-                    };
+                .call => |cc| if (self.primKindAt(cc, c.loc)) |k| {
+                    if (k == .array and
+                        (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first")))
+                    {
+                        return switch (self.elemKindOf(cc.receiver.?.*)) {
+                            .str => .{ .boxed = false, .str = true },
+                            .f32 => .{ .boxed = true, .float_ = true },
+                            .i32 => .{ .boxed = true },
+                        };
+                    }
+                    // `s.at(i)` → `?string`: `$__str_at` answers the pointer of
+                    // a fresh one-byte string, or 0. Without this the result
+                    // printed through `$__print_str`, which reads a length at
+                    // address 0 — the WASI iovec — and answers whatever is
+                    // there with exit 0 instead of saying it is absent.
+                    if (k == .string and std.mem.eql(u8, cc.callee, "at")) {
+                        return .{ .boxed = false, .str = true };
+                    }
                 },
                 else => {},
             },

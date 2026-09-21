@@ -28,7 +28,10 @@ The four `codegen ---- use … is a plain call` cells of `features.zig` record d
 programs an all-backend snapshot cannot hold: decision 8 §10's `break <value>`
 out of a condition loop does not compile on erlang at all
 (`ConditionLoopValueUnsupported`), so `assertJsSingle` aborts before it can
-record wasm's answer.
+record wasm's answer. `wat.zig`'s `String.at` fixture uses it for the other
+reason: the method already answers on the other three backends, so an
+all-backend fixture would move their snapshot directories, which front `05-wasm`
+does not own.
 
 `assertJsExpecting`, `assertJsError` and `assertJsTestMode` wrap their snapshot calls in `utils/snap.zig` `traceEnter(loc)`/`traceLeave`, so `BOTOPINK_SNAP_TRACE=<file>` records the test `file:line` for every codegen snapshot. A new helper that writes a snapshot must do the same, or `scripts/snap_audit.sh --mode=review` cannot attribute it.
 
@@ -42,6 +45,19 @@ record wasm's answer.
   snapshot records a `----- COMPILE DIAGNOSTIC -- <module>` section instead of
   an empty code section (H3/H9). Before this, 29 slugs × 4 backends were 0-byte
   snapshots that compared empty with empty and passed.
+- `assertJsRefusedOnWasm(alloc, @src(), src)` (and `assertJsExpecting(…,
+  .refused_on_wasm)` for a multi-module program) is the opt-in for a program
+  that compiles on commonJS, erlang and beam and is **refused on wasm** — a call
+  to a host-backed `declare fn` that names another target and no `wasm` one,
+  which decision 67 refuses at the call site instead of lowering to a run-time
+  trap. The wasm snapshot records the located diagnostic as its
+  `COMPILE DIAGNOSTIC` section; the other three backends still have to compile,
+  and the test fails if wasm ever starts accepting the program. Ten
+  `externals.zig` fixtures carry it. `collectCompileDiagnostics` recovers a
+  **backend** refusal through `codegen.generateWith` (`generate` drops the
+  module, and the comptime front end has nothing to say about it), so the
+  section holds the real message and location rather than "no diagnostic
+  available".
 - `assertJsCompileError(alloc, @src(), src)` is the opt-in for a test whose
   point *is* that the program does not compile: it records the diagnostic and
   fails if the source ever starts compiling. Every call site carries a comment

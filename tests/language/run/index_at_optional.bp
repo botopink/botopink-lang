@@ -15,9 +15,12 @@
 ////   commonJS  `1`, `null`, `b`, `null` — correct
 ////   erlang    `1`, `undefined`, `b`, `undefined` — the absent optional prints
 ////             the atom, not `null` (decision 47, C-18)
-////   wasm      `1`, `0`, then a trap at `s.at(1)` — a `null` optional prints as
-////             `0` (decision 47 on wasm, C-18) and `String.at` has no wasm
-////             lowering at all (no row owns that second half; reported)
+////   wasm      `1`, `0`, `b`, `undefined` — absence alone, decision 47 on wasm
+////             (C-18): `0` where the value is unboxed, `undefined` where it is
+////             a `?string`. Until `fix/wasm-refusals` this line read "then a
+////             trap at `s.at(1)`": `String.at` had no wasm lowering at all and
+////             the program died there (exit 134). It has one now (`$__str_at`),
+////             and `run/string_at.bp` pins it on all four targets
 
 import {dict} from "std";
 

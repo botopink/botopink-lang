@@ -979,6 +979,21 @@ const str_ends_with = func("__str_ends_with", &.{ "s", "x" }, .i32, i32s(&.{ "n"
     call("__mem_eq"),
 });
 
+/// `s.at(i)` as a `?string`: a fresh one-byte string, or `0` — absence — when
+/// `i` is outside `0..len`. A `?string` needs no box on this backend: a string
+/// IS its own pointer and `$__print_opt_str_raw` reads absence as `i32.eqz`,
+/// which is why this answers a pointer and not the `$__box_i32` cell
+/// `$__arr_at_box` builds for a scalar element. The bounds test is `$__arr_at`'s
+/// against the length prefix instead of the element count, folded into one
+/// **unsigned** compare: a negative `i` wraps past any length, so `i32.ge_u`
+/// rejects both ends where `$__arr_at` needs `lt_s` and `ge_s` together.
+const str_at = func("__str_at", &.{ "s", "i" }, .i32, &.{}, &.{
+    get("i"),   get("s"),                load(0),
+    op("ge_u"), when(&.{ c32(0), ret }), get("s"),
+    get("i"),   get("i"),                c32(1),
+    op("add"),  call("__str_slice"),
+});
+
 /// `mode` bit 1 trims the start, bit 2 the end (whitespace: ' ' \t \n \r).
 const str_trim = func("__str_trim", &.{ "s", "mode" }, .i32, i32s(&.{ "a", "b", "ch" }), &.{
     get("s"),            load(0),  set("b"),

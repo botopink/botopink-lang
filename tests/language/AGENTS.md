@@ -36,7 +36,8 @@ Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, �
 `context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, one test cell, one run
 cell and six reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
 `run/index_past_the_end_fails`, `run/index_at_optional`), `std_erlang_node` (decision 64),
-`panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4), and the
+`panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4),
+`string_at` (`05-wasm`: the `String.at` reader, on all four targets), and the
 singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
 `curried_call`, `index_expression`). One scenario group per
@@ -70,15 +71,18 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | Sidecar | Claim | Passes when |
 |---|---|---|
 | `<name>.exit` holding `nonzero` | the program **aborts** after printing `.out` (`@panic`, `@todo`, a failed index under decision 63) | stdout equals `.out` **and** the status is not 0. The number is never pinned: node 1, erl 1, wasmtime 134 are the runtimes' (§ Never pin an erlang exit status) |
-| `<name>.<target>.expect` | on that target the compiler **refuses** the program — `reject/`'s shape, per target | exit ≠ 0 and the diagnostic contains line 1 (and ` --> src/main.bp:<L:C>` when line 2 is present). `run/external_erlang_only.commonJS.expect` and `run/std_erlang_node.{commonJS,wasm}.expect` are the live ones |
+| `<name>.<target>.expect` | on that target the compiler **refuses** the program — `reject/`'s shape, per target | exit ≠ 0 and the diagnostic contains line 1 (and ` --> src/main.bp:<L:C>` when line 2 is present). `run/external_erlang_only.{commonJS,wasm}.expect` and `run/std_erlang_node.{commonJS,wasm}.expect` are the live ones |
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 
-Any other content in `.exit` is a malformed claim and fails the cell. `.targets` exists for exactly
-one reason today: `run/external_erlang_only.bp` keeps wasm out, because wasm does not refuse a
-host-backed `declare fn` with no wasm host — `wat.zig`'s `lowerPlainCall` lowers it to `unreachable`
-on purpose ("so the module still loads") and the program traps at run time where commonJS, erlang and
-beam answer at compile time. No row in `00-compiler-carry-over` owns that divergence, so it is
-reported here rather than listed against an invented one.
+Any other content in `.exit` is a malformed claim and fails the cell. **No cell carries `.targets`
+today.** The one that did was `run/external_erlang_only.bp`, which kept wasm out because wasm did
+not refuse a host-backed `declare fn` with no wasm host — `wat.zig`'s `lowerPlainCall` lowered it to
+`unreachable` on purpose ("so the module still loads") and the program trapped at run time where
+commonJS, erlang and beam answered at compile time. That divergence was reported here for want of an
+owner row; it was closed on `fix/wasm-refusals` under decision 67 (a located refusal, no flag), so
+the sidecar is gone, `external_erlang_only.wasm.expect` carries wasm's half of the diagnostic and
+the cell runs on all four targets. The sidecar stays documented: the next divergence of that shape
+is written down the same way.
 
 ## The targets
 
@@ -252,13 +256,16 @@ after the branch moved from `85f883bd` onto the workspaces manifest):**
 
 ```bash
 ls test/*.bp    | wc -l   # 50
-ls run/*.bp     | wc -l   # 23   (each with its .out; 4 with an .exit, 2 with .<target>.expect, 1 with .targets)
+ls run/*.bp     | wc -l   # 24   (each with its .out; 4 with an .exit, 2 with .<target>.expect — 4 files, one per refusing target; none with .targets)
 ls reject/*.bp  | wc -l   # 30   (each with its .expect)
 ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 114 — 107 cells, plus the 7 extra .bp of the modules/ projects
+find . -name '*.bp' | wc -l   # 115 — 108 cells, plus the 7 extra .bp of the modules/ projects
 ```
 
-**107 cells**, 104 besides the three `smoke` files. The difference from the front-19 block below is
+**108 cells**, 105 besides the three `smoke` files. The 108th is `run/string_at.bp`, added on
+`fix/wasm-refusals`: `String.at` had no wasm lowering and `s.at(1)` trapped there while the other
+three answered, so the cell pins the present-index reader on all four targets. Absent indexes stay
+out of it — they are decision 47's spelling row (C-18), measured by `run/index_at_optional.bp`. The difference from the front-19 block below is
 C-16's eight cells, two new area rows and one row grown:
 
 | Area | Cells | Total |
@@ -272,11 +279,19 @@ Measured there — this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
 ```
 $ tests/language/run.sh                 # commonJS, erlang, wasm
 expected-failures.txt: 67 lines, 53 exercised by --target commonJS,erlang,wasm — by target: erlang 25 · beam 14 · commonJS 13 · * 8 · wasm 7; by first owner row: 01 23 · C-06 15 · C-02 8 · 02 6 · 03 4 · 05 3 · 13 3 · C-18 3 · 04 1 · C-03 1; 7 name tests rather than a path; 13 name a second row
-language tests: 363 passed, 53 expected failures, 0 failed
+language tests: 367 passed, 53 expected failures, 0 failed
 $ tests/language/run.sh --target beam
 expected-failures.txt: 67 lines, 22 exercised by --target beam — …the same line…
-language tests: 35 passed, 22 expected failures, 0 failed
+language tests: 36 passed, 22 expected failures, 0 failed
 ```
+
+Re-run on `fix/wasm-refusals` (front `05-wasm`): **367 / 53** and **36 / 22**, from 363 / 53 and
+35 / 22 at C-16's landing. `expected-failures.txt` keeps its 67 lines — nothing was deleted, and
+**one was relabelled**: `wasm | run/index_at_optional.bp` lost the `String.at` trap half it carried
+(the method has a wasm lowering now) and names only decision 47's absent-optional spelling, still
+C-18. The **+5 results** are two cells: `run/string_at.bp` is new and passes on all four targets
+(+3 here, +1 on beam), and `run/external_erlang_only.bp` lost its `.targets` sidecar and now runs —
+and is refused — on wasm too (+1 here; it already ran on beam).
 
 From 348 / 45 and 31 / 18 at `85f883bd` before C-16: **+12 lines** (8 `C-02`, 3 `C-18`, 1 `C-03`),
 **15 relabelled** (decisions 52/53/55's erlang, beam and commonJS halves, from `02 step 3` / `02 (no
@@ -549,8 +564,10 @@ landing commit, with no line in `expected-failures.txt`.
   `undefined` / `undefined` / `0` with exit 0. The third passes on commonJS (the `libs/std` half,
   `e065b564`) and is C-18 (decision 47's `null` spelling) on erlang, wasm and beam. Two more defects
   it turned up, reported rather than listed: `Array.at` past the end answers `undefined` on commonJS
-  (decision 47, C-18 — kept out of the cell so it would not hide the rename), and `String.at` has **no
-  wasm lowering** — `s.at(1)` traps — which no row owns. The cell C-16 names as
+  (decision 47, C-18 — kept out of the cell so it would not hide the rename), and `String.at` had **no
+  wasm lowering** — `s.at(1)` trapped, exit 134. The second is **closed** (`fix/wasm-refusals`, front
+  `05-wasm`): `$__str_at` lowers it, `run/string_at.bp` pins the present-index reader on all four
+  targets, and wasm's `index_at_optional` line is now decision 47's spelling alone. The cell C-16 names as
   `index_an_index_past_the_end_answers_zero` is a `src/codegen/tests` fixture, not a cell of this suite;
   `run/index_past_the_end_fails.bp` is this suite's statement of the same rule, third spelling.
 - **64** (a wrapper per host-bound std `declare fn`) — `run/std_erlang_node.bp`: `erlang.node()`
@@ -585,6 +602,6 @@ What cannot be tested from botopink at all, and why: `@typeInfo` / `@makeRecord`
 list by C-16, each with the cell that covers it: `pub default mod` / `pub default fn`, `@ExprCustom` /
 `q.custom` and `.d.bp` via `files` (`modules/local_dependency`, a local dependency needs no network);
 "no external target for the active backend" (`run/external_erlang_only.bp`, a `run/` cell refused on
-one target through a `.<target>.expect` sidecar — `botopink run --target <t>` is not
+two targets through a `.<target>.expect` sidecar each — `botopink run --target <t>` is not
 target-independent, which is what `reject/` lacked); `@panic` / `@todo` (`run/` compares stdout **and**
 the status through `.exit`, so an aborting program is exactly what it can assert).
