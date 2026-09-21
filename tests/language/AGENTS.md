@@ -73,6 +73,15 @@ at `361d255d` — the cell was written against the array `"dependencies"` of `85
 object form when the workspaces manifest (`aa80e30b`) started refusing the array. A dependency ships
 only what `files` lists — `root.bp` included, or the handle never reaches the consumer.
 
+`modules/package_variant_identity` is the second local-dependency cell, and it is here because the
+defect it pins is **invisible in one package**: the value is built in the consumer and the `case`
+that reads it lives in the dependency. commonJS tested a payload-less arm with `instanceof` whenever
+the variant's bare name was unique in the module; an enum SECTION desugars into an inner enum no
+module exports, so its classes are re-emitted per module and the consumer's value was never
+`instanceof` the library's class — the `case` fell through every arm and printed `undefined`, at
+exit 0. The cell prints four values through one dispatcher: a uniquely-named variant, a repeated one
+(`Lg` is declared twice, which is why it always worked), and one of each section head.
+
 ### The sidecars of a `run/` cell
 
 Three optional files beside `run/<name>.bp`, each a claim the cell makes (C-16, front 12 steps 4.3
@@ -84,15 +93,17 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.<target>.expect` | on that target the compiler **refuses** the program — `reject/`'s shape, per target | exit ≠ 0 and the diagnostic contains line 1 (and ` --> src/main.bp:<L:C>` when line 2 is present). `run/external_erlang_only.{commonJS,wasm}.expect` and `run/std_erlang_node.{commonJS,wasm}.expect` are the live ones |
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **No cell carries `.targets`
-today.** The one that did was `run/external_erlang_only.bp`, which kept wasm out because wasm did
+Any other content in `.exit` is a malformed claim and fails the cell. **One cell carries
+`.targets` today**: `run/string_char_code_after_slice.bp` names `commonJS erlang`, because
+`String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
+(`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it
+the only one was `run/external_erlang_only.bp`, which kept wasm out because wasm did
 not refuse a host-backed `declare fn` with no wasm host — `wat.zig`'s `lowerPlainCall` lowered it to
 `unreachable` on purpose ("so the module still loads") and the program trapped at run time where
 commonJS, erlang and beam answered at compile time. That divergence was reported here for want of an
 owner row; it was closed on `fix/wasm-refusals` under decision 67 (a located refusal, no flag), so
 the sidecar is gone, `external_erlang_only.wasm.expect` carries wasm's half of the diagnostic and
-the cell runs on all four targets. The sidecar stays documented: the next divergence of that shape
-is written down the same way.
+the cell runs on all four targets.
 
 ## The targets
 
@@ -250,6 +261,51 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
   path that is not a `test/` cell (only a `test/` cell has tests).
 
 ## Status and the gate
+
+**Recounted on disk at `fix/js-instanceof-boundary` (00 · 04-js round 2, merged onto
+`032fd765`):**
+
+```bash
+ls test/*.bp    | wc -l   # 54
+ls run/*.bp     | wc -l   # 32   (each with its .out; 4 with an .exit, 4 with .<target>.expect; 1 with a .targets)
+ls reject/*.bp  | wc -l   # 41   (each with its .expect)
+ls -d modules/*/| wc -l   #  5
+find . -name '*.bp' | wc -l   # 142 — 132 cells, plus the 10 extra .bp of the modules/ projects
+```
+
+**132 cells.** The difference from the `fix/erlang-module-load` block below is this branch's three,
+one per defect emilia's front 56 measured while writing real code, and one new area row. It is also
+the first `.targets` sidecar in the suite, which that block records as "none":
+
+| Area | Cells | Total |
+|---|---|---|
+| the three commonJS defects of 00 · 04-js round 2 | 1 `modules/` + 2 run | 3 |
+
+| Cell | What it pins |
+|---|---|
+| `modules/package_variant_identity` | a variant's identity across a package boundary: the value is built in the consumer and the `case` that reads it lives in the dependency. commonJS tested a uniquely-named arm with `instanceof`, which does not cross the boundary, and the `case` answered `undefined` at exit 0. The second local-dependency cell, and one package cannot express it |
+| `run/string_char_code_after_slice.bp` | `s.slice(…)` installs the `String` prelude, whose `charCodeAt` patch called itself — every `.charCodeAt(…)` in the program blew the stack. `commonJS erlang` only, by a `.targets` sidecar: `charCodeAt` has no wasm or beam lowering and traps on wasm |
+| `run/array_reverse_answers_a_new_array.bp` | `xs.reverse()` answers a new array and leaves the receiver alone — native `reverse` is in-place, so commonJS alone reversed the receiver too |
+
+**`expected-failures.txt` does not move**: 64 lines, byte for byte the file at `032fd765`. All three
+cells pass on every target they are scheduled on, nothing was added and nothing was deleted —
+checked by (target, key), not by count, with the six lines C-08 turned green still gone.
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on the tree
+`fix/js-instanceof-boundary` made by merging `origin/feat` `032fd765`:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 64 lines, 49 exercised by --target commonJS,erlang,wasm
+language tests: 430 passed, 49 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 64 lines, 21 exercised by --target beam
+language tests: 56 passed, 21 expected failures, 0 failed
+```
+
+Re-derived from the files and a re-run after the merge — neither side's number was kept. The **+8**
+on `--target all` is the `modules/` cell on three targets, the `reverse` cell on three, and the
+`charCodeAt` cell on the two its `.targets` names. Beam's **+2** is the two of them that reach it.
 
 **Recounted on disk at `fix/erlang-module-load` (front 00 · 02-erlang, merged onto
 `9c230065`):**

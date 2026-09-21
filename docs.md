@@ -380,7 +380,11 @@ true, false    // bool
 ```botopink
 val xs = [1, 2, 3];
 val tail = xs.slice(1, xs.length);    // [2, 3]
+val back = xs.reverse();              // [3, 2, 1] — and xs is still [1, 2, 3]
 ```
+
+An array method **answers a value and leaves its receiver alone**, on every
+target: `reverse`, `slice`, `map` and `filter` all hand back a new array.
 
 ### Operators
 

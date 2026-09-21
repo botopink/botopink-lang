@@ -22,6 +22,16 @@ generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in
 `features.zig` (`import {Lib} from "Lib"` → `const Lib = require(...)`).
 Golden outputs live in `modules/compiler-core/snapshots/codegen/<target>/<slug>.snap.md` (`commonJS`, `erlang`, `beam`, `wasm`), comptime validation errors in `codegen/errors/<target>/`.
+
+`externals.zig` closes with the one test here that has no fixture of its own:
+**`no prelude template calls the method it patches`** lexes and parses the
+prelude the compiler EMBEDS (`@import("std_prelude").primitives`, not the file
+on disk) and fails on any behavior method whose `#[@External.Node]` template
+calls the method it is about to become a `<Owner>.prototype.<m>` patch for.
+`String.charCodeAt` was exactly that, and it made every `.charCodeAt(…)` in any
+program that installed the `String` prelude — one `s.slice(…)` is enough — blow
+the stack. The rule was already written down in `libs/std/AGENTS.md`; this is
+what holds it.
 The four `codegen ---- use … is a plain call` cells of `features.zig` record decision 88 (1.0.10-beta, front 19): `val c = use state(0)` is `const c = state(0)` on commonJS, as it already was on erlang, beam and wasm — their components carry `#[@context]`, the effect that lets a body activate a hook. They replaced the `… to useState` / `… infers dependency array` / `… empty deps` cells, whose snapshots recorded the React rename.
 
 `assertTestModeRunLog(src, expected)` compiles `src` in **test mode** for both
