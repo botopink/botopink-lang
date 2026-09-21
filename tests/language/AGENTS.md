@@ -294,6 +294,8 @@ Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
 ```
 $ tests/language/run.sh                 # commonJS, erlang, wasm
 language tests: 391 passed, 53 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+language tests: 47 passed, 22 expected failures, 0 failed
 ```
 
 Counted on disk at `b09bf9c6` — local `feat` after the fronts 12 × 13 merge:
