@@ -23,7 +23,7 @@
 ////   wasm      traps (`unreachable`) at the present key, stdout empty
 ////   beam      the erlang shape through `erlc +from_asm`
 
-import { dict } from "std";
+import {dict} from "std";
 
 pub fn main() {
     val d = dict.empty().insert("a", 1);

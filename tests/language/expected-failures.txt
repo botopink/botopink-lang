@@ -208,7 +208,7 @@ beam     | run/display_print.bp       | 03 step 2, 13 step 18 | §7: `@print` do
 # them: erlang never takes the arm and beam always takes it, so the
 # single-value probe decision 53 quotes reads beam's `1` as correct when it is a
 # false positive. commonJS passes, and **wasm passes since `8594e4ba`** (C-06's
-# wasm half: the `A...B` arm in `wat.zig`, verified by running at `85f883bd`:
+# wasm half: the `A...B` arm in `wat.zig`, verified by running at `361d255d`:
 # `1 1 1 0 0`). The two lines left are C-06's erlang and beam halves.
 erlang   | run/case_range_value.bp     | C-06 (erlang half not landed) | decision 53: the `1...9` arm never matches — all five probes (5, 1, 9, 0, 10) answer the `_` arm's `0`
 beam     | run/case_range_value.bp     | C-06 (beam half not landed) | decision 53: the opposite — the `1...9` arm **always** matches, so 0 and 10 answer `1` too. beam does run (run.sh § beam assembles and executes it); "beam emits only out/main.S" is no longer the measurement (D4, `case` arms)
@@ -235,7 +235,7 @@ beam     | run/case_range_value.bp     | C-06 (beam half not landed) | decision 
 # The rows are C-06's now (1.0.10-beta, `00-compiler-carry-over`), one half per
 # backend. **The wasm half landed** (`8594e4ba`: a value `break` is `emitYield`
 # then `br $__break`, six `loop_*` RUN LOGs moved with it) and C-16 verified it by
-# running the three cells and the six fixtures under wasmtime at `85f883bd` —
+# running the three cells and the six fixtures under wasmtime at `361d255d` —
 # `3` / `20,40,99`, `2` / `20,99`, `2` / `20,40`, `[2]` — so the three wasm lines
 # are gone for good. commonJS, erlang and beam still run the loop on; their owner
 # cell says which half is missing. (Before C-06 the erlang lines read `02 (no

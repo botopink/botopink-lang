@@ -19,7 +19,7 @@
 ////             `0` (decision 47 on wasm, C-18) and `String.at` has no wasm
 ////             lowering at all (no row owns that second half; reported)
 
-import { dict } from "std";
+import {dict} from "std";
 
 pub fn main() {
     val d = dict.empty().insert("a", 1);

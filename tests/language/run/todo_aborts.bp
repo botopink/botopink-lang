@@ -9,7 +9,9 @@
 //// non-zero status) is the same, so the cell passes there; the defect is noted
 //// here and reported, not asserted (no row owns it).
 
-fn notReady() -> i32 { @todo(); }
+fn notReady() -> i32 {
+    @todo();
+}
 
 pub fn main() {
     @print("before");

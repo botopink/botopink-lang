@@ -22,7 +22,7 @@ rewrite a test to match current behaviour.
 | `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` | every test reports `ok` |
 | `run/<name>.bp` + `<name>.out` | a whole program (`pub fn main`), run by `botopink run --target <t>` | exit 0 and stdout equals `.out` byte for byte — or, with a sidecar, § the sidecars of a `run/` cell |
 | `reject/<name>.bp` + `<name>.expect` | a program that must not compile, run by `botopink check` | exit ≠ 0, stderr contains `.expect` line 1, and ` --> src/main.bp:<line 2>` when line 2 is present |
-| `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a `deps/` directory inside it is a local library root | exit 0 and stdout equals `expected.out` byte for byte |
+| `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a second project inside it can be a `{ "path": "…" }` dependency | exit 0 and stdout equals `expected.out` byte for byte |
 | `expected-failures.txt` | the list of known failures | — |
 | `run.sh` | the runner | — |
 
@@ -50,15 +50,17 @@ The kind for what a single file cannot express: `pub mod`, `import … from "<mo
 inside `libs/std`. The directory **is** the project; the runner copies it whole and compares stdout
 with `expected.out`. A cell that needs a **git** dependency is deliberately out of scope — that is
 `zig build test-libs`' job, and this suite must not need the network. A **local** dependency is in
-scope since C-16 (front 12 step 4.2): a `deps/` directory inside the cell is a second project, the
-runner prepends `<cell>/deps` to `BOTOPINK_LIB_ROOTS`, and `"dependencies": ["<lib>"]` in the cell's
-`botopink.json` resolves `deps/<lib>/botopink.json` from disk. `modules/local_dependency` is the one
+scope since C-16 (front 12 step 4.2): a second project inside the cell, named by the manifest's
+object-form dependency `"<lib>": { "path": "deps/<lib>" }` (decisions 75/76, the workspaces landing
+`aa80e30b` — an array `"dependencies"` is refused since then), resolves from disk relative to the
+project, and the runner does nothing special for it. `modules/local_dependency` is the one
 cell of that shape: `deps/shapesdsl/` ships `root.bp` (`pub default mod shapesdsl;`), `shapesdsl.bp`
 (`pub default fn … -> @ExprCustom<T>`, the handler returning `e.custom(ast, code)`) and `shapes.d.bp`
 (a record declared in a `.d.bp` listed in `files`); the program does `import shapesdsl, {area, Rect}
-from "shapesdsl"` and expands `shapesdsl "4, 5"` at compile time. Green on all four targets at
-`85f883bd`. A dependency ships only what `files` lists — `root.bp` included, or the handle never
-reaches the consumer.
+from "shapesdsl"` and expands `shapesdsl "4, 5"` at compile time. Green on all four targets, measured
+at `361d255d` — the cell was written against the array `"dependencies"` of `85f883bd` and moved to the
+object form when the workspaces manifest (`aa80e30b`) started refusing the array. A dependency ships
+only what `files` lists — `root.bp` included, or the handle never reaches the consumer.
 
 ### The sidecars of a `run/` cell
 
@@ -245,7 +247,8 @@ ls -d modules/*/| wc -l   #  3
 find . -name '*.bp' | wc -l   # 95 — 91 cells, plus the 4 extra .bp of the modules/ projects
 ```
 
-**Recounted on disk at C-16's landing (`fix/language-cells`, on `85f883bd`, 2026-09-20):**
+**Recounted on disk at C-16's landing (`fix/language-cells`, on `361d255d`, re-measured 2026-09-21
+after the branch moved from `85f883bd` onto the workspaces manifest):**
 
 ```bash
 ls test/*.bp    | wc -l   # 50
@@ -564,8 +567,12 @@ landing commit, with no line in `expected-failures.txt`.
   red (`mod_tree`, `std_import`, `two_modules`) are **formatted**: `botopink format` inside each
   (brace bodies expanded, `import {a, b}` spacing) and `botopink format --check` exits 0 in all four
   `modules/*` roots and in `deps/shapesdsl`. The cells' output did not move. Nothing in this suite
-  *calls* `format --check` — that caller is C-11's (`scripts/gate.sh`), and `reject/**`'s structural
-  exemption is `format_cmd.zig`'s arm — so the cells can drift again until it lands.
+  *calls* `format --check`: the caller is `scripts/format-check.sh`, stage 3 of `scripts/gate.sh`, and
+  `tests/language` is not in its `TREES` yet — its header names the tree's reds, re-measured
+  2026-09-21 at `361d255d` as `modules/*` **green** (all 11 files, this row) and the single-file cells
+  red (`run/` 9 of 22, `test/` 42 of 49; `run/optional_null_pattern.bp` and `test/case_arms.bp` do not
+  parse, which is front 12's row and not the formatter's). `reject/**`'s structural exemption is
+  `format_cmd.zig`'s arm. Until the tree joins `TREES`, the single-file cells can drift.
 
 **Two step-4.3 measurements worth keeping.** `@panic` and `@todo` abort with stdout intact and a
 non-zero status on all four backends (`run/panic_aborts.bp`, `run/todo_aborts.bp`, `.exit` =

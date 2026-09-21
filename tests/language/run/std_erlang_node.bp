@@ -12,7 +12,7 @@
 //// `{undef, [{'std@erlang', node, [], []}, …]}` — the beam twin
 //// (`hostDeclareWrapperNeeded`) is declared and not wired, C-03's beam half.
 
-import { erlang } from "std";
+import {erlang} from "std";
 
 pub fn main() {
     @print(erlang.node());

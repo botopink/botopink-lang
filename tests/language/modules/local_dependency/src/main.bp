@@ -1,7 +1,8 @@
 //// Front 12 step 4.2 — a local dependency. `deps/shapesdsl/` is a second
-//// project inside this cell; the runner prepends `deps/` to BOTOPINK_LIB_ROOTS,
-//// so `"dependencies": ["shapesdsl"]` resolves it from disk with no network.
-//// What one project cannot express and this pair does:
+//// project inside this cell, named by the manifest's object-form dependency
+//// `"shapesdsl": { "path": "deps/shapesdsl" }` (decisions 75/76, `aa80e30b`) —
+//// resolved from disk, relative to this project, with no network and nothing
+//// special in the runner. What one project cannot express and this pair does:
 ////
 ////   * `pub default mod` / `pub default fn` — the package-default DSL: the lib's
 ////     `root.bp` names the handle, `shapesdsl.bp` holds the handler, and

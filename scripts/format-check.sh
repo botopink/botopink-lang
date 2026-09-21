@@ -18,11 +18,14 @@
 #   examples/generic-loader-binding   src/main.bp — two method chains (decision 65) → C-14
 #   examples/stdlib-tour              src/main.bp — one method chain (decision 65) and two lambda
 #                                     arguments that hug the call (decision 61 rule 1) → C-14
-#   tests/language                    never formatted: modules/* 7 of 7 files (C-16's row), run/ 8 of 15,
-#                                     test/ 41 of 49; two cells do not parse — run/optional_null_pattern.bp:21
-#                                     (`null` as a `case` pattern) and test/case_arms.bp:21 (`1..9`, the
-#                                     named error `pattern-range-exclusive`) — the suite's rows, not the
-#                                     formatter's (front 12)
+#   tests/language                    re-measured 2026-09-21 at `361d255d`: modules/* is **green** —
+#                                     all 11 files, C-16 formatted them (decision 66's row) — and the
+#                                     single-file cells are not: run/ 9 of 22, test/ 42 of 49. Two cells
+#                                     do not parse — run/optional_null_pattern.bp:21 (`null` as a `case`
+#                                     pattern) and test/case_arms.bp:21 (`1..9`, the named error
+#                                     `pattern-range-exclusive`) — the suite's rows, not the formatter's
+#                                     (front 12). The tree joins TREES when those two parse and the
+#                                     single-file cells are reformatted
 #   modules/compiler-cli/tests        5 fixtures written at two-space indent (backend_exec ×2,
 #                                     mutual_recursion, test_tooling ×2) → 10-cli-residuals
 #

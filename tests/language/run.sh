@@ -47,11 +47,10 @@
 #   modules/<name>/    a whole project — its own `botopink.json` and `src/` tree;
 #                      `botopink run --target <t>`; stdout must equal
 #                      <name>/expected.out. The kind for what one file cannot
-#                      express: `pub mod`, `import … from "<module>"`, `from "std"`.
-#                      A `deps/` directory inside the cell is a local library
-#                      root: it is prepended to BOTOPINK_LIB_ROOTS, so
-#                      `"dependencies": ["<lib>"]` resolves `deps/<lib>/` with no
-#                      network (front 12 step 4.2)
+#                      express: `pub mod`, `import … from "<module>"`, `from "std"`,
+#                      and a local dependency — a second project inside the cell
+#                      named by a `{ "path": "…" }` dependency of its manifest
+#                      (front 12 step 4.2; no network, nothing special here)
 #
 # expected-failures.txt — one line per expected failure, `|`-separated (test
 # names contain spaces):
@@ -232,10 +231,6 @@ run_one() { # <path> <target>
         *) project "$dir" ;;
     esac
     export BOTOPINK_LIB_ROOTS="$lib_root"
-    # A `deps/` directory inside a modules/ cell is a local library root: the
-    # cell's `"dependencies"` resolve there first, then in the std root. That is
-    # front 12 step 4.2's local dependency, with no network.
-    [ -d "$dir/deps" ] && export BOTOPINK_LIB_ROOTS="$dir/deps:$lib_root"
     case "$path" in
         test/*)
             cp "$here/$path" "$dir/test/$(basename "$path")"
