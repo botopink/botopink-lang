@@ -14,6 +14,10 @@
 /// authenticated quota. The transport rejects `http://` for integrity reasons.
 const std = @import("std");
 const sha256 = @import("./sha256.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 pub const Error = error{
     InsecureScheme,
@@ -210,14 +214,14 @@ test "fetch: invalid sha length errors before any I/O" {
 }
 
 test "fetch: cache hit short-circuits without HTTP" {
-    const dir = ".botopinkbuild/bpmp-tests/download-cache-hit";
+    const dir = test_scratch.path(testing.io, "bpmp-tests/download-cache-hit");
     std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     try std.Io.Dir.cwd().createDirPath(testing.io, dir);
 
     const payload = "abc";
     const sha = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-    const cached_path = dir ++ "/" ++ "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.tar.gz";
+    const cached_path = test_scratch.path(testing.io, "bpmp-tests/download-cache-hit/ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.tar.gz");
     try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = cached_path, .data = payload });
 
     var got = try fetch(
@@ -233,14 +237,14 @@ test "fetch: cache hit short-circuits without HTTP" {
 }
 
 test "fetch: corrupt cache entry is silently refetched (here: returns retry error after no network)" {
-    const dir = ".botopinkbuild/bpmp-tests/download-cache-corrupt";
+    const dir = test_scratch.path(testing.io, "bpmp-tests/download-cache-corrupt");
     std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     try std.Io.Dir.cwd().createDirPath(testing.io, dir);
 
     // sha for "abc" but bytes for "DEF" → verify will fail on cache read.
     const sha = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-    const cached_path = dir ++ "/ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.tar.gz";
+    const cached_path = test_scratch.path(testing.io, "bpmp-tests/download-cache-corrupt/ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.tar.gz");
     try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = cached_path, .data = "DEF" });
 
     // Refetch path will try the network — in a hermetic test that hits
@@ -263,11 +267,11 @@ test "fetch: corrupt cache entry is silently refetched (here: returns retry erro
 }
 
 test "loadSidecar: reads release-pack.sh-shaped file" {
-    const dir = ".botopinkbuild/bpmp-tests/sidecar";
-    std.Io.Dir.cwd().deleteTree(testing.io, ".botopinkbuild/bpmp-tests/sidecar") catch {};
-    defer std.Io.Dir.cwd().deleteTree(testing.io, ".botopinkbuild/bpmp-tests/sidecar") catch {};
+    const dir = test_scratch.path(testing.io, "bpmp-tests/sidecar");
+    std.Io.Dir.cwd().deleteTree(testing.io, test_scratch.path(testing.io, "bpmp-tests/sidecar")) catch {};
+    defer std.Io.Dir.cwd().deleteTree(testing.io, test_scratch.path(testing.io, "bpmp-tests/sidecar")) catch {};
     try std.Io.Dir.cwd().createDirPath(testing.io, dir);
-    const path = dir ++ "/x.sha256";
+    const path = test_scratch.path(testing.io, "bpmp-tests/sidecar/x.sha256");
     try std.Io.Dir.cwd().writeFile(testing.io, .{
         .sub_path = path,
         .data = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\n",

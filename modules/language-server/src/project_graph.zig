@@ -25,6 +25,10 @@
 const std = @import("std");
 const manifest = @import("manifest");
 const lsp_types = @import("./lsp_types.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 /// Optional process-environment handle. The server threads its `environ_map`
 /// through so the graph honours `BOTOPINK_LIB_ROOTS` — keeping the LSP's root
@@ -607,22 +611,21 @@ fn absUri(a: std.mem.Allocator, io: std.Io, rel: []const u8) ![]const u8 {
 test "resolve: a member's { workspace: true } dependency loads the sibling's files, no problems" {
     const gpa = testing.allocator;
     const io = testing.io;
-    const ws = ".botopinkbuild/pg-ws/meta";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/pg-ws") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/pg-ws") catch {};
-    try writeFileP(io, ws ++ "/repository/acme/botopink.json",
+    test_scratch.remove(io, "pg-ws");
+    defer test_scratch.remove(io, "pg-ws");
+    try writeFileP(io, test_scratch.path(io, "pg-ws/meta/repository/acme/botopink.json"),
         \\{ "name": "acme", "workspaces": ["modules/*"] }
     );
-    try writeFileP(io, ws ++ "/repository/acme/modules/acme/botopink.json",
+    try writeFileP(io, test_scratch.path(io, "pg-ws/meta/repository/acme/modules/acme/botopink.json"),
         \\{ "name": "acme", "files": ["root.bp"] }
     );
-    try writeFileP(io, ws ++ "/repository/acme/modules/acme/src/root.bp",
+    try writeFileP(io, test_scratch.path(io, "pg-ws/meta/repository/acme/modules/acme/src/root.bp"),
         \\pub fn core() -> i32 { return 1; }
     );
-    try writeFileP(io, ws ++ "/repository/acme/modules/acme-web/botopink.json",
+    try writeFileP(io, test_scratch.path(io, "pg-ws/meta/repository/acme/modules/acme-web/botopink.json"),
         \\{ "name": "acme-web", "files": ["root.bp"], "dependencies": { "acme": { "workspace": true } } }
     );
-    try writeFileP(io, ws ++ "/repository/acme/modules/acme-web/src/root.bp",
+    try writeFileP(io, test_scratch.path(io, "pg-ws/meta/repository/acme/modules/acme-web/src/root.bp"),
         \\import { core } from "acme";
     );
 
@@ -632,7 +635,7 @@ test "resolve: a member's { workspace: true } dependency loads the sibling's fil
     var graph = ProjectGraph.init(gpa, io, null);
     defer graph.deinit();
 
-    const active = try absUri(a, io, ws ++ "/repository/acme/modules/acme-web/src/root.bp");
+    const active = try absUri(a, io, test_scratch.path(io, "pg-ws/meta/repository/acme/modules/acme-web/src/root.bp"));
     const resolved = (try graph.resolve(active)) orelse return error.TestExpectedProject;
     try testing.expectEqual(@as(usize, 0), resolved.problems.len);
     // The sibling's `root.bp` and the project's own `root.bp`.
@@ -644,25 +647,24 @@ test "resolve: a member's { workspace: true } dependency loads the sibling's fil
 test "resolve: a refused manifest is a Problem on it — the array form, and a path to a sibling member" {
     const gpa = testing.allocator;
     const io = testing.io;
-    const ws = ".botopinkbuild/pg-bad/meta";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/pg-bad") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/pg-bad") catch {};
-    try writeFileP(io, ws ++ "/repository/acme/botopink.json",
+    test_scratch.remove(io, "pg-bad");
+    defer test_scratch.remove(io, "pg-bad");
+    try writeFileP(io, test_scratch.path(io, "pg-bad/meta/repository/acme/botopink.json"),
         \\{ "name": "acme", "workspaces": ["modules/*"] }
     );
-    try writeFileP(io, ws ++ "/repository/acme/modules/acme/botopink.json",
+    try writeFileP(io, test_scratch.path(io, "pg-bad/meta/repository/acme/modules/acme/botopink.json"),
         \\{ "name": "acme", "files": ["root.bp"] }
     );
-    try writeFileP(io, ws ++ "/repository/acme/modules/acme/src/root.bp", "pub fn core() -> i32 { return 1; }");
-    try writeFileP(io, ws ++ "/repository/acme/modules/acme-web/botopink.json",
+    try writeFileP(io, test_scratch.path(io, "pg-bad/meta/repository/acme/modules/acme/src/root.bp"), "pub fn core() -> i32 { return 1; }");
+    try writeFileP(io, test_scratch.path(io, "pg-bad/meta/repository/acme/modules/acme-web/botopink.json"),
         \\{ "name": "acme-web", "files": ["root.bp"],
         \\  "dependencies": { "acme": { "path": "../acme" } } }
     );
-    try writeFileP(io, ws ++ "/repository/acme/modules/acme-web/src/root.bp", "import { core } from \"acme\";");
-    try writeFileP(io, ws ++ "/app/botopink.json",
+    try writeFileP(io, test_scratch.path(io, "pg-bad/meta/repository/acme/modules/acme-web/src/root.bp"), "import { core } from \"acme\";");
+    try writeFileP(io, test_scratch.path(io, "pg-bad/meta/app/botopink.json"),
         \\{ "name": "app", "dependencies": ["acme"] }
     );
-    try writeFileP(io, ws ++ "/app/src/main.bp", "pub fn main() {}");
+    try writeFileP(io, test_scratch.path(io, "pg-bad/meta/app/src/main.bp"), "pub fn main() {}");
 
     var arena_inst = std.heap.ArenaAllocator.init(gpa);
     defer arena_inst.deinit();
@@ -670,7 +672,7 @@ test "resolve: a refused manifest is a Problem on it — the array form, and a p
     var graph = ProjectGraph.init(gpa, io, null);
     defer graph.deinit();
 
-    const member = (try graph.resolve(try absUri(a, io, ws ++ "/repository/acme/modules/acme-web/src/root.bp"))) orelse return error.TestExpectedProject;
+    const member = (try graph.resolve(try absUri(a, io, test_scratch.path(io, "pg-bad/meta/repository/acme/modules/acme-web/src/root.bp")))) orelse return error.TestExpectedProject;
     try testing.expectEqual(@as(usize, 1), member.problems.len);
     try testing.expectEqualStrings("\"acme\": path \"../acme\" points at the sibling member \"acme\" — use { \"workspace\": true }", member.problems[0].message);
     try testing.expect(std.mem.endsWith(u8, member.problems[0].uri, "/modules/acme-web/botopink.json"));
@@ -679,7 +681,7 @@ test "resolve: a refused manifest is a Problem on it — the array form, and a p
     // The project's own file is still there.
     try testing.expectEqual(@as(usize, 1), member.deps.len);
 
-    const app = (try graph.resolve(try absUri(a, io, ws ++ "/app/src/main.bp"))) orelse return error.TestExpectedProject;
+    const app = (try graph.resolve(try absUri(a, io, test_scratch.path(io, "pg-bad/meta/app/src/main.bp")))) orelse return error.TestExpectedProject;
     try testing.expectEqual(@as(usize, 1), app.problems.len);
     try testing.expect(std.mem.startsWith(u8, app.problems[0].message, "\"dependencies\" must be an object, not an array"));
     try testing.expectEqual(@as(u32, 0), app.problems[0].line);

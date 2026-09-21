@@ -27,7 +27,8 @@ botopink-lang/                 ← language core (this project)
 │   ├── compiler-core/         ← lexer, parser, AST, infer, comptime, codegen
 │   ├── language-server/       ← `botopink-lsp` LSP server
 │   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
-│   └── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
+│   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
+│   └── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
 ├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
 │   └── std/                   ← standard library
 ├── examples/                  ← non-framework .bp example programs
@@ -44,7 +45,7 @@ Golden snapshots live inside the owning package (`modules/compiler-core/snapshot
 
 ```bash
 zig build               # botopink + botopink-lsp + botopink-lib-test + bpmp
-zig build test          # compiler-core + language-server + compiler-cli + lib-test-runner + manifest tests
+zig build test          # compiler-core + language-server + compiler-cli + lib-test-runner + manifest + test-scratch tests
 zig build test -Dtest-filter=<name>   # only tests whose name matches
 zig build run           # build and run the CLI
 zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, recursion, backend parity)
@@ -57,8 +58,19 @@ zig build test-docs     # every `botopink` fence of docs.md/README.md compiles (
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
 ```
 
-`zig build test` also runs a lib-agnostic gate: it fails if
-`modules/compiler-core/src` names a non-std library (`rakun|jhonstart|erika`).
+`zig build test` also runs two greps that refuse rather than warn (decision 67,
+no flag turns either off):
+
+- the **lib-agnostic gate** — it fails if `modules/compiler-core/src` names a
+  non-std library (`rakun|jhonstart|erika`);
+- **`scripts/check-test-scratch.sh`** — it fails if a `test` block names a
+  cwd-anchored `.botopinkbuild` path. Each test binary runs with its package
+  directory as cwd, so a fixed path is shared with every other process running
+  the suite and the second one deletes the first one's fixtures mid-test (one
+  `compiler-cli` test binary is 89/89 green; four concurrent copies were red
+  1–5 tests each). The one way to spell such a path is the `test_scratch`
+  module — see
+  [`modules/test-scratch/AGENTS.md`](modules/test-scratch/AGENTS.md).
 
 Comptime evaluation spawns a persistent `erl`, so `erl` (OTP 28+, decision 86's
 floor) must be on `PATH` for `zig build test`; codegen snapshot RUN LOGs also use
@@ -72,7 +84,11 @@ Per-test scratch dirs live under `modules/compiler-core/.botopinkbuild/tmp/<hex>
 (one root for every `executeJavaScript` / `executeErlang` / `executeBeamAsm`
 invocation). See
 [`modules/compiler-core/src/codegen/AGENTS.md`](modules/compiler-core/src/codegen/AGENTS.md)
-(`runtime.zig` row) for the layout contract.
+(`runtime.zig` row) for the layout contract. Everything else a test writes goes
+under `modules/<pkg>/.botopinkbuild/test-scratch/<id>/` — `<id>` per **process**
+— through the `test_scratch` module
+([`modules/test-scratch/AGENTS.md`](modules/test-scratch/AGENTS.md)), which is
+the only way to name one. `zig build clean-tmp` reaps both at a 1-day TTL.
 
 `test-libs` is the lib ecosystem gate (`botopink-lib-test`): it runs
 `botopink test --target <t>` in `libs/std` and in every sibling library the
@@ -125,6 +141,7 @@ does not mirror them. Entry points:
 | CLI | [`modules/compiler-cli/AGENTS.md`](modules/compiler-cli/AGENTS.md) |
 | LSP | [`modules/language-server/AGENTS.md`](modules/language-server/AGENTS.md) |
 | bpmp | [`modules/bpmp/AGENTS.md`](modules/bpmp/AGENTS.md) |
+| Per-process scratch paths for tests | [`modules/test-scratch/AGENTS.md`](modules/test-scratch/AGENTS.md) |
 | `.bp` libraries | [`libs/AGENTS.md`](libs/AGENTS.md) · [`libs/std/AGENTS.md`](libs/std/AGENTS.md) |
 | Examples | [`examples/AGENTS.md`](examples/AGENTS.md) |
 | Scripts | [`scripts/AGENTS.md`](scripts/AGENTS.md) |
@@ -269,8 +286,9 @@ capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
 - **stdout is the frame channel only.** The server moves the default logger
   handler to `standard_error` and runs `main/0` with `standard_error` as its
   group leader, so `io:format/1` in a comptime body and a SIGTERM notice go to
-  `.botopinkbuild/tmp/persistent_erl/erl.stderr.log` (write-only, truncated at
-  each spawn). A reply length above `max_frame_len` (16 MiB) fails as
+  `.botopinkbuild/tmp/persistent_erl/erl.<id>.stderr.log` (write-only, truncated
+  at each spawn; `<id>` is 64 random bits per process, so two compilers sharing
+  this cwd do not truncate each other's live log). A reply length above `max_frame_len` (16 MiB) fails as
   `error.PersistentErlFrameTooLarge` with a message in `lastTransportError()`.
 - **Timeouts.** `main` runs under `EVAL_TIMEOUT_MS` (10 s) inside erl. The
   Zig-side `readFrame` itself blocks without a timeout, so a wedged erl process
@@ -287,7 +305,7 @@ capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
   (`erl -noshell -eval …`) loads them from stdin — one cmd-4 frame each — before
   `start/0` runs. Editing the server or a prelude re-runs `erlc` at the next
   build, nothing else; `.botopinkbuild/tmp/persistent_erl/` holds only
-  `erl.stderr.log`. A generated module reaches the prelude through `-import`,
+  `erl.<id>.stderr.log`, one per process. A generated module reaches the prelude through `-import`,
   so a missing prelude would be a run-time failure of every comptime
   evaluation, not a compile error. An `erl` below OTP 28 is refused by the
   bootstrap with both releases in the message (`error.PersistentErlBelowFloor`,
@@ -330,8 +348,10 @@ capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
 
 - **Stale processes.** Hung tests leave orphan `erl`/`node` processes:
   `pkill -f botopink_comptime_server`. The SIGTERM notice goes to
-  `erl.stderr.log`, not the frame stream: a live compiler's in-flight request
+  `erl.<id>.stderr.log`, not the frame stream: a live compiler's in-flight request
   fails as a transport error and the next one respawns the server.
-- **Scratch dirs.** Safe to delete manually: `rm -rf .botopinkbuild/tmp/[0-9a-f]*`.
+- **Scratch dirs.** Safe to delete manually: `rm -rf .botopinkbuild/tmp/[0-9a-f]*`
+  and `rm -rf modules/*/.botopinkbuild/test-scratch/*` (`zig build clean-tmp`
+  does both at a 1-day TTL).
 - **Snapshot mismatches** write `<slug>.snap.md.new` next to the snapshot; do not
   commit `.snap.md.new` files.

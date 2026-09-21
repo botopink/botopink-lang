@@ -52,13 +52,19 @@ persistent `erl` comptime runtime, so `erl` must be on `PATH`.
 Suites that touch **disk** (paths resolved against the test cwd,
 `modules/language-server`):
 
-- `cross_module.zig` materializes a tiny project under `.botopinkbuild/xmod-*`,
+Every such path comes from the `test_scratch` module
+([`../../../test-scratch/AGENTS.md`](../../../test-scratch/AGENTS.md)) — the
+names below are its `rel` argument, and the directory they land in carries a
+per-process segment, so a second `zig build test` over this checkout cannot
+empty them mid-test (four concurrent copies of this binary used to red 1–4
+tests each). `scripts/check-test-scratch.sh` refuses a hand-spelled one.
+
+- `cross_module.zig` materializes a tiny project under `xmod-*`,
   points a `ProjectIndex` at it via `setRoot`, and exercises
   `crossModuleReferences` / `crossModuleRename` / the import-missing
   `codeAction`. Each test pre-deletes and deletes its dir on exit.
-- `project_graph.zig` writes throwaway workspaces under
-  `.botopinkbuild/lsp-roots-*` for the `BOTOPINK_LIB_ROOTS` tests and
-  `.botopinkbuild/lsp-graph-*` for the graph-problem tests (a dependency no root
+- `project_graph.zig` writes throwaway workspaces under `lsp-roots-*` for the
+  `BOTOPINK_LIB_ROOTS` tests and `lsp-graph-*` for the graph-problem tests (a dependency no root
   carries, a `files` entry that cannot be read, a `.bp` of the project's own
   `src` that cannot be read — mode `000`, which asserts the diagnostic is on that
   file and skips when the run is root and can read it anyway — and a healthy

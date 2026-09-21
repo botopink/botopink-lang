@@ -9,6 +9,10 @@ const envMod = @import("../env.zig");
 const inferMod = @import("../infer.zig");
 const comptimeMod = @import("../../comptime.zig");
 const template = @import("../template.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 const templateEval = @import("../template_eval.zig");
 const erlEmitter = @import("../../codegen/beam/erl_emitter.zig");
 const Lexer = lexerMod.Lexer;
@@ -463,7 +467,7 @@ test "template: runtime fail() maps into the caller's template" {
         std.testing.allocator,
         &.{.{ .path = "", .source = src }},
         io,
-        ".botopinkbuild/comptime/runtime_fail_maps_into_template",
+        test_scratch.path(io, "comptime/runtime_fail_maps_into_template"),
         null,
     );
     defer session.deinit(std.testing.allocator);
@@ -538,7 +542,7 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
         std.testing.allocator,
         &.{.{ .path = "", .source = src }},
         io,
-        ".botopinkbuild/comptime/expr_custom_carrier",
+        test_scratch.path(io, "comptime/expr_custom_carrier"),
         null,
     );
     defer session.deinit(std.testing.allocator);

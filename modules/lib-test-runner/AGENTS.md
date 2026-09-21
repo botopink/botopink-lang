@@ -249,3 +249,14 @@ a key should ignore it.
 
 See the root [`AGENTS.md`](../../AGENTS.md) for workspace commands and the
 [`modules/AGENTS.md`](../AGENTS.md) package table.
+
+## Scratch paths in tests
+
+A unit test in this package that writes to disk takes its path from the
+`test_scratch` module — `test_scratch.path(io, "<case>/…")`,
+`test_scratch.remove(io, "<case>")` — never a hand-spelled
+`.botopinkbuild/<case>` (`scripts/check-test-scratch.sh` refuses that, decision 67, no flag).
+The test cwd is this package's directory, shared by every process running the
+suite; a per-case-but-not-per-run path let a second `zig build test` empty the
+first one's fixtures mid-test. See
+[../test-scratch/AGENTS.md](../test-scratch/AGENTS.md).

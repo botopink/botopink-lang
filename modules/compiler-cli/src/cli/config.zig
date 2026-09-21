@@ -11,6 +11,10 @@
 /// nothing more.
 const std = @import("std");
 const manifest = @import("manifest");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -370,16 +374,17 @@ test "workspaceRefusal lists the members of an expandable workspace" {
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
     const io = testing.io;
-    const ws = ".botopinkbuild/config-ws/acme";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/config-ws") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/config-ws") catch {};
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/modules/acme-core");
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/botopink.json", .data = "{ \"name\": \"acme\",\n  \"workspaces\": [\"modules/*\"] }\n" });
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/modules/acme-core/botopink.json", .data = "{ \"name\": \"acme-core\", \"files\": [\"root.bp\"] }" });
+    const ws = test_scratch.path(io, "config-ws/acme");
+    test_scratch.remove(io, "config-ws");
+    defer test_scratch.remove(io, "config-ws");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "config-ws/acme/modules/acme-core"));
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "config-ws/acme/botopink.json"), .data = "{ \"name\": \"acme\",\n  \"workspaces\": [\"modules/*\"] }\n" });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "config-ws/acme/modules/acme-core/botopink.json"), .data = "{ \"name\": \"acme-core\", \"files\": [\"root.bp\"] }" });
     var err: ?manifest.Located = null;
     const m = try manifest.read(arena, io, ws, &err);
     const l = try workspaceRefusal(arena, io, m);
-    try testing.expectEqualStrings(ws ++ "/botopink.json is a workspace, not a package — run this command inside one of its members: acme-core", l.message);
+    const want = try std.fmt.allocPrint(arena, "{s}/botopink.json is a workspace, not a package — run this command inside one of its members: acme-core", .{ws});
+    try testing.expectEqualStrings(want, l.message);
     try testing.expectEqual(@as(usize, 2), l.line);
     try testing.expectEqual(@as(usize, 3), l.col);
 }

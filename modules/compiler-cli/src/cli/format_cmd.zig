@@ -20,6 +20,10 @@
 /// must not grow one.
 const std = @import("std");
 const bp = @import("botopink");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 const reporter = @import("./reporter.zig");
 const diagnostics = @import("./diagnostics.zig");
 
@@ -274,27 +278,27 @@ test "decision 66: the walk reaches src/, test/, examples/, a nested project and
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const root = ".botopinkbuild/format-walk/whole";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/format-walk") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/format-walk") catch {};
-    try writeFileP(io, root ++ "/botopink.json", "{}");
-    try writeFileP(io, root ++ "/src/main.bp", "");
-    try writeFileP(io, root ++ "/src/types.d.bp", "");
-    try writeFileP(io, root ++ "/src/README.md", "");
-    try writeFileP(io, root ++ "/test/main_test.bp", "");
-    try writeFileP(io, root ++ "/examples/nested/botopink.json", "{}");
-    try writeFileP(io, root ++ "/examples/nested/src/main.bp", "");
-    try writeFileP(io, root ++ "/examples/nested/test/app_test.botopink", "");
+    const root = test_scratch.path(io, "format-walk/whole");
+    test_scratch.remove(io, "format-walk");
+    defer test_scratch.remove(io, "format-walk");
+    try writeFileP(io, test_scratch.path(io, "format-walk/whole/botopink.json"), "{}");
+    try writeFileP(io, test_scratch.path(io, "format-walk/whole/src/main.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/whole/src/types.d.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/whole/src/README.md"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/whole/test/main_test.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/whole/examples/nested/botopink.json"), "{}");
+    try writeFileP(io, test_scratch.path(io, "format-walk/whole/examples/nested/src/main.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/whole/examples/nested/test/app_test.botopink"), "");
 
     const paths = try collectSorted(gpa, io, root);
     defer freePaths(gpa, paths);
 
     const want = [_][]const u8{
-        root ++ "/examples/nested/src/main.bp",
-        root ++ "/examples/nested/test/app_test.botopink",
-        root ++ "/src/main.bp",
-        root ++ "/src/types.d.bp",
-        root ++ "/test/main_test.bp",
+        test_scratch.path(io, "format-walk/whole/examples/nested/src/main.bp"),
+        test_scratch.path(io, "format-walk/whole/examples/nested/test/app_test.botopink"),
+        test_scratch.path(io, "format-walk/whole/src/main.bp"),
+        test_scratch.path(io, "format-walk/whole/src/types.d.bp"),
+        test_scratch.path(io, "format-walk/whole/test/main_test.bp"),
     };
     try std.testing.expectEqual(want.len, paths.len);
     for (want, paths) |w, got| try std.testing.expectEqualStrings(w, got);
@@ -304,32 +308,34 @@ test "decision 66/67: hidden directories and node_modules are not entered; rejec
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const root = ".botopinkbuild/format-walk/exempt";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/format-walk") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/format-walk") catch {};
-    try writeFileP(io, root ++ "/src/main.bp", "");
+    const root = test_scratch.path(io, "format-walk/exempt");
+    test_scratch.remove(io, "format-walk");
+    defer test_scratch.remove(io, "format-walk");
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/src/main.bp"), "");
     // The language suite's shape, at the depth the suite has it and at the root.
-    try writeFileP(io, root ++ "/tests/language/reject/case_bare_name_arm.bp", "");
-    try writeFileP(io, root ++ "/tests/language/reject/case_bare_name_arm.expect", "");
-    try writeFileP(io, root ++ "/reject/bad.bp", "");
-    try writeFileP(io, root ++ "/reject/bad.expect", "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/tests/language/reject/case_bare_name_arm.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/tests/language/reject/case_bare_name_arm.expect"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/reject/bad.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/reject/bad.expect"), "");
     // Not the fixture: no `.expect`, so the runner would fail it too — reached.
-    try writeFileP(io, root ++ "/reject/lone.bp", "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/reject/lone.bp"), "");
     // A directory merely *containing* the word is not the directory.
-    try writeFileP(io, root ++ "/rejected/ok.bp", "");
-    try writeFileP(io, root ++ "/rejected/ok.expect", "");
-    // Tool state and another package manager's store.
-    try writeFileP(io, root ++ "/.botopinkbuild/tmp/scratch.bp", "");
-    try writeFileP(io, root ++ "/.git/hooks/x.bp", "");
-    try writeFileP(io, root ++ "/node_modules/dep/src/dep.bp", "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/rejected/ok.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/rejected/ok.expect"), "");
+    // Tool state and another package manager's store. The build directory is
+    // fixture CONTENT here — a hidden directory the walk must not enter — so it
+    // is named relative to the scratch root, never at the cwd.
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/.botopinkbuild/tmp/scratch.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/.git/hooks/x.bp"), "");
+    try writeFileP(io, test_scratch.path(io, "format-walk/exempt/node_modules/dep/src/dep.bp"), "");
 
     const paths = try collectSorted(gpa, io, root);
     defer freePaths(gpa, paths);
 
     const want = [_][]const u8{
-        root ++ "/reject/lone.bp",
-        root ++ "/rejected/ok.bp",
-        root ++ "/src/main.bp",
+        test_scratch.path(io, "format-walk/exempt/reject/lone.bp"),
+        test_scratch.path(io, "format-walk/exempt/rejected/ok.bp"),
+        test_scratch.path(io, "format-walk/exempt/src/main.bp"),
     };
     try std.testing.expectEqual(want.len, paths.len);
     for (want, paths) |w, got| try std.testing.expectEqualStrings(w, got);

@@ -86,9 +86,13 @@ zig build test-bpmp        # bpmp unit tests (manifest / lockfile / semver / sha
 `test-bpmp` is **not** part of `zig build test` (the network surface — registry,
 download — has no hermetic fixtures). Whether it joins the gate is a `build.zig`
 decision owned by the cli-gate front (1.0.2-beta F2); until then run it by hand
-whenever `modules/bpmp/**` changes. Tests that need a scratch directory use
-`.botopinkbuild/bpmp-tests/<test>/` under the test cwd (`modules/bpmp`,
-git-ignored). The `install.zig` clone tests build a local fixture repo with
+whenever `modules/bpmp/**` changes. Tests that need a scratch directory take it from the `test_scratch` module
+([`../test-scratch/AGENTS.md`](../test-scratch/AGENTS.md)) —
+`test_scratch.path(testing.io, "bpmp-tests/<test>")`, which lands under
+`.botopinkbuild/test-scratch/<per-process id>/bpmp-tests/<test>/` in the test
+cwd (`modules/bpmp`, git-ignored). It used to be a fixed
+`.botopinkbuild/bpmp-tests/<test>/`, which two processes sharing this checkout
+emptied for each other. The `install.zig` clone tests build a local fixture repo with
 `git` (hermetic: identity, signing and hooks overridden per call) and clone it
 over `file://`; they skip when `git` is not installed.
 

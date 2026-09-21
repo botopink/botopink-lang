@@ -10,6 +10,10 @@
 /// reached through any `mod` path is reported as orphaned (and not compiled).
 const std = @import("std");
 const bp = @import("botopink");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 const Module = bp.Module;
 const Lexer = bp.Lexer;
@@ -1127,20 +1131,19 @@ test "a `files` entry is not an orphan; a module in neither `files` nor a `mod` 
     // The shape `libs/std` has: a root whose `mod` chain reaches one module, an
     // ambient module the manifest ships instead (`files`), and a real dangling
     // file that nothing reaches at all.
-    const ws = ".botopinkbuild/resolver-declared";
-    std.Io.Dir.cwd().deleteTree(io, ws) catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ws) catch {};
-    try writeScratchFile(io, ws ++ "/src/root.bp", "pub mod geometry;\n");
-    try writeScratchFile(io, ws ++ "/src/geometry.bp", "pub fn area() -> i32 { return 1; }\n");
-    try writeScratchFile(io, ws ++ "/src/ambient.bp", "pub fn ambient() -> i32 { return 2; }\n");
-    try writeScratchFile(io, ws ++ "/src/dangling.bp", "pub fn dangling() -> i32 { return 3; }\n");
+    test_scratch.remove(io, "resolver-declared");
+    defer test_scratch.remove(io, "resolver-declared");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/root.bp"), "pub mod geometry;\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/geometry.bp"), "pub fn area() -> i32 { return 1; }\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/ambient.bp"), "pub fn ambient() -> i32 { return 2; }\n");
+    try writeScratchFile(io, test_scratch.path(io, "resolver-declared/src/dangling.bp"), "pub fn dangling() -> i32 { return 3; }\n");
 
     var da = std.heap.ArenaAllocator.init(gpa);
     defer da.deinit();
 
     // Nothing declared: both the ambient module and the dangling one are orphans.
     {
-        const res = try resolve(gpa, io, ws ++ "/src", "root.bp", null, &.{}, da.allocator(), null);
+        const res = try resolve(gpa, io, test_scratch.path(io, "resolver-declared/src"), "root.bp", null, &.{}, da.allocator(), null);
         defer freeModules(gpa, res.modules);
         defer freeOrphans(gpa, res.orphans);
         try std.testing.expectEqual(@as(usize, 2), res.orphans.len);
@@ -1150,7 +1153,7 @@ test "a `files` entry is not an orphan; a module in neither `files` nor a `mod` 
     // the case the warning exists for.
     {
         const declared = [_][]const u8{"ambient.bp"};
-        const res = try resolve(gpa, io, ws ++ "/src", "root.bp", null, &declared, da.allocator(), null);
+        const res = try resolve(gpa, io, test_scratch.path(io, "resolver-declared/src"), "root.bp", null, &declared, da.allocator(), null);
         defer freeModules(gpa, res.modules);
         defer freeOrphans(gpa, res.orphans);
         try std.testing.expectEqual(@as(usize, 1), res.orphans.len);

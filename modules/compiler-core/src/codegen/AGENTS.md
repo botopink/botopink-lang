@@ -2180,7 +2180,14 @@ first three are now enforced by the model, not by discipline:
   SHA256 over `HARNESS_VERSION` + target tag + module name + code + aux modules;
   a hit skips the subprocess. Entries are prefixed `OK:` (anything else is a
   miss) and hold the final RUN LOG — an output, a `COMPILE ERROR` block or the
-  empty string of a crash. Bump `HARNESS_VERSION` whenever the harness records
+  empty string of a crash. An entry is **staged under a random sibling name and
+  renamed into place**, never written in place: the path is content-keyed, so
+  two writers agree on the bytes, but they share this cwd (parallel tests, two
+  `zig build test` processes over one checkout) and a truncate-and-write is not
+  one step — a reader arriving mid-write got a SHORT entry that still began
+  `OK:`, and a truncated tail came back as the program's output with nothing
+  saying so. Same shape as `comptime/template_eval.zig`'s `writeModule`, which
+  stages precisely against this. Bump `HARNESS_VERSION` whenever the harness records
   something different for unchanged inputs, otherwise a warm cache hides the
   change. Toolchain versions are **not** part of the key — delete the cache dir
   after upgrading node/OTP. Nothing reaps it: `clean-tmp` only touches `tmp/`,

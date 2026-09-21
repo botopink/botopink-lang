@@ -46,7 +46,7 @@
 //! stdout is the frame channel and nothing else may write to it: the server
 //! moves the default logger handler to `standard_error`, and `main` runs with
 //! `standard_error` as its group leader, so `io:format/1` and log events from a
-//! comptime body land in `erl.stderr.log`. A reply longer than `max_frame_len`
+//! comptime body land in this process's `erl.<id>.stderr.log`. A reply longer than `max_frame_len`
 //! is a desynchronised stream (something wrote to `user` directly), reported as
 //! `error.PersistentErlFrameTooLarge` with a message in `lastTransportError`.
 //!
@@ -151,7 +151,38 @@ const server_dir = ".botopinkbuild/tmp/persistent_erl";
 
 /// erl's stderr: the logger's output and everything a comptime body prints.
 /// Truncated at every spawn; nothing reads it back — transport errors name it.
-const stderr_log_path = server_dir ++ "/erl.stderr.log";
+///
+/// **Per process.** `server_dir` is fixed and the checkout is shared, so two
+/// compilers with this cwd (parallel tests, two `zig build test` runs, a gate
+/// and a developer) used to hand their two `erl` children ONE log path: the
+/// second spawn truncated the file the first child was still writing to, and
+/// the transport diagnostic that names the log pointed at a mixture of both.
+/// 64 random bits drawn once per process keep each child's stderr its own. The
+/// directory sits under `TMP_ROOT`, so `clean-tmp` reaps it after a day.
+const log_stem = server_dir ++ "/erl.";
+const log_ext = ".stderr.log";
+var stderr_log_buf: [log_stem.len + 16 + log_ext.len]u8 = undefined;
+var stderr_log_ready = false;
+
+/// Draw this process's log path. Called once, under the spawn's init lock.
+fn ensureStderrLogPath(io: Io) []const u8 {
+    if (!stderr_log_ready) {
+        var rand_bytes: [8]u8 = undefined;
+        io.random(&rand_bytes);
+        _ = std.fmt.bufPrint(&stderr_log_buf, log_stem ++ "{x:0>16}" ++ log_ext, .{
+            std.mem.readInt(u64, &rand_bytes, .little),
+        }) catch unreachable;
+        stderr_log_ready = true;
+    }
+    return &stderr_log_buf;
+}
+
+/// The log path a diagnostic names. Before the first spawn there is none yet,
+/// and the pattern is more use than a name that does not exist.
+fn stderrLogPath() []const u8 {
+    if (stderr_log_ready) return &stderr_log_buf;
+    return log_stem ++ "<id>" ++ log_ext;
+}
 
 // ── singleton state ───────────────────────────────────────────────────────────
 
@@ -195,7 +226,7 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
             // `zig build test` runner reports "test runner failed to respond").
             const cwd = std.Io.Dir.cwd();
             try cwd.createDirPath(io, server_dir);
-            const stderr_log = try cwd.createFile(io, stderr_log_path, .{});
+            const stderr_log = try cwd.createFile(io, ensureStderrLogPath(io), .{});
             defer stderr_log.close(io);
             const child = try std.process.spawn(io, .{
                 .argv = &.{ "erl", "-noshell", "-eval", bootstrap_eval },
@@ -286,14 +317,15 @@ var transport_error_buf: [512]u8 = undefined;
 var transport_error_len: usize = 0;
 
 fn setTransportError(comptime fmt: []const u8, args: anytype) void {
-    const suffix = " (erl stderr: " ++ stderr_log_path ++ ")";
-    const message = std.fmt.bufPrint(&transport_error_buf, fmt ++ suffix, args) catch {
-        const fallback = "transport error" ++ suffix;
+    // The log path is per process (see `ensureStderrLogPath`), so the suffix is
+    // appended as a value rather than concatenated into the format string.
+    const head = std.fmt.bufPrint(&transport_error_buf, fmt, args) catch blk: {
+        const fallback = "transport error";
         @memcpy(transport_error_buf[0..fallback.len], fallback);
-        transport_error_len = fallback.len;
-        return;
+        break :blk transport_error_buf[0..fallback.len];
     };
-    transport_error_len = message.len;
+    const tail = std.fmt.bufPrint(transport_error_buf[head.len..], " (erl stderr: {s})", .{stderrLogPath()}) catch "";
+    transport_error_len = head.len + tail.len;
 }
 
 /// Why the last request failed with a transport error (`PersistentErlBroken`,
@@ -546,7 +578,7 @@ test "persistent_erl: a reply frame over the length cap is a transport error, th
     );
     const message = lastTransportError() orelse return error.TestExpectedTransportMessage;
     try std.testing.expect(std.mem.indexOf(u8, message, "exceeds the 16777216-byte cap") != null);
-    try std.testing.expect(std.mem.indexOf(u8, message, stderr_log_path) != null);
+    try std.testing.expect(std.mem.indexOf(u8, message, stderrLogPath()) != null);
 
     try expectOk("clean reply", noisy_path);
 }

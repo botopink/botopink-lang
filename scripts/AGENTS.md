@@ -22,6 +22,7 @@ scripts/
 ├── restricted-targets.txt ← the ledger: every cell a member's `"targets"` list hides, with its measured failed count
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── check-docs.sh      ← compiles every `botopink` fence of docs.md/README.md (`zig build test-docs`)
+├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block (part of `zig build test`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (6 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
 ├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-node compile/load/run split
@@ -249,6 +250,32 @@ fence, an unknown directive, a `skip` with no reason and a named project with no
 prints every fence with its directive and compiles nothing. State for a named
 project lives in the scratch tree (`.name`, `.origin`, `src/main.bp`), not in an
 associative array, so the script runs under the macOS runner's bash 3.2.
+
+## check-test-scratch.sh
+
+`scripts/check-test-scratch.sh [<dir>…]` (default `modules`), a dependency of
+`zig build test` — **a test may not spell a cwd-anchored scratch path.**
+
+Each test binary runs with its package directory as cwd, so the whole suite
+writes into one shared checkout: a path that is fixed (scoped per test name but
+not per run) is shared with every other process running the suite, and each
+test empties its own root on the way in. Measured before the rule existed: one
+`modules/compiler-cli` test binary is 89/89 green, four concurrent copies red
+1–5 tests each (`cli.config.workspaceRefusal … FileNotFound`,
+`cli.format_cmd decision 66 … expected 5, found 0`, and so on).
+
+The one way to name such a path is the `test_scratch` module
+([`../modules/test-scratch/AGENTS.md`](../modules/test-scratch/AGENTS.md)),
+whose root carries a per-process segment. This script is the other half: it
+walks every `<dir>/**/*.zig`, tracks `test` blocks (a top-level `test "`/`test {`
+until the next column-0 `}`) and refuses a string literal that **begins**
+`.botopinkbuild` inside one.
+
+It refuses, it does not warn, and no flag or environment variable turns it off
+(decision 67). The only exemption is structural: a literal that does not start
+at the cwd — `"…/.botopinkbuild/tmp/scratch.bp"` as fixture *content* under a
+scratch root, or a reference to a production constant such as
+`runtime.TMP_ROOT` — is not a cwd-anchored path and is not matched.
 
 ## test-vscode.sh
 

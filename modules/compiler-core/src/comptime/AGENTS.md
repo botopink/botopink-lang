@@ -938,3 +938,14 @@ section name; duplicate section names are rejected.
 - [`runtime/AGENTS.md`](runtime/AGENTS.md) — persistent `erl` comptime runtime.
 - [`stdlib/AGENTS.md`](stdlib/AGENTS.md) — std prelude embedding.
 - [`tests/AGENTS.md`](tests/AGENTS.md) — comptime tests.
+
+## Scratch paths in tests
+
+A unit test in this package that writes to disk takes its path from the
+`test_scratch` module — `test_scratch.path(io, "<case>/…")`,
+`test_scratch.remove(io, "<case>")` — never a hand-spelled
+`.botopinkbuild/<case>` (`scripts/check-test-scratch.sh` refuses that, decision 67, no flag).
+The test cwd is this package's directory, shared by every process running the
+suite; a per-case-but-not-per-run path let a second `zig build test` empty the
+first one's fixtures mid-test. See
+[../../../test-scratch/AGENTS.md](../../../test-scratch/AGENTS.md).
