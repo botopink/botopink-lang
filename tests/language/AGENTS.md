@@ -517,15 +517,16 @@ Each step that deletes a beam line re-quotes this run; no commonJS/erlang/wasm l
 ```
 $ tests/language/run.sh --target beam
 expected-failures.txt: 41 lines, 15 exercised by --target beam
-language tests: 107 passed, 15 expected failures, 5 failed
+language tests: 108 passed, 15 expected failures, 4 failed
 ```
 
-The 5 failures predate the front's steps and have no line:
-`modules/{field,method,type}_name_collision` (03's rows, carried from 05-wasm
-step 9), `run/effect_method.bp` (`ConditionLoopValueUnsupported`: a `while`
-that `yield`s in an `implement` / enum-body method, whose frame opens no
-generator scope — 22-loops' lowering, decision 105) and `run/labelled_arguments.bp` (variant payload zipped by position).
-Deleted so far: `beam | run/case_range_value.bp` (C-06's beam half).
+The 4 failures have no line: `modules/{field,method,type}_name_collision` (03's
+rows, carried from 05-wasm step 9) and `run/effect_method.bp`
+(`ConditionLoopValueUnsupported`: a `while` that `yield`s in an `implement` /
+enum-body method, whose frame opens no generator scope — 22-loops' lowering,
+decision 105). Deleted so far: `beam | run/case_range_value.bp` (C-06's beam
+half). `run/labelled_arguments.bp` had no beam line and passes since the
+variant constructor places a labelled argument by its declared field.
 
 **Recounted on disk at C-04's landing (`fix/trailing-defaults`, merged onto
 `4aee802d`):**

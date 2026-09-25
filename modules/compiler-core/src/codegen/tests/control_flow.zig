@@ -1212,6 +1212,22 @@ test "beam: case ---- a primitive type or a bool literal is a test, not a binder
     , "int\nstr\nyes\nno\npositive\nnegative\nzero\n", &.{ "{test, is_integer, ", "{test, is_binary, ", "{test, is_eq_exact, " });
 }
 
+test "beam: an enum variant's labelled payload claims its declared slot" {
+    // `run/labelled_arguments.bp`'s beam twin of the erlang row. The record
+    // constructor placed a labelled argument by field index; the variant
+    // constructor zipped by position, so `Shape.Rect(height: 2, width: 5)`
+    // was built `{Rect, 2, 5}` and the cell printed `205`.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\type Shape { Rect(width: i32, height: i32), Dot }
+        \\fn shown(s: Shape) -> i32 { return case s { Shape.Rect(w, h) -> w * 100 + h; Shape.Dot -> 0; }; }
+        \\fn main() {
+        \\  @print(shown(Shape.Rect(height: 2, width: 5)));
+        \\  @print(shown(Shape.Rect(width: 5, height: 2)));
+        \\  @print(shown(Shape.Rect(5, 2)));
+        \\}
+    , "502\n502\n502\n", &.{});
+}
+
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
 //
 // `break <value>` out of `while (cond)` was refused outright with an unlocated

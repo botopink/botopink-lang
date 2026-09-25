@@ -1498,6 +1498,10 @@ codegen/
   Every one of these used to match every subject and bind nothing
   (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
   `assertBeamRunLog` rows in `tests/control_flow.zig`.
+- **Variant constructors** (`lowerTaggedTuple`): a labelled argument fills the
+  slot of the field it names (`variantDeclOf`, the declared fields), as a record
+  constructor's does — `Shape.Rect(height: 2, width: 5)` was built positionally
+  as `{Rect, 2, 5}`. An enum this emit cannot place keeps the written order.
 - **Module shape**: every *named* top-level `val` is a 0-arity function
   (reserved, emitted and — when `pub` — exported whether or not the module has a
   `main/0`), so a read is a local call; a `val` holding a fun is read, parked on

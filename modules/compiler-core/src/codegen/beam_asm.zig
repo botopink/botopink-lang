@@ -2218,6 +2218,12 @@ const Emitter = struct {
     /// The declared shape of the variant a pattern writes, when an enum this
     /// emit can place declares it; null for `Ok`/`Err` and a variant from
     /// nowhere, whose written arity is all there is.
+    fn variantDeclOf(self: *const Emitter, enum_name: []const u8, variant: []const u8) []const ast.Field {
+        const shapes = self.enum_variant_names.get(enum_name) orelse return &.{};
+        for (shapes) |sh| if (std.mem.eql(u8, sh.name, variant)) return sh.decl;
+        return &.{};
+    }
+
     fn declaredVariantShape(self: *const Emitter, written: []const u8) ?VariantShape {
         const bare = bareVariantName(written);
         const enum_name = self.enumOfVariantPath(written, bare) orelse return null;
@@ -4458,7 +4464,7 @@ const Emitter = struct {
                     // tested by `is_tagged_tuple`). A lowercase callee (`List.map`)
                     // is a module-qualified remote call.
                     if (cc.callee.len > 0 and std.ascii.isUpper(cc.callee[0])) {
-                        try self.lowerTaggedTuple(self.qualifiedVariantTagOf(rn, cc.callee) orelse cc.callee, cc.args);
+                        try self.lowerTaggedTuple(self.qualifiedVariantTagOf(rn, cc.callee) orelse cc.callee, cc.args, self.variantDeclOf(rn, cc.callee));
                         if (mode == .tail) try self.emitReturn();
                         return;
                     }
@@ -6093,7 +6099,13 @@ const Emitter = struct {
     /// Build a tagged tuple `{Tag, Field0, …}` from an enum variant constructor
     /// `Shape.Circle(r: 5)` → `{Circle, 5}`. The tag atom matches the one tested
     /// by `is_tagged_tuple` when the variant is pattern-matched. Result in `{x, 0}`.
-    fn lowerTaggedTuple(self: *Emitter, tag: []const u8, args: anytype) anyerror!void {
+    ///
+    /// `decl` is the variant's declared fields when this emit can place its
+    /// enum: a labelled argument then fills the slot of the field it names,
+    /// as a record constructor's does (`docs.md` § Parameters with defaults).
+    /// Zipped by position, `Shape.Rect(height: 2, width: 5)` was built
+    /// `{Rect, 2, 5}`.
+    fn lowerTaggedTuple(self: *Emitter, tag: []const u8, args: anytype, decl: []const ast.Field) anyerror!void {
         const n = args.len;
         const st = try self.stageCall(null, args, &[_]ast.TrailingLambda{});
         // A tuple of `n + 1` elements (tag + fields) needs `n + 2` heap words.
@@ -6103,6 +6115,14 @@ const Emitter = struct {
         var elems: [max_staged + 1]Op = undefined;
         elems[0] = Op.atom(tag_atom);
         for (0..n) |i| elems[i + 1] = st.ops[i];
+        if (decl.len == n) {
+            for (args, 0..) |arg, i| {
+                const lbl = arg.label orelse continue;
+                for (decl, 0..) |f, at| if (std.mem.eql(u8, f.name, lbl)) {
+                    elems[at + 1] = st.ops[i];
+                };
+            }
+        }
         try beamEmitter.writePutTuple2(self.out, Dst.xr(0), elems[0 .. n + 1]);
     }
 
