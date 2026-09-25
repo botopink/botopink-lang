@@ -4718,6 +4718,13 @@ const Emitter = struct {
                     try self.lowerLambda(f.kind, self.min_live);
                     return;
                 },
+                // `async { … }` (decision 124): the Task is eager here — the
+                // block's closure, called in place.
+                .asyncBlock => {
+                    try self.lowerLambda(f.kind, self.min_live);
+                    try beamEmitter.writeCallFun(self.out, 0);
+                    return;
+                },
                 .fnExpr => {
                     try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
                     return;

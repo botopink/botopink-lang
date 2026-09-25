@@ -797,6 +797,12 @@ pub const Formatter = struct {
             .function => |func| switch (func.kind.syntax) {
                 .lambda => try this.fmtLambdaAt(func.loc.line, func.kind.params, func.kind.body, true),
                 .fnExpr => try this.fmtFnExpr(func.kind.params, func.kind.body),
+                // `async { … }` (decision 124): the block's statements, one per
+                // line, like any body.
+                .asyncBlock => if (func.kind.body.len == 0)
+                    try this.text("async {}")
+                else
+                    try this.surroundBreak("async {", try this.fmtStmtSeq(func.kind.body), "}"),
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| try this.fmtCall(cc),

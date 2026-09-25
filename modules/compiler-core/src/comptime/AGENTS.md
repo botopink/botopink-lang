@@ -207,6 +207,20 @@ one: there is no implicit `try`. `for` over a `@Stream` is `for-over-stream`;
 `builtinMaxGenericArgs`) refuses a type argument past a builtin wrapper's
 declared arity; no effect wrapper declares a default any more.
 
+**Decision 124 — `async { … }`.** The parser writes the block as a
+`.function` node with `syntax = .asyncBlock` and no parameters (a closure called
+in place). `inferAsyncBlock` types it `@Task<T>`: `T` from its `return`s (a
+`return` leaves the block — `returnTarget` / `returnWhole` are the block's), and
+`@Result<U, E>` when the body has `throw` / `try` of its own (`ast.bodyFails`) —
+unless the position expects a `@Task<X>` (an annotated `val`), which pins the
+value and so opens or closes the fallible channel. The body awaits (`starFn` is
+a `.task` context), never yields, and never `use`s (`env.asyncBlockDepth`,
+refused with `use-without-context-effect`); the enclosing labels are closed.
+Where the `E` is inferred (`env.inferredErrorScope`: an unannotated block, or an
+`iter` / `stream` loop whose item became a `@Result`), every `throw` / `try`
+joins it through `unifyErrorChannel`, and two errors that do not unify are
+`gen-infer-conflicting-errors`.
+
 **Decision 125 — `iter` / `stream` loops.** The parser writes `iter while` /
 `iter for` as the prefixed `loop { <the written loop>; break; }`
 (`LoopExprOf.prefixedKeyword` keeps the written keyword for the formatter), so

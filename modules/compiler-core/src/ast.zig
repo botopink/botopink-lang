@@ -813,8 +813,12 @@ pub fn UseHookExprOf(comptime phase: Phase) type {
 /// form produced the node so consumers can emit the right syntax.
 pub fn FunctionExprOf(comptime phase: Phase) type {
     const Kind = struct {
-        /// Surface syntax: `{ a, b -> stmts }` lambda vs `fn(a, b) { stmts }`.
-        syntax: enum { lambda, fnExpr },
+        /// Surface syntax: `{ a, b -> stmts }` lambda vs `fn(a, b) { stmts }`,
+        /// or `async { stmts }` (decision 124): a closed block worth
+        /// `@Task<T>`, which every backend runs as a parameterless closure
+        /// called in place (`(async () => { … })()` on commonJS) — so it
+        /// keeps the lambda's shape and `params` is empty.
+        syntax: enum { lambda, fnExpr, asyncBlock },
         /// Parameter names (inferred types). Empty for no-param functions.
         params: []const []const u8,
         body: []StmtOf(phase),

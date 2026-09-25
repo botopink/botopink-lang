@@ -8093,6 +8093,25 @@ fn fallibleChannelRefusal(env: *Env, what: []const u8) ![]const u8 {
     );
 }
 
+/// Unify a `throw` / `try`'s error with the fallible channel's `E`. Where the
+/// `E` is INFERRED (an `async { }` block or an `iter` / `stream` loop with no
+/// annotation, decisions 124 / 125), two that do not unify are
+/// `gen-infer-conflicting-errors`, asking for the annotation.
+fn unifyErrorChannel(env: *Env, errType: *T.Type, got: *T.Type, loc: ast.Loc) InferError!void {
+    if (!env.inferredErrorScope) return unifyAt(env, errType, got, loc);
+    unify(env, errType, got) catch |err| switch (err) {
+        error.TypeError => {
+            env.lastError = TypeError.custom(
+                diagnostics.gen_infer_conflicting_errors ++
+                    ": the error types of this block's `throw` / `try` do not agree, so its `@Result<U, E>` has no one `E`",
+                "Annotate the value with the error you mean: `val x: @Task<@Result<U, E>> = async { … };` (or `@Iterator<@Result<U, E>>` for a loop), and handle the other error where it happens.",
+            ).withLoc(loc);
+            return error.TypeError;
+        },
+        else => return err,
+    };
+}
+
 /// Decision 118 rule 1 — refuse `what` (a capability) in a body whose return
 /// is an ALIAS of an effect wrapper: the alias types the function but
 /// activates nothing. Returns true (with `lastError` set) when it refused.
@@ -8267,7 +8286,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     if (valPtr) |vp| {
                         // Order matters: `errType` is the expected `E`, the thrown
                         // value is what we got — so unify(expected, got).
-                        try unifyAt(env, errType, vp.getType(), loc);
+                        try unifyErrorChannel(env, errType, vp.getType(), loc);
                         // `throw e` produces the value `{error, E}`: returned
                         // from a `@Result` / `@Task` / `@Component` body
                         // (`return __bp_error(e)`), emitted as the last item of
@@ -8292,6 +8311,14 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             const valPtr: ?*TypedExpr = if (e) |ev| try makeTypedPtr(env, try inferExprTyped(env, ev.*)) else null;
             const rawTy = if (valPtr) |vp| vp.getType() else try env.freshVar();
             const ty = try tryUnwrapOrError(env, rawTy, loc);
+            // Decisions 124 / 125 — in a block or prefixed loop whose `E` is
+            // inferred, every propagating `try` joins it.
+            if (env.inferredErrorScope and env.throwContext == .result) {
+                const rt = rawTy.deref();
+                if (rt.* == .named and std.mem.eql(u8, rt.named.name, "Result") and rt.named.args.len >= 2) {
+                    try unifyErrorChannel(env, env.throwContext.result, rt.named.args[1], loc);
+                }
+            }
             // Decision 121 — bare `try` PROPAGATES: it returns the `Error` out of
             // the enclosing function (or, in a sequence whose item is a
             // `@Result`, emits it as the last item), so the body needs the
@@ -8768,8 +8795,10 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
     const prevClosedLabels = env.closedLabels;
     const prevAliasWrapper = env.aliasWrapper;
     const prevReturnWhole = env.returnWhole;
+    const prevInferredErrLoop = env.inferredErrorScope;
     const prevLabels = try env.arena.dupe([]const u8, env.labelStack.items);
     defer {
+        env.inferredErrorScope = prevInferredErrLoop;
         env.starFn = prevStarFn;
         env.fnEffect = prevFnEffect;
         env.throwContext = prevThrowCtx;
@@ -8793,6 +8822,7 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
     // item became a `@Result` (decision 122); with no `throw` / `try` in the
     // body the channel is closed.
     env.throwContext = if (errTy) |et| .{ .result = et } else .plain;
+    env.inferredErrorScope = errTy != null;
     env.useAnchor = null;
     env.inContextFn = false;
     env.aliasWrapper = null;
@@ -9999,6 +10029,14 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     // stays in the body that carries the annotation (decision 87: `use` never
     // leaves a function body). On commonJS the hook is an `async function`
     // (decision 104), and an `await` in a plain arrow would not parse.
+    if (env.asyncBlockDepth > 0) {
+        env.lastError = TypeError.custom(
+            diagnostics.use_without_context_effect ++
+                ": `use` inside an `async { }` block — the block is closed like a closure (decision 124), and `use` does not enter it",
+            "Activate the hook in the `@Component` body before the block and let the block read its value.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
     if (env.starFn == null) {
         env.lastError = TypeError.custom(
             diagnostics.use_without_context_effect ++
@@ -11350,7 +11388,110 @@ fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
 
 /// Infer type for function definition expressions (lambdas and anonymous functions)
 fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    if (func.kind.syntax == .asyncBlock) return inferAsyncBlock(env, func, loc);
     return inferFunctionExprExpected(env, func, loc, null, false);
+}
+
+/// Decision 124 — `async { … }`: a closed block worth `@Task<T>`, legal in any
+/// function. `T` comes from the block's `return`s (a `return` leaves the
+/// BLOCK, decision 119); when the body has `throw` / `try` of its own
+/// (`ast.bodyFails`) the value becomes `@Result<U, E>` on its own, `E` from
+/// them — two that do not unify are `gen-infer-conflicting-errors`. An
+/// expected `@Task<X>` (an annotated `val`) pins the value: `X` a `@Result`
+/// opens the fallible channel with its `E`, any other `X` closes it, so a `try`
+/// in the body is then a located refusal. The body starts a new capability
+/// context: it awaits (it IS a Task), never `use`s (not the `@Component`
+/// body) and never yields; the enclosing labels are closed.
+fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    const fk = func.kind;
+    // The expected `@Task<X>`, when the position says one (`val t: @Task<i32> = async { … }`).
+    const expectedValue: ?*T.Type = blk: {
+        const want = (env.expectedType orelse break :blk null).deref();
+        if (want.* != .named or !std.mem.eql(u8, want.named.name, "Task") or want.named.args.len != 1) break :blk null;
+        break :blk want.named.args[0];
+    };
+    var errTy: ?*T.Type = null;
+    var value: *T.Type = undefined;
+    var target: *T.Type = undefined;
+    if (expectedValue) |ev| {
+        value = ev;
+        const d = ev.deref();
+        if (d.* == .named and std.mem.eql(u8, d.named.name, "Result") and d.named.args.len >= 2) {
+            errTy = d.named.args[1];
+            target = d.named.args[0];
+        } else target = ev;
+    } else if (ast.bodyFails(fk.body)) {
+        const u = try env.freshVar();
+        const e = try env.freshVar();
+        errTy = e;
+        target = u;
+        value = try env.namedTypeArgs("Result", &.{ u, e });
+    } else {
+        value = try env.freshVar();
+        target = value;
+    }
+    const taskTy = try env.namedTypeArgs("Task", &.{value});
+
+    const prevStarFn = env.starFn;
+    const prevFnEffect = env.fnEffect;
+    const prevThrowCtx = env.throwContext;
+    const prevUseAnchor = env.useAnchor;
+    const prevInContextFn = env.inContextFn;
+    const prevLoopDepth = env.loopDepth;
+    const prevBreakScope = env.breakScope;
+    const prevClosedLabels = env.closedLabels;
+    const prevAliasWrapper = env.aliasWrapper;
+    const prevReturnTarget = env.returnTarget;
+    const prevReturnWhole = env.returnWhole;
+    const prevReturnBareIsVoid = env.returnBareIsVoid;
+    const prevKeep = env.keepReturnTarget;
+    const prevGenLoops = env.generatorLoopDepth;
+    const prevInferredErr = env.inferredErrorScope;
+    const prevLabels = try env.arena.dupe([]const u8, env.labelStack.items);
+    defer {
+        env.starFn = prevStarFn;
+        env.fnEffect = prevFnEffect;
+        env.throwContext = prevThrowCtx;
+        env.useAnchor = prevUseAnchor;
+        env.inContextFn = prevInContextFn;
+        env.loopDepth = prevLoopDepth;
+        env.breakScope = prevBreakScope;
+        env.closedLabels = prevClosedLabels;
+        env.aliasWrapper = prevAliasWrapper;
+        env.returnTarget = prevReturnTarget;
+        env.returnWhole = prevReturnWhole;
+        env.returnBareIsVoid = prevReturnBareIsVoid;
+        env.keepReturnTarget = prevKeep;
+        env.generatorLoopDepth = prevGenLoops;
+        env.inferredErrorScope = prevInferredErr;
+        env.labelStack.shrinkRetainingCapacity(0);
+        env.labelStack.appendSlice(env.arena, prevLabels) catch {};
+        env.asyncBlockDepth -= 1;
+    }
+    env.asyncBlockDepth += 1;
+    env.closedLabels = prevLabels;
+    env.labelStack.shrinkRetainingCapacity(0);
+    env.starFn = .{ .allowsAwait = true, .allowsYield = false, .iterItem = null, .fnLabel = null, .effect = .task };
+    env.fnEffect = .task;
+    env.throwContext = if (errTy) |et| .{ .result = et } else .plain;
+    env.inferredErrorScope = expectedValue == null and errTy != null;
+    env.useAnchor = null;
+    env.inContextFn = false;
+    env.aliasWrapper = null;
+    env.loopDepth = 0;
+    env.breakScope = .none;
+    env.generatorLoopDepth = 0;
+    env.keepReturnTarget = false;
+    env.returnTarget = target;
+    env.returnWhole = taskTy;
+    env.returnBareIsVoid = true;
+
+    const bodyTyped = try inferStmtsTyped(env, fk.body);
+    return TypedExpr{ .function = .{ .loc = loc, .type_ = taskTy, .kind = .{
+        .syntax = .asyncBlock,
+        .params = fk.params,
+        .body = bodyTyped,
+    } } };
 }
 
 /// Infer a lambda / anonymous-function expression. When `expected` is a
@@ -11374,6 +11515,12 @@ fn inferFunctionExprExpected(
     expected: ?*T.Type,
     params_only: bool,
 ) InferError!TypedExpr {
+    if (func.kind.syntax == .asyncBlock) {
+        const savedExpected = env.expectedType;
+        env.expectedType = expected;
+        defer env.expectedType = savedExpected;
+        return inferAsyncBlock(env, func, loc);
+    }
     // A nested function expression has no declared return type, so `throw`
     // inside it is not checked against the enclosing fn's `E`.
     const savedThrowCtx = env.throwContext;
@@ -11402,6 +11549,13 @@ fn inferFunctionExprExpected(
     }
 
     const fk = func.kind;
+    // A lambda inside an `async { }` block is its own function again.
+    const prevAsyncDepth = env.asyncBlockDepth;
+    env.asyncBlockDepth = 0;
+    defer env.asyncBlockDepth = prevAsyncDepth;
+    const prevInferredErrLambda = env.inferredErrorScope;
+    env.inferredErrorScope = false;
+    defer env.inferredErrorScope = prevInferredErrLambda;
     // Anonymous function expressions never carry an effect annotation, so the
     // async/generator context is always cleared inside them. (The deprecated
     // `*fn(...)` anonymous-generator form was removed in v0.beta.19.)

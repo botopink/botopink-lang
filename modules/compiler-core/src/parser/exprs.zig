@@ -62,7 +62,27 @@ const precedence_table = [_]PrecedenceLevel{
     } },
 };
 
+/// `async { … }` (decision 124) — `async` is contextual: a keyword only
+/// immediately before `{`, an identifier everywhere else
+/// (`import {async} from "std"`, `async.allOf(…)`). Checked before the
+/// call-chain path, which would read `async { … }` as a call of `async` with a
+/// trailing lambda. Null when the cursor is not on one.
+fn parseAsyncBlockAhead(this: *This, alloc: std.mem.Allocator) ParseError!?Expr {
+    if (!(this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "async") and
+        this.peekAt(1).kind == .leftBrace)) return null;
+    const asyncTok = this.advance();
+    const body = try this.parseFnBodyInBraces(alloc);
+    const block = Expr{ .function = .{ .loc = locFromToken(asyncTok), .kind = .{
+        .syntax = .asyncBlock,
+        .params = try alloc.alloc([]const u8, 0),
+        .body = body,
+    } } };
+    // A postfix chain may follow (`async { … }.map(f)`).
+    return try parsePostfixChain(this, alloc, block);
+}
+
 pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    if (try parseAsyncBlockAhead(this, alloc)) |blk| return blk;
     // The removed `record { … }` literal, before the call-chain path reads
     // `record { … }` as a call with a trailing lambda (see `parsePrimary`).
     if (this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "record") and
@@ -1103,6 +1123,8 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     {
         return this.failRemovedAt(.removedRecordLiteral, 0);
     }
+
+    if (try parseAsyncBlockAhead(this, alloc)) |blk| return blk;
 
     // `try x` / `try x catch h` / `await x` as an OPERAND (`total + try r`,
     // `(try batch).length`, `f(try await g())` — decisions 120 and 122 spell

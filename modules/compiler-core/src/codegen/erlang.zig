@@ -6275,7 +6275,11 @@ const Emitter = struct {
                     params[i] = V(try this.arenaVar(b, p));
                     this.addLocal(p);
                 }
-                return .{ .fun = .{ .params = params, .body = try this.bodyNode(b, func.kind.body, 0, this.indent + 1) } };
+                const fun: Ast.Expr = .{ .fun = .{ .params = params, .body = try this.bodyNode(b, func.kind.body, 0, this.indent + 1) } };
+                // `async { … }` (decision 124): the Task is eager here — the
+                // block's fun, called in place.
+                if (func.kind.syntax == .asyncBlock) return b.applyParen(fun, &.{});
+                return fun;
             },
 
             .collection => |col| switch (col.kind) {

@@ -3490,7 +3490,10 @@ const Emitter = struct {
                 },
             },
 
-            .function => |f| return self.buildArrow(f.kind.params, f.kind.body),
+            .function => |f| {
+                if (f.kind.syntax == .asyncBlock) return self.buildAsyncBlock(f.kind.body);
+                return self.buildArrow(f.kind.params, f.kind.body);
+            },
 
             .collection => |col| switch (col.kind) {
                 .arrayLit => |arr| {
@@ -3839,6 +3842,43 @@ const Emitter = struct {
             .keyword = shape.keyword(),
             .params = &.{},
             .body = .{ .stmts = try self.guardExprTry(try self.b.stmts(&.{while_stmt}), base), .indent = base },
+        } }), &.{});
+    }
+
+    /// `async { … }` (decision 124) — an async function called in place:
+    ///
+    ///     (async function() { …; return v; })()
+    ///
+    /// Its `return`s leave the block (they are the function's); a `throw` /
+    /// failing `try` resolves the Promise with the `{ error }` value, never a
+    /// rejection (decision 120). A function boundary: the enclosing loop
+    /// context, generator and test flags do not reach the body.
+    fn buildAsyncBlock(self: *Emitter, body_stmts: []const ast.Stmt) anyerror!js.Expr {
+        const base = self.current_indent;
+        const prev_ctx = self.loop_ctx;
+        const prev_gen = self.in_generator;
+        const prev_wrap = self.case_ok_wrap;
+        const prev_in_test = self.in_test_body;
+        const prev_expr_try = self.expr_try_used;
+        self.loop_ctx = .none;
+        self.in_generator = false;
+        self.case_ok_wrap = false;
+        self.in_test_body = false;
+        self.expr_try_used = false;
+        self.current_indent = base + 1;
+        defer {
+            self.loop_ctx = prev_ctx;
+            self.in_generator = prev_gen;
+            self.case_ok_wrap = prev_wrap;
+            self.in_test_body = prev_in_test;
+            self.expr_try_used = prev_expr_try;
+            self.current_indent = base;
+        }
+        const body = try self.guardExprTry(try self.buildStmts(body_stmts), base);
+        return self.b.call(try self.b.paren(.{ .function = .{
+            .keyword = "async function",
+            .params = &.{},
+            .body = .{ .stmts = body, .indent = base },
         } }), &.{});
     }
 

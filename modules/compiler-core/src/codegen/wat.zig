@@ -3262,7 +3262,10 @@ const Emitter = struct {
                 .assertPattern => |ap| try self.lowerAssertPattern(ap),
                 else => try self.emit(zero),
             },
-            .function => |f| try self.lowerLambdaValue(f.kind.params, f.kind.body),
+            .function => |f| if (f.kind.syntax == .asyncBlock)
+                try self.lowerAsyncBlock(f.kind.body)
+            else
+                try self.lowerLambdaValue(f.kind.params, f.kind.body),
             .loop => |lp| try self.lowerLoop(lp),
             else => try self.noteF("unsupported expr: {s}", .{@tagName(e)}),
         }
@@ -5666,6 +5669,18 @@ const Emitter = struct {
         /// Set for a trampoline standing for a top-level fn used as a value.
         fn_ref: ?[]const u8 = null,
     };
+
+    /// `async { … }` (decision 124): the Task is eager here — the block is
+    /// lifted like a lambda and its closure called in place, so a `return`
+    /// inside it leaves the block, not the enclosing function.
+    fn lowerAsyncBlock(self: *Emitter, body: []const ast.Stmt) anyerror!void {
+        const slot = try std.fmt.allocPrint(self.reg_arena.allocator(), "__async{d}", .{self.lambdas.items.len});
+        try self.declareLocal(slot, "i32");
+        try self.lowerLambdaValue(&.{}, body);
+        try self.emit(.{ .local_set = slot });
+        try self.emitC(.{ .local_get = slot }, "the block's environment");
+        try self.emitIndirect(slot, 0);
+    }
 
     fn lowerLambdaValue(self: *Emitter, params: []const []const u8, body: []const ast.Stmt) anyerror!void {
         const ra = self.reg_arena.allocator();

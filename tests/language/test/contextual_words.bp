@@ -5,7 +5,7 @@
 //// they stay identifiers: a method named `iter` (the "iterable" type of
 //// decision 122, which replaces `Iterable`), a `val` named `stream` or `iter`, a
 //// method call `http.stream(…)`, a record field named `stream`, and the std
-//// module `async` imported and called as `async.allOf(…)` — next to a real
+//// module `async` imported and called as `async.all(…)` — next to a real
 //// `async { }` block.
 
 import {async} from "std";
@@ -49,7 +49,7 @@ test "decision 125 stream and iter are field names" {
 }
 
 test "decision 124 async names the std module beside an async block" {
-    val all = async.allOf([async { return 1; }, async { return 2; }]);
+    val all = async.all([async { return 1; }, async { return 2; }]);
     val tasks = [all];
     assert tasks.length == 1;
 }

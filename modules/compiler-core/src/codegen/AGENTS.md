@@ -2516,6 +2516,12 @@ section at the loop's call site (`guardLoopCall`, one y-slot counted by
 wasm's `lowerTryPropagate` pushes the Error and ends when a generator scope is
 open.
 
+`async { … }` (decision 124) reaches every backend as a `.function` node with
+`syntax = .asyncBlock`: commonJS `(async function() { … })()` (`buildAsyncBlock`,
+its own expression-`try` guard); erlang `(fun() -> … end)()`; beam the lambda
+then `call_fun 0`; wasm the lifted lambda called in place through the table
+(`lowerAsyncBlock`). Its `return`s are the closure's, so they leave the block.
+
 `iter` / `stream` loops (decision 125) reach every backend as the prefixed
 `loop` node (`LoopExprOf.generator` = `.iterator` / `.stream`): the parser
 writes `iter for (xs) { … }` / `iter while (c) { … }` as

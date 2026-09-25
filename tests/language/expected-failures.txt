@@ -298,12 +298,6 @@ wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope)
 # ── "Old names that left" table (the maintainer's priority order) ────────────
 # `async { … }` (decision 124, E2/E3.6–E3.7/E5) is deferred: `async` is still an
 # identifier, so every cell that writes a block reads `async` as an unbound name.
-*        | run/async_block_all_of.bp | 24-effects-by-return (async block, deferred) | `async { … }` does not parse yet (decision 124); the cell also needs `std/async`'s Task-shaped `allOf` (24-c)
-*        | run/async_block_return.bp | 24-effects-by-return (async block, deferred) | `async { … }` does not parse yet (decision 124)
-*        | run/async_block_value_type.bp | 24-effects-by-return (async block, deferred) | `async { … }` does not parse yet (decision 124)
-*        | test/contextual_words.bp | 24-effects-by-return (async block, deferred) | its `async { }` row does not parse yet (decision 124); the `iter` / `stream` rows pass
-*        | reject/async_block_conflicting_errors.bp | 24-effects-by-return (async block, deferred) | `gen-infer-conflicting-errors` needs the `async { }` block's own inferred `@Result` (E3.6)
-*        | reject/async_block_use.bp | 24-effects-by-return (async block, deferred) | `async { … }` does not parse yet (decision 124)
 *        | reject/effect_return_ambiguous_nesting.bp | 24-effects-by-return (E3.3 refinement, deferred) | `-> @Result<@Result<i32, E>, E>` answers a plain type mismatch, not `effect-return-ambiguous-nesting` (the code is reserved in `comptime/diagnostics.zig`)
 # The host rows of decision 126 are deferred: a `@External.Node` declared
 # `-> @Task<@Result<T, E>>` is still called as a bare Promise, so a rejection is
@@ -329,4 +323,6 @@ wasm     | run/prefixed_loop_result_item.bp | 05-wasm (string payload printing) 
 wasm     | run/stream_pages.bp | 05-wasm (string payload printing) | the `Error` strings and the batch arrays print addresses; the paging stops at the failure as owed
 wasm     | run/task_await_result.bp | 05-wasm (string payload printing) | the `Ok` / `Error` strings print their addresses (`ok 356`)
 wasm     | run/task_return_layers.bp | 05-wasm (string payload printing) | `result error 256` — the `Error` string prints its address
+wasm     | run/async_block_return.bp | 05-wasm (string payload printing) | the block's `string` value prints its address (`292` for `positive`); the order of the lines is right
+wasm     | run/async_block_value_type.bp | 05-wasm (string payload printing) | the numbers and the `ok` rows are right; the `Error` strings print their addresses (`error 256`)
 wasm     | run/stream_loop_no_failure.bp | 24-effects-by-return (wasm stream loop in a record field) | only `done` prints: a `stream loop` stored in a record field and walked by `for await` yields nothing on the eager wasm lowering

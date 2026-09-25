@@ -57,7 +57,9 @@ parser/
 │                     `while [:label] (cond) { … }`, the condition at `prec.lowest` like an `if`'s; `parseLoopExpr` —
 │                     `loop [:label] { … }` (`condition` over the literal `true`). A binder on `while`/`loop` is
 │                     `loop-binds-nothing`; `loop (…)` is `removed-loop-parenthesised` at the keyword, naming `for`
-│                     and `while`. `parseGenLoopExpr` reads `iter` / `stream` before `loop` /
+│                     and `while`. `parseAsyncBlockAhead` reads `async { … }` (decision 124; `async` is contextual,
+│                     a keyword only before `{`) as a `.function` node with `syntax = .asyncBlock`, before the
+│                     call-chain path would read it as a call with a trailing lambda. `parseGenLoopExpr` reads `iter` / `stream` before `loop` /
 │                     `while` / `for` (decision 125; `genLoopPrefixAhead` — the two words are contextual, an
 │                     identifier anywhere else): `iter loop` is the prefixed `loop` node, `iter while` / `iter for`
 │                     the prefixed `loop { <written loop>; break; }` with `prefixedKeyword` recording the keyword;

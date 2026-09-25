@@ -476,6 +476,16 @@ pub const Env = struct {
     /// `effect-wrapper-behind-alias`, naming the wrapper to write. Null when
     /// the return is written literally or is no wrapper at all.
     aliasWrapper: ?[]const u8 = null,
+    /// Number of `async { }` blocks (decision 124) enclosing the position being
+    /// inferred, counted from the nearest lambda. A `use` inside one is refused:
+    /// the block is closed like a closure.
+    asyncBlockDepth: u32 = 0,
+    /// True while inferring a body whose fallible channel's `E` is INFERRED —
+    /// an unannotated `async { }` block or an `iter` / `stream` loop with
+    /// `throw` / `try` of its own (decisions 124, 125): its `throw` / `try`
+    /// errors join one `E`, and two that do not unify are
+    /// `gen-infer-conflicting-errors`.
+    inferredErrorScope: bool = false,
     /// Capability scope of the function body currently being inferred (null at top level).
     fnContext: ?FnContext = null,
     /// C1 — the type a `return <value>` in the body currently being inferred
