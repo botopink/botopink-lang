@@ -34,4 +34,10 @@ test {
     _ = @import("./runtime/runtime.zig");
     _ = @import("./runtime/prelude.zig");
     _ = @import("./runtime/etf.zig");
+    _ = @import("./runtime/persistent_wat.zig");
+    _ = @import("./runtime/parity.zig");
+    _ = @import("./runtime/reply_order.zig");
+    _ = @import("./runtime/wat/erl_parse.zig");
+    _ = @import("./runtime/wat/program.zig");
+    _ = @import("./runtime/wat/rt.zig");
 }

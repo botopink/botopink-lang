@@ -94,10 +94,10 @@ main({Arg0}) ->
 ----- COMPTIME REPLY -- decorator component
 ```json
 {
-  "kind": "ok",
   "contributions": [
     "pub fn wireService() -> string { return \"Service(port: prop(port), name: makestring())\"; }"
-  ]
+  ],
+  "kind": "ok"
 }
 ```
 

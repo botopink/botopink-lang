@@ -8,6 +8,13 @@ WAT backend, `externals.zig` for `#[@External.<Target>(…)]` FFI declarations,
 `comptime_module.zig` for `erlang.emitComptimeModule`). Aggregated by the
 sibling barrel `../tests.zig` for `test_root.zig`; shared harness
 (`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`.
+Every harness compile goes through `helpers.generate` — `codegen.generate`
+with **every comptime evaluation run on both runtimes** (front 18,
+`comptime/runtime/runtime.zig` `parity`): the fixture's runtime answers and the
+other one is asked the same question; a difference fails the fixture as
+`error.ComptimeRuntimeParity` with both answers printed. So each of the 33
+fixtures with a `COMPTIME REPLY` is also a parity check between the BEAM and
+the wat runtime.
 `assertJsRunLog(src, expected)` compiles `src` for commonJS, runs it and
 compares the entry's RUN LOG — for behaviour that lives in a sibling module
 (`std/<mod>.js`) a single-module snapshot does not show.

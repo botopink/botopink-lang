@@ -52,8 +52,8 @@ main({Arg0}) ->
 ----- COMPTIME REPLY -- template outer
 ```json
 {
-  "source": "inner(\"deep\")",
-  "kind": "code"
+  "kind": "code",
+  "source": "inner(\"deep\")"
 }
 ```
 

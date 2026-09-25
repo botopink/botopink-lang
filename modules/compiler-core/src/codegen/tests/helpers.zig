@@ -15,6 +15,37 @@ const GenerateResult = @import(".././moduleOutput.zig").GenerateResult;
 const comptimeMod = @import("../../comptime.zig");
 const validation = @import("../../comptime/error.zig");
 const ctSnapshot = @import("../../comptime/snapshot.zig");
+const hostRuntime = @import("../../comptime/runtime/runtime.zig");
+
+/// `codegen.generate` with every comptime evaluation run on **both** runtimes
+/// (front 18 step 3, `comptime/runtime/runtime.zig` `parity`): the fixture's
+/// own runtime answers — the target's, decision 84 — and the other one is
+/// asked the same question. A difference fails the fixture with both answers
+/// printed; the doubled snapshot tree of step 4 is the recorded form of the
+/// same invariant.
+pub fn generate(
+    allocator: Allocator,
+    modules: []const Module,
+    io: std.Io,
+    cfg: config.Config,
+) !std.ArrayListUnmanaged(ModuleOutput) {
+    var parity: hostRuntime.Parity = .{ .alloc = allocator };
+    defer parity.deinit();
+    const prev = hostRuntime.parity;
+    hostRuntime.parity = &parity;
+    defer hostRuntime.parity = prev;
+    var outputs = try codegen.generate(allocator, modules, io, cfg);
+    if (parity.mismatches.items.len > 0) {
+        var aw: std.Io.Writer.Allocating = .init(allocator);
+        defer aw.deinit();
+        parity.report(&aw.writer) catch {};
+        std.debug.print("\ncomptime runtimes disagree ({s}, {d} of {d} evaluations):{s}\n", .{ @tagName(cfg.targetSource), parity.mismatches.items.len, parity.evaluations, aw.written() });
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+        return error.ComptimeRuntimeParity;
+    }
+    return outputs;
+}
 
 pub const configs = [_]config.Config{
     .{
@@ -286,7 +317,7 @@ pub fn assertJsExpecting(
         // Whether THIS backend failed. `any_module_failed` is cumulative across
         // backends, and `refused_on_wasm` needs the per-backend answer.
         var backend_failed = false;
-        var outputs = try codegen.generate(
+        var outputs = try generate(
             allocator,
             modules,
             io,
@@ -403,7 +434,7 @@ pub fn assertJsError(allocator: Allocator, comptime loc: std.builtin.SourceLocat
     var first_err: ?anyerror = null;
 
     for (configs) |c| {
-        var outputs = try codegen.generate(
+        var outputs = try generate(
             allocator,
             &.{.{ .path = "", .source = src }},
             io,
@@ -500,7 +531,7 @@ pub fn assertJsSingle(allocator: Allocator, comptime loc: std.builtin.SourceLoca
 /// slice (caller frees). Used to assert two source forms lower identically.
 pub fn generateJs(allocator: Allocator, src: []const u8) ![]u8 {
     const io = std.testing.io;
-    var outputs = try codegen.generate(allocator, &.{.{ .path = "", .source = src }}, io, configs[0]);
+    var outputs = try generate(allocator, &.{.{ .path = "", .source = src }}, io, configs[0]);
     defer {
         for (outputs.items) |*o| o.result.deinit(allocator);
         outputs.deinit(allocator);
@@ -528,7 +559,7 @@ pub fn assertJsTestMode(allocator: Allocator, comptime loc: std.builtin.SourceLo
         cfg.build_root = build_root_path;
         cfg.test_mode = true;
 
-        var outputs = try codegen.generate(allocator, &modules, io, cfg);
+        var outputs = try generate(allocator, &modules, io, cfg);
         defer {
             for (outputs.items) |*o| o.result.deinit(allocator);
             outputs.deinit(allocator);
@@ -581,7 +612,7 @@ pub fn assertJsTestMode(allocator: Allocator, comptime loc: std.builtin.SourceLo
 
 pub fn assertJsContains(allocator: Allocator, src: []const u8, needles: []const []const u8) !void {
     const io = std.testing.io;
-    var outputs = try codegen.generate(
+    var outputs = try generate(
         allocator,
         &.{.{ .path = "", .source = src }},
         io,
@@ -619,7 +650,7 @@ pub fn assertErlangTestModeContains(
     var cfg = configs[1]; // erlang
     cfg.test_mode = true;
     cfg.build_root = ".botopinkbuild/codegen/erlang_test_mode_contains";
-    var outputs = try codegen.generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg);
+    var outputs = try generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg);
     defer {
         for (outputs.items) |*o| o.result.deinit(allocator);
         outputs.deinit(allocator);
@@ -649,7 +680,7 @@ pub fn assertErlangTestModeContains(
 /// a single-module snapshot does not show.
 pub fn assertJsRunLog(allocator: Allocator, src: []const u8, expected: []const u8) !void {
     const io = std.testing.io;
-    var outputs = try codegen.generate(
+    var outputs = try generate(
         allocator,
         &.{.{ .path = "", .source = src }},
         io,
@@ -681,7 +712,7 @@ pub fn assertJsRunLog(allocator: Allocator, src: []const u8, expected: []const u
 /// `assertJsRunLog` for the same reason.
 pub fn assertWasmRunLog(allocator: Allocator, src: []const u8, expected: []const u8) !void {
     const io = std.testing.io;
-    var outputs = try codegen.generate(
+    var outputs = try generate(
         allocator,
         &.{.{ .path = "", .source = src }},
         io,
@@ -720,7 +751,7 @@ pub fn assertErlangRunLog(
     needles: []const []const u8,
 ) !void {
     const io = std.testing.io;
-    var outputs = try codegen.generate(
+    var outputs = try generate(
         allocator,
         &.{.{ .path = "", .source = src }},
         io,
@@ -765,7 +796,7 @@ pub fn assertTestModeRunLog(allocator: Allocator, src: []const u8, expected: []c
         var cfg = c;
         cfg.test_mode = true;
         cfg.build_root = ".botopinkbuild/codegen/test_mode_run_log";
-        var outputs = try codegen.generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg);
+        var outputs = try generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg);
         defer {
             for (outputs.items) |*o| o.result.deinit(allocator);
             outputs.deinit(allocator);
@@ -809,7 +840,7 @@ fn stripDurationLines(allocator: Allocator, text: []const u8) ![]u8 {
 /// Asserts that none of `needles` appear in the generated commonJS output.
 pub fn assertJsNotContains(allocator: Allocator, src: []const u8, needles: []const []const u8) !void {
     const io = std.testing.io;
-    var outputs = try codegen.generate(
+    var outputs = try generate(
         allocator,
         &.{.{ .path = "", .source = src }},
         io,
@@ -843,7 +874,7 @@ pub fn assertDtsContains(
     absent: []const []const u8,
 ) !void {
     const io = std.testing.io;
-    var outputs = try codegen.generate(
+    var outputs = try generate(
         allocator,
         &.{.{ .path = "", .source = src }},
         io,
@@ -879,7 +910,7 @@ pub fn assertConsumerJs(
     absent: []const []const u8,
 ) !void {
     const io = std.testing.io;
-    var outputs = try codegen.generate(allocator, modules, io, configs[0]);
+    var outputs = try generate(allocator, modules, io, configs[0]);
     defer {
         for (outputs.items) |*o| o.result.deinit(allocator);
         outputs.deinit(allocator);

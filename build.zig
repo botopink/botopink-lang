@@ -7,6 +7,7 @@
 ///   zig build test-libs → compiles and tests every visible `.bp` library per target
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
+const wasm3 = @import("modules/wasm3/build.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -165,10 +166,40 @@ pub fn build(b: *std.Build) void {
         }
     }
 
+    // ── the wat comptime runtime: `rt.zig` → `bp_wat_rt.wasm`, embedded ──────
+    // Front 18 step 2. The term library a lowered comptime body links against
+    // (`comptime/runtime/wat/link.zig`) is compiled here for `wasm32-freestanding`
+    // at the MVP feature set wasm3 and every browser run, and reaches
+    // `wat/program.zig` as an `@embedFile` — in the native compiler and in the
+    // browser build alike. `__heap_base` is exported so the linker knows where
+    // the runtime's static memory (`.bss` included) ends.
+    const wat_rt = b.addExecutable(.{
+        .name = "bp_wat_rt",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/compiler-core/src/comptime/runtime/wat/rt.zig"),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .wasm32,
+                .os_tag = .freestanding,
+                .cpu_model = .{ .explicit = &std.Target.wasm.cpu.mvp },
+            }),
+            .optimize = .ReleaseSmall,
+        }),
+    });
+    wat_rt.entry = .disabled;
+    wat_rt.rdynamic = true;
+    wat_rt.root_module.export_symbol_names = &.{"__heap_base"};
+    for ([_]*std.Build.Module{ core_mod, core_test_mod }) |mod| {
+        mod.addAnonymousImport("bp_wat_rt.wasm", .{ .root_source_file = wat_rt.getEmittedBin() });
+    }
+    // wasm3 runs it in-process on every native build (`persistent_wat.zig`).
+    wasm3.exposeHeaders(b, core_mod);
+    wasm3.exposeHeaders(b, core_test_mod);
+
     const core_tests = b.addTest(.{
         .root_module = core_test_mod,
         .filters = test_filters,
     });
+    wasm3.link(b, core_tests);
 
     const run_core_tests = b.addRunArtifact(core_tests);
     // Ensure snapshots are written inside modules/compiler-core/,
@@ -253,6 +284,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const lsp_tests = b.addTest(.{ .root_module = lsp_test_mod, .filters = test_filters });
+    wasm3.link(b, lsp_tests);
 
     const run_lsp_tests = b.addRunArtifact(lsp_tests);
     run_lsp_tests.setCwd(b.path("modules/language-server"));
@@ -274,6 +306,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const cli_tests = b.addTest(.{ .root_module = cli_test_mod, .filters = test_filters });
+    wasm3.link(b, cli_tests);
 
     const run_cli_tests = b.addRunArtifact(cli_tests);
     run_cli_tests.setCwd(b.path("modules/compiler-cli"));
@@ -295,6 +328,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    wasm3.link(b, cli_exe);
     b.installArtifact(cli_exe);
 
     // ── language-server (botopink-lsp executable) ─────────────────────────────
@@ -312,6 +346,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    wasm3.link(b, lsp_exe);
     b.installArtifact(lsp_exe);
 
     // ── lib-test-runner (botopink-lib-test executable) ────────────────────────
@@ -501,6 +536,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "std_prelude", .module = stdPreludeModule(b, web_target, std_pkg_files, pkg_table_file) },
         },
     });
+    web_core_mod.addAnonymousImport("bp_wat_rt.wasm", .{ .root_source_file = wat_rt.getEmittedBin() });
     const web_exe = b.addExecutable(.{
         .name = "botopink",
         .root_module = b.createModule(.{

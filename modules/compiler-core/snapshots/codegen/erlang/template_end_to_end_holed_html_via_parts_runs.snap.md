@@ -91,8 +91,8 @@ main({Arg0}) ->
 ----- COMPTIME REPLY -- template html
 ```json
 {
-  "source": "\"\" + \"<p>\" + __bp_hole_q_0 + \"</p>\"",
-  "kind": "code"
+  "kind": "code",
+  "source": "\"\" + \"<p>\" + __bp_hole_q_0 + \"</p>\""
 }
 ```
 

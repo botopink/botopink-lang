@@ -72,10 +72,10 @@ main({Arg0}) ->
 ----- COMPTIME REPLY -- decorator describe
 ```json
 {
-  "kind": "ok",
   "contributions": [
     "pub fn describeUser() -> string { return \"NAME_SECRET_AGE:hidden:Use:four\"; }"
-  ]
+  ],
+  "kind": "ok"
 }
 ```
 

@@ -33,6 +33,7 @@ modules/
 ├── manifest/                ← the shared `botopink.json` model (packages, workspaces, dependencies)
 │   ├── src/                 ← root.zig — parser, workspace expansion, discovery, resolution
 │   └── tests/fixtures/      ← the manifests its unit tests read
+├── wasm3/                   ← vendored wasm3 (C, v0.5.0): the wat comptime runtime's engine, in-process
 ├── test-scratch/            ← `test_scratch` — the one way a TEST spells a path it writes to
 │   └── src/root.zig         ← per-process scratch root; given to the test modules only
 └── bpmp/                    ← `bpmp` — Boto Pink Package Manager + toolchain manager
@@ -51,6 +52,7 @@ modules/
 | `lib-test-runner/` | `botopink-lib-test` executable | `manifest` only (shells out to `botopink`) | [link](lib-test-runner/AGENTS.md) |
 | `manifest/` | library (the `botopink.json` model) | `std` only | [link](manifest/AGENTS.md) |
 | `test-scratch/` | library (`test_scratch` — per-process scratch paths for tests) | `std` only | [link](test-scratch/AGENTS.md) |
+| `wasm3/` | C sources linked into every native artifact that imports `compiler-core` (`link`), headers for its `@cImport` (`exposeHeaders`) | libc | [link](wasm3/AGENTS.md) |
 | `bpmp/` | `bpmp` executable | `manifest` only (spawns `botopink`) | [link](bpmp/AGENTS.md) |
 | `../../vscode-extension/` | VS Code `.vsix` extension (sibling project) | `language-server` (runtime) | [link](../../vscode-extension/AGENTS.md) |
 

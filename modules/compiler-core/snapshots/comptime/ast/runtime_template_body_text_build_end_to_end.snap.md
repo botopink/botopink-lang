@@ -47,8 +47,8 @@ main({Arg0}) ->
 ----- COMPTIME REPLY -- template shout
 ```json
 {
-  "source": "\"hey!\"",
-  "kind": "code"
+  "kind": "code",
+  "source": "\"hey!\""
 }
 ```
 

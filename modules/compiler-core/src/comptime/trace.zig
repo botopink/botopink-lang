@@ -7,6 +7,7 @@
 /// the runtime sent back to the compiler. `render` writes them as
 /// `COMPTIME ERLANG` / `COMPTIME REPLY` snapshot sections.
 const std = @import("std");
+const replyOrder = @import("runtime/reply_order.zig");
 
 pub const Kind = enum { template, decorator };
 
@@ -53,10 +54,13 @@ fn appendBlock(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), t
     try buf.appendSlice(allocator, "\n```\n\n");
 }
 
-/// The reply re-indented, or null when it is not JSON (an error text).
+/// The reply re-indented with its objects' keys sorted (`runtime/reply_order.zig`:
+/// the order the runtime happened to emit them in is not part of the answer),
+/// or null when it is not JSON (an error text).
 fn prettyJson(allocator: std.mem.Allocator, text: []const u8) !?[]u8 {
-    const parsed = std.json.parseFromSlice(std.json.Value, allocator, text, .{}) catch return null;
+    var parsed = std.json.parseFromSlice(std.json.Value, allocator, text, .{}) catch return null;
     defer parsed.deinit();
+    replyOrder.sortObjects(&parsed.value);
     return try std.json.Stringify.valueAlloc(allocator, parsed.value, .{ .whitespace = .indent_2 });
 }
 

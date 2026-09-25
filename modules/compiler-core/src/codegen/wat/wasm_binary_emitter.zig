@@ -234,9 +234,12 @@ pub fn encodeModule(alloc: std.mem.Allocator, m: ast.Module) Error![]u8 {
 
 // ── indexing ─────────────────────────────────────────────────────────────────
 
-const Bytes = std.ArrayListUnmanaged(u8);
+pub const Bytes = std.ArrayListUnmanaged(u8);
 
-const Encoder = struct {
+/// The index spaces of one module being encoded. `link.zig` (the wat comptime
+/// runtime) pre-seeds `types`, `funcs` and `globals` with a prebuilt module's,
+/// so the functions it adds are encoded against the merged numbering.
+pub const Encoder = struct {
     ar: std.mem.Allocator,
     m: ast.Module,
     types: std.ArrayListUnmanaged(ast.FuncType) = .empty,
@@ -268,7 +271,7 @@ const Encoder = struct {
         };
     }
 
-    fn typeIndex(e: *Encoder, t: ast.FuncType) Error!usize {
+    pub fn typeIndex(e: *Encoder, t: ast.FuncType) Error!usize {
         for (e.types.items, 0..) |have, i| {
             if (sameType(have, t)) return i;
         }
@@ -276,7 +279,7 @@ const Encoder = struct {
         return e.types.items.len - 1;
     }
 
-    fn funcIndex(e: *Encoder, sym: []const u8) Error!usize {
+    pub fn funcIndex(e: *Encoder, sym: []const u8) Error!usize {
         for (e.funcs.items, 0..) |n, i| if (std.mem.eql(u8, n, sym)) return i;
         return error.UnknownName;
     }
@@ -286,7 +289,7 @@ const Encoder = struct {
         return error.UnknownName;
     }
 
-    fn funcBody(e: *Encoder, f: ast.Func) Error![]const u8 {
+    pub fn funcBody(e: *Encoder, f: ast.Func) Error![]const u8 {
         var locals: std.ArrayListUnmanaged([]const u8) = .empty;
         for (f.params) |p| try locals.append(e.ar, p.name);
         var decl: std.ArrayListUnmanaged(ast.ValType) = .empty;
@@ -472,7 +475,7 @@ const Body = struct {
 
 // ── encoding primitives ──────────────────────────────────────────────────────
 
-fn section(alloc: std.mem.Allocator, out: *Bytes, id: u8, body: []const u8) Error!void {
+pub fn section(alloc: std.mem.Allocator, out: *Bytes, id: u8, body: []const u8) Error!void {
     try out.append(alloc, id);
     var len: [5]u8 = undefined;
     const n = ulebInto(&len, body.len);
@@ -495,7 +498,7 @@ fn ulebInto(buf: *[5]u8, value: usize) usize {
     }
 }
 
-fn uleb(ar: std.mem.Allocator, out: *Bytes, value: usize) Error!void {
+pub fn uleb(ar: std.mem.Allocator, out: *Bytes, value: usize) Error!void {
     var v = value;
     while (true) {
         const byte: u8 = @truncate(v & 0x7f);
@@ -505,7 +508,7 @@ fn uleb(ar: std.mem.Allocator, out: *Bytes, value: usize) Error!void {
     }
 }
 
-fn sleb(ar: std.mem.Allocator, out: *Bytes, value: i64) Error!void {
+pub fn sleb(ar: std.mem.Allocator, out: *Bytes, value: i64) Error!void {
     var v = value;
     while (true) {
         const byte: u8 = @truncate(@as(u64, @bitCast(v)) & 0x7f);
@@ -516,12 +519,12 @@ fn sleb(ar: std.mem.Allocator, out: *Bytes, value: i64) Error!void {
     }
 }
 
-fn name(ar: std.mem.Allocator, out: *Bytes, s: []const u8) Error!void {
+pub fn name(ar: std.mem.Allocator, out: *Bytes, s: []const u8) Error!void {
     try uleb(ar, out, s.len);
     try out.appendSlice(ar, s);
 }
 
-fn valType(t: ast.ValType) u8 {
+pub fn valType(t: ast.ValType) u8 {
     return switch (t) {
         .i32 => 0x7F,
         .i64 => 0x7E,
@@ -547,7 +550,7 @@ fn sameType(a: ast.FuncType, b: ast.FuncType) bool {
     return std.mem.eql(ast.ValType, a.params, b.params);
 }
 
-fn funcType(ar: std.mem.Allocator, f: ast.Func) Error!ast.FuncType {
+pub fn funcType(ar: std.mem.Allocator, f: ast.Func) Error!ast.FuncType {
     const params = try ar.alloc(ast.ValType, f.params.len);
     for (f.params, 0..) |p, i| params[i] = p.ty;
     return .{ .params = params, .result = f.result };
@@ -555,7 +558,7 @@ fn funcType(ar: std.mem.Allocator, f: ast.Func) Error!ast.FuncType {
 
 /// `<ty>.const <text>` — the numeral as the text format spells it: decimal or
 /// `0x` hex, an optional sign, `_` separators; a float may be `inf`/`nan`.
-fn constInstr(ar: std.mem.Allocator, out: *Bytes, ty: ast.ValType, text: []const u8) Error!void {
+pub fn constInstr(ar: std.mem.Allocator, out: *Bytes, ty: ast.ValType, text: []const u8) Error!void {
     var buf: [128]u8 = undefined;
     var n: usize = 0;
     for (text) |ch| {

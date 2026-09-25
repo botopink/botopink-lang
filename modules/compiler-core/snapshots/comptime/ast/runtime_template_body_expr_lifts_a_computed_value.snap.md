@@ -47,8 +47,8 @@ main({Arg0}) ->
 ----- COMPTIME REPLY -- template six
 ```json
 {
-  "value": 6,
-  "kind": "value"
+  "kind": "value",
+  "value": 6
 }
 ```
 

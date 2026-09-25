@@ -94,8 +94,8 @@ main({Arg0}) ->
 ----- COMPTIME REPLY -- template shout
 ```json
 {
-  "source": "\"END,WORLD,BIG,HELLO|hello|big world|at|contains|startsWith|indexOf\"",
-  "kind": "code"
+  "kind": "code",
+  "source": "\"END,WORLD,BIG,HELLO|hello|big world|at|contains|startsWith|indexOf\""
 }
 ```
 

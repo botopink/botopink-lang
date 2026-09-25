@@ -65,8 +65,8 @@ main({Arg0}) ->
 ----- COMPTIME REPLY -- template refer
 ```json
 {
-  "source": "greeting",
-  "kind": "code"
+  "kind": "code",
+  "source": "greeting"
 }
 ```
 

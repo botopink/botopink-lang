@@ -62,8 +62,8 @@ main({Arg0}) ->
 ----- COMPTIME REPLY -- template need
 ```json
 {
-  "source": "\"ok\"",
-  "kind": "code"
+  "kind": "code",
+  "source": "\"ok\""
 }
 ```
 

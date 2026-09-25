@@ -58,13 +58,13 @@ main({Arg0}) ->
 ----- COMPTIME REPLY -- template conf
 ```json
 {
+  "kind": "value",
   "value": {
     "$tuple": [
       8004,
       true
     ]
-  },
-  "kind": "value"
+  }
 }
 ```
 

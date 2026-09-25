@@ -29,7 +29,8 @@ botopink-lang/                 ← language core (this project)
 │   ├── language-server/       ← `botopink-lsp` LSP server
 │   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
-│   └── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
+│   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
+│   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
 ├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
 │   └── std/                   ← standard library
 ├── examples/                  ← non-framework .bp example programs
