@@ -8399,21 +8399,9 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                         try env.bind(nm, elemTy);
                     }
                 },
-                .list => |pat| {
-                    // Bind pattern variable names to fresh type vars.
-                    switch (pat) {
-                        .ident => |name| try env.bind(name, try env.freshVar()),
-                        .variant => |v| if (v.payload == .fields) for (v.payload.fields) |binding| try env.bind(binding, try env.freshVar()),
-                        else => {},
-                    }
-                },
-                .ctor => |pat| {
-                    switch (pat) {
-                        .ident => |name| try env.bind(name, try env.freshVar()),
-                        .variant => |v| if (v.payload == .fields) for (v.payload.fields) |binding| try env.bind(binding, try env.freshVar()),
-                        else => {},
-                    }
-                },
+                // 01 R5 — `val Circle(r) = s;` / `val [..rest] = xs;` bind
+                // through the walk a `case` arm uses, typed by the subject.
+                .list, .ctor => |pat| try bindDestructPattern(env, pat, valTyped.getType(), lb.mutable, loc),
             }
             return TypedExpr{ .binding = .{ .loc = loc, .type_ = valTyped.getType(), .kind = .{ .localBindDestruct = .{
                 .pattern = lb.pattern,
@@ -8422,6 +8410,74 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             } } } };
         },
     };
+}
+
+/// 01 R5 — a pattern in binding position: `val Circle(r) = s;`,
+/// `val Person(name, age) = p;`, `val [..rest] = xs;`.
+///
+/// The bare form has no failure path of its own, so it is legal only where the
+/// pattern matches **every** value of the subject's type: a one-variant `type`,
+/// a record's own constructor, a list pattern that is only a spread. Anything
+/// that can fail to match is refused at the binding (`refutable-val-pattern`),
+/// naming the two forms that say what a mismatch does — `val assert <Pattern>
+/// = e;` (fatal) and `case`. Nothing is left for a backend to decide: every
+/// program that checks destructures without a test.
+///
+/// The names land in the enclosing scope — the snapshots the walk collects
+/// are dropped, as `val assert` does — and a `val` binds them as `val`s.
+fn bindDestructPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, mutable: bool, loc: ast.Loc) InferError!void {
+    var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    defer snapshots.deinit(env.arena);
+    const st = subjectType.deref();
+    const covers: bool = switch (pattern) {
+        .list => |lst| lst.elems.len == 0 and lst.spread != null and
+            st.* == .named and std.mem.eql(u8, st.named.name, "array"),
+        .variant => |v| blk: {
+            if (v.shape != .variant or st.* != .named) break :blk false;
+            const bare = bareVariantName(v.name);
+            const td = env.lookupTypeDef(st.named.name) orelse break :blk false;
+            switch (td) {
+                .enum_ => |en| {
+                    if (en.variants.len != 1 or !std.mem.eql(u8, en.variants[0].name, bare)) break :blk false;
+                    if (!try variantPayloadIrrefutable(env, subjectType, v.name, v.payload)) break :blk false;
+                    try bindPatternNamesForSubject(env, pattern, subjectType, &snapshots);
+                    break :blk true;
+                },
+                .record => |rec| {
+                    if (!std.mem.eql(u8, rec.name, bare) or v.payload != .literals) break :blk false;
+                    const args = v.payload.literals;
+                    if (args.len > rec.fields.len or (args.len < rec.fields.len and !v.rest)) break :blk false;
+                    for (args, 0..) |a, i| {
+                        // A generic record's field types are its declaration's
+                        // cells; the subject's instantiation is not read here.
+                        const fieldTy = if (rec.genericParams.len == 0) rec.fields[i].type_ else try env.freshVar();
+                        if (!try patternIsIrrefutable(env, a, fieldTy)) break :blk false;
+                        try bindPatternNamesForSubject(env, a, fieldTy, &snapshots);
+                    }
+                    break :blk true;
+                },
+                .struct_ => break :blk false,
+            }
+        },
+        else => false,
+    };
+    if (!covers) {
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `val <Pattern> = e;` needs a pattern that matches every value of `{s}`, and this one can fail",
+            .{ diagnostics.refutable_val_pattern, try snapshotMod.typeNameOf(env.arena, subjectType) },
+        );
+        env.lastError = TypeError.custom(
+            msg,
+            "write `val assert <Pattern> = e;` (a mismatch is a fatal assert) or a `case` that says what a mismatch does",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    if (!mutable) {
+        for (snapshots.items) |sn| {
+            if (env.lookup(sn.name)) |ty| try env.bindVal(sn.name, ty);
+        }
+    }
 }
 
 fn containsStr(haystack: []const []const u8, needle: []const u8) bool {

@@ -644,6 +644,22 @@ The parser carries the dotted spelling in `TypeRef.named` (`parser/types.zig`). 
 spelling (`TokenText`) reds with a hint naming the path (`Env.sectionPathForFlatName`). A section
 declares no methods — `EnumSection` has no slot for them and nothing needs one yet.
 
+## `val <Pattern> = <expr>;` — a pattern in binding position (01 R5)
+
+`val Circle(r) = s;`, `val Person(name, age) = p;` and `val [..rest] = xs;` bind through
+`bindDestructPattern`, which runs the `case` arm walk (`bindPatternNamesForSubject`) typed by the
+subject and leaves the names in the enclosing scope — as `val`s unless the binding is `var`.
+
+**The failure behaviour is decided: a pattern that can fail does not check.** The bare form has no
+failure path of its own, so it is accepted only where the pattern matches every value of the
+subject's type: the one variant of a one-variant `type`, a record's own constructor (all binders, or
+fewer with `..`), a list pattern that is only a spread. Anything else — a variant of a many-variant
+`type`, a list pattern with elements, a subject whose type is not known yet — is
+`refutable-val-pattern` at the binding, whose hint names `val assert <Pattern> = e;` (a fatal
+mismatch) and `case`. No bypass (decision 67), and nothing is left for a backend to decide: every
+program that checks destructures without a test. The cells are `infer_errors.zig`'s
+`val destructure: …` tests.
+
 ## `val assert <pattern> = <expr> [catch <handler>]` (06 C12, decision 8 § 9)
 
 The subject and the handler are inferred like any other expression. Both used to swallow

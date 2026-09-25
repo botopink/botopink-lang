@@ -1126,3 +1126,86 @@ test "infer error: `keyed = true` on a list has no key (decision 51)" {
 test "infer: `@BeamMemory` accepts its three members, the default said out loud included" {
     try h.assertInfersOk(std.testing.allocator, "#[@BeamMemory.ProcessDict]\nvar a: i32 = 0;\n#[@BeamMemory.Ets]\nvar b: i32 = 0;\n#[@BeamMemory.PersistentTerm]\nvar c: i32 = 0;\n#[@BeamMemory.Ets(keyed = false)]\nvar d: i32 = 0;");
 }
+
+// ── 01 R5: a pattern in binding position ──────────────────────────────────────
+
+test "val destructure: a one-variant type binds its payload typed" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Round = type { Circle(radius: i32) };
+        \\fn main() {
+        \\    val s = Round.Circle(radius: 2);
+        \\    val Circle(r) = s;
+        \\    val n: i32 = r;
+        \\    @print(n);
+        \\}
+    );
+}
+
+test "val destructure: a record's constructor binds its fields typed" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Person = type(name: string, age: i32);
+        \\fn main() {
+        \\    val p = Person(name: "a", age: 3);
+        \\    val Person(name, age) = p;
+        \\    val s: string = name;
+        \\    val n: i32 = age;
+        \\    @print(s);
+        \\    @print(n);
+        \\}
+    );
+}
+
+test "val destructure: the bound name carries the payload's type" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Round = type { Circle(radius: i32) };
+        \\fn main() {
+        \\    val s = Round.Circle(radius: 2);
+        \\    val Circle(r) = s;
+        \\    val t: string = r;
+        \\    @print(t);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "string") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "i32") != null);
+}
+
+test "val destructure: a val-bound name cannot be assigned" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Round = type { Circle(radius: i32) };
+        \\fn main() {
+        \\    val Circle(r) = Round.Circle(radius: 2);
+        \\    r = 3;
+        \\    @print(r);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`r` is a `val`") != null);
+}
+
+test "val destructure: a pattern that can fail is refused, naming val assert" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Shape = type { Circle(radius: i32), Square(side: i32) };
+        \\fn main() {
+        \\    val s = Shape.Circle(radius: 2);
+        \\    val Circle(r) = s;
+        \\    @print(r);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "refutable-val-pattern") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`Shape`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "val assert") != null);
+}
+
+test "val destructure: a list pattern with elements is refused" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn main() {
+        \\    val xs = [1, 2];
+        \\    val [a, b] = xs;
+        \\    @print(a + b);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "refutable-val-pattern") != null);
+}
