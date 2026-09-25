@@ -204,11 +204,11 @@ test "codegen ---- use object destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element> { }
         \\#[@use]
-        \\fn state(initial: i32) -> @Use<Element, i32> {
+        \\fn state(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}
         \\#[@use]
-        \\fn Counter() -> @Component<Element> {
+        \\fn Counter() -> @Component<Element, Element> {
         \\    val {count, setCount} = use state(0);
         \\    Element();
         \\}
@@ -222,12 +222,12 @@ test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element> { }
         \\#[@use]
-        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Use<Element, #(i32, fn(action: i32) -> i32)> {
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
         \\    val push = { action -> f(base, action) };
         \\    #(base, push);
         \\}
         \\#[@use]
-        \\fn LikeWidget() -> @Component<Element> {
+        \\fn LikeWidget() -> @Component<Element, Element> {
         \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
         \\    push(shown);
         \\    Element();
@@ -239,15 +239,15 @@ test "codegen ---- use memo is a plain call with no inferred deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element> { }
         \\#[@use]
-        \\fn state(initial: i32) -> @Use<Element, i32> {
+        \\fn state(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}
         \\#[@use]
-        \\fn memo() -> @Use<Element, i32> {
+        \\fn memo() -> @Component<Element, i32> {
         \\    0;
         \\}
         \\#[@use]
-        \\fn Counter() -> @Component<Element> {
+        \\fn Counter() -> @Component<Element, Element> {
         \\    val {count, setCount} = use state(0);
         \\    val doubled = use memo { -> return count * 2; };
         \\    Element();
@@ -262,11 +262,11 @@ test "codegen ---- use effect void hook is a plain call" {
         \\    0;
         \\}
         \\#[@use]
-        \\fn effect() -> @Use<Element, i32> {
+        \\fn effect() -> @Component<Element, i32> {
         \\    0;
         \\}
         \\#[@use]
-        \\fn Widget() -> @Component<Element> {
+        \\fn Widget() -> @Component<Element, Element> {
         \\    use effect { -> cleanup(); };
         \\    Element();
         \\}

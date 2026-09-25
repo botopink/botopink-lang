@@ -410,15 +410,15 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   `infer.registerImportedDecorator`, so `#[name(args)]` in an importing module
   both arg-checks and runs the body (mirror of the template registry path).
 
-## `use` capability inference (decisions 88, 96, 102, 104)
+## `use` capability inference (decisions 88, 96, 102, 104, 128)
 
 `use` is a **prefix operator** (`use <hookcall>`); bindings come from the
 enclosing `val`/`var` (`val {v, s} = use state(0)`, `use effect(…)` for void).
 AST node: `Expr.useHook { inner }`. `@Context<Base>` is the owner MARKER a type
 implements (`type Element(…) implement @Context<ElementBase>`); the `use`
-wrappers are `@Use<C, T>` (a hook) and `@Component<T>` (a component, `T` an
-owner, ≡ `@Use<B, T>`), both answered by `#[@use]` (`EffectKind.use`, whose
-`returnWrappers()` is the set `{Component, Use}`).
+wrapper is one, `@Component<C, T>` (decision 128), answered by `#[@use]`
+(`EffectKind.use`, `returnWrapper()` = `Component`): a hook returns any `T`, a
+component returns an owner at its own base (`T: @Context<C>`, `isComponentType`).
 
 - Only a `#[@use]` body activates: `FnContext.annotated` and `env.inContextFn`
   are one flag, set by `#[@use]` and by nothing else (decision 104 — decisions
@@ -428,20 +428,21 @@ owner, ≡ `@Use<B, T>`), both answered by `#[@use]` (`EffectKind.use`, whose
   first, so a `#[@future]` body and a plain `-> string` body get the same
   refusal. A `use` inside a nested closure is the same code: a lambda clears
   `env.starFn`, and `use`, like `await`, is not inherited.
-- R1/R2 (`effectMatchesReturn`) accept `@Use<…>` or `@Component<T>` with `T` an
-  owner (`ownerBaseOfType`); the bare owner (`-> Element`) is
-  `effect-missing-wrapper`, anything else — `@Component<i32>` included —
-  `effect-wrapper-mismatch`. `classifyWrapperReturn` makes `@Use`/`@Component`
+- R1/R2 (`effectMatchesReturn`) accept `@Component<C, T>`, refusing a `T` that
+  owns a context at a base other than `C` (`effect-wrapper-mismatch`); the bare
+  owner (`-> Element`) is `effect-missing-wrapper`, any other return
+  `effect-wrapper-mismatch`; `@Component<T>` with one argument is an arity error
+  (`builtinRequiredGenericArgs`). `classifyWrapperReturn` makes `@Component`
   without the annotation the "needs an effect annotation" refusal.
-- The base is READ, never unwrapped (`contextInfoFromReturn`): `C` of
-  `@Use<C, _>`, or `B` of `T: @Context<B>` for `@Component<T>`.
-- The operand is a hook: `validateUseBase` reads `hookBaseOfType` (`C` of
-  `@Use<C, _>`); a `@Component<…>` operand is refused (a component is called),
+- The base is READ, never unwrapped (`contextInfoFromReturn`): the `C` of
+  `@Component<C, _>`, for a hook and a component alike.
+- The operand is a hook: `validateUseBase` reads `hookBaseOfType` (`C` of a
+  hook's `@Component<C, _>`); a component operand is refused (a component is called),
   anything else is `useNotContext`. Every `use` in the body shares the base
   (decision 96: `contextMismatch` against the declared base at the first `use`,
   `contextBaseMixed` at a later one). The prefix is typed as `T`
   (`bindingSourceType`).
-- `await` accepts `@Use<C, T>` / `@Component<T>` too (`unwrapFutureType` → `T`):
+- `await` accepts `@Component<C, T>` too (`unwrapFutureType` → `T`):
   every caller awaits a component (decision 104).
 
 `contextBaseFromImplements` computes `TypeDef.contextBase` from the marker.
@@ -467,14 +468,14 @@ the value:
   slot; before C5 `T` sat in `returnType`, so the call was typed `T` and the narrowing at the `if`
   was unreachable);
 - an effect body → the wrapper's inner channel: `#[@result]` → `R` of `@Result<R, E>`,
-  `#[@future]` → `T`; `#[@use]` → the `T` of `@Use<C, T>` / `@Component<T>`;
+  `#[@future]` → `T`; `#[@use]` → the `T` of `@Component<C, T>`;
 - a lambda → its expected return type, else a fresh var shared by its `return`s; a trailing
   lambda (`@block { … }`, `use memo { -> … }`) owns its `return`s too, and `@block` is typed as the
   value they carry;
 - no declared return type, a template fn (`-> @Expr<…>`), a generator effect (any of the three:
   `return <expr>` is RI1 there, decision 103) → unchecked.
 
-A value that already is the declared wrapper (`return state(start)` in a `-> @Use<B, X>` hook,
+A value that already is the declared wrapper (`return state(start)` in a `-> @Component<B, X>` hook,
 a `@Result` / `@Future` passthrough, `try` / `catch` forms) unifies with the whole declared type or
 is left alone. A named type returned where the fn declares a behavior it implements is accepted.
 Body annotations resolve the fn's generic params (`env.fnGenericMap`). A bare `return;` unifies

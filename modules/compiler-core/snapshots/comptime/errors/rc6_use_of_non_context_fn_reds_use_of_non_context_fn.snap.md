@@ -2,7 +2,7 @@
 type User(id: i32)
 fn plain() -> User { return User(id: 1); }
 #[@use]
-fn lookup() -> @Use<User, User> {
+fn lookup() -> @Component<User, User> {
     val u = use plain();
     return u;
 }
@@ -14,4 +14,4 @@ error: use-of-non-context-fn: `use` takes a hook
 5 │     val u = use plain();
   │             ^
 
-  `User` is not a hook — `use` requires @Use<_, _>
+  `User` is not a hook — `use` requires a hook @Component<_, _>

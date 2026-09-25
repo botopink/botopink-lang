@@ -129,7 +129,7 @@ pub const future_manual_construction_forbidden: []const u8 = "future-manual-cons
 /// R18 (E2) — alias of RC2 (`use <hook>()` violates anchor).
 /// R19 (E1) — alias of RC1 (`@getContext(T)` with no active provider).
 /// R20      — alias of RC3 (`@getContext(T)` outside the anchor).
-/// R21      — alias of RC6 (`use` of a non-hook (a callee that is not `@Use<C, _>`)).
+/// R21      — alias of RC6 (`use` of a non-hook (a callee that is not a hook `@Component<C, _>`)).
 //
 // The §1C addendum keeps the RC* names as the canonical surface; the R-table
 // numbers point to them via alias here for the catalogue.
@@ -196,7 +196,7 @@ pub const context_getcontext_expects_type: []const u8 = "context-getcontext-expe
 /// RC5 — `@getContext(…)` outside a `#[@use]` fn body.
 pub const context_getcontext_outside_context_fn: []const u8 = "context-getcontext-outside-context-fn";
 
-/// RC6 — `use <hook>()` where `<hook>` is not a `@Use<C, _>` hook.
+/// RC6 — `use <hook>()` where `<hook>` is not a hook `@Component<C, _>` hook.
 pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
 
 /// RC7 (decisions 88, 104) — `use` in a body whose fn is not `#[@use]`, or in a

@@ -11,4 +11,4 @@ error: effect-await-without-future: `await` needs an effect that implements `@Fu
 2 │     val x = await ready();
   │             ^
 
-  hint: Mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@use]` (`-> @Use<…>` / `-> @Component<…>`).
+  hint: Mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@use]` (`-> @Component<…>`).

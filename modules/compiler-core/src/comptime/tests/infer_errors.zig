@@ -715,7 +715,7 @@ test "infer error: RC4 ---- @getContext(<value>) reds context-getcontext-expects
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
         \\#[@use]
-        \\fn lookup() -> @Use<User, User> {
+        \\fn lookup() -> @Component<User, User> {
         \\    return @getContext(42);
         \\}
     );
@@ -726,7 +726,7 @@ test "infer error: RC6 ---- use of non-context fn reds use-of-non-context-fn" {
         \\type User(id: i32)
         \\fn plain() -> User { return User(id: 1); }
         \\#[@use]
-        \\fn lookup() -> @Use<User, User> {
+        \\fn lookup() -> @Component<User, User> {
         \\    val u = use plain();
         \\    return u;
         \\}
@@ -742,7 +742,7 @@ test "infer error: RC3 ---- @getContext(T) outside enclosing Anchor tree reds co
         \\type RootB(name: string)
         \\type LeafB(v: i32) implement @Context<RootB>
         \\#[@use]
-        \\fn pickA() -> @Use<RootA, RootA> {
+        \\fn pickA() -> @Component<RootA, RootA> {
         \\    return @getContext(LeafB);
         \\}
     );
@@ -872,14 +872,14 @@ test "infer error: return ---- an @block value flows to the fn's return" {
     );
 }
 
-test "infer: return ---- a hook body returns the X of @Use<B, X>, or another hook" {
+test "infer: return ---- a hook body returns the X of @Component<B, X>, or another hook" {
     try h.assertInfersOk(std.testing.allocator,
         \\type El(tag: string)
         \\type Cell<T>(value: T)
         \\#[@use]
-        \\fn state<T>(initial: T) -> @Use<El, Cell<T>> { return Cell(value: initial); }
+        \\fn state<T>(initial: T) -> @Component<El, Cell<T>> { return Cell(value: initial); }
         \\#[@use]
-        \\fn counter(start: i32) -> @Use<El, Cell<i32>> { return state(start); }
+        \\fn counter(start: i32) -> @Component<El, Cell<i32>> { return state(start); }
     );
 }
 

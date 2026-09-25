@@ -389,15 +389,11 @@ const Builder = struct {
             for (g.args, 0..) |a, i| members[i] = try self.typeRef(a);
             return .{ .union_ = members };
         }
-        // `#[@use]` lowers to an `async function` (decision 104), so both of
-        // its wrappers are a `Promise` of the value: `@Use<C, T>` →
-        // `Promise<T>` (the base `C` is a phantom), `@Component<T>` →
-        // `Promise<T>`.
-        if (std.mem.eql(u8, g.name, "Use") and g.args.len == 2) {
+        // `#[@use]` lowers to an `async function` (decision 104), so its
+        // wrapper is a `Promise` of the value: `@Component<C, T>` →
+        // `Promise<T>` (the base `C` is a phantom, decision 128).
+        if (std.mem.eql(u8, g.name, "Component") and g.args.len == 2) {
             return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{try self.typeRef(g.args[1])}) } };
-        }
-        if (std.mem.eql(u8, g.name, "Component") and g.args.len == 1) {
-            return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{try self.typeRef(g.args[0])}) } };
         }
         if (std.mem.eql(u8, g.name, "Result") and g.args.len == 2) {
             return .{ .union_ = try self.b.types(&.{

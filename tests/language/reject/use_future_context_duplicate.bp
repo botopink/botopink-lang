@@ -1,6 +1,6 @@
 //// R5 stands (decision 104 does not amend it): one effect annotation per fn,
 //// so `#[@future] #[@use]` is refused. The chain is what makes one enough — the
-//// server component that awaits and uses is `#[@use] fn … -> @Component<Element>`
+//// server component that awaits and uses is `#[@use] fn … -> @Component<Element, Element>`
 //// (`test/use_future_context.bp`).
 ////
 //// The `.expect` claims the message only: R5's caret points at the body's `{`
@@ -9,7 +9,7 @@
 
 type Element(count: i32) implement @Context<Element>
 #[@use]
-fn state(initial: i32) -> @Use<Element, i32> { return initial; }
+fn state(initial: i32) -> @Component<Element, i32> { return initial; }
 
 #[@future]
 #[@use]

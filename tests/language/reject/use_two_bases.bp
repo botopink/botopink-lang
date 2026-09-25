@@ -12,12 +12,12 @@ type Element(count: i32) implement @Context<Element>
 type Http(port: i32) implement @Context<Http>
 
 #[@use]
-fn state(initial: i32) -> @Use<Element, i32> { return initial; }
+fn state(initial: i32) -> @Component<Element, i32> { return initial; }
 #[@use]
-fn connection() -> @Use<Http, i32> { return 8080; }
+fn connection() -> @Component<Http, i32> { return 8080; }
 
 #[@use]
-fn Mixed() -> @Component<Element> {
+fn Mixed() -> @Component<Element, Element> {
     val a = use state(1);
     val b = use connection();
     return Element(count: a + b);

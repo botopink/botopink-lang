@@ -2,15 +2,15 @@
 ```botopink
 val Element = type implement @Context<Element> { }
 #[@use]
-fn state(initial: i32) -> @Use<Element, i32> {
+fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
 #[@use]
-fn memo() -> @Use<Element, i32> {
+fn memo() -> @Component<Element, i32> {
     0;
 }
 #[@use]
-fn Counter() -> @Component<Element> {
+fn Counter() -> @Component<Element, Element> {
     val {count, setCount} = use state(0);
     val doubled = use memo { -> return count * 2; };
     Element();

@@ -5,11 +5,11 @@ fn cleanup() {
     0;
 }
 #[@use]
-fn effect() -> @Use<Element, i32> {
+fn effect() -> @Component<Element, i32> {
     0;
 }
 #[@use]
-fn Widget() -> @Component<Element> {
+fn Widget() -> @Component<Element, Element> {
     use effect { -> cleanup(); };
     Element();
 }

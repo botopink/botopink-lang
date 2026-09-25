@@ -1162,28 +1162,28 @@ pub fn renderTypeErrorBody(
         .useNotAllowed => |returnType| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  function returns `{s}`, which is neither `@Use<C, _>` nor `@Component<T>`\n",
+                "\n  function returns `{s}`, which is not a `@Component<C, _>`\n",
                 .{returnType},
             ));
         },
         .useNotContext => |exprType| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  `{s}` is not a hook — `use` requires @Use<_, _>\n",
+                "\n  `{s}` is not a hook — `use` requires a hook @Component<_, _>\n",
                 .{exprType},
             ));
         },
         .contextMismatch => |m| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  function anchors at `{s}`\n  but the `use` expression returns @Use<{s}, _>\n",
+                "\n  function anchors at `{s}`\n  but the `use` expression returns @Component<{s}, _>\n",
                 .{ m.fnBase, m.useBase },
             ));
         },
         .contextBaseMixed => |m| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  this body's base is `{s}`, fixed by the `use` on line {d}\n  but this `use` returns @Use<{s}, _>\n",
+                "\n  this body's base is `{s}`, fixed by the `use` on line {d}\n  but this `use` returns @Component<{s}, _>\n",
                 .{ m.anchorBase, m.anchorLine, m.useBase },
             ));
         },

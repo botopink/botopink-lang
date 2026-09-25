@@ -265,21 +265,21 @@ test "infer: net-new ---- @Context across three hook layers stays Element-based"
     try h.assertInfersOk(std.testing.allocator,
         \\val Element = type implement @Context<Element> { }
         \\#[@use]
-        \\fn layer1(initial: i32) -> @Use<Element, i32> {
+        \\fn layer1(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}
         \\#[@use]
-        \\fn layer2() -> @Use<Element, i32> {
+        \\fn layer2() -> @Component<Element, i32> {
         \\    val a = use layer1(0);
         \\    a;
         \\}
         \\#[@use]
-        \\fn layer3() -> @Use<Element, i32> {
+        \\fn layer3() -> @Component<Element, i32> {
         \\    val b = use layer2();
         \\    b;
         \\}
         \\#[@use]
-        \\fn Widget() -> @Component<Element> {
+        \\fn Widget() -> @Component<Element, Element> {
         \\    val c = use layer3();
         \\    Element();
         \\}

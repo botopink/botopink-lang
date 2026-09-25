@@ -10,7 +10,7 @@
 type Element(count: i32) implement @Context<Element>
 
 #[@use]
-fn Bad(n: i32) -> @Component<Element> {
+fn Bad(n: i32) -> @Component<Element, Element> {
     yield n;
 }
 

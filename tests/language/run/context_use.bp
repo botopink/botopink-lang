@@ -1,6 +1,7 @@
 //// Front 19 of 1.0.10-beta (C-27), decision 88 — `use f(x)` activates the hook
-//// `f(x)`; decisions 102/104 (front 21) — a hook is `#[@use] fn … -> @Use<C, T>`,
-//// a component `#[@use] fn … -> @Component<T>`, and every caller `await`s a
+//// `f(x)`; decisions 102/104 (front 21) — and decision 128 — a hook
+//// is `#[@use] fn … -> @Component<C, T>` with any `T`, a component the same wrapper
+//// with `T: @Context<C>`, and every caller `await`s a
 //// component (commonJS emits every `#[@use]` body as an `async function`; erlang,
 //// wasm and beam are eager and `await` is the identity). So `run` awaits each
 //// component in turn and the values print in the same order on every target.
@@ -8,68 +9,68 @@
 //// owner type is declared here (no library).
 
 type Element(count: i32) implement @Context<Element>
-type State(value: i32) implement @Context<Element>
+type State(value: i32)
 
 #[@use]
-fn state(initial: i32) -> @Use<Element, State> {
+fn state(initial: i32) -> @Component<Element, State> {
     return State(value: initial);
 }
 
 #[@use]
-fn pair(a: i32, b: i32) -> @Use<Element, #(i32, i32)> {
+fn pair(a: i32, b: i32) -> @Component<Element, #(i32, i32)> {
     return #(a, b);
 }
 
 #[@use]
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Use<Element, #(i32, fn(action: i32) -> i32)> {
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
 
 #[@use]
-fn effect(cb: fn() -> i32) -> @Use<Element, i32> {
+fn effect(cb: fn() -> i32) -> @Component<Element, i32> {
     return cb();
 }
 
 #[@use]
-fn counter(start: i32) -> @Use<Element, State> {
+fn counter(start: i32) -> @Component<Element, State> {
     val s = use state(start * 2);
     return s;
 }
 
 #[@use]
-fn Widget(n: i32) -> @Component<Element> {
+fn Widget(n: i32) -> @Component<Element, Element> {
     val c = use state(n);
     return Element(count: c.value + 1);
 }
 
 #[@use]
-fn Fields() -> @Component<Element> {
+fn Fields() -> @Component<Element, Element> {
     val {value} = use state(5);
     return Element(count: value);
 }
 
 #[@use]
-fn Composed() -> @Component<Element> {
+fn Composed() -> @Component<Element, Element> {
     val k = use counter(10);
     return Element(count: k.value);
 }
 
 #[@use]
-fn Positional() -> @Component<Element> {
+fn Positional() -> @Component<Element, Element> {
     val #(x, y) = use pair(3, 4);
     return Element(count: x + y);
 }
 
 #[@use]
-fn Effectful() -> @Component<Element> {
+fn Effectful() -> @Component<Element, Element> {
     use effect({ -> return 9; });
     val c = use state(1);
     return Element(count: c.value);
 }
 
 #[@use]
-fn Liked() -> @Component<Element> {
+fn Liked() -> @Component<Element, Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     return Element(count: push(shown));
 }

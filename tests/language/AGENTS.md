@@ -754,8 +754,8 @@ rows:
 runs (`#[@result]` with `try`, `#[@use]` with `use` and `try`);
 `test/effect_chain.bp` holds the two that need a target able to consume a future
 or a generator. `run/effect_context_await.bp` carries `await` inside a `#[@use]`
-body, for a hook (`-> @Use<Element, i32>`) and a component
-(`-> @Component<Element>`). Every `#[@use]` body is an `async function` on
+body, for a hook (`-> @Component<Element, i32>`) and a component
+(`-> @Component<Element, Element>`). Every `#[@use]` body is an `async function` on
 commonJS (decision 104), so its caller reads a promise there and the value on
 erlang, wasm and beam: both cells print every value from **inside** the body,
 where all four agree.
@@ -1126,7 +1126,7 @@ erlang and BEAM before, where two bare maps with the same keys were one term.
 **`use` is tested from botopink since front 19 of 1.0.10-beta**, spelled to decisions 102/104
 (front 21): `test/context_use.bp`, `run/context_use.bp` and the `reject/use_*.bp` cells declare
 their own owner type (`type Element(…) implement @Context<Element>`), hooks as
-`#[@use] fn … -> @Use<Element, T>` and components as `#[@use] fn … -> @Component<Element>`, and
+`#[@use] fn … -> @Component<Element, T>` and components as `#[@use] fn … -> @Component<Element, Element>`, and
 pin the binding of `T`, field and positional destructuring, a custom hook composing hooks, a bare
 void `use`, an unannotated `fn … -> Element` as an ordinary function, the static prefix (rows 4b and
 4c as parse errors), `use-without-context-effect` (a `-> Element` body without `#[@use]`, a plain

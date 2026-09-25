@@ -1,5 +1,5 @@
-//// Decision 95 of 1.0.10-beta — the effects are a chain: `@Component` ⊃ `@Use`
-//// ⊃ `@Future` ⊃ `@Result`, `@FutureGenerator` ⊃ `@Future`, `@ResultGenerator` ⊃
+//// Decision 95 of 1.0.10-beta — the effects are a chain: `@Component` ⊃ `@Future`
+//// ⊃ `@Result` (decision 128), `@FutureGenerator` ⊃ `@Future`, `@ResultGenerator` ⊃
 //// `@Result`, and an annotation grants every body operation at or below its own
 //// level. The two rows here are the ones every backend runs: `#[@result]`, the
 //// base, holding the `try` it grants, and `#[@use]`, the top, holding `use` and
@@ -18,7 +18,7 @@
 type Element(count: i32) implement @Context<Element>
 
 #[@use]
-fn state(initial: i32) -> @Use<Element, i32> {
+fn state(initial: i32) -> @Component<Element, i32> {
     return initial;
 }
 
@@ -35,9 +35,9 @@ fn doubled(n: i32) -> @Result<i32, string> {
     return v * 2;
 }
 
-// `#[@use]` — `@Component` ⊃ `@Use` ⊃ `@Future` ⊃ `@Result`: `use` and `try` in one body.
+// `#[@use]` — `@Component` ⊃ `@Future` ⊃ `@Result`: `use` and `try` in one body.
 #[@use]
-fn Widget(n: i32) -> @Component<Element> {
+fn Widget(n: i32) -> @Component<Element, Element> {
     val c = use state(1);
     val v = try parse(n);
     @print(c + v);

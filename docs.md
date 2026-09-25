@@ -897,16 +897,17 @@ in this module is auto-applied; `*` is only for imports `` (`redundantActivation
 (`notAnExtension`).
 
 **Expression role.** A **hook** is a `#[@use]` function whose return type is
-`@Use<Base, R>`: `Base` is the base the hook is anchored at, `R` is what it
+`@Component<Base, R>`: `Base` is the base the hook is anchored at, `R` is what it
 yields. A hook is named by its noun, without a `use` prefix (`state`, `effect`,
 `router`, `pathname` — never `useState`), because the keyword *is* the
 activation. `val x = use <hook>(…)` activates the hook and binds `R`; a bare
 `use <hook>(…);` activates a void hook; `val {a, b} = use …` binds `R`'s fields
 by name. The activating body is a `#[@use]` function — a **custom hook**
-(`-> @Use<Base, _>`, hooks compose) or a **component**, `#[@use] fn Widget() ->
-@Component<Element>`, where `Element` is the type that carries the tree:
-`implement @Context<Base>` is the owner marker, and `@Component<Element>` is
-`@Use<Base, Element>` with the base read off it (decision 102). A component is
+(`-> @Component<Base, _>`, hooks compose) or a **component**, `#[@use] fn Widget()
+-> @Component<ElementBase, Element>`, where `Element` is the type that carries the
+tree: `implement @Context<ElementBase>` is the owner marker. One wrapper serves
+both (decision 128): the base is always written, and a component is the
+`@Component<Base, T>` whose `T` implements `@Context<Base>`. A component is
 **called** (`Widget(1)`), never `use`d. Every `use` in one body agrees on the
 one base its return type names.
 
@@ -917,20 +918,20 @@ type State(value: i32, name: string)
 
 // A hook: the noun, the base, the yield.
 #[@use]
-fn state(initial: i32) -> @Use<ElementBase, State> {
+fn state(initial: i32) -> @Component<ElementBase, State> {
     return State(value: initial, name: "state");
 }
 
 // A custom hook composes hooks.
 #[@use]
-fn counter(start: i32) -> @Use<ElementBase, State> {
+fn counter(start: i32) -> @Component<ElementBase, State> {
     val s = use state(start * 2);
     return s;
 }
 
 // A component: its return is the owner, and it may `await` and `try` too.
 #[@use]
-fn Widget(n: i32) -> @Component<Element> {
+fn Widget(n: i32) -> @Component<ElementBase, Element> {
     val c = use state(n);
     val {value, name} = use counter(n);
     return Element(count: c.value + value);
@@ -950,32 +951,32 @@ The rules, each with its diagnostic:
   `#[@use]` on the enclosing fn 'Widget' (it returns 'Element'): only a
   `#[@use]` body activates a hook ``. Nothing is unwrapped to find an owner:
   the server component that awaits and uses is `#[@use] fn Page() ->
-  @Component<Element>`, which the chain lets `await` and `try`. A nested
+  @Component<ElementBase, Element>`, which the chain lets `await` and `try`. A nested
   closure is not the `#[@use]` body either: `use` is not inherited by a
   lambda, as `await` is not.
-- **The wrapper is written.** `#[@use]` answers `@Use<Base, T>` or
-  `@Component<T>`. The bare owner (`#[@use] fn Card() -> Element`) is
-  `` effect-missing-wrapper ``; any other return (`-> string`) is
-  `` effect-wrapper-mismatch ``, and so is `@Component<X>` with an `X` that
-  implements no `@Context` — `` `@Component<T>` needs `T` to implement
-  `@Context<Base>` ``. A fn returning `@Use`/`@Component` without the
-  annotation is refused like `@Future` without `#[@future]`.
+- **The wrapper is written.** `#[@use]` answers `@Component<Base, T>`. The bare
+  owner (`#[@use] fn Card() -> Element`) is `` effect-missing-wrapper ``; any
+  other return (`-> string`) is `` effect-wrapper-mismatch ``, and so is a `T`
+  that owns a context at another base (`@Component<Http, Element>` with
+  `Element: @Context<ElementBase>`). `@Component<Element>` with one argument is
+  an arity error. A fn returning `@Component` without the annotation is refused
+  like `@Future` without `#[@future]`.
 - **The operand is a hook.** `use plain()` where `plain : -> User` is
-  `` use-of-non-context-fn: `use` takes a hook: 'User' is not a `@Use<C, _>` ``,
-  and `use Card()` where `Card` is a component is refused: a component is
+  `` use-of-non-context-fn: `use` takes a hook: 'User' is not a hook `@Component<C, _>` ``,
+  and `use Card()` where `Card` is a component (its `T` owns the context) is refused: a component is
   called, not `use`d.
 - **One base per body** (decision 96). The base is a property of the
   FUNCTION, not of each activation: the first `use` fixes it and every later
   one resolves against the same one. Two refusals say so, and they are
   different rules. A single `use` anchored at a base the return type never
   named is the DECLARATION's: `use connection()` with `connection : ->
-  @Use<Http, _>` inside a body anchored at `Element` is
+  @Component<Http, _>` inside a body anchored at `Element` is
   `` context-anchor-violation: function anchors at `Element` but `use` returns
-  @Use<Http, _> ``. A second `use` disagreeing with the first is the BODY's,
+  @Component<Http, _> ``. A second `use` disagreeing with the first is the BODY's,
   refused at its own site with both bases and the line that fixed the anchor:
   `` context-anchor-violation: every `use` in one function resolves against the
   same ContextBase: this body's is `Element`, fixed by the `use` on line 9, and
-  this one is @Use<Http, _> ``. Two hooks that are each legal alone are still
+  this one is @Component<Http, _> ``. Two hooks that are each legal alone are still
   refused together; there is no flag (decision 67). Each body starts over — a
   sibling `fn` may anchor wherever its own return type says.
 - **The static prefix.** Every `use` of a function body comes before its first
@@ -988,7 +989,7 @@ The rules, each with its diagnostic:
 - **The type is `R`.** `val c = use state(0)` binds `c : State`, and
   `val {value, set} = use state(0)` binds each name to the field of `R` it
   names. A tuple `R` destructures positionally: with `optimistic : (i32, fn(i32,
-  i32) -> i32) -> @Use<Element, #(i32, fn(action: i32) -> i32)>`,
+  i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)>`,
   `val #(shown, push) = use optimistic(12, addLike)` binds `shown : i32` and
   `push : fn(action: i32) -> i32`. The pattern's arity is the tuple's, and the
   hook's `R` has to be a tuple; either failing is refused at the binding —
@@ -1101,20 +1102,19 @@ A function's effect is named by one `#[@<effect>]` annotation — at most one pe
 `fn` — and the return wrapper is the annotation with its first letter
 capitalised: `#[@result]` → `@Result`, `#[@future]` → `@Future`,
 `#[@generator]` → `@Generator`, `#[@resultGenerator]` → `@ResultGenerator`,
-`#[@futureGenerator]` → `@FutureGenerator`, `#[@use]` → `@Use` — and
-`@Component<T>`, the one wrapper that does not repeat its annotation's name, is
-sugar for `@Use<B, T>` with `T: @Context<B>` (decision 102). `@Context<Base>`
+`#[@futureGenerator]` → `@FutureGenerator` — and `#[@use]` → `@Component<C, T>`,
+the one wrapper that does not repeat its annotation's name, for hooks and
+components alike (decision 128). `@Context<Base>`
 itself is not a wrapper: it is the marker the type that carries a context tree
 implements.
 
-The six effects and their seven wrappers form a **chain** (decision 95): a wrapper extends the one
+The six effects and their six wrappers form a **chain** (decision 95): a wrapper extends the one
 below it, and an annotation grants every body operation at or below its own
 level.
 
 | Body | May write | Because the wrapper extends |
 |---|---|---|
-| `#[@use] fn … -> @Component<T>` (`T: @Context<B>`) | `use` · `await` · `try` | `@Component` ⊃ `@Use` ⊃ `@Future` ⊃ `@Result` |
-| `#[@use] fn … -> @Use<C, T>` | `use` · `await` · `try` | `@Use` ⊃ `@Future` ⊃ `@Result` |
+| `#[@use] fn … -> @Component<C, T>` | `use` · `await` · `try` | `@Component` ⊃ `@Future` ⊃ `@Result` |
 | `#[@futureGenerator] fn … -> @FutureGenerator<T, E>` | `await` · `try` · `yield` | `@FutureGenerator` ⊃ `@Future` ⊃ `@Result` |
 | `#[@future] fn … -> @Future<T, E>` | `await` · `try` | `@Future` ⊃ `@Result` |
 | `#[@resultGenerator] fn … -> @ResultGenerator<T, E>` | `try` · `yield` | `@ResultGenerator` ⊃ `@Result` |

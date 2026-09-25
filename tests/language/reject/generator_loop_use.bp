@@ -9,12 +9,12 @@ type Element(count: i32) implement @Context<Element>
 type State(value: i32)
 
 #[@use]
-fn state(initial: i32) -> @Use<Element, State> {
+fn state(initial: i32) -> @Component<Element, State> {
     return State(value: initial);
 }
 
 #[@use]
-fn Counter() -> @Component<Element> {
+fn Counter() -> @Component<Element, Element> {
     val g = #[@generator] loop {
         val s = use state(0);
         break s.value;

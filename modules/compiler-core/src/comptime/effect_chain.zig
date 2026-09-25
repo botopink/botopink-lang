@@ -1,6 +1,6 @@
 //! The effect chain — decision 95 of 1.0.10-beta.
 //!
-//! The seven effect wrappers are not seven unrelated types: they form a subsumption
+//! The six effect wrappers are not six unrelated types: they form a subsumption
 //! order, and an annotation grants every capability at or below its own level.
 //! The order is declared in botopink, on the wrappers in
 //! `libs/std/src/builtins.d.bp`:
@@ -8,8 +8,7 @@
 //!     pub behavior Future<T, E = any>                    extends Result
 //!     pub behavior ResultGenerator<T, E = any>           extends Result
 //!     pub behavior FutureGenerator<T, E = any>           extends Future
-//!     pub behavior Use<C, T>                             extends Future
-//!     pub behavior Component<T>                          extends Use
+//!     pub behavior Component<C, T>                       extends Future   // decision 128
 //!     pub behavior Generator<T>                          // no clause — decision 103
 //!
 //! Decision 95 calls these `implement` clauses; a `behavior` carries `extends`
@@ -37,15 +36,14 @@ const ast = @import("../ast.zig");
 const Clause = struct { wrapper: []const u8, implements: []const u8 };
 
 /// The chain, in the order `builtins.d.bp` declares it. Transitivity is
-/// computed by `wrapperImplements`, so `@Use` needs no `Result` row.
+/// computed by `wrapperImplements`, so `@Component` needs no `Result` row.
 /// `@Context<Base>` is not here: it is the owner MARKER a type implements
 /// (decision 102), not a wrapper, and grants nothing.
 pub const clauses = [_]Clause{
     .{ .wrapper = "Future", .implements = "Result" },
     .{ .wrapper = "ResultGenerator", .implements = "Result" },
     .{ .wrapper = "FutureGenerator", .implements = "Future" },
-    .{ .wrapper = "Use", .implements = "Future" },
-    .{ .wrapper = "Component", .implements = "Use" },
+    .{ .wrapper = "Component", .implements = "Future" },
 };
 
 /// The wrappers whose body may `yield`. `yield` is not a level of the chain:
@@ -77,7 +75,7 @@ pub const Capability = enum {
         return switch (self) {
             .try_ => "Result",
             .await_ => "Future",
-            .use_ => "Use",
+            .use_ => "Component",
             .yield_ => null,
         };
     }
@@ -268,7 +266,7 @@ test "effect chain: decision 95's table, row by row" {
     try std.testing.expect(!grants(.generator, .await_));
     try std.testing.expect(!grants(.generator, .use_));
     try std.testing.expect(grants(.generator, .yield_));
-    // `#[@use]` — `@Use` ⊃ `@Future` ⊃ `@Result`, and activates.
+    // `#[@use]` — `@Component` ⊃ `@Future` ⊃ `@Result`, and activates.
     try std.testing.expect(grants(.use, .try_));
     try std.testing.expect(grants(.use, .await_));
     try std.testing.expect(grants(.use, .use_));
@@ -288,16 +286,14 @@ test "effect chain: the chain grants downwards, never upwards" {
     }
     // `@Result` implements nothing above it.
     try std.testing.expect(!wrapperImplements("Result", "Future"));
-    try std.testing.expect(!wrapperImplements("Result", "Use"));
-    try std.testing.expect(!wrapperImplements("Future", "Use"));
-    // `@Component<T>` is `@Use<B, T>`: it answers every level `@Use` does.
-    try std.testing.expect(wrapperImplements("Component", "Use"));
+    try std.testing.expect(!wrapperImplements("Result", "Component"));
+    try std.testing.expect(!wrapperImplements("Future", "Component"));
+    // `@Component<C, T>` is the one `use` wrapper (decision 128) and sits above `@Future`.
     try std.testing.expect(wrapperImplements("Component", "Future"));
-    try std.testing.expect(!wrapperImplements("Use", "Component"));
     // `@Context<Base>` is a marker, not a level of the chain.
     try std.testing.expect(!wrapperImplements("Context", "Result"));
     // …and everything below it, reflexively.
     try std.testing.expect(wrapperImplements("Result", "Result"));
-    try std.testing.expect(wrapperImplements("Use", "Result"));
+    try std.testing.expect(wrapperImplements("Component", "Result"));
     try std.testing.expect(wrapperImplements("FutureGenerator", "Result"));
 }

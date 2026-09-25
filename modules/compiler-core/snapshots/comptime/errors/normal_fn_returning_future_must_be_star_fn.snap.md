@@ -4,7 +4,7 @@ fn bad() -> @Future<i32> {
 }
 
 ----- ERROR
-error: a function returning `@Future`/`@ResultGenerator`/`@FutureGenerator`/`@Use`/`@Component` needs an effect annotation
+error: a function returning `@Future`/`@ResultGenerator`/`@FutureGenerator`/`@Component` needs an effect annotation
   ┌─ :2:5
   │
 2 │     return 0;

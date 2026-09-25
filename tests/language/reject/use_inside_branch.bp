@@ -3,10 +3,10 @@
 
 type Element(count: i32) implement @Context<Element>
 #[@use]
-fn effect(cb: i32) -> @Use<Element, i32> { return cb; }
+fn effect(cb: i32) -> @Component<Element, i32> { return cb; }
 
 #[@use]
-fn Widget(a: bool) -> @Component<Element> {
+fn Widget(a: bool) -> @Component<Element, Element> {
     if (a) { use effect(1); };
     return Element(count: 1);
 }

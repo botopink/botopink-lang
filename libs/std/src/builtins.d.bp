@@ -201,18 +201,16 @@ pub behavior Slice<V> {
 // (`type Element(…) implement @Context<ElementBase>`; the name is the
 // library's). It grants no capability and has no methods.
 //
-// The wrappers of `use` are two, both answered by `#[@use]`:
-//   `Use<C, T>`    — a hook: returns any `T`, anchored at base `C`;
-//   `Component<T>` — the return IS the owner: `T: @Context<B>`, and
-//                    `@Component<T>` ≡ `@Use<B, T>`.
-// A component is called (`Card()`), never `use`d; `use f()` takes a
-// `@Use<C, _>` at the body's base, so hooks compose.
+// The wrapper of `use` is one, answered by `#[@use]` (decision 128):
+//   `Component<C, T>` — anchored at base `C`, returning `T`. A hook returns
+//                       any `T`; a component returns the owner itself,
+//                       `T: @Context<C>`.
+// A component is called (`Card()`), never `use`d; `use f()` takes a hook
+// `@Component<C, _>` at the body's base, so hooks compose.
 
 pub behavior Context<Base> { }
 
-pub behavior Use<C, T> extends Future { }
-
-pub behavior Component<T> extends Use { }
+pub behavior Component<C, T> extends Future { }
 
 // ── annotation marker ────────────────────────────────────────────────────────
 //
@@ -339,7 +337,7 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //   #[generator]       fn range(a: i32, b: i32) -> Generator<i32>
 //   #[resultGenerator] fn lazyMap<T, U>(it: ResultGenerator<T>, f: fn(T) -> U) -> ResultGenerator<U, string> :a
 //   #[futureGenerator] fn stream() -> FutureGenerator<T, NetworkError>
-//   #[use]             fn processarPagamento() -> Use<BasePagamento, bool>
+//   #[use]             fn processarPagamento() -> Component<BasePagamento, bool>
 //
 // The annotation marks an IMPLEMENTATION (a `fn` with a body): it gates the
 // body operations (`await` under future/futureGenerator; `yield` under
@@ -362,13 +360,12 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //   Future<T, E>             extends Result<T, E>
 //   ResultGenerator<T, E>    extends Result<T, E>
 //   FutureGenerator<T, E>    extends Future<YieldStep<T, E>, E>
-//   Use<C, T>                extends Future<T, any>
-//   Component<T>             extends Use<B, T>   where T: Context<B>
+//   Component<C, T>          extends Future<T, any>   (decision 128)
 //   Generator<T>             — NO clause. See below.
 //
 // What each body may therefore write:
 //
-//   #[use]             use · await · try     Component ⊃ Use ⊃ Future ⊃ Result
+//   #[use]             use · await · try     Component ⊃ Future ⊃ Result
 //   #[futureGenerator] await · try · yield   FutureGenerator ⊃ Future ⊃ Result
 //   #[future]          await · try           Future ⊃ Result
 //   #[resultGenerator] try · yield           ResultGenerator ⊃ Result
@@ -415,8 +412,8 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // form is removed (RI6). Labels (`-> ResultGenerator<…> :label`) disambiguate
 // nested generator scopes.
 //
-// §1C — `#[use]` Anchor + `getContext`. The wrapper is `Use<Base, T>` (or
-// `Component<T>`, whose `T: Context<Base>` names it); `Base` is the Anchor
+// §1C — `#[use]` Anchor + `getContext`. The wrapper is `Component<Base, T>`
+// (decision 128, a hook and a component alike); `Base` is the Anchor
 // that gates every `use` inside the body. EVERY `use` in one body resolves against the SAME `Base`
 // (decision 96): the first one fixes it, and a second anchored elsewhere is
 // refused at its own site with both bases named (RC2). `use getContext(T)`
@@ -456,7 +453,7 @@ pub type Host implement Annotation {
 // `getContext(T)` is the context-retrieval intrinsic. It retrieves the
 // active provider of context type `T` from the enclosing `#[use]`
 // fn's scope stack. `T` must be the enclosing fn's Anchor (or a subtype
-// thereof); the call returns `Use<T, V>` where `V` is the provider's
+// thereof); the call returns `Component<T, V>` where `V` is the provider's
 // authored value slot. Errors: [E1] context-unbound when no `T` provider
 // is on the stack; [E2] context-anchor-violation when `T` is outside the
 // Anchor's tree. Only legal inside a `#[use]` fn body, behind `use`:
@@ -466,7 +463,7 @@ pub type Host implement Annotation {
 // Declared `comptime` in its sole type argument because the Anchor check
 // runs at compile time; the runtime side is the inside-out walk inserted
 // by the lowering.
-pub declare fn getContext<T>(comptime _: type) -> Use<T, any>;
+pub declare fn getContext<T>(comptime _: type) -> Component<T, any>;
 
 // ── Expr template model (std.syntax) ─────────────────────────────────────────
 // Data model for `Expr` templates. Interfaces are pure behaviour contracts, so

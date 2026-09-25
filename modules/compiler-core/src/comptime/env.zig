@@ -130,12 +130,11 @@ pub const ExtEntry = struct {
 /// Capability information about the function body currently being inferred.
 ///
 /// The function's return type decides whether `use` is allowed inside the body:
-/// it must be `@Use<C, _>` or `@Component<T: @Context<B>>` (decision 102). All
+/// it must be `@Component<C, _>` (decisions 102, 128). All
 /// `use` calls in the body must agree on the same base (decision 96). `null` on the environment means
 /// no function body is currently being inferred (top-level position).
 pub const FnContext = struct {
-    /// True when the function's return type is `@Use<C, _>` or `@Component<T>`
-    /// with `T` an owner.
+    /// True when the function's return type is `@Component<C, _>`.
     implementsContext: bool,
     /// The `ContextBase` name when `implementsContext` is true; null otherwise.
     base: ?[]const u8 = null,
@@ -468,14 +467,14 @@ pub const Env = struct {
     /// C1 — the type a `return <value>` in the body currently being inferred
     /// must unify with: the declared return type, or an effect wrapper's inner
     /// channel (`#[@result]` → R, `#[@future]` → T, `#[@use]` → the `T` of
-    /// `@Use<C, T>` / `@Component<T>`). Null where returns are not checked (no declared
+    /// `@Component<C, T>`). Null where returns are not checked (no declared
     /// return type, template fns, top level).
     returnTarget: ?*T.Type = null,
     /// C1 — a bare `return;` must unify with `void` (fn decls with a declared
     /// return type; not lambdas, whose target is a shared fresh var).
     returnBareIsVoid: bool = false,
     /// C1 — the fn's whole declared return type, for a returned value that is
-    /// already the wrapper (`return state(start)` in a `-> @Use<B, X>` hook).
+    /// already the wrapper (`return state(start)` in a `-> @Component<B, X>` hook).
     returnWhole: ?*T.Type = null,
     /// C1 — set while inferring a `case` block arm: its `return`s leave the
     /// enclosing fn, so the arm's lambda keeps the fn's return target.

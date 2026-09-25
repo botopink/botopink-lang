@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 val Element = type implement @Context<Element> { }
 #[@use]
-fn state(initial: i32) -> @Use<Element, i32> {
+fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
 #[@result]
@@ -13,12 +13,12 @@ fn fetch(n: i32) -> @Future<i32> {
     return n;
 }
 #[@use]
-fn Bad(n: i32) -> @Component<Element> {
+fn Bad(n: i32) -> @Component<Element, Element> {
     yield n;
 }
 
 ----- ERROR
-error: yield-without-generator: `yield` needs a generator effect — `#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`; `#[@use]` is `@Use`, which does not
+error: yield-without-generator: `yield` needs a generator effect — `#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`; `#[@use]` is `@Component`, which does not
   ┌─ :16:5
   │
 16 │     yield n;

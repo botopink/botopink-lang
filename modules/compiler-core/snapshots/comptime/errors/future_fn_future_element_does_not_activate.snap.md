@@ -2,7 +2,7 @@
 val Element = type implement @Context<Element> { }
 val Request = type(path: string)
 #[@use]
-fn request() -> @Use<Element, Request> {
+fn request() -> @Component<Element, Request> {
     Request(path: "/");
 }
 #[@future]

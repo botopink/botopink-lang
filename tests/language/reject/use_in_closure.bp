@@ -7,12 +7,12 @@
 type Element(count: i32) implement @Context<Element>
 
 #[@use]
-fn state(initial: i32) -> @Use<Element, i32> {
+fn state(initial: i32) -> @Component<Element, i32> {
     return initial;
 }
 
 #[@use]
-fn Deferred() -> @Component<Element> {
+fn Deferred() -> @Component<Element, Element> {
     val f = { -> return use state(4); };
     return Element(count: f());
 }

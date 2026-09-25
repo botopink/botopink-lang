@@ -1,7 +1,7 @@
-//// Decision 95 — `@Use` ⊃ `@Future` ⊃ `@Result`, so `await` is legal in a
-//// `#[@use]` body; `run/effect_chain.bp` carries `use` and `try`. Both wrappers
-//// decision 102 gives `#[@use]` are here: a hook (`-> @Use<Element, i32>`) and
-//// a component (`-> @Component<Element>`).
+//// Decision 95 — `@Component` ⊃ `@Future` ⊃ `@Result`, so `await` is legal in a
+//// `#[@use]` body; `run/effect_chain.bp` carries `use` and `try`. Both shapes of
+//// decision 128's one wrapper are here: a hook (`-> @Component<Element, i32>`) and
+//// a component (`-> @Component<Element, Element>`).
 ////
 //// Every value is printed from INSIDE the body. commonJS emits every `#[@use]`
 //// body as an `async function` (decision 104) and hands its CALLER a promise,
@@ -15,7 +15,7 @@
 type Element(count: i32) implement @Context<Element>
 
 #[@use]
-fn state(initial: i32) -> @Use<Element, i32> {
+fn state(initial: i32) -> @Component<Element, i32> {
     return initial;
 }
 
@@ -26,7 +26,7 @@ fn answer(n: i32) -> @Future<i32> {
 
 // The explicit wrapper: `await` two levels down the chain.
 #[@use]
-fn page(n: i32) -> @Use<Element, i32> {
+fn page(n: i32) -> @Component<Element, i32> {
     val v = await answer(n);
     @print(v);
     return v;
@@ -34,7 +34,7 @@ fn page(n: i32) -> @Use<Element, i32> {
 
 // The component shape — `use` and `await` in one body.
 #[@use]
-fn Widget(n: i32) -> @Component<Element> {
+fn Widget(n: i32) -> @Component<Element, Element> {
     val c = use state(1);
     val v = await answer(n);
     @print(c + v);
@@ -44,7 +44,7 @@ fn Widget(n: i32) -> @Component<Element> {
 // A component with no `await` of its own: its `use` is the suspension on
 // commonJS (decision 104), so it prints from inside too.
 #[@use]
-fn Plain(n: i32) -> @Component<Element> {
+fn Plain(n: i32) -> @Component<Element, Element> {
     val c = use state(1);
     @print(c + n);
     return Element(count: c + n);

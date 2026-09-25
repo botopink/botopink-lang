@@ -1,17 +1,17 @@
 ----- SOURCE CODE
 val Element = type implement @Context<Element> { }
 #[@use]
-fn Card() -> @Component<Element> {
+fn Card() -> @Component<Element, Element> {
     return Element();
 }
 #[@use]
-fn Page() -> @Component<Element> {
+fn Page() -> @Component<Element, Element> {
     val c = use Card();
     return Element();
 }
 
 ----- ERROR
-error: use-of-non-context-fn: `use` takes a hook (`@Use<C, _>`), and this is a `@Component<…>` — a component is called, not `use`d
+error: use-of-non-context-fn: `use` takes a hook, and this is a component (its `T` implements `@Context<…>`) — a component is called, not `use`d
   ┌─ :8:13
   │
 8 │     val c = use Card();

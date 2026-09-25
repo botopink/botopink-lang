@@ -4,10 +4,10 @@
 type Element(count: i32) implement @Context<Element>
 type Http(port: i32) implement @Context<Http>
 #[@use]
-fn connection() -> @Use<Http, i32> { return 8080; }
+fn connection() -> @Component<Http, i32> { return 8080; }
 
 #[@use]
-fn Widget() -> @Component<Element> {
+fn Widget() -> @Component<Element, Element> {
     val c = use connection();
     return Element(count: c);
 }

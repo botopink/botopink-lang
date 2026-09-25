@@ -2,15 +2,15 @@
 val Element = type implement @Context<Element> { }
 val Http = type implement @Context<Http> { }
 #[@use]
-fn state(initial: i32) -> @Use<Element, i32> {
+fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
 #[@use]
-fn connection() -> @Use<Http, i32> {
+fn connection() -> @Component<Http, i32> {
     initial;
 }
 #[@use]
-fn Mixed() -> @Component<Element> {
+fn Mixed() -> @Component<Element, Element> {
     val a = use state(0);
     val b = use connection();
     return Element();
@@ -24,4 +24,4 @@ error: context-anchor-violation: two ContextBases in one body
   │             ^
 
   this body's base is `Element`, fixed by the `use` on line 13
-  but this `use` returns @Use<Http, _>
+  but this `use` returns @Component<Http, _>

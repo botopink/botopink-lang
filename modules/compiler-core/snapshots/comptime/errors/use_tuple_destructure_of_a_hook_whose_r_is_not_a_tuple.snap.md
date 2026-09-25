@@ -1,11 +1,11 @@
 ----- SOURCE CODE
 val Element = type implement @Context<Element> { }
 #[@use]
-fn state(initial: i32) -> @Use<Element, i32> {
+fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
 #[@use]
-fn Counter() -> @Component<Element> {
+fn Counter() -> @Component<Element, Element> {
     val #(count, setCount) = use state(0);
     Element();
 }

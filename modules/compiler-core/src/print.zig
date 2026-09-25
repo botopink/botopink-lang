@@ -180,7 +180,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "deprecated-star-fn",
             .message = "the `*fn` prefix was removed in v0.beta.19",
             .caretCaption = "use a `#[@<effect>]` annotation instead",
-            .note = "the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@ResultGenerator<…>` to `#[@resultGenerator]`, `@FutureGenerator<…>` to `#[@futureGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to what is now `#[@use]` (`-> @Use<…>` / `-> @Component<…>`)",
+            .note = "the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@ResultGenerator<…>` to `#[@resultGenerator]`, `@FutureGenerator<…>` to `#[@futureGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to what is now `#[@use]` (`-> @Component<…>`)",
             .hint = "rewrite as `#[@<effect>] fn <name>(...) -> @<Wrapper><...> { ... }`",
         },
         .effectOnDeclareForbidden => .{

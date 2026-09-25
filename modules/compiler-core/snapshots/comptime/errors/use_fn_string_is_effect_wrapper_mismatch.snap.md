@@ -5,7 +5,7 @@ fn bad() -> string {
 }
 
 ----- ERROR
-error: effect-wrapper-mismatch: `#[@use]` requires `-> @Component<…>` or `-> @Use<…>` return type
+error: effect-wrapper-mismatch: `#[@use]` requires a `-> @Component<C, T>` return type
   ┌─ :3:5
   │
 3 │     return "x";

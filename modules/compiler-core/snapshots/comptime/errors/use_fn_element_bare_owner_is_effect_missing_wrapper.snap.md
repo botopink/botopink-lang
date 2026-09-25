@@ -6,7 +6,7 @@ fn Card() -> Element {
 }
 
 ----- ERROR
-error: effect-missing-wrapper: `#[@use]` requires `-> @Component<…>` or `-> @Use<…>` return type
+error: effect-missing-wrapper: `#[@use]` requires a `-> @Component<C, T>` return type
   ┌─ :4:5
   │
 4 │     return Element();

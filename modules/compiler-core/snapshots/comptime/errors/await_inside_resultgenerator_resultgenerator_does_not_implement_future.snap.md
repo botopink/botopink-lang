@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 val Element = type implement @Context<Element> { }
 #[@use]
-fn state(initial: i32) -> @Use<Element, i32> {
+fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
 #[@result]
@@ -25,4 +25,4 @@ error: effect-await-without-future: `await` needs an effect that implements `@Fu
 16 │     val w = await fetch(n);
   │             ^
 
-  hint: Mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@use]` (`-> @Use<…>` / `-> @Component<…>`).
+  hint: Mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@use]` (`-> @Component<…>`).

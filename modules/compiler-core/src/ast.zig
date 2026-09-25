@@ -2240,8 +2240,8 @@ pub const EffectKind = enum {
     generator,
     resultGenerator,
     futureGenerator,
-    /// `#[@use]` — the body may `use` a hook (decisions 102/104). The one
-    /// effect whose return wrapper is a SET: `@Use<C, T>` or `@Component<T>`.
+    /// `#[@use]` — the body may `use` a hook (decisions 102/104); its return
+    /// wrapper is `@Component<C, T>` (decision 128).
     use,
 
     /// Every effect, in declaration order. The one list: `fromAnnotationName`
@@ -2261,9 +2261,8 @@ pub const EffectKind = enum {
         };
     }
 
-    /// The builtin return-type wrapper this effect requires (`@Future`, …) —
-    /// for `#[@use]` the wrapper that names the capability, `@Use`; the full
-    /// set R1/R2 accept is `returnWrappers`.
+    /// The builtin return-type wrapper this effect requires (`@Future`, …;
+    /// `#[@use]` → `@Component`, decision 128).
     pub fn returnWrapper(self: EffectKind) []const u8 {
         return switch (self) {
             .result => "Result",
@@ -2271,13 +2270,12 @@ pub const EffectKind = enum {
             .generator => "Generator",
             .resultGenerator => "ResultGenerator",
             .futureGenerator => "FutureGenerator",
-            .use => "Use",
+            .use => "Component",
         };
     }
 
-    /// Every wrapper R1/R2 accept for this effect. `#[@use]` answers
-    /// `@Component<T>` or `@Use<C, T>` (decision 102: `@Component<T>` is sugar
-    /// for `@Use<B, T>` with `T: @Context<B>`); every other effect has one.
+    /// Every wrapper R1/R2 accept for this effect — one each; `#[@use]`
+    /// answers `@Component<C, T>` for hooks and components alike (decision 128).
     pub fn returnWrappers(self: EffectKind) []const []const u8 {
         return switch (self) {
             .result => &.{"Result"},
@@ -2285,7 +2283,7 @@ pub const EffectKind = enum {
             .generator => &.{"Generator"},
             .resultGenerator => &.{"ResultGenerator"},
             .futureGenerator => &.{"FutureGenerator"},
-            .use => &.{ "Component", "Use" },
+            .use => &.{"Component"},
         };
     }
 

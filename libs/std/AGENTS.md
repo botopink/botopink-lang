@@ -284,8 +284,8 @@ lib is a dependency. Sidecars ship verbatim.
 ## Effect annotations
 
 `#[@result]`, `#[@future]`, `#[@generator]`, `#[@resultGenerator]`,
-`#[@futureGenerator]`, `#[@use]` (with `@Use<C, T>` / `@Component<T>` and the
-owner marker `@Context<Base>`, decisions 102/104) and default generic parameters are
+`#[@futureGenerator]`, `#[@use]` (with `@Component<C, T>` and the
+owner marker `@Context<Base>`, decisions 102/104/128) and default generic parameters are
 documented in the effect-annotations block of `src/builtins.d.bp`.
 
 ## Conventions

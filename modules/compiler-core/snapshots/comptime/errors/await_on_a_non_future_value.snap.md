@@ -6,7 +6,7 @@ fn bad() -> @Future<i32> {
 }
 
 ----- ERROR
-error: `await` expects a `@Future<_>` value (or a `@Use<C, T>` / `@Component<T>`, which extend it)
+error: `await` expects a `@Future<_>` value (or a `@Component<C, T>`, which extends it)
   ┌─ :3:13
   │
 3 │     val x = await 5;
