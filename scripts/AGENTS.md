@@ -127,6 +127,24 @@ every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
 `GIT_INDEX_FILE`, …): a stage that runs `git` in a scratch repository (bpmp's
 install tests) would otherwise act on the committing repository.
 
+### Where the gate's time goes
+
+The stages stay one ordered run — the first failing stage is the one reported,
+and each runs only after the cheaper ones passed. The time is saved inside the
+stages, by doing the same work once and on every CPU, never by running less:
+
+| Stage | What makes it fast | Where |
+|---|---|---|
+| `test-libs` | cells run on a bounded worker pool (one per CPU, bounded by `MemAvailable / 768 MiB`, each cell admitted only while `procs_running` ≤ CPUs) and are emitted in discovery order, byte for byte what `--jobs 1` prints | [`../modules/lib-test-runner/AGENTS.md`](../modules/lib-test-runner/AGENTS.md) § Parallel cells |
+| `test-libs` (erlang cells) | `botopink test --target erlang` compiles each `.erl` of a run once (`precompileErlang`), not once per test module that loads it; the host-sidecar shipper resolves each library and probes each qualifier once per run | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `libs.zig`) |
+| `test-language` | already parallel (`--jobs 4`, results sorted before the report). One job per CPU was measured and not kept: under the usual shared load it moved the stage's ~27–29 s by nothing measurable and cost ~30 % more CPU-seconds | [`../tests/language/run.sh`](../tests/language/run.sh) header |
+
+`zig build` in stage 2 builds every binary the later stages run; `zig build
+test-libs`, `test-language` and `test-docs` re-enter the build graph, find it
+up to date and run the installed `zig-out/bin/*`, so no stage rebuilds one.
+Measured numbers, before and after, are in the meta workspace's
+`specs/1.0.10-beta/00-compiler-carry-over/11-tooling/README.md` § The gate's speed.
+
 ## format-check.sh
 
 `scripts/format-check.sh` — stage 3 of `gate.sh` and a step of CI's `test` job:

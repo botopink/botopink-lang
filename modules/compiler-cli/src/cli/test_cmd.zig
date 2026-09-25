@@ -71,6 +71,60 @@ fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) !
     return std.fmt.allocPrint(arena, TEST_OUT_ROOT ++ "/{s}/{x}", .{ target.toString(), id });
 }
 
+/// Compile every `.erl` under `dir` ONCE, in one `erl` (a process per file),
+/// writing `<name>.beam` beside each source that compiled.
+///
+/// Each erlang test module's runner loads every sibling `.erl` before its
+/// tests run (`codegen/erlang.zig`, `__bp_load_siblings`). It used to call
+/// `compile:file/2` on each of them, so a package with T test modules and M
+/// modules compiled T × M times — `libs/std` spent ~24 s of its erlang cell
+/// there, against ~2 s for commonJS. The runner now loads the `.beam` written
+/// here (`__bp_prebuilt`) and compiles from source only when there is none.
+///
+/// Nothing is decided here. The compile uses the loader's own options
+/// (`binary`, `return_errors`, the include dir), a module that does not compile
+/// gets no `.beam` and so reaches the loader's `compile:file/2` arm, whose
+/// refusal names it exactly as before, and a source that says `-include` is
+/// left to the loader (its include dir is the script's, which this step does
+/// not know). The directory is this run's own, written above from this run's
+/// outputs, so a `.beam` here can only be this run's. A failure of the step
+/// itself — `erl` missing, a crash — leaves some or no `.beam` behind, which
+/// is the old path for the rest; its output is discarded.
+fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8) void {
+    const eval =
+        \\[Dir] = init:get_plain_arguments(),
+        \\Compile = fun(Src) ->
+        \\    {ok, Text} = file:read_file(Src),
+        \\    case binary:match(Text, <<"-include">>) of
+        \\        nomatch ->
+        \\            case compile:file(Src, [binary, return_errors, {i, Dir}]) of
+        \\                {ok, _Mod, Bin} ->
+        \\                    Beam = filename:rootname(Src) ++ ".beam",
+        \\                    Tmp = Beam ++ ".tmp",
+        \\                    ok = file:write_file(Tmp, Bin),
+        \\                    ok = file:rename(Tmp, Beam);
+        \\                _ -> ok
+        \\            end;
+        \\        _ -> ok
+        \\    end
+        \\end,
+        \\Parent = self(),
+        \\Refs = [begin
+        \\            Ref = make_ref(),
+        \\            spawn(fun() -> catch Compile(S), Parent ! Ref end),
+        \\            Ref
+        \\        end || S <- filelib:wildcard(filename:join([Dir, "**", "*.erl"]))],
+        \\[receive R -> ok end || R <- Refs],
+        \\halt(0).
+    ;
+    const result = std.process.run(arena, io, .{
+        .argv = &.{ "erl", "-noshell", "-eval", eval, "-extra", dir },
+        .stdout_limit = .limited(1024 * 1024),
+        .stderr_limit = .limited(1024 * 1024),
+    }) catch return;
+    _ = result;
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 pub fn run(
@@ -257,6 +311,9 @@ pub fn run(
     // beside the script before running the tests.
     if (target == .erlang) {
         _ = libs.shipErlSidecars(gpa, io, outputs.items, test_out, env_map) catch 0;
+        // Every `.erl` of the run is now in place: compile each once, here,
+        // instead of once per test module that loads it.
+        precompileErlang(arena, io, test_out);
     }
 
     // commonJS: root-source imports (`import {x};`) emit `require("./module")`

@@ -728,7 +728,11 @@ codegen/
   that module only, so a cross-module call would be `undef` at run time: in test
   mode a module that reaches another one emits `'__bp_load_siblings'/0`, which
   compiles and loads every other `.erl` the runner wrote beside it before the
-  tests run. "Reaches another one" is `imported_fns`, `imported_types`,
+  tests run. It loads the `<name>.beam` `botopink test` already compiled beside
+  the source in the run's own directory when there is one (`'__bp_prebuilt'/1`,
+  written by `test_cmd.zig`'s `precompileErlang` — one compile per module per
+  run, not one per sibling per test module) and compiles the source itself
+  otherwise, which is also the arm every module that does not compile takes. "Reaches another one" is `imported_fns`, `imported_types`,
   **`std_imports`** and a type module of its own — the std route was missing, so
   `import {querystring} from "std"` emitted the remote `std@querystring:parse/1`
   in a module whose runner never loaded `std@querystring` and the test died

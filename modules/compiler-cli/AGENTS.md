@@ -109,7 +109,8 @@ ones it finds a source file for into the output — so a qualifier naming an OTP
 module or another module of this build is a no-op, with no lib names in the
 code. **Wired into `botopink test` only** (`test_cmd.zig`): the test runner's
 `__bp_load_siblings/0` compiles and loads every `.erl` beside the script, so
-copying is all it takes there. `botopink build`/`run` emit no such loader and do
+copying is all it takes there (the copy lands before `precompileErlang`, so a
+host module is compiled once per run like every other `.erl`). `botopink build`/`run` emit no such loader and do
 not copy, so the `build.zig` call site is still open (front
 `13-module-identity`'s file: `if (target == .erlang) { _ = libs.shipErlSidecars(gpa, io, outputs, out_dir, env_map) catch 0; }`
 beside the existing `if (target == .commonJS)`). It only becomes *useful* once an
