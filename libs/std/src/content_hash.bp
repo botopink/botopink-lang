@@ -40,6 +40,30 @@ pub declare fn contentHash(value: string) -> string;
 #[@External.Erlang("""binary:part(string:lowercase(binary:encode_hex(crypto:hash(sha256, $0))), 0, 32)""")]
 pub declare fn strongHash(value: string) -> string;
 
+// ── cache keys — framed, never joined ────────────────────────────────────────
+
+// A key over several parts. Each part is length-prefixed, so no two different
+// part lists can collide: ["user:1", "profile"] and ["user", "1:profile"] frame
+// to `6:user:1|7:profile` and `4:user|9:1:profile` and therefore hash to
+// different keys. A cache that collides across a user boundary serves one user
+// another user's page, so the framing is the whole reason this function exists
+// instead of a `join`.
+pub fn cacheKey(parts: string[]) -> string {
+    return contentHash(frame(parts));
+}
+
+// The same framing over the strong hash, for keys built from input the caller
+// did not choose.
+pub fn strongCacheKey(parts: string[]) -> string {
+    return strongHash(frame(parts));
+}
+
+// `<length>:<part>` per part, `|` between parts. The one place a multi-part
+// key is rendered, so no function in this module joins parts unframed.
+fn frame(parts: string[]) -> string {
+    return parts.map({ p -> p.length().toString() + ":" + p }).join("|");
+}
+
 // ── tests ────────────────────────────────────────────────────────────────────
 //
 // Every expected hex below is a LITERAL, not a second call: a literal is the
@@ -72,4 +96,29 @@ test "content_hash.strongHash of the empty string is the truncated empty SHA-256
 
 test "content_hash.strongHash of 'hello' is the pinned truncated SHA-256" {
     assert strongHash("hello") == "2cf24dba5fb0a30e26e83b2ac5b9e29e";
+}
+
+test "content_hash.cacheKey framing does not collide across part boundaries" {
+    val a = cacheKey(["user:1", "profile"]);
+    val b = cacheKey(["user", "1:profile"]);
+    assert a != b;
+    // `6:user:1|7:profile` and `4:user|9:1:profile`, pinned on both targets.
+    assert a == "62d9003d";
+    assert b == "8aac687d";
+}
+
+test "content_hash.cacheKey distinguishes a trailing empty part" {
+    assert cacheKey(["a"]) != cacheKey(["a", ""]);
+    assert cacheKey(["a"]) == "b878b31";
+    assert cacheKey(["a", ""]) == "7e7c9f77";
+}
+
+test "content_hash.cacheKey of no parts is the hash of the empty frame" {
+    assert cacheKey([]) == "1505";
+}
+
+test "content_hash.strongCacheKey frames like cacheKey over the strong hash" {
+    assert strongCacheKey(["user:1", "profile"]) != strongCacheKey(["user", "1:profile"]);
+    assert strongCacheKey(["user:1", "profile"]) == strongHash("6:user:1|7:profile");
+    assert strongCacheKey(["user:1", "profile"]).length == 32;
 }
