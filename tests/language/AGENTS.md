@@ -29,6 +29,8 @@ rewrite a test to match current behaviour.
 — a dotted path and a braced group over the package's own tree and over std, aliases bound, only the
 leaves in scope, on commonJS/erlang/wasm — and three `reject/` cells: `import_name_collision` (the
 second item), `import_group_modifier` (`*` on a node that opens braces) and `import_alias_on_type`.
+`00 · 01-checker` step 8 R2 adds `modules/import_type_closure` — `import { User, makeUser }` where
+`User(role: Role)`, `Role` not named, on commonJS/erlang.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

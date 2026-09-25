@@ -4166,6 +4166,78 @@ pub fn registerImportedTypeDecl(env: *Env, decl: ast.DeclKind) !void {
     try registerTypeDecl(env, decl);
 }
 
+/// 01 R2 — importing a type registers the closure of the types its
+/// declaration mentions (field types and method signature types,
+/// transitively) from the module it comes from, so `import { User }` works
+/// when `User(role: Role)` and `Role` was not named in the clause. Each type
+/// of the closure is registered as a TYPE only: the constructor and variant
+/// bindings its registration adds are removed again — naming it in the
+/// import is what brings its constructor into scope. Call before registering
+/// `decl` itself: its fields resolve against the closure.
+pub fn registerImportedTypeClosure(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    decl: ast.DeclKind,
+) !void {
+    try registerTypeClosureDepth(env, moduleDecls, decl, 0);
+}
+
+fn registerTypeClosureDepth(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    decl: ast.DeclKind,
+    depth: usize,
+) !void {
+    if (depth >= 32 or decl != .type_) return;
+    const td = decl.type_;
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer names.deinit(env.arena);
+    for (td.recordFields()) |f| try collectTypeRefNames(env, f.typeRef, &names);
+    for (td.variants()) |v| for (v.fields) |f| try collectTypeRefNames(env, f.typeRef, &names);
+    for (td.methods) |m| {
+        for (m.params) |p| try collectTypeRefNames(env, p.typeRef, &names);
+        if (m.returnType) |rt| try collectTypeRefNames(env, rt, &names);
+    }
+    for (names.items) |n| {
+        if (std.mem.eql(u8, n, td.name)) continue;
+        if (env.lookupTypeDef(n) != null) continue;
+        const dep = moduleDecls.get(n) orelse continue;
+        if (dep != .type_) continue;
+        try registerTypeClosureDepth(env, moduleDecls, dep, depth + 1);
+        if (env.lookupTypeDef(n) != null) continue;
+        // Register the type, then take back the bindings it added.
+        var before = std.StringHashMap(void).init(env.arena);
+        defer before.deinit();
+        var kit = env.bindings.keyIterator();
+        while (kit.next()) |k| try before.put(k.*, {});
+        try registerTypeDecl(env, dep);
+        var added: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer added.deinit(env.arena);
+        var ait = env.bindings.keyIterator();
+        while (ait.next()) |k| if (!before.contains(k.*)) try added.append(env.arena, k.*);
+        for (added.items) |k| _ = env.bindings.remove(k);
+    }
+}
+
+fn collectTypeRefNames(env: *Env, ref: ast.TypeRef, out: *std.ArrayListUnmanaged([]const u8)) !void {
+    switch (ref) {
+        .named => |n| try out.append(env.arena, n),
+        .array => |e| try collectTypeRefNames(env, e.*, out),
+        .optional => |e| try collectTypeRefNames(env, e.*, out),
+        .tuple_ => |es| for (es) |e| try collectTypeRefNames(env, e, out),
+        .labeledTuple => |lt| for (lt.elems) |e| try collectTypeRefNames(env, e, out),
+        .function => |f| {
+            for (f.params) |e| try collectTypeRefNames(env, e, out);
+            try collectTypeRefNames(env, f.returnType.*, out);
+        },
+        .generic => |g| {
+            try out.append(env.arena, g.name);
+            for (g.args) |e| try collectTypeRefNames(env, e, out);
+        },
+        .typeparam => |cs| for (cs) |e| try collectTypeRefNames(env, e, out),
+    }
+}
+
 // ── template call-site expansion (expr-templates F6, V1 driver) ───────────────
 
 /// Expand a call to a template function (`-> @Expr<…>`) at the call site.

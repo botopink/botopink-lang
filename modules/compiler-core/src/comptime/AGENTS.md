@@ -709,6 +709,17 @@ declares no methods — `EnumSection` has no slot for them and nothing needs one
 The `reject/` cells `wrapper_without_annotation`, `val_assert_after_catch` and `two_effect_markers`
 pin all three.
 
+## Importing a type brings its type closure (01 R2)
+
+`import { User } from "users"` where `User(role: Role)` used to red `unknown type 'Role'` until `Role` was
+named too. `comptime.zig`'s import loop now calls `registerImportedTypeClosure` before
+`registerImportedTypeDecl`: the types the declaration mentions — field, variant-field and method
+signature types, transitively, from the module the import names — are registered as **types only**
+(the constructor and variant bindings their registration adds are removed again), so naming a type
+in the clause is still what brings its constructor into scope: `Role(name: "x")` stays unbound. A
+name the module does not declare is left to the ordinary unknown-type diagnostic. Cell:
+`tests/language/modules/import_type_closure`.
+
 ## A behavior's associated fn through its own name (01 R6)
 
 `Array.range(0, 3)` resolves through `registerInterfaceAssociatedFns`' `Array.range` binding even
