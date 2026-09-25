@@ -502,6 +502,7 @@ pub const Parser = struct {
                     // them — `val Name = fn …` and the other `val` shorthands do
                     // not, and are refused where the annotation is.
                     .val, .@"var" => blk2: {
+                        const annTok = this.peek();
                         const anns = try this.parseAnnotations(alloc);
                         var decl = try this.parseValForm(alloc);
                         switch (decl) {
@@ -510,6 +511,9 @@ pub const Parser = struct {
                                 decl.deinit(alloc);
                                 for (anns) |*ann| ann.deinit(alloc);
                                 alloc.free(anns);
+                                // Refused at the annotation, not at whatever
+                                // token follows the form (decision 67).
+                                this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, annTok);
                                 return ParseError.UnexpectedToken;
                             },
                         }

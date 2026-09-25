@@ -1,0 +1,57 @@
+//// Decision 43 — off the BEAM, `#[@BeamMemory.<member>]` is a silent no-op: a
+//// target whose execution context is already the whole program has nowhere
+//// else to put the state, so an annotated `var` is the binding a bare `var` is.
+//// `ProcessDict` is the default said out loud; `Ets(keyed = true)` needs a
+//// `Dict` (decision 51). Each test writes and reads back through the module
+//// binding, because a read alone would pass on a backend that dropped the
+//// write.
+////
+//// erlang is C-10's (`@BeamMemory` steps 4–5, after 13): the writes below do
+//// not compile there today (`hits() -> 0.` then an unbound `Hits`).
+
+import { dict } from "std";
+
+var bare: i32 = 0;
+
+#[@BeamMemory.ProcessDict]
+var explicit: i32 = 0;
+
+#[@BeamMemory.Ets]
+var hits: i32 = 0;
+
+#[@BeamMemory.PersistentTerm]
+var version: i32 = 101;
+
+#[@BeamMemory.Ets(keyed = true)]
+var counts: Dict<string, i32> = dict.empty();
+
+fn bump() { hits = hits + 1; }
+
+test "a bare var is one value for the program" {
+    bare = bare + 1;
+    bare = bare + 1;
+    assert bare == 2;
+}
+
+test "ProcessDict written out loud is the same binding a bare var is" {
+    explicit = 5;
+    assert explicit == 5;
+}
+
+test "Ets: a write through a fn is what the next reader sees" {
+    bump();
+    bump();
+    assert hits == 2;
+}
+
+test "PersistentTerm: the declaration's value, then a write" {
+    assert version == 101;
+    version = 102;
+    assert version == 102;
+}
+
+test "Ets(keyed = true) on a Dict: a row per key" {
+    counts = counts.insert("a", 1);
+    counts = counts.insert("b", 2);
+    assert counts.size() == 2;
+}

@@ -361,3 +361,13 @@ erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's lab
 # body still traps (`wasm trap: unreachable`). The cell is listed whole because
 # the first failing row stops the run.
 wasm     | run/effect_method.bp | 05-wasm | a record method looping over its own array field answers `0`, and a method declared in an enum's body traps (`unreachable`). Measured with the effect annotations removed as well, so it is the method call and not the effect
+
+# ── front 17 (C-05 landed the carrier; C-10 owes the BEAM lowering) ──────────
+# A module-level `var` parses, is `let` on commonJS and `(mut i32)` on wasm, and
+# has no lowering on erlang or beam until C-10 (`@BeamMemory` steps 4–5, after
+# 13). Measured at `4fe1747e`: erlang emits `hits() -> 0.` and `Hits = (Hits +
+# 1).` — unbound, the module does not compile; beam writes `%% assign to unknown
+# variable: hits` into the `.S`, assembles, and prints `0` at exit 0.
+erlang   | run/module_var.bp | C-10 | a module `var` is still a 0-arity fn on erlang; the write is `Hits = (Hits + 1).` with `Hits` unbound, so the module does not compile
+beam     | run/module_var.bp | C-10 | the write is dropped (`%% assign to unknown variable: hits`) and the program prints `0` at exit 0 — the silent one of the two
+erlang   | test/beam_memory_noop.bp | C-10 | the five tests write through a module `var`; each write is an unbound `Hits`/`Bare`/… on erlang, so the cell does not compile — once C-10 lands, the annotated ones become mode cells, not no-op cells

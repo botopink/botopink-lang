@@ -511,7 +511,8 @@ shapes (vocabulary in `libs/std/AGENTS.md`):
 reads it). An annotated binding — `#[@BeamMemory.Ets(keyed = true)] var hits:
 i32 = 0;` — is dispatched from the annotation branch of the top-level loop, and
 the annotations land on `ValDecl.annotations`; only the plain form takes them
-(an annotated shorthand is `UnexpectedToken`). What the annotation may say is
+(an annotated shorthand is `UnexpectedToken`, located at the annotation's first
+token rather than at whatever follows the form). What the annotation may say is
 checked by inference, not here.
 
 ## Comments and declaration ids
