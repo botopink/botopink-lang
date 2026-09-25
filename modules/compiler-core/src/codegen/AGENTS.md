@@ -369,6 +369,21 @@ codegen/
   package prefix — a path nothing emits, so the program built and then died at
   run time. The namespace-handle block below is skipped for it: the shorthand
   names no package, so there is no handle to bind.
+- **A path and a group bind their leaf (decision 107)**: every backend reads
+  `imp.leaf()` (the exported name), `imp.name()` (the local binding — the
+  alias when written) and `ImportDecl.leafSource` (the module the prefix
+  names, handed to `CrossModule.picked` in place of the decl's `from`), so
+  `import {url.parse, json: {parse as parseJson}}` reaches two owners.
+  commonJS destructures `{ leaf: alias }` (`js.ObjectPattern.Prop.bind`) —
+  from `std/<prefix>.js` for a std symbol leaf, or binds the module object
+  for a std namespace leaf (`comptimeMod.isStdModule` decides which;
+  `import {io.fs}` → `require("./std/io/fs.js")`); erlang keys `std_imports`
+  local name → std module path and maps an alias back to the declared name
+  at the remote call (`import_aliases`); beam records `imported_fn_owners`
+  (local → owner atom + declared name) ahead of the name-keyed
+  `crossOwnerOf`; wat, which links statically, registers the alias beside the
+  declared name in every fn table and maps it back at the `call`
+  (`import_aliases`).
 - **Lib namespace object**: when an import names the lib itself
   (`import {Lib} from "Lib"`) and that name has no emitted symbol, `emitUse`
   binds the lib's module object (`buildUse`: `const Lib = require(…)`, or

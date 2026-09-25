@@ -1313,6 +1313,10 @@ fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bo
     return false;
 }
 
+/// An imported `pub fn` as this module calls it: the owner's atom and the
+/// declared name it exports (decision 107 — the local name may be an alias).
+const ImportedFn = struct { owner: []const u8, exported: []const u8 };
+
 const Emitter = struct {
     alloc: std.mem.Allocator,
     /// The atom of the module being emitted — the FILE's own, or a `type`'s
@@ -1473,7 +1477,14 @@ const Emitter = struct {
     /// from "std"` → `"math"`). A qualified call whose receiver is in this
     /// set lowers to a remote `call_ext` into the lowercase module atom,
     /// parity with the erlang backend's `std_imports` path.
-    std_imports: std.StringHashMap(void),
+    std_imports: std.StringHashMap([]const u8),
+    /// Decision 107 — an imported `pub fn` bound here (`import {a.twice}`,
+    /// `import {a.twice as double}`): the LOCAL name → the owner's atom and
+    /// the declared name the owner exports. Mirrors the erlang backend's
+    /// `imported_fns` + `import_aliases`; resolved through the cross index's
+    /// `picked` with the item's own source, so `import {url.parse}` and
+    /// `import {json.parse}` reach different modules.
+    imported_fn_owners: std.StringHashMap(ImportedFn),
     /// Named top-level `val`s of this module — each is a 0-arity function, so a
     /// bare reference is a local call.
     top_vals: std.StringHashMap(void),
@@ -1590,7 +1601,8 @@ const Emitter = struct {
             .user_behavior_methods = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
             .prim_beam_templates = std.StringHashMap([]const u8).init(alloc),
-            .std_imports = std.StringHashMap(void).init(alloc),
+            .std_imports = std.StringHashMap([]const u8).init(alloc),
+            .imported_fn_owners = std.StringHashMap(ImportedFn).init(alloc),
             .top_vals = std.StringHashMap(void).init(alloc),
             .prelude_arena = std.heap.ArenaAllocator.init(alloc),
             .externals = std.StringHashMap(ast.FnDecl).init(alloc),
@@ -1667,6 +1679,7 @@ const Emitter = struct {
         }
         self.prim_beam_templates.deinit();
         self.std_imports.deinit();
+        self.imported_fn_owners.deinit();
         self.top_vals.deinit();
         self.entry_stmts.deinit(self.alloc);
         self.string_locals.deinit();
@@ -1894,7 +1907,14 @@ const Emitter = struct {
                 };
                 if (!from_std) continue;
                 for (u.imports) |imp| {
-                    try self.std_imports.put(imp.segments[imp.segments.len - 1], {});
+                    // The namespace form only (`dict`, `io.fs`, `io: {fs}`):
+                    // local name → the module's path inside std. A symbol
+                    // leaf (`io.fs.readText`) is an imported `pub fn`
+                    // (`imported_fn_owners`), not a namespace.
+                    const whole = try imp.fullPath(self.atom_arena.allocator());
+                    if (!imp.isQualified() or comptimeMod.isStdModule(whole)) {
+                        try self.std_imports.put(imp.name(), whole);
+                    }
                 }
             },
             else => {},
@@ -1964,9 +1984,14 @@ const Emitter = struct {
                 };
                 if (!from_std) continue;
                 for (u.imports) |imp| {
-                    const mod = imp.segments[imp.segments.len - 1];
+                    // The module the item names by its whole path (`dict`,
+                    // `io.fs`) — or, for a symbol leaf, the module its
+                    // prefix names: either way its enums come along.
+                    const whole = try imp.fullPath(self.atom_arena.allocator());
+                    const owner_key = if (!imp.isQualified() or comptimeMod.isStdModule(whole)) whole else try imp.prefixPath(self.atom_arena.allocator());
                     for (all_outputs) |*other| {
-                        if (!std.mem.eql(u8, crossModule.moduleBasename(other.name), mod)) continue;
+                        if (!std.mem.startsWith(u8, other.name, "std/")) continue;
+                        if (!std.mem.eql(u8, other.name["std/".len..], owner_key)) continue;
                         const ok = switch (other.outcome) {
                             .ok => |*o| o,
                             else => continue,
@@ -1992,12 +2017,16 @@ const Emitter = struct {
         const xc = self.cross orelse return;
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
-                const name = imp.name();
-                // Resolved through the import's own `from "<mod>"`, not by the
+                // The LEAF is what the owner exports (decision 107); the local
+                // binding may be an alias.
+                const name = imp.leaf();
+                // Resolved through the import's own `from "<mod>"` — for a
+                // qualified item, the module its prefix names — not by the
                 // bare name: several modules of a program may export one name
                 // and `exports.get` answered with whichever the walk reached
                 // last. A contest is refused in the driver, not guessed here.
-                const info = xc.picked(name, u.source, null) orelse continue;
+                const leaf_src = try u.leafSource(imp, self.atom_arena.allocator(), false);
+                const info = xc.picked(name, leaf_src, null) orelse continue;
                 const owner = self.atomOf(info.module);
                 if (std.mem.eql(u8, owner, self.module_name)) continue;
                 switch (info.kind) {
@@ -2032,6 +2061,7 @@ const Emitter = struct {
                             else => {},
                         };
                     },
+                    .@"fn" => try self.imported_fn_owners.put(imp.name(), .{ .owner = owner, .exported = name }),
                     else => {},
                 }
             },
@@ -4320,7 +4350,7 @@ const Emitter = struct {
             // `call_ext` into that module atom. Parity with the erlang
             // backend's `std_imports` path.
             if (recv_name) |rn| {
-                if (self.std_imports.contains(rn)) {
+                if (self.std_imports.get(rn)) |std_key| {
                     try self.materializeCallArgs(cc.args, cc.trailing);
                     const arity = cc.args.len + cc.trailing.len;
                     var fn_buf: [256]u8 = undefined;
@@ -4330,7 +4360,7 @@ const Emitter = struct {
                         self.out,
                         if (mode == .tail) .last else .normal,
                         arity,
-                        .{ .ext = .{ .module = self.stdModuleAtom(rn, &path_buf), .function = fn_atom } },
+                        .{ .ext = .{ .module = self.stdModuleAtom(std_key, &path_buf), .function = fn_atom } },
                         self.num_y,
                     );
                     return;
@@ -4567,6 +4597,23 @@ const Emitter = struct {
         // module, so the call is remote (`math:double/1`). Without this the site
         // recorded a `%% unresolved local call` comment and silently left the
         // last staged argument in `{x, 0}`.
+        // An imported `pub fn` bound by this module's own import (decision
+        // 107: by its leaf, in the module the item names, under the alias
+        // when one is written) — before the name-keyed index, which cannot
+        // tell `url.parse` from `json.parse` and knows no alias.
+        if (self.imported_fn_owners.get(cc.callee)) |imported| {
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            var name_buf: [256]u8 = undefined;
+            const fn_atom = atomName(imported.exported, &name_buf) catch imported.exported;
+            try beamEmitter.writeCall(
+                self.out,
+                if (mode == .tail) .last else .normal,
+                arity,
+                .{ .ext = .{ .module = imported.owner, .function = fn_atom } },
+                self.num_y,
+            );
+            return;
+        }
         if (self.crossOwnerOf(cc.callee, .@"fn")) |owner| {
             try self.materializeCallArgs(cc.args, cc.trailing);
             var name_buf: [256]u8 = undefined;

@@ -619,6 +619,99 @@ test "infer: std package ---- import binds namespace" {
     );
 }
 
+// ── decision 107: only the leaf enters scope ─────────────────────────────────
+
+test "infer: std package ---- a dotted path binds its leaf, a group binds several" {
+    // `Dict` (a type), `newDict` (an aliased fn), `gt`/`reverse`/`toInt`
+    // (fns) — and neither `dict` nor `order` is bound: only the leaf enters
+    // scope, so the namespace has to be imported on its own to be spelled.
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {dict.Dict, dict: {empty as newDict}, order: {gt, reverse, toInt}} from "std";
+        \\
+        \\fn main() {
+        \\    val d: Dict<string, i32> = newDict();
+        \\    val n: i32 = d.insert("a", 1).size();
+        \\    val o: i32 = toInt(reverse(gt()));
+        \\}
+    );
+}
+
+test "infer: std package ---- an intermediate node may be a leaf" {
+    // `import {io.fs}` will bind the module `fs` as a namespace once the tree
+    // of decision 106 lands; on the flat tree the same rule reads
+    // `dict: {empty}` beside `dict` itself: the prefix is a leaf if listed.
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {dict, dict: {empty}} from "std";
+        \\
+        \\fn main() {
+        \\    val a = dict.empty().insert("a", 1);
+        \\    val b = empty().insert("b", 2);
+        \\    val n: i32 = a.size() + b.size();
+        \\}
+    );
+}
+
+test "infer: std package ---- the namespace is not bound by a path through it" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {order.lt} from "std";
+        \\
+        \\fn main() {
+        \\    val a = order.toInt(lt());
+        \\}
+    );
+}
+
+test "infer: std package ---- two leaves binding one name collide at the second" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {url.parse, json.parse} from "std";
+        \\
+        \\fn main() {
+        \\    val u = parse("http://a");
+        \\}
+    );
+}
+
+test "infer: std package ---- an alias on either side clears the collision" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {url.parse as parseUrl, json: {parse as parseJson}} from "std";
+        \\
+        \\fn main() {
+        \\    val u = parseUrl("http://a/b");
+        \\    val j = parseJson("{}");
+        \\}
+    );
+}
+
+test "infer: std package ---- a type keeps its declared name" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {dict.Dict as D} from "std";
+        \\
+        \\fn main() {
+        \\    val d: D<string, i32> = D(pairs: []);
+        \\}
+    );
+}
+
+test "infer: std package ---- a path whose prefix is no module is refused at the item" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {collections.Dict} from "std";
+        \\
+        \\fn main() {
+        \\    val n = 1;
+        \\}
+    );
+}
+
+test "infer: std package ---- a leaf the module does not declare is refused at the item" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {dict: {Dict, emptyish}} from "std";
+        \\
+        \\fn main() {
+        \\    val n = 1;
+        \\}
+    );
+}
+
 test "infer: builtin result namespace ---- qualified calls typecheck" {
     try h.assertInfersOk(std.testing.allocator,
         \\#[@result]

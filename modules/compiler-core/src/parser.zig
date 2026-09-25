@@ -127,6 +127,11 @@ pub const ParseErrorType = enum {
     removedKeywordRecord,
     /// `enum E { … }` — `enum` was replaced by `type` in 1.0.3.
     removedKeywordEnum,
+    /// Decision 107 — `*` or `as` on an import node that opens braces
+    /// (`import {io* : {fs}}`, `import {io as x: {fs}}`). Both belong to a
+    /// leaf: an activation names one extension and an alias renames one
+    /// binding, and a group is neither.
+    importGroupModifier,
     /// `interface I { … }` — `interface` was renamed to `behavior` in 1.0.3.
     removedKeywordInterface,
     /// `record { x: 1 }` — anonymous records are tuples in 1.0.3.

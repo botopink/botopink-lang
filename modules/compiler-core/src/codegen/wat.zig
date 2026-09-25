@@ -224,6 +224,11 @@ fn collectLinks(
     visited: *std.StringHashMap(void),
     out: *std.ArrayListUnmanaged(Linked),
 ) !void {
+    // The import sources synthesised below are scratch: they answer one
+    // ownership question each and are not kept.
+    var scratch = std.heap.ArenaAllocator.init(alloc);
+    defer scratch.deinit();
+    const sa = scratch.allocator();
     for (program.decls) |decl| {
         const u = switch (decl) {
             .use => |u| u,
@@ -237,10 +242,15 @@ fn collectLinks(
                 // the index's walk reached last INTO the consumer: measured,
                 // `import {parse} from "one"` linked `two`'s body and the
                 // program printed the other module's answer at exit 0.
-                const owns = if (cross.picked(imp.name(), u.source, null)) |info|
+                // A qualified item (decision 107) asks for its LEAF in the
+                // module its prefix names; the whole path names a module
+                // outright (`import {io.fs} from "std"` → `std/io/fs`).
+                const leaf_src = try u.leafSource(imp, sa, false);
+                const whole = try u.leafSource(imp, sa, true);
+                const owns = if (cross.picked(imp.leaf(), leaf_src, null)) |info|
                     std.mem.eql(u8, info.module, o.name)
                 else
-                    std.mem.eql(u8, crossModule.moduleBasename(o.name), imp.segments[imp.segments.len - 1]);
+                    whole.namesModule(o.name) or std.mem.eql(u8, crossModule.moduleBasename(o.name), imp.leaf());
                 if (!owns or visited.contains(o.name)) continue;
                 const ok = switch (o.outcome) {
                     .ok => |*ok| ok,
@@ -573,6 +583,12 @@ const Emitter = struct {
     bool_globals: std.StringHashMap(void),
     /// Every emitted WAT function symbol → its signature.
     fn_sigs: std.StringHashMap(FnSig),
+    /// Decision 107 — an imported fn bound under an alias (`import {a.twice as
+    /// double}`): the local name → the declared name. The module is linked
+    /// statically, so the function exists under its declared name only; the
+    /// alias is registered beside it in every name-keyed table and mapped
+    /// back at the `call`.
+    import_aliases: std.StringHashMap([]const u8),
     /// Every emitted WAT global symbol. An identifier that is neither a local
     /// nor a known global lowers to a zero placeholder instead of a dangling
     /// `global.get`.
@@ -757,6 +773,7 @@ const Emitter = struct {
             .arr_globals = std.StringHashMap(void).init(alloc),
             .bool_globals = std.StringHashMap(void).init(alloc),
             .fn_sigs = std.StringHashMap(FnSig).init(alloc),
+            .import_aliases = std.StringHashMap([]const u8).init(alloc),
             .globals = std.StringHashMap(void).init(alloc),
             .records = std.StringHashMap([]const []const u8).init(alloc),
             .record_field_types = std.StringHashMap([]const []const u8).init(alloc),
@@ -829,6 +846,7 @@ const Emitter = struct {
         self.arr_globals.deinit();
         self.bool_globals.deinit();
         self.fn_sigs.deinit();
+        self.import_aliases.deinit();
         self.globals.deinit();
         self.records.deinit();
         self.record_field_types.deinit();
@@ -980,6 +998,28 @@ const Emitter = struct {
                     if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
                 }
                 try self.iface_assoc.put(sym, m);
+            },
+            else => {},
+        };
+        // Decision 107 — an import bound under an alias: the callee a body
+        // spells is the alias, the function the linked owner defines is the
+        // declared name. Register the alias beside the declared name in every
+        // table a call consults, and map it back where the `call` is written.
+        for (program.decls) |decl| switch (decl) {
+            .use => |u| for (u.imports) |imp| {
+                const alias = imp.alias orelse continue;
+                const leaf = imp.leaf();
+                if (std.mem.eql(u8, alias, leaf)) continue;
+                const sig = self.fn_sigs.get(leaf) orelse continue;
+                try self.import_aliases.put(alias, leaf);
+                try self.fn_sigs.put(alias, sig);
+                if (self.fn_param_typerefs.get(leaf)) |v| try self.fn_param_typerefs.put(alias, v);
+                if (self.fn_ret_typerefs.get(leaf)) |v| try self.fn_ret_typerefs.put(alias, v);
+                if (self.fn_arr_elem.get(leaf)) |v| try self.fn_arr_elem.put(alias, v);
+                if (self.result_shape_fns.get(leaf)) |v| try self.result_shape_fns.put(alias, v);
+                if (self.str_fns.contains(leaf)) try self.str_fns.put(alias, {});
+                if (self.bool_fns.contains(leaf)) try self.bool_fns.put(alias, {});
+                if (self.result_str_fns.contains(leaf)) try self.result_str_fns.put(alias, {});
             },
             else => {},
         };
@@ -3116,7 +3156,7 @@ const Emitter = struct {
                     } else if (self.globals.contains(n)) {
                         try self.emit(.{ .global_get = n });
                     } else if (self.fn_sigs.contains(n)) {
-                        try self.lowerFnRef(n);
+                        try self.lowerFnRef(self.import_aliases.get(n) orelse n);
                     } else if (self.findVariant(n)) |fv| {
                         // a bare unit variant (`Lt`)
                         try self.emitUnitVariant(fv.variants, fv.tag, "", n);
@@ -3198,7 +3238,7 @@ const Emitter = struct {
                             .ident => |name| {
                                 if (self.fn_sigs.get(name)) |sig| {
                                     try self.lowerValue(pl.lhs.*);
-                                    try self.emit(.{ .call = name });
+                                    try self.emit(.{ .call = self.import_aliases.get(name) orelse name });
                                     if (sig.result == null) try self.pushZero();
                                 } else {
                                     try self.emitCf(zero, "unresolved pipeline target {s}", .{name});
@@ -4723,7 +4763,7 @@ const Emitter = struct {
             while (k < sig.params.len) : (k += 1) {
                 try self.emitC(constOf(sig.params[k], "0"), "missing argument");
             }
-            try self.emit(.{ .call = cc.callee });
+            try self.emit(.{ .call = self.import_aliases.get(cc.callee) orelse cc.callee });
             return;
         }
         if (try self.lowerCollectionMethod(cc)) return;

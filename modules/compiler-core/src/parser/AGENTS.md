@@ -33,6 +33,10 @@ parser/
 ├── types.zig      ← type-ref sub-grammar: parseTypeRef/BaseTypeRef/GenericParams/ImplementClause
 ├── patterns.zig   ← case/pattern sub-grammar: parseCaseExpr/parsePattern/SimplePattern/ListPattern
 ├── decls.zig      ← declaration sub-grammar: val/var/fn/test/type/behavior/implement/extend/delegate/import + params;
+│                     the import list of decision 107 (`parseImportItems` / `parseImportItemInto`): a dotted path
+│                     (`a.b.c ("*" | "as" x)?`) and a braced group (`a: {b: {c}}`) flatten to the same `ImportPath`
+│                     per leaf, the group's prefix written into `segments`; `*`/`as` on a node that opens braces
+│                     is `importGroupModifier`; `parseImportItem` (one leaf) serves the `X*;` activation statement
 │                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
@@ -74,7 +78,7 @@ parser/
 
 ```zig
 test "import decl" {
-    try assertParser(std.testing.allocator, @src(), "import {std.List as L, X*};");
+    try assertParser(std.testing.allocator, @src(), "import {std.List as L, X*, io: {fs: {readText as read}}};");
 }
 ```
 

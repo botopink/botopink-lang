@@ -832,7 +832,9 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
             // A `pub implement` is emitted as a namespace object; a consumer that
             // stars it (`import { Name* }`) references it as a value (`Name.m(x)`).
             .implement => |im| if (im.isPub) try putExport(alloc, &exports, &owners, im.name, .{ .module = ct.name, .kind = .val, .is_class = false }),
-            .use => |u| for (u.imports) |imp| try imported.put(imp.name(), {}),
+            // What an owner has to EXPORT is the declared name — the leaf of
+            // a qualified item (decision 107), never its alias.
+            .use => |u| for (u.imports) |imp| try imported.put(imp.leaf(), {}),
             else => {},
         };
     }
@@ -855,6 +857,9 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
     var export_faults = std.StringHashMap(Contested).init(alloc);
     errdefer export_faults.deinit();
     {
+        // The import sources synthesised for qualified items are scratch.
+        var scratch = std.heap.ArenaAllocator.init(alloc);
+        defer scratch.deinit();
         const tmp: CrossModule = .{
             .exports = exports,
             .owners = owners_final,
@@ -874,8 +879,12 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
                     if (export_faults.contains(ct.name)) break;
                     // An import site binds a NAME, not a call, so there is no
                     // arity to narrow with: botopink has no overloading and
-                    // `import {parse}` binds exactly one `parse`.
-                    switch (tmp.pick(imp.name(), u.source, null)) {
+                    // `import {parse}` binds exactly one `parse`. A qualified
+                    // item (decision 107) asks for its leaf in the module the
+                    // prefix names, so `url.parse` beside `json.parse` is two
+                    // answered questions, not a contest.
+                    const leaf_src = try u.leafSource(imp, scratch.allocator(), false);
+                    switch (tmp.pick(imp.leaf(), leaf_src, null)) {
                         .contested => |c| try export_faults.put(ct.name, c),
                         .none, .one => {},
                     }
