@@ -371,6 +371,11 @@ pub const Env = struct {
     /// The names whose most recent binder was a `val` (decision 38). `bind`
     /// clears a name — a `var`, a parameter, a pattern may all be assigned;
     /// `bindVal` sets it — and an assignment to a set name is refused.
+    /// 01 R8 — the bindings that hold a TYPE rather than a value
+    /// (`val T = i32;`, `val U = T;`). `resolveTypeName`'s bindings arm
+    /// accepts these, a primitive and an imported constructor, and refuses
+    /// every other binding: `val n = 5; val x: n = 7;` names a value.
+    typeValueNames: std.StringHashMap(void),
     valNames: std.StringHashMap(void),
     /// Registered type definitions: type name → TypeDef.
     typeDefs: std.StringHashMap(TypeDef),
@@ -722,6 +727,7 @@ pub const Env = struct {
             .arena = arena,
             .bindings = std.StringHashMap(*T.Type).init(arena),
             .valNames = std.StringHashMap(void).init(arena),
+            .typeValueNames = std.StringHashMap(void).init(arena),
             .typeDefs = std.StringHashMap(TypeDef).init(arena),
             .fnTypeparams = std.StringHashMap([]const TypeparamConstraint).init(arena),
             .fnExprParams = std.StringHashMap([]const ExprParamInfo).init(arena),
@@ -798,6 +804,7 @@ pub const Env = struct {
             .arena = arena,
             .bindings = try tmpl.bindings.cloneWithAllocator(arena),
             .valNames = try tmpl.valNames.cloneWithAllocator(arena),
+            .typeValueNames = try tmpl.typeValueNames.cloneWithAllocator(arena),
             .typeDefs = try tmpl.typeDefs.cloneWithAllocator(arena),
             .fnTypeparams = try tmpl.fnTypeparams.cloneWithAllocator(arena),
             .fnExprParams = try tmpl.fnExprParams.cloneWithAllocator(arena),
@@ -1229,7 +1236,26 @@ pub const Env = struct {
             if (d.* == .func and d.func.ret.isNamed(name)) {
                 return self.namedType(name);
             }
-            return ty;
+            // A primitive is bound to itself (`registerBuiltins`); a `val`
+            // bound to a type is recorded in `typeValueNames`. A binding of
+            // function type keeps the arm's old answer: std's `Array` and
+            // imported constructors whose return is not spelled like the
+            // binding (`Array` → `array<T>`) are read through it, and a
+            // variant constructor used as a type is not R8's question.
+            //
+            // A declaration's own binding — what a `type`/`behavior` binds its
+            // name to, and what an import of one carries — is typed by the
+            // declaration's display name (`behavior Request { … }`, the R1
+            // builders), which no value's type can spell: it holds a space.
+            const declBinding = d.* == .named and std.mem.indexOfScalar(u8, d.named.name, ' ') != null;
+            if (d.isNamed(name) or d.* == .func or declBinding or self.typeValueNames.contains(name)) return ty;
+            // 01 R8 — any other binding is a value, and a value is not a type.
+            const e = @import("error.zig").TypeError.custom(
+                try std.fmt.allocPrint(self.arena, "'{s}' is a value, not a type", .{name}),
+                "a type position takes a type: a `type` or `behavior` declaration, a primitive, or a `val` bound to one (`val T = i32;`)",
+            );
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
+            return error.TypeError;
         }
         // N28 — the flat spelling of a section type (`TokenText` for
         // `Token.Text`) is a name the author had to guess from a mangling the

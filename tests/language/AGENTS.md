@@ -29,6 +29,8 @@ rewrite a test to match current behaviour.
 — a dotted path and a braced group over the package's own tree and over std, aliases bound, only the
 leaves in scope, on commonJS/erlang/wasm — and three `reject/` cells: `import_name_collision` (the
 second item), `import_group_modifier` (`*` on a node that opens braces) and `import_alias_on_type`.
+`00 · 01-checker` step 8 R2 adds `modules/import_type_closure` — `import { User, makeUser }` where
+`User(role: Role)`, `Role` not named, on commonJS/erlang.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
@@ -992,7 +994,7 @@ table carried are gone: they parse. What is left is two rows and one correction.
 | Shape | Was listed as | Now |
 |---|---|---|
 | §5.1 `Pattern { body }` arms, and §5.3b section arms | `06 N22` | parse; `test/case_sections.bp` fails in inference like every other `case` cell (`expected string, got void`), not at the `{` |
-| `adder(3)(4)` — calling the result of a call | "make it parse" (14) | **parses** (15's R2). It does not *check*: `error: unbound variable ''` at the second `(` — the call carries its callee in `calleeExpr` and inference never types it. `test/curried_call.bp` asserts it and carries the two lines |
+| `adder(3)(4)` — calling the result of a call | "make it parse" (14) | **parses** (15's R2) and **checks** (01 handover 15: inference types the `calleeExpr` and applies it). No backend reads `calleeExpr` yet — commonJS emits `(4)`, erlang `''(4)` — so `test/curried_call.bp` carries two `C-09 (backend half)` lines |
 | `#(a: i32, b: string)[]` — an array of labeled tuples | "make it parse" (14) | **parses, checks and runs on all four targets** (15's R1), with `@Result<i32, string>[]` and `(i32 \| string)[]`. `test/type_suffix.bp` |
 | `??` | "deliberately absent (14) — it duplicates `catch` and `?.`" | **parses and runs on all four targets** (15's R8, decision 28). The premise was false as well as the verdict: `catch` is `@Result`-only — `val b = a catch 0;` on an `a: ?i32` reds with `` `try` requires a @Result<D, E> value, found 'optional' `` — so nothing else gives an optional a default. `test/nullish_default.bp` |
 | `xs[0]`, `xs[0..2]`, `d["k"]` — an index expression | "there is no index expression in the grammar" | **parses and checks** (15's R5, decision 30). **No backend lowers it**: the form reaches the unrecognised-builtin path, so `run/index_expression.bp` is listed against all four — and beam is the one that fails *silently*, exit 0 with the index dropped |
