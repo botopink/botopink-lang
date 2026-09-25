@@ -108,6 +108,14 @@ Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
   runs; on a `declare fn` it emits `require("./file.mjs")`, which throws unless
   the file is shipped next to the emitted module. Name the native method, write
   a template, or keep host code in a sidecar (below).
+- **`inline`** — `#[@External.Erlang("…", inline = true)]` (or `@External.Beam`)
+  opts the `(target, method)` pair out of the dispatch table so the emitter's
+  hand-coded shape keeps emitting. Only those two variants declare it, because
+  only the erlang and beam emitters read it (`hasExternalInline`, over the last
+  argument); on `Node` / `Wasm` / `Typescript`, anywhere but last, or with a
+  non-bool value it is refused at the annotation (front 20 F9, decision 67 —
+  `comptime/infer.zig` `external_variants`, kept in step with the
+  `pub type External` block by a drift test).
 - **Template** — any `$` in the string switches to the shared renderer
   (`modules/compiler-core/src/comptime/primOpTemplate.zig`):
 

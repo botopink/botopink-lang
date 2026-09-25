@@ -1092,6 +1092,14 @@ error naming the capitalised form (`` `#[@external]` binds no host — an extern
 target is written `External.<Target>` ``), rather than a function left silently
 without a host.
 
+`inline = true`, written last on `External.Erlang` or `External.Beam`, opts the
+declaration out of the dispatch table so the backend's hand-coded shape keeps
+emitting. Those two variants alone declare it, because the erlang and beam
+emitters alone read it. Written on `Node`, `Wasm` or `Typescript`, anywhere but
+last, or with a value that is not a bool, it would be a switch nothing reads, so
+it is refused at the annotation (`` `External.Node` declares no `inline` — the
+flag is read by the erlang and beam emitters only ``).
+
 A relative path (`"./helpers.mjs"`, `"helpers"` on erlang) names a **sidecar** the
 library keeps beside its sources, in `<src>/sidecars/` or `<src>/`. `botopink
 build` and `botopink test` copy it next to the emitted module, from the

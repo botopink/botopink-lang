@@ -70,8 +70,9 @@ because the checker refuses `effect-on-behavior-method-forbidden`), and
 `effect_chain` (1.0.10-beta front 20,
 decisions 95 and 98: one `test/`, two `run/` and five `reject/` cells; front 20
 also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
-decision 96, and `run/option_unwrap_or` + `reject/option_expect_removed` to
-`optional*` for F11), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
+decision 96, `run/option_unwrap_or` + `reject/option_expect_removed` to
+`optional*` for F11, and `reject/external_inline_unread` to `external_*` for F9 — `inline` on
+a variant whose emitter never reads it is refused at the annotation), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
 leading-dot section path names — `run/enum_section_expected_type`, where two enums carry
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
 `reject/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
