@@ -298,8 +298,14 @@ const assert_helper_source =
 ;
 
 /// The test-mode runner, appended after the `__bp_tests` registry.
+///
+/// It reads node's `process` through `globalThis`: a module that imports
+/// `std`'s `process` declares a module-level `const process`, which shadowed
+/// the global, and `process.argv[2]` threw before any test ran — the file
+/// printed no `N passed, M failed` line and its cells vanished from the count.
 const test_runner_source =
     \\async function __bp_run_tests() {
+    \\    const process = globalThis.process;
     \\    const filter = process.argv[2] || null;
     \\    const tests = filter ? __bp_tests.filter((t) => t.name.includes(filter)) : __bp_tests;
     \\    let passed = 0, failed = 0;

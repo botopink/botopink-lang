@@ -98,6 +98,7 @@ const __bp_tests = [
     { name: "t: a lambda's try is its own", fn: __bp_test_2, loc: "main.bp:17" },
 ];
 async function __bp_run_tests() {
+    const process = globalThis.process;
     const filter = process.argv[2] || null;
     const tests = filter ? __bp_tests.filter((t) => t.name.includes(filter)) : __bp_tests;
     let passed = 0, failed = 0;
