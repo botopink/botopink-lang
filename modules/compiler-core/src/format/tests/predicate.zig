@@ -132,3 +132,43 @@ test "fits: a measured group nested in a pinned one is decided at the column it 
         \\    .ccc())
     );
 }
+
+test "ifBreak: text that exists only in the broken spelling — absent flat, charged and printed broken" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var f = Formatter.init(arena.allocator());
+
+    // `f(a, b)` as one document with the trailing comma of the open form:
+    // `(` · nest(softline · a · `,` line · b) · ifBreak(`,`) · softline · `)`.
+    const args = try f.concat(
+        f.softline(),
+        try f.concat(try f.text("a"), try f.concat(try f.concat(try f.text(","), f.line()), try f.text("b"))),
+    );
+    const list = try f.concat(
+        try f.concat(try f.text("f("), try f.nest(formatMod.INDENT, args)),
+        try f.concat(try f.ifBreak(","), try f.concat(f.softline(), try f.text(")"))),
+    );
+
+    // Measured: 7 columns flat, no comma; one column short, every argument on
+    // its own line and the comma on the last.
+    const measured = try f.groupMeasured(list);
+    try expectRender(measured, 7, "f(a, b)");
+    try expectRender(measured, 6,
+        \\f(
+        \\    a,
+        \\    b,
+        \\)
+    );
+
+    // Pinned: flat past the width, and the `ifBreak` prints nothing.
+    const pinned = try f.group(list);
+    try expectRender(pinned, 3, "f(a, b)");
+
+    // Charged in the trailing half of `fits`: a broken group's `ifBreak` on the
+    // same line as a measured candidate counts against it — `x` + `,` = 2, so a
+    // width of 1 breaks the candidate and 2 keeps it.
+    const candidate = try f.groupMeasured(try f.concat(try f.text("x"), try f.concat(f.softline(), try f.text("y"))));
+    const doc = try f.forceBreak(try f.concat(candidate, try f.concat(try f.ifBreak(","), try f.concat(f.hardline(), try f.text("z")))));
+    try expectRender(doc, 3, "xy,\nz");
+    try expectRender(doc, 2, "x\ny,\nz");
+}
