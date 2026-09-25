@@ -10,6 +10,12 @@
 //// Node has no built-in seedable PRNG behind `Math.random`, so any
 //// seed/state surface needs a userland PRNG; ship that in a follow-up
 //// once the test infra is ready for reproducible draws.
+////
+//// NOT A CSPRNG: everything above `secureToken` is `Math.random` /
+//// `rand:uniform`, predictable to anyone who sees enough draws. A token, a
+//// session id, a nonce or a UUID comes from `secureToken` / `uuidV4`, which
+//// read the host's cryptographic source (`crypto.randomBytes`,
+//// `crypto:strong_rand_bytes/1`) — or `crypto.randomBytes` for hex.
 
 #[@External.Node("Math", "random")]
 #[@External.Erlang("rand", "uniform")]
@@ -115,6 +121,32 @@ fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
 #[@External.Erlang("""[__X || {_, __X} <- lists:sort([{rand:uniform(), __Y} || __Y <- $0])]""")]
 pub declare fn shuffle<T>(xs: Array<T>) -> Array<T>;
 
+// ── 1.0.10-beta front 01 additions (`io/random` after front 23) ─────────────
+//
+// The CSPRNG half. Everything ABOVE is `Math.random` / `rand:uniform` — fine
+// for a shuffle, wrong for anything an attacker must not guess. A token, a
+// session id, a nonce or a UUID comes from the two functions below, which
+// read the host's cryptographically strong source.
+
+// `bytes` strong random bytes as base64url without padding — URL-, cookie-
+// and header-safe. 32 bytes answer 43 characters.
+// Node: `crypto.randomBytes(n).toString('base64url')`.
+// Erlang: `crypto:strong_rand_bytes/1` + `base64:encode/2` in `urlsafe`
+// mode without padding (OTP 26+).
+#[@External.Node("""require('crypto').randomBytes($0).toString('base64url')""")]
+#[@External.Erlang("""base64:encode(crypto:strong_rand_bytes($0), #{mode => urlsafe, padding => false})""")]
+pub declare fn secureToken(bytes: i32) -> string;
+
+// A random (version 4) UUID, lowercase: 122 strong random bits with the
+// version nibble set to `4` and the variant bits to `10` (RFC 9562 §5.4).
+// Node: `crypto.randomUUID()`.
+// Erlang: 16 strong random bytes, the version/variant bits rewritten in the
+// binary pattern — the bit work lives in the template because botopink has
+// no bitwise operators (`language-gaps.md`).
+#[@External.Node("""require('crypto').randomUUID()""")]
+#[@External.Erlang("""(fun() -> <<__A:32, __B:16, _:4, __C:12, _:2, __D:14, __E:48>> = crypto:strong_rand_bytes(16), iolist_to_binary(io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b", [__A, __B, __C, __D bor 16#8000, __E])) end)()""")]
+pub declare fn uuidV4() -> string;
+
 // ── tests ────────────────────────────────────────────────────────────────────
 
 test "random.float lies in [0.0, 1.0)" {
@@ -200,4 +232,34 @@ test "random.shuffle of a single-element array preserves it" {
     val ys = shuffle(xs);
     assert ys.length == 1;
     assert ys.at(0).unwrapOr(0) == 42;
+}
+
+test "random.secureToken(32) is 43 base64url characters" {
+    val t = secureToken(32);
+    assert t.length == 43;
+    assert t.contains("+").negate();
+    assert t.contains("/").negate();
+    assert t.contains("=").negate();
+}
+
+test "random.secureToken draws differ" {
+    assert secureToken(16) != secureToken(16);
+    assert secureToken(0) == "";
+}
+
+test "random.uuidV4 has the version 4 layout" {
+    val u = uuidV4();
+    val groups = u.split("-");
+    assert u.length == 36;
+    assert groups.length == 5;
+    assert groups.at(0).unwrapOr("").length == 8;
+    assert groups.at(1).unwrapOr("").length == 4;
+    assert groups.at(2).unwrapOr("").length == 4;
+    assert groups.at(3).unwrapOr("").length == 4;
+    assert groups.at(4).unwrapOr("").length == 12;
+    assert groups.at(2).unwrapOr("").startsWith("4");
+    val variant = groups.at(3).unwrapOr("").slice(0, 1);
+    assert "89ab".contains(variant);
+    assert u.split("").filter({ c -> "0123456789abcdef-".contains(c) }).length == 36;
+    assert uuidV4() != u;
 }

@@ -28,10 +28,10 @@ already does.
 lib-test-runner/
 ├── AGENTS.md            ← you are here
 └── src/                 ← built and tested by the workspace build.zig (no build.zig of its own)
-    ├── main.zig         ← entry: resolve roots/binary → discover → run cells → matrix → exit
+    ├── main.zig         ← entry: resolve roots/binary → discover → plan cells → worker pool → emit in order → matrix → exit
     ├── args.zig         ← CLI parsing (Target enum, node alias, =-form, all)  + unit tests
     ├── discovery.zig    ← `manifest.scanRoots` over the roots (packages + workspace members), "has tests" probe, `libSupportsTarget`/`libRunsTarget`, problems + unit tests (fixtures: ../manifest/tests/fixtures)
-    ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib) + status classification + the cell's failed-test tally
+    ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib), split into `capture*` (spawn, capture, classify — thread-safe, writes nothing) and `emit*` (the cell's output, exactly as a serial run wrote it) + the cell's failed-test tally
     └── matrix.zig       ← Status enum, lib×target matrix render, summary + unit tests
 ```
 
@@ -45,7 +45,7 @@ zig build test-libs -- --target erlang --lib rakun    # one target, one lib
 zig build test-libs -- --target all --strict          # supported targets, strict
 zig build test-libs -- --lib rakun --target erlang    # measure one restricted cell
 zig build               # produces zig-out/bin/botopink-lib-test among the workspace executables
-zig build test          # includes the args + discovery + matrix + runner unit tests (38)
+zig build test          # includes the args + discovery + matrix + runner unit tests (48)
 ```
 
 ## CLI surface
@@ -53,7 +53,7 @@ zig build test          # includes the args + discovery + matrix + runner unit t
 ```
 botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
                   [--filter <s>] [--strict] [--include-unsupported]
-                  [--bin <path>] [--lib-root <dir>] [--json]
+                  [--bin <path>] [--lib-root <dir>] [--json] [--jobs <n>]
 ```
 
 `--json` switches output from the text matrix to JSONL — see
@@ -76,6 +76,11 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
   unaffected.
 - `--bin <path>` — `botopink` binary path. Also read from `BOTOPINK_BIN`; defaults
   to `./zig-out/bin/botopink`, else the bare name `botopink` on `PATH`.
+- `--jobs <n>` — how many cells run at once (a positive count; `0` or a
+  non-number is refused). Default: one per CPU, bounded by memory
+  (`MemAvailable / 768 MiB` from `/proc/meminfo` where it exists — a `botopink
+  test` child peaks around 400 MB plus its `erl`/`node`, and several gates share
+  one machine). Scheduling only — see "Parallel cells" below.
 - `--lib-root <dir>` — extra root to scan; repeatable. Appended **after**
   `BOTOPINK_LIB_ROOTS` env entries and the walk-up roots. Useful for ad-hoc CI
   without mutating env (`botopink-lib-test --lib-root /tmp/store --lib foo`).
@@ -207,6 +212,39 @@ the upstream contract from
 [`../compiler-cli/AGENTS.md`](../compiler-cli/AGENTS.md) (`--json`
 section). Forward-compatible: a JSON consumer that does not recognise
 a key should ignore it.
+
+## Parallel cells
+
+`main.zig` plans every (lib, target) cell in discovery order first — problem,
+skipped and nothing-to-compile cells are decided from discovery alone and spawn
+nothing — then runs the spawning cells (`compile`, `test_run`) on `--jobs`
+workers (`std.Io.concurrent`; each worker claims the next cell in plan order,
+captures it into its slot with a page-backed arena of its own, and sets the
+slot's `std.Io.Event`). The main thread walks the plan in order, waits for each
+slot, and is the **only** writer of stdout/stderr: each cell's header, captured
+child stdout (JSONL spliced under `--json`), captured child stderr and
+`cell_summary` are written exactly as the serial runner wrote them, one cell at
+a time. The child's output was always captured whole before being re-emitted,
+so the stream — and the exit code, the matrix, `run_summary`, and everything
+`scripts/test-libs.sh` reads from it — is byte for byte what `--jobs 1` prints;
+only the timing values the children print (`duration_ms`, `Compiled in …`)
+differ between any two runs. When no worker can be started the main thread runs
+each cell as it reaches it (the serial runner).
+
+Before a worker starts a cell it waits for a free CPU (`Pool.admit`): while this
+run already has a cell in flight, it polls `procs_running` — the runnable
+threads right now, 4th field of `/proc/loadavg` — every 200 ms until it is at
+most the CPU count. Up to five gates share the maintainer's machine; sized to
+CPUs alone the pools put the load at ~140 on 16 CPUs, and `std/async`'s
+"settleOf runs its tasks concurrently" (three 60 ms tasks under 120 ms) went
+red. A run with nothing in flight is always admitted, so it cannot wait on
+other gates forever; without `/proc/loadavg` nothing waits.
+
+Concurrency inside one library directory was already the contract: two gates
+over one checkout run the same cells side by side, so `botopink test` writes to
+`.botopinkbuild/test-out/<target>/<id>/`, the comptime module cache is written
+by rename, and `compileCell` writes per target — two cells of one library in
+one run are never the same (lib, target) pair.
 
 ## Design contract
 

@@ -182,6 +182,34 @@ pub fn resolve(segments: string[]) -> string {
     return if (finalState.isAbs) [separator, joined].join("") else if (joined == "") "." else joined;
 }
 
+// ── 1.0.10-beta front 01 additions ───────────────────────────────────────────
+
+// `p` without its trailing extension: `page.bp` → `page`, `archive.tar.gz`
+// → `archive.tar`, `noext` → `noext`. The extension is what `extname`
+// answers, so a dotfile keeps its name.
+pub fn withoutExtension(p: string) -> string {
+    val ext = extname(p);
+    val n = p.length;
+    val stem = if (ext == "") p else p.slice(0, n - ext.length);
+    return stem;
+}
+
+// True when `child` resolves inside `parent` — the traversal guard front 22
+// applies before it turns a request path into a file path. Both sides go
+// through `resolve`, which pops `..` (`normalize` does not), and a relative
+// `child` is resolved against `parent`, so `isInside("/app", "blog/x")` is
+// true and `isInside("/app", "blog/../../etc")` is false. A parent is inside
+// itself. The check reads the first component of the relative path: `..`
+// exactly, or `../…` — a component that merely starts with two dots
+// (`..foo`) is a name, not an escape.
+pub fn isInside(parent: string, child: string) -> bool {
+    val up = resolve([parent]);
+    val down = resolve([parent, child]);
+    val rel = relative(up, down);
+    val escapes = rel == ".." || rel.startsWith("../");
+    return escapes == false;
+}
+
 // ── tests ────────────────────────────────────────────────────────────────────
 
 test "path.separator is forward slash" {
@@ -249,4 +277,29 @@ test "path.resolve absolute" {
 
 test "path.resolve with double-dot" {
     assert resolve(["/a", "b", "..", "c"]) == "/a/c";
+}
+
+test "path.withoutExtension strips the trailing extension only" {
+    assert withoutExtension("page.bp") == "page";
+    assert withoutExtension("archive.tar.gz") == "archive.tar";
+    assert withoutExtension("noext") == "noext";
+    assert withoutExtension(".bashrc") == ".bashrc";
+    assert withoutExtension("app/blog/page.bp") == "app/blog/page";
+}
+
+test "path.isInside accepts a descendant and the parent itself" {
+    assert isInside("/app", "/app/blog/page.bp");
+    assert isInside("/app", "blog/page.bp");
+    assert isInside("/app", "/app");
+}
+
+test "path.isInside rejects a path that escapes the parent" {
+    assert isInside("/app", "/app/../etc/passwd").negate();
+    assert isInside("/app", "/app/blog/../../etc").negate();
+    assert isInside("/app", "/application/x").negate();
+    assert isInside("/app", "/etc").negate();
+}
+
+test "path.isInside treats a name starting with two dots as a name" {
+    assert isInside("/app", "/app/..hidden/x");
 }

@@ -22,7 +22,8 @@ compiler-cli/
 │   ├── backend_exec/        ← numeric + records fixture projects
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
 │   │                          (multi / none), assert message, mixed pass/fail exit;
-│   │                          `botopink-lib-test` compiles a test-less library;
+│   │                          `botopink-lib-test` compiles a test-less library,
+│   │                          and prints under `--jobs 4` what `--jobs 1` prints;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
 │   └── test_tooling/        ← pass + fail fixture projects
 └── src/
