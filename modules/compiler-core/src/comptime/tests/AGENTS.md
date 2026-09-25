@@ -19,7 +19,8 @@ Inference/comptime tests, split by feature. Aggregated by the sibling barrel
 Until 1.0.5-beta front 06 every AST snapshot was written four times
 (`comptime/{node,erlang,wasm,beam}/<slug>`) and every type error twice
 (`comptime/{node,erlang}/errors/<slug>`). The copies were always byte-identical:
-the four-runtime architecture collapsed in v0.beta.21 (`wasm3-unified-runtime`)
+the four-runtime architecture collapsed in v0.beta.21, when one comptime runtime
+replaced the per-backend runtimes (the WAT runtime and its host among them),
 and the per-runtime loop only changed `RunResult.script`, which these snapshots
 do not include. The layout outlived it to avoid stale-file churn, at the cost of
 four files per review row. 1079 files became 338, with no change to what the

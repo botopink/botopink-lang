@@ -1542,11 +1542,10 @@ closes it, or says that it has none yet. Every row below was re-derived by
 
 | Rule | Today | Closes with |
 |---|---|---|
-| `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.5-beta `01-checker` step 6 |
-| A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.5-beta `15-language-surface` step 2, with `16-formatter` (the formatter has to stop printing it in the same wave) |
-| A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value it answers something different on every backend: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, `0` on erlang and `256` on wasm | 1.0.5-beta — owner unassigned; the rule is decided (the `...` token, the diagnostic and the run-time semantics) |
-| `await` inside a `#[@context]` body (decision 95 — `@Context` extends `@Future`) | it type-checks, and it RUNS on erlang, wasm and beam (their `@Future<T>` is eager, so `await` is the identity). commonJS lowers `#[@context]` to a plain `function`, so the emitted `await` is `SyntaxError: await is only valid in async functions and the top level bodies of modules` | 1.0.10-beta — commonJS's own front: `fnKeyword` answering `async function` for a `#[@context]` body that awaits changes what a component's caller receives, which is a backend decision. Front 20 owns what is legal, not what is emitted |
-| An effect annotation on a record METHOD | ignored on commonJS: `fnKeyword` reads `ast.FnDecl.effect` and never sees a method, so `#[@iterator] fn iter(self: Self) -> @Iterator<T>` in a `type … implement Iterable<T> { … }` body emits as a plain `iter() { … }` and `for (b.iter()) { x -> … }` reds `b.iter is not a function or its return value is not iterable`. erlang runs it | 1.0.10-beta — owner unassigned; found by front 20 F12 while answering what `-> Iterator<T, E, C>` means on a behavior method |
+| `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.10-beta C-15 (`01-checker` step 6) |
+| A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.10-beta C-13 (decision 29): `15-language-surface`'s parser half first, `16-formatter` second (the formatter has to stop printing it in the same wave), then the sources |
+| A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value the four backends agree since C-06: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, erlang, beam and wasm (wasm printed `256` and erlang `0` before) | 1.0.10-beta C-06 (`02-erlang` step 3, `03-beam` step 3; decision 53 at run time). Decision 105 keeps both spellings and gives `a...b` a value in a `for` as well |
+| `await` inside a `#[@context]` body (decision 95 — `@Context` extends `@Future`) | it type-checks, and it RUNS on erlang and wasm (their `@Future<T>` is eager, so `await` is the identity: a `#[@context] fn Widget(n: i32) -> Element` that awaits a `#[@future]` fn answers its `Element`, and `@print(Widget(1).count)` prints `2`). commonJS emits `async function Widget`, so the `await` is legal there now — but the caller receives a **Promise**, and the same `@print(Widget(1).count)` prints `undefined` | 1.0.10-beta C-29 (`21-effect-chain`, decisions 102–104: what a component's caller receives is the effect chain's rule), with `04-js` for the lowering that follows it |
 
 Seven of the twelve rows this table carried before this revision left it because
 the compiler now accepts the form: union types, the `unknown` type and its
@@ -1555,7 +1554,11 @@ assignability rule, `x is <Type>` with narrowing, `case` arms written
 (binding its names, and fatal when the match fails), a `//` comment inside a
 `loop` body, and — since 1.0.10-beta's C-04 — a **parameter default applied at
 the call site**, on all four backends, **for a declaration in the calling
-module**. Each is documented above, in the section that teaches the form.
+module**. So did the row front 20 added for an **effect annotation on a record
+method**: `#[@iterator] fn iter(self: Self) -> @Iterator<i32>` in a `type …
+implement Iterable<i32> { … }` body now emits a generator method (`*iter()`) on
+commonJS, and `for (b.iter()) { x -> … }` walks it there as it already did on erlang. Each
+is documented above, in the section that teaches the form.
 
 The one limit worth stating here, because a library will meet it before it
 meets the rule: a default on an **imported** declaration is not filled. The
