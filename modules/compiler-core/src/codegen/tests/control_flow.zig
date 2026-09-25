@@ -1263,6 +1263,20 @@ test "beam: a synth helper a type's module reached first is the file module's to
     , "3\n2\n", &.{});
 }
 
+test "beam: the module body runs once, in declaration order, before main" {
+    // `run/module_init_order.bp`. A named module-level `val` was a 0-arity
+    // function evaluated on every READ (`first` printed twice, after `main`),
+    // and the `'_botopink_main'/0` wrapper ran only the `_` statements. An
+    // effectful `val` now caches under `persistent_term` (erlang's
+    // `cachedValueExpr`) and the wrapper runs the module body in order.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn note(tag: string) -> i32 { @print(tag); return 1; }
+        \\val first = note("first");
+        \\val _second = note("second");
+        \\fn main() { @print("main"); @print(first); @print(first); }
+    , "first\nsecond\nmain\n1\n1\n", &.{ "{extfunc, persistent_term, get, 2}", "{extfunc, persistent_term, put, 2}" });
+}
+
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
 //
 // `break <value>` out of `while (cond)` was refused outright with an unlocated

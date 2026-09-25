@@ -303,6 +303,52 @@ fn isSyntheticEntrypointVal(v: ast.ValDecl) bool {
     return std.mem.startsWith(u8, v.name, "_");
 }
 
+/// The atom a cached module-level `val` reads as "not evaluated yet"
+/// (erlang's `TOP_VAL_UNSET`).
+const top_val_unset = "$bp_unset";
+
+/// A named module-level `val` whose initialiser can run something — a call, a
+/// builtin, a `case` — is evaluated once and cached (`emitTopVal`): read per
+/// call, `val first = note("first")` printed `first` at every read and never
+/// before `main`. A constant cannot be told apart either way and stays a plain
+/// reader. The beam twin of `erlang.zig`'s `initialiserCanHaveEffect`.
+fn topValIsCached(v: ast.ValDecl) bool {
+    if (v.value.isComptimeExpr()) return false;
+    return exprCanHaveEffect(v.value.*);
+}
+
+fn exprCanHaveEffect(e: ast.Expr) bool {
+    return switch (e) {
+        .literal => |lit| switch (lit.kind) {
+            .stringLit, .numberLit, .null_, .comment => false,
+            .stringTemplate => |t| for (t.parts) |p| {
+                if (p == .expr and exprCanHaveEffect(p.expr.*)) break true;
+            } else false,
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident, .dotIdent => false,
+            .identAccess => |a| exprCanHaveEffect(a.receiver.*),
+        },
+        .binaryOp => |op| exprCanHaveEffect(op.lhs.*) or exprCanHaveEffect(op.rhs.*),
+        .unaryOp => |op| exprCanHaveEffect(op.expr.*),
+        .function => false,
+        .collection => |col| switch (col.kind) {
+            .arrayLit => |al| blk: {
+                if (al.spreadExpr) |se| if (exprCanHaveEffect(se.*)) break :blk true;
+                break :blk for (al.elems) |el| {
+                    if (exprCanHaveEffect(el)) break true;
+                } else false;
+            },
+            .tupleLit => |tl| for (tl.elems) |el| {
+                if (exprCanHaveEffect(el)) break true;
+            } else false,
+            .grouped => |g| exprCanHaveEffect(g.*),
+            else => true,
+        },
+        else => true,
+    };
+}
+
 /// A synthetic statement that only calls `main()` — the entrypoint wrapper
 /// already does, so it is not run a second time. Mirrors the erlang backend's
 /// `isSyntheticMainEntrypointCall`.
@@ -1148,6 +1194,9 @@ fn emitBeamAsm(
             .val => |v| if (!isSyntheticEntrypointVal(v)) {
                 try em.reserveFn(v.name, 0);
                 try em.top_vals.put(v.name, {});
+                // The module body evaluates an effectful named `val` once, in
+                // declaration order with the `_` statements (`cachedTopVal`).
+                if (has_main_0 and topValIsCached(v)) try em.entry_stmts.append(alloc, v);
             } else if (has_main_0 and !isSyntheticMainCall(v)) {
                 try em.entry_stmts.append(alloc, v);
             },
@@ -1519,8 +1568,10 @@ const Emitter = struct {
     /// Named top-level `val`s of this module — each is a 0-arity function, so a
     /// bare reference is a local call.
     top_vals: std.StringHashMap(void),
-    /// `_`-named synthetic top-level statements, run in source order by
-    /// `'_botopink_main'/0` before it calls `main/0`.
+    /// The module body, run in source order by `'_botopink_main'/0` before it
+    /// calls `main/0`: the `_`-named synthetic statements, and the named
+    /// `val`s whose initialiser can have an effect (`topValIsCached`), each
+    /// as the call to its reader.
     entry_stmts: std.ArrayListUnmanaged(ast.ValDecl) = .empty,
     /// Locals (and string-typed params) bound to a `string` in the frame being
     /// lowered — `isStringExpr` reads it to tell a string `+` from arithmetic.
@@ -3398,8 +3449,32 @@ const Emitter = struct {
         // `{deallocate, 0}` is rejected by the loader with `{allocated, none}`
         // as soon as the function is reachable.
         self.num_y = self.precountLocalsInExpr(v.value.*);
+        if (!topValIsCached(v)) {
+            try self.emitFrame(0);
+            try self.lowerExprIntoX0(v.value.*);
+            try self.emitReturn();
+            return;
+        }
+        // The value is evaluated ONCE, whichever read comes first — the module
+        // body (`'_botopink_main'/0`) or a function. `persistent_term`, the
+        // erlang backend's `cachedValueExpr`: a module-level binding is one
+        // value for the node, keyed `{Module, Name}`.
+        const slot = self.num_y;
+        self.num_y += 1;
         try self.emitFrame(0);
+        const key = Term.tupleOf(&.{ Term.atomOf(self.module_name), Term.atomOf(v.name) });
+        const cached = self.allocLabel();
+        try beamEmitter.writeMoveOp(self.out, .{ .term = key }, Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.atom(top_val_unset), Dst.xr(1));
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "persistent_term", .function = "get" } }, 0);
+        try beamEmitter.writeTest(self.out, .is_eq_exact, cached, &.{ Op.xr(0), Op.atom(top_val_unset) });
         try self.lowerExprIntoX0(v.value.*);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(slot));
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, .{ .term = key }, Dst.xr(0));
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "persistent_term", .function = "put" } }, 0);
+        try beamEmitter.writeMoveOp(self.out, Op.yr(slot), Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, cached);
         try self.emitReturn();
     }
 
@@ -3443,10 +3518,19 @@ const Emitter = struct {
             self.resetFnState(0);
             self.cur_fn_name = "_botopink_main";
             var n: u32 = 0;
-            for (self.entry_stmts.items) |v| n += self.precountLocalsInExpr(v.value.*);
+            for (self.entry_stmts.items) |v| {
+                if (isSyntheticEntrypointVal(v)) n += self.precountLocalsInExpr(v.value.*);
+            }
             self.num_y = n;
             try self.emitFrame(0);
-            for (self.entry_stmts.items) |v| try self.lowerExprIntoX0(v.value.*);
+            for (self.entry_stmts.items) |v| {
+                if (isSyntheticEntrypointVal(v)) {
+                    try self.lowerExprIntoX0(v.value.*);
+                } else {
+                    const reader = try self.fnLabelsFor(v.name, 0);
+                    try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = reader.entry }, 0);
+                }
+            }
             try beamEmitter.writeCall(self.out, .last, 0, .{ .local = main0.entry }, self.num_y);
         }
         self.cur_line += 1;

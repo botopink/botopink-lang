@@ -113,7 +113,7 @@ done
 #
 #     $ botopink run --target beam        # wrote out/main.S
 #     $ (cd out && erlc +from_asm *.S)    # main.S → main.beam
-#     $ erl -noshell -pa out -eval 'language_tests@main:main(), halt().'
+#     $ erl -noshell -pa out -eval "'language_tests@main':'_botopink_main'(), halt()."
 #     hi
 #
 # `erlc` and `erl` are already gate dependencies (every erlang cell, and stage 5
@@ -214,7 +214,11 @@ exec_run() { # <dir> <target>
         mod="$(basename "${mod%.beam}")"
     fi
     [ -n "$mod" ] || { echo "error: erlc +from_asm produced no .beam" >>"$dir/e.txt"; return 1; }
-    (cd "$dir" && timeout 300 erl -noshell -pa out -eval "$mod:main(), halt()." \
+    # The entry is `'_botopink_main'/0`, as for the codegen snapshots
+    # (`runtime.executeBeamAsm`): it runs the module body — the `_` statements
+    # and the effectful module-level `val`s, in declaration order — and then
+    # `main/0`. Calling `main/0` directly skipped the module body.
+    (cd "$dir" && timeout 300 erl -noshell -pa out -eval "'$mod':'_botopink_main'(), halt()." \
         >"$dir/stdout.txt" 2>>"$dir/e.txt")
 }
 

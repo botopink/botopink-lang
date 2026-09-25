@@ -1502,6 +1502,15 @@ codegen/
   Every one of these used to match every subject and bind nothing
   (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
   `assertBeamRunLog` rows in `tests/control_flow.zig`.
+- **The module body** (`topValIsCached`, `emitTopVal`,
+  `emitEntrypointWrappers`): a named module-level `val` whose initialiser can
+  have an effect (`exprCanHaveEffect`, the twin of erlang's
+  `initialiserCanHaveEffect`) is evaluated ONCE and cached under
+  `persistent_term` keyed `{Module, Name}` (erlang's `cachedValueExpr`), and
+  `'_botopink_main'/0` runs the module body in declaration order — the `_`
+  statements inline, each cached `val` as the call to its reader — before
+  `main/0`. Read per call, `val first = note("first")` printed `first` at each
+  read and after `main`. A constant initialiser stays a plain reader.
 - **A read or a call the emit cannot place asks the value** (decision 21;
   05-wasm step 9's beam row, `modules/{field,method,type}_name_collision`):
   a name decides a record only when nothing else in the PROGRAM declares it

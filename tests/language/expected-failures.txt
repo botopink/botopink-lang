@@ -242,10 +242,10 @@ beam     | run/std_erlang_node.bp | C-03 | decision 64: dies at boot — `{undef
 # A module-level `val` is the module body: evaluated once, in declaration order,
 # at module load — before `main`. commonJS has always done that and erlang does
 # since `fix/erlang-module-load` (front 00 · 02-erlang), which is what
-# `run/module_init_order.bp` pins. The other two backends each miss a different
-# half of it, measured at that branch with OTP 29 / node v25.
+# `run/module_init_order.bp` pins. wasm still misses half of it, measured at
+# that branch with OTP 29 / node v25; beam runs it since front 03 (the module
+# body in `'_botopink_main'/0`, an effectful `val` cached in `persistent_term`).
 wasm     | run/module_init_order.bp | 05 (no step; the module body on wasm) | a `_`-named top-level statement is dropped: `first` / `main` / `1` / `1` — `second` never runs. The named `val` is already evaluated once at load, so only the statement half is owed
-beam     | run/module_init_order.bp | 03 (no step; the module body on the BEAM) | the shape erlang had before this branch: `main` / `first` / `1` / `first` / `1` — the named `val` is a 0-arity function evaluated on each READ, and the `_`-named statement never runs. `beam_asm.zig` carries its own copy of `isSyntheticMainEntrypointCall` and of the entrypoint wrapper
 
 # ── a field read whose receiver lost its type, on wasm ───────────────────────
 # `modules/field_name_collision` pins decision 21's positional read against the
