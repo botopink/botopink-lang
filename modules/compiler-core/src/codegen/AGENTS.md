@@ -147,14 +147,18 @@ codegen/
   else. Turning the row on for a record, an array or a variant needs the
   operand's type at the site — a per-`Loc` mark from inference, the way
   `method_lowerings` already does it — which crosses `01-checker`.
-- **`break <value>` in a condition loop** (decision 8 §10) is the loop's value.
-  A `loop { … }` / `loop (cond) { … }` used as a value with no `yield` in its
-  body is a **search**: `break <v>` becomes `return <v>` out of the IIFE and the
-  loop answers `null` if it never breaks (`LoopCtx.search`). With a `yield` it
-  is a comprehension and keeps the accumulator, where `break <v>` contributes
-  `v` and ends the loop. An **iteration** loop (`loop (xs) { x -> … }`) is
-  always a comprehension: `break <v>` there contributes, which is what
-  `fn find(arr: i32[]) -> i32[]` relies on.
+- **Loops are statements** (decision 105, front 22): `for (xs) { x -> … }` is
+  `for (const x of xs)`, `for await (gen) { x -> … }` is `for await (const x of
+  gen)`, `while (cond) { … }` and `loop { … }` are `while` — every one built by
+  `buildLoopStmt` under `LoopCtx.stmt`, where `break;` / `continue;` are the
+  native statements. No loop has a value: the comprehension, the search and
+  decision 52's `null` of decision 8 §10 are gone, and a `break <v>` reaches
+  this backend only inside a generator scope, where it is `yield v; return;`
+  (`buildBreakStmt`) from any loop depth. **`#[@generator] loop { … }`**
+  (`buildGeneratorLoop`) is a `function*` IIFE whose body runs under
+  `while (true)` — the captured `var`s are the closure's, so a counter the body
+  reassigns is generator state for free; `#[@futureGenerator] loop` is
+  `async function*`. `a...b` materialises one more element than `a..b`.
 - **`x is T`** (decision 8 §4, `buildIsCall`/`isTest`) tests the **value**, not
   where it came from, which is what makes one lowering answer for a known
   static type and for a value arriving through `unknown` or a union: an integer
@@ -467,13 +471,11 @@ codegen/
   all yet: `xs[0]` is still `void`). Today `d["k"]` emits the JS property read
   and answers `undefined`. `01-checker` types the call by the receiver; the
   dict arm lands with it.
-- **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`;
-  an open-ended `a..` is the lazy `__bp_range_from(a)` prelude generator
-  (`function*` counting up forever), so `loop (x..) { i -> … break; }` runs.
-- **Indexed loops**: `loop (xs) { x, i -> … }` and `loop (xs, 0..)` iterate
-  `(xs).entries()`; any other index start pairs each item with it —
-  `Array.from(xs, (__x, __i) => [__i + (start), __x])` — so `loop (xs, 1..)`
-  counts from 1 (erlang's `lists:enumerate(Start, Xs)`).
+- **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`,
+  `a...b` the same with `b + 1` (decision 105: inclusive); an open-ended `a..`
+  is the lazy `__bp_range_from(a)` prelude generator (`function*` counting up
+  forever), so `for (x..) { i -> … break; }` runs. There is no index binder
+  (decision 105): `for (0..xs.length) { i -> }` is the spelling.
 - **Enum methods**: variant values carry no methods (a payload variant is a
   plain `{ tag, … }` object, a nullary one its name). A method whose first
   parameter is `self` or typed `Self` takes the value as a real first parameter
@@ -539,26 +541,15 @@ codegen/
     (`buildIfStmt`; the `if (val e = …)` form keeps its binding in a `{ … }`
     block). Any other `if` stays the value IIFE, and a jumping `if` in a value
     position is `error.JumpInValuePosition`;
-  - a `loop` in statement position is `for…of` (`buildLoopStmt`, `loop_ctx =
-    .stmt`): `break;` / `continue;` are native, `break <v>` evaluates `v` and
-    continues;
-  - a `loop` used as a value is a comprehension (`buildLoop`): only top-level
-    `yield <v>` → `xs.map(…)`; anything else (`break <v>`, `continue`, a nested
-    `yield`) → an accumulating IIFE `(() => { const _acc = []; for (…) {
-    _acc.push(v); … } return _acc; })()` — `break <v>` contributes `v`,
-    `continue` drops the item, `break;` ends the iteration;
+  - a loop is a statement (decision 105): `for…of` / `for await…of` / `while`
+    (`buildLoopStmt`, `loop_ctx = .stmt`), `break;` / `continue;` native, and
+    inside a generator scope `break <v>` is `yield v; return;`; an annotated
+    `loop` is the generator IIFE (`buildGeneratorLoop`) — see the row above;
   - `return case … { … }` where an arm returns from the function (the
     `#[@result]` wrap puts `__bp_ok(…)` around a whole `case`, so `Fail -> throw
     e` is `return __bp_error(e)` inside it) lowers the `case` to statements in
     a block (`buildReturnCaseStmt`): value arms `return ({ ok: v })`, the jump
     arm keeps its own `return`;
-  - a condition loop (decision 8 §10, `LoopExpr.condition`: `loop (cond) { … }` /
-    `loop { … }`) is a JS `while` statement (`buildWhileStmt`, `loop_ctx = .stmt`);
-    used as a value it is an accumulating IIFE around the `while`
-    (`buildConditionLoopValue`, `loop_ctx = .cond_value`) where `yield <v>`
-    contributes and `break <v>` contributes and ends the loop. `while (…)` is not
-    part of the language (a parse error) — the old call-shaped `while` lowering
-    is gone;
   - `throw` in value position is a one-statement IIFE; a binding in value
     position is `error.BindingInValuePosition`. `try x catch return y` in value
     position still returns from the value IIFE (the `try`'s value becomes `y`);

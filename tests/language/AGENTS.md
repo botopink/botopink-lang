@@ -139,6 +139,25 @@ comment inside a braced `if` and inside a condition loop's body: commonJS writes
 line, so the comment ran on and swallowed the closing brace and everything after it, and the module
 did not parse.
 
+### `loop_*` (decision 105)
+
+Front 22 of 1.0.10-beta: `loop { }` / `while (c) { }` / `for (xs) { x -> }` / `for await (g) { x -> }`
+are statements, and `#[@generator] loop { }` (with `#[@iterator]` / `#[@futureGenerator]`) is the one
+loop that is a value — a generator whose body is a closed generator scope.
+
+| Cell | Pins |
+|---|---|
+| `test/loop_generator_expr.bp` | an annotated loop typed `@Generator<i32>`: `yield v` emits, `break v` emits and ends, a bare `break` ends, a captured `var` is the generator's state, and a `for` inside the loop feeds it |
+| `test/loop_future_generator_expr.bp` | a `#[@futureGenerator] loop` awaiting in a plain `fn` body, consumed by a `#[@future]` body's `for await` |
+| `test/loop_yield_nearest_scope.bp` | `yield :out` from inside a `for` names the generator fn; an unannotated `loop` inside a generator fn is an ordinary loop |
+| `run/loop_generator_dobros.bp` | decision 105's own example: `2 4 … 18 20`, then the counter the generator left at `10` |
+| `run/loop_range_inclusive.bp` | `for (1..4)` visits `1 2 3`, `for (1...4)` visits `1 2 3 4`, `for (3...2)` nothing |
+
+The `reject/` cells name one refusal each: `loop_break_value`, `loop_yield_plain_fn`,
+`for_over_condition`, `for_fallible_generator_plain_fn`, `for_future_generator_without_await`,
+`generator_loop_use`, `generator_loop_await`, `generator_loop_break_outer`, `continue_outside_loop`,
+`yield_label_loop`, plus the parser's `loop_parenthesised` and `loop_condition_parameter`.
+
 ### The `modules/` kind
 
 The kind for what a single file cannot express: `pub mod`, `import … from "<module>"`, a folder index

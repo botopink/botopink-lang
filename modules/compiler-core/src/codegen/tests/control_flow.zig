@@ -1148,6 +1148,78 @@ test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
 // a one-clause `case` destructures it: the group's variables are rebound and
 // the case's value is the break's.
 
+// ── decision 105 on commonJS: the annotated loop, `break v`, `for await`, `a...b`
+//
+// `#[@generator] loop { … }` is a `function*` IIFE whose body runs under
+// `while (true)`: the captured `var` is the closure's, `yield v` is native,
+// `break v` is `yield v; return;`, a bare `break` leaves the `while` and ends
+// the generator. RUN LOGs, not snapshots: the other three backends record
+// their own baselines in their own commits.
+test "js: generator loop ---- a var captured by an annotated loop is its state" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var n = 0;
+        \\    val g = #[@generator] loop {
+        \\        n = n + 1;
+        \\        if (n == 4) { break n * 10; };
+        \\        yield n * 10;
+        \\    };
+        \\    for (g) { x -> @print(x); };
+        \\    @print(n);
+        \\}
+    , "10\n20\n30\n40\n4\n");
+}
+
+test "js: generator loop ---- break v inside a for ends the whole generator" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\#[@generator]
+        \\fn firstOver(xs: i32[], limit: i32) -> @Generator<i32> {
+        \\    for (xs) { x ->
+        \\        if (x > limit) { break x; };
+        \\        yield 0;
+        \\    };
+        \\}
+        \\fn main() {
+        \\    for (firstOver([1, 5, 9, 12], 4)) { v -> @print(v); };
+        \\}
+    , "0\n5\n");
+}
+
+test "js: generator loop ---- a futureGenerator loop awaits inside and for await consumes it" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\#[@future]
+        \\fn fetch(n: i32) -> @Future<i32> { return n * 2; }
+        \\type Ticker(gen: @FutureGenerator<i32>)
+        \\fn ticks(limit: i32) -> Ticker {
+        \\    var i = 0;
+        \\    val gen = #[@futureGenerator] loop {
+        \\        i = i + 1;
+        \\        if (i > limit) { break; };
+        \\        val v = await fetch(i);
+        \\        yield v;
+        \\    };
+        \\    return Ticker(gen: gen);
+        \\}
+        \\#[@future]
+        \\fn total(limit: i32) -> @Future<i32> {
+        \\    var sum = 0;
+        \\    for await (ticks(limit).gen) { v -> sum = sum + v; };
+        \\    @print(sum);
+        \\    return sum;
+        \\}
+        \\fn main() { total(3); }
+    , "12\n");
+}
+
+test "js: range ---- a...b includes its end" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    for (1..4) { i -> @print(i); };
+        \\    for (1...4) { i -> @print(i); };
+        \\}
+    , "1\n2\n3\n1\n2\n3\n4\n");
+}
+
 // ── front 02-erlang step 5, re-specified by decision 105 ─────────────────────
 //
 // A condition loop is a statement: the variables its body reassigns travel

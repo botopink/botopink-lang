@@ -732,25 +732,15 @@ const MethodHoles = struct {
 };
 
 /// What a `break` / `continue` in the body being built binds to.
-const LoopCtx = union(enum) {
+const LoopCtx = enum {
     /// Not inside a loop body (or behind a function boundary).
     none,
-    /// A `loop` in statement position: a JS `for…of`. `break;` ends it,
-    /// `continue;` skips to the next item, a `break <v>` value is discarded.
+    /// Inside a loop body — a JS `for…of` or `while`, or the `while (true)`
+    /// of an annotated `loop`'s generator. `break;` / `continue;` are the
+    /// native statements. Decision 105: every loop is a statement, so this
+    /// is the one context a body is built in; the comprehension and search
+    /// contexts of decision 8 §10 are gone with the loop's value.
     stmt,
-    /// A `loop` used as a value — a comprehension lowered to an accumulating
-    /// IIFE. `break <v>` / `yield <v>` push `v` onto the named array and move to
-    /// the next item; `break;` ends the iteration.
-    value: []const u8,
-    /// A condition `loop` (decision 8 §10) used as a value: an accumulating
-    /// IIFE around a JS `while`. `yield <v>` pushes; `break <v>` pushes and
-    /// ends the loop (there is no next item to move to); `break;` ends it.
-    cond_value: []const u8,
-    /// A condition `loop` used as a value whose body has no `yield`: a search,
-    /// not a comprehension. Decision 8 §10 — `break <v>` IS the loop's value,
-    /// so it returns `v` out of the IIFE instead of collecting it; `break;`
-    /// ends the loop and the IIFE answers `null`.
-    search,
 };
 
 /// Holes filled from a wrapper function's own parameters: `$N` is the Nth
@@ -2938,19 +2928,13 @@ const Emitter = struct {
                 .if_ => |i| if (self.ifJumps(i)) return self.buildIfStmt(i),
                 .tryCatch => {},
             },
-            .loop => |lp| if (try self.buildLoopStmt(lp)) |st| return st,
+            .loop => |lp| return try self.buildLoopStmt(lp),
             .jump => |j| switch (j.kind) {
                 .@"break" => |br| return self.buildBreakStmt(br, false),
                 .throw_ => |r| return .{ .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*) },
                 .@"continue" => return switch (self.loop_ctx) {
                     .none => error.JumpOutsideLoop,
-                    .stmt, .value, .cond_value, .search => js.Stmt.continue_,
-                },
-                .yield => |y| if (self.loop_ctx == .value or self.loop_ctx == .cond_value) {
-                    // An accumulator `yield <v>` contributes `v` and moves on;
-                    // a valueless one contributes nothing.
-                    const val = y.value orelse return .continue_;
-                    return self.b.group(&.{ try self.accPush(val.*), .continue_ });
+                    .stmt => js.Stmt.continue_,
                 },
                 else => {},
             },
@@ -3017,8 +3001,8 @@ const Emitter = struct {
     /// binding already gets.
     ///
     /// `isImplicitReturnExpr` alone was not that rule: it lists only the
-    /// categories that are *always* a value, so an `if`, a `loop` and a
-    /// `try`/`catch` tail fell through to `buildStmt` and were emitted as
+    /// categories that are *always* a value, so an `if`, an annotated `loop`
+    /// and a `try`/`catch` tail fell through to `buildStmt` and were emitted as
     /// statements — `(x) => { (() => { … })(); }` — dropping the value. A
     /// `case` never had the defect: it is a `.collection`.
     ///
@@ -3034,7 +3018,12 @@ const Emitter = struct {
         switch (e) {
             // `buildArrow` reset `loop_ctx` to `.none`, so no accumulator
             // `yield` is in scope here — `exprJumps`' third argument is false.
-            .branch, .loop => if (!exprJumps(e, false, false)) {
+            .branch => if (!exprJumps(e, false, false)) {
+                return .{ .return_ = try self.buildExpr(e) };
+            },
+            // Decision 105: only the annotated loop is a value; every other
+            // loop is a statement, even in the tail.
+            .loop => |lp| if (lp.generator != null) {
                 return .{ .return_ = try self.buildExpr(e) };
             },
             else => {},
@@ -3154,6 +3143,9 @@ const Emitter = struct {
                 .localBind, .localBindDestruct => return self.buildStmt(stmt),
                 .assign => {},
             },
+            // A trailing loop is a statement (decision 105) — only the
+            // annotated one has a value.
+            .loop => |lp| if (lp.generator == null) return self.buildStmt(stmt),
             else => {},
         }
         return .{ .return_ = try self.buildExpr(stmt.expr) };
@@ -3411,7 +3403,7 @@ const Emitter = struct {
                 },
             },
 
-            .loop => |lp| return self.buildLoop(lp),
+            .loop => |lp| return self.buildGeneratorLoop(lp),
 
             .binding => |b| switch (b.kind) {
                 // A binding is a statement: every block position builds it
@@ -3511,9 +3503,14 @@ const Emitter = struct {
                         // with `break`, like erlang's recursive counter).
                         return self.b.call(self.helper(.range_from), &.{try self.buildExpr(r.start.*)});
                     const start = try self.b.paren(try self.buildExpr(r.start.*));
+                    // `a...b` (decision 105) includes its end: one more.
+                    const stop = if (r.inclusive)
+                        try self.b.paren(try self.b.binaryBare("+", try self.b.paren(try self.buildExpr(end.*)), .{ .number = "1" }))
+                    else
+                        try self.b.paren(try self.buildExpr(end.*));
                     const length = try self.b.call(try self.b.member(.{ .name = "Math" }, "max"), &.{
                         .{ .number = "0" },
-                        try self.b.binaryBare("-", try self.b.paren(try self.buildExpr(end.*)), start),
+                        try self.b.binaryBare("-", stop, start),
                     });
                     return self.b.call(try self.b.member(.{ .name = "Array" }, "from"), &.{
                         .{ .object = .{ .props = try self.b.props(&.{.{ .kv = .{ .key = "length", .value = length } }}), .layout = .tight } },
@@ -3665,35 +3662,37 @@ const Emitter = struct {
 
     /// True when a branch of `i` leaves the enclosing function or loop:
     /// `return`, or a `break` / `continue` not bound to a loop inside the
-    /// branch — and, inside a comprehension body, an accumulator `yield`.
+    /// branch — or a `break <v>`, which ends the generator (decision 105).
     fn ifJumps(self: *Emitter, i: anytype) bool {
-        const acc = self.loop_ctx == .value or self.loop_ctx == .cond_value;
-        if (stmtsJump(i.then_, false, acc)) return true;
-        if (i.else_) |els| if (stmtsJump(els, false, acc)) return true;
+        if (stmtsJump(i.then_, false, self.in_generator)) return true;
+        if (i.else_) |els| if (stmtsJump(els, false, self.in_generator)) return true;
         return false;
     }
 
-    fn stmtsJump(stmts: []const ast.Stmt, in_loop: bool, acc_yield: bool) bool {
-        for (stmts) |st| if (exprJumps(st.expr, in_loop, acc_yield)) return true;
+    fn stmtsJump(stmts: []const ast.Stmt, in_loop: bool, gen_break: bool) bool {
+        for (stmts) |st| if (exprJumps(st.expr, in_loop, gen_break)) return true;
         return false;
     }
 
-    fn exprJumps(e: ast.Expr, in_loop: bool, acc_yield: bool) bool {
+    /// `gen_break`: inside a generator scope a `break <v>` ends the generator
+    /// from any loop depth (`yield v; return;`); elsewhere a `break <v>` is a
+    /// `case` arm's or `comptime` block's value and leaves nothing.
+    fn exprJumps(e: ast.Expr, in_loop: bool, gen_break: bool) bool {
         return switch (e) {
             .jump => |j| switch (j.kind) {
                 .@"return" => true,
-                .@"break", .@"continue" => !in_loop,
-                .yield => acc_yield and !in_loop,
-                .throw_, .try_, .await_ => false,
+                .@"break" => |b| (gen_break and b.value != null) or !in_loop,
+                .@"continue" => !in_loop,
+                .yield, .throw_, .try_, .await_ => false,
             },
             .branch => |br| switch (br.kind) {
-                .if_ => |i| stmtsJump(i.then_, in_loop, acc_yield) or
-                    (if (i.else_) |els| stmtsJump(els, in_loop, acc_yield) else false),
+                .if_ => |i| stmtsJump(i.then_, in_loop, gen_break) or
+                    (if (i.else_) |els| stmtsJump(els, in_loop, gen_break) else false),
                 .tryCatch => false,
             },
             // A nested loop's own `break` / `continue` bind to it; a `return`
             // inside it still leaves the function.
-            .loop => |lp| stmtsJump(lp.body, true, acc_yield),
+            .loop => |lp| stmtsJump(lp.body, true, gen_break),
             else => false,
         };
     }
@@ -3708,88 +3707,23 @@ const Emitter = struct {
         return out;
     }
 
-    /// `loop (xs) { x -> … }` iterates the ITEM; with two params the second is
-    /// the index (`{ item, i -> … }`). `Array.entries()` yields numeric
-    /// [index, item] pairs, so the destructure order is swapped.
-    /// (`Object.entries` gave [stringKey, value], which bound the 1-param
-    /// form to the index — a real bug.)
+    /// `for (xs) { x -> … }` iterates the ITEM: the one binder is the
+    /// `for…of` pattern (decision 105 has no index binder; the index is
+    /// `for (0..xs.length) { i -> }`).
     fn loopHead(self: *Emitter, lp: anytype) !struct { pattern: js.Pattern, iter: js.Expr } {
-        const pattern: js.Pattern = if (lp.params.len == 1)
-            .{ .ident = lp.params[0] }
-        else blk: {
-            const elems = try self.arena().alloc(js.Pattern, lp.params.len);
-            for (lp.params, 0..) |p, i| elems[lp.params.len - 1 - i] = .{ .ident = p };
-            break :blk js.Pattern{ .array = .{ .elems = elems } };
-        };
-        if (lp.params.len == 1) return .{ .pattern = pattern, .iter = try self.buildExpr(lp.iter.*) };
-        // `loop (xs, <start>..) { x, i -> … }` counts the index from the
-        // range's lower bound (erlang's `lists:enumerate(Start, Xs)`).
-        // `entries()` counts from 0, so any other start pairs each item with
-        // `__i + start` instead.
-        if (indexRangeStart(lp)) |start| {
-            return .{ .pattern = pattern, .iter = try self.b.call(try self.b.member(.{ .name = "Array" }, "from"), &.{
-                try self.buildExpr(lp.iter.*),
-                try self.b.arrowExpr(
-                    &.{ .{ .pattern = .{ .name = "__x" } }, .{ .pattern = .{ .name = "__i" } } },
-                    .{ .array = .{ .elems = try self.b.exprs(&.{
-                        try self.b.binaryBare("+", .{ .name = "__i" }, try self.b.paren(try self.buildExpr(start))),
-                        .{ .name = "__x" },
-                    }) } },
-                ),
-            }) };
-        }
-        const iter = try self.b.call(try self.b.member(try self.b.paren(try self.buildExpr(lp.iter.*)), "entries"), &.{});
-        return .{ .pattern = pattern, .iter = iter };
+        return .{ .pattern = .{ .ident = lp.params[0] }, .iter = try self.buildExpr(lp.iter.*) };
     }
 
-    /// The lower bound of a two-parameter loop's index range, or null when the
-    /// index counts from 0 (no range, or a literal `0..`).
-    fn indexRangeStart(lp: anytype) ?ast.Expr {
-        const ir = lp.indexRange orelse return null;
-        if (ir.* != .collection or ir.collection.kind != .range) return null;
-        const start = ir.collection.kind.range.start.*;
-        if (start == .literal and start.literal.kind == .numberLit and std.mem.eql(u8, start.literal.kind.numberLit, "0")) return null;
-        return start;
-    }
-
-    fn hasTopLevelYield(body: []const ast.Stmt) bool {
-        for (body) |stmt| switch (stmt.expr) {
-            .jump => |j| if (j.kind == .yield) return true,
-            else => {},
-        };
-        return false;
-    }
-
-    /// A `yield` anywhere in the body, `if` branches included — what tells a
-    /// comprehension (which collects) from a search (whose value is the one
-    /// its `break` carries). Nested loops are not descended into: their
-    /// `yield`s belong to them.
-    fn hasAnyYield(body: []const ast.Stmt) bool {
-        for (body) |stmt| switch (stmt.expr) {
-            .jump => |j| if (j.kind == .yield) return true,
-            .branch => |br| switch (br.kind) {
-                .if_ => |i| {
-                    if (hasAnyYield(i.then_)) return true;
-                    if (i.else_) |els| if (hasAnyYield(els)) return true;
-                },
-                .tryCatch => {},
-            },
-            else => {},
-        };
-        return false;
-    }
-
-    /// A `loop` in statement position: a JS `for…of`. Its `break` / `continue`
-    /// are the native statements, and inside a generator body its `yield` is
-    /// the native one — which is what makes `#[@iterator]` recursion work (a
-    /// `.map()` would build a throwaway array and yield nothing). Null for an
-    /// accumulator `yield` loop outside a generator: that is a comprehension
-    /// whose value is discarded, and it keeps the value lowering.
-    fn buildLoopStmt(self: *Emitter, lp: anytype) anyerror!?js.Stmt {
-        // `loop (condition) { … }` / `loop { … }` (decision 8 §10): a JS `while`
-        // re-testing the condition before every iteration.
-        if (lp.condition and !(!self.in_generator and hasTopLevelYield(lp.body))) return try self.buildWhileStmt(lp.iter.*, lp.body);
-        if (!self.in_generator and hasTopLevelYield(lp.body)) return null;
+    /// A loop in statement position (decision 105 — every loop is one):
+    /// `for (xs) { x -> … }` / `for await (gen) { x -> … }` is a JS `for…of`
+    /// / `for await…of`; `while (cond) { … }` and `loop { … }` a JS `while`.
+    /// `break` / `continue` are the native statements; inside a generator
+    /// scope a `yield` is the native one and a `break <v>` is `yield v;
+    /// return;`. An annotated `loop` in statement position is its generator
+    /// expression, discarded.
+    fn buildLoopStmt(self: *Emitter, lp: anytype) anyerror!js.Stmt {
+        if (lp.generator != null) return .{ .expr = try self.buildGeneratorLoop(lp) };
+        if (lp.condition) return try self.buildWhileStmt(lp.iter.*, lp.body);
         const head = try self.loopHead(lp);
         const prev_ctx = self.loop_ctx;
         self.loop_ctx = .stmt;
@@ -3797,6 +3731,7 @@ const Emitter = struct {
         return .{ .for_of = .{
             .pattern = head.pattern,
             .iter = head.iter,
+            .is_await = lp.awaitLoop,
             .body = .{
                 .stmts = try self.buildStmts(lp.body),
                 .layout = .fixed,
@@ -3818,206 +3753,65 @@ const Emitter = struct {
         } };
     }
 
-    /// `break` in a loop body. In a comprehension, `break <v>` contributes `v`
-    /// and moves to the next item (`is_last` drops the redundant `continue`
-    /// of the body's final statement); `break;` ends the iteration. In a
-    /// statement loop a `break <v>` value is evaluated and discarded.
+    /// `break` in a body. Bare, it leaves the nearest loop (a native
+    /// `break;`), or — with no loop, inside a generator — ends the generator
+    /// (`return;`). With a value it emits the value and ends the generator
+    /// scope from any loop depth: `yield v; return;` (decision 105 — the
+    /// checker admits `break <v>` in a generator scope only).
     fn buildBreakStmt(self: *Emitter, br: anytype, is_last: bool) anyerror!js.Stmt {
+        _ = is_last;
         const val = br.value orelse return switch (self.loop_ctx) {
-            .none => error.JumpOutsideLoop,
-            .stmt, .value, .cond_value, .search => js.Stmt.break_,
+            .none => if (self.in_generator) js.Stmt{ .return_ = null } else error.JumpOutsideLoop,
+            .stmt => js.Stmt.break_,
         };
-        return switch (self.loop_ctx) {
-            .none => error.JumpOutsideLoop,
-            // Decision 8 §10 — in a condition loop with no `yield`, the
-            // loop's value IS the break's value, so the IIFE returns it.
-            .search => .{ .return_ = try self.buildExpr(val.*) },
-            .cond_value => try self.b.group(&.{ try self.accPush(val.*), .break_ }),
-            .value => if (is_last)
-                try self.accPush(val.*)
-            else
-                try self.b.group(&.{ try self.accPush(val.*), .continue_ }),
-            .stmt => try self.b.group(&.{ .{ .expr = try self.buildExpr(val.*) }, .continue_ }),
-        };
+        if (!self.in_generator) return error.JumpOutsideLoop;
+        return self.b.group(&.{ .{ .expr = try self.b.yield_(try self.buildExpr(val.*)) }, .{ .return_ = null } });
     }
 
-    /// `<acc>.push(<v>);` for the comprehension being built.
-    fn accPush(self: *Emitter, val: ast.Expr) anyerror!js.Stmt {
-        const acc = switch (self.loop_ctx) {
-            .value, .cond_value => |name| name,
-            else => return error.JumpOutsideLoop,
-        };
-        return .{ .expr = try self.b.call(try self.b.member(.{ .name = acc }, "push"), &.{try self.buildExpr(val)}) };
-    }
-
-    /// True when a comprehension body needs the accumulating form: a `break`
-    /// or `continue` anywhere in it (outside a nested loop), or a `yield`
-    /// below the top level.
-    fn loopNeedsAccumulator(body: []const ast.Stmt) bool {
-        for (body) |st| switch (st.expr) {
-            .jump => |j| switch (j.kind) {
-                .@"break", .@"continue" => return true,
-                else => {},
-            },
-            .branch => |br| switch (br.kind) {
-                .if_ => |i| if (stmtsJump(i.then_, false, true) or
-                    (if (i.else_) |els| stmtsJump(els, false, true) else false)) return true,
-                .tryCatch => {},
-            },
-            else => {},
-        };
-        return false;
-    }
-
-    /// A `loop` used as a value — a comprehension.
+    /// `#[@generator] loop { … }` (decision 105) — the loop as a generator: a
+    /// local parameterless generator function called in place, its body the
+    /// loop's under `while (true)`:
     ///
-    /// A body whose only contributions are top-level `yield <v>`s maps the
-    /// collection (`xs.map((x) => { …; return v; })`). Any other body —
-    /// `break <v>` contributing a value, `continue` dropping an item, a
-    /// `yield` under an `if` — is an accumulating IIFE:
-    ///
-    ///     (() => {
-    ///         const _acc = [];
-    ///         for (const x of xs) { …; _acc.push(v); }
-    ///         return _acc;
+    ///     (function* () {
+    ///         while (true) { …; yield v; …; break; }
     ///     })()
-    fn buildLoop(self: *Emitter, lp: anytype) anyerror!js.Expr {
-        if (lp.condition) return self.buildConditionLoopValue(lp);
-        if (hasTopLevelYield(lp.body) and !loopNeedsAccumulator(lp.body)) {
-            const params = try self.arena().alloc(js.Param, lp.params.len);
-            for (lp.params, 0..) |p, i| params[i] = .{ .pattern = .{ .ident = p } };
-            const prev_ctx = self.loop_ctx;
-            const prev_gen = self.in_generator;
-            self.loop_ctx = .none;
-            self.in_generator = false;
-            defer {
-                self.loop_ctx = prev_ctx;
-                self.in_generator = prev_gen;
-            }
-            var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
-            for (lp.body) |stmt| {
-                const is_yield = switch (stmt.expr) {
-                    .jump => |j| j.kind == .yield,
-                    else => false,
-                };
-                if (!is_yield) {
-                    try body.append(self.arena(), try self.buildStmt(stmt));
-                    continue;
-                }
-                // A valueless `yield` contributes no element.
-                const val = stmt.expr.jump.kind.yield.value orelse continue;
-                try body.append(self.arena(), .{ .return_ = try self.buildExpr(val.*) });
-            }
-            return self.b.call(
-                try self.b.member(try self.buildExpr(lp.iter.*), "map"),
-                &.{try self.b.arrowBlock(params, .{
-                    .stmts = try body.toOwnedSlice(self.arena()),
-                    .layout = .fixed,
-                    .indent = self.current_indent,
-                })},
-            );
-        }
-
-        const head = try self.loopHead(lp);
-        const acc = "_acc";
+    ///
+    /// `#[@futureGenerator]` is `async function*`. The captured `var`s are the
+    /// closure's — JS shares them by reference, so a counter the body
+    /// reassigns is generator state for free. `yield v` is native, `break v`
+    /// is `yield v; return;`, a bare `break` leaves the `while` and ends the
+    /// generator, `continue` starts its next round. A function boundary: the
+    /// enclosing loop context and test/result wraps do not reach the body.
+    fn buildGeneratorLoop(self: *Emitter, lp: anytype) anyerror!js.Expr {
+        const eff = lp.generator orelse return error.LoopInValuePosition;
+        const shape = effectShape(eff);
         const base = self.current_indent;
         const prev_ctx = self.loop_ctx;
         const prev_gen = self.in_generator;
         const prev_wrap = self.case_ok_wrap;
-        self.loop_ctx = .{ .value = acc };
-        self.in_generator = false;
+        const prev_in_test = self.in_test_body;
+        self.loop_ctx = .stmt;
+        self.in_generator = true;
         self.case_ok_wrap = false;
+        self.in_test_body = false;
         self.current_indent = base + 2;
         defer {
             self.loop_ctx = prev_ctx;
             self.in_generator = prev_gen;
             self.case_ok_wrap = prev_wrap;
+            self.in_test_body = prev_in_test;
             self.current_indent = base;
         }
-        const body = try self.arena().alloc(js.Stmt, lp.body.len);
-        for (lp.body, 0..) |st, i| {
-            const last = i == lp.body.len - 1;
-            body[i] = switch (st.expr) {
-                .jump => |j| switch (j.kind) {
-                    .@"break" => |br| try self.buildBreakStmt(br, last),
-                    .yield => |y| if (y.value) |v| (if (last)
-                        try self.accPush(v.*)
-                    else
-                        try self.buildStmt(st)) else try self.buildStmt(st),
-                    else => try self.buildStmt(st),
-                },
-                else => try self.buildStmt(st),
-            };
-        }
-        return self.b.call(try self.b.paren(try self.b.arrowBlock(&.{}, .{
-            .stmts = try self.b.stmts(&.{
-                .{ .decl = .{ .pattern = .{ .name = acc }, .value = .{ .array = .{} } } },
-                .{ .for_of = .{
-                    .pattern = head.pattern,
-                    .iter = head.iter,
-                    .body = .{ .stmts = body, .indent = base + 1 },
-                } },
-                .{ .return_ = .{ .name = acc } },
-            }),
-            .indent = base,
-        })), &.{});
-    }
-
-    /// A condition loop used as a value (decision 8 §10).
-    ///
-    /// With a `yield` in the body it is a comprehension, and it collects:
-    ///
-    ///     (() => { const _acc = []; while (cond) { …; _acc.push(v); } return _acc; })()
-    ///
-    /// Without one it is a **search**, and `break <v>` is the loop's value:
-    ///
-    ///     (() => { while (cond) { …; return v; } return null; })()
-    ///
-    /// It collected in both cases before, so `val r = loop { …; break k; };`
-    /// answered `[3]` where §10 asks for `3`. A loop that ends without
-    /// breaking has no value to give, which is `null`.
-    fn buildConditionLoopValue(self: *Emitter, lp: anytype) anyerror!js.Expr {
-        const acc = "_acc";
-        const base = self.current_indent;
-        const cond = try self.buildExpr(lp.iter.*);
-        const searching = !hasAnyYield(lp.body);
-        const prev_ctx = self.loop_ctx;
-        const prev_gen = self.in_generator;
-        const prev_wrap = self.case_ok_wrap;
-        self.loop_ctx = if (searching) .search else .{ .cond_value = acc };
-        self.in_generator = false;
-        self.case_ok_wrap = false;
-        self.current_indent = base + 2;
-        defer {
-            self.loop_ctx = prev_ctx;
-            self.in_generator = prev_gen;
-            self.case_ok_wrap = prev_wrap;
-            self.current_indent = base;
-        }
-        const body = try self.arena().alloc(js.Stmt, lp.body.len);
-        for (lp.body, 0..) |st, i| {
-            body[i] = switch (st.expr) {
-                .jump => |j| switch (j.kind) {
-                    .@"break" => |br| try self.buildBreakStmt(br, false),
-                    .yield => |y| if (y.value) |v| try self.accPush(v.*) else js.Stmt.continue_,
-                    else => try self.buildStmt(st),
-                },
-                else => try self.buildStmt(st),
-            };
-        }
-        const while_stmt = js.Stmt{ .while_ = .{ .cond = cond, .body = .{ .stmts = body, .indent = base + 1 } } };
-        const stmts = if (searching)
-            try self.b.stmts(&.{ while_stmt, .{ .return_ = .null_ } })
-        else
-            try self.b.stmts(&.{
-                .{ .decl = .{ .pattern = .{ .name = acc }, .value = .{ .array = .{} } } },
-                while_stmt,
-                .{ .return_ = .{ .name = acc } },
-            });
-        return self.b.call(try self.b.paren(try self.b.arrowBlock(&.{}, .{
-            .stmts = stmts,
-            .indent = base,
-        })), &.{});
+        const body = try self.buildStmts(lp.body);
+        const while_stmt = js.Stmt{ .while_ = .{
+            .cond = .{ .name = "true" },
+            .body = .{ .stmts = body, .indent = base + 1 },
+        } };
+        return self.b.call(try self.b.paren(.{ .function = .{
+            .keyword = shape.keyword(),
+            .params = &.{},
+            .body = .{ .stmts = try self.b.stmts(&.{while_stmt}), .indent = base },
+        } }), &.{});
     }
 
     // ── @print ────────────────────────────────────────────────────────────────

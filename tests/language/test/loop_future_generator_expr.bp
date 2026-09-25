@@ -1,0 +1,33 @@
+//// Decision 105 — a `#[@futureGenerator] loop` may `await` inside its body
+//// without the enclosing fn having the level: the suspension surfaces at the
+//// consumer, whose `for await` needs a body that grants `await`. Here the loop
+//// is built in a plain fn (handed out in a record field — a plain fn's return
+//// type may not be a wrapper, N25) and consumed by a `#[@future]` body.
+
+#[@future]
+fn fetch(n: i32) -> @Future<i32> { return n * 2; }
+
+type Ticker(gen: @FutureGenerator<i32>)
+
+fn ticks(limit: i32) -> Ticker {
+    var i = 0;
+    val gen = #[@futureGenerator] loop {
+        i = i + 1;
+        if (i > limit) { break; };
+        val v = await fetch(i);
+        yield v;
+    };
+    return Ticker(gen: gen);
+}
+
+#[@future]
+fn total(limit: i32) -> @Future<i32> {
+    var sum = 0;
+    for await (ticks(limit).gen) { v -> sum = sum + v; };
+    return sum;
+}
+
+test "§10 a futureGenerator loop awaits inside, and for await consumes it" {
+    val s = await total(3);
+    assert s == 12;
+}
