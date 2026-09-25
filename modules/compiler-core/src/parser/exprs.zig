@@ -1834,12 +1834,16 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
 
         // The shared block body — the `{`, the optional label and the
         // `a, b ->` parameter list are this block's prologue. The semicolon
-        // policy stays `.required`, which a trailing lambda has always applied;
-        // what it gains is comment handling and empty-line tracking.
+        // policy is the fn body's, `.requiredExceptLast`: it was `.required`,
+        // the one block whose last statement could not drop its `;`, so
+        // `xs.map { x -> f(x) }` and every one-line `loop (xs) { x -> f(x) }`
+        // body were the catch-all at the `}` while `{ x -> f(x) }` as a value
+        // parsed (front 15 step 4b; C-11's `arrow_when_empty` is the printer
+        // half). Strictly accepting: every body that parsed still does.
         const body = try this.parseBlockBody(alloc, .{
             .trackEmptyLines = true,
             .handleComments = true,
-            .semicolonPolicy = .required,
+            .semicolonPolicy = .requiredExceptLast,
             // A trailing lambda is another function: a fresh static prefix
             // of `use` (`use memo { -> return … }` keeps the enclosing one).
             .useAfterBranchGuard = true,
@@ -1915,14 +1919,17 @@ pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr 
     }
 
     // The shared block body — the `{` and the `x, y ->` parameter list are this
-    // block's prologue. The semicolon policy stays `.required`, which is what a
-    // loop body has always applied. What it gains is comment handling and
-    // empty-line tracking: a `//` inside a `loop (…) { x -> … }` body was a
-    // parse error, and a blank line inside one was dropped by the printer.
+    // block's prologue. The semicolon policy is the fn body's,
+    // `.requiredExceptLast`, as the trailing lambda's is: it was `.required`,
+    // so a one-line `loop (xs) { x -> f(x) }` was the catch-all at the `}`
+    // (front 15 step 4b; strictly accepting). What it gained before that was
+    // comment handling and empty-line tracking: a `//` inside a
+    // `loop (…) { x -> … }` body was a parse error, and a blank line inside
+    // one was dropped by the printer.
     const body = try this.parseBlockBody(alloc, .{
         .trackEmptyLines = true,
         .handleComments = true,
-        .semicolonPolicy = .required,
+        .semicolonPolicy = .requiredExceptLast,
         // A loop body is a branch's block, not a function: it inherits the
         // enclosing body's static prefix, which the `loop` itself just ended,
         // so a `use` inside it is `useAfterBranch`.

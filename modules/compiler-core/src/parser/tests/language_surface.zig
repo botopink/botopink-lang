@@ -473,3 +473,44 @@ test "surface R10: a decided-against form renders its code, the replacement and 
         \\fn f() -> i32 { return 1 << 2; }
     );
 }
+
+// ── R11 — the two measured forms (step 4b) ───────────────────────────────────
+//
+// Both were found by library fronts paying for them, and both are strictly
+// accepting: `#[mark(-20)]` reds at the DIGITS because the annotation-argument
+// loop took the `-` as the whole argument; a one-line trailing-lambda body
+// (`xs.map { x -> f(x) }`, every `loop (xs) { x -> f(x) }`) reds at the `}`
+// because that one block kept the `.required` semicolon policy while the same
+// lambda as a value parsed. Pre-fix each snapshot below is a parse error.
+
+test "surface R11: a negative literal is one annotation argument" {
+    try assertParser(std.testing.allocator, @src(),
+        \\#[mark(-20)]
+        \\fn f() -> i32 { return 1; }
+        \\#[order(-100), tag("x", -1)]
+        \\fn g() -> i32 { return 2; }
+    );
+}
+
+test "surface R11: a one-line trailing lambda body needs no `;`" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(xs: i32[]) -> i32 {
+        \\    val ys = xs.map { x -> x + 1 };
+        \\    var acc = 0;
+        \\    loop (xs) { x -> acc = acc + x };
+        \\    xs.forEach { x -> @print(x.toString()) };
+        \\    val z = calcular(fator: 2) { a, b -> a + b };
+        \\    val w = memo { -> 42 };
+        \\    return acc;
+        \\}
+    );
+}
+
+test "surface R11: a trailing lambda body with several statements keeps its `;`" {
+    try expectErrorAt(
+        \\fn f(xs: i32[]) -> i32 {
+        \\    xs.forEach { x -> @print(x.toString()) @print(x.toString()); };
+        \\    return 1;
+        \\}
+    , .unexpectedToken, 2, 44);
+}

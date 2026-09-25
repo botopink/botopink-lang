@@ -95,8 +95,8 @@ block that reads something between the `{` and its first statement — a prologu
 | `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` | inherits |
 | `if` then-branch | `{ x -> ` or `{ _ -> ` — the branch's value binding | `requiredExceptLast` | inherits |
 | lambda `{ a, b -> … }` | the parameter list | `optional` | fresh |
-| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `required` | fresh |
-| `loop (…) { x -> … }` body | the parameter list | `required` | inherits |
+| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `requiredExceptLast` (was `required` — the one block whose last statement could not drop its `;`; front 15 step 4b) | fresh |
+| `loop (…) { x -> … }` body | the parameter list | `requiredExceptLast` (was `required`; front 15 step 4b, with the trailing lambda) | inherits |
 
 **The static prefix of `use`** (front 19 of 1.0.10-beta, decision 88) is a
 property of the *function body*: every `use` precedes every `if`, `case`, `loop`
@@ -499,6 +499,10 @@ shapes (vocabulary in `libs/std/AGENTS.md`):
 - **Enum/member chains** — `.Erlang`, `Target.Erlang`: adjacent `.`/identifier
   tokens fold into one lexeme spanning the source bytes. A bare identifier or
   string literal goes through unchanged.
+- **A negative literal** — `#[mark(-20)]`: the `-` and the digits span into one
+  lexeme, `"-20"`, so the reader that evaluates the argument sees the number
+  (front 15 step 4b). It used to be the catch-all at the digits, with the `-`
+  taken as the whole argument.
 
 ## Module-level `var` (front 17, decision 38)
 

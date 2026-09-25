@@ -1105,6 +1105,16 @@ pub const Parser = struct {
                     var last = first;
                     while (this.check(.dot) or this.check(.identifier)) last = this.advance();
                     try args.append(alloc, spanLexemes(first, last));
+                } else if (this.check(.minus) and this.peekAt(1).kind == .numberLiteral) {
+                    // `#[mark(-20)]` — a negative literal is one argument, the
+                    // sign and the digits spanned into one lexeme, so the
+                    // reader that parses the lexeme as an expression sees
+                    // `-20`. It used to be the catch-all at the digits: the
+                    // `-` was taken as the whole argument and `20` had
+                    // nowhere to go (front 15 step 4b).
+                    const first = this.advance(); // `-`
+                    const last = this.advance(); // the digits
+                    try args.append(alloc, spanLexemes(first, last));
                 } else {
                     const tok = this.advance();
                     try args.append(alloc, tok.lexeme);
