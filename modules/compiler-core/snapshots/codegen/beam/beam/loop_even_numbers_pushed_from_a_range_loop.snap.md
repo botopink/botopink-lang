@@ -68,7 +68,7 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, 'rem', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
-    {test, is_eq, {f, 10}, [{x, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 10}, [{x, 0}, {integer, 0}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {y, 1}, {x, 0}}.

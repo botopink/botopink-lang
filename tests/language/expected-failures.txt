@@ -198,8 +198,10 @@ erlang   | test/curried_call.bp       | C-09 (backend half) | 01 types it; erlan
 # single-value probe decision 53 quotes reads beam's `1` as correct when it is a
 # false positive. commonJS passes, and **wasm passes since `8594e4ba`** (C-06's
 # wasm half: the `A...B` arm in `wat.zig`, verified by running at `361d255d`:
-# `1 1 1 0 0`). The two lines left are C-06's erlang and beam halves.
-beam     | run/case_range_value.bp     | C-06 (beam half not landed) | decision 53: the opposite — the `1...9` arm **always** matches, so 0 and 10 answer `1` too. beam does run (run.sh § beam assembles and executes it); "beam emits only out/main.S" is no longer the measurement (D4, `case` arms)
+# `1 1 1 0 0`), and **beam passes since C-06's beam half** (`emitRangeArm` in
+# `beam_asm.zig`: two `is_ge` tests; run by hand: `1 1 1 0 0`), and **erlang
+# passes since C-06's erlang half** (`rangePatternNode` in `erlang.zig`: a fresh
+# variable guarded by both bounds). No line is left.
 
 # ── an index is a method call (decision 63, amended 2026-09-19) ──────────────
 # `xs[i]` IS `xs.at(i)` and `d["k"]` IS `d.at("k")` through the ambient
@@ -235,31 +237,14 @@ beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `
 # that). beam's twin helper is declared and not wired.
 beam     | run/std_erlang_node.bp | C-03 | decision 64: dies at boot — `{undef, [{'std@erlang', node, [], []}, …]}`; `hostDeclareWrapperNeeded` in `beam_asm.zig` is declared and not wired (C-03's beam half)
 
-# ── a lambda's expression body is its value ─────────────────────────────────
-# `run/lambda_expression_body.bp` (04-js, this cell's commonJS half landed with
-# it). beam drops the lambda's tail expression the same way commonJS did: four
-# of the five rows answer the atom `ok` — the value of the arm's last statement
-# on erlang terms. It is defect 2
-# of the three `01-checker` handed to the backends ("an arm whose value is its
-# final expression is emitted as a statement"), seen through the lambda rather
-# than through a `case` arm, and measured here for the first time.
-beam     | run/lambda_expression_body.bp | 03 handover 01 | a lambda whose body is an `if` / `case` / `try … catch` answers the atom `ok` (`ok,ok,ok`) on the three lines left since decision 105 removed the loop rows
-
 # ── the module body on wasm and on the BEAM ──────────────────────────────────
 # A module-level `val` is the module body: evaluated once, in declaration order,
 # at module load — before `main`. commonJS has always done that and erlang does
 # since `fix/erlang-module-load` (front 00 · 02-erlang), which is what
-# `run/module_init_order.bp` pins. The other two backends each miss a different
-# half of it, measured at that branch with OTP 29 / node v25.
+# `run/module_init_order.bp` pins. wasm still misses half of it, measured at
+# that branch with OTP 29 / node v25; beam runs it since front 03 (the module
+# body in `'_botopink_main'/0`, an effectful `val` cached in `persistent_term`).
 wasm     | run/module_init_order.bp | 05 (no step; the module body on wasm) | a `_`-named top-level statement is dropped: `first` / `main` / `1` / `1` — `second` never runs. The named `val` is already evaluated once at load, so only the statement half is owed
-beam     | run/module_init_order.bp | 03 (no step; the module body on the BEAM) | the shape erlang had before this branch: `main` / `first` / `1` / `first` / `1` — the named `val` is a 0-arity function evaluated on each READ, and the `_`-named statement never runs. `beam_asm.zig` carries its own copy of `isSyntheticMainEntrypointCall` and of the entrypoint wrapper
-
-# `00 · 01-checker` — narrowing (`fix/null-narrowing`). `if (x != null)` and the
-# guard clause `if (x == null) { return …; }` narrow the name they test, so a
-# field read off a `?Record` resolves and commonJS emits the `length` PROPERTY
-# instead of a call on a number. The two cells run on every target; what is left
-# is not the checker's.
-beam     | run/narrowing_null_guard_clause.bp | 03 (no step; two optional readers in one module) | the module does not compile: `UnknownFunction`, no location. Not narrowing's — the same program written with `??` fails identically. Minimal shape: an optional reader in a record METHOD and another in a top-level `fn` in the same module (`type Row(cells: string[]) { fn widest(self: Self) -> i32 { return (self.cells.at(0) ?? "").length(); } }` plus `fn firstOf(ws: string[]) -> i32 { return (ws.at(0) ?? "").length(); }`) — either alone compiles and runs on beam, together they are `UnknownFunction`. `run/narrowing_null_check.bp` passes on beam
 
 # ── a field read whose receiver lost its type, on wasm ───────────────────────
 # `modules/field_name_collision` pins decision 21's positional read against the

@@ -24,7 +24,7 @@ fn main() {
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 9}}.
-    {test, is_eq, {f, 33}, [{integer, 1}, {integer, 2}]}.
+    {test, is_eq_exact, {f, 33}, [{integer, 1}, {integer, 2}]}.
     {jump, {f, 34}}.
   {label, 33}.
     {move, {literal, <<"boom">>}, {x, 0}}.

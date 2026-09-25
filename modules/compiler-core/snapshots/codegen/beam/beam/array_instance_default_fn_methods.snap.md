@@ -190,7 +190,7 @@ fn main() {
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 2, [{x, 0}], {x, 0}}.
-    {test, is_eq, {f, 64}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 64}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 65}}.
   {label, 64}.

@@ -47,7 +47,7 @@ fn main() {
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{integer, 1}, {x, 0}]}}.
     {move, {x, 0}, {y, 1}}.
-    {test, is_eq, {f, 8}, [{y, 0}, {y, 1}]}.
+    {test, is_eq_exact, {f, 8}, [{y, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 9}}.
   {label, 8}.
@@ -69,7 +69,7 @@ fn main() {
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{integer, 1}, {x, 0}]}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_eq, {f, 37}, [{y, 0}, {y, 2}]}.
+    {test, is_eq_exact, {f, 37}, [{y, 0}, {y, 2}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 38}}.
   {label, 37}.
@@ -89,7 +89,7 @@ fn main() {
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{x, 0}, {integer, 12}]}}.
     {move, {x, 0}, {y, 6}}.
-    {test, is_eq, {f, 39}, [{y, 5}, {y, 6}]}.
+    {test, is_eq_exact, {f, 39}, [{y, 5}, {y, 6}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 40}}.
   {label, 39}.
@@ -119,7 +119,7 @@ fn main() {
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{x, 1}, {x, 0}]}}.
     {move, {x, 0}, {y, 9}}.
-    {test, is_eq, {f, 41}, [{y, 7}, {y, 8}]}.
+    {test, is_eq_exact, {f, 41}, [{y, 7}, {y, 8}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 42}}.
   {label, 41}.
@@ -128,7 +128,7 @@ fn main() {
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
-    {test, is_eq, {f, 43}, [{y, 7}, {y, 9}]}.
+    {test, is_eq_exact, {f, 43}, [{y, 7}, {y, 9}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 44}}.
   {label, 43}.
@@ -149,7 +149,7 @@ fn main() {
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{float, 1.5}, {x, 0}]}}.
     {move, {x, 0}, {y, 12}}.
-    {test, is_eq, {f, 45}, [{y, 10}, {y, 11}]}.
+    {test, is_eq_exact, {f, 45}, [{y, 10}, {y, 11}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 46}}.
   {label, 45}.
@@ -158,7 +158,7 @@ fn main() {
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
-    {test, is_eq, {f, 47}, [{y, 10}, {y, 12}]}.
+    {test, is_eq_exact, {f, 47}, [{y, 10}, {y, 12}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 48}}.
   {label, 47}.

@@ -187,7 +187,7 @@ fn main() {
     {move, {x, 0}, {y, 3}}.
     {bif, element, {f, 0}, [{integer, 3}, {y, 1}], {x, 0}}.
     {move, {x, 0}, {y, 4}}.
-    {test, is_eq, {f, 14}, [{y, 4}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 14}, [{y, 4}, {integer, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {jump, {f, 15}}.

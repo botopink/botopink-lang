@@ -25,7 +25,7 @@ fn main() {
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test, is_eq, {f, 10}, [{y, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 10}, [{y, 0}, {atom, undefined}]}.
     {move, {literal, <<"nobody">>}, {x, 0}}.
     {deallocate, 2}.
     return.

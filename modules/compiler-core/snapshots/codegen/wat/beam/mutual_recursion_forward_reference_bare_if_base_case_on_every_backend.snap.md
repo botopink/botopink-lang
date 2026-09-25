@@ -39,7 +39,7 @@ fn isOdd(n: i32) -> bool {
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test, is_eq, {f, 12}, [{y, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 12}, [{y, 0}, {integer, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {deallocate, 1}.
     return.
@@ -55,7 +55,7 @@ fn isOdd(n: i32) -> bool {
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test, is_eq, {f, 13}, [{y, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 13}, [{y, 0}, {integer, 0}]}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 1}.
     return.

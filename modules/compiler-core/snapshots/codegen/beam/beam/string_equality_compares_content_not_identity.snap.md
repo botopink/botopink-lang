@@ -49,7 +49,7 @@ fn main() {
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {literal, <<"foo">>}, {x, 0}}.
-    {test, is_eq, {f, 12}, [{y, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 12}, [{y, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 13}}.
   {label, 12}.
@@ -59,7 +59,7 @@ fn main() {
     {move, {literal, <<"foo">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"bar">>}, {x, 0}}.
-    {test, is_eq, {f, 14}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 14}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 15}}.
   {label, 14}.

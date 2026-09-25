@@ -513,6 +513,28 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 
 ## Status and the gate
 
+**Front 00 · 03-beam (branch `front/03-beam`, on `feat` `0beaa1f9`) — `--target beam` only.**
+Each step that deletes a beam line re-quotes this run; no commonJS/erlang/wasm line moves:
+
+```
+$ tests/language/run.sh --target beam
+expected-failures.txt: 35 lines, 9 exercised by --target beam
+language tests: 118 passed, 9 expected failures, 1 failed
+```
+
+The 1 failure has no line: `run/effect_method.bp` (`ConditionLoopValueUnsupported`:
+a `while` that `yield`s in an `implement` / enum-body method, whose frame opens
+no generator scope — 22-loops' lowering, decision 105). Passing since this
+front, with no beam line to delete: `run/labelled_arguments.bp` (a variant's
+labelled argument) and `modules/{field,method,type}_name_collision` (a read or
+a call the emit cannot place asks the value). Deleted so far:
+`beam | run/case_range_value.bp` (C-06's beam half),
+`beam | run/lambda_expression_body.bp` (03 handover 01),
+`beam | run/narrowing_null_guard_clause.bp` (a synth helper per module),
+`beam | run/module_init_order.bp` (the module body). The beam cells run the
+entry as `'_botopink_main'/0`, which runs the module body before `main/0`. `run/labelled_arguments.bp` had no beam line and passes since the
+variant constructor places a labelled argument by its declared field.
+
 **Recounted on disk at C-04's landing (`fix/trailing-defaults`, merged onto
 `4aee802d`):**
 

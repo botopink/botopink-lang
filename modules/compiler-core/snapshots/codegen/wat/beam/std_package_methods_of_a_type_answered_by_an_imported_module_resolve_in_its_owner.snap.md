@@ -333,7 +333,7 @@ test "dict empty boundary: size 0, at misses" {
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 40}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq, {f, 41}, [{x, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 41}, [{x, 0}, {integer, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 42}}.
   {label, 41}.
@@ -556,7 +556,7 @@ test "dict empty boundary: size 0, at misses" {
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq, {f, 26}, [{x, 0}, {y, 2}]}.
+    {test, is_eq_exact, {f, 26}, [{x, 0}, {y, 2}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
@@ -582,7 +582,7 @@ test "dict empty boundary: size 0, at misses" {
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq, {f, 32}, [{x, 0}, {y, 1}]}.
+    {test, is_eq_exact, {f, 32}, [{x, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 33}}.
   {label, 32}.

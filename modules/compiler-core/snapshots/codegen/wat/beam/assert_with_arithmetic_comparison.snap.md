@@ -19,7 +19,7 @@ fn f() {
   {label, 3}.
     {allocate, 0, 0}.
     {gc_bif, '+', {f, 0}, 0, [{float, 1.0}, {float, 2.0}], {x, 0}}.
-    {test, is_eq, {f, 4}, [{x, 0}, {float, 3.0}]}.
+    {test, is_eq_exact, {f, 4}, [{x, 0}, {float, 3.0}]}.
     {jump, {f, 5}}.
   {label, 4}.
     {move, {literal, <<"assertion failed">>}, {x, 0}}.

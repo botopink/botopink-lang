@@ -1141,6 +1141,186 @@ test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
     , "int\nstr\n", &.{ "I32 when is_number(I32), (I32 == trunc(I32))", "String when is_binary(String) ->" });
 }
 
+// ── front 03-beam: `case` patterns in BEAM assembly (C-06, C-07 D4) ──────────
+//
+// Each row made an arm match everything or nothing on beam, so each is asserted
+// by assembling and running the emitted module and by pinning the test
+// instructions it now writes. The erlang twins are the block above.
+
+test "beam: case ---- an inclusive range is two is_ge tests (decision 53)" {
+    // C-06's beam half. `1...9` reached the untested `.literals` arm and matched
+    // every subject — 0 and 10 answered `1`. Both ends are inclusive; a string
+    // bound compares the binaries in term order.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn n(x: i32) -> i32 { return case x { 1...3 { 1 } 4...6 { 2 } _ { 0 } }; }
+        \\fn s(x: string) -> i32 { return case x { "b"..."d" { 1 } _ { 0 } }; }
+        \\fn main() {
+        \\  @print(n(0)); @print(n(1)); @print(n(3)); @print(n(4)); @print(n(6)); @print(n(7));
+        \\  @print(s("a")); @print(s("b")); @print(s("d")); @print(s("e"));
+        \\}
+    , "0\n1\n1\n2\n2\n0\n0\n1\n1\n0\n", &.{ "{test, is_ge, ", "[{x, 0}, {integer, 1}]", "[{integer, 3}, {x, 0}]" });
+}
+
+test "beam: case ---- a tuple pattern is the bare tuple, element by element" {
+    // C-07 D4 (P6, P7). `#(0, s)` reached the untested `.literals` arm, so the
+    // first tuple arm took every subject and bound nothing. It is `is_tuple` +
+    // `test_arity`, then each slot tested from `get_tuple_element`; under `..`
+    // the arity is a lower bound read with the guard BIF `element/2`.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn classify(p: #(i32, string)) -> string {
+        \\  return case p { #(0, s) { "zero " + s } #(n, "x") { "x " + n.toString() } #(_, s) { s } };
+        \\}
+        \\fn first(t: #(i32, i32, i32)) -> i32 { return case t { #(a, ..) { a } }; }
+        \\fn main() {
+        \\  @print(classify(#(0, "a"))); @print(classify(#(7, "x"))); @print(classify(#(7, "y")));
+        \\  @print(first(#(4, 5, 6)));
+        \\}
+    , "zero a\nx 7\ny\n4\n", &.{ "{test, test_arity, ", "{bif, element, " });
+}
+
+test "beam: case ---- `..` and labels read the declared variant" {
+    // C-07 D4 (P4, P7). `Rect(height: h, width: w)` binds by label, not by
+    // position, and `Circle(..)` / `Rect(5, ..)` take the arity the variant
+    // DECLARES — both used to match every subject.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+        \\fn width(s: Shape) -> i32 { return case s { Rect(height: h, width: w) { w * 100 + h } Circle(..) { 0 } }; }
+        \\fn five(s: Shape) -> i32 { return case s { Rect(5, ..) { 1 } _ { 0 } }; }
+        \\fn kind(s: Shape) -> string {
+        \\  return case s { .Rect(width: w, height: h) when (w == h) { "square" } .Rect(..) { "rect" } .Circle(..) { "circle" } };
+        \\}
+        \\fn main() {
+        \\  @print(width(Shape.Rect(width: 5, height: 9))); @print(width(Shape.Circle(radius: 1)));
+        \\  @print(five(Shape.Rect(width: 5, height: 9))); @print(five(Shape.Rect(width: 6, height: 9)));
+        \\  @print(kind(Shape.Rect(width: 2, height: 2))); @print(kind(Shape.Rect(width: 2, height: 3))); @print(kind(Shape.Circle(radius: 2)));
+        \\}
+    , "509\n0\n1\n0\nsquare\nrect\ncircle\n", &.{"{test, is_tagged_tuple, "});
+}
+
+test "beam: case ---- a primitive type or a bool literal is a test, not a binder" {
+    // C-07 D4 (§5.2). `i32 { … }`, `string { … }`, `true { … }` were plain
+    // binders, so the first arm answered for every subject.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn kind(v: i32 | string) -> string { return case v { i32 { "int" } string { "str" } }; }
+        \\fn yesNo(b: bool) -> string { return case b { true { "yes" } false { "no" } }; }
+        \\fn sign(x: i32) -> string {
+        \\  return case x { i32 when (x > 0) { "positive" } i32 when (x < 0) { "negative" } _ { "zero" } };
+        \\}
+        \\fn main() {
+        \\  @print(kind(3)); @print(kind("abcd")); @print(yesNo(true)); @print(yesNo(false));
+        \\  @print(sign(3)); @print(sign(-3)); @print(sign(0));
+        \\}
+    , "int\nstr\nyes\nno\npositive\nnegative\nzero\n", &.{ "{test, is_integer, ", "{test, is_binary, ", "{test, is_eq_exact, " });
+}
+
+test "beam: an enum variant's labelled payload claims its declared slot" {
+    // `run/labelled_arguments.bp`'s beam twin of the erlang row. The record
+    // constructor placed a labelled argument by field index; the variant
+    // constructor zipped by position, so `Shape.Rect(height: 2, width: 5)`
+    // was built `{Rect, 2, 5}` and the cell printed `205`.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\type Shape { Rect(width: i32, height: i32), Dot }
+        \\fn shown(s: Shape) -> i32 { return case s { Shape.Rect(w, h) -> w * 100 + h; Shape.Dot -> 0; }; }
+        \\fn main() {
+        \\  @print(shown(Shape.Rect(height: 2, width: 5)));
+        \\  @print(shown(Shape.Rect(width: 5, height: 2)));
+        \\  @print(shown(Shape.Rect(5, 2)));
+        \\}
+    , "502\n502\n502\n", &.{});
+}
+
+test "beam: a lambda whose body is an if, a case or a try answers its value" {
+    // 03 handover 01, `run/lambda_expression_body.bp`. `emitLambdaBody`
+    // treated only a literal/name/operator/call tail as the lambda's value;
+    // an `if`, a `case` and a `try … catch` fell to `emitBody`, which answers
+    // the atom `ok` — `ok,ok,ok` on each line. The value tails are now
+    // `armValueTail`'s, the set a `case` arm's block already used.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\#[@result]
+        \\fn tenth(x: i32) -> @Result<i32, string> {
+        \\    if (x > 1) { return x * 10; } else { throw "too small"; }
+        \\}
+        \\fn main() {
+        \\  val xs = [1, 2, 3];
+        \\  @print(xs.map({ x -> if (x > 1) { x * 10 } else { x } }).join(","));
+        \\  @print(xs.map({ x -> case x { 1 { 100 } _ { 200 } } }).join(","));
+        \\  @print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
+        \\}
+    , "1,20,30\n100,200,200\n0,20,30\n", &.{});
+}
+
+test "beam: a synth helper a type's module reached first is the file module's too" {
+    // `run/narrowing_null_guard_clause.bp`. `'-bp_at-'/2` (and every other
+    // once-per-module helper) was cached by name across the whole emit: a
+    // record METHOD reached it first, inside the type's own module, and the
+    // file's `fn` then asked its own label table for a name that module never
+    // reserved — `UnknownFunction`, no location. Each unit now keeps its own.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\type Row(cells: string[]) {
+        \\    fn widest(self: Self) -> i32 { return (self.cells.at(0) ?? "").length(); }
+        \\}
+        \\fn firstOf(ws: string[]) -> i32 { return (ws.at(0) ?? "").length(); }
+        \\fn main() { @print(Row(cells: ["abc"]).widest()); @print(firstOf(["ab"])); }
+    , "3\n2\n", &.{});
+}
+
+test "beam: the module body runs once, in declaration order, before main" {
+    // `run/module_init_order.bp`. A named module-level `val` was a 0-arity
+    // function evaluated on every READ (`first` printed twice, after `main`),
+    // and the `'_botopink_main'/0` wrapper ran only the `_` statements. An
+    // effectful `val` now caches under `persistent_term` (erlang's
+    // `cachedValueExpr`) and the wrapper runs the module body in order.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn note(tag: string) -> i32 { @print(tag); return 1; }
+        \\val first = note("first");
+        \\val _second = note("second");
+        \\fn main() { @print("main"); @print(first); @print(first); }
+    , "first\nsecond\nmain\n1\n1\n", &.{ "{extfunc, persistent_term, get, 2}", "{extfunc, persistent_term, put, 2}" });
+}
+
+test "beam: is and == read numbers by value only where decision 8 says so" {
+    // C-07 D1/D3 (§4.1, §2.3). `x is f64` is any number (`is_number`, was
+    // `is_float`); `x is i32` holds for `2.0` (an integer, or a float equal to
+    // its `trunc`), and inside the branch or the arm the value IS an `i32` —
+    // `3.0` prints `number 3`. `==` / `!=` are exact between two typed
+    // operands (decision B2: `2.0 == 2` is false) and by value when one is
+    // `unknown`. D2 (§11): beam stores nothing extra for `unknown` or a union,
+    // so no instruction is pinned for it.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn describe(x: unknown) -> string {
+        \\    return case x {
+        \\        i32 { n -> "number " + n.toString() }
+        \\        string when (x == "") { "empty text" }
+        \\        string { s -> "text " + s }
+        \\        _ { "other" }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    val a: unknown = 3.0;
+        \\    @print(describe(a));
+        \\    val b: unknown = 2.5;
+        \\    @print(describe(b));
+        \\    val e: unknown = "";
+        \\    @print(describe(e));
+        \\    val c: unknown = true;
+        \\    @print(describe(c));
+        \\    val d: unknown = 2.0;
+        \\    @print(d is i32);
+        \\    @print(d is f64);
+        \\    val k: unknown = 2;
+        \\    @print(k is f64);
+        \\    @print(b is i32);
+        \\    var got = 0;
+        \\    if (d is i32) { got = d + 1; };
+        \\    @print(got);
+        \\    @print(d == 2);
+        \\    @print(d != 2);
+        \\    @print(2.0 == 2);
+        \\    @print(2.0 != 2);
+        \\}
+    , "number 3\nother\nempty text\nother\ntrue\ntrue\ntrue\nfalse\n3\ntrue\nfalse\nfalse\ntrue\n", &.{ "{test, is_number, ", "{gc_bif, trunc, ", "{test, is_eq_exact, " });
+}
+
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
 //
 // `break <value>` out of `while (cond)` was refused outright with an unlocated

@@ -1499,16 +1499,86 @@ codegen/
   constructor emits the bare atom `'Circle'`, so `variantTag` and the `.ident`
   arm take the last `.`-separated segment (`bareVariantName`); §5.1 P8 — a name
   carrying a `.` is a variant, never a binding (`isVariantPath`) (01's defect 1).
+- **Case patterns** (`emitPatternArm`, `emitSubPattern`, decision 8 §5; C-06's
+  and C-07 D4's beam halves): every shape the `.fields`/`.binding` arms never
+  read — a range, a tuple, `..`, labels, a literal or nested payload, a
+  primitive type name, `true`/`false` — is tested from `{x, 0}` element by
+  element. Tests fall through on a match and jump to the next arm; nothing is
+  written below the scratch base, so the subject is intact on the fail edge; each
+  binder takes a y-slot (`patternYSlots` counts nested ones). `A...B` is two
+  `is_ge` tests in term order (numeric, or byte order for string bounds). `#(…)`
+  is `is_tuple` + `test_arity` with no tag; under `..` the arity is a lower
+  bound asked as the guard BIF `element(N, T)`, and the slots are read with it
+  too — after a `tuple_size` test the loader's validator still refuses a
+  `get_tuple_element` (`bad_type`). A variant's `..` takes the DECLARED arity
+  (`VariantShape.decl`) and a label (P4) the slot of the field it names
+  (`variantSlotIndex`, the twin of erlang's `slotIndex`). `i32` / `string`
+  / `f64` / `bool` in a pattern are `emitTypeTestBranchOn` tests and bind
+  nothing. A list, `|` or multi pattern NESTED inside a tuple or payload is
+  refused (`error.NestedPatternUnsupported`) instead of matching everything.
+  Every one of these used to match every subject and bind nothing
+  (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
+  `assertBeamRunLog` rows in `tests/control_flow.zig`.
+- **Numbers by value** (decision 8 §4.1, §2.3; C-07 D1/D3): `x is f64` is
+  `is_number`; `x is i32` (every integer spelling) is an integer, or a float
+  equal to its `trunc`, within the range — `emitTypeTestBranchOn`, for `is`
+  and for a pattern alike. Inside the branch the value IS the tested type
+  (`numericConversion`: `trunc/1` / `float/1`): a `case` arm `i32 { n -> … }`
+  binds the converted value in a slot of its own (`armNumericConversion`),
+  and `if (x is i32) { … }` rebinds `x` for the branch only
+  (`ifNumericNarrowing`). `==` / `!=` (`comparisonTest`) are `is_eq_exact` /
+  `is_ne_exact` between two typed operands (decision B2) and `is_eq` / `is_ne`
+  when one is a name declared `unknown` (`local_types` now records a `val`'s
+  annotation too). D2 stores nothing (§11).
+- **The module body** (`topValIsCached`, `emitTopVal`,
+  `emitEntrypointWrappers`): a named module-level `val` whose initialiser can
+  have an effect (`exprCanHaveEffect`, the twin of erlang's
+  `initialiserCanHaveEffect`) is evaluated ONCE and cached under
+  `persistent_term` keyed `{Module, Name}` (erlang's `cachedValueExpr`), and
+  `'_botopink_main'/0` runs the module body in declaration order — the `_`
+  statements inline, each cached `val` as the call to its reader — before
+  `main/0`. Read per call, `val first = note("first")` printed `first` at each
+  read and after `main`. A constant initialiser stays a plain reader.
+- **A read or a call the emit cannot place asks the value** (decision 21;
+  05-wasm step 9's beam row, `modules/{field,method,type}_name_collision`):
+  a name decides a record only when nothing else in the PROGRAM declares it
+  (`programFieldDeclarers`, `programTypeDeclarers`), not only what this file
+  imported. A field read with no placeable type goes to `'-bp_field-'/2` (a
+  map → `maps:get/3`; a record → its type module's `'__bp_get'/2` through
+  `erlang:apply/3`; `length` of a list or a string → its length), and a method
+  call to `erlang:apply(element(1, V), Method, [V | Args])`
+  (`lowerDynamicMethodCall`) — when no type is known and some type declares the
+  method, or when the type's NAME is declared by two modules. Both are calls,
+  so `exprMayCall` says so (`dynamicFieldRead`), and a field read's receiver is
+  counted in this frame (`countLocalsInExpr`'s `.identifier` arm). Before,
+  the read fell through its `is_map` / `is_tagged_tuple` test leaving the
+  RECEIVER in the destination (`h.rest.length` printed the whole record; one
+  `index_*` RUN LOG printed `[1, 2]` for `rows[0].length`), and the call
+  aborted with `{unresolved_method, …}`.
+- **Synth helpers per module** (`HelperNames`, `takeHelperNames` /
+  `restoreHelperNames`): the once-per-module helpers (`'-bp_at-'/2`, the print
+  prelude, …) are cached by name, and a name is only good in the module whose
+  label table reserved it — a type's unit starts with none and the file module
+  gets its own back. Shared, a helper a record METHOD reached first was reserved
+  in the type's unit and the file's next call site failed `UnknownFunction`
+  with no location (`run/narrowing_null_guard_clause.bp`).
+- **Lambda bodies** (`emitLambdaBody`): the last statement is the lambda's
+  value when it is a value tail — `armValueTail`'s set, shared with a `case`
+  arm's block, so an `if`, a `case` and a `try … catch` answer their value
+  (`xs.map({ x -> if (x > 1) { x * 10 } else { x } })` answered `ok,ok,ok`,
+  03 handover 01). An explicit `return`, a `yield`/`break` or a loop keeps
+  `emitBody`.
+- **Variant constructors** (`lowerTaggedTuple`): a labelled argument fills the
+  slot of the field it names (`variantDeclOf`, the declared fields), as a record
+  constructor's does — `Shape.Rect(height: 2, width: 5)` was built positionally
+  as `{Rect, 2, 5}`. An enum this emit cannot place keeps the written order.
 - **Module shape**: every *named* top-level `val` is a 0-arity function
   (reserved, emitted and — when `pub` — exported whether or not the module has a
   `main/0`), so a read is a local call; a `val` holding a fun is read, parked on
-  the stack and applied with `call_fun`. Only `_`-named synthetic statements run
-  in order inside `'_botopink_main'/0` before it calls `main/0`. This is the
-  shape erlang had before `'_botopink_init'/0` (§ **The module body**): the
-  statements run only when a `main/0` exists, a named `val`'s initialiser runs
-  once per READ rather than once at load, and neither runs under `botopink test`.
-  `tests/language/expected-failures.txt` carries the beam row of
-  `run/module_init_order.bp`.
+  the stack and applied with `call_fun`. An effectful one caches its value and
+  `'_botopink_main'/0` runs the module body before `main/0` (§ **The module
+  body** of this section). Still owed: the body runs only when a `main/0`
+  exists, and not under `botopink test`, which refuses beam.
 - **Emission**: `beam_asm.zig` writes no target text. It builds typed operands
   (`Op`/`Dst` = `beamEmitter.Operand`/`Dest`) and calls one `beam_emitter.write*`
   function per `.S` line, the module preamble included (`writeModuleForm` /
