@@ -10,7 +10,7 @@ fn sumEvens(arr: i32[]) -> i32[] {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 sumEvens(Arr) ->
     lists:map(fun(X) ->

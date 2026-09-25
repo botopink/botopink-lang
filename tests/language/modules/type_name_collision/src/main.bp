@@ -13,7 +13,7 @@
 ////    it: `net-note`, the NEIGHBOURING field, at exit 0, where commonJS and
 ////    wasm printed `net-tag`.
 //// 3. `type_owner_path` kept one owner too, so the typed method call went to
-////    `parser__t__outcome:describe/1` over a `net` tuple — the same wrong
+////    `language_tests@parser@@Outcome:describe/1` over a `net` tuple — the same wrong
 ////    field, `404` in the first reduction, again at exit 0.
 ////
 //// Inference records a field read's and a method call's receiver type as a

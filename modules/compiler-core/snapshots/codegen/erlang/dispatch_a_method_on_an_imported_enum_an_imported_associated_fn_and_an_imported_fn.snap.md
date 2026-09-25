@@ -22,7 +22,7 @@ pub fn make() -> Counter { return Counter(n: 41); }
 
 ----- ERLANG -- geometry.erl
 ```erlang
--module(geometry).
+-module(test@geometry).
 -export([make/0]).
 
 %% type Counter: n
@@ -32,16 +32,16 @@ pub fn make() -> Counter { return Counter(n: 41); }
 %%   Square(side)
 
 make() ->
-    {geometry__t__counter, 41}.
+    {test@geometry@@Counter, 41}.
 ```
 
------ ERLANG -- geometry__t__counter.erl
+----- ERLANG -- test@geometry@@Counter.erl
 ```erlang
--module(geometry__t__counter).
+-module(test@geometry@@Counter).
 -export([zero/0, bump/1, '__bp_get'/2, '__bp_format'/1]).
 
 zero() ->
-    {geometry__t__counter, 0}.
+    {test@geometry@@Counter, 0}.
 
 bump(Self) ->
     (element(2, Self) + 1).
@@ -51,21 +51,21 @@ bump(Self) ->
 '__bp_format'(V) -> {record, "Counter", [{"n", element(2, V)}]}.
 ```
 
------ ERLANG -- geometry__t__shape.erl
+----- ERLANG -- test@geometry@@Shape.erl
 ```erlang
--module(geometry__t__shape).
+-module(test@geometry@@Shape).
 -export([area/1, '__bp_format'/1]).
 
 area(Self) ->
     case Self of
-        {geometry__t__shape__v__circle, R} ->
+        {test@geometry@@Shape__v__circle, R} ->
             ((R * R) * 3);
-        {geometry__t__shape__v__square, S} ->
+        {test@geometry@@Shape__v__square, S} ->
             (S * S)
     end.
 
-'__bp_format'({geometry__t__shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]};
-'__bp_format'({geometry__t__shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]}.
+'__bp_format'({test@geometry@@Shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]};
+'__bp_format'({test@geometry@@Shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]}.
 ```
 
 ----- RUN LOG -----
@@ -85,16 +85,16 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% import Counter, Shape, make
 
 main() ->
-    C = geometry__t__counter:zero(),
-    '__bp_print'([geometry__t__counter:bump(C)]),
-    '__bp_print'([geometry__t__shape:area({geometry__t__shape__v__square, 4})]),
-    '__bp_print'([geometry__t__counter:bump(geometry:make())]).
+    C = test@geometry@@Counter:zero(),
+    '__bp_print'([test@geometry@@Counter:bump(C)]),
+    '__bp_print'([test@geometry@@Shape:area({test@geometry@@Shape__v__square, 4})]),
+    '__bp_print'([test@geometry@@Counter:bump(test@geometry:make())]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

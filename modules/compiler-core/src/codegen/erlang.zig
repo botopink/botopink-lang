@@ -428,7 +428,7 @@ pub fn codegenEmit(
     // Cross-module link index — lets a consumer resolve an imported record's
     // associated fn to a remote call into the owning module (`http:ok(...)`)
     // and an owner export only the assoc fns another module consumes.
-    var cross = try crossModule.build(alloc, outputs);
+    var cross = try crossModule.buildIn(alloc, outputs, config.packages);
     defer cross.deinit();
 
     // Every module's `pub enum`s with their variants, so a consumer can quote
@@ -1663,7 +1663,14 @@ fn emitErlangModule(
     // shadow the OTP module of that name. `main` is unchanged.
     // `crossModule.erlAtom` is the one renderer; `outputStem` names the file
     // from the same rule, because `erlc` refuses an atom that differs from it.
-    const erl_module_name = try crossModule.erlAtom(b.arena, .of(module_name));
+    // Decision 109: the atom starts with the owning package (`myapp@main`,
+    // `std@math`). A comptime module is handed its placeholder atom as it
+    // stands — its real atom (`bp@comptime__tpl__…`) is spliced in by the
+    // evaluator.
+    const erl_module_name = if (comptime_module != null)
+        try b.arena.dupe(u8, module_name)
+    else
+        try crossModule.erlAtom(b.arena, if (cross) |xc| xc.idOf(module_name) else .of(module_name));
     em.erl_atom = erl_module_name;
     try forms.append(b.arena, .{ .module = erl_module_name });
 
@@ -3273,11 +3280,11 @@ const Emitter = struct {
         if (this.imported_types.get(type_name)) |owner| return owner;
         if (this.cross) |xc| if (xc.exports.get(type_name)) |info| switch (info.kind) {
             .record, .@"enum" => if (!std.mem.eql(u8, info.module, this.module_name)) {
-                return try crossModule.typeAtom(this.atom_arena.allocator(), .of(info.module), type_name);
+                return try crossModule.typeAtom(this.atom_arena.allocator(), this.idOf(info.module), type_name);
             },
             else => {},
         };
-        return try crossModule.typeAtom(this.atom_arena.allocator(), .of(this.module_name), type_name);
+        return try crossModule.typeAtom(this.atom_arena.allocator(), this.idOf(this.module_name), type_name);
     }
 
     /// A call to `name` of the FILE's module: local there, a remote call the
@@ -3786,7 +3793,7 @@ const Emitter = struct {
     /// dissent check, no diagnostic. So a bare `.Circle` outside a `case`,
     /// where the subject hint cannot answer, was qualified by whichever enum
     /// the decl walk indexed first — measured, a `Hole` value written
-    /// `.Circle` was tagged `main__t__shape__v__circle` and the `case` over it
+    /// `.Circle` was tagged `main@@Shape__v__circle` and the `case` over it
     /// died with `case_clause` at run time, while wasm answered correctly.
     /// A name two enums declare names neither, so `variant_enum` keeps the
     /// first ONLY as a witness and `variant_contested` records that it is not
@@ -3904,7 +3911,7 @@ const Emitter = struct {
                         }
                         // Its methods and associated fns are in the TYPE's
                         // module (policy 3), not the file's.
-                        try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), name));
+                        try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), name));
                         _ = try self.type_owner_path.getOrPutValue(name, info.module);
                     },
                     .@"enum" => {
@@ -3931,7 +3938,7 @@ const Emitter = struct {
                     .@"fn" => if (!info.is_external or info.erlang_backed) try self.imported_fns.put(name, owner),
                     // A method is reached in the TYPE's module (policy 3).
                     .record, .@"enum" => {
-                        const type_owner = try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), name);
+                        const type_owner = try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), name);
                         for (info.methods) |m| {
                             const gop = try self.imported_fns.getOrPut(m.name);
                             if (!gop.found_existing) gop.value_ptr.* = type_owner;
@@ -3948,7 +3955,7 @@ const Emitter = struct {
                     const other = e.value_ptr.*;
                     if (!std.mem.eql(u8, other.module, info.module)) continue;
                     if (other.kind != .record and other.kind != .@"enum") continue;
-                    const other_owner = try crossModule.typeAtom(self.atom_arena.allocator(), .of(other.module), e.key_ptr.*);
+                    const other_owner = try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(other.module), e.key_ptr.*);
                     for (other.methods) |m| {
                         const gop = try self.imported_fns.getOrPut(m.name);
                         if (!gop.found_existing) gop.value_ptr.* = other_owner;
@@ -3981,6 +3988,14 @@ const Emitter = struct {
         return crossModule.moduleBasename(path);
     }
 
+    /// The identity of module `path` — its package and path (decision 109),
+    /// which every atom this emitter renders starts with. Outside a
+    /// cross-module compilation (a comptime module) the default package.
+    fn idOf(self: *const Emitter, path: []const u8) crossModule.ModuleId {
+        if (self.cross) |xc| return xc.idOf(path);
+        return .of(path);
+    }
+
     fn collectNamespaceModuleTypes(self: *Emitter, xc: *const CrossModule, ns: []const u8) !void {
         var it = xc.exports.iterator();
         while (it.next()) |e| {
@@ -3990,7 +4005,7 @@ const Emitter = struct {
             if (std.mem.eql(u8, info.module, self.module_name)) continue;
             // The type's own module (policy 3), for its associated fns and its
             // methods alike.
-            const owner = try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), e.key_ptr.*);
+            const owner = try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), e.key_ptr.*);
             _ = try self.type_owner_path.getOrPutValue(e.key_ptr.*, info.module);
             if (info.kind == .record) try self.imported_types.put(e.key_ptr.*, owner);
             for (info.methods) |m| {
@@ -4216,7 +4231,7 @@ const Emitter = struct {
     fn stdModuleAtom(this: *const Emitter, b: Ast.Builder, seg: []const u8) ![]const u8 {
         const path = try std.fmt.allocPrint(b.arena, "std/{s}", .{seg});
         if (this.cross) |xc| if (xc.atoms.get(path)) |a| return a;
-        return crossModule.erlAtom(b.arena, .of(path));
+        return crossModule.erlAtom(b.arena, this.idOf(path));
     }
 
     /// Records every module name imported from the "std" package.
@@ -6438,7 +6453,7 @@ const Emitter = struct {
             // may each declare `pub type Outcome` with a `describe/1` of its
             // own, and policy 3 puts each in its OWN module. The call went to
             // whichever declaration the export index kept, so erlang ran
-            // `parser__t__outcome:describe/1` over a `net` tuple and printed
+            // `parser@@Outcome:describe/1` over a `net` tuple and printed
             // the neighbouring field (`404`) at exit 0. The value carries its
             // own tag (decision 21), so it answers instead.
             .type_ => |tn| return if (this.typeNameContested(tn))
@@ -7094,7 +7109,7 @@ const Emitter = struct {
     /// therefore taken from the last `.`-separated segment (01's handover 1).
     /// Half 3 (decision 21): a variant the emitter can place is tagged by
     /// `crossModule.variantAtom` — its enum and the enum's module —
-    /// `main__t__shape__v__circle`. The bare name told five ecosystem `Circle`s
+    /// `main@@Shape__v__circle`. The bare name told five ecosystem `Circle`s
     /// apart in no node. A variant this module cannot place keeps the bare
     /// name: a comptime host enum has no declaration to read an enum off.
     fn variantTag(this: *Emitter, written: []const u8) []const u8 {
@@ -7215,7 +7230,7 @@ const Emitter = struct {
     /// against the module that declares the enum, so a consumer builds the
     /// owner's atom and not its own.
     fn variantTagAtom(this: *Emitter, enum_name: []const u8, variant: []const u8) ![]const u8 {
-        return crossModule.variantAtom(this.atom_arena.allocator(), .of(this.typeOwnerPath(enum_name)), enum_name, variant);
+        return crossModule.variantAtom(this.atom_arena.allocator(), this.idOf(this.typeOwnerPath(enum_name)), enum_name, variant);
     }
 
     /// The module path that DECLARES `type_name`: this file, unless the type
@@ -7225,8 +7240,8 @@ const Emitter = struct {
         // §enum-sections F4: a synthesised inner enum (`__Token__Color`) is
         // re-synthesised in EVERY module that writes the section path, so its
         // own declaration is not its identity — the OUTER enum's owner is.
-        // Without this, a consumer builds `main__t__token_color__v__white` for
-        // a value the owner's `case` reads as `emilia@tokens__t__…`, and the
+        // Without this, a consumer builds `main@@__Token__Color__v__white` for
+        // a value the owner's `case` reads as `emilia@tokens@@…`, and the
         // arm answers `case_clause` (measured on `emilia-cascade`).
         if (sectionOuterEnum(type_name)) |outer| return this.typeOwnerPath(outer);
         if (this.type_owner_path.get(type_name)) |path| return path;
@@ -7241,7 +7256,7 @@ const Emitter = struct {
     /// the type's own module atom, which is what lets `'__bp_show'` reach the
     /// formatter through the value alone.
     fn recordTagAtom(this: *Emitter, type_name: []const u8) ![]const u8 {
-        return crossModule.typeAtom(this.atom_arena.allocator(), .of(this.typeOwnerPath(type_name)), type_name);
+        return crossModule.typeAtom(this.atom_arena.allocator(), this.idOf(this.typeOwnerPath(type_name)), type_name);
     }
 
     /// A record field read under decision 21. A record is `{TypeAtom, F1, …}`,
@@ -7968,7 +7983,7 @@ const Emitter = struct {
         }
         try out.append(b.arena, .{ .comment = Ast.Comment.doc(text.items) });
         // Policy 3: the record's functions go to the record's own module,
-        // `<file atom>__t__<record>`, under their own names — the module
+        // `<file atom>@@<Record>` (decision 109), under their own names — the module
         // boundary replaces the `<recordtype>_<method>` mangling two records
         // declaring `greet/1` used to need. A comptime module keeps them here.
         var unit = try this.openTypeUnit(b, r.name);
@@ -8163,7 +8178,7 @@ const Emitter = struct {
         if (this.needs_print_helper) try unit.forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form, .blank, tagged_helper_form, .blank, render_helper_form });
 
         // The header: the type's atom, its exports, then the forms.
-        const atom = try crossModule.typeAtom(this.alloc, .of(this.module_name), type_name);
+        const atom = try crossModule.typeAtom(this.alloc, this.idOf(this.module_name), type_name);
         errdefer this.alloc.free(atom);
         var forms: Forms = .empty;
         try forms.append(b.arena, .{ .module = atom });

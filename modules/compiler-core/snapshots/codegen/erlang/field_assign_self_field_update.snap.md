@@ -10,14 +10,14 @@ val Counter = type(
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Counter: count
 ```
 
------ ERLANG -- main__t__counter.erl
+----- ERLANG -- test@main@@Counter.erl
 ```erlang
--module(main__t__counter).
+-module(test@main@@Counter).
 -export([inc/0, '__bp_get'/2, '__bp_format'/1]).
 
 inc() ->

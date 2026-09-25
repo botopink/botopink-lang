@@ -9,7 +9,7 @@ fn sumTo(n: i32) -> i32[] {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 sumTo(N) ->
     lists:map(fun(I) ->

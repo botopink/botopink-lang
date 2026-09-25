@@ -5,7 +5,7 @@ val list3 = [1, 2, ..[3, 4]];
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 list3() ->
     [1, 2] ++ [3, 4].

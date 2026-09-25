@@ -303,6 +303,22 @@ pub fn resolveBpmpStoreRoot(gpa: std.mem.Allocator, env_map: EnvMap) !?[]u8 {
     return null;
 }
 
+/// The packages of one compilation (decision 109): the project's own
+/// `botopink.json` `name` and every dependency package a module was loaded
+/// from — the first segment of its `<dep>/<stem>` path, transitive ones
+/// included. The erlang and BEAM module atoms start with it. Owned by `arena`.
+pub fn packagesOf(arena: std.mem.Allocator, proj: config.ProjectConfig, dep_modules: []const Module) !bp.codegen.crossModule.Packages {
+    var deps: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (dep_modules) |m| {
+        const slash = std.mem.indexOfScalar(u8, m.path, '/') orelse continue;
+        const head = m.path[0..slash];
+        for (deps.items) |d| {
+            if (std.mem.eql(u8, d, head)) break;
+        } else try deps.append(arena, try arena.dupe(u8, head));
+    }
+    return .{ .root = proj.name, .deps = deps.items };
+}
+
 /// Load the `files` of the resolved dependency `dep` at `dir` as modules named
 /// `<dep>/<stem>` — the prefix is how the core resolves `from "<dep>"`
 /// generically.

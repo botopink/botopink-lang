@@ -16,7 +16,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Status
@@ -25,15 +25,15 @@ fn main() {
 
 check(S) ->
     {ok, case S of
-        main__t__status__v__ok ->
+        test@main@@Status__v__ok ->
             1;
-        main__t__status__v__fail ->
+        test@main@@Status__v__fail ->
             {error, <<"failed">>}
     end}.
 
 main() ->
-    '__bp_print'([(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(check(main__t__status__v__ok))]),
-    '__bp_print'([(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(check(main__t__status__v__fail))]).
+    '__bp_print'([(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(check(test@main@@Status__v__ok))]),
+    '__bp_print'([(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(check(test@main@@Status__v__fail))]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -61,13 +61,13 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__status.erl
+----- ERLANG -- test@main@@Status.erl
 ```erlang
--module(main__t__status).
+-module(test@main@@Status).
 -export(['__bp_format'/1]).
 
-'__bp_format'(main__t__status__v__ok) -> {variant, "Status.Ok", []};
-'__bp_format'(main__t__status__v__fail) -> {variant, "Status.Fail", []}.
+'__bp_format'(test@main@@Status__v__ok) -> {variant, "Status.Ok", []};
+'__bp_format'(test@main@@Status__v__fail) -> {variant, "Status.Fail", []}.
 ```
 
 ----- RUN LOG -----

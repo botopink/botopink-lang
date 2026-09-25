@@ -5,7 +5,7 @@ val t = #("56454", "85484");
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 t() ->
     {<<"56454">>, <<"85484">>}.

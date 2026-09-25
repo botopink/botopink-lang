@@ -9,15 +9,15 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 -export(['_botopink_init'/0]).
 
 %% type SourceLocation: file, line, column, fnName
 
 top() ->
-    case persistent_term:get({main, top}, '__bp_unset') of
-        '__bp_unset' -> __BpV = {main__t__sourcelocation, <<"main.bp">>, 1, 11, <<"">>}, persistent_term:put({main, top}, __BpV), __BpV;
+    case persistent_term:get({test@main, top}, '__bp_unset') of
+        '__bp_unset' -> __BpV = {test@main@@SourceLocation, <<"main.bp">>, 1, 11, <<"">>}, persistent_term:put({test@main, top}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 
@@ -56,9 +56,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__sourcelocation.erl
+----- ERLANG -- test@main@@SourceLocation.erl
 ```erlang
--module(main__t__sourcelocation).
+-module(test@main@@SourceLocation).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, file) -> element(2, V);

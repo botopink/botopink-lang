@@ -15,7 +15,7 @@ fn process(x: i32) -> string {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 process(X) ->
     case X of

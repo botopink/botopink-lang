@@ -9,14 +9,14 @@ type Unimplemented(id: i32) {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Unimplemented: id
 ```
 
------ ERLANG -- main__t__unimplemented.erl
+----- ERLANG -- test@main@@Unimplemented.erl
 ```erlang
--module(main__t__unimplemented).
+-module(test@main@@Unimplemented).
 -export([process/1, '__bp_get'/2, '__bp_format'/1]).
 
 process(Self) ->

@@ -5,7 +5,7 @@ val nothing = null;
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 nothing() ->
     undefined.

@@ -11,7 +11,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 -export(['_botopink_init'/0]).
 
@@ -19,10 +19,10 @@ ids() ->
     [10, 20, 30].
 
 dobrados() ->
-    case persistent_term:get({main, dobrados}, '__bp_unset') of
+    case persistent_term:get({test@main, dobrados}, '__bp_unset') of
         '__bp_unset' -> __BpV = lists:map(fun(Id) ->
             (Id * 2)
-        end, ids()), persistent_term:put({main, dobrados}, __BpV), __BpV;
+        end, ids()), persistent_term:put({test@main, dobrados}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 

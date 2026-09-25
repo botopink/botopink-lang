@@ -233,10 +233,11 @@ pub const TMP_ROOT = ".botopinkbuild/tmp";
 pub const CACHE_ROOT = ".botopinkbuild/runtime-cache";
 
 /// Bumped whenever the harness changes what it records for unchanged inputs
-/// (the exit-status contract, compile-error capture, the cwd of the spawns).
+/// (the exit-status contract, compile-error capture, the cwd of the spawns,
+/// the package-first scratch-file atom of decision 109).
 /// Folded into `cacheKey` so entries written by an older harness miss instead
 /// of masking the change — a warm cache must never hide a harness defect.
-pub const HARNESS_VERSION = "4-type-units";
+pub const HARNESS_VERSION = "5-package-atoms";
 
 /// Hash (harness version + target_tag + module_name + code + aux entries)
 /// into a 64-char hex SHA256 key. Each component is length-prefixed so two
@@ -336,7 +337,8 @@ pub const AuxFile = struct {
     code: []const u8,
     /// The module atom, already rendered, when the aux is a per-`type` module
     /// (`GenerateResult.units`) — its name IS an atom, not a module path, so it
-    /// must not go through `erlModuleAtom` again (`__` would collapse to `_`).
+    /// must not go through `erlModuleAtom` again (the package would be
+    /// prepended a second time and the declaration lowercased).
     /// Null for a sibling source module, whose path is rendered here.
     atom: ?[]const u8 = null,
 };
@@ -481,14 +483,16 @@ fn nodeCheckFailureLog(allocator: std.mem.Allocator, rel: []const u8, diagnostic
     return try out.toOwnedSlice(allocator);
 }
 
-/// The Erlang/BEAM module atom of a module path — the whole path joined with
-/// `@` (`std/bool` → `std@bool`), which is what the erlang and BEAM backends
-/// write into `-module(...)` / `{module, …}`. It was the path's BASENAME, and
+/// The Erlang/BEAM module atom of a module path — its package, then the whole
+/// path joined with `@` (`std/bool` → `std@bool`, `main` → `test@main`: the
+/// harness compiles under the implicit test manifest, `crossModule.test_packages`,
+/// exactly as the codegen it runs — `helpers.configs`), which is what the erlang and
+/// BEAM backends write into `-module(...)` / `{module, …}`. It was the path's BASENAME, and
 /// the harness inherited the collision that made: two aux modules whose paths
 /// shared a basename were written to the same scratch file and one silently
 /// overwrote the other. Caller owns the result.
 fn erlModuleAtom(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
-    return crossModule.erlAtom(allocator, .of(name)) catch |err| switch (err) {
+    return crossModule.erlAtom(allocator, crossModule.test_packages.idOf(name)) catch |err| switch (err) {
         error.OutOfMemory => error.OutOfMemory,
         else => allocator.dupe(u8, crossModule.moduleBasename(name)),
     };
@@ -945,12 +949,12 @@ test "compileFailureLog keeps the indented body of a validator rejection" {
 // 13-module-identity, half 1 step 3: the scratch filename IS the module atom,
 // so two aux modules rendering one atom used to be one file — the second
 // silently overwrote the first and the program ran against whichever won.
-// `my__mod/user` and `my_mod/user` both render `my_mod@user` (A2 § 4 collapses
+// `my__mod/user` and `my_mod/user` both render `test@my_mod@user` (A2 § 4 collapses
 // a run of `_`, so `__` stays free for the qualifier), which is the one
 // collision `crossModule.build` diagnoses and the harness must refuse too.
 const duplicate_aux_erl = [_]AuxFile{
-    .{ .name = "my__mod/user", .code = "-module(my_mod@user).\n-export([who/0]).\nwho() -> first.\n" },
-    .{ .name = "my_mod/user", .code = "-module(my_mod@user).\n-export([who/0]).\nwho() -> second.\n" },
+    .{ .name = "my__mod/user", .code = "-module(test@my_mod@user).\n-export([who/0]).\nwho() -> first.\n" },
+    .{ .name = "my_mod/user", .code = "-module(test@my_mod@user).\n-export([who/0]).\nwho() -> second.\n" },
 };
 
 // The same pair as BEAM assembly: the first aux is assembled before the
@@ -961,14 +965,14 @@ const duplicate_aux_asm = [_]AuxFile{
 };
 
 fn duplicateAuxAsm(comptime answer: []const u8) []const u8 {
-    return "{module, my_mod@user}.\n" ++
+    return "{module, test@my_mod@user}.\n" ++
         "{exports, [{who, 0}]}.\n" ++
         "{attributes, []}.\n" ++
         "{labels, 3}.\n\n" ++
         "{function, who, 0, 2}.\n" ++
         "  {label, 1}.\n" ++
         "    {line, []}.\n" ++
-        "    {func_info, {atom, my_mod@user}, {atom, who}, 0}.\n" ++
+        "    {func_info, {atom, test@my_mod@user}, {atom, who}, 0}.\n" ++
         "  {label, 2}.\n" ++
         "    {move, {atom, " ++ answer ++ "}, {x, 0}}.\n" ++
         "    return.\n";
@@ -978,7 +982,7 @@ fn expectDuplicateAtomRefused(log: []const u8) !void {
     try std.testing.expect(std.mem.startsWith(u8, log, "HARNESS ERROR:"));
     try std.testing.expect(std.mem.indexOf(u8, log, "`my__mod/user`") != null);
     try std.testing.expect(std.mem.indexOf(u8, log, "`my_mod/user`") != null);
-    try std.testing.expect(std.mem.indexOf(u8, log, "module atom `my_mod@user`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, log, "module atom `test@my_mod@user`") != null);
     // The refusal is the whole log: nothing ran, so nothing printed.
     try std.testing.expect(std.mem.indexOf(u8, log, "hi") == null);
 }
@@ -986,7 +990,7 @@ fn expectDuplicateAtomRefused(log: []const u8) !void {
 test "executeErlang: two aux modules rendering one atom fail loudly instead of overwriting" {
     const alloc = std.testing.allocator;
     const entry =
-        \\-module(main).
+        \\-module(test@main).
         \\-export(['_botopink_main'/0]).
         \\'_botopink_main'() -> io:format("hi~n", []).
         \\
@@ -1001,7 +1005,7 @@ test "executeErlang: two aux modules rendering one atom fail loudly instead of o
 test "executeBeamAsm: two aux modules rendering one atom fail loudly instead of overwriting" {
     const alloc = std.testing.allocator;
     const entry =
-        \\{module, main}.
+        \\{module, test@main}.
         \\{exports, [{'_botopink_main', 0}]}.
         \\{attributes, []}.
         \\{labels, 3}.
@@ -1009,7 +1013,7 @@ test "executeBeamAsm: two aux modules rendering one atom fail loudly instead of 
         \\{function, '_botopink_main', 0, 2}.
         \\  {label, 1}.
         \\    {line, []}.
-        \\    {func_info, {atom, main}, {atom, '_botopink_main'}, 0}.
+        \\    {func_info, {atom, test@main}, {atom, '_botopink_main'}, 0}.
         \\  {label, 2}.
         \\    {move, {literal, <<"hi~n">>}, {x, 0}}.
         \\    {move, nil, {x, 1}}.

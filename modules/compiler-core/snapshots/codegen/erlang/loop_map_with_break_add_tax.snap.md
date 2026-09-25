@@ -12,7 +12,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 -export(['_botopink_init'/0]).
 
@@ -20,11 +20,11 @@ precosBrutos() ->
     [100, 250, 400].
 
 precosComTaxa() ->
-    case persistent_term:get({main, precosComTaxa}, '__bp_unset') of
+    case persistent_term:get({test@main, precosComTaxa}, '__bp_unset') of
         '__bp_unset' -> __BpV = lists:map(fun(Valor) ->
             Taxa = (Valor * 0.15),
             (Valor + Taxa)
-        end, precosBrutos()), persistent_term:put({main, precosComTaxa}, __BpV), __BpV;
+        end, precosBrutos()), persistent_term:put({test@main, precosComTaxa}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 

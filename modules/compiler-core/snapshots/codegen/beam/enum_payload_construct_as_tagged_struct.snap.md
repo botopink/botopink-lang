@@ -11,40 +11,40 @@ fn makeCircle() -> Shape {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 4}.
 
 {function, makeCircle, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, makeCircle}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, makeCircle}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__shape__v__circle}, {integer, 5}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Shape__v__circle}, {integer, 5}]}}.
     {deallocate, 0}.
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__shape.S
+----- BEAM ASSEMBLY -- test@main@@Shape.S
 ```erlang
-{module, main__t__shape}.
+{module, test@main@@Shape}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 6}.
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__shape.erl", 1}]}.
-    {func_info, {atom, main__t__shape}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Shape.erl", 1}]}.
+    {func_info, {atom, test@main@@Shape}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, main__t__shape__v__circle}]}.
+    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, test@main@@Shape__v__circle}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -58,7 +58,7 @@ fn makeCircle() -> Shape {
     return.
   {label, 4}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 2, {atom, main__t__shape__v__square}]}.
+    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 2, {atom, test@main@@Shape__v__square}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.

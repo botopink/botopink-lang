@@ -10,7 +10,7 @@ fn process(a: i32, b: i32) {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 process(A, B) ->
     case {A, B} of

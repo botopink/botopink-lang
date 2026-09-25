@@ -147,6 +147,21 @@ fn locateEntry(text: []const u8, key: []const u8, entry: []const u8) Span {
     return .{ .offset = 0, .len = @min(text.len, 1) };
 }
 
+/// Why `name` cannot name a package, or null. The erlang and BEAM module atom
+/// of every module starts with its package's name (decision 109 of
+/// 1.0.10-beta: `std@math@@PI`, `myapp@main`), and an atom that does not start
+/// with a lowercase letter has to be quoted — so such a name is refused here,
+/// once, for every tool, rather than quoted there. `bp` is the compiler's own
+/// namespace: a module compiled outside any package, and every comptime
+/// evaluation, is `bp@…`.
+pub fn nameRefusal(name: []const u8) ?[]const u8 {
+    if (name.len == 0 or !(name[0] >= 'a' and name[0] <= 'z'))
+        return "\"name\" must start with a lowercase letter — every erlang module atom of the package starts with it";
+    if (std.mem.eql(u8, name, "bp"))
+        return "\"name\" cannot be \"bp\" — it is the compiler's own namespace, the package of a module compiled outside any botopink.json";
+    return null;
+}
+
 fn located(text: []const u8, file: []const u8, span: Span, message: []const u8) Located {
     const lc = lineCol(text, span.offset);
     return .{ .message = message, .file = file, .source = text, .line = lc.line, .col = lc.col, .span = span.len };
@@ -274,6 +289,10 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_e
     var m: Manifest = .{ .path = path, .text = text, .kind = .package, .name = "" };
 
     m.name = try requireString(arena, obj, "name", text, path, out_err);
+    if (nameRefusal(m.name)) |why| {
+        out_err.* = located(text, path, locateKey(text, "name"), why);
+        return error.Invalid;
+    }
     if (try optionalString(arena, obj, "version", text, path, out_err)) |v| m.version = v;
     m.description = try optionalString(arena, obj, "description", text, path, out_err);
     if (try optionalString(arena, obj, "src", text, path, out_err)) |v| m.src = v;
@@ -1160,6 +1179,31 @@ test "parse: an empty dependencies array is refused too — the object form is t
         \\{ "name": "p", "dependencies": [] }
     );
     try testing.expect(std.mem.indexOf(u8, out, "must be an object, not an array") != null);
+}
+
+test "parse: a name that cannot start an erlang atom is refused, located at the name (decision 109)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    for ([_][]const u8{
+        \\{ "name": "MyApp" }
+        ,
+        \\{ "name": "9lives" }
+        ,
+        \\{ "name": "_x" }
+        ,
+        \\{ "name": "" }
+        ,
+    }) |text| {
+        const out = try refuse(arena_inst.allocator(), text);
+        try testing.expect(std.mem.indexOf(u8, out, "must start with a lowercase letter") != null);
+    }
+    const bp_out = try refuse(arena_inst.allocator(),
+        \\{ "name": "bp" }
+    );
+    try testing.expect(std.mem.indexOf(u8, bp_out, "compiler's own namespace") != null);
+    // A lowercase first letter is all it asks: the rest is sanitised.
+    try testing.expect(nameRefusal("acme-web") == null);
+    try testing.expect(nameRefusal("myApp2") == null);
 }
 
 test "parse: a dependency with no source is a located error" {

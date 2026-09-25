@@ -14,7 +14,7 @@ fn run(p: Parser) -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type ParseError: msg
 
@@ -22,7 +22,7 @@ fn run(p: Parser) -> i32 {
 
 run(P) ->
     Result = case try
-        main__t__parser:parse(P)
+        test@main@@Parser:parse(P)
     catch
         error:_TryR0 -> {error, _TryR0}
     end of
@@ -33,9 +33,9 @@ run(P) ->
     Result.
 ```
 
------ ERLANG -- main__t__parseerror.erl
+----- ERLANG -- test@main@@ParseError.erl
 ```erlang
--module(main__t__parseerror).
+-module(test@main@@ParseError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, msg) -> element(2, V).
@@ -43,13 +43,13 @@ run(P) ->
 '__bp_format'(V) -> {record, "ParseError", [{"msg", element(2, V)}]}.
 ```
 
------ ERLANG -- main__t__parser.erl
+----- ERLANG -- test@main@@Parser.erl
 ```erlang
--module(main__t__parser).
+-module(test@main@@Parser).
 -export([parse/1, '__bp_format'/1]).
 
 parse(Self) ->
-    erlang:throw({main__t__parseerror, <<"bad input">>}).
+    erlang:throw({test@main@@ParseError, <<"bad input">>}).
 
 '__bp_format'(_) -> {record, "Parser", []}.
 ```

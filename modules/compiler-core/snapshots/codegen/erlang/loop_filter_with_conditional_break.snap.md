@@ -13,7 +13,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 -export(['_botopink_init'/0]).
 
@@ -21,14 +21,14 @@ precosBrutos() ->
     [100, 250, 400].
 
 apenasGrandes() ->
-    case persistent_term:get({main, apenasGrandes}, '__bp_unset') of
+    case persistent_term:get({test@main, apenasGrandes}, '__bp_unset') of
         '__bp_unset' -> __BpV = lists:filtermap(fun(Valor) ->
             case (Valor > 200) of
                 true ->
                     {true, Valor};
                 _ -> false
             end
-        end, precosBrutos()), persistent_term:put({main, apenasGrandes}, __BpV), __BpV;
+        end, precosBrutos()), persistent_term:put({test@main, apenasGrandes}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 

@@ -7,7 +7,7 @@ fn fail() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 fail() ->
     erlang:throw(<<"something went wrong">>).

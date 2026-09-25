@@ -9,13 +9,13 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type P: x, y
 
 main() ->
-    Pts = [{main__t__p, 1, 2}, {main__t__p, 3, 4}],
+    Pts = [{test@main@@P, 1, 2}, {test@main@@P, 3, 4}],
     '__bp_print'([length(Pts)]).
 
 '__bp_print'(Values) ->
@@ -44,9 +44,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__p.erl
+----- ERLANG -- test@main@@P.erl
 ```erlang
--module(main__t__p).
+-module(test@main@@P).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, x) -> element(2, V);

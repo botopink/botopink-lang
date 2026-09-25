@@ -31,15 +31,15 @@ fn main() {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
 {labels, 37}.
 
 {function, main, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 5}]}.
-    {func_info, {atom, main}, {atom, main}, 0}.
+    {line, [{location, "test@main.erl", 5}]}.
+    {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 3}.
     {allocate, 7, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
@@ -78,10 +78,10 @@ fn main() {
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {test_heap, 3, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__box}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Box}, {x, 0}]}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {call_ext, 1, {extfunc, main__t__box, total, 1}}.
+    {call_ext, 1, {extfunc, test@main@@Box, total, 1}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
@@ -121,17 +121,17 @@ fn main() {
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
     {move, {y, 3}, {x, 0}}.
-    {call_ext, 1, {extfunc, main__t__box, isBig, 1}}.
+    {call_ext, 1, {extfunc, test@main@@Box, isBig, 1}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
     {move, {y, 3}, {x, 0}}.
-    {call_ext, 1, {extfunc, main__t__box, doubled, 1}}.
+    {call_ext, 1, {extfunc, test@main@@Box, doubled, 1}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
     {move, {y, 3}, {x, 0}}.
-    {call_ext, 1, {extfunc, main__t__box, label, 1}}.
+    {call_ext, 1, {extfunc, test@main@@Box, label, 1}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
@@ -141,22 +141,22 @@ fn main() {
 
 {function, '_botopink_main', 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, '_botopink_main'}, 0}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '_botopink_main'}, 0}.
   {label, 5}.
     {call_only, 0, {f, 3}}.
 
 {function, main, 1, 7}.
   {label, 6}.
-    {line, [{location, "main.erl", 7}]}.
-    {func_info, {atom, main}, {atom, main}, 1}.
+    {line, [{location, "test@main.erl", 7}]}.
+    {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
 {function, '-main/0-fun-0-', 2, 9}.
   {label, 8}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, '-main/0-fun-0-'}, 2}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '-main/0-fun-0-'}, 2}.
   {label, 9}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -170,8 +170,8 @@ fn main() {
 
 {function, '__bp_print', 1, 11}.
   {label, 10}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, '__bp_print'}, 1}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_print'}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -190,24 +190,24 @@ fn main() {
 
 {function, '-bp_show_top-', 1, 15}.
   {label, 14}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, '-bp_show_top-'}, 1}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '-bp_show_top-'}, 1}.
   {label, 15}.
     {move, {atom, true}, {x, 1}}.
     {call_only, 2, {f, 13}}.
 
 {function, '-bp_show_elem-', 1, 17}.
   {label, 16}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, '-bp_show_elem-'}, 1}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '-bp_show_elem-'}, 1}.
   {label, 17}.
     {move, {atom, false}, {x, 1}}.
     {call_only, 2, {f, 13}}.
 
 {function, '__bp_show', 2, 13}.
   {label, 12}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, '__bp_show'}, 2}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_show'}, 2}.
   {label, 13}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -288,8 +288,8 @@ fn main() {
 
 {function, '__bp_tagged', 2, 19}.
   {label, 18}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, '__bp_tagged'}, 2}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_tagged'}, 2}.
   {label, 19}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -328,8 +328,8 @@ fn main() {
 
 {function, '__bp_render', 1, 21}.
   {label, 20}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, '__bp_render'}, 1}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_render'}, 1}.
   {label, 21}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -372,8 +372,8 @@ fn main() {
 
 {function, '-bp_render_pair-', 1, 23}.
   {label, 22}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, '-bp_render_pair-'}, 1}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '-bp_render_pair-'}, 1}.
   {label, 23}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -396,8 +396,8 @@ fn main() {
 
 {function, '-main/0-fun-1-', 2, 36}.
   {label, 35}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, '-main/0-fun-1-'}, 2}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '-main/0-fun-1-'}, 2}.
   {label, 36}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -410,17 +410,17 @@ fn main() {
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__box.S
+----- BEAM ASSEMBLY -- test@main@@Box.S
 ```erlang
-{module, main__t__box}.
+{module, test@main@@Box}.
 {exports, [{total, 1}, {isBig, 1}, {doubled, 1}, {label, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 24}.
 
 {function, total, 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__box.erl", 1}]}.
-    {func_info, {atom, main__t__box}, {atom, total}, 1}.
+    {line, [{location, "test@main@@Box.erl", 1}]}.
+    {func_info, {atom, test@main@@Box}, {atom, total}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -428,7 +428,7 @@ fn main() {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 12}, [{x, 0}, 2, {atom, main__t__box}]}.
+    {test, is_tagged_tuple, {f, 12}, [{x, 0}, 2, {atom, test@main@@Box}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 12}.
     {move, {y, 1}, {x, 1}}.
@@ -443,14 +443,14 @@ fn main() {
 
 {function, isBig, 1, 5}.
   {label, 4}.
-    {line, [{location, "main__t__box.erl", 2}]}.
-    {func_info, {atom, main__t__box}, {atom, isBig}, 1}.
+    {line, [{location, "test@main@@Box.erl", 2}]}.
+    {func_info, {atom, test@main@@Box}, {atom, isBig}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 13}, [{x, 0}, 2, {atom, main__t__box}]}.
+    {test, is_tagged_tuple, {f, 13}, [{x, 0}, 2, {atom, test@main@@Box}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 13}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
@@ -465,14 +465,14 @@ fn main() {
 
 {function, doubled, 1, 7}.
   {label, 6}.
-    {line, [{location, "main__t__box.erl", 3}]}.
-    {func_info, {atom, main__t__box}, {atom, doubled}, 1}.
+    {line, [{location, "test@main@@Box.erl", 3}]}.
+    {func_info, {atom, test@main@@Box}, {atom, doubled}, 1}.
   {label, 7}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 16}, [{x, 0}, 2, {atom, main__t__box}]}.
+    {test, is_tagged_tuple, {f, 16}, [{x, 0}, 2, {atom, test@main@@Box}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 16}.
     {move, {x, 0}, {x, 1}}.
@@ -482,8 +482,8 @@ fn main() {
 
 {function, label, 1, 9}.
   {label, 8}.
-    {line, [{location, "main__t__box.erl", 4}]}.
-    {func_info, {atom, main__t__box}, {atom, label}, 1}.
+    {line, [{location, "test@main@@Box.erl", 4}]}.
+    {func_info, {atom, test@main@@Box}, {atom, label}, 1}.
   {label, 9}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -494,8 +494,8 @@ fn main() {
 
 {function, '__bp_get', 2, 20}.
   {label, 19}.
-    {line, [{location, "main__t__box.erl", 5}]}.
-    {func_info, {atom, main__t__box}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Box.erl", 5}]}.
+    {func_info, {atom, test@main@@Box}, {atom, '__bp_get'}, 2}.
   {label, 20}.
     {test, is_eq_exact, {f, 21}, [{x, 1}, {atom, items}]}.
     {move, {x, 0}, {x, 1}}.
@@ -507,8 +507,8 @@ fn main() {
 
 {function, '__bp_format', 1, 23}.
   {label, 22}.
-    {line, [{location, "main__t__box.erl", 5}]}.
-    {func_info, {atom, main__t__box}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Box.erl", 5}]}.
+    {func_info, {atom, test@main@@Box}, {atom, '__bp_format'}, 1}.
   {label, 23}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -527,8 +527,8 @@ fn main() {
 
 {function, '-/1-fun-0-', 2, 11}.
   {label, 10}.
-    {line, [{location, "main__t__box.erl", 2}]}.
-    {func_info, {atom, main__t__box}, {atom, '-/1-fun-0-'}, 2}.
+    {line, [{location, "test@main@@Box.erl", 2}]}.
+    {func_info, {atom, test@main@@Box}, {atom, '-/1-fun-0-'}, 2}.
   {label, 11}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -542,8 +542,8 @@ fn main() {
 
 {function, '-/1-fun-1-', 1, 18}.
   {label, 17}.
-    {line, [{location, "main__t__box.erl", 4}]}.
-    {func_info, {atom, main__t__box}, {atom, '-/1-fun-1-'}, 1}.
+    {line, [{location, "test@main@@Box.erl", 4}]}.
+    {func_info, {atom, test@main@@Box}, {atom, '-/1-fun-1-'}, 1}.
   {label, 18}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.

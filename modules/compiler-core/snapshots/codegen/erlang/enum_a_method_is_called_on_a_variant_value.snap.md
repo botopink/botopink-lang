@@ -20,7 +20,7 @@ pub fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 -export([main/0]).
 
@@ -29,8 +29,8 @@ pub fn main() {
 %%   Square(side)
 
 main() ->
-    '__bp_print'([main__t__shape:area({main__t__shape__v__square, 4})]),
-    '__bp_print'([main__t__shape:area({main__t__shape__v__circle, 2})]).
+    '__bp_print'([test@main@@Shape:area({test@main@@Shape__v__square, 4})]),
+    '__bp_print'([test@main@@Shape:area({test@main@@Shape__v__circle, 2})]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -58,21 +58,21 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__shape.erl
+----- ERLANG -- test@main@@Shape.erl
 ```erlang
--module(main__t__shape).
+-module(test@main@@Shape).
 -export([area/1, '__bp_format'/1]).
 
 area(Self) ->
     case Self of
-        {main__t__shape__v__circle, R} ->
+        {test@main@@Shape__v__circle, R} ->
             ((R * R) * 3);
-        {main__t__shape__v__square, S} ->
+        {test@main@@Shape__v__square, S} ->
             (S * S)
     end.
 
-'__bp_format'({main__t__shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]};
-'__bp_format'({main__t__shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]}.
+'__bp_format'({test@main@@Shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]};
+'__bp_format'({test@main@@Shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]}.
 ```
 
 ----- RUN LOG -----

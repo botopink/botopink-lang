@@ -24,7 +24,7 @@ test "t: a lambda's try is its own" {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export([main/1]).
 
 failing() ->

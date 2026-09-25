@@ -13,7 +13,7 @@ pub val PatoNada = implement Swimmer for Pato {
 
 ----- ERLANG -- pond.erl
 ```erlang
--module(pond).
+-module(test@pond).
 -export([swim/1]).
 
 %% behavior Swimmer
@@ -26,9 +26,9 @@ swim(Self) ->
     element(2, Self).
 ```
 
------ ERLANG -- pond__t__pato.erl
+----- ERLANG -- test@pond@@Pato.erl
 ```erlang
--module(pond__t__pato).
+-module(test@pond@@Pato).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, id) -> element(2, V).
@@ -51,14 +51,14 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% import Pato, PatoNada
 
 main() ->
-    Donald = {pond__t__pato, 2},
-    '__bp_print'([pond:swim(Donald)]).
+    Donald = {test@pond@@Pato, 2},
+    '__bp_print'([test@pond:swim(Donald)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

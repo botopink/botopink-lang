@@ -928,13 +928,12 @@ pub fn codegenEmit(
     outputs: []ComptimeOutput,
     config: configMod.Config,
 ) !std.ArrayListUnmanaged(ModuleOutput) {
-    _ = config;
     var results: std.ArrayListUnmanaged(ModuleOutput) = .empty;
 
     // Cross-module link index — resolves an imported record's associated fn to
     // a remote `call_ext` into the owning module and an imported record literal
     // to the owner's map shape.
-    var cross = try crossModule.build(alloc, outputs);
+    var cross = try crossModule.buildIn(alloc, outputs, config.packages);
     defer cross.deinit();
 
     for (outputs) |*ct| {
@@ -1065,7 +1064,7 @@ fn emitBeamAsm(
     // (`crossModule.erlAtom`, read here via `CrossModule.atomFor`), so a target
     // and the module it names can never disagree. Mirrors the Erlang backend's
     // `erl_module_name`.
-    const module_atom = try crossModule.erlAtom(alloc, .of(module_name));
+    const module_atom = try crossModule.erlAtom(alloc, if (cross) |xc| xc.idOf(module_name) else .of(module_name));
     defer alloc.free(module_atom);
 
     var em = Emitter.init(alloc, module_atom, &body_buf.writer, comptime_vals, rewrites);
@@ -1338,8 +1337,8 @@ const Emitter = struct {
     own_types: std.StringHashMap(void),
     /// `"<Type>.<method>/<arity>"` for every bodied method one of those types
     /// declares. A method an `implement`/`extend` block gives the same type is
-    /// NOT here: those stay in the file's module (`__im__` is reserved and
-    /// emits nothing), so routing them into the type's module would name a
+    /// NOT here: those stay in the file's module (an `implement` block emits no
+    /// module yet), so routing them into the type's module would name a
     /// function the unit never defines.
     own_type_methods: std.StringHashMap(void),
     /// The file module's label table while a unit is open, so a call from
@@ -2008,7 +2007,7 @@ const Emitter = struct {
                         if (!self.record_fields.contains(name)) {
                             try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
                         }
-                        try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), name));
+                        try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), name));
                         _ = try self.type_owner_path.getOrPutValue(name, info.module);
                     },
                     // An imported enum's nullary variants are atoms a `case`
@@ -2065,12 +2064,12 @@ const Emitter = struct {
     }
 
     fn variantTagAtom(self: *Emitter, enum_name: []const u8, variant: []const u8) ![]const u8 {
-        return crossModule.variantAtom(self.atom_arena.allocator(), .of(self.typeOwnerPath(enum_name)), enum_name, variant);
+        return crossModule.variantAtom(self.atom_arena.allocator(), self.idOf(self.typeOwnerPath(enum_name)), enum_name, variant);
     }
 
     /// Decision 21's T2 tag: element 1 of every value `type_name` builds.
     fn recordTagAtom(self: *Emitter, type_name: []const u8) ![]const u8 {
-        return crossModule.typeAtom(self.atom_arena.allocator(), .of(self.typeOwnerPath(type_name)), type_name);
+        return crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.typeOwnerPath(type_name)), type_name);
     }
 
     /// The module path that DECLARES `type_name`. A synthesised inner enum
@@ -2307,6 +2306,13 @@ const Emitter = struct {
     fn atomOf(self: *const Emitter, path: []const u8) []const u8 {
         if (self.cross) |xc| return xc.atomFor(path);
         return crossModule.moduleBasename(path);
+    }
+
+    /// The identity of module `path` — its package and path (decision 109),
+    /// which every atom this emitter renders starts with.
+    fn idOf(self: *const Emitter, path: []const u8) crossModule.ModuleId {
+        if (self.cross) |xc| return xc.idOf(path);
+        return .of(path);
     }
 
     fn importedExtension(self: *const Emitter, buf: []u8, sym: []const u8, method: []const u8) ?struct { owner: []const u8, mangled: []const u8 } {
@@ -2743,7 +2749,7 @@ const Emitter = struct {
     };
 
     /// Policy 3: a `type`'s methods are emitted into the type's own module,
-    /// `<file atom>__t__<type>`, under the names the programmer wrote. Shared by
+    /// `<file atom>@@<Type>` (decision 109), under the names the programmer wrote. Shared by
     /// `emitRecord` and `emitEnum` — a record and an enum differ in how their
     /// values are built, not in where their functions live.
     fn emitTypeUnit(self: *Emitter, type_name: []const u8, methods: []const ast.BehaviorMethod, ident: IdentityShape) !void {
@@ -2986,7 +2992,7 @@ const Emitter = struct {
             .emitted_prim_shims = self.emitted_prim_shims,
             .exports = .empty,
         };
-        self.module_name = try crossModule.typeAtom(self.atom_arena.allocator(), .of(self.module_path), type_name);
+        self.module_name = try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.module_path), type_name);
         self.out = &buf.writer;
         self.next_label = 2;
         self.lambda_count = 0;
@@ -4619,7 +4625,7 @@ const Emitter = struct {
     /// with a module at all. The BEAM twin of `erlang.zig`'s `typeModuleAtom`.
     fn typeModuleAtom(self: *Emitter, type_name: []const u8) !?[]const u8 {
         if (self.own_types.contains(type_name)) {
-            return try crossModule.typeAtom(self.atom_arena.allocator(), .of(self.module_path), type_name);
+            return try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.module_path), type_name);
         }
         if (self.imported_types.get(type_name)) |owner| return owner;
         const xc = self.cross orelse return null;
@@ -4628,7 +4634,7 @@ const Emitter = struct {
             .record, .@"enum" => {},
             else => return null,
         }
-        return try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), type_name);
+        return try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), type_name);
     }
 
     /// A call from inside a type module to one of the FILE module's functions

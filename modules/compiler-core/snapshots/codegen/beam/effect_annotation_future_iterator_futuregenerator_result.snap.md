@@ -22,7 +22,7 @@ fn parse(n: i32) -> @Result<i32, string> {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 11}.
@@ -30,8 +30,8 @@ fn parse(n: i32) -> @Result<i32, string> {
 %% #[@future] / #[@futureGenerator] — eager lowering
 {function, fetch, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, fetch}, 1}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, fetch}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -43,8 +43,8 @@ fn parse(n: i32) -> @Result<i32, string> {
 %% #[@future] / #[@futureGenerator] — eager lowering
 {function, counter, 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, counter}, 0}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, counter}, 0}.
   {label, 5}.
     {allocate, 0, 0}.
     {move, {integer, 1}, {x, 0}}.
@@ -57,8 +57,8 @@ fn parse(n: i32) -> @Result<i32, string> {
 %% #[@future] / #[@futureGenerator] — eager lowering
 {function, stream, 0, 7}.
   {label, 6}.
-    {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, stream}, 0}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, stream}, 0}.
   {label, 7}.
     {allocate, 0, 0}.
     {move, {integer, 1}, {x, 0}}.
@@ -67,8 +67,8 @@ fn parse(n: i32) -> @Result<i32, string> {
 
 {function, parse, 1, 9}.
   {label, 8}.
-    {line, [{location, "main.erl", 4}]}.
-    {func_info, {atom, main}, {atom, parse}, 1}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, parse}, 1}.
   {label, 9}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.

@@ -13,7 +13,7 @@ fn loadTwice(x: i32) -> @Future<i32> {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 9}.
@@ -21,8 +21,8 @@ fn loadTwice(x: i32) -> @Future<i32> {
 %% #[@future] / #[@futureGenerator] — eager lowering
 {function, fetch, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, fetch}, 1}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, fetch}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -34,8 +34,8 @@ fn loadTwice(x: i32) -> @Future<i32> {
 %% #[@future] / #[@futureGenerator] — eager lowering
 {function, loadTwice, 1, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, loadTwice}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, loadTwice}, 1}.
   {label, 5}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -51,8 +51,8 @@ fn loadTwice(x: i32) -> @Future<i32> {
 
 {function, '__bp_add', 2, 7}.
   {label, 6}.
-    {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, '__bp_add'}, 2}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_add'}, 2}.
   {label, 7}.
     {test, is_binary, {f, 8}, [{x, 0}]}.
     {test, is_binary, {f, 8}, [{x, 1}]}.

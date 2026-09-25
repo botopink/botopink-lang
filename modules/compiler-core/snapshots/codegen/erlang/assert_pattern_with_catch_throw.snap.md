@@ -9,19 +9,19 @@ fn f() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Person: name, age
 
 f() ->
-    R = {main__t__person, <<"ann">>, 30},
+    R = {test@main@@Person, <<"ann">>, 30},
     BpAssert4_9 = R,
     {'Person', Name, Age} = case BpAssert4_9 of {'Person', _, _} -> BpAssert4_9; _ -> erlang:throw(<<"is not person">>) end.
 ```
 
------ ERLANG -- main__t__person.erl
+----- ERLANG -- test@main@@Person.erl
 ```erlang
--module(main__t__person).
+-module(test@main@@Person).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, name) -> element(2, V);

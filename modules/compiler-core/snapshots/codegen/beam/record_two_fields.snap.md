@@ -5,23 +5,23 @@ val Point = type(x: i32, y: i32)
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 2}.
 ```
 
------ BEAM ASSEMBLY -- main__t__point.S
+----- BEAM ASSEMBLY -- test@main@@Point.S
 ```erlang
-{module, main__t__point}.
+{module, test@main@@Point}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 8}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "main__t__point.erl", 1}]}.
-    {func_info, {atom, main__t__point}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Point.erl", 1}]}.
+    {func_info, {atom, test@main@@Point}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, x}]}.
     {move, {x, 0}, {x, 1}}.
@@ -38,8 +38,8 @@ val Point = type(x: i32, y: i32)
 
 {function, '__bp_format', 1, 7}.
   {label, 6}.
-    {line, [{location, "main__t__point.erl", 1}]}.
-    {func_info, {atom, main__t__point}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Point.erl", 1}]}.
+    {func_info, {atom, test@main@@Point}, {atom, '__bp_format'}, 1}.
   {label, 7}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

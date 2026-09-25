@@ -171,6 +171,7 @@ pub fn run(
         },
         .build_root = ".botopinkbuild",
         .test_mode = true,
+        .packages = try libs.packagesOf(arena, proj, real_deps.items),
     };
 
     // Emit only: each test module is run once, below, by its runner.

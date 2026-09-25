@@ -9,7 +9,7 @@ fn stream() -> @FutureGenerator<i32, string> {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% #[@future] / #[@futureGenerator] — eager lowering
 stream() ->
