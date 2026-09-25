@@ -167,6 +167,7 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
                 for (decls) |d| {
                     const type_name = switch (d) {
                         .type_ => |t| t.name,
+                        .typeAlias => |a| a.name,
                         else => continue,
                     };
                     if (!std.mem.eql(u8, type_name, leaf)) continue;
@@ -252,6 +253,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     try validateUniqueDefaults(env, program);
 
     // Pass 1: register type definitions and their constructors.
+    try registerTypeAliases(env, program);
     for (program.decls) |decl| {
         try registerTypeDecl(env, decl);
     }
@@ -324,6 +326,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
 
     try validateUniqueDefaults(env, program);
 
+    try registerTypeAliases(env, program);
     for (program.decls) |decl| {
         try registerTypeDecl(env, decl);
     }
@@ -728,6 +731,13 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             try inferTestDecl(env, t);
             return null;
         },
+        // An alias binds no value; its binding carries the target's type for
+        // the tooling (hover, the `.d.ts`). `registerExports` keeps it out of
+        // the value exports.
+        .typeAlias => |a| {
+            const ty = try checkTypeAliasDecl(env, a);
+            return .{ .name = a.name, .type_ = ty, .typedExpr = null, .decl = decl };
+        },
         else => return null,
     }
 }
@@ -740,6 +750,10 @@ fn registerTypeDecl(env: *Env, decl: ast.DeclKind) InferError!void {
             .record => try registerRecord(env, tdecl),
             .enum_ => try registerEnum(env, tdecl),
         },
+        // An imported alias (`registerImportedTypeDecl`, the `from "std"`
+        // type export) arrives here; a module's own were registered ahead of
+        // every type by `registerTypeAliases`.
+        .typeAlias => |a| try env.typeAliases.put(env.arena, a.name, a),
         else => {},
     }
 }
@@ -2492,6 +2506,10 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
         // `inferProgramTyped`'s `.use` interception.
         .use => |u| {
             _ = try markStdImports(env, u);
+            return null;
+        },
+        .typeAlias => |a| {
+            _ = try checkTypeAliasDecl(env, a);
             return null;
         },
         // implement doesn't produce a value binding.
@@ -4252,7 +4270,9 @@ fn registerTypeClosureDepth(
     decl: ast.DeclKind,
     depth: usize,
 ) !void {
-    if (depth >= 32 or decl != .type_) return;
+    if (depth >= 32) return;
+    if (decl == .typeAlias) return registerAliasClosure(env, moduleDecls, decl.typeAlias, depth);
+    if (decl != .type_) return;
     const td = decl.type_;
     var names: std.ArrayListUnmanaged([]const u8) = .empty;
     defer names.deinit(env.arena);
@@ -4266,6 +4286,10 @@ fn registerTypeClosureDepth(
         if (std.mem.eql(u8, n, td.name)) continue;
         if (env.lookupTypeDef(n) != null) continue;
         const dep = moduleDecls.get(n) orelse continue;
+        if (dep == .typeAlias) {
+            try registerAliasClosure(env, moduleDecls, dep.typeAlias, depth + 1);
+            continue;
+        }
         if (dep != .type_) continue;
         try registerTypeClosureDepth(env, moduleDecls, dep, depth + 1);
         if (env.lookupTypeDef(n) != null) continue;
@@ -6074,6 +6098,9 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // see; a module that names it gets its declaration spliced in
             // (`comptime.zig`, `withSourceLocationDecl`).
             if (std.mem.eql(u8, n, source_location_type_name)) env.usesSourceLocation = true;
+            if (!genericMap.contains(n)) {
+                if (env.typeAliases.get(n)) |alias| return expandTypeAlias(env, alias, &.{}, genericMap);
+            }
             return env.resolveTypeName(n, genericMap);
         },
         .array => |elem| {
@@ -6112,6 +6139,9 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             return env.funcType(paramTypes, returnType);
         },
         .generic => |b| {
+            if (!b.is_builtin) {
+                if (env.typeAliases.get(b.name)) |alias| return expandTypeAlias(env, alias, b.args, genericMap);
+            }
             // Decision 8 §3 — `A | B` reaches inference as a `generic` under the
             // reserved name `ast.union_type_name`; `unionMembers()` reads the
             // members back. It is a union type, not a nominal one called `|`,
@@ -6251,6 +6281,130 @@ fn resolveTypeRef(env: *Env, ref: ast.TypeRef) InferError!*T.Type {
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
     defer genericMap.deinit();
     return resolveTypeRefInContext(env, ref, genericMap);
+}
+
+// ── type aliases (decision 118 rule 1) ───────────────────────────────────────
+
+/// Pass 1, ahead of every `type`: a record field or a signature may name an
+/// alias declared further down, so every alias of the module is in scope
+/// before anything resolves. Then each target is checked once (arity of what
+/// it names, recursion, and — through `pendingTypeNames` — unknown names), at
+/// the target's own location.
+fn registerTypeAliases(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .typeAlias => |a| try env.typeAliases.put(env.arena, a.name, a),
+        else => {},
+    };
+    for (program.decls) |decl| switch (decl) {
+        .typeAlias => |a| _ = try resolveTypeAliasTarget(env, a),
+        else => {},
+    };
+}
+
+/// The target with every parameter a fresh variable, located at the target.
+fn resolveTypeAliasTarget(env: *Env, a: ast.TypeAliasDecl) InferError!*T.Type {
+    const prev = env.atTypeRef(a.targetLoc);
+    defer env.typeRefLoc = prev;
+    const args = try env.arena.alloc(ast.TypeRef, a.genericParams.len);
+    for (a.genericParams, 0..) |gp, i| args[i] = .{ .named = gp.name };
+    var map = std.StringHashMap(*T.Type).init(env.arena);
+    defer map.deinit();
+    for (a.genericParams) |gp| try map.put(gp.name, try env.freshVar());
+    return expandTypeAlias(env, a, args, map);
+}
+
+/// Pass 2: an alias may not take a name a type of the module (or a primitive)
+/// already has — the alias would shadow it in every annotation. Answers the
+/// target's type, for the declaration's binding.
+fn checkTypeAliasDecl(env: *Env, a: ast.TypeAliasDecl) InferError!*T.Type {
+    const taken = env.lookupTypeDef(a.name) != null or blk: {
+        const b = env.bindings.get(a.name) orelse break :blk false;
+        break :blk b.deref().isNamed(a.name);
+    };
+    if (taken) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` already names a type; an alias cannot take it", .{ diagnostics.type_alias_name_taken, a.name });
+        env.lastError = TypeError.custom(msg, "Give the alias a name of its own.").withLoc(a.loc);
+        return error.TypeError;
+    }
+    return resolveTypeAliasTarget(env, a);
+}
+
+/// `Name<args>` where `Name` is an alias: the target, with each parameter
+/// bound to its argument resolved in the CALLER's generic scope. The target's
+/// other names resolve in the module's scope, never the caller's generics —
+/// `type Box<T> = T[];` inside `fn f<U>(x: Box<U>)` is `U[]`.
+fn expandTypeAlias(
+    env: *Env,
+    alias: ast.TypeAliasDecl,
+    args: []const ast.TypeRef,
+    callerMap: std.StringHashMap(*T.Type),
+) InferError!*T.Type {
+    if (args.len != alias.genericParams.len) {
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes {d} type argument{s}, {d} given", .{
+            diagnostics.type_alias_arity,
+            alias.name,
+            alias.genericParams.len,
+            if (alias.genericParams.len == 1) "" else "s",
+            args.len,
+        });
+        var err = TypeError.custom(msg, "Write the alias with one argument per parameter it declares.");
+        if (env.typeRefLoc) |l| err = err.withLoc(l);
+        env.lastError = err;
+        return error.TypeError;
+    }
+    for (env.aliasExpanding.items) |open| {
+        if (!std.mem.eql(u8, open, alias.name)) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` expands to itself", .{ diagnostics.type_alias_recursive, alias.name });
+        var err = TypeError.custom(msg, "An alias names a type that already exists; declare a recursive type with `type Name(…)` or `type Name { … }`.");
+        if (env.typeRefLoc) |l| err = err.withLoc(l);
+        env.lastError = err;
+        return error.TypeError;
+    }
+    var map = std.StringHashMap(*T.Type).init(env.arena);
+    defer map.deinit();
+    for (alias.genericParams, args) |gp, arg| {
+        try map.put(gp.name, try resolveTypeRefInContext(env, arg, callerMap));
+    }
+    try env.aliasExpanding.append(env.arena, alias.name);
+    defer _ = env.aliasExpanding.pop();
+    return resolveTypeRefInContext(env, alias.target, map);
+}
+
+/// 01 R2 for an alias: importing `Parser` registers the alias and the types
+/// its target names from the module it comes from, as types only.
+fn registerAliasClosure(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    a: ast.TypeAliasDecl,
+    depth: usize,
+) InferError!void {
+    if (depth >= 32 or env.typeAliases.contains(a.name)) return;
+    try env.typeAliases.put(env.arena, a.name, a);
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer names.deinit(env.arena);
+    try collectTypeRefNames(env, a.target, &names);
+    for (names.items) |n| {
+        if (env.lookupTypeDef(n) != null or env.typeAliases.contains(n)) continue;
+        const dep = moduleDecls.get(n) orelse continue;
+        switch (dep) {
+            .typeAlias => |d| try registerAliasClosure(env, moduleDecls, d, depth + 1),
+            .type_ => {
+                try registerTypeClosureDepth(env, moduleDecls, dep, depth + 1);
+                if (env.lookupTypeDef(n) != null) continue;
+                var before = std.StringHashMap(void).init(env.arena);
+                defer before.deinit();
+                var kit = env.bindings.keyIterator();
+                while (kit.next()) |k| try before.put(k.*, {});
+                try registerTypeDecl(env, dep);
+                var added: std.ArrayListUnmanaged([]const u8) = .empty;
+                defer added.deinit(env.arena);
+                var ait = env.bindings.keyIterator();
+                while (ait.next()) |k| if (!before.contains(k.*)) try added.append(env.arena, k.*);
+                for (added.items) |k| _ = env.bindings.remove(k);
+            },
+            else => {},
+        }
+    }
 }
 
 /// Infer the type of an expression, returning a *Type.

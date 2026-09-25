@@ -2366,6 +2366,8 @@ pub const TestDecl = struct {
 
 pub const DeclKind = union(enum) {
     type_: TypeDecl,
+    /// `[pub] type Name<T> = Target;` — see `TypeAliasDecl`.
+    typeAlias: TypeAliasDecl,
     implement: ImplementDecl,
     extend: ExtendDecl,
     use: ImportDecl,
@@ -2412,6 +2414,7 @@ pub const DeclKind = union(enum) {
             .behavior => |*t| t.deinit(allocator),
             .delegate => |*d| d.deinit(allocator),
             .type_ => |*t| t.deinit(allocator),
+            .typeAlias => |*a| a.deinit(allocator),
             .implement => |*i| i.deinit(allocator),
             .extend => |*x| x.deinit(allocator),
             .@"fn" => |*f| f.deinit(allocator),
@@ -2800,6 +2803,42 @@ pub const TypeDecl = struct {
 
     pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
         return stringifyOmitting(this, jws, &.{}, &.{"bodyComments"});
+    }
+};
+
+// ── type alias decl ───────────────────────────────────────────────────────────
+
+/// `[pub] type Name<A, B> = Target;` — a transparent name for a type
+/// (decision 118 rule 1). The checker substitutes `Target` wherever `Name` is
+/// written; backends emit nothing for it. The declarations that *use* the
+/// alias keep it syntactically (`-> Parser<i32>` stays a `TypeRef` naming
+/// `Parser`), which is how the effect checker tells an aliased return from a
+/// literal wrapper (`Env.aliasedReturnWrapper`).
+pub const TypeAliasDecl = struct {
+    name: []const u8,
+    isPub: bool = false,
+    docComment: ?[]const u8 = null,
+    /// `//` regular comment (last one before the declaration)
+    comment: ?[]const u8 = null,
+    /// `////` module-level documentation
+    moduleComment: ?[]const u8 = null,
+    /// The alias's own parameters, e.g. `<T>` in `type Parser<T> = …`.
+    genericParams: []GenericParam = &.{},
+    /// The aliased type, as written.
+    target: TypeRef,
+    /// The `type` keyword (the declaration's location).
+    loc: Loc = .{ .line = 0, .col = 0 },
+    /// Where `target` starts. Left out of the AST dump.
+    targetLoc: Loc = .{ .line = 0, .col = 0 },
+
+    pub fn deinit(this: *TypeAliasDecl, allocator: std.mem.Allocator) void {
+        for (this.genericParams) |*gp| gp.deinit(allocator);
+        allocator.free(this.genericParams);
+        this.target.deinit(allocator);
+    }
+
+    pub fn jsonStringify(this: TypeAliasDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{ "loc", "targetLoc" }, &.{});
     }
 };
 

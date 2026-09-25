@@ -352,6 +352,16 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "an empty field list `()`",
             .hint = "A record with no fields omits the parentheses: `type Name { methods }`.",
         },
+        .typeAliasAnnotated => .{
+            .code = "type-alias-annotated",
+            .message = "a type alias takes no annotation",
+            .hint = "An alias is only a name for a type (`type Parser<T> = @Result<T, ParseError>;`); put the annotation on a declaration that carries it.",
+        },
+        .typeAliasGenericDefault => .{
+            .code = "type-alias-generic-default",
+            .message = "a type alias parameter takes no default",
+            .hint = "Write the alias with every argument at each use (`Name<i32>`), or declare a second alias for the defaulted form.",
+        },
         .typeVariantAfterMethod => .{
             .code = "type-variant-after-method",
             .message = "a variant after a method",

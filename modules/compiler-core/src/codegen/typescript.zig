@@ -57,7 +57,26 @@ const Builder = struct {
             // Test blocks never surface in the public typedef; `mod` declares a
             // submodule that carries its own typedef, so it emits nothing here.
             .@"test", .mod, .comment => .none,
+            .typeAlias => |a| try self.typeAlias(a),
         };
+    }
+
+    /// `pub type Parser<T> = @Result<T, E>;` → `export declare type Parser<T> = …;`,
+    /// the target mapped the way any annotation is, so a signature that
+    /// writes the alias names a type the `.d.ts` declares.
+    fn typeAlias(self: *Builder, a: ast.TypeAliasDecl) Error!js.TsDecl {
+        if (!a.isPub) return .none;
+        var name: std.ArrayListUnmanaged(u8) = .empty;
+        try name.appendSlice(self.b.arena, a.name);
+        if (a.genericParams.len > 0) {
+            try name.append(self.b.arena, '<');
+            for (a.genericParams, 0..) |gp, i| {
+                if (i > 0) try name.appendSlice(self.b.arena, ", ");
+                try name.appendSlice(self.b.arena, gp.name);
+            }
+            try name.append(self.b.arena, '>');
+        }
+        return .{ .type_alias = .{ .name = name.items, .type = try self.typeRef(a.target) } };
     }
 
     fn val(self: *Builder, name: []const u8, is_pub: bool, ty: *comptimeMod.Type) Error!js.TsDecl {

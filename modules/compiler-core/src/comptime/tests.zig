@@ -23,6 +23,8 @@ test {
     _ = @import("tests/effect_generator.zig");
     _ = @import("tests/builtins_typeinfo.zig");
     _ = @import("tests/eval_pipeline.zig");
+    _ = @import("tests/type_alias.zig");
+    _ = @import("./alias_erase.zig");
     _ = @import("primOpTemplate.zig");
     _ = @import("./snapshot.zig");
     _ = @import("./diagnostics.zig");

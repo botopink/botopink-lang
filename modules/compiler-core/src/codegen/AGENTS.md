@@ -40,7 +40,7 @@ codegen/
 ├── beam/             ← BEAM term model + shared `.erl`/`.S` emitters — see [`beam/AGENTS.md`](beam/AGENTS.md)
 ├── wat.zig           ← WAT backend: lowers to the wat code model, writes no text
 ├── wat/              ← WAT code model + emitter + runtime helpers — see [`wat/AGENTS.md`](wat/AGENTS.md)
-├── typescript.zig    ← `.d.ts` backend: builds the TypeScript declaration model
+├── typescript.zig    ← `.d.ts` backend: builds the TypeScript declaration model (a `pub` type alias → `export declare type Name<T> = …;`; every other backend skips `DeclKind.typeAlias` — `comptime/alias_erase.zig` already substituted it)
 ├── runtime.zig       ← executes generated code in tests (RUN LOG capture)
 ├── snapshot.zig      ← codegen snapshot builder / assertions
 ├── tests.zig         ← barrel: aggregates tests/<feature>.zig + js/*.zig + beam/*.zig for test_root.zig

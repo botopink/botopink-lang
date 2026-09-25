@@ -31,6 +31,7 @@ pub const LoopExpr = ast.LoopExprOf(.untyped);
 pub const FunctionExpr = ast.FunctionExpr;
 pub const Loc = ast.Loc;
 pub const TypeDecl = ast.TypeDecl;
+pub const TypeAliasDecl = ast.TypeAliasDecl;
 pub const TypeShape = ast.TypeShape;
 pub const Field = ast.Field;
 pub const ImplementDecl = ast.ImplementDecl;
@@ -183,6 +184,12 @@ pub const ParseErrorType = enum {
     caseConstantPattern,
     /// `type P()` — an empty field list; a record with no fields omits `()`.
     typeEmptyFieldList,
+    /// `#[x] type Name = T;` — an alias is a name for a type, not a
+    /// declaration that carries metadata; it takes no annotation.
+    typeAliasAnnotated,
+    /// `type Name<T = i32> = …;` — an alias parameter takes no default: the
+    /// alias is written with every argument (`Name<i32>`).
+    typeAliasGenericDefault,
     /// `type S { fn f(self: Self) {} A }` — variants come before methods.
     typeVariantAfterMethod,
     /// `type P(val x: i32)` — the field list takes no `val` prefix.
@@ -459,6 +466,8 @@ pub const Parser = struct {
                 const d = try this.parseFnDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .@"fn" = d };
+            } else if (this.isTypeAliasAt(0)) blk: {
+                break :blk .{ .typeAlias = try this.parseTypeAliasDecl(alloc) };
             } else if (this.checkShorthandNamed(.type)) blk: {
                 const d = try this.parseShorthandTypeDecl(alloc);
                 _ = this.match(.semicolon);
@@ -518,7 +527,13 @@ pub const Parser = struct {
                         if (this.removedDeclKeywordAt(off) != null) return this.failRemovedDeclKeyword(off);
                         return ParseError.UnexpectedToken;
                     },
-                    .type => DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) },
+                    .type => blk2: {
+                        if (this.isTypeAliasAt(annEnd)) {
+                            this.parseError = ParseErrorInfo.fromToken(.typeAliasAnnotated, this.peek());
+                            return ParseError.UnexpectedToken;
+                        }
+                        break :blk2 DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) };
+                    },
                     .behavior => DeclKind{ .behavior = try this.parseShorthandBehaviorDecl(alloc) },
                     // `#[@BeamMemory.Ets] var hits: i32 = 0;` (front 17): the
                     // annotations land on the binding. Only the plain form takes
@@ -1400,6 +1415,10 @@ pub const Parser = struct {
     pub const parseTypeDecl = decl_grammar.parseTypeDecl;
 
     pub const parseShorthandTypeDecl = decl_grammar.parseShorthandTypeDecl;
+
+    pub const isTypeAliasAt = decl_grammar.isTypeAliasAt;
+
+    pub const parseTypeAliasDecl = decl_grammar.parseTypeAliasDecl;
 
     pub const parseTypeDeclRest = decl_grammar.parseTypeDeclRest;
 

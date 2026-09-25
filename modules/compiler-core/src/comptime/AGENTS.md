@@ -23,6 +23,7 @@ comptime/
 ├── render.zig         ← source-line helpers for diagnostic rendering
 ├── specialize.zig     ← `SpecializedFn`, `SpecCache`, `specialize()`
 ├── transform.zig      ← `Aggregator` — drives the full transform pass
+├── alias_erase.zig    ← type aliases erased for the backends (reflective `TypeRef` walk; a return alias of a wrapper stays)
 ├── template.zig       ← `@Expr` templates: CapturedExpr, PlainArg, ScopeSnapshot, CustomNode, fail diagnostics
 ├── template_eval.zig  ← runtime-backed template body evaluation (through runtime/runtime.zig's dispatcher)
 ├── decorator_eval.zig ← runtime-backed decorator body invocation (erl; the same refusal)
@@ -729,6 +730,37 @@ declares no methods — `EnumSection` has no slot for them and nothing needs one
 
 The `reject/` cells `wrapper_without_annotation`, `val_assert_after_catch` and `two_effect_markers`
 pin all three.
+
+## Type aliases (decision 118 rule 1)
+
+`[pub] type Name<A, B> = Target;` parses to `DeclKind.typeAlias` (`ast.TypeAliasDecl`). An alias
+is a **transparent** name, never a typedef and never a value:
+
+- **Scope.** `Env.typeAliases` (name → decl). `registerTypeAliases` puts every alias of the module
+  in scope **before** any `type` registers (a field may name an alias declared further down), then
+  resolves each target once at `targetLoc` — unknown names go through `pendingTypeNames` like any
+  annotation. An imported alias arrives through `registerTypeDecl` (the `from "std"` type export,
+  `registerImportedTypeDecl`); `registerAliasClosure` brings the types its target names, as types
+  only (01 R2). `registerExports` puts a `pub` alias in the type-decl registry and never in the
+  value exports; `import {Parser as P}` is refused like any type (`import-alias-on-type`).
+- **Substitution.** `resolveTypeRefInContext` expands `Name` / `Name<args>` (not a generic param
+  of the scope) with `expandTypeAlias`: each argument resolved in the caller's generic map, the
+  target resolved in a map holding only the alias's own parameters. Arity must match exactly —
+  a bare generic alias too — or `type-alias-arity`; an alias met again while it is on
+  `Env.aliasExpanding` is `type-alias-recursive`. `checkTypeAliasDecl` (pass 2) refuses a name a
+  typedef or primitive has (`type-alias-name-taken`); the typed binding carries the target's type
+  for hover and the `.d.ts`.
+- **What the effect checker reads.** The AST keeps the alias as written: `FnDecl.returnType` of
+  `fn f() -> Parser<i32>` is `generic{ name = "Parser" }`. `Env.aliasedWrapper(ref)` answers
+  `{ .alias = "Parser", .wrapper = "Result" }` when `ref` goes through an alias (followed through
+  aliases of aliases) that ends at a builtin `@Wrapper<…>`, and null for a literal wrapper or an
+  alias of a plain type. `effect-wrapper-behind-alias` (front `24-effects-by-return`) is: the
+  body uses a capability and `aliasedWrapper(returnType) != null`. An alias on a function that
+  uses no capability is legal — it only passes a value along.
+- **Backends.** `alias_erase.erase` runs on the transformed program (both `comptime.zig` sites):
+  every `TypeRef` naming an alias becomes its target, except a declared return that ends at a
+  builtin wrapper, which keeps the alias name (its arguments erased) so no backend lowers it as
+  an effect. The `.d.ts` emits a `pub` alias as `export declare type Name<T> = …;`.
 
 ## Importing a type brings its type closure (01 R2)
 

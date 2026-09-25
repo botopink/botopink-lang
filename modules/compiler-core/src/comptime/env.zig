@@ -10,6 +10,13 @@ const trace = @import("./trace.zig");
 
 // ── type definitions ──────────────────────────────────────────────────────────
 
+/// What `Env.aliasedWrapper` answers: the alias the source wrote and the
+/// builtin wrapper (`"Result"`, `"Task"`, …, without `@`) it expands to.
+pub const AliasedWrapper = struct {
+    alias: []const u8,
+    wrapper: []const u8,
+};
+
 /// A field inside a record, struct, or enum variant.
 pub const FieldDef = struct {
     name: []const u8,
@@ -704,6 +711,14 @@ pub const Env = struct {
     /// `"<Type>.<method>"` and **including** `self`, exactly as written.
     /// `setInherentMethodType` stores TYPES, which carry no defaults.
     inherentMethodParams: std.StringHashMap([]const ast.Param),
+    /// Type aliases in scope (`type Parser<T> = @Result<T, ParseError>;`,
+    /// decision 118 rule 1), the module's own and the imported ones. An alias
+    /// is transparent: `resolveTypeRefInContext` substitutes its target. Never
+    /// a typedef and never a binding. Arena-owned; std's template has none.
+    typeAliases: std.StringHashMapUnmanaged(ast.TypeAliasDecl) = .empty,
+    /// The aliases being expanded right now, innermost last: an alias met
+    /// again while it is on this stack is `type-alias-recursive`.
+    aliasExpanding: std.ArrayListUnmanaged([]const u8) = .empty,
 
     pub fn init(arena: std.mem.Allocator) Env {
         return .{
@@ -1017,6 +1032,49 @@ pub const Env = struct {
 
     pub fn lookupTypeDef(self: *Env, name: []const u8) ?TypeDef {
         return self.typeDefs.get(name);
+    }
+
+    /// The type alias `name` names, if one is in scope.
+    pub fn lookupTypeAlias(self: *const Env, name: []const u8) ?ast.TypeAliasDecl {
+        return self.typeAliases.get(name);
+    }
+
+    /// The alias a written type goes through, with the builtin wrapper it
+    /// finally stands for. `type Parser<T> = @Result<T, E>;` makes `-> Parser<i32>`
+    /// answer `.{ .alias = "Parser", .wrapper = "Result" }`; an alias of an
+    /// alias is followed (`type P2<T> = Parser<T>;` answers `.alias = "P2"`,
+    /// the name written). Null when `ref` is not an alias, or the alias ends at
+    /// a type that is not a builtin `@Wrapper<…>`.
+    ///
+    /// This is the reading decision 118 rule 1 needs: the declared return
+    /// `TypeRef` keeps the alias spelling (the checker substitutes only when it
+    /// builds the type), so the effect checker asks this on `FnDecl.returnType`
+    /// to tell "the wrapper written in the return" (activates) from "the
+    /// wrapper behind an alias" (types the function, activates nothing —
+    /// `effect-wrapper-behind-alias` when the body uses a capability).
+    pub fn aliasedWrapper(self: *const Env, ref: ast.TypeRef) ?AliasedWrapper {
+        const written = aliasNameOf(ref) orelse return null;
+        var decl = self.typeAliases.get(written) orelse return null;
+        var depth: usize = 0;
+        while (depth < 32) : (depth += 1) {
+            switch (decl.target) {
+                .generic => |g| if (g.is_builtin) return .{ .alias = written, .wrapper = g.name },
+                else => {},
+            }
+            const next = aliasNameOf(decl.target) orelse return null;
+            decl = self.typeAliases.get(next) orelse return null;
+        }
+        return null;
+    }
+
+    /// The name a type reference spells when it could be an alias: `Name` or
+    /// `Name<…>` (not a builtin, not a union).
+    fn aliasNameOf(ref: ast.TypeRef) ?[]const u8 {
+        return switch (ref) {
+            .named => |n| n,
+            .generic => |g| if (g.is_builtin or ref.unionMembers() != null) null else g.name,
+            else => null,
+        };
     }
 
     /// Record the typeparam constraints for a function (keyed by name).

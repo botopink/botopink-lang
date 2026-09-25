@@ -1354,7 +1354,8 @@ fn emitBeamAsm(
             // test blocks (only compiled under `botopink test`) don't lower to
             // runtime code — silently skip. `mod` declares a submodule in the
             // explicit tree; the submodule is compiled as its own unit.
-            .delegate, .use, .mod, .@"test" => {},
+            // A type alias is erased: the checker substituted its target.
+            .delegate, .use, .mod, .@"test", .typeAlias => {},
         }
     }
 

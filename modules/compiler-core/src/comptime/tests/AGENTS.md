@@ -57,6 +57,7 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 | `decorator_regression.zig` | Decorator bodies with loops / conditionals / string concat / `@emit` / accumulator fold fusion. Each lowering has a rejecting fixture compared on the whole message and an accepting fixture that asserts the lowered Erlang (`OkData.comptime_traces`: `lists:foreach(`, `'__bp_len'(`, `'__bp_add'(`, `lists:foldl(`; the `@emit` reply exactly), so every row of `specs/1.0.4-beta/05-cli-residuals/mutation-matrix.md` (M1–M10) and a fold fusion that discards its accumulator reds a test. Run alone: `zig build test -Dtest-filter="decorator regression"`. |
 | `builtins_typeinfo.zig` | `@typeInfo` / `@TypeOf` / `@makeRecord` / `@RecordKeys` / `@Field` inference. |
 | `std_target_gating.zig` | `from "std"` imports rejected on targets without `@external` coverage. |
+| `type_alias.zig` | Type aliases (decision 118 rule 1): substitution in params / returns / fields / `val`s, forward reference from a field, alias of an alias, caller generics, an `@Result` alias on a value-passing return; refusals located (`type-alias-arity`, `-recursive`, `-name-taken`, an unknown target); `Env.aliasedWrapper`. |
 | `eval_pipeline.zig` | Source → infer → `evaluateComptime` for comptime vals. |
 
 ## Pass/fail contract (spec 06, H3/H9)

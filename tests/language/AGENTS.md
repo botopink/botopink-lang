@@ -31,6 +31,9 @@ leaves in scope, on commonJS/erlang/wasm — and three `reject/` cells: `import_
 second item), `import_group_modifier` (`*` on a node that opens braces) and `import_alias_on_type`.
 `00 · 01-checker` step 8 R2 adds `modules/import_type_closure` — `import { User, makeUser }` where
 `User(role: Role)`, `Role` not named, on commonJS/erlang.
+Front 24's type aliases (decision 118 rule 1) add `run/type_alias` — `Id`, `Pair<A, B>`, `Ids` and
+an `@Result` alias typing a function that only passes the value along, on all four targets — and
+`modules/import_type_alias` — a `pub` alias imported like a type, the types its target names with it.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

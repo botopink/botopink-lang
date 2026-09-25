@@ -1827,6 +1827,7 @@ pub const Formatter = struct {
                 .behavior => |v| v.docComment,
                 .delegate => |v| v.docComment,
                 .type_ => |v| v.docComment,
+                .typeAlias => |v| v.docComment,
                 .implement => |v| v.docComment,
                 .extend => |v| v.docComment,
                 .@"fn" => |v| v.docComment,
@@ -1843,6 +1844,8 @@ pub const Formatter = struct {
                 .val => true,
                 // 1.0.3 declarations end with `)` or `}` and take no `;`.
                 .type_ => false,
+                // An alias ends with its target type, which has no closing token.
+                .typeAlias => true,
                 .behavior => false,
                 .use, .delegate, .implement, .extend => true,
                 .mod => true,
@@ -1898,6 +1901,7 @@ pub const Formatter = struct {
             .behavior => |iface| this.fmtBehavior(iface),
             .delegate => |d| this.fmtDelegate(d),
             .type_ => |t| this.fmtType(t),
+            .typeAlias => |a| this.fmtTypeAlias(a),
             .implement => |impl| this.fmtImplement(impl),
             .extend => |ext| this.fmtExtend(ext),
             .@"fn" => |f| this.fmtFnDecl(f),
@@ -2708,6 +2712,18 @@ pub const Formatter = struct {
         try parts.append(this.arena, try this.text(" = "));
         try parts.append(this.arena, try this.fmtExpr(v.value.*));
         return this.concatAll(parts.items);
+    }
+
+    /// `[pub] type Name<A, B> = Target` — the `;` is added by the program
+    /// loop (`needsSemi`), as for `val`.
+    fn fmtTypeAlias(this: *Formatter, a: ast.TypeAliasDecl) !*const Doc {
+        return this.concatAll(&.{
+            try this.text(if (a.isPub) "pub type " else "type "),
+            try this.text(a.name),
+            try this.fmtGenericParams(a.genericParams),
+            try this.text(" = "),
+            try this.fmtTypeRef(a.target),
+        });
     }
 };
 

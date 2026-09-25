@@ -39,4 +39,9 @@ bare `use …;` after a `return`, row 4b (`val c = use …` after a `return`, re
 `use multiple hooks in function` and `errors.zig`'s `lambda return does not end the
 enclosing static prefix` pin what still parses — a lambda body is a fresh scope.
 
+`type_alias.zig` holds the type-alias declaration (decision 118 rule 1): `[pub] type Name<A, B> = T;`
+parses to `DeclKind.typeAlias` (structural assertions), `type Box<T>(v: T)` stays a record, and the
+three refusals — a missing `;`, `type-alias-generic-default` at the `=`, `type-alias-annotated` at
+the annotation.
+
 When adding a test file here, register it in `../tests.zig` or it will not run.

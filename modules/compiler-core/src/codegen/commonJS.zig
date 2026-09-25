@@ -484,6 +484,8 @@ fn emitProgramOptsX(
             // `mod` declares a submodule in the explicit tree; the submodule is
             // emitted as its own module file, so the declaration emits nothing.
             .mod => {},
+            // A type alias is erased: the checker substituted its target.
+            .typeAlias => {},
             // Test blocks are only compiled under `botopink test`; in normal
             // builds they are skipped entirely.
             .@"test" => |t| {

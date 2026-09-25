@@ -1,0 +1,15 @@
+pub mod parse;
+
+import {Parser, Port, portOf} from "parse";
+
+// `Parser` and `Port` are imported like types; `ParseError`, which `Parser`'s
+// target names, comes with them (01 R2).
+fn relay(s: string) -> Parser<Port> {
+    return portOf(s);
+}
+
+pub fn main() {
+    val p: Port = try relay("x") catch 0;
+    @print(p);
+    @print(try relay("") catch 7);
+}

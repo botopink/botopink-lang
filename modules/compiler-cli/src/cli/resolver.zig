@@ -746,6 +746,7 @@ fn collectModuleRefs(
         .@"fn" => |f| if (f.isPub) try registerExport(sa, owner, &exps, f.name, idx),
         .val => |v| if (v.isPub) try registerExport(sa, owner, &exps, v.name, idx),
         .type_ => |t| if (t.isPub) try registerExport(sa, owner, &exps, t.name, idx),
+        .typeAlias => |a| if (a.isPub) try registerExport(sa, owner, &exps, a.name, idx),
         .behavior => |it| if (it.isPub) try registerExport(sa, owner, &exps, it.name, idx),
         .use => |u| {
             // Every `from "…"` clause consumes one location, `std` included, so
