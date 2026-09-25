@@ -2203,7 +2203,7 @@ first three are now enforced by the model, not by discipline:
   atom, so its scratch file keeps the basename.
   Captured text is stdout with stderr appended after a newline (wasm: stdout
   then stderr, no separator).
-- **`executeWat` — the decision (06-wasm step 3): it executes.** It was turned
+- **`executeWat` — the decision (1.0.4-beta's wasm front, step 3; `05-wasm` owns it now): it executes.** It was turned
   on once a trap became a visible block and W1 had closed, so reaching
   `unreachable` means the program aborted rather than the backend giving up. It
   runs `wasmtime run` on the `.wat` text in a scratch dir (the `_start` export),
