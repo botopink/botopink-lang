@@ -119,6 +119,22 @@ pub fn expectParseError(
     }
 }
 
+/// The parse fails with `kind`, located at `line:col` (1-based) — the harness
+/// of a NAMED refusal: a form the language decides against has its own
+/// `ParseErrorType` and a location, so a test pins both and never the text.
+pub fn expectErrorAt(src: []const u8, kind: parserMod.ParseErrorType, line: usize, col: usize) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var l = lexerMod.Lexer.init(src);
+    const tokens = try l.scanAll(a);
+    var p = parserMod.Parser.initWithSource(tokens, src);
+    if (p.parse(a)) |_| return error.TestExpectedParseError else |_| {}
+    const pe = p.parseError orelse return error.TestParseErrorInfoMissing;
+    try std.testing.expectEqual(kind, pe.kind);
+    try std.testing.expectEqual([2]usize{ line, col }, [2]usize{ pe.line, pe.col });
+}
+
 pub fn expectParseFails(allocator: std.mem.Allocator, src: []const u8) !void {
     var l = lexerMod.Lexer.init(src);
     const tokens = l.scanAll(allocator) catch {

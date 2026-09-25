@@ -188,6 +188,34 @@ pub const ParseErrorType = enum {
     /// declaration without a body says what it answers, even when the answer
     /// is nothing.
     bodylessFnNeedsReturnType,
+    /// `c ? 1 : 2` — there is no ternary; `if` is an expression (front 15
+    /// step 3). Located at the `?`.
+    ternaryAbsent,
+    /// `1 << 2`, `a >> 1`, `a & b`, `a ^ b` — the language has no bitwise
+    /// operators, and no replacement to name (front 15 step 3). Located at the
+    /// operator.
+    bitwiseOperatorAbsent,
+    /// `'a'` — there is no character literal; a character is a one-character
+    /// string (front 15 step 3). Located at the literal.
+    charLiteralAbsent,
+    /// `fn inner(x: i32) { … }` inside a body — a `fn` declares at module
+    /// level; inside a body a function is a value bound with `val` (front 15
+    /// step 3). Located at the `fn`.
+    nestedFnDecl,
+    /// `[...a, 3]` — `...` is a pattern's inclusive range; the spread of an
+    /// array literal is `..` (front 15 step 3). Located at the `...`.
+    listSpreadDotDotDot,
+    /// `type P(x: i32)` followed by `implement A for P { … }`: the `implement`
+    /// was read as the bodyless type's own clause, whose receiver is the type
+    /// itself, so `for` has nothing to name (front 15 step 3). Located at the
+    /// `for`.
+    implementClauseFor,
+    /// `#(x: 1, y: 2)` — a tuple LITERAL is positional; labels belong to the
+    /// tuple type `#(x: i32, y: i32)` (decision 8 §6). The labeled
+    /// construction is not parsed (`01-checker` §6); this names it instead of
+    /// blaming the value for a missing `val` (front 15 step 3). Located at the
+    /// label.
+    tupleLiteralLabel,
 };
 
 pub const ParseErrorInfo = struct {

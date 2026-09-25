@@ -26,6 +26,7 @@ const Pattern = parser.Pattern;
 const ParamDestruct = parser.ParamDestruct;
 const Token = parser.Token;
 const TokenKind = parser.TokenKind;
+const ParseErrorType = parser.ParseErrorType;
 const BinOp = This.BinOp;
 const prec = This.prec;
 const locFromToken = This.locFromToken;
@@ -554,12 +555,32 @@ fn isBinaryOpNext(this: *This) bool {
     // (see `parseNullishExpr`) — but `g(1) ?? 0` must not end the expression
     // at the call, so it is named here beside the table's operators.
     if (kind == .questionQuestion) return true;
+    // A decided-against infix form (`?`, `<<`, …) continues the expression
+    // too: the call path rolls back, and the precedence climber's
+    // `parsePostfixChain` refuses it by name at its one exit — so a call in
+    // statement position (`g(1) ? 1 : 2`) reaches the same refusal as an
+    // operand does.
+    if (absentInfixKind(kind) != null) return true;
     inline for (precedence_table) |lvl| {
         inline for (lvl.ops) |o| {
             if (kind == o.tok) return true;
         }
     }
     return false;
+}
+
+/// The named refusal for a token that would continue an expression in a
+/// language that has the form, and does not here (front 15 step 3): a `?`
+/// that is not `?.`/`??` is the ternary's; `<<`, `>>`, `&`, `^` are bitwise
+/// operators. Raised once, at `parsePostfixChain`'s exit — every receiver ends
+/// there. Nothing that parses puts either after a complete operand: `?` in a
+/// type is `parseTypeRef`'s, a pattern's `|` is `patterns.zig`'s.
+fn absentInfixKind(kind: TokenKind) ?ParseErrorType {
+    return switch (kind) {
+        .questionMark => .ternaryAbsent,
+        .lessThanLessThan, .greaterThanGreaterThan, .ampersand, .caret => .bitwiseOperatorAbsent,
+        else => null,
+    };
 }
 
 /// The handler a handler-less `val assert P = e;` desugars to: `@panic(…)`,
@@ -1041,6 +1062,14 @@ fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) Parse
             } } } };
         }
     }
+    // The chain is complete and the next token would have continued an
+    // expression in a language that has the form: refused HERE, by name, once
+    // for every receiver — the same reason the chain itself is one loop
+    // (`absentInfixKind`; the call path of `parseExpr` rolls back to reach it).
+    if (absentInfixKind(this.peek().kind)) |kind| {
+        this.parseError = ParseErrorInfo.fromToken(kind, this.peek());
+        return ParseError.UnexpectedToken;
+    }
     return base;
 }
 
@@ -1257,6 +1286,12 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return ParseError.UnexpectedToken;
     }
     if (this.check(.@"fn")) {
+        // `fn inner(x: i32) { … }` inside a body: a NAMED fn is a module-level
+        // declaration; here a function is a value (front 15 step 3).
+        if (this.peekAt(1).kind == .identifier) {
+            this.parseError = ParseErrorInfo.fromToken(.nestedFnDecl, this.peek());
+            return ParseError.UnexpectedToken;
+        }
         const fnTok = this.advance();
         _ = try this.consume(.leftParenthesis);
         var params: std.ArrayList([]const u8) = .empty;
@@ -1378,6 +1413,13 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return parsePostfixChain(this, alloc, grouped);
     }
 
+    // `'a'` — the lexer hands the whole literal over as one token so the
+    // refusal names the string spelling (front 15 step 3).
+    if (this.check(.charLiteral)) {
+        this.parseError = ParseErrorInfo.fromToken(.charLiteralAbsent, this.peek());
+        return ParseError.UnexpectedToken;
+    }
+
     return ParseError.UnexpectedToken;
 }
 
@@ -1410,6 +1452,13 @@ pub fn parseTupleLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
             break;
         }
         try commentsPerElem.append(alloc, commentsBefore);
+        // `#(x: 1, y: 2)` — a label in a tuple LITERAL. Refused by name at the
+        // label, before `parseExpr` reads `x:` as a binding without its `val`
+        // (front 15 step 3; the labeled construction is `01-checker`'s §6).
+        if (this.check(.identifier) and this.peekAt(1).kind == .colon) {
+            this.parseError = ParseErrorInfo.fromToken(.tupleLiteralLabel, this.peek());
+            return ParseError.UnexpectedToken;
+        }
         try elems.append(alloc, try this.parseExpr(alloc));
         if (!this.match(.comma)) break;
     }
@@ -1470,6 +1519,13 @@ pub fn parseArrayLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
             commentsBefore += 1;
         }
 
+        // `[...a]` — three dots are a pattern's inclusive range; the spread
+        // is `..` (front 15 step 3).
+        if (this.check(.dotDotDot)) {
+            this.parseError = ParseErrorInfo.fromToken(.listSpreadDotDotDot, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+
         if (this.check(.dotDot)) {
             try commentsPerElem.append(alloc, commentsBefore);
             _ = this.advance();
@@ -1483,6 +1539,13 @@ pub fn parseArrayLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
             }
             if (this.match(.comma)) {
                 if (this.check(.rightSquareBracket)) trailingComma = true;
+            }
+            // `[..a, 3]` — the spread comes last. The kind existed in the enum
+            // and nothing raised it; the element after the spread does now
+            // (front 15 step 3).
+            if (!this.check(.rightSquareBracket) and !this.check(.endOfFile)) {
+                this.parseError = ParseErrorInfo.fromToken(.listSpreadNotLast, this.peek());
+                return ParseError.UnexpectedToken;
             }
             break;
         }
