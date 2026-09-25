@@ -241,7 +241,12 @@ pub fn run(
     // sit a directory deeper here than in their own build, so their relative
     // `require("../../src/x.mjs")` would miss the source — copy each into place.
     if (target == .commonJS) {
-        libs.shipMjsSidecars(gpa, io, outputs.items, test_out, ext, env_map) catch {};
+        libs.shipMjsSidecars(gpa, io, outputs.items, test_out, ext, env_map) catch |err| switch (err) {
+            // A sidecar the run cannot ship: the located refusal is already
+            // printed, and a suite that cannot load its modules has no verdict.
+            error.SidecarRefused => return 1,
+            else => return err,
+        };
     }
 
     // erlang: the same for host `.erl` modules — a `#[@External.Erlang("host",

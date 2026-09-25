@@ -440,14 +440,15 @@ const ProjectManifest = struct {
 };
 
 /// A sidecar the build cannot ship ends the build, after the located
-/// diagnostic. It is not a `return error`: both shippers are called as
-/// `shipMjsSidecars(…) catch {}` from `build` and `test`, so a returned error
-/// would be swallowed and the build would still exit 0 — the silence this front
-/// closes. There is no flag, environment variable or manifest field that turns
-/// the refusal off (decision 67 of 1.0.10-beta).
-fn refuseSidecar(loc: manifest.Located) noreturn {
+/// diagnostic: `error.SidecarRefused`, which `build` and `test` answer with
+/// exit 1. It used to `std.process.exit(1)` by hand, because both callers ran
+/// the shipper as `shipMjsSidecars(…) catch {}` and would have swallowed the
+/// error — that is fixed at the callers, so the refusal is an ordinary error
+/// return again. There is no flag, environment variable or manifest field that
+/// turns it off (decision 67 of 1.0.10-beta).
+fn refuseSidecar(loc: manifest.Located) error{SidecarRefused} {
     loc.print();
-    std.process.exit(1);
+    return error.SidecarRefused;
 }
 
 /// True when the project's manifest declares `lib` under `dependencies`.
@@ -729,14 +730,14 @@ pub fn shipMjsSidecars(
                     const proj = project.get(arena, io);
                     var oerr: ?manifest.Located = null;
                     const found = try sidecarOwner(gpa, arena, io, roots.?, env_map, proj, lib, &oerr);
-                    const pkg = found orelse refuseSidecar(oerr orelse
+                    const pkg = found orelse return refuseSidecar(oerr orelse
                         try unresolvedOwner(arena, proj, lib, o.name, req_path));
                     const src_dir = try pkg.srcDir(arena);
                     const sidecar = try std.fs.path.join(arena, &.{ src_dir, "sidecars", base });
                     if (fileExists(io, sidecar)) break :blk sidecar;
                     const cand = try std.fs.path.join(arena, &.{ src_dir, base });
                     if (fileExists(io, cand)) break :blk cand;
-                    refuseSidecar(try missingSidecar(arena, proj, lib, pkg.package, o.name, req_path, sidecar, cand));
+                    return refuseSidecar(try missingSidecar(arena, proj, lib, pkg.package, o.name, req_path, sidecar, cand));
                 }
                 // Project-own module: probe sidecars/ first, then flat src/.
                 const proj = project.get(arena, io);
@@ -745,11 +746,11 @@ pub fn shipMjsSidecars(
                 if (fileExists(io, sidecar)) break :blk sidecar;
                 const cand = try std.fs.path.join(arena, &.{ own_src, base });
                 if (fileExists(io, cand)) break :blk cand;
-                refuseSidecar(try missingOwnSidecar(arena, proj, o.name, req_path, sidecar, cand));
+                return refuseSidecar(try missingOwnSidecar(arena, proj, o.name, req_path, sidecar, cand));
             };
 
             const data = std.Io.Dir.cwd().readFileAlloc(io, src, arena, .unlimited) catch |err|
-                refuseSidecar(try unreadableSidecar(arena, project.get(arena, io), owner, o.name, req_path, src, err));
+                return refuseSidecar(try unreadableSidecar(arena, project.get(arena, io), owner, o.name, req_path, src, err));
             if (std.fs.path.dirname(target)) |parent| {
                 std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
                     error.PathAlreadyExists => {},

@@ -104,7 +104,12 @@ pub fn run(
 
     // Write what compiled; remove any previous artifact of a module that did not,
     // so nothing stale is left claiming to be current.
-    try writeOutputs(gpa, io, outputs.items, opts.out_dir, target, env_map);
+    writeOutputs(gpa, io, outputs.items, opts.out_dir, target, env_map) catch |err| switch (err) {
+        // A sidecar the build cannot ship: the located refusal is already
+        // printed by the shipper, and the build ends here with exit 1.
+        error.SidecarRefused => return 1,
+        else => return err,
+    };
     removeStaleArtifacts(arena, io, failed, opts.out_dir, target);
 
     diagnostics.reportOrphans(arena, loaded.orphans.len);
@@ -287,6 +292,6 @@ fn writeOutputs(
     // `#[@External.<targert>(...)]` `require("…/x.mjs")` — including a dependency's, whose
     // emitted module sits a directory deeper than in its own build.
     if (target == .commonJS) {
-        libs.shipMjsSidecars(gpa, io, outputs, out_dir, ext, env_map) catch {};
+        try libs.shipMjsSidecars(gpa, io, outputs, out_dir, ext, env_map);
     }
 }
