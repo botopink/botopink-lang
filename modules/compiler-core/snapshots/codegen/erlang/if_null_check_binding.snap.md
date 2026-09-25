@@ -10,7 +10,7 @@ fn getName(name: ?string) -> string {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 getName(Name) ->
     case Name of

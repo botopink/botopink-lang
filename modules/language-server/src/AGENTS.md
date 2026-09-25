@@ -125,11 +125,21 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   the inlay hint, the `signatureHelp` parameter label, and the `Add type
   annotation` code action, which wrote `: optional<i32>` **into the user's file**
   one line under a declaration that spelled the same type `?i32`.
-  What it cannot fix is a type **name** the checker built: a `type` declaration's
-  constructor binding is *named* `record { name: string, count: i32 }` by
-  `comptime/infer.zig`'s `buildRecordDeclName` (and `enum {` / `interface ` by
-  its two siblings), and `renderType` prints a name verbatim. That is front 06's
-  file — reported, not patched (`completion_decorator_record.snap.md` still shows it).
+  What it does not build is a type **name** the checker made: a `type` or
+  `behavior` declaration's binding is *named* by `comptime/infer.zig`'s
+  `buildRecordDeclName` / `buildEnumDeclName` / `buildInterfaceDeclName`, and
+  `renderType` prints that name verbatim — so completion's `detail` for the
+  binding is the builder's text. Since 1.0.10-beta (C-19) the three spell the
+  1.0.3 surface, `type Name<G>(f: T)`, `type Name<G> { V, V(f: T) }` and
+  `behavior Name<G> { … }`; before it they spelled `record { … }` / `enum { … }`
+  / `interface { … }`. Pinned from this side by `completion_decorator_record`,
+  `completion_type_enum_detail` and `completion_behavior_detail` (front 11's
+  carve-out in `tests/completion.zig`). An *instance* is named by the declared
+  name alone (`Point`, `Shape`) — that is what a hover, an inlay hint or a
+  parameter label prints for a value of the type. Because a `type Name(f: T)`
+  constructor's binding is that `named` type and not a `.func`,
+  `signatureHelp` falls back to `recordCtorSignature`, which reads the field
+  list from the declaration in the document: `Point(x: i32, y: i32) -> Point`.
 - The hover footer of a builtin method names the **declaring** behavior and the
   receiver's when they differ (`*from \`behavior Signed\` (via I32)*`):
   `InterfaceMember.owner` records which link of the `extends` chain declared the

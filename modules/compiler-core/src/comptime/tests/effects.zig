@@ -654,22 +654,17 @@ test "chain error: `yield` inside #[@context] — the top of the chain still can
     );
 }
 
-// The `yield` gate asks which scope the `yield` targets before it asks the
-// chain, exactly as the `break` gate does (§1I REGRAS DE ESCOPO). A `yield`
-// inside a loop feeds that loop's array — decision 8 § 10's comprehension —
-// and is legal in any body, which is what these two cells pin from both sides.
-test "chain: a loop comprehension yields in a body the chain grants no `yield`" {
-    try h.assertInfersOk(std.testing.allocator,
+// Decision 105 — a `yield` inside a `for` / `while` feeds the nearest generator
+// scope, and a body the chain grants no `yield` has none: the loop does not
+// make it legal. This is the cell that pinned the opposite (decision 8 §10's
+// comprehension) before the decision.
+test "chain error: `yield` inside a loop still needs a generator scope (decision 105)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@future]
-        \\fn collected() -> @Future<i32[]> {
-        \\    val xs = loop ([1, 2, 3]) { x -> yield x * 2; };
-        \\    return xs;
-        \\}
-        \\#[@result]
-        \\fn counted() -> @Result<i32[], string> {
-        \\    var i = 0;
-        \\    val xs = loop (i < 3) { i = i + 1; yield i; };
-        \\    return xs;
+        \\fn collected() -> @Future<i32> {
+        \\    var n = 0;
+        \\    for ([1, 2, 3]) { x -> yield x * 2; };
+        \\    return n;
         \\}
     );
 }
@@ -769,9 +764,9 @@ test "anchor: each body starts over — a sibling fn may anchor elsewhere" {
 
 // ── decision 103: a type that wants to be iterated exposes a generator method ──
 //
-// `Iterable` left with decision 103: a `behavior` would only buy the sugar
-// `loop (g)`, and surface nobody uses drifts. The shape is an ordinary method
-// answering a generator, and the consumer calls it — `loop (bag.iter())`. The
+// There is no iterable behavior (decision 103): a `behavior` would only buy the
+// sugar `for (g)`, and surface nobody uses drifts. The shape is an ordinary
+// method answering a generator, and the consumer calls it — `for (bag.iter())`. The
 // annotation belongs to the implementation (a `behavior` method is declarative
 // and carries none — the R1/R2 error).
 
@@ -780,13 +775,13 @@ test "decision 103: a type exposes a #[@resultGenerator] fn iter and a body iter
         \\type Bag(items: i32[]) {
         \\    #[@resultGenerator]
         \\    fn iter(self: Self) -> @ResultGenerator<i32> {
-        \\        loop (self.items) { x -> yield x; };
+        \\        for (self.items) { x -> yield x; };
         \\    }
         \\}
         \\#[@result]
         \\fn total(b: Bag) -> @Result<i32, string> {
         \\    var acc = 0;
-        \\    loop (b.iter()) { x -> acc = acc + x; };
+        \\    for (b.iter()) { x -> acc = acc + x; };
         \\    return acc;
         \\}
     );
@@ -803,7 +798,7 @@ test "chain error: a plain fn iterating a @ResultGenerator — the loop is a `tr
         \\}
         \\fn total(n: i32) -> i32 {
         \\    var acc = 0;
-        \\    loop (upTo(n)) { x -> acc = acc + x; };
+        \\    for (upTo(n)) { x -> acc = acc + x; };
         \\    return acc;
         \\}
     );
@@ -817,7 +812,7 @@ test "chain: a plain fn iterates a @Generator<T> — infallible, no level needed
         \\}
         \\fn total(n: i32) -> i32 {
         \\    var acc = 0;
-        \\    loop (upTo(n)) { x -> acc = acc + x; };
+        \\    for (upTo(n)) { x -> acc = acc + x; };
         \\    return acc;
         \\}
     );

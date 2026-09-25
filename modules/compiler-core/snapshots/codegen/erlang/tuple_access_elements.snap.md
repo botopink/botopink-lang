@@ -7,7 +7,7 @@ fn getFirst(t: #(i32, string)) -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 getFirst(T) ->
     element(1, T).

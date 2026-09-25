@@ -11,34 +11,34 @@ val Point = type(
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 2}.
 ```
 
------ BEAM ASSEMBLY -- main__t__point.S
+----- BEAM ASSEMBLY -- test@main@@Point.S
 ```erlang
-{module, main__t__point}.
+{module, test@main@@Point}.
 {exports, [{sum, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 15}.
 
 {function, sum, 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__point.erl", 1}]}.
-    {func_info, {atom, main__t__point}, {atom, sum}, 1}.
+    {line, [{location, "test@main@@Point.erl", 1}]}.
+    {func_info, {atom, test@main@@Point}, {atom, sum}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 3, {atom, main__t__point}]}.
+    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 3, {atom, test@main@@Point}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 4}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 3, {atom, main__t__point}]}.
+    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 3, {atom, test@main@@Point}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
   {label, 5}.
     {move, {x, 1}, {x, 2}}.
@@ -50,8 +50,8 @@ val Point = type(
 
 {function, '__bp_get', 2, 10}.
   {label, 9}.
-    {line, [{location, "main__t__point.erl", 2}]}.
-    {func_info, {atom, main__t__point}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Point.erl", 2}]}.
+    {func_info, {atom, test@main@@Point}, {atom, '__bp_get'}, 2}.
   {label, 10}.
     {test, is_eq_exact, {f, 11}, [{x, 1}, {atom, x}]}.
     {move, {x, 0}, {x, 1}}.
@@ -68,8 +68,8 @@ val Point = type(
 
 {function, '__bp_format', 1, 14}.
   {label, 13}.
-    {line, [{location, "main__t__point.erl", 2}]}.
-    {func_info, {atom, main__t__point}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Point.erl", 2}]}.
+    {func_info, {atom, test@main@@Point}, {atom, '__bp_format'}, 1}.
   {label, 14}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -94,8 +94,8 @@ val Point = type(
 
 {function, '__bp_add', 2, 7}.
   {label, 6}.
-    {line, [{location, "main__t__point.erl", 2}]}.
-    {func_info, {atom, main__t__point}, {atom, '__bp_add'}, 2}.
+    {line, [{location, "test@main@@Point.erl", 2}]}.
+    {func_info, {atom, test@main@@Point}, {atom, '__bp_add'}, 2}.
   {label, 7}.
     {test, is_binary, {f, 8}, [{x, 0}]}.
     {test, is_binary, {f, 8}, [{x, 1}]}.

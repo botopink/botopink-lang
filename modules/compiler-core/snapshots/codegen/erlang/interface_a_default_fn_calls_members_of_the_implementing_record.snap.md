@@ -29,7 +29,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% behavior Bounded
@@ -37,7 +37,7 @@ fn main() {
 %% type Money: cents
 
 main() ->
-    M = main__t__money:clamp({main__t__money, 500}, {main__t__money, 0}, {main__t__money, 120}),
+    M = test@main@@Money:clamp({test@main@@Money, 500}, {test@main@@Money, 0}, {test@main@@Money, 120}),
     '__bp_print'([element(2, M)]).
 
 '__bp_print'(Values) ->
@@ -66,9 +66,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__money.erl
+----- ERLANG -- test@main@@Money.erl
 ```erlang
--module(main__t__money).
+-module(test@main@@Money).
 -compile({no_auto_import,[min/2, max/2]}).
 -export([min/2, max/2, clamp/3, '__bp_get'/2, '__bp_format'/1]).
 

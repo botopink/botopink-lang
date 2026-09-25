@@ -11,14 +11,14 @@ type Vec2(
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Vec2: x, y
 ```
 
------ ERLANG -- main__t__vec2.erl
+----- ERLANG -- test@main@@Vec2.erl
 ```erlang
--module(main__t__vec2).
+-module(test@main@@Vec2).
 -export([dot/2, '__bp_get'/2, '__bp_format'/1]).
 
 dot(Self, Other) ->

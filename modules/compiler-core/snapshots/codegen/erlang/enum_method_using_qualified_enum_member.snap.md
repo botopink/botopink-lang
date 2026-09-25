@@ -12,24 +12,24 @@ val Status = type {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Status
 %%   Active
 %%   Inactive
 ```
 
------ ERLANG -- main__t__status.erl
+----- ERLANG -- test@main@@Status.erl
 ```erlang
--module(main__t__status).
+-module(test@main@@Status).
 -export([isDefault/1, '__bp_format'/1]).
 
 isDefault(S) ->
-    Current = main__t__status__v__active,
+    Current = test@main@@Status__v__active,
     Current.
 
-'__bp_format'(main__t__status__v__active) -> {variant, "Status.Active", []};
-'__bp_format'(main__t__status__v__inactive) -> {variant, "Status.Inactive", []}.
+'__bp_format'(test@main@@Status__v__active) -> {variant, "Status.Active", []};
+'__bp_format'(test@main@@Status__v__inactive) -> {variant, "Status.Inactive", []}.
 ```
 
 ----- RUN LOG -----

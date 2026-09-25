@@ -8,7 +8,7 @@ fn first3() -> string {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% behavior String
 

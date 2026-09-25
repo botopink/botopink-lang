@@ -15,7 +15,7 @@ pub fn main() {
         // a comment inside the braced block
         i = 1;
     };
-    loop (i < 3) {
+    while (i < 3) {
         // and one inside a condition loop's body
         i = i + 1;
     };

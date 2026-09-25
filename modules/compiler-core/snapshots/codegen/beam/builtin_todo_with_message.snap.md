@@ -7,15 +7,15 @@ fn notImplemented() {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 4}.
 
 {function, notImplemented, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, notImplemented}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, notImplemented}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {move, {atom, undef}, {x, 0}}.

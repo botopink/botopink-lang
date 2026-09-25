@@ -2,14 +2,14 @@
 ```botopink
 #[@generator]
 fn fromList<T>(xs: Array<T>) -> @Generator<T> {
-    loop (xs) { item ->
+    for (xs) { item ->
         yield item;
     };
 }
 
 fn toList<T>(iter: @Generator<T>) -> Array<T> {
     var out = [];
-    loop (iter) { item ->
+    for (iter) { item ->
         out.push(item);
     };
     return out;

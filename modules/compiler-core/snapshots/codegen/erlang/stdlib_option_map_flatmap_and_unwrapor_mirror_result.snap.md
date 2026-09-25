@@ -13,7 +13,7 @@ fn greet(p: Person) -> string {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Person: name
 
@@ -34,9 +34,9 @@ greet(P) ->
 '__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 ```
 
------ ERLANG -- main__t__person.erl
+----- ERLANG -- test@main@@Person.erl
 ```erlang
--module(main__t__person).
+-module(test@main@@Person).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, name) -> element(2, V).

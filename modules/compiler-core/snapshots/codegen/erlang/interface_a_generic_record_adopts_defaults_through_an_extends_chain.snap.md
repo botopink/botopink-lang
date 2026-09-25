@@ -31,7 +31,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% behavior Sized
@@ -41,9 +41,9 @@ fn main() {
 %% type Bag: items
 
 main() ->
-    '__bp_print'([main__t__bag:isEmpty({main__t__bag, []})]),
-    '__bp_print'([main__t__bag:isEmpty({main__t__bag, [1]})]),
-    '__bp_print'([main__t__bag:twiceSize({main__t__bag, [1, 2]})]).
+    '__bp_print'([test@main@@Bag:isEmpty({test@main@@Bag, []})]),
+    '__bp_print'([test@main@@Bag:isEmpty({test@main@@Bag, [1]})]),
+    '__bp_print'([test@main@@Bag:twiceSize({test@main@@Bag, [1, 2]})]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -71,9 +71,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__bag.erl
+----- ERLANG -- test@main@@Bag.erl
 ```erlang
--module(main__t__bag).
+-module(test@main@@Bag).
 -compile({no_auto_import,[size/1]}).
 -export([size/1, twiceSize/1, isEmpty/1, '__bp_get'/2, '__bp_format'/1]).
 

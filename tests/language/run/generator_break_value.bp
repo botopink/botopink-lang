@@ -1,7 +1,7 @@
 //// Decision 103 of 1.0.10-beta — a generator delivers a value in two ways:
 //// `yield v` emits and continues, `break v` emits `v` and ENDS (≡ `yield v;
 //// break;`). The last value is an item like the others; there is no
-//// completion channel (`IteratorStep.Done(completion: C)` left with `C`).
+//// completion channel (the old step enum's `Done(completion: C)` left with `C`).
 ////
 //// `upto(3)` yields 0, 1, 2 from its loop and then `break 7` at the level of
 //// the body — top-level position, so it is the generator's, not a loop's —
@@ -9,18 +9,15 @@
 //// a bare `break` at that position ends the generator, so nothing after it is
 //// emitted.
 ////
-//// The checker types `break v` against the item type `T` and the transform
-//// rewrites it to `yield v; return;`, which commonJS's `function*` runs. The
-//// eager lowerings of erlang, wasm and beam do not stop at a `return;` in a
-//// generator body (measured at `4fe1747e`: `nums2() -> 1, 2, undefined.` on
-//// erlang; `expected i32 but nothing on stack` on wasm) — that is the
-//// generator-scope lowering decision 105 re-specifies, and their lines are
-//// pinned in `expected-failures.txt` against it.
+//// The checker types `break v` against the item type `T`; the generator scope
+//// of decision 105 lowers it (emit and end). commonJS's `function*` and beam
+//// run the cell; the eager erlang and wasm scopes are pinned in
+//// `expected-failures.txt`.
 
 #[@resultGenerator]
 fn upto(n: i32) -> @ResultGenerator<i32, string> {
     var i = 0;
-    loop (i < n) { yield i; i = i + 1; };
+    while (i < n) { yield i; i = i + 1; };
     break 7;
 }
 
@@ -41,14 +38,14 @@ fn last() -> @Generator<i32> {
 // A plain `fn` iterates a `@Generator<T>`.
 fn plainDigits(g: @Generator<i32>) -> string {
     var acc = "";
-    loop (g) { x -> acc = acc + x.toString(); };
+    for (g) { x -> acc = acc + x.toString(); };
     return acc;
 }
 
 #[@result]
 fn digits(g: @ResultGenerator<i32, string>) -> @Result<string, string> {
     var acc = "";
-    loop (g) { x -> acc = acc + x.toString(); };
+    for (g) { x -> acc = acc + x.toString(); };
     return acc;
 }
 

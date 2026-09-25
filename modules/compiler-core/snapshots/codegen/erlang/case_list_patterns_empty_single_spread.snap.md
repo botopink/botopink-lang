@@ -12,7 +12,7 @@ fn describe() -> string {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 describe() ->
     Items = [<<"a">>, <<"b">>, <<"c">>],

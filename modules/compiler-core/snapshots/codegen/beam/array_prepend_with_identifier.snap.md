@@ -6,15 +6,15 @@ val list = [1, 2, ..rest];
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 6}.
 
 {function, rest, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, rest}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, rest}, 0}.
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -34,8 +34,8 @@ val list = [1, 2, ..rest];
 
 {function, list, 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, list}, 0}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, list}, 0}.
   {label, 5}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn countUp(x: i32) {
-    loop (x..) { i ->
+    for (x..) { i ->
         if (i > 100) {
           break;
         };

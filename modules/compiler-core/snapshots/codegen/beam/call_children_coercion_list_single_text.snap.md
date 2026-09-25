@@ -9,15 +9,15 @@ val txt = box("hi");
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 12}.
 
 {function, node, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, node}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, node}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {move, {literal, <<"n">>}, {x, 0}}.
@@ -26,8 +26,8 @@ val txt = box("hi");
 
 {function, box, 1, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, box}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, box}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -38,8 +38,8 @@ val txt = box("hi");
 
 {function, many, 0, 7}.
   {label, 6}.
-    {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, many}, 0}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, many}, 0}.
   {label, 7}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -60,8 +60,8 @@ val txt = box("hi");
 
 {function, one, 0, 9}.
   {label, 8}.
-    {line, [{location, "main.erl", 4}]}.
-    {func_info, {atom, main}, {atom, one}, 0}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, one}, 0}.
   {label, 9}.
     {allocate, 0, 0}.
     {call, 0, {f, 3}}.
@@ -71,8 +71,8 @@ val txt = box("hi");
 
 {function, txt, 0, 11}.
   {label, 10}.
-    {line, [{location, "main.erl", 5}]}.
-    {func_info, {atom, main}, {atom, txt}, 0}.
+    {line, [{location, "test@main.erl", 5}]}.
+    {func_info, {atom, test@main}, {atom, txt}, 0}.
   {label, 11}.
     {allocate, 0, 0}.
     {move, {literal, <<"hi">>}, {x, 0}}.

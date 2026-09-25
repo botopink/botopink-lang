@@ -8,7 +8,7 @@ fn make() -> #(#(i32, i32), i32) {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 make() ->
     Outer = {{1, 2}, 3},

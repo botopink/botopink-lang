@@ -14,14 +14,14 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Contador: n
 
 main() ->
-    C = {main__t__contador, 5},
-    '__bp_print'([main__t__contador:atual(C)]).
+    C = {test@main@@Contador, 5},
+    '__bp_print'([test@main@@Contador:atual(C)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -49,9 +49,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__contador.erl
+----- ERLANG -- test@main@@Contador.erl
 ```erlang
--module(main__t__contador).
+-module(test@main@@Contador).
 -export([atual/1, '__bp_get'/2, '__bp_format'/1]).
 
 atual(Self) ->

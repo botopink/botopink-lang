@@ -18,14 +18,14 @@ pub fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 -export([main/0]).
 
 %% type Cell: value, set
 
 mk(V) ->
-    {main__t__cell, V, fun(Next) ->
+    {test@main@@Cell, V, fun(Next) ->
         (Next + V)
     end}.
 
@@ -60,9 +60,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__cell.erl
+----- ERLANG -- test@main@@Cell.erl
 ```erlang
--module(main__t__cell).
+-module(test@main@@Cell).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, value) -> element(2, V);

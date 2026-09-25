@@ -2,7 +2,7 @@
 ```botopink
 fn main() {
     val messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
-    loop (messages, 0..) { msg, i ->
+    for (messages) { msg ->
         @print(msg);
     };
 }
@@ -10,14 +10,14 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
     Messages = [<<"Erro 404">>, <<"Sucesso 200">>, <<"Aviso 500">>],
-    lists:foreach(fun({I, Msg}) ->
+    lists:foreach(fun(Msg) ->
         '__bp_print'([Msg])
-    end, lists:enumerate(0, Messages)).
+    end, Messages).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

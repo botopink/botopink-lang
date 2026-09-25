@@ -13,14 +13,14 @@ fn handle() -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type ErrorKind
 %%   NotFound
 %%   Timeout
 
 fetch() ->
-    {error, main__t__errorkind__v__notfound}.
+    {error, test@main@@ErrorKind__v__notfound}.
 
 handle() ->
     R = case try
@@ -35,13 +35,13 @@ handle() ->
     R.
 ```
 
------ ERLANG -- main__t__errorkind.erl
+----- ERLANG -- test@main@@ErrorKind.erl
 ```erlang
--module(main__t__errorkind).
+-module(test@main@@ErrorKind).
 -export(['__bp_format'/1]).
 
-'__bp_format'(main__t__errorkind__v__notfound) -> {variant, "ErrorKind.NotFound", []};
-'__bp_format'(main__t__errorkind__v__timeout) -> {variant, "ErrorKind.Timeout", []}.
+'__bp_format'(test@main@@ErrorKind__v__notfound) -> {variant, "ErrorKind.NotFound", []};
+'__bp_format'(test@main@@ErrorKind__v__timeout) -> {variant, "ErrorKind.Timeout", []}.
 ```
 
 ----- RUN LOG -----

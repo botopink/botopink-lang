@@ -634,10 +634,12 @@ test "js: pipeline ---- with labeled args" {
 
 test "js: range ---- iterate over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn sumTo(n: i32) -> i32[] {
-        \\    return loop (0..n) { i ->
-        \\        yield i;
+        \\fn sumTo(n: i32) -> i32 {
+        \\    var sum = 0;
+        \\    for (0..n) { i ->
+        \\        sum = sum + i;
         \\    };
+        \\    return sum;
         \\}
     );
 }
@@ -645,7 +647,7 @@ test "js: range ---- iterate over range" {
 test "js: range ---- open-ended range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn countUp(x: i32) {
-        \\    loop (x..) { i ->
+        \\    for (x..) { i ->
         \\        if (i > 100) {
         \\          break;
         \\        };
@@ -872,23 +874,22 @@ test "js: reserved word identifiers" {
 }
 
 test "js: iterator fromList yields array items" {
-    // A `#[@generator] fn -> @Generator<T>` generator: `loop (xs) { yield }` must
-    // lower to a real `for…of` with native `yield` (not `.map()`). Recursive
-    // delegation (the legacy `return <iter>` shortcut) is now forbidden by
-    // RI1 (§1I). `@Generator<T>` is the infallible wrapper a plain `fn` such
-    // as `toList` may iterate (decision 103 — a loop over a `@ResultGenerator`
-    // is a `try` in the iterating body, which a plain `fn` has no channel for).
+    // A `#[@generator] fn -> @Generator<T>` generator: `for (xs) { x -> yield x; }`
+    // must lower to a real `for…of` with native `yield` (not `.map()`).
+    // Recursive delegation (the legacy `return <iter>` shortcut) is forbidden
+    // by RI1 (§1I). A `@Generator<T>` is infallible, so a plain fn iterates it
+    // (decision 103); a fallible one needs a body that grants `try`.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\#[@generator]
         \\fn fromList<T>(xs: Array<T>) -> @Generator<T> {
-        \\    loop (xs) { item ->
+        \\    for (xs) { item ->
         \\        yield item;
         \\    };
         \\}
         \\
         \\fn toList<T>(iter: @Generator<T>) -> Array<T> {
         \\    var out = [];
-        \\    loop (iter) { item ->
+        \\    for (iter) { item ->
         \\        out.push(item);
         \\    };
         \\    return out;

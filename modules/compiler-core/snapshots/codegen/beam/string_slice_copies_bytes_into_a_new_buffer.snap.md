@@ -8,15 +8,15 @@ fn first3() -> string {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 10}.
 
 {function, first3, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, first3}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, first3}, 0}.
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -29,8 +29,8 @@ fn first3() -> string {
 
 {function, 'String_slice', 3, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, 'String_slice'}, 3}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, 'String_slice'}, 3}.
   {label, 5}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -48,8 +48,8 @@ fn first3() -> string {
 
 {function, '__bp_erl_eval', 2, 8}.
   {label, 7}.
-    {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, '__bp_erl_eval'}, 2}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_erl_eval'}, 2}.
   {label, 8}.
     {allocate, 1, 2}.
     {init_yregs, {list, [{y, 0}]}}.

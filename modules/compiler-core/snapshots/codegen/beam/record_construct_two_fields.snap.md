@@ -8,34 +8,34 @@ fn make() -> Point {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 4}.
 
 {function, make, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, make}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, make}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {test_heap, 4, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__point}, {integer, 3}, {integer, 4}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Point}, {integer, 3}, {integer, 4}]}}.
     {deallocate, 0}.
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__point.S
+----- BEAM ASSEMBLY -- test@main@@Point.S
 ```erlang
-{module, main__t__point}.
+{module, test@main@@Point}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 8}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "main__t__point.erl", 1}]}.
-    {func_info, {atom, main__t__point}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Point.erl", 1}]}.
+    {func_info, {atom, test@main@@Point}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, x}]}.
     {move, {x, 0}, {x, 1}}.
@@ -52,8 +52,8 @@ fn make() -> Point {
 
 {function, '__bp_format', 1, 7}.
   {label, 6}.
-    {line, [{location, "main__t__point.erl", 1}]}.
-    {func_info, {atom, main__t__point}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Point.erl", 1}]}.
+    {func_info, {atom, test@main@@Point}, {atom, '__bp_format'}, 1}.
   {label, 7}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

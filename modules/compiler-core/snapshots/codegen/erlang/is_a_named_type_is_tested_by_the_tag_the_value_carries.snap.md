@@ -26,7 +26,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Person: name, age
@@ -39,22 +39,22 @@ fn main() {
 
 nameOf(V) ->
     case V of
-        Person when ((is_tuple(Person) andalso (tuple_size(Person) =:= 3)) andalso (element(1, Person) =:= main__t__person)) ->
+        Person when ((is_tuple(Person) andalso (tuple_size(Person) =:= 3)) andalso (element(1, Person) =:= test@main@@Person)) ->
             <<"person">>;
-        Vec when ((is_tuple(Vec) andalso (tuple_size(Vec) =:= 3)) andalso (element(1, Vec) =:= main__t__vec)) ->
+        Vec when ((is_tuple(Vec) andalso (tuple_size(Vec) =:= 3)) andalso (element(1, Vec) =:= test@main@@Vec)) ->
             <<"vec">>
     end.
 
 main() ->
-    U = {main__t__vec, <<"Ana">>, 30},
-    '__bp_print'([((is_tuple(U) andalso (tuple_size(U) =:= 3)) andalso (element(1, U) =:= main__t__vec))]),
-    '__bp_print'([((is_tuple(U) andalso (tuple_size(U) =:= 3)) andalso (element(1, U) =:= main__t__person))]),
-    S = {main__t__shape__v__circle, 4},
-    '__bp_print'([((S =:= main__t__shape__v__dot) orelse ((is_tuple(S) andalso (tuple_size(S) =:= 2)) andalso (element(1, S) =:= main__t__shape__v__circle)))]),
-    D = main__t__shape__v__dot,
-    '__bp_print'([((D =:= main__t__shape__v__dot) orelse ((is_tuple(D) andalso (tuple_size(D) =:= 2)) andalso (element(1, D) =:= main__t__shape__v__circle)))]),
-    '__bp_print'([nameOf({main__t__person, <<"Ana">>, 30})]),
-    '__bp_print'([nameOf({main__t__vec, <<"Ana">>, 30})]).
+    U = {test@main@@Vec, <<"Ana">>, 30},
+    '__bp_print'([((is_tuple(U) andalso (tuple_size(U) =:= 3)) andalso (element(1, U) =:= test@main@@Vec))]),
+    '__bp_print'([((is_tuple(U) andalso (tuple_size(U) =:= 3)) andalso (element(1, U) =:= test@main@@Person))]),
+    S = {test@main@@Shape__v__circle, 4},
+    '__bp_print'([((S =:= test@main@@Shape__v__dot) orelse ((is_tuple(S) andalso (tuple_size(S) =:= 2)) andalso (element(1, S) =:= test@main@@Shape__v__circle)))]),
+    D = test@main@@Shape__v__dot,
+    '__bp_print'([((D =:= test@main@@Shape__v__dot) orelse ((is_tuple(D) andalso (tuple_size(D) =:= 2)) andalso (element(1, D) =:= test@main@@Shape__v__circle)))]),
+    '__bp_print'([nameOf({test@main@@Person, <<"Ana">>, 30})]),
+    '__bp_print'([nameOf({test@main@@Vec, <<"Ana">>, 30})]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -82,9 +82,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__person.erl
+----- ERLANG -- test@main@@Person.erl
 ```erlang
--module(main__t__person).
+-module(test@main@@Person).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, name) -> element(2, V);
@@ -93,9 +93,9 @@ main(_Args) ->
 '__bp_format'(V) -> {record, "Person", [{"name", element(2, V)}, {"age", element(3, V)}]}.
 ```
 
------ ERLANG -- main__t__vec.erl
+----- ERLANG -- test@main@@Vec.erl
 ```erlang
--module(main__t__vec).
+-module(test@main@@Vec).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, name) -> element(2, V);
@@ -104,13 +104,13 @@ main(_Args) ->
 '__bp_format'(V) -> {record, "Vec", [{"name", element(2, V)}, {"age", element(3, V)}]}.
 ```
 
------ ERLANG -- main__t__shape.erl
+----- ERLANG -- test@main@@Shape.erl
 ```erlang
--module(main__t__shape).
+-module(test@main@@Shape).
 -export(['__bp_format'/1]).
 
-'__bp_format'(main__t__shape__v__dot) -> {variant, "Shape.Dot", []};
-'__bp_format'({main__t__shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]}.
+'__bp_format'(test@main@@Shape__v__dot) -> {variant, "Shape.Dot", []};
+'__bp_format'({test@main@@Shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]}.
 ```
 
 ----- RUN LOG -----

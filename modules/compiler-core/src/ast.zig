@@ -558,22 +558,23 @@ pub fn JumpExprOf(comptime phase: Phase) type {
         try_: ?*ExprOf(phase),
         /// `await expr` — suspend until the `@Future` operand resolves; result is its `T`
         await_: *ExprOf(phase),
-        /// `break [:label] [expr]` ---- exit a block/loop/iterator early.
-        /// `value=null` is bare `break`; the optional `:label` targets a named
-        /// outer loop or `#[@resultGenerator]` / `#[@futureGenerator]` fn scope (§1I
-        /// REGRAS DE ESCOPO: an unlabelled `break` inside a nested loop binds
-        /// to the loop, not the iterator).
+        /// `break [:label] [expr]` ---- leave the nearest loop, or end the
+        /// generator scope. `value=null` is bare `break`: it leaves the nearest
+        /// `loop`/`while`/`for`, or ends the generator when no loop encloses
+        /// it. `break v` (decision 105) emits `v` and ends the nearest generator
+        /// scope — an annotated fn or an annotated `loop` — and needs one. The
+        /// optional `:label` names an enclosing labelled loop.
         @"break": struct {
             label: ?[]const u8 = null,
             value: ?*ExprOf(phase),
         },
         /// `continue` ---- skip the rest of this loop iteration
         @"continue",
-        /// `yield [:label] expr` ---- in a generator (`#[@resultGenerator]` /
-        /// `#[@generator]` / `#[@futureGenerator]` fn), suspend emitting `expr`;
-        /// in a plain loop, accumulate `expr` into the loop's result list. The
-        /// optional `:label` disambiguates which generator/loop scope the yield
-        /// targets.
+        /// `yield [:label] expr` ---- emit `expr` from the nearest generator
+        /// scope (an annotated fn or an annotated `loop`, decision 105) and
+        /// continue; an unannotated `while`/`for`/`loop` between the `yield`
+        /// and that scope is transparent. The optional `:label` names the
+        /// generator scope (a fn's signature label or a `loop :name`).
         yield: struct {
             label: ?[]const u8 = null,
             value: ?*ExprOf(phase),
@@ -631,28 +632,63 @@ pub fn BranchExprOf(comptime phase: Phase) type {
     };
 }
 
-/// Loop expressions: iteration constructs.
+/// The keyword a loop node was written with (decision 105): three keywords,
+/// one meaning each. `keyword` is what the formatter prints back; `condition`
+/// and `awaitLoop` are the shape the checker and the backends read.
+pub const LoopKeyword = enum {
+    /// `loop { … }` — repeats until `break`; `#[@generator] loop { … }` when
+    /// `generator` is set.
+    loop,
+    /// `while (cond) { … }` — repeats while `cond` holds.
+    while_,
+    /// `for (coll) { x -> … }` / `for await (gen) { x -> … }` — iterates a
+    /// collection, a range or a generator.
+    for_,
+
+    pub fn spelling(self: LoopKeyword) []const u8 {
+        return switch (self) {
+            .loop => "loop",
+            .while_ => "while",
+            .for_ => "for",
+        };
+    }
+};
+
+/// Loop expressions: `loop`, `while` and `for` (decision 105).
 /// Flattened: loop fields live directly on the node (no `.kind` indirection).
+/// Every unannotated loop is a statement typed `void`; the annotated
+/// `#[@generator] loop { … }` is an expression worth the annotation's wrapper.
 pub fn LoopExprOf(comptime phase: Phase) type {
     return struct {
         loc: Loc,
         type_: if (phase == .typed) *@import("./comptime/types.zig").Type else void =
             if (phase == .typed) undefined else {},
-        /// `loop (iter) { params -> body }` or `loop (iter, 0..) { item, i -> body }`
+        /// The keyword written: `loop`, `while` or `for`.
+        keyword: LoopKeyword = .loop,
+        /// `#[@generator] loop { … }` — the effect the annotation names; the
+        /// body is a generator scope and the node is worth the effect's
+        /// wrapper. Only `.loop` carries one.
+        generator: ?EffectKind = null,
+        /// `for (iter) { param -> body }`: the collection, range or generator
+        /// iterated; `while (iter) { … }`: the condition. A `loop { … }` is the
+        /// condition loop over the literal `true`.
         iter: *ExprOf(phase),
+        /// Retired with decision 105 (`for (xs, 0..) { x, i -> }` no longer
+        /// parses); always null. Leaves with the backends' index lowering.
         indexRange: ?*ExprOf(phase),
+        /// The one name a `for` binds; empty for `while` and `loop`.
         params: []const []const u8,
         /// Location of the first parameter (the loop's own location when it has none).
         paramsLoc: Loc = .{ .line = 0, .col = 0 },
-        /// Decision 8 §10 — `loop (condition) { … }` / `loop { … }`: repeat while
-        /// `iter` (a `bool`) holds, binding nothing. Set by the parser for
-        /// `loop { … }` and a syntactically boolean condition, and by the
-        /// comptime transform for any `iter` inference typed `bool`.
+        /// True for `while (cond) { … }` and `loop { … }`: repeat while `iter`
+        /// (a `bool`) holds, binding nothing.
         condition: bool = false,
         body: []StmtOf(phase),
-        /// `loop await (iter) { ... }` ---- iterate an `@FutureGenerator`, awaiting each item.
+        /// `for await (iter) { ... }` ---- iterate an `@FutureGenerator`, awaiting each item.
         awaitLoop: bool = false,
-        /// Optional loop label (`loop :acc (iter) { ... }`) for `yield :label` disambiguation.
+        /// Optional label (`for :outer (xs) { … }`, `while :w (…)`, `loop :l {`)
+        /// for `break :label` / `continue :label`, and — on an annotated
+        /// `loop` — for `yield :label` / `break :label v`.
         label: ?[]const u8 = null,
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -912,10 +948,15 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             /// Arena-owned; not freed by `deinit`.
             labels: []const []const u8 = &.{},
         },
-        /// `start..end` or `start..` ---- integer range (end=null means open)
+        /// `start..end` (exclusive), `start...end` (inclusive, decision 105 —
+        /// the pattern token of decision 53 as a value) or `start..` (open,
+        /// end=null) ---- an integer range. Not a value: it is the iteration of a
+        /// `for` and the bounds of a slice, never a `Range` to hold.
         range: struct {
             start: *ExprOf(phase),
             end: ?*ExprOf(phase),
+            /// `a...b` — both ends included. Only with an `end`.
+            inclusive: bool = false,
         },
         /// `case .identifier{ arm* }` or `case expr1, expr2 { arm* }`
         case: struct {

@@ -30,11 +30,6 @@ pub const ResultJumpLowerings = std.AutoHashMap(ast.Loc, envMod.ResultJumpLoweri
 /// shape of `ResultJumpLowerings` — only the wrap callee names differ.
 pub const FutureJumpLowerings = std.AutoHashMap(ast.Loc, envMod.FutureJumpLowering);
 
-/// Map of the `break` sites that target a generator body itself (by source
-/// loc), produced by inference (decision 103). `expandGeneratorBreaks` turns
-/// each into `yield <v>; return;` / `return;` at statement level.
-pub const GeneratorJumpLowerings = std.AutoHashMap(ast.Loc, envMod.GeneratorJumpLowering);
-
 /// Map of stdlib-module method calls on builtin-array receivers (by source loc).
 pub const StdArrayLowerings = std.AutoHashMap(ast.Loc, envMod.StdArrayLowering);
 
@@ -50,8 +45,6 @@ pub const EnumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
 /// emit and **none of them learns a new rule**.
 pub const IndexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
 /// Decision 8 §10 — locs of loops inference typed as condition loops.
-pub const ConditionLoops = std.AutoHashMap(ast.Loc, void);
-
 /// C-04 (01 step 7, N1) — map of call sites (by source loc) to the argument
 /// fill inference planned for them. Written whenever a call omitted an argument
 /// whose parameter declares a default; the transform materialises the plan so
@@ -81,9 +74,6 @@ const Aggregator = struct {
     /// `return`/`throw` → `__bp_future_resolved`/`__bp_future_rejected`
     /// wrappings keyed by jump loc (#[@future] F4F-T1).
     future_jump_lowerings: *const FutureJumpLowerings,
-    /// Decision 103 — generator-level `break`s, expanded at statement level by
-    /// `expandGeneratorBreaks` after the expression walk.
-    generator_jump_lowerings: *const GeneratorJumpLowerings,
     /// Stdlib array method dispatch lowerings keyed by call loc.
     std_array_lowerings: *const StdArrayLowerings,
     /// §enum-sections F2 — untyped AST rewrites for dot-shorthand chains
@@ -96,7 +86,6 @@ const Aggregator = struct {
     /// method the language says it is.
     index_rewrites: *const IndexRewrites,
     /// Decision 8 §10 — loops to mark `condition` (their `iter` is a `bool`).
-    condition_loops: *const ConditionLoops,
     optional_null_cases: *const OptionalNullCases,
     /// True for the aggregator that walks method bodies: every map but
     /// `src_rewrites` is empty and the one unconditional rewrite (the `${}`
@@ -124,7 +113,7 @@ const Aggregator = struct {
     /// sites need their defaults as much as a fn body's do.
     default_injections: *const DefaultInjections,
 
-    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, generator_jump_lowerings: *const GeneratorJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, index_rewrites: *const IndexRewrites, condition_loops: *const ConditionLoops, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
+    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, index_rewrites: *const IndexRewrites, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
         return .{
             .spec_cache = specialize.SpecCache.init(allocator),
             .method_lowerings = method_lowerings,
@@ -132,11 +121,9 @@ const Aggregator = struct {
             .src_rewrites = src_rewrites,
             .result_jump_lowerings = result_jump_lowerings,
             .future_jump_lowerings = future_jump_lowerings,
-            .generator_jump_lowerings = generator_jump_lowerings,
             .std_array_lowerings = std_array_lowerings,
             .enum_section_rewrites = enum_section_rewrites,
             .index_rewrites = index_rewrites,
-            .condition_loops = condition_loops,
             .optional_null_cases = optional_null_cases,
             .total_calls = std.StringHashMap(usize).init(allocator),
             .specialized_calls = std.StringHashMap(usize).init(allocator),
@@ -197,16 +184,14 @@ pub fn transform(
     src_rewrites: *const TemplateExpansions,
     result_jump_lowerings: *const ResultJumpLowerings,
     future_jump_lowerings: *const FutureJumpLowerings,
-    generator_jump_lowerings: *const GeneratorJumpLowerings,
     std_array_lowerings: *const StdArrayLowerings,
     enum_section_rewrites: *const EnumSectionRewrites,
     index_rewrites: *const IndexRewrites,
-    condition_loops: *const ConditionLoops,
     optional_null_cases: *const OptionalNullCases,
     ctor_params: std.StringHashMap([]const ast.Param),
     default_injections: *const DefaultInjections,
 ) !ast.Program {
-    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, generator_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, condition_loops, optional_null_cases, ctor_params, default_injections);
+    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
 
     // The method-body aggregator (`src_only`): the `@src()` splice alone.
@@ -222,15 +207,13 @@ pub fn transform(
     defer empty_sa.deinit();
     var empty_es = EnumSectionRewrites.init(allocator);
     defer empty_es.deinit();
-    var empty_cl = ConditionLoops.init(allocator);
-    defer empty_cl.deinit();
     var empty_onc = OptionalNullCases.init(allocator);
     defer empty_onc.deinit();
     const empty_vals = std.StringHashMap([]const u8).init(allocator);
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, generator_jump_lowerings, &empty_sa, &empty_es, index_rewrites, &empty_cl, &empty_onc, empty_ctor, default_injections);
+    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, &empty_sa, &empty_es, index_rewrites, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
     defer src_agg.deinit(allocator);
 
@@ -287,10 +270,6 @@ pub fn transform(
             for (fn_decl.body) |*stmt| {
                 rewriteStmt(&agg, fn_decls, comptime_arrays, stmt) catch return error.OutOfMemory;
             }
-            // Decision 103 — a generator-level `break <v>` / `break` is two
-            // statements (`yield <v>; return;` / `return;`), so it is expanded
-            // on the statement LIST once the expression walk is done.
-            fn_decl.body = expandGeneratorBreaks(allocator, generator_jump_lowerings, fn_decl.body) catch return error.OutOfMemory;
         }
         if (decl.* == .@"test") {
             const test_decl = &decl.@"test";
@@ -314,23 +293,6 @@ pub fn transform(
             if (decl.* == .implement) {
                 for (decl.implement.methods) |*m| {
                     for (m.body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
-                }
-            }
-        }
-        // Decision 103 — a generator METHOD's `break <v>` is the method's own
-        // last item, exactly as a fn's (`run/effect_method.bp`: an effect on a
-        // method is the method's). Statement-level only, so it is safe on the
-        // method bodies the full walk does not visit.
-        if (generator_jump_lowerings.count() > 0) {
-            if (decl.* == .type_) {
-                for (decl.type_.methods) |*m| {
-                    const body = m.body orelse continue;
-                    m.body = expandGeneratorBreaks(allocator, generator_jump_lowerings, body) catch return error.OutOfMemory;
-                }
-            }
-            if (decl.* == .implement) {
-                for (decl.implement.methods) |*m| {
-                    m.body = expandGeneratorBreaks(allocator, generator_jump_lowerings, m.body) catch return error.OutOfMemory;
                 }
             }
         }
@@ -751,54 +713,6 @@ fn tryLowerFutureJump(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!bool {
     return true;
 }
 
-/// Decision 103 — expand every generator-level `break` inference recorded in
-/// `lowerings` (a `break <v>` / `break` in top-level position of a generator
-/// body, or labelled with the fn's own label): `break <v>;` becomes
-/// `yield <v>; return;` and `break;` becomes `return;`. The walk descends into
-/// `if` branches and loop bodies (a labelled `break :fn v` inside a loop is the
-/// generator's too — the map says which). Answers `stmts` itself when nothing
-/// in it is listed, so an unlisted body costs one scan and no allocation.
-fn expandGeneratorBreaks(allocator: std.mem.Allocator, lowerings: *const GeneratorJumpLowerings, stmts: []ast.Stmt) error{OutOfMemory}![]ast.Stmt {
-    if (lowerings.count() == 0) return stmts;
-    var out: std.ArrayListUnmanaged(ast.Stmt) = .empty;
-    var changed = false;
-    for (stmts) |*stmt| {
-        switch (stmt.expr) {
-            .jump => |j| if (j.kind == .@"break") {
-                if (lowerings.get(j.loc)) |lowering| {
-                    if (!changed) {
-                        changed = true;
-                        try out.ensureTotalCapacity(allocator, stmts.len + 1);
-                        const idx = (@intFromPtr(stmt) - @intFromPtr(stmts.ptr)) / @sizeOf(ast.Stmt);
-                        try out.appendSlice(allocator, stmts[0..idx]);
-                    }
-                    switch (lowering) {
-                        .emit_and_end => {
-                            var yield_stmt = stmt.*;
-                            yield_stmt.expr = ast.Expr{ .jump = .{ .loc = j.loc, .kind = .{ .yield = .{ .label = null, .value = j.kind.@"break".value } } } };
-                            try out.append(allocator, yield_stmt);
-                        },
-                        .end => {},
-                    }
-                    try out.append(allocator, .{ .expr = ast.Expr{ .jump = .{ .loc = j.loc, .kind = .{ .@"return" = null } } } });
-                    continue;
-                }
-            },
-            .branch => |*br| if (br.kind == .if_) {
-                const if_node = &br.kind.if_;
-                if_node.then_ = try expandGeneratorBreaks(allocator, lowerings, if_node.then_);
-                if (if_node.else_) |else_stmts| {
-                    if_node.else_ = try expandGeneratorBreaks(allocator, lowerings, @constCast(else_stmts));
-                }
-            },
-            .loop => |*lp| lp.body = try expandGeneratorBreaks(allocator, lowerings, lp.body),
-            else => {},
-        }
-        if (changed) try out.append(allocator, stmt.*);
-    }
-    return if (changed) try out.toOwnedSlice(allocator) else stmts;
-}
-
 fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), stmt: *ast.Stmt) ScanError!void {
     // Template-call expansion (F6): substitute the expansion recorded by
     // inference, then process the spliced code like ordinary AST.
@@ -869,7 +783,6 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             },
         },
         .loop => |*lp| {
-            if (agg.condition_loops.contains(lp.loc)) lp.condition = true;
             rewriteExpr(agg, fn_decls, comptime_arrays, lp.iter) catch return ScanError.OutOfMemory;
             if (lp.indexRange) |ir| rewriteExpr(agg, fn_decls, comptime_arrays, ir) catch return ScanError.OutOfMemory;
             for (lp.body) |*s| rewriteStmt(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
@@ -1058,7 +971,6 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             },
         },
         .loop => |*lp| {
-            if (agg.condition_loops.contains(lp.loc)) lp.condition = true;
             rewriteExpr(agg, fn_decls, comptime_arrays, lp.iter) catch return ScanError.OutOfMemory;
             if (lp.indexRange) |ir| rewriteExpr(agg, fn_decls, comptime_arrays, ir) catch return ScanError.OutOfMemory;
             for (lp.body) |*s| rewriteStmt(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;

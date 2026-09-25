@@ -5,14 +5,14 @@ pub type Pato(id: i32)
 
 ----- ERLANG -- pond.erl
 ```erlang
--module(pond).
+-module(test@pond).
 
 %% type Pato: id
 ```
 
------ ERLANG -- pond__t__pato.erl
+----- ERLANG -- test@pond@@Pato.erl
 ```erlang
--module(pond__t__pato).
+-module(test@pond@@Pato).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, id) -> element(2, V).
@@ -43,7 +43,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% import Pato
@@ -56,7 +56,7 @@ swim(Self) ->
     element(2, Self).
 
 main() ->
-    Donald = {pond__t__pato, 2},
+    Donald = {test@pond@@Pato, 2},
     '__bp_print'([swim(Donald)]).
 
 '__bp_print'(Values) ->

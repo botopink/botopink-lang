@@ -59,6 +59,29 @@ pub const effect_try_without_fallible_channel: []const u8 = "effect-try-without-
 /// and broken at run time.
 pub const option_expect_removed: []const u8 = "option-expect-removed";
 
+// ── decision 105 — the three loops and the generator scope ───────────────────
+
+/// `break <value>` outside a generator scope (an annotated fn or an annotated
+/// `loop`), and not the value of a `comptime` block or a `case` arm's block.
+pub const break_value_outside_generator: []const u8 = "break-value-outside-generator";
+/// A bare `break` with no loop, generator scope or value block to leave.
+pub const break_outside_loop: []const u8 = "break-outside-loop";
+/// `continue` with no enclosing loop.
+pub const continue_outside_loop: []const u8 = "continue-outside-loop";
+/// `for (cond) { x -> … }` over a `bool` — a condition is a `while`.
+pub const for_over_condition: []const u8 = "for-over-condition";
+/// `for` over a fallible generator in a body the chain grants no `try`.
+pub const for_over_fallible_generator: []const u8 = "for-over-fallible-generator";
+/// `for` (not `for await`) over an `@FutureGenerator`.
+pub const for_over_future_generator: []const u8 = "for-over-future-generator";
+/// `for await` over something that is not an `@FutureGenerator`.
+pub const for_await_expects_future_generator: []const u8 = "for-await-expects-future-generator";
+/// A `use`, or a `break :outer` / `continue :outer`, crossing the border of an
+/// annotated loop — its body is closed like a closure.
+pub const generator_loop_closed_scope: []const u8 = "generator-loop-closed-scope";
+/// `yield :label` naming a plain loop's label rather than a generator scope's.
+pub const yield_label_not_generator: []const u8 = "yield-label-not-generator";
+
 /// R7 — `await` outside `#[@future]` / `#[@futureGenerator]`.
 pub const effect_await_without_future: []const u8 = "effect-await-without-future";
 
@@ -332,6 +355,15 @@ pub const all_codes = [_][]const u8{
     fn_param_default_trailing_only_parse,
     fn_param_arity_exceeded,
     option_expect_removed,
+    break_value_outside_generator,
+    break_outside_loop,
+    continue_outside_loop,
+    for_over_condition,
+    for_over_fallible_generator,
+    for_over_future_generator,
+    for_await_expects_future_generator,
+    generator_loop_closed_scope,
+    yield_label_not_generator,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

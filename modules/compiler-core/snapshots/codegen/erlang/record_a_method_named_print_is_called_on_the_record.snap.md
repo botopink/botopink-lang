@@ -16,14 +16,14 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Doc: title
 
 main() ->
-    D = {main__t__doc, <<"hi">>},
-    '__bp_print'([main__t__doc:print(D)]).
+    D = {test@main@@Doc, <<"hi">>},
+    '__bp_print'([test@main@@Doc:print(D)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -51,9 +51,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__doc.erl
+----- ERLANG -- test@main@@Doc.erl
 ```erlang
--module(main__t__doc).
+-module(test@main@@Doc).
 -export([print/1, '__bp_get'/2, '__bp_format'/1]).
 
 print(Self) ->

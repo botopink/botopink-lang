@@ -16,7 +16,7 @@ test {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export([main/1]).
 
 add(A, B) ->

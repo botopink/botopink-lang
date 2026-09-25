@@ -5,7 +5,7 @@ val xs = ["hello", "world"];
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 xs() ->
     [<<"hello">>, <<"world">>].

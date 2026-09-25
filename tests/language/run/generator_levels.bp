@@ -4,7 +4,7 @@
 //// go somewhere, and the place is that body's error channel), so `digits` is
 //// `#[@result]`. `@Generator<T>` is infallible: `total` is a plain `fn` and
 //// iterates it with no level at all — that is what the infallible wrapper
-//// buys. `reject/loop_result_generator_in_plain_fn.bp` is the refusal.
+//// buys. `reject/for_fallible_generator_plain_fn.bp` is the refusal.
 
 #[@result]
 fn parse(n: i32) -> @Result<i32, string> {
@@ -17,27 +17,27 @@ fn parse(n: i32) -> @Result<i32, string> {
 fn upto(n: i32) -> @ResultGenerator<i32, string> {
     val limit = try parse(n);
     var i = 0;
-    loop (i < limit) { yield i; i = i + 1; };
+    while (i < limit) { yield i; i = i + 1; };
 }
 
 // The iterating body needs `try`'s level: `#[@result]`.
 #[@result]
 fn digits(n: i32) -> @Result<string, string> {
     var acc = "";
-    loop (upto(n)) { x -> acc = acc + x.toString(); };
+    for (upto(n)) { x -> acc = acc + x.toString(); };
     return acc;
 }
 
 #[@generator]
 fn nums(n: i32) -> @Generator<i32> {
     var i = 0;
-    loop (i < n) { yield i; i = i + 1; };
+    while (i < n) { yield i; i = i + 1; };
 }
 
 // A plain `fn` iterates an infallible generator.
 fn total(n: i32) -> i32 {
     var acc = 0;
-    loop (nums(n)) { x -> acc = acc + x; };
+    for (nums(n)) { x -> acc = acc + x; };
     return acc;
 }
 

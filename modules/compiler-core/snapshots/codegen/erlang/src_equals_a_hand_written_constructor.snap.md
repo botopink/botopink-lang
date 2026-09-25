@@ -10,13 +10,13 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type SourceLocation: file, line, column, fnName
 
 locate() ->
-    {main__t__sourcelocation, <<"main.bp">>, 2, 12, <<"locate">>}.
+    {test@main@@SourceLocation, <<"main.bp">>, 2, 12, <<"locate">>}.
 
 main() ->
     '__bp_print'([element(5, locate())]).
@@ -47,9 +47,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__sourcelocation.erl
+----- ERLANG -- test@main@@SourceLocation.erl
 ```erlang
--module(main__t__sourcelocation).
+-module(test@main@@SourceLocation).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, file) -> element(2, V);

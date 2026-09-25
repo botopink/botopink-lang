@@ -5,15 +5,15 @@ fn upTo(n: i32) -> @ResultGenerator<i32, string> {
 }
 fn total(n: i32) -> i32 {
     var acc = 0;
-    loop (upTo(n)) { x -> acc = acc + x; };
+    for (upTo(n)) { x -> acc = acc + x; };
     return acc;
 }
 
 ----- ERROR
-error: effect-try-without-fallible-channel: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`, `#[@futureGenerator]` or `#[@context]`; this fn carries no effect annotation — a loop over a `@ResultGenerator<T, E>` propagates its `Error(e)` as a `try` in the body that iterates it (decision 103)
+error: for-over-fallible-generator: `for` over a `@ResultGenerator` is an implicit `try` at every item, and this body grants no `try`
   ┌─ :7:5
   │
-7 │     loop (upTo(n)) { x -> acc = acc + x; };
+7 │     for (upTo(n)) { x -> acc = acc + x; };
   │     ^
 
-  hint: Give the enclosing fn an error channel (`#[@result]` or above), or iterate an infallible `@Generator<T>`.
+  hint: for-over-fallible-generator: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`, `#[@futureGenerator]` or `#[@context]`; this fn carries no effect annotation

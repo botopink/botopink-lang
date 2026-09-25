@@ -19,7 +19,7 @@ val HttpMethod = type {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type HttpMethod
 %%   Get
@@ -28,28 +28,28 @@ val HttpMethod = type {
 %%   Delete
 ```
 
------ ERLANG -- main__t__httpmethod.erl
+----- ERLANG -- test@main@@HttpMethod.erl
 ```erlang
--module(main__t__httpmethod).
+-module(test@main@@HttpMethod).
 -export([name/1, '__bp_format'/1]).
 
 name(M) ->
     Label = case M of
-        main__t__httpmethod__v__get ->
+        test@main@@HttpMethod__v__get ->
             <<"GET">>;
-        main__t__httpmethod__v__post ->
+        test@main@@HttpMethod__v__post ->
             <<"POST">>;
-        main__t__httpmethod__v__put ->
+        test@main@@HttpMethod__v__put ->
             <<"PUT">>;
         _ ->
             <<"DELETE">>
     end,
     Label.
 
-'__bp_format'(main__t__httpmethod__v__get) -> {variant, "HttpMethod.Get", []};
-'__bp_format'(main__t__httpmethod__v__post) -> {variant, "HttpMethod.Post", []};
-'__bp_format'(main__t__httpmethod__v__put) -> {variant, "HttpMethod.Put", []};
-'__bp_format'(main__t__httpmethod__v__delete) -> {variant, "HttpMethod.Delete", []}.
+'__bp_format'(test@main@@HttpMethod__v__get) -> {variant, "HttpMethod.Get", []};
+'__bp_format'(test@main@@HttpMethod__v__post) -> {variant, "HttpMethod.Post", []};
+'__bp_format'(test@main@@HttpMethod__v__put) -> {variant, "HttpMethod.Put", []};
+'__bp_format'(test@main@@HttpMethod__v__delete) -> {variant, "HttpMethod.Delete", []}.
 ```
 
 ----- RUN LOG -----

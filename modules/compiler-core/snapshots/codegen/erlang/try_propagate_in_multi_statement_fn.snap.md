@@ -19,15 +19,15 @@ fn pipeline() -> @Result<i32, IoError> {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type IoError: path
 
 step1() ->
-    {error, {main__t__ioerror, <<"/data">>}}.
+    {error, {test@main@@IoError, <<"/data">>}}.
 
 step2(X) ->
-    {error, {main__t__ioerror, <<"/out">>}}.
+    {error, {test@main@@IoError, <<"/out">>}}.
 
 pipeline() ->
     case step1() of
@@ -41,9 +41,9 @@ pipeline() ->
     end.
 ```
 
------ ERLANG -- main__t__ioerror.erl
+----- ERLANG -- test@main@@IoError.erl
 ```erlang
--module(main__t__ioerror).
+-module(test@main@@IoError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, path) -> element(2, V).

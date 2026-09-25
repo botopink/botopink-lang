@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn countdown(n: i32) {
-    loop (0..n) { i ->
+    for (0..n) { i ->
         @print(n - i);
     };
 }
@@ -12,7 +12,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 countdown(N) ->

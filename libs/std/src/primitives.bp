@@ -597,7 +597,7 @@ behavior Array<T> {
         var out = [];
         if (n <= 0) return out;
         val len = self.length;
-        loop (0..len) { k ->
+        for (0..len) { k ->
             if (k % n == 0) out = out.append([self.slice(k, k + n)]);
         };
         return out;
@@ -611,7 +611,7 @@ behavior Array<T> {
         if (n <= 0) return out;
         val windows = self.length - n + 1;
         if (windows <= 0) return out;
-        loop (0..windows) { k ->
+        for (0..windows) { k ->
             out = out.append([self.slice(k, k + n)]);
         };
         return out;

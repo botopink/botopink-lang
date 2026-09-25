@@ -2,7 +2,7 @@
 //// `fn`'s — decision 8 §9 names no exception for a receiver. commonJS read the
 //// effect off `ast.FnDecl.effect`, which a method has not, so `#[@resultGenerator] fn
 //// each(self: Self) -> @ResultGenerator<i32>` emitted as a plain method whose
-//// `loop … yield` lowered to a value-dropping `.map()`, and `loop (b.each())`
+//// `loop … yield` lowered to a value-dropping `.map()`, and `for (b.each())`
 //// died with `TypeError: b.each is not a function or its return value is not
 //// iterable` where erlang printed the elements.
 ////
@@ -21,19 +21,19 @@
 //// shape of a suspending effect on that backend and not this cell's claim.
 
 type Box(items: Array<i32>) {
-    #[@resultGenerator]
-    fn each(self: Self) -> @ResultGenerator<i32> {
-        loop (self.items) { x ->
+    #[@generator]
+    fn each(self: Self) -> @Generator<i32> {
+        for (self.items) { x ->
             yield x;
         };
     }
 }
 
 type Tally(seed: i32) implement Tally {
-    #[@resultGenerator]
-    fn upto(self: Self, n: i32) -> @ResultGenerator<i32> {
+    #[@generator]
+    fn upto(self: Self, n: i32) -> @Generator<i32> {
         var i = self.seed;
-        loop (i < n) {
+        while (i < n) {
             yield i;
             i = i + 1;
         };
@@ -43,7 +43,7 @@ type Tally(seed: i32) implement Tally {
     fn total(self: Self, n: i32) -> @Future<i32> {
         var acc = self.seed;
         var i = 0;
-        loop (i < n) {
+        while (i < n) {
             acc = acc + i;
             i = i + 1;
         };
@@ -56,22 +56,19 @@ type Shape {
     Rect(width: i32, height: i32),
     Dot,
 
-    #[@resultGenerator]
-    fn counts(self: Self, n: i32) -> @ResultGenerator<i32> {
+    #[@generator]
+    fn counts(self: Self, n: i32) -> @Generator<i32> {
         var i = 0;
-        loop (i < n) {
+        while (i < n) {
             yield i;
             i = i + 1;
         };
     }
 }
 
-// A loop over a `@ResultGenerator` is a `try` in the body that iterates it
-// (decision 103), so the consumer carries `#[@result]`.
-#[@result]
-fn digits(xs: @ResultGenerator<i32>) -> @Result<i32, string> {
+fn digits(xs: @Generator<i32>) -> i32 {
     var acc = 0;
-    loop (xs) { v ->
+    for (xs) { v ->
         acc = acc * 10 + v;
     };
     return acc;
@@ -79,13 +76,13 @@ fn digits(xs: @ResultGenerator<i32>) -> @Result<i32, string> {
 
 pub fn main() {
     // A method in the record's own body.
-    @print(try digits(Box(items: [1, 2, 3]).each()) catch 0);
+    @print(digits(Box(items: [1, 2, 3]).each()));
 
     // A method in an `implement` block.
-    @print(try digits(Tally(seed: 4).upto(7)) catch 0);
+    @print(digits(Tally(seed: 4).upto(7)));
 
     // A method in an enum's body.
-    @print(try digits(Shape.Rect(width: 5, height: 2).counts(3)) catch 0);
+    @print(digits(Shape.Rect(width: 5, height: 2).counts(3)));
 
     // `#[@future]` on a method: the body runs and prints its own answer.
     Tally(seed: 10).total(4);

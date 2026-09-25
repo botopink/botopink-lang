@@ -4,9 +4,9 @@
 //// `Circle` is a variant of `Shape` and a variant of `Hole`, and `.Circle`
 //// written as a call argument says which of the two only if something at the
 //// site does — and nothing here does. Decision 21's atom carries the enum, so
-//// there is no tag to render: `main__t__shape__v__circle` is a value no `case`
+//// there is no tag to render: `language_tests@main@@Shape__v__circle` is a value no `case`
 //// over `Hole` can match, which is exactly what erlang did before this —
-//// `{case_clause, main__t__shape__v__circle}` at run time, from a program that
+//// `{case_clause, language_tests@main@@Shape__v__circle}` at run time, from a program that
 //// compiled without a word. Decision 67: refuse rather than guess.
 ////
 //// `.targets` is `erlang` alone, and neither omission is this cell's shape:

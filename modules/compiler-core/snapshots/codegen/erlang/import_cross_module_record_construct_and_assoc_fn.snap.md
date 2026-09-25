@@ -15,29 +15,29 @@ pub type App(
 
 ----- ERLANG -- http.erl
 ```erlang
--module(http).
+-module(test@http).
 
 %% type Response: body
 
 %% type App: port, path
 ```
 
------ ERLANG -- http__t__response.erl
+----- ERLANG -- test@http@@Response.erl
 ```erlang
--module(http__t__response).
+-module(test@http@@Response).
 -export([ok/1, '__bp_get'/2, '__bp_format'/1]).
 
 ok(Body) ->
-    {http__t__response, Body}.
+    {test@http@@Response, Body}.
 
 '__bp_get'(V, body) -> element(2, V).
 
 '__bp_format'(V) -> {record, "Response", [{"body", element(2, V)}]}.
 ```
 
------ ERLANG -- http__t__app.erl
+----- ERLANG -- test@http@@App.erl
 ```erlang
--module(http__t__app).
+-module(test@http@@App).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, port) -> element(2, V);
@@ -64,15 +64,15 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% import Response, App
 
 main() ->
-    R = http__t__response:ok(<<"hi">>),
+    R = test@http@@Response:ok(<<"hi">>),
     '__bp_print'([element(2, R)]),
-    A = {http__t__app, 8080, <<"/">>},
+    A = {test@http@@App, 8080, <<"/">>},
     '__bp_print'([element(2, A)]).
 
 '__bp_print'(Values) ->

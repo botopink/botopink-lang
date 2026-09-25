@@ -1,0 +1,17 @@
+//// Decision 105 — inside a `#[@future]` fn a `#[@generator] loop` may not
+//// `await`: `@Generator<T>` has no suspension to honour. For `await` in the
+//// body one writes `#[@futureGenerator] loop { … }`.
+
+#[@future]
+fn fetch(n: i32) -> @Future<i32> { return n; }
+
+#[@future]
+fn feed() -> @Future<i32> {
+    val g = #[@generator] loop {
+        val v = await fetch(1);
+        break v;
+    };
+    return 1;
+}
+
+pub fn main() { @print(1); }

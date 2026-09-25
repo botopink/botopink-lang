@@ -10,7 +10,7 @@ fn capitalize(s: string) -> string {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %%% This module provides utility functions
 

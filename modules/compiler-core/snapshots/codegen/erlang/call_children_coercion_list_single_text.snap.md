@@ -9,7 +9,7 @@ val txt = box("hi");
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -compile({no_auto_import,[node/0]}).
 -export(['_botopink_init'/0]).
 
@@ -20,20 +20,20 @@ box(Children) ->
     <<"x">>.
 
 many() ->
-    case persistent_term:get({main, many}, '__bp_unset') of
-        '__bp_unset' -> __BpV = box([node(), node()]), persistent_term:put({main, many}, __BpV), __BpV;
+    case persistent_term:get({test@main, many}, '__bp_unset') of
+        '__bp_unset' -> __BpV = box([node(), node()]), persistent_term:put({test@main, many}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 
 one() ->
-    case persistent_term:get({main, one}, '__bp_unset') of
-        '__bp_unset' -> __BpV = box(node()), persistent_term:put({main, one}, __BpV), __BpV;
+    case persistent_term:get({test@main, one}, '__bp_unset') of
+        '__bp_unset' -> __BpV = box(node()), persistent_term:put({test@main, one}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 
 txt() ->
-    case persistent_term:get({main, txt}, '__bp_unset') of
-        '__bp_unset' -> __BpV = box(<<"hi">>), persistent_term:put({main, txt}, __BpV), __BpV;
+    case persistent_term:get({test@main, txt}, '__bp_unset') of
+        '__bp_unset' -> __BpV = box(<<"hi">>), persistent_term:put({test@main, txt}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 

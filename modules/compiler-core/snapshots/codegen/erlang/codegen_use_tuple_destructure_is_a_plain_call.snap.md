@@ -15,7 +15,7 @@ fn LikeWidget() -> Element {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Element: 
 
@@ -30,15 +30,15 @@ optimistic(Base, F) ->
         '__bp_add'(C, A)
     end),
     Push(Shown),
-    {main__t__element}.
+    {test@main@@Element}.
 
 '__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
 '__bp_add'(A, B) -> A + B.
 ```
 
------ ERLANG -- main__t__element.erl
+----- ERLANG -- test@main@@Element.erl
 ```erlang
--module(main__t__element).
+-module(test@main@@Element).
 -export(['__bp_format'/1]).
 
 '__bp_format'(_) -> {record, "Element", []}.

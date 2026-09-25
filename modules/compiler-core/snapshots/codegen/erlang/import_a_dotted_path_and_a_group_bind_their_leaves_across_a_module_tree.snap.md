@@ -11,7 +11,7 @@ pub fn label() -> string {
 
 ----- ERLANG -- shapes/circle.erl
 ```erlang
--module(shapes@circle).
+-module(test@shapes@circle).
 -export([name/0, label/0]).
 
 name() ->
@@ -38,7 +38,7 @@ pub fn label() -> string {
 
 ----- ERLANG -- shapes/helpers.erl
 ```erlang
--module(shapes@helpers).
+-module(test@shapes@helpers).
 -export([seven/0, label/0]).
 
 seven() ->
@@ -66,16 +66,16 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% import circleName, seven, label, circleLabel
 
 main() ->
-    '__bp_print'([shapes@circle:name()]),
-    '__bp_print'([shapes@helpers:seven()]),
-    '__bp_print'([shapes@helpers:label()]),
-    '__bp_print'([shapes@circle:label()]).
+    '__bp_print'([test@shapes@circle:name()]),
+    '__bp_print'([test@shapes@helpers:seven()]),
+    '__bp_print'([test@shapes@helpers:label()]),
+    '__bp_print'([test@shapes@circle:label()]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

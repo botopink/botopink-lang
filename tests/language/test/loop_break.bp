@@ -13,7 +13,7 @@ test "§10 an unconditioned loop stops at break" {
 test "§10 break leaves only the inner loop" {
     var outer = 0;
     var inner = 0;
-    loop (outer < 3) {
+    while (outer < 3) {
         outer = outer + 1;
         loop {
             inner = inner + 1;
@@ -26,7 +26,7 @@ test "§10 break leaves only the inner loop" {
 
 test "§10 break inside a condition loop" {
     var i = 0;
-    loop (i < 100) {
+    while (i < 100) {
         if (i == 7) { break; };
         i = i + 1;
     };

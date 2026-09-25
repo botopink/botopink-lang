@@ -28,6 +28,7 @@ const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
+const effectChain = @import("../comptime/effect_chain.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
 const beamEmitter = @import("./beam/beam_emitter.zig");
 /// Instruction operand / destination shorthands — every `.S` line this backend
@@ -224,12 +225,17 @@ fn stmtIsReturn(stmt: ast.Stmt) bool {
     };
 }
 
-/// A condition loop's labels, and the buffer (the frame) it is emitted into.
-/// `valued` is set when the body carries a `break <value>` (decision 8 §10):
-/// the loop is then an expression, every `break` leaves its value in `{x, 0}`
-/// before it jumps to `exit`, and the condition's own failure path goes to
-/// `fail` instead — which moves `undefined` in and falls through to `exit`.
-const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer, valued: bool = false };
+/// A loop's labels, and the buffer (the frame) it is emitted into: a
+/// condition loop, or a `for` walked in the frame (`lowerInFrameFor`).
+/// `break` jumps to `exit`, `continue` to `top`. No loop has a value
+/// (decision 105).
+const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer };
+
+/// A generator scope being emitted into a frame (decision 105) — a generator
+/// fn's body or an annotated `loop`: the y-slot its items are consed onto
+/// (reversed at `exit`), and the label a `break <v>` jumps to once `v` is
+/// pushed.
+const GenLoop = struct { acc: u32, exit: u32, out: *std.Io.Writer };
 
 /// True for a `break` / `continue` statement.
 fn stmtIsLoopJump(stmt: ast.Stmt) bool {
@@ -239,19 +245,11 @@ fn stmtIsLoopJump(stmt: ast.Stmt) bool {
     };
 }
 
-/// True when a condition-loop body YIELDS a value — the generator protocol's
-/// shape, which has no beam lowering of its own. A valued `break` is lowered
-/// (decision 8 §10) and is `condLoopBreaksWithValue`'s question; the two are
-/// asked separately, exactly as on erlang (`conditionLoopYieldsValue` /
-/// `conditionLoopBreaksWithValue`).
+/// True when a condition-loop body YIELDS a value outside a generator scope —
+/// a shape the checker refuses (decision 105), so reaching it is an internal
+/// error (`ConditionLoopValueUnsupported`).
 fn condLoopYieldsValue(body: []const ast.Stmt) bool {
     return condLoopJumpHasValue(body, .yield);
-}
-
-/// True when a condition-loop body's `break` carries a value — the loop is then
-/// an expression whose value is that `break`'s (decision 8 §10).
-fn condLoopBreaksWithValue(body: []const ast.Stmt) bool {
-    return condLoopJumpHasValue(body, .@"break");
 }
 
 /// True when `body` carries a `kind` jump WITH a value for the loop it belongs
@@ -689,17 +687,15 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 countLocalsInExpr(em, ap.handler.*, count);
             },
         },
-        // `.function` (lambda) and `.loop` open their own frames — their inner
-        // bindings don't consume this frame's y-slots. A two-parameter loop's
-        // written index start that is neither a literal nor a local is staged
-        // with the iterable (`lowerEnumerateIntoX0`).
-        // A condition loop (decision 8 §10) runs in this frame: its condition
+        // `.function` (lambda) and a `for` open their own frames — their inner
+        // bindings don't consume this frame's y-slots.
+        // A condition loop (`while`, `loop`) runs in this frame: its condition
         // and body take this frame's slots.
         //
         // The **iterable** is lowered in this frame whichever loop it is
         // (`lowerLoop` materialises it before it builds the body closure, and
         // `lowerConditionLoop` re-evaluates the condition here), so its own
-        // slots are this frame's: `loop ([1, 2, 3]) { x -> … }` parks the cons
+        // slots are this frame's: `for ([1, 2, 3]) { x -> … }` parks the cons
         // accumulator of the array literal in a y-slot, and counting nothing
         // left the frame at `{allocate, 0, 0}` — the emitted `.S` did not
         // assemble (`{invalid_store, {y, 0}}`, "Internal consistency check
@@ -707,22 +703,45 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
         // loader error.
         .loop => |lp| {
             countLocalsInExpr(em, lp.iter.*, count);
+            // An annotated loop (decision 105) runs in this frame with its
+            // item accumulator, and so does every `for` inside it that yields.
+            if (lp.generator != null) {
+                count.* += 1;
+                countGenForSlots(em, lp.body, count);
+            }
             if (lp.condition) {
                 countLocalsRec(em, lp.body, count);
-            } else if (lp.params.len == 2) if (lp.indexRange) |ir| {
-                if (ir.* == .collection and ir.collection.kind == .range) {
-                    const start = ir.collection.kind.range.start.*;
-                    const simple = switch (start) {
-                        .literal => true,
-                        .identifier => |id| id.kind == .ident and !em.top_vals.contains(id.kind.ident),
-                        else => false,
-                    };
-                    if (!simple) countStaging(em, &.{ start, lp.iter.* }, count);
-                }
-            };
+            }
         },
         else => {},
     }
+}
+
+/// The slots of the `for` loops an annotated loop's body runs in its own
+/// frame (`Emitter.lowerInFrameFor`): the list being walked, the item, and the
+/// body's own bindings — through `if` arms and nested condition loops, which
+/// run in the frame too.
+fn countGenForSlots(em: *Emitter, body: []const ast.Stmt, count: *u32) void {
+    for (body) |stmt| switch (stmt.expr) {
+        .loop => |lp| {
+            if (lp.generator != null) continue;
+            if (lp.condition) {
+                countGenForSlots(em, lp.body, count);
+            } else if (lp.params.len == 1 and Emitter.hasYieldOrBreakValue(lp.body)) {
+                count.* += 2;
+                countLocalsRec(em, lp.body, count);
+                countGenForSlots(em, lp.body, count);
+            }
+        },
+        .branch => |br| switch (br.kind) {
+            .if_ => |i| {
+                countGenForSlots(em, i.then_, count);
+                if (i.else_) |els| countGenForSlots(em, els, count);
+            },
+            else => {},
+        },
+        else => {},
+    };
 }
 
 /// The value a field assignment stores: `value` for `=`, `recv.f + value` for
@@ -928,13 +947,12 @@ pub fn codegenEmit(
     outputs: []ComptimeOutput,
     config: configMod.Config,
 ) !std.ArrayListUnmanaged(ModuleOutput) {
-    _ = config;
     var results: std.ArrayListUnmanaged(ModuleOutput) = .empty;
 
     // Cross-module link index — resolves an imported record's associated fn to
     // a remote `call_ext` into the owning module and an imported record literal
     // to the owner's map shape.
-    var cross = try crossModule.build(alloc, outputs);
+    var cross = try crossModule.buildIn(alloc, outputs, config.packages);
     defer cross.deinit();
 
     for (outputs) |*ct| {
@@ -1065,7 +1083,7 @@ fn emitBeamAsm(
     // (`crossModule.erlAtom`, read here via `CrossModule.atomFor`), so a target
     // and the module it names can never disagree. Mirrors the Erlang backend's
     // `erl_module_name`.
-    const module_atom = try crossModule.erlAtom(alloc, .of(module_name));
+    const module_atom = try crossModule.erlAtom(alloc, if (cross) |xc| xc.idOf(module_name) else .of(module_name));
     defer alloc.free(module_atom);
 
     var em = Emitter.init(alloc, module_atom, &body_buf.writer, comptime_vals, rewrites);
@@ -1342,8 +1360,8 @@ const Emitter = struct {
     own_types: std.StringHashMap(void),
     /// `"<Type>.<method>/<arity>"` for every bodied method one of those types
     /// declares. A method an `implement`/`extend` block gives the same type is
-    /// NOT here: those stay in the file's module (`__im__` is reserved and
-    /// emits nothing), so routing them into the type's module would name a
+    /// NOT here: those stay in the file's module (an `implement` block emits no
+    /// module yet), so routing them into the type's module would name a
     /// function the unit never defines.
     own_type_methods: std.StringHashMap(void),
     /// The file module's label table while a unit is open, so a call from
@@ -1392,10 +1410,12 @@ const Emitter = struct {
     deferred_lambdas: std.ArrayListUnmanaged([]u8) = .empty,
     /// True when emitting a loop body lambda — makes break emit return.
     in_loop_lambda: bool = false,
-    /// The innermost condition loop (decision 8 §10) being emitted in this
+    /// The innermost in-frame loop (`while`, `loop`, `lowerInFrameFor`) being emitted in this
     /// frame: its `break` jumps to `exit`, its `continue` to `top`. A lambda
     /// writes to another buffer (`out`), so its jumps never match.
     cond_loop: ?CondLoop = null,
+    /// The annotated `loop` whose body is being emitted (decision 105).
+    gen_loop: ?GenLoop = null,
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     /// Primitive (Array/String/Bool/numeric) receiver method lowering, keyed by
@@ -2037,7 +2057,7 @@ const Emitter = struct {
                         if (!self.record_fields.contains(name)) {
                             try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
                         }
-                        try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), name));
+                        try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), name));
                         _ = try self.type_owner_path.getOrPutValue(name, info.module);
                     },
                     // An imported enum's nullary variants are atoms a `case`
@@ -2095,12 +2115,12 @@ const Emitter = struct {
     }
 
     fn variantTagAtom(self: *Emitter, enum_name: []const u8, variant: []const u8) ![]const u8 {
-        return crossModule.variantAtom(self.atom_arena.allocator(), .of(self.typeOwnerPath(enum_name)), enum_name, variant);
+        return crossModule.variantAtom(self.atom_arena.allocator(), self.idOf(self.typeOwnerPath(enum_name)), enum_name, variant);
     }
 
     /// Decision 21's T2 tag: element 1 of every value `type_name` builds.
     fn recordTagAtom(self: *Emitter, type_name: []const u8) ![]const u8 {
-        return crossModule.typeAtom(self.atom_arena.allocator(), .of(self.typeOwnerPath(type_name)), type_name);
+        return crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.typeOwnerPath(type_name)), type_name);
     }
 
     /// The module path that DECLARES `type_name`. A synthesised inner enum
@@ -2337,6 +2357,13 @@ const Emitter = struct {
     fn atomOf(self: *const Emitter, path: []const u8) []const u8 {
         if (self.cross) |xc| return xc.atomFor(path);
         return crossModule.moduleBasename(path);
+    }
+
+    /// The identity of module `path` — its package and path (decision 109),
+    /// which every atom this emitter renders starts with.
+    fn idOf(self: *const Emitter, path: []const u8) crossModule.ModuleId {
+        if (self.cross) |xc| return xc.idOf(path);
+        return .of(path);
     }
 
     fn importedExtension(self: *const Emitter, buf: []u8, sym: []const u8, method: []const u8) ?struct { owner: []const u8, mangled: []const u8 } {
@@ -2645,6 +2672,14 @@ const Emitter = struct {
         for (f.params) |p| {
             if (p.destruct) |d| self.num_y += destructYSlots(d);
         }
+        // A generator fn (decision 105) keeps its item accumulator in this
+        // frame, and walks every `for` that yields here too.
+        const gen_fn = effectChain.grants(f.effect, .yield_) and f.body.len > 0;
+        if (gen_fn) {
+            var extra: u32 = 1;
+            countGenForSlots(self, f.body, &extra);
+            self.num_y += extra;
+        }
         try self.bindParams(names_buf[0..nparams]);
 
         try beamEmitter.writeBlankLine(self.out);
@@ -2685,17 +2720,7 @@ const Emitter = struct {
         }
 
         self.cur_line += 1;
-        // An eager `#[@resultGenerator]`/`#[@future]` body ending in a yielding loop
-        // is that loop's list: the fn returns it instead of `ok`.
-        if (f.effect != null and f.effect.? != .result and f.effect.? != .context and f.body.len > 0) {
-            const last = f.body[f.body.len - 1].expr;
-            if (last == .loop and hasYieldOrBreakValue(last.loop.body)) {
-                for (f.body[0 .. f.body.len - 1]) |stmt| try self.emitStmt(stmt);
-                try self.lowerExprIntoX0(last);
-                try self.emitReturn();
-                return;
-            }
-        }
+        if (gen_fn) return self.emitGeneratorBody(f.body);
         try self.emitBody(f.body);
     }
 
@@ -2773,7 +2798,7 @@ const Emitter = struct {
     };
 
     /// Policy 3: a `type`'s methods are emitted into the type's own module,
-    /// `<file atom>__t__<type>`, under the names the programmer wrote. Shared by
+    /// `<file atom>@@<Type>` (decision 109), under the names the programmer wrote. Shared by
     /// `emitRecord` and `emitEnum` — a record and an enum differ in how their
     /// values are built, not in where their functions live.
     fn emitTypeUnit(self: *Emitter, type_name: []const u8, methods: []const ast.BehaviorMethod, ident: IdentityShape) !void {
@@ -3016,7 +3041,7 @@ const Emitter = struct {
             .emitted_prim_shims = self.emitted_prim_shims,
             .exports = .empty,
         };
-        self.module_name = try crossModule.typeAtom(self.atom_arena.allocator(), .of(self.module_path), type_name);
+        self.module_name = try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.module_path), type_name);
         self.out = &buf.writer;
         self.next_label = 2;
         self.lambda_count = 0;
@@ -3334,6 +3359,10 @@ const Emitter = struct {
         switch (stmt.expr) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
+                    if (r == null) if (self.inGenLoop()) |gl| {
+                        try beamEmitter.writeJump(self.out, gl.exit);
+                        return;
+                    };
                     if (r) |val| {
                         // §1F F4F-T2 — `#[@future]` eager lowering on BEAM:
                         // strip the `__bp_future_resolved(<t>)` marker back
@@ -3379,22 +3408,23 @@ const Emitter = struct {
                     try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
                 },
                 .@"break" => |br| {
+                    // `break <v>` in an annotated loop pushes `v` and ends it
+                    // from any loop depth (decision 105).
+                    if (br.value) |v| if (self.inGenLoop()) |gl| {
+                        try self.genPush(gl, v.*);
+                        try beamEmitter.writeJump(self.out, gl.exit);
+                        return;
+                    };
                     if (self.inCondLoop()) |cl| {
-                        // Decision 8 §10 — in a loop some `break` of which
-                        // carries a value, every `break` leaves the loop's
-                        // value in `{x, 0}`; a value-less one answers
-                        // `undefined`, as the erlang lowering's third tuple
-                        // element does.
-                        if (cl.valued) {
-                            if (br.value) |v| {
-                                try self.lowerExprIntoX0(v.*);
-                            } else {
-                                try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
-                            }
-                        }
                         try beamEmitter.writeJump(self.out, cl.exit);
                         return;
                     }
+                    // A bare `break` with no loop to leave, in a generator
+                    // fn's body, ends the generator.
+                    if (br.value == null) if (self.inGenLoop()) |gl| {
+                        try beamEmitter.writeJump(self.out, gl.exit);
+                        return;
+                    };
                     if (br.value) |v| {
                         try self.lowerExprIntoX0(v.*);
                     } else if (self.fold_group) |names| {
@@ -3403,6 +3433,10 @@ const Emitter = struct {
                     if (self.in_loop_lambda) try self.emitReturn();
                 },
                 .yield => |y| {
+                    if (self.inGenLoop()) |gl| {
+                        try self.genPush(gl, if (y.value) |v| v.* else null);
+                        return;
+                    }
                     if (y.value) |v| {
                         try self.lowerExprIntoX0(v.*);
                     }
@@ -3442,19 +3476,21 @@ const Emitter = struct {
             // threads them through `lists:foldl` (a fun cannot write its
             // caller's stack slots).
             .loop => |lp| {
+                if (lp.generator != null) {
+                    try self.lowerGeneratorLoop(lp);
+                    return;
+                }
                 if (lp.condition) {
-                    if (condLoopYieldsValue(lp.body)) return error.ConditionLoopValueUnsupported;
+                    if (self.inGenLoop() == null and condLoopYieldsValue(lp.body)) return error.ConditionLoopValueUnsupported;
                     try self.lowerConditionLoop(lp);
                     return;
                 }
+                if (self.inGenLoop() != null and lp.params.len == 1 and hasYieldOrBreakValue(lp.body)) {
+                    try self.lowerInFrameFor(lp);
+                    return;
+                }
                 if (!lp.awaitLoop and !hasYieldOrBreakValue(lp.body)) {
-                    // One parameter, or two — `loop (xs) { x, i -> … }` /
-                    // `loop (xs, 1..) { … }` — whose second one is the index.
-                    if (lp.params.len == 1 and lp.indexRange == null) {
-                        if (try self.lowerMutatingFold(.{ .params = &.{lp.params[0]} }, lp.body, lp.iter.*, null)) return;
-                    } else if (lp.params.len == 2) {
-                        if (try self.lowerMutatingFold(.{ .pair = .{ .item = lp.params[0], .index = lp.params[1] } }, lp.body, lp.iter.*, lp.indexRange)) return;
-                    }
+                    if (try self.lowerMutatingFold(.{ .params = &.{lp.params[0]} }, lp.body, lp.iter.*)) return;
                 }
                 try self.lowerExprIntoX0(stmt.expr);
             },
@@ -3464,7 +3500,7 @@ const Emitter = struct {
                     return;
                 }
                 if (self.forEachLambda(stmt.expr)) |each| {
-                    if (try self.lowerMutatingFold(.{ .params = &.{each.param} }, each.body, each.recv.*, null)) return;
+                    if (try self.lowerMutatingFold(.{ .params = &.{each.param} }, each.body, each.recv.*)) return;
                 }
                 try self.lowerExprIntoX0(stmt.expr);
                 // `out.push(x)` on a local array rebinds it: the call's value
@@ -3955,14 +3991,15 @@ const Emitter = struct {
                 },
             },
             .loop => |lp| {
+                if (lp.generator != null) {
+                    try self.lowerGeneratorLoop(lp);
+                    return;
+                }
                 if (lp.condition) {
-                    if (condLoopYieldsValue(lp.body)) return error.ConditionLoopValueUnsupported;
-                    // A loop whose `break` carries a value leaves it in `{x, 0}`
-                    // itself (decision 8 §10); one that cannot answer anything
-                    // is `ok`, as it was.
-                    const valued = condLoopBreaksWithValue(lp.body);
+                    if (self.inGenLoop() == null and condLoopYieldsValue(lp.body)) return error.ConditionLoopValueUnsupported;
+                    // A statement: its value is `ok`.
                     try self.lowerConditionLoop(lp);
-                    if (!valued) try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
                     return;
                 }
                 try self.lowerLoop(lp);
@@ -4666,7 +4703,7 @@ const Emitter = struct {
     /// with a module at all. The BEAM twin of `erlang.zig`'s `typeModuleAtom`.
     fn typeModuleAtom(self: *Emitter, type_name: []const u8) !?[]const u8 {
         if (self.own_types.contains(type_name)) {
-            return try crossModule.typeAtom(self.atom_arena.allocator(), .of(self.module_path), type_name);
+            return try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.module_path), type_name);
         }
         if (self.imported_types.get(type_name)) |owner| return owner;
         const xc = self.cross orelse return null;
@@ -4675,7 +4712,7 @@ const Emitter = struct {
             .record, .@"enum" => {},
             else => return null,
         }
-        return try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), type_name);
+        return try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), type_name);
     }
 
     /// A call from inside a type module to one of the FILE module's functions
@@ -7603,11 +7640,16 @@ const Emitter = struct {
         if (r.end) |end| {
             // `a..b` is half-open `[a, b)` (parity with wasm/erlang/`Array.range`),
             // but `lists:seq/2` is inclusive — so the upper bound is `b - 1`.
+            // `a...b` (decision 105) is `lists:seq(A, B)` itself.
             const st = try self.stageOperands(&.{ r.start.*, end.* }, &[_]ast.TrailingLambda{});
-            const live = @max(self.min_live, st.x_top);
-            const spare = @max(live, 1);
-            try beamEmitter.writeGcBif(self.out, .sub, live, &.{ st.ops[1], Op.int(1) }, Dst.xr(spare));
-            try self.emitParallelMove(&.{ st.ops[0], Op.xr(spare) }, &.{ 0, 1 });
+            if (r.inclusive) {
+                try self.emitParallelMove(&.{ st.ops[0], st.ops[1] }, &.{ 0, 1 });
+            } else {
+                const live = @max(self.min_live, st.x_top);
+                const spare = @max(live, 1);
+                try beamEmitter.writeGcBif(self.out, .sub, live, &.{ st.ops[1], Op.int(1) }, Dst.xr(spare));
+                try self.emitParallelMove(&.{ st.ops[0], Op.xr(spare) }, &.{ 0, 1 });
+            }
         } else {
             try self.lowerExprIntoX0(r.start.*);
             try beamEmitter.writeMoveOp(self.out, Op.atom("infinity"), Dst.xr(1));
@@ -7670,38 +7712,6 @@ const Emitter = struct {
             }
         }
         return false;
-    }
-
-    /// The loop-comprehension shape `loop (xs) { x -> if (c) { …; break v; }; }`
-    /// — a single else-less `if` whose branch ends in `break <value>` — which
-    /// keeps only the elements the branch fires for (`lists:filtermap/2`).
-    /// Returns the `if`, or null.
-    fn filterMapIf(lp: anytype) ?@TypeOf(lp.body[0].expr.branch.kind.if_) {
-        if (lp.body.len != 1 or lp.body[0].expr != .branch) return null;
-        const br = lp.body[0].expr.branch;
-        if (br.kind != .if_) return null;
-        const iff = br.kind.if_;
-        if (iff.else_ != null or iff.then_.len == 0) return null;
-        const last = iff.then_[iff.then_.len - 1].expr;
-        if (last != .jump or last.jump.kind != .@"break") return null;
-        if (last.jump.kind.@"break".value == null) return null;
-        return iff;
-    }
-
-    /// The `lists:filtermap/2` fun body: `{true, Value}` when the branch fires,
-    /// `false` otherwise.
-    fn emitFilterMapBody(self: *Emitter, iff: anytype) anyerror!void {
-        const else_l = self.allocLabel();
-        try self.emitIfTest(iff, else_l);
-        for (iff.then_[0 .. iff.then_.len - 1]) |stmt| try self.emitStmt(stmt);
-        try self.lowerExprIntoX0(iff.then_[iff.then_.len - 1].expr.jump.kind.@"break".value.?.*);
-        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
-        try beamEmitter.writeTestHeap(self.out, 3, 2);
-        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("true"), Op.xr(1) });
-        try self.emitReturn();
-        try beamEmitter.writeLabel(self.out, else_l);
-        try beamEmitter.writeMoveOp(self.out, Op.atom("false"), Dst.xr(0));
-        try self.emitReturn();
     }
 
     // ── mutation threading ───────────────────────────────────────────────────
@@ -7961,10 +7971,8 @@ const Emitter = struct {
 
     /// `Group = lists:foldl(fun(Param, Group) -> Body, Group end, Group, Iter)`
     /// for a statement loop over `iter` whose `body` reassigns outer names.
-    /// A `.pair` head walks `lists:enumerate(Start, Iter)` (`index_range` gives
-    /// the start, 0 without one). Returns false (nothing emitted) when the body
-    /// reassigns none.
-    fn lowerMutatingFold(self: *Emitter, head: GroupFunHead, body: []const ast.Stmt, iter: ast.Expr, index_range: ?*const ast.Expr) anyerror!bool {
+    /// Returns false (nothing emitted) when the body reassigns none.
+    fn lowerMutatingFold(self: *Emitter, head: GroupFunHead, body: []const ast.Stmt, iter: ast.Expr) anyerror!bool {
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer names.deinit(self.alloc);
         var head_buf: [2][]const u8 = undefined;
@@ -7976,37 +7984,13 @@ const Emitter = struct {
         const entry = try self.emitGroupFun(head, names.items, body, true, &env_ops);
 
         // lists:foldl(Fun, Group, List)
-        if (head == .pair) {
-            try self.lowerEnumerateIntoX0(iter, index_range);
-        } else {
-            try self.lowerExprIntoX0(iter);
-        }
+        try self.lowerExprIntoX0(iter);
         try self.emitGroupInto(names.items, 1, 1);
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(2));
         try self.emitMakeFun(entry, 3, env_ops.items);
         try beamEmitter.writeCall(self.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "foldl" } }, 0);
         try self.unpackGroupFromX0(names.items);
         return true;
-    }
-
-    /// `lists:enumerate(Start, Iter)` into `{x, 0}`: the `{Index, Item}` pairs
-    /// of a two-parameter loop. `index_range` is the written `Start..` (null
-    /// for `loop (xs) { x, i -> … }`, which counts from 0).
-    fn lowerEnumerateIntoX0(self: *Emitter, iter: ast.Expr, index_range: ?*const ast.Expr) anyerror!void {
-        const start_expr: ?ast.Expr = if (index_range) |ir|
-            (if (ir.* == .collection and ir.collection.kind == .range) ir.collection.kind.range.start.* else null)
-        else
-            null;
-        const simple_start: ?Op = if (start_expr) |se| self.simpleTerm(se) else Op.int(0);
-        if (simple_start) |start| {
-            try self.lowerExprIntoX0(iter);
-            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
-            try beamEmitter.writeMoveOp(self.out, start, Dst.xr(0));
-        } else {
-            const st = try self.stageOperands(&.{ start_expr.?, iter }, &[_]ast.TrailingLambda{});
-            try self.emitParallelMove(st.slice(), &.{ 0, 1 });
-        }
-        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = "enumerate" } }, 0);
     }
 
     /// A statement-position call of a local closure recorded in
@@ -8063,55 +8047,137 @@ const Emitter = struct {
         return if (cl.out == self.out) cl else null;
     }
 
-    /// `loop (condition) { … }` / `loop { … }` (decision 8 §10) in this frame:
+    /// `while (cond) { … }` / `loop { … }` in this frame:
     ///
     ///     {label, Top}  <test Cond, else jump Exit>  Body  {jump, {f, Top}}  {label, Exit}
     ///
     /// Reassigned variables live in this frame's registers, so they need no
-    /// threading; `break` jumps to `Exit`, `continue` to `Top`.
-    ///
-    /// When the body carries a `break <value>` (decision 8 §10) the loop is an
-    /// expression, and the condition's failure path needs a register of its own
-    /// so it cannot be the `break`'s:
-    ///
-    ///     {label, Top}  <test Cond, else jump Fail>  Body  {jump, {f, Top}}
-    ///     {label, Fail} {move, {atom, undefined}, {x,0}}  {label, Exit}
-    ///
-    /// so `{x, 0}` at `Exit` is the break's value on the `break` path and
-    /// `undefined` when the condition ran out — the same pair of answers the
-    /// erlang backend's `{Group, Value}` tuple carries (`{FinalGroup,
-    /// undefined}` against `{GroupAtTheJump, Value}`).
+    /// threading; `break` jumps to `Exit`, `continue` to `Top`. No loop has a
+    /// value (decision 105): a `break <v>` belongs to the generator scope.
     fn lowerConditionLoop(self: *Emitter, lp: anytype) anyerror!void {
-        const valued = condLoopBreaksWithValue(lp.body);
         const top = self.allocLabel();
         const exit = self.allocLabel();
-        const fail = if (valued) self.allocLabel() else exit;
         try beamEmitter.writeLabel(self.out, top);
-        if (!try self.lowerComparisonAsTest(lp.iter.*, fail)) {
+        if (!try self.lowerComparisonAsTest(lp.iter.*, exit)) {
             try self.lowerExprIntoX0(lp.iter.*);
-            try beamEmitter.writeTest(self.out, .is_eq_exact, fail, &.{ Op.xr(0), Op.atom("true") });
+            try beamEmitter.writeTest(self.out, .is_eq_exact, exit, &.{ Op.xr(0), Op.atom("true") });
         }
         const saved = self.cond_loop;
-        self.cond_loop = .{ .top = top, .exit = exit, .out = self.out, .valued = valued };
+        self.cond_loop = .{ .top = top, .exit = exit, .out = self.out };
         defer self.cond_loop = saved;
         for (lp.body) |stmt| try self.emitStmt(stmt);
         if (!(lp.body.len > 0 and stmtIsLoopJump(lp.body[lp.body.len - 1]))) {
             try beamEmitter.writeJump(self.out, top);
         }
-        if (valued) {
-            try beamEmitter.writeLabel(self.out, fail);
-            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, exit);
+    }
+
+    /// The annotated loop whose body is being emitted into the current frame.
+    fn inGenLoop(self: *const Emitter) ?GenLoop {
+        const gl = self.gen_loop orelse return null;
+        return if (gl.out == self.out) gl else null;
+    }
+
+    /// `[V | Acc]` into the annotated loop's accumulator slot.
+    /// A value-less `yield` pushes `undefined`, botopink's null.
+    fn genPush(self: *Emitter, gl: GenLoop, value: ?ast.Expr) anyerror!void {
+        if (value) |v| try self.lowerExprIntoX0(v) else try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
+        try beamEmitter.writeTestHeap(self.out, 2, @max(self.min_live, 1));
+        try beamEmitter.writePutList(self.out, Op.xr(0), Op.yr(gl.acc), Dst.yr(gl.acc));
+    }
+
+    /// A generator fn's body (decision 105) — eager, as on erlang: every
+    /// `yield v` in the frame conses onto a y-slot accumulator, `break <v>`
+    /// pushes and jumps to the end, a bare `break` or `return;` outside a
+    /// loop jumps there too, and the fn answers the reversed list.
+    fn emitGeneratorBody(self: *Emitter, body: []const ast.Stmt) anyerror!void {
+        const acc = self.next_y;
+        self.next_y += 1;
+        const exit = self.allocLabel();
+        try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.yr(acc));
+        const saved = self.gen_loop;
+        self.gen_loop = .{ .acc = acc, .exit = exit, .out = self.out };
+        {
+            defer self.gen_loop = saved;
+            for (body) |stmt| try self.emitStmt(stmt);
+        }
+        try beamEmitter.writeLabel(self.out, exit);
+        try beamEmitter.writeMoveOp(self.out, Op.yr(acc), Dst.xr(0));
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "lists", .function = "reverse" } }, 0);
+        try self.emitReturn();
+    }
+
+    /// `#[@generator] loop { … }` (decision 105) — eager on beam, as on erlang:
+    /// the body runs in this frame as `loop { … }` does, each `yield v` conses
+    /// onto a y-slot accumulator, and the expression is the reversed list:
+    ///
+    ///     {move, nil, Acc}  <the condition loop>  {label, Exit}
+    ///     {move, Acc, {x,0}}  {call_ext, 1, lists:reverse/1}
+    ///
+    /// A captured `var` is this frame's register, so a counter the body
+    /// advances is read after the loop at its last value. `break <v>` pushes
+    /// and jumps to `Exit`; a bare `break` leaves the condition loop, which
+    /// falls through to it. `#[@futureGenerator]` is the same list — beam's
+    /// `await` is identity.
+    fn lowerGeneratorLoop(self: *Emitter, lp: anytype) anyerror!void {
+        const acc = self.next_y;
+        self.next_y += 1;
+        const exit = self.allocLabel();
+        try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.yr(acc));
+        const saved = self.gen_loop;
+        self.gen_loop = .{ .acc = acc, .exit = exit, .out = self.out };
+        {
+            defer self.gen_loop = saved;
+            try self.lowerConditionLoop(lp);
+        }
+        try beamEmitter.writeLabel(self.out, exit);
+        try beamEmitter.writeMoveOp(self.out, Op.yr(acc), Dst.xr(0));
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "lists", .function = "reverse" } }, 0);
+    }
+
+    /// A `for` that yields inside an annotated loop, walked in this frame so
+    /// its `yield` reaches the loop's accumulator (a `lists:foreach` fun
+    /// would be another frame):
+    ///
+    ///     {move, Iter, Rest}  {label, Top}  {test, is_nonempty_list, {f, Exit}, [Rest]}
+    ///     {get_list, Rest, {x,0}, {x,1}}  {move, {x,0}, Item}  {move, {x,1}, Rest}
+    ///     Body  {jump, {f, Top}}  {label, Exit}
+    ///
+    /// A bare `break` jumps to `Exit`, `continue` to `Top`.
+    fn lowerInFrameFor(self: *Emitter, lp: anytype) anyerror!void {
+        const rest = self.next_y;
+        self.next_y += 1;
+        const item = self.next_y;
+        self.next_y += 1;
+        try self.lowerExprIntoX0(lp.iter.*);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(rest));
+        const top = self.allocLabel();
+        const exit = self.allocLabel();
+        try beamEmitter.writeLabel(self.out, top);
+        try beamEmitter.writeTest(self.out, .is_nonempty_list, exit, &.{Op.yr(rest)});
+        try beamEmitter.writeGetList(self.out, Op.yr(rest), Dst.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(item));
+        try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(rest));
+        const prev = self.reg_map.get(lp.params[0]);
+        try self.reg_map.put(lp.params[0], .{ .y = item });
+        defer {
+            if (prev) |r| self.reg_map.put(lp.params[0], r) catch {} else _ = self.reg_map.remove(lp.params[0]);
+        }
+        const saved = self.cond_loop;
+        self.cond_loop = .{ .top = top, .exit = exit, .out = self.out };
+        defer self.cond_loop = saved;
+        for (lp.body) |stmt| try self.emitStmt(stmt);
+        if (!(lp.body.len > 0 and stmtIsLoopJump(lp.body[lp.body.len - 1]))) {
+            try beamEmitter.writeJump(self.out, top);
         }
         try beamEmitter.writeLabel(self.out, exit);
     }
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
+        // A `for` whose body yields is walked in its generator scope's frame
+        // (`lowerInFrameFor`); one reaching here outside a scope (a lambda
+        // body's) keeps the per-item `lists:map`.
         const has_map = hasYieldOrBreakValue(lp.body);
-        const filter_map = filterMapIf(lp);
-        // `loop (xs, 0..) { item, i -> … }` iterates `lists:enumerate(Start, Xs)`:
-        // the fun takes one `{Index, Item}` pair and binds both names from it.
-        // Without a written range (`loop (xs) { item, i -> … }`) it counts from 0.
-        const indexed = lp.params.len == 2;
 
         const idx = self.lambda_count;
         self.lambda_count += 1;
@@ -8123,11 +8189,7 @@ const Emitter = struct {
         try self.closureEnv(lp.body, lp.params, &env_names, &env_ops);
         var all_params: std.ArrayListUnmanaged([]const u8) = .empty;
         defer all_params.deinit(self.alloc);
-        if (indexed) {
-            try all_params.append(self.alloc, "");
-        } else {
-            try all_params.appendSlice(self.alloc, lp.params);
-        }
+        try all_params.appendSlice(self.alloc, lp.params);
         try all_params.appendSlice(self.alloc, env_names.items);
         const arity: u32 = @intCast(all_params.items.len);
 
@@ -8155,7 +8217,7 @@ const Emitter = struct {
 
         self.next_y = 0;
         self.cur_arity = arity;
-        self.num_y = arity + self.precountLocals(lp.body) + @as(u32, if (indexed) 2 else 0);
+        self.num_y = arity + self.precountLocals(lp.body);
         self.in_loop_lambda = true;
         try self.bindParams(all_params.items);
 
@@ -8167,23 +8229,7 @@ const Emitter = struct {
         try beamEmitter.writeLabel(self.out, labels.entry);
         try self.emitFrame(arity);
         try self.emitParamSpill(arity);
-        if (indexed) {
-            // y0 holds `{Index, Item}`: `element/2` is a guard BIF, so reading
-            // it frees no register.
-            for ([_]struct { name: []const u8, pos: i64 }{ .{ .name = lp.params[1], .pos = 1 }, .{ .name = lp.params[0], .pos = 2 } }) |b| {
-                try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(b.pos), Op.yr(0) }, Dst.xr(0));
-                const y_idx = self.next_y;
-                self.next_y += 1;
-                try self.reg_map.put(b.name, .{ .y = y_idx });
-                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
-            }
-        }
-
-        if (filter_map) |iff| {
-            try self.emitFilterMapBody(iff);
-        } else {
-            try self.emitBody(lp.body);
-        }
+        try self.emitBody(lp.body);
 
         self.reg_map.deinit();
         self.reg_map = saved_reg_map;
@@ -8203,15 +8249,11 @@ const Emitter = struct {
         // x-register beforehand would lose it (`lists:foreach([_],[_])`). Instead
         // the list lands in `x1` (and stays in `x0` too), so the closure's
         // `make_fun3` — which always writes `x0` — keeps the list live in `x1`.
-        if (indexed) {
-            try self.lowerEnumerateIntoX0(lp.iter.*, lp.indexRange);
-        } else {
-            try self.lowerExprIntoX0(lp.iter.*);
-        }
+        try self.lowerExprIntoX0(lp.iter.*);
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
         try self.emitMakeFun(labels.entry, 2, env_ops.items);
 
-        const func = if (filter_map != null) "filtermap" else if (has_map) "map" else "foreach";
+        const func = if (has_map) "map" else "foreach";
         try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = func } }, 0);
     }
 

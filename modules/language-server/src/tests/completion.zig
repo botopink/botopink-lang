@@ -900,3 +900,71 @@ test "completion: the enum type itself still offers its variants and methods" {
     try std.testing.expect(has_active);
     try std.testing.expect(has_method);
 }
+
+// ── front 11 carve-out: a declaration's constructor binding is named in the 1.0.3 surface ──
+//
+// `completion` prints a binding's `detail` through `renderType`, and a
+// `type`/`behavior` declaration's binding is *named* by `comptime/infer.zig`'s
+// `buildRecordDeclName` / `buildEnumDeclName` / `buildInterfaceDeclName`, so
+// the name is what the editor shows verbatim. Until 1.0.10-beta (C-19) those
+// names spelled `record { … }` / `enum { … }` / `interface { … }` — surfaces
+// that no longer parse. `completion_decorator_record` above pins the record;
+// these two pin the enum and the behavior, so a builder cannot regress alone.
+
+fn assertNoLegacyDeclSurface(items: []const proto.CompletionItem) !void {
+    for (items) |it| {
+        const d = it.detail orelse continue;
+        try std.testing.expect(std.mem.indexOf(u8, d, "record {") == null);
+        try std.testing.expect(std.mem.indexOf(u8, d, "enum {") == null);
+        try std.testing.expect(std.mem.indexOf(u8, d, "interface {") == null);
+        try std.testing.expect(std.mem.indexOf(u8, d, "struct {") == null);
+    }
+}
+
+test "completion: an enum type's binding is detailed as `type Name { … }`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\pub type Shape {
+        \\    Circle(radius: f64),
+        \\    Square,
+        \\}
+        \\val s = Shape.Square;
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    // "val s = Sh|ape.Square;" → prefix `Sh`.
+    const cursor = h.pos(4, 10);
+    const items = try engine.completion(gpa, source, cursor, bindings);
+    defer freeItems(gpa, items);
+
+    try std.testing.expect(hasLabel(items, "Shape"));
+    try assertNoLegacyDeclSurface(items);
+    try snap.assertCompletion(gpa, "completion_type_enum_detail", source, cursor, items);
+}
+
+test "completion: a behavior's binding is detailed as `behavior Name<G> { … }`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\pub behavior Mappable<T> {
+        \\    fn map(self: Self<T>) -> Self<T>;
+        \\}
+        \\
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    // A behavior is not a value (`val m = Mappable;` does not check), so the
+    // cursor sits on the empty line after it: empty prefix, every binding.
+    const cursor = h.pos(3, 0);
+    const items = try engine.completion(gpa, source, cursor, bindings);
+    defer freeItems(gpa, items);
+
+    try std.testing.expect(hasLabel(items, "Mappable"));
+    try assertNoLegacyDeclSurface(items);
+    try snap.assertCompletion(gpa, "completion_behavior_detail", source, cursor, items);
+}

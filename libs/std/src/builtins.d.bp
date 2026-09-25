@@ -100,8 +100,8 @@ pub type Result<R, E> {
 //   @FutureGenerator<T, E>  extends Future   yield · await · try   #[@futureGenerator]
 //
 // A type that wants to be iterated exposes an ordinary method answering a
-// generator and the consumer calls it — `loop (grid.iter())`; there is no
-// `Iterable` behavior (question 97 / decision 103: surface nobody uses drifts).
+// generator and the consumer calls it — `for (grid.iter())`; there is no
+// iterable behavior (question 97 / decision 103: surface nobody uses drifts).
 
 pub type YieldStep<T, E = void> {
     Yield(value: T),

@@ -12,12 +12,12 @@ fn safe() -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type RiskError: level
 
 risky() ->
-    {error, {main__t__riskerror, 5}}.
+    {error, {test@main@@RiskError, 5}}.
 
 safe() ->
     case try
@@ -31,9 +31,9 @@ safe() ->
     end.
 ```
 
------ ERLANG -- main__t__riskerror.erl
+----- ERLANG -- test@main@@RiskError.erl
 ```erlang
--module(main__t__riskerror).
+-module(test@main@@RiskError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, level) -> element(2, V).
