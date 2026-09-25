@@ -98,6 +98,47 @@ pub declare fn copy(src: string, dest: string) -> @Result<i32, string>;
 #[@External.Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn stat(path: string) -> @Result<FileStat, string>;
 
+// ── 1.0.10-beta front 01 additions (`io/fs` after front 23) ─────────────────
+
+// Every REGULAR FILE under `root`, recursively, as paths relative to `root`
+// with `/` separators, sorted — the same set on both targets (the two hosts
+// walk in different orders, so the list is sorted rather than left as found).
+// Directories are not listed; a missing or non-directory `root` is an `Error`.
+// Node: `readdirSync(root, { recursive: true })` answers files AND directories
+// relative to `root`; the template keeps the entries `statSync` says are files.
+// Erlang: `filelib:fold_files/5` answers full paths of regular files only and
+// silently answers `[]` for a missing root, so the template checks
+// `filelib:is_dir/1` first and strips the normalised root prefix.
+#[@result]
+#[@External.Node("""(() => { try { const __fs = require('fs'); const __p = require('path'); const __all = __fs.readdirSync($0, { recursive: true }).map(String); return { ok: __all.filter(__f => __fs.statSync(__p.join($0, __f)).isFile()).map(__f => __f.split(__p.sep).join('/')).sort() } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__R) -> __Root = filename:join([unicode:characters_to_list(__R)]), case filelib:is_dir(__Root) of false -> {error, <<"enotdir">>}; true -> __N = case __Root of "/" -> 1; _ -> length(__Root) + 1 end, {ok, lists:sort([unicode:characters_to_binary(lists:nthtail(__N, __F)) || __F <- filelib:fold_files(__Root, ".*", true, fun(__F0, __A) -> [__F0 | __A] end, [])])} end end)($0)""")]
+pub declare fn walk(root: string) -> @Result<string[], string>;
+
+// The entries under `root` matching the glob `pattern` (`*`, `?`, `[…]`,
+// `{a,b}` and `**` for any depth), as paths relative to `root` with `/`
+// separators, sorted. A root that does not exist answers `Ok([])` on both
+// targets — that is what both hosts do, and the caller who needs the
+// distinction asks `exists` first.
+// Node: `fs.globSync(pattern, { cwd: root })` (Node 22+).
+// Erlang: `filelib:wildcard/2`.
+#[@result]
+#[@External.Node("""(() => { try { const __fs = require('fs'); const __p = require('path'); return { ok: __fs.globSync($0, { cwd: $1 }).map(__f => String(__f).split(__p.sep).join('/')).sort() } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__P, __R) -> try {ok, lists:sort([unicode:characters_to_binary(__F) || __F <- filelib:wildcard(unicode:characters_to_list(__P), unicode:characters_to_list(__R))])} catch _:__E -> {error, iolist_to_binary(io_lib:format("~p", [__E]))} end end)($0, $1)""")]
+pub declare fn glob(pattern: string, root: string) -> @Result<string[], string>;
+
+// Internal, test scaffolding: a fresh, unique, empty directory under the
+// host's tmpdir, and the recursive delete that removes it again. Private —
+// the public surface stays the one the module documents. Every `walk`/`glob`
+// test makes its fixture tree in one of these and removes it, so a run leaves
+// nothing under the host's tmpdir.
+#[@External.Node("""require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bp-std-fs-'))""")]
+#[@External.Erlang("""(fun() -> __T = case os:getenv("TMPDIR") of false -> "/tmp"; __V -> __V end, __D = filename:join(__T, "bp-std-fs-" ++ integer_to_list(erlang:unique_integer([positive]))), ok = file:make_dir(__D), unicode:characters_to_binary(__D) end)()""")]
+declare fn scratchDir() -> string;
+
+#[@External.Node("""require('fs').rmSync($0, { recursive: true, force: true })""")]
+#[@External.Erlang("""(fun(__D) -> file:del_dir_r(__D), ok end)($0)""")]
+declare fn removeTree(path: string) -> void;
+
 // ── tests ────────────────────────────────────────────────────────────────────
 // (Inline tests are smoke-grade — they require the host filesystem to be
 // writable at the host's `tmpdir()`. The lib-test harness runs each
@@ -112,4 +153,42 @@ test "fs.exists is false for a fixed-name path that doesn't exist" {
 test "fs.list of the host '/' resolves Ok" {
     val r = list("/");
     assert r.isOk();
+}
+
+// Internal, test scaffolding: `<dir>/app/page.bp`, `<dir>/app/blog/page.bp`,
+// `<dir>/app/blog/notes.md` — the fixture tree every walk/glob test reads.
+fn makeFixtureTree(dir: string) -> void {
+    mkdir([dir, "/app"].join(""));
+    mkdir([dir, "/app/blog"].join(""));
+    writeText([dir, "/app/page.bp"].join(""), "root page");
+    writeText([dir, "/app/blog/page.bp"].join(""), "blog page");
+    writeText([dir, "/app/blog/notes.md"].join(""), "notes");
+}
+
+test "fs.walk lists every regular file relative to the root, sorted" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    val walked = walk([dir, "/app"].join("")).unwrapOr([]);
+    removeTree(dir);
+    assert walked.join(",") == "blog/notes.md,blog/page.bp,page.bp";
+}
+
+test "fs.walk of a missing root is an Error" {
+    val r = walk("/__bp_std_fs_definitely_not_a_real_path_xyz__");
+    assert r.isError();
+}
+
+test "fs.glob finds a nested file through a double-star pattern" {
+    val dir = scratchDir();
+    makeFixtureTree(dir);
+    val found = glob("**/page.bp", [dir, "/app"].join("")).unwrapOr([]);
+    removeTree(dir);
+    assert found.join(",") == "blog/page.bp,page.bp";
+}
+
+test "fs.glob answers the empty list when nothing matches" {
+    val dir = scratchDir();
+    val found = glob("*.nothing", dir).unwrapOr(["x"]);
+    removeTree(dir);
+    assert found.length == 0;
 }
