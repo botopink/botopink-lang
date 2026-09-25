@@ -23,3 +23,7 @@ pub const ast = @import("./ast.zig");
 /// element resolution for `recv._N` chains — §E E1 in
 /// `tasks/v0.beta.19/specs/frente-b-rules-tooling.md`).
 pub const types = @import("./comptime/types.zig");
+/// The `.snap.md` compare-or-record helper the compiler's own snapshot tests
+/// use, for a package whose tests record text snapshots too (compiler-cli's
+/// `migrate effects` codemod).
+pub const snap = @import("./utils/snap.zig");

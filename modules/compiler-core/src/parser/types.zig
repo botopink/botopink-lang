@@ -253,7 +253,12 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             .effectTypeRemovedLegacy
         else
             null;
-        if (removedKind) |k| {
+        const legacyWrapper = parser.effect_migration and removedKind != null and switch (removedKind.?) {
+            .effectTypeRemovedFuture, .effectTypeRemovedGenerator, .effectTypeRemovedResultGenerator, .effectTypeRemovedFutureGenerator, .effectTypeRemovedUse => true,
+            else => false,
+        };
+        if (removedKind != null and !legacyWrapper) {
+            const k = removedKind.?;
             this.parseError = ParseErrorInfo.fromToken(k, tok);
             return ParseError.UnexpectedToken;
         }
@@ -272,7 +277,7 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
         while (!this.checkGenericClose() and !this.check(.endOfFile)) {
             // Decision 122 — `@Iterator<T, E>`: the second argument is the
             // removed error parameter, refused where it is written.
-            if (args.items.len == 1 and std.mem.eql(u8, name, "Iterator")) {
+            if (args.items.len == 1 and std.mem.eql(u8, name, "Iterator") and !parser.effect_migration) {
                 this.parseError = ParseErrorInfo.fromToken(.iteratorErrorParamRemoved, this.peek());
                 return ParseError.UnexpectedToken;
             }
@@ -292,7 +297,11 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             }
         }
         try this.consumeGenericClose();
-        return ast.TypeRef{ .generic = .{ .name = name, .args = try args.toOwnedSlice(alloc), .is_builtin = true } };
+        const owned = try args.toOwnedSlice(alloc);
+        if (parser.effect_migration) {
+            if (try legacyEffectType(alloc, name, owned)) |t| return t;
+        }
+        return ast.TypeRef{ .generic = .{ .name = name, .args = owned, .is_builtin = true } };
     }
     // type [Constraint (| Constraint)*] — comptime type parameter (meta-kind)
     // with an optional `|`-separated constraint list. `type` alone is unconstrained.
@@ -415,4 +424,32 @@ pub fn parseImplementClause(this: *This, alloc: std.mem.Allocator) ParseError![]
         return ParseError.UnexpectedToken;
     }
     return list.toOwnedSlice(alloc);
+}
+
+/// The migration parse (`parser.effect_migration`, front 24 E6, 24-d): a
+/// removed effect wrapper read as the type it means now — `@Future<T, E>` →
+/// `@Task<@Result<T, E>>`, `@Future<T>` → `@Task<T>`, `@Generator<T>` →
+/// `@Iterator<T>`, `@ResultGenerator<T, E>` / `@Iterator<T, E>` →
+/// `@Iterator<@Result<T, E>>`, `@FutureGenerator<T, E>` →
+/// `@Stream<@Result<T, E>>`, `@Use<C, T>` → `@Component<C, T>`. Null for every
+/// other type. Takes ownership of `args`.
+fn legacyEffectType(alloc: std.mem.Allocator, name: []const u8, args: []ast.TypeRef) ParseError!?ast.TypeRef {
+    const eql = std.mem.eql;
+    const outer: []const u8 = if (eql(u8, name, "Future"))
+        "Task"
+    else if (eql(u8, name, "Generator") or eql(u8, name, "ResultGenerator") or (eql(u8, name, "Iterator") and args.len == 2))
+        "Iterator"
+    else if (eql(u8, name, "FutureGenerator"))
+        "Stream"
+    else if (eql(u8, name, "Use"))
+        "Component"
+    else
+        return null;
+    if (eql(u8, outer, "Component") or args.len != 2) {
+        return ast.TypeRef{ .generic = .{ .name = outer, .args = args, .is_builtin = true } };
+    }
+    // `<T, E>` → `<@Result<T, E>>`: the error travels in the value (decision 120).
+    const inner = try alloc.alloc(ast.TypeRef, 1);
+    inner[0] = .{ .generic = .{ .name = "Result", .args = args, .is_builtin = true } };
+    return ast.TypeRef{ .generic = .{ .name = outer, .args = inner, .is_builtin = true } };
 }

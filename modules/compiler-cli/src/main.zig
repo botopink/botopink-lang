@@ -23,6 +23,7 @@ const new_cmd = @import("./cli/new.zig");
 const clean_cmd = @import("./cli/clean.zig");
 const test_cmd = @import("./cli/test_cmd.zig");
 const migrate_cmd = @import("./cli/migrate.zig");
+const migrate_effects_cmd = @import("./cli/migrate_effects.zig");
 const cfg = @import("./cli/config.zig");
 
 // ── Version ───────────────────────────────────────────────────────────────────
@@ -45,7 +46,8 @@ const HELP =
     \\  format   Format source files
     \\  new      Create a new botopink project
     \\  clean    Remove build artifacts
-    \\  migrate  Generate the module tree (mod/pub mod) from the src/ layout
+    \\  migrate  Generate the module tree (mod/pub mod) from the src/ layout;
+    \\           `migrate effects` rewrites the effect annotations (front 24)
     \\  help     Show this message
     \\  version  Show the compiler version
     \\
@@ -81,6 +83,9 @@ const HELP =
     \\
     \\Options for `migrate`:
     \\  --dry-run                    Report the index files without writing them
+    \\
+    \\Options for `migrate effects`:
+    \\  --dry-run                    Report the rewrites and review markers without writing
     \\
 ;
 
@@ -161,6 +166,11 @@ fn dispatch(init: std.process.Init) !u8 {
     if (std.mem.eql(u8, cmd, "clean")) {
         parseNoOpts(rest, &diag) catch |err| return usageError(cmd, err, diag);
         return clean_cmd.run(io);
+    }
+
+    if (std.mem.eql(u8, cmd, "migrate") and rest.len > 0 and std.mem.eql(u8, rest[0], "effects")) {
+        const opts = parseMigrateEffectsOpts(rest[1..], &diag) catch |err| return usageError("migrate effects", err, diag);
+        return migrate_effects_cmd.run(gpa, io, opts, env_map);
     }
 
     if (std.mem.eql(u8, cmd, "migrate")) {
@@ -380,6 +390,18 @@ fn parseMigrateOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!migrate
     return opts;
 }
 
+/// `migrate effects [--dry-run]` — the subcommand word comes first; a
+/// positional after it is refused like any other.
+fn parseMigrateEffectsOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!migrate_effects_cmd.Options {
+    var opts: migrate_effects_cmd.Options = .{};
+    for (args) |a| {
+        if (std.mem.eql(u8, a, "--dry-run")) {
+            opts.dry_run = true;
+        } else return reject(a, diag);
+    }
+    return opts;
+}
+
 fn parseNoOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
     if (args.len > 0) return reject(args[0], diag);
 }
@@ -402,6 +424,7 @@ test {
     _ = @import("./cli/format_cmd.zig");
     _ = @import("./cli/libs.zig");
     _ = @import("./cli/migrate.zig");
+    _ = @import("./cli/migrate_effects.zig");
     _ = @import("./cli/new.zig");
     _ = @import("./cli/reporter.zig");
     _ = @import("./cli/resolver.zig");
@@ -502,6 +525,17 @@ test "C8: migrate recognises --dry-run wherever it appears and rejects a positio
     try std.testing.expectError(error.UnexpectedArgument, parseMigrateOpts(argv(&.{ "src", "--dry-run" }), &d));
     try std.testing.expectEqualStrings("src", d.token);
     try std.testing.expect(!(try parseMigrateOpts(argv(&.{}), &d)).dry_run);
+}
+
+test "migrate effects: the subcommand takes --dry-run and nothing else" {
+    var d: ArgDiag = .{};
+    try std.testing.expect((try parseMigrateEffectsOpts(argv(&.{"--dry-run"}), &d)).dry_run);
+    try std.testing.expect(!(try parseMigrateEffectsOpts(argv(&.{}), &d)).dry_run);
+    try std.testing.expectError(error.UnexpectedArgument, parseMigrateEffectsOpts(argv(&.{"src"}), &d));
+    try std.testing.expectError(error.UnknownFlag, parseMigrateEffectsOpts(argv(&.{"--write"}), &d));
+    // The subcommand word is only recognised first: `migrate` alone keeps its
+    // module-tree meaning and refuses `effects` after a flag.
+    try std.testing.expectError(error.UnexpectedArgument, parseMigrateOpts(argv(&.{ "--dry-run", "effects" }), &d));
 }
 
 test "C14: run and format argument lists are arena-owned (no leak under testing.allocator)" {

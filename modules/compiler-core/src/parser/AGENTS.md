@@ -65,7 +65,12 @@ parser/
 │                     the prefixed `loop { <written loop>; break; }` with `prefixedKeyword` recording the keyword;
 │                     `LoopExpr.generator` carries `.iterator` / `.stream`. An annotation block before a loop is
 │                     `loop-annotation-not-generator` (`parseAnnotatedLoopExpr`), a removed effect annotation there
-│                     `effect-annotation-removed` with the `iter` / `stream` fix-it. `throw new X(…)` is
+│                     `effect-annotation-removed` with the `iter` / `stream` fix-it — except in the
+│                     migration-only parse of `botopink migrate effects` (`parser.effect_migration`,
+│                     thread-local, set only through `comptime.setEffectMigration`; decisions-pending 24-d),
+│                     where a removed effect annotation is dropped (on a loop it becomes the prefix,
+│                     `genLoopAfterPrefix`) and a removed wrapper reads as its new spelling
+│                     (`types.zig`'s `legacyEffectType`: `@Future<T, E>` → `@Task<@Result<T, E>>`, …). `throw new X(…)` is
 │                     `removed-keyword-new` (06 N27) — `new`/`delegate`/`const` lex as identifiers. `val assert P = e;` with no `catch` (decision 8 § 9) parses:
 │                     `assertFatalHandler` desugars it into the handler `@panic("assert pattern did not
 │                     match")` and sets `AssertPattern.fatal`, so the AST keeps one shape and every

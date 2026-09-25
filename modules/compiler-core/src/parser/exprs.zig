@@ -2052,10 +2052,22 @@ pub fn parseForExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
 /// here is `loop-annotation-not-generator`, spanned over the block.
 pub fn parseAnnotatedLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
     const hashTok = this.peek();
+    this.legacyLoopKind = null;
     const annotations = try this.parseAnnotations(alloc);
     defer {
         for (annotations) |*ann| ann.deinit(alloc);
         alloc.free(annotations);
+    }
+    // The migration parse (`parser.effect_migration`, 24-d): the removed
+    // generator annotation was dropped and the loop reads as the prefixed
+    // loop it meant (`#[@generator] loop` is `iter loop`).
+    if (parser.effect_migration and annotations.len == 0 and
+        (this.check(.loop) or this.check(.@"while") or this.check(.@"for")))
+    {
+        if (this.legacyLoopKind) |kind| {
+            this.legacyLoopKind = null;
+            return genLoopAfterPrefix(this, alloc, kind, hashTok);
+        }
     }
     const closeTok = this.tokens[this.current - 1];
     this.parseError = ParseErrorInfo.fromTokenSpan(.loopAnnotationNotGenerator, hashTok, closeTok.offset + closeTok.lexeme.len - hashTok.offset);
@@ -2087,6 +2099,12 @@ pub fn genLoopPrefixAhead(this: *This) ?ast.EffectKind {
 /// keep their meaning) and also names the generator scope (`yield :l v`).
 pub fn parseGenLoopExpr(this: *This, alloc: std.mem.Allocator, kind: ast.EffectKind) ParseError!LoopExpr {
     const prefixTok = this.advance(); // `iter` / `stream`
+    return genLoopAfterPrefix(this, alloc, kind, prefixTok);
+}
+
+/// The prefixed loop after its prefix (`prefixTok` locates it): the `iter` /
+/// `stream` word, or the removed annotation the migration parse reads.
+fn genLoopAfterPrefix(this: *This, alloc: std.mem.Allocator, kind: ast.EffectKind, prefixTok: Token) ParseError!LoopExpr {
     if (this.check(.loop)) {
         var lp = try this.parseLoopExpr(alloc, kind);
         lp.prefixedKeyword = .loop;

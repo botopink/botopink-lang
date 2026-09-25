@@ -7596,7 +7596,87 @@ fn checkCaseExhaustiveness(
 /// Infer the type of `expr` AND build the fully-annotated `TypedExpr` in one
 /// pass.  Every child node is recursively typed before its parent is built, so
 /// no expression is visited more than once.  All allocations go into env.arena.
+/// Tooling hook (front 24 E6, `botopink migrate effects`): when set, every
+/// expression `inferExprTyped` types is recorded — the file being inferred
+/// (`env.srcPath`), the expression's location, its type. Null, the default,
+/// records nothing; the codemod sets it around one `compileTypesOnly` and
+/// reads the types while that session's arena is alive. A location shared by
+/// a node and its first child keeps the OUTER node (the last one typed).
+pub const ExprTypeLog = struct {
+    gpa: std.mem.Allocator,
+    files: std.StringHashMapUnmanaged(std.AutoHashMapUnmanaged(ast.Loc, *T.Type)) = .empty,
+
+    pub fn typeAt(self: *const ExprTypeLog, file: []const u8, loc: ast.Loc) ?*T.Type {
+        const m = self.files.get(file) orelse return null;
+        return m.get(loc);
+    }
+
+    pub fn deinit(self: *ExprTypeLog) void {
+        var it = self.files.iterator();
+        while (it.next()) |e| {
+            self.gpa.free(e.key_ptr.*);
+            e.value_ptr.deinit(self.gpa);
+        }
+        self.files.deinit(self.gpa);
+    }
+
+    fn record(self: *ExprTypeLog, file: []const u8, loc: ast.Loc, ty: *T.Type) InferError!void {
+        const gop = try self.files.getOrPut(self.gpa, file);
+        if (!gop.found_existing) {
+            gop.key_ptr.* = self.gpa.dupe(u8, file) catch |e| {
+                self.files.removeByPtr(gop.key_ptr);
+                return e;
+            };
+            gop.value_ptr.* = .empty;
+        }
+        try gop.value_ptr.put(self.gpa, loc, ty);
+    }
+};
+
+/// See `ExprTypeLog`. Thread-local: it records the inference of the thread
+/// that installed it.
+pub threadlocal var expr_type_log: ?*ExprTypeLog = null;
+
+/// The checker's half of the migration-only mode of `botopink migrate
+/// effects` (front 24 E6, decisions-pending 24-d; the parser's half is
+/// `parser.effect_migration`, which reads the removed wrappers as their new
+/// spelling). Null everywhere else — only `comptime.setEffectMigration` sets
+/// it, around the codemod's own type-check, so no compile, check, test or
+/// language-server path accepts the old forms (decision 67). It lists the
+/// files (`env.srcPath`) written against the pre-front-24 surface; the
+/// checker types THOSE with that surface's meaning, so the codemod can read
+/// the types of the old program, and every other module (std, a dependency
+/// already migrated) with today's: every old wrapper could fail, so `await t`
+/// of a `@Task<@Result<U, E>>` answers `U` (the old `await` propagated), a
+/// `for` / `for await` over an `@Iterator` / `@Stream` of `@Result<T, E>`
+/// binds `T` (the old implicit `try`), and `throw` / `try` are not refused
+/// for want of a `@Result` layer (every old effect body had an error
+/// channel). Thread-local, like `expr_type_log`.
+pub threadlocal var effect_migration_files: ?[]const []const u8 = null;
+
+/// True when `env` is typing one of `effect_migration_files`.
+fn legacyEffects(env: *const Env) bool {
+    const files = effect_migration_files orelse return false;
+    for (files) |f| if (std.mem.eql(u8, f, env.srcPath)) return true;
+    return false;
+}
+
+/// In a legacy file (`legacyEffects`): `@Result<U, E>` → `U` (the old
+/// propagating `await` and the old implicit `try` of a `for`); `ty` otherwise.
+fn legacyPropagated(env: *const Env, ty: *T.Type) *T.Type {
+    if (!legacyEffects(env)) return ty;
+    const d = ty.deref();
+    if (d.* == .named and std.mem.eql(u8, d.named.name, "Result") and d.named.args.len >= 1) return d.named.args[0];
+    return ty;
+}
+
 pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
+    const typed = try inferExprTypedInner(env, expr);
+    if (expr_type_log) |log| try log.record(env.srcPath, expr.getLoc(), typed.getType());
+    return typed;
+}
+
+fn inferExprTypedInner(env: *Env, expr: ast.Expr) InferError!TypedExpr {
     // 00 · 01-checker — an expectation belongs to the position it was set for.
     // Only an identifier chain reads it (a leading-dot enum path) and only an
     // array literal passes it on (to its elements); every other node clears it
@@ -8314,7 +8394,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         try env.result_jump_lowerings.put(loc, if (inSequence) .break_error else .wrap_error);
                     }
                 },
-                .plain => {
+                .plain => if (!legacyEffects(env)) {
                     env.lastError = TypeError.custom(
                         try fallibleChannelRefusal(env, "throw"),
                         "Put a `@Result` in the return (`-> @Result<T, E>`, `-> @Task<@Result<T, E>>`, `-> @Iterator<@Result<T, E>>`, …) or handle the failure where it happens.",
@@ -8352,7 +8432,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             // carries no fallible channel, and `.unchecked` in a body with no
             // declared return type (a lambda, a `test` block), which stays
             // lenient.
-            if (env.throwContext == .plain) {
+            if (env.throwContext == .plain and !legacyEffects(env)) {
                 if (try refuseBehindAlias(env, "try", loc)) return error.TypeError;
                 env.lastError = TypeError.custom(
                     try fallibleChannelRefusal(env, "try"),
@@ -8456,7 +8536,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 ).withLoc(loc);
                 return error.TypeError;
             }
-            const ty = unwrapTaskType(rawTy) orelse rawTy;
+            const ty = legacyPropagated(env, unwrapTaskType(rawTy) orelse rawTy);
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .await_ = valPtr } } };
         },
         .@"continue" => {
@@ -8715,7 +8795,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             return error.TypeError;
         }
         if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "Stream") and iterTy.named.args.len >= 1) {
-            itemTy = iterTy.named.args[0];
+            itemTy = legacyPropagated(env, iterTy.named.args[0]);
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
                 diagnostics.for_await_expects_stream ++ ": `for await` expects a `@Stream<T>` value",
@@ -8746,7 +8826,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             // Decision 122 — `for` over any `@Iterator<X>` is legal in any
             // function and hands over each `X`, a `@Result` when `X` is one:
             // there is no implicit `try`.
-            itemTy = n.args[0];
+            itemTy = legacyPropagated(env, n.args[0]);
         }
     }
     for (lp.params) |p| try env.bind(p, itemTy orelse try env.freshVar());
