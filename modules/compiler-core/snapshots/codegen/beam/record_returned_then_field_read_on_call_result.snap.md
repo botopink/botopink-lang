@@ -11,47 +11,47 @@ fn lineNo() -> i32 {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 7}.
 
 {function, span, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, span}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, span}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {test_heap, 5, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__span}, {integer, 4}, {integer, 9}, {integer, 2}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Span}, {integer, 4}, {integer, 9}, {integer, 2}]}}.
     {deallocate, 0}.
     return.
 
 {function, lineNo, 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, lineNo}, 0}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, lineNo}, 0}.
   {label, 5}.
     {allocate, 0, 0}.
     {call, 0, {f, 3}}.
-    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 4, {atom, main__t__span}]}.
+    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 4, {atom, test@main@@Span}]}.
     {get_tuple_element, {x, 0}, 3, {x, 0}}.
   {label, 6}.
     {deallocate, 0}.
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__span.S
+----- BEAM ASSEMBLY -- test@main@@Span.S
 ```erlang
-{module, main__t__span}.
+{module, test@main@@Span}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 9}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "main__t__span.erl", 1}]}.
-    {func_info, {atom, main__t__span}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Span.erl", 1}]}.
+    {func_info, {atom, test@main@@Span}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, start}]}.
     {move, {x, 0}, {x, 1}}.
@@ -73,8 +73,8 @@ fn lineNo() -> i32 {
 
 {function, '__bp_format', 1, 8}.
   {label, 7}.
-    {line, [{location, "main__t__span.erl", 1}]}.
-    {func_info, {atom, main__t__span}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Span.erl", 1}]}.
+    {func_info, {atom, test@main@@Span}, {atom, '__bp_format'}, 1}.
   {label, 8}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

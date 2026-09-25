@@ -15,7 +15,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Point: x, y
@@ -28,10 +28,10 @@ main() ->
     '__bp_print'([<<"hi">>]),
     '__bp_print'([[1, 2]]),
     '__bp_print'([{1, <<"a">>}]),
-    '__bp_print'([{main__t__point, 1, 2}]),
-    '__bp_print'([{main__t__shape__v__square, 4}]),
-    '__bp_print'([main__t__shape__v__nothing]),
-    '__bp_print'([[{main__t__point, 1, 2}]]).
+    '__bp_print'([{test@main@@Point, 1, 2}]),
+    '__bp_print'([{test@main@@Shape__v__square, 4}]),
+    '__bp_print'([test@main@@Shape__v__nothing]),
+    '__bp_print'([[{test@main@@Point, 1, 2}]]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -59,9 +59,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__point.erl
+----- ERLANG -- test@main@@Point.erl
 ```erlang
--module(main__t__point).
+-module(test@main@@Point).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, x) -> element(2, V);
@@ -70,13 +70,13 @@ main(_Args) ->
 '__bp_format'(V) -> {record, "Point", [{"x", element(2, V)}, {"y", element(3, V)}]}.
 ```
 
------ ERLANG -- main__t__shape.erl
+----- ERLANG -- test@main@@Shape.erl
 ```erlang
--module(main__t__shape).
+-module(test@main@@Shape).
 -export(['__bp_format'/1]).
 
-'__bp_format'({main__t__shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]};
-'__bp_format'(main__t__shape__v__nothing) -> {variant, "Shape.Nothing", []}.
+'__bp_format'({test@main@@Shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]};
+'__bp_format'(test@main@@Shape__v__nothing) -> {variant, "Shape.Nothing", []}.
 ```
 
 ----- RUN LOG -----

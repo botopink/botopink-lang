@@ -7,7 +7,7 @@ fn process(#(x, y): #(i32, i32)) -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 process({X, Y}) ->
     X.

@@ -8,7 +8,7 @@ fn greet(name: string) -> string {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% This function greets the user
 

@@ -7,15 +7,15 @@ pub fn twice(x: i32) -> i32 {
 
 ----- BEAM ASSEMBLY -- a.S
 ```erlang
-{module, a}.
+{module, test@a}.
 {exports, [{twice, 1}]}.
 {attributes, []}.
 {labels, 4}.
 
 {function, twice, 1, 3}.
   {label, 2}.
-    {line, [{location, "a.erl", 1}]}.
-    {func_info, {atom, a}, {atom, twice}, 1}.
+    {line, [{location, "test@a.erl", 1}]}.
+    {func_info, {atom, test@a}, {atom, twice}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -44,27 +44,27 @@ pub fn main() {
 
 ----- BEAM ASSEMBLY -- b.S
 ```erlang
-{module, b}.
+{module, test@b}.
 {exports, [{'_botopink_main', 0}, {main, 1}, {quad, 1}, {main, 0}]}.
 {attributes, []}.
 {labels, 35}.
 
 {function, quad, 1, 3}.
   {label, 2}.
-    {line, [{location, "b.erl", 1}]}.
-    {func_info, {atom, b}, {atom, quad}, 1}.
+    {line, [{location, "test@b.erl", 1}]}.
+    {func_info, {atom, test@b}, {atom, quad}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, a, twice, 1}}.
-    {call_ext_last, 1, {extfunc, a, twice, 1}, 1}.
+    {call_ext, 1, {extfunc, test@a, twice, 1}}.
+    {call_ext_last, 1, {extfunc, test@a, twice, 1}, 1}.
 
 {function, main, 0, 5}.
   {label, 4}.
-    {line, [{location, "b.erl", 2}]}.
-    {func_info, {atom, b}, {atom, main}, 0}.
+    {line, [{location, "test@b.erl", 2}]}.
+    {func_info, {atom, test@b}, {atom, main}, 0}.
   {label, 5}.
     {allocate, 0, 0}.
     {move, {integer, 3}, {x, 0}}.
@@ -78,22 +78,22 @@ pub fn main() {
 
 {function, '_botopink_main', 0, 7}.
   {label, 6}.
-    {line, [{location, "b.erl", 3}]}.
-    {func_info, {atom, b}, {atom, '_botopink_main'}, 0}.
+    {line, [{location, "test@b.erl", 3}]}.
+    {func_info, {atom, test@b}, {atom, '_botopink_main'}, 0}.
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
 {function, main, 1, 9}.
   {label, 8}.
-    {line, [{location, "b.erl", 4}]}.
-    {func_info, {atom, b}, {atom, main}, 1}.
+    {line, [{location, "test@b.erl", 4}]}.
+    {func_info, {atom, test@b}, {atom, main}, 1}.
   {label, 9}.
     {call_only, 0, {f, 7}}.
 
 {function, '__bp_print', 1, 11}.
   {label, 10}.
-    {line, [{location, "b.erl", 3}]}.
-    {func_info, {atom, b}, {atom, '__bp_print'}, 1}.
+    {line, [{location, "test@b.erl", 3}]}.
+    {func_info, {atom, test@b}, {atom, '__bp_print'}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -112,24 +112,24 @@ pub fn main() {
 
 {function, '-bp_show_top-', 1, 15}.
   {label, 14}.
-    {line, [{location, "b.erl", 3}]}.
-    {func_info, {atom, b}, {atom, '-bp_show_top-'}, 1}.
+    {line, [{location, "test@b.erl", 3}]}.
+    {func_info, {atom, test@b}, {atom, '-bp_show_top-'}, 1}.
   {label, 15}.
     {move, {atom, true}, {x, 1}}.
     {call_only, 2, {f, 13}}.
 
 {function, '-bp_show_elem-', 1, 17}.
   {label, 16}.
-    {line, [{location, "b.erl", 3}]}.
-    {func_info, {atom, b}, {atom, '-bp_show_elem-'}, 1}.
+    {line, [{location, "test@b.erl", 3}]}.
+    {func_info, {atom, test@b}, {atom, '-bp_show_elem-'}, 1}.
   {label, 17}.
     {move, {atom, false}, {x, 1}}.
     {call_only, 2, {f, 13}}.
 
 {function, '__bp_show', 2, 13}.
   {label, 12}.
-    {line, [{location, "b.erl", 3}]}.
-    {func_info, {atom, b}, {atom, '__bp_show'}, 2}.
+    {line, [{location, "test@b.erl", 3}]}.
+    {func_info, {atom, test@b}, {atom, '__bp_show'}, 2}.
   {label, 13}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -210,8 +210,8 @@ pub fn main() {
 
 {function, '__bp_tagged', 2, 19}.
   {label, 18}.
-    {line, [{location, "b.erl", 3}]}.
-    {func_info, {atom, b}, {atom, '__bp_tagged'}, 2}.
+    {line, [{location, "test@b.erl", 3}]}.
+    {func_info, {atom, test@b}, {atom, '__bp_tagged'}, 2}.
   {label, 19}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -250,8 +250,8 @@ pub fn main() {
 
 {function, '__bp_render', 1, 21}.
   {label, 20}.
-    {line, [{location, "b.erl", 3}]}.
-    {func_info, {atom, b}, {atom, '__bp_render'}, 1}.
+    {line, [{location, "test@b.erl", 3}]}.
+    {func_info, {atom, test@b}, {atom, '__bp_render'}, 1}.
   {label, 21}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -294,8 +294,8 @@ pub fn main() {
 
 {function, '-bp_render_pair-', 1, 23}.
   {label, 22}.
-    {line, [{location, "b.erl", 3}]}.
-    {func_info, {atom, b}, {atom, '-bp_render_pair-'}, 1}.
+    {line, [{location, "test@b.erl", 3}]}.
+    {func_info, {atom, test@b}, {atom, '-bp_render_pair-'}, 1}.
   {label, 23}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

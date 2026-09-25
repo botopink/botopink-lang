@@ -8,7 +8,7 @@ fn f() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 f() ->
     Answer = 42,

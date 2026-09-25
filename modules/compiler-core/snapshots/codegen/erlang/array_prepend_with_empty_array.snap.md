@@ -5,7 +5,7 @@ val list1 = [1, ..[]];
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 list1() ->
     [1] ++ [].

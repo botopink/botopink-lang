@@ -378,7 +378,7 @@ test "infer error: loop await on a non-future-generator" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@future]
         \\fn bad() -> @Future<i32> {
-        \\    loop await (5) { x ->
+        \\    for await (5) { x ->
         \\        ping(x);
         \\    }
         \\}
@@ -494,6 +494,47 @@ test "infer error: external ---- wrong arity" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@External.Erlang(..)]
         \\pub declare fn str_length(s: string) -> i32;
+    );
+}
+
+// Front 20 F9, decision 67 — `inline` is read by two emitters (`erlang.zig` and
+// `beam_asm.zig`, `hasExternalInline` over the last argument), so it is declared
+// on `External.Erlang` and `External.Beam` alone, and a written flag no emitter
+// would read is refused at the annotation rather than accepted and ignored.
+test "infer error: external ---- inline on a variant that does not declare it" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Node("Math.max($args)", inline = true)]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
+    );
+}
+
+test "infer error: external ---- inline as a bare trailing bool is the same flag" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Typescript("Math.max($args)", true)]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
+    );
+}
+
+test "infer error: external ---- inline must be the last argument" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Erlang(inline = true, "max($args)")]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
+    );
+}
+
+test "infer error: external ---- inline is a bool" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Beam("max($args)", inline = 1)]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
+    );
+}
+
+test "infer error: external ---- inline on a behavior method is checked the same way" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\pub behavior Shape {
+        \\    #[@External.Wasm("area", inline = true)]
+        \\    fn area(self: Self) -> i32;
+        \\}
     );
 }
 
@@ -629,16 +670,6 @@ test "infer error: RI5 ---- break :unknown reds break-label-unbound" {
     );
 }
 
-test "infer error: RI3 ---- break <expr> with C=void reds iterator-break-without-completion-type" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn nums() -> @Iterator<i32> {
-        \\    yield 1;
-        \\    break 42;
-        \\}
-    );
-}
-
 test "infer error: RC5 ---- @getContex outside #[@context] fn reds context-getcontex-outside-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
@@ -685,10 +716,12 @@ test "infer error: RC3 ---- @getContex(T) outside enclosing Anchor tree reds con
     );
 }
 
-test "infer error: RI2 ---- break <wrongType> reds iterator-break-type-mismatch" {
+test "infer error: break <wrongType> in a generator reds a type mismatch against T (decision 103)" {
+    // `break v` emits `v` and ends the generator: `v` is an item, so it must
+    // be a `T`. The completion channel `C` is gone (decision 103).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@iterator]
-        \\fn nums() -> @Iterator<i32, string, i32> {
+        \\fn nums() -> @Iterator<i32, string> {
         \\    yield 1;
         \\    break "not an i32";
         \\}
@@ -773,17 +806,6 @@ test "infer error: record update ---- a wrong value type reds at the value (C11)
         \\type Person(name: string, age: i32)
         \\val alice = Person(name: "a", age: 1);
         \\val b = Person(..alice, age: "x");
-    );
-}
-
-test "infer error: loop ---- a condition loop takes no parameter (N26)" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn f() {
-        \\    var i = 0;
-        \\    loop (i < 3) { x ->
-        \\        i = i + 1;
-        \\    };
-        \\}
     );
 }
 

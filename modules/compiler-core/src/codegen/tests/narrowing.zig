@@ -293,7 +293,7 @@ test "js: optional binding ---- the guard is loose, so `?.`'s undefined is none"
 // `case` over `Person | Vec` matched every subject and the second was dead.
 //
 // One cell for all four backends: erlang tests the tag in a guard
-// (`element(1, V) =:= 'main__t__person'`), beam as `is_tagged_tuple`, commonJS
+// (`element(1, V) =:= 'test@main@@Person'`), beam as `is_tagged_tuple`, commonJS
 // as `instanceof` (decision 5 — the prototype IS the identity there), and wasm
 // records what it records. The two records have the SAME fields on purpose: a
 // structural test cannot tell them apart, so the arm that fires proves the tag

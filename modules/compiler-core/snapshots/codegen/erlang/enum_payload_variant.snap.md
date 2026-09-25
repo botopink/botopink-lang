@@ -8,20 +8,20 @@ val Color = type {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Color
 %%   Red
 %%   Rgb(r, g, b)
 ```
 
------ ERLANG -- main__t__color.erl
+----- ERLANG -- test@main@@Color.erl
 ```erlang
--module(main__t__color).
+-module(test@main@@Color).
 -export(['__bp_format'/1]).
 
-'__bp_format'(main__t__color__v__red) -> {variant, "Color.Red", []};
-'__bp_format'({main__t__color__v__rgb, F0, F1, F2}) -> {variant, "Color.Rgb", [{"r", F0}, {"g", F1}, {"b", F2}]}.
+'__bp_format'(test@main@@Color__v__red) -> {variant, "Color.Red", []};
+'__bp_format'({test@main@@Color__v__rgb, F0, F1, F2}) -> {variant, "Color.Rgb", [{"r", F0}, {"g", F1}, {"b", F2}]}.
 ```
 
 ----- RUN LOG -----

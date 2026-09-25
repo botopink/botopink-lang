@@ -11,21 +11,21 @@ fn second(p: Point) -> i32 {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 8}.
 
 {function, first, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, first}, 1}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, first}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 3, {atom, main__t__point}]}.
+    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 3, {atom, test@main@@Point}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 6}.
     {deallocate, 1}.
@@ -33,31 +33,31 @@ fn second(p: Point) -> i32 {
 
 {function, second, 1, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, second}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, second}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 3, {atom, main__t__point}]}.
+    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 3, {atom, test@main@@Point}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
   {label, 7}.
     {deallocate, 1}.
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__point.S
+----- BEAM ASSEMBLY -- test@main@@Point.S
 ```erlang
-{module, main__t__point}.
+{module, test@main@@Point}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 8}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "main__t__point.erl", 1}]}.
-    {func_info, {atom, main__t__point}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Point.erl", 1}]}.
+    {func_info, {atom, test@main@@Point}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, x}]}.
     {move, {x, 0}, {x, 1}}.
@@ -74,8 +74,8 @@ fn second(p: Point) -> i32 {
 
 {function, '__bp_format', 1, 7}.
   {label, 6}.
-    {line, [{location, "main__t__point.erl", 1}]}.
-    {func_info, {atom, main__t__point}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Point.erl", 1}]}.
+    {func_info, {atom, test@main@@Point}, {atom, '__bp_format'}, 1}.
   {label, 7}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

@@ -703,25 +703,31 @@ pub const Formatter = struct {
                 },
             },
             .loop => |lp| blk: {
-                // `loop [await] [:label] (...)`
-                var head: []const u8 = "loop ";
-                if (lp.awaitLoop) head = "loop await ";
-                var doc: *const Doc = try this.text(head);
+                // Decision 105's three keywords, printed back as written:
+                //   `[#[@generator] ]loop [:label] {`
+                //   `while [:label] (cond) {`
+                //   `for [await] [:label] (iter) { x ->`
+                var doc: *const Doc = if (lp.generator) |g|
+                    try this.text(try std.fmt.allocPrint(this.arena, "#[@{s}] ", .{g.annotationName()}))
+                else
+                    try this.text("");
+                doc = try this.concat(doc, try this.text(lp.keyword.spelling()));
+                if (lp.keyword == .for_ and lp.awaitLoop) doc = try this.concat(doc, try this.text(" await"));
                 if (lp.label) |lbl| {
-                    doc = try this.concat(doc, try this.text(try std.fmt.allocPrint(this.arena, ":{s} ", .{lbl})));
+                    doc = try this.concat(doc, try this.text(try std.fmt.allocPrint(this.arena, " :{s}", .{lbl})));
                 }
-                doc = try this.concat(doc, try this.text("("));
-                doc = try this.concat(doc, try this.fmtExpr(lp.iter.*));
-                if (lp.indexRange) |ir| {
-                    doc = try this.concat(doc, try this.text(", "));
-                    doc = try this.concat(doc, try this.fmtExpr(ir.*));
+                if (lp.keyword == .loop) {
+                    doc = try this.concat(doc, try this.text(" {"));
+                } else {
+                    doc = try this.concat(doc, try this.text(" ("));
+                    doc = try this.concat(doc, try this.fmtExpr(lp.iter.*));
+                    doc = try this.concat(doc, try this.text(") {"));
                 }
-                doc = try this.concat(doc, try this.text(") {"));
                 for (lp.params, 0..) |p, i| {
                     doc = try this.concat(doc, if (i == 0) try this.text(" ") else try this.text(", "));
                     doc = try this.concat(doc, try this.text(p));
                 }
-                // A condition loop (decision 8 §10) binds nothing: no `->`.
+                // A `while` and a `loop` bind nothing: no `->`.
                 if (lp.params.len > 0) doc = try this.concat(doc, try this.text(" ->"));
                 // Each body statement keeps its `;` — printing them bare made a
                 // loop of two statements unparseable.
@@ -1067,7 +1073,7 @@ pub const Formatter = struct {
                 },
 
                 .range => |r| if (r.end) |end|
-                    this.concat(try this.fmtExpr(r.start.*), try this.concat(try this.text(".."), try this.fmtExpr(end.*)))
+                    this.concat(try this.fmtExpr(r.start.*), try this.concat(try this.text(if (r.inclusive) "..." else ".."), try this.fmtExpr(end.*)))
                 else
                     this.concat(try this.fmtExpr(r.start.*), try this.text("..")),
             },

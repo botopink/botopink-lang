@@ -8,7 +8,7 @@ val Drawable = behavior {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% behavior Drawable
 ```

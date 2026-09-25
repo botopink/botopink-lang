@@ -5,7 +5,7 @@ val msg: ?string = null;
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 msg() ->
     undefined.

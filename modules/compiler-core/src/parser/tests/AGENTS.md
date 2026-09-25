@@ -15,9 +15,13 @@ per row. A fixture there pins what *parses*; what it means is the checker half's
 still red in inference until N19–N22's checker rows land.
 
 `language_surface.zig` holds front 15's rows — the forms the project's documents write against the
-grammar that has to accept them (`specs/1.0.5-beta/15-language-surface/`). One section per row, named
-`R<n>`. A row that **hoists a rule** carries its regressions beside its new forms: the point of
-hoisting is that the arms which already worked keep working, so the two are asserted in one test.
+grammar that has to accept them (`specs/1.0.10-beta/00-compiler-carry-over/15-language-surface/`).
+One section per row, named `R<n>`. A row that **hoists a rule** carries its regressions beside its
+new forms: the point of hoisting is that the arms which already worked keep working, so the two are
+asserted in one test. R10 is the decided-against forms (step 3): one
+`expectErrorAt(src, kind, line, col)` per kind — the shared harness in `helpers.zig`, which
+`surface.zig`'s `expectError` is an alias of — beside an `assertParser` of the neighbouring forms
+that still parse, and one rendered-message case so the code, the caption and the hint are pinned.
 
 `surface.zig` holds the front-12 step-2 acceptance cases (`type`, `behavior`, field lists, separators) as structural
 assertions — no snapshots — and compares the JSON dump of each old spelling with its new spelling.
@@ -25,7 +29,9 @@ assertions — no snapshots — and compares the JSON dump of each old spelling 
 `declarations.zig` ends with front 17's rows (decision 38): `var` at module level
 (`ValDecl.mutable`), `#[@BeamMemory.Ets(keyed = true)] var` carrying the annotation on
 the binding with its `keyed` label, and an unlabelled argument having no label —
-structural assertions, no snapshot.
+structural assertions, no snapshot. `surface.zig` carries the front's two `expectError`
+cases: an annotated `val` shorthand (`#[@BeamMemory.Ets] val add = fn …`) is
+`unexpectedToken` **at the annotation** (`1:1`), and `var` reads no shorthand at all.
 
 `errors.zig` carries the static-prefix cells of `use` (front 19 of 1.0.10-beta): the
 bare `use …;` after a `return`, row 4b (`val c = use …` after a `return`, refused at the

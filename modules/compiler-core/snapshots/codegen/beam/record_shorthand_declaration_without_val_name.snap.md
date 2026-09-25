@@ -11,46 +11,46 @@ type Vec2(
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 2}.
 ```
 
------ BEAM ASSEMBLY -- main__t__vec2.S
+----- BEAM ASSEMBLY -- test@main@@Vec2.S
 ```erlang
-{module, main__t__vec2}.
+{module, test@main@@Vec2}.
 {exports, [{dot, 2}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 14}.
 
 {function, dot, 2, 3}.
   {label, 2}.
-    {line, [{location, "main__t__vec2.erl", 1}]}.
-    {func_info, {atom, main__t__vec2}, {atom, dot}, 2}.
+    {line, [{location, "test@main@@Vec2.erl", 1}]}.
+    {func_info, {atom, test@main@@Vec2}, {atom, dot}, 2}.
   {label, 3}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 3, {atom, main__t__vec2}]}.
+    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 3, {atom, test@main@@Vec2}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 4}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 3, {atom, main__t__vec2}]}.
+    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 3, {atom, test@main@@Vec2}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 5}.
     {gc_bif, '*', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 3, {atom, main__t__vec2}]}.
+    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 3, {atom, test@main@@Vec2}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
   {label, 6}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 3, {atom, main__t__vec2}]}.
+    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 3, {atom, test@main@@Vec2}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
   {label, 7}.
     {gc_bif, '*', {f, 0}, 3, [{x, 2}, {x, 0}], {x, 0}}.
@@ -60,8 +60,8 @@ type Vec2(
 
 {function, '__bp_get', 2, 9}.
   {label, 8}.
-    {line, [{location, "main__t__vec2.erl", 2}]}.
-    {func_info, {atom, main__t__vec2}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Vec2.erl", 2}]}.
+    {func_info, {atom, test@main@@Vec2}, {atom, '__bp_get'}, 2}.
   {label, 9}.
     {test, is_eq_exact, {f, 10}, [{x, 1}, {atom, x}]}.
     {move, {x, 0}, {x, 1}}.
@@ -78,8 +78,8 @@ type Vec2(
 
 {function, '__bp_format', 1, 13}.
   {label, 12}.
-    {line, [{location, "main__t__vec2.erl", 2}]}.
-    {func_info, {atom, main__t__vec2}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Vec2.erl", 2}]}.
+    {func_info, {atom, test@main@@Vec2}, {atom, '__bp_format'}, 1}.
   {label, 13}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

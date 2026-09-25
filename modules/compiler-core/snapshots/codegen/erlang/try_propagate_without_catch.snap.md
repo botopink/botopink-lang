@@ -14,7 +14,7 @@ fn process() -> @Result<i32, string> {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 fetch() ->
     erlang:error({todo, <<"not implemented">>}).

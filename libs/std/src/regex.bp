@@ -77,17 +77,17 @@ pub type Match(
 // Node materialises `null` from a missing match; Erlang's `re:run`
 // yields `{match, [{Offset, Len}]}` (0-based byte offsets) and the
 // template projects that into the `Match` record's run-time shape —
-// the tagged tuple `{'std@regex__t__match', Value, Index}` decision 21
+// the tagged tuple `{'std@regex@@Match', Value, Index}` decision 21
 // gives every record on this backend.
 #[@External.Node("""(() => { const __m = $1.match(new RegExp($0)); return __m ? { value: __m[0], index: __m.index } : null })()""")]
-#[@External.Erlang("""(fun() -> case re:run($1, $0, [{capture, first, index}]) of {match, [{__O, __L}]} -> {'std@regex__t__match', binary:part($1, __O, __L), __O}; nomatch -> undefined end end)()""")]
+#[@External.Erlang("""(fun() -> case re:run($1, $0, [{capture, first, index}]) of {match, [{__O, __L}]} -> {'std@regex@@Match', binary:part($1, __O, __L), __O}; nomatch -> undefined end end)()""")]
 pub declare fn match(pattern: string, input: string) -> ?Match;
 
 // Every non-overlapping match. Node uses the `g` flag + `matchAll`;
 // Erlang uses `[global, {capture, first, index}]` and projects each
 // `{Offset, Len}` into the same tagged tuple.
 #[@External.Node("""(Array.from($1.matchAll(new RegExp($0, 'g'))).map((__m) => ({ value: __m[0], index: __m.index })))""")]
-#[@External.Erlang("""(fun() -> case re:run($1, $0, [global, {capture, first, index}]) of {match, __Ms} -> [{'std@regex__t__match', binary:part($1, __O, __L), __O} || [{__O, __L}] <- __Ms]; nomatch -> [] end end)()""")]
+#[@External.Erlang("""(fun() -> case re:run($1, $0, [global, {capture, first, index}]) of {match, __Ms} -> [{'std@regex@@Match', binary:part($1, __O, __L), __O} || [{__O, __L}] <- __Ms]; nomatch -> [] end end)()""")]
 pub declare fn matchAll(pattern: string, input: string) -> Array<Match>;
 
 // ── tests ────────────────────────────────────────────────────────────────────

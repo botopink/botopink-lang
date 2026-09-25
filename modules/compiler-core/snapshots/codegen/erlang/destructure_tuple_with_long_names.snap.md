@@ -10,7 +10,7 @@ fn extract_coordinates() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 get_coordinates() ->
     {0.0, 0.0}.

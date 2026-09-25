@@ -17,15 +17,15 @@ fn Counter() -> Element {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 14}.
 
 {function, state, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, state}, 1}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, state}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -37,8 +37,8 @@ fn Counter() -> Element {
 
 {function, memo, 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, memo}, 0}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, memo}, 0}.
   {label, 5}.
     {allocate, 0, 0}.
     {move, {integer, 0}, {x, 0}}.
@@ -48,8 +48,8 @@ fn Counter() -> Element {
 
 {function, 'Counter', 0, 7}.
   {label, 6}.
-    {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, 'Counter'}, 0}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, 'Counter'}, 0}.
   {label, 7}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -78,15 +78,15 @@ fn Counter() -> Element {
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {x, 0}, {y, 2}}.
     {test_heap, 2, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__element}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Element}]}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
 
 {function, '-Counter/0-fun-0-', 1, 13}.
   {label, 12}.
-    {line, [{location, "main.erl", 4}]}.
-    {func_info, {atom, main}, {atom, '-Counter/0-fun-0-'}, 1}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '-Counter/0-fun-0-'}, 1}.
   {label, 13}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -96,17 +96,17 @@ fn Counter() -> Element {
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__element.S
+----- BEAM ASSEMBLY -- test@main@@Element.S
 ```erlang
-{module, main__t__element}.
+{module, test@main@@Element}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 4}.
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__element.erl", 1}]}.
-    {func_info, {atom, main__t__element}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Element.erl", 1}]}.
+    {func_info, {atom, test@main@@Element}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

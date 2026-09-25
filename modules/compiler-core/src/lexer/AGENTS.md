@@ -10,7 +10,7 @@ Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 ```text
 lexer/
 ├── AGENTS.md      ← you are here
-├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col); `record`/`enum`/`interface` are no longer lexed (declaration-kind tags for the language server only); `unknown` IS lexed (decision 8 §2, 06 N19)
+├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col); `record`/`enum`/`interface` are no longer lexed (declaration-kind tags for the language server only); `unknown` IS lexed (decision 8 §2, 06 N19); `ampersand`/`caret`/`charLiteral` are lexed so the parser refuses them by name (front 15 step 3)
 ├── tests.zig      ← barrel importing every tests/<feature>.zig
 └── tests/         ← lexer tests, split by feature
     ├── helpers.zig    ← placeholder harness module (no helpers defined)
@@ -59,6 +59,14 @@ defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer
 stays `dotDot`, iteration and slicing. The scanner tries the third dot before
 settling for `..`, so no source that writes `..` changed meaning.
 
+## `while` is a keyword (decision 105)
+
+`while` lexes as `@"while"` since 1.0.10-beta's front 22; `for` was already a
+keyword the lexer produced and nothing consumed. The three loop keywords —
+`for`, `while`, `loop` — are one `LoopExpr` node in the parser
+(`../parser/AGENTS.md`). `while` was refused as `removed-keyword-while` before;
+that kind is gone.
+
 ## `??` is its own token (decision 28)
 
 `??` lexes as `questionQuestion`, tried after `?.` and before the bare `?`, the
@@ -69,6 +77,21 @@ botopink tokens.
 
 The parser **desugars** it (`parseNullishExpr`) rather than mapping it to a
 `BinOp`; `ast.nullish_binding_name` says why.
+
+## `&`, `^` and `'a'` are tokens the parser refuses by name (front 15 step 3)
+
+A lone `&`, a `^` and a `'…'` literal used to stop the scanner with
+`LexerError.UnexpectedCharacter` — an error with no kind and, for the reader,
+no name: "unexpected character" at a column. They lex now — `ampersand`,
+`caret`, and `charLiteral` spanning the opening `'` to the closing one on the
+same line (an escaped `\'` does not close it) or to the end of the line — and
+the **parser** refuses each where an expression could have continued:
+`bitwise-operator-absent` at `parsePostfixChain`'s exit (`<<` and `>>` were
+tokens already and are refused there too), `char-literal-absent` in
+`parsePrimary`. The rule this follows: a form the language *decided against* is
+not a malformed token, so it gets a `ParseErrorType`, a located message naming
+the replacement and an `expectErrorAt` case (`parser/AGENTS.md` § *A
+decided-against form is refused by name*). `&&` is unchanged.
 
 ## `unknown` is a keyword (decision 8 §2, 06 N19)
 
@@ -84,7 +107,8 @@ into `TypeRef.named = ast.unknown_type_name`; the language server lists it in
   malformed: `scanAll` returns `LexerError.LexicalError` and fills
   `Lexer.lexError: ?LexicalError` (`LexicalErrorType`: `DigitOutOfRadix`,
   `RadixIntNovalue`, `BadStringEscape`, `InvalidUnicodeEscape`,
-  `InvalidTripleEqual`).
+  `InvalidTripleEqual`). A spelling the language decided against is **not**
+  malformed — it lexes, and the parser names it (§ above).
 - Numeric literals support `1_000_000` digit separators and scientific notation
   (`1.5e-10`, `2E+3`); unary `-` is handled in the parser primary.
 - A new `tests/*.zig` file only runs once it is imported from `tests.zig`.

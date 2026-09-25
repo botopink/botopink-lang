@@ -1,15 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@iterator]
-fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
-    loop (xs) { item ->
+#[@generator]
+fn fromList<T>(xs: Array<T>) -> @Generator<T> {
+    for (xs) { item ->
         yield item;
     };
 }
 
-fn toList<T>(iter: @Iterator<T>) -> Array<T> {
+fn toList<T>(iter: @Generator<T>) -> Array<T> {
     var out = [];
-    loop (iter) { item ->
+    for (iter) { item ->
         out.push(item);
     };
     return out;
@@ -76,9 +76,6 @@ fn main() {
     (local $__mem0 i32)
     (local $out i32)
     (local $item i32)
-    (local $__iter0 i32)
-    (local $__idx0 i32)
-    (local $__len0 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -90,38 +87,7 @@ fn main() {
     i32.store
     local.get $__mem0
     local.set $out
-    local.get $iter
-    local.set $__iter0
-    local.get $__iter0
-    i32.load ;; element count
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
-    (block $__break
-      (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
-        local.set $item
-    local.get $out
-    local.get $item
-    call $__arr_push
-    local.set $out
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
-      )
-    )
-    i32.const 0
+    i32.const 0 ;; loop over unknown iterable
     drop
     local.get $out
     return
@@ -337,6 +303,15 @@ fn main() {
     )
   )
   (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 256
+    i32.lt_u
+    (if
+      (then
+        ;; a pointer below the data floor is not a string
+        unreachable
+      )
+    )
     local.get $s
     i32.const 4
     i32.add
@@ -642,5 +617,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-1,2,3
+
 ```

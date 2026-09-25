@@ -1,6 +1,7 @@
 /// `botopink new <name>` — scaffold a new botopink project.
 const std = @import("std");
 const reporter = @import("./reporter.zig");
+const manifest = @import("manifest");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,13 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options) !u8 {
             reporter.errMsg("project name may only contain letters, digits, '-' and '_'");
             return 1;
         }
+    }
+    // The name becomes the manifest's `name`, which `manifest` refuses unless
+    // it starts with a lowercase letter (decision 109) — refuse before
+    // scaffolding a project that could not build.
+    if (manifest.nameRefusal(opts.name)) |why| {
+        reporter.errMsg(why);
+        return 1;
     }
 
     const cwd = std.Io.Dir.cwd();

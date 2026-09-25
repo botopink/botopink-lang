@@ -7,7 +7,7 @@ fn notImplemented() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 notImplemented() ->
     erlang:error({todo, <<"implement this function">>}).

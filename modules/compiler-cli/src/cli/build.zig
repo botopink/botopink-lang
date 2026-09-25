@@ -77,11 +77,13 @@ pub fn run(
     // location (below); the rest still compile.
     const modules = all_modules;
 
-    // Build codegen config.
+    // Build codegen config. The package names start every erlang/BEAM
+    // module atom (decision 109).
     const cfg = bp.codegen.Config{
         .targetSource = targetSource(target),
         .typeDefLanguage = if (opts.typescript) .typescript else null,
         .build_root = ".botopinkbuild",
+        .packages = try libs.packagesOf(arena, proj, dep_modules),
     };
 
     // Run the compiler. `build` emits only: the program is not executed.
@@ -104,8 +106,13 @@ pub fn run(
 
     // Write what compiled; remove any previous artifact of a module that did not,
     // so nothing stale is left claiming to be current.
-    try writeOutputs(gpa, io, outputs.items, opts.out_dir, target, env_map);
-    removeStaleArtifacts(arena, io, failed, opts.out_dir, target);
+    writeOutputs(gpa, io, outputs.items, opts.out_dir, target, cfg.packages, env_map) catch |err| switch (err) {
+        // A sidecar the build cannot ship: the located refusal is already
+        // printed by the shipper, and the build ends here with exit 1.
+        error.SidecarRefused => return 1,
+        else => return err,
+    };
+    removeStaleArtifacts(arena, io, failed, opts.out_dir, target, cfg.packages);
 
     diagnostics.reportOrphans(arena, loaded.orphans.len);
 
@@ -178,15 +185,17 @@ pub fn targetSubdir(target: config.Target) []const u8 {
 }
 
 /// `<out_dir>/<subdir><stem><ext>` for one module — the stem is the module atom
-/// for erlang and BEAM, the module path for commonJS and wasm. Caller owns it.
+/// for erlang and BEAM (its package first, decision 109), the module path for
+/// commonJS and wasm. Caller owns it.
 pub fn artifactPath(
     alloc: std.mem.Allocator,
     out_dir: []const u8,
     target: config.Target,
+    packages: bp.codegen.crossModule.Packages,
     module_name: []const u8,
     ext: []const u8,
 ) ![]u8 {
-    const stem = try bp.codegen.crossModule.outputStem(targetSource(target), alloc, .of(module_name));
+    const stem = try bp.codegen.crossModule.outputStem(targetSource(target), alloc, packages.idOf(module_name));
     defer alloc.free(stem);
     return std.fmt.allocPrint(alloc, "{s}/{s}{s}{s}", .{ out_dir, targetSubdir(target), stem, ext });
 }
@@ -196,27 +205,28 @@ pub fn artifactPath(
 /// succeeded (policy 3 of `13-module-identity`). A failed module carries no
 /// `GenerateResult`, so its units cannot be named from the output; they are
 /// found by their prefix instead, which is exactly this module's: every unit is
-/// `<module atom>__t__<decl><ext>` and no other module can render that stem.
-fn removeStaleArtifacts(arena: std.mem.Allocator, io: std.Io, failed: []const []const u8, out_dir: []const u8, target: config.Target) void {
+/// `<module atom>@@<Decl><ext>` (decision 109) and no other module can render
+/// that stem: `@@` never occurs inside a module atom.
+fn removeStaleArtifacts(arena: std.mem.Allocator, io: std.Io, failed: []const []const u8, out_dir: []const u8, target: config.Target, packages: bp.codegen.crossModule.Packages) void {
     for (failed) |name| {
         const exts = [_][]const u8{ artifactExt(target), ".d.ts" };
         for (exts) |ext| {
-            const p = artifactPath(arena, out_dir, target, name, ext) catch continue;
+            const p = artifactPath(arena, out_dir, target, packages, name, ext) catch continue;
             std.Io.Dir.cwd().deleteFile(io, p) catch {};
         }
-        removeStaleUnits(arena, io, name, out_dir, target);
+        removeStaleUnits(arena, io, packages, name, out_dir, target);
     }
 }
 
-/// The `<module atom>__t__…<ext>` files of one failed module, deleted from the
+/// The `<module atom>@@…<ext>` files of one failed module, deleted from the
 /// flat per-target directory. A no-op on commonJS and wasm, which emit no units.
-fn removeStaleUnits(arena: std.mem.Allocator, io: std.Io, name: []const u8, out_dir: []const u8, target: config.Target) void {
+fn removeStaleUnits(arena: std.mem.Allocator, io: std.Io, packages: bp.codegen.crossModule.Packages, name: []const u8, out_dir: []const u8, target: config.Target) void {
     switch (target) {
         .erlang, .beam => {},
         .commonJS, .wasm => return,
     }
-    const atom = bp.codegen.crossModule.erlAtom(arena, .of(name)) catch return;
-    const prefix = std.fmt.allocPrint(arena, "{s}__{s}__", .{ atom, bp.codegen.crossModule.Kind.t.tag() }) catch return;
+    const atom = bp.codegen.crossModule.erlAtom(arena, packages.idOf(name)) catch return;
+    const prefix = std.fmt.allocPrint(arena, "{s}{s}", .{ atom, bp.codegen.crossModule.DECL_SEP }) catch return;
     const ext = artifactExt(target);
     const dir_path = std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, targetSubdir(target) }) catch return;
     var dir = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch return;
@@ -238,6 +248,7 @@ fn writeOutputs(
     outputs: []const bp.codegen.ModuleOutput,
     out_dir: []const u8,
     target: config.Target,
+    packages: bp.codegen.crossModule.Packages,
     env_map: libs.EnvMap,
 ) !void {
     // Ensure output directory exists.
@@ -253,7 +264,7 @@ fn writeOutputs(
         if (o.result.failed()) continue;
         // erlang/BEAM: `out/<target>/<atom><ext>`, flat. commonJS/wasm:
         // `out/<module path><ext>`, so subdirectories may have to be created.
-        const sub_path = try artifactPath(gpa, out_dir, target, o.name, ext);
+        const sub_path = try artifactPath(gpa, out_dir, target, packages, o.name, ext);
         defer gpa.free(sub_path);
 
         // Ensure parent directory exists.
@@ -277,7 +288,7 @@ fn writeOutputs(
 
         // Optional TypeScript typedef.
         if (o.result.typedef) |td| {
-            const dts_path = try artifactPath(gpa, out_dir, target, o.name, ".d.ts");
+            const dts_path = try artifactPath(gpa, out_dir, target, packages, o.name, ".d.ts");
             defer gpa.free(dts_path);
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = dts_path, .data = td });
         }
@@ -287,6 +298,6 @@ fn writeOutputs(
     // `#[@External.<targert>(...)]` `require("…/x.mjs")` — including a dependency's, whose
     // emitted module sits a directory deeper than in its own build.
     if (target == .commonJS) {
-        libs.shipMjsSidecars(gpa, io, outputs, out_dir, ext, env_map) catch {};
+        try libs.shipMjsSidecars(gpa, io, outputs, out_dir, ext, env_map);
     }
 }

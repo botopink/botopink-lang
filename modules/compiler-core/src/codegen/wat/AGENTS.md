@@ -41,7 +41,7 @@ model exists so none of them can be written again:
 | `wat_ast.zig` | **Types**: `ValType` (`i32`/`i64`/`f32`/`f64`, with `parse` for the backend's spelled type names), `Stack` (`none`/`value`/`terminated`, with `fits(?ValType)`), `Width` (`full`/`byte` — `…8_u` / `…8`), `MemArg` (`ty`, `width`, `offset`). **Instructions**: `Instr` (`const` with the numeral as spelled, `local_get`/`local_set`/`local_tee`, `global_get`/`global_set`, `op` = `<ty>.<name>`, `convert` (a fully-spelled conversion opcode), `load`/`store`, `call`, `call_indirect` (an inline `FuncType`), `br`/`br_if`, `drop`, `return`, `unreachable`, `memory_copy`, `if`, `block` (`block` or `loop`), `comment`). **Layout**: `Line` (instruction + `indent` + trailing `;; comment` + `folded`), `Seq` (lines + stack), `If.Arm.Layout` (`block` vs one-line `inline_`). **Forms**: `Param`, `Local`, `Func` (name, exports, params, result, `locals` as *lines* so a helper can group several, body), `Global`, `FuncType`/`Import`, `Memory`, `DataSegment` (offset + length prefix + raw bytes), `Item` (import/memory/start/table/data/global/func/comment — `table` is `(table funcref (elem $f …))`, each name checked against the module's functions), `Module` (items). **Invariants**: `Invalid`, `validateFunc`, `validateModule`, `declaresCall`. **Helpers**: `Helper` (every symbol is `__<tag>`; `group`), `HelperGroup` (`deps` — the groups a group's functions call into), `HelperSet` (an `EnumSet`; `require` closes over `deps`). **`Builder`**: arena + `seq`/`param`/`localLines`/`func` (which validates) + `helper`. |
 | `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point). Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
 | `wasm_binary_emitter.zig` | `encodeModule(alloc, Module) → []u8`: the binary format of the module the text emitter renders — validated first (`validateModule`), then sections type · import · function · table · memory · global · export · start · element · code · data, LEB128, one type per distinct signature (imports' and functions' types first, then each `call_indirect`'s), locals as runs of one type, no custom section. Every name the text spells is resolved to an index — functions (imports first, then definitions, in item order), globals, locals (params then declared), branch labels (depth, every `if` counted) — and a name that resolves to nothing (`UnknownName`), an operator the MVP table (`opcodes`: numeric, conversions, sign extension, `trunc_sat`) does not know (`UnknownOp`) or a numeral that does not parse (`BadNumeral`, the text format's spellings: sign, `0x`, `_`, `inf`/`nan`) is an error, never a guess. `wat.zig`'s `emitWat` renders both from one `Module` (`GenerateResult.js` the text, `.wasm` the binary); `codegen/runtime.zig`'s `executeWat` runs the **binary**, so every wasm RUN LOG is the binary emitter's answer checked against the recorded fixture. The browser build's page instantiates the same bytes. `Encoder` (with `typeIndex`/`funcIndex`/`funcBody`), `Bytes`, `section`, `uleb`/`sleb`, `name`, `valType`, `funcType` and `constInstr` are public for `comptime/runtime/wat/link.zig`, which pre-seeds an `Encoder` with a prebuilt module's index spaces and encodes a lowered comptime program's functions against the merged numbering. |
-| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str`, `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_undefined` — the bytes of `undefined` through scratch `176..185` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `print_loop` (`$__print_null` — decision 52's four bytes through scratch `176..180`, one `i32.store` — and `$__print_loop_i32` +`_raw`, which take the value **and** the `$__got{n}` flag; deliberately a different text from `$__print_undefined`, see `../AGENTS.md`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
+| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_undefined` — the bytes of `undefined` through scratch `176..185` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), and `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `undefined` for `0`, `$__print_tagged_raw` otherwise; its own group, last in declaration order, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
 
 ## Consumers
 
@@ -178,30 +178,112 @@ What is left in this class is the **generic-parameter limit** below, which is a
 different cause: there the declared type is a type parameter, so no shape exists
 to slice — and one more, reported on `fix/wasm-refusals` and not fixed there:
 
-**An absent `?string` that `optInfoOf` does not recognise prints through
-`$__print_str`, which loads a length from address 0 — the WASI iovec — and writes
-whatever bytes sit there, exit 0.** Measured by disabling the `s.at(i)` arm of
-`optInfoOf` and rebuilding: `@print(s.at(3))` on `"abc"` wrote six spaces instead
-of saying the value is absent. The `?T` reader is a hand-maintained list
-(`optInfoOf`'s arms plus `fn_ret_typerefs`), so **every** new `?string`-valued
-lowering has to be registered there by hand or it answers garbage silently — the
-wrong default for the backend this section exists for. `$__print_str` guarding
-its own null (printing absence, or trapping) would close it for good. `05-wasm`
-step 1's row.
+**`$__print_str_raw` guards its own null** (`00 · 05-wasm`, 1.0.10-beta). A
+string here is a length-prefixed blob in a data segment or on the heap, and both
+start at the data floor (256); everything below it is the scratch area, and
+`0..8` is the WASI iovec itself. So a pointer below the floor is not a string —
+it is an absent `?string` whose shape nothing registered — and the helper traps
+(`unreachable`, wasmtime 134, a backtrace naming `$__print_str_raw`) instead of
+loading a length from address 0 and writing whatever bytes sit there. Measured
+both ways by disabling the `s.at(i)` arm of `optInfoOf` and rebuilding:
+`@print(s.at(3))` on `"abc"` wrote garbage at exit 0 before the guard (six spaces
+at the tip the row was written against, a bare newline at `2e6bb4ac`) and traps
+after it. This is [decision 67](../../../../../specs/1.0.10-beta/decisions-taken.md)
+— the most restrictive behaviour, and no flag that turns it off — and it is the
+reason the hand-maintained list below is no longer a silent trap: an optional
+shape nobody registered is now loud.
+
+## The carrier of a `?T` (`00 · 05-wasm`, 1.0.10-beta)
+
+**`arrayElemOpt` is the one place that decides what `xs.at(i)` / `xs.first()`
+answers, and both the writer and the reader take their answer from it.** A
+payload that is already a POINTER — a string, a record, an array, a tuple — is
+its own offset, and `0` is absence; only a scalar (an integer, a bool, a float)
+goes in a `$__box_i32` cell, because a present `0` has to be distinguishable from
+none. While the two sides decided separately — `lowerArrayMethod` picking
+`$__arr_at` or `$__arr_at_box`, `optInfoOf` reporting the shape — a RECORD
+element fell between them: `ElemKind` cannot tell a record from an integer (both
+are an `i32` slot), so the element was WRITTEN boxed and READ as a bare pointer,
+one indirection short at every reader. Every line of it answered a heap address
+at exit 0:
+
+| Written | Was | Is |
+|---|---|---|
+| `es.at(0)?.key.length()` | `276` | `3` |
+| `val k: string = first.key;` inside `if (first != null)` | `272` | `abc` |
+| `@print(es.at(0))` | `296` | `Entry(key: "abc")` |
+| `rows[1][0]` over `[[1, 2], [3, 4]]` | `0` | `3` |
+
+Four readers had to learn the same thing, and each is named where it sits:
+
+- **`elemRecordOf`** answers the record type an array's elements name — an array
+  literal of constructor calls, a local or global bound to one, a declared
+  `Entry[]`, and the array methods that keep their receiver's elements
+  (`keepsElements`). `arr_elem_recs` / `arr_elem_rec_globals` carry it per name,
+  beside `arr_elem_locals`, because `ElemKind` has no room for it.
+- **`elemIsPointer`** answers the other pointer element — an array or a tuple —
+  off the print shape (`[[i`, `[(is)`), which is the one place a nested container
+  is already tracked.
+- **`recordTypeOfExpr`** recovers the record through `xs.at(i)` / `xs.first()`,
+  and through `a ?? b` (the transform pass writes that as `if (a) { <this> ->
+  <this> } else { b }`, so the binder is what tells it from an ordinary `if`, and
+  the default arm is the one that names the type). That is what makes
+  `(es.at(9) ?? Entry(key: "zz")).key` a declared `string` and not a number.
+- **`elemKindOf`'s `identAccess` arm** reads the field's declared type instead of
+  answering `.i32` unconditionally, so `self.cells.at(0)` over a `cells:
+  string[]` field is a `?string` and not a boxed `?i32`.
+
+**A name a `!= null` test narrows is its PAYLOAD for the branch**
+(`narrowed_opts`, `collectNullTestNames`, `applyNarrowing`/`dropNarrowing` in
+`lowerIfExpr`). Inside the branch `optInfoOf` answers nothing for that name and a
+boxed payload is loaded at every read — the same unboxing the optional-binding
+form `if (ns.at(0)) { n -> … }` has always done. `!= null` narrows the then
+branch, `== null` the else branch, `&&` both of its halves on the holding side
+and `||` both on the failing side; only a bare NAME is narrowable, which is the
+limit the checker draws too. Without it a narrowed `?i32` was read as its box and
+`n + 1` answered a heap address at exit 0. `00 · 01-checker` owns the checker's
+half of this rule; this is only the carrier's.
+
+**`$__print_opt_tagged`** (+`_raw`) is the printer a `?T` whose `T` is a record
+takes: the tagged printer reads a header four bytes behind the value, so absence
+has to be answered before it is called. Its own helper group, last in declaration
+order, so a module that never prints one renders exactly as it did before.
+
+**A loop's and a HOF's element parameter carries the element's record type**
+(`lowerCollectionLoop`, `lowerArrayHof`, both through `elemRecordOf`). The
+binder is one ELEMENT, so `for (es) { e -> @print(e.key) }` and
+`es.filter({ e -> e.n > 1 })` need the record type or the field read falls to
+the unique-field guess and prints the field's ADDRESS — `284` for `"abc"`, exit
+0. Two `local_types` registrations, at the two binders.
+
+`run/optional_record_carrier.bp` pins the whole family on all four targets, and
+`run/optional_length_method.bp` lost its `.targets` sidecar with it.
+
+**A `case` used as a VALUE is a string in BOTH arm spellings** (`armIsString`).
+A BRACE arm — `case x { 5 { "five" } … }` — parses its body as a parameterless
+block, which reaches codegen as a lambda node; a lambda VALUE is a closure
+pointer, so `isStringExpr` said no, `val a = case …` was typed `i32` and
+`@print(a)` wrote the arm's heap address (`256`) at exit 0. The ARROW spelling
+(`5 -> "five";`) was right all along, which is what made the defect
+syntax-dependent. `armIsString` is the only position allowed to look through a
+lambda node, and `run/case_value_string_arms.bp` pins both spellings on four
+targets.
+
+**Still open, measured here and left.** `es.map({ e -> e.key })` does not answer
+a string ARRAY: `elemKindOf`'s `map` arm asks `isStringExpr` of the lambda's
+tail while the parameter's record type is not yet bound, so the result is `.i32`
+and `ks.at(0)?.length()` reads the box as a string pointer (`284`). It needs the
+binding held for the duration of that question, and it is not wasm's alone —
+commonJS answers `ks.at(...)?.length is not a function` for the same line.
+Likewise `es.at(1)?.key.length().toString()` traps (`unresolved call:
+toString/0`): a `?.` chain loses the receiver's type for the SECOND method.
 
 ## Two run-time rules this backend implements first (2026-09-19)
 
-**A value `break` ends a collection loop** ([decision 55](../../../../../specs/1.0.5-beta/decisions-taken.md)):
-`break <v>` inside `loop (xs) { x -> … }` appends `v` to the loop's array
-**and leaves** — `emitYield` then `br $__break`, exactly what the condition loop
-already did through `cond_break_depth`. Six `snapshots/codegen/wasm/loop_*`
-cells moved with it, all of the shape `loop (xs) { x -> break f(x); }`: their
-`RUN LOG` went from every element to the first (`[20, 40, 60]` → `[20]`), which
-is the decision's own row — the four backends agreeing on the old answer was the
-evidence it overrides. The three other backends still print the old lists
-(04 step 3, 02 has no step, 03 step 3), so those fixtures disagree across
-directories until they land. `tests/language/run/loop_yield_then_break_value.bp`
-and `loop_break_value_then_yield.bp` pin the two orderings.
+**No loop has a value** ([decision 105](../../../../../specs/1.0.10-beta/decisions-taken.md),
+superseding decision 55's value `break`): `break <v>` belongs to a generator
+scope and ends it — `emitGenBreak` appends `v` and branches out of the
+annotated loop's `$__gen{n}` block, or returns a generator fn's array.
 
 **A range pattern tests both ends** ([decision 53](../../../../../specs/1.0.5-beta/decisions-taken.md)):
 `1...9` arrives as a `.variant` whose `shape` is `.range` with the two bounds in

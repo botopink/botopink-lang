@@ -487,7 +487,7 @@ test "comptime: runtime template body ---- parts() with a hole splices the calle
     const src =
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
         \\    var acc = "\"\"";
-        \\    loop (q.parts()) { p ->
+        \\    for (q.parts()) { p ->
         \\        if (p.kind == "Text") {
         \\            acc = acc + " + \"" + p.text + "\"";
         \\        };
@@ -866,7 +866,7 @@ test "template: markup DSL ---- ${expr} splices as a text child" {
         \\fn text(value: string) -> Element { Element(); }
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<Element> {
         \\    var acc = "fragment([";
-        \\    loop (q.parts()) { p ->
+        \\    for (q.parts()) { p ->
         \\        if (p.kind == "Interp") {
         \\            acc = acc + "text(" + p.code + "),";
         \\        };

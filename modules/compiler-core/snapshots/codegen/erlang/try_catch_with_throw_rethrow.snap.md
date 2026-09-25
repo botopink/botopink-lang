@@ -14,12 +14,12 @@ fn strict() -> @Result<i32, string> {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type ApiError: msg
 
 fetch() ->
-    {error, {main__t__apierror, <<"not found">>}}.
+    {error, {test@main@@ApiError, <<"not found">>}}.
 
 strict() ->
     R = case try
@@ -34,9 +34,9 @@ strict() ->
     {ok, R}.
 ```
 
------ ERLANG -- main__t__apierror.erl
+----- ERLANG -- test@main@@ApiError.erl
 ```erlang
--module(main__t__apierror).
+-module(test@main@@ApiError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, msg) -> element(2, V).

@@ -1,9 +1,0 @@
-//// Decision 8 §10 — `while` does not exist: use `loop (condition)`.
-
-pub fn main() {
-    var i = 0;
-    while (i < 3) {
-        i = i + 1;
-    };
-    @print(i);
-}

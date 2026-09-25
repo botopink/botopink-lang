@@ -251,24 +251,26 @@ pub behavior Annotation {
 //
 // F9 — it is declared on `Erlang` and `Beam` and NOWHERE ELSE, because those
 // are the two emitters that read it: each has a `hasExternalInline` that skips
-// the dispatch entry when the flag is set. `Node` declared it too and no JS
-// path ever consulted it, so `#[@External.Node("charAt", inline = true)]` was
-// a switch that silently did nothing — a configuration that looks like it
-// bypasses the dispatch table and does not, which decision 67 refuses in
-// exactly those words. `Wasm` and `Typescript` do not gain it for the same
-// reason. A backend that grows a hand-coded shape worth opting out of adds the
-// parameter in the same change as the `hasExternalInline` that honours it.
+// the dispatch entry when the flag is set, reading the annotation's LAST
+// argument. `Node` declared it too and no JS path ever consulted it, so
+// `#[@External.Node("charAt", inline = true)]` was a switch that silently did
+// nothing — a configuration that looks like it bypasses the dispatch table and
+// does not, which decision 67 refuses in exactly those words. `Wasm` and
+// `Typescript` do not gain it for the same reason. The checker holds this
+// block to its word (`comptime/infer.zig` `external_variants`, kept in step
+// with the declaration below by a drift test): `inline` written on `Node`,
+// `Wasm` or `Typescript`, written anywhere but last, or given a value that is
+// not a bool is refused at the annotation
+// (`tests/language/reject/external_inline_unread`). A backend that grows a
+// hand-coded shape worth opting out of adds the parameter here, the table row
+// and the `hasExternalInline` that honours it, in one change.
 //
-// F9, the other half — these five variants are the five `Target` values under
-// another name, and they stay two declarations. `Target` is DATA: a value a
-// program holds, compares and passes (`Target.Node`). `External.<T>` is a
-// MARKER whose variants each carry a payload — the template, and on two of
-// them the flag — and whose meaning is per variant, which is what the
-// annotation model spells (`type … implement Annotation`, one annotation key
-// per variant) and what a plain enum of five names cannot. Collapsing them
-// would mean either an annotation with no payload or a data enum carrying
-// per-value parameters nobody reads. The names coincide because there are five
-// backends; that is the only thing they share.
+// F9, the other half — `External` is not `Target`, because `Target` is a value
+// a program holds and compares (`Target.Node`) while `External.<T>` is an
+// annotation whose every variant carries a payload the compiler reads (the
+// template, and on two of them the flag), and one enum cannot be both a value
+// and an annotation with per-variant parameters. The names coincide because
+// there are five backends; that is the only thing they share.
 
 pub type External implement Annotation {
     Erlang(template: string, inline: bool = false),

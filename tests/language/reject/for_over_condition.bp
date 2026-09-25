@@ -1,0 +1,9 @@
+//// Decision 105 — `for` iterates a collection, a range or a generator; a
+//// condition is a `while`. Refused at the loop, naming `while`.
+
+pub fn main() {
+    val running = true;
+    for (running) { x ->
+        @print(x);
+    };
+}

@@ -166,7 +166,6 @@ wasm     | run/display_print.bp       | 05-wasm | re-measured 2026-09-21 by runn
 # fails silently" is gone, because nothing is dropped any more. wasm keeps one
 # line below, and it is a different defect: not the index, but `Array.at` on an
 # array OF arrays.
-wasm     | run/index_expression.bp    | C-18 (decision 47 on wasm) | the first three probes are right (`10`, `30`, `2`); the fourth, `rows[1][0]`, answers `0`. C-02 made it `rows.at(1).at(0)` and the inner step is where it goes wrong: `@print(rows.at(1))` — the method SPELLED BY HAND, no index anywhere — prints `280`, a raw heap address, and `.at(0)` of that is `0`. So `Array.at` does not carry a `?T` whose `T` is itself an array on wasm; the index expression only reaches it. Measured 2026-09-21
 commonJS | test/curried_call.bp       | 01 handover 15 | 15's R2 made `adder(3)(4)` parse; inference does not type it. The call carries its callee in `calleeExpr`, not `callee`, and nothing reads that: the whole cell reds with `unbound variable ''` at the second `(`
 erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell does not compile, so the failure is the file's, not a test's
 
@@ -186,7 +185,7 @@ erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell d
 # `tests/language/run.sh --target beam`, which is green with them. `botopink
 # test` refuses beam, so only run/ and modules/ cells reach it: re-counted at
 # `b09bf9c6`, **18 results, 7 passing** — `run/smoke.bp`, `run/tuple_print.bp`,
-# `run/print_nested.bp`, `run/loop_yield_and_break.bp` and all three `modules/`
+# `run/print_nested.bp` and all three `modules/`
 # cells, the last two of those thanks to front 13's half 1. The "9 results,
 # 2 passing" this comment carried was measured at `c2dd780` and is two milestone
 # merges out of date.
@@ -203,56 +202,6 @@ erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell d
 # `1 1 1 0 0`). The two lines left are C-06's erlang and beam halves.
 erlang   | run/case_range_value.bp     | C-06 (erlang half not landed) | decision 53: the `1...9` arm never matches — all five probes (5, 1, 9, 0, 10) answer the `_` arm's `0`
 beam     | run/case_range_value.bp     | C-06 (beam half not landed) | decision 53: the opposite — the `1...9` arm **always** matches, so 0 and 10 answer `1` too. beam does run (run.sh § beam assembles and executes it); "beam emits only out/main.S" is no longer the measurement (D4, `case` arms)
-
-# ── §10 `yield` beside `break` in a collection loop (decision 55) ─────────────
-# Decision 55, taken 2026-09-18: `break <value>` in a collection loop contributes
-# its value **and ends the loop**. Each `.out` below is that decision's column,
-# not any backend's current answer, so if the four are moved against it exactly
-# one `.out` per cell is involved. The two shapes that already agree on all four
-# are pinned as a passing cell (`run/loop_yield_and_break.bp`) and carry no line.
-#
-# Every result is read as `length` + `join(",")` rather than printed as an array:
-# `@print` of an array is §7's separator row and two backends still get it wrong,
-# and a §7 row must not hide a §10 one.
-#
-# Three of the erlang lines below quote an `escript` compile warning that arrives
-# on **stdout**, which this suite compares byte for byte. The warnings are caused
-# by the broken lowerings themselves, so they go with them — but under
-# [decision 56](`specs/1.0.5-beta/decisions-taken.md`) front 13 replaces
-# `escript out/main.erl` with `erlc -o <out> … && erl -pa <out>`, and an erlc
-# warning does not reach the program's stdout there. A front that fixes an erlang
-# lowering and still sees a byte mismatch should check which of the two moved.
-#
-# The rows are C-06's now (1.0.10-beta, `00-compiler-carry-over`), one half per
-# backend. **The wasm half landed** (`8594e4ba`: a value `break` is `emitYield`
-# then `br $__break`, six `loop_*` RUN LOGs moved with it) and C-16 verified it by
-# running the three cells and the six fixtures under wasmtime at `361d255d` —
-# `3` / `20,40,99`, `2` / `20,99`, `2` / `20,40`, `[2]` — so the three wasm lines
-# are gone for good. commonJS, erlang and beam still run the loop on; their owner
-# cell says which half is missing. (Before C-06 the erlang lines read `02 (no
-# step; decision 55, reported 2026-09-18)`: front 02 had no step for the
-# collection loop, and the missing row was reported rather than invented.)
-commonJS | run/loop_yield_then_break_value.bp | C-06 (commonJS half not landed) | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` where `3` / `20,40,99` is owed
-erlang   | run/loop_yield_then_break_value.bp | C-06 (erlang half not landed) | decision 55: the yielded values are lost — `3` / `ok,99,ok`: every non-breaking iteration answers the `ok` of its last statement. escript also prints a `the result of evaluating operator '*'/2 is ignored` warning on stdout, which is the same defect seen by the compiler
-beam     | run/loop_yield_then_break_value.bp | C-06 (beam half not landed) | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` (D7, `break <value>`; measured here for the first time, which D7 asked for)
-commonJS | run/loop_break_value_then_yield.bp | C-06 (commonJS half not landed) | decision 55: the loop runs on after the break — `3` / `20,99,60` where `2` / `20,99` is owed
-erlang   | run/loop_break_value_then_yield.bp | C-06 (erlang half not landed) | decision 55: the break is ignored outright — `3` / `20,40,60`, the same answer the body without any `break` gives
-beam     | run/loop_break_value_then_yield.bp | C-06 (beam half not landed) | decision 55: the loop runs on after the break — `3` / `20,99,60` (D7)
-commonJS | run/loop_yield_then_bare_break.bp | C-06 (commonJS half not landed) | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` where `2` / `20,40` is owed
-erlang   | run/loop_yield_then_bare_break.bp | C-06 (erlang half not landed) | decision 55: the loop answers the atom `ok`, so `length/1` is called on a non-list and the program dies — `escript: exception error: bad argument in function length/1 called as length(ok)`. The status is escript's **127** today and becomes `erl`'s **1** when front 13 lands decision 56's runner; the reason is the crash, not the number
-beam     | run/loop_yield_then_bare_break.bp | C-06 (beam half not landed) | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` (D7)
-commonJS | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | C-06 (commonJS half not landed) | decision 55: `loop ([1, 2, 3]) { x -> break x * 2; }` answers all three doubled values; the first `break` must end the loop, so `[2]`. This assertion read `length == 3` / `"2,4,6"` and passed on all four backends until decision 55 was taken
-erlang   | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | C-06 (erlang half not landed) | decision 55: the same — `[2, 4, 6]` where `[2]` is owed
-
-# ── §10 a condition loop that never breaks (decision 52) ─────────────────────
-# Decision 52, taken 2026-09-18: a loop with no `break <value>` has no value to
-# give, on every backend, and `null` is decision 47's one spelling for absent.
-# commonJS already answers it. Decision 52's "what it costs" paragraph says
-# erlang and beam print `undefined`; re-measured here, neither does — that is
-# what they print for a *value* break, a different row. wasm's row landed as 05's
-# decision-52 commits (`13688675`, `0bc8051d`); the two lines left are C-06's.
-erlang   | run/loop_condition_no_break.bp | C-06 (erlang half not landed) | decision 52: the loop's variable group leaks out as its value — prints `3`, not `null`. escript also prints a `variable 'I@3' is unused` warning on stdout
-beam     | run/loop_condition_no_break.bp | C-06 (beam half not landed) | decision 52: prints the atom `ok` — the value of the loop body's last statement — not `null` (D6)
 
 # ── an index is a method call (decision 63, amended 2026-09-19) ──────────────
 # `xs[i]` IS `xs.at(i)` and `d["k"]` IS `d.at("k")` through the ambient
@@ -292,11 +241,11 @@ beam     | run/std_erlang_node.bp | C-03 | decision 64: dies at boot — `{undef
 # `run/lambda_expression_body.bp` (04-js, this cell's commonJS half landed with
 # it). beam drops the lambda's tail expression the same way commonJS did: four
 # of the five rows answer the atom `ok` — the value of the arm's last statement
-# on erlang terms — and only the accumulator `loop` row survives. It is defect 2
+# on erlang terms. It is defect 2
 # of the three `01-checker` handed to the backends ("an arm whose value is its
 # final expression is emitted as a statement"), seen through the lambda rather
 # than through a `case` arm, and measured here for the first time.
-beam     | run/lambda_expression_body.bp | 03 handover 01 | a lambda whose body is an `if` / `case` / condition `loop` / `try … catch` answers the atom `ok`: `ok,ok,ok` on four of the five lines, `1,2,3` on the accumulator `loop`
+beam     | run/lambda_expression_body.bp | 03 handover 01 | a lambda whose body is an `if` / `case` / `try … catch` answers the atom `ok` (`ok,ok,ok`) on the three lines left since decision 105 removed the loop rows
 
 # ── the module body on wasm and on the BEAM ──────────────────────────────────
 # A module-level `val` is the module body: evaluated once, in declaration order,
@@ -312,8 +261,6 @@ beam     | run/module_init_order.bp | 03 (no step; the module body on the BEAM) 
 # field read off a `?Record` resolves and commonJS emits the `length` PROPERTY
 # instead of a call on a number. The two cells run on every target; what is left
 # is not the checker's.
-wasm     | run/narrowing_null_check.bp | 05 step 2 (D1) | wasm's `?T` is a BOX and a narrowed NAME is never unboxed, so a field read off it reads the box: `276` / `2` / `388` / `425` / `276` / `276/2` / `276` / `3`, exit 0, where `3` / `2` / `3` / `8` / `3` / `3/2` / `3` / `3` is owed. Only the `?string` line is right, because the `.length()` rename unwraps one optional layer by itself. Before narrowing landed the same lines TRAPPED (`unreachable`, exit 134) — the field read off a fresh type variable lowered to `unreachable`; the missing unbox is the same either way, and `if (es.at(0)) { f -> f.key.length() }` answers `3` on wasm today because that form DOES unbox. Re-measured after C-01 half 3 (`a8087490`): every address MOVED and nothing else did — a box carries its declaration now, so the numbers grew (`256`/`364`/`401` before the merge) while the narrowed name is still read off the box
-wasm     | run/narrowing_null_guard_clause.bp | 05 step 2 (D1) | the same box: `292` / `0` / `292/2` / `none` / `328` / `0`, exit 0, where `3` / `0` / `3/2` / `none` / `5` / `0` is owed. Every absent probe is right — nothing is read off a `null`. Re-measured after C-01 half 3 (`a8087490`), which moved the addresses only (`272`/`288` before it)
 beam     | run/narrowing_null_guard_clause.bp | 03 (no step; two optional readers in one module) | the module does not compile: `UnknownFunction`, no location. Not narrowing's — the same program written with `??` fails identically. Minimal shape: an optional reader in a record METHOD and another in a top-level `fn` in the same module (`type Row(cells: string[]) { fn widest(self: Self) -> i32 { return (self.cells.at(0) ?? "").length(); } }` plus `fn firstOf(ws: string[]) -> i32 { return (ws.at(0) ?? "").length(); }`) — either alone compiles and runs on beam, together they are `UnknownFunction`. `run/narrowing_null_check.bp` passes on beam
 
 # ── a field read whose receiver lost its type, on wasm ───────────────────────
@@ -364,3 +311,13 @@ erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's lab
 # body still traps (`wasm trap: unreachable`). The cell is listed whole because
 # the first failing row stops the run.
 wasm     | run/effect_method.bp | 05-wasm | a record method looping over its own array field answers `0`, and a method declared in an enum's body traps (`unreachable`). Measured with the effect annotations removed as well, so it is the method call and not the effect
+
+# ── front 17 (C-05 landed the carrier; C-10 owes the BEAM lowering) ──────────
+# A module-level `var` parses, is `let` on commonJS and `(mut i32)` on wasm, and
+# has no lowering on erlang or beam until C-10 (`@BeamMemory` steps 4–5, after
+# 13). Measured at `4fe1747e`: erlang emits `hits() -> 0.` and `Hits = (Hits +
+# 1).` — unbound, the module does not compile; beam writes `%% assign to unknown
+# variable: hits` into the `.S`, assembles, and prints `0` at exit 0.
+erlang   | run/module_var.bp | C-10 | a module `var` is still a 0-arity fn on erlang; the write is `Hits = (Hits + 1).` with `Hits` unbound, so the module does not compile
+beam     | run/module_var.bp | C-10 | the write is dropped (`%% assign to unknown variable: hits`) and the program prints `0` at exit 0 — the silent one of the two
+erlang   | test/beam_memory_noop.bp | C-10 | the five tests write through a module `var`; each write is an unbound `Hits`/`Bare`/… on erlang, so the cell does not compile — once C-10 lands, the annotated ones become mode cells, not no-op cells

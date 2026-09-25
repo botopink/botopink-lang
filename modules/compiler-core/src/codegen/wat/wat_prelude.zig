@@ -41,7 +41,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
         .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw } },
         .print_opt_f32 => &.{ .{ .func = print_opt_f32_raw }, .{ .func = print_opt_f32 } },
-        .print_loop => &.{ .{ .func = print_null }, .{ .func = print_loop_i32_raw }, .{ .func = print_loop_i32 } },
+        .print_opt_tagged => &.{ .{ .func = print_opt_tagged_raw }, .{ .func = print_opt_tagged } },
         .print_opt => &.{
             .{ .func = print_undefined },    .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -354,10 +354,30 @@ const memmove = ast.Func{
     } },
 };
 
+/// Decision 67 — the most restrictive behaviour, and no flag that turns it off.
+/// A string here is a length-prefixed blob in a data segment or on the heap,
+/// and both start at the data floor (256); everything below it is the scratch
+/// area — `0..8` is the WASI iovec itself. So a pointer below the floor is not
+/// a string, it is an absent `?string` whose shape nothing registered, and the
+/// honest answer is to stop. Before this guard, `@print` of such a value loaded
+/// a length from address 0 and wrote whatever bytes were there at exit 0 with
+/// no diagnostic. Measured both ways by disabling the `s.at(i)` arm of
+/// `optInfoOf` and rebuilding: `@print(s.at(3))` on `"abc"` wrote six spaces at
+/// the tip the row was first written against and a bare newline at `2e6bb4ac`
+/// — whatever the iovec happens to hold — and traps here.
 const print_str_raw = ast.Func{
     .name = "__print_str_raw",
     .params = &.{.{ .name = "s", .ty = .i32 }},
     .body = .{ .stack = .none, .lines = &.{
+        .{ .indent = 4, .instr = .{ .local_get = "s" } },
+        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "256" } } },
+        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "lt_u" } } },
+        .{ .indent = 4, .instr = .{ .@"if" = .{
+            .then = .{ .seq = .{ .stack = .none, .lines = &.{
+                .{ .indent = 8, .instr = .{ .comment = "a pointer below the data floor is not a string" } },
+                .{ .indent = 8, .instr = .@"unreachable" },
+            } } },
+        } } },
         .{ .indent = 4, .instr = .{ .local_get = "s" } },
         .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
         .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
@@ -1460,28 +1480,15 @@ const print_opt_f32_raw = func("__print_opt_f32_raw", &.{"p"}, null, &.{}, &.{
 });
 const print_opt_f32 = func("__print_opt_f32", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_f32_raw"), call("__print_nl") });
 
-/// `null` — decision 52's spelling for a condition loop that ran out without a
-/// `break <value>`. **Not** the same text as `$__print_undefined`, which is what
-/// an absent `?T` prints here: decision 52 settles the loop and says nothing
-/// about the optional, and the spelling of absence in general is still open
-/// (§7 names neither). Written through scratch `176..180` — the same region
-/// `$__print_undefined` uses, which is safe because each writes and flushes in
-/// one call.
-const print_null = func("__print_null", &.{}, null, &.{}, &.{
-    c32(176), .{ .@"const" = .{ .ty = .i32, .text = "1819047278" } }, store(0),
-    c32(176), c32(4),                                                 call("__write_bytes"),
+/// A `?T` whose `T` is a record: the value IS the record's pointer, so `0` is
+/// absence and anything else carries the header the tagged printer reads four
+/// bytes behind it. Without the guard the tagged printer read that header out
+/// of the scratch area below address 0.
+const print_opt_tagged_raw = func("__print_opt_tagged_raw", &.{"v"}, null, &.{}, &.{
+    get("v"),                                                                            op("eqz"),
+    whenElse(&.{call("__print_undefined")}, &.{ get("v"), call("__print_tagged_raw") }),
 });
-
-/// `@print(<the value of a condition loop>)`: the value the loop's `break`
-/// carried, or `null` when it never broke. `got` is the companion flag
-/// `lowerLoop` declares beside `$__found{n}` — the value alone cannot answer
-/// this, because `break 0` and "never broke" are the same `i32` and every other
-/// backend prints `0` for the first.
-const print_loop_i32_raw = func("__print_loop_i32_raw", &.{ "v", "got" }, null, &.{}, &.{
-    get("got"),
-    whenElse(&.{ get("v"), call("__print_i32_raw") }, &.{call("__print_null")}),
-});
-const print_loop_i32 = func("__print_loop_i32", &.{ "v", "got" }, null, &.{}, &.{ get("v"), get("got"), call("__print_loop_i32_raw"), call("__print_nl") });
+const print_opt_tagged = func("__print_opt_tagged", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_opt_tagged_raw"), call("__print_nl") });
 
 /// `$__write_bytes` to stderr (fd 2), through the same iovec scratch.
 const write_err = func("__write_err", &.{ "p", "n" }, null, &.{}, &.{

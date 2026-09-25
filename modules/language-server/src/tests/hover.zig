@@ -176,6 +176,52 @@ test "hover: std module fn shows its signature" {
     try snap.assertHover(gpa, "hover_std_module_fn", source, h.pos(1, 14), result);
 }
 
+// ── decision 107 — the leaf an import path binds, in either spelling ─────────
+//
+// The server compiles with the same `resolveImports` the CLI runs, so a
+// binding an aliased std leaf introduces (`newDict`) hovers with the fn's
+// type. One snapshot per spelling: the dotted path and the braced group are
+// one tree, and the two hovers are byte-identical.
+
+test "hover: a dotted std import path binds its aliased leaf" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\import {dict.empty as newDict} from "std";
+        \\val d = newDict();
+    ;
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    // `from "std"` prepends the std module to the session, so the main
+    // module's bindings are asked for by URI, not taken from the first output.
+    const bindings = c.result.bindingsFor(h.TEST_URI);
+
+    // Cursor on `newDict` in `val d = newDict();` (line 1, char 8).
+    const result = try engine.hover(gpa, source, h.pos(1, 8), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "Dict") != null);
+    try snap.assertHover(gpa, "hover_import_dotted_leaf_alias", source, h.pos(1, 8), result);
+}
+
+test "hover: a grouped std import binds its aliased leaf" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\import {dict: {empty as newDict}} from "std";
+        \\val d = newDict();
+    ;
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.result.bindingsFor(h.TEST_URI);
+
+    const result = try engine.hover(gpa, source, h.pos(1, 8), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "Dict") != null);
+    try snap.assertHover(gpa, "hover_import_group_leaf_alias", source, h.pos(1, 8), result);
+}
+
 // NOTE: the "external declare fn in std module" hover test was retired with the
 // stdlib-interface migration — `io` was dissolved and `@[external]` declarations
 // now live in `primitives.d.bp` (flattened into the global env, not an importable

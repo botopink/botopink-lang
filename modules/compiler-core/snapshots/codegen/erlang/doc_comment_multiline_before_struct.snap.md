@@ -7,7 +7,7 @@ val Account = type(name: string, email: string);
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% User account structure
 
@@ -16,9 +16,9 @@ val Account = type(name: string, email: string);
 %% type Account: name, email
 ```
 
------ ERLANG -- main__t__account.erl
+----- ERLANG -- test@main@@Account.erl
 ```erlang
--module(main__t__account).
+-module(test@main@@Account).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, name) -> element(2, V);

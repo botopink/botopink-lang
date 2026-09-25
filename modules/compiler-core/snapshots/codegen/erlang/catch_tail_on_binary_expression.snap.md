@@ -13,12 +13,12 @@ fn compute() -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type CalcError: msg
 
 getA() ->
-    {error, {main__t__calcerror, <<"overflow">>}}.
+    {error, {test@main@@CalcError, <<"overflow">>}}.
 
 compute() ->
     R = case try
@@ -33,9 +33,9 @@ compute() ->
     R.
 ```
 
------ ERLANG -- main__t__calcerror.erl
+----- ERLANG -- test@main@@CalcError.erl
 ```erlang
--module(main__t__calcerror).
+-module(test@main@@CalcError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, msg) -> element(2, V).

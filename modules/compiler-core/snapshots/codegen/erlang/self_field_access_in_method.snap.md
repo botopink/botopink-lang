@@ -11,14 +11,14 @@ val Point = type(
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Point: x, y
 ```
 
------ ERLANG -- main__t__point.erl
+----- ERLANG -- test@main@@Point.erl
 ```erlang
--module(main__t__point).
+-module(test@main@@Point).
 -export([sum/0, '__bp_get'/2, '__bp_format'/1]).
 
 sum() ->

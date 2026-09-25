@@ -16,7 +16,7 @@ pub fn pulses() -> @FutureGenerator<i32, string> {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export([loadOne/1, count/0, pulses/0]).
 
 %% #[@future] / #[@futureGenerator] — eager lowering

@@ -282,12 +282,35 @@ pub const Lexer = struct {
             },
 
             // ── '&', '&&' ────────────────────────────────────────────────────
+            // A lone `&` is a token, not a lexical error: the parser refuses
+            // it by name (`bitwise-operator-absent`) where an expression could
+            // have continued, so the reader is told what the language has
+            // instead of "unexpected character" (front 15 step 3).
             '&' => {
                 if (self.matchChar('&')) {
                     try self.addToken(.amperAmper, allocator);
                 } else {
-                    return LexerError.UnexpectedCharacter;
+                    try self.addToken(.ampersand, allocator);
                 }
+            },
+
+            // ── '^' ───────────────────────────────────────────────────────────
+            // Same reason as the lone `&`: a token the parser names.
+            '^' => try self.addToken(.caret, allocator),
+
+            // ── `'a'` — a character literal the language does not have ──────
+            // Scanned as one token up to the closing `'` on the same line (an
+            // escaped `\'` does not close it), or to the end of the line, so
+            // `parsePrimary` refuses the whole literal as `char-literal-absent`
+            // and names the one-character string. An unterminated one is the
+            // same token: the parser's refusal covers both spellings.
+            '\'' => {
+                while (!self.isAtEnd() and self.peek() != '\'' and self.peek() != '\n') {
+                    if (self.peek() == '\\' and self.peekNext() != '\n' and self.peekNext() != 0) _ = self.advance();
+                    _ = self.advance();
+                }
+                _ = self.matchChar('\'');
+                try self.addToken(.charLiteral, allocator);
             },
 
             // ── '.', '..', '...' ─────────────────────────────────────────────
@@ -752,6 +775,7 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "use")) return .use;
         if (std.mem.eql(u8, text, "val")) return .val;
         if (std.mem.eql(u8, text, "var")) return .@"var";
+        if (std.mem.eql(u8, text, "while")) return .@"while";
         if (std.mem.eql(u8, text, "comptime")) return .@"comptime";
         if (std.mem.eql(u8, text, "syntax")) return .syntax;
         if (std.mem.eql(u8, text, "break")) return .@"break";

@@ -78,12 +78,20 @@ tests each). `scripts/check-test-scratch.sh` refuses a hand-spelled one.
 
 `lifecycle.zig` drives the in-memory `FileCache` directly (no runtime, no disk).
 
-Four tests here are **front 11's carve-out**, marked by a
-`front 11 carve-out` banner comment: `hover.zig`'s two optional-rendering tests,
-`signature_help.zig`'s `sig_optional_params` and `code_actions.zig`'s
-`code_action_annotation_optional`. They belong with `engine.renderType`, which is
-front 11's file — every one of them asserts that no rendered type contains
-`optional<`, the checker's name for a type the surface only spells `?T`.
+Nine tests here are **front 11's carve-out**, marked by a
+`front 11 carve-out` banner comment. Four assert that no rendered type contains
+`optional<`, the checker's name for a type the surface only spells `?T`:
+`hover.zig`'s two optional-rendering tests, `signature_help.zig`'s
+`sig_optional_params` and `code_actions.zig`'s `code_action_annotation_optional`.
+Five pin the 1.0.3 surface of a declaration's name after C-19 (`record { … }`,
+`enum { … }` and `interface { … }` may never render again): `completion.zig`'s
+`completion_type_enum_detail` and `completion_behavior_detail` (the builder's
+text is the completion `detail`), `inlay_hints.zig`'s `inlay_hints_val_record` and
+`inlay_hints_val_enum` (an instance is hinted by the declared name alone) and
+`signature_help.zig`'s `sig_type_constructor` (a constructor's binding is a
+`named` type, not a `.func`, so `engine.recordCtorSignature` reads the field list
+from the declaration: `Point(x: i32, y: i32) -> Point`).
+They belong with `engine.renderType`, which is front 11's file.
 
 ## Snapshot workflow
 

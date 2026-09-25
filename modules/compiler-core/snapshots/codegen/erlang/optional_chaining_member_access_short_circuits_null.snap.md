@@ -10,13 +10,13 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type User: name
 
 main() ->
-    U = {main__t__user, <<"ana">>},
+    U = {test@main@@User, <<"ana">>},
     '__bp_print'([(fun(undefined) -> undefined; (_Opt0) -> element(2, _Opt0) end)(U)]).
 
 '__bp_print'(Values) ->
@@ -45,9 +45,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__user.erl
+----- ERLANG -- test@main@@User.erl
 ```erlang
--module(main__t__user).
+-module(test@main@@User).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, name) -> element(2, V).

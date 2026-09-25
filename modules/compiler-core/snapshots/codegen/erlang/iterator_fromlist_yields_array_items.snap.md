@@ -1,15 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@iterator]
-fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
-    loop (xs) { item ->
+#[@generator]
+fn fromList<T>(xs: Array<T>) -> @Generator<T> {
+    for (xs) { item ->
         yield item;
     };
 }
 
-fn toList<T>(iter: @Iterator<T>) -> Array<T> {
+fn toList<T>(iter: @Generator<T>) -> Array<T> {
     var out = [];
-    loop (iter) { item ->
+    for (iter) { item ->
         out.push(item);
     };
     return out;
@@ -22,14 +22,21 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% #[@future] / #[@futureGenerator] — eager lowering
 fromList(Xs) ->
-    lists:map(fun(Item) ->
-        Item
-    end, Xs).
+    __BpGen1 = make_ref(),
+    erlang:put(__BpGen1, []),
+    try
+        lists:foreach(fun(Item) ->
+            erlang:put(__BpGen1, [Item | erlang:get(__BpGen1)])
+        end, Xs)
+    catch
+        throw:{'__bp_gen_end', __BpGenK1, _, __BpGenV1} when (__BpGenK1 =:= __BpGen1) -> erlang:put(__BpGen1, [__BpGenV1 | erlang:get(__BpGen1)]), ok
+    end,
+    lists:reverse(erlang:erase(__BpGen1)).
 
 toList(Iter) ->
     Out = [],

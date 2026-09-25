@@ -7,7 +7,7 @@ pub fn twice(x: i32) -> i32 {
 
 ----- ERLANG -- a.erl
 ```erlang
--module(a).
+-module(test@a).
 -export([twice/1]).
 
 twice(X) ->
@@ -33,14 +33,14 @@ pub fn main() {
 
 ----- ERLANG -- b.erl
 ```erlang
--module(b).
+-module(test@b).
 -export(['_botopink_main'/0, main/1]).
 -export([quad/1, main/0]).
 
 %% import twice
 
 quad(X) ->
-    a:twice(a:twice(X)).
+    test@a:twice(test@a:twice(X)).
 
 main() ->
     '__bp_print'([quad(3)]).

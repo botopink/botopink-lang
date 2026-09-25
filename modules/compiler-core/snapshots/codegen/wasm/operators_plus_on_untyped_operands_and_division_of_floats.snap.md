@@ -3,7 +3,7 @@
 fn average(xs: Array<f64>) -> f64 {
     var total = 0.0;
     var n = 0.0;
-    loop (xs) { x ->
+    for (xs) { x ->
         total = total + x;
         n = n + 1.0;
     };
@@ -315,6 +315,15 @@ fn main() {
     )
   )
   (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 256
+    i32.lt_u
+    (if
+      (then
+        ;; a pointer below the data floor is not a string
+        unreachable
+      )
+    )
     local.get $s
     i32.const 4
     i32.add

@@ -655,22 +655,17 @@ test "chain error: `yield` inside #[@context] — the top of the chain still can
     );
 }
 
-// The `yield` gate asks which scope the `yield` targets before it asks the
-// chain, exactly as the `break` gate does (§1I REGRAS DE ESCOPO). A `yield`
-// inside a loop feeds that loop's array — decision 8 § 10's comprehension —
-// and is legal in any body, which is what these two cells pin from both sides.
-test "chain: a loop comprehension yields in a body the chain grants no `yield`" {
-    try h.assertInfersOk(std.testing.allocator,
+// Decision 105 — a `yield` inside a `for` / `while` feeds the nearest generator
+// scope, and a body the chain grants no `yield` has none: the loop does not
+// make it legal. This is the cell that pinned the opposite (decision 8 §10's
+// comprehension) before the decision.
+test "chain error: `yield` inside a loop still needs a generator scope (decision 105)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@future]
-        \\fn collected() -> @Future<i32[]> {
-        \\    val xs = loop ([1, 2, 3]) { x -> yield x * 2; };
-        \\    return xs;
-        \\}
-        \\#[@result]
-        \\fn counted() -> @Result<i32[], string> {
-        \\    var i = 0;
-        \\    val xs = loop (i < 3) { i = i + 1; yield i; };
-        \\    return xs;
+        \\fn collected() -> @Future<i32> {
+        \\    var n = 0;
+        \\    for ([1, 2, 3]) { x -> yield x * 2; };
+        \\    return n;
         \\}
     );
 }
@@ -795,8 +790,73 @@ test "F12: a type satisfies Iterable with a #[@iterator] fn iter" {
         \\type Bag(items: i32[]) implement Iterable<i32> {
         \\    #[@iterator]
         \\    fn iter(self: Self) -> @Iterator<i32> {
-        \\        loop (self.items) { x -> yield x; };
+        \\        for (self.items) { x -> yield x; };
         \\    }
+        \\}
+    );
+}
+
+// Front 19 step 3 (1.0.10-beta): `val #(a, b) = use …` binds each name to the
+// element of `R` at its position — `push` is `fn(action: i32) -> i32`, so
+// `push(shown)` types and `push("x")` reds — and the arity is checked at the
+// binding, as is that `R` is a tuple at all (decision 67: located, no flag).
+test "context: use tuple destructure binds element types" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+        \\    val push = { action -> f(base, action) };
+        \\    #(base, push);
+        \\}
+        \\#[@context]
+        \\fn LikeWidget() -> Element {
+        \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+        \\    push(shown);
+        \\    Element();
+        \\}
+    );
+}
+
+test "context error: use tuple destructure element is R's, not a fresh var" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+        \\    val push = { action -> f(base, action) };
+        \\    #(base, push);
+        \\}
+        \\#[@context]
+        \\fn LikeWidget() -> Element {
+        \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+        \\    push("x");
+        \\    Element();
+        \\}
+    );
+}
+
+test "context error: use tuple destructure arity mismatch" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+        \\    val push = { action -> f(base, action) };
+        \\    #(base, push);
+        \\}
+        \\#[@context]
+        \\fn LikeWidget() -> Element {
+        \\    val #(shown) = use optimistic(12, { c, a -> c + a });
+        \\    Element();
+        \\}
+    );
+}
+
+test "context error: use tuple destructure of a hook whose R is not a tuple" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\#[@context]
+        \\fn Counter() -> Element {
+        \\    val #(count, setCount) = use state(0);
+        \\    Element();
         \\}
     );
 }

@@ -2,7 +2,7 @@
 ```botopink
 pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
     var acc = "\"\"";
-    loop (q.parts()) { p ->
+    for (q.parts()) { p ->
         if (p.kind == "Text") {
             acc = acc + " + \"" + p.text + "\"";
         };
@@ -120,7 +120,7 @@ val page = "" + "<p>" + name + "</p>";
           "source": "var acc = \"\\\"\\\"\";"
         },
         {
-          "source": "loop (q.parts()) { p ->"
+          "source": "for (q.parts()) { p ->"
         },
         {
           "source": "return q.build(acc);"

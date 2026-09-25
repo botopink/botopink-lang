@@ -24,18 +24,105 @@ pub const Comment = struct {
         allocator.free(this.text);
     }
 };
+/// One leaf of an import list (decision 107). The dotted spelling
+/// (`io.fs.readText as read`) and the grouped spelling
+/// (`io: {fs: {readText as read}}`) both flatten to this — the parser writes
+/// the group's prefix into `segments`, so nothing downstream knows which one
+/// was written. Only the leaf enters scope: `segments[0..len-1]` is the path
+/// of the module the leaf lives in (or, when the whole path names a module,
+/// the leaf is that module as a namespace).
 pub const ImportPath = struct {
     segments: []const []const u8,
     /// Trailing `*` — activates dispatch of the symbol's methods (impl or extend).
     activate: bool = false,
     /// `as` rename of the final binding (`std.List as L`); null when absent.
     alias: ?[]const u8 = null,
+    /// Where the item is written — its first own token (`json` in `json.parse`,
+    /// `parse` in `json: {parse}`), so a refusal such as `import-name-collision`
+    /// points at the item it is about. `line == 0` when synthesised.
+    loc: Loc = .{ .line = 0, .col = 0 },
 
     /// Final bound name: the alias when present, else the last path segment.
     pub fn name(this: ImportPath) []const u8 {
         return this.alias orelse this.segments[this.segments.len - 1];
     }
+
+    /// The AST snapshots serialise every field; `loc` is diagnostic
+    /// provenance, not shape, so it stays out of them — a snapshot recorded
+    /// before the field existed reads the same after it.
+    pub fn jsonStringify(this: ImportPath, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("segments");
+        try jws.write(this.segments);
+        try jws.objectField("activate");
+        try jws.write(this.activate);
+        try jws.objectField("alias");
+        try jws.write(this.alias);
+        try jws.endObject();
+    }
+
+    /// The last segment — the exported name the leaf refers to, whatever the
+    /// local binding (`alias`) is called.
+    pub fn leaf(this: ImportPath) []const u8 {
+        return this.segments[this.segments.len - 1];
+    }
+
+    /// True when the item carries a path (`a.b`, or a group leaf), so the leaf
+    /// is looked up in the module the prefix names rather than in the source
+    /// module itself.
+    pub fn isQualified(this: ImportPath) bool {
+        return this.segments.len > 1;
+    }
+
+    /// The segments before the leaf joined with `/` — the module path the
+    /// leaf is resolved in, relative to the import's source package. Empty for
+    /// a single-segment item.
+    pub fn prefixPath(this: ImportPath, alloc: std.mem.Allocator) ![]const u8 {
+        return joinSegments(alloc, this.segments[0 .. this.segments.len - 1]);
+    }
+
+    /// Every segment joined with `/` — the module path the whole item names
+    /// when the leaf is itself a module (`io.fs` → `io/fs`).
+    pub fn fullPath(this: ImportPath, alloc: std.mem.Allocator) ![]const u8 {
+        return joinSegments(alloc, this.segments);
+    }
+
+    /// The item as written, segments joined with `.` — for a diagnostic.
+    pub fn dotted(this: ImportPath, alloc: std.mem.Allocator) ![]const u8 {
+        const out = try joinSegments(alloc, this.segments);
+        for (@constCast(out)) |*c| {
+            if (c.* == '/') c.* = '.';
+        }
+        return out;
+    }
+
+    /// True when two items name the same thing: same path, same activation.
+    /// A repeated identical import (an `@emit` contribution re-importing what
+    /// its module already imports) is not a collision.
+    pub fn samePath(this: ImportPath, other: ImportPath) bool {
+        if (this.segments.len != other.segments.len) return false;
+        for (this.segments, other.segments) |a, b| {
+            if (!std.mem.eql(u8, a, b)) return false;
+        }
+        return this.activate == other.activate;
+    }
 };
+
+fn joinSegments(alloc: std.mem.Allocator, segs: []const []const u8) ![]const u8 {
+    var total: usize = 0;
+    for (segs, 0..) |s, i| total += s.len + @as(usize, if (i > 0) 1 else 0);
+    const out = try alloc.alloc(u8, total);
+    var at: usize = 0;
+    for (segs, 0..) |s, i| {
+        if (i > 0) {
+            out[at] = '/';
+            at += 1;
+        }
+        @memcpy(out[at .. at + s.len], s);
+        at += s.len;
+    }
+    return out;
+}
 
 /// Where an `import { … }` resolves from.
 pub const ImportSource = union(enum) {
@@ -83,6 +170,24 @@ pub const ImportDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
+
+    /// The module a qualified item's leaf lives in, as the source a lookup
+    /// narrows by (`ImportSource.namesModule`): `import {io.fs.readText} from
+    /// "std"` answers `std/io/fs`, `import {html.div} from "web"` answers
+    /// `web/html`, and the bare `import {shapes.circle.name};` answers
+    /// `shapes/circle` — the package's own module tree. A single-segment item
+    /// answers the decl's own source, and so does `from "std"` on a single
+    /// segment (the std namespace form). With `whole`, every segment is the
+    /// path: the item names a module (`io.fs` → `std/io/fs`) rather than a
+    /// symbol of one.
+    pub fn leafSource(this: ImportDecl, imp: ImportPath, alloc: std.mem.Allocator, whole: bool) !ImportSource {
+        if (!whole and !imp.isQualified()) return this.source;
+        const rel = if (whole) try imp.fullPath(alloc) else try imp.prefixPath(alloc);
+        return switch (this.source) {
+            .root => .{ .module = rel },
+            .module => |pkg| .{ .module = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ pkg, rel }) },
+        };
+    }
 };
 
 /// A `mod Name;` / `pub mod Name;` declaration — a node in the explicit module
@@ -453,22 +558,23 @@ pub fn JumpExprOf(comptime phase: Phase) type {
         try_: ?*ExprOf(phase),
         /// `await expr` — suspend until the `@Future` operand resolves; result is its `T`
         await_: *ExprOf(phase),
-        /// `break [:label] [expr]` ---- exit a block/loop/iterator early.
-        /// `value=null` is bare `break`; the optional `:label` targets a named
-        /// outer loop or `#[@iterator]` / `#[@futureGenerator]` fn scope (§1I
-        /// REGRAS DE ESCOPO: an unlabelled `break` inside a nested loop binds
-        /// to the loop, not the iterator).
+        /// `break [:label] [expr]` ---- leave the nearest loop, or end the
+        /// generator scope. `value=null` is bare `break`: it leaves the nearest
+        /// `loop`/`while`/`for`, or ends the generator when no loop encloses
+        /// it. `break v` (decision 105) emits `v` and ends the nearest generator
+        /// scope — an annotated fn or an annotated `loop` — and needs one. The
+        /// optional `:label` names an enclosing labelled loop.
         @"break": struct {
             label: ?[]const u8 = null,
             value: ?*ExprOf(phase),
         },
         /// `continue` ---- skip the rest of this loop iteration
         @"continue",
-        /// `yield [:label] expr` ---- in a generator (`#[@iterator]` /
-        /// `#[@generator]` / `#[@futureGenerator]` fn), suspend emitting `expr`;
-        /// in a plain loop, accumulate `expr` into the loop's result list. The
-        /// optional `:label` disambiguates which generator/loop scope the yield
-        /// targets.
+        /// `yield [:label] expr` ---- emit `expr` from the nearest generator
+        /// scope (an annotated fn or an annotated `loop`, decision 105) and
+        /// continue; an unannotated `while`/`for`/`loop` between the `yield`
+        /// and that scope is transparent. The optional `:label` names the
+        /// generator scope (a fn's signature label or a `loop :name`).
         yield: struct {
             label: ?[]const u8 = null,
             value: ?*ExprOf(phase),
@@ -526,28 +632,63 @@ pub fn BranchExprOf(comptime phase: Phase) type {
     };
 }
 
-/// Loop expressions: iteration constructs.
+/// The keyword a loop node was written with (decision 105): three keywords,
+/// one meaning each. `keyword` is what the formatter prints back; `condition`
+/// and `awaitLoop` are the shape the checker and the backends read.
+pub const LoopKeyword = enum {
+    /// `loop { … }` — repeats until `break`; `#[@generator] loop { … }` when
+    /// `generator` is set.
+    loop,
+    /// `while (cond) { … }` — repeats while `cond` holds.
+    while_,
+    /// `for (coll) { x -> … }` / `for await (gen) { x -> … }` — iterates a
+    /// collection, a range or a generator.
+    for_,
+
+    pub fn spelling(self: LoopKeyword) []const u8 {
+        return switch (self) {
+            .loop => "loop",
+            .while_ => "while",
+            .for_ => "for",
+        };
+    }
+};
+
+/// Loop expressions: `loop`, `while` and `for` (decision 105).
 /// Flattened: loop fields live directly on the node (no `.kind` indirection).
+/// Every unannotated loop is a statement typed `void`; the annotated
+/// `#[@generator] loop { … }` is an expression worth the annotation's wrapper.
 pub fn LoopExprOf(comptime phase: Phase) type {
     return struct {
         loc: Loc,
         type_: if (phase == .typed) *@import("./comptime/types.zig").Type else void =
             if (phase == .typed) undefined else {},
-        /// `loop (iter) { params -> body }` or `loop (iter, 0..) { item, i -> body }`
+        /// The keyword written: `loop`, `while` or `for`.
+        keyword: LoopKeyword = .loop,
+        /// `#[@generator] loop { … }` — the effect the annotation names; the
+        /// body is a generator scope and the node is worth the effect's
+        /// wrapper. Only `.loop` carries one.
+        generator: ?EffectKind = null,
+        /// `for (iter) { param -> body }`: the collection, range or generator
+        /// iterated; `while (iter) { … }`: the condition. A `loop { … }` is the
+        /// condition loop over the literal `true`.
         iter: *ExprOf(phase),
+        /// Retired with decision 105 (`for (xs, 0..) { x, i -> }` no longer
+        /// parses); always null. Leaves with the backends' index lowering.
         indexRange: ?*ExprOf(phase),
+        /// The one name a `for` binds; empty for `while` and `loop`.
         params: []const []const u8,
         /// Location of the first parameter (the loop's own location when it has none).
         paramsLoc: Loc = .{ .line = 0, .col = 0 },
-        /// Decision 8 §10 — `loop (condition) { … }` / `loop { … }`: repeat while
-        /// `iter` (a `bool`) holds, binding nothing. Set by the parser for
-        /// `loop { … }` and a syntactically boolean condition, and by the
-        /// comptime transform for any `iter` inference typed `bool`.
+        /// True for `while (cond) { … }` and `loop { … }`: repeat while `iter`
+        /// (a `bool`) holds, binding nothing.
         condition: bool = false,
         body: []StmtOf(phase),
-        /// `loop await (iter) { ... }` ---- iterate an `@FutureGenerator`, awaiting each item.
+        /// `for await (iter) { ... }` ---- iterate an `@FutureGenerator`, awaiting each item.
         awaitLoop: bool = false,
-        /// Optional loop label (`loop :acc (iter) { ... }`) for `yield :label` disambiguation.
+        /// Optional label (`for :outer (xs) { … }`, `while :w (…)`, `loop :l {`)
+        /// for `break :label` / `continue :label`, and — on an annotated
+        /// `loop` — for `yield :label` / `break :label v`.
         label: ?[]const u8 = null,
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -807,10 +948,15 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             /// Arena-owned; not freed by `deinit`.
             labels: []const []const u8 = &.{},
         },
-        /// `start..end` or `start..` ---- integer range (end=null means open)
+        /// `start..end` (exclusive), `start...end` (inclusive, decision 105 —
+        /// the pattern token of decision 53 as a value) or `start..` (open,
+        /// end=null) ---- an integer range. Not a value: it is the iteration of a
+        /// `for` and the bounds of a slice, never a `Range` to hold.
         range: struct {
             start: *ExprOf(phase),
             end: ?*ExprOf(phase),
+            /// `a...b` — both ends included. Only with an `end`.
+            inclusive: bool = false,
         },
         /// `case .identifier{ arm* }` or `case expr1, expr2 { arm* }`
         case: struct {

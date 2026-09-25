@@ -226,6 +226,11 @@ fn collectLinks(
     visited: *std.StringHashMap(void),
     out: *std.ArrayListUnmanaged(Linked),
 ) !void {
+    // The import sources synthesised below are scratch: they answer one
+    // ownership question each and are not kept.
+    var scratch = std.heap.ArenaAllocator.init(alloc);
+    defer scratch.deinit();
+    const sa = scratch.allocator();
     for (program.decls) |decl| {
         const u = switch (decl) {
             .use => |u| u,
@@ -239,10 +244,15 @@ fn collectLinks(
                 // the index's walk reached last INTO the consumer: measured,
                 // `import {parse} from "one"` linked `two`'s body and the
                 // program printed the other module's answer at exit 0.
-                const owns = if (cross.picked(imp.name(), u.source, null)) |info|
+                // A qualified item (decision 107) asks for its LEAF in the
+                // module its prefix names; the whole path names a module
+                // outright (`import {io.fs} from "std"` → `std/io/fs`).
+                const leaf_src = try u.leafSource(imp, sa, false);
+                const whole = try u.leafSource(imp, sa, true);
+                const owns = if (cross.picked(imp.leaf(), leaf_src, null)) |info|
                     std.mem.eql(u8, info.module, o.name)
                 else
-                    std.mem.eql(u8, crossModule.moduleBasename(o.name), imp.segments[imp.segments.len - 1]);
+                    whole.namesModule(o.name) or std.mem.eql(u8, crossModule.moduleBasename(o.name), imp.leaf());
                 if (!owns or visited.contains(o.name)) continue;
                 const ok = switch (o.outcome) {
                     .ok => |*ok| ok,
@@ -536,6 +546,14 @@ const Emitter = struct {
     result_subjects: std.StringHashMap(ResultShape),
     /// Locals bound to an optional no declaration names (an else-less `if`).
     opt_locals: std.StringHashMap(OptInfo),
+    /// Names a `!= null` test has narrowed for the branch being emitted, with
+    /// the optional they were before it. Inside the branch the name is its
+    /// PAYLOAD and not an optional at all: `optInfoOf` answers nothing for it,
+    /// and a boxed payload is loaded at every read. Without this a narrowed
+    /// `?i32` was read as its box — `n + 1` answered a heap address at exit 0 —
+    /// while the optional-binding form `if (ns.at(0)) { n -> … }` unboxed and
+    /// answered the sum.
+    narrowed_opts: std.StringHashMap(OptInfo),
     /// Declared types the optional carrier needs to see: a fn's return type and
     /// parameter types, a local's / global's annotation (or the declared type
     /// of the call it was bound from), and every record field's type.
@@ -555,26 +573,23 @@ const Emitter = struct {
     /// Module globals: wat value type, plus the string/bool shapes.
     global_types: std.StringHashMap([]const u8),
     str_globals: std.StringHashMap(void),
-    /// Names known to hold an `[len][e0][e1]…` array blob. `loop (xs) {…}`
+    /// Names known to hold an `[len][e0][e1]…` array blob. `for (xs) {…}`
     /// only walks the layout for these; anything else keeps the honest
     /// `;; loop over unknown iterable` no-op rather than reading garbage.
     arr_locals: std.StringHashMap(void),
     /// Local name → the `$__print_shaped_raw` shape of its value, when it is
     /// an array or a tuple (`printShapeOf`).
     print_shape_locals: std.StringHashMap([]const u8),
-    /// Local name → the `search_flag` of the condition loop it was bound to
-    /// (decision 52). `@print` is the only reader.
-    search_flag_locals: std.StringHashMap([]const u8),
-    /// Locals bound to a condition loop that can **never** have a value — no
-    /// `break <value>` and no `yield` anywhere in its body, which is decision
-    /// 52's headline shape and the one `tests/language/run/loop_condition_no_break.bp`
-    /// writes. There is no flag to read: it would be `0` always, so the local is
-    /// simply known to be absent and `@print` writes `null` without loading it.
-    null_value_locals: std.StringHashMap(void),
     arr_globals: std.StringHashMap(void),
     bool_globals: std.StringHashMap(void),
     /// Every emitted WAT function symbol → its signature.
     fn_sigs: std.StringHashMap(FnSig),
+    /// Decision 107 — an imported fn bound under an alias (`import {a.twice as
+    /// double}`): the local name → the declared name. The module is linked
+    /// statically, so the function exists under its declared name only; the
+    /// alias is registered beside it in every name-keyed table and mapped
+    /// back at the `call`.
+    import_aliases: std.StringHashMap([]const u8),
     /// Every emitted WAT global symbol. An identifier that is neither a local
     /// nor a known global lowers to a zero placeholder instead of a dangling
     /// `global.get`.
@@ -593,29 +608,13 @@ const Emitter = struct {
     module_name: []const u8 = "",
     /// The array local a comprehension's `yield`/`break <v>` appends to.
     yield_target: ?[]const u8 = null,
-    /// Decision 8 §10 — the local a **search** loop's `break <v>` writes. A
-    /// condition or infinite `loop` used as a value whose body has no `yield`
-    /// has exactly one value to give, the one its `break` carries, so there is
-    /// no accumulator: `break <v>` stores `v` here and ends the loop, and the
-    /// loop answers this local (`0` when it never broke).
-    search_target: ?[]const u8 = null,
-    /// Decision 52 — the companion flag of `search_target`: `0` until a
-    /// `break <v>` fires, `1` after. The value alone cannot say whether the
-    /// loop broke, because `break 0` and "never broke" are the same `i32`, and
-    /// every other backend prints `0` for the first and the `null` spelling for
-    /// the second. Only `@print` reads it; the loop's **value** stays the bare
-    /// `i32`, so `??` — which already reads `0` as absence — is untouched.
-    search_flag: ?[]const u8 = null,
-    /// The flag of the search loop most recently lowered, so the binding that
-    /// consumes the loop can adopt it. Read only when the initialiser *is* the
-    /// loop (`searchLoopInit`), never when a loop merely occurs inside one.
-    last_search_flag: ?[]const u8 = null,
+    /// The block label of the annotated `loop` being lowered (decision 105):
+    /// a `break <v>` inside it pushes `v` and branches here, out of every
+    /// loop between. Null outside one.
+    gen_end: ?[]const u8 = null,
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
-    /// The `loop_depth` of the innermost condition loop (decision 8 §10) used
-    /// as a value: there a `break <v>` contributes `v` and also ends the loop.
-    cond_break_depth: ?u32 = null,
     /// Sequence counter for the `$__mem{n}` scratch pointers used when building
     /// or destructuring aggregates (tuples, arrays, records, enum payloads).
     mem_seq: u32 = 0,
@@ -673,6 +672,12 @@ const Emitter = struct {
     /// type of a HOF's element parameter.
     arr_elem_locals: std.StringHashMap(ElemKind),
     arr_elem_globals: std.StringHashMap(ElemKind),
+    /// The record type the elements of an array-valued name hold, when they
+    /// hold one. `ElemKind` cannot carry it — a record shares the `i32` slot
+    /// with an integer — and the `?T` a `.at()` answers needs the NAME, both
+    /// to find a field's offset and to know the value is its own pointer.
+    arr_elem_recs: std.StringHashMap([]const u8),
+    arr_elem_rec_globals: std.StringHashMap([]const u8),
     /// Element shape of the arrays top-level fns are declared to return.
     fn_arr_elem: std.StringHashMap(ElemKind),
     /// Lambdas lifted into functions, in table order — see `lowerLambdaValue`.
@@ -738,6 +743,7 @@ const Emitter = struct {
             .folded_globals = std.StringHashMap([]const u8).init(alloc),
             .fn_ret_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
             .opt_locals = std.StringHashMap(OptInfo).init(alloc),
+            .narrowed_opts = std.StringHashMap(OptInfo).init(alloc),
             .fn_param_typerefs = std.StringHashMap([]const ast.TypeRef).init(alloc),
             .local_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
             .global_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
@@ -747,11 +753,10 @@ const Emitter = struct {
             .str_globals = std.StringHashMap(void).init(alloc),
             .arr_locals = std.StringHashMap(void).init(alloc),
             .print_shape_locals = std.StringHashMap([]const u8).init(alloc),
-            .search_flag_locals = std.StringHashMap([]const u8).init(alloc),
-            .null_value_locals = std.StringHashMap(void).init(alloc),
             .arr_globals = std.StringHashMap(void).init(alloc),
             .bool_globals = std.StringHashMap(void).init(alloc),
             .fn_sigs = std.StringHashMap(FnSig).init(alloc),
+            .import_aliases = std.StringHashMap([]const u8).init(alloc),
             .globals = std.StringHashMap(void).init(alloc),
             .records = std.StringHashMap([]const []const u8).init(alloc),
             .record_field_types = std.StringHashMap([]const []const u8).init(alloc),
@@ -764,6 +769,8 @@ const Emitter = struct {
             .ext_by_name = std.StringHashMap(ExtInfo).init(alloc),
             .arr_elem_locals = std.StringHashMap(ElemKind).init(alloc),
             .arr_elem_globals = std.StringHashMap(ElemKind).init(alloc),
+            .arr_elem_recs = std.StringHashMap([]const u8).init(alloc),
+            .arr_elem_rec_globals = std.StringHashMap([]const u8).init(alloc),
             .fn_arr_elem = std.StringHashMap(ElemKind).init(alloc),
             .fn_refs = std.StringHashMap(u32).init(alloc),
             .iface_assoc = std.StringHashMap(ast.BehaviorMethod).init(alloc),
@@ -807,6 +814,7 @@ const Emitter = struct {
         self.folded_globals.deinit();
         self.fn_ret_typerefs.deinit();
         self.opt_locals.deinit();
+        self.narrowed_opts.deinit();
         self.fn_param_typerefs.deinit();
         self.local_typerefs.deinit();
         self.global_typerefs.deinit();
@@ -816,11 +824,10 @@ const Emitter = struct {
         self.str_globals.deinit();
         self.arr_locals.deinit();
         self.print_shape_locals.deinit();
-        self.search_flag_locals.deinit();
-        self.null_value_locals.deinit();
         self.arr_globals.deinit();
         self.bool_globals.deinit();
         self.fn_sigs.deinit();
+        self.import_aliases.deinit();
         self.globals.deinit();
         self.records.deinit();
         self.record_field_types.deinit();
@@ -834,6 +841,8 @@ const Emitter = struct {
         self.ext_by_name.deinit();
         self.arr_elem_locals.deinit();
         self.arr_elem_globals.deinit();
+        self.arr_elem_recs.deinit();
+        self.arr_elem_rec_globals.deinit();
         self.fn_arr_elem.deinit();
         self.lambdas.deinit(self.alloc);
         self.fn_refs.deinit();
@@ -940,11 +949,15 @@ const Emitter = struct {
                 if (self.isArrayExpr(v.value.*)) {
                     try self.arr_globals.put(v.name, {});
                     try self.arr_elem_globals.put(v.name, self.elemKindOf(v.value.*));
+                    if (self.elemRecordOf(v.value.*)) |rec| try self.arr_elem_rec_globals.put(v.name, rec);
                 }
-                if (v.typeAnnotation) |ta| if (arrayElemOfTypeRef(ta)) |ek| {
-                    try self.arr_globals.put(v.name, {});
-                    try self.arr_elem_globals.put(v.name, ek);
-                };
+                if (v.typeAnnotation) |ta| {
+                    if (arrayElemOfTypeRef(ta)) |ek| {
+                        try self.arr_globals.put(v.name, {});
+                        try self.arr_elem_globals.put(v.name, ek);
+                    }
+                    if (self.elemRecordOfTypeRef(ta)) |rec| try self.arr_elem_rec_globals.put(v.name, rec);
+                }
             },
             .implement => |im| try self.registerMethodSigs(im.target, im.methods),
             .extend => |ex| try self.registerMethodSigs(ex.target, ex.methods),
@@ -966,6 +979,28 @@ const Emitter = struct {
                     if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
                 }
                 try self.iface_assoc.put(sym, m);
+            },
+            else => {},
+        };
+        // Decision 107 — an import bound under an alias: the callee a body
+        // spells is the alias, the function the linked owner defines is the
+        // declared name. Register the alias beside the declared name in every
+        // table a call consults, and map it back where the `call` is written.
+        for (program.decls) |decl| switch (decl) {
+            .use => |u| for (u.imports) |imp| {
+                const alias = imp.alias orelse continue;
+                const leaf = imp.leaf();
+                if (std.mem.eql(u8, alias, leaf)) continue;
+                const sig = self.fn_sigs.get(leaf) orelse continue;
+                try self.import_aliases.put(alias, leaf);
+                try self.fn_sigs.put(alias, sig);
+                if (self.fn_param_typerefs.get(leaf)) |v| try self.fn_param_typerefs.put(alias, v);
+                if (self.fn_ret_typerefs.get(leaf)) |v| try self.fn_ret_typerefs.put(alias, v);
+                if (self.fn_arr_elem.get(leaf)) |v| try self.fn_arr_elem.put(alias, v);
+                if (self.result_shape_fns.get(leaf)) |v| try self.result_shape_fns.put(alias, v);
+                if (self.str_fns.contains(leaf)) try self.str_fns.put(alias, {});
+                if (self.bool_fns.contains(leaf)) try self.bool_fns.put(alias, {});
+                if (self.result_str_fns.contains(leaf)) try self.result_str_fns.put(alias, {});
             },
             else => {},
         };
@@ -1155,6 +1190,17 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    // `xs.at(i)` / `xs.first()` over an array of records: the
+                    // `?Entry` it answers is an `Entry` pointer, and its record
+                    // type is what a `?.field` read (and the narrowed name a
+                    // `!= null` test rebinds) needs to find a slot. Without it
+                    // the reader fell back to the unique-field guess and, when
+                    // the value was a box, read one indirection short.
+                    if (self.primKindAt(cc, c.loc)) |k| {
+                        if (k == .array and (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first"))) {
+                            if (cc.receiver) |r| if (self.elemRecordOf(r.*)) |rec| break :blk rec;
+                        }
+                    }
                     switch (self.callKind(cc)) {
                         .record_ctor => break :blk self.resolveRecordName(cc.callee),
                         .plain => {
@@ -1170,6 +1216,23 @@ const Emitter = struct {
             .collection => |c| switch (c.kind) {
                 .behaviorLit => |il| self.ensureAnonRecord(c.loc, .{ .fields = il.fields }) catch null,
                 .grouped => |inner| self.recordTypeOfExpr(inner.*),
+                else => null,
+            },
+            // `a ?? b` — the transform pass writes it as `if (a) { <this> ->
+            // <this> } else { b }`, so the binder is what tells it apart from
+            // an ordinary `if`. Both arms carry the same type by construction
+            // and the default is the one that names it: the payload arm reads
+            // a bound name whose type nothing recovered. Without this,
+            // `(es.at(9) ?? Entry(key: "zz")).key` found its slot by the
+            // unique-field guess and then printed the string as a number,
+            // because nothing knew the field was declared `string`.
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| blk: {
+                    if (i.binding == null) break :blk null;
+                    const els = i.else_ orelse break :blk null;
+                    if (els.len == 0) break :blk null;
+                    break :blk self.recordTypeOfExpr(els[els.len - 1].expr);
+                },
                 else => null,
             },
             else => null,
@@ -1485,15 +1548,15 @@ const Emitter = struct {
         self.str_locals.clearRetainingCapacity();
         self.arr_locals.clearRetainingCapacity();
         self.print_shape_locals.clearRetainingCapacity();
-        self.search_flag_locals.clearRetainingCapacity();
-        self.null_value_locals.clearRetainingCapacity();
         self.arr_elem_locals.clearRetainingCapacity();
+        self.arr_elem_recs.clearRetainingCapacity();
         self.result_shape_locals.clearRetainingCapacity();
         self.result_subjects.clearRetainingCapacity();
         self.aliases.clearRetainingCapacity();
         self.pattern_locals.clearRetainingCapacity();
         self.local_typerefs.clearRetainingCapacity();
         self.opt_locals.clearRetainingCapacity();
+        self.narrowed_opts.clearRetainingCapacity();
         self.cur_ret_typeref = null;
         self.bool_locals.clearRetainingCapacity();
         self.closure_locals.clearRetainingCapacity();
@@ -1509,6 +1572,7 @@ const Emitter = struct {
         self.res_seq = 0;
         self.loop_seq = 0;
         self.yield_target = null;
+        self.gen_end = null;
         self.loop_depth = 0;
     }
 
@@ -2694,29 +2758,11 @@ const Emitter = struct {
                 },
                 .@"break" => |br| {
                     if (br.value) |v| {
-                        // §10: in a search the break's value IS the loop's.
-                        if (self.search_target) |tgt| {
-                            try self.lowerCoerced(v.*, "i32");
-                            try self.emit(.{ .local_set = tgt });
-                            if (self.search_flag) |flag| {
-                                try self.emitC(one, "decision 52: it broke, so it has a value");
-                                try self.emit(.{ .local_set = flag });
-                            }
-                            try self.emit(.{ .br = break_label });
-                            return .terminated;
-                        }
+                        // Decision 105: `break <v>` in a generator scope
+                        // pushes `v` and ends the scope from any loop depth.
                         if (self.yield_target != null) {
-                            // Decision 55: the value is appended and the loop
-                            // ends there — in a collection loop as much as in a
-                            // condition loop. Before, only the condition loop
-                            // left (`cond_break_depth`); a collection loop ran on
-                            // and `[20, 40, 99]` printed as `[20, 40, 99, 60]`.
-                            try self.emitYield(v.*);
-                            if (self.loop_depth > 0) {
-                                try self.emit(.{ .br = break_label });
-                                return .terminated;
-                            }
-                            return .none;
+                            try self.emitGenBreak(v.*);
+                            return .terminated;
                         }
                         try self.lowerValue(v.*);
                         return .value;
@@ -2760,26 +2806,11 @@ const Emitter = struct {
                     // `emitLocalDecls` runs before the body, so its guess can
                     // differ from what lowering ends up pushing.
                     const lambda_idx: u32 = @intCast(self.lambdas.items.len);
-                    // Decision 52 — `val r = loop (…) { … }` adopts the loop's
-                    // `search_flag`, so `@print(r)` can tell the value a `break`
-                    // carried from the `null` an exhausted loop answers. Read
-                    // only when the initialiser *is* the loop: a loop merely
-                    // occurring inside a bigger expression (`loop(…) ?? 5`)
-                    // binds that expression's value, not the loop's.
-                    const is_search_init = searchLoopInit(lb.value.*);
-                    if (is_search_init) self.last_search_flag = null;
                     if (self.boxesInto(lb.typeAnnotation, lb.value.*))
                         try self.lowerBoxed(lb.value.*)
                     else
                         try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse "i32");
                     try self.emit(.{ .local_set = lb.name });
-                    if (is_search_init) {
-                        if (self.last_search_flag) |flag| try self.search_flag_locals.put(lb.name, flag);
-                    } else _ = self.search_flag_locals.remove(lb.name);
-                    if (valuelessLoopInit(lb.value.*))
-                        try self.null_value_locals.put(lb.name, {})
-                    else
-                        _ = self.null_value_locals.remove(lb.name);
                     if (lb.value.* == .function and self.lambdas.items.len > lambda_idx)
                         try self.closure_locals.put(lb.name, lambda_idx)
                     else
@@ -2959,7 +2990,7 @@ const Emitter = struct {
                 .@"continue" => if (self.loop_depth > 0) Tail.terminated else Tail.none,
                 .try_ => |v| if (v != null) Tail.value else Tail.none,
                 .@"break" => |jl| if (jl.value != null)
-                    (if (self.yield_target != null) Tail.none else Tail.value)
+                    (if (self.yield_target != null) Tail.terminated else Tail.value)
                 else if (self.loop_depth > 0) Tail.terminated else Tail.none,
                 .yield => |jl| if (jl.value != null and self.yield_target == null) Tail.value else Tail.none,
                 .await_ => |a| self.exprTail(a.*),
@@ -3063,10 +3094,16 @@ const Emitter = struct {
                         try self.emit(zero);
                     } else if (self.locals.contains(n)) {
                         try self.emit(.{ .local_get = n });
+                        // Narrowed by a `!= null` test: the name is its payload
+                        // inside the branch, and a boxed payload lives one
+                        // indirection away.
+                        if (self.narrowed_opts.get(n)) |o| {
+                            if (o.boxed) try self.emitC(.{ .load = .{} }, "narrowed optional payload");
+                        }
                     } else if (self.globals.contains(n)) {
                         try self.emit(.{ .global_get = n });
                     } else if (self.fn_sigs.contains(n)) {
-                        try self.lowerFnRef(n);
+                        try self.lowerFnRef(self.import_aliases.get(n) orelse n);
                     } else if (self.findVariant(n)) |fv| {
                         // a bare unit variant (`Lt`)
                         try self.emitUnitVariant(fv.variants, fv.tag, "", n);
@@ -3148,7 +3185,7 @@ const Emitter = struct {
                             .ident => |name| {
                                 if (self.fn_sigs.get(name)) |sig| {
                                     try self.lowerValue(pl.lhs.*);
-                                    try self.emit(.{ .call = name });
+                                    try self.emit(.{ .call = self.import_aliases.get(name) orelse name });
                                     if (sig.result == null) try self.pushZero();
                                 } else {
                                     try self.emitCf(zero, "unresolved pipeline target {s}", .{name});
@@ -3185,9 +3222,8 @@ const Emitter = struct {
                 .@"break" => |br| {
                     if (br.value) |v| {
                         if (self.yield_target != null) {
-                            // Decision 55 — see the statement-position arm above.
-                            try self.emitYield(v.*);
-                            if (self.loop_depth > 0) try self.emit(.{ .br = break_label });
+                            // Decision 105 — see the statement-position arm above.
+                            try self.emitGenBreak(v.*);
                         } else try self.lowerExpr(v.*);
                     } else if (self.loop_depth > 0) try self.emit(.{ .br = break_label });
                 },
@@ -3364,40 +3400,6 @@ const Emitter = struct {
         try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
     }
 
-    /// The decision-52 flag of a local bound to a condition loop's value, when
-    /// `e` is a read of exactly that local. Nothing else has one: a loop lowered
-    /// straight into `@print` is not a fixture this backend has, and the flag is
-    /// a local of the enclosing function, not a property of the value.
-    fn searchFlagOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
-        return switch (e) {
-            .identifier => |id| switch (id.kind) {
-                .ident => |n| self.search_flag_locals.get(self.resolveName(n)),
-                else => null,
-            },
-            .collection => |col| switch (col.kind) {
-                .grouped => |inner| self.searchFlagOf(inner.*),
-                else => null,
-            },
-            else => null,
-        };
-    }
-
-    /// Whether `e` reads a local bound to a loop that can never have a value
-    /// (`null_value_locals`), or is such a loop written straight into `@print`.
-    fn isNullValueRead(self: *Emitter, e: ast.Expr) bool {
-        return switch (e) {
-            .identifier => |id| switch (id.kind) {
-                .ident => |n| self.null_value_locals.contains(self.resolveName(n)),
-                else => false,
-            },
-            .collection => |col| switch (col.kind) {
-                .grouped => |inner| self.isNullValueRead(inner.*),
-                else => false,
-            },
-            else => valuelessLoopInit(e),
-        };
-    }
-
     /// One `@print` argument. `last` decides whether the trailing newline is
     /// emitted here (the `_raw` helpers write the value only). The printer is
     /// picked from the argument's recovered shape — everything used to go
@@ -3417,6 +3419,15 @@ const Emitter = struct {
         // allocation and so no header, and still has no printed form: it keeps
         // the trap rather than reading four bytes behind an integer.
         if (self.namedShapeOf(arg)) |ns| {
+            // A record that may be ABSENT — `es.at(0)`, or a name bound to one.
+            // The tagged printer reads a header four bytes behind the value, so
+            // a `0` would read out of bounds; `$__print_opt_tagged` answers
+            // `undefined` for it and the header for anything else.
+            if (self.optInfoOf(arg)) |oi| if (oi.rec != null) {
+                try self.lowerCoerced(arg, "i32");
+                try self.emit(self.builder().helper(if (last) .print_opt_tagged else .print_opt_tagged_raw));
+                return;
+            };
             if (self.isTaggedValue(arg)) {
                 try self.lowerCoerced(arg, "i32");
                 try self.emit(self.builder().helper(if (last) .print_tagged else .print_tagged_raw));
@@ -3431,27 +3442,6 @@ const Emitter = struct {
                 });
                 return;
             }
-        }
-        // Decision 52 — a condition loop that never broke has no value to give,
-        // and every backend owes the `null` spelling for it. wasm carries the
-        // value unboxed with `0` for absence (which is what `??` already reads),
-        // so the value alone cannot tell "never broke" from `break 0`, and
-        // commonJS prints `0` for the second. The companion flag decides.
-        if (self.searchFlagOf(arg)) |flag| {
-            try self.lowerCoerced(arg, "i32");
-            try self.emit(.{ .local_get = flag });
-            try self.emit(self.builder().helper(if (last) .print_loop_i32 else .print_loop_i32_raw));
-            return;
-        }
-        // The same decision, one shape simpler: a loop with no `break <value>`
-        // at all is absent with certainty, so there is nothing to load and no
-        // flag to test — `$__print_null` outright. This is the shape
-        // `run/loop_condition_no_break.bp` writes, and it printed the bare `0`
-        // that `lowerConditionLoop` leaves for a loop with no accumulator.
-        if (self.isNullValueRead(arg)) {
-            try self.emit(self.builder().helper(.print_null));
-            if (last) try self.emit(self.builder().helper(.print_nl));
-            return;
         }
         if (self.optInfoOf(arg)) |oi| {
             try self.lowerValue(arg);
@@ -4664,7 +4654,7 @@ const Emitter = struct {
             while (k < sig.params.len) : (k += 1) {
                 try self.emitC(constOf(sig.params[k], "0"), "missing argument");
             }
-            try self.emit(.{ .call = cc.callee });
+            try self.emit(.{ .call = self.import_aliases.get(cc.callee) orelse cc.callee });
             return;
         }
         if (try self.lowerCollectionMethod(cc)) return;
@@ -4955,9 +4945,11 @@ const Emitter = struct {
             try self.emitC(.{ .load = .{} }, "element count");
             try self.emit(opOf("i32", "eqz"));
         } else if (eq(u8, name, "at") or eq(u8, name, "first")) {
-            // `?T`: a string element is its own offset; anything else is boxed.
+            // `?T`: a pointer element (a string, a record) is its own offset; a
+            // scalar is boxed. `arrayElemOpt` is the ONE place that decides,
+            // and `optInfoOf` reads the same answer — see its doc comment.
             if (eq(u8, name, "first")) try self.emit(zero) else try self.lowerCoerced(callArg(cc, 0).?, "i32");
-            try self.emit(b.helper(if (elem == .str) .arr_at else .arr_at_box));
+            try self.emit(b.helper(if (self.arrayElemOpt(recv).boxed) .arr_at_box else .arr_at));
         } else if (eq(u8, name, "toList")) {
             // the array itself
         } else if (eq(u8, name, "reverse")) {
@@ -5069,6 +5061,10 @@ const Emitter = struct {
         if (elem_param) |p| {
             try self.declareLocal(p, elem_ty);
             if (elem_kind == .str) try self.str_locals.put(p, {});
+            // The parameter is one ELEMENT, so it has the element's record
+            // type. Without it a field read off it had no receiver type and
+            // fell to the unique-field guess, or to the `0` stub.
+            if (self.elemRecordOf(recv)) |r| try self.local_types.put(p, r);
         }
         if (acc_param) |p| {
             try self.declareLocal(p, acc_ty);
@@ -5278,6 +5274,7 @@ const Emitter = struct {
             try self.arr_locals.put(sym, {});
             try self.arr_elem_locals.put(sym, ek);
         }
+        if (self.elemRecordOfTypeRef(t)) |rec| try self.arr_elem_recs.put(sym, rec);
     }
 
     /// A local bound to something `isArrayExpr` recognises is an array too,
@@ -5287,6 +5284,7 @@ const Emitter = struct {
         if (!self.isArrayExpr(value)) return;
         try self.arr_locals.put(name, {});
         try self.arr_elem_locals.put(name, self.elemKindOf(value));
+        if (self.elemRecordOf(value)) |rec| try self.arr_elem_recs.put(name, rec) else _ = self.arr_elem_recs.remove(name);
     }
 
     /// The shape `$__print_shaped_raw` walks for `e` (semantics decision 1a):
@@ -5492,11 +5490,15 @@ const Emitter = struct {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| self.arr_elem_locals.get(self.resolveName(n)) orelse self.arr_elem_globals.get(n) orelse .i32,
-                .identAccess => |ia| blk: {
-                    const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk .i32;
-                    const fields = self.records.get(rty) orelse break :blk .i32;
-                    _ = fields;
-                    break :blk .i32;
+                // A record FIELD declared as an array: its element shape is in
+                // the field's declared type, and reading it is what tells
+                // `self.cells.at(0)` it is a `?string` and not a boxed `?i32`.
+                // While this arm answered `.i32` unconditionally, `(self.cells
+                // .at(0) ?? "").length()` and its narrowed twin read the box
+                // as a string pointer and printed a heap address at exit 0.
+                .identAccess => blk: {
+                    const tr = self.typeRefOf(e) orelse break :blk .i32;
+                    break :blk arrayElemOfTypeRef(tr) orelse .i32;
                 },
                 else => .i32,
             },
@@ -6060,6 +6062,12 @@ const Emitter = struct {
         /// The boxed payload is an `f32` slot, not an integer — a float array's
         /// `at`/`first`. Read as an `i32` it prints the float's bits.
         float_: bool = false,
+        /// The payload is a value of this record type — `es.at(0)` over an
+        /// `Entry[]`. It names the field offsets a `?.` read needs and the
+        /// header `$__print_opt_tagged` writes, and it is the reason a record
+        /// element is NOT boxed: a record is its own pointer, so `0` is
+        /// absence exactly as it is for a string.
+        rec: ?[]const u8 = null,
         inner: ?ast.TypeRef = null,
     };
 
@@ -6144,6 +6152,100 @@ const Emitter = struct {
         };
     }
 
+    /// The `?T` one element of `recv` is — **the one answer the writer and the
+    /// reader of `xs.at(i)` / `xs.first()` both take**, so they cannot drift
+    /// apart. `lowerArrayMethod` picks `$__arr_at` or `$__arr_at_box` from it
+    /// and `optInfoOf` reports it; while the two decided separately, an array
+    /// of RECORDS was written boxed (the element kind a record shares with an
+    /// integer) and read as a bare pointer, so `es.at(0)?.key.length()` loaded
+    /// the box, then the record's first slot, and printed a heap address
+    /// (`276`) at exit 0 where the other three backends answer `3`.
+    fn arrayElemOpt(self: *Emitter, recv: ast.Expr) OptInfo {
+        // A record is its own pointer: `0` is absence, as it is for a string,
+        // and a box would only hide the payload from every reader.
+        if (self.elemRecordOf(recv)) |rec| return .{ .boxed = false, .rec = rec };
+        if (self.elemIsPointer(recv)) return .{ .boxed = false };
+        return switch (self.elemKindOf(recv)) {
+            .str => .{ .boxed = false, .str = true },
+            .f32 => .{ .boxed = true, .float_ = true },
+            .i32 => .{ .boxed = true },
+        };
+    }
+
+    /// Whether one element of `recv` is a CONTAINER — an array or a tuple —
+    /// and so a pointer of its own. Read off the print shape, which is the one
+    /// place a nested container is already tracked (`[[i` an array of integer
+    /// arrays, `[(is)` an array of tuples), for a local as much as for a
+    /// literal. A record is the other pointer element and `elemRecordOf`
+    /// answers it, because a record's NAME is wanted too.
+    fn elemIsPointer(self: *Emitter, recv: ast.Expr) bool {
+        const sh = (self.printShapeOf(recv) catch null) orelse return false;
+        return sh.len >= 2 and sh[0] == '[' and (sh[1] == '[' or sh[1] == '(');
+    }
+
+    /// The record type the elements of an array-valued expression name, when
+    /// they name one: an array literal of constructor calls, a local or global
+    /// bound to one, a declared `Entry[]`, and the array methods that keep
+    /// their receiver's elements.
+    fn elemRecordOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n0| {
+                    const n = self.resolveName(n0);
+                    if (self.arr_elem_recs.get(n)) |r| return r;
+                    if (!self.locals.contains(n)) if (self.arr_elem_rec_globals.get(n)) |r| return r;
+                },
+                else => {},
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.elemRecordOf(inner.*),
+                .arrayLit => |al| if (al.elems.len > 0) {
+                    if (self.recordTypeOfExpr(al.elems[0])) |r| return r;
+                },
+                else => {},
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| {
+                    if (self.primKindAt(cc, c.loc)) |k| if (k == .array and keepsElements(cc.callee)) {
+                        if (cc.receiver) |r| return self.elemRecordOf(r.*);
+                    };
+                },
+                else => {},
+            },
+            else => {},
+        }
+        const t = self.typeRefOf(e) orelse return null;
+        return self.elemRecordOfTypeRef(t);
+    }
+
+    /// The array methods whose result holds the elements of their receiver.
+    fn keepsElements(name: []const u8) bool {
+        for ([_][]const u8{ "slice", "rest", "take", "drop", "reverse", "toList", "filter", "sort", "sorted" }) |s| {
+            if (std.mem.eql(u8, name, s)) return true;
+        }
+        return false;
+    }
+
+    /// The record an `Entry[]` / `Array<Entry>` / `?Entry[]` spells, when the
+    /// element names a record this module declared.
+    fn elemRecordOfTypeRef(self: *Emitter, t: ast.TypeRef) ?[]const u8 {
+        const elem: ast.TypeRef = switch (t) {
+            .array => |inner| inner.*,
+            .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
+                std.mem.eql(u8, g.name, "Iterator")))
+                g.args[0]
+            else
+                return null,
+            .optional => |inner| return self.elemRecordOfTypeRef(inner.*),
+            else => return null,
+        };
+        const name = switch (elem) {
+            .named => |n| n,
+            else => return null,
+        };
+        return self.resolveRecordName(name);
+    }
+
     /// The optional an expression evaluates to, when it is one.
     fn optInfoOf(self: *Emitter, e: ast.Expr) ?OptInfo {
         switch (e) {
@@ -6162,11 +6264,7 @@ const Emitter = struct {
                     if (k == .array and
                         (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first")))
                     {
-                        return switch (self.elemKindOf(cc.receiver.?.*)) {
-                            .str => .{ .boxed = false, .str = true },
-                            .f32 => .{ .boxed = true, .float_ = true },
-                            .i32 => .{ .boxed = true },
-                        };
+                        return self.arrayElemOpt(cc.receiver.?.*);
                     }
                     // `s.at(i)` → `?string`: `$__str_at` answers the pointer of
                     // a fresh one-byte string, or 0. Without this the result
@@ -6180,7 +6278,12 @@ const Emitter = struct {
                 else => {},
             },
             .identifier => |id| switch (id.kind) {
-                .ident => |n| if (self.opt_locals.get(self.resolveName(n))) |oi| return oi,
+                .ident => |n| {
+                    const rn = self.resolveName(n);
+                    // Narrowed: inside the branch the name IS the payload.
+                    if (self.narrowed_opts.contains(rn)) return null;
+                    if (self.opt_locals.get(rn)) |oi| return oi;
+                },
                 // `recv?.field` of a scalar field is a boxed optional
                 .identAccess => |ia| if (ia.optional) {
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return null;
@@ -6195,6 +6298,21 @@ const Emitter = struct {
         }
         const t = self.typeRefOf(e) orelse return null;
         return optInfoOfTypeRef(t);
+    }
+
+    /// The bare name `e` reads, when it reads one and nothing else.
+    fn plainIdentName(e: ast.Expr) ?[]const u8 {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| n,
+                else => null,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| plainIdentName(inner.*),
+                else => null,
+            },
+            else => null,
+        };
     }
 
     fn isNullLit(e: ast.Expr) bool {
@@ -6685,7 +6803,7 @@ const Emitter = struct {
                     var any = false;
                     for (c.arms) |arm| {
                         if (self.exprTail(arm.body) == .terminated) continue;
-                        if (!self.isStringExpr(arm.body)) break :blk false;
+                        if (!self.armIsString(arm.body)) break :blk false;
                         any = true;
                     }
                     break :blk any;
@@ -6819,6 +6937,20 @@ const Emitter = struct {
         if (self.isBoolExpr(elems[i])) try self.bool_locals.put(name, {});
     }
 
+    /// Whether a `case` ARM answers a string. A BRACE arm — `case x { 5 {
+    /// "five" } … }` — parses its body as a parameterless block, which arrives
+    /// here as a `.function`, and a lambda VALUE is a closure pointer, so only
+    /// this position may look through one: its value is its last statement's.
+    /// Only the ARROW spelling (`5 -> "five";`) was a string before, so the
+    /// same program answered `five` one way and the pointer `256` the other,
+    /// at exit 0, where commonJS and erlang answer `five` for both.
+    fn armIsString(self: *Emitter, body: ast.Expr) bool {
+        return switch (body) {
+            .function => |f| f.kind.params.len == 0 and self.bodyIsString(f.kind.body),
+            else => self.isStringExpr(body),
+        };
+    }
+
     /// Whether a statement list yields a string (its last statement does).
     fn bodyIsString(self: *Emitter, body: []const ast.Stmt) bool {
         if (body.len == 0) return false;
@@ -6924,50 +7056,10 @@ const Emitter = struct {
     }
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
-        // A loop whose body `yield`s (or `break`s with a value) is a
-        // comprehension: every such value is appended to a fresh array, which
-        // is the loop's value. Inside an `#[@iterator]`/`#[@generator]` fn the
-        // fn's own accumulator (`emitFn`) collects them instead.
-        const saved_target = self.yield_target;
-        const saved_search = self.search_target;
-        const saved_flag = self.search_flag;
-        defer {
-            self.yield_target = saved_target;
-            self.search_target = saved_search;
-            self.search_flag = saved_flag;
-        }
-        var result: ?[]const u8 = null;
-        if (self.yield_target == null and bodyYields(lp.body)) {
-            // Decision 8 §10: the fork is the body. A `yield` anywhere means
-            // the loop **collects**; without one, a condition or infinite loop
-            // used as a value is a **search** and `break <v>` IS its value, not
-            // one element of an array. An iteration loop (`loop (xs) { x -> … }`)
-            // always collects — `fn find(xs) -> i32[]` relies on it.
-            if (loopIsSearch(lp)) {
-                const tgt = try std.fmt.allocPrint(self.reg_arena.allocator(), "__found{d}", .{self.loop_seq});
-                try self.declareLocal(tgt, "i32");
-                try self.emitC(zero, "§10: a search that never breaks has no value");
-                try self.emit(.{ .local_set = tgt });
-                self.search_target = tgt;
-                // Decision 52 — the flag that tells "never broke" from
-                // `break 0`, which are the same `i32` in `$__found{n}`.
-                const flag = try std.fmt.allocPrint(self.reg_arena.allocator(), "__got{d}", .{self.loop_seq});
-                try self.declareLocal(flag, "i32");
-                try self.emitC(zero, "decision 52: it has not broken yet");
-                try self.emit(.{ .local_set = flag });
-                self.search_flag = flag;
-                self.last_search_flag = flag;
-                result = tgt;
-            } else {
-                const tgt = try std.fmt.allocPrint(self.reg_arena.allocator(), "__yield{d}", .{self.loop_seq});
-                try self.declareLocal(tgt, "i32");
-                try self.emit(zero);
-                try self.emit(self.builder().helper(.arr_new));
-                try self.emit(.{ .local_set = tgt });
-                self.yield_target = tgt;
-                result = tgt;
-            }
-        }
+        if (lp.generator != null) return self.lowerGeneratorLoop(lp);
+        // Every other loop is a statement (decision 105); inside a generator
+        // fn its `yield`s feed the fn's accumulator (`renderAccumulatingBody`).
+        const result: ?[]const u8 = null;
         if (lp.condition) return self.lowerConditionLoop(lp, result);
         switch (lp.iter.*) {
             .collection => |col| switch (col.kind) {
@@ -6985,6 +7077,59 @@ const Emitter = struct {
         try self.emitC(zero, "loop over unknown iterable");
     }
 
+    /// `#[@generator] loop { … }` (decision 105) — eager on wasm: the body
+    /// runs as `loop { … }` does inside a block of its own, each `yield v`
+    /// appends to a fresh array, and the expression is the array:
+    ///
+    ///     (block $__gen<n> (block $__break (loop $__continue …)))  local.get $__yield<n>
+    ///
+    /// `break <v>` appends and branches to `$__gen<n>` from any loop depth; a
+    /// bare `break` leaves the loop, which falls out of the block too. A
+    /// captured `var` is this function's local, so the loop's reassignments
+    /// are read after it.
+    fn lowerGeneratorLoop(self: *Emitter, lp: anytype) anyerror!void {
+        const ra = self.reg_arena.allocator();
+        const n = self.loop_seq;
+        self.loop_seq += 1;
+        const tgt = try std.fmt.allocPrint(ra, "__yield{d}", .{n});
+        const label = try std.fmt.allocPrint(ra, "__gen{d}", .{n});
+        try self.declareLocal(tgt, "i32");
+        try self.emit(zero);
+        try self.emit(self.builder().helper(.arr_new));
+        try self.emit(.{ .local_set = tgt });
+        const saved_target = self.yield_target;
+        const saved_end = self.gen_end;
+        self.yield_target = tgt;
+        self.gen_end = label;
+        var c: Capture = .{};
+        self.open(&c);
+        {
+            defer {
+                self.yield_target = saved_target;
+                self.gen_end = saved_end;
+            }
+            try self.lowerConditionLoop(lp, null);
+            try self.emit(.drop);
+        }
+        const seq = self.seal(&c, .none);
+        try self.emit(.{ .block = .{ .kind = .block, .label = label, .body = seq } });
+        try self.emit(.{ .local_get = tgt });
+    }
+
+    /// `break <v>` in a generator scope: append `v`, then end the scope —
+    /// branch out of the annotated loop's block, or, in a generator fn,
+    /// return what the body collected.
+    fn emitGenBreak(self: *Emitter, v: ast.Expr) anyerror!void {
+        try self.emitYield(v);
+        if (self.gen_end) |label| {
+            try self.emit(.{ .br = label });
+            return;
+        }
+        try self.emitC(.{ .local_get = self.yield_target.? }, "everything the body yielded");
+        try self.emitConvert("i32", self.cur_result);
+        try self.emit(.@"return");
+    }
+
     /// Whether a loop body `yield`s or `break`s with a value — directly or in a
     /// nested `if`/`case` arm, but not inside a nested loop or lambda, whose
     /// values are their own.
@@ -6997,45 +7142,6 @@ const Emitter = struct {
     /// what tells a comprehension (which collects) from a search (whose value
     /// is the one its `break` carries). A nested loop is not descended into:
     /// its `yield`s are its own.
-    /// Decision 8 §10 — a condition or infinite `loop` used as a value whose
-    /// body holds no `yield`: its value is the one its `break` carries, not a
-    /// collection. An iteration loop always collects.
-    fn loopIsSearch(lp: anytype) bool {
-        return lp.condition and !bodyHasYield(lp.body);
-    }
-
-    /// Whether `e` **is** a search loop used as a value — the initialiser shape
-    /// that lets a binding adopt the loop's decision-52 flag. Parentheses are
-    /// transparent; anything else is not the loop's value.
-    fn searchLoopInit(e: ast.Expr) bool {
-        return switch (e) {
-            .loop => |lp| loopIsSearch(lp) and bodyYields(lp.body),
-            .collection => |col| switch (col.kind) {
-                .grouped => |inner| searchLoopInit(inner.*),
-                else => false,
-            },
-            else => false,
-        };
-    }
-
-    /// Whether `e` is a condition or infinite `loop` that can **never** have a
-    /// value: no `yield` and no `break <value>` anywhere in its body, so
-    /// `lowerLoop` builds neither accumulator and `lowerConditionLoop` leaves a
-    /// bare `0`. Decision 52's headline — "a loop with no `break <value>` has no
-    /// value to give" — is exactly this shape, and it needs no run-time flag:
-    /// absence is statically certain. An **iteration** loop is excluded: it
-    /// collects, and its value is an empty array, not absence.
-    fn valuelessLoopInit(e: ast.Expr) bool {
-        return switch (e) {
-            .loop => |lp| lp.condition and !bodyYields(lp.body),
-            .collection => |col| switch (col.kind) {
-                .grouped => |inner| valuelessLoopInit(inner.*),
-                else => false,
-            },
-            else => false,
-        };
-    }
-
     fn bodyHasYield(body: []const ast.Stmt) bool {
         for (body) |st| if (exprHasYield(st.expr)) return true;
         return false;
@@ -7138,8 +7244,8 @@ const Emitter = struct {
                 .arrayLit => true,
                 else => false,
             },
-            // a search answers the value its `break` carries, not an array
-            .loop => |lp| bodyYields(lp.body) and !loopIsSearch(lp),
+            // only the annotated loop has a value, and it is an array
+            .loop => |lp| lp.generator != null,
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .arr;
@@ -7158,10 +7264,9 @@ const Emitter = struct {
         };
     }
 
-    /// `loop (xs) { item -> … }` / `loop (xs, 0..) { item, i -> … }` over the
-    /// `[len][e0][e1]…` layout: a counted walk binding each element to the loop
-    /// parameter. The loop itself yields 0 — a `yield`/`break`-accumulating
-    /// comprehension still collects nothing (see codegen/AGENTS.md).
+    /// `for (xs) { item -> … }` over the `[len][e0][e1]…` layout: a counted
+    /// walk binding each element to the loop parameter. A statement (decision
+    /// 105): it leaves 0, or the generator's array when `result` names one.
     fn lowerCollectionLoop(self: *Emitter, lp: anytype, result: ?[]const u8) anyerror!void {
         const ra = self.reg_arena.allocator();
         const n = self.loop_seq;
@@ -7180,10 +7285,11 @@ const Emitter = struct {
         const elem_ty = if (elem_kind == .f32) "f32" else "i32";
         try self.declareLocal(elem, elem_ty);
         if (elem_kind == .str) try self.str_locals.put(elem, {});
-        const idx_param: ?[]const u8 = if (lp.params.len > 1) lp.params[1] else null;
-        if (idx_param) |ip| try self.declareLocal(ip, "i32");
-        // `loop (xs, 1..) { x, i -> … }` counts `i` from the range's start.
-        const start = try self.indexRangeStart(lp.indexRange, n);
+        // `for (es) { e -> … }` binds one ELEMENT: when the elements are
+        // records, `e.key` needs the record type or it reads a slot by the
+        // unique-field guess and prints the field's ADDRESS (`284` for
+        // `"abc"`, exit 0).
+        if (self.elemRecordOf(lp.iter.*)) |r| try self.local_types.put(elem, r);
 
         try self.lowerCoerced(lp.iter.*, "i32");
         try self.emit(.{ .local_set = base });
@@ -7206,21 +7312,6 @@ const Emitter = struct {
         try self.emitAt(8, opOf("i32", "add"));
         try self.emitAt(8, .{ .load = .{ .ty = vt(elem_ty), .offset = 4 } });
         try self.emitAt(8, .{ .local_set = elem });
-        if (idx_param) |ip| {
-            try self.emitAt(8, .{ .local_get = cur });
-            switch (start) {
-                .zero => {},
-                .constant => |k| {
-                    try self.emitAt(8, k);
-                    try self.emitAt(8, opOf("i32", "add"));
-                },
-                .local => |l| {
-                    try self.emitAt(8, .{ .local_get = l });
-                    try self.emitAt(8, opOf("i32", "add"));
-                },
-            }
-            try self.emitAt(8, .{ .local_set = ip });
-        }
         try self.emitIterationBody(lp.body);
         try self.emitAt(8, .{ .local_get = cur });
         try self.emitAt(8, one);
@@ -7231,39 +7322,6 @@ const Emitter = struct {
 
         try self.emitLoopBlock(loop_seq);
         if (result) |r| try self.emit(.{ .local_get = r }) else try self.emit(zero);
-    }
-
-    const IndexStart = union(enum) { zero, constant: Instr, local: []const u8 };
-
-    /// The first index of `loop (xs, <range>)`: the range's lower bound (`0`
-    /// without one, as erlang's `lists:enumerate(Start, Xs)`). An integer
-    /// literal is added as a constant; anything else is evaluated once, before
-    /// the walk, into `__start<n>`.
-    fn indexRangeStart(self: *Emitter, range: anytype, n: u32) anyerror!IndexStart {
-        const r = range orelse return .zero;
-        const start_expr = switch (r.*) {
-            .collection => |col| switch (col.kind) {
-                .range => |rg| rg.start.*,
-                else => return .zero,
-            },
-            else => return .zero,
-        };
-        switch (start_expr) {
-            .literal => |lit| switch (lit.kind) {
-                .numberLit => |text| if (isNumericLiteral(text) and numLitType(text)[0] == 'i') {
-                    const k = std.fmt.parseInt(i64, text, 10) catch return .zero;
-                    if (k == 0) return .zero;
-                    return .{ .constant = try self.constInt(k) };
-                },
-                else => {},
-            },
-            else => {},
-        }
-        const name = try std.fmt.allocPrint(self.reg_arena.allocator(), "__start{d}", .{n});
-        try self.declareLocal(name, "i32");
-        try self.lowerCoerced(start_expr, "i32");
-        try self.emit(.{ .local_set = name });
-        return .{ .local = name };
     }
 
     /// One iteration's statements. A body that `continue`s is wrapped in
@@ -7323,13 +7381,9 @@ const Emitter = struct {
         } });
     }
 
-    /// `loop (condition) { … }` / `loop { … }` (decision 8 §10): test the
+    /// `while (condition) { … }` / `loop { … }` (decision 105): test the
     /// condition at the top of every iteration, leave when it is false.
     fn lowerConditionLoop(self: *Emitter, lp: anytype, result: ?[]const u8) anyerror!void {
-        const saved_depth = self.cond_break_depth;
-        self.cond_break_depth = if (result != null) self.loop_depth + 1 else null;
-        defer self.cond_break_depth = saved_depth;
-
         var loop_c: Capture = .{};
         self.open(&loop_c);
         try self.lowerCoerced(lp.iter.*, "i32");
@@ -7353,9 +7407,10 @@ const Emitter = struct {
         var loop_c: Capture = .{};
         self.open(&loop_c);
         if (r.end) |end| {
+            // `a..b` stops at `b`; `a...b` (decision 105) runs it too.
             try self.emitAt(8, .{ .local_get = param });
             try self.lowerExpr(end.*);
-            try self.emitAt(8, opOf("i32", "ge_s"));
+            try self.emitAt(8, opOf("i32", if (r.inclusive) "gt_s" else "ge_s"));
             try self.emitAt(8, .{ .br_if = break_label });
         }
 
@@ -7649,6 +7704,92 @@ const Emitter = struct {
         }
     }
 
+    /// The plain NAMES a null test narrows — when it HOLDS (`present`), which
+    /// is the then-branch of `x != null`, and when it fails, which is the else
+    /// branch of `x == null`. `&&` narrows both of its halves on the holding
+    /// side and `||` both of them on the failing side; only a bare name is
+    /// narrowable, which is the same limit the checker draws
+    /// (`o.inner != null` rebinds nothing).
+    fn collectNullTestNames(self: *Emitter, cond: ast.Expr, present: bool, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        switch (cond) {
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| try self.collectNullTestNames(inner.*, present, out),
+                else => {},
+            },
+            .binaryOp => |bin| switch (bin.op) {
+                .ne, .eq => {
+                    if ((bin.op == .ne) != present) return;
+                    const name = if (isNullLit(bin.rhs.*))
+                        plainIdentName(bin.lhs.*)
+                    else if (isNullLit(bin.lhs.*))
+                        plainIdentName(bin.rhs.*)
+                    else
+                        null;
+                    if (name) |n| try out.append(self.arena(), n);
+                },
+                .@"and" => if (present) {
+                    try self.collectNullTestNames(bin.lhs.*, true, out);
+                    try self.collectNullTestNames(bin.rhs.*, true, out);
+                },
+                .@"or" => if (!present) {
+                    try self.collectNullTestNames(bin.lhs.*, false, out);
+                    try self.collectNullTestNames(bin.rhs.*, false, out);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+
+    /// One name a branch narrowed, and which shape notes were added for it —
+    /// so `dropNarrowing` restores exactly what was there, and a narrowing does
+    /// not outlive its branch.
+    const Narrowing = struct {
+        name: []const u8,
+        added_str: bool = false,
+        added_bool: bool = false,
+        added_rec: bool = false,
+    };
+
+    /// Mark every narrowable name of `names` as its payload for the branch
+    /// about to be emitted, and answer what was marked so `dropNarrowing` can
+    /// put it back. A `?string`, a `?bool` and a `?Record` also take the shape
+    /// their payload has, because inside the branch every reader asks about a
+    /// plain value and no longer about an optional.
+    fn applyNarrowing(self: *Emitter, names: []const []const u8) anyerror![]const Narrowing {
+        var marked: std.ArrayListUnmanaged(Narrowing) = .empty;
+        for (names) |n0| {
+            const n = self.resolveName(n0);
+            if (self.narrowed_opts.contains(n)) continue;
+            const oi = self.opt_locals.get(n) orelse continue;
+            try self.narrowed_opts.put(n, oi);
+            var m: Narrowing = .{ .name = n };
+            if (oi.str and !self.str_locals.contains(n)) {
+                try self.str_locals.put(n, {});
+                m.added_str = true;
+            }
+            if (oi.bool_ and !self.bool_locals.contains(n)) {
+                try self.bool_locals.put(n, {});
+                m.added_bool = true;
+            }
+            if (oi.rec) |r| if (!self.local_types.contains(n)) {
+                try self.local_types.put(n, r);
+                m.added_rec = true;
+            };
+            try marked.append(self.arena(), m);
+        }
+        return marked.items;
+    }
+
+    fn dropNarrowing(self: *Emitter, marked: []const Narrowing) void {
+        for (marked) |m| {
+            _ = self.narrowed_opts.remove(m.name);
+            if (m.added_str) _ = self.str_locals.remove(m.name);
+            if (m.added_bool) _ = self.bool_locals.remove(m.name);
+            if (m.added_rec) _ = self.local_types.remove(m.name);
+        }
+    }
+
     fn lowerIfExpr(self: *Emitter, i: anytype) !void {
         // F2 (Optionals tail) — distinguish statement-form `if` (both
         // branches end in void calls / valueless returns) from value-form
@@ -7687,14 +7828,22 @@ const Emitter = struct {
             }
             try self.emit(.{ .local_set = name });
         }
+        var then_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        try self.collectNullTestNames(i.cond.*, true, &then_names);
+        const then_marked = try self.applyNarrowing(then_names.items);
         const then_tail = try self.emitBody(i.then_, !as_stmt);
+        self.dropNarrowing(then_marked);
         const then_seq = self.seal(&then_c, stackOf(then_tail, self.cur_result));
 
         var else_seq: ?Seq = null;
         if (i.else_) |els| {
             var else_c: Capture = .{};
             self.open(&else_c);
+            var else_names: std.ArrayListUnmanaged([]const u8) = .empty;
+            try self.collectNullTestNames(i.cond.*, false, &else_names);
+            const else_marked = try self.applyNarrowing(else_names.items);
             const else_tail = try self.emitBody(els, !as_stmt);
+            self.dropNarrowing(else_marked);
             else_seq = self.seal(&else_c, stackOf(else_tail, self.cur_result));
         } else if (!as_stmt) {
             // A value-form `if` must fill its `(result …)` on both paths.

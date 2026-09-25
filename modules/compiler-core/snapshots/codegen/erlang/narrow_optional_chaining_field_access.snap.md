@@ -13,7 +13,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Inner: value
@@ -24,7 +24,7 @@ getValue(O) ->
     (fun(undefined) -> undefined; (_Opt0) -> element(2, _Opt0) end)(element(2, O)).
 
 main() ->
-    O = {main__t__outer, {main__t__inner, 42}},
+    O = {test@main@@Outer, {test@main@@Inner, 42}},
     '__bp_print'([getValue(O)]).
 
 '__bp_print'(Values) ->
@@ -53,9 +53,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__inner.erl
+----- ERLANG -- test@main@@Inner.erl
 ```erlang
--module(main__t__inner).
+-module(test@main@@Inner).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, value) -> element(2, V).
@@ -63,9 +63,9 @@ main(_Args) ->
 '__bp_format'(V) -> {record, "Inner", [{"value", element(2, V)}]}.
 ```
 
------ ERLANG -- main__t__outer.erl
+----- ERLANG -- test@main@@Outer.erl
 ```erlang
--module(main__t__outer).
+-module(test@main@@Outer).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, inner) -> element(2, V).

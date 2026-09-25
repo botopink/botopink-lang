@@ -51,6 +51,7 @@ test "parity: a template and a decorator answer the same on both runtimes" {
         var outputs = try codegen.generateWith(alloc, &.{.{ .path = "", .source = program }}, io, .{
             .targetSource = target,
             .build_root = test_scratch.path(io, "comptime-parity"),
+            .packages = @import("../../codegen/crossModule.zig").test_packages,
         }, .{ .execute = false });
         defer {
             for (outputs.items) |*o| o.result.deinit(alloc);

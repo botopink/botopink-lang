@@ -37,6 +37,12 @@ pub const Config = struct {
     /// lowers to a throwing helper, and `fn main/0` is not auto-invoked.
     test_mode: bool = false,
 
+    /// Which package owns each module (decision 109): the root package's
+    /// `botopink.json` `name` and the dependencies loaded beside it. The
+    /// erlang and BEAM module atoms start with it. The default is a
+    /// compilation with no manifest, whose modules are `bp`'s.
+    packages: @import("crossModule.zig").Packages = .{},
+
     /// Which runtime evaluates this generation's decorators and templates.
     /// Null — every driver — is decision 84: the target's VM (erlang/beam →
     /// beam, commonJS/wasm → wat). Set only where one process generates the

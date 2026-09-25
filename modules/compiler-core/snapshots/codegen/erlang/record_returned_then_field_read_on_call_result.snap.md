@@ -11,20 +11,20 @@ fn lineNo() -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Span: start, end, line
 
 span() ->
-    {main__t__span, 4, 9, 2}.
+    {test@main@@Span, 4, 9, 2}.
 
 lineNo() ->
     element(4, span()).
 ```
 
------ ERLANG -- main__t__span.erl
+----- ERLANG -- test@main@@Span.erl
 ```erlang
--module(main__t__span).
+-module(test@main@@Span).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, start) -> element(2, V);

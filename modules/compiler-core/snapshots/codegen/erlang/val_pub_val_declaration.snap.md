@@ -6,7 +6,7 @@ pub val HOST = "localhost";
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 'VERSION'() ->
     1.

@@ -1,20 +1,20 @@
 //// Decision 8 §9 — `#[@iterator]` plus `-> @Iterator<T>`: `yield` produces the
-//// elements and `loop (gen)` consumes them.
+//// elements and `for (gen)` consumes them.
 
 #[@iterator]
 fn upto(n: i32) -> @Iterator<i32> {
     var i = 0;
-    loop (i < n) { yield i; i = i + 1; };
+    while (i < n) { yield i; i = i + 1; };
 }
 
 test "§9 an iterator yields its elements in order" {
     var acc = "";
-    loop (upto(4)) { x -> acc = acc + x.toString(); };
+    for (upto(4)) { x -> acc = acc + x.toString(); };
     assert acc == "0123";
 }
 
 test "§9 an empty iterator runs no iteration" {
     var runs = 0;
-    loop (upto(0)) { x -> runs = runs + 1; };
+    for (upto(0)) { x -> runs = runs + 1; };
     assert runs == 0;
 }

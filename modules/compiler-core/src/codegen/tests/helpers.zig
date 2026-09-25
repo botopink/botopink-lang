@@ -7,6 +7,7 @@ const codegen = @import("../../codegen.zig");
 const snap = @import(".././snapshot.zig");
 const snapUtil = @import("../../utils/snap.zig");
 const config = @import(".././config.zig");
+const crossModule = @import(".././crossModule.zig");
 const Lexer = @import("../../lexer.zig").Lexer;
 const Parser = @import("../../parser.zig").Parser;
 const Module = codegen.Module;
@@ -47,22 +48,30 @@ pub fn generate(
     return outputs;
 }
 
+/// Every target the harness compiles for. `packages` is the implicit test
+/// manifest (decision 109): an erlang/BEAM module atom starts with its
+/// package, a compilation with no `botopink.json` is refused, so the harness
+/// compiles as package `test` — `test@main`, `test@main@@Person`.
 pub const configs = [_]config.Config{
     .{
         .targetSource = .commonJS,
         .typeDefLanguage = .typescript,
+        .packages = crossModule.test_packages,
     },
     .{
         .targetSource = .erlang,
         .typeDefLanguage = null,
+        .packages = crossModule.test_packages,
     },
     .{
         .targetSource = .beam,
         .typeDefLanguage = null,
+        .packages = crossModule.test_packages,
     },
     .{
         .targetSource = .wasm,
         .typeDefLanguage = null,
+        .packages = crossModule.test_packages,
     },
 };
 

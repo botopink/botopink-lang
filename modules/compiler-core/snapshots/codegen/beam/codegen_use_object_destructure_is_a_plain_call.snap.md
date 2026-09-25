@@ -13,15 +13,15 @@ fn Counter() -> Element {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 10}.
 
 {function, state, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, state}, 1}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, state}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -33,8 +33,8 @@ fn Counter() -> Element {
 
 {function, 'Counter', 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, 'Counter'}, 0}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, 'Counter'}, 0}.
   {label, 5}.
     {allocate, 2, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -55,23 +55,23 @@ fn Counter() -> Element {
   {label, 7}.
     {move, {x, 1}, {x, 0}}.
     {test_heap, 2, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__element}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Element}]}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 2}.
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__element.S
+----- BEAM ASSEMBLY -- test@main@@Element.S
 ```erlang
-{module, main__t__element}.
+{module, test@main@@Element}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 4}.
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__element.erl", 1}]}.
-    {func_info, {atom, main__t__element}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Element.erl", 1}]}.
+    {func_info, {atom, test@main@@Element}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

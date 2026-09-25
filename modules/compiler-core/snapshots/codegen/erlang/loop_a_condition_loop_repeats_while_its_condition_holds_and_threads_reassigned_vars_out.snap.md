@@ -3,7 +3,7 @@
 fn count(limit: i32) -> i32 {
     var i = 0;
     var acc = "";
-    loop (i < limit) {
+    while (i < limit) {
         acc = acc + i.toString();
         i = i + 1;
     };
@@ -13,7 +13,7 @@ fn count(limit: i32) -> i32 {
 fn evens(limit: i32) -> i32 {
     var i = 0;
     var sum = 0;
-    loop (i < limit) {
+    while (i < limit) {
         i = i + 1;
         if (i % 2 == 1) { continue; };
         sum = sum + i;
@@ -29,7 +29,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 count(Limit) ->

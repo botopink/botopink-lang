@@ -9,23 +9,23 @@ type Unimplemented(id: i32) {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 2}.
 ```
 
------ BEAM ASSEMBLY -- main__t__unimplemented.S
+----- BEAM ASSEMBLY -- test@main@@Unimplemented.S
 ```erlang
-{module, main__t__unimplemented}.
+{module, test@main@@Unimplemented}.
 {exports, [{process, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 9}.
 
 {function, process, 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__unimplemented.erl", 1}]}.
-    {func_info, {atom, main__t__unimplemented}, {atom, process}, 1}.
+    {line, [{location, "test@main@@Unimplemented.erl", 1}]}.
+    {func_info, {atom, test@main@@Unimplemented}, {atom, process}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -35,8 +35,8 @@ type Unimplemented(id: i32) {
 
 {function, '__bp_get', 2, 5}.
   {label, 4}.
-    {line, [{location, "main__t__unimplemented.erl", 2}]}.
-    {func_info, {atom, main__t__unimplemented}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Unimplemented.erl", 2}]}.
+    {func_info, {atom, test@main@@Unimplemented}, {atom, '__bp_get'}, 2}.
   {label, 5}.
     {test, is_eq_exact, {f, 6}, [{x, 1}, {atom, id}]}.
     {move, {x, 0}, {x, 1}}.
@@ -48,8 +48,8 @@ type Unimplemented(id: i32) {
 
 {function, '__bp_format', 1, 8}.
   {label, 7}.
-    {line, [{location, "main__t__unimplemented.erl", 2}]}.
-    {func_info, {atom, main__t__unimplemented}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Unimplemented.erl", 2}]}.
+    {func_info, {atom, test@main@@Unimplemented}, {atom, '__bp_format'}, 1}.
   {label, 8}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

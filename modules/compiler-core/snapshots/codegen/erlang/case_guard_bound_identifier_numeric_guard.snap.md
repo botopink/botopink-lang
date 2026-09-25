@@ -11,7 +11,7 @@ fn classify(n: i32) -> string {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 classify(N) ->
     case N of

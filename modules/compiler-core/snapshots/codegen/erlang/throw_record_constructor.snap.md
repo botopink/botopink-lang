@@ -10,21 +10,21 @@ fn validate(x: i32) {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type AppError: code, msg
 
 validate(X) ->
     case (X < 0) of
         true ->
-            erlang:throw({main__t__apperror, 400, <<"negative">>});
+            erlang:throw({test@main@@AppError, 400, <<"negative">>});
         _ -> ok
     end.
 ```
 
------ ERLANG -- main__t__apperror.erl
+----- ERLANG -- test@main@@AppError.erl
 ```erlang
--module(main__t__apperror).
+-module(test@main@@AppError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, code) -> element(2, V);

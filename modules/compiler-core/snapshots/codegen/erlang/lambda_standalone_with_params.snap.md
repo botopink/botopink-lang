@@ -11,7 +11,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 -export(['_botopink_init'/0]).
 
@@ -21,8 +21,8 @@ add() ->
     end.
 
 result() ->
-    case persistent_term:get({main, result}, '__bp_unset') of
-        '__bp_unset' -> __BpV = (add())(10, 20), persistent_term:put({main, result}, __BpV), __BpV;
+    case persistent_term:get({test@main, result}, '__bp_unset') of
+        '__bp_unset' -> __BpV = (add())(10, 20), persistent_term:put({test@main, result}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 
