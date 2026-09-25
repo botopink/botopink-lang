@@ -138,13 +138,13 @@ test "hover: empty bindings returns null" {
     try snap.assertHover(gpa, "hover_empty_bindings", source, h.pos(0, 4), result);
 }
 
-// ── async / generators (#[@iterator]) ────────────────────────────────────────
+// ── async / generators (#[@resultGenerator]) ────────────────────────────────────────
 
 test "hover: star fn shows async marker and element type" {
     const gpa = std.testing.allocator;
     const source =
-        \\#[@iterator]
-        \\fn counter() -> @Iterator<i32> :gen { yield 1; }
+        \\#[@resultGenerator]
+        \\fn counter() -> @ResultGenerator<i32> :gen { yield 1; }
     ;
 
     var c = try h.compile(gpa, source);

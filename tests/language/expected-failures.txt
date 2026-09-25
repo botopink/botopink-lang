@@ -289,3 +289,9 @@ erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's lab
 # the first failing row stops the run.
 wasm     | run/effect_method.bp | 05-wasm | a record method looping over its own array field answers `0`, and a method declared in an enum's body traps (`unreachable`). Measured with the effect annotations removed as well, so it is the method call and not the effect
 
+# ── decision 103 cells on the eager generator lowerings (front 21) ───────────
+# Measured after merging 22-loops (`52843fd5`): commonJS's `function*` and beam
+# run both cells; the eager erlang and wasm generator scopes do not yet.
+erlang   | run/generator_break_value.bp | C-30 (22-loops' eager generator scope) | decision 103: a bare `break` at the level of a generator body is thrown as `'__bp_break'` and never caught by the scope — `ends()` crashes the program after `0127` (`{nocatch,'__bp_break'}`)
+wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope) | decision 103: every `digits` answers the empty string — the eager generator scope yields nothing into the `for` that reads it (three empty lines)
+wasm     | run/generator_levels.bp | C-30 (22-loops' eager generator scope) | decision 103: a `try` inside a `@ResultGenerator` body plus a `#[@result]` `for` over it answers the empty string, and the plain `fn` over a `@Generator<T>` answers `0`

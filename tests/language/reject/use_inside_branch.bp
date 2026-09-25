@@ -1,11 +1,12 @@
 //// Front 19 row 4c — a `use` inside a branch's own block is after that branch:
 //// the static prefix is the function body's, at any nesting.
 
-type Element(count: i32) implement @Context<Element, Element>
-fn effect(cb: i32) -> @Context<Element, i32> { return cb; }
+type Element(count: i32) implement @Context<Element>
+#[@use]
+fn effect(cb: i32) -> @Component<Element, i32> { return cb; }
 
-#[@context]
-fn Widget(a: bool) -> Element {
+#[@use]
+fn Widget(a: bool) -> @Component<Element, Element> {
     if (a) { use effect(1); };
     return Element(count: 1);
 }

@@ -1,7 +1,7 @@
 //// An effect annotation on a METHOD is the method's, exactly as it is a free
 //// `fn`'s — decision 8 §9 names no exception for a receiver. commonJS read the
-//// effect off `ast.FnDecl.effect`, which a method has not, so `#[@iterator] fn
-//// each(self: Self) -> @Iterator<i32>` emitted as a plain method whose
+//// effect off `ast.FnDecl.effect`, which a method has not, so `#[@resultGenerator] fn
+//// each(self: Self) -> @ResultGenerator<i32>` emitted as a plain method whose
 //// `loop … yield` lowered to a value-dropping `.map()`, and `for (b.each())`
 //// died with `TypeError: b.each is not a function or its return value is not
 //// iterable` where erlang printed the elements.

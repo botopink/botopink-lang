@@ -8,7 +8,7 @@
 //// each Param.
 ////
 //// Surface bookkeeping (the doc-only fns in `builtins.d.bp`): `field<T,F>` /
-//// `trap` / `emit` / `module` / `getContex<T>` are declared there as
+//// `trap` / `emit` / `module` / `getContext<T>` are declared there as
 //// `pub declare fn … -> …;` like every other bodyless fn in the file (front 20
 //// F10). None carries a trailing default, so none needs this parse path.
 

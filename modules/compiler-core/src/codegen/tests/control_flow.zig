@@ -1462,8 +1462,8 @@ test "erlang: generator ---- a condition-loop body yields its elements in order"
 test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
     // `isPlainYieldGenerator`'s path, untouched by the collecting loop.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\#[@iterator]
-        \\fn two() -> @Iterator<i32> { yield 1; yield 2; }
+        \\#[@resultGenerator]
+        \\fn two() -> @ResultGenerator<i32> { yield 1; yield 2; }
         \\fn main() {
         \\  var a = "";
         \\  for (two()) { x -> a = a + x.toString(); };

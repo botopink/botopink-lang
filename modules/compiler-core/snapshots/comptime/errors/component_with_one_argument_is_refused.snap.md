@@ -1,6 +1,9 @@
 ----- SOURCE CODE
-#[@iterator]
-fn empty() -> @Iterator<> { break; }
+val Element = type implement @Context<Element> { }
+#[@use]
+fn Card() -> @Component<Element> {
+    return Element();
+}
 
 ----- ERROR
 error: generic-required-arg-missing: a required generic argument is missing

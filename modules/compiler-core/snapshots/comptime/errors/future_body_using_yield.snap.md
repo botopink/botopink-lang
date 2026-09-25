@@ -5,7 +5,7 @@ fn bad() -> @Future<i32> {
 }
 
 ----- ERROR
-error: yield-without-generator: `yield` needs a generator effect — `#[@generator]`, `#[@iterator]` or `#[@futureGenerator]`; `#[@future]` is `@Future`, which does not
+error: yield-without-generator: `yield` needs a generator effect — `#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`; `#[@future]` is `@Future`, which does not
   ┌─ :3:5
   │
 3 │     yield 1;

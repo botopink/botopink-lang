@@ -367,8 +367,8 @@ test "infer error: await on a non-@Future value" {
 
 test "infer error: yield targets an unknown label" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn gen() -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\fn gen() -> @ResultGenerator<i32> {
         \\    yield :nope 1;
         \\}
     );
@@ -580,10 +580,10 @@ test "infer error: RG3 ---- @Future<> rejects (T is required)" {
     );
 }
 
-test "infer error: RG3 ---- @Iterator<> rejects (T is required)" {
+test "infer error: RG3 ---- @ResultGenerator<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn empty() -> @Iterator<> { break; }
+        \\#[@resultGenerator]
+        \\fn empty() -> @ResultGenerator<> { break; }
     );
 }
 
@@ -640,10 +640,10 @@ test "infer error: RF2 ---- throw Future.rejected(...) inside #[@future] reds fu
     );
 }
 
-test "infer error: RI1 ---- return <expr> inside #[@iterator] reds iterator-return-forbidden" {
+test "infer error: RI1 ---- return <expr> inside #[@resultGenerator] reds iterator-return-forbidden" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn nums() -> @Iterator<i32, string, i32> {
+        \\#[@resultGenerator]
+        \\fn nums() -> @ResultGenerator<i32, string> {
         \\    yield 1;
         \\    return 42;
         \\}
@@ -653,7 +653,7 @@ test "infer error: RI1 ---- return <expr> inside #[@iterator] reds iterator-retu
 test "infer error: RI1 ---- return <expr> inside #[@futureGenerator] reds iterator-return-forbidden" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@futureGenerator]
-        \\fn nums() -> @FutureGenerator<i32, string, i32> {
+        \\fn nums() -> @FutureGenerator<i32, string> {
         \\    yield 1;
         \\    return 42;
         \\}
@@ -662,29 +662,61 @@ test "infer error: RI1 ---- return <expr> inside #[@futureGenerator] reds iterat
 
 test "infer error: RI5 ---- break :unknown reds break-label-unbound" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn nums() -> @Iterator<i32, string, i32> :outer {
+        \\#[@resultGenerator]
+        \\fn nums() -> @ResultGenerator<i32, string> :outer {
         \\    yield 1;
         \\    break :nonsense 42;
         \\}
     );
 }
 
-test "infer error: RC5 ---- @getContex outside #[@context] fn reds context-getcontex-outside-context-fn" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\type User(id: i32)
-        \\fn lookup() -> User {
-        \\    return @getContex(User);
+// Decision 103 — `break <v>` at generator level emits `v` as the last item
+// and ends; `v` is an item of `T`, so this compiles (the RI3 refusal left
+// with the completion channel `C`).
+test "infer: decision 103 ---- break <expr> inside #[@resultGenerator] is the last item" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\#[@resultGenerator]
+        \\fn nums() -> @ResultGenerator<i32> {
+        \\    yield 1;
+        \\    break 42;
         \\}
     );
 }
 
-test "infer error: RC4 ---- @getContex(<value>) reds context-getcontex-expects-type" {
+test "infer error: RG5 ---- a third argument on @ResultGenerator reds generic-arg-count-exceeded" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@resultGenerator]
+        \\fn nums() -> @ResultGenerator<i32, string, i32> {
+        \\    yield 1;
+        \\}
+    );
+}
+
+test "infer error: RG5 ---- a third argument on @FutureGenerator reds generic-arg-count-exceeded" {
+    // Decision 103 — `@FutureGenerator<T, E>` lost its completion channel `C`.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@futureGenerator]
+        \\fn nums() -> @FutureGenerator<i32, string, i32> {
+        \\    yield 1;
+        \\}
+    );
+}
+
+test "infer error: RC5 ---- @getContext outside #[@use] fn reds context-getcontext-outside-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
-        \\#[@context]
-        \\fn lookup() -> @Context<User, User> {
-        \\    return @getContex(42);
+        \\fn lookup() -> User {
+        \\    return @getContext(User);
+        \\}
+    );
+}
+
+test "infer error: RC4 ---- @getContext(<value>) reds context-getcontext-expects-type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type User(id: i32)
+        \\#[@use]
+        \\fn lookup() -> @Component<User, User> {
+        \\    return @getContext(42);
         \\}
     );
 }
@@ -693,25 +725,25 @@ test "infer error: RC6 ---- use of non-context fn reds use-of-non-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
         \\fn plain() -> User { return User(id: 1); }
-        \\#[@context]
-        \\fn lookup() -> @Context<User, User> {
+        \\#[@use]
+        \\fn lookup() -> @Component<User, User> {
         \\    val u = use plain();
         \\    return u;
         \\}
     );
 }
 
-test "infer error: RC3 ---- @getContex(T) outside enclosing Anchor tree reds context-getcontex-anchor-violation" {
+test "infer error: RC3 ---- @getContext(T) outside enclosing Anchor tree reds context-getcontext-anchor-violation" {
     // The enclosing fn's Anchor is `RootA`; the requested type `LeafB`'s
     // Anchor is `RootB`. No `use` chain rooted at `RootA` can ever provide
     // `LeafB`, so the request is statically out of reach (RC3).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type RootA(name: string)
         \\type RootB(name: string)
-        \\type LeafB(v: i32) implement @Context<RootB, RootB>
-        \\#[@context]
-        \\fn pickA() -> @Context<RootA, RootA> {
-        \\    return @getContex(LeafB);
+        \\type LeafB(v: i32) implement @Context<RootB>
+        \\#[@use]
+        \\fn pickA() -> @Component<RootA, RootA> {
+        \\    return @getContext(LeafB);
         \\}
     );
 }
@@ -720,8 +752,8 @@ test "infer error: break <wrongType> in a generator reds a type mismatch against
     // `break v` emits `v` and ends the generator: `v` is an item, so it must
     // be a `T`. The completion channel `C` is gone (decision 103).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn nums() -> @Iterator<i32, string> {
+        \\#[@resultGenerator]
+        \\fn nums() -> @ResultGenerator<i32, string> {
         \\    yield 1;
         \\    break "not an i32";
         \\}
@@ -840,12 +872,14 @@ test "infer error: return ---- an @block value flows to the fn's return" {
     );
 }
 
-test "infer: return ---- a hook body returns the X of @Context<B, X>, or another hook" {
+test "infer: return ---- a hook body returns the X of @Component<B, X>, or another hook" {
     try h.assertInfersOk(std.testing.allocator,
         \\type El(tag: string)
         \\type Cell<T>(value: T)
-        \\fn state<T>(initial: T) -> @Context<El, Cell<T>> { return Cell(value: initial); }
-        \\fn counter(start: i32) -> @Context<El, Cell<i32>> { return state(start); }
+        \\#[@use]
+        \\fn state<T>(initial: T) -> @Component<El, Cell<T>> { return Cell(value: initial); }
+        \\#[@use]
+        \\fn counter(start: i32) -> @Component<El, Cell<i32>> { return state(start); }
     );
 }
 

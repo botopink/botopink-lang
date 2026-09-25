@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@iterator]
-fn counter() -> @Iterator<i32> {
+#[@resultGenerator]
+fn counter() -> @ResultGenerator<i32> {
     yield 1;
     yield 2;
     yield 3;

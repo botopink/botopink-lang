@@ -262,7 +262,7 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
 
     // For an effect fn, surface the unwrapped element type produced by
     // `await` / `yield` / iteration (the `T` of `@Future<T>` /
-    // `@Iterator<T>` / `@FutureGenerator<T, _>`).
+    // `@ResultGenerator<T>` / `@FutureGenerator<T, _>`).
     if (b.decl == .@"fn" and b.decl.@"fn".effect != null) {
         if (b.decl.@"fn".returnType) |rt| {
             if (asyncItemTypeRef(rt)) |item| {
@@ -386,12 +386,12 @@ fn getDeclDocComment(decl: ast.DeclKind) ?[]const u8 {
 }
 
 /// The element type `T` of an async/generator return type
-/// (`@Future<T>` / `@Iterator<T>` / `@FutureGenerator<T, _>`), or null.
+/// (`@Future<T>` / `@ResultGenerator<T>` / `@FutureGenerator<T, _>`), or null.
 fn asyncItemTypeRef(tr: ast.TypeRef) ?ast.TypeRef {
     return switch (tr) {
         .generic => |g| if (g.is_builtin and g.args.len >= 1 and
             (std.mem.eql(u8, g.name, "Future") or
-                std.mem.eql(u8, g.name, "Iterator") or
+                std.mem.eql(u8, g.name, "ResultGenerator") or
                 std.mem.eql(u8, g.name, "FutureGenerator")))
             g.args[0]
         else
@@ -3481,7 +3481,7 @@ pub fn semanticTokens(
     var fn_body_depth: ?usize = null; // containers.len while inside that body
 
     var in_attribute = false; // between `#[` and its `]`
-    var pending_effect_fn = false; // `#[@iterator]` / `*` seen before a `fn`
+    var pending_effect_fn = false; // `#[@resultGenerator]` / `*` seen before a `fn`
 
     // Generic type parameters of the enclosing declaration (`fn q<T>(…)`,
     // `record Box<T> { … }`). A `T` in the signature or in the body names a
@@ -3605,7 +3605,7 @@ pub fn semanticTokens(
             else => {},
         }
 
-        // `#[ … ]` attribute block: `#[@iterator]` & friends mark the *next*
+        // `#[ … ]` attribute block: `#[@resultGenerator]` & friends mark the *next*
         // `fn` as an effect function.
         if (tok.kind == .hash and i + 1 < tokens.len and tokens[i + 1].kind == .leftSquareBracket) {
             in_attribute = true;
@@ -3647,7 +3647,7 @@ pub fn semanticTokens(
         }
 
         if (tok.kind == .builtinIdent) {
-            // `#[@iterator]` / `#[@future]` / … : the annotation names an
+            // `#[@resultGenerator]` / `#[@future]` / … : the annotation names an
             // effect, so the fn it decorates is an effect function.
             if (in_attribute and tok.lexeme.len >= 2 and
                 ast.EffectKind.fromAnnotationName(tok.lexeme[1..]) != null)
@@ -3710,7 +3710,7 @@ pub fn semanticTokens(
                 pending_effect_fn = false;
                 generic_pending = nk == .lessThan;
             } else if (awaiting_fn_body and pk == .colon) {
-                // `fn counter() -> @Iterator<i32> :gen { … }` — the trailing
+                // `fn counter() -> @ResultGenerator<i32> :gen { … }` — the trailing
                 // `:label` of an effect fn is syntax, not a binding.
                 type_idx = proto.SemanticTokenTypes.keyword;
             } else if (pk == .val or pk == .record or pk == .@"enum" or pk == .interface or pk == .behavior or pk == .type) {
@@ -4736,10 +4736,10 @@ fn dotCompletion(
         if (t.* == .named) receiver_type_name = t.named.name;
         break;
     }
-    // Iterator receivers (`@Iterator` / `@FutureGenerator`) expose the iteration
+    // Generator receivers (`@ResultGenerator` / `@FutureGenerator`) expose the iteration
     // protocol: `next()`, `iter()` and `map()`.
     if (receiver_type_name) |rtn| {
-        if (std.mem.eql(u8, rtn, "Iterator") or std.mem.eql(u8, rtn, "FutureGenerator")) {
+        if (std.mem.eql(u8, rtn, "ResultGenerator") or std.mem.eql(u8, rtn, "FutureGenerator")) {
             const iter_methods = [_][]const u8{ "next", "iter", "map" };
             for (iter_methods) |m| {
                 try items.append(gpa, .{

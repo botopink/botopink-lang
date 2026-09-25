@@ -1,15 +1,16 @@
-//// Decision 90 is a dispensation, not a way to switch a refusal off. The
-//// wrapper effect is there, but `@Future<i32>` unwraps (decision 89) to a type
-//// that owns no context, so there is no owner for the activation to agree on —
-//// the fn is refused exactly as a plain `-> i32` body would be.
+//// Decision 104 of 1.0.10-beta (front 21) — only `#[@use]` grants `use`.
+//// Decisions 89 and 90, which let a `#[@future]` body activate a hook when its
+//// unwrapped return owned a context, are revoked: `@Future` grants no `use`,
+//// whatever it wraps. The refusal names the annotation that does.
 
-type Element(count: i32) implement @Context<Element, Element>
-fn state(initial: i32) -> @Context<Element, i32> { return initial; }
+type Element(count: i32) implement @Context<Element>
+#[@use]
+fn state(initial: i32) -> @Component<Element, i32> { return initial; }
 
 #[@future]
-fn Page() -> @Future<i32> {
+fn Page() -> @Future<Element> {
     val n = use state(0);
-    return n;
+    return Element(count: n);
 }
 
 pub fn main() { @print(0); }

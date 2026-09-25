@@ -9,3 +9,10 @@
 # the cell into a hard assert. An unlisted cell that fails always fails the gate.
 #
 # Owners are the 1.0.4-beta fronts (specs/1.0.4-beta/fronts.md).
+jhonstart          commonJS  21-effect-chain  step 2 window: the compiler spells decisions 102/104 (`#[@use]`, `@Use<C, T>`, `@Component<T>`, `@Context<Base>`), and the library still writes `#[@context]` / `@Context<Element, R>`; deleted by the commit after the jhonstart sweep (step 4)
+jhonstart          erlang    21-effect-chain  the same window
+jhonstart-counter  commonJS  21-effect-chain  the same window — the example compiles against jhonstart's hooks
+jhonstart-html     commonJS  21-effect-chain  the same window
+jhonstart-html     erlang    21-effect-chain  the same window
+jhonstart-todo     commonJS  21-effect-chain  the same window
+emilia-card        commonJS  21-effect-chain  the same window — the example renders through jhonstart

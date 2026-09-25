@@ -1,35 +1,39 @@
 //// Decision 96 of 1.0.10-beta, the other side of `reject/use_two_bases.bp` —
 //// a body whose hooks share a base still compiles, and its activations still
-//// compose. `counter` is a custom hook (`-> @Context<Element, i32>`) and
-//// `Widget` a component (`-> Element`); both anchor every `use` at `Element`,
+//// compose. `counter` is a custom hook (`-> @Component<Element, i32>`) and
+//// `Widget` a component (`-> @Component<Element, Element>`, which prints its own count:
+//// on commonJS a component answers a Promise, decision 104); both anchor every `use` at `Element`,
 //// so both fix the same anchor at their first activation and agree at every
 //// one after it.
 
-type Element(count: i32) implement @Context<Element, Element>
+type Element(count: i32) implement @Context<Element>
 
-fn state(initial: i32) -> @Context<Element, i32> {
+#[@use]
+fn state(initial: i32) -> @Component<Element, i32> {
     return initial;
 }
 
-fn memo(value: i32) -> @Context<Element, i32> {
+#[@use]
+fn memo(value: i32) -> @Component<Element, i32> {
     return value * 2;
 }
 
-#[@context]
-fn counter(start: i32) -> @Context<Element, i32> {
+#[@use]
+fn counter(start: i32) -> @Component<Element, i32> {
     val s = use state(start);
     val m = use memo(s);
     return s + m;
 }
 
-#[@context]
-fn Widget(n: i32) -> Element {
+#[@use]
+fn Widget(n: i32) -> @Component<Element, Element> {
     val c = use state(n);
     val k = use counter(1);
     val m = use memo(c);
+    @print(c + k + m);
     return Element(count: c + k + m);
 }
 
 pub fn main() {
-    @print(Widget(10).count);
+    Widget(10);
 }

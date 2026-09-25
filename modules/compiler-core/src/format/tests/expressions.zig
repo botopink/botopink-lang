@@ -532,7 +532,7 @@ test "format: for, for await, while, loop and the annotated loop round-trip" {
         \\        if (n == 10) break n * 2;
         \\        yield n * 2;
         \\    };
-        \\    val r = #[@iterator] loop {
+        \\    val r = #[@resultGenerator] loop {
         \\        yield 1;
         \\    };
         \\    val fg = #[@futureGenerator] loop {

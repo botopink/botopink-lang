@@ -83,7 +83,7 @@ test "surface: type Stack<T>(items) with a method is a generic record" {
 }
 
 test "surface: type Element(tag) implement @Context<…> {} keeps the implement clause" {
-    var parsed = try parse("type Element(tag: string) implement @Context<Element, Element> { }");
+    var parsed = try parse("type Element(tag: string) implement @Context<Element> { }");
     defer parsed.deinit();
     const t = try onlyType(parsed);
     try std.testing.expect(t.isRecord());
@@ -424,7 +424,7 @@ test "surface: the annotated loop carries its effect and the three forms their k
     var parsed = try parse(
         \\fn f(xs: i32[]) {
         \\    val g = #[@generator] loop :gen { yield 1; break 2; };
-        \\    val r = #[@iterator] loop { yield 1; };
+        \\    val r = #[@resultGenerator] loop { yield 1; };
         \\    val fg = #[@futureGenerator] loop { yield 1; };
         \\    for :outer (xs) { x -> x; };
         \\    for await (fg) { x -> x; };
@@ -439,7 +439,7 @@ test "surface: the annotated loop carries its effect and the three forms their k
     try std.testing.expectEqual(ast.EffectKind.generator, g.generator.?);
     try std.testing.expectEqualStrings("gen", g.label.?);
     try std.testing.expect(g.condition);
-    try std.testing.expectEqual(ast.EffectKind.iterator, body[1].expr.binding.kind.localBind.value.loop.generator.?);
+    try std.testing.expectEqual(ast.EffectKind.resultGenerator, body[1].expr.binding.kind.localBind.value.loop.generator.?);
     try std.testing.expectEqual(ast.EffectKind.futureGenerator, body[2].expr.binding.kind.localBind.value.loop.generator.?);
     const f = body[3].expr.loop;
     try std.testing.expectEqual(ast.LoopKeyword.for_, f.keyword);

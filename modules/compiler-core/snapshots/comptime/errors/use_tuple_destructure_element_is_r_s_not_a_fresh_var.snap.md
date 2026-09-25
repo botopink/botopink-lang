@@ -1,11 +1,12 @@
 ----- SOURCE CODE
-val Element = type implement @Context<Element, Element> { }
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+val Element = type implement @Context<Element> { }
+#[@use]
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     #(base, push);
 }
-#[@context]
-fn LikeWidget() -> Element {
+#[@use]
+fn LikeWidget() -> @Component<Element, Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     push("x");
     Element();
@@ -13,9 +14,9 @@ fn LikeWidget() -> Element {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :9:10
+  ┌─ :10:10
   │
-9 │     push("x");
+10 │     push("x");
   │          ^
 
   expected: i32

@@ -258,7 +258,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // break [:label] [expr]
     //
     // §1I (`frente-b-rules-tooling.md`) extends `break` with an optional
-    // `:label` targeting an enclosing labelled loop or `#[@iterator]` /
+    // `:label` targeting an enclosing labelled loop or `#[@resultGenerator]` /
     // `#[@futureGenerator]` fn scope. The bare and value forms keep their old
     // shape; `break :name` (no expr) and `break :name <expr>` are the new
     // surface. Unbound labels are caught by the comptime body walk (RI5).

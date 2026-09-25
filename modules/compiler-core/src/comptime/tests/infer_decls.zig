@@ -509,10 +509,10 @@ test "infer: star fn ---- async returns @Future is valid" {
     );
 }
 
-test "infer: star fn ---- generator returns @Iterator is valid" {
+test "infer: star fn ---- generator returns @ResultGenerator is valid" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn gen() -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\fn gen() -> @ResultGenerator<i32> {
         \\    yield 1;
         \\}
     );

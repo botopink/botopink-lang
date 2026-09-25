@@ -120,8 +120,8 @@ test "R5 — three effect markers also red" {
 
 test "RI6 — legacy `yield break <expr>` is rejected at parse" {
     try expectKind(
-        \\#[@iterator]
-        \\fn it() -> @Iterator<i32, string, i32> {
+        \\#[@resultGenerator]
+        \\fn it() -> @ResultGenerator<i32, string> {
         \\    yield break 0;
         \\}
     , .yieldBreakRemoved);
@@ -176,9 +176,9 @@ test "RG1 — every parameter defaulted is accepted" {
     try std.testing.expectEqual(@as(?parserMod.ParseErrorInfo, null), p.parseError);
 }
 
-test "RG4 — `@Iterator<i32, , i64>` rejected at parse" {
+test "RG4 — `@ResultGenerator<i32, , i64>` rejected at parse" {
     try expectKind(
-        \\fn middle() -> @Iterator<i32, , i64> { return 0; }
+        \\fn middle() -> @ResultGenerator<i32, , i64> { return 0; }
     , .genericArgSkipForbidden);
 }
 

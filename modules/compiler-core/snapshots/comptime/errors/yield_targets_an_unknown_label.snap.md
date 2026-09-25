@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-#[@iterator]
-fn gen() -> @Iterator<i32> {
+#[@resultGenerator]
+fn gen() -> @ResultGenerator<i32> {
     yield :nope 1;
 }
 

@@ -20,7 +20,7 @@ test "js: record implement ---- fields round-trip at runtime" {
     // runtime instead of `undefined`. Runs on every backend (node + erlang
     // parity captured in each RUN LOG).
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val E = type(tag: string, n: i32) implement @Context<E, E>
+        \\val E = type(tag: string, n: i32) implement @Context<E>
         \\fn mk() -> E {
         \\    return E(tag: "x", n: 5);
         \\}

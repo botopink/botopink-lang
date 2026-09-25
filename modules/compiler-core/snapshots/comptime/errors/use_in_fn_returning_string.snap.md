@@ -1,5 +1,7 @@
 ----- SOURCE CODE
-fn state(initial: i32) -> @Context<Element, i32> {
+val Element = type implement @Context<Element> { }
+#[@use]
+fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
 fn bad() -> string {
@@ -8,10 +10,11 @@ fn bad() -> string {
 }
 
 ----- ERROR
-error: use-of-non-context-fn: `use` not allowed
-  ┌─ :5:13
+error: use-without-context-effect: `use` needs `#[@use]` on the enclosing fn
+  ┌─ :7:13
   │
-5 │     val x = use state(0);
+7 │     val x = use state(0);
   │             ^
 
-  function returns `string` which does not implement @Context
+  fn 'bad' returns 'string',
+  but only a `#[@use]` body activates a hook (decision 104)

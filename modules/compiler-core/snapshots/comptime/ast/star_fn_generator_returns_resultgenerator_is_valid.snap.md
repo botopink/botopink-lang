@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@iterator]
-fn gen() -> @Iterator<i32> {
+#[@resultGenerator]
+fn gen() -> @ResultGenerator<i32> {
     yield 1;
 }
 ```
@@ -15,7 +15,7 @@ fn gen() -> @Iterator<i32> {
       "name": "gen",
       "is_pub": false,
       "params": [],
-      "return_type": "Iterator<i32,any,void>",
+      "return_type": "ResultGenerator<i32,any>",
       "body": [
         {
           "source": "yield 1;"

@@ -9,7 +9,7 @@
 //! `iterator` qualified, `pair` as a module, `array` method-dispatch sugar) were
 //! retired with the stdlib-interface migration — those modules were dissolved
 //! into `primitives.bp` behaviors (`Array<T>`, `String`, `Bool`, numeric
-//! tower, `Pair`, `Function`) and the builtin `Iterator<T>`. The method-dispatch
+//! tower, `Pair`, `Function`) and the builtin `ResultGenerator<T, E>`. The method-dispatch
 //! API is exercised by the co-located `libs/std` test suites; re-add codegen
 //! fixtures once primitive/default-fn method lowering lands (tasks/v0.beta.4
 //! carryover, Part A).

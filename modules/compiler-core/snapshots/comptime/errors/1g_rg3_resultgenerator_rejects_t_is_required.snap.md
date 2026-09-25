@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-#[@iterator]
-fn empty() -> @Iterator<> { break; }
+#[@resultGenerator]
+fn empty() -> @ResultGenerator<> { break; }
 
 ----- ERROR
 error: generic-required-arg-missing: a required generic argument is missing

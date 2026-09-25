@@ -424,7 +424,7 @@ type Tree<T> {
 }
 ```
 
-Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Iterator<T>`,
+Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@ResultGenerator<T, E>`,
 `@Future<T>`, `@Expr<T>`. Optionals are `?T`; tuples are `#(A, B)`.
 
 ### Union types, `unknown`, and `is`
@@ -804,7 +804,7 @@ loop {
 ```
 
 **`yield v` and `break v` need a generator scope** — a `fn` annotated
-`#[@generator]`, `#[@iterator]` or `#[@futureGenerator]`, or a `loop` annotated
+`#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`, or a `loop` annotated
 the same way. `yield v` emits and continues; `break v` emits and ends. Outside a
 generator scope both are refused naming the three annotations: no loop answers
 a value, and collecting in a plain `fn` is `xs.map(…)` / `filter(…)` or a `var`.
@@ -827,7 +827,7 @@ for (doubles) { d -> @print(d); };
 ```
 
 Its body is **closed**: it has its own annotation's capabilities, never the
-enclosing function's. Inside a `#[@context]` fn a `#[@generator] loop` may
+enclosing function's. Inside a `#[@use]` fn a `#[@generator] loop` may
 neither `use` nor `await` (for `await`, write `#[@futureGenerator] loop`), and
 `break :outer` / `continue :outer` across its border are refused like leaving
 a closure. Only `loop` takes the annotation — `#[@generator] for` does not
@@ -835,7 +835,7 @@ exist; write `#[@generator] loop { for (xs) { x -> yield f(x); }; break; }`.
 
 `for` over a generator is an implicit `try` / `await` when the generator can
 fail or suspend, so it needs the level: an `@Generator<T>` is iterable in any
-body, an `@Iterator` in a body that grants `try`, an `@FutureGenerator` only
+body, an `@ResultGenerator` in a body that grants `try`, an `@FutureGenerator` only
 through `for await` in a body that grants `await`. `for` over a `bool` is
 refused naming `while`.
 
@@ -896,102 +896,89 @@ in this module is auto-applied; `*` is only for imports `` (`redundantActivation
 — and anything else is `'Name' does not name an implement/extend symbol`
 (`notAnExtension`).
 
-**Expression role.** A **hook** is a function whose return type is
-`@Context<Owner, R>`: `Owner` is the type the hook is anchored to, `R` is what it
+**Expression role.** A **hook** is a `#[@use]` function whose return type is
+`@Component<Base, R>`: `Base` is the base the hook is anchored at, `R` is what it
 yields. A hook is named by its noun, without a `use` prefix (`state`, `effect`,
 `router`, `pathname` — never `useState`), because the keyword *is* the
 activation. `val x = use <hook>(…)` activates the hook and binds `R`; a bare
 `use <hook>(…);` activates a void hook; `val {a, b} = use …` binds `R`'s fields
-by name. The activating body is a `#[@context]` function whose return type is
-the owner — a **component**, `#[@context] fn Widget() -> Element`, where
-`Element` is a type that `implement @Context<Element, Element>` — or is itself
-`@Context<Owner, _>` — a **custom hook** composing hooks. A body that carries a
-**wrapper effect** instead (`#[@future]` today) and whose return type *unwraps*
-to the owner activates too, with no second annotation: `@Future<T>` is looked
-through to `T`, so `#[@future] fn Page() -> @Future<Element>` is owned by
-`Element` (and one fn carries one effect annotation — `#[@future] #[@context]`
-is `effect-duplicate-annotation`). Every `use` in one body agrees on the one
-`Owner` its return type names.
+by name. The activating body is a `#[@use]` function — a **custom hook**
+(`-> @Component<Base, _>`, hooks compose) or a **component**, `#[@use] fn Widget()
+-> @Component<ElementBase, Element>`, where `Element` is the type that carries the
+tree: `implement @Context<ElementBase>` is the owner marker. One wrapper serves
+both (decision 128): the base is always written, and a component is the
+`@Component<Base, T>` whose `T` implements `@Context<Base>`. A component is
+**called** (`Widget(1)`), never `use`d. Every `use` in one body agrees on the
+one base its return type names.
 
 ```botopink
-type Element(count: i32) implement @Context<Element, Element>
-type State(value: i32, name: string) implement @Context<Element, State>
+type ElementBase(id: i32)
+type Element(count: i32) implement @Context<ElementBase>
+type State(value: i32, name: string)
 
-// A hook: the noun, the owner, the yield. No annotation — its body activates nothing.
-fn state(initial: i32) -> @Context<Element, State> {
+// A hook: the noun, the base, the yield.
+#[@use]
+fn state(initial: i32) -> @Component<ElementBase, State> {
     return State(value: initial, name: "state");
 }
 
-// A custom hook composes hooks: `#[@context]`, and a return that is `@Context<Element, _>`.
-#[@context]
-fn counter(start: i32) -> @Context<Element, State> {
+// A custom hook composes hooks.
+#[@use]
+fn counter(start: i32) -> @Component<ElementBase, State> {
     val s = use state(start * 2);
     return s;
 }
 
-// A component: `#[@context]`, and a return that is the owner type.
-#[@context]
-fn Widget(n: i32) -> Element {
+// A component: its return is the owner, and it may `await` and `try` too.
+#[@use]
+fn Widget(n: i32) -> @Component<ElementBase, Element> {
     val c = use state(n);
     val {value, name} = use counter(n);
     return Element(count: c.value + value);
 }
 
-// A wrapper effect activates on its own: `@Future<Element>` unwraps to the owner.
-#[@future]
-fn Page() -> @Future<Element> {
-    val c = use state(1);
-    return Element(count: c.value);
-}
-
-// Without `use` the same call is an ordinary call — the first-render value.
-fn Plain() -> Element {
-    val c = state(7);
-    return Element(count: c.value);
+// No annotation: an ordinary function, which activates nothing.
+fn Loading() -> Element {
+    return Element(count: 0);
 }
 ```
 
 The rules, each with its diagnostic:
 
-- **The body needs an effect.** A `use` in a body that carries **no** effect
-  annotation is refused at the `use`: when the return type implements
-  `@Context` (the owner type, or the `@Context<…>` wrapper) the message names
-  the annotation — `` use-without-context-effect: `use` needs `#[@context]` on
-  the enclosing fn 'Widget': its return type 'Element' implements @Context, but
-  a body with no effect annotation does not activate a hook `` — and a bare
-  `fn … -> Element` without it is an ordinary function. When the return type
-  does not implement `@Context` at all (`-> string`, `-> void`, a module-level
-  `val`) it is `` use-of-non-context-fn: `use` not allowed: function returns
-  'string' which does not implement @Context ``. `#[@context]` itself accepts
-  either return shape: `-> @Context<B, R>` or a named type implementing
-  `@Context<B, _>`.
-- **A wrapper effect is enough when its return owns the context.** The
-  dispensation above is the return type answering the question the annotation
-  would have: `#[@future] fn Page() -> @Future<Element>` activates, because
-  `@Future<Element>` unwraps to the owner. It switches no refusal off —
-  `#[@future] fn … -> @Future<i32>` with a `use` is still
-  `` use-of-non-context-fn: `use` not allowed ``, and `#[@context]` over a
-  return type that owns no context is still
-  `` effect-wrapper-mismatch: `#[@context]` requires a `-> @Context<…>` return
-  type ``.
+- **Only `#[@use]` grants `use`** (decision 104). A `use` in any other body —
+  a plain `fn`, a `#[@future]` one whatever it wraps — is refused at the
+  `use`, naming the annotation: `` use-without-context-effect: `use` needs
+  `#[@use]` on the enclosing fn 'Widget' (it returns 'Element'): only a
+  `#[@use]` body activates a hook ``. Nothing is unwrapped to find an owner:
+  the server component that awaits and uses is `#[@use] fn Page() ->
+  @Component<ElementBase, Element>`, which the chain lets `await` and `try`. A nested
+  closure is not the `#[@use]` body either: `use` is not inherited by a
+  lambda, as `await` is not.
+- **The wrapper is written.** `#[@use]` answers `@Component<Base, T>`. The bare
+  owner (`#[@use] fn Card() -> Element`) is `` effect-missing-wrapper ``; any
+  other return (`-> string`) is `` effect-wrapper-mismatch ``, and so is a `T`
+  that owns a context at another base (`@Component<Http, Element>` with
+  `Element: @Context<ElementBase>`). `@Component<Element>` with one argument is
+  an arity error. A fn returning `@Component` without the annotation is refused
+  like `@Future` without `#[@future]`.
 - **The operand is a hook.** `use plain()` where `plain : -> User` is
-  `` use-of-non-context-fn: `use` requires @Context: 'User' does not implement
-  @Context ``.
-- **One owner per body** (decision 96). The owner is a property of the
+  `` use-of-non-context-fn: `use` takes a hook: 'User' is not a hook `@Component<C, _>` ``,
+  and `use Card()` where `Card` is a component (its `T` owns the context) is refused: a component is
+  called, not `use`d.
+- **One base per body** (decision 96). The base is a property of the
   FUNCTION, not of each activation: the first `use` fixes it and every later
   one resolves against the same one. Two refusals say so, and they are
-  different rules. A single `use` anchored at an owner the return type never
+  different rules. A single `use` anchored at a base the return type never
   named is the DECLARATION's: `use connection()` with `connection : ->
-  @Context<Http, _>` inside a body owned by `Element` is
-  `` context-anchor-violation: function returns @Context<Element, _> but `use`
-  returns @Context<Http, _> ``. A second `use` disagreeing with the first is
-  the BODY's, refused at its own site with both owners and the line that fixed
-  the anchor: `` context-anchor-violation: every `use` in one function resolves
-  against the same ContextBase: this body's is @Context<Element, _>, fixed by
-  the `use` on line 9, and this one is @Context<Http, _> ``. Two hooks that are
-  each legal alone are still refused together; there is no flag (decision 67).
-  Each body starts over — a sibling `fn` may anchor wherever its own return
-  type says.
+  @Component<Http, _>` inside a body anchored at `Element` is
+  `` context-anchor-violation: function anchors at `Element` but `use` returns
+  @Component<Http, _> ``. A second `use` disagreeing with the first is the BODY's,
+  refused at its own site with both bases and the line that fixed the anchor:
+  `` context-anchor-violation: every `use` in one function resolves against the
+  same ContextBase: this body's is `Element`, fixed by the `use` on line 9, and
+  this one is @Component<Http, _> ``. Two hooks that are each legal alone are still
+  refused together; there is no flag (decision 67). Each body starts over — a
+  sibling `fn` may anchor wherever its own return type says.
 - **The static prefix.** Every `use` of a function body comes before its first
   `if`, `case`, `loop` or `return`, at any nesting: `val c = use …` after a
   `return`, and a `use` inside an `if`'s own block, are both parse errors —
@@ -1002,7 +989,7 @@ The rules, each with its diagnostic:
 - **The type is `R`.** `val c = use state(0)` binds `c : State`, and
   `val {value, set} = use state(0)` binds each name to the field of `R` it
   names. A tuple `R` destructures positionally: with `optimistic : (i32, fn(i32,
-  i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)>`,
+  i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)>`,
   `val #(shown, push) = use optimistic(12, addLike)` binds `shown : i32` and
   `push : fn(action: i32) -> i32`. The pattern's arity is the tuple's, and the
   hook's `R` has to be a tuple; either failing is refused at the binding —
@@ -1013,20 +1000,23 @@ The rules, each with its diagnostic:
   `use client;` / `use server;` directive (decision 87 of 1.0.10-beta): a
   framework's boundary markers are its own decorators (`#[client]`).
 
-**Lowering.** `use f(x)` is `f(x)` on every backend (decision 88). The prefix is
-the activation the checker validated, not a rename: nothing is turned into
+**Lowering.** `use f(x)` is `f(x)` on erlang, wasm and beam, and `await f(x)`
+on commonJS, where every `#[@use]` body is an `async function` — awaiting or
+not, as a `#[@future]` one is — so every hook and component answers a Promise
+and every caller awaits it (decisions 88 and 104). The prefix is the
+activation the checker validated, not a rename: nothing is turned into
 `useState`, no dependency array is inferred — a hook that takes one declares it
 as a parameter (`memo(compute, deps)`). A client runtime supplies hook semantics
 through what `f` does; the pure body above is what every backend runs, and what
 the server renders.
 
-**The provider side.** `#[@context]` is also the effect under which
-`@getContex(T)` reads the active provider of `T` on the same owner tree; a
+**The provider side.** `#[@use]` is also the effect under which
+`@getContext(T)` reads the active provider of `T` on the same owner tree; a
 provider stack is not part of this section.
 
 ## Functions
 
-`use` and `#[@context]` (hooks and components) are under *Expressions › use*.
+`use` and `#[@use]` (hooks and components) are under *Expressions › use*.
 
 ### Recursion
 
@@ -1052,7 +1042,7 @@ answer, not the language's:
   function held in a binding;
 * a function that also makes a closure reading one of its own parameters, or
   one with a destructuring or defaulted parameter;
-* an `#[@iterator]`, `#[@generator]` or `#[@future]` function.
+* an `#[@generator]`, `#[@resultGenerator]` or `#[@future]` function.
 
 `wasm` recurses for every shape, tail call included — about 30 000 frames.
 Measured at 1.0.10-beta, with node's own ceiling for a two-parameter function
@@ -1110,39 +1100,44 @@ every argument written out; no backend emits a default of its own.
 
 A function's effect is named by one `#[@<effect>]` annotation — at most one per
 `fn` — and the return wrapper is the annotation with its first letter
-capitalised, in all six rows and with no exception: `#[@result]` → `@Result`,
-`#[@future]` → `@Future`, `#[@generator]` → `@Generator`, `#[@iterator]` →
-`@Iterator`, `#[@futureGenerator]` → `@FutureGenerator`, `#[@context]` →
-`@Context`.
+capitalised: `#[@result]` → `@Result`, `#[@future]` → `@Future`,
+`#[@generator]` → `@Generator`, `#[@resultGenerator]` → `@ResultGenerator`,
+`#[@futureGenerator]` → `@FutureGenerator` — and `#[@use]` → `@Component<C, T>`,
+the one wrapper that does not repeat its annotation's name, for hooks and
+components alike (decision 128). `@Context<Base>`
+itself is not a wrapper: it is the marker the type that carries a context tree
+implements.
 
-The six effects form a **chain** (decision 95): a wrapper extends the one
+The six effects and their six wrappers form a **chain** (decision 95): a wrapper extends the one
 below it, and an annotation grants every body operation at or below its own
 level.
 
 | Body | May write | Because the wrapper extends |
 |---|---|---|
-| `#[@context] fn … -> @Context<B, R>` (or a type implementing it, e.g. `Element`) | `use` · `await` · `try` | `@Context` ⊃ `@Future` ⊃ `@Result` |
-| `#[@futureGenerator] fn … -> @FutureGenerator<T, E, C>` | `await` · `try` · `yield` | `@FutureGenerator` ⊃ `@Future` ⊃ `@Result` |
+| `#[@use] fn … -> @Component<C, T>` | `use` · `await` · `try` | `@Component` ⊃ `@Future` ⊃ `@Result` |
+| `#[@futureGenerator] fn … -> @FutureGenerator<T, E>` | `await` · `try` · `yield` | `@FutureGenerator` ⊃ `@Future` ⊃ `@Result` |
 | `#[@future] fn … -> @Future<T, E>` | `await` · `try` | `@Future` ⊃ `@Result` |
-| `#[@iterator] fn … -> @Iterator<T, E, C>` | `try` · `yield` | `@Iterator` ⊃ `@Result` |
-| `#[@generator] fn … -> @Generator<T, R>` | `yield` | — no error channel |
+| `#[@resultGenerator] fn … -> @ResultGenerator<T, E>` | `try` · `yield` | `@ResultGenerator` ⊃ `@Result` |
+| `#[@generator] fn … -> @Generator<T>` | `yield` | — no error channel |
 | `#[@result] fn … -> @Result<T, E>` | `try` | — it is the base |
 
 Every effectful body can fail, so every wrapper but one extends `@Result`; a
 wrapper that suspends extends `@Future`. The chain grants **downwards and never
 upwards**: `yield` stays exclusive to the three generator-shaped wrappers and
-`use` to `@Context`, and neither is a level anything else reaches.
-`@Generator<T, R>` is the exception — it has no error channel, so `throw` and
-`try` are both refused in a `#[@generator]` body.
+`use` to `#[@use]`, and neither is a level anything else reaches.
+`@Generator<T>` is the exception — it has no error channel, so `throw` and
+`try` are both refused in a `#[@generator]` body, naming `@ResultGenerator<T, E>`
+(decision 103); that is what lets any body, a plain `fn` included, iterate it.
 
 A capability written above the body's level is refused, located, naming the
 level it would need — there is no flag:
 
 ```
 error: effect-try-without-fallible-channel: `try` needs an effect that
-implements `@Result` — `#[@result]`, `#[@future]`, `#[@iterator]`,
-`#[@futureGenerator]` or `#[@context]`; `#[@generator]` is `@Generator`,
-which does not
+implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`,
+`#[@futureGenerator]` or `#[@use]`; `#[@generator]` is `@Generator`,
+which does not; `@Generator` has no error channel; use
+`@ResultGenerator<T, E>`
 ```
 
 Two forms are **not** gated by the chain, because neither leaves the body.
@@ -1172,15 +1167,39 @@ fn load() {
 }
 ```
 
-### Iterators
+### Generators
+
+A generator `yield`s items; `for (g) { x -> … }` consumes them. Every
+generator's `next` answers the one step enum `YieldStep<T, E = void>` —
+`Yield(value)`, `Done`, `Error(error)` — and a generator's prefix is the chain
+level it extends (decision 103): `@ResultGenerator<T, E>` extends `@Result`, so
+its body answers `try` and `throw`, and a loop over it is a `try` in the body
+that iterates it — that body needs `try`'s level (`#[@result]` or above).
 
 ```botopink
-#[@iterator]
-fn counter() -> @Iterator<i32> {
+#[@resultGenerator]
+fn counter(n: i32) -> @ResultGenerator<i32, string> {
+    if (n < 0) { throw "negative"; };
     yield 1;
     yield 2;
+    break n;             // emits `n` as the last item and ends
+}
+
+#[@result]
+fn digits(n: i32) -> @Result<i32, string> {
+    var acc = 0;
+    for (counter(n)) { x -> acc = acc * 10 + x; };
+    return acc;
 }
 ```
+
+A generator has no return channel: `return <expr>` is refused
+(`iterator-return-forbidden`); `break v` emits `v` as the last item and ends
+(≡ `yield v; break;`), and a bare `break` outside any loop ends the generator.
+A type that wants to be iterated exposes an ordinary method answering a
+generator, and the consumer calls it — `for (grid.iter())`; there is no
+iterable behavior. A type argument the wrapper does not declare is refused
+(`generic-arg-count-exceeded`), not dropped.
 
 ## Comptime
 
@@ -1545,7 +1564,6 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.10-beta C-15 (`01-checker` step 6) |
 | A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.10-beta C-13 (decision 29): `15-language-surface`'s parser half first, `16-formatter` second (the formatter has to stop printing it in the same wave), then the sources |
 | A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value the four backends agree since C-06: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, erlang, beam and wasm (wasm printed `256` and erlang `0` before) | 1.0.10-beta C-06 (`02-erlang` step 3, `03-beam` step 3; decision 53 at run time). Decision 105 keeps both spellings and gives `a...b` a value in a `for` as well |
-| `await` inside a `#[@context]` body (decision 95 — `@Context` extends `@Future`) | it type-checks, and it RUNS on erlang and wasm (their `@Future<T>` is eager, so `await` is the identity: a `#[@context] fn Widget(n: i32) -> Element` that awaits a `#[@future]` fn answers its `Element`, and `@print(Widget(1).count)` prints `2`). commonJS emits `async function Widget`, so the `await` is legal there now — but the caller receives a **Promise**, and the same `@print(Widget(1).count)` prints `undefined` | 1.0.10-beta C-29 (`21-effect-chain`, decisions 102–104: what a component's caller receives is the effect chain's rule), with `04-js` for the lowering that follows it |
 
 Seven of the twelve rows this table carried before this revision left it because
 the compiler now accepts the form: union types, the `unknown` type and its
@@ -1555,9 +1573,11 @@ assignability rule, `x is <Type>` with narrowing, `case` arms written
 `loop` body, and — since 1.0.10-beta's C-04 — a **parameter default applied at
 the call site**, on all four backends, **for a declaration in the calling
 module**. So did the row front 20 added for an **effect annotation on a record
-method**: `#[@iterator] fn iter(self: Self) -> @Iterator<i32>` in a `type …
-implement Iterable<i32> { … }` body now emits a generator method (`*iter()`) on
-commonJS, and `for (b.iter()) { x -> … }` walks it there as it already did on erlang. Each
+method**: `#[@resultGenerator] fn iter(self: Self) -> @ResultGenerator<i32>` in a
+`type … { … }` body now emits a generator method (`*iter()`) on commonJS, and
+`for (b.iter()) { x -> … }` walks it there as it already did on erlang. And so did
+the row on `await` inside a context body: `#[@use]` bodies are an `async
+function` on commonJS (decision 104), and every caller awaits a component. Each
 is documented above, in the section that teaches the form.
 
 The one limit worth stating here, because a library will meet it before it

@@ -30,8 +30,8 @@ test "js: star fn ---- async function with await" {
 
 test "js: star fn ---- generator with yield" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn counter() -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\fn counter() -> @ResultGenerator<i32> {
         \\    yield 1;
         \\    yield 2;
         \\    yield 3;
@@ -55,8 +55,8 @@ test "js: star fn ---- pub typedefs" {
         \\pub fn loadOne(x: i32) -> @Future<i32> {
         \\    return x;
         \\}
-        \\#[@iterator]
-        \\pub fn count() -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\pub fn count() -> @ResultGenerator<i32> {
         \\    yield 1;
         \\}
         \\#[@futureGenerator]
@@ -74,8 +74,8 @@ test "js: effect annotation ---- future/iterator/futureGenerator/result" {
         \\fn fetch(x: i32) -> @Future<i32> {
         \\    return x;
         \\}
-        \\#[@iterator]
-        \\fn counter() -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\fn counter() -> @ResultGenerator<i32> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -198,16 +198,17 @@ test "js: import ---- named imports" {
 // (`state` → `useState`) and the inferred dependency arrays these four cells
 // used to record were deleted with the decision — the emitted name was never
 // declared, and the client runtime supplies hook semantics through what `state`
-// does. The component carries `#[@context]`, the effect that lets a body
+// does. The component carries `#[@use]`, the effect that lets a body
 // activate a hook.
 test "codegen ---- use object destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type implement @Context<Element, Element> { }
-        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\val Element = type implement @Context<Element> { }
+        \\#[@use]
+        \\fn state(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}
-        \\#[@context]
-        \\fn Counter() -> Element {
+        \\#[@use]
+        \\fn Counter() -> @Component<Element, Element> {
         \\    val {count, setCount} = use state(0);
         \\    Element();
         \\}
@@ -219,13 +220,14 @@ test "codegen ---- use object destructure is a plain call" {
 // lowering is the same plain call followed by the destructure.
 test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type implement @Context<Element, Element> { }
-        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+        \\val Element = type implement @Context<Element> { }
+        \\#[@use]
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
         \\    val push = { action -> f(base, action) };
         \\    #(base, push);
         \\}
-        \\#[@context]
-        \\fn LikeWidget() -> Element {
+        \\#[@use]
+        \\fn LikeWidget() -> @Component<Element, Element> {
         \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
         \\    push(shown);
         \\    Element();
@@ -235,15 +237,17 @@ test "codegen ---- use tuple destructure is a plain call" {
 
 test "codegen ---- use memo is a plain call with no inferred deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type implement @Context<Element, Element> { }
-        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\val Element = type implement @Context<Element> { }
+        \\#[@use]
+        \\fn state(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}
-        \\fn memo() -> @Context<Element, i32> {
+        \\#[@use]
+        \\fn memo() -> @Component<Element, i32> {
         \\    0;
         \\}
-        \\#[@context]
-        \\fn Counter() -> Element {
+        \\#[@use]
+        \\fn Counter() -> @Component<Element, Element> {
         \\    val {count, setCount} = use state(0);
         \\    val doubled = use memo { -> return count * 2; };
         \\    Element();
@@ -253,15 +257,16 @@ test "codegen ---- use memo is a plain call with no inferred deps" {
 
 test "codegen ---- use effect void hook is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element> { }
         \\fn cleanup() {
         \\    0;
         \\}
-        \\fn effect() -> @Context<Element, i32> {
+        \\#[@use]
+        \\fn effect() -> @Component<Element, i32> {
         \\    0;
         \\}
-        \\#[@context]
-        \\fn Widget() -> Element {
+        \\#[@use]
+        \\fn Widget() -> @Component<Element, Element> {
         \\    use effect { -> cleanup(); };
         \\    Element();
         \\}
@@ -270,7 +275,7 @@ test "codegen ---- use effect void hook is a plain call" {
 
 test "codegen ---- inline implement context base erased at runtime" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element> { }
         \\fn render() -> Element {
         \\    Element();
         \\}

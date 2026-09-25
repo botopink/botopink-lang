@@ -1,88 +1,103 @@
-//// Front 19 of 1.0.10-beta (C-27), decision 88 — `use f(x)` is `f(x)` on every
-//// backend, so a component's first-render value is the same on commonJS,
-//// erlang, wasm and beam. The owner type is declared here (no library).
+//// Front 19 of 1.0.10-beta (C-27), decision 88 — `use f(x)` activates the hook
+//// `f(x)`; decisions 102/104 (front 21) — and decision 128 — a hook
+//// is `#[@use] fn … -> @Component<C, T>` with any `T`, a component the same wrapper
+//// with `T: @Context<C>`, and every caller `await`s a
+//// component (commonJS emits every `#[@use]` body as an `async function`; erlang,
+//// wasm and beam are eager and `await` is the identity). So `run` awaits each
+//// component in turn and the values print in the same order on every target.
+//// A `use` inside a nested closure is refused (`reject/use_in_closure.bp`). The
+//// owner type is declared here (no library).
 
-type Element(count: i32) implement @Context<Element, Element>
-type State(value: i32) implement @Context<Element, State>
+type Element(count: i32) implement @Context<Element>
+type State(value: i32)
 
-fn state(initial: i32) -> @Context<Element, State> {
+#[@use]
+fn state(initial: i32) -> @Component<Element, State> {
     return State(value: initial);
 }
 
-fn pair(a: i32, b: i32) -> @Context<Element, #(i32, i32)> {
+#[@use]
+fn pair(a: i32, b: i32) -> @Component<Element, #(i32, i32)> {
     return #(a, b);
 }
 
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+#[@use]
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
 
-fn effect(cb: fn() -> i32) -> @Context<Element, i32> {
+#[@use]
+fn effect(cb: fn() -> i32) -> @Component<Element, i32> {
     return cb();
 }
 
-#[@context]
-fn counter(start: i32) -> @Context<Element, State> {
+#[@use]
+fn counter(start: i32) -> @Component<Element, State> {
     val s = use state(start * 2);
     return s;
 }
 
-#[@context]
-fn Widget(n: i32) -> Element {
+#[@use]
+fn Widget(n: i32) -> @Component<Element, Element> {
     val c = use state(n);
     return Element(count: c.value + 1);
 }
 
-#[@context]
-fn Fields() -> Element {
+#[@use]
+fn Fields() -> @Component<Element, Element> {
     val {value} = use state(5);
     return Element(count: value);
 }
 
-#[@context]
-fn Composed() -> Element {
+#[@use]
+fn Composed() -> @Component<Element, Element> {
     val k = use counter(10);
     return Element(count: k.value);
 }
 
-#[@context]
-fn Positional() -> Element {
+#[@use]
+fn Positional() -> @Component<Element, Element> {
     val #(x, y) = use pair(3, 4);
     return Element(count: x + y);
 }
 
-#[@context]
-fn Effectful() -> Element {
+#[@use]
+fn Effectful() -> @Component<Element, Element> {
     use effect({ -> return 9; });
     val c = use state(1);
     return Element(count: c.value);
 }
 
-#[@context]
-fn Liked() -> Element {
+#[@use]
+fn Liked() -> @Component<Element, Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     return Element(count: push(shown));
 }
 
-#[@context]
-fn Deferred() -> Element {
-    val f = { -> return use state(4); };
-    return Element(count: f().value);
+// No annotation: an ordinary function (question 92 (b)).
+fn Loading() -> Element {
+    return Element(count: 7);
 }
 
-fn Plain() -> Element {
-    val c = state(7);
-    return Element(count: c.value);
+#[@future]
+fn run() -> @Future<i32> {
+    val e0 = await Widget(41);
+    @print(e0.count);
+    val e1 = await Fields();
+    @print(e1.count);
+    val e2 = await Composed();
+    @print(e2.count);
+    val e3 = await Positional();
+    @print(e3.count);
+    val e4 = await Effectful();
+    @print(e4.count);
+    @print(Loading().count);
+    val e5 = await Liked();
+    @print(e5.count);
+    return 0;
 }
 
 pub fn main() {
-    @print(Widget(41).count);
-    @print(Fields().count);
-    @print(Composed().count);
-    @print(Positional().count);
-    @print(Effectful().count);
-    @print(Plain().count);
-    @print(Liked().count);
-    @print(Deferred().count);
+    run();
 }

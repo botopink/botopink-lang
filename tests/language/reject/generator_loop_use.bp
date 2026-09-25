@@ -1,19 +1,20 @@
 //// Decision 105 — an annotated loop is closed: its body has only its own
-//// annotation's capabilities, never the enclosing fn's. Inside a `#[@context]`
+//// annotation's capabilities, never the enclosing fn's. Inside a `#[@use]`
 //// fn a `#[@generator] loop` may not `use`: the body runs later, on demand, and
 //// a lazy `use` would activate a hook outside the render. The parser's
 //// static-prefix rule (decision 88) refuses it first — a loop ends the prefix —
 //// and the checker's `generator-loop-closed-scope` stands behind it.
 
-type Element(count: i32) implement @Context<Element, Element>
-type State(value: i32) implement @Context<Element, State>
+type Element(count: i32) implement @Context<Element>
+type State(value: i32)
 
-fn state(initial: i32) -> @Context<Element, State> {
+#[@use]
+fn state(initial: i32) -> @Component<Element, State> {
     return State(value: initial);
 }
 
-#[@context]
-fn Counter() -> Element {
+#[@use]
+fn Counter() -> @Component<Element, Element> {
     val g = #[@generator] loop {
         val s = use state(0);
         break s.value;

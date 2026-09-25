@@ -532,20 +532,20 @@ test "completion: dot completes enum variants" {
     try snap.assertCompletion(gpa, "completion_dot_enum_variants", source, cursor, items);
 }
 
-// ── iterator method completion (#[@iterator] generators) ─────────────────────
+// ── iterator method completion (#[@resultGenerator] generators) ─────────────────────
 
 test "completion: iterator receiver offers next/iter/map" {
     const gpa = std.testing.allocator;
     // Bindings come from a valid compile; completion runs on the mid-edit buffer
     // (`it.`) just like the LSP serves completion against the last good index.
     const valid_source =
-        \\#[@iterator]
-        \\fn gen() -> @Iterator<i32> { yield 1; }
+        \\#[@resultGenerator]
+        \\fn gen() -> @ResultGenerator<i32> { yield 1; }
         \\val it = gen();
     ;
     const edit_source =
-        \\#[@iterator]
-        \\fn gen() -> @Iterator<i32> { yield 1; }
+        \\#[@resultGenerator]
+        \\fn gen() -> @ResultGenerator<i32> { yield 1; }
         \\val it = gen();
         \\val first = it.
     ;

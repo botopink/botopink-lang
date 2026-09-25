@@ -59,7 +59,7 @@ calls the method it is about to become a `<Owner>.prototype.<m>` patch for.
 program that installed the `String` prelude — one `s.slice(…)` is enough — blow
 the stack. The rule was already written down in `libs/std/AGENTS.md`; this is
 what holds it.
-The four `codegen ---- use … is a plain call` cells of `features.zig` record decision 88 (1.0.10-beta, front 19): `val c = use state(0)` is `const c = state(0)` on commonJS, as it already was on erlang, beam and wasm — their components carry `#[@context]`, the effect that lets a body activate a hook. They replaced the `… to useState` / `… infers dependency array` / `… empty deps` cells, whose snapshots recorded the React rename.
+The four `codegen ---- use … is a plain call` cells of `features.zig` record decisions 88 and 104 (1.0.10-beta, fronts 19 and 21): `val c = use state(0)` is `const c = await state(0)` on commonJS, where every `#[@use]` body (hook or component) is an `async function`, and the bare call on erlang, beam and wasm — their components carry `#[@use]`, the effect that lets a body activate a hook. They replaced the `… to useState` / `… infers dependency array` / `… empty deps` cells, whose snapshots recorded the React rename.
 
 `assertTestModeRunLog(src, expected)` compiles `src` in **test mode** for both
 `botopink test` targets, runs each module the way the CLI does

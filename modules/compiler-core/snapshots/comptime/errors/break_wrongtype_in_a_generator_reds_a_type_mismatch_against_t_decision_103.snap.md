@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-#[@iterator]
-fn nums() -> @Iterator<i32, string> {
+#[@resultGenerator]
+fn nums() -> @ResultGenerator<i32, string> {
     yield 1;
     break "not an i32";
 }

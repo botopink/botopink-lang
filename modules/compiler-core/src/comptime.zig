@@ -1175,11 +1175,11 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     }
 
     // `builtins_fns.d.bp`: the parseable fn-decl slice of `builtins.d.bp`
-    // (todo / panic / trap / emit / module / getContex / field). Parse it
+    // (todo / panic / trap / emit / module / getContext / field). Parse it
     // here so a bare `todo()` / `panic()` call at user code resolves to the
     // declared `FnDecl` and `expandTrailingDefaults` injects the trailing
     // literal default into `c.args` before dispatch. The full doc surface
-    // (Result / Future / Iterator / Generator / FutureGenerator / Context
+    // (Result / Future / Generator / ResultGenerator / FutureGenerator / Context
     // interfaces) stays in `builtins.d.bp` — re-parsing it here would red
     // on the synthetic interfaces already registered by `registerBuiltins`.
     {
@@ -1598,7 +1598,7 @@ pub fn compile(
                 var comptime_arrays = std.StringHashMap([]const ast.TypedExpr).init(arena_alloc);
                 {
                     // Stdlib fn decls (`todo`/`panic`/`trap`/`emit`/`module`/
-                    // `getContex`/`field`) come from `registerStdlib`'s parse
+                    // `getContext`/`field`) come from `registerStdlib`'s parse
                     // of `builtins_fns.d.bp`. Seed them first so user-module
                     // bindings (next loop) win on name collision — a user-
                     // defined `panic` shadows the builtin, same as any other

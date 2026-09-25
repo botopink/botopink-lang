@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-#[@iterator]
-fn nums() -> @Iterator<i32, string, i32> :outer {
+#[@resultGenerator]
+fn nums() -> @ResultGenerator<i32, string> :outer {
     yield 1;
     break :nonsense 42;
 }

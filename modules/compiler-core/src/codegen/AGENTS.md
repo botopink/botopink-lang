@@ -77,7 +77,7 @@ codegen/
 | `beam_asm.zig` | BEAM Assembly `.S` emitter, assembled with `erlc +from_asm`. See [beam_asm](#beam_asm) below |
 | `wat/` | WebAssembly-text code model and the only writer of `.wat`: `wat_ast.zig` (`Module`/`Item`/`Func`/`Seq`/`Instr` + `Builder` + the invariants), `wat_emitter.zig` (s-expression layout, `$` names, data escaping), `wat_prelude.zig` (the runtime helpers as built nodes). See [`wat/AGENTS.md`](wat/AGENTS.md) |
 | `wat.zig` | WAT backend: builds `wat/wat_ast.zig` nodes and hands them to the emitter. See [wat](#wat) below |
-| `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **Decision 8 §3's union `A | B`** rides on `TypeRef.generic` under the reserved name `ast.union_type_name` (`"|"`), and takes TypeScript's own union (`TsType.union_`) rather than the generic path's `|<A, B>`, which is not TypeScript. **The `import { … };` shorthand** resolves through `CrossModule.exports` here too, one `import` per owning file, where it used to write the literal `from "./module"` |
+| `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, maps `@Component<C, T>` to `Promise<T>` (decisions 104, 128), renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **Decision 8 §3's union `A | B`** rides on `TypeRef.generic` under the reserved name `ast.union_type_name` (`"|"`), and takes TypeScript's own union (`TsType.union_`) rather than the generic path's `|<A, B>`, which is not TypeScript. **The `import { … };` shorthand** resolves through `CrossModule.exports` here too, one `import` per owning file, where it used to write the literal `from "./module"` |
 | `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below. `executeTestModule` runs a **test-mode** module the way `botopink test` does (`node main.js` / `escript main.erl`) and answers its output whatever the exit status — the decision-74 FAIL line is a non-zero exit, which the snapshot path records as an empty RUN LOG, and `executeErlang` never runs a test module (no `_botopink_main`) |
 | `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError` — paths `codegen/<comptime runtime>/<target>/<slug>` and `codegen/<comptime runtime>/errors/<target>/<slug>` (front 18 step 4, decision 85), the runtime being `Config.comptime_runtime`, which the harness sets on every recorded generation (`runtimeDir`: none is `error.SnapshotWithoutComptimeRuntime`); `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` under `beam/`, `COMPTIME WAT` under `wat/` — the runtime that evaluated — then `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty. `writeUnitSections` adds one `----- ERLANG -- <atom>.erl` / `----- BEAM ASSEMBLY -- <atom>.S` section per `GenerateResult.units` entry, so a cell shows every module its program loads and `beam_export_audit.sh` — which keys on the `{module, …}` form, not on the fixture — assembles each of them. `writeRunLog` is the one writer of the `----- RUN LOG -----` section on every backend, and it normalises the `botopink test` envelope's `  duration <digits>ms` line to `  duration <ms>ms` (`isDurationLine`: the two-space indent, the word, digits, `ms` — nothing a program prints by accident): that line is the runner's wall clock around each test body, the ONE nondeterministic line of the envelope, and a snapshot pinning its digits (`src_in_a_test` recorded `0ms`) failed on any machine slower than the one that wrote it — `1ms` under load, the only line that differed. `tests/helpers.zig`'s `stripDurationLines` is the same rule for `assertTestModeRunLog`, which writes no snapshot |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertJsNotContains`, `assertJsRunLog`, `assertDtsContains`, `assertConsumerJs`, `configs` — one config per target). The snapshot-free helpers are what a **single backend's** row uses: a snapshot carries the same program through all four, so a commonJS-only fixture would write into the erlang, beam and wasm snapshot directories other fronts own |
@@ -533,7 +533,7 @@ codegen/
   block and an enum's body all route through it, and a class member spells the
   same two modifiers without the `function` word (`static async *name`,
   `js/js_ast.zig`'s `ClassMember.is_async` / `.is_generator`). Reading
-  `ast.FnDecl.effect` alone is what made `#[@iterator] fn each(self: Self)`
+  `ast.FnDecl.effect` alone is what made `#[@resultGenerator] fn each(self: Self)`
   emit a plain method whose `loop … yield` lowered to a value-dropping
   `.map()`. A `behavior`'s `default fn` is the one method kind that never
   carries one — the checker refuses `effect-on-behavior-method-forbidden`.
@@ -1169,7 +1169,7 @@ codegen/
     `continue` throws `{'__bp_cond_continue', Group}` caught around the body, so
     the recursion carries the variables at the jump; each loop's `catch` binds
     its own `__BpGroupN`.
-  - **A generator scope** — a `#[@generator]`/`#[@iterator]`/`#[@futureGenerator]`
+  - **A generator scope** — a `#[@generator]`/`#[@resultGenerator]`/`#[@futureGenerator]`
     fn or method (whose effect `methodEffect` reads off the annotations), or an
     annotated `loop` — is eager: its items are pushed onto a list held in the
     process dictionary under a fresh `make_ref()` (`GenScope`, `genPush`), so a
@@ -1437,9 +1437,9 @@ codegen/
   or `break`s with a value (directly or in an `if`/`case` arm, not in a nested
   loop or lambda) appends each value to a fresh array (`$__arr_push`; a float
   as its f32 bits), and that array is the loop's value — the erlang reading
-  of `break <v>`. An `#[@iterator]`/`#[@generator]` fn body that yields runs
+  of `break <v>`. An `#[@resultGenerator]`/`#[@generator]` fn body that yields runs
   eagerly into one fn-level array it returns (`renderAccumulatingBody`); a
-  `@Iterator<T>` is then an array of `T`. A bare `break` branches out of the
+  `@ResultGenerator<T>` is then an array of `T`. A bare `break` branches out of the
   loop, `continue` out of the iteration's `(block $__next …)`. An f32 array
   prints as `[115,287.5,460]` (`$__print_arr_f32`).
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
@@ -1702,7 +1702,7 @@ codegen/
   matched by the output buffer so a lambda's jumps never take it), and its
   body's slots are counted into the frame (`countLocalsInExpr`). `a...b` is
   `lists:seq(A, B)`, `a..b` `lists:seq(A, B - 1)`.
-  **A generator scope** — a `#[@generator]`/`#[@iterator]`/`#[@futureGenerator]`
+  **A generator scope** — a `#[@generator]`/`#[@resultGenerator]`/`#[@futureGenerator]`
   fn (`emitGeneratorBody`) or an annotated `loop` (`lowerGeneratorLoop`) — is
   eager: a y-slot accumulator (`GenLoop`, matched by the output buffer like
   `cond_loop`) that each `yield v` conses onto (`genPush`), reversed with
@@ -1947,7 +1947,7 @@ first three are now enforced by the model, not by discipline:
 - **Known gaps** (loadable, but not yet right):
   - `loop` over anything that is not a range or a known array emits
     `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` accepts an array
-    literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
+    literal, a name bound to an array, an `Array<T>`/`T[]`/`@ResultGenerator<T>`
     parameter or fn result, an array-returning primitive method and an
     annotated `loop`, and nothing else, because walking the layout of a non-array
     would read its first word as an element count and trap;
@@ -2458,15 +2458,16 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
   too; their bodies run in the persistent `erl` comptime runtime
   (`comptime/decorator_eval.zig`). Decls a body contributes via `@emit` are
   spliced into the module and emitted as ordinary declarations.
-- `use` hooks: `use f(x)` lowers to `f(x)` on every backend (decision 88 of
-  1.0.10-beta, front 19); `val`/`var` does the binding. CommonJS used to map
+- `use` hooks: `use f(x)` lowers to `f(x)` on erlang, wasm and beam and to
+  `await f(x)` on commonJS (decisions 88 and 104 of 1.0.10-beta, fronts 19 and
+  21); `val`/`var` does the binding. CommonJS used to map
   hooks to React (`state` → `useState`, an inferred dependency array for
   `memo`/`effect`/… from the names earlier hooks bound) — `hookName`,
   `hookTakesDeps`, `buildHookCall`, `buildHookDeps`, `hook_state` are gone: the
   emitted name was never declared, and the client runtime supplies hook
-  semantics through what `f` does. `#[@context]` is a plain function on every
-  backend (the annotation gates `use` in the checker; the three eager-lowering
-  comments exclude it beside `#[@result]`). Phantom `@Context` base structs
+  semantics through what `f` does. `#[@use]` is an `async function` on commonJS
+  and a plain function on erlang, wasm and beam (their `@Future` is eager; the
+  three eager-lowering sites exclude it beside `#[@result]`). Phantom `@Context` base structs
   (`isPhantomContextStruct`: implements `@Context`, no members) emit no runtime
   code. A record/struct with fields (incl. `record implement … { fields }`)
   emits a real constructor (`emitStruct` — field initializers become param
@@ -2480,49 +2481,24 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 |---|---|---|---|---|
 | `#[@result]` | plain `function`; `__bp_ok`/`__bp_error` build `{ok: V}`/`{error: E}`; `try`/`catch` via `"error" in _r` | plain fun; `{ok, V}`/`{error, E}`; `try`/`catch` → `case … of` | plain local; `put_tuple2` pair; `try`/`catch` → `is_tagged_tuple` | `[tag, payload]` in linear memory; `try`/`catch` → `if` on the tag |
 | `#[@future]` | `async function`; resolved/rejected markers → native `return`/`throw` | eager (`@Future<T>` is `T`); rejected → `throw` | eager; rejected → `erlang:throw/1` | eager; rejected → `unreachable` |
-| `#[@generator]` / `#[@iterator]` | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
+| `#[@generator]` / `#[@resultGenerator]` | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
 | `#[@futureGenerator]` | `async function*` | eager | eager body | eager body |
-| `#[@context]` | plain `function` | plain fun | plain local | plain func |
+| `#[@use]` | `async function` (every body, awaiting or not); `use f()` → `await f()` | plain fun | plain local | plain func |
 
-**Open, measured 2026-09-21 at front 20's landing: a `#[@context]` body may now
-`await`, and commonJS cannot emit it.** Decision 95 made the effects a chain —
-`@Context` extends `@Future` extends `@Result` — so `await` inside a
-`#[@context]` body is legal, and `try` with it. `try` lowers everywhere (it is
-the same propagate/`catch` shape the `#[@result]` row describes). `await` does
-not: the `#[@context]` row above is a plain `function` on commonJS, so the
-emitted `await` is
+Decision 103 (front 21): the fallible generator is `#[@resultGenerator]` /
+`@ResultGenerator<T, E>` in every backend's effect switch. A generator-scope
+`break <v>` is decision 105's (22-loops): commonJS's `function*` and beam run
+`run/generator_break_value.bp`; the eager erlang and wasm scopes are pinned in
+`tests/language/expected-failures.txt`.
 
-```
-SyntaxError: await is only valid in async functions and the top level bodies of modules
-```
-
-while erlang, wasm and beam run it (their `@Future<T>` is eager, so `await` is
-the identity and the row needs nothing).
-
-**Taken by `00 · 04-js` (2026-09-21), narrowly.** `contextShape` raises the
-`async` flag for a `#[@context]` function whose **built body** carries an
-`await` of its own (`AwaitScan`: a nested arrow, function or class member owns
-its own `await` and stops the walk). JavaScript has exactly one legal home for
-an `await`, so a body that emits one has to be `async` or the module is not
-JavaScript; and reading the built body rather than the declared effect means
-the only programs whose output moves are the ones node refused to load at all.
-A `#[@context] fn … -> Element` that awaits nothing — decision 88's component,
-which is every one written today — keeps its plain `function`, and its caller
-keeps receiving an `Element`.
-
-**What was deliberately NOT taken**: making every `#[@context]` an `async
-function` regardless of its body, which is the wider and more readable
-contract (a caller could tell from the signature). It would change what every
-component's caller receives, and that is the maintainer's call. The cost of
-the narrow rule is that two `#[@context]` functions with the same signature can
-have different call contracts; the cost of the wide one is every component.
-
-What a caller receives on commonJS is unchanged in kind: a suspending function
-hands back a promise, exactly as `#[@future]` already does (`@print(f())` prints
-`Promise { <pending> }` on commonJS and the value on erlang and wasm — measured,
-pre-existing, and not this row's). `tests/language/run/effect_context_await.bp`
-pins the row and prints every value from inside the awaiting body for that
-reason; `run/effect_chain.bp` carries `use` and `try`.
+Decision 104 (front 21): `fnKeyword` / `effectShape` answers `async function`
+for every `#[@use]` body — a hook and a component alike — as it does for
+`#[@future]`, so every caller receives a Promise and awaits it; the old
+`contextShape` / `AwaitScan` body scan (async only when the built body awaited)
+is deleted. `typescript.zig` maps `@Component<C, T>` to `Promise<T>`
+(decision 128). `tests/language/run/effect_context_await.bp` and
+`run/effect_chain.bp` print every value from inside the `#[@use]` body, since a
+caller reads a promise on commonJS and the value elsewhere.
 
 Effect rejection diagnostics (R*, RF*, RI*, RC*, RG* codes) live in
 `comptime/diagnostics.zig`; `comptime/infer.zig`'s `inEffectContext` uses the

@@ -83,56 +83,44 @@ pub type Result<R, E> {
 //
 //   obj.val?.prop      obj.val?.[expr]      obj.arr?.[index]      obj.func?.(args)
 
-// ── iterator ─────────────────────────────────────────────────────────────────
+// ── generators (decision 103) ────────────────────────────────────────────────
+//
+// One protocol, one step enum. `YieldStep<T, E = void>` is what every
+// generator's `next` answers: `Yield(value)` emits, `Done` ends, `Error(error)`
+// lands in the error channel of the body that ITERATES the generator (a loop
+// over a fallible generator is a `try` there). There is no completion channel:
+// `break <v>` in a generator body emits `v` as the last item and ends
+// (≡ `yield v; break;`), and a bare `break` outside any loop ends it.
+//
+// The three generators are named by the chain level they extend
+// (`Future ⊃ Result`), so a reader derives the names without a table:
+//
+//   @Generator<T>           (isolated)       yield                 #[@generator]
+//   @ResultGenerator<T, E>  extends Result   yield · try           #[@resultGenerator]
+//   @FutureGenerator<T, E>  extends Future   yield · await · try   #[@futureGenerator]
+//
+// A type that wants to be iterated exposes an ordinary method answering a
+// generator and the consumer calls it — `for (grid.iter())`; there is no
+// iterable behavior (question 97 / decision 103: surface nobody uses drifts).
 
-// §1I — Iterator carries three channels: the YIELD type T (mandatory), an
-// ERROR type E (defaulted to `any`; surfaces via `throw <e>;` inside a
-// `#[@iterator]` body), and a COMPLETION type C (defaulted to `void`; the
-// payload of a `break <c>` clean exit). `next(self) -> @IteratorStep<T, E, C>`
-// is the lazy pull-based protocol — each call returns one of the three
-// variants below. F4I-tail's `transform.zig → @IteratorStep` rewrite
-// targets this same enum.
-pub behavior Iterator<T, E = any, C = void> extends Result {
-    fn next(self: Self) -> IteratorStep<T, E, C>;
-}
-
-pub type IteratorStep<T, E, C> {
+pub type YieldStep<T, E = void> {
     Yield(value: T),
-    Done(completion: C),
+    Done,
     Error(error: E),
 }
 
-// F12 — `iter` answering `Iterator<T, E, C>` is NOT a behavior escaping into
-// value position: `Iterator` is a `behavior` because every effect wrapper is
-// (`Future`, `Generator`, `FutureGenerator`, `Context` — all of them above),
-// and returning one is what every effect signature in the language already
-// does. `#[@iterator] fn upTo(n: i32) -> @Iterator<i32>` is the same shape.
-// What makes this line look unlike its neighbours is only that a `behavior`
-// method is DECLARATIVE — it expresses its effect through the return wrapper
-// alone and carries no `#[@iterator]` annotation (using one there is the R1/R2
-// error) — so the wrapper appears without the marker that usually accompanies
-// it. A type satisfies `Iterable` with a `#[@iterator] fn iter(self: Self) ->
-// @Iterator<T, E, C>`; the annotation belongs to the implementation, never to
-// the declaration.
-//
-// Nothing in this tree implements or consumes `Iterable` today. It is kept
-// because it is the one name for "a thing you can iterate" and `loop` will
-// want it; if it is still unimplemented when something else needs the name, it
-// goes rather than drifts.
-
-pub behavior Iterable<T, E = any, C = void> {
-    fn iter(self: Self) -> Iterator<T, E, C>;
+// `ResultGenerator<T, E = any>` — a generator that may fail: `throw <e>` in a
+// `#[@resultGenerator]` body is the `Error(e)` step, and the loop that
+// iterates it needs `try`'s level (`#[@result]` or above).
+pub behavior ResultGenerator<T, E = any> extends Result {
+    fn next(self: Self) -> YieldStep<T, E>;
 }
 
-// ── generator ────────────────────────────────────────────────────────────────
-
-pub type Yield<T, R> {
-    Yielded(value: T),
-    Done(result: R),
-}
-
-pub behavior Generator<T, R> {
-    fn next(self: Self) -> Yield<T, R>;
+// `Generator<T>` — the infallible generator: no error channel (`try` and
+// `throw` are refused in a `#[@generator]` body, naming `@ResultGenerator`),
+// so a loop over it is legal in any body, a plain `fn` included.
+pub behavior Generator<T> {
+    fn next(self: Self) -> YieldStep<T, void>;
 }
 
 // ── future ───────────────────────────────────────────────────────────────────
@@ -151,11 +139,11 @@ pub behavior Future<T, E = any> extends Result {
 // A `Generator` whose steps are `Future`s: `next` answers a future of one step
 // rather than a step. The language spells suspension ONE way — `Future` — so
 // this wrapper borrows that noun rather than inventing a second one; the
-// `#[@futureGenerator]` annotation and the `@FutureGenerator<T, E, C>` wrapper
+// `#[@futureGenerator]` annotation and the `@FutureGenerator<T, E>` wrapper
 // share a name exactly as the other five pairs do (§ effect annotations below).
 
-pub behavior FutureGenerator<T, E = any, C = void> extends Future {
-    fn next(self: Self) -> Future<IteratorStep<T, E, C>, E>;
+pub behavior FutureGenerator<T, E = any> extends Future {
+    fn next(self: Self) -> Future<YieldStep<T, E>, E>;
 }
 
 // ── display (decision 8 §7, decision 27) ─────────────────────────────────────
@@ -206,9 +194,23 @@ pub behavior Slice<V> {
     fn slice(self: Self, start: i32, end: ?i32) -> V;
 }
 
-// ── context (hooks) ──────────────────────────────────────────────────────────
+// ── context (hooks) — decisions 102 and 104 ──────────────────────────────────
+//
+// `Context<Base>` is the owner MARKER, not a wrapper: the type that carries a
+// context tree implements it, naming the base its hooks anchor at
+// (`type Element(…) implement @Context<ElementBase>`; the name is the
+// library's). It grants no capability and has no methods.
+//
+// The wrapper of `use` is one, answered by `#[@use]` (decision 128):
+//   `Component<C, T>` — anchored at base `C`, returning `T`. A hook returns
+//                       any `T`; a component returns the owner itself,
+//                       `T: @Context<C>`.
+// A component is called (`Card()`), never `use`d; `use f()` takes a hook
+// `@Component<C, _>` at the body's base, so hooks compose.
 
-pub behavior Context<ContextBase, Return> extends Future { }
+pub behavior Context<Base> { }
+
+pub behavior Component<C, T> extends Future { }
 
 // ── annotation marker ────────────────────────────────────────────────────────
 //
@@ -285,7 +287,7 @@ pub type External implement Annotation {
 // F10 — the five intrinsics below are written in the file's own dialect:
 // `pub declare fn`, `->` before the return type, a closing `;`. They are
 // bodyless because the compiler IS the body — each is reached as a builtin
-// call (`@field`, `@trap`, `@emit`, `@module`, `@getContex`), never as a
+// call (`@field`, `@trap`, `@emit`, `@module`, `@getContext`), never as a
 // plain name — and `declare fn` is the language's bodyless form. They carry
 // no `#[@External.<Target>]` because no host supplies them.
 pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
@@ -332,17 +334,18 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //
 //   #[result]          fn parse(n: i32) -> Result<i32, string>
 //   #[future]          fn fetchUser(id: u64) -> Future<User, NetworkError>
-//   #[generator]       fn range(a: i32, b: i32) -> Generator<i32, void>
-//   #[iterator]        fn lazyMap<T, U>(it: Iterator<T>, f: fn(T) -> U) -> Iterator<U, string, i32> :a
-//   #[futureGenerator] fn stream() -> FutureGenerator<T, NetworkError, i32>
-//   #[context]         fn processarPagamento() -> Context<BasePagamento, bool>
+//   #[generator]       fn range(a: i32, b: i32) -> Generator<i32>
+//   #[resultGenerator] fn lazyMap<T, U>(it: ResultGenerator<T>, f: fn(T) -> U) -> ResultGenerator<U, string> :a
+//   #[futureGenerator] fn stream() -> FutureGenerator<T, NetworkError>
+//   #[use]             fn processarPagamento() -> Component<BasePagamento, bool>
 //
 // The annotation marks an IMPLEMENTATION (a `fn` with a body): it gates the
 // body operations (`await` under future/futureGenerator; `yield` under
-// generator/iterator/futureGenerator; `throw`/`try` under result, future,
-// iterator, futureGenerator — the fallible-channel effects) and drives codegen
-// (future → `async function`, generator/iterator → `function*`,
-// futureGenerator → `async function*`, result/context → plain `function`).
+// generator/resultGenerator/futureGenerator; `throw`/`try` under result,
+// future, resultGenerator, futureGenerator — the fallible-channel effects) and
+// drives codegen (future → `async function`, generator/resultGenerator → `function*`,
+// futureGenerator → `async function*`, use → `async function`, result →
+// plain `function`).
 // Interface methods and `declare fn` declarations are declarative — they
 // express the effect through the return wrapper alone, with NO annotation
 // (using one there is the R1/R2 error).
@@ -355,31 +358,31 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // cannot carry type arguments, so the full clauses are:
 //
 //   Future<T, E>             extends Result<T, E>
-//   Iterator<T, E, C>        extends Result<T, E>
-//   FutureGenerator<T, E, C> extends Future<IteratorStep<T, E, C>, E>
-//   Context<Base, Return>    extends Future<Return, any>
-//   Generator<T, R>          — NO clause. See below.
+//   ResultGenerator<T, E>    extends Result<T, E>
+//   FutureGenerator<T, E>    extends Future<YieldStep<T, E>, E>
+//   Component<C, T>          extends Future<T, any>   (decision 128)
+//   Generator<T>             — NO clause. See below.
 //
 // What each body may therefore write:
 //
-//   #[context]         use · await · try     Context ⊃ Future ⊃ Result
+//   #[use]             use · await · try     Component ⊃ Future ⊃ Result
 //   #[futureGenerator] await · try · yield   FutureGenerator ⊃ Future ⊃ Result
 //   #[future]          await · try           Future ⊃ Result
-//   #[iterator]        try · yield           Iterator ⊃ Result
+//   #[resultGenerator] try · yield           ResultGenerator ⊃ Result
 //   #[generator]       yield                 — no error channel
 //   #[result]          try                   — it is the base
 //
 // The chain grants DOWNWARDS and never upwards: `yield` stays exclusive to the
-// three generator-shaped wrappers and `use` to `@Context`, neither of which is
+// three generator-shaped wrappers and `use` to `#[@use]`, neither of which is
 // a level anything else reaches. `@Future<T, E = any>` already carries the
 // error channel this needs, so `extends Result` adds no parameter and invents
-// no error type; the same holds for `@Iterator<T, E = any, C = void>`.
+// no error type; the same holds for `@ResultGenerator<T, E = any>`.
 //
-// `@Generator<T, R>` is the exception and is left out on purpose: it has no
-// error channel, and whether a generator should answer `try` is open question
-// 97. Until it is answered, `throw` and `try` are BOTH refused in a
-// `#[generator]` body — a defaulted parameter can be added later and never
-// removed.
+// `@Generator<T>` is the exception and is left out on purpose: it has no
+// error channel (question 97, answered (b) by decision 103), so `throw` and
+// `try` are BOTH refused in a `#[generator]` body, naming
+// `@ResultGenerator<T, E>`, the wrapper that has one. That is what lets any
+// body — a plain `fn` included — iterate a `@Generator<T>`.
 //
 // The compiler reads this order from `comptime/effect_chain.zig`, which
 // restates it and carries a test that reads THIS FILE and fails if the two
@@ -401,25 +404,23 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // future's `T`. Manual `Future::resolved(…)` / `Future::rejected(…)`
 // constructors inside the body are rejected (RF1/RF2/RF5).
 //
-// §1I — `#[iterator]` three-channel contract. The wrapper is
-// `Iterator<T, E = any, C = void>`; `yield <t>` emits, `yield :label <t>`
-// targets a named scope, `throw <e>` lands in the iterator-error channel,
-// `break` ends cleanly, `break <c>` delivers a completion value of type C.
-// `return <expr>` is forbidden (RI1); use `break <c>`. The legacy
-// `yield break` form is removed (RI6). Labels (`-> Iterator<…> :label`)
-// disambiguate nested iterator scopes.
+// §1I — `#[resultGenerator]` two-channel contract (decision 103). The wrapper
+// is `ResultGenerator<T, E = any>`; `yield <t>` emits, `yield :label <t>`
+// targets a named scope, `throw <e>` lands in the error channel, `break` ends
+// cleanly, `break <t>` emits `t` as the last item and ends. `return <expr>` is
+// forbidden (RI1) — a generator has no return channel. The legacy `yield break`
+// form is removed (RI6). Labels (`-> ResultGenerator<…> :label`) disambiguate
+// nested generator scopes.
 //
-// §1C — `#[context]` Anchor + `getContex`. The wrapper is
-// `Context<Base, T>`; `Base` is the Anchor that gates every `use` inside
-// the body. EVERY `use` in one body resolves against the SAME `Base`
+// §1C — `#[use]` Anchor + `getContext`. The wrapper is `Component<Base, T>`
+// (decision 128, a hook and a component alike); `Base` is the Anchor
+// that gates every `use` inside the body. EVERY `use` in one body resolves against the SAME `Base`
 // (decision 96): the first one fixes it, and a second anchored elsewhere is
-// refused at its own site with both bases named (RC2). `use getContex(T)`
+// refused at its own site with both bases named (RC2). `use getContext(T)`
 // requires `T` to be in the Anchor's inheritance tree (RC3) and finds the
 // active provider by inside-out walk of the activation stack (RC1 when
-// missing). `await` and `try` ARE legal here — `Context` extends `Future`
-// extends `Result` (§95 above); `yield` is not, and neither is `throw`,
-// whose auto-wrap has no wrapper to build in a body whose return type is
-// the owner.
+// missing). `await` and `try` ARE legal here — `Use` extends `Future`
+// extends `Result` (§95 above); `yield` is not.
 //
 // §1G — default generic parameters. A generic parameter may carry a
 // default type (`<T, U = string>`). Defaults must occupy the trailing
@@ -445,24 +446,24 @@ pub type Host implement Annotation {
     host,
 }
 
-// The markers (`result`, `future`, `generator`, `iterator`, `futureGenerator`,
-// `context`) are recognized as core builtins by the compiler — they are
+// The markers (`result`, `future`, `generator`, `resultGenerator`, `futureGenerator`,
+// `use`) are recognized as core builtins by the compiler — they are
 // lib-agnostic and take no arguments, so they need no signature here.
 //
-// `getContex(T)` is the context-retrieval intrinsic. It retrieves the
-// active provider of context type `T` from the enclosing `#[context]`
+// `getContext(T)` is the context-retrieval intrinsic. It retrieves the
+// active provider of context type `T` from the enclosing `#[use]`
 // fn's scope stack. `T` must be the enclosing fn's Anchor (or a subtype
-// thereof); the call returns `Context<T, V>` where `V` is the provider's
+// thereof); the call returns `Component<T, V>` where `V` is the provider's
 // authored value slot. Errors: [E1] context-unbound when no `T` provider
 // is on the stack; [E2] context-anchor-violation when `T` is outside the
-// Anchor's tree. Only legal inside a `#[context]` fn body, behind `use`:
+// Anchor's tree. Only legal inside a `#[use]` fn body, behind `use`:
 //
-//   val ctx = use getContex(BasePagamento)
+//   val ctx = use getContext(BasePagamento)
 //
 // Declared `comptime` in its sole type argument because the Anchor check
 // runs at compile time; the runtime side is the inside-out walk inserted
 // by the lowering.
-pub declare fn getContex<T>(comptime _: type) -> Context<T, any>;
+pub declare fn getContext<T>(comptime _: type) -> Component<T, any>;
 
 // ── Expr template model (std.syntax) ─────────────────────────────────────────
 // Data model for `Expr` templates. Interfaces are pure behaviour contracts, so
@@ -513,8 +514,8 @@ pub type Source(
 // declared, its raw text, and its shape. The origin scope is reached via
 // `lookup`/`bindings`; the segmented view via `parts`.
 //
-// F1 — this record is `ExprContext`, not `Context`: `@Context<ContextBase, Return>`
-// above is the hook wrapper, and one module may not declare one name twice. The
+// F1 — this record is `ExprContext`, not `Context`: `@Context<Base>` above is
+// the context-owner marker, and one module may not declare one name twice. The
 // template model is the narrower audience of the two, so it is the half that
 // moved; `q.context()` still reads `context`, because a method names the
 // receiver's own input rather than a type.

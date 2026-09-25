@@ -463,7 +463,7 @@ pub fn parseFnBody(
 
     // Optional generator/iterator label after the return type. Spec §1I
     // (`frente-b-rules-tooling.md`) extends the form from `#[@generator]` to
-    // `#[@iterator]` / `#[@futureGenerator]` — both can declare a label that a
+    // `#[@resultGenerator]` / `#[@futureGenerator]` — both can declare a label that a
     // nested `yield :label …` / `break :label …` then targets. The parser
     // accepts the form on any fn; the comptime body walk validates that the
     // label is only consumed inside a yielding effect.

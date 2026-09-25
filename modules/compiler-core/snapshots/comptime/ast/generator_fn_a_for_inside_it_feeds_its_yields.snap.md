@@ -22,7 +22,7 @@ fn doubles(arr: i32[]) -> @Generator<i32> {
           "type": "i32[]"
         }
       ],
-      "return_type": "Generator<i32,void>",
+      "return_type": "Generator<i32>",
       "body": [
         {
           "source": "for (arr) { x ->"

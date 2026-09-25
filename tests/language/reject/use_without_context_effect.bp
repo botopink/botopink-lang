@@ -1,10 +1,11 @@
-//// Decision 88 — a body activates a hook only under `#[@context]`. The return
-//// type implements `@Context` (it is the owner type), so the diagnostic names
-//// the annotation rather than the type; a bare `-> Element` without the
-//// annotation is an ordinary fn.
+//// Decisions 88 and 104 — a body activates a hook only under `#[@use]`. The
+//// return type is the owner type, so the diagnostic names the annotation
+//// rather than the type; a bare `-> Element` without the annotation is an
+//// ordinary fn (question 92 (b)).
 
-type Element(count: i32) implement @Context<Element, Element>
-fn state(initial: i32) -> @Context<Element, i32> { return initial; }
+type Element(count: i32) implement @Context<Element>
+#[@use]
+fn state(initial: i32) -> @Component<Element, i32> { return initial; }
 
 fn Widget() -> Element {
     val c = use state(0);

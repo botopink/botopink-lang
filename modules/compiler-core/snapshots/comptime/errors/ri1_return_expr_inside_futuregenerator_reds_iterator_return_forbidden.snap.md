@@ -1,15 +1,15 @@
 ----- SOURCE CODE
 #[@futureGenerator]
-fn nums() -> @FutureGenerator<i32, string, i32> {
+fn nums() -> @FutureGenerator<i32, string> {
     yield 1;
     return 42;
 }
 
 ----- ERROR
-error: iterator-return-forbidden: use `break <C>` to deliver an iterator's completion value, or bare `break` for a clean end. Plain `return <expr>` is only valid in #[@generator].
+error: iterator-return-forbidden: a generator has no return channel — `break <v>` emits `v` as the last item and ends, bare `break` ends cleanly
   ┌─ :4:5
   │
 4 │     return 42;
   │     ^
 
-  hint: Replace `return <expr>;` with `break <expr>;` (the third generic of @Iterator<T, E, C> declares the completion-value type).
+  hint: Replace `return <expr>;` with `break <expr>;` (the value is an item of type `T`), or with `yield <expr>; return;`.

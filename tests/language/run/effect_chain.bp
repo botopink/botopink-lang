@@ -1,28 +1,24 @@
-//// Decision 95 of 1.0.10-beta — the effects are a chain: `@Context` ⊃ `@Future`
-//// ⊃ `@Result`, `@FutureGenerator` ⊃ `@Future`, `@Iterator` ⊃ `@Result`, and an
-//// annotation grants every body operation at or below its own level. The two
-//// rows here are the ones every backend runs: `#[@result]`, the base, holding
-//// the `try` it grants, and `#[@context]`, the top, holding `use` and the `try`
-//// it reaches two levels down. `test/effect_chain.bp` carries the `#[@future]`
-//// and `#[@iterator]` rows, which need a target that can consume a future or an
-//// iterator (commonJS and erlang).
+//// Decision 95 of 1.0.10-beta — the effects are a chain: `@Component` ⊃ `@Future`
+//// ⊃ `@Result` (decision 128), `@FutureGenerator` ⊃ `@Future`, `@ResultGenerator` ⊃
+//// `@Result`, and an annotation grants every body operation at or below its own
+//// level. The two rows here are the ones every backend runs: `#[@result]`, the
+//// base, holding the `try` it grants, and `#[@use]`, the top, holding `use` and
+//// the `try` it reaches three levels down. `test/effect_chain.bp` carries the
+//// `#[@future]` and `#[@resultGenerator]` rows, which need a target that can
+//// consume a future or a generator (commonJS and erlang).
 ////
-//// One row of the table is in neither cell but has one of its own:
-//// `run/effect_context_await.bp` carries `await` inside a `#[@context]` body.
-//// It was left out of here because commonJS lowered `#[@context]` to a plain
-//// `function` and the emitted `await` was a JS SyntaxError while erlang, wasm
-//// and beam ran it; the legality was front 20's and the `async function`
-//// keyword the backend's, and 1.0.10-beta's `00 · 04-js` took it. It stays a
-//// cell of its own because it needs care this one does not: a suspending
-//// function's caller reads a promise on commonJS and the value elsewhere, so
-//// every value it pins is printed from inside the awaiting body.
+//// `run/effect_context_await.bp` carries `await` inside a `#[@use]` body. A
+//// `#[@use]` body is an `async function` on commonJS (decision 104), so its
+//// caller reads a promise there and the value elsewhere: `Widget` prints its
+//// own count from inside the body, after `main`'s two lines.
 ////
-//// `#[@generator]` is absent for the other reason: question 97 leaves it
+//// `#[@generator]` is absent for the other reason: decision 103 keeps it
 //// infallible, and `reject/try_in_generator.bp` asserts that refusal.
 
-type Element(count: i32) implement @Context<Element, Element>
+type Element(count: i32) implement @Context<Element>
 
-fn state(initial: i32) -> @Context<Element, i32> {
+#[@use]
+fn state(initial: i32) -> @Component<Element, i32> {
     return initial;
 }
 
@@ -39,16 +35,17 @@ fn doubled(n: i32) -> @Result<i32, string> {
     return v * 2;
 }
 
-// `#[@context]` ⊃ `@Future` ⊃ `@Result`: `use` and `try` in one body.
-#[@context]
-fn Widget(n: i32) -> Element {
+// `#[@use]` — `@Component` ⊃ `@Future` ⊃ `@Result`: `use` and `try` in one body.
+#[@use]
+fn Widget(n: i32) -> @Component<Element, Element> {
     val c = use state(1);
     val v = try parse(n);
+    @print(c + v);
     return Element(count: c + v);
 }
 
 pub fn main() {
     @print(try doubled(21) catch 0);
     @print(try doubled(0 - 1) catch 7);
-    @print(Widget(41).count);
+    Widget(41);
 }

@@ -1,4 +1,4 @@
-//// Decision 95 — the top of the chain still cannot yield. `#[@context]` grants
+//// Decision 95 — the top of the chain still cannot yield. `#[@use]` grants
 //// `use`, `await` and `try`, and `yield` is not below any of them; the same
 //// missing star context that accepted `reject/yield_in_result.bp` accepted
 //// this one.
@@ -7,10 +7,10 @@
 //// 105: it feeds the nearest generator scope, and a body the chain grants no
 //// `yield` has none.
 
-type Element(count: i32) implement @Context<Element, Element>
+type Element(count: i32) implement @Context<Element>
 
-#[@context]
-fn Bad(n: i32) -> Element {
+#[@use]
+fn Bad(n: i32) -> @Component<Element, Element> {
     yield n;
 }
 

@@ -6,17 +6,17 @@
 ///
 /// `primitives.bp` is the controller (numeric tower, Bool, String, Function,
 /// Array<T>) and `builtins.d.bp` holds the builtin model (reflection, io, Result,
-/// the lazy Iterator<T>, generators, async, Expr<E>, annotations). Both flatten
+/// the generators, async, Expr<E>, annotations). Both flatten
 /// into the global env. The remaining files are concrete `record`/`enum` modules
 /// importable via `import {…} from "std";`.
 pub const primitives = @embedFile("primitives.bp");
 pub const builtins = @embedFile("builtins.d.bp");
 
 /// `builtins_fns.d.bp` carries the parseable fn-decl slice of `builtins.d.bp`
-/// (todo / panic / trap / emit / module / getContex / field) so
+/// (todo / panic / trap / emit / module / getContext / field) so
 /// `registerStdlib` can install them in the global env. Splitting them out
-/// keeps the synthetic-interface declarations (Result / Future / Iterator /
-/// Generator / FutureGenerator / Context) in `builtins.d.bp` doc-only — those
+/// keeps the synthetic-interface declarations (Result / Future / Generator /
+/// ResultGenerator / FutureGenerator / Context) in `builtins.d.bp` doc-only — those
 /// types are pre-registered by `Env.registerBuiltins`, so re-parsing them
 /// would red on duplicate type registration.
 pub const builtin_fns = @embedFile("builtins_fns.d.bp");

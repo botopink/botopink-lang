@@ -1028,10 +1028,10 @@ pub fn renderTypeErrorBody(
         .extendRequiresInterface => "extend requires a behavior",
         .redundantActivation => "redundant activation",
         .useNotAllowed => "use-of-non-context-fn: `use` not allowed",
-        .useNotContext => "use-of-non-context-fn: `use` requires @Context",
+        .useNotContext => "use-of-non-context-fn: `use` takes a hook",
         .contextMismatch => "context-anchor-violation: ContextBase mismatch",
         .contextBaseMixed => "context-anchor-violation: two ContextBases in one body",
-        .useWithoutContextEffect => "use-without-context-effect: `use` needs `#[@context]` on the enclosing fn",
+        .useWithoutContextEffect => "use-without-context-effect: `use` needs `#[@use]` on the enclosing fn",
         .useTupleArity => "use-tuple-arity: `val #(…)` from a `use` binds the tuple's elements",
         .throwWithoutResult => "throw outside @Result",
         .missingMethod => "missing interface method",
@@ -1162,35 +1162,35 @@ pub fn renderTypeErrorBody(
         .useNotAllowed => |returnType| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  function returns `{s}` which does not implement @Context\n",
+                "\n  function returns `{s}`, which is not a `@Component<C, _>`\n",
                 .{returnType},
             ));
         },
         .useNotContext => |exprType| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  `{s}` does not implement @Context — `use` requires @Context<_, _>\n",
+                "\n  `{s}` is not a hook — `use` requires a hook @Component<_, _>\n",
                 .{exprType},
             ));
         },
         .contextMismatch => |m| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  function returns @Context<{s}, _>\n  but the `use` expression returns @Context<{s}, _>\n",
+                "\n  function anchors at `{s}`\n  but the `use` expression returns @Component<{s}, _>\n",
                 .{ m.fnBase, m.useBase },
             ));
         },
         .contextBaseMixed => |m| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  this body's ContextBase is @Context<{s}, _>, fixed by the `use` on line {d}\n  but this `use` returns @Context<{s}, _>\n",
+                "\n  this body's base is `{s}`, fixed by the `use` on line {d}\n  but this `use` returns @Component<{s}, _>\n",
                 .{ m.anchorBase, m.anchorLine, m.useBase },
             ));
         },
         .useWithoutContextEffect => |u| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  fn '{s}' returns '{s}', which implements @Context,\n  but a body with no effect annotation does not activate a hook (decisions 88, 90)\n",
+                "\n  fn '{s}' returns '{s}',\n  but only a `#[@use]` body activates a hook (decision 104)\n",
                 .{ u.fnName, u.returnType },
             ));
         },

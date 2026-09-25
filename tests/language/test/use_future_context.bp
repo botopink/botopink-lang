@@ -1,52 +1,45 @@
-//// Front 19 of 1.0.10-beta, decisions 89 and 90 — a wrapper effect activates on
-//// its own. `contextInfoFromReturn` looks through `@Future<T>` to `T`'s owner, so
-//// `#[@future] fn Page() -> @Future<Element>` owns `Element` and may write `use`
-//// without `#[@context]` — which R5 forbids spelling next to `#[@future]` anyway.
-//// `use f(x)` lowers to `f(x)`, so the value the body reads is the hook's own
-//// first-render value. A `test` body is not a `#[@future]` body, so the resolved
-//// element is not observable from here (see `test/effect_future.bp`); what this
-//// cell pins is that the pair typechecks, produces a value on both backends, and
-//// that the `#[@context]` form of the same hook still activates.
+//// Decision 104 of 1.0.10-beta (front 21) revokes decisions 89 and 90: a
+//// `#[@future]` body no longer activates a hook on its own
+//// (`reject/use_future_without_owner.bp`). The server component that `await`s
+//// and `use`s is spelled by the chain — `@Component<Element, Element>` extends
+//// `@Future` — so one annotation, `#[@use]`, grants both. A
+//// `test` body runs in a future context, so it awaits the component.
 
-type Element(count: i32) implement @Context<Element, Element>
-type Request(code: i32) implement @Context<Element, Request>
+type Element(count: i32) implement @Context<Element>
+type Request(code: i32)
 
-// A hook anchored at `Element`: the owner a `use` in either body agrees on.
-fn request() -> @Context<Element, Request> {
+// A hook anchored at `Element`.
+#[@use]
+fn request() -> @Component<Element, Request> {
     return Request(code: 7);
 }
 
-// Decision 90 — the wrapper effect is the only annotation on this fn.
 #[@future]
-fn Page() -> @Future<Element> {
-    val r = use request();
-    return Element(count: r.code + 1);
+fn load(n: i32) -> @Future<i32> {
+    return n;
 }
 
-// The activation composes with the effect's own body operations.
+// `use` and `await` in one body, under one annotation.
+#[@use]
+fn Page() -> @Component<Element, Element> {
+    val r = use request();
+    val extra = await load(1);
+    return Element(count: r.code + extra);
+}
+
+// The component composes with a `#[@future]` caller that awaits it.
 #[@future]
 fn rendered() -> @Future<i32> {
     val e = await Page();
     return e.count;
 }
 
-// Decision 88 is untouched where there is no wrapper effect.
-#[@context]
-fn Widget() -> Element {
-    val r = use request();
-    return Element(count: r.code);
+test "a #[@use] component uses and awaits" {
+    val e = await Page();
+    assert e.count == 8;
 }
 
-test "a #[@future] body activates a hook without #[@context]" {
-    val f = Page();
-    assert f != null;
-}
-
-test "the activated future chains through await" {
-    val f = rendered();
-    assert f != null;
-}
-
-test "#[@context] on a plain owner return still activates" {
-    assert Widget().count == 7;
+test "a #[@future] caller awaits the component" {
+    val n = await rendered();
+    assert n == 8;
 }

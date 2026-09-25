@@ -4,7 +4,7 @@
     {
       "fn": {
         "isPub": false,
-        "effect": "iterator",
+        "effect": "resultGenerator",
         "isDeclare": false,
         "isDefault": false,
         "label": null,
@@ -14,7 +14,7 @@
         "moduleComment": null,
         "annotations": [
           {
-            "name": "iterator",
+            "name": "resultGenerator",
             "args": [],
             "is_builtin": true
           }
@@ -23,7 +23,7 @@
         "params": [],
         "returnType": {
           "generic": {
-            "name": "Iterator",
+            "name": "ResultGenerator",
             "args": [
               {
                 "named": "Int"

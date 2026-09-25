@@ -91,7 +91,7 @@ pub const yield_without_generator: []const u8 = "yield-without-generator";
 /// R9 — alias of R7 (`await` inside `#[@result]` body).
 pub const effect_await_without_future_in_result: []const u8 = effect_await_without_future;
 
-/// R10 — alias of R6 (`throw` inside `#[@context]` / `#[@generator]` body).
+/// R10 — alias of R6 (`throw` inside `#[@use]` / `#[@generator]` body).
 pub const effect_throw_without_fallible_channel_in_context: []const u8 = effect_throw_without_fallible_channel;
 
 /// R11 — `return Result::Ok(<r>)` inside `#[@result]` body (must be bare R).
@@ -112,10 +112,9 @@ pub const result_throw_type_mismatch: []const u8 = "result-throw-type-mismatch";
 /// `try { … }` block whose callee `E` differs from the enclosing `E`.
 pub const result_error_type_incompatible: []const u8 = "result-error-type-incompatible";
 
-/// R13 — `break <expr>` inside an iterator whose wrapper has `C = void`.
-pub const iterator_break_without_completion_type: []const u8 = "iterator-break-without-completion-type";
-
-/// R14 — `return <expr>` inside `#[@iterator]` / `#[@futureGenerator]`.
+/// R14 — `return <expr>` inside a generator body (`#[@generator]` /
+/// `#[@resultGenerator]` / `#[@futureGenerator]`): a generator has no return
+/// channel (decision 103) — `break <v>` emits the last item and ends.
 pub const iterator_return_forbidden: []const u8 = "iterator-return-forbidden";
 
 /// R15 — `yield :label <expr>` where the label is not bound.
@@ -128,9 +127,9 @@ pub const generic_default_before_required: []const u8 = "generic-default-before-
 pub const future_manual_construction_forbidden: []const u8 = "future-manual-construction-forbidden";
 
 /// R18 (E2) — alias of RC2 (`use <hook>()` violates anchor).
-/// R19 (E1) — alias of RC1 (`@getContex(T)` with no active provider).
-/// R20      — alias of RC3 (`@getContex(T)` outside the anchor).
-/// R21      — alias of RC6 (`use` of a non-`#[@context]` fn).
+/// R19 (E1) — alias of RC1 (`@getContext(T)` with no active provider).
+/// R20      — alias of RC3 (`@getContext(T)` outside the anchor).
+/// R21      — alias of RC6 (`use` of a non-hook (a callee that is not a hook `@Component<C, _>`)).
 //
 // The §1C addendum keeps the RC* names as the canonical surface; the R-table
 // numbers point to them via alias here for the catalogue.
@@ -153,18 +152,15 @@ pub const future_throw_type_mismatch: []const u8 = "future-throw-type-mismatch";
 /// Identical to R17 (the §2 alias).
 pub const future_manual_construction_forbidden_alias: []const u8 = future_manual_construction_forbidden;
 
-// ── RI1–RI6: §1I `#[@iterator]` syntax diagnostics ──────────────────────────
+// ── RI1–RI6: §1I generator-body syntax diagnostics ───────────────────────────
 
-/// RI1 — `return <expr>` inside `#[@iterator]` / `#[@futureGenerator]`.
-/// Identical to R14 (the §2 alias).
+/// RI1 — `return <expr>` inside a generator body. Identical to R14 (the §2 alias).
 pub const iterator_return_forbidden_alias: []const u8 = iterator_return_forbidden;
 
-/// RI2 — `break <expr>` whose type is not assignable to declared `C`.
+/// RI2 — `break <expr>` whose type is not the generator's item type `T`
+/// (decision 103: `break v` ≡ `yield v; break;`, so `v` is an item). RI3 —
+/// `break <expr>` against a `C = void` wrapper — left with the `C` channel.
 pub const iterator_break_type_mismatch: []const u8 = "iterator-break-type-mismatch";
-
-/// RI3 — `break <expr>` inside an iterator whose wrapper has `C = void`.
-/// Identical to R13.
-pub const iterator_break_without_completion_type_alias: []const u8 = iterator_break_without_completion_type;
 
 /// RI4 — `yield :label <expr>` where `:label` is not bound.
 /// Identical to R15.
@@ -176,16 +172,16 @@ pub const break_label_unbound: []const u8 = "break-label-unbound";
 /// RI6 — `yield break <expr>` (the deprecated form, removed in v0.beta.19).
 pub const yield_break_removed: []const u8 = "yield-break-removed";
 
-// ── RC1–RC6: §1C `#[@context]` Anchor diagnostics ───────────────────────────
+// ── RC1–RC6: §1C `#[@use]` Anchor diagnostics ───────────────────────────
 
-/// RC1 (E1) — `@getContex(T)` with no active provider of T on the scope stack.
+/// RC1 (E1) — `@getContext(T)` with no active provider of T on the scope stack.
 pub const context_unbound: []const u8 = "context-unbound";
 
 /// RC2 (E2) — `use <hook>()` whose `HookBase` is not assignable to enclosing Anchor.
 pub const context_anchor_violation: []const u8 = "context-anchor-violation";
 
-/// RC3 — `@getContex(T)` whose T is outside the enclosing fn's Anchor tree.
-pub const context_getcontex_anchor_violation: []const u8 = "context-getcontex-anchor-violation";
+/// RC3 — `@getContext(T)` whose T is outside the enclosing fn's Anchor tree.
+pub const context_getcontext_anchor_violation: []const u8 = "context-getcontext-anchor-violation";
 
 // ── `@src()` (1.0.10-beta front 01-std, decision 73) ─────────────────────────
 /// `@src(…)` was given an argument or a trailing lambda — the builtin takes none.
@@ -194,17 +190,17 @@ pub const src_takes_no_arguments: []const u8 = "src-takes-no-arguments";
 /// fallback that let a typo (`@pritn`) compile (decision 67: refuse).
 pub const unknown_builtin: []const u8 = "unknown-builtin";
 
-/// RC4 — `@getContex(<value>)` (the argument must be a type).
-pub const context_getcontex_expects_type: []const u8 = "context-getcontex-expects-type";
+/// RC4 — `@getContext(<value>)` (the argument must be a type).
+pub const context_getcontext_expects_type: []const u8 = "context-getcontext-expects-type";
 
-/// RC5 — `@getContex(…)` outside a `#[@context]` fn body.
-pub const context_getcontex_outside_context_fn: []const u8 = "context-getcontex-outside-context-fn";
+/// RC5 — `@getContext(…)` outside a `#[@use]` fn body.
+pub const context_getcontext_outside_context_fn: []const u8 = "context-getcontext-outside-context-fn";
 
-/// RC6 — `use <hook>()` where `<hook>` is not a `#[@context]` fn.
+/// RC6 — `use <hook>()` where `<hook>` is not a hook `@Component<C, _>` hook.
 pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
 
-/// RC7 (decision 88) — `use` in a body whose return type implements `@Context`
-/// but whose fn is not `#[@context]`: only the annotated body activates a hook.
+/// RC7 (decisions 88, 104) — `use` in a body whose fn is not `#[@use]`, or in a
+/// nested closure of one: only the annotated body activates a hook.
 pub const use_without_context_effect: []const u8 = "use-without-context-effect";
 
 /// Front 19 step 3 — `val #(a, b) = use …` whose hook yields a tuple of another
@@ -229,8 +225,13 @@ pub const generic_all_defaults_legal_reserved: []const u8 = "";
 /// RG3 — required generic argument missing (e.g. `@Future<>` where T is required).
 pub const generic_required_arg_missing: []const u8 = "generic-required-arg-missing";
 
-/// RG4 — skipped middle generic argument (`@Iterator<i32, , i64>`).
+/// RG4 — skipped middle generic argument (`@ResultGenerator<i32, , i64>`).
 pub const generic_arg_skip_forbidden: []const u8 = "generic-arg-skip-forbidden";
+
+/// RG5 — more generic arguments than a builtin wrapper declares
+/// (`@ResultGenerator<i32, string, i32>`: the completion channel `C` left with
+/// decision 103, and an argument nothing reads is refused, not dropped).
+pub const generic_arg_count_exceeded: []const u8 = "generic-arg-count-exceeded";
 
 /// §A3 — `#[@result] declare fn` whose `@external(<target>, "<template>")`
 /// body is missing the `ok` or `error` branch on at least one target.
@@ -325,7 +326,6 @@ pub const all_codes = [_][]const u8{
     result_return_type_mismatch,
     result_throw_type_mismatch,
     result_error_type_incompatible,
-    iterator_break_without_completion_type,
     iterator_return_forbidden,
     yield_label_unbound,
     generic_default_before_required,
@@ -339,13 +339,14 @@ pub const all_codes = [_][]const u8{
     yield_break_removed,
     context_unbound,
     context_anchor_violation,
-    context_getcontex_anchor_violation,
-    context_getcontex_expects_type,
-    context_getcontex_outside_context_fn,
+    context_getcontext_anchor_violation,
+    context_getcontext_expects_type,
+    context_getcontext_outside_context_fn,
     use_of_non_context_fn,
     use_without_context_effect,
     generic_required_arg_missing,
     generic_arg_skip_forbidden,
+    generic_arg_count_exceeded,
     result_template_shape_mismatch,
     std_unsupported_on_target,
     import_name_collision,

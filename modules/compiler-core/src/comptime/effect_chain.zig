@@ -6,10 +6,10 @@
 //! `libs/std/src/builtins.d.bp`:
 //!
 //!     pub behavior Future<T, E = any>                    extends Result
-//!     pub behavior Iterator<T, E = any, C = void>        extends Result
-//!     pub behavior FutureGenerator<T, E = any, C = void> extends Future
-//!     pub behavior Context<ContextBase, Return>          extends Future
-//!     pub behavior Generator<T, R>                       // no clause — question 97
+//!     pub behavior ResultGenerator<T, E = any>           extends Result
+//!     pub behavior FutureGenerator<T, E = any>           extends Future
+//!     pub behavior Component<C, T>                       extends Future   // decision 128
+//!     pub behavior Generator<T>                          // no clause — decision 103
 //!
 //! Decision 95 calls these `implement` clauses; a `behavior` carries `extends`
 //! and only a `type` writes `implement`, so `extends` is what the file spells
@@ -24,10 +24,10 @@
 //! `try`, `await`, `use`, `yield` — asks `grants` rather than switching on an
 //! effect kind, so adding a wrapper is a row in `clauses` and nothing else.
 //!
-//! `@Generator<T, R>` is deliberately absent from `clauses`: it is the one
-//! wrapper with no error channel, the maintainer has not decided whether a
-//! generator answers `try` (question 97), and the status quo — `throw` and
-//! `try` are not legal in a `#[@generator]` body — is what an empty row means.
+//! `@Generator<T>` is deliberately absent from `clauses`: it is the one
+//! wrapper with no error channel (decision 103 answers question 97 (b)), so
+//! `throw` and `try` are not legal in a `#[@generator]` body — what an empty
+//! row means — and `refusal` names `@ResultGenerator<T, E>` there.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -36,19 +36,21 @@ const ast = @import("../ast.zig");
 const Clause = struct { wrapper: []const u8, implements: []const u8 };
 
 /// The chain, in the order `builtins.d.bp` declares it. Transitivity is
-/// computed by `wrapperImplements`, so `@Context` needs no `Result` row.
+/// computed by `wrapperImplements`, so `@Component` needs no `Result` row.
+/// `@Context<Base>` is not here: it is the owner MARKER a type implements
+/// (decision 102), not a wrapper, and grants nothing.
 pub const clauses = [_]Clause{
     .{ .wrapper = "Future", .implements = "Result" },
-    .{ .wrapper = "Iterator", .implements = "Result" },
+    .{ .wrapper = "ResultGenerator", .implements = "Result" },
     .{ .wrapper = "FutureGenerator", .implements = "Future" },
-    .{ .wrapper = "Context", .implements = "Future" },
+    .{ .wrapper = "Component", .implements = "Future" },
 };
 
 /// The wrappers whose body may `yield`. `yield` is not a level of the chain:
 /// it belongs to the three generator-shaped wrappers and is granted by none of
 /// the others, in either direction (decision 95 — "`yield` stays exclusive to
-/// the three generator wrappers and `use` stays exclusive to `@Context`").
-pub const yielding_wrappers = [_][]const u8{ "Generator", "Iterator", "FutureGenerator" };
+/// the three generator wrappers and `use` stays exclusive to `#[@use]`").
+pub const yielding_wrappers = [_][]const u8{ "Generator", "ResultGenerator", "FutureGenerator" };
 
 /// A body operation whose legality the chain decides.
 pub const Capability = enum {
@@ -73,7 +75,7 @@ pub const Capability = enum {
         return switch (self) {
             .try_ => "Result",
             .await_ => "Future",
-            .use_ => "Context",
+            .use_ => "Component",
             .yield_ => null,
         };
     }
@@ -155,10 +157,17 @@ pub fn refusal(arena: std.mem.Allocator, code: []const u8, cap: Capability, eff:
     else
         "this fn carries no effect annotation";
 
+    // Decision 103 — the infallible generator names the wrapper that has the
+    // channel it lacks.
+    const hint: []const u8 = if (eff != null and eff.? == .generator and cap == .try_)
+        "; `@Generator` has no error channel; use `@ResultGenerator<T, E>`"
+    else
+        "";
+
     return std.fmt.allocPrint(
         arena,
-        "{s}: `{s}` needs {s} — {s}; {s}",
-        .{ code, cap.spelling(), level, names.items, body },
+        "{s}: `{s}` needs {s} — {s}; {s}{s}",
+        .{ code, cap.spelling(), level, names.items, body, hint },
     );
 }
 
@@ -242,11 +251,11 @@ test "effect chain: decision 95's table, row by row" {
     try std.testing.expect(grants(.future, .await_));
     try std.testing.expect(!grants(.future, .use_));
     try std.testing.expect(!grants(.future, .yield_));
-    // `#[@iterator]` ⊃ `@Result`, and yields.
-    try std.testing.expect(grants(.iterator, .try_));
-    try std.testing.expect(!grants(.iterator, .await_));
-    try std.testing.expect(!grants(.iterator, .use_));
-    try std.testing.expect(grants(.iterator, .yield_));
+    // `#[@resultGenerator]` ⊃ `@Result`, and yields.
+    try std.testing.expect(grants(.resultGenerator, .try_));
+    try std.testing.expect(!grants(.resultGenerator, .await_));
+    try std.testing.expect(!grants(.resultGenerator, .use_));
+    try std.testing.expect(grants(.resultGenerator, .yield_));
     // `#[@futureGenerator]` ⊃ `@Future` ⊃ `@Result`, and yields.
     try std.testing.expect(grants(.futureGenerator, .try_));
     try std.testing.expect(grants(.futureGenerator, .await_));
@@ -257,11 +266,11 @@ test "effect chain: decision 95's table, row by row" {
     try std.testing.expect(!grants(.generator, .await_));
     try std.testing.expect(!grants(.generator, .use_));
     try std.testing.expect(grants(.generator, .yield_));
-    // `#[@context]` ⊃ `@Future` ⊃ `@Result`, and activates.
-    try std.testing.expect(grants(.context, .try_));
-    try std.testing.expect(grants(.context, .await_));
-    try std.testing.expect(grants(.context, .use_));
-    try std.testing.expect(!grants(.context, .yield_));
+    // `#[@use]` — `@Component` ⊃ `@Future` ⊃ `@Result`, and activates.
+    try std.testing.expect(grants(.use, .try_));
+    try std.testing.expect(grants(.use, .await_));
+    try std.testing.expect(grants(.use, .use_));
+    try std.testing.expect(!grants(.use, .yield_));
     // A plain `fn` grants nothing.
     try std.testing.expect(!grants(null, .try_));
     try std.testing.expect(!grants(null, .await_));
@@ -270,17 +279,21 @@ test "effect chain: decision 95's table, row by row" {
 }
 
 test "effect chain: the chain grants downwards, never upwards" {
-    // `use` is `@Context`'s alone, in both directions.
+    // `use` is `#[@use]`'s alone, in both directions.
     for (ast.EffectKind.all) |e| {
-        if (e == .context) continue;
+        if (e == .use) continue;
         try std.testing.expect(!grants(e, .use_));
     }
     // `@Result` implements nothing above it.
     try std.testing.expect(!wrapperImplements("Result", "Future"));
-    try std.testing.expect(!wrapperImplements("Result", "Context"));
-    try std.testing.expect(!wrapperImplements("Future", "Context"));
+    try std.testing.expect(!wrapperImplements("Result", "Component"));
+    try std.testing.expect(!wrapperImplements("Future", "Component"));
+    // `@Component<C, T>` is the one `use` wrapper (decision 128) and sits above `@Future`.
+    try std.testing.expect(wrapperImplements("Component", "Future"));
+    // `@Context<Base>` is a marker, not a level of the chain.
+    try std.testing.expect(!wrapperImplements("Context", "Result"));
     // …and everything below it, reflexively.
     try std.testing.expect(wrapperImplements("Result", "Result"));
-    try std.testing.expect(wrapperImplements("Context", "Result"));
+    try std.testing.expect(wrapperImplements("Component", "Result"));
     try std.testing.expect(wrapperImplements("FutureGenerator", "Result"));
 }

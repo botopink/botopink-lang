@@ -205,7 +205,7 @@ pub fn isBoxedPrototype(owner: []const u8) bool {
         std.mem.eql(u8, owner, "String");
 }
 
-/// True when a type reference is the phantom capability `@Context<B, R>`.
+/// True when a type reference is the owner marker `@Context<B>` (decision 102).
 pub fn isContextTypeRef(tr: ast.TypeRef) bool {
     return switch (tr) {
         .generic => |g| std.mem.eql(u8, g.name, "Context"),
@@ -884,76 +884,6 @@ const NameScan = struct {
     }
 };
 
-/// True when a built JS subtree carries an `await` that belongs to the
-/// function being built. A nested arrow, function, class member or object
-/// method owns its own `await`, so the walk stops at one — a nested closure
-/// that awaits is that closure's problem, not its enclosing function's.
-const AwaitScan = struct {
-    fn expr(e: js.Expr) bool {
-        return switch (e) {
-            .lexeme_string, .quoted, .number, .null_, .this, .comment, .ident, .name => false,
-            .await_ => true,
-            .member => |m| expr(m.object.*),
-            .index => |ix| expr(ix.object.*) or expr(ix.index.*),
-            .call, .new_ => |cl| expr(cl.callee.*) or exprs(cl.args),
-            .binary => |b| expr(b.lhs.*) or expr(b.rhs.*),
-            .unary => |u| expr(u.operand.*),
-            .ternary => |t| expr(t.cond.*) or expr(t.then.*) or expr(t.else_.*),
-            .assign => |a| expr(a.target.*) or expr(a.value.*),
-            .paren => |p| expr(p.*),
-            // A closure owns its own `await`.
-            .arrow, .function => false,
-            .array => |a| exprs(a.elems) or (if (a.spread) |sp| switch (sp) {
-                .name => false,
-                .expr => |x| expr(x.*),
-            } else false),
-            .object => |o| blk: {
-                for (o.props) |pr| switch (pr) {
-                    .kv => |kv| if (expr(kv.value)) break :blk true,
-                    // A method of an object literal is its own function.
-                    .shorthand, .method => {},
-                };
-                break :blk false;
-            },
-            .host => |parts| blk: {
-                for (parts) |pt| switch (pt) {
-                    .text => {},
-                    .expr => |x| if (expr(x)) break :blk true,
-                };
-                break :blk false;
-            },
-            .yield_ => |x| if (x) |v| expr(v.*) else false,
-        };
-    }
-
-    fn exprs(xs: []const js.Expr) bool {
-        for (xs) |x| if (expr(x)) return true;
-        return false;
-    }
-
-    fn stmt(st: js.Stmt) bool {
-        return switch (st) {
-            .continue_, .continue_label, .break_, .comment => false,
-            .expr, .throw_, .yield_delegate => |e| expr(e),
-            .decl => |d| expr(d.value),
-            .return_ => |e| if (e) |v| expr(v) else false,
-            .if_ => |i| expr(i.cond) or stmt(i.then.*) or
-                (if (i.else_) |el| stmt(el.*) else false),
-            .for_of => |f| expr(f.iter) or stmts(f.body.stmts),
-            .while_ => |wh| expr(wh.cond) or stmts(wh.body.stmts),
-            .block => |b| stmts(b.stmts),
-            // A nested declaration and a class member each own their `await`.
-            .function, .class => false,
-            .group => |g| stmts(g),
-        };
-    }
-
-    fn stmts(list: []const js.Stmt) bool {
-        for (list) |st| if (stmt(st)) return true;
-        return false;
-    }
-};
-
 /// Rewrites every `return <self>(args);` of one function into "assign the
 /// parameters and go round again". Statement positions only: a `return` inside
 /// a nested arrow or function belongs to THAT function, and the walk never
@@ -1123,7 +1053,7 @@ const Emitter = struct {
     /// real first parameter) instead of the prototype-method `this.x`.
     self_is_param: bool = false,
     /// True while building a generator (`function*`) body. A `return <expr>`
-    /// inside an `#[@iterator] fn -> @Iterator<T>` means *delegate the rest of
+    /// inside an `#[@resultGenerator] fn -> @ResultGenerator<T>` means *delegate the rest of
     /// the iteration* to that iterator, so it lowers to `yield* <expr>;
     /// return;` — a plain `return <gen>` would surface the generator object as
     /// the done-value and yield nothing (the iterator-recursion bug behind the
@@ -1793,20 +1723,23 @@ const Emitter = struct {
 
     /// The JS shape a botopink effect asks for.
     ///   `#[@future]`          → `async function`
-    ///   `#[@iterator]`        → `function*`
+    ///   `#[@resultGenerator]`        → `function*`
     ///   `#[@generator]`       → `function*`
     ///   `#[@futureGenerator]` → `async function*`
     ///   `#[@result]`          → `function` (checked-Result effect — plain fn)
-    ///   `#[@context]` / none  → `function`, unless the body awaits (`contextShape`)
+    ///   `#[@use]`             → `async function`, awaiting or not (decision 104:
+    ///                           every hook and component answers a Promise and
+    ///                           every caller `await`s it)
+    ///   none                  → `function`
     fn effectShape(eff: ?ast.EffectKind) FnShape {
         const e = eff orelse return .{};
         return switch (e) {
             .future => .{ .is_async = true },
-            .iterator => .{ .is_generator = true },
+            .resultGenerator => .{ .is_generator = true },
             .generator => .{ .is_generator = true },
             .futureGenerator => .{ .is_async = true, .is_generator = true },
             .result => .{},
-            .context => .{},
+            .use => .{ .is_async = true },
         };
     }
 
@@ -1814,7 +1747,7 @@ const Emitter = struct {
     /// field; `ast.BehaviorMethod` — a record's or an enum's method, and a
     /// `behavior`'s `default fn` — carries only its annotation list, so the
     /// effect is read back from it. Reading `FnDecl.effect` alone is what made
-    /// `#[@iterator] fn iter(self: Self)` emit as a plain method whose
+    /// `#[@resultGenerator] fn iter(self: Self)` emit as a plain method whose
     /// `loop … yield` lowered to a value-dropping `.map()`.
     fn methodEffect(m: ast.BehaviorMethod) ?ast.EffectKind {
         for (m.annotations) |a| {
@@ -1822,25 +1755,6 @@ const Emitter = struct {
             if (ast.EffectKind.fromAnnotationName(a.name)) |k| return k;
         }
         return null;
-    }
-
-    /// Decision 95 — `@Context` ⊃ `@Future`, so a `#[@context]` body may
-    /// `await`. JavaScript has exactly one legal home for an `await`, so a
-    /// context body that emits one has to be `async`; without this the module
-    /// is not JavaScript and node refuses to load it
-    /// (`SyntaxError: await is only valid in async functions`).
-    ///
-    /// The flag is raised from the BUILT body, not from the declared effect:
-    /// a `#[@context] fn … -> Element` that awaits nothing — decision 88's
-    /// component, which is every one written today — keeps the plain
-    /// `function` it has and its caller keeps receiving an `Element`. Making
-    /// every `#[@context]` async regardless is the wider answer and is NOT
-    /// taken here: it would change what every component's caller receives,
-    /// which is the maintainer's call, not the emitter's.
-    fn contextShape(eff: ?ast.EffectKind, shape: FnShape, body: []const js.Stmt) FnShape {
-        if (eff != .context or shape.is_async) return shape;
-        if (!AwaitScan.stmts(body)) return shape;
-        return .{ .is_async = true, .is_generator = shape.is_generator };
     }
 
     /// A top-level `fn` decl: an external alias/template breadcrumb, or a real
@@ -1990,7 +1904,7 @@ const Emitter = struct {
 
     fn buildFn(self: *Emitter, f: ast.FnDecl) anyerror!js.Stmt {
         self.try_seq = 0;
-        var shape = effectShape(f.effect);
+        const shape = effectShape(f.effect);
         const prev_in_generator = self.in_generator;
         self.in_generator = shape.is_generator;
         defer self.in_generator = prev_in_generator;
@@ -1999,7 +1913,6 @@ const Emitter = struct {
         self.current_indent = 1;
         var body = try self.buildStmts(f.body);
         self.current_indent = prev_fn_indent;
-        shape = contextShape(f.effect, shape, body);
         const kw = shape.keyword();
         // A plain `function` only: a generator's `return f(…)` resumes an
         // iterator rather than ending one, and an `async` one's answer is a
@@ -2067,14 +1980,13 @@ const Emitter = struct {
             const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
             const params = try self.buildParams(m.params);
             const eff = methodEffect(m);
-            var shape = effectShape(eff);
+            const shape = effectShape(eff);
             const prev_in_generator = self.in_generator;
             self.in_generator = shape.is_generator;
             self.current_indent = 2;
             const body = try self.buildStmts(m.body orelse &.{});
             self.current_indent = 0;
             self.in_generator = prev_in_generator;
-            shape = contextShape(eff, shape, body);
             try members.append(self.arena(), .{
                 .kind = if (has_self) .method else .static_method,
                 .name = m.name,
@@ -2258,14 +2170,13 @@ const Emitter = struct {
             } else try self.buildParams(m.params);
             self.self_is_param = recv_first;
             const eff = methodEffect(m);
-            var shape = effectShape(eff);
+            const shape = effectShape(eff);
             const prev_in_generator = self.in_generator;
             self.in_generator = shape.is_generator;
             self.current_indent = 2;
             const body = try self.buildStmts(m.body orelse &.{});
             self.current_indent = 0;
             self.in_generator = prev_in_generator;
-            shape = contextShape(eff, shape, body);
             try members.append(self.arena(), .{
                 .kind = .static_method,
                 .name = m.name,
@@ -2962,9 +2873,11 @@ const Emitter = struct {
                 },
                 else => return .{ .expr = try self.buildExpr(e) },
             },
-            // A bare `use <hookcall>;` statement is a void hook (`use effect(…)`):
-            // the call itself, the prefix is transparent (decision 88).
-            .useHook => |uh| return .{ .expr = try self.buildExpr(uh.kind.inner.*) },
+            // A bare `use <hookcall>;` statement is a void hook (`use effect(…)`).
+            // Decision 104 — every `#[@use]` body is an `async function` here,
+            // so a hook answers a Promise and `use` awaits it; the body that
+            // writes `use` is `#[@use]` too, so the `await` is always legal.
+            .useHook => |uh| return .{ .expr = try self.b.await_(try self.buildExpr(uh.kind.inner.*)) },
             // An `if` whose branches jump out (`return`, `break`, `continue`)
             // is a JS `if` statement: a jump cannot leave the IIFE the value
             // form wraps it in.
@@ -3007,7 +2920,7 @@ const Emitter = struct {
                             .rejected => js.Stmt{ .throw_ = inner },
                         };
                     }
-                    // `return <iter>` in an `#[@iterator] fn -> @Iterator`
+                    // `return <iter>` in an `#[@resultGenerator] fn -> @ResultGenerator`
                     // delegates: `yield* <iter>; return;` (a plain
                     // `return <gen>` surfaces the generator object and
                     // yields nothing).
@@ -3408,7 +3321,7 @@ const Emitter = struct {
                 },
                 .await_ => |av| return self.b.await_(try self.buildExpr(av.*)),
                 // Generator `yield` (loop-accumulator yields are lowered at
-                // the `.loop` site, so reaching here means an `#[@iterator]`
+                // the `.loop` site, so reaching here means an `#[@resultGenerator]`
                 // / `#[@generator]` / `#[@futureGenerator]` body).
                 .yield => |y| return self.b.yield_(if (y.value) |val| try self.buildExpr(val.*) else null),
             },
@@ -3478,11 +3391,12 @@ const Emitter = struct {
                 },
             },
 
-            // `use <call>` in value position is the call: the prefix is the
-            // activation the checker validated, not a rename (decision 88 —
-            // `use state(0)` is `state(0)` on every backend; the client
-            // runtime supplies hook semantics through what `state` does).
-            .useHook => |uh| return self.buildExpr(uh.kind.inner.*),
+            // `use <call>` in value position is the call, awaited: the prefix
+            // is the activation the checker validated, not a rename (decision
+            // 88), and on this target the hook is an `async function`
+            // (decision 104), so `use state(0)` is `await state(0)`. erlang,
+            // wasm and beam keep the bare call — their `@Future` is eager.
+            .useHook => |uh| return self.b.await_(try self.buildExpr(uh.kind.inner.*)),
 
             .call => |c| switch (c.kind) {
                 .call => |cc| return self.buildCall(c.loc, cc),

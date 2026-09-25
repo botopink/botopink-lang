@@ -389,10 +389,11 @@ const Builder = struct {
             for (g.args, 0..) |a, i| members[i] = try self.typeRef(a);
             return .{ .union_ = members };
         }
-        // `@Context<B, R>` is a phantom capability — at the value level a
-        // context function yields its Return type `R`. Erase the wrapper.
-        if (std.mem.eql(u8, g.name, "Context") and g.args.len == 2) {
-            return self.typeRef(g.args[1]);
+        // `#[@use]` lowers to an `async function` (decision 104), so its
+        // wrapper is a `Promise` of the value: `@Component<C, T>` →
+        // `Promise<T>` (the base `C` is a phantom, decision 128).
+        if (std.mem.eql(u8, g.name, "Component") and g.args.len == 2) {
+            return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{try self.typeRef(g.args[1])}) } };
         }
         if (std.mem.eql(u8, g.name, "Result") and g.args.len == 2) {
             return .{ .union_ = try self.b.types(&.{
@@ -406,11 +407,11 @@ const Builder = struct {
                 }), .sep = "; " } },
             }) };
         }
-        // `@Future<T>` → `Promise<T>`; `@Iterator<T>` → `IterableIterator<T>`;
+        // `@Future<T>` → `Promise<T>`; `@ResultGenerator<T>` → `IterableIterator<T>`;
         // `@FutureGenerator<T, E>` → `AsyncGenerator<T>` (TypeScript
         // tracks only the item type).
         const host: ?[]const u8 =
-            if (std.mem.eql(u8, g.name, "Future")) "Promise" else if (std.mem.eql(u8, g.name, "Iterator")) "IterableIterator" else if (std.mem.eql(u8, g.name, "FutureGenerator")) "AsyncGenerator" else null;
+            if (std.mem.eql(u8, g.name, "Future")) "Promise" else if (std.mem.eql(u8, g.name, "ResultGenerator")) "IterableIterator" else if (std.mem.eql(u8, g.name, "FutureGenerator")) "AsyncGenerator" else null;
         if (host) |h| if (g.args.len >= 1) {
             return .{ .generic = .{ .name = h, .args = try self.b.types(&.{try self.typeRef(g.args[0])}) } };
         };
