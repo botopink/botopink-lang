@@ -532,28 +532,28 @@ test "completion: dot completes enum variants" {
     try snap.assertCompletion(gpa, "completion_dot_enum_variants", source, cursor, items);
 }
 
-// ── iterator method completion (generators) ─────────────────────
+// ── effect-wrapper receiver completion (decisions 120/122/128) ────────────────
+//
+// A value typed by an effect wrapper completes the members the prelude
+// declares for it (`libs/std/src/builtins.d.bp`): `@Iterator` steps with
+// `next`; `@Stream` steps with `next` and, through `extends Task`, maps with
+// `map` / `then`; a `@Task` maps with `map` / `then`.
 
-test "completion: iterator receiver offers next/iter/map" {
+/// Compiles `decls` + `val it = <call>;`, completes `it.` on the next line and
+/// snapshots the items under `slug`.
+fn wrapperReceiver(slug: []const u8, comptime decls: []const u8, comptime call: []const u8) !void {
     const gpa = std.testing.allocator;
     // Bindings come from a valid compile; completion runs on the mid-edit buffer
     // (`it.`) just like the LSP serves completion against the last good index.
-    const valid_source =
-        \\fn gen() -> @Iterator<i32> { yield 1; }
-        \\val it = gen();
-    ;
-    const edit_source =
-        \\fn gen() -> @Iterator<i32> { yield 1; }
-        \\val it = gen();
-        \\val first = it.
-    ;
+    const valid_source = decls ++ "\nval it = " ++ call ++ ";";
+    const edit_source = valid_source ++ "\nval first = it.";
 
     var c = try h.compile(gpa, valid_source);
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // Cursor at end of `val first = it.` on line 2 (col 15).
-    const cursor = h.pos(2, 15);
+    const line: u32 = @intCast(std.mem.count(u8, edit_source, "\n"));
+    const cursor = h.pos(line, 15);
     const items = try engine.completion(gpa, edit_source, cursor, bindings);
     defer {
         for (items) |it| {
@@ -562,16 +562,25 @@ test "completion: iterator receiver offers next/iter/map" {
         }
         gpa.free(items);
     }
+    try snap.assertCompletion(gpa, slug, edit_source, cursor, items);
+}
 
-    var have_next = false;
-    var have_iter = false;
-    var have_map = false;
-    for (items) |it| {
-        if (std.mem.eql(u8, it.label, "next")) have_next = true;
-        if (std.mem.eql(u8, it.label, "iter")) have_iter = true;
-        if (std.mem.eql(u8, it.label, "map")) have_map = true;
-    }
-    try std.testing.expect(have_next and have_iter and have_map);
+test "completion: @Iterator receiver offers next" {
+    try wrapperReceiver("completion_receiver_iterator",
+        \\fn gen() -> @Iterator<i32> { yield 1; }
+    , "gen()");
+}
+
+test "completion: @Stream receiver offers next, map and then" {
+    try wrapperReceiver("completion_receiver_stream",
+        \\fn pulses() -> @Stream<i32> { yield 1; }
+    , "pulses()");
+}
+
+test "completion: @Task receiver offers map and then" {
+    try wrapperReceiver("completion_receiver_task",
+        \\fn load() -> @Task<i32> { return 1; }
+    , "load()");
 }
 
 // ── C-std — `list.` completes embedded std module members ─────────────────────

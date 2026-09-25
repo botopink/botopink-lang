@@ -138,23 +138,74 @@ test "hover: empty bindings returns null" {
     try snap.assertHover(gpa, "hover_empty_bindings", source, h.pos(0, 4), result);
 }
 
-// ── async / generators (#[@resultGenerator]) ────────────────────────────────────────
+// ── effect returns (decision 118: the return is the effect) ──────────────────
+//
+// The footer names what a caller unwraps from the wrapper the fn writes as its
+// return: `await`'s value for `@Task` / `@Component` (the `T` after the context
+// base), the `for` / `for await` item for `@Iterator` / `@Stream`. A `@Result`
+// return has no footer — it is consumed, not unwrapped.
 
-test "hover: star fn shows async marker and element type" {
+/// Compiles `source`, hovers the fn name at (`line`, `col`) and snapshots it.
+fn hoverSnap(slug: []const u8, source: []const u8, line: u32, col: u32) !void {
     const gpa = std.testing.allocator;
-    const source =
-        \\fn counter() -> @Iterator<i32> :gen { yield 1; }
-    ;
-
     var c = try h.compile(gpa, source);
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // 'counter' starts on the `fn` line (line 0) at col 3 (`fn ` prefix).
-    const result = try engine.hover(gpa, source, h.pos(0, 3), bindings);
+    const result = try engine.hover(gpa, source, h.pos(line, col), bindings);
     defer if (result) |hov| gpa.free(hov.contents.value);
 
-    try snap.assertHover(gpa, "hover_star_fn", source, h.pos(0, 3), result);
+    try snap.assertHover(gpa, slug, source, h.pos(line, col), result);
+}
+
+test "hover: @Iterator fn shows its for item type" {
+    try hoverSnap("hover_effect_iterator",
+        \\fn counter() -> @Iterator<i32> :gen { yield 1; }
+    , 0, 3);
+}
+
+test "hover: @Task<@Result<T, E>> fn shows the whole Result as the await value" {
+    try hoverSnap("hover_effect_task_result",
+        \\pub type User(id: i32, name: string);
+        \\fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
+        \\    if (id < 0) { throw "negative"; };
+        \\    return User(id: id, name: "ana");
+        \\}
+    , 1, 3);
+}
+
+test "hover: @Component<C, T> fn shows T, not the context base" {
+    try hoverSnap("hover_effect_component",
+        \\val Element = type implement @Context<Element> { }
+        \\fn state(initial: i32) -> @Component<Element, i32> {
+        \\    initial;
+        \\}
+    , 1, 3);
+}
+
+test "hover: @Stream fn shows its for await item type" {
+    try hoverSnap("hover_effect_stream",
+        \\fn pulses() -> @Stream<@Result<i32, string>> {
+        \\    yield 1;
+        \\    yield 2;
+        \\}
+    , 0, 3);
+}
+
+test "hover: @Iterator factory (no yield) still shows its item type" {
+    try hoverSnap("hover_effect_iterator_factory",
+        \\fn counter() -> @Iterator<i32> :gen { yield 1; }
+        \\fn fresh() -> @Iterator<i32> { return counter(); }
+    , 1, 3);
+}
+
+test "hover: @Result fn has no element footer" {
+    try hoverSnap("hover_effect_result",
+        \\fn parse(x: i32) -> @Result<i32, string> {
+        \\    if (x < 0) { throw "negative"; };
+        \\    return x;
+        \\}
+    , 0, 3);
 }
 
 // ── H-std — hover on a qualified std module member ────────────────────────────

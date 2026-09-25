@@ -254,14 +254,20 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
 
     try buf.appendSlice(gpa, "\n```");
 
-    // For an effect fn, surface the unwrapped element type produced by
-    // `await` / `yield` / iteration (the `T` of `@Task<T>` /
-    // `@Iterator<T>` / `@Stream<T>`).
-    if (b.decl == .@"fn" and b.decl.@"fn".effect != null) {
+    // For a fn whose written return is a Task or a sequence (decision 118:
+    // the return is the effect), surface what the caller unwraps from it —
+    // what `await` hands over, or what a `for` binds per item. Driven by the
+    // return, not `FnDecl.effect`: an `@Iterator` factory (decision 123) has
+    // no effect but its caller still iterates the same items.
+    if (b.decl == .@"fn") {
         if (b.decl.@"fn".returnType) |rt| {
             if (asyncItemTypeRef(rt)) |item| {
-                try buf.appendSlice(gpa, "\n\n---\n\n`await`/`yield` element type: `");
-                try appendTypeRef(gpa, &buf, item);
+                try buf.appendSlice(gpa, switch (item.kind) {
+                    .iterator => "\n\n---\n\n`for` item type: `",
+                    .stream => "\n\n---\n\n`for await` item type: `",
+                    else => "\n\n---\n\n`await` value type: `",
+                });
+                try appendTypeRef(gpa, &buf, item.type_);
                 try buf.appendSlice(gpa, "`");
             }
         }
@@ -379,19 +385,27 @@ fn getDeclDocComment(decl: ast.DeclKind) ?[]const u8 {
     };
 }
 
-/// The element type `T` of an async/sequence return type
-/// (`@Task<T>` / `@Iterator<T>` / `@Stream<T>`), or null.
-fn asyncItemTypeRef(tr: ast.TypeRef) ?ast.TypeRef {
-    return switch (tr) {
-        .generic => |g| if (g.is_builtin and g.args.len >= 1 and
-            (std.mem.eql(u8, g.name, "Task") or
-                std.mem.eql(u8, g.name, "Iterator") or
-                std.mem.eql(u8, g.name, "Stream")))
-            g.args[0]
-        else
-            null,
-        else => null,
+/// What a caller unwraps from an effect return, and the wrapper it came from.
+const AsyncItem = struct { kind: ast.EffectKind, type_: ast.TypeRef };
+
+/// The element type of an async/sequence return type, or null: the `T` of
+/// `@Task<T>` / `@Iterator<T>` / `@Stream<T>` and of `@Component<C, T>` (the
+/// value slot after the context base, decision 128). A `@Result` return has
+/// no element — it is consumed by `try` / `case`, not unwrapped — and with
+/// `@Task<@Result<U, E>>` the element is the whole `@Result<U, E>`: `await`
+/// hands the Result over and never propagates (decision 120).
+fn asyncItemTypeRef(tr: ast.TypeRef) ?AsyncItem {
+    if (tr != .generic) return null;
+    const g = tr.generic;
+    if (!g.is_builtin) return null;
+    const kind = ast.EffectKind.fromWrapperName(g.name) orelse return null;
+    const slot: usize = switch (kind) {
+        .result => return null,
+        .task, .iterator, .stream => 0,
+        .component => 1,
     };
+    if (g.args.len <= slot) return null;
+    return .{ .kind = kind, .type_ = g.args[slot] };
 }
 
 fn appendTypeRef(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), tr: ast.TypeRef) !void {
@@ -3474,8 +3488,6 @@ pub fn semanticTokens(
     var awaiting_fn_body = false; // params closed, the next `{` is the body
     var fn_body_depth: ?usize = null; // containers.len while inside that body
 
-    var in_attribute = false; // between `#[` and its `]`
-    var pending_effect_fn = false; // `#[@resultGenerator]` / `*` seen before a `fn`
 
     // Generic type parameters of the enclosing declaration (`fn q<T>(…)`,
     // `record Box<T> { … }`). A `T` in the signature or in the body names a
@@ -3599,25 +3611,6 @@ pub fn semanticTokens(
             else => {},
         }
 
-        // `#[ … ]` attribute block: `#[@resultGenerator]` & friends mark the *next*
-        // `fn` as an effect function.
-        if (tok.kind == .hash and i + 1 < tokens.len and tokens[i + 1].kind == .leftSquareBracket) {
-            in_attribute = true;
-        } else if (tok.kind == .rightSquareBracket and in_attribute) {
-            in_attribute = false;
-        }
-
-        // `*` immediately before `fn` is the effect marker of a `*fn`.
-        if (tok.kind == .star) {
-            if (nextSignificantKind(tokens, i) == .@"fn") {
-                try emitSem(arena, &out, tok, proto.SemanticTokenTypes.keyword, 0);
-                pending_effect_fn = true;
-            }
-            prev_kind = tok.kind;
-            saw_comptime = false;
-            continue;
-        }
-
         if (isKeywordKind(tok.kind)) {
             if (tok.kind == .@"fn") {
                 expect_fn_name = true;
@@ -3641,9 +3634,6 @@ pub fn semanticTokens(
         }
 
         if (tok.kind == .builtinIdent) {
-            // Decision 118 removed the effect annotations: an effect function
-            // is one whose return is an effect wrapper, which this token walk
-            // does not see (painting it is `11-tooling`'s, after front 24).
             // `@Name` (PascalCase) → builtin type; `@name` → builtin fn.
             const is_type = tok.lexeme.len >= 2 and std.ascii.isUpper(tok.lexeme[1]);
             const ty = if (is_type) proto.SemanticTokenTypes.type_ else proto.SemanticTokenTypes.function;
@@ -3659,8 +3649,13 @@ pub fn semanticTokens(
             const in_params = fn_param_depth != null and paren_depth == fn_param_depth.? + 1;
 
             // `true` / `false` are lexed as identifiers but are literals, not
-            // bindings — paint them like `null` (a keyword token kind).
-            if (std.mem.eql(u8, tok.lexeme, "true") or std.mem.eql(u8, tok.lexeme, "false")) {
+            // bindings — paint them like `null` (a keyword token kind). The
+            // contextual effect words (`async {`, `iter loop`, `stream for`,
+            // decisions 124/125) and a loop label (`for :outer`, `break :l`)
+            // paint the same way.
+            if (std.mem.eql(u8, tok.lexeme, "true") or std.mem.eql(u8, tok.lexeme, "false") or
+                isContextualKeywordAt(tokens, i) or isLabelAt(tokens, i))
+            {
                 try emitSem(arena, &out, tok, proto.SemanticTokenTypes.keyword, 0);
                 prev_kind = tok.kind;
                 saw_comptime = false;
@@ -3696,12 +3691,12 @@ pub fn semanticTokens(
                     else => proto.SemanticTokenTypes.function,
                 };
                 mods |= proto.SemanticTokenModifiers.declaration;
-                if (pending_effect_fn) mods |= proto.SemanticTokenModifiers.async;
-                pending_effect_fn = false;
+                if (fnReturnsEffectWrapper(tokens, i)) mods |= proto.SemanticTokenModifiers.async;
                 generic_pending = nk == .lessThan;
             } else if (awaiting_fn_body and pk == .colon) {
-                // `fn counter() -> @Iterator<i32> :gen { … }` — the trailing
-                // `:label` of an effect fn is syntax, not a binding.
+                // `fn counter() -> @Iterator<i32> :gen { … }` — the `:label`
+                // after a return names the fn's generator scope for
+                // `yield :gen v` / `break :gen v`; syntax, not a binding.
                 type_idx = proto.SemanticTokenTypes.keyword;
             } else if (pk == .val or pk == .record or pk == .@"enum" or pk == .interface or pk == .behavior or pk == .type) {
                 type_idx = lookupCategory(bindings, tok.lexeme) orelse switch (pk.?) {
@@ -4023,6 +4018,115 @@ fn nextSignificantKind(tokens: []const Token, i: usize) ?TokenKind {
     return null;
 }
 
+/// The significant (non-trivia) token before `i`, or null at the start.
+fn prevSignificantIndex(tokens: []const Token, i: usize) ?usize {
+    var j = i;
+    while (j > 0) {
+        j -= 1;
+        switch (tokens[j].kind) {
+            .endOfFile, .commentNormal, .commentDoc, .commentModule => continue,
+            else => return j,
+        }
+    }
+    return null;
+}
+
+/// The significant (non-trivia) token after `i`, or null at the end.
+fn nextSignificantIndex(tokens: []const Token, i: usize) ?usize {
+    var j = i + 1;
+    while (j < tokens.len) : (j += 1) {
+        switch (tokens[j].kind) {
+            .endOfFile, .commentNormal, .commentDoc, .commentModule => continue,
+            else => return j,
+        }
+    }
+    return null;
+}
+
+/// True when the identifier at `i` is one of the contextual effect words in
+/// the one position where it is a keyword: `async` right before `{` (the
+/// `async { … }` block, decision 124) and `iter` / `stream` right before
+/// `loop` / `while` / `for` (the prefixed loops, decision 125 — the parser's
+/// `genLoopPrefixAhead`). Anywhere else the word is an ordinary name:
+/// `g.iter()`, `val stream = 1`, `http.stream(…)`, `import {async} from "std"`
+/// and `async.allOf(…)` stay identifiers.
+fn isContextualKeywordAt(tokens: []const Token, i: usize) bool {
+    const word = tokens[i].lexeme;
+    if (prevSignificantIndex(tokens, i)) |p| {
+        // A member (`x.iter loop` never parses, but `x.async {` must not paint).
+        if (tokens[p].kind == .dot or tokens[p].kind == .questionDot) return false;
+    }
+    const nk = nextSignificantKind(tokens, i) orelse return false;
+    if (std.mem.eql(u8, word, "async")) return nk == .leftBrace;
+    if (std.mem.eql(u8, word, "iter") or std.mem.eql(u8, word, "stream"))
+        return nk == .loop or nk == .@"while" or nk == .@"for";
+    return false;
+}
+
+/// True when the identifier at `i` is a loop label — syntax, not a binding:
+/// a loop's own label (`loop :l {`, `while :w (…)`, `for :outer (…)`,
+/// `for await :l (…)`, and the same after an `iter` / `stream` prefix), and a
+/// jump's target (`break :l`, `continue :l`, `yield :l v`).
+fn isLabelAt(tokens: []const Token, i: usize) bool {
+    const colon = prevSignificantIndex(tokens, i) orelse return false;
+    if (tokens[colon].kind != .colon) return false;
+    const before = prevSignificantIndex(tokens, colon) orelse return false;
+    return switch (tokens[before].kind) {
+        .loop, .@"while", .@"for", .@"break", .@"continue", .yield => true,
+        // `for await :l (…)` — `await` then `:` only ever opens a label.
+        .await => true,
+        else => false,
+    };
+}
+
+/// True when the fn whose name token sits at `name_idx` writes an effect
+/// wrapper as its return (decision 118: the return IS the effect) — one of
+/// `@Result`, `@Task`, `@Component`, `@Iterator`, `@Stream`
+/// (`ast.EffectKind.fromWrapperName`), spelled with its `@` as the outermost
+/// type. This is what the `async` semantic-token modifier means: the fn's
+/// signature opens an effect (its body may `throw` / `await` / `use` /
+/// `yield`, and its caller receives a wrapped value). It reads the signature,
+/// not the body, so an `@Iterator` factory that never yields (decision 123)
+/// carries the modifier too; an alias to a wrapper (`-> Job<i32>`) does not.
+fn fnReturnsEffectWrapper(tokens: []const Token, name_idx: usize) bool {
+    var j = nextSignificantIndex(tokens, name_idx) orelse return false;
+    // Skip the generic parameter list `<T, U: Bound<X>>`.
+    if (tokens[j].kind == .lessThan) {
+        var depth: u32 = 0;
+        while (j < tokens.len) : (j += 1) {
+            switch (tokens[j].kind) {
+                .lessThan => depth += 1,
+                .greaterThan => {
+                    depth -= 1;
+                    if (depth == 0) break;
+                },
+                .endOfFile => return false,
+                else => {},
+            }
+        }
+        j = nextSignificantIndex(tokens, j) orelse return false;
+    }
+    if (tokens[j].kind != .leftParenthesis) return false;
+    var depth: u32 = 0;
+    while (j < tokens.len) : (j += 1) {
+        switch (tokens[j].kind) {
+            .leftParenthesis => depth += 1,
+            .rightParenthesis => {
+                depth -= 1;
+                if (depth == 0) break;
+            },
+            .endOfFile => return false,
+            else => {},
+        }
+    }
+    j = nextSignificantIndex(tokens, j) orelse return false;
+    if (tokens[j].kind != .rightArrow) return false;
+    j = nextSignificantIndex(tokens, j) orelse return false;
+    const rt = tokens[j];
+    if (rt.kind != .builtinIdent or rt.lexeme.len < 2) return false;
+    return ast.EffectKind.fromWrapperName(rt.lexeme[1..]) != null;
+}
+
 /// True for a name the checker registers as a built-in type — what semantic
 /// tokens paint `type [defaultLibrary]`.
 ///
@@ -4030,8 +4134,9 @@ fn nextSignificantKind(tokens: []const Token, i: usize) ?TokenKind {
 /// minus `Self` (a keyword token of its own). `char`, `byte` and `never` were
 /// painted here and are registered nowhere: the editor marked three words as
 /// standard-library types that no program can name. `any` stays because the
-/// checker still registers it (the unconstrained error channel of
-/// `@Future<T, E = any>`), even though decision 8 §2.5 gives the user no `any`.
+/// checker still registers it (the prelude's `getContext` answers
+/// `Component<T, any>`), even though decision 8 §2.5 gives the user no `any`;
+/// the error-channel default it once filled left with `@Future` (decision 120).
 /// `unknown` is decision 8 §2's type; front 06 registers it, and painting it
 /// early costs nothing — no other declaration may be called `unknown`.
 fn isPrimitiveType(name: []const u8) bool {
@@ -4726,16 +4831,17 @@ fn dotCompletion(
         if (t.* == .named) receiver_type_name = t.named.name;
         break;
     }
-    // Sequence receivers (`@Iterator` / `@Stream`) expose the iteration
-    // protocol: `next()`, `iter()` and `map()`.
+    // Effect-wrapper receivers expose the members the prelude declares for
+    // them (`libs/std/src/builtins.d.bp`, decisions 120/122/128): a sequence
+    // steps with `next()`; a Task — and, through the chain, a `@Stream` and a
+    // `@Component` — maps with `map()` / `then()`.
     if (receiver_type_name) |rtn| {
-        if (std.mem.eql(u8, rtn, "Iterator") or std.mem.eql(u8, rtn, "Stream")) {
-            const iter_methods = [_][]const u8{ "next", "iter", "map" };
-            for (iter_methods) |m| {
+        if (wrapperMembers(rtn)) |members| {
+            for (members) |m| {
                 try items.append(gpa, .{
-                    .label = try gpa.dupe(u8, m),
+                    .label = try gpa.dupe(u8, m.name),
                     .kind = proto.CompletionItemKind.Method,
-                    .detail = null,
+                    .detail = try gpa.dupe(u8, m.detail),
                 });
             }
             return items.toOwnedSlice(gpa);
@@ -4751,6 +4857,31 @@ fn dotCompletion(
     }
 
     return items.toOwnedSlice(gpa);
+}
+
+const WrapperMember = struct { name: []const u8, detail: []const u8 };
+
+const task_map_member: WrapperMember = .{ .name = "map", .detail = "fn map<R>(self: Self, transform: fn(value: T) -> R) -> Task<R>" };
+const task_then_member: WrapperMember = .{ .name = "then", .detail = "fn then<R>(self: Self, next: fn(value: T) -> Task<R>) -> Task<R>" };
+const iterator_members = [_]WrapperMember{
+    .{ .name = "next", .detail = "fn next(self: Self) -> YieldStep<T>" },
+};
+const stream_members = [_]WrapperMember{
+    .{ .name = "next", .detail = "fn next(self: Self) -> Task<YieldStep<T>>" },
+    task_map_member,
+    task_then_member,
+};
+const task_members = [_]WrapperMember{ task_map_member, task_then_member };
+
+/// The members `builtins.d.bp` declares on an effect wrapper, following its
+/// `extends` chain (`Stream<T> extends Task`, `Component<C, T> extends Task`),
+/// or null for a name that is not a wrapper with members. `@Result`'s methods
+/// come from its own behavior and are not listed here.
+fn wrapperMembers(type_name: []const u8) ?[]const WrapperMember {
+    if (std.mem.eql(u8, type_name, "Iterator")) return &iterator_members;
+    if (std.mem.eql(u8, type_name, "Stream")) return &stream_members;
+    if (std.mem.eql(u8, type_name, "Task") or std.mem.eql(u8, type_name, "Component")) return &task_members;
+    return null;
 }
 
 /// True when the file imports `module_name` from the "std" package, i.e. it

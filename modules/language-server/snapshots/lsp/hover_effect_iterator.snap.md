@@ -13,4 +13,4 @@ fn counter() -> @Iterator<i32> :gen
 
 ---
 
-`await`/`yield` element type: `i32`
+`for` item type: `i32`
