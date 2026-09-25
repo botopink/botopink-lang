@@ -58,7 +58,7 @@ pub const effect_wrapper_behind_alias: []const u8 = "effect-wrapper-behind-alias
 
 /// Decision 119 — a `return` whose value fits two layers of a nested wrapper
 /// (`-> @Result<@Result<i32, E>, E>`); asks for an explicit `Ok(…)`.
-/// Reserved: the refinement is deferred (front 24's priority order).
+
 pub const effect_return_ambiguous_nesting: []const u8 = "effect-return-ambiguous-nesting";
 
 /// Decision 121 — `throw` or bare `try` (the propagating form) in a body whose
@@ -77,7 +77,7 @@ pub const iter_await: []const u8 = "iter-await";
 pub const iter_mixed_yield_return: []const u8 = "iter-mixed-yield-return";
 
 /// Decisions 124 / 125 — two different `E`s in the body of `async { }` /
-/// `iter` / `stream`. Reserved: deferred with `async { }`.
+/// `iter` / `stream` whose `E` is inferred (`infer.zig` `unifyErrorChannel`).
 pub const gen_infer_conflicting_errors: []const u8 = "gen-infer-conflicting-errors";
 
 /// Front 20 F11 — `.expect(default)` on a `?T`. It was an alias of `unwrapOr`

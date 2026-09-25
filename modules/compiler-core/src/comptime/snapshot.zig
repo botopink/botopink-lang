@@ -1078,6 +1078,9 @@ pub fn renderTypeErrorBody(
                 "\n  expected: {s}\n  found:    {s}\n",
                 .{ try typeNameOf(tmp, m.expected), try typeNameOf(tmp, m.got) },
             ));
+            if (@import("./error.zig").TypeError.resultMismatchHint(m.expected, m.got)) |hint| {
+                try out.appendSlice(allocator, try std.fmt.allocPrint(tmp, "  hint: {s}\n", .{hint}));
+            }
         },
         .unboundVariable => |name| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(

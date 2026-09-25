@@ -8204,6 +8204,24 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     const isCatchForm = rv.* == .branch and rv.branch.kind == .tryCatch;
                     const isTryJump = rv.* == .jump and rv.jump.kind == .try_;
                     const passes = valuePassesThrough(env, valPtr.?.getType());
+                    // Decision 119 — a nested wrapper (`-> @Result<@Result<U, E>, E>`)
+                    // where a returned `@Result` fits both the value layer and the
+                    // `@Result` layer: which one is meant is not the compiler's to
+                    // guess.
+                    const looksWhole = blk: {
+                        const vt = valPtr.?.getType().deref();
+                        break :blk vt.* == .named and vt.named.args.len >= 1 and isResultType(vt.named.args[0]);
+                    };
+                    if (passes and !isTryJump and !isCatchForm and !looksWhole and isResultType(valPtr.?.getType())) {
+                        if (env.returnTarget) |target| if (isResultType(target)) {
+                            env.lastError = TypeError.custom(
+                                diagnostics.effect_return_ambiguous_nesting ++
+                                    ": this `@Result` fits two layers of the nested return — the value layer (wrapped `Ok(…)`) and the `@Result` layer (passed through)",
+                                "Say which: return the inner value and let `return` wrap it (`return try r;`), or bind the whole value with the declared type (`val w: @Result<@Result<U, E>, E> = …; return w;`) and return that.",
+                            ).withLoc(loc);
+                            return error.TypeError;
+                        };
+                    }
                     if (isTryJump) {
                         // `return try f()` — unwrap-then-rewrap is the identity;
                         // the transform returns `f()`'s Result directly.

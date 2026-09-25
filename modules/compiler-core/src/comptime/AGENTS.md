@@ -207,6 +207,20 @@ one: there is no implicit `try`. `for` over a `@Stream` is `for-over-stream`;
 `builtinMaxGenericArgs`) refuses a type argument past a builtin wrapper's
 declared arity; no effect wrapper declares a default any more.
 
+**Decision 119 — `effect-return-ambiguous-nesting`.** In a nested
+`-> @Result<@Result<U, E>, E>` (the value layer's `U` is itself a `@Result`), a
+returned `@Result` that is not the whole wrapper fits two layers — wrapped
+`Ok(…)`, or passed through — and is refused at the `return` rather than read one
+way (`looksWhole` tells the whole wrapper apart: its first argument is a
+`@Result`).
+
+**E3.9 — the hint of the migration's most common error.** A `typeMismatch` with
+a `@Result` on exactly one side renders `error.zig` `resultMismatchHint`: the
+value is a `@Result` where its `U` is expected — `try await t` for a Task,
+`try r` for a `for` item, or `case` / `catch` — and a value inferred as
+`@Result` became one from a `throw` / `try` in its own block. One text for the
+three sources; telling them apart needs the mismatch to carry its origin.
+
 **Decision 124 — `async { … }`.** The parser writes the block as a
 `.function` node with `syntax = .asyncBlock` and no parameters (a closure called
 in place). `inferAsyncBlock` types it `@Task<T>`: `T` from its `return`s (a

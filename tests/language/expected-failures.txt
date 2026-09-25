@@ -298,7 +298,6 @@ wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope)
 # ── "Old names that left" table (the maintainer's priority order) ────────────
 # `async { … }` (decision 124, E2/E3.6–E3.7/E5) is deferred: `async` is still an
 # identifier, so every cell that writes a block reads `async` as an unbound name.
-*        | reject/effect_return_ambiguous_nesting.bp | 24-effects-by-return (E3.3 refinement, deferred) | `-> @Result<@Result<i32, E>, E>` answers a plain type mismatch, not `effect-return-ambiguous-nesting` (the code is reserved in `comptime/diagnostics.zig`)
 # The host rows of decision 126 are deferred: a `@External.Node` declared
 # `-> @Task<@Result<T, E>>` is still called as a bare Promise, so a rejection is
 # not turned into `Error(e)` and the resolved raw value reaches a `case` as is.

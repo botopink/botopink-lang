@@ -345,6 +345,21 @@ pub const TypeError = struct {
         return .{ .kind = .{ .custom = .{ .message = msg, .hint = hint } } };
     }
 
+    /// Decisions 120–122 (front 24 E3.9) — the most common error of the
+    /// migration: a `@Result` used where its value is expected (`await t` now
+    /// answers the `@Result`, a `for` item over `@Iterator<@Result<…>>` is the
+    /// `@Result`, and an `async { }` / `iter` value became one from its own
+    /// `throw` / `try`). Null when the mismatch is not that one.
+    pub fn resultMismatchHint(expected: *T.Type, got: *T.Type) ?[]const u8 {
+        const e = expected.deref();
+        const g = got.deref();
+        const eIsResult = e.* == .named and std.mem.eql(u8, e.named.name, "Result");
+        const gIsResult = g.* == .named and std.mem.eql(u8, g.named.name, "Result");
+        if (eIsResult == gIsResult) return null;
+        if (e.* == .typeVar or g.* == .typeVar) return null;
+        return "a `@Result` stands where its value is expected: propagate it with `try` (`try await t` for a Task, `try r` for a `for` item) or handle it with `case` / `catch`; a value inferred as `@Result` became one from a `throw` / `try` in its own block";
+    }
+
     /// Render a concise, human-readable message for this error. Caller owns the
     /// returned slice. Used by `botopink check` and the language server.
     pub fn message(this: TypeError, gpa: std.mem.Allocator) ![]u8 {
@@ -357,6 +372,8 @@ pub const TypeError = struct {
                 defer gpa.free(expected);
                 const got = try typeLabelAlloc(gpa, m.got);
                 defer gpa.free(got);
+                if (resultMismatchHint(m.expected, m.got)) |hint|
+                    break :blk std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s} — {s}", .{ expected, got, hint });
                 break :blk std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s}", .{ expected, got });
             },
             .unboundVariable => |n| std.fmt.allocPrint(gpa, "unbound variable '{s}'", .{n}),
