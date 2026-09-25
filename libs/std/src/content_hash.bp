@@ -1,0 +1,75 @@
+//// std/content_hash — stable hashes for cache keys, ETags and asset
+//// fingerprints (1.0.10-beta `01-std` front 03).
+////
+//// Reference:
+////   RFC 9110 § 8.8.3 — https://www.rfc-editor.org/rfc/rfc9110#field.etag
+////   Next.js caching  — https://nextjs.org/docs/app/getting-started/caching
+////   Erlang           — https://www.erlang.org/doc/apps/crypto/crypto.html#hash/2
+////
+//// This file is the content-hash half of `hash.bp` (decision 106): it lands
+//// flat as `content_hash.bp` and `00-compiler-carry-over/23-std-purity` folds
+//// it under the digests of `crypto.bp` once fronts 01/02/03 have merged. A
+//// std module cannot import another today, so `strongHash` carries its own
+//// SHA-256 cell rather than calling `crypto.sha256`; the truncation lives in
+//// the template.
+////
+//// TWO hashes, and the choice is not a matter of taste. `contentHash` is a
+//// djb2 fold rendered as lowercase hex: fast, stable across both targets,
+//// and TRIVIAL TO COLLIDE ON PURPOSE. Use it when a collision costs a wrong
+//// cache hit you control — an asset filename, an internal fingerprint.
+//// `strongHash` is SHA-256 truncated to 32 hex characters. Use it whenever
+//// the hashed value came from outside: a request header, a client-supplied
+//// tag, a key that spans a user boundary.
+////
+//// The `contentHash` templates are lifted verbatim from
+//// `repository/emilia/modules/emilia/src/emilia.bp` (`hashHex`), where they
+//// were tuned until both targets agreed byte-for-byte; only the `__`-prefixed
+//// variable names differ. Astral characters diverge (one codepoint on
+//// Erlang, two UTF-16 units in JS) — the same caveat emilia carries.
+//// `emilia.hashHex` is therefore a duplicate of `contentHash` now; collapsing
+//// it onto std is a later, `emilia`-owned change — this milestone is additive
+//// only.
+
+// ── content hashes ───────────────────────────────────────────────────────────
+
+#[@External.Node("""(function(__S){ var __H = 5381; for (var __I = 0; __I < __S.length; __I++) { __H = (Math.imul(__H, 33) + __S.charCodeAt(__I)) >>> 0; } return __H.toString(16); })($0)""")]
+#[@External.Erlang("""(fun(__S) -> __H = lists:foldl(fun(__C, __A) -> (__A * 33 + __C) band 16#FFFFFFFF end, 5381, unicode:characters_to_list(__S)), list_to_binary(string:lowercase(integer_to_list(__H, 16))) end)($0)""")]
+pub declare fn contentHash(value: string) -> string;
+
+#[@External.Node("""require('crypto').createHash('sha256').update($0).digest('hex').slice(0, 32)""")]
+#[@External.Erlang("""binary:part(string:lowercase(binary:encode_hex(crypto:hash(sha256, $0))), 0, 32)""")]
+pub declare fn strongHash(value: string) -> string;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+//
+// Every expected hex below is a LITERAL, not a second call: a literal is the
+// only form that catches the two targets drifting apart.
+
+test "content_hash.contentHash of 'hello' is the pinned djb2 hex on both targets" {
+    assert contentHash("hello") == "f923099";
+}
+
+test "content_hash.contentHash is stable within a process" {
+    val a = contentHash("hello");
+    val b = contentHash("hello");
+    assert a == b;
+}
+
+test "content_hash.contentHash differs between 'hello' and 'world'" {
+    assert contentHash("world") == "10a7356d";
+    assert contentHash("hello") != contentHash("world");
+}
+
+test "content_hash.contentHash of the empty string is djb2's seed, not empty" {
+    assert contentHash("") == "1505";
+}
+
+test "content_hash.strongHash of the empty string is the truncated empty SHA-256" {
+    val h = strongHash("");
+    assert h == "e3b0c44298fc1c149afbf4c8996fb924";
+    assert h.length == 32;
+}
+
+test "content_hash.strongHash of 'hello' is the pinned truncated SHA-256" {
+    assert strongHash("hello") == "2cf24dba5fb0a30e26e83b2ac5b9e29e";
+}

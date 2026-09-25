@@ -28,6 +28,7 @@ std/
     ├── math.bp  asserts.bp  path.bp  random.bp  querystring.bp  time.bp  url.bp
     ├── base64.bp  unicode.bp  process.bp  os.bp  env.bp  crypto.bp  regex.bp
     ├── erlang.bp  json.bp  fs.bp  http.bp  snapshots.bp  mocks.bp
+    ├── content_hash.bp      ← the content-hash half of the future `hash.bp` (1.0.10-beta `01-std` front 03); front 23 folds it into `hash.bp` with `crypto.bp`
     ├── __snapshots__/<suite>/<slug>.snap  ← recorded by `snapshots` from the inline tests (decision 72); a `.snap.new` beside one is a candidate a person reviews and renames
     └── sidecars/random.mjs  ← Mulberry32 PRNG used by `random` (the only sidecar: `mocks` keeps its tables on `globalThis`, not in a `.mjs`)
 ```
@@ -58,6 +59,7 @@ std/
 | `os` | `hostname`, `arch`, `cpuCount`, `tmpdir`, `userInfo` (`type UserInfo`), `eol` |
 | `env` | `read`, `write`, `clear`, `args`, `vars` (`get`/`set` are keywords) |
 | `crypto` | `sha256`, `sha512`, `md5`, `hmacSha256`, `randomBytes` (hex strings) |
+| `content_hash` | The content-hash half of `hash.bp` (1.0.10-beta `01-std` front 03, decision 106; lands flat, `00 · 23-std-purity` folds it into `hash.bp`): `contentHash` (djb2 as lowercase hex, the `emilia.hashHex` templates verbatim — fast, trivially collidable, for filenames and internal keys) and `strongHash` (SHA-256 truncated to 32 hex, for input the caller did not choose). Both are `declare fn` with a Node and an Erlang cell — no bitwise operators or `toString(radix)` in the language, so the fold lives in the template and neither runs on beam or wasm. Every expected hex in the inline tests is a literal, which is what pins the two targets to each other. `emilia.hashHex` is a duplicate now; collapsing it is a later, `emilia`-owned change |
 | `regex` | `matches`, `replace`, `replaceAll`, `splitOn`, `type Match`, `match`, `matchAll` |
 | `erlang` | Erlang BIF bindings (`abs`, `element`, `spawn`, `send`, …); the erlang codegen reads this file to know which names are BIFs |
 | `json` | `parse`, `stringify` (validate + canonical re-encode, `@Result<string, string>`) |
