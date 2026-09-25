@@ -170,7 +170,12 @@ codegen/
   number, `string`/`bool` the primitive, a tuple an array of the right arity
   with each element tested, `?T` null-or-`T`, an array its constructor only
   (§4.2 — an element type is not checkable), and a **named type** an
-  `instanceof`, free under decision 5. The subject is bound in an arrow
+  `instanceof`, free under decision 5. A **variant path** (`x is Token.Text`)
+  is `(_v instanceof Token && _v.tag === "Text")` when `Token` is an enum this
+  module declares with that variant or imports by name, and `(_v != null &&
+  _v.tag === "Text")` for any other path — `Token.Text` is a factory and
+  `Token.Eof` a singleton, never a class, so the written `instanceof` threw
+  `TypeError`. The subject is bound in an arrow
   (`((_v) => …)(x)`) only when the test reads it more than once, so a call on
   the left is evaluated once. An unrecognised spelling answers `false`. The
   parser synthesises this as the `is` builtin call with the type on `isType`
