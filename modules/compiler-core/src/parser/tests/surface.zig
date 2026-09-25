@@ -49,19 +49,9 @@ fn onlyBehavior(parsed: Parsed) !ast.BehaviorDecl {
     return parsed.program.decls[0].behavior;
 }
 
-/// The parse fails with `kind`, located at `line:col` (1-based).
-fn expectError(src: []const u8, kind: ParseErrorType, line: usize, col: usize) !void {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const a = arena.allocator();
-    var l = lexerMod.Lexer.init(src);
-    const tokens = try l.scanAll(a);
-    var p = parserMod.Parser.initWithSource(tokens, src);
-    if (p.parse(a)) |_| return error.TestExpectedParseError else |_| {}
-    const pe = p.parseError orelse return error.TestParseErrorInfoMissing;
-    try std.testing.expectEqual(kind, pe.kind);
-    try std.testing.expectEqual([2]usize{ line, col }, [2]usize{ pe.line, pe.col });
-}
+/// The parse fails with `kind`, located at `line:col` (1-based) — the shared
+/// harness `helpers.expectErrorAt`.
+const expectError = @import("helpers.zig").expectErrorAt;
 
 // ── type: shape resolution ────────────────────────────────────────────────────
 
