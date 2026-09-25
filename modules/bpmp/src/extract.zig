@@ -14,6 +14,10 @@
 /// `std.compress.flate.Decompress` (gzip container) then `std.tar.extract`;
 /// `extractZip` opens the file and hands its reader to `std.zip.extract`.
 const std = @import("std");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 pub const Error = error{
     NotImplemented,
@@ -179,32 +183,31 @@ test "stripLeadingDir: preserves nested paths after first strip" {
 }
 
 test "extractTarGz: round-trips a tarball produced from this tree" {
-    const dir = ".botopinkbuild/bpmp-tests/extract-tar";
+    const dir = test_scratch.path(testing.io, "bpmp-tests/extract-tar");
     std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     try std.Io.Dir.cwd().createDirPath(testing.io, dir);
 
     // Stage `<dir>/src/repo-abc/{a.txt,sub/b.txt}` and tar it up with the
     // single top-level `repo-abc/` — the conventional GitHub layout.
-    const src_root = dir ++ "/src/repo-abc";
-    try std.Io.Dir.cwd().createDirPath(testing.io, src_root ++ "/sub");
+    try std.Io.Dir.cwd().createDirPath(testing.io, test_scratch.path(testing.io, "bpmp-tests/extract-tar/src/repo-abc/sub"));
     try std.Io.Dir.cwd().writeFile(testing.io, .{
-        .sub_path = src_root ++ "/a.txt",
+        .sub_path = test_scratch.path(testing.io, "bpmp-tests/extract-tar/src/repo-abc/a.txt"),
         .data = "alpha\n",
     });
     try std.Io.Dir.cwd().writeFile(testing.io, .{
-        .sub_path = src_root ++ "/sub/b.txt",
+        .sub_path = test_scratch.path(testing.io, "bpmp-tests/extract-tar/src/repo-abc/sub/b.txt"),
         .data = "beta\n",
     });
 
-    const tar_path = dir ++ "/in.tar.gz";
+    const tar_path = test_scratch.path(testing.io, "bpmp-tests/extract-tar/in.tar.gz");
 
     // Use the system `tar` to produce a known-good gzip-tar. Skip the test
     // if `tar` isn't on PATH (Windows CI under MSYS+Zig has it; bare Windows
     // PowerShell does not — the GitHub-Actions runners are POSIX).
     const run_result = std.process.run(testing.allocator, testing.io, .{
         .argv = &.{ "tar", "-czf", "../in.tar.gz", "repo-abc" },
-        .cwd = .{ .path = dir ++ "/src" },
+        .cwd = .{ .path = test_scratch.path(testing.io, "bpmp-tests/extract-tar/src") },
     }) catch |err| switch (err) {
         error.FileNotFound => return error.SkipZigTest,
         else => return err,
@@ -217,12 +220,12 @@ test "extractTarGz: round-trips a tarball produced from this tree" {
     }
 
     // Extract into a fresh dir and assert the strip-leading-dir contract.
-    const out = dir ++ "/out";
+    const out = test_scratch.path(testing.io, "bpmp-tests/extract-tar/out");
     try extractTarGz(testing.allocator, testing.io, tar_path, out, .{ .strip_components = 1 });
 
     const got_a = try std.Io.Dir.cwd().readFileAlloc(
         testing.io,
-        out ++ "/a.txt",
+        test_scratch.path(testing.io, "bpmp-tests/extract-tar/out/a.txt"),
         testing.allocator,
         .unlimited,
     );
@@ -231,7 +234,7 @@ test "extractTarGz: round-trips a tarball produced from this tree" {
 
     const got_b = try std.Io.Dir.cwd().readFileAlloc(
         testing.io,
-        out ++ "/sub/b.txt",
+        test_scratch.path(testing.io, "bpmp-tests/extract-tar/out/sub/b.txt"),
         testing.allocator,
         .unlimited,
     );

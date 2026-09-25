@@ -286,15 +286,35 @@ fn cacheRead(allocator: std.mem.Allocator, io: anytype, key: []const u8) ?[]u8 {
 
 /// Write a cache entry (best-effort: a failed write just means the next
 /// run pays the spawn again).
+///
+/// **Staged and renamed, never written in place.** The path is content-keyed,
+/// so two writers of one key write the same bytes — but they share this cwd
+/// (parallel tests, two `zig build test` processes over one checkout), and a
+/// plain truncate-and-write is not one step. A reader arriving mid-write saw a
+/// SHORT entry that still began `OK:`, and `cacheRead` accepts it: a truncated
+/// tail came back as the program's output and nothing said so. A rename is
+/// atomic, so a reader sees the old entry or the whole new one. The staging
+/// name carries 64 random bits, so two writers never stage over each other
+/// either. Same shape as `comptime/template_eval.zig`'s `writeModule`, which
+/// stages precisely against this.
 fn cacheWrite(io: anytype, allocator: std.mem.Allocator, key: []const u8, output: []const u8) void {
-    std.Io.Dir.cwd().createDirPath(io, CACHE_ROOT) catch return;
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDirPath(io, CACHE_ROOT) catch return;
     var path_buf: [128]u8 = undefined;
     const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ CACHE_ROOT, key }) catch return;
+    var nonce: [8]u8 = undefined;
+    io.random(&nonce);
+    var staging_buf: [160]u8 = undefined;
+    const staging = std.fmt.bufPrint(&staging_buf, "{s}.{x}.tmp", .{ path, std.mem.readInt(u64, &nonce, .little) }) catch return;
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     defer buf.deinit(allocator);
     buf.appendSlice(allocator, "OK:") catch return;
     buf.appendSlice(allocator, output) catch return;
-    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = buf.items }) catch return;
+    cwd.writeFile(io, .{ .sub_path = staging, .data = buf.items }) catch return;
+    cwd.rename(staging, cwd, path, io) catch {
+        cwd.deleteFile(io, staging) catch {};
+        return;
+    };
 }
 
 /// Tests may run concurrently (and several test binaries share this cwd), so

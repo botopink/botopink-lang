@@ -23,6 +23,10 @@ const bp = @import("botopink");
 const manifest = @import("manifest");
 const config = @import("./config.zig");
 const diagnostics = @import("./diagnostics.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 const Module = bp.Module;
 const DepEntry = config.DepEntry;
@@ -1078,35 +1082,34 @@ test "resolveLibRoots: repository workspace yields [bundled libs, repository]" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/roots-repo/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-repo") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-repo") catch {};
-    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/std/botopink.json", "{}");
-    try writeFileP(io, ws ++ "/repository/rakun/botopink.json", "{}");
+    test_scratch.remove(io, "roots-repo");
+    defer test_scratch.remove(io, "roots-repo");
+    try writeFileP(io, test_scratch.path(io, "roots-repo/ws/repository/botopink-lang/libs/std/botopink.json"), "{}");
+    try writeFileP(io, test_scratch.path(io, "roots-repo/ws/repository/rakun/botopink.json"), "{}");
 
     // A consumer under repository/rakun resolves up to `ws`, where both roots fire.
-    const roots = try rootsFrom(gpa, io, &.{}, ws ++ "/repository/rakun");
+    const roots = try rootsFrom(gpa, io, &.{}, test_scratch.path(io, "roots-repo/ws/repository/rakun"));
     defer freeRoots(gpa, roots);
 
     try std.testing.expectEqual(@as(usize, 2), roots.len);
-    try std.testing.expectEqualStrings(ws ++ "/repository/botopink-lang/libs", roots[0]);
-    try std.testing.expectEqualStrings(ws ++ "/repository", roots[1]);
+    try std.testing.expectEqualStrings(test_scratch.path(io, "roots-repo/ws/repository/botopink-lang/libs"), roots[0]);
+    try std.testing.expectEqualStrings(test_scratch.path(io, "roots-repo/ws/repository"), roots[1]);
 }
 
 test "resolveLibRoots: flat libs/ tree yields a single legacy root" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/roots-flat/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-flat") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-flat") catch {};
-    try writeFileP(io, ws ++ "/libs/std/botopink.json", "{}");
+    const ws = test_scratch.path(io, "roots-flat/ws");
+    test_scratch.remove(io, "roots-flat");
+    defer test_scratch.remove(io, "roots-flat");
+    try writeFileP(io, test_scratch.path(io, "roots-flat/ws/libs/std/botopink.json"), "{}");
 
     const roots = try rootsFrom(gpa, io, &.{}, ws);
     defer freeRoots(gpa, roots);
 
     try std.testing.expectEqual(@as(usize, 1), roots.len);
-    try std.testing.expectEqualStrings(ws ++ "/libs", roots[0]);
+    try std.testing.expectEqualStrings(test_scratch.path(io, "roots-flat/ws/libs"), roots[0]);
 }
 
 // ── BOTOPINK_LIB_ROOTS env-hook tests ──────────────────────────────────────────
@@ -1151,55 +1154,54 @@ test "rootsFrom: env entries prepend before walk-up roots" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/roots-env/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-env") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-env") catch {};
-    try writeFileP(io, ws ++ "/store/erika/botopink.json", "{}");
-    try writeFileP(io, ws ++ "/repository/rakun/botopink.json", "{}");
+    test_scratch.remove(io, "roots-env");
+    defer test_scratch.remove(io, "roots-env");
+    try writeFileP(io, test_scratch.path(io, "roots-env/ws/store/erika/botopink.json"), "{}");
+    try writeFileP(io, test_scratch.path(io, "roots-env/ws/repository/rakun/botopink.json"), "{}");
 
-    const env_roots = [_][]const u8{ws ++ "/store"};
-    const roots = try rootsFrom(gpa, io, &env_roots, ws ++ "/repository/rakun");
+    const env_roots = [_][]const u8{test_scratch.path(io, "roots-env/ws/store")};
+    const roots = try rootsFrom(gpa, io, &env_roots, test_scratch.path(io, "roots-env/ws/repository/rakun"));
     defer freeRoots(gpa, roots);
 
     try std.testing.expectEqual(@as(usize, 2), roots.len);
-    try std.testing.expectEqualStrings(ws ++ "/store", roots[0]);
-    try std.testing.expectEqualStrings(ws ++ "/repository", roots[1]);
+    try std.testing.expectEqualStrings(test_scratch.path(io, "roots-env/ws/store"), roots[0]);
+    try std.testing.expectEqualStrings(test_scratch.path(io, "roots-env/ws/repository"), roots[1]);
 }
 
 test "rootsFrom: non-existent env entry is silently dropped" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/roots-envmiss/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-envmiss") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-envmiss") catch {};
-    try writeFileP(io, ws ++ "/libs/std/botopink.json", "{}");
+    const ws = test_scratch.path(io, "roots-envmiss/ws");
+    test_scratch.remove(io, "roots-envmiss");
+    defer test_scratch.remove(io, "roots-envmiss");
+    try writeFileP(io, test_scratch.path(io, "roots-envmiss/ws/libs/std/botopink.json"), "{}");
 
-    const env_roots = [_][]const u8{".botopinkbuild/roots-envmiss/nope"};
+    const env_roots = [_][]const u8{test_scratch.path(io, "roots-envmiss/nope")};
     const roots = try rootsFrom(gpa, io, &env_roots, ws);
     defer freeRoots(gpa, roots);
 
     // Env entry dropped silently; only the walk-up `libs/` root fires.
     try std.testing.expectEqual(@as(usize, 1), roots.len);
-    try std.testing.expectEqualStrings(ws ++ "/libs", roots[0]);
+    try std.testing.expectEqualStrings(test_scratch.path(io, "roots-envmiss/ws/libs"), roots[0]);
 }
 
 test "rootsFrom: env entry duplicating a walk-up root de-dups env-first" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/roots-envdup/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-envdup") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-envdup") catch {};
-    try writeFileP(io, ws ++ "/libs/std/botopink.json", "{}");
+    const ws = test_scratch.path(io, "roots-envdup/ws");
+    test_scratch.remove(io, "roots-envdup");
+    defer test_scratch.remove(io, "roots-envdup");
+    try writeFileP(io, test_scratch.path(io, "roots-envdup/ws/libs/std/botopink.json"), "{}");
 
-    const env_roots = [_][]const u8{ws ++ "/libs"};
+    const env_roots = [_][]const u8{test_scratch.path(io, "roots-envdup/ws/libs")};
     const roots = try rootsFrom(gpa, io, &env_roots, ws);
     defer freeRoots(gpa, roots);
 
     // The walk-up duplicate is skipped — env copy wins, kept first.
     try std.testing.expectEqual(@as(usize, 1), roots.len);
-    try std.testing.expectEqualStrings(ws ++ "/libs", roots[0]);
+    try std.testing.expectEqualStrings(test_scratch.path(io, "roots-envdup/ws/libs"), roots[0]);
 }
 
 test "parseEnvRoots: null env_map → empty slice (byte-identical to unset)" {
@@ -1253,26 +1255,25 @@ test "loadOne: std resolves from the bundled root, rakun from the sibling root; 
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/loadone/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone") catch {};
+    test_scratch.remove(io, "loadone");
+    defer test_scratch.remove(io, "loadone");
     // `std` is the bundled lib (`libs/std`); `rakun` is a sibling project.
-    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/std/botopink.json",
+    try writeFileP(io, test_scratch.path(io, "loadone/ws/repository/botopink-lang/libs/std/botopink.json"),
         \\{ "name": "std", "src": "src/", "files": ["math.bp"] }
     );
-    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/std/src/math.bp",
+    try writeFileP(io, test_scratch.path(io, "loadone/ws/repository/botopink-lang/libs/std/src/math.bp"),
         \\pub fn abs() {}
     );
-    try writeFileP(io, ws ++ "/repository/rakun/botopink.json",
+    try writeFileP(io, test_scratch.path(io, "loadone/ws/repository/rakun/botopink.json"),
         \\{ "name": "rakun", "src": "src/", "files": ["rakun.bp"] }
     );
-    try writeFileP(io, ws ++ "/repository/rakun/src/rakun.bp",
+    try writeFileP(io, test_scratch.path(io, "loadone/ws/repository/rakun/src/rakun.bp"),
         \\pub fn run() {}
     );
 
     const roots = [_][]const u8{
-        ws ++ "/repository/botopink-lang/libs",
-        ws ++ "/repository",
+        test_scratch.path(io, "loadone/ws/repository/botopink-lang/libs"),
+        test_scratch.path(io, "loadone/ws/repository"),
     };
 
     var out: std.ArrayListUnmanaged(Module) = .empty;
@@ -1299,19 +1300,18 @@ test "loadOne: a workspace member resolves by its manifest name through the umbr
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/loadone-ws/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone-ws") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone-ws") catch {};
-    try writeFileP(io, ws ++ "/repository/rakun/botopink.json",
+    test_scratch.remove(io, "loadone-ws");
+    defer test_scratch.remove(io, "loadone-ws");
+    try writeFileP(io, test_scratch.path(io, "loadone-ws/ws/repository/rakun/botopink.json"),
         \\{ "name": "rakun", "workspaces": ["modules/*"] }
     );
-    try writeFileP(io, ws ++ "/repository/rakun/modules/rakun-web/botopink.json",
+    try writeFileP(io, test_scratch.path(io, "loadone-ws/ws/repository/rakun/modules/rakun-web/botopink.json"),
         \\{ "name": "rakun-web", "files": ["root.bp"] }
     );
-    try writeFileP(io, ws ++ "/repository/rakun/modules/rakun-web/src/root.bp",
+    try writeFileP(io, test_scratch.path(io, "loadone-ws/ws/repository/rakun/modules/rakun-web/src/root.bp"),
         \\pub fn serve() {}
     );
-    const roots = [_][]const u8{ws ++ "/repository"};
+    const roots = [_][]const u8{test_scratch.path(io, "loadone-ws/ws/repository")};
 
     var out: std.ArrayListUnmanaged(Module) = .empty;
     defer {
@@ -1331,17 +1331,16 @@ test "loadOne: a files entry that does not exist is LibFileNotFound, located in 
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/loadone-missing/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone-missing") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone-missing") catch {};
-    try writeFileP(io, ws ++ "/repository/rakun/botopink.json",
+    test_scratch.remove(io, "loadone-missing");
+    defer test_scratch.remove(io, "loadone-missing");
+    try writeFileP(io, test_scratch.path(io, "loadone-missing/ws/repository/rakun/botopink.json"),
         \\{ "name": "rakun", "src": "src/",
         \\  "files": ["rakun.bp", "gone.bp"] }
     );
-    try writeFileP(io, ws ++ "/repository/rakun/src/rakun.bp",
+    try writeFileP(io, test_scratch.path(io, "loadone-missing/ws/repository/rakun/src/rakun.bp"),
         \\pub fn run() {}
     );
-    const roots = [_][]const u8{ws ++ "/repository"};
+    const roots = [_][]const u8{test_scratch.path(io, "loadone-missing/ws/repository")};
 
     var out: std.ArrayListUnmanaged(Module) = .empty;
     defer {
@@ -1359,21 +1358,20 @@ test "rootsFrom: an ancestor workspace is a root, nearest-first" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/roots-ws/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-ws") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-ws") catch {};
-    try writeFileP(io, ws ++ "/repository/rakun/botopink.json",
+    test_scratch.remove(io, "roots-ws");
+    defer test_scratch.remove(io, "roots-ws");
+    try writeFileP(io, test_scratch.path(io, "roots-ws/ws/repository/rakun/botopink.json"),
         \\{ "name": "rakun", "workspaces": ["modules/*"] }
     );
-    try writeFileP(io, ws ++ "/repository/rakun/modules/rakun-web/botopink.json",
+    try writeFileP(io, test_scratch.path(io, "roots-ws/ws/repository/rakun/modules/rakun-web/botopink.json"),
         \\{ "name": "rakun-web", "files": ["root.bp"] }
     );
 
-    const roots = try rootsFrom(gpa, io, &.{}, ws ++ "/repository/rakun/modules/rakun-web");
+    const roots = try rootsFrom(gpa, io, &.{}, test_scratch.path(io, "roots-ws/ws/repository/rakun/modules/rakun-web"));
     defer freeRoots(gpa, roots);
     try std.testing.expectEqual(@as(usize, 2), roots.len);
-    try std.testing.expectEqualStrings(ws ++ "/repository/rakun", roots[0]);
-    try std.testing.expectEqualStrings(ws ++ "/repository", roots[1]);
+    try std.testing.expectEqualStrings(test_scratch.path(io, "roots-ws/ws/repository/rakun"), roots[0]);
+    try std.testing.expectEqualStrings(test_scratch.path(io, "roots-ws/ws/repository"), roots[1]);
 }
 
 test "renderMissingFile names the path it looked for and the manifest entry" {

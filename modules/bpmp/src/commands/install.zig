@@ -19,6 +19,10 @@ const lockfile = @import("../lockfile.zig");
 const storage = @import("../storage.zig");
 const semver = @import("../semver.zig");
 const dep_spec = @import("../dep/spec.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 const dep_clone = @import("../dep/clone.zig");
 const dep_resolver = @import("../dep/resolver.zig");
 const dep_lock = @import("../lock.zig");
@@ -565,35 +569,35 @@ fn makeFixtureRepo(gpa: std.mem.Allocator, repo: []const u8) !void {
 }
 
 test "ensureSymlink: a missing target is refused and leaves no link" {
-    const dir = ".botopinkbuild/bpmp-tests/install-symlink-missing";
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-symlink-missing");
     resetDir(dir);
     defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
-    const link = dir ++ "/deps/x";
-    try testing.expectError(error.SymlinkTargetMissing, ensureSymlink(testing.io, dir ++ "/store/x/nope", link));
+    const link = test_scratch.path(testing.io, "bpmp-tests/install-symlink-missing/deps/x");
+    try testing.expectError(error.SymlinkTargetMissing, ensureSymlink(testing.io, test_scratch.path(testing.io, "bpmp-tests/install-symlink-missing/store/x/nope"), link));
     try testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(testing.io, link, .{}));
 }
 
 test "ensureSymlink: an existing target is linked, replacing the old link" {
     const gpa = testing.allocator;
-    const dir = ".botopinkbuild/bpmp-tests/install-symlink-replace";
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace");
     resetDir(dir);
     defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
-    try std.Io.Dir.cwd().createDirPath(testing.io, dir ++ "/store/a");
-    try std.Io.Dir.cwd().createDirPath(testing.io, dir ++ "/store/b");
-    try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = dir ++ "/store/b/marker", .data = "b" });
-    const a_abs = try absTestPath(gpa, dir ++ "/store/a");
+    try std.Io.Dir.cwd().createDirPath(testing.io, test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/store/a"));
+    try std.Io.Dir.cwd().createDirPath(testing.io, test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/store/b"));
+    try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/store/b/marker"), .data = "b" });
+    const a_abs = try absTestPath(gpa, test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/store/a"));
     defer gpa.free(a_abs);
-    const b_abs = try absTestPath(gpa, dir ++ "/store/b");
+    const b_abs = try absTestPath(gpa, test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/store/b"));
     defer gpa.free(b_abs);
 
-    const link = dir ++ "/deps/x";
+    const link = test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/deps/x");
     try ensureSymlink(testing.io, a_abs, link);
     try ensureSymlink(testing.io, b_abs, link);
-    try std.Io.Dir.cwd().access(testing.io, link ++ "/marker", .{});
+    try std.Io.Dir.cwd().access(testing.io, test_scratch.path(testing.io, "bpmp-tests/install-symlink-replace/deps/x/marker"), .{});
 }
 
 test "install --frozen against an empty store fails before any symlink" {
-    const dir = ".botopinkbuild/bpmp-tests/install-frozen-empty-store";
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-frozen-empty-store");
     resetDir(dir);
     defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     const rev = "0123456789abcdef0123456789abcdef01234567";
@@ -602,21 +606,21 @@ test "install --frozen against an empty store fails before any symlink" {
         .spec = .{ .git = "https://e/j.git", .ref = .{ .rev = rev } },
     }};
     var failed: []const u8 = "";
-    const r = dep_resolver.plan(testing.allocator, testing.io, &entries, dir ++ "/store", .{
+    const r = dep_resolver.plan(testing.allocator, testing.io, &entries, test_scratch.path(testing.io, "bpmp-tests/install-frozen-empty-store/store"), .{
         .frozen = true,
         .failed_name = &failed,
     });
     try testing.expectError(dep_resolver.Error.FrozenStoreMiss, r);
     try testing.expectEqualStrings("j", failed);
-    try testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(testing.io, dir ++ "/deps", .{}));
+    try testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(testing.io, test_scratch.path(testing.io, "bpmp-tests/install-frozen-empty-store/deps"), .{}));
 }
 
 test "first install of a branch: dep checks out that branch, not default HEAD" {
     const gpa = testing.allocator;
-    const dir = ".botopinkbuild/bpmp-tests/install-clone-branch";
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-clone-branch");
     resetDir(dir);
     defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
-    const repo = dir ++ "/repo";
+    const repo = test_scratch.path(testing.io, "bpmp-tests/install-clone-branch/repo");
     try makeFixtureRepo(gpa, repo);
     const main_rev = try gitHead(gpa, repo, "main");
     defer gpa.free(main_rev);
@@ -628,7 +632,7 @@ test "first install of a branch: dep checks out that branch, not default HEAD" {
     defer gpa.free(repo_abs);
     const url = try std.fmt.allocPrint(gpa, "file://{s}", .{repo_abs});
     defer gpa.free(url);
-    const store = try absTestPath(gpa, dir ++ "/store");
+    const store = try absTestPath(gpa, test_scratch.path(testing.io, "bpmp-tests/install-clone-branch/store"));
     defer gpa.free(store);
 
     const entries = [_]dep_spec.DepEntry{.{ .name = "j", .spec = .{ .git = url, .ref = .{ .branch = "feat" } } }};
@@ -643,10 +647,10 @@ test "first install of a branch: dep checks out that branch, not default HEAD" {
 
 test "first install of a tag: dep checks out that tag, not default HEAD" {
     const gpa = testing.allocator;
-    const dir = ".botopinkbuild/bpmp-tests/install-clone-tag";
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-clone-tag");
     resetDir(dir);
     defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
-    const repo = dir ++ "/repo";
+    const repo = test_scratch.path(testing.io, "bpmp-tests/install-clone-tag/repo");
     try makeFixtureRepo(gpa, repo);
     const main_rev = try gitHead(gpa, repo, "main");
     defer gpa.free(main_rev);
@@ -658,7 +662,7 @@ test "first install of a tag: dep checks out that tag, not default HEAD" {
     defer gpa.free(repo_abs);
     const url = try std.fmt.allocPrint(gpa, "file://{s}", .{repo_abs});
     defer gpa.free(url);
-    const store = try absTestPath(gpa, dir ++ "/store");
+    const store = try absTestPath(gpa, test_scratch.path(testing.io, "bpmp-tests/install-clone-tag/store"));
     defer gpa.free(store);
 
     const entries = [_]dep_spec.DepEntry{.{ .name = "j", .spec = .{ .git = url, .ref = .{ .tag = "v1.0.0" } } }};
@@ -672,10 +676,10 @@ test "first install of a tag: dep checks out that tag, not default HEAD" {
 
 test "install of a pinned rev: (store miss) checks out that exact commit" {
     const gpa = testing.allocator;
-    const dir = ".botopinkbuild/bpmp-tests/install-clone-rev";
+    const dir = test_scratch.path(testing.io, "bpmp-tests/install-clone-rev");
     resetDir(dir);
     defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
-    const repo = dir ++ "/repo";
+    const repo = test_scratch.path(testing.io, "bpmp-tests/install-clone-rev/repo");
     try makeFixtureRepo(gpa, repo);
     const feat_rev = try gitHead(gpa, repo, "feat");
     defer gpa.free(feat_rev);
@@ -684,7 +688,7 @@ test "install of a pinned rev: (store miss) checks out that exact commit" {
     defer gpa.free(repo_abs);
     const url = try std.fmt.allocPrint(gpa, "file://{s}", .{repo_abs});
     defer gpa.free(url);
-    const store = try absTestPath(gpa, dir ++ "/store");
+    const store = try absTestPath(gpa, test_scratch.path(testing.io, "bpmp-tests/install-clone-rev/store"));
     defer gpa.free(store);
 
     const entries = [_]dep_spec.DepEntry{.{ .name = "j", .spec = .{ .git = url, .ref = .{ .rev = feat_rev } } }};
