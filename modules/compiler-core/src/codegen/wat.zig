@@ -526,6 +526,14 @@ const Emitter = struct {
     result_subjects: std.StringHashMap(ResultShape),
     /// Locals bound to an optional no declaration names (an else-less `if`).
     opt_locals: std.StringHashMap(OptInfo),
+    /// Names a `!= null` test has narrowed for the branch being emitted, with
+    /// the optional they were before it. Inside the branch the name is its
+    /// PAYLOAD and not an optional at all: `optInfoOf` answers nothing for it,
+    /// and a boxed payload is loaded at every read. Without this a narrowed
+    /// `?i32` was read as its box — `n + 1` answered a heap address at exit 0 —
+    /// while the optional-binding form `if (ns.at(0)) { n -> … }` unboxed and
+    /// answered the sum.
+    narrowed_opts: std.StringHashMap(OptInfo),
     /// Declared types the optional carrier needs to see: a fn's return type and
     /// parameter types, a local's / global's annotation (or the declared type
     /// of the call it was bound from), and every record field's type.
@@ -663,6 +671,12 @@ const Emitter = struct {
     /// type of a HOF's element parameter.
     arr_elem_locals: std.StringHashMap(ElemKind),
     arr_elem_globals: std.StringHashMap(ElemKind),
+    /// The record type the elements of an array-valued name hold, when they
+    /// hold one. `ElemKind` cannot carry it — a record shares the `i32` slot
+    /// with an integer — and the `?T` a `.at()` answers needs the NAME, both
+    /// to find a field's offset and to know the value is its own pointer.
+    arr_elem_recs: std.StringHashMap([]const u8),
+    arr_elem_rec_globals: std.StringHashMap([]const u8),
     /// Element shape of the arrays top-level fns are declared to return.
     fn_arr_elem: std.StringHashMap(ElemKind),
     /// Lambdas lifted into functions, in table order — see `lowerLambdaValue`.
@@ -728,6 +742,7 @@ const Emitter = struct {
             .folded_globals = std.StringHashMap([]const u8).init(alloc),
             .fn_ret_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
             .opt_locals = std.StringHashMap(OptInfo).init(alloc),
+            .narrowed_opts = std.StringHashMap(OptInfo).init(alloc),
             .fn_param_typerefs = std.StringHashMap([]const ast.TypeRef).init(alloc),
             .local_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
             .global_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
@@ -754,6 +769,8 @@ const Emitter = struct {
             .ext_by_name = std.StringHashMap(ExtInfo).init(alloc),
             .arr_elem_locals = std.StringHashMap(ElemKind).init(alloc),
             .arr_elem_globals = std.StringHashMap(ElemKind).init(alloc),
+            .arr_elem_recs = std.StringHashMap([]const u8).init(alloc),
+            .arr_elem_rec_globals = std.StringHashMap([]const u8).init(alloc),
             .fn_arr_elem = std.StringHashMap(ElemKind).init(alloc),
             .fn_refs = std.StringHashMap(u32).init(alloc),
             .iface_assoc = std.StringHashMap(ast.BehaviorMethod).init(alloc),
@@ -797,6 +814,7 @@ const Emitter = struct {
         self.folded_globals.deinit();
         self.fn_ret_typerefs.deinit();
         self.opt_locals.deinit();
+        self.narrowed_opts.deinit();
         self.fn_param_typerefs.deinit();
         self.local_typerefs.deinit();
         self.global_typerefs.deinit();
@@ -824,6 +842,8 @@ const Emitter = struct {
         self.ext_by_name.deinit();
         self.arr_elem_locals.deinit();
         self.arr_elem_globals.deinit();
+        self.arr_elem_recs.deinit();
+        self.arr_elem_rec_globals.deinit();
         self.fn_arr_elem.deinit();
         self.lambdas.deinit(self.alloc);
         self.fn_refs.deinit();
@@ -930,11 +950,15 @@ const Emitter = struct {
                 if (self.isArrayExpr(v.value.*)) {
                     try self.arr_globals.put(v.name, {});
                     try self.arr_elem_globals.put(v.name, self.elemKindOf(v.value.*));
+                    if (self.elemRecordOf(v.value.*)) |rec| try self.arr_elem_rec_globals.put(v.name, rec);
                 }
-                if (v.typeAnnotation) |ta| if (arrayElemOfTypeRef(ta)) |ek| {
-                    try self.arr_globals.put(v.name, {});
-                    try self.arr_elem_globals.put(v.name, ek);
-                };
+                if (v.typeAnnotation) |ta| {
+                    if (arrayElemOfTypeRef(ta)) |ek| {
+                        try self.arr_globals.put(v.name, {});
+                        try self.arr_elem_globals.put(v.name, ek);
+                    }
+                    if (self.elemRecordOfTypeRef(ta)) |rec| try self.arr_elem_rec_globals.put(v.name, rec);
+                }
             },
             .implement => |im| try self.registerMethodSigs(im.target, im.methods),
             .extend => |ex| try self.registerMethodSigs(ex.target, ex.methods),
@@ -1145,6 +1169,17 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    // `xs.at(i)` / `xs.first()` over an array of records: the
+                    // `?Entry` it answers is an `Entry` pointer, and its record
+                    // type is what a `?.field` read (and the narrowed name a
+                    // `!= null` test rebinds) needs to find a slot. Without it
+                    // the reader fell back to the unique-field guess and, when
+                    // the value was a box, read one indirection short.
+                    if (self.primKindAt(cc, c.loc)) |k| {
+                        if (k == .array and (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first"))) {
+                            if (cc.receiver) |r| if (self.elemRecordOf(r.*)) |rec| break :blk rec;
+                        }
+                    }
                     switch (self.callKind(cc)) {
                         .record_ctor => break :blk self.resolveRecordName(cc.callee),
                         .plain => {
@@ -1160,6 +1195,23 @@ const Emitter = struct {
             .collection => |c| switch (c.kind) {
                 .behaviorLit => |il| self.ensureAnonRecord(c.loc, .{ .fields = il.fields }) catch null,
                 .grouped => |inner| self.recordTypeOfExpr(inner.*),
+                else => null,
+            },
+            // `a ?? b` — the transform pass writes it as `if (a) { <this> ->
+            // <this> } else { b }`, so the binder is what tells it apart from
+            // an ordinary `if`. Both arms carry the same type by construction
+            // and the default is the one that names it: the payload arm reads
+            // a bound name whose type nothing recovered. Without this,
+            // `(es.at(9) ?? Entry(key: "zz")).key` found its slot by the
+            // unique-field guess and then printed the string as a number,
+            // because nothing knew the field was declared `string`.
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| blk: {
+                    if (i.binding == null) break :blk null;
+                    const els = i.else_ orelse break :blk null;
+                    if (els.len == 0) break :blk null;
+                    break :blk self.recordTypeOfExpr(els[els.len - 1].expr);
+                },
                 else => null,
             },
             else => null,
@@ -1478,12 +1530,14 @@ const Emitter = struct {
         self.search_flag_locals.clearRetainingCapacity();
         self.null_value_locals.clearRetainingCapacity();
         self.arr_elem_locals.clearRetainingCapacity();
+        self.arr_elem_recs.clearRetainingCapacity();
         self.result_shape_locals.clearRetainingCapacity();
         self.result_subjects.clearRetainingCapacity();
         self.aliases.clearRetainingCapacity();
         self.pattern_locals.clearRetainingCapacity();
         self.local_typerefs.clearRetainingCapacity();
         self.opt_locals.clearRetainingCapacity();
+        self.narrowed_opts.clearRetainingCapacity();
         self.cur_ret_typeref = null;
         self.bool_locals.clearRetainingCapacity();
         self.closure_locals.clearRetainingCapacity();
@@ -3053,6 +3107,12 @@ const Emitter = struct {
                         try self.emit(zero);
                     } else if (self.locals.contains(n)) {
                         try self.emit(.{ .local_get = n });
+                        // Narrowed by a `!= null` test: the name is its payload
+                        // inside the branch, and a boxed payload lives one
+                        // indirection away.
+                        if (self.narrowed_opts.get(n)) |o| {
+                            if (o.boxed) try self.emitC(.{ .load = .{} }, "narrowed optional payload");
+                        }
                     } else if (self.globals.contains(n)) {
                         try self.emit(.{ .global_get = n });
                     } else if (self.fn_sigs.contains(n)) {
@@ -3407,6 +3467,15 @@ const Emitter = struct {
         // allocation and so no header, and still has no printed form: it keeps
         // the trap rather than reading four bytes behind an integer.
         if (self.namedShapeOf(arg)) |ns| {
+            // A record that may be ABSENT — `es.at(0)`, or a name bound to one.
+            // The tagged printer reads a header four bytes behind the value, so
+            // a `0` would read out of bounds; `$__print_opt_tagged` answers
+            // `undefined` for it and the header for anything else.
+            if (self.optInfoOf(arg)) |oi| if (oi.rec != null) {
+                try self.lowerCoerced(arg, "i32");
+                try self.emit(self.builder().helper(if (last) .print_opt_tagged else .print_opt_tagged_raw));
+                return;
+            };
             if (self.isTaggedValue(arg)) {
                 try self.lowerCoerced(arg, "i32");
                 try self.emit(self.builder().helper(if (last) .print_tagged else .print_tagged_raw));
@@ -4945,9 +5014,11 @@ const Emitter = struct {
             try self.emitC(.{ .load = .{} }, "element count");
             try self.emit(opOf("i32", "eqz"));
         } else if (eq(u8, name, "at") or eq(u8, name, "first")) {
-            // `?T`: a string element is its own offset; anything else is boxed.
+            // `?T`: a pointer element (a string, a record) is its own offset; a
+            // scalar is boxed. `arrayElemOpt` is the ONE place that decides,
+            // and `optInfoOf` reads the same answer — see its doc comment.
             if (eq(u8, name, "first")) try self.emit(zero) else try self.lowerCoerced(callArg(cc, 0).?, "i32");
-            try self.emit(b.helper(if (elem == .str) .arr_at else .arr_at_box));
+            try self.emit(b.helper(if (self.arrayElemOpt(recv).boxed) .arr_at_box else .arr_at));
         } else if (eq(u8, name, "toList")) {
             // the array itself
         } else if (eq(u8, name, "reverse")) {
@@ -5059,6 +5130,10 @@ const Emitter = struct {
         if (elem_param) |p| {
             try self.declareLocal(p, elem_ty);
             if (elem_kind == .str) try self.str_locals.put(p, {});
+            // The parameter is one ELEMENT, so it has the element's record
+            // type. Without it a field read off it had no receiver type and
+            // fell to the unique-field guess, or to the `0` stub.
+            if (self.elemRecordOf(recv)) |r| try self.local_types.put(p, r);
         }
         if (acc_param) |p| {
             try self.declareLocal(p, acc_ty);
@@ -5268,6 +5343,7 @@ const Emitter = struct {
             try self.arr_locals.put(sym, {});
             try self.arr_elem_locals.put(sym, ek);
         }
+        if (self.elemRecordOfTypeRef(t)) |rec| try self.arr_elem_recs.put(sym, rec);
     }
 
     /// A local bound to something `isArrayExpr` recognises is an array too,
@@ -5277,6 +5353,7 @@ const Emitter = struct {
         if (!self.isArrayExpr(value)) return;
         try self.arr_locals.put(name, {});
         try self.arr_elem_locals.put(name, self.elemKindOf(value));
+        if (self.elemRecordOf(value)) |rec| try self.arr_elem_recs.put(name, rec) else _ = self.arr_elem_recs.remove(name);
     }
 
     /// The shape `$__print_shaped_raw` walks for `e` (semantics decision 1a):
@@ -5482,11 +5559,15 @@ const Emitter = struct {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| self.arr_elem_locals.get(self.resolveName(n)) orelse self.arr_elem_globals.get(n) orelse .i32,
-                .identAccess => |ia| blk: {
-                    const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk .i32;
-                    const fields = self.records.get(rty) orelse break :blk .i32;
-                    _ = fields;
-                    break :blk .i32;
+                // A record FIELD declared as an array: its element shape is in
+                // the field's declared type, and reading it is what tells
+                // `self.cells.at(0)` it is a `?string` and not a boxed `?i32`.
+                // While this arm answered `.i32` unconditionally, `(self.cells
+                // .at(0) ?? "").length()` and its narrowed twin read the box
+                // as a string pointer and printed a heap address at exit 0.
+                .identAccess => blk: {
+                    const tr = self.typeRefOf(e) orelse break :blk .i32;
+                    break :blk arrayElemOfTypeRef(tr) orelse .i32;
                 },
                 else => .i32,
             },
@@ -6050,6 +6131,12 @@ const Emitter = struct {
         /// The boxed payload is an `f32` slot, not an integer — a float array's
         /// `at`/`first`. Read as an `i32` it prints the float's bits.
         float_: bool = false,
+        /// The payload is a value of this record type — `es.at(0)` over an
+        /// `Entry[]`. It names the field offsets a `?.` read needs and the
+        /// header `$__print_opt_tagged` writes, and it is the reason a record
+        /// element is NOT boxed: a record is its own pointer, so `0` is
+        /// absence exactly as it is for a string.
+        rec: ?[]const u8 = null,
         inner: ?ast.TypeRef = null,
     };
 
@@ -6134,6 +6221,100 @@ const Emitter = struct {
         };
     }
 
+    /// The `?T` one element of `recv` is — **the one answer the writer and the
+    /// reader of `xs.at(i)` / `xs.first()` both take**, so they cannot drift
+    /// apart. `lowerArrayMethod` picks `$__arr_at` or `$__arr_at_box` from it
+    /// and `optInfoOf` reports it; while the two decided separately, an array
+    /// of RECORDS was written boxed (the element kind a record shares with an
+    /// integer) and read as a bare pointer, so `es.at(0)?.key.length()` loaded
+    /// the box, then the record's first slot, and printed a heap address
+    /// (`276`) at exit 0 where the other three backends answer `3`.
+    fn arrayElemOpt(self: *Emitter, recv: ast.Expr) OptInfo {
+        // A record is its own pointer: `0` is absence, as it is for a string,
+        // and a box would only hide the payload from every reader.
+        if (self.elemRecordOf(recv)) |rec| return .{ .boxed = false, .rec = rec };
+        if (self.elemIsPointer(recv)) return .{ .boxed = false };
+        return switch (self.elemKindOf(recv)) {
+            .str => .{ .boxed = false, .str = true },
+            .f32 => .{ .boxed = true, .float_ = true },
+            .i32 => .{ .boxed = true },
+        };
+    }
+
+    /// Whether one element of `recv` is a CONTAINER — an array or a tuple —
+    /// and so a pointer of its own. Read off the print shape, which is the one
+    /// place a nested container is already tracked (`[[i` an array of integer
+    /// arrays, `[(is)` an array of tuples), for a local as much as for a
+    /// literal. A record is the other pointer element and `elemRecordOf`
+    /// answers it, because a record's NAME is wanted too.
+    fn elemIsPointer(self: *Emitter, recv: ast.Expr) bool {
+        const sh = (self.printShapeOf(recv) catch null) orelse return false;
+        return sh.len >= 2 and sh[0] == '[' and (sh[1] == '[' or sh[1] == '(');
+    }
+
+    /// The record type the elements of an array-valued expression name, when
+    /// they name one: an array literal of constructor calls, a local or global
+    /// bound to one, a declared `Entry[]`, and the array methods that keep
+    /// their receiver's elements.
+    fn elemRecordOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n0| {
+                    const n = self.resolveName(n0);
+                    if (self.arr_elem_recs.get(n)) |r| return r;
+                    if (!self.locals.contains(n)) if (self.arr_elem_rec_globals.get(n)) |r| return r;
+                },
+                else => {},
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.elemRecordOf(inner.*),
+                .arrayLit => |al| if (al.elems.len > 0) {
+                    if (self.recordTypeOfExpr(al.elems[0])) |r| return r;
+                },
+                else => {},
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| {
+                    if (self.primKindAt(cc, c.loc)) |k| if (k == .array and keepsElements(cc.callee)) {
+                        if (cc.receiver) |r| return self.elemRecordOf(r.*);
+                    };
+                },
+                else => {},
+            },
+            else => {},
+        }
+        const t = self.typeRefOf(e) orelse return null;
+        return self.elemRecordOfTypeRef(t);
+    }
+
+    /// The array methods whose result holds the elements of their receiver.
+    fn keepsElements(name: []const u8) bool {
+        for ([_][]const u8{ "slice", "rest", "take", "drop", "reverse", "toList", "filter", "sort", "sorted" }) |s| {
+            if (std.mem.eql(u8, name, s)) return true;
+        }
+        return false;
+    }
+
+    /// The record an `Entry[]` / `Array<Entry>` / `?Entry[]` spells, when the
+    /// element names a record this module declared.
+    fn elemRecordOfTypeRef(self: *Emitter, t: ast.TypeRef) ?[]const u8 {
+        const elem: ast.TypeRef = switch (t) {
+            .array => |inner| inner.*,
+            .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
+                std.mem.eql(u8, g.name, "Iterator")))
+                g.args[0]
+            else
+                return null,
+            .optional => |inner| return self.elemRecordOfTypeRef(inner.*),
+            else => return null,
+        };
+        const name = switch (elem) {
+            .named => |n| n,
+            else => return null,
+        };
+        return self.resolveRecordName(name);
+    }
+
     /// The optional an expression evaluates to, when it is one.
     fn optInfoOf(self: *Emitter, e: ast.Expr) ?OptInfo {
         switch (e) {
@@ -6152,11 +6333,7 @@ const Emitter = struct {
                     if (k == .array and
                         (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first")))
                     {
-                        return switch (self.elemKindOf(cc.receiver.?.*)) {
-                            .str => .{ .boxed = false, .str = true },
-                            .f32 => .{ .boxed = true, .float_ = true },
-                            .i32 => .{ .boxed = true },
-                        };
+                        return self.arrayElemOpt(cc.receiver.?.*);
                     }
                     // `s.at(i)` → `?string`: `$__str_at` answers the pointer of
                     // a fresh one-byte string, or 0. Without this the result
@@ -6170,7 +6347,12 @@ const Emitter = struct {
                 else => {},
             },
             .identifier => |id| switch (id.kind) {
-                .ident => |n| if (self.opt_locals.get(self.resolveName(n))) |oi| return oi,
+                .ident => |n| {
+                    const rn = self.resolveName(n);
+                    // Narrowed: inside the branch the name IS the payload.
+                    if (self.narrowed_opts.contains(rn)) return null;
+                    if (self.opt_locals.get(rn)) |oi| return oi;
+                },
                 // `recv?.field` of a scalar field is a boxed optional
                 .identAccess => |ia| if (ia.optional) {
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return null;
@@ -6185,6 +6367,21 @@ const Emitter = struct {
         }
         const t = self.typeRefOf(e) orelse return null;
         return optInfoOfTypeRef(t);
+    }
+
+    /// The bare name `e` reads, when it reads one and nothing else.
+    fn plainIdentName(e: ast.Expr) ?[]const u8 {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| n,
+                else => null,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| plainIdentName(inner.*),
+                else => null,
+            },
+            else => null,
+        };
     }
 
     fn isNullLit(e: ast.Expr) bool {
@@ -6675,7 +6872,7 @@ const Emitter = struct {
                     var any = false;
                     for (c.arms) |arm| {
                         if (self.exprTail(arm.body) == .terminated) continue;
-                        if (!self.isStringExpr(arm.body)) break :blk false;
+                        if (!self.armIsString(arm.body)) break :blk false;
                         any = true;
                     }
                     break :blk any;
@@ -6807,6 +7004,20 @@ const Emitter = struct {
         if (i >= elems.len) return;
         if (self.isStringExpr(elems[i])) try self.str_locals.put(name, {});
         if (self.isBoolExpr(elems[i])) try self.bool_locals.put(name, {});
+    }
+
+    /// Whether a `case` ARM answers a string. A BRACE arm — `case x { 5 {
+    /// "five" } … }` — parses its body as a parameterless block, which arrives
+    /// here as a `.function`, and a lambda VALUE is a closure pointer, so only
+    /// this position may look through one: its value is its last statement's.
+    /// Only the ARROW spelling (`5 -> "five";`) was a string before, so the
+    /// same program answered `five` one way and the pointer `256` the other,
+    /// at exit 0, where commonJS and erlang answer `five` for both.
+    fn armIsString(self: *Emitter, body: ast.Expr) bool {
+        return switch (body) {
+            .function => |f| f.kind.params.len == 0 and self.bodyIsString(f.kind.body),
+            else => self.isStringExpr(body),
+        };
     }
 
     /// Whether a statement list yields a string (its last statement does).
@@ -7170,6 +7381,11 @@ const Emitter = struct {
         const elem_ty = if (elem_kind == .f32) "f32" else "i32";
         try self.declareLocal(elem, elem_ty);
         if (elem_kind == .str) try self.str_locals.put(elem, {});
+        // `loop (es) { e -> … }` binds one ELEMENT: when the elements are
+        // records, `e.key` needs the record type or it reads a slot by the
+        // unique-field guess and prints the field's ADDRESS (`284` for
+        // `"abc"`, exit 0).
+        if (self.elemRecordOf(lp.iter.*)) |r| try self.local_types.put(elem, r);
         const idx_param: ?[]const u8 = if (lp.params.len > 1) lp.params[1] else null;
         if (idx_param) |ip| try self.declareLocal(ip, "i32");
         // `loop (xs, 1..) { x, i -> … }` counts `i` from the range's start.
@@ -7639,6 +7855,92 @@ const Emitter = struct {
         }
     }
 
+    /// The plain NAMES a null test narrows — when it HOLDS (`present`), which
+    /// is the then-branch of `x != null`, and when it fails, which is the else
+    /// branch of `x == null`. `&&` narrows both of its halves on the holding
+    /// side and `||` both of them on the failing side; only a bare name is
+    /// narrowable, which is the same limit the checker draws
+    /// (`o.inner != null` rebinds nothing).
+    fn collectNullTestNames(self: *Emitter, cond: ast.Expr, present: bool, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        switch (cond) {
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| try self.collectNullTestNames(inner.*, present, out),
+                else => {},
+            },
+            .binaryOp => |bin| switch (bin.op) {
+                .ne, .eq => {
+                    if ((bin.op == .ne) != present) return;
+                    const name = if (isNullLit(bin.rhs.*))
+                        plainIdentName(bin.lhs.*)
+                    else if (isNullLit(bin.lhs.*))
+                        plainIdentName(bin.rhs.*)
+                    else
+                        null;
+                    if (name) |n| try out.append(self.arena(), n);
+                },
+                .@"and" => if (present) {
+                    try self.collectNullTestNames(bin.lhs.*, true, out);
+                    try self.collectNullTestNames(bin.rhs.*, true, out);
+                },
+                .@"or" => if (!present) {
+                    try self.collectNullTestNames(bin.lhs.*, false, out);
+                    try self.collectNullTestNames(bin.rhs.*, false, out);
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
+
+    /// One name a branch narrowed, and which shape notes were added for it —
+    /// so `dropNarrowing` restores exactly what was there, and a narrowing does
+    /// not outlive its branch.
+    const Narrowing = struct {
+        name: []const u8,
+        added_str: bool = false,
+        added_bool: bool = false,
+        added_rec: bool = false,
+    };
+
+    /// Mark every narrowable name of `names` as its payload for the branch
+    /// about to be emitted, and answer what was marked so `dropNarrowing` can
+    /// put it back. A `?string`, a `?bool` and a `?Record` also take the shape
+    /// their payload has, because inside the branch every reader asks about a
+    /// plain value and no longer about an optional.
+    fn applyNarrowing(self: *Emitter, names: []const []const u8) anyerror![]const Narrowing {
+        var marked: std.ArrayListUnmanaged(Narrowing) = .empty;
+        for (names) |n0| {
+            const n = self.resolveName(n0);
+            if (self.narrowed_opts.contains(n)) continue;
+            const oi = self.opt_locals.get(n) orelse continue;
+            try self.narrowed_opts.put(n, oi);
+            var m: Narrowing = .{ .name = n };
+            if (oi.str and !self.str_locals.contains(n)) {
+                try self.str_locals.put(n, {});
+                m.added_str = true;
+            }
+            if (oi.bool_ and !self.bool_locals.contains(n)) {
+                try self.bool_locals.put(n, {});
+                m.added_bool = true;
+            }
+            if (oi.rec) |r| if (!self.local_types.contains(n)) {
+                try self.local_types.put(n, r);
+                m.added_rec = true;
+            };
+            try marked.append(self.arena(), m);
+        }
+        return marked.items;
+    }
+
+    fn dropNarrowing(self: *Emitter, marked: []const Narrowing) void {
+        for (marked) |m| {
+            _ = self.narrowed_opts.remove(m.name);
+            if (m.added_str) _ = self.str_locals.remove(m.name);
+            if (m.added_bool) _ = self.bool_locals.remove(m.name);
+            if (m.added_rec) _ = self.local_types.remove(m.name);
+        }
+    }
+
     fn lowerIfExpr(self: *Emitter, i: anytype) !void {
         // F2 (Optionals tail) — distinguish statement-form `if` (both
         // branches end in void calls / valueless returns) from value-form
@@ -7677,14 +7979,22 @@ const Emitter = struct {
             }
             try self.emit(.{ .local_set = name });
         }
+        var then_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        try self.collectNullTestNames(i.cond.*, true, &then_names);
+        const then_marked = try self.applyNarrowing(then_names.items);
         const then_tail = try self.emitBody(i.then_, !as_stmt);
+        self.dropNarrowing(then_marked);
         const then_seq = self.seal(&then_c, stackOf(then_tail, self.cur_result));
 
         var else_seq: ?Seq = null;
         if (i.else_) |els| {
             var else_c: Capture = .{};
             self.open(&else_c);
+            var else_names: std.ArrayListUnmanaged([]const u8) = .empty;
+            try self.collectNullTestNames(i.cond.*, false, &else_names);
+            const else_marked = try self.applyNarrowing(else_names.items);
             const else_tail = try self.emitBody(els, !as_stmt);
+            self.dropNarrowing(else_marked);
             else_seq = self.seal(&else_c, stackOf(else_tail, self.cur_result));
         } else if (!as_stmt) {
             // A value-form `if` must fill its `(result …)` on both paths.
