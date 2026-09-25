@@ -32,7 +32,12 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
 
 - `publishDiagnostics` (with `$/progress`), `formatting`,
   `hover` (full signature + doc comments, incl. qualified `std` members and
-  builtin interface methods on primitives/arrays/strings),
+  builtin interface methods on primitives/arrays/strings; for a fn whose return
+  is `@Task` / `@Component` / `@Iterator` / `@Stream`, a footer naming what the
+  caller unwraps — the `await` value (`T` of `@Task<T>`, `T` of
+  `@Component<C, T>`, the whole `@Result<U, E>` of a `@Task<@Result<U, E>>`) or
+  the `for` / `for await` item; driven by the return, so an `@Iterator` factory
+  shows it too),
   `definition` (same-file, cross-module, embedded `std` modules, plus type-aware
   member access — see below),
   `typeDefinition`,
@@ -42,7 +47,9 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   is itself an `Enum` carrying its own members — decision 8 §5.3b; a method of a `type`, an
   `enum` or a `behavior` is `Method`, and so is a `test "name"` block — see below),
   `completion` (prefix + dot-trigger + std members + builtin interface methods
-  on primitive/array/string receivers + labeled args + sortText + module names),
+  on primitive/array/string receivers + the prelude members of an effect-wrapper
+  receiver — `next` on `@Iterator`, `next` / `map` / `then` on `@Stream`, `map` /
+  `then` on `@Task` / `@Component` + labeled args + sortText + module names),
   `references` (cross-module), `rename` (cross-module multi-file, with
   `prepareRename`, rejects keywords),
   `signatureHelp` (incl. builtin interface methods, `self` dropped; parameter
@@ -50,13 +57,17 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   `inlayHint` (inferred `val` types, call-site parameter names, lambda parameter
   types; `workspace/inlayHint/refresh` on edits),
   `semanticTokens/full` + `semanticTokens/range` (legend distinguishing builtin
-  types, interface methods vs free fns, the `*fn` effect marker, comptime params,
+  types, interface methods vs free fns, comptime params,
   enum members, record fields (`property`), generic type parameters, parameter
-  *uses* inside the body, named-argument labels and `true`/`false`; effect fns
-  (a `-> @Task` / `@Iterator` / … return; the annotation that used to mark them left
-  with decision 118, so the modifier is the tooling thread's to restore) carry the
-  `async` modifier; plus a sub-language overlay
-  inside string literals — see below),
+  *uses* inside the body, named-argument labels and `true`/`false`; the contextual
+  effect words are `keyword` only in position — `async` right before `{`, `iter` /
+  `stream` right before `loop` / `while` / `for` (decisions 124, 125) — and stay
+  names elsewhere (`g.iter()`, `val stream = 1`, `async.allOf(…)`); a fn's
+  `:label` and a loop's label (`for :outer`, `break :outer`) are `keyword`; effect
+  fns carry the `async` modifier — a fn whose written return is one of the five
+  effect wrappers `@Result` / `@Task` / `@Component` / `@Iterator` / `@Stream`
+  (decision 118: the return is the effect; an alias return does not count); plus
+  a sub-language overlay inside string literals — see below),
   `codeAction` (add type annotation, remove unused import, add missing case
   patterns, add missing import),
   `foldingRange` (incl. `test` blocks).

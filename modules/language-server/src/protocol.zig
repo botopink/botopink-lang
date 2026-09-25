@@ -262,7 +262,9 @@ pub const SemanticTokenModifiers = struct {
     pub const declaration: u32 = 1 << 0;
     pub const readonly: u32 = 1 << 1;
     pub const defaultLibrary: u32 = 1 << 2;
-    /// Effect functions (`#[@resultGenerator]`, `#[@future]`, … and the legacy `*fn`).
+    /// Effect functions: a fn whose written return is an effect wrapper —
+    /// `-> @Result` / `@Task` / `@Component` / `@Iterator` / `@Stream`
+    /// (decision 118: the return is the effect; `engine.fnReturnsEffectWrapper`).
     /// LSP's standard `async` modifier is the closest thing a client already
     /// styles; appended last so the flags above keep their bit positions.
     pub const async: u32 = 1 << 3;

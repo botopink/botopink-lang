@@ -58,7 +58,7 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
 - `protocol.zig`'s `SemanticTokenTypes` / `SemanticTokenModifiers` indices **are**
   the legend advertised to the client. Append only — never reorder, and extend
   the matching `legend` array in the same edit (`async`, bit 3, is the newest
-  modifier: it marks effect fns).
+  modifier: it marks a fn whose written return is an effect wrapper).
 - `engine.documentSymbols` returns owned names **and owned children**; free a
   result with `engine.freeSymbol` per symbol, never `gpa.free(sym.name)` alone,
   or every child leaks.
@@ -147,5 +147,9 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
 - `semanticTokens` is a single token walk with a little state: `fn_params` /
   `fn_generics` (names in scope for the body being scanned, cleared when it
   closes), `generic_depth` (only a `<` right after a *declaration name* opens a
-  type-parameter list — everywhere else `<` stays a comparison), and
-  `pending_effect_fn` (set by `*` or a `#[@effect]` attribute before the `fn`).
+  type-parameter list — everywhere else `<` stays a comparison). The `async`
+  modifier on a fn name comes from a look-ahead over its signature
+  (`fnReturnsEffectWrapper`: generics, parameters, `->`, then one of the five
+  effect wrappers as the outermost return); contextual `async` / `iter` /
+  `stream` and loop labels are decided from their neighbours
+  (`isContextualKeywordAt`, `isLabelAt`), never from state.
