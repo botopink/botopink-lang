@@ -32,6 +32,13 @@ pub const Env_ = Env; // alias: use `comptimeMod.Env` in callers
 /// What `compileTypesOnly`'s opt-in template evaluator needs (`{ io, build_root }`).
 /// Re-exported so tooling (the LSP) builds it without importing comptime internals.
 pub const TemplateEvalCtx = envMod.TemplateEvalCtx;
+/// Tooling hook — the type the checker gave each expression, per file and
+/// location (`botopink migrate effects`, front 24 E6). See `infer.ExprTypeLog`.
+pub const ExprTypeLog = infer.ExprTypeLog;
+/// Install (or clear, with null) the `ExprTypeLog` the next inference fills.
+pub fn setExprTypeLog(log: ?*ExprTypeLog) void {
+    infer.expr_type_log = log;
+}
 
 // ── Intermediate types ────────────────────────────────────────────────────────
 

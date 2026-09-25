@@ -7625,7 +7625,53 @@ fn checkCaseExhaustiveness(
 /// Infer the type of `expr` AND build the fully-annotated `TypedExpr` in one
 /// pass.  Every child node is recursively typed before its parent is built, so
 /// no expression is visited more than once.  All allocations go into env.arena.
+/// Tooling hook (front 24 E6, `botopink migrate effects`): when set, every
+/// expression `inferExprTyped` types is recorded — the file being inferred
+/// (`env.srcPath`), the expression's location, its type. Null, the default,
+/// records nothing; the codemod sets it around one `compileTypesOnly` and
+/// reads the types while that session's arena is alive. A location shared by
+/// a node and its first child keeps the OUTER node (the last one typed).
+pub const ExprTypeLog = struct {
+    gpa: std.mem.Allocator,
+    files: std.StringHashMapUnmanaged(std.AutoHashMapUnmanaged(ast.Loc, *T.Type)) = .empty,
+
+    pub fn typeAt(self: *const ExprTypeLog, file: []const u8, loc: ast.Loc) ?*T.Type {
+        const m = self.files.get(file) orelse return null;
+        return m.get(loc);
+    }
+
+    pub fn deinit(self: *ExprTypeLog) void {
+        var it = self.files.iterator();
+        while (it.next()) |e| {
+            self.gpa.free(e.key_ptr.*);
+            e.value_ptr.deinit(self.gpa);
+        }
+        self.files.deinit(self.gpa);
+    }
+
+    fn record(self: *ExprTypeLog, file: []const u8, loc: ast.Loc, ty: *T.Type) InferError!void {
+        const gop = try self.files.getOrPut(self.gpa, file);
+        if (!gop.found_existing) {
+            gop.key_ptr.* = self.gpa.dupe(u8, file) catch |e| {
+                self.files.removeByPtr(gop.key_ptr);
+                return e;
+            };
+            gop.value_ptr.* = .empty;
+        }
+        try gop.value_ptr.put(self.gpa, loc, ty);
+    }
+};
+
+/// See `ExprTypeLog`. Single-threaded tooling only.
+pub var expr_type_log: ?*ExprTypeLog = null;
+
 pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
+    const typed = try inferExprTypedInner(env, expr);
+    if (expr_type_log) |log| try log.record(env.srcPath, expr.getLoc(), typed.getType());
+    return typed;
+}
+
+fn inferExprTypedInner(env: *Env, expr: ast.Expr) InferError!TypedExpr {
     // 00 · 01-checker — an expectation belongs to the position it was set for.
     // Only an identifier chain reads it (a leading-dot enum path) and only an
     // array literal passes it on (to its elements); every other node clears it
