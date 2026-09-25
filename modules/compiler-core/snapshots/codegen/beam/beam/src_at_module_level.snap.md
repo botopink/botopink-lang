@@ -78,7 +78,7 @@ fn main() {
   {label, 39}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq, {f, 40}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 40}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 41}}.
   {label, 40}.

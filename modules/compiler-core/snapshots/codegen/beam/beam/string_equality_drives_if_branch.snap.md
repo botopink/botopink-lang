@@ -42,7 +42,7 @@ fn main() {
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {literal, <<"yes">>}, {x, 0}}.
-    {test, is_eq, {f, 12}, [{y, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 12}, [{y, 1}, {x, 0}]}.
     {move, {integer, 42}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.

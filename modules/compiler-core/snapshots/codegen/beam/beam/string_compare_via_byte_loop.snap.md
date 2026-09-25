@@ -21,7 +21,7 @@ fn sameWord() -> bool {
     {move, {literal, <<"foo">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"bar">>}, {x, 0}}.
-    {test, is_eq, {f, 4}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 4}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 5}}.
   {label, 4}.

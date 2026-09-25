@@ -147,7 +147,7 @@ fn main() {
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq, {f, 48}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 48}, [{x, 0}, {atom, undefined}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 49}}.
   {label, 48}.

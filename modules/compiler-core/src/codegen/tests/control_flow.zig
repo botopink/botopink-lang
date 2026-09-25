@@ -1277,6 +1277,49 @@ test "beam: the module body runs once, in declaration order, before main" {
     , "first\nsecond\nmain\n1\n1\n", &.{ "{extfunc, persistent_term, get, 2}", "{extfunc, persistent_term, put, 2}" });
 }
 
+test "beam: is and == read numbers by value only where decision 8 says so" {
+    // C-07 D1/D3 (§4.1, §2.3). `x is f64` is any number (`is_number`, was
+    // `is_float`); `x is i32` holds for `2.0` (an integer, or a float equal to
+    // its `trunc`), and inside the branch or the arm the value IS an `i32` —
+    // `3.0` prints `number 3`. `==` / `!=` are exact between two typed
+    // operands (decision B2: `2.0 == 2` is false) and by value when one is
+    // `unknown`. D2 (§11): beam stores nothing extra for `unknown` or a union,
+    // so no instruction is pinned for it.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn describe(x: unknown) -> string {
+        \\    return case x {
+        \\        i32 { n -> "number " + n.toString() }
+        \\        string when (x == "") { "empty text" }
+        \\        string { s -> "text " + s }
+        \\        _ { "other" }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    val a: unknown = 3.0;
+        \\    @print(describe(a));
+        \\    val b: unknown = 2.5;
+        \\    @print(describe(b));
+        \\    val e: unknown = "";
+        \\    @print(describe(e));
+        \\    val c: unknown = true;
+        \\    @print(describe(c));
+        \\    val d: unknown = 2.0;
+        \\    @print(d is i32);
+        \\    @print(d is f64);
+        \\    val k: unknown = 2;
+        \\    @print(k is f64);
+        \\    @print(b is i32);
+        \\    var got = 0;
+        \\    if (d is i32) { got = d + 1; };
+        \\    @print(got);
+        \\    @print(d == 2);
+        \\    @print(d != 2);
+        \\    @print(2.0 == 2);
+        \\    @print(2.0 != 2);
+        \\}
+    , "number 3\nother\nempty text\nother\ntrue\ntrue\ntrue\nfalse\n3\ntrue\nfalse\nfalse\ntrue\n", &.{ "{test, is_number, ", "{gc_bif, trunc, ", "{test, is_eq_exact, " });
+}
+
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
 //
 // `break <value>` out of `while (cond)` was refused outright with an unlocated

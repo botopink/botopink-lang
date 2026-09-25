@@ -31,7 +31,7 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
-    {test, is_eq, {f, 8}, [{y, 1}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 8}, [{y, 1}, {atom, undefined}]}.
     {move, {integer, 0}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.

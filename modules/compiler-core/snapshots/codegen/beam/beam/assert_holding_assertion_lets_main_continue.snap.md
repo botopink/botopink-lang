@@ -20,7 +20,7 @@ fn main() {
   {label, 3}.
     {allocate, 0, 0}.
     {gc_bif, '+', {f, 0}, 0, [{integer, 1}, {integer, 1}], {x, 0}}.
-    {test, is_eq, {f, 8}, [{x, 0}, {integer, 2}]}.
+    {test, is_eq_exact, {f, 8}, [{x, 0}, {integer, 2}]}.
     {jump, {f, 9}}.
   {label, 8}.
     {move, {literal, <<"arithmetic">>}, {x, 0}}.

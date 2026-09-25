@@ -37,7 +37,7 @@ fn main() {
     {move, {x, 0}, {y, 1}}.
   {label, 8}.
     {test, is_lt, {f, 9}, [{y, 0}, {integer, 10}]}.
-    {test, is_eq, {f, 10}, [{y, 0}, {integer, 4}]}.
+    {test, is_eq_exact, {f, 10}, [{y, 0}, {integer, 4}]}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {jump, {f, 9}}.
@@ -80,7 +80,7 @@ fn main() {
     {move, {x, 0}, {y, 5}}.
   {label, 39}.
     {test, is_lt, {f, 40}, [{y, 4}, {integer, 3}]}.
-    {test, is_eq, {f, 41}, [{y, 4}, {integer, 99}]}.
+    {test, is_eq_exact, {f, 41}, [{y, 4}, {integer, 99}]}.
     {move, {y, 4}, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
     {jump, {f, 40}}.

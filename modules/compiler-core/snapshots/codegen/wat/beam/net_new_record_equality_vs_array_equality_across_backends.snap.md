@@ -33,7 +33,7 @@ fn arrayEq() -> bool {
     {test_heap, 4, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Point}, {integer, 1}, {integer, 2}]}}.
     {move, {x, 0}, {y, 1}}.
-    {test, is_eq, {f, 6}, [{y, 0}, {y, 1}]}.
+    {test, is_eq_exact, {f, 6}, [{y, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 7}}.
   {label, 6}.
@@ -73,7 +73,7 @@ fn arrayEq() -> bool {
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {test, is_eq, {f, 8}, [{y, 1}, {y, 3}]}.
+    {test, is_eq_exact, {f, 8}, [{y, 1}, {y, 3}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 9}}.
   {label, 8}.

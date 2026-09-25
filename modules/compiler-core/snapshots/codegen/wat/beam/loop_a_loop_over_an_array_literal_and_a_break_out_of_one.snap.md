@@ -339,7 +339,7 @@ fn main() {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {test, is_eq, {f, 37}, [{y, 0}, {integer, 2}]}.
+    {test, is_eq_exact, {f, 37}, [{y, 0}, {integer, 2}]}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 10}], {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.

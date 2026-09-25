@@ -112,6 +112,9 @@ pub const Dest = union(enum) {
 pub const TestOp = enum {
     is_eq,
     is_eq_exact,
+    /// `{test, is_ne, …}` — unequal by VALUE (`2.0` and `2` are equal), the
+    /// twin of `is_eq`; decision 8 §2.3's `!=` with an `unknown` operand.
+    is_ne,
     is_ne_exact,
     is_map,
     is_tuple,
@@ -121,6 +124,8 @@ pub const TestOp = enum {
     is_binary,
     is_integer,
     is_float,
+    /// Any number — decision 8 §4.1's `x is f64`.
+    is_number,
     is_boolean,
     is_atom,
     is_ge,
@@ -142,6 +147,10 @@ pub const GcBif = enum {
     fdiv,
     rem,
     length,
+    /// `trunc/1` — an integral float's integer (decision 8 §4.1's conversion).
+    trunc,
+    /// `float/1` — a number's float.
+    float,
 
     fn text(self: GcBif) []const u8 {
         return switch (self) {
@@ -152,6 +161,8 @@ pub const GcBif = enum {
             .fdiv => "'/'",
             .rem => "'rem'",
             .length => "length",
+            .trunc => "trunc",
+            .float => "float",
         };
     }
 };

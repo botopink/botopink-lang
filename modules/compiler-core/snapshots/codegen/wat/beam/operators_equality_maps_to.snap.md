@@ -24,7 +24,7 @@ fn main() {
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test, is_eq, {f, 10}, [{y, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 10}, [{y, 0}, {integer, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 11}}.
   {label, 10}.

@@ -629,6 +629,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
         .branch => |br| switch (br.kind) {
             .if_ => |i| {
                 if (i.binding != null) count.* += 1;
+                if (ifNumericNarrowing(i.cond.*) != null) count.* += 1;
                 countLocalsInExpr(em, i.cond.*, count);
                 countLocalsRec(em, i.then_, count);
                 if (i.else_) |els| countLocalsRec(em, els, count);
@@ -656,6 +657,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 var binder_arm = false;
                 for (c.arms) |arm| {
                     count.* += patternYSlots(arm.pattern);
+                    if (Emitter.armNumericConversion(arm) != null) count.* += 1;
                     if (arm.guard) |g| {
                         countLocalsInExpr(em, g, count);
                         // The subject waits on the stack across a guard that calls.
@@ -2295,6 +2297,19 @@ const Emitter = struct {
     /// The primitive type spellings a pattern can write, which decision 8 §5.2
     /// makes a type test rather than a binding. The twin of `erlang.zig`'s
     /// `primitiveTypeName`: disagree and the two backends take different arms.
+    fn isFloatTypeName(name: []const u8) bool {
+        return std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64") or std.mem.eql(u8, name, "float");
+    }
+
+    /// Decision 8 §4.1 — inside a branch that tested `T`, the value IS a `T`:
+    /// an integer type takes `trunc/1` (`2.0` → `2`), a float type `float/1`.
+    /// Null for every other type, whose value needs no conversion.
+    fn numericConversion(name: []const u8) ?beamEmitter.GcBif {
+        if (integerPatternRange(name) != null) return .trunc;
+        if (isFloatTypeName(name)) return .float;
+        return null;
+    }
+
     fn primitiveTypeName(name: []const u8) bool {
         if (integerPatternRange(name) != null) return true;
         return std.mem.eql(u8, name, "string") or std.mem.eql(u8, name, "bool") or
@@ -2345,14 +2360,27 @@ const Emitter = struct {
                     try beamEmitter.writeTest(self.out, .is_boolean, fail, &.{s});
                     return true;
                 }
-                if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "float")) {
-                    try beamEmitter.writeTest(self.out, .is_float, fail, &.{s});
+                // Decision 8 §4.1: numbers are tested by VALUE, not by origin.
+                // `x is f64` holds for any number …
+                if (isFloatTypeName(n)) {
+                    try beamEmitter.writeTest(self.out, .is_number, fail, &.{s});
                     return true;
                 }
                 // Decision 8 §2: `unknown` is every value.
                 if (std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "any")) return true;
                 if (integerPatternRange(n)) |range| {
-                    try beamEmitter.writeTest(self.out, .is_integer, fail, &.{s});
+                    // … and `2.0 is i32` is true: an integer, or a float
+                    // whose `trunc` equals it, within the type's range.
+                    const in_range = self.allocLabel();
+                    const not_int = self.allocLabel();
+                    const tmp = @max(self.scratchBase(), src + 1);
+                    try beamEmitter.writeTest(self.out, .is_integer, not_int, &.{s});
+                    try beamEmitter.writeJump(self.out, in_range);
+                    try beamEmitter.writeLabel(self.out, not_int);
+                    try beamEmitter.writeTest(self.out, .is_float, fail, &.{s});
+                    try beamEmitter.writeGcBif(self.out, .trunc, @max(self.min_live, src + 1), &.{s}, Dst.xr(tmp));
+                    try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ s, Op.xr(tmp) });
+                    try beamEmitter.writeLabel(self.out, in_range);
                     if (range.lo) |lo| try beamEmitter.writeTest(self.out, .is_ge, fail, &.{ s, Op.num(lo) });
                     if (range.hi) |hi| try beamEmitter.writeTest(self.out, .is_ge, fail, &.{ Op.num(hi), s });
                     return true;
@@ -3673,6 +3701,9 @@ const Emitter = struct {
                         const fe = lb.value.function;
                         if (try self.lowerMutatingClosure(lb.name, fe.kind.params, fe.kind.body)) return;
                     }
+                    // The declared type steers `==` (decision 8 §2.3) and a
+                    // `case` on the name.
+                    if (lb.typeAnnotation) |ta| if (writtenTypeName(ta)) |tn| try self.local_types.put(lb.name, tn);
                     try self.emitLocalBind(lb.name, lb.value.*);
                 },
                 .assign => |a| try self.emitAssign(a),
@@ -3920,8 +3951,24 @@ const Emitter = struct {
         const else_label = self.allocLabel();
         try self.emitIfTest(i, else_label);
 
+        // Decision 8 §4.1 — `if (a is i32) { … }`: inside the branch `a` IS
+        // an `i32`, so `2.0` reads as `2` there. The converted value takes a
+        // slot of its own and the name points at it for the branch only; `a`
+        // after the `if` is the value it was.
+        var narrowed: ?struct { name: []const u8, saved: Reg } = null;
+        if (ifNumericNarrowing(i.cond.*)) |nw| if (self.reg_map.get(nw.name)) |reg| {
+            const y = self.next_y;
+            self.next_y += 1;
+            try beamEmitter.writeMoveOp(self.out, reg.operand(), Dst.xr(0));
+            try beamEmitter.writeGcBif(self.out, nw.bif, @max(self.min_live, 1), &.{Op.xr(0)}, Dst.xr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y));
+            try self.reg_map.put(nw.name, .{ .y = y });
+            narrowed = .{ .name = nw.name, .saved = reg };
+        };
+
         // then branch (cond true).
         for (i.then_) |s| try self.emitStmt(s);
+        if (narrowed) |nw| try self.reg_map.put(nw.name, nw.saved);
         const then_returns = i.then_.len > 0 and (stmtIsReturn(i.then_[i.then_.len - 1]) or
             (self.inCondLoop() != null and stmtIsLoopJump(i.then_[i.then_.len - 1])));
 
@@ -3971,7 +4018,7 @@ const Emitter = struct {
     fn lowerComparisonAsTest(self: *Emitter, cond: ast.Expr, fail_label: u32) anyerror!bool {
         switch (cond) {
             .binaryOp => |bin| {
-                const cmp = comparisonTestOp(bin.op) orelse return false;
+                const cmp = self.comparisonTest(bin) orelse return false;
                 const st = try self.stageOperands(&.{ bin.lhs.*, bin.rhs.* }, &[_]ast.TrailingLambda{});
                 const a = if (cmp.swap) st.ops[1] else st.ops[0];
                 const b = if (cmp.swap) st.ops[0] else st.ops[1];
@@ -4398,7 +4445,7 @@ const Emitter = struct {
     /// Lower a comparison (`<`, `>`, `==`, …) as a value: emits a `{test, …}`
     /// then branches to produce `{atom, true}` or `{atom, false}` in `{x, dest}`.
     fn lowerCmpAsValue(self: *Emitter, bin: anytype, dest: u32) anyerror!void {
-        const cmp = comparisonTestOp(bin.op) orelse unreachable;
+        const cmp = self.comparisonTest(bin) orelse unreachable;
         const st = try self.stageOperands(&.{ bin.lhs.*, bin.rhs.* }, &[_]ast.TrailingLambda{});
         const false_label = self.allocLabel();
         const end_label = self.allocLabel();
@@ -4410,6 +4457,30 @@ const Emitter = struct {
         try beamEmitter.writeLabel(self.out, false_label);
         try beamEmitter.writeMoveOp(self.out, Op.atom("false"), Dst.xr(dest));
         try beamEmitter.writeLabel(self.out, end_label);
+    }
+
+    /// `comparisonTestOp`, with decision 8 §2.3 on `==` / `!=`: two operands
+    /// the program typed compare EXACTLY (decision B2 — `2.0 == 2` is false),
+    /// and an `unknown` one compares numbers by value (`is_eq` / `is_ne`).
+    fn comparisonTest(self: *const Emitter, bin: anytype) ?CmpTest {
+        var cmp = comparisonTestOp(bin.op) orelse return null;
+        if (cmp.opcode == .is_eq or cmp.opcode == .is_ne_exact) {
+            const by_value = self.isUnknownOperand(bin.lhs.*) or self.isUnknownOperand(bin.rhs.*);
+            if (cmp.opcode == .is_eq) {
+                cmp.opcode = if (by_value) .is_eq else .is_eq_exact;
+            } else {
+                cmp.opcode = if (by_value) .is_ne else .is_ne_exact;
+            }
+        }
+        return cmp;
+    }
+
+    /// A name the program declared `unknown` — a parameter or a `val x:
+    /// unknown` (`local_types`).
+    fn isUnknownOperand(self: *const Emitter, e: ast.Expr) bool {
+        if (e != .identifier or e.identifier.kind != .ident) return false;
+        const t = self.local_types.get(e.identifier.kind.ident) orelse return false;
+        return std.mem.eql(u8, t, "unknown");
     }
 
     /// `a && b` → short-circuit: test `a`, if false → false, else evaluate `b`.
@@ -7646,15 +7717,37 @@ const Emitter = struct {
         return i;
     }
 
-    /// One arm whose pattern `emitSubPattern` tests from `{x, 0}`.
+    /// One arm whose pattern `emitSubPattern` tests from `{x, 0}`. A
+    /// primitive numeric arm that binds the subject (`i32 { n -> … }`) binds
+    /// it CONVERTED (decision 8 §4.1: `3.0` matches `i32` and is `3` inside),
+    /// into a slot of its own — the shared subject slot still serves the arms
+    /// after it when a guard fails.
     fn emitPatternArm(self: *Emitter, arm: anytype, subj_y: ?u32, end_label: u32) anyerror!void {
         const next = self.allocLabel();
         const free = self.scratchBase();
         const saved_live = self.raiseLive(free);
         try self.emitSubPattern(0, arm.pattern, next, free);
         self.min_live = saved_live;
-        try self.emitArmTail(arm, subj_y, end_label);
+        var bind_y = subj_y;
+        if (armNumericConversion(arm)) |bif| {
+            const y = self.next_y;
+            self.next_y += 1;
+            try beamEmitter.writeGcBif(self.out, bif, @max(self.min_live, 1), &.{Op.xr(0)}, Dst.xr(free));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(free), Dst.yr(y));
+            bind_y = y;
+        }
+        try self.emitArmTail(arm, bind_y, end_label);
         try beamEmitter.writeLabel(self.out, next);
+    }
+
+    /// The conversion a `case` arm's binder takes: a primitive numeric type
+    /// pattern whose block names the subject. `countLocalsInExpr` counts a
+    /// slot for each.
+    fn armNumericConversion(arm: anytype) ?beamEmitter.GcBif {
+        if (arm.pattern != .ident) return null;
+        const blk = armBlock(arm.body) orelse return null;
+        if (blk.params.len != 1) return null;
+        return numericConversion(arm.pattern.ident);
     }
 
     /// Lower a `case expr { pat -> body; ... }` into a chain of BEAM test
@@ -9040,6 +9133,25 @@ const Emitter = struct {
         }
     }
 };
+
+/// `x is T` as an `if` condition where `x` is a name and `T` a numeric type
+/// that converts (`Emitter.numericConversion`) — the narrowing `emitIf`
+/// rebinds for its branch. `countLocalsInExpr` counts its slot.
+fn ifNumericNarrowing(cond: ast.Expr) ?struct { name: []const u8, bif: beamEmitter.GcBif } {
+    if (cond != .call or cond.call.kind != .call) return null;
+    const cc = cond.call.kind.call;
+    if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, ast.is_builtin_name)) return null;
+    const t = cc.isType orelse return null;
+    if (cc.args.len != 1) return null;
+    const arg = cc.args[0].value.*;
+    if (arg != .identifier or arg.identifier.kind != .ident) return null;
+    const tn = switch (t) {
+        .named => |n| n,
+        else => return null,
+    };
+    const bif = Emitter.numericConversion(tn) orelse return null;
+    return .{ .name = arg.identifier.kind.ident, .bif = bif };
+}
 
 /// `self`, the one receiver whose type the emit always knows.
 fn isSelfIdent(e: ast.Expr) bool {

@@ -95,7 +95,7 @@ fn main() {
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {gc_bif, 'rem', {f, 0}, 0, [{y, 1}, {integer, 2}], {x, 0}}.
-    {test, is_eq, {f, 45}, [{x, 0}, {integer, 1}]}.
+    {test, is_eq_exact, {f, 45}, [{x, 0}, {integer, 1}]}.
     {jump, {f, 43}}.
   {label, 45}.
     {gc_bif, '+', {f, 0}, 0, [{y, 2}, {y, 1}], {x, 0}}.

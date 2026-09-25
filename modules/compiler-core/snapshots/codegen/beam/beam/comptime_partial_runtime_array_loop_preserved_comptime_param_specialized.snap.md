@@ -139,7 +139,7 @@ fn main() {
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {x, 3}, {y, 3}}.
-    {test, is_eq, {f, 16}, [{y, 0}, {y, 2}]}.
+    {test, is_eq_exact, {f, 16}, [{y, 0}, {y, 2}]}.
     {gc_bif, '*', {f, 0}, 0, [{y, 3}, {integer, 2}], {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {jump, {f, 17}}.
@@ -160,7 +160,7 @@ fn main() {
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {x, 3}, {y, 3}}.
-    {test, is_eq, {f, 20}, [{y, 0}, {y, 2}]}.
+    {test, is_eq_exact, {f, 20}, [{y, 0}, {y, 2}]}.
     {gc_bif, '*', {f, 0}, 0, [{y, 3}, {integer, 2}], {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {jump, {f, 21}}.

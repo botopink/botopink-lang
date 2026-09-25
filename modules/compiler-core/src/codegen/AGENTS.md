@@ -1502,6 +1502,17 @@ codegen/
   Every one of these used to match every subject and bind nothing
   (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
   `assertBeamRunLog` rows in `tests/control_flow.zig`.
+- **Numbers by value** (decision 8 §4.1, §2.3; C-07 D1/D3): `x is f64` is
+  `is_number`; `x is i32` (every integer spelling) is an integer, or a float
+  equal to its `trunc`, within the range — `emitTypeTestBranchOn`, for `is`
+  and for a pattern alike. Inside the branch the value IS the tested type
+  (`numericConversion`: `trunc/1` / `float/1`): a `case` arm `i32 { n -> … }`
+  binds the converted value in a slot of its own (`armNumericConversion`),
+  and `if (x is i32) { … }` rebinds `x` for the branch only
+  (`ifNumericNarrowing`). `==` / `!=` (`comparisonTest`) are `is_eq_exact` /
+  `is_ne_exact` between two typed operands (decision B2) and `is_eq` / `is_ne`
+  when one is a name declared `unknown` (`local_types` now records a `val`'s
+  annotation too). D2 stores nothing (§11).
 - **The module body** (`topValIsCached`, `emitTopVal`,
   `emitEntrypointWrappers`): a named module-level `val` whose initialiser can
   have an effect (`exprCanHaveEffect`, the twin of erlang's
@@ -1547,13 +1558,10 @@ codegen/
 - **Module shape**: every *named* top-level `val` is a 0-arity function
   (reserved, emitted and — when `pub` — exported whether or not the module has a
   `main/0`), so a read is a local call; a `val` holding a fun is read, parked on
-  the stack and applied with `call_fun`. Only `_`-named synthetic statements run
-  in order inside `'_botopink_main'/0` before it calls `main/0`. This is the
-  shape erlang had before `'_botopink_init'/0` (§ **The module body**): the
-  statements run only when a `main/0` exists, a named `val`'s initialiser runs
-  once per READ rather than once at load, and neither runs under `botopink test`.
-  `tests/language/expected-failures.txt` carries the beam row of
-  `run/module_init_order.bp`.
+  the stack and applied with `call_fun`. An effectful one caches its value and
+  `'_botopink_main'/0` runs the module body before `main/0` (§ **The module
+  body** of this section). Still owed: the body runs only when a `main/0`
+  exists, and not under `botopink test`, which refuses beam.
 - **Emission**: `beam_asm.zig` writes no target text. It builds typed operands
   (`Op`/`Dst` = `beamEmitter.Operand`/`Dest`) and calls one `beam_emitter.write*`
   function per `.S` line, the module preamble included (`writeModuleForm` /
