@@ -757,6 +757,49 @@ pub fn assertErlangRunLog(
     return error.ModuleDidNotCompile;
 }
 
+/// The beam twin of `assertErlangRunLog` (front `03-beam`): compiles `src` for
+/// the beam target, assembles every emitted `.S` with `erlc +from_asm`, runs
+/// the entry under `erl` and asserts its RUN LOG equals `expected`, then that
+/// every needle of `needles` is in the emitted BEAM assembly.
+///
+/// It exists for the rows whose other backends are not landed yet: an
+/// all-backend snapshot would record another front's wrong answer in another
+/// front's directory, and the language suite's beam cell only says pass/fail.
+pub fn assertBeamRunLog(
+    allocator: Allocator,
+    src: []const u8,
+    expected: []const u8,
+    needles: []const []const u8,
+) !void {
+    const io = std.testing.io;
+    var outputs = try codegen.generate(
+        allocator,
+        &.{.{ .path = "", .source = src }},
+        io,
+        configs[2], // beam
+    );
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        const got = o.result.run_output orelse "";
+        if (!std.mem.eql(u8, got, expected)) {
+            std.debug.print("\n=== generated beam ===\n{s}\n=== RUN LOG ===\n{s}\n=== expected ===\n{s}\n", .{ o.result.js, got, expected });
+            return error.RunLogMismatch;
+        }
+        for (needles) |needle| {
+            if (std.mem.indexOf(u8, o.result.js, needle) == null) {
+                std.debug.print("\n=== generated beam ===\n{s}\n=== missing needle: {s} ===\n", .{ o.result.js, needle });
+                return error.NeedleNotFound;
+            }
+        }
+        return;
+    }
+    return error.ModuleDidNotCompile;
+}
+
 /// The test-mode twin of `assertJsRunLog` (1.0.10-beta decision 74): compiles
 /// `src` in **test mode** for both `botopink test` targets (commonJS + erlang),
 /// runs each module the way the CLI does (`runtime.executeTestModule`) and

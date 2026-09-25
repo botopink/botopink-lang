@@ -1140,6 +1140,26 @@ test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
     , "int\nstr\n", &.{ "I32 when is_integer(I32)", "String when is_binary(String) ->" });
 }
 
+// ── front 03-beam: `case` patterns in BEAM assembly (C-06, C-07 D4) ──────────
+//
+// Each row made an arm match everything or nothing on beam, so each is asserted
+// by assembling and running the emitted module and by pinning the test
+// instructions it now writes. The erlang twins are the block above.
+
+test "beam: case ---- an inclusive range is two is_ge tests (decision 53)" {
+    // C-06's beam half. `1...9` reached the untested `.literals` arm and matched
+    // every subject — 0 and 10 answered `1`. Both ends are inclusive; a string
+    // bound compares the binaries in term order.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn n(x: i32) -> i32 { return case x { 1...3 { 1 } 4...6 { 2 } _ { 0 } }; }
+        \\fn s(x: string) -> i32 { return case x { "b"..."d" { 1 } _ { 0 } }; }
+        \\fn main() {
+        \\  @print(n(0)); @print(n(1)); @print(n(3)); @print(n(4)); @print(n(6)); @print(n(7));
+        \\  @print(s("a")); @print(s("b")); @print(s("d")); @print(s("e"));
+        \\}
+    , "0\n1\n1\n2\n2\n0\n0\n1\n1\n0\n", &.{ "{test, is_ge, ", "[{x, 0}, {integer, 1}]", "[{integer, 3}, {x, 0}]" });
+}
+
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
 //
 // `break <value>` out of `while (cond)` was refused outright with an unlocated

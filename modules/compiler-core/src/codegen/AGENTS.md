@@ -1478,6 +1478,13 @@ codegen/
   constructor emits the bare atom `'Circle'`, so `variantTag` and the `.ident`
   arm take the last `.`-separated segment (`bareVariantName`); §5.1 P8 — a name
   carrying a `.` is a variant, never a binding (`isVariantPath`) (01's defect 1).
+- **Range patterns** (`emitRangeArm`, decision 53, C-06's beam half): `A...B` is
+  two `is_ge` tests on the subject — term order, so numeric for numbers and byte
+  order for the binaries a string lowers to; a string bound is moved into
+  `{x, 0}` with the subject parked above the live floor and restored on both
+  edges. It used to fall into the untested `.literals` arm and match every
+  subject (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by
+  `assertBeamRunLog` in `tests/control_flow.zig`.
 - **Module shape**: every *named* top-level `val` is a 0-arity function
   (reserved, emitted and — when `pub` — exported whether or not the module has a
   `main/0`), so a read is a local call; a `val` holding a fun is read, parked on

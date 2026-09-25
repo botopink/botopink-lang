@@ -199,9 +199,10 @@ erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell d
 # single-value probe decision 53 quotes reads beam's `1` as correct when it is a
 # false positive. commonJS passes, and **wasm passes since `8594e4ba`** (C-06's
 # wasm half: the `A...B` arm in `wat.zig`, verified by running at `361d255d`:
-# `1 1 1 0 0`). The two lines left are C-06's erlang and beam halves.
+# `1 1 1 0 0`), and **beam passes since C-06's beam half** (`emitRangeArm` in
+# `beam_asm.zig`: two `is_ge` tests; run by hand: `1 1 1 0 0`). The one line
+# left is C-06's erlang half.
 erlang   | run/case_range_value.bp     | C-06 (erlang half not landed) | decision 53: the `1...9` arm never matches — all five probes (5, 1, 9, 0, 10) answer the `_` arm's `0`
-beam     | run/case_range_value.bp     | C-06 (beam half not landed) | decision 53: the opposite — the `1...9` arm **always** matches, so 0 and 10 answer `1` too. beam does run (run.sh § beam assembles and executes it); "beam emits only out/main.S" is no longer the measurement (D4, `case` arms)
 
 # ── an index is a method call (decision 63, amended 2026-09-19) ──────────────
 # `xs[i]` IS `xs.at(i)` and `d["k"]` IS `d.at("k")` through the ambient

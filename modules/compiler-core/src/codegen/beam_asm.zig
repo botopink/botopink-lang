@@ -7262,6 +7262,45 @@ const Emitter = struct {
         try self.emitGuardPost(guard_ctx);
     }
 
+    /// Decision 53 — `A...B` is an inclusive range: the arm is taken when
+    /// `A =< x0 =< B` in term order, which is numeric order for numbers and
+    /// byte order for the binaries a string lowers to. Two `is_ge` tests, each
+    /// falling to the next arm. A string bound is materialised in `{x, 0}` with
+    /// the subject parked above the live floor and restored on both edges
+    /// (the `.stringLit` arm's choreography). Before this the payload fell into
+    /// the untested `.literals` arm and the range matched every subject.
+    fn emitRangeArm(self: *Emitter, bounds: []const ast.Pattern, arm: anytype, subj_y: ?u32, end_label: u32) anyerror!void {
+        std.debug.assert(bounds.len == 2);
+        const next = self.allocLabel();
+        var has_string = false;
+        for (bounds) |b| {
+            if (b == .stringLit) has_string = true;
+        }
+        const subj = self.scratchBase();
+        if (has_string) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(subj));
+        for (bounds, 0..) |b, i| {
+            const low = i == 0;
+            switch (b) {
+                .numberLit => |n| {
+                    const ops: [2]Op = if (low) .{ Op.xr(0), Op.num(n) } else .{ Op.num(n), Op.xr(0) };
+                    try beamEmitter.writeTest(self.out, .is_ge, next, &ops);
+                },
+                .stringLit => |s| {
+                    const saved_live = self.raiseLive(subj + 1);
+                    try self.emitStringLiteral(s, 0);
+                    self.min_live = saved_live;
+                    const ops: [2]Op = if (low) .{ Op.xr(subj), Op.xr(0) } else .{ Op.xr(0), Op.xr(subj) };
+                    try beamEmitter.writeTest(self.out, .is_ge, next, &ops);
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
+                },
+                else => unreachable, // the parser admits a number or a string bound only
+            }
+        }
+        try self.emitArmTail(arm, subj_y, end_label);
+        try beamEmitter.writeLabel(self.out, next);
+        if (has_string) try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
+    }
+
     /// Lower a `case expr { pat -> body; ... }` into a chain of BEAM test
     /// instructions with fall-through labels. Optional `pat if guard -> body`
     /// guards are honoured via `emitGuardPre`/`emitGuardPost`.
@@ -7375,7 +7414,9 @@ const Emitter = struct {
                     try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                 },
-                .variant => |v| switch (v.payload) {
+                .variant => |v| if (v.shape == .range) {
+                    try self.emitRangeArm(v.payload.literals, arm, subj_y, end_label);
+                } else switch (v.payload) {
                     .fields => |fields| {
                         const next = self.allocLabel();
                         var vbuf: [256]u8 = undefined;

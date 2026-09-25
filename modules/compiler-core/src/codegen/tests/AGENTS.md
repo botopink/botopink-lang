@@ -60,6 +60,14 @@ reason: the method already answers on the other three backends, so an
 all-backend fixture would move their snapshot directories, which front `05-wasm`
 does not own.
 
+`assertBeamRunLog(src, expected, needles)` is the beam twin of
+`assertErlangRunLog` (front `03-beam`): it compiles for the beam target,
+assembles and runs every emitted `.S` (`runtime.executeBeamAsm`), compares the
+RUN LOG and checks the emitted assembly for each needle. No snapshot, for the
+same reason: a beam row whose erlang or wasm half has not landed would record
+another front's wrong answer in another front's directory. The `case`-pattern
+rows of `control_flow.zig` use it.
+
 `assertJsExpecting`, `assertJsError` and `assertJsTestMode` wrap their snapshot calls in `utils/snap.zig` `traceEnter(loc)`/`traceLeave`, so `BOTOPINK_SNAP_TRACE=<file>` records the test `file:line` for every codegen snapshot. A new helper that writes a snapshot must do the same, or `scripts/snap_audit.sh --mode=review` cannot attribute it.
 
 ## Pass/fail contract (spec 06, H3/H9/H10)
