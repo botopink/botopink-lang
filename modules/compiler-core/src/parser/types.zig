@@ -277,7 +277,9 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
                 return ParseError.UnexpectedToken;
             }
             try args.append(alloc, try this.parseTypeRef(alloc));
-            if (!this.match(.comma)) break;
+            // A `>>` that closed an inner list left the outer close pending: the
+            // `,` after it separates the ENCLOSING list, not this one.
+            if (this.pending_gt or !this.match(.comma)) break;
             // RG4 (§1G) — a comma followed by another comma or by the closing
             // `>` means a middle generic argument was skipped (e.g.
             // `@ResultGenerator<i32, , i64>` or a stray trailing `, >`). Either pass
@@ -339,7 +341,9 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
         }
         while (!this.checkGenericClose() and !this.check(.endOfFile)) {
             try args.append(alloc, try this.parseTypeRef(alloc));
-            if (!this.match(.comma)) break;
+            // A `>>` that closed an inner list left the outer close pending: the
+            // `,` after it separates the ENCLOSING list, not this one.
+            if (this.pending_gt or !this.match(.comma)) break;
             // RG4 (§1G) — see the matching `@Name<…>` path above.
             if (this.check(.comma) or this.checkGenericClose()) {
                 const slot = this.peek();

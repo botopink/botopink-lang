@@ -3704,7 +3704,11 @@ const Emitter = struct {
                 .@"return" => true,
                 .@"break" => |b| (gen_break and b.value != null) or !in_loop,
                 .@"continue" => !in_loop,
-                .yield, .throw_, .try_, .await_ => false,
+                // In a generator a `yield` cannot sit inside the arrow a
+                // value-form `if` lowers to (decision 122's `if (…) { yield x; }`),
+                // so an `if` holding one is a statement there.
+                .yield => gen_break,
+                .throw_, .try_, .await_ => false,
             },
             .branch => |br| switch (br.kind) {
                 .if_ => |i| stmtsJump(i.then_, in_loop, gen_break) or

@@ -293,3 +293,40 @@ wasm     | run/effect_method.bp | 05-wasm | a record method looping over its own
 # run both cells; the eager erlang and wasm generator scopes do not yet.
 erlang   | run/generator_break_value.bp | C-30 (22-loops' eager generator scope) | decision 103: a bare `break` at the level of a generator body is thrown as `'__bp_break'` and never caught by the scope — `ends()` crashes the program after `0127` (`{nocatch,'__bp_break'}`)
 wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope) | decision 103: every `digits` answers the empty string — the eager generator scope yields nothing into the `for` that reads it (three empty lines)
+
+# ── front 24 (effects by return) — the cells of the steps deferred behind the ─
+# ── "Old names that left" table (the maintainer's priority order) ────────────
+# `async { … }` (decision 124, E2/E3.6–E3.7/E5) is deferred: `async` is still an
+# identifier, so every cell that writes a block reads `async` as an unbound name.
+*        | run/async_block_all_of.bp | 24-effects-by-return (async block, deferred) | `async { … }` does not parse yet (decision 124); the cell also needs `std/async`'s Task-shaped `allOf` (24-c)
+*        | run/async_block_return.bp | 24-effects-by-return (async block, deferred) | `async { … }` does not parse yet (decision 124)
+*        | run/async_block_value_type.bp | 24-effects-by-return (async block, deferred) | `async { … }` does not parse yet (decision 124)
+*        | test/contextual_words.bp | 24-effects-by-return (async block, deferred) | its `async { }` row does not parse yet (decision 124); the `iter` / `stream` rows pass
+*        | reject/async_block_conflicting_errors.bp | 24-effects-by-return (async block, deferred) | `gen-infer-conflicting-errors` needs the `async { }` block's own inferred `@Result` (E3.6)
+*        | reject/async_block_use.bp | 24-effects-by-return (async block, deferred) | `async { … }` does not parse yet (decision 124)
+*        | reject/effect_return_ambiguous_nesting.bp | 24-effects-by-return (E3.3 refinement, deferred) | `-> @Result<@Result<i32, E>, E>` answers a plain type mismatch, not `effect-return-ambiguous-nesting` (the code is reserved in `comptime/diagnostics.zig`)
+# The host rows of decision 126 are deferred: a `@External.Node` declared
+# `-> @Task<@Result<T, E>>` is still called as a bare Promise, so a rejection is
+# not turned into `Error(e)` and the resolved raw value reaches a `case` as is.
+commonJS | run/host_node_task_result.bp | 24-effects-by-return (host rows, deferred) | decision 126: the rejected Promise is not converted — `Cannot use 'in' operator to search for 'ok' in 42`
+# `.next()` by hand on an iterator (decision 122's `YieldStep<T>` protocol) has
+# no lowering: `YieldStep` is documentation in `builtins.d.bp`, not a type the
+# checker registers or a backend constructs, so `it.next()` answers the host's
+# own step (a JS `{value, done}`) and `YieldStep<i32, string>` is not arity-checked.
+commonJS | test/yield_step_next.bp::decision 122 next answers Yield for each item, then Done | 24-effects-by-return (`next()` protocol, deferred) | `it.next()` answers JS's `{ value, done }`, not a `YieldStep` variant
+commonJS | test/yield_step_next.bp::decision 122 a failing item is a Yield of an Error, then Done | 24-effects-by-return (`next()` protocol, deferred) | the same
+erlang   | test/yield_step_next.bp | 24-effects-by-return (`next()` protocol, deferred) | an eager iterator is a list: `it.next()` has no lowering and the module does not compile
+*        | reject/yield_step_error_param.bp | 24-effects-by-return (`next()` protocol, deferred) | `YieldStep` is not a registered type, so its arity is not checked (exit 0)
+# wasm prints a string held in a `@Result` payload, a record field or an array
+# element as its heap address — pre-existing, measured at `82e32e36` (before
+# front 24) with a plain `-> @Result<i32, string>` parameter: `failed: 256`. Every
+# row below prints the right sequence of lines with a number where a string is owed.
+wasm     | run/component_hook_and_component.bp | 05-wasm (string payload printing) | `256: 12` for `clicks: 12` — the label read off the hook's record prints its address
+wasm     | run/component_result_try_await.bp | 05-wasm (string payload printing) | an `Error(e)` string prints its address (`error 268`)
+wasm     | run/iterator_result_item.bp | 05-wasm (string payload printing) | every `Error(e)` string prints its address (`try error 416`); the sequence (`Ok`, `Error`, `Done`) is right
+wasm     | run/iterator_result_items.bp | 05-wasm (string payload printing) | `sum failed: 472`, `error: 656` — the `Error` strings print their addresses; the values and the order are right
+wasm     | run/prefixed_loop_result_item.bp | 05-wasm (string payload printing) | the `Error` strings print their addresses (`try error 404`); the sequence is right
+wasm     | run/stream_pages.bp | 05-wasm (string payload printing) | the `Error` strings and the batch arrays print addresses; the paging stops at the failure as owed
+wasm     | run/task_await_result.bp | 05-wasm (string payload printing) | the `Ok` / `Error` strings print their addresses (`ok 356`)
+wasm     | run/task_return_layers.bp | 05-wasm (string payload printing) | `result error 256` — the `Error` string prints its address
+wasm     | run/stream_loop_no_failure.bp | 24-effects-by-return (wasm stream loop in a record field) | only `done` prints: a `stream loop` stored in a record field and walked by `for await` yields nothing on the eager wasm lowering

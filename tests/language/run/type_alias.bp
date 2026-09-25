@@ -12,7 +12,6 @@ type Id = i32;
 type Pair<A, B> = #(A, B);
 type Ids = Id[];
 
-#[@result]
 fn parsePort(s: string) -> @Result<i32, ParseError> {
     if (s == "") { throw ParseError.Empty; };
     return 8080;

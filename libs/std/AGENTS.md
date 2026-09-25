@@ -355,12 +355,12 @@ gone, not aliased (decision 127).
      format` writes**, so formatting a file with such a signature produces a file
      that no longer compiles; `src/async.bp` carries a DO-NOT-FORMAT banner and
      `libs/std` is not one of `scripts/format-check.sh`'s canonical trees.
-  2. `Array<Array<T>>` (any doubled `>>`) as a parameter FOLLOWED BY another
-     parameter reds `generic-arg-skip-forbidden` on the next parameter —
-     `pub declare fn f<T>(xs: Array<Array<T>>, who: string) -> i32;`. Spell the
-     outer array `Array<T>[]` and it compiles. A doubled `>>` in the LAST
-     parameter or in a return type is fine (`Array<fn() -> @Task<T>>` is the
-     whole task surface), and so is a tripled `>>>` in a return type.
+  2. (fixed by front 24, which made `@Task<@Result<T, E>>` parameters common)
+     `Array<Array<T>>` — any doubled `>>` — as a parameter followed by another
+     parameter used to red `generic-arg-skip-forbidden`: the inner list's `>>`
+     left the outer close pending and the generic-argument loop read the
+     parameter separator as its own. `parser/types.zig` now stops at a pending
+     `>`.
   3. A `$N` marker called as a function in a Node template — `… => $0()` — emits
      `() => {…}()` when the argument is a closure literal, which is a JS
      `SyntaxError` (an arrow IIFE needs parentheses). Write `($0)()`.
