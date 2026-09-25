@@ -185,6 +185,16 @@ fn isSyntheticMainEntrypointCall(v: ast.ValDecl) bool {
 /// The atom a module-level `val` caches under before it has a value. A `val`
 /// that evaluates to this atom recomputes its initialiser on every read, which
 /// is only observable for an initialiser that is both effectful and returns it.
+/// Front 17 — the helper functions a module with a module `var` carries
+/// (`memoryVarForms`, `etsOwnerForms`, `loadForms`) and the box a
+/// `ProcessDict` value is stored in.
+const MEM_ETS_GUARD = "__bp_ets";
+const MEM_ETS_WAIT = "__bp_ets_wait";
+const MEM_ETS_OWNER = "__bp_ets_owner";
+const MEM_LOST = "__bp_lost";
+const MEM_LOAD = "__bp_load";
+const MEM_BOX = "__bp_var";
+
 const TOP_VAL_UNSET: []const u8 = "__bp_unset";
 
 /// True when EVALUATING this expression can be observed — it calls something,
@@ -1651,6 +1661,25 @@ fn emitErlangModule(
         if (std.mem.startsWith(u8, v.name, "_")) continue;
         em.top_vals.put(v.name, {}) catch {};
     }
+    defer em.module_vars.deinit(alloc);
+    defer em.module_var_decls.deinit(alloc);
+    var any_ets_var = false;
+    var pt_vars: std.ArrayListUnmanaged(ast.ValDecl) = .empty;
+    defer pt_vars.deinit(alloc);
+    for (program.decls) |decl| {
+        const v = switch (decl) {
+            .val => |x| x,
+            else => continue,
+        };
+        const mem = v.memory() orelse continue;
+        try em.module_vars.put(alloc, v.name, mem);
+        try em.module_var_decls.put(alloc, v.name, v);
+        switch (mem.mode) {
+            .ets => any_ets_var = true,
+            .persistentTerm => try pt_vars.append(alloc, v),
+            .processDict => {},
+        }
+    }
 
     // The module is built as `erl_ast` forms in one arena, then rendered.
     var arena_state = std.heap.ArenaAllocator.init(alloc);
@@ -1715,6 +1744,10 @@ fn emitErlangModule(
     // The module body is exported: a module with no entrypoint of its own has
     // nothing that calls it locally, and erlc would report it unused.
     if (emit_init) try exports.append(b.arena, .{ .name = "_botopink_init", .arity = 0 });
+    // The `Ets` owner is started with `spawn/3`, which reaches it by name.
+    if (any_ets_var) try exports.append(b.arena, .{ .name = MEM_ETS_OWNER, .arity = 2 });
+    // Under `botopink test` another module's runner calls the load hook.
+    if (pt_vars.items.len > 0 and test_mode) try exports.append(b.arena, .{ .name = MEM_LOAD, .arity = 0 });
     for (pub_fns.items) |f| try exports.append(b.arena, .{ .name = f.name, .arity = fnArityNoSelf(f) });
     // A host-backed `declare fn` another module imports is answered by the
     // wrapper the decl loop emits, so it is exported like any other pub fn.
@@ -1752,6 +1785,16 @@ fn emitErlangModule(
     // (`file_exports_needed`), and the slice must be complete when rendered.
     const exports_at = forms.items.len;
     try forms.append(b.arena, .blank);
+    // A `PersistentTerm` var is put once, at load (front 17): the one module
+    // attribute that has to precede every function.
+    //
+    // Not under `botopink test`: the runner is an escript, which loads its own
+    // module before any sibling — `std@beam` included — is compiled, so an
+    // `-on_load` there would run against a module that is not loaded yet. The
+    // runner calls `'__bp_load'/0` itself instead, once every sibling is
+    // loaded, and does the same for each sibling that exports one
+    // (`testRunnerForms`).
+    if (pt_vars.items.len > 0 and !test_mode) try forms.append(b.arena, .{ .on_load = .{ .name = MEM_LOAD, .arity = 0 } });
 
     // A comptime module reaches its host glue in the resident prelude by its
     // bare name, so the lowered body reads the same whether the glue is
@@ -1822,6 +1865,10 @@ fn emitErlangModule(
 
     // Interface instance `default fn`s reached by some call site above.
     try em.instanceDefaultForms(b, &forms);
+
+    // Front 17 — the storage the module `var`s above lower onto.
+    if (any_ets_var) try em.etsOwnerForms(b, &forms);
+    if (pt_vars.items.len > 0) try em.loadForms(b, &forms, pt_vars.items);
 
     // Every function a type module reached remotely, now that all of them are
     // lowered. Deduplicated against what is already exported.
@@ -1917,8 +1964,9 @@ fn emitErlangModule(
         const calls_out = em.imported_fns.count() > 0 or
             em.imported_types.count() > 0 or
             em.std_imports.count() > 0 or
+            em.module_vars.count() > 0 or
             em.type_units.items.len > 0;
-        try testRunnerForms(b, &forms, tests, calls_out, emit_init);
+        try testRunnerForms(b, &forms, tests, calls_out, emit_init, pt_vars.items.len > 0);
     }
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -2034,7 +2082,7 @@ fn comments(b: Ast.Builder, lines: []const []const u8) ![]const Ast.Stmt {
 /// the first test, exactly where `'_botopink_main'/0` runs it before `main/0` in
 /// a build. A module-level `val` therefore has the same effect in both modes —
 /// the divergence that made module-load self-registration untestable on erlang.
-fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool, run_init: bool) !void {
+fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool, run_init: bool, run_load: bool) !void {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const monotonic = try b.remote("erlang", "monotonic_time", &.{A("millisecond")});
@@ -2142,7 +2190,11 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
     // `escript <module>.erl` compiles and loads THAT module only, so a call
     // into a sibling or a dependency (`a:twice(X)`) is `undef` at run time.
     // Compile and load every other module the runner wrote beside this one,
-    // once, before the tests run.
+    // once, before the tests run — and then run the load hook of each one
+    // that exports it (`'__bp_load'/0`, a module's `PersistentTerm` vars,
+    // front 17), which the build runs as `-on_load` and a test build cannot:
+    // a sibling loaded before `std@beam` would call into a module that is not
+    // there yet.
     //
     // A module that does not compile REFUSES THE RUN, named, with `erlc`'s own
     // diagnostic (decision 67 — refuse rather than continue, and no flag that
@@ -2159,16 +2211,18 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
             \\(fun() ->
             \\        Dir = filename:dirname(escript:script_name()),
             \\        Self = atom_to_list(?MODULE) ++ ".erl",
-            \\        lists:foreach(fun(Src) ->
+            \\        Loaded = lists:foldl(fun(Src, Acc) ->
             \\            case filename:basename(Src) =:= Self of
-            \\                true -> ok;
+            \\                true -> Acc;
             \\                false ->
             \\                    case compile:file(Src, [binary, return_errors, {i, Dir}]) of
-            \\                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
+            \\                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin), [Mod | Acc];
             \\                        Bad -> '__bp_dead_module'(Src, Bad)
             \\                    end
             \\            end
-            \\        end, filelib:wildcard(filename:join([Dir, "**", "*.erl"])))
+            \\        end, [], filelib:wildcard(filename:join([Dir, "**", "*.erl"]))),
+            \\        [Mod:'__bp_load'() || Mod <- lists:reverse(Loaded), erlang:function_exported(Mod, '__bp_load', 0)],
+            \\        ok
             \\    end)()
         };
         // Reported on standard_error, so `--json`'s stdout envelope stays pure
@@ -2219,6 +2273,9 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
         });
         try main_stmts.append(b.arena, try b.call("__bp_load_siblings", &.{}));
     }
+    // Front 17 — this module's `PersistentTerm` vars, put before the module
+    // body and the tests read them (the build's `-on_load`; see `emitModule`).
+    if (run_load) try main_stmts.append(b.arena, try b.call(MEM_LOAD, &.{}));
     if (run_init) try main_stmts.append(b.arena, try b.call("_botopink_init", &.{}));
     try main_stmts.appendSlice(b.arena, &.{
         try b.match(V("Filter"), filter),
@@ -2775,6 +2832,14 @@ const Emitter = struct {
     /// half of the `persistent_term` key an effectful module-level `val` caches
     /// under, so two modules declaring the same `val` name keep two values.
     erl_atom: []const u8 = "",
+    /// Front 17 — this file's module-level `var`s, name → where each lives on
+    /// the BEAM (`ast.ValDecl.memory`). A bare read of one is still the call
+    /// `name()` (`top_vals`); an assignment to one that no local shadows is a
+    /// write onto `std/beam`'s host primitives (`memoryWrite`).
+    module_vars: std.StringHashMapUnmanaged(ast.Memory) = .empty,
+    /// The declaration of each of `module_vars` — the `Ets` guard re-seeds
+    /// from its initialiser.
+    module_var_decls: std.StringHashMapUnmanaged(ast.ValDecl) = .empty,
     /// The DECLARED type name of a local — a parameter's annotation or a
     /// `val x: T = …`. Function-scoped, cleared by `resetLocals`; the keys and
     /// values borrow the AST. Only a plain `named` annotation is recorded: a
@@ -3690,6 +3755,9 @@ const Emitter = struct {
     /// later binding — assignment or a shadowing `val i = i - 1` — binds the next
     /// version, with `value` (and the `+=` left operand) reading the previous one.
     fn bindExpr(this: *Emitter, b: Ast.Builder, name: []const u8, op: BindOp, value: ast.Expr) anyerror!Ast.Expr {
+        if (op != .bind and !this.locals.contains(name)) {
+            if (this.module_vars.get(name)) |mem| return this.memoryWrite(b, name, mem, op == .plus_assign, value);
+        }
         // Remember string-valued bindings so a later `+` on them concatenates.
         if (op != .plus_assign and this.isStringExpr(value)) try this.string_locals.put(name, {});
         if (op != .plus_assign) {
@@ -4386,6 +4454,7 @@ const Emitter = struct {
     /// A constant initialiser needs no cache: evaluating it per read cannot be
     /// told apart from evaluating it once, and the reader stays a plain body.
     fn topValForms(this: *Emitter, b: Ast.Builder, out: *Forms, v: ast.ValDecl) !void {
+        if (v.memory()) |mem| return this.memoryVarForms(b, out, v, mem);
         if (v.value.isComptimeExpr()) {
             try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "comptime val {s}", .{v.name})) });
         }
@@ -4449,6 +4518,206 @@ const Emitter = struct {
             .blank,
             try blockFunction(b, "_botopink_init", &.{}, try b.body(stmts.items)),
         });
+    }
+
+    // ── module `var` storage (front 17, `@BeamMemory`) ────────────────────────
+    //
+    // A module-level `var` is one value per execution context — on the BEAM,
+    // per PROCESS — and `#[@BeamMemory.<Mode>]` widens it. Every read is still
+    // the 0-arity reader `name()`; the reader and every write lower onto the
+    // host primitives of `std/beam` (decision 43's layer 1), reached as remote
+    // calls into `std@beam`, so no line here names the process dictionary, ETS
+    // or `persistent_term`. The storage is named `'<module atom>@@<var>'` —
+    // the process-dictionary key, the ETS table and its registered owner, the
+    // `persistent_term` key — so two modules declaring the same `var` name keep
+    // two values (decision 109's `@@` separator, which no path atom contains).
+
+    /// `'<module atom>@@<name>'` — where module `var` `name` is stored.
+    fn memoryKey(this: *Emitter, b: Ast.Builder, name: []const u8) !Ast.Expr {
+        return Ast.Expr.a(try std.fmt.allocPrint(b.arena, "{s}@@{s}", .{ this.atomOf(this.module_name), name }));
+    }
+
+    /// A call to one of `std/beam`'s host primitives.
+    fn beamPrim(this: *Emitter, b: Ast.Builder, prim: []const u8, args: []const Ast.Expr) !Ast.Expr {
+        return b.remote(try this.stdModuleAtom(b, "beam"), prim, args);
+    }
+
+    /// The reader of a module `var`, per mode:
+    /// - `ProcessDict` — the value this process put, else the declaration's,
+    ///   evaluated and put on the first read so an effectful initialiser runs
+    ///   once per process. The value is stored boxed (`{'__bp_var', V}`): a
+    ///   botopink `null` is `undefined`, which is also what an absent key reads.
+    /// - `Ets` — `lookup_element` on the table the guard answers (`etsOwnerForms`).
+    /// - `PersistentTerm` — the term `'__bp_load'/0` put when the module loaded.
+    fn memoryVarForms(this: *Emitter, b: Ast.Builder, out: *Forms, v: ast.ValDecl, mem: ast.Memory) !void {
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "var {s} — @BeamMemory.{s}", .{ v.name, mem.mode.spelling() })) });
+        const saved = this.indent;
+        this.indent = 1;
+        defer this.indent = saved;
+        this.resetLocals();
+        const key = try this.memoryKey(b, v.name);
+        const body: Ast.Expr = switch (mem.mode) {
+            .processDict => blk: {
+                const boxed = Ast.Expr.v("__BpV");
+                const fresh = Ast.Expr.v("__BpInit");
+                break :blk try b.caseOf(try this.beamPrim(b, "pdGet", &.{key}), &.{
+                    try b.clause(&.{try b.tuple(&.{ Ast.Expr.a(MEM_BOX), boxed })}, &.{}, &.{boxed}),
+                    try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{
+                        try b.match(fresh, try this.memoryInit(b, v)),
+                        try this.beamPrim(b, "pdPut", &.{ key, try b.tuple(&.{ Ast.Expr.a(MEM_BOX), fresh }) }),
+                        fresh,
+                    }),
+                });
+            },
+            .ets => try this.beamPrim(b, "etsGet", &.{ try this.etsTable(b, v.name), key, .{ .number = "2" } }),
+            .persistentTerm => try this.beamPrim(b, "ptGet", &.{key}),
+        };
+        try out.append(b.arena, try blockFunction(b, v.name, &.{}, try b.body(&.{body})));
+    }
+
+    /// The declaration's initialiser as a value — a comptime block's `break`.
+    fn memoryInit(this: *Emitter, b: Ast.Builder, v: ast.ValDecl) !Ast.Expr {
+        if (v.value.* == .comptime_ and v.value.comptime_.kind == .comptimeBlock) {
+            const body = try this.comptimeBlockBody(b, v.value.comptime_.kind.comptimeBlock.body, this.indent + 1);
+            return .{ .apply = .{ .fun = try b.ptr(.{ .fun = .{ .params = &.{}, .body = body } }) } };
+        }
+        return this.exprNode(b, v.value.*);
+    }
+
+    /// `'__bp_ets'(Name, Seed)` — the table of `Ets` var `name`, created and
+    /// seeded by its owner the first time anything reaches it (the guard every
+    /// read and write goes through, decision 39). The seed is the declaration's
+    /// initialiser, a literal or a `comptime` value (the checker's rule), so it
+    /// can be written at every site.
+    fn etsTable(this: *Emitter, b: Ast.Builder, name: []const u8) !Ast.Expr {
+        const decl = this.module_var_decls.get(name).?;
+        return this.fileCall(b, MEM_ETS_GUARD, &.{ try this.memoryKey(b, name), try this.memoryInit(b, decl) });
+    }
+
+    /// A write to module `var` `name` (`name = value` / `name += value`).
+    fn memoryWrite(this: *Emitter, b: Ast.Builder, name: []const u8, mem: ast.Memory, plus: bool, value: ast.Expr) anyerror!Ast.Expr {
+        const key = try this.memoryKey(b, name);
+        switch (mem.mode) {
+            .ets => {
+                const tab = try this.etsTable(b, name);
+                switch (ast.classifyMemoryWrite(name, plus, &value)) {
+                    // Decision 40: an increment is the host's atomic counter —
+                    // integers only, which the checker has already enforced.
+                    .bump => |bump| {
+                        const incr = try this.exprNode(b, bump.incr.*);
+                        const by: Ast.Expr = if (bump.negate) .{ .unop = .{ .op = "-", .operand = try b.ptr(incr) } } else incr;
+                        return this.beamPrim(b, "etsBump", &.{ tab, key, by });
+                    },
+                    // `recompose` is refused by the checker (design §5(b)).
+                    .whole, .recompose => return this.beamPrim(b, "etsPut", &.{ tab, try b.tuple(&.{ key, try this.memoryNewValue(b, name, plus, value) }) }),
+                }
+            },
+            .processDict => return this.beamPrim(b, "pdPut", &.{ key, try b.tuple(&.{ Ast.Expr.a(MEM_BOX), try this.memoryNewValue(b, name, plus, value) }) }),
+            // Refused by the checker (design §5(a)); written as a put so a
+            // program that reaches here unchecked still means what it says.
+            .persistentTerm => return this.beamPrim(b, "ptPut", &.{ key, try this.memoryNewValue(b, name, plus, value) }),
+        }
+    }
+
+    /// The value a write stores: `value`, or `name + value` for `+=` — lowered
+    /// as the binary `+` it is, so a string var concatenates.
+    fn memoryNewValue(this: *Emitter, b: Ast.Builder, name: []const u8, plus: bool, value: ast.Expr) anyerror!Ast.Expr {
+        if (!plus) return this.exprNode(b, value);
+        const lhs = try b.arena.create(ast.Expr);
+        lhs.* = .{ .identifier = .{ .loc = value.getLoc(), .kind = .{ .ident = name } } };
+        const rhs = try b.arena.create(ast.Expr);
+        rhs.* = value;
+        return this.exprNode(b, .{ .binaryOp = .{ .loc = value.getLoc(), .op = .add, .lhs = lhs, .rhs = rhs } });
+    }
+
+    /// The `Ets` guard and the table owner, once per module (decision 39):
+    ///
+    ///     '__bp_ets'(Name, Seed) ->
+    ///         case erlang:whereis(Name) of
+    ///             undefined -> '__bp_ets_wait'(Name, Seed, undefined);
+    ///             _ -> Name
+    ///         end.
+    ///
+    /// A table's owner registers itself under the table's name only once the
+    /// table is created AND seeded, so "the owner is registered" is the one
+    /// test that also says "the row is there". Until then a caller waits: it
+    /// starts a candidate owner when no table exists and its own candidate is
+    /// not running, yields, and looks again. Candidates race on `ets:new` with
+    /// `named_table`, which admits one; the others answer `badarg` and exit.
+    /// The winner parks in `timer:sleep(infinity)` — a tail call out of this
+    /// module, so no frame of it is left to be purged by a code reload — and
+    /// when it dies the table dies with it and the next caller starts another,
+    /// re-seeded from the declaration: the silent re-init decided as the
+    /// safety net, with a stable owner in front of it.
+    fn etsOwnerForms(this: *Emitter, b: Ast.Builder, out: *Forms) !void {
+        const V = Ast.Expr.v;
+        const A = Ast.Expr.a;
+        const name = V("Name");
+        const seed = V("Seed");
+        const cand = V("Cand");
+        const owned = try b.caseOf(try b.remote("erlang", "whereis", &.{name}), &.{
+            try b.clause(&.{A("undefined")}, &.{}, &.{try b.call(MEM_ETS_WAIT, &.{ name, seed, A("undefined") })}),
+            try b.clause(&.{V("_")}, &.{}, &.{name}),
+        });
+        const alive = try b.binop("andalso", try b.call("is_pid", &.{cand}), try b.remote("erlang", "is_process_alive", &.{cand}));
+        const start = try b.caseOf(try this.beamPrim(b, "etsWhereis", &.{name}), &.{
+            try b.clause(&.{A("undefined")}, &.{}, &.{try b.remote("erlang", "spawn", &.{
+                A(this.atomOf(this.module_name)),
+                A(MEM_ETS_OWNER),
+                try b.list(&.{ name, seed }),
+            })}),
+            try b.clause(&.{V("_")}, &.{}, &.{cand}),
+        });
+        const next = try b.caseOf(alive, &.{
+            try b.clause(&.{A("true")}, &.{}, &.{cand}),
+            try b.clause(&.{A("false")}, &.{}, &.{start}),
+        });
+        const wait = try b.caseOf(try b.remote("erlang", "whereis", &.{name}), &.{
+            .{ .patterns = try b.exprs(&.{A("undefined")}), .body = try b.body(&.{
+                try b.match(V("Next"), next),
+                try b.remote("erlang", "yield", &.{}),
+                try b.call(MEM_ETS_WAIT, &.{ name, seed, V("Next") }),
+            }) },
+            try b.clause(&.{V("_")}, &.{}, &.{name}),
+        });
+        const created: Ast.Expr = .{ .try_catch = .{
+            .body = try b.body(&.{try this.beamPrim(b, "etsNew", &.{ name, try b.list(&.{ A("named_table"), A("public"), A("set") }) })}),
+            .catches = try b.arena.dupe(Ast.Clause, &.{.{
+                .patterns = try b.exprs(&.{try b.exception(A("error"), A("badarg"))}),
+                .body = try b.body(&.{A(MEM_LOST)}),
+            }}),
+        } };
+        const own = try b.caseOf(created, &.{
+            try b.clause(&.{A(MEM_LOST)}, &.{}, &.{A("ok")}),
+            .{ .patterns = try b.exprs(&.{V("_")}), .body = try b.body(&.{
+                try this.beamPrim(b, "etsPut", &.{ name, try b.tuple(&.{ name, seed }) }),
+                try b.remote("erlang", "register", &.{ name, try b.call("self", &.{}) }),
+                try b.remote("timer", "sleep", &.{A("infinity")}),
+            }) },
+        });
+        try out.appendSlice(b.arena, &.{
+            .blank,
+            try blockFunction(b, MEM_ETS_GUARD, &.{ name, seed }, try b.body(&.{owned})),
+            .blank,
+            try blockFunction(b, MEM_ETS_WAIT, &.{ name, seed, cand }, try b.body(&.{wait})),
+            .blank,
+            try blockFunction(b, MEM_ETS_OWNER, &.{ name, seed }, try b.body(&.{own})),
+        });
+    }
+
+    /// `'__bp_load'/0`, the module's `-on_load` function: every
+    /// `PersistentTerm` var put under its key, in declaration order. It runs
+    /// once per load — and again on every code reload, which is why a
+    /// run-time write to one is refused rather than lowered.
+    fn loadForms(this: *Emitter, b: Ast.Builder, out: *Forms, vars: []const ast.ValDecl) !void {
+        const saved = this.indent;
+        this.indent = 1;
+        defer this.indent = saved;
+        this.resetLocals();
+        var stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        for (vars) |v| try stmts.append(b.arena, try this.beamPrim(b, "ptPut", &.{ try this.memoryKey(b, v.name), try this.memoryInit(b, v) }));
+        try stmts.append(b.arena, Ast.Expr.a("ok"));
+        try out.appendSlice(b.arena, &.{ .blank, try blockFunction(b, MEM_LOAD, &.{}, try b.body(stmts.items)) });
     }
 
     // ── fn ────────────────────────────────────────────────────────────────────

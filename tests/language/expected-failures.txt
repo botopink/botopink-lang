@@ -312,12 +312,14 @@ erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's lab
 # the first failing row stops the run.
 wasm     | run/effect_method.bp | 05-wasm | a record method looping over its own array field answers `0`, and a method declared in an enum's body traps (`unreachable`). Measured with the effect annotations removed as well, so it is the method call and not the effect
 
-# ── front 17 (C-05 landed the carrier; C-10 owes the BEAM lowering) ──────────
-# A module-level `var` parses, is `let` on commonJS and `(mut i32)` on wasm, and
-# has no lowering on erlang or beam until C-10 (`@BeamMemory` steps 4–5, after
-# 13). Measured at `4fe1747e`: erlang emits `hits() -> 0.` and `Hits = (Hits +
-# 1).` — unbound, the module does not compile; beam writes `%% assign to unknown
-# variable: hits` into the `.S`, assembles, and prints `0` at exit 0.
-erlang   | run/module_var.bp | C-10 | a module `var` is still a 0-arity fn on erlang; the write is `Hits = (Hits + 1).` with `Hits` unbound, so the module does not compile
+# ── front 17 (C-10: the BEAM lowering) ───────────────────────────────────────
+# Step 4 lowered a module `var` on erlang onto `std/beam`'s primitives, so
+# `run/module_var` and `test/beam_memory_noop` pass there. beam's lowering is
+# step 5's; until it lands the write is dropped (`%% assign to unknown
+# variable: hits` in the `.S`) and the program prints `0` at exit 0.
+# `run/beam_memory_persistent_term` is not listed because it passes on beam
+# today for the wrong reason: the read answers the declaration's `101` inline,
+# which is also what the value put at load would be.
 beam     | run/module_var.bp | C-10 | the write is dropped (`%% assign to unknown variable: hits`) and the program prints `0` at exit 0 — the silent one of the two
-erlang   | test/beam_memory_noop.bp | C-10 | the five tests write through a module `var`; each write is an unbound `Hits`/`Bare`/… on erlang, so the cell does not compile — once C-10 lands, the annotated ones become mode cells, not no-op cells
+beam     | run/beam_memory_process_dict.bp | C-10 | step 5: the beam target has no module-`var` storage yet — the write is dropped, so `main` prints `0` where it wrote `5`
+beam     | run/beam_memory_ets.bp | C-10 | step 5: every increment is dropped and the program prints `0` where five processes × three increments are `15`

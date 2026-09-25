@@ -667,6 +667,11 @@ pub fn writeForm(w: *Writer, form: Ast.Form) Error!void {
             try writeFnRefs(w, refs);
             try w.writeAll("}).\n");
         },
+        .on_load => |ref| {
+            try w.writeAll("-on_load(");
+            try writeFnRef(w, ref);
+            try w.writeAll(").\n");
+        },
         .blank => try w.writeByte('\n'),
         .function => |f| try writeFunction(w, f),
         .comment => |c| {

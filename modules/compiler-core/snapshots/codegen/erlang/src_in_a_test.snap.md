@@ -103,16 +103,18 @@ helper() ->
     (fun() ->
         Dir = filename:dirname(escript:script_name()),
         Self = atom_to_list(?MODULE) ++ ".erl",
-        lists:foreach(fun(Src) ->
+        Loaded = lists:foldl(fun(Src, Acc) ->
             case filename:basename(Src) =:= Self of
-                true -> ok;
+                true -> Acc;
                 false ->
                     case compile:file(Src, [binary, return_errors, {i, Dir}]) of
-                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
+                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin), [Mod | Acc];
                         Bad -> '__bp_dead_module'(Src, Bad)
                     end
             end
-        end, filelib:wildcard(filename:join([Dir, "**", "*.erl"])))
+        end, [], filelib:wildcard(filename:join([Dir, "**", "*.erl"]))),
+        [Mod:'__bp_load'() || Mod <- lists:reverse(Loaded), erlang:function_exported(Mod, '__bp_load', 0)],
+        ok
     end)().
 
 '__bp_dead_module'(Src, Bad) ->

@@ -3296,6 +3296,79 @@ fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferEr
             );
         }
     }
+    const mem = v.memory() orelse return;
+    // Design §5(d), step 4: an `Ets` table that goes missing is re-created and
+    // re-seeded from the declaration at a moment nobody chose, so the seed is
+    // a literal or a `comptime` expression — not a purity judgement, which
+    // the compiler cannot make.
+    if (mem.mode == .ets and !ast.isMemorySeed(v.value.*)) return failAt(
+        env,
+        v.value.getLoc(),
+        try std.fmt.allocPrint(env.arena, "an `@BeamMemory.Ets` var is re-seeded from its initialiser whenever its table is re-created — `{s}`'s initialiser must be a literal or a `comptime` expression", .{v.name}),
+        try std.fmt.allocPrint(env.arena, "Write the value (`var {s} = 0;`), fold it with `comptime`, or keep the var in `ProcessDict` / `PersistentTerm`, whose initialiser runs once.", .{v.name}),
+    );
+    // `keyed = true` stores a `Dict` one row per key, which needs the
+    // `Dict`'s own reads and writes lowered onto rows. The BEAM emitters do
+    // not lower them yet, and storing the whole value instead would drop the
+    // atomicity the author asked for without a word (decision 67).
+    if (mem.keyed) if (env.target) |t| if (std.mem.eql(u8, t, "erlang") or std.mem.eql(u8, t, "beam")) return failAt(
+        env,
+        mem.loc orelse v.value.getLoc(),
+        try std.fmt.allocPrint(env.arena, "`keyed = true` has no lowering on the `{s}` target yet — `{s}` would be stored whole, which is `keyed = false`", .{ t, v.name }),
+        "Drop `keyed = true` to store the whole `Dict` as one value, or build for `commonJS` / `wasm`, where the annotation is a no-op.",
+    );
+    try env.memoryVars.put(env.arena, v.name, .{ .memory = mem, .ty = bindTy });
+}
+
+/// Front 17 step 4 — the writes `@BeamMemory` cannot honour, refused at the
+/// assignment on every target (the annotation's contract does not depend on
+/// where the program runs, only its lowering does):
+///
+/// - a `PersistentTerm` var is written once, at load (design §5(a)): every
+///   `persistent_term:put` scans every process heap, and `-on_load` re-runs on
+///   every code reload, so a run-time write is erased by the next one;
+/// - under `Ets`, a write that recomputes the value from what it just read
+///   loses one of two concurrent runs (§5(b)) — except the increment
+///   (`x += n`, `x = x + n`), which lowers to the host's atomic counter, and
+///   that only on an integer (decision 40).
+fn refuseMemoryWrite(env: *Env, name: []const u8, plus: bool, value: *const ast.Expr, loc: ast.Loc) InferError!void {
+    const mv = env.memoryVars.get(name) orelse return;
+    // A local or parameter of the same name shadows the module binding.
+    const bound = env.lookup(name) orelse return;
+    if (bound != mv.ty) return;
+    switch (mv.memory.mode) {
+        .processDict => {},
+        .persistentTerm => return failAt(
+            env,
+            loc,
+            try std.fmt.allocPrint(env.arena, "a `PersistentTerm` var is written once, at load — `{s}` cannot be assigned", .{name}),
+            if (typeIsDict(mv.ty))
+                "Initialise it in the declaration, or use `#[@BeamMemory.Ets(keyed = true)]` if it changes."
+            else
+                "Initialise it in the declaration, or use `#[@BeamMemory.Ets]` if it changes.",
+        ),
+        .ets => switch (ast.classifyMemoryWrite(name, plus, value)) {
+            .whole => {},
+            // A `Dict` rewritten through its own methods is decision 42's
+            // documented case, not this rule's: under `keyed = false` it is
+            // read, updated and stored whole — concurrent writes to different
+            // keys can be lost, which `docs.md` states with the figure and the
+            // compiler deliberately does not warn about — and `keyed = true`
+            // is the one-row-per-key form that exists to remove the race.
+            .recompose => if (!typeIsDict(mv.ty)) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "`{s}` is an `@BeamMemory.Ets` var: a write that recomputes it from its own value can lose one of two concurrent runs", .{name}),
+                try std.fmt.allocPrint(env.arena, "An increment — `{s} += n` or `{s} = {s} + n` — is atomic on an integer; any other write must not read `{s}`.", .{ name, name, name, name }),
+            ) else {},
+            .bump => if (!isIntType(mv.ty.deref())) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "an increment of an `@BeamMemory.Ets` var is atomic only on an integer — `{s}` is {s}", .{ name, try describeForKeyed(env, mv.ty) }),
+                try std.fmt.allocPrint(env.arena, "Declare `{s}` an integer, or write the whole value without reading `{s}`.", .{ name, name }),
+            ),
+        },
+    }
 }
 
 fn failAt(env: *Env, loc: ast.Loc, msg: []const u8, hint: ?[]const u8) InferError {
@@ -8834,6 +8907,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                     .name => |name| blk: {
                         if (env.lookup(name)) |ty| {
                             try refuseValAssign(env, name, loc);
+                            try refuseMemoryWrite(env, name, a.op == .plusAssign, a.value, loc);
                             try unifyAt(env, ty, valTyped.getType(), loc);
                         } else {
                             env.lastError = TypeError.unboundVariable(name).withLoc(loc);

@@ -1168,6 +1168,34 @@ codegen/
   body as an applied `fun`. Each val function starts a fresh variable scope.
   Value-less jumps have a value node: `return;`/bare `try`/bare `yield` →
   `undefined`, bare `throw;` → `erlang:throw(undefined)`.
+- **Module-level `var`s — `@BeamMemory`** (front 17 step 4, decisions 39, 40,
+  43; `memoryVarForms`, `memoryWrite`, `etsOwnerForms`, `loadForms`): a `var` is
+  one value per PROCESS (`ProcessDict`, the default) unless its annotation widens
+  it to the node (`Ets`, `PersistentTerm`). A read is still the call `name()`;
+  the reader and every write that no local shadows (`bindExpr` →
+  `memoryWrite`) lower onto `std/beam`'s host primitives as remote calls into
+  `std@beam` (`beamPrim`) — this file names no ETS, `persistent_term` or
+  process-dictionary function (decision 43's layer 2), and `comptime.zig`'s
+  `expandStdImports` pulls `std/beam` into an erlang/beam build of a module
+  that declares a `var`. The storage is named `'<module atom>@@<var>'`
+  (`memoryKey`). `ProcessDict`: `pdGet`, the value boxed as
+  `{'__bp_var', V}` (a `null` is `undefined`, which is also what an absent key
+  reads), the initialiser evaluated and put on a process's first read.
+  `Ets`: every read and write goes through `'__bp_ets'(Name, Seed)`, which
+  answers the table once its owner is registered under the table's name; the
+  owner (`'__bp_ets_owner'/2`, spawned by `'__bp_ets_wait'/3`) wins
+  `etsNew(named_table)`, seeds the row, registers and parks in
+  `timer:sleep(infinity)`, so "registered" also means "seeded", and a dead
+  owner's table is re-created and re-seeded by the next caller. An increment
+  (`x += n`, `x = x + n`, `x = n + x`, `x = x - n` — `ast.classifyMemoryWrite`,
+  the reading the checker shares) is `etsBump`; any other write `etsPut`s the
+  whole value. `PersistentTerm`: `ptGet`, put by `'__bp_load'/0` from
+  `-on_load` — except under `botopink test`, whose escript loads its own module
+  before `std@beam`: there `'__bp_load'/0` is exported and the runner calls it
+  (its own after the siblings load, each sibling's from `'__bp_load_siblings'`).
+  What the modes cannot honour the checker refuses (`infer.zig`
+  `refuseMemoryWrite`); `keyed = true` has no lowering yet and is refused on
+  erlang and beam.
 - **The module body** (`'_botopink_init'/0`, `initForms`): a module-level `val` is
   evaluated ONCE, in declaration order, at module load — `docs.md` § `val`, and
   what `const x = f();` does on commonJS. `'_botopink_init'/0` is that body: a

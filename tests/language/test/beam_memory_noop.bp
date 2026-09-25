@@ -1,15 +1,15 @@
 //// Decision 43 — off the BEAM, `#[@BeamMemory.<member>]` is a silent no-op: a
 //// target whose execution context is already the whole program has nowhere
 //// else to put the state, so an annotated `var` is the binding a bare `var` is.
-//// `ProcessDict` is the default said out loud; `Ets(keyed = true)` needs a
-//// `Dict` (decision 51). Each test writes and reads back through the module
-//// binding, because a read alone would pass on a backend that dropped the
-//// write.
+//// `ProcessDict` is the default said out loud. Each test writes and reads back
+//// through the module binding, because a read alone would pass on a backend
+//// that dropped the write.
 ////
-//// erlang is C-10's (`@BeamMemory` steps 4–5, after 13): the writes below do
-//// not compile there today (`hits() -> 0.` then an unbound `Hits`).
-
-import { dict } from "std";
+//// On erlang the same tests run one process each, where the three modes read
+//// alike; what tells them apart across processes is the `run/beam_memory_*`
+//// cells'. What the annotation refuses it refuses on every target (front 17
+//// step 4): a `PersistentTerm` var is only read here, because writing one after
+//// load is `reject/beam_memory_pt_write`.
 
 var bare: i32 = 0;
 
@@ -21,9 +21,6 @@ var hits: i32 = 0;
 
 #[@BeamMemory.PersistentTerm]
 var version: i32 = 101;
-
-#[@BeamMemory.Ets(keyed = true)]
-var counts: Dict<string, i32> = dict.empty();
 
 fn bump() { hits = hits + 1; }
 
@@ -44,14 +41,11 @@ test "Ets: a write through a fn is what the next reader sees" {
     assert hits == 2;
 }
 
-test "PersistentTerm: the declaration's value, then a write" {
-    assert version == 101;
-    version = 102;
-    assert version == 102;
+test "Ets: a whole-value write replaces the value" {
+    hits = 40;
+    assert hits == 40;
 }
 
-test "Ets(keyed = true) on a Dict: a row per key" {
-    counts = counts.insert("a", 1);
-    counts = counts.insert("b", 2);
-    assert counts.size() == 2;
+test "PersistentTerm: the declaration's value" {
+    assert version == 101;
 }
