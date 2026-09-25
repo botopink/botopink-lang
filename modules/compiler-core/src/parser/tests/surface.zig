@@ -407,6 +407,29 @@ test "surface: throw new Error(…) is removed-keyword-new at `new`" {
     try expectError("fn f() { throw new Error(\"x\"); }", .removedKeywordNew, 1, 16);
 }
 
+// ── front 17, decision 38: the annotated binding takes the plain form only ────
+
+test "surface: an annotated `val` shorthand is refused at the annotation" {
+    // `val add = fn …` is a `fn` declaration in a `val` coat; the annotation
+    // would have nowhere to land, so the form is refused where it starts.
+    try expectError("#[@BeamMemory.Ets]\nval add = fn(x: i32) -> i32 { return x; }", .unexpectedToken, 1, 1);
+    try expectError("#[@BeamMemory.Ets] pub val add = fn(x: i32) -> i32 { return x; }", .unexpectedToken, 1, 1);
+}
+
+test "surface: `var` takes no shorthand — `var add = fn …` is not a fn declaration" {
+    var parsed = try parse(
+        \\var hits: i32 = 0;
+        \\#[@BeamMemory.PersistentTerm]
+        \\pub var version = 101;
+    );
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(usize, 2), parsed.program.decls.len);
+    try std.testing.expect(parsed.program.decls[0].val.mutable);
+    try std.testing.expect(parsed.program.decls[1].val.mutable);
+    try std.testing.expect(parsed.program.decls[1].val.isPub);
+    try std.testing.expectEqual(@as(usize, 1), parsed.program.decls[1].val.annotations.len);
+}
+
 test "surface: new, delegate and const are ordinary identifiers" {
     var parsed = try parse(
         \\val new = 1;
