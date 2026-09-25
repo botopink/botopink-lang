@@ -842,6 +842,18 @@ pub fn shipErlSidecars(
     var project: ProjectManifest = .{};
 
     var shipped = std.StringHashMapUnmanaged(void){};
+    // Both answers below depend only on the roots on disk and the project's
+    // manifest, which one run reads once — so each is asked once per run.
+    // `owners`: lib → the package `sidecarOwner` resolved it to (null: none).
+    // `misses`: `<owner>\x00<atom>` pairs already probed and not found — an OTP
+    // qualifier (`lists:`, `maps:`) is not a sidecar and never becomes one.
+    // Without them every OTP call in every dependency module re-ran
+    // `manifest.scanRoots` over every library root, reading every workspace
+    // manifest again: measured on emilia's `emilia-backgrounds` (1 849 emitted
+    // modules), its erlang cell went from ~51 s to ~11 s with nothing else
+    // changed.
+    var owners = std.StringHashMapUnmanaged(?SidecarOwner){};
+    var misses = std.StringHashMapUnmanaged(void){};
     for (outputs) |o| {
         if (o.result.failed()) continue;
         // The owning lib is the first path segment of a dependency module name
@@ -852,6 +864,8 @@ pub fn shipErlSidecars(
         while (it.next()) |atom| {
             if (emitted.contains(atom)) continue;
             if (shipped.contains(atom)) continue;
+            const miss_key = try std.fmt.allocPrint(arena, "{s}\x00{s}", .{ owner orelse "", atom });
+            if (misses.contains(miss_key)) continue;
 
             const base = try std.fmt.allocPrint(arena, "{s}.erl", .{atom});
             const target = try std.fs.path.join(arena, &.{ out_dir, base });
@@ -861,8 +875,12 @@ pub fn shipErlSidecars(
                     if (roots == null) roots = try resolveLibRoots(gpa, io, env_map);
                     // Same owner lookup as the `.mjs` shipper: the directory the
                     // build resolved the dependency to, and that package's `src`.
-                    var oerr: ?manifest.Located = null;
-                    const found = try sidecarOwner(gpa, arena, io, roots.?, env_map, project.get(arena, io), lib, &oerr);
+                    const found = owners.get(lib) orelse found: {
+                        var oerr: ?manifest.Located = null;
+                        const f = try sidecarOwner(gpa, arena, io, roots.?, env_map, project.get(arena, io), lib, &oerr);
+                        try owners.put(arena, lib, f);
+                        break :found f;
+                    };
                     const pkg = found orelse break :blk null;
                     const src_dir = try pkg.srcDir(arena);
                     const sidecar = try std.fs.path.join(arena, &.{ src_dir, "sidecars", base });
@@ -880,7 +898,10 @@ pub fn shipErlSidecars(
             };
             // An unresolved atom here is an OTP or unknown module, not a sidecar
             // the library named — the `.mjs` shipper's refusal has no twin here.
-            const src = src_path orelse continue;
+            const src = src_path orelse {
+                try misses.put(arena, miss_key, {});
+                continue;
+            };
 
             const data = std.Io.Dir.cwd().readFileAlloc(io, src, arena, .unlimited) catch continue;
             if (std.fs.path.dirname(target)) |parent| {
