@@ -1,0 +1,203 @@
+//// std/encoding — the wire formats: base64, base64url, hex, percent
+//// encoding and the percent-aware form codec, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/buffer.html (`Buffer.from(s, 'utf8').toString('base64' | 'base64url' | 'hex')`)
+////              https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/encodeURIComponent
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/base64.html
+////              https://www.erlang.org/doc/apps/stdlib/binary.html (`encode_hex/1`, `decode_hex/1`)
+////              https://www.erlang.org/doc/apps/stdlib/uri_string.html (`quote/1`, `unquote/1`)
+////   RFC 4648 (base64, base64url), RFC 3986 §2.1 (percent-encoding)
+////
+//// One import for the whole wire-format surface. Every encoder answers a
+//// string; every decoder that can meet malformed input answers
+//// `@Result<string, string>` through the template-owned `#[@result]`
+//// wrapper (`fs.bp`'s shape) — nothing here returns a sentinel. Text in,
+//// text out: there is no byte type, so `base64Decode` and `hexDecode`
+//// answer the bytes read back as UTF-8 (a non-UTF-8 payload is lossy —
+//// `language-gaps.md`).
+////
+//// `base64.bp` still carries `encode`/`decode`/`encodeUrlSafe`/
+//// `decodeUrlSafe`; front 23 folds it into this file (decision 106) and
+//// the four here are their names in the final registry.
+
+// Standard base64 (RFC 4648 §4) of the UTF-8 bytes of `s`, with `=` padding.
+#[@External.Node("""Buffer.from($0, 'utf8').toString('base64')""")]
+#[@External.Erlang("base64:encode($0)")]
+pub declare fn base64Encode(s: string) -> string;
+
+// The inverse of `base64Encode`. Malformed input is an `Error`: Node's
+// `Buffer.from(_, 'base64')` silently drops what it cannot read, so the
+// template re-encodes and compares to detect it; Erlang's `base64:decode/1`
+// raises, and the template catches.
+#[@result]
+#[@External.Node("""(() => { const __s = String($0).replace(/=+$/, ''); const __b = Buffer.from(__s, 'base64'); return __b.toString('base64').replace(/=+$/, '') === __s ? { ok: __b.toString('utf8') } : { error: 'not base64' } })()""")]
+#[@External.Erlang("""(fun(__B) -> try {ok, base64:decode(__B)} catch _:_ -> {error, <<"not base64">>} end end)($0)""")]
+pub declare fn base64Decode(b: string) -> @Result<string, string>;
+
+// base64url (RFC 4648 §5): the `-_` alphabet, no `=` padding — the form
+// JWS/JWT (RFC 7515) and `random.secureToken` use. Pure over `base64Encode`,
+// with `replaceAll` (not `replace`, which stops at the first occurrence).
+pub fn base64UrlEncode(s: string) -> string {
+    val raw = base64Encode(s);
+    val noPlus = raw.replaceAll("+", "-");
+    val noSlash = noPlus.replaceAll("/", "_");
+    return noSlash.replaceAll("=", "");
+}
+
+// The inverse of `base64UrlEncode`: restore the `+/` alphabet, re-pad to a
+// multiple of four, decode.
+#[@result]
+pub fn base64UrlDecode(b: string) -> @Result<string, string> {
+    val noDash = b.replaceAll("-", "+");
+    val noUnder = noDash.replaceAll("_", "/");
+    val padded = padToMultipleOfFour(noUnder);
+    return base64Decode(padded);
+}
+
+// Internal: append `=` until the length is a multiple of four. Tail-recursive;
+// at most three steps.
+fn padToMultipleOfFour(s: string) -> string {
+    val remainder = s.length % 4;
+    return if (remainder == 0) s else padToMultipleOfFour([s, "="].join(""));
+}
+
+// Lowercase hex of the UTF-8 bytes of `s`: `"hi"` → `6869`.
+#[@External.Node("""Buffer.from($0, 'utf8').toString('hex')""")]
+#[@External.Erlang("""string:lowercase(binary:encode_hex($0))""")]
+pub declare fn hexEncode(s: string) -> string;
+
+// The inverse of `hexEncode`, either case. An odd length or a non-hex digit
+// is an `Error` (Node's `Buffer.from(_, 'hex')` truncates silently at the
+// first bad digit, so the template validates first; Erlang's
+// `binary:decode_hex/1` raises `badarg`, caught).
+#[@result]
+#[@External.Node("""(() => { const __s = String($0); return /^([0-9a-fA-F]{2})*$/.test(__s) ? { ok: Buffer.from(__s, 'hex').toString('utf8') } : { error: 'not hex' } })()""")]
+#[@External.Erlang("""(fun(__H) -> try {ok, binary:decode_hex(__H)} catch _:_ -> {error, <<"not hex">>} end end)($0)""")]
+pub declare fn hexDecode(s: string) -> @Result<string, string>;
+
+// RFC 3986 percent-encoding of a component: every byte of the UTF-8 form
+// outside the unreserved set `A-Z a-z 0-9 - . _ ~` becomes `%XX`, uppercase.
+// `uri_string:quote/1` is exactly that; `encodeURIComponent` leaves
+// `! ' ( ) *` unencoded (RFC 2396's mark set), so the Node template encodes
+// those five too — the two targets answer the same bytes for the same input.
+#[@External.Node("""encodeURIComponent($0).replace(/[!'()*]/g, __c => '%' + __c.charCodeAt(0).toString(16).toUpperCase())""")]
+#[@External.Erlang("uri_string:quote($0)")]
+pub declare fn percentEncode(s: string) -> string;
+
+// The inverse of `percentEncode`. A `%` not followed by two hex digits, or a
+// sequence that is not UTF-8, is an `Error`. `+` is left as `+` — the form
+// codec below is what reads `+` as a space.
+#[@result]
+#[@External.Node("""(() => { try { return { ok: decodeURIComponent($0) } } catch (__e) { return { error: 'not percent-encoded' } } })()""")]
+#[@External.Erlang("""(fun(__S) -> try uri_string:unquote(__S) of __U when is_binary(__U) -> case unicode:characters_to_binary(__U) of __V when is_binary(__V) -> {ok, __V}; _ -> {error, <<"not percent-encoded">>} end; _ -> {error, <<"not percent-encoded">>} catch _:_ -> {error, <<"not percent-encoded">>} end end)($0)""")]
+pub declare fn percentDecode(s: string) -> @Result<string, string>;
+
+// `application/x-www-form-urlencoded`, the escaping form: each pair is
+// `percentEncode(name)=percentEncode(value)`, joined with `&`. This is the
+// case `querystring.stringify` documents itself as not handling (its
+// docblock says callers pre-escape).
+pub fn formStringify(pairs: Array<#(string, string)>) -> string {
+    return pairs.map({ p -> [percentEncode(p._0), "=", percentEncode(p._1)].join("") }).join("&");
+}
+
+// The inverse of `formStringify`, percent-aware: split on `&`, each field on
+// its FIRST `=` (a field with no `=` is a name with an empty value), `+` read
+// as a space (the form encoding's rule), then percent-decoded. A field that
+// does not decode keeps its raw text — a parse over user input must not
+// throw, and a malformed pair is still a pair. Empty fields (`a=1&&b=2`)
+// are dropped.
+pub fn formParse(q: string) -> Array<#(string, string)> {
+    val fields = q.split("&").filter({ f -> f != "" });
+    return fields.map({ f -> formField(f) });
+}
+
+// Internal: one `name=value` field into its decoded pair.
+fn formField(f: string) -> #(string, string) {
+    val eq = f.indexOf("=");
+    val rawName = if (eq < 0) f else f.slice(0, eq);
+    val rawValue = if (eq < 0) "" else f.slice(eq + 1);
+    return #(formDecode(rawName), formDecode(rawValue));
+}
+
+// Internal: `+` to space, then percent-decode, falling back to the raw text.
+fn formDecode(s: string) -> string {
+    val spaced = s.replaceAll("+", " ");
+    return percentDecode(spaced).unwrapOr(spaced);
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "encoding.base64Encode matches the RFC 4648 vectors" {
+    assert base64Encode("") == "";
+    assert base64Encode("f") == "Zg==";
+    assert base64Encode("foobar") == "Zm9vYmFy";
+}
+
+test "encoding.base64Decode inverts base64Encode and refuses garbage" {
+    assert base64Decode("Zm9vYmFy").unwrapOr("?") == "foobar";
+    assert base64Decode("").unwrapOr("?") == "";
+    assert base64Decode("!!!!").isError();
+}
+
+test "encoding.base64UrlEncode uses the url alphabet without padding" {
+    // base64("???>") is `Pz8/Pg==` — one `/`, two `=`; base64("??>") is `Pz8+`.
+    val slash = base64UrlEncode("???>");
+    val plus = base64UrlEncode("??>");
+    assert slash == "Pz8_Pg";
+    assert plus == "Pz8-";
+    assert slash.contains("/").negate();
+    assert plus.contains("+").negate();
+    assert slash.contains("=").negate();
+}
+
+test "encoding.base64UrlDecode inverts base64UrlEncode" {
+    val original = "any carnal pleasure.";
+    assert base64UrlDecode(base64UrlEncode(original)).unwrapOr("?") == original;
+    assert base64UrlDecode("Pz8_Pg").unwrapOr("?") == "???>";
+    assert base64UrlDecode("Pz8-").unwrapOr("?") == "??>";
+}
+
+test "encoding.hexEncode is lowercase hex of the UTF-8 bytes" {
+    assert hexEncode("hi") == "6869";
+    assert hexEncode("") == "";
+    // A non-ASCII input is exercised through the decoder, not a literal —
+    // see the percentDecode test.
+}
+
+test "encoding.hexDecode inverts hexEncode in either case and refuses garbage" {
+    assert hexDecode("6869").unwrapOr("?") == "hi";
+    assert hexEncode(hexDecode("C3A9").unwrapOr("?")) == "c3a9";
+    assert hexDecode("zz").isError();
+    assert hexDecode("686").isError();
+}
+
+test "encoding.percentEncode escapes the RFC 3986 reserved set, uppercase" {
+    assert percentEncode("a b&c=d") == "a%20b%26c%3Dd";
+    assert percentEncode("+/~-._") == "%2B%2F~-._";
+    assert percentEncode("!'()*") == "%21%27%28%29%2A";
+    // `é` (U+00E9, UTF-8 `C3 A9`) enters through hexDecode: a non-ASCII
+    // literal is not written here (the erlang backend lowers one to latin1).
+    assert percentEncode(hexDecode("c3a9").unwrapOr("?")) == "%C3%A9";
+}
+
+test "encoding.percentDecode inverts percentEncode and refuses a bad escape" {
+    val s = "a b&c=d+e/f";
+    assert percentDecode(percentEncode(s)).unwrapOr("?") == s;
+    assert hexEncode(percentDecode("%C3%A9").unwrapOr("?")) == "c3a9";
+    assert percentDecode("%zz").isError();
+    assert percentDecode("%C3").isError();
+}
+
+test "encoding.formStringify percent-encodes each name and value" {
+    assert formStringify([#("q", "a b")]) == "q=a%20b";
+    assert formStringify([#("a", "1"), #("b&c", "x=y")]) == "a=1&b%26c=x%3Dy";
+    assert formStringify([]) == "";
+}
+
+test "encoding.formParse reads back what formStringify wrote, plus form pluses" {
+    val pairs = formParse("q=a%20b&a=1&b%26c=x%3Dy&plus=a+b&flag&&bad=%zz");
+    assert pairs.length == 6;
+    assert pairs.map({ p -> p._0 }).join(",") == "q,a,b&c,plus,flag,bad";
+    assert pairs.map({ p -> p._1 }).join(",") == "a b,1,x=y,a b,,%zz";
+}

@@ -37,4 +37,5 @@ pub mod json;
 pub mod fs;
 pub mod http;
 pub mod escape;
+pub mod encoding;
 pub mod async;
