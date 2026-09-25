@@ -309,4 +309,3 @@ commonJS | test/yield_step_next.bp::decision 122 next answers Yield for each ite
 commonJS | test/yield_step_next.bp::decision 122 a failing item is a Yield of an Error, then Done | 24-effects-by-return (`next()` protocol, deferred) | the same
 erlang   | test/yield_step_next.bp | 24-effects-by-return (`next()` protocol, deferred) | an eager iterator is a list: `it.next()` has no lowering and the module does not compile
 *        | reject/yield_step_error_param.bp | 24-effects-by-return (`next()` protocol, deferred) | `YieldStep` is not a registered type, so its arity is not checked (exit 0)
-wasm     | run/stream_loop_no_failure.bp | 24-effects-by-return (wasm stream loop in a record field) | only `done` prints: a `stream loop` stored in a record field and walked by `for await` yields nothing on the eager wasm lowering

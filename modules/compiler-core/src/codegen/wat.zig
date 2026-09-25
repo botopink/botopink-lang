@@ -7408,6 +7408,13 @@ const Emitter = struct {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| self.arr_locals.contains(self.resolveName(n)) or self.arr_globals.contains(n),
+                // A record field (or tuple element) declared as an array, an
+                // `Array<T>` or an eager `@Iterator<T>` / `@Stream<T>` holds
+                // the `[len][e0]…` blob its initialiser built — a `stream loop`
+                // stored in `Ticker(s: …)` included. `for await (t.s)` fell to
+                // the unknown-iterable no-op and yielded nothing. An optional
+                // field (`?T[]`) is not an array until it is unwrapped.
+                .identAccess => self.elemTypeRefOf(e) != null,
                 else => false,
             },
             .collection => |col| switch (col.kind) {

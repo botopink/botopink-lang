@@ -1,0 +1,38 @@
+//// A lambda that binds a name itself — a `case` arm's binder, its own `val`,
+//// a nested `for` element — reads its own binding, not the enclosing frame's
+//// variable of the same name. Pinned for beam, where `main`'s earlier `case`s
+//// had bound `v` and `e` into y-registers only the arm that matched assigns:
+//// the closure of the `for` below captured both (`make_fun3 … [{y,14},{y,15}]`)
+//// and `erlc +from_asm` refused the module (`{unassigned,{y,14}}`). The shape
+//// is the one `run/result_string_payloads` had before its loop moved into a
+//// function of its own: a `for` with a lambda at the end of a long `main`.
+
+type Job(title: string, outcome: @Result<i32, string>)
+
+fn check(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative " + n.toString(); };
+    return n;
+}
+
+fn attempt(j: Job) -> @Result<string, string> {
+    val n = try j.outcome;
+    return j.title + " " + n.toString();
+}
+
+pub fn main() {
+    case check(3) { Ok(v) -> @print("first " + v.toString()); Error(e) -> @print(e); };
+    case check(-4) { Ok(v) -> @print(v.toString()); Error(e) -> @print("second " + e); };
+    val r: @Result<i32, string> = check(-5);
+    case r { Ok(v) -> @print(v.toString()); Error(e) -> @print(e); };
+    for ([check(1), check(-7)]) { x -> case x { Ok(v) -> @print(v.toString()); Error(e) -> @print(e); }; };
+    for ([2, 3]) { n ->
+        val v = n * 10;
+        for ([v, v + 1]) { e -> @print(e.toString()); };
+    };
+    val done = Job(title: "build", outcome: check(2));
+    val failed = Job(title: "test", outcome: check(-8));
+    case done.outcome { Ok(v) -> @print(done.title + " " + v.toString()); Error(e) -> @print(e); };
+    case failed.outcome { Ok(v) -> @print(v.toString()); Error(e) -> @print(failed.title + ": " + e); };
+    case attempt(done) { Ok(s) -> @print(s); Error(e) -> @print(e); };
+    case attempt(failed) { Ok(s) -> @print(s); Error(e) -> @print("attempt: " + e); };
+}

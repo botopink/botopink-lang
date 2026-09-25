@@ -1666,8 +1666,10 @@ codegen/
   of silently wrong. No beam snapshot reached this path, so nothing was
   re-recorded.
 - **Closures** (`emitMakeFun`, `closureEnv`): a lambda or loop body's free
-  variables — every name it reads that the enclosing frame binds — travel in
-  `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
+  variables — every name it reads that the enclosing frame binds and it does
+  not bind itself where it reads it (`collectNamesIn*` with `NameCollector`'s
+  `bound` scope: a block's `val`/`var`, a lambda/trailing/`for` parameter, a
+  `case` arm's pattern binder) — travel in `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
   as extra parameters after the fun's own, spilled to stack slots like params.
   `Live` honours the `min_live` floor; lambda bodies reset it to 0. The **eight**
   places that emit a fun value are classified one by one in
@@ -1677,6 +1679,10 @@ codegen/
   `@block { … }` runs in the current frame on this backend and the `case`-arm
   block that did build a throwaway closure was removed by `ae813cc8`. The
   13 `make_fun3` hits `grep` finds in `beam_asm.zig` are all comments.
+  Scope matters because a `case` binder's y-register is written only on the
+  arm that binds it: capturing an enclosing `v` a lambda's own `Ok(v)` shadows
+  made `make_fun3` read an unassigned `{y, N}`, which `erlc +from_asm` refuses
+  (`run/lambda_rebinds_case_binders`).
 - **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
   `for (xs) { x -> … }` or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
   (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
@@ -1948,8 +1954,11 @@ first three are now enforced by the model, not by discipline:
   - `loop` over anything that is not a range or a known array emits
     `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` accepts an array
     literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
-    parameter or fn result, an array-returning primitive method and an
-    annotated `loop`, and nothing else, because walking the layout of a non-array
+    parameter or fn result, a record field (or tuple element) declared as one of
+    those — a `stream loop` stored in `Ticker(s: …)` and walked by `for await
+    (t.s)`, `run/stream_loop_no_failure` — an array-returning primitive method
+    and an annotated `loop`, and nothing else (an optional `?T[]` field is not
+    an array until unwrapped), because walking the layout of a non-array
     would read its first word as an element count and trap;
   - an array of tuples/records prints as the element addresses (no printer);
   - every function value's parameters and result are `i32`;

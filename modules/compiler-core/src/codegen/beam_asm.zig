@@ -950,14 +950,77 @@ fn countStringSegments(em: *Emitter, e: ast.Expr, count: *u32) void {
 /// the emitted `make_fun3` — is deterministic.
 const NameSet = std.StringArrayHashMapUnmanaged(void);
 
-/// `collectNamesIn*` sink that records every name once, in first-use order.
+/// `collectNamesIn*` sink that records every *free* name once, in first-use
+/// order. It keeps the scope the walk is in (`bound`): a name the body binds
+/// itself — a lambda/trailing/`for` parameter, a `case` arm's pattern binder, a
+/// `val`/`var` earlier in the same block — is not read from the enclosing frame
+/// while that binding is in scope. Without it, `x -> case x { Ok(v) -> … }` in a
+/// `main` whose earlier `case` also bound `v` captured the outer `v`'s y-register
+/// — a slot only the arm that bound it assigns, so `make_fun3` read an
+/// uninitialised `{y, N}` and `erlc` refused the module (`unassigned`).
 const NameCollector = struct {
     alloc: std.mem.Allocator,
     set: NameSet = .empty,
+    bound: std.ArrayListUnmanaged([]const u8) = .empty,
     fn add(c: *NameCollector, n: []const u8) !void {
+        for (c.bound.items) |b| if (std.mem.eql(u8, b, n)) return;
         try c.set.put(c.alloc, n, {});
     }
+    fn deinit(c: *NameCollector) void {
+        c.set.deinit(c.alloc);
+        c.bound.deinit(c.alloc);
+    }
 };
+
+/// Scope bookkeeping for a `collectNamesIn*` sink that tracks one (`bound`);
+/// a sink without it (`NameFinder`) sees every mention, bound or not.
+fn scopeMark(ctx: anytype) usize {
+    if (comptime @hasField(@TypeOf(ctx.*), "bound")) return ctx.bound.items.len;
+    return 0;
+}
+
+fn scopeRestore(ctx: anytype, mark: usize) void {
+    if (comptime @hasField(@TypeOf(ctx.*), "bound")) ctx.bound.shrinkRetainingCapacity(mark);
+}
+
+fn scopeBind(ctx: anytype, name: []const u8) !void {
+    if (comptime @hasField(@TypeOf(ctx.*), "bound")) try ctx.bound.append(ctx.alloc, name);
+}
+
+fn scopeBindAll(ctx: anytype, names: []const []const u8) !void {
+    for (names) |n| try scopeBind(ctx, n);
+}
+
+/// Bind every name a `case` pattern introduces. An `ident` carrying a `.` is a
+/// variant path, not a binding; a bare capitalised variant (`Red`) bound by
+/// mistake only hides a local of that very name, which cannot be one.
+fn scopeBindPattern(ctx: anytype, pat: ast.Pattern) !void {
+    switch (pat) {
+        .wildcard, .numberLit, .stringLit => {},
+        .ident => |n| if (std.mem.indexOfScalar(u8, n, '.') == null) try scopeBind(ctx, n),
+        .variant => |v| switch (v.payload) {
+            .binding => |n| try scopeBind(ctx, n),
+            .fields => |fs| try scopeBindAll(ctx, fs),
+            .literals => |ps| for (ps) |p| try scopeBindPattern(ctx, p),
+        },
+        .list => |l| {
+            for (l.elems) |el| switch (el) {
+                .bind => |n| try scopeBind(ctx, n),
+                else => {},
+            };
+            if (l.spread) |sp| if (sp.len > 0) try scopeBind(ctx, sp);
+        },
+        .@"or", .multi => |ps| for (ps) |p| try scopeBindPattern(ctx, p),
+    }
+}
+
+fn scopeBindDestruct(ctx: anytype, d: ast.ParamDestruct) !void {
+    switch (d) {
+        .names => |n| for (n.fields) |f| try scopeBind(ctx, f.bind_name),
+        .tuple_ => |t| try scopeBindAll(ctx, t),
+        .list, .ctor => |p| try scopeBindPattern(ctx, p),
+    }
+}
 
 /// `collectNamesIn*` sink that only answers whether one name is mentioned.
 const NameFinder = struct {
@@ -978,10 +1041,14 @@ fn bodyMentionsSelf(body: []const ast.Stmt) bool {
 
 /// Every name `body` could read from an enclosing frame: identifiers, the
 /// callee of an unqualified call (a local may hold a fun), assignment targets
-/// and a spread's name. An over-approximation — the caller keeps only the names
-/// bound in the enclosing frame, and a name the body rebinds itself is harmless
-/// to capture.
+/// and a spread's name. A sink with a `bound` scope (`NameCollector`) drops the
+/// names the body binds itself while they are in scope — each block, loop,
+/// lambda, trailing lambda and `case` arm opens a scope; a sink without one
+/// (`NameFinder`) sees every mention. Still an over-approximation otherwise:
+/// the caller keeps only the names bound in the enclosing frame.
 fn collectNamesInStmts(ctx: anytype, body: []const ast.Stmt) anyerror!void {
+    const mark = scopeMark(ctx);
+    defer scopeRestore(ctx, mark);
     for (body) |stmt| try collectNamesInExpr(ctx, stmt.expr);
 }
 
@@ -1021,11 +1088,22 @@ fn collectNamesInExpr(ctx: anytype, e: ast.Expr) anyerror!void {
         .loop => |lp| {
             try walk(ctx, lp.iter.*);
             if (lp.indexRange) |ir| try walk(ctx, ir.*);
+            const mark = scopeMark(ctx);
+            defer scopeRestore(ctx, mark);
+            try scopeBindAll(ctx, lp.params);
             try walkBody(ctx, lp.body);
         },
         .binding => |b| switch (b.kind) {
-            .localBind => |lb| try walk(ctx, lb.value.*),
-            .localBindDestruct => |lb| try walk(ctx, lb.value.*),
+            // The name is in scope for the rest of the enclosing block, which
+            // `collectNamesInStmts` closes.
+            .localBind => |lb| {
+                try walk(ctx, lb.value.*);
+                try scopeBind(ctx, lb.name);
+            },
+            .localBindDestruct => |lb| {
+                try walk(ctx, lb.value.*);
+                try scopeBindDestruct(ctx, lb.pattern);
+            },
             .assign => |a| {
                 switch (a.target) {
                     .name => |n| try ctx.add(n),
@@ -1039,14 +1117,24 @@ fn collectNamesInExpr(ctx: anytype, e: ast.Expr) anyerror!void {
             .call => |cc| {
                 if (cc.receiver) |r| try walk(ctx, r.*) else if (!cc.is_builtin) try ctx.add(cc.callee);
                 for (cc.args) |arg| try walk(ctx, arg.value.*);
-                for (cc.trailing) |t| try walkBody(ctx, t.body);
+                for (cc.trailing) |t| {
+                    const mark = scopeMark(ctx);
+                    defer scopeRestore(ctx, mark);
+                    try scopeBindAll(ctx, t.params);
+                    try walkBody(ctx, t.body);
+                }
             },
             .pipeline => |pl| {
                 try walk(ctx, pl.lhs.*);
                 try walk(ctx, pl.rhs.*);
             },
         },
-        .function => |f| try walkBody(ctx, f.kind.body),
+        .function => |f| {
+            const mark = scopeMark(ctx);
+            defer scopeRestore(ctx, mark);
+            try scopeBindAll(ctx, f.kind.params);
+            try walkBody(ctx, f.kind.body);
+        },
         .collection => |col| switch (col.kind) {
             .arrayLit => |al| {
                 for (al.elems) |el| try walk(ctx, el);
@@ -1061,6 +1149,9 @@ fn collectNamesInExpr(ctx: anytype, e: ast.Expr) anyerror!void {
             .case => |c| {
                 for (c.subjects) |subj| try walk(ctx, subj);
                 for (c.arms) |arm| {
+                    const mark = scopeMark(ctx);
+                    defer scopeRestore(ctx, mark);
+                    try scopeBindPattern(ctx, arm.pattern);
                     if (arm.guard) |g| try walk(ctx, g);
                     try walk(ctx, arm.body);
                 }
@@ -8497,7 +8588,7 @@ const Emitter = struct {
         ops: *std.ArrayListUnmanaged(Op),
     ) !void {
         var seen: NameCollector = .{ .alloc = self.alloc };
-        defer seen.set.deinit(self.alloc);
+        defer seen.deinit();
         try collectNamesInStmts(&seen, body);
         for (seen.set.keys()) |n| {
             var shadowed = false;
