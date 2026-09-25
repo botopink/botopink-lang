@@ -43,9 +43,9 @@ pub const can_spawn: bool = !is_wasm;
 pub fn available(r: ComptimeRuntime) bool {
     return switch (r) {
         .beam => can_spawn,
-        // wasm3 is linked into every native build; the browser's engine is
-        // reached through a host import that is not wired yet.
-        .wat => !is_wasm,
+        // wasm3 on a native build; the page's engine, through `bp_host`
+        // imports, in the browser build (`persistent_wat.zig`).
+        .wat => true,
     };
 }
 
@@ -79,8 +79,7 @@ pub fn missingRuntimeMessage(r: ComptimeRuntime) []const u8 {
     return switch (r) {
         .beam => "no BEAM runtime in this build of the compiler: it needs a process it can spawn, " ++
             "and an erlang or beam target evaluates comptime on it (decision 84)",
-        .wat => "no wat runtime engine in this build of the compiler: the browser build does not reach " ++
-            "the page's WebAssembly engine yet (front 18 step 5, the comptime half)",
+        .wat => "no wat runtime engine in this build of the compiler",
     };
 }
 
@@ -155,10 +154,7 @@ fn evalWat(arena: std.mem.Allocator, module: []const u8, code: []const u8, arg: 
         .ok => |o| o,
         .refused => |why| return .{ .response = .{ .compile_error = try arena.dupe(u8, why) } },
     };
-    const response = persistent_wat.evalWithArg(arena, ok.wasm, arg) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.NoEngineOnThisHost => unreachable, // `available(.wat)` said so
-    };
+    const response = try persistent_wat.evalWithArg(arena, ok.wasm, arg);
     return .{ .response = switch (response) {
         .ok => |b| .{ .ok = b },
         .compile_error => |b| .{ .compile_error = b },

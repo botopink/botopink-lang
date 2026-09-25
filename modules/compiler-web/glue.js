@@ -1,6 +1,9 @@
 // glue.js — the JS side of the browser build of compiler-core (front 18 step 5).
 //
 // Three things, no dependency:
+//   0. `bp_host`, the compiler's comptime engine: `run_module` instantiates a
+//      linked comptime module (front 18's wat runtime) and runs it, the answer
+//      comes back through `result_len`/`result_copy`;
 //   1. a WASI preview1 shim: the five calls the compiler makes at run time are
 //      served (fd_write to captured stdout/stderr, clock_time_get, clock_res_get,
 //      random_get, environ_*, fd_fdstat_get on the three stdio descriptors);
@@ -19,7 +22,7 @@
 //      `{ stdout, stderr, trap }` — `trap` is the engine's message or null;
 //   4. when loaded as a Worker script (`new Worker("glue.js")`), a message
 //      protocol: `{ id, op: "load", wasm }` → `{ id, ok }`, then
-//      `{ id, op: "compile", sources: [{ path, source }], target }` →
+//      `{ id, op: "compile", sources: [{ path, source }], target, package }` →
 //      `{ id, ok, status, result, stdout, stderr, ms }`, and
 //      `{ id, op: "run", wasm }` (base64) → `{ id, ok, run, ms }`. The page
 //      keeps the compiler off the main thread, where synchronous
@@ -114,12 +117,67 @@
     return require("crypto").webcrypto;
   }
 
+  // ── the comptime engine ────────────────────────────────────────────────────
+
+  /// Run one comptime evaluation the compiler lowered and linked (front 18,
+  /// the wat runtime): the bytes are a whole module importing nothing; the
+  /// export sequence is `persistent_wat.zig`'s. Status 0 is the reply, 1 a
+  /// runtime error (`Class:Reason`, or the engine's trap), 2 a module the
+  /// engine refused.
+  function runComptime(bytes, arg) {
+    const encoder = new TextEncoder();
+    let module;
+    try {
+      module = new WebAssembly.Module(bytes);
+    } catch (err) {
+      return { status: 2, bytes: encoder.encode(`the page's engine refused the module: ${err.message}`) };
+    }
+    try {
+      const e = new WebAssembly.Instance(module, {}).exports;
+      e.bp_init();
+      const p = e.rt_alloc(arg.length);
+      new Uint8Array(e.memory.buffer, p, arg.length).set(arg);
+      const r = e.bp_main(p, arg.length);
+      const bin = (t) => new Uint8Array(e.memory.buffer, e.rt_bin_ptr(t) >>> 0, e.rt_bin_len(t) >>> 0).slice();
+      if (r === 0 || e.rt_pending() !== 0) return { status: 1, bytes: bin(e.rt_describe(e.rt_class(), e.rt_reason())) };
+      return { status: 0, bytes: bin(r) };
+    } catch (err) {
+      return { status: 1, bytes: encoder.encode(`the page's engine trapped: ${err.message}`) };
+    }
+  }
+
+  /// `bp_host`: the compiler asks the page to run a comptime module, then
+  /// copies the answer back into its own memory.
+  function hostServed(state) {
+    let last = new Uint8Array(0);
+    return {
+      run_module(wptr, wlen, aptr, alen) {
+        const mem = new Uint8Array(state.memory.buffer);
+        const r = runComptime(mem.slice(wptr >>> 0, (wptr >>> 0) + (wlen >>> 0)), mem.slice(aptr >>> 0, (aptr >>> 0) + (alen >>> 0)));
+        last = r.bytes;
+        return r.status;
+      },
+      result_len() {
+        return last.length;
+      },
+      result_copy(dst) {
+        new Uint8Array(state.memory.buffer, dst >>> 0, last.length).set(last);
+      },
+    };
+  }
+
   /// The import object for `module`: every declared import is bound — the
   /// served ones to the shim, the rest to a refusal naming the call.
   function importsFor(module, state) {
     const served = wasiServed(state);
+    const host = hostServed(state);
     const imports = {};
     for (const imp of WebAssembly.Module.imports(module)) {
+      if (imp.module === "bp_host" && imp.kind === "function" && host[imp.name]) {
+        imports.bp_host = imports.bp_host || {};
+        imports.bp_host[imp.name] = host[imp.name];
+        continue;
+      }
       if (imp.module !== WASI_MODULE || imp.kind !== "function") {
         throw new Error(`botopink.wasm imports ${imp.module}.${imp.name} (${imp.kind}), which the browser build does not serve`);
       }
@@ -178,6 +236,19 @@
 
     reset() {
       this.exports.bp_reset();
+    }
+
+    /// The project's package name (decision 109): what `botopink.json`'s
+    /// `name` is to the CLI. An erlang/beam compile without one is refused.
+    setPackage(name) {
+      // A zero-length allocation has no address to hand over: an empty name
+      // is passed as length 0 of a one-byte buffer.
+      const n = this.writeString(name === "" ? " " : name);
+      try {
+        if (this.exports.bp_set_package(n.ptr, name === "" ? 0 : n.len) !== 0) throw new Error("botopink.wasm is out of memory");
+      } finally {
+        this.exports.bp_free(n.ptr, n.len);
+      }
     }
 
     addSource(path, source) {
@@ -269,6 +340,7 @@
         } else if (msg.op === "compile") {
           if (!compiler) throw new Error("load the compiler first");
           compiler.reset();
+          compiler.setPackage(msg.package || "");
           for (const s of msg.sources) compiler.addSource(s.path, s.source);
           const t0 = nowMs();
           const result = compiler.compile(msg.target);

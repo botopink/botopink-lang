@@ -10,15 +10,28 @@
 //! runtime error. A trap of the engine (a stack overflow, an out-of-bounds
 //! access) is a runtime error carrying wasm3's message.
 //!
-//! On a wasm host (the browser build) there is no wasm3: the executor is the
-//! page's `WebAssembly.instantiate` behind a host import, which step 5's
-//! comptime half adds; until then this file answers a refusal there.
+//! On a wasm host (the browser build, front 18 step 5) there is no wasm3: the
+//! executor is the page's engine, reached through three host imports the JS
+//! glue serves (`modules/compiler-web/glue.js`): `bp_host.run_module(wasm,
+//! arg) → status` instantiates the linked bytes and runs the same export
+//! sequence as here, keeping the answer on the JS side;
+//! `bp_host.result_len()` and `bp_host.result_copy(dst)` bring it back into
+//! the compiler's memory. Status 0 is the reply, 1 a runtime error (the
+//! exception's `Class:Reason`, or the engine's trap message), 2 the engine
+//! refusing the module.
 const std = @import("std");
 const builtin = @import("builtin");
 
 const c = if (builtin.cpu.arch.isWasm()) struct {} else @cImport({
     @cInclude("wasm3.h");
 });
+
+/// The browser build's engine (see the file comment).
+const host = if (builtin.cpu.arch.isWasm()) struct {
+    extern "bp_host" fn run_module(wasm_ptr: [*]const u8, wasm_len: usize, arg_ptr: [*]const u8, arg_len: usize) u32;
+    extern "bp_host" fn result_len() usize;
+    extern "bp_host" fn result_copy(dst: [*]u8) void;
+} else struct {};
 
 pub const Response = union(enum) {
     /// The reply bytes (`main`'s JSON).
@@ -39,11 +52,22 @@ pub const Response = union(enum) {
 /// lowering has no tail calls, so a body's depth is its iteration count.
 const stack_bytes: u32 = 8 * 1024 * 1024;
 
-pub const Error = std.mem.Allocator.Error || error{NoEngineOnThisHost};
+pub const Error = std.mem.Allocator.Error;
 
 /// Run the linked module `wasm` with the ETF argument `arg`.
 pub fn evalWithArg(alloc: std.mem.Allocator, wasm: []const u8, arg: []const u8) Error!Response {
-    if (comptime builtin.cpu.arch.isWasm()) return error.NoEngineOnThisHost else return evalNative(alloc, wasm, arg);
+    if (comptime builtin.cpu.arch.isWasm()) return evalHost(alloc, wasm, arg) else return evalNative(alloc, wasm, arg);
+}
+
+fn evalHost(alloc: std.mem.Allocator, wasm: []const u8, arg: []const u8) Error!Response {
+    const status = host.run_module(wasm.ptr, wasm.len, arg.ptr, arg.len);
+    const text = try alloc.alloc(u8, host.result_len());
+    host.result_copy(text.ptr);
+    return switch (status) {
+        0 => .{ .ok = text },
+        2 => .{ .compile_error = text },
+        else => .{ .runtime_error = text },
+    };
 }
 
 fn evalNative(alloc: std.mem.Allocator, wasm: []const u8, arg: []const u8) Error!Response {

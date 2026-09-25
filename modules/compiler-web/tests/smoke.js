@@ -72,8 +72,35 @@ fn main() {
 }
 `;
 
+// What the native compiler records for COMPTIME (its commonJS build, the wat
+// runtime; the BEAM answers the same — `comptime/runtime/parity.zig`).
+const NATIVE_TEMPLATE_REPLY = `----- COMPTIME REPLY -- template shout
+\`\`\`json
+{
+  "kind": "code",
+  "source": "\\"BROWSER\\""
+}
+\`\`\``;
+const NATIVE_DECORATOR_REPLY = `----- COMPTIME REPLY -- decorator describe
+\`\`\`json
+{
+  "contributions": [
+    "pub fn describeUser() -> string { return \\"User\\"; }"
+  ],
+  "kind": "ok"
+}
+\`\`\``;
+
 (async () => {
   const compiler = await Compiler.load(fs.readFileSync(wasmPath));
+
+  // Decision 109: an erlang/beam module atom starts with the project's package
+  // name. Without one — no `botopink.json` — the compile is refused, located.
+  compiler.reset();
+  compiler.addSource("main", PLAIN);
+  const nameless = compiler.compile("erlang");
+  assert(nameless.status === 1 && String(nameless.modules[0].diagnostic).includes("belongs to no package"), "erlang: a project with no package name is refused, not given a fallback name");
+  compiler.setPackage("web");
 
   for (const target of ["commonJS", "erlang", "beam", "wasm"]) {
     compiler.reset();
@@ -103,11 +130,25 @@ fn main() {
   assert(typeof broken.modules[0].diagnostic === "string" && broken.modules[0].diagnostic.includes("main.bp:"), "the diagnostic is rendered and located");
   assert(broken.modules[0].code === "", "a failed module has no artifact");
 
+  // The decorator + template program: on commonJS and wasm its comptime runs
+  // on the wat runtime (decision 84) — lowered by the compiler, run by the
+  // page's engine through `bp_host` — and answers what the native compiler
+  // answers; erlang needs the BEAM, which a page does not have.
+  for (const target of ["commonJS", "wasm"]) {
+    compiler.reset();
+    compiler.addSource("main", COMPTIME);
+    const ct = compiler.compile(target);
+    assert(ct.status === 0, `${target}: the decorator + template program compiles in the page (${ct.modules[0].diagnostic || ""})`);
+    const trace = ct.modules[0].comptimeTrace || "";
+    assert(trace.includes(NATIVE_TEMPLATE_REPLY), `${target}: the template's COMPTIME REPLY equals the native one`);
+    assert(trace.includes(NATIVE_DECORATOR_REPLY), `${target}: the decorator's COMPTIME REPLY equals the native one`);
+    assert(ct.modules[0].code.includes("BROWSER"), `${target}: the expansion is in the generated code`);
+  }
   compiler.reset();
   compiler.addSource("main", COMPTIME);
-  const ct = compiler.compile("commonJS");
-  assert(ct.status === 1, "a program with a template is refused on a host with no comptime runtime");
-  assert(String(ct.modules[0].diagnostic).includes("runtime") && String(ct.modules[0].diagnostic).includes("in this build of the compiler"), "the refusal names the missing runtime");
+  const ctErl = compiler.compile("erlang");
+  assert(ctErl.status === 1, "erlang: a program with a template is refused in the page");
+  assert(String(ctErl.modules[0].diagnostic).includes("no BEAM runtime in this build of the compiler"), "erlang: the refusal names the missing BEAM");
 
   let threw = false;
   try {
@@ -134,7 +175,7 @@ fn main() {
   assert(typeof scope.onmessage === "function", "loaded as a Worker, glue.js installs the message handler");
   await scope.onmessage({ data: { id: 1, op: "load", wasm: fs.readFileSync(wasmPath) } });
   assert(replies.length === 1 && replies[0].id === 1 && replies[0].ok === true, "the Worker answers `load`");
-  await scope.onmessage({ data: { id: 2, op: "compile", target: "wasm", sources: [{ path: "main", source: PLAIN }] } });
+  await scope.onmessage({ data: { id: 2, op: "compile", target: "wasm", package: "web", sources: [{ path: "main", source: PLAIN }] } });
   const r = replies[1];
   assert(r.ok === true && r.status === 0 && r.result.modules[0].code.includes("(module"), "the Worker answers `compile` with the generated text");
   assert(typeof r.ms === "number" && r.ms >= 0, "the Worker reports the compile time");

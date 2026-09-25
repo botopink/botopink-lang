@@ -7,6 +7,11 @@
 //!   bp_alloc(len) → ptr · bp_free(ptr, len)       the host's window into linear memory
 //!   bp_reset()                                    forget every source added so far
 //!   bp_add_source(path, path_len, src, src_len)   one module of the virtual project (0 ok, 1 OOM)
+//!   bp_set_package(name, name_len)                the project's package name — what `botopink.json`'s
+//!                                                 `name` is to the CLI (decision 109: an erlang/BEAM
+//!                                                 module atom starts with it); empty is no manifest,
+//!                                                 and an erlang/beam compile is then refused
+//!                                                 (0 ok, 1 OOM)
 //!   bp_compile(target, target_len) → status       0 compiled · 1 a module failed (its diagnostic is in
 //!                                                 the output) · 2 unknown target · 3 internal error
 //!   bp_output_ptr() / bp_output_len()             the JSON of the last `bp_compile`
@@ -29,6 +34,7 @@ const gpa = std.heap.wasm_allocator;
 
 var sources: std.ArrayListUnmanaged(bp.Module) = .empty;
 var output: []u8 = "";
+var root_package: []u8 = "";
 
 export fn bp_alloc(len: usize) ?[*]u8 {
     const s = gpa.alloc(u8, len) catch return null;
@@ -61,6 +67,13 @@ export fn bp_add_source(path: [*]const u8, path_len: usize, src: [*]const u8, sr
     return 0;
 }
 
+export fn bp_set_package(name: [*]const u8, name_len: usize) i32 {
+    const n = gpa.dupe(u8, name[0..name_len]) catch return 1;
+    if (root_package.len > 0) gpa.free(root_package);
+    root_package = n;
+    return 0;
+}
+
 export fn bp_compile(target: [*]const u8, target_len: usize) i32 {
     const name = target[0..target_len];
     const target_source: bp.codegen.TargetSource = if (std.mem.eql(u8, name, "commonJS"))
@@ -90,7 +103,7 @@ fn compile(target_source: bp.codegen.TargetSource) !i32 {
     const arena = arena_state.allocator();
 
     const io = std.Io.Threaded.global_single_threaded.io();
-    const cfg = bp.codegen.Config{ .targetSource = target_source };
+    const cfg = bp.codegen.Config{ .targetSource = target_source, .packages = .{ .root = root_package } };
     var outputs = try bp.codegen.generateWith(gpa, sources.items, io, cfg, .{ .execute = false });
     defer {
         for (outputs.items) |*o| o.result.deinit(gpa);

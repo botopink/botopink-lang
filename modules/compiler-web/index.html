@@ -11,10 +11,11 @@
   (rendered from the same model as the `.wat` text shown) is instantiated here
   and its `_start` called; what it prints is the "run" tab.
 
-  The sample with a decorator and a template shows the compiler's answer on a
-  host whose comptime engine is not reached yet: a located refusal naming the
-  runtime (front 18 step 5's comptime half wires the page's engine). Everything else — the checker, the four emitters, the
-  diagnostics — is the native compiler byte for byte.
+  The sample with a decorator and a template runs its comptime in the page on
+  commonJS and wasm (the wat runtime: the compiler lowers the bodies, the
+  page's engine runs them — no request leaves the page); on erlang/beam it is
+  refused, a page having no BEAM. Everything else — the checker, the four
+  emitters, the diagnostics — is the native compiler byte for byte.
 -->
 <html lang="en">
 <head>
@@ -136,7 +137,7 @@ fn main() {
       $("compile").disabled = true;
       $("status").textContent = `compiling for ${target}…`;
       try {
-        const reply = await ask({ op: "compile", target, sources: [{ path: "main", source: $("source").value }] });
+        const reply = await ask({ op: "compile", target, package: "demo", sources: [{ path: "main", source: $("source").value }] });
         const modules = reply.result.modules;
         panes.code = modules.map((m) => `// ${m.name} — ${target}\n${m.code}${m.units.map((u) => `\n\n// unit ${u.atom}\n${u.code}`).join("")}`).join("\n\n");
         panes.trace = modules.map((m) => m.comptimeTrace || "").join("\n") || "(no decorator or template was evaluated)";

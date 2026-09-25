@@ -40,5 +40,3 @@ wat/
   raises `{bp_wat_runtime, …}` rather than answering differently from OTP.
 - Tail calls: an Erlang loop is recursion, so a body's depth is its iteration
   count (the executor gives wasm3 an 8 MiB stack).
-- The browser build has the lowering, the linker and the library, but no engine
-  reached from the compiler (step 5's comptime half).
