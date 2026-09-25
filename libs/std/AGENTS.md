@@ -28,6 +28,7 @@ std/
     ├── math.bp  asserts.bp  path.bp  random.bp  querystring.bp  time.bp  url.bp
     ├── base64.bp  unicode.bp  process.bp  os.bp  env.bp  crypto.bp  regex.bp
     ├── erlang.bp  json.bp  fs.bp  http.bp  snapshots.bp  mocks.bp
+    ├── escape.bp            ← 1.0.10-beta front 01-std-lib-enablement (flat today; front 23 moves the `io/` ones)
     ├── __snapshots__/<suite>/<slug>.snap  ← recorded by `snapshots` from the inline tests (decision 72); a `.snap.new` beside one is a candidate a person reviews and renames
     └── sidecars/random.mjs  ← Mulberry32 PRNG used by `random` (the only sidecar: `mocks` keeps its tables on `globalThis`, not in a `.mjs`)
 ```
@@ -63,6 +64,7 @@ std/
 | `json` | `parse`, `stringify` (validate + canonical re-encode, `@Result<string, string>`) |
 | `fs` | `type FileStat`, `readText`, `writeText`, `exists`, `list`, `mkdir`, `rm`, `copy`, `stat` (fallible ops return `@Result`) |
 | `http` | `type Response`, `fetch`, `fetchStatus` (`@Future`) |
+| `escape` | Pure, every backend (1.0.10-beta front 01-std-lib-enablement, decision 106 root): `html` (`&` first, then `<` `>`), `attribute` (`html` + `"` `'`), `unescapeHtml` (the five entities, `&amp;` last), `jsString` (`\` `"` `<`→`\u003c`, `\n` `\r`, U+2028/U+2029 — a payload for a double-quoted JS string literal inside `<script>`) |
 
 `mergeRecords(A, B)`, `partial(T)`, `omit(T, "f")` and `pick(T, ["f"])` are
 comptime type functions implemented in the compiler
