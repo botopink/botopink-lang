@@ -11,14 +11,14 @@ fn parse(n: i32) -> @Result<i32, string> {
 fn fetch(n: i32) -> @Future<i32> {
     return n;
 }
-#[@iterator]
-fn bad(n: i32) -> @Iterator<i32> {
+#[@resultGenerator]
+fn bad(n: i32) -> @ResultGenerator<i32> {
     val w = await fetch(n);
     yield w;
 }
 
 ----- ERROR
-error: effect-await-without-future: `await` needs an effect that implements `@Future` — `#[@future]`, `#[@futureGenerator]` or `#[@context]`; `#[@iterator]` is `@Iterator`, which does not
+error: effect-await-without-future: `await` needs an effect that implements `@Future` — `#[@future]`, `#[@futureGenerator]` or `#[@context]`; `#[@resultGenerator]` is `@ResultGenerator`, which does not
   ┌─ :15:13
   │
 15 │     val w = await fetch(n);

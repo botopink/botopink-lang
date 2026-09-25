@@ -30,8 +30,8 @@ test "js: star fn ---- async function with await" {
 
 test "js: star fn ---- generator with yield" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn counter() -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\fn counter() -> @ResultGenerator<i32> {
         \\    yield 1;
         \\    yield 2;
         \\    yield 3;
@@ -55,8 +55,8 @@ test "js: star fn ---- pub typedefs" {
         \\pub fn loadOne(x: i32) -> @Future<i32> {
         \\    return x;
         \\}
-        \\#[@iterator]
-        \\pub fn count() -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\pub fn count() -> @ResultGenerator<i32> {
         \\    yield 1;
         \\}
         \\#[@futureGenerator]
@@ -74,8 +74,8 @@ test "js: effect annotation ---- future/iterator/futureGenerator/result" {
         \\fn fetch(x: i32) -> @Future<i32> {
         \\    return x;
         \\}
-        \\#[@iterator]
-        \\fn counter() -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\fn counter() -> @ResultGenerator<i32> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -796,20 +796,21 @@ test "js: reserved word identifiers" {
 }
 
 test "js: iterator fromList yields array items" {
-    // An `#[@iterator] fn -> @Iterator<T>` generator: `loop (xs) { yield }` must
+    // A `#[@generator] fn -> @Generator<T>` generator: `loop (xs) { yield }` must
     // lower to a real `for…of` with native `yield` (not `.map()`). Recursive
     // delegation (the legacy `return <iter>` shortcut) is now forbidden by
-    // RI1 (§1I); spec-compliant delegation patterns get their own coverage in
-    // the F6 `effect_iterator.zig` suite.
+    // RI1 (§1I). `@Generator<T>` is the infallible wrapper a plain `fn` such
+    // as `toList` may iterate (decision 103 — a loop over a `@ResultGenerator`
+    // is a `try` in the iterating body, which a plain `fn` has no channel for).
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
+        \\#[@generator]
+        \\fn fromList<T>(xs: Array<T>) -> @Generator<T> {
         \\    loop (xs) { item ->
         \\        yield item;
         \\    };
         \\}
         \\
-        \\fn toList<T>(iter: @Iterator<T>) -> Array<T> {
+        \\fn toList<T>(iter: @Generator<T>) -> Array<T> {
         \\    var out = [];
         \\    loop (iter) { item ->
         \\        out.push(item);

@@ -4457,7 +4457,7 @@ const Emitter = struct {
     fn fnForms(this: *Emitter, b: Ast.Builder, out: *Forms, f: ast.FnDecl) !void {
         // An effect fn is async/generator — except `#[@result]` (checked-Result
         // effect), which is a plain function. Erlang is eager: a `@Future<T>`
-        // resolves to `T` (so `await` is identity) and a finite `@Iterator<T>`
+        // resolves to `T` (so `await` is identity) and a finite `@ResultGenerator<T>`
         // is a list.
         // `#[@context]` is a plain function too: the annotation gates `use`
         // in the body (decision 88); nothing about it is async.

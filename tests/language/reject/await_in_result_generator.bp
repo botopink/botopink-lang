@@ -1,13 +1,13 @@
-//// Decision 95 — the chain grants downwards, never upwards. `@Iterator`
-//// implements `@Result`, so a `#[@iterator]` body answers `try`; it does not
+//// Decision 95 — the chain grants downwards, never upwards. `@ResultGenerator`
+//// implements `@Result`, so a `#[@resultGenerator]` body answers `try`; it does not
 //// implement `@Future`, so `await` is one level above it and is refused,
 //// located, naming the level it would need (decision 67 — no flag).
 
 #[@future]
 fn fetch(n: i32) -> @Future<i32> { return n; }
 
-#[@iterator]
-fn bad(n: i32) -> @Iterator<i32> {
+#[@resultGenerator]
+fn bad(n: i32) -> @ResultGenerator<i32> {
     val w = await fetch(n);
     yield w;
 }

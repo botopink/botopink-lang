@@ -1,0 +1,44 @@
+//// Decision 103 of 1.0.10-beta — a generator delivers a value in two ways:
+//// `yield v` emits and continues, `break v` emits `v` and ENDS (≡ `yield v;
+//// break;`). The last value is an item like the others; there is no
+//// completion channel (`IteratorStep.Done(completion: C)` left with `C`).
+////
+//// `upto(3)` yields 0, 1, 2 from its loop and then `break 7` at the level of
+//// the body — top-level position, so it is the generator's, not a loop's —
+//// emits 7 and ends: the consumer reads `0127`. `ends()` pins the other half:
+//// a bare `break` at that position ends the generator, so nothing after it is
+//// emitted.
+////
+//// The checker types `break v` against the item type `T` and the transform
+//// rewrites it to `yield v; return;`, which commonJS's `function*` runs. The
+//// eager lowerings of erlang, wasm and beam do not stop at a `return;` in a
+//// generator body (measured at `4fe1747e`: `nums2() -> 1, 2, undefined.` on
+//// erlang; `expected i32 but nothing on stack` on wasm) — that is the
+//// generator-scope lowering decision 105 re-specifies, and their lines are
+//// pinned in `expected-failures.txt` against it.
+
+#[@resultGenerator]
+fn upto(n: i32) -> @ResultGenerator<i32, string> {
+    var i = 0;
+    loop (i < n) { yield i; i = i + 1; };
+    break 7;
+}
+
+#[@resultGenerator]
+fn ends() -> @ResultGenerator<i32, string> {
+    yield 1;
+    break;
+    yield 2;
+}
+
+#[@result]
+fn digits(g: @ResultGenerator<i32, string>) -> @Result<string, string> {
+    var acc = "";
+    loop (g) { x -> acc = acc + x.toString(); };
+    return acc;
+}
+
+pub fn main() {
+    @print(try digits(upto(3)) catch "error");
+    @print(try digits(ends()) catch "error");
+}

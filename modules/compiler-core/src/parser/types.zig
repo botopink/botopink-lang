@@ -253,7 +253,7 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             if (!this.match(.comma)) break;
             // RG4 (§1G) — a comma followed by another comma or by the closing
             // `>` means a middle generic argument was skipped (e.g.
-            // `@Iterator<i32, , i64>` or a stray trailing `, >`). Either pass
+            // `@ResultGenerator<i32, , i64>` or a stray trailing `, >`). Either pass
             // the middle argument explicitly, or rely on defaults for the
             // contiguous trailing range.
             if (this.check(.comma) or this.checkGenericClose()) {

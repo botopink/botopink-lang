@@ -89,10 +89,9 @@ pub const result_throw_type_mismatch: []const u8 = "result-throw-type-mismatch";
 /// `try { … }` block whose callee `E` differs from the enclosing `E`.
 pub const result_error_type_incompatible: []const u8 = "result-error-type-incompatible";
 
-/// R13 — `break <expr>` inside an iterator whose wrapper has `C = void`.
-pub const iterator_break_without_completion_type: []const u8 = "iterator-break-without-completion-type";
-
-/// R14 — `return <expr>` inside `#[@iterator]` / `#[@futureGenerator]`.
+/// R14 — `return <expr>` inside a generator body (`#[@generator]` /
+/// `#[@resultGenerator]` / `#[@futureGenerator]`): a generator has no return
+/// channel (decision 103) — `break <v>` emits the last item and ends.
 pub const iterator_return_forbidden: []const u8 = "iterator-return-forbidden";
 
 /// R15 — `yield :label <expr>` where the label is not bound.
@@ -130,18 +129,15 @@ pub const future_throw_type_mismatch: []const u8 = "future-throw-type-mismatch";
 /// Identical to R17 (the §2 alias).
 pub const future_manual_construction_forbidden_alias: []const u8 = future_manual_construction_forbidden;
 
-// ── RI1–RI6: §1I `#[@iterator]` syntax diagnostics ──────────────────────────
+// ── RI1–RI6: §1I generator-body syntax diagnostics ───────────────────────────
 
-/// RI1 — `return <expr>` inside `#[@iterator]` / `#[@futureGenerator]`.
-/// Identical to R14 (the §2 alias).
+/// RI1 — `return <expr>` inside a generator body. Identical to R14 (the §2 alias).
 pub const iterator_return_forbidden_alias: []const u8 = iterator_return_forbidden;
 
-/// RI2 — `break <expr>` whose type is not assignable to declared `C`.
+/// RI2 — `break <expr>` whose type is not the generator's item type `T`
+/// (decision 103: `break v` ≡ `yield v; break;`, so `v` is an item). RI3 —
+/// `break <expr>` against a `C = void` wrapper — left with the `C` channel.
 pub const iterator_break_type_mismatch: []const u8 = "iterator-break-type-mismatch";
-
-/// RI3 — `break <expr>` inside an iterator whose wrapper has `C = void`.
-/// Identical to R13.
-pub const iterator_break_without_completion_type_alias: []const u8 = iterator_break_without_completion_type;
 
 /// RI4 — `yield :label <expr>` where `:label` is not bound.
 /// Identical to R15.
@@ -197,8 +193,13 @@ pub const generic_all_defaults_legal_reserved: []const u8 = "";
 /// RG3 — required generic argument missing (e.g. `@Future<>` where T is required).
 pub const generic_required_arg_missing: []const u8 = "generic-required-arg-missing";
 
-/// RG4 — skipped middle generic argument (`@Iterator<i32, , i64>`).
+/// RG4 — skipped middle generic argument (`@ResultGenerator<i32, , i64>`).
 pub const generic_arg_skip_forbidden: []const u8 = "generic-arg-skip-forbidden";
+
+/// RG5 — more generic arguments than a builtin wrapper declares
+/// (`@ResultGenerator<i32, string, i32>`: the completion channel `C` left with
+/// decision 103, and an argument nothing reads is refused, not dropped).
+pub const generic_arg_count_exceeded: []const u8 = "generic-arg-count-exceeded";
 
 /// §A3 — `#[@result] declare fn` whose `@external(<target>, "<template>")`
 /// body is missing the `ok` or `error` branch on at least one target.
@@ -268,7 +269,6 @@ pub const all_codes = [_][]const u8{
     result_return_type_mismatch,
     result_throw_type_mismatch,
     result_error_type_incompatible,
-    iterator_break_without_completion_type,
     iterator_return_forbidden,
     yield_label_unbound,
     generic_default_before_required,
@@ -289,6 +289,7 @@ pub const all_codes = [_][]const u8{
     use_without_context_effect,
     generic_required_arg_missing,
     generic_arg_skip_forbidden,
+    generic_arg_count_exceeded,
     result_template_shape_mismatch,
     std_unsupported_on_target,
     fn_param_default_trailing_only,

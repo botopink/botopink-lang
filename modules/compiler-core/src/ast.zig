@@ -455,7 +455,7 @@ pub fn JumpExprOf(comptime phase: Phase) type {
         await_: *ExprOf(phase),
         /// `break [:label] [expr]` ---- exit a block/loop/iterator early.
         /// `value=null` is bare `break`; the optional `:label` targets a named
-        /// outer loop or `#[@iterator]` / `#[@futureGenerator]` fn scope (§1I
+        /// outer loop or `#[@resultGenerator]` / `#[@futureGenerator]` fn scope (§1I
         /// REGRAS DE ESCOPO: an unlabelled `break` inside a nested loop binds
         /// to the loop, not the iterator).
         @"break": struct {
@@ -464,7 +464,7 @@ pub fn JumpExprOf(comptime phase: Phase) type {
         },
         /// `continue` ---- skip the rest of this loop iteration
         @"continue",
-        /// `yield [:label] expr` ---- in a generator (`#[@iterator]` /
+        /// `yield [:label] expr` ---- in a generator (`#[@resultGenerator]` /
         /// `#[@generator]` / `#[@futureGenerator]` fn), suspend emitting `expr`;
         /// in a plain loop, accumulate `expr` into the loop's result list. The
         /// optional `:label` disambiguates which generator/loop scope the yield
@@ -2084,14 +2084,14 @@ pub const EffectKind = enum {
     result,
     future,
     generator,
-    iterator,
+    resultGenerator,
     futureGenerator,
     context,
 
     /// Every effect, in declaration order. The one list: `fromAnnotationName`
     /// and `comptime/effect_chain.zig` both walk it, so a seventh effect is a
     /// value here and nowhere else.
-    pub const all = [_]EffectKind{ .result, .future, .generator, .iterator, .futureGenerator, .context };
+    pub const all = [_]EffectKind{ .result, .future, .generator, .resultGenerator, .futureGenerator, .context };
 
     /// The annotation spelling — `#[@<name>]` — for this effect.
     pub fn annotationName(self: EffectKind) []const u8 {
@@ -2099,7 +2099,7 @@ pub const EffectKind = enum {
             .result => "result",
             .future => "future",
             .generator => "generator",
-            .iterator => "iterator",
+            .resultGenerator => "resultGenerator",
             .futureGenerator => "futureGenerator",
             .context => "context",
         };
@@ -2111,7 +2111,7 @@ pub const EffectKind = enum {
             .result => "Result",
             .future => "Future",
             .generator => "Generator",
-            .iterator => "Iterator",
+            .resultGenerator => "ResultGenerator",
             .futureGenerator => "FutureGenerator",
             .context => "Context",
         };
@@ -2140,8 +2140,8 @@ pub const FnDecl = struct {
     /// level (not just `root.bp`).
     isDefault: bool = false,
     /// Optional generator label declared after the return type
-    /// (`#[@iterator] fn f() -> @Iterator<T> :gen`), used to disambiguate
-    /// `yield :label` from an enclosing loop's accumulator.
+    /// (`#[@resultGenerator] fn f() -> @ResultGenerator<T, E> :gen`), used to
+    /// disambiguate `yield :label` / `break :label` from an enclosing loop's.
     label: ?[]const u8 = null,
     name: []const u8,
     docComment: ?[]const u8 = null,

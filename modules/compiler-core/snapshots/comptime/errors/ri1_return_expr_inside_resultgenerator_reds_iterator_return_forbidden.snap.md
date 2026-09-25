@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-#[@futureGenerator]
-fn nums() -> @FutureGenerator<i32, string, i32> {
+#[@resultGenerator]
+fn nums() -> @ResultGenerator<i32, string> {
     yield 1;
     return 42;
 }

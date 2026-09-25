@@ -6,7 +6,7 @@
 //! `libs/std/src/builtins.d.bp`:
 //!
 //!     pub behavior Future<T, E = any>                    extends Result
-//!     pub behavior Iterator<T, E = any, C = void>        extends Result
+//!     pub behavior ResultGenerator<T, E = any>           extends Result
 //!     pub behavior FutureGenerator<T, E = any, C = void> extends Future
 //!     pub behavior Context<ContextBase, Return>          extends Future
 //!     pub behavior Generator<T, R>                       // no clause — question 97
@@ -39,7 +39,7 @@ const Clause = struct { wrapper: []const u8, implements: []const u8 };
 /// computed by `wrapperImplements`, so `@Context` needs no `Result` row.
 pub const clauses = [_]Clause{
     .{ .wrapper = "Future", .implements = "Result" },
-    .{ .wrapper = "Iterator", .implements = "Result" },
+    .{ .wrapper = "ResultGenerator", .implements = "Result" },
     .{ .wrapper = "FutureGenerator", .implements = "Future" },
     .{ .wrapper = "Context", .implements = "Future" },
 };
@@ -48,7 +48,7 @@ pub const clauses = [_]Clause{
 /// it belongs to the three generator-shaped wrappers and is granted by none of
 /// the others, in either direction (decision 95 — "`yield` stays exclusive to
 /// the three generator wrappers and `use` stays exclusive to `@Context`").
-pub const yielding_wrappers = [_][]const u8{ "Generator", "Iterator", "FutureGenerator" };
+pub const yielding_wrappers = [_][]const u8{ "Generator", "ResultGenerator", "FutureGenerator" };
 
 /// A body operation whose legality the chain decides.
 pub const Capability = enum {
@@ -242,11 +242,11 @@ test "effect chain: decision 95's table, row by row" {
     try std.testing.expect(grants(.future, .await_));
     try std.testing.expect(!grants(.future, .use_));
     try std.testing.expect(!grants(.future, .yield_));
-    // `#[@iterator]` ⊃ `@Result`, and yields.
-    try std.testing.expect(grants(.iterator, .try_));
-    try std.testing.expect(!grants(.iterator, .await_));
-    try std.testing.expect(!grants(.iterator, .use_));
-    try std.testing.expect(grants(.iterator, .yield_));
+    // `#[@resultGenerator]` ⊃ `@Result`, and yields.
+    try std.testing.expect(grants(.resultGenerator, .try_));
+    try std.testing.expect(!grants(.resultGenerator, .await_));
+    try std.testing.expect(!grants(.resultGenerator, .use_));
+    try std.testing.expect(grants(.resultGenerator, .yield_));
     // `#[@futureGenerator]` ⊃ `@Future` ⊃ `@Result`, and yields.
     try std.testing.expect(grants(.futureGenerator, .try_));
     try std.testing.expect(grants(.futureGenerator, .await_));

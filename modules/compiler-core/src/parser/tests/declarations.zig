@@ -954,10 +954,10 @@ test "parser: effect fn ---- #[@future] declaration" {
     );
 }
 
-test "parser: effect fn ---- #[@iterator] declaration" {
+test "parser: effect fn ---- #[@resultGenerator] declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn fib() -> @Iterator<Int> {
+        \\#[@resultGenerator]
+        \\fn fib() -> @ResultGenerator<Int> {
         \\    yield 1;
         \\}
     );
@@ -972,10 +972,10 @@ test "parser: effect fn ---- #[@futureGenerator] declaration" {
     );
 }
 
-test "parser: effect fn ---- #[@iterator] label after return type" {
+test "parser: effect fn ---- #[@resultGenerator] label after return type" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn gen() -> @Iterator<Int> :gen {
+        \\#[@resultGenerator]
+        \\fn gen() -> @ResultGenerator<Int> :gen {
         \\    yield :gen 1;
         \\}
     );

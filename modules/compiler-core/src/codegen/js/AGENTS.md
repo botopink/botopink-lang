@@ -105,7 +105,7 @@ without the `function` word and in a fixed order — `static`, then `async`, the
 `*` — so `ClassMember` carries `is_async` and `is_generator` and `writeClass`
 writes them in that order. The backend fills them from one table
 (`commonJS.zig`'s `effectShape` / `methodEffect`), which is what makes
-`#[@iterator] fn each(self: Self)` the `*each()` a `for…of` can consume.
+`#[@resultGenerator] fn each(self: Self)` the `*each()` a `for…of` can consume.
 
 `__bp` is what the §7 formatter tests, and it is the reason the formatter needs
 no `constructor` sniffing: a `Map`, a `@Result`'s `{ ok }` and any host object

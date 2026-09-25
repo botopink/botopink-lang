@@ -18,7 +18,7 @@ fn counted(n: i32) -> @Generator<i32, void> {
 }
 
 ----- ERROR
-error: effect-try-without-fallible-channel: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@iterator]`, `#[@futureGenerator]` or `#[@context]`; `#[@generator]` is `@Generator`, which does not
+error: effect-try-without-fallible-channel: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`, `#[@futureGenerator]` or `#[@context]`; `#[@generator]` is `@Generator`, which does not
   ┌─ :15:13
   │
 15 │     val v = try parse(n);

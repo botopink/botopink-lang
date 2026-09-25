@@ -1127,7 +1127,7 @@ const Emitter = struct {
     /// real first parameter) instead of the prototype-method `this.x`.
     self_is_param: bool = false,
     /// True while building a generator (`function*`) body. A `return <expr>`
-    /// inside an `#[@iterator] fn -> @Iterator<T>` means *delegate the rest of
+    /// inside an `#[@resultGenerator] fn -> @ResultGenerator<T>` means *delegate the rest of
     /// the iteration* to that iterator, so it lowers to `yield* <expr>;
     /// return;` — a plain `return <gen>` would surface the generator object as
     /// the done-value and yield nothing (the iterator-recursion bug behind the
@@ -1790,7 +1790,7 @@ const Emitter = struct {
 
     /// The JS shape a botopink effect asks for.
     ///   `#[@future]`          → `async function`
-    ///   `#[@iterator]`        → `function*`
+    ///   `#[@resultGenerator]`        → `function*`
     ///   `#[@generator]`       → `function*`
     ///   `#[@futureGenerator]` → `async function*`
     ///   `#[@result]`          → `function` (checked-Result effect — plain fn)
@@ -1799,7 +1799,7 @@ const Emitter = struct {
         const e = eff orelse return .{};
         return switch (e) {
             .future => .{ .is_async = true },
-            .iterator => .{ .is_generator = true },
+            .resultGenerator => .{ .is_generator = true },
             .generator => .{ .is_generator = true },
             .futureGenerator => .{ .is_async = true, .is_generator = true },
             .result => .{},
@@ -1811,7 +1811,7 @@ const Emitter = struct {
     /// field; `ast.BehaviorMethod` — a record's or an enum's method, and a
     /// `behavior`'s `default fn` — carries only its annotation list, so the
     /// effect is read back from it. Reading `FnDecl.effect` alone is what made
-    /// `#[@iterator] fn iter(self: Self)` emit as a plain method whose
+    /// `#[@resultGenerator] fn iter(self: Self)` emit as a plain method whose
     /// `loop … yield` lowered to a value-dropping `.map()`.
     fn methodEffect(m: ast.BehaviorMethod) ?ast.EffectKind {
         for (m.annotations) |a| {
@@ -2979,7 +2979,7 @@ const Emitter = struct {
                             .rejected => js.Stmt{ .throw_ = inner },
                         };
                     }
-                    // `return <iter>` in an `#[@iterator] fn -> @Iterator`
+                    // `return <iter>` in an `#[@resultGenerator] fn -> @ResultGenerator`
                     // delegates: `yield* <iter>; return;` (a plain
                     // `return <gen>` surfaces the generator object and
                     // yields nothing).
@@ -3372,7 +3372,7 @@ const Emitter = struct {
                 },
                 .await_ => |av| return self.b.await_(try self.buildExpr(av.*)),
                 // Generator `yield` (loop-accumulator yields are lowered at
-                // the `.loop` site, so reaching here means an `#[@iterator]`
+                // the `.loop` site, so reaching here means an `#[@resultGenerator]`
                 // / `#[@generator]` / `#[@futureGenerator]` body).
                 .yield => |y| return self.b.yield_(if (y.value) |val| try self.buildExpr(val.*) else null),
             },
@@ -3781,7 +3781,7 @@ const Emitter = struct {
 
     /// A `loop` in statement position: a JS `for…of`. Its `break` / `continue`
     /// are the native statements, and inside a generator body its `yield` is
-    /// the native one — which is what makes `#[@iterator]` recursion work (a
+    /// the native one — which is what makes `#[@resultGenerator]` recursion work (a
     /// `.map()` would build a throwaway array and yield nothing). Null for an
     /// accumulator `yield` loop outside a generator: that is a comprehension
     /// whose value is discarded, and it keeps the value lowering.

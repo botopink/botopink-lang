@@ -409,8 +409,8 @@ test "format: star fn ---- async function" {
 
 test "format: star fn ---- generator with label" {
     try h.assertFormat(std.testing.allocator,
-        \\#[@iterator]
-        \\fn gen() -> @Iterator<Int> :gen {
+        \\#[@resultGenerator]
+        \\fn gen() -> @ResultGenerator<Int> :gen {
         \\    yield :gen 1;
         \\}
     );

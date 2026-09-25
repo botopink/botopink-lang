@@ -21,7 +21,7 @@ std/
     ├── root.bp              ← module-tree root: one `pub mod <name>;` per importable std module
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
     ├── primitives.bp        ← primitive behavior registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array); no tests (see `test/`)
-    ├── builtins.d.bp        ← builtin surface: print, @Result/@Iterator/@Future/@FutureGenerator…, `Display` (decision 8 §7), `Index`/`Slice` (decision 63, amended), `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `ExprContext`, `CustomNode`, …), `@Decl` reflection, effect-annotation rules
+    ├── builtins.d.bp        ← builtin surface: print, @Result/@Future/@Generator/@ResultGenerator/@FutureGenerator (`YieldStep`)…, `Display` (decision 8 §7), `Index`/`Slice` (decision 63, amended), `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `ExprContext`, `CustomNode`, …), `@Decl` reflection, effect-annotation rules
     ├── builtins_fns.d.bp    ← builtin fns with literal defaults (`todo`, `panic`)
     │                        — importable modules (declared in root.bp):
     ├── order.bp  dict.bp  sets.bp  string_builder.bp  queue.bp
@@ -248,7 +248,7 @@ lib is a dependency. Sidecars ship verbatim.
 
 ## Effect annotations
 
-`#[@result]`, `#[@future]`, `#[@generator]`, `#[@iterator]`,
+`#[@result]`, `#[@future]`, `#[@generator]`, `#[@resultGenerator]`,
 `#[@futureGenerator]`, `#[@context]` and default generic parameters are
 documented in the effect-annotations block of `src/builtins.d.bp`.
 

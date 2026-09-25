@@ -17,7 +17,7 @@ fn plain(n: i32) -> i32 {
 }
 
 ----- ERROR
-error: effect-try-without-fallible-channel: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@iterator]`, `#[@futureGenerator]` or `#[@context]`; this fn carries no effect annotation
+error: effect-try-without-fallible-channel: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`, `#[@futureGenerator]` or `#[@context]`; this fn carries no effect annotation
   ┌─ :14:13
   │
 14 │     val v = try parse(n);

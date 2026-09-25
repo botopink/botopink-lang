@@ -9,7 +9,7 @@
 //! Happy path: `yield <expr>` inside a `#[@generator]` body, labelled
 //! `yield :outer` interacting with the enclosing fn label, and
 //! `#[@generator]` return shape (`@Generator<T, R>` — R is the
-//! return-value channel, distinct from `#[@iterator]`'s C completion).
+//! return-value channel; a `@ResultGenerator` has none, decision 103).
 //!
 //! NOTE: §1 R8 (`yield <expr>` outside a generator/iterator body) is
 //! NOT enforced at comptime by the current inference (the parser+typer
@@ -22,8 +22,7 @@ const h = @import("helpers.zig");
 // ── RI4 / R10: yield :label where label is not bound reds ─────────────────
 
 test "§1 R10 — yield :nonsense inside #[@generator] reds yield-label-unbound" {
-    try h.assertTypeErrorSnap(std.testing.allocator,
-        @src(),
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@generator]
         \\fn nums() -> @Generator<i32, void> :outer {
         \\    yield :nonsense 1;
@@ -55,7 +54,7 @@ test "§1 happy path — labelled yield :outer matches enclosing fn label" {
 
 test "§1 happy path — return <r> inside #[@generator] sets the R channel" {
     // `#[@generator]` carries a return-value channel R (distinct from
-    // `#[@iterator]`'s completion channel C). `return <r>` resolves R.
+    // `#[@resultGenerator]`'s completion channel C). `return <r>` resolves R.
     try h.assertInfersOk(std.testing.allocator,
         \\#[@generator]
         \\fn nums() -> @Generator<i32, string> {

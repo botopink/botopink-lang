@@ -2422,7 +2422,6 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
         .allowsAwait = true,
         .allowsYield = false,
         .iterItem = null,
-        .iterCompletion = null,
         .fnLabel = null,
         .effect = .future,
     };
@@ -3350,12 +3349,12 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             }
         }
         // R6 (§2) — `throw` belongs to a fallible-channel effect. Allow it in
-        // `#[@future]` / `#[@iterator]` / `#[@futureGenerator]` bodies too — the
+        // `#[@future]` / `#[@resultGenerator]` / `#[@futureGenerator]` bodies too — the
         // auto-wrap in `transform.zig` rewrites each form to the right wrapper.
         // `#[@generator]` and `#[@context]` keep `.plain` (they have no error
         // channel — throwing reds with `effect-throw-without-fallible-channel`).
         if (eff) |e| switch (e) {
-            .future, .iterator, .futureGenerator => throwCtx = .unchecked,
+            .future, .resultGenerator, .futureGenerator => throwCtx = .unchecked,
             else => {},
         };
     }
@@ -3391,8 +3390,8 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         }
     } else if (wrapperKind != .none) {
         var err = TypeError.custom(
-            "a function returning `@Future`/`@Iterator`/`@FutureGenerator` needs an effect annotation",
-            "Mark it `#[@future]` / `#[@iterator]` / `#[@futureGenerator]`.",
+            "a function returning `@Future`/`@ResultGenerator`/`@FutureGenerator` needs an effect annotation",
+            "Mark it `#[@future]` / `#[@resultGenerator]` / `#[@futureGenerator]`.",
         );
         if (fnLoc) |l| err = err.withLoc(l);
         env.lastError = err;
@@ -3644,16 +3643,16 @@ fn inferTypeMethods(
     }
 }
 
-const WrapperReturnKind = enum { none, future, iterator, futureGenerator };
+const WrapperReturnKind = enum { none, future, resultGenerator, futureGenerator };
 
-/// Classify a resolved return type as `@Future` / `@Iterator` / `@FutureGenerator`.
+/// Classify a resolved return type as `@Future` / `@ResultGenerator` / `@FutureGenerator`.
 fn classifyWrapperReturn(ty: *T.Type) WrapperReturnKind {
     const t = ty.deref();
     return switch (t.*) {
         .named => |n| if (std.mem.eql(u8, n.name, "Future"))
             .future
-        else if (std.mem.eql(u8, n.name, "Iterator"))
-            .iterator
+        else if (std.mem.eql(u8, n.name, "ResultGenerator"))
+            .resultGenerator
         else if (std.mem.eql(u8, n.name, "FutureGenerator"))
             .futureGenerator
         else
@@ -3707,7 +3706,7 @@ fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Ty
         // (handled above) returns its owner type as written — a component's
         // `-> Element` (decision 88).
         .context => retType,
-        .iterator, .futureGenerator => null,
+        .resultGenerator, .futureGenerator => null,
     };
 }
 
@@ -3717,26 +3716,14 @@ fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8
         .named => |n| if (n.args.len >= 1) n.args[0] else null,
         else => null,
     };
-    // §1I — `@Iterator<T, E, C>` / `@FutureGenerator<T, E, C>` carry the
-    // completion type in the third argument. Default-fill (`C = void`) lands
-    // via `builtinDefaultFilledArgs` before this point, so `args.len >= 3`
-    // is reliable for iterator/futureGenerator.
-    const completion: ?*T.Type = switch (t.*) {
-        .named => |n| if (n.args.len >= 3) n.args[2] else null,
-        else => null,
-    };
-    // `iterItem` / `iterCompletion` are the iterator channels: only the three
-    // generator-shaped wrappers carry them, and `.iterator` / `.futureGenerator`
-    // are the two the `break` handler reads for RI2/RI3.
+    // `iterItem` is the one item channel: only the three generator-shaped
+    // wrappers carry it, and both `yield <v>` and a generator-level `break <v>`
+    // unify with it (decision 103 — there is no completion channel).
     const yields = effectChain.grants(eff, .yield_);
     return .{
         .allowsAwait = effectChain.grants(eff, .await_),
         .allowsYield = yields,
         .iterItem = if (yields) item else null,
-        .iterCompletion = switch (eff) {
-            .iterator, .futureGenerator => completion,
-            else => null,
-        },
         .fnLabel = fnLabel,
         .effect = eff,
     };
@@ -5490,11 +5477,11 @@ fn unwrapFutureType(ty: *T.Type) ?*T.Type {
     };
 }
 
-/// `@Iterator<T>` / `@FutureGenerator<T, E>` -> `T`. Returns null when `ty` is not an iterator.
+/// `@ResultGenerator<T, E>` / `@FutureGenerator<T, E>` -> `T`. Returns null when `ty` is neither.
 fn unwrapIteratorType(ty: *T.Type) ?*T.Type {
     const t = ty.deref();
     return switch (t.*) {
-        .named => |n| if ((std.mem.eql(u8, n.name, "Iterator") or
+        .named => |n| if ((std.mem.eql(u8, n.name, "ResultGenerator") or
             std.mem.eql(u8, n.name, "FutureGenerator")) and n.args.len >= 1)
             n.args[0]
         else
@@ -5532,7 +5519,7 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 /// The defaulted tail (per §1G / `tasks/v0.beta.19/specs/frente-b-rules-tooling.md`):
 ///   - `@Future<T, E = any>`            → 1 required
 ///   - `@Generator<T, R = void>`        → 1 required
-///   - `@Iterator<T, E = any, C = void>`→ 1 required
+///   - `@ResultGenerator<T, E = any>`   → 1 required
 ///   - `@FutureGenerator<T, E = any, C = void>` → 1 required
 ///   - `@Result<R, E>`                  → 2 required
 ///   - `@Context<Base, T>`              → 2 required
@@ -5541,8 +5528,25 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     const eq = std.mem.eql;
     if (eq(u8, name, "Future")) return 1;
     if (eq(u8, name, "Generator")) return 1;
-    if (eq(u8, name, "Iterator")) return 1;
+    if (eq(u8, name, "ResultGenerator")) return 1;
     if (eq(u8, name, "FutureGenerator")) return 1;
+    if (eq(u8, name, "Result")) return 2;
+    if (eq(u8, name, "Context")) return 2;
+    if (eq(u8, name, "Expr")) return 1;
+    if (eq(u8, name, "ExprCustom")) return 1;
+    return null;
+}
+
+/// The FULL declared arity of a known builtin wrapper — required plus
+/// defaulted parameters — or null for builtins without a fixed arity. RG5: an
+/// argument past it is refused (decision 67 — a type argument nothing reads
+/// is not dropped silently).
+fn builtinMaxGenericArgs(name: []const u8) ?usize {
+    const eq = std.mem.eql;
+    if (eq(u8, name, "Future")) return 2;
+    if (eq(u8, name, "Generator")) return 2;
+    if (eq(u8, name, "ResultGenerator")) return 2;
+    if (eq(u8, name, "FutureGenerator")) return 3;
     if (eq(u8, name, "Result")) return 2;
     if (eq(u8, name, "Context")) return 2;
     if (eq(u8, name, "Expr")) return 1;
@@ -5559,8 +5563,8 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
 /// Layouts (per §1G default tail):
 ///   - `Future<T, E = any>`              → `["any"]` for the E slot
 ///   - `Generator<T, R = void>`          → `["void"]` for the R slot
-///   - `Iterator<T, E = any, C = void>`  → `["any", "void"]` for the E/C slots
-///   - `FutureGenerator<T, E = any, C = void>` → same as Iterator
+///   - `ResultGenerator<T, E = any>`     → `["any"]` for the E slot
+///   - `FutureGenerator<T, E = any, C = void>` → `["any", "void"]` for the E/C slots
 ///
 /// The returned slice always has the FULL declared arity (so the caller
 /// allocates an args slice sized to it and indexes positions
@@ -5577,8 +5581,8 @@ fn builtinDefaultFilledArgs(env: *Env, name: []const u8, given: usize) ?[]const 
     if (eq(u8, name, "Generator") and given < 2) {
         return &.{ "", "void" };
     }
-    if (eq(u8, name, "Iterator") and given < 3) {
-        return &.{ "", "any", "void" };
+    if (eq(u8, name, "ResultGenerator") and given < 2) {
+        return &.{ "", "any" };
     }
     if (eq(u8, name, "FutureGenerator") and given < 3) {
         return &.{ "", "any", "void" };
@@ -5680,7 +5684,7 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // RG3 (§1G) — required generic argument missing. Each known builtin
             // wrapper has a fixed required-arg minimum: the parameters before
             // the defaulted trailing range. Catching it here covers the
-            // `@Future<>` / `@Iterator<>` shape; user-defined types' defaults
+            // `@Future<>` / `@ResultGenerator<>` shape; user-defined types' defaults
             // are tracked separately on `TypeDef.genericParams` (follow-up).
             if (b.is_builtin) {
                 if (builtinRequiredGenericArgs(b.name)) |required| {
@@ -5692,12 +5696,25 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
                         return error.TypeError;
                     }
                 }
+                // RG5 — an argument past the declared arity names a channel
+                // the wrapper does not have (`@ResultGenerator<T, E, C>` after
+                // decision 103 took `C` away) and is refused at the annotation.
+                if (builtinMaxGenericArgs(b.name)) |max| {
+                    if (b.args.len > max) {
+                        var err = TypeError.custom(
+                            try std.fmt.allocPrint(env.arena, "{s}: `@{s}` takes at most {d} type argument{s}, {d} given", .{ diagnostics.generic_arg_count_exceeded, b.name, max, if (max == 1) "" else "s", b.args.len }),
+                            "Drop the extra type argument: the wrapper declares no channel for it.",
+                        );
+                        if (env.typeRefLoc) |l| err = err.withLoc(l);
+                        env.lastError = err;
+                        return error.TypeError;
+                    }
+                }
             }
             // §1G default-fill — when fewer trailing args are supplied than the
             // builtin declares, the missing positions take their declared
-            // defaults. `@Future<User>` ⇒ `@Future<User, any>`; `@Iterator<i32>`
-            // ⇒ `@Iterator<i32, any, void>`; `@Iterator<i32, MyError>` ⇒
-            // `@Iterator<i32, MyError, void>`; `@Generator<i32>` ⇒
+            // defaults. `@Future<User>` ⇒ `@Future<User, any>`; `@ResultGenerator<i32>`
+            // ⇒ `@ResultGenerator<i32, any>`; `@Generator<i32>` ⇒
             // `@Generator<i32, void>`. `@Result` and `@Context` declare no
             // defaults — RG3 above already rejected an under-supplied form.
             const filled_args = if (b.is_builtin)
@@ -7659,19 +7676,19 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     }
                 }
             }
-            // RI1 (§1I / §2 R14) — `return <expr>;` inside `#[@iterator]` /
-            // `#[@futureGenerator]` is forbidden: the iterator/futureGenerator
-            // protocol carries no `R` channel. The author uses `break` for a
-            // clean end and `break <C>` for a completion value. Bare `return;`
-            // (no value, an implicit clean end) stays legal.
+            // RI1 (§1I / §2 R14) — `return <expr>;` inside `#[@resultGenerator]` /
+            // `#[@futureGenerator]` is forbidden: a generator carries no return
+            // channel (decision 103). The author writes `break <v>` to emit a
+            // last item and end, or bare `break` for a clean end. Bare
+            // `return;` (no value, an implicit clean end) stays legal.
             if (r != null and
-                (inEffectContext(env, .iterator) or
+                (inEffectContext(env, .resultGenerator) or
                     inEffectContext(env, .futureGenerator)))
             {
                 env.lastError = TypeError.custom(
                     diagnostics.iterator_return_forbidden ++
-                        ": use `break <C>` to deliver an iterator's completion value, or bare `break` for a clean end. Plain `return <expr>` is only valid in #[@generator].",
-                    "Replace `return <expr>;` with `break <expr>;` (the third generic of @Iterator<T, E, C> declares the completion-value type).",
+                        ": a generator has no return channel — `break <v>` emits `v` as the last item and ends, bare `break` ends cleanly",
+                    "Replace `return <expr>;` with `break <expr>;` (the value is an item of type `T`), or with `yield <expr>; return;`.",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -7854,17 +7871,9 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             if (e != null and inEffectContext(env, .future)) {
                 try env.future_jump_lowerings.put(loc, .wrap_rejected);
             }
-            // §1I F4I-tail — inside `#[@iterator]` / `#[@futureGenerator]`, a
-            // `throw <e>;` lands in the iterator-error channel. The transform
-            // rewrites it as `return @IteratorStep.Error(<e>);` so the
-            // consumer can pattern-match on the step variant; the existing
-            // enum codegen materialises the value.
-            if (e != null and inEffectContext(env, .iterator)) {
-                try env.iterator_jump_lowerings.put(loc, .wrap_error);
-            }
-            if (e != null and inEffectContext(env, .futureGenerator)) {
-                try env.iterator_jump_lowerings.put(loc, .wrap_error);
-            }
+            // Inside `#[@resultGenerator]` / `#[@futureGenerator]`, a `throw <e>;`
+            // is the error channel's: every backend lowers it as its own throw
+            // and the consuming loop propagates it as a `try` (decision 103).
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .throw_ = valPtr } } };
         },
         .try_ => |e| {
@@ -7896,7 +7905,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
         },
         .@"break" => |b| {
             // RI5 (§1I) — `break :label` must name an enclosing labelled scope
-            // (a loop or `#[@iterator]` / `#[@futureGenerator]` fn). The label
+            // (a loop or `#[@resultGenerator]` / `#[@futureGenerator]` fn). The label
             // stack is shared with `yield`; an unbound label here is a parse-
             // visible typo, not a backend issue.
             if (b.label) |lbl| {
@@ -7904,55 +7913,45 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     env.lastError = TypeError.custom(
                         diagnostics.break_label_unbound ++
                             ": `break :<label>` targets an unknown label",
-                        "Label a loop (`loop :name (...)`) or an iterator/futureGenerator fn (`#[@iterator] fn … -> @Iterator<…> :name`).",
+                        "Label a loop (`loop :name (...)`) or an iterator/futureGenerator fn (`#[@resultGenerator] fn … -> @ResultGenerator<…> :name`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
             }
             const typedPtr: ?*TypedExpr = if (b.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
-            // RI2 / RI3 (§1I) — when `break <expr>` targets the enclosing
-            // iterator/futureGenerator (top-level position OR labelled with
-            // the fn's signature label), the value type must satisfy the
-            // wrapper's `C` parameter. An unlabelled break inside a nested
-            // loop targets the loop, not the FSM — skip.
+            // Decision 103 — when `break <v>` targets the enclosing generator
+            // body (top-level position OR labelled with the fn's signature
+            // label), `v` is the LAST ITEM: it unifies with the item type `T`
+            // exactly as a `yield <v>` does, and the transform rewrites the
+            // statement into `yield <v>; return;` (`GeneratorJumpLowering`). A
+            // bare `break` at that position ends the generator (`return;`).
+            // An unlabelled break inside a nested loop targets the loop, not
+            // the generator — skip (§1I REGRAS DE ESCOPO).
             if (env.starFn) |ctx| {
-                if (ctx.effect == .iterator or ctx.effect == .futureGenerator) {
-                    const targetsIterator = blk: {
+                if (ctx.effect == .resultGenerator or ctx.effect == .futureGenerator) {
+                    const targetsGenerator = blk: {
                         if (b.label) |lbl| {
                             if (ctx.fnLabel) |fl| break :blk std.mem.eql(u8, lbl, fl);
                             break :blk false;
                         }
                         break :blk env.loopDepth == 0;
                     };
-                    if (targetsIterator) {
+                    if (targetsGenerator) {
                         if (typedPtr) |vp| {
-                            // RI2 — `break <expr>` against an iterator.
-                            const completion = ctx.iterCompletion orelse try env.namedType("void");
-                            const completionDeref = completion.deref();
-                            if (completionDeref.* == .named and std.mem.eql(u8, completionDeref.named.name, "void")) {
-                                env.lastError = TypeError.custom(
-                                    diagnostics.iterator_break_without_completion_type ++
-                                        ": this iterator declares C = void; bare `break` is the only valid form",
-                                    "Extend the wrapper to opt into completion values: `@Iterator<T, E, <C-type>>` (or `@FutureGenerator<…>`).",
-                                ).withLoc(loc);
-                                return error.TypeError;
+                            // RI2 — the value is an item of type `T`.
+                            if (ctx.iterItem) |item| {
+                                unifyAt(env, item, vp.getType(), loc) catch {
+                                    env.lastError = TypeError.custom(
+                                        diagnostics.iterator_break_type_mismatch ++
+                                            ": `break <v>` emits `v` as the generator's last item, so `v` must be the item type `T` of the wrapper",
+                                        "Either change the `break <expr>;` value to the item type, or widen the wrapper's first generic.",
+                                    ).withLoc(loc);
+                                    return error.TypeError;
+                                };
                             }
-                            // RI2 — value must unify with the declared C.
-                            unifyAt(env, completion, vp.getType(), loc) catch {
-                                env.lastError = TypeError.custom(
-                                    diagnostics.iterator_break_type_mismatch ++
-                                        ": completion value type does not match the declared C parameter of @Iterator<T, E, C>",
-                                    "Either change the `break <expr>;` value to match C, or widen the wrapper's third generic.",
-                                ).withLoc(loc);
-                                return error.TypeError;
-                            };
-                            // F4I-tail — record `break <c>` for the transform
-                            // rewrite into `return @IteratorStep.Done(<c>);`.
-                            try env.iterator_jump_lowerings.put(loc, .wrap_done);
+                            try env.generator_jump_lowerings.put(loc, .emit_and_end);
                         } else {
-                            // F4I-tail — bare `break;` targeting the FSM:
-                            // record for rewrite into `return @IteratorStep.Done();`.
-                            try env.iterator_jump_lowerings.put(loc, .wrap_done_void);
+                            try env.generator_jump_lowerings.put(loc, .end);
                         }
                     }
                 }
@@ -7993,7 +7992,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     env.lastError = TypeError.custom(
                         diagnostics.yield_label_unbound ++
                             ": `yield` targets an unknown label",
-                        "Label a generator fn (`#[@iterator] fn … -> @Iterator<T> :name`) or a `loop :name (...)`.",
+                        "Label a generator fn (`#[@resultGenerator] fn … -> @ResultGenerator<T> :name`) or a `loop :name (...)`.",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
@@ -8017,7 +8016,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 break :blk env.loopDepth == 0;
             };
             // R8, as decision 95 rewrites it — `yield` is exclusive to the three
-            // generator-shaped wrappers (`@Generator`, `@Iterator`,
+            // generator-shaped wrappers (`@Generator`, `@ResultGenerator`,
             // `@FutureGenerator`) and is granted by no level of the chain: a
             // `#[@future]`, `#[@result]` or `#[@context]` body cannot yield, and
             // neither can a plain `fn`.
@@ -8025,7 +8024,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 if (env.starFn == null or !env.starFn.?.allowsYield) {
                     env.lastError = TypeError.custom(
                         try effectChain.refusal(env.arena, diagnostics.yield_without_generator, .yield_, env.fnEffect),
-                        "A `yield` that is not inside a `loop (…) { … }` body is the function's: mark the fn `#[@iterator]` (`-> @Iterator<T>`), `#[@generator]` or `#[@futureGenerator]`.",
+                        "A `yield` that is not inside a `loop (…) { … }` body is the function's: mark the fn `#[@resultGenerator]` (`-> @ResultGenerator<T>`), `#[@generator]` or `#[@futureGenerator]`.",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
@@ -8199,6 +8198,23 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
     };
 }
 
+/// Decision 103 — the level a collection loop over a fallible generator
+/// needs. `for (g)` over a `@ResultGenerator<T, E>` propagates `Error(e)` as
+/// a `try`, so the iterating body needs `try`'s level; a `@FutureGenerator`
+/// needs it too (its `await` is checked beside it). The gate reads
+/// `throwContext` for the reason bare `try` does: `.plain` is exactly a
+/// declared return type with no error channel, and a body with no declared
+/// return type (a lambda, a `test` block) stays lenient.
+fn requireGeneratorLevel(env: *Env, wrapper: []const u8, loc: ast.Loc) InferError!void {
+    if (env.throwContext != .plain or effectChain.grants(env.fnEffect, .try_)) return;
+    const base = try effectChain.refusal(env.arena, diagnostics.effect_try_without_fallible_channel, .try_, env.fnEffect);
+    env.lastError = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "{s} — a loop over a `@{s}<T, E>` propagates its `Error(e)` as a `try` in the body that iterates it (decision 103)", .{ base, wrapper }),
+        "Give the enclosing fn an error channel (`#[@result]` or above), or iterate an infallible `@Generator<T>`.",
+    ).withLoc(loc);
+    return error.TypeError;
+}
+
 /// Infer type for loop expressions
 fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     const iterTyped = try inferExprTyped(env, lp.iter.*);
@@ -8219,6 +8235,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         const iterTy = iterTyped.getType().deref();
         if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "FutureGenerator") and iterTy.named.args.len >= 1) {
             awaitItem = iterTy.named.args[0];
+            try requireGeneratorLevel(env, "FutureGenerator", loc);
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
                 "`loop await` expects an `@FutureGenerator<T, E>` value",
@@ -8255,9 +8272,14 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         // `loop (a..b) { i -> … }` — a range has no element argument to read,
         // and decision 8 §10 counts it in integers.
         if (std.mem.eql(u8, iter.named.name, "Range")) break :blk try env.namedType("i32");
-        if (iter.named.args.len == 1 and
+        // Decision 103 — a loop over a fallible generator is a `try` in the
+        // body that iterates it: `Error(e)` propagates on the iterating body's
+        // error channel, which the body must therefore have. `@Generator<T>`
+        // is infallible and iterable anywhere, a plain `fn` included.
+        if (std.mem.eql(u8, iter.named.name, "ResultGenerator")) try requireGeneratorLevel(env, "ResultGenerator", loc);
+        if (iter.named.args.len >= 1 and
             (std.mem.eql(u8, iter.named.name, "array") or
-                std.mem.eql(u8, iter.named.name, "Iterator") or
+                std.mem.eql(u8, iter.named.name, "ResultGenerator") or
                 std.mem.eql(u8, iter.named.name, "Generator")))
             break :blk iter.named.args[0];
         break :blk null;

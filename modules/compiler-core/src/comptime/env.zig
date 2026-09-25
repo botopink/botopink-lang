@@ -225,7 +225,7 @@ pub const TypeparamConstraint = struct {
 // ── environment ───────────────────────────────────────────────────────────────
 
 /// Context active while inferring the body of an effect fn (async /
-/// generator — i.e. one marked `#[@future]` / `#[@iterator]` / `#[@generator]`
+/// generator — i.e. one marked `#[@future]` / `#[@resultGenerator]` / `#[@generator]`
 /// / `#[@futureGenerator]`). Drives validation of `await` and `yield`; `null`
 /// inside normal functions and at the top level. (The type keeps its
 /// historical name `StarFnCtx` for the field on `Env`; the `*fn` prefix it
@@ -234,26 +234,23 @@ pub const StarFnCtx = struct {
     /// `await` is permitted here — async function (`@Future`) or async
     /// generator (`@FutureGenerator`).
     allowsAwait: bool,
-    /// `yield` (and generator delegation) is permitted here — `@Iterator` /
-    /// `@Generator` / `@FutureGenerator`. False for a pure `@Future`.
+    /// `yield` (and generator delegation) is permitted here — `@Generator` /
+    /// `@ResultGenerator` / `@FutureGenerator`. False for a pure `@Future`.
     allowsYield: bool,
-    /// `@Iterator<T>` / `@Generator<T, _>` / `@FutureGenerator<T, _>` item type
-    /// that `yield` values must unify with; `null` when unknown or absent
+    /// `@Generator<T>` / `@ResultGenerator<T, _>` / `@FutureGenerator<T, _>`
+    /// item type that `yield <v>` AND `break <v>` values unify with (decision
+    /// 103: `break v` emits `v` and ends — the last item is an item like the
+    /// others, there is no completion channel); `null` when unknown or absent
     /// (`@Future`).
     iterItem: ?*T.Type,
-    /// `@Iterator<T, E, C>` / `@FutureGenerator<T, E, C>` completion type that
-    /// `break <expr>` values must unify with (§1I RI2/RI3). `null` for
-    /// effects without a completion channel (`@Future`, `@Generator`'s `R`
-    /// rides on `return` instead).
-    iterCompletion: ?*T.Type,
-    /// The label declared on the fn signature (`#[@iterator] fn … :name`),
-    /// used to scope `break :name` to the iterator FSM vs. an enclosing loop.
+    /// The label declared on the fn signature (`#[@resultGenerator] fn … :name`),
+    /// used to scope `break :name` to the generator vs. an enclosing loop.
     /// Drives the §1I REGRAS DE ESCOPO disambiguation in the `.@"break"`
     /// type-checker.
     fnLabel: ?[]const u8,
     /// The specific effect kind this context was built from. Drives effect-
     /// specific rejections (RF1/RF2/RF5 fire only inside `#[@future]`, RI*
-    /// only inside `#[@iterator]` / `#[@futureGenerator]`, etc.).
+    /// only inside `#[@resultGenerator]` / `#[@futureGenerator]`, etc.).
     effect: ast.EffectKind,
 };
 
@@ -347,15 +344,16 @@ pub const ResultJumpLowering = enum { wrap_ok, wrap_error, unwrap_passthrough };
 /// Other backends (erlang/beam) consume the same uniform AST form.
 pub const FutureJumpLowering = enum { wrap_resolved, wrap_rejected };
 
-/// §1I F4I-tail — `break`/`throw` jumps inside `#[@iterator]` / `#[@futureGenerator]`
-/// fns. The transform rewrites:
-///   - `break <c>;` (targeting the FSM, per RI2/RI3 scoping) → `return @IteratorStep.Done(<c>);`
-///   - `break;` (bare, targeting the FSM)                    → `return @IteratorStep.Done();`
-///   - `throw <e>;`                                          → `return @IteratorStep.Error(<e>);`
-/// `yield <t>;` is NOT rewritten — backends emit `yield t` natively (JS `function*`).
-/// Each backend then renders the enum constructor through its existing enum
-/// codegen (no special-case lowering needed at this layer).
-pub const IteratorJumpLowering = enum { wrap_done, wrap_done_void, wrap_error };
+/// Decision 103 — a `break` that targets the generator itself (top-level
+/// position, or `break :label` with the fn's signature label — §1I REGRAS DE
+/// ESCOPO) inside a `#[@generator]` / `#[@resultGenerator]` /
+/// `#[@futureGenerator]` body. The transform rewrites, at statement level:
+///   - `break <v>;` → `yield <v>; return;`   (`emit_and_end`: the value is the
+///                                            last item, and the body ends)
+///   - `break;`     → `return;`              (`end`: a clean end)
+/// `yield <t>;` is NOT rewritten — backends emit `yield t` natively. There is
+/// no completion channel: `YieldStep.Done` carries no payload.
+pub const GeneratorJumpLowering = enum { emit_and_end, end };
 
 pub const Env = struct {
     /// Arena allocator ---- all Type and TypeCell nodes are allocated here.
@@ -467,13 +465,12 @@ pub const Env = struct {
     /// rewrites to `__bp_future_resolved(...)` / `__bp_future_rejected(...)`
     /// wrapper calls. Keyed by the jump's source location.
     future_jump_lowerings: std.AutoHashMap(ast.Loc, FutureJumpLowering),
-    /// §1I F4I-tail — `break`/`throw` jumps inside `#[@iterator]` /
-    /// `#[@futureGenerator]` fns that target the FSM (top-level `break`/`throw`
-    /// or `break :label` with the fn's signature label, per RI2/RI3 scoping).
-    /// The transform pass rewrites each entry into a `return @IteratorStep.<v>(…)`
-    /// call so the backend's existing enum-constructor codegen materialises the
-    /// step value. `yield` is NOT recorded — it stays as native `yield t`.
-    iterator_jump_lowerings: std.AutoHashMap(ast.Loc, IteratorJumpLowering),
+    /// Decision 103 — the `break`s that target the generator body itself
+    /// (top-level position, or `break :label` with the fn's signature label).
+    /// `comptime/transform.zig` rewrites each into `yield <v>; return;` /
+    /// `return;` (see `GeneratorJumpLowering`). `yield` is NOT recorded — it
+    /// stays as native `yield t`.
+    generator_jump_lowerings: std.AutoHashMap(ast.Loc, GeneratorJumpLowering),
     /// Capability scope of the function body currently being inferred (null at top level).
     fnContext: ?FnContext = null,
     /// C1 — the type a `return <value>` in the body currently being inferred
@@ -719,7 +716,7 @@ pub const Env = struct {
             .method_lowerings = std.AutoHashMap(ast.Loc, MethodLowering).init(arena),
             .result_jump_lowerings = std.AutoHashMap(ast.Loc, ResultJumpLowering).init(arena),
             .future_jump_lowerings = std.AutoHashMap(ast.Loc, FutureJumpLowering).init(arena),
-            .iterator_jump_lowerings = std.AutoHashMap(ast.Loc, IteratorJumpLowering).init(arena),
+            .generator_jump_lowerings = std.AutoHashMap(ast.Loc, GeneratorJumpLowering).init(arena),
             .fnContext = null,
             .throwContext = .unchecked,
             .starFn = null,
@@ -795,7 +792,7 @@ pub const Env = struct {
             .method_lowerings = std.AutoHashMap(ast.Loc, MethodLowering).init(arena),
             .result_jump_lowerings = std.AutoHashMap(ast.Loc, ResultJumpLowering).init(arena),
             .future_jump_lowerings = std.AutoHashMap(ast.Loc, FutureJumpLowering).init(arena),
-            .iterator_jump_lowerings = std.AutoHashMap(ast.Loc, IteratorJumpLowering).init(arena),
+            .generator_jump_lowerings = std.AutoHashMap(ast.Loc, GeneratorJumpLowering).init(arena),
             .fnContext = null,
             .throwContext = .unchecked,
             .starFn = null,
@@ -850,7 +847,7 @@ pub const Env = struct {
         self.method_lowerings.deinit();
         self.result_jump_lowerings.deinit();
         self.future_jump_lowerings.deinit();
-        self.iterator_jump_lowerings.deinit();
+        self.generator_jump_lowerings.deinit();
         self.fnTypeparams.deinit();
         self.fnExprParams.deinit();
         self.exprCaptures.deinit();
@@ -1051,7 +1048,7 @@ pub const Env = struct {
             // other primitives
             "bool", "string", "void", "v128",
             // §1G — `any` is the unconstrained default for effect-wrapper error
-            // channels (`@Future<T, E = any>` / `@Iterator<T, E = any, C = void>`).
+            // channels (`@Future<T, E = any>` / `@ResultGenerator<T, E = any, C = void>`).
             // It is treated as opaque at the type level — no operations beyond
             // being threaded through generics.
             "any",

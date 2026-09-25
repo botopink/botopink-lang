@@ -2655,7 +2655,7 @@ const Emitter = struct {
         }
 
         self.cur_line += 1;
-        // An eager `#[@iterator]`/`#[@future]` body ending in a yielding loop
+        // An eager `#[@resultGenerator]`/`#[@future]` body ending in a yielding loop
         // is that loop's list: the fn returns it instead of `ok`.
         if (f.effect != null and f.effect.? != .result and f.effect.? != .context and f.body.len > 0) {
             const last = f.body[f.body.len - 1].expr;

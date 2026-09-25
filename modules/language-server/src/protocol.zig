@@ -262,10 +262,10 @@ pub const SemanticTokenModifiers = struct {
     pub const declaration: u32 = 1 << 0;
     pub const readonly: u32 = 1 << 1;
     pub const defaultLibrary: u32 = 1 << 2;
-    /// Effect functions (`#[@iterator]`, `#[@future]`, … and the legacy `*fn`).
+    /// Effect functions (`#[@resultGenerator]`, `#[@future]`, … and the legacy `*fn`).
     /// LSP's standard `async` modifier is the closest thing a client already
     /// styles; appended last so the flags above keep their bit positions.
-    pub const @"async": u32 = 1 << 3;
+    pub const async: u32 = 1 << 3;
 
     pub const legend = [_][]const u8{ "declaration", "readonly", "defaultLibrary", "async" };
 };

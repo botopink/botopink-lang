@@ -1,10 +1,10 @@
 //// Decision 95 of 1.0.10-beta — the effects are a chain: `@Context` ⊃ `@Future`
-//// ⊃ `@Result`, `@FutureGenerator` ⊃ `@Future`, `@Iterator` ⊃ `@Result`, and an
+//// ⊃ `@Result`, `@FutureGenerator` ⊃ `@Future`, `@ResultGenerator` ⊃ `@Result`, and an
 //// annotation grants every body operation at or below its own level. The two
 //// rows here are the ones every backend runs: `#[@result]`, the base, holding
 //// the `try` it grants, and `#[@context]`, the top, holding `use` and the `try`
 //// it reaches two levels down. `test/effect_chain.bp` carries the `#[@future]`
-//// and `#[@iterator]` rows, which need a target that can consume a future or an
+//// and `#[@resultGenerator]` rows, which need a target that can consume a future or an
 //// iterator (commonJS and erlang).
 ////
 //// One row of the table is in neither cell but has one of its own:

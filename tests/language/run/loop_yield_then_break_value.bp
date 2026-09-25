@@ -18,6 +18,11 @@
 ////
 //// The result is read as `length` + `join(",")` rather than printed as an array
 //// so that §7's separator row cannot hide this one.
+////
+//// Decision 103 (1.0.10-beta front 21) re-specifies the reading, not the answer:
+//// `break v` in a generator scope EMITS `v` as the last item and ends (≡ `yield v;
+//// break;`) — the same `[20, 40, 99]`. Decision 55's "the loop's value" reading is
+//// superseded; the loop form itself becomes `#[@generator] loop` with 22-loops.
 
 pub fn main() {
     val r = loop ([10, 20, 30]) { x ->

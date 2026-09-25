@@ -406,11 +406,11 @@ const Builder = struct {
                 }), .sep = "; " } },
             }) };
         }
-        // `@Future<T>` → `Promise<T>`; `@Iterator<T>` → `IterableIterator<T>`;
+        // `@Future<T>` → `Promise<T>`; `@ResultGenerator<T>` → `IterableIterator<T>`;
         // `@FutureGenerator<T, E>` → `AsyncGenerator<T>` (TypeScript
         // tracks only the item type).
         const host: ?[]const u8 =
-            if (std.mem.eql(u8, g.name, "Future")) "Promise" else if (std.mem.eql(u8, g.name, "Iterator")) "IterableIterator" else if (std.mem.eql(u8, g.name, "FutureGenerator")) "AsyncGenerator" else null;
+            if (std.mem.eql(u8, g.name, "Future")) "Promise" else if (std.mem.eql(u8, g.name, "ResultGenerator")) "IterableIterator" else if (std.mem.eql(u8, g.name, "FutureGenerator")) "AsyncGenerator" else null;
         if (host) |h| if (g.args.len >= 1) {
             return .{ .generic = .{ .name = h, .args = try self.b.types(&.{try self.typeRef(g.args[0])}) } };
         };

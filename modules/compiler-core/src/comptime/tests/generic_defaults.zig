@@ -12,11 +12,11 @@
 //!         (`generic-default-before-required`, parser-level, fires at every
 //!         `GenericParamList` site: struct, fn, enum, interface, TypeRef).
 //!   RG2 — `<>` with every param defaulted is legal (no diagnostic).
-//!   RG3 — `@Future<>`/`@Iterator<>`/`@Result<i32>` etc.: a required
+//!   RG3 — `@Future<>`/`@ResultGenerator<>`/`@Result<i32>` etc.: a required
 //!         (non-defaulted) generic argument missing
 //!         (`generic-required-arg-missing`, comptime, fires at type-ref
 //!         resolution time via `builtinRequiredGenericArgs`).
-//!   RG4 — `@Iterator<i32, , i64>`: a middle generic argument skipped while
+//!   RG4 — `@ResultGenerator<i32, , i64>`: a middle generic argument skipped while
 //!         a later one is provided (`generic-arg-skip-forbidden`, parser).
 //!
 //! Resolution rules (`comptime/types.zig` default-fill for omitted trailing
@@ -116,10 +116,10 @@ test "§1G RG3 — @Future<> rejects (T is required)" {
     );
 }
 
-test "§1G RG3 — @Iterator<> rejects (T is required)" {
+test "§1G RG3 — @ResultGenerator<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn empty() -> @Iterator<> { break; }
+        \\#[@resultGenerator]
+        \\fn empty() -> @ResultGenerator<> { break; }
     );
 }
 
@@ -132,9 +132,9 @@ test "§1G RG3 — @Result<i32> rejects (E is required, no default)" {
 
 // ── RG4 — skipped middle generic argument ───────────────────────────────────
 
-test "§1G RG4 — @Iterator<i32, , i64> rejects (middle slot empty)" {
+test "§1G RG4 — @ResultGenerator<i32, , i64> rejects (middle slot empty)" {
     try expectParseKind(
-        \\fn middle() -> @Iterator<i32, , i64> { return 0; }
+        \\fn middle() -> @ResultGenerator<i32, , i64> { return 0; }
     , .genericArgSkipForbidden);
 }
 
@@ -165,17 +165,17 @@ test "§1G resolution — @Future<i32> resolves with E = any (E omitted)" {
     );
 }
 
-test "§1G resolution — @Iterator<i32> resolves with E = any, C = void" {
+test "§1G resolution — @ResultGenerator<i32> resolves with E = any" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@iterator]
-        \\fn count(n: i32) -> @Iterator<i32> { yield n; }
+        \\#[@resultGenerator]
+        \\fn count(n: i32) -> @ResultGenerator<i32> { yield n; }
     );
 }
 
-test "§1G resolution — @Iterator<i32, string> resolves with C = void" {
+test "§1G resolution — @ResultGenerator<i32, string> resolves with E given" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@iterator]
-        \\fn run(n: i32) -> @Iterator<i32, string> { yield n; }
+        \\#[@resultGenerator]
+        \\fn run(n: i32) -> @ResultGenerator<i32, string> { yield n; }
     );
 }
 

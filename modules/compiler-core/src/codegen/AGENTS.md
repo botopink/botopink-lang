@@ -505,7 +505,7 @@ codegen/
   block and an enum's body all route through it, and a class member spells the
   same two modifiers without the `function` word (`static async *name`,
   `js/js_ast.zig`'s `ClassMember.is_async` / `.is_generator`). Reading
-  `ast.FnDecl.effect` alone is what made `#[@iterator] fn each(self: Self)`
+  `ast.FnDecl.effect` alone is what made `#[@resultGenerator] fn each(self: Self)`
   emit a plain method whose `loop … yield` lowered to a value-dropping
   `.map()`. A `behavior`'s `default fn` is the one method kind that never
   carries one — the checker refuses `effect-on-behavior-method-forbidden`.
@@ -1367,9 +1367,9 @@ codegen/
   or `break`s with a value (directly or in an `if`/`case` arm, not in a nested
   loop or lambda) appends each value to a fresh array (`$__arr_push`; a float
   as its f32 bits), and that array is the loop's value — the erlang reading
-  of `break <v>`. An `#[@iterator]`/`#[@generator]` fn body that yields runs
+  of `break <v>`. An `#[@resultGenerator]`/`#[@generator]` fn body that yields runs
   eagerly into one fn-level array it returns (`renderAccumulatingBody`); a
-  `@Iterator<T>` is then an array of `T`. A bare `break` branches out of the
+  `@ResultGenerator<T>` is then an array of `T`. A bare `break` branches out of the
   loop, `continue` out of the iteration's `(block $__next …)`. An f32 array
   prints as `[115,287.5,460]` (`$__print_arr_f32`).
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
@@ -1562,7 +1562,7 @@ codegen/
   from the pair with the `element/2` guard BIF; the comprehension shape (a
   single else-less `if` whose
   branch ends in `break v`) lowers through `lists:filtermap/2`; an eager
-  `#[@iterator]` body ending in a yielding loop returns that loop's list.
+  `#[@resultGenerator]` body ending in a yielding loop returns that loop's list.
   A condition loop (decision 8 §10, `LoopExpr.condition`) runs in the
   enclosing frame (`lowerConditionLoop`): `{label, Top}`, the condition as a
   test jumping to `Exit`, the body, `{jump, {f, Top}}`, `{label, Exit}`. The
@@ -1808,7 +1808,7 @@ first three are now enforced by the model, not by discipline:
 - **Known gaps** (loadable, but not yet right):
   - `loop` over anything that is not a range or a known array emits
     `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` accepts an array
-    literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
+    literal, a name bound to an array, an `Array<T>`/`T[]`/`@ResultGenerator<T>`
     parameter or fn result, an array-returning primitive method and a
     comprehension, and nothing else, because walking the layout of a non-array
     would read its first word as an element count and trap;
@@ -2352,7 +2352,16 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 |---|---|---|---|---|
 | `#[@result]` | plain `function`; `__bp_ok`/`__bp_error` build `{ok: V}`/`{error: E}`; `try`/`catch` via `"error" in _r` | plain fun; `{ok, V}`/`{error, E}`; `try`/`catch` → `case … of` | plain local; `put_tuple2` pair; `try`/`catch` → `is_tagged_tuple` | `[tag, payload]` in linear memory; `try`/`catch` → `if` on the tag |
 | `#[@future]` | `async function`; resolved/rejected markers → native `return`/`throw` | eager (`@Future<T>` is `T`); rejected → `throw` | eager; rejected → `erlang:throw/1` | eager; rejected → `unreachable` |
-| `#[@generator]` / `#[@iterator]` | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
+| `#[@generator]` / `#[@resultGenerator]` | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
+
+Decision 103 (front 21): `#[@iterator]` / `@Iterator` is `#[@resultGenerator]` /
+`@ResultGenerator<T, E>` in every backend's effect switch — a rename and nothing
+else here. A generator-level `break <v>` reaches the backends already expanded
+to `yield <v>; return;` by `comptime/transform.zig`; commonJS's `function*` runs
+it, while the eager erlang/wasm/beam lowerings do not stop at a `return;` in a
+generator body (`nums2() -> 1, 2, undefined.` on erlang) — pinned in
+`tests/language/expected-failures.txt` (`run/generator_break_value.bp`) against
+decision 105's generator scopes (22-loops).
 | `#[@futureGenerator]` | `async function*` | eager | eager body | eager body |
 | `#[@context]` | plain `function` | plain fun | plain local | plain func |
 

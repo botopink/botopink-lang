@@ -61,7 +61,7 @@ comptime/
 ## Effect annotations (`#[@<effect>]`)
 
 A function's effect is `ast.FnDecl.effect: ?EffectKind` (`result` / `future` /
-`generator` / `iterator` / `futureGenerator` / `context`), set by the parser from
+`generator` / `resultGenerator` / `futureGenerator` / `context`), set by the parser from
 a `#[@<effect>]` builtin annotation. The `*fn` prefix is rejected by the parser
 (`deprecated-star-fn`). `inferFnDecl` validates the effect: it must match the
 return wrapper (`effectMatchesReturn`); an effect on an interface method is an
@@ -80,7 +80,7 @@ spells the target capitalised. It fires on the `@`-prefixed builtin form only: `
 without the `@` is a user-defined attribute and means something else.
 
 **The wrapper without its annotation is an error too** (06 N25, decision 8 § 9).
-`@Future` / `@Iterator` / `@FutureGenerator` already demanded one; `@Result` did not — a plain
+`@Future` / `@ResultGenerator` / `@FutureGenerator` already demanded one; `@Result` did not — a plain
 `fn f() -> @Result<D, E>` was accepted and deliberately given NO special treatment (`return` did
 not wrap, `throw` stayed a raw host exception), which is a second, unwritten Result calculus.
 `inferFnDecl` now reds it with `effect-missing-annotation`. Every `-> @Result` in `libs/std` already
@@ -105,7 +105,7 @@ written up in the root `AGENTS.md` § Open handoffs. Nothing here changes when
 it lands: the anchor reads whatever the first type argument says.
 
 **The effects are a chain** (decision 95 of 1.0.10-beta). `effect_chain.zig`
-owns the order — `@Future` and `@Iterator` extend `@Result`, `@FutureGenerator`
+owns the order — `@Future` and `@ResultGenerator` extend `@Result`, `@FutureGenerator`
 and `@Context` extend `@Future`, `@Generator` extends nothing (question 97: no
 error channel, so no `try` and no `throw`) — and every legality check asks
 `effectChain.grants(eff, cap)` instead of switching on an effect kind. The
@@ -138,7 +138,7 @@ rejections (RF1/RF2/RF5) without firing inside other effects.
 `resultVariantCallName` / `futureConstructorCallName` /
 `builtinRequiredGenericArgs` drive the syntactic rejections. Codegen reads
 `f.effect` directly (`commonJS.zig fnKeyword`: future → `async function`,
-generator/iterator → `function*`, futureGenerator → `async function*`,
+generator/resultGenerator → `function*`, futureGenerator → `async function*`,
 result/context → plain `function`) — which is why `await` inside a
 `#[@context]` body, legal since decision 95, runs on erlang, wasm and beam and
 is a JS `SyntaxError` on commonJS. The legality is front 20's and the keyword is
@@ -151,7 +151,25 @@ from `parser/exprs.parseCallArgs`. The remaining D-codes are reserved constants.
 `break [:label] [<expr>]` lives on the Jump AST as `@"break": struct { label:
 ?[]const u8, value: ?*Expr }` (mirrors `.yield`). Unbound labels (RI5) use the
 same `env.labelStack` as `yield :label` (RI4) — declare the target with
-`loop :name (…)` or `#[@iterator] fn … -> @Iterator<…> :name`.
+`loop :name (…)` or `#[@resultGenerator] fn … -> @ResultGenerator<…> :name`.
+
+**Decision 103 — generators (front 21 step 1).** `Iterator<T, E, C>` is
+`ResultGenerator<T, E = any>`, `IteratorStep<T, E, C>` is `YieldStep<T, E = void>`
+(`Done` carries no payload), `Iterable` is gone, and so is the completion channel:
+`StarFnCtx.iterCompletion` left with it. A `break <v>` that targets the generator
+body (top-level position, or `break :label` with the fn's label) unifies `v` with
+the item type `T` (`iterator-break-type-mismatch` otherwise) and is recorded in
+`env.generator_jump_lowerings` (`emit_and_end` / `end`); `transform.zig`'s
+`expandGeneratorBreaks` rewrites the statement into `yield <v>; return;` /
+`return;` on fn AND method bodies. `requireGeneratorLevel` is the level a
+collection loop needs: a loop over a `@ResultGenerator` (or `loop await` over a
+`@FutureGenerator`) is a `try` in the body that iterates it, refused with
+`effect-try-without-fallible-channel` under the same `throwContext == .plain`
+gate bare `try` uses; `@Generator<T>` is iterable anywhere. RG5
+(`generic-arg-count-exceeded`, `builtinMaxGenericArgs`) refuses a type argument
+past a builtin wrapper's declared arity — the `C` nothing reads is not dropped.
+A generator `throw` is no longer recorded for a `@YieldStep.Error` rewrite (the
+consumer never existed); every backend lowers it as its own throw.
 
 ## Testing helpers (`tests/helpers.zig`)
 
@@ -289,7 +307,7 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   `declare fn` slice: `todo`/`panic`/`trap`/`emit`/…) into `env.stdlibFnDecls`,
   which `compile`/`compileTypesOnly` merge into transform's `fn_decls` so
   trailing defaults are injected at bare `todo()`/`panic()` calls. The synthetic
-  `Result`/`Future`/`Iterator`/`Generator`/`FutureGenerator`/`Context` interfaces
+  `Result`/`Future`/`Generator`/`ResultGenerator`/`FutureGenerator`/`Context` interfaces
   stay doc-only in `builtins.d.bp` (they are pre-registered by
   `Env.registerBuiltins`).
 - `@compilerError(message)` — generic compile-time rejection usable from a
@@ -842,7 +860,7 @@ at exit 1, while erlang — which needs no receiver type to lower a primitive me
 length. Measured by a consuming library while it wrote a configuration reader; pinned by
 `tests/language/run/loop_item_method.bp`, which asserts the VALUE.
 
-The parameter binds the collection's element: `array` / `Iterator` / `Generator` give their single
+The parameter binds the collection's element: `array` / `ResultGenerator` / `Generator` give their single
 type argument, a `Range` gives `i32` (§10 counts a range in integers), `loop await` keeps the
 `@FutureGenerator<T, E>` item it already resolved, and everything else keeps the fresh variable —
 a condition loop, which binds nothing at all, and an iterated expression still a type variable,

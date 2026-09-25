@@ -40,14 +40,14 @@ test "semanticTokens: val binding is a variable declaration" {
 //
 // Three kinds, three classifications: `function [declaration]`,
 // `method [declaration]`, and `function [declaration,async]` for the
-// `#[@iterator]` fn (whose `:gen` label is syntax, not a binding).
+// `#[@resultGenerator]` fn (whose `:gen` label is syntax, not a binding).
 
 test "semanticTokens: free fn, interface method, and effect fn distinguished" {
     const source =
         \\fn free(a: i32) -> i32 { return a; }
         \\behavior Greeter { fn greet(self: Self) -> string; }
-        \\#[@iterator]
-        \\fn counter() -> @Iterator<i32> :gen { yield 1; }
+        \\#[@resultGenerator]
+        \\fn counter() -> @ResultGenerator<i32> :gen { yield 1; }
     ;
     try run(std.testing.allocator, "semantic_tokens_fn_kinds", source);
 }

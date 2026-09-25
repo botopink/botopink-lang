@@ -367,8 +367,8 @@ test "infer error: await on a non-@Future value" {
 
 test "infer error: yield targets an unknown label" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn gen() -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\fn gen() -> @ResultGenerator<i32> {
         \\    yield :nope 1;
         \\}
     );
@@ -539,10 +539,10 @@ test "infer error: RG3 ---- @Future<> rejects (T is required)" {
     );
 }
 
-test "infer error: RG3 ---- @Iterator<> rejects (T is required)" {
+test "infer error: RG3 ---- @ResultGenerator<> rejects (T is required)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn empty() -> @Iterator<> { break; }
+        \\#[@resultGenerator]
+        \\fn empty() -> @ResultGenerator<> { break; }
     );
 }
 
@@ -599,10 +599,10 @@ test "infer error: RF2 ---- throw Future.rejected(...) inside #[@future] reds fu
     );
 }
 
-test "infer error: RI1 ---- return <expr> inside #[@iterator] reds iterator-return-forbidden" {
+test "infer error: RI1 ---- return <expr> inside #[@resultGenerator] reds iterator-return-forbidden" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn nums() -> @Iterator<i32, string, i32> {
+        \\#[@resultGenerator]
+        \\fn nums() -> @ResultGenerator<i32, string> {
         \\    yield 1;
         \\    return 42;
         \\}
@@ -621,20 +621,32 @@ test "infer error: RI1 ---- return <expr> inside #[@futureGenerator] reds iterat
 
 test "infer error: RI5 ---- break :unknown reds break-label-unbound" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn nums() -> @Iterator<i32, string, i32> :outer {
+        \\#[@resultGenerator]
+        \\fn nums() -> @ResultGenerator<i32, string> :outer {
         \\    yield 1;
         \\    break :nonsense 42;
         \\}
     );
 }
 
-test "infer error: RI3 ---- break <expr> with C=void reds iterator-break-without-completion-type" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn nums() -> @Iterator<i32> {
+// Decision 103 — `break <v>` at generator level emits `v` as the last item
+// and ends; `v` is an item of `T`, so this compiles (the RI3 refusal left
+// with the completion channel `C`).
+test "infer: decision 103 ---- break <expr> inside #[@resultGenerator] is the last item" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\#[@resultGenerator]
+        \\fn nums() -> @ResultGenerator<i32> {
         \\    yield 1;
         \\    break 42;
+        \\}
+    );
+}
+
+test "infer error: RG5 ---- a third argument on @ResultGenerator reds generic-arg-count-exceeded" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@resultGenerator]
+        \\fn nums() -> @ResultGenerator<i32, string, i32> {
+        \\    yield 1;
         \\}
     );
 }
@@ -687,8 +699,8 @@ test "infer error: RC3 ---- @getContex(T) outside enclosing Anchor tree reds con
 
 test "infer error: RI2 ---- break <wrongType> reds iterator-break-type-mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn nums() -> @Iterator<i32, string, i32> {
+        \\#[@resultGenerator]
+        \\fn nums() -> @ResultGenerator<i32, string> {
         \\    yield 1;
         \\    break "not an i32";
         \\}

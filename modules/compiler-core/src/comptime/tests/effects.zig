@@ -519,7 +519,7 @@ test "context: Element[] coerces into Children" {
 // ── decision 95: the effects are a chain ──────────────────────────────────────
 //
 // `@Context` ⊃ `@Future` ⊃ `@Result`, `@FutureGenerator` ⊃ `@Future`,
-// `@Iterator` ⊃ `@Result`, and an annotation grants every body operation at or
+// `@ResultGenerator` ⊃ `@Result`, and an annotation grants every body operation at or
 // below its own level. The order itself is `comptime/effect_chain.zig`'s unit
 // tests (and its drift gate against `libs/std/src/builtins.d.bp`); what follows
 // is the order as the CHECKER applies it — one cell per granted capability and
@@ -569,10 +569,10 @@ test "chain: #[@future] implements @Result — it answers `try` and `await`" {
     );
 }
 
-test "chain: #[@iterator] implements @Result — it answers `try` and `yield`" {
+test "chain: #[@resultGenerator] implements @Result — it answers `try` and `yield`" {
     try h.assertInfersOk(std.testing.allocator, chain_preamble ++
-        \\#[@iterator]
-        \\fn upTo(n: i32) -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\fn upTo(n: i32) -> @ResultGenerator<i32> {
         \\    val limit = try parse(n);
         \\    yield limit;
         \\}
@@ -627,10 +627,10 @@ test "chain error: `try` in a plain fn — no effect, no error channel" {
     );
 }
 
-test "chain error: `await` inside #[@iterator] — @Iterator does not implement @Future" {
+test "chain error: `await` inside #[@resultGenerator] — @ResultGenerator does not implement @Future" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
-        \\#[@iterator]
-        \\fn bad(n: i32) -> @Iterator<i32> {
+        \\#[@resultGenerator]
+        \\fn bad(n: i32) -> @ResultGenerator<i32> {
         \\    val w = await fetch(n);
         \\    yield w;
         \\}
@@ -768,35 +768,58 @@ test "anchor: each body starts over — a sibling fn may anchor elsewhere" {
     );
 }
 
-// ── front 20 F12: what `-> Iterator<T, E, C>` means on a behavior method ──────
+// ── decision 103: a type that wants to be iterated exposes a generator method ──
 //
-// `Iterable.iter(self: Self) -> Iterator<T, E, C>` looked like a behavior
-// escaping into value position, and is not: every effect wrapper IS a
-// `behavior` (`Future`, `Generator`, `Iterator`, `FutureGenerator`, `Context`),
-// and returning one is what every effect signature in the language does. What
-// makes the line look unlike its neighbours is only that a `behavior` method is
-// DECLARATIVE — it expresses its effect through the return wrapper alone and
-// carries no `#[@iterator]` (using one there is the R1/R2 error) — so the
-// wrapper appears without the marker that usually accompanies it. The
-// annotation belongs to the implementation.
-//
-// This is a comptime cell rather than a `tests/language` one because the shape
-// does not RUN on commonJS: an effect annotation on a record METHOD is ignored
-// by `commonJS.zig`'s `fnKeyword`, which reads `ast.FnDecl.effect` and never
-// sees a method, so `#[@iterator] fn iter` emits as a plain `iter() { … }`
-// rather than `*iter() { … }` and the caller's `for (const x of b.iter())`
-// reds at run time. erlang runs it. That is a lowering gap and belongs to the
-// backend's own front; front 20 records it here and in the report rather than
-// committing a cell it would have to list against an owner row that does not
-// exist.
+// `Iterable` left with decision 103: a `behavior` would only buy the sugar
+// `loop (g)`, and surface nobody uses drifts. The shape is an ordinary method
+// answering a generator, and the consumer calls it — `loop (bag.iter())`. The
+// annotation belongs to the implementation (a `behavior` method is declarative
+// and carries none — the R1/R2 error).
 
-test "F12: a type satisfies Iterable with a #[@iterator] fn iter" {
+test "decision 103: a type exposes a #[@resultGenerator] fn iter and a body iterates it" {
     try h.assertInfersOk(std.testing.allocator,
-        \\type Bag(items: i32[]) implement Iterable<i32> {
-        \\    #[@iterator]
-        \\    fn iter(self: Self) -> @Iterator<i32> {
+        \\type Bag(items: i32[]) {
+        \\    #[@resultGenerator]
+        \\    fn iter(self: Self) -> @ResultGenerator<i32> {
         \\        loop (self.items) { x -> yield x; };
         \\    }
+        \\}
+        \\#[@result]
+        \\fn total(b: Bag) -> @Result<i32, string> {
+        \\    var acc = 0;
+        \\    loop (b.iter()) { x -> acc = acc + x; };
+        \\    return acc;
+        \\}
+    );
+}
+
+// Decision 103 — a loop over a fallible generator is a `try` in the body that
+// iterates it, so a plain `fn` (no error channel) is refused naming the level;
+// `@Generator<T>` is infallible and iterable anywhere.
+test "chain error: a plain fn iterating a @ResultGenerator — the loop is a `try`" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@resultGenerator]
+        \\fn upTo(n: i32) -> @ResultGenerator<i32, string> {
+        \\    yield n;
+        \\}
+        \\fn total(n: i32) -> i32 {
+        \\    var acc = 0;
+        \\    loop (upTo(n)) { x -> acc = acc + x; };
+        \\    return acc;
+        \\}
+    );
+}
+
+test "chain: a plain fn iterates a @Generator<T> — infallible, no level needed" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\#[@generator]
+        \\fn upTo(n: i32) -> @Generator<i32> {
+        \\    yield n;
+        \\}
+        \\fn total(n: i32) -> i32 {
+        \\    var acc = 0;
+        \\    loop (upTo(n)) { x -> acc = acc + x; };
+        \\    return acc;
         \\}
     );
 }

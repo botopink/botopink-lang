@@ -17,10 +17,10 @@ fn bad(n: i32) -> @Result<i32, string> {
 }
 
 ----- ERROR
-error: yield-without-generator: `yield` needs a generator effect — `#[@generator]`, `#[@iterator]` or `#[@futureGenerator]`; `#[@result]` is `@Result`, which does not
+error: yield-without-generator: `yield` needs a generator effect — `#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`; `#[@result]` is `@Result`, which does not
   ┌─ :15:5
   │
 15 │     yield n;
   │     ^
 
-  hint: A `yield` that is not inside a `loop (…) { … }` body is the function's: mark the fn `#[@iterator]` (`-> @Iterator<T>`), `#[@generator]` or `#[@futureGenerator]`.
+  hint: A `yield` that is not inside a `loop (…) { … }` body is the function's: mark the fn `#[@resultGenerator]` (`-> @ResultGenerator<T>`), `#[@generator]` or `#[@futureGenerator]`.

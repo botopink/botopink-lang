@@ -104,7 +104,7 @@ pub const ParseErrorType = enum {
     /// `break <C>` (or bare `break`) inside an iterator instead.
     yieldBreakRemoved,
     /// RG4 (§1G) — a generic argument list with a skipped middle slot
-    /// (`@Iterator<i32, , i64>`). Either pass the middle argument explicitly,
+    /// (`@ResultGenerator<i32, , i64>`). Either pass the middle argument explicitly,
     /// or rely on defaults for the contiguous trailing range.
     genericArgSkipForbidden,
     /// D5 (fn-param-default-expansion §F2) — a fn param without a default

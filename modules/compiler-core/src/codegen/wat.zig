@@ -1765,10 +1765,10 @@ const Emitter = struct {
         try self.declareScratch("__mem", self.countMems(f.body));
         try self.emitLocalDecls(f.body);
 
-        // An `#[@iterator]` / `#[@generator]` body runs eagerly: every `yield`
+        // An `#[@resultGenerator]` / `#[@generator]` body runs eagerly: every `yield`
         // is appended to one array, which is what the fn returns.
         const accumulates = if (f.effect) |e|
-            (e == .iterator or e == .generator or e == .futureGenerator) and has_result and bodyYieldsDeep(f.body)
+            (e == .resultGenerator or e == .generator or e == .futureGenerator) and has_result and bodyYieldsDeep(f.body)
         else
             false;
         const body = if (accumulates) try self.renderAccumulatingBody(f.body) else try self.renderBody(f.body, f);
@@ -5238,7 +5238,7 @@ const Emitter = struct {
             .array => |inner| inner.*,
             // An iterator runs eagerly here: it is the array of what it yields.
             .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
-                std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "FutureGenerator")))
+                std.mem.eql(u8, g.name, "ResultGenerator") or std.mem.eql(u8, g.name, "FutureGenerator")))
                 g.args[0]
             else
                 return null,
@@ -6916,7 +6916,7 @@ const Emitter = struct {
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
         // A loop whose body `yield`s (or `break`s with a value) is a
         // comprehension: every such value is appended to a fresh array, which
-        // is the loop's value. Inside an `#[@iterator]`/`#[@generator]` fn the
+        // is the loop's value. Inside an `#[@resultGenerator]`/`#[@generator]` fn the
         // fn's own accumulator (`emitFn`) collects them instead.
         const saved_target = self.yield_target;
         const saved_search = self.search_target;
@@ -7082,7 +7082,7 @@ const Emitter = struct {
     }
 
     /// Any `yield` with a value anywhere in a fn body, loops included (not
-    /// lambdas) — what makes an `#[@iterator]` body an accumulator.
+    /// lambdas) — what makes an `#[@resultGenerator]` body an accumulator.
     fn bodyYieldsDeep(body: []const ast.Stmt) bool {
         for (body) |st| {
             if (exprYields(st.expr)) return true;

@@ -4,8 +4,8 @@
 pub fn loadOne(x: i32) -> @Future<i32> {
     return x;
 }
-#[@iterator]
-pub fn count() -> @Iterator<i32> {
+#[@resultGenerator]
+pub fn count() -> @ResultGenerator<i32> {
     yield 1;
 }
 #[@futureGenerator]

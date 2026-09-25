@@ -721,9 +721,23 @@ return type never named, caught before any anchor exists.
 The five `reject/` cells are the refusals decision 95 adds or repairs:
 `try_in_generator` (question 97 — the generator stays infallible),
 `try_in_plain_fn`, `yield_in_result`, `yield_in_context` (the last three were
-silently ACCEPTED before this front) and `await_in_iterator` (one level above
+silently ACCEPTED before this front) and `await_in_result_generator` (one level above
 the body). `expected-failures.txt` did not change: none of the seven is listed,
 on any target.
+
+**Decision 103 (1.0.10-beta front 21, step 1) — the generators.** `#[@iterator]` /
+`@Iterator<T, E, C>` is `#[@resultGenerator]` / `@ResultGenerator<T, E>` in every cell
+(`test/effect_result_generator.bp` and `reject/await_in_result_generator.bp` were
+renamed with it; `test/loop_generator.bp`, `test/effect_chain.bp` and `run/effect_method.bp`
+re-spelled in place), the completion channel `C` is gone, and three cells carry what the
+decision adds: `run/generator_break_value.bp` — `break v` at the level of a generator body
+emits `v` as the last item and ends, a bare `break` there ends it (`0127` / `1`; commonJS
+runs it, and the eager erlang/wasm/beam lowerings are pinned against decision 105's
+generator scopes); `run/generator_levels.bp` — a `@ResultGenerator` body holds `try`, the
+`#[@result]` body that iterates it holds the loop's implicit `try`, and a plain `fn`
+iterates a `@Generator<T>` (wasm and beam pinned); `reject/loop_result_generator_in_plain_fn.bp`
+— the loop over a fallible generator in a plain `fn` is `effect-try-without-fallible-channel`
+at the loop. `run/effect_method.bp`'s consumer became `#[@result]` for the same rule.
 
 Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
 

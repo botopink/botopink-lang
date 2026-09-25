@@ -105,7 +105,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "deprecated-star-fn",
             .message = "the `*fn` prefix was removed in v0.beta.19",
             .caretCaption = "use a `#[@<effect>]` annotation instead",
-            .note = "the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@Iterator<…>` to `#[@iterator]`, `@FutureGenerator<…>` to `#[@futureGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to `#[@context]`",
+            .note = "the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@ResultGenerator<…>` to `#[@resultGenerator]`, `@FutureGenerator<…>` to `#[@futureGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to `#[@context]`",
             .hint = "rewrite as `#[@<effect>] fn <name>(...) -> @<Wrapper><...> { ... }`",
         },
         .effectOnDeclareForbidden => .{
@@ -126,7 +126,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         },
         .yieldBreakRemoved => .{
             .message = "yield-break-removed: use `break <C>` to end an iterator with a completion value. The `yield break` form was removed in v0.beta.19.",
-            .hint = "Inside a #[@iterator] / #[@futureGenerator] body, write `break <C>` to deliver a completion value, or bare `break` for a clean end.",
+            .hint = "Inside a #[@resultGenerator] / #[@futureGenerator] body, write `break <C>` to deliver a completion value, or bare `break` for a clean end.",
         },
         .genericArgSkipForbidden => .{
             .message = "generic-arg-skip-forbidden: cannot skip a defaulted argument while providing a later one.",

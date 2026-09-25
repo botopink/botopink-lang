@@ -1111,7 +1111,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     // here so a bare `todo()` / `panic()` call at user code resolves to the
     // declared `FnDecl` and `expandTrailingDefaults` injects the trailing
     // literal default into `c.args` before dispatch. The full doc surface
-    // (Result / Future / Iterator / Generator / FutureGenerator / Context
+    // (Result / Future / Generator / ResultGenerator / FutureGenerator / Context
     // interfaces) stays in `builtins.d.bp` — re-parsing it here would red
     // on the synthetic interfaces already registered by `registerBuiltins`.
     {
@@ -1396,6 +1396,7 @@ pub fn compileTypesOnly(
                         &succ.env.srcRewrites,
                         &succ.env.result_jump_lowerings,
                         &succ.env.future_jump_lowerings,
+                        &succ.env.generator_jump_lowerings,
                         &succ.env.stdArrayLowerings,
                         &succ.env.enumSectionRewrites,
                         &succ.env.indexRewrites,
@@ -1584,7 +1585,7 @@ pub fn compile(
                 };
                 const transformed = try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.future_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.conditionLoops, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.future_jump_lowerings, &succ.env.generator_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.conditionLoops, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections), &succ.env),
                     &succ.env,
                 ), &succ.env);
 

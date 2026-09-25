@@ -352,7 +352,7 @@ type Tree<T> {
 }
 ```
 
-Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Iterator<T>`,
+Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@ResultGenerator<T, E>`,
 `@Future<T>`, `@Expr<T>`. Optionals are `?T`; tuples are `#(A, B)`.
 
 ### Union types, `unknown`, and `is`
@@ -915,7 +915,7 @@ answer, not the language's:
   function held in a binding;
 * a function that also makes a closure reading one of its own parameters, or
   one with a destructuring or defaulted parameter;
-* an `#[@iterator]`, `#[@generator]` or `#[@future]` function.
+* an `#[@generator]`, `#[@resultGenerator]` or `#[@future]` function.
 
 `wasm` recurses for every shape, tail call included — about 30 000 frames.
 Measured at 1.0.10-beta, with node's own ceiling for a two-parameter function
@@ -974,9 +974,9 @@ every argument written out; no backend emits a default of its own.
 A function's effect is named by one `#[@<effect>]` annotation — at most one per
 `fn` — and the return wrapper is the annotation with its first letter
 capitalised, in all six rows and with no exception: `#[@result]` → `@Result`,
-`#[@future]` → `@Future`, `#[@generator]` → `@Generator`, `#[@iterator]` →
-`@Iterator`, `#[@futureGenerator]` → `@FutureGenerator`, `#[@context]` →
-`@Context`.
+`#[@future]` → `@Future`, `#[@generator]` → `@Generator`, `#[@resultGenerator]`
+→ `@ResultGenerator`, `#[@futureGenerator]` → `@FutureGenerator`, `#[@context]`
+→ `@Context`.
 
 The six effects form a **chain** (decision 95): a wrapper extends the one
 below it, and an annotation grants every body operation at or below its own
@@ -987,7 +987,7 @@ level.
 | `#[@context] fn … -> @Context<B, R>` (or a type implementing it, e.g. `Element`) | `use` · `await` · `try` | `@Context` ⊃ `@Future` ⊃ `@Result` |
 | `#[@futureGenerator] fn … -> @FutureGenerator<T, E, C>` | `await` · `try` · `yield` | `@FutureGenerator` ⊃ `@Future` ⊃ `@Result` |
 | `#[@future] fn … -> @Future<T, E>` | `await` · `try` | `@Future` ⊃ `@Result` |
-| `#[@iterator] fn … -> @Iterator<T, E, C>` | `try` · `yield` | `@Iterator` ⊃ `@Result` |
+| `#[@resultGenerator] fn … -> @ResultGenerator<T, E>` | `try` · `yield` | `@ResultGenerator` ⊃ `@Result` |
 | `#[@generator] fn … -> @Generator<T, R>` | `yield` | — no error channel |
 | `#[@result] fn … -> @Result<T, E>` | `try` | — it is the base |
 
@@ -1003,7 +1003,7 @@ level it would need — there is no flag:
 
 ```
 error: effect-try-without-fallible-channel: `try` needs an effect that
-implements `@Result` — `#[@result]`, `#[@future]`, `#[@iterator]`,
+implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`,
 `#[@futureGenerator]` or `#[@context]`; `#[@generator]` is `@Generator`,
 which does not
 ```
@@ -1035,15 +1035,39 @@ fn load() {
 }
 ```
 
-### Iterators
+### Generators
+
+A generator `yield`s items; `loop (g) { x -> … }` consumes them. Every
+generator's `next` answers the one step enum `YieldStep<T, E = void>` —
+`Yield(value)`, `Done`, `Error(error)` — and a generator's prefix is the chain
+level it extends (decision 103): `@ResultGenerator<T, E>` extends `@Result`, so
+its body answers `try` and `throw`, and a loop over it is a `try` in the body
+that iterates it — that body needs `try`'s level (`#[@result]` or above).
 
 ```botopink
-#[@iterator]
-fn counter() -> @Iterator<i32> {
+#[@resultGenerator]
+fn counter(n: i32) -> @ResultGenerator<i32, string> {
+    if (n < 0) { throw "negative"; };
     yield 1;
     yield 2;
+    break n;             // emits `n` as the last item and ends
+}
+
+#[@result]
+fn digits(n: i32) -> @Result<i32, string> {
+    var acc = 0;
+    loop (counter(n)) { x -> acc = acc * 10 + x; };
+    return acc;
 }
 ```
+
+A generator has no return channel: `return <expr>` is refused
+(`iterator-return-forbidden`); `break v` emits `v` as the last item and ends
+(≡ `yield v; break;`), and a bare `break` outside any loop ends the generator.
+A type that wants to be iterated exposes an ordinary method answering a
+generator, and the consumer calls it — `loop (grid.iter())`; there is no
+`Iterable` behavior. A type argument the wrapper does not declare is refused
+(`generic-arg-count-exceeded`), not dropped.
 
 ## Comptime
 
@@ -1402,7 +1426,7 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.5-beta `15-language-surface` step 2, with `16-formatter` (the formatter has to stop printing it in the same wave) |
 | A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value it answers something different on every backend: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, `0` on erlang and `256` on wasm | 1.0.5-beta — owner unassigned; the rule is decided (the `...` token, the diagnostic and the run-time semantics) |
 | `await` inside a `#[@context]` body (decision 95 — `@Context` extends `@Future`) | it type-checks, and it RUNS on erlang, wasm and beam (their `@Future<T>` is eager, so `await` is the identity). commonJS lowers `#[@context]` to a plain `function`, so the emitted `await` is `SyntaxError: await is only valid in async functions and the top level bodies of modules` | 1.0.10-beta — commonJS's own front: `fnKeyword` answering `async function` for a `#[@context]` body that awaits changes what a component's caller receives, which is a backend decision. Front 20 owns what is legal, not what is emitted |
-| An effect annotation on a record METHOD | ignored on commonJS: `fnKeyword` reads `ast.FnDecl.effect` and never sees a method, so `#[@iterator] fn iter(self: Self) -> @Iterator<T>` in a `type … implement Iterable<T> { … }` body emits as a plain `iter() { … }` and `loop (b.iter())` reds `b.iter is not a function or its return value is not iterable`. erlang runs it | 1.0.10-beta — owner unassigned; found by front 20 F12 while answering what `-> Iterator<T, E, C>` means on a behavior method |
+| An effect annotation on a record METHOD | ignored on commonJS: `fnKeyword` reads `ast.FnDecl.effect` and never sees a method, so `#[@resultGenerator] fn iter(self: Self) -> @ResultGenerator<T>` in a `type … { … }` body emits as a plain `iter() { … }` and `loop (b.iter())` reds `b.iter is not a function or its return value is not iterable`. erlang runs it | 1.0.10-beta — owner unassigned; found by front 20 F12 while answering what a generator wrapper means on a behavior method |
 
 Seven of the twelve rows this table carried before this revision left it because
 the compiler now accepts the form: union types, the `unknown` type and its

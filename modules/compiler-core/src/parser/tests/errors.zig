@@ -241,7 +241,7 @@ test "parser error: deprecated *fn prefix" {
         \\1 | *fn parse(n: i32) -> @Result<i32, string> { return n; }
         \\  | ^^^ use a `#[@<effect>]` annotation instead
         \\  |
-        \\  = note: the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@Iterator<…>` to `#[@iterator]`, `@FutureGenerator<…>` to `#[@futureGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to `#[@context]`
+        \\  = note: the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@ResultGenerator<…>` to `#[@resultGenerator]`, `@FutureGenerator<…>` to `#[@futureGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to `#[@context]`
         \\  = hint: rewrite as `#[@<effect>] fn <name>(...) -> @<Wrapper><...> { ... }`
         \\
         \\

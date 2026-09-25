@@ -3,7 +3,7 @@
 //// erlang) rather than in `run/effect_chain.bp`, which every backend runs.
 ////
 ////   `#[@future]`    ⊃ `@Result`   — `try` and `await` in one body
-////   `#[@iterator]`  ⊃ `@Result`   — `try` and `yield` in one body
+////   `#[@resultGenerator]`  ⊃ `@Result`   — `try` and `yield` in one body
 ////
 //// What each pins is that the body type-checks with BOTH capabilities in it and
 //// that the value it produces is the one the chain implies — a `try` that
@@ -29,9 +29,9 @@ fn load(n: i32) -> @Future<i32> {
     return w + 1;
 }
 
-// `#[@iterator]` ⊃ `@Result`: `try` and `yield` in one body.
-#[@iterator]
-fn upTo(n: i32) -> @Iterator<i32> {
+// `#[@resultGenerator]` ⊃ `@Result`: `try` and `yield` in one body.
+#[@resultGenerator]
+fn upTo(n: i32) -> @ResultGenerator<i32> {
     val limit = try parse(n);
     var i = 0;
     loop (i < limit) { yield i; i = i + 1; };
@@ -42,7 +42,7 @@ test "§95 a #[@future] body holds the `try` its level grants" {
     assert f != null;
 }
 
-test "§95 a #[@iterator] body holds the `try` its level grants" {
+test "§95 a #[@resultGenerator] body holds the `try` its level grants" {
     var acc = "";
     loop (upTo(3)) { x -> acc = acc + x.toString(); };
     assert acc == "012";
