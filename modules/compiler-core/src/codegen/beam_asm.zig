@@ -3059,7 +3059,73 @@ const Emitter = struct {
         needed_prim_shims: std.StringArrayHashMapUnmanaged(PrimShim),
         emitted_prim_shims: usize,
         exports: std.ArrayListUnmanaged(ExportEntry),
+        helpers: HelperNames,
     };
+
+    /// The once-per-module synth helpers (`'-bp_at-'/2`, the print prelude,
+    /// …) are cached by name, and a name is only good in the module whose
+    /// label table reserved it. A unit starts with none and the file module
+    /// gets its own back: sharing the cache, a helper a METHOD reached first
+    /// was reserved in the type's unit, and the file's next call site asked its
+    /// own table for it — `UnknownFunction`, no location
+    /// (`run/narrowing_null_guard_clause.bp`: an optional reader in a record
+    /// method and one in a top-level `fn`).
+    const HelperNames = struct {
+        at: ?[]const u8,
+        index: ?[]const u8,
+        slice: ?[]const u8,
+        indexOf: ?[]const u8,
+        stringify: ?[]const u8,
+        print: ?[]const u8,
+        add: ?[]const u8,
+        eval: ?[]const u8,
+        join: ?[]const u8,
+    };
+
+    fn takeHelperNames(self: *Emitter) HelperNames {
+        const saved: HelperNames = .{
+            .at = self.at_helper_name,
+            .index = self.index_helper_name,
+            .slice = self.slice_helper_name,
+            .indexOf = self.indexOf_helper_name,
+            .stringify = self.stringify_helper_name,
+            .print = self.print_helper_name,
+            .add = self.add_helper_name,
+            .eval = self.eval_helper_name,
+            .join = self.join_helper_name,
+        };
+        self.at_helper_name = null;
+        self.index_helper_name = null;
+        self.slice_helper_name = null;
+        self.indexOf_helper_name = null;
+        self.stringify_helper_name = null;
+        self.print_helper_name = null;
+        self.add_helper_name = null;
+        self.eval_helper_name = null;
+        self.join_helper_name = null;
+        return saved;
+    }
+
+    fn restoreHelperNames(self: *Emitter, saved: HelperNames) void {
+        if (self.at_helper_name) |n| self.alloc.free(n);
+        self.at_helper_name = saved.at;
+        if (self.index_helper_name) |n| self.alloc.free(n);
+        self.index_helper_name = saved.index;
+        if (self.slice_helper_name) |n| self.alloc.free(n);
+        self.slice_helper_name = saved.slice;
+        if (self.indexOf_helper_name) |n| self.alloc.free(n);
+        self.indexOf_helper_name = saved.indexOf;
+        if (self.stringify_helper_name) |n| self.alloc.free(n);
+        self.stringify_helper_name = saved.stringify;
+        if (self.print_helper_name) |n| self.alloc.free(n);
+        self.print_helper_name = saved.print;
+        if (self.add_helper_name) |n| self.alloc.free(n);
+        self.add_helper_name = saved.add;
+        if (self.eval_helper_name) |n| self.alloc.free(n);
+        self.eval_helper_name = saved.eval;
+        if (self.join_helper_name) |n| self.alloc.free(n);
+        self.join_helper_name = saved.join;
+    }
 
     /// Open `type_name`'s module: its bodies write into `buf`, its labels start
     /// over, and `cur_type` makes a call to one of its own methods local while a
@@ -3080,6 +3146,7 @@ const Emitter = struct {
             .needed_prim_shims = self.needed_prim_shims,
             .emitted_prim_shims = self.emitted_prim_shims,
             .exports = .empty,
+            .helpers = self.takeHelperNames(),
         };
         self.module_name = try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(self.module_path), type_name);
         self.out = &buf.writer;
@@ -3153,6 +3220,7 @@ const Emitter = struct {
         self.needed_defaults = unit.needed_defaults;
         self.needed_prim_shims = unit.needed_prim_shims;
         self.emitted_prim_shims = unit.emitted_prim_shims;
+        self.restoreHelperNames(unit.helpers);
     }
 
     fn emitStruct(self: *Emitter, s: ast.StructDecl) !void {

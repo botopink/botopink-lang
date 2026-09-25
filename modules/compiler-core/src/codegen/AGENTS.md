@@ -1498,6 +1498,13 @@ codegen/
   Every one of these used to match every subject and bind nothing
   (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
   `assertBeamRunLog` rows in `tests/control_flow.zig`.
+- **Synth helpers per module** (`HelperNames`, `takeHelperNames` /
+  `restoreHelperNames`): the once-per-module helpers (`'-bp_at-'/2`, the print
+  prelude, …) are cached by name, and a name is only good in the module whose
+  label table reserved it — a type's unit starts with none and the file module
+  gets its own back. Shared, a helper a record METHOD reached first was reserved
+  in the type's unit and the file's next call site failed `UnknownFunction`
+  with no location (`run/narrowing_null_guard_clause.bp`).
 - **Lambda bodies** (`emitLambdaBody`): the last statement is the lambda's
   value when it is a value tail — `armValueTail`'s set, shared with a `case`
   arm's block, so an `if`, a `case` and a `try … catch` answer their value

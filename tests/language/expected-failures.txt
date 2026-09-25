@@ -247,13 +247,6 @@ beam     | run/std_erlang_node.bp | C-03 | decision 64: dies at boot — `{undef
 wasm     | run/module_init_order.bp | 05 (no step; the module body on wasm) | a `_`-named top-level statement is dropped: `first` / `main` / `1` / `1` — `second` never runs. The named `val` is already evaluated once at load, so only the statement half is owed
 beam     | run/module_init_order.bp | 03 (no step; the module body on the BEAM) | the shape erlang had before this branch: `main` / `first` / `1` / `first` / `1` — the named `val` is a 0-arity function evaluated on each READ, and the `_`-named statement never runs. `beam_asm.zig` carries its own copy of `isSyntheticMainEntrypointCall` and of the entrypoint wrapper
 
-# `00 · 01-checker` — narrowing (`fix/null-narrowing`). `if (x != null)` and the
-# guard clause `if (x == null) { return …; }` narrow the name they test, so a
-# field read off a `?Record` resolves and commonJS emits the `length` PROPERTY
-# instead of a call on a number. The two cells run on every target; what is left
-# is not the checker's.
-beam     | run/narrowing_null_guard_clause.bp | 03 (no step; two optional readers in one module) | the module does not compile: `UnknownFunction`, no location. Not narrowing's — the same program written with `??` fails identically. Minimal shape: an optional reader in a record METHOD and another in a top-level `fn` in the same module (`type Row(cells: string[]) { fn widest(self: Self) -> i32 { return (self.cells.at(0) ?? "").length(); } }` plus `fn firstOf(ws: string[]) -> i32 { return (ws.at(0) ?? "").length(); }`) — either alone compiles and runs on beam, together they are `UnknownFunction`. `run/narrowing_null_check.bp` passes on beam
-
 # ── a field read whose receiver lost its type, on wasm ───────────────────────
 # `modules/field_name_collision` pins decision 21's positional read against the
 # name-alone guess that places it: the name only identifies a record when nothing

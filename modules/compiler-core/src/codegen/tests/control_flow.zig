@@ -1248,6 +1248,21 @@ test "beam: a lambda whose body is an if, a case or a try answers its value" {
     , "1,20,30\n100,200,200\n0,20,30\n", &.{});
 }
 
+test "beam: a synth helper a type's module reached first is the file module's too" {
+    // `run/narrowing_null_guard_clause.bp`. `'-bp_at-'/2` (and every other
+    // once-per-module helper) was cached by name across the whole emit: a
+    // record METHOD reached it first, inside the type's own module, and the
+    // file's `fn` then asked its own label table for a name that module never
+    // reserved — `UnknownFunction`, no location. Each unit now keeps its own.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\type Row(cells: string[]) {
+        \\    fn widest(self: Self) -> i32 { return (self.cells.at(0) ?? "").length(); }
+        \\}
+        \\fn firstOf(ws: string[]) -> i32 { return (ws.at(0) ?? "").length(); }
+        \\fn main() { @print(Row(cells: ["abc"]).widest()); @print(firstOf(["ab"])); }
+    , "3\n2\n", &.{});
+}
+
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
 //
 // `break <value>` out of `while (cond)` was refused outright with an unlocated
