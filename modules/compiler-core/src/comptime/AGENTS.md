@@ -644,6 +644,20 @@ The parser carries the dotted spelling in `TypeRef.named` (`parser/types.zig`). 
 spelling (`TokenText`) reds with a hint naming the path (`Env.sectionPathForFlatName`). A section
 declares no methods — `EnumSection` has no slot for them and nothing needs one yet.
 
+## A type position takes a type, not any binding (01 R8)
+
+`Env.resolveTypeName`'s bindings arm used to answer any binding's type, so `val n = 5; val x: n = 7;`
+checked. It now accepts four kinds of binding only: one of function type (an imported constructor —
+the reason the arm exists — and std's `Array`, whose return is `array<T>`), a declaration's own binding
+(typed by the declaration's display name, `behavior Request { … }`, which holds a space no value's
+type can), a primitive (bound to itself by `registerBuiltins`), and a `val` recorded in
+`Env.typeValueNames` — `noteTypeValue` marks `val T = i32;` / `val U = T;` when the value is a name
+that is itself a type, and clears the mark when a value shadows it. Any other binding — a value — is
+`'n' is a value, not a type`, located at the `val` (a local)
+or the value (a module `val`), since neither carries its annotation's location. The location is added
+after the fact by `locateTypeRefError`, not through `typeRefLoc`, which would also enter every
+unresolved local annotation into C10's pending list. Cells: `infer_errors.zig` `type position: …`.
+
 ## A behavior-typed parameter or field accepts an implementer (01 R4)
 
 An argument meets its parameter through `unifyArgument`: a parameter — or a record constructor's

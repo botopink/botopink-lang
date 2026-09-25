@@ -545,7 +545,12 @@ fn validateStructAccessors(env: *Env, s: ast.StructDecl) InferError!void {
 fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
     switch (decl) {
         .val => |v| {
-            const annType: ?*T.Type = if (v.typeAnnotation) |ann| try resolveTypeRef(env, ann) else null;
+            // 01 R8 — `ValDecl` carries no location for its annotation; an
+            // unlocated refusal there reds at the value.
+            const annType: ?*T.Type = if (v.typeAnnotation) |ann|
+                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
+            else
+                null;
             // When binding a lambda to a `fn(...) -> ...` annotation, feed the
             // annotation into the lambda so its params are typed from context.
             const typedExpr = if (annType != null and v.value.* == .function)
@@ -562,6 +567,7 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             // `option.map(head, f)` sees a bare `i32`).
             const bindTy = annType orelse ty;
             try validateMemoryAnnotations(env, v, bindTy);
+            try noteTypeValue(env, v.name, v.value.*, annType == null and !v.mutable);
             if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
             return .{ .name = v.name, .type_ = bindTy, .typedExpr = typedExpr, .decl = decl };
         },
@@ -2338,7 +2344,10 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
             // The annotation is resolved BEFORE the value so it can be this
             // position's expected type (00 · 01-checker) — see
             // `inferDeclTyped`'s `.val` case.
-            const annType: ?*T.Type = if (v.typeAnnotation) |ann| try resolveTypeRef(env, ann) else null;
+            const annType: ?*T.Type = if (v.typeAnnotation) |ann|
+                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
+            else
+                null;
             const ty = try inferExprExpecting(env, v.value.*, annType);
             // Bind the DECLARED (annotated) type when present.
             var bindTy = ty;
@@ -2347,6 +2356,7 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
                 bindTy = at;
             }
             try validateMemoryAnnotations(env, v, bindTy);
+            try noteTypeValue(env, v.name, v.value.*, annType == null and !v.mutable);
             if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
             return .{ .name = v.name, .type_ = bindTy };
         },
@@ -8329,7 +8339,14 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
 fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (b.kind) {
         .localBind => |lb| {
-            const annType: ?*T.Type = if (lb.typeAnnotation) |ann| try resolveTypeRef(env, ann) else null;
+            // 01 R8 — a refusal in the annotation needs a location; the
+            // binding carries none of its own for the annotation, so an
+            // unlocated one reds at the `val`. (Setting `typeRefLoc` instead
+            // would also enter every unresolved name into C10's pending list.)
+            const annType: ?*T.Type = if (lb.typeAnnotation) |ann|
+                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, loc)
+            else
+                null;
             // Feed a `fn(...) -> ...` annotation into a lambda RHS so its
             // params are typed from context (mirrors `inferDeclTyped`).
             const valTyped = if (annType != null and lb.value.* == .function)
@@ -8343,6 +8360,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             // The annotation is the DECLARED type — bind it, not the RHS type
             // (`val head: ?i32 = 5;` must bind `?i32`).
             const bindTy = annType orelse valTyped.getType();
+            try noteTypeValue(env, lb.name, lb.value.*, annType == null and !lb.mutable);
             if (lb.mutable) try env.bind(lb.name, bindTy) else try env.bindVal(lb.name, bindTy);
             return TypedExpr{ .binding = .{ .loc = loc, .type_ = bindTy, .kind = .{ .localBind = .{
                 .name = lb.name,
@@ -8526,6 +8544,32 @@ fn expectedEnumDeclaring(env: *Env, variant: []const u8) ?[]const u8 {
         if (std.mem.eql(u8, v.name, variant)) return d.named.name;
     }
     return null;
+}
+
+/// 01 R8 — give an annotation's unlocated error the binding's location.
+fn locateTypeRefError(env: *Env, err: InferError, loc: ast.Loc) InferError {
+    if (env.lastError) |*e| {
+        if (e.loc == null) e.loc = loc;
+    }
+    return err;
+}
+
+/// 01 R8 — record whether `val name = value` binds a TYPE: `value` is a name
+/// that is itself a type (a primitive, a declared `type`/`behavior`, an
+/// imported constructor, or another such `val`). Checked before `name` is
+/// bound, so `val T = T;` cannot vouch for itself. A binding that is not one
+/// clears the mark, so a value shadowing a type alias is a value.
+fn noteTypeValue(env: *Env, name: []const u8, value: ast.Expr, eligible: bool) InferError!void {
+    const isType = eligible and blk: {
+        if (value != .identifier or value.identifier.kind != .ident) break :blk false;
+        const n = value.identifier.kind.ident;
+        if (env.typeDefs.contains(n) or env.assocInterfaceDecls.contains(n) or env.typeValueNames.contains(n)) break :blk true;
+        const ty = env.lookup(n) orelse break :blk false;
+        const d = ty.deref();
+        if (d.* == .func and d.func.ret.isNamed(n)) break :blk true;
+        break :blk d.isNamed(n);
+    };
+    if (isType) try env.typeValueNames.put(name, {}) else _ = env.typeValueNames.remove(name);
 }
 
 fn containsStr(haystack: []const []const u8, needle: []const u8) bool {

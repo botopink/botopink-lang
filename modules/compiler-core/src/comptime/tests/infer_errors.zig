@@ -1305,3 +1305,34 @@ test "behavior-typed field rejects a record that does not implement it" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "Handler") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "Other") != null);
 }
+
+// ── 01 R8: a type position takes a type, not any binding ─────────────────────
+
+test "type position: a val bound to a type is a type" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val T = i32;
+        \\fn main() {
+        \\    val x: T = 1;
+        \\    val U = T;
+        \\    val y: U = 2;
+        \\    @print(x + y);
+        \\}
+    );
+}
+
+test "type position: a val bound to a value is refused, located" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn main() { val n = 5; val x: n = 7; @print(x); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "'n' is a value, not a type") != null);
+}
+
+test "type position: a module-level value is refused too" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val n = 5;
+        \\val x: n = 7;
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "'n' is a value, not a type") != null);
+}
