@@ -1,27 +1,27 @@
-//// Decision 103 of 1.0.10-beta — a generator's prefix is the level it extends.
-//// `@Iterator<@Result<T, E>>` extends `@Result`, so its body answers `try`; and
-//// a loop over it is a `try` in the body that ITERATES it (`Error(e)` has to
-//// go somewhere, and the place is that body's error channel), so `digits` is
-//// `#[@result]`. `@Iterator<T>` is infallible: `total` is a plain `fn` and
-//// iterates it with no level at all — that is what the infallible wrapper
-//// buys. `reject/for_fallible_generator_plain_fn.bp` is the refusal.
+//// Decisions 121 and 122 of 1.0.10-beta — only `@Result` fails. An iterator
+//// never fails: its ITEM may. `@Iterator<@Result<T, E>>`'s body answers
+//// `try` (the item is a `@Result`, so a failing `try` emits `Error(e)` and
+//// ends), and the body that ITERATES it receives each `@Result` and decides —
+//// `for` does no implicit `try`. `digits` propagates with an explicit
+//// `try r`, so it returns `@Result`; `total` iterates an `@Iterator<i32>` in a
+//// plain `fn`, with no level at all.
 
 fn parse(n: i32) -> @Result<i32, string> {
     if (n < 0) { throw "negative"; };
     return n;
 }
 
-// `#[@resultGenerator]` ⊃ `@Result`: `try` and `yield` in one body.
+// The item is a `@Result`: `try` and `yield` in one body.
 fn upto(n: i32) -> @Iterator<@Result<i32, string>> {
     val limit = try parse(n);
     var i = 0;
     while (i < limit) { yield i; i = i + 1; };
 }
 
-// The iterating body needs `try`'s level: `#[@result]`.
+// The iterating body reads each `@Result`; `try r` propagates.
 fn digits(n: i32) -> @Result<string, string> {
     var acc = "";
-    for (upto(n)) { x -> acc = acc + x.toString(); };
+    for (upto(n)) { r -> acc = acc + (try r).toString(); };
     return acc;
 }
 
@@ -30,7 +30,7 @@ fn nums(n: i32) -> @Iterator<i32> {
     while (i < n) { yield i; i = i + 1; };
 }
 
-// A plain `fn` iterates an infallible generator.
+// A plain `fn` iterates an iterator.
 fn total(n: i32) -> i32 {
     var acc = 0;
     for (nums(n)) { x -> acc = acc + x; };
@@ -39,5 +39,6 @@ fn total(n: i32) -> i32 {
 
 pub fn main() {
     @print(try digits(4) catch "error");
+    @print(try digits(-1) catch "error");
     @print(total(4));
 }

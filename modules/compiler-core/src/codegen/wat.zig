@@ -3410,8 +3410,25 @@ const Emitter = struct {
 
         var then_c: Capture = .{};
         self.open(&then_c);
-        try self.emit(.{ .local_get = slot });
-        try self.emitC(.@"return", "propagate Error");
+        if (self.yield_target) |tgt| {
+            // Decision 122 — in a sequence whose item is a `@Result`, a
+            // failing `try` emits the Error as the last item and ends (the
+            // scope's `break <v>`).
+            try self.emit(.{ .local_get = tgt });
+            try self.emit(.{ .local_get = slot });
+            try self.emit(self.builder().helper(.arr_push));
+            try self.emit(.{ .local_set = tgt });
+            if (self.gen_end) |label| {
+                try self.emit(.{ .br = label });
+            } else {
+                try self.emitC(.{ .local_get = tgt }, "everything the body yielded");
+                try self.emitConvert("i32", self.cur_result);
+                try self.emit(.@"return");
+            }
+        } else {
+            try self.emit(.{ .local_get = slot });
+            try self.emitC(.@"return", "propagate Error");
+        }
         const then_seq = self.seal(&then_c, .terminated);
 
         try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });

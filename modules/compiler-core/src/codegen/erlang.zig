@@ -609,6 +609,8 @@ const cond_continue_signal = "__bp_cond_continue";
 /// `{Signal, Key, Group, V}` — the scope's key, the variables an annotated
 /// loop hands back, and the last item.
 const gen_end_signal = "__bp_gen_end";
+/// The throw of a `try` with no rest to nest (`tryThrowCase`).
+const try_throw_signal = "__bp_try";
 
 /// A `pub enum` of some module in the build, with its variants.
 const EnumExport = struct {
@@ -2477,6 +2479,15 @@ const Emitter = struct {
     cv: std.StringHashMap([]const u8),
     indent: usize = 0,
     try_seq: usize = 0,
+    /// The statements of the function body being lowered. A `try` in THAT
+    /// sequence propagates by nesting the rest in its Ok arm (Erlang has no
+    /// early return); one anywhere else — a loop's fun, an `if` arm, an
+    /// operand — has no rest to nest, so it throws `{'__bp_try', Error}` to
+    /// the function's guard (`tryThrowCase`, `guardTry`).
+    fn_top_body: []const ast.Stmt = &.{},
+    /// Set when the body being lowered used the `'__bp_try'` throw; `fnForms`
+    /// then wraps the body in the guard that answers the thrown Error.
+    try_throw_used: bool = false,
     /// 06 C13 — the host-backed fn whose `#[@External.Erlang(…)]` is missing,
     /// filled at the throw site so `codegenEmit` can turn
     /// `error.MissingExternalTarget` into a located diagnostic naming it.
@@ -4784,7 +4795,13 @@ const Emitter = struct {
         this.indent = 1;
         defer this.indent = saved;
         this.try_seq = 0;
-        const body: Ast.Body = if (isPlainYieldGenerator(f)) blk: {
+        const saved_top = this.fn_top_body;
+        this.fn_top_body = f.body;
+        defer this.fn_top_body = saved_top;
+        const saved_throw = this.try_throw_used;
+        this.try_throw_used = false;
+        defer this.try_throw_used = saved_throw;
+        const raw_body: Ast.Body = if (isPlainYieldGenerator(f)) blk: {
             // Finite generator → eager list of yielded items: `[V1, V2, ...]`.
             const items = try b.arena.alloc(Ast.Expr, f.body.len);
             for (f.body, 0..) |stmt, i| {
@@ -4796,6 +4813,7 @@ const Emitter = struct {
             try this.generatorFnBody(b, f.body)
         else
             try this.bodyNode(b, f.body, 0, 1);
+        const body = if (this.try_throw_used) try this.guardTry(b, raw_body) else raw_body;
         try out.append(b.arena, try blockFunction(b, f.name, params.items, body));
     }
 
@@ -4946,10 +4964,14 @@ const Emitter = struct {
                 },
                 else => null,
             };
-            if (prop) |p| {
+            // Only the function's own statement sequence has a rest to nest
+            // in the Ok arm; anywhere else (a loop's fun, an `if` arm) the
+            // `try` lowers as an expression, whose Error is thrown to the
+            // function's guard (`tryThrowCase`).
+            if (prop) |p| if (body.ptr == this.fn_top_body.ptr or this.in_test_body) {
                 try stmts.append(b.arena, .{ .expr = try this.propagateTryExpr(b, body, i, p.inner, p.head) });
                 break; // remaining statements are nested inside the Ok arm
-            }
+            };
 
             if (!is_last and stmt.expr == .branch and stmt.expr.branch.kind == .if_) {
                 const if_node = stmt.expr.branch.kind.if_;
@@ -5457,6 +5479,55 @@ const Emitter = struct {
         })});
     }
 
+    /// `throw({'__bp_gen_end', Key, Group, Value})` for an already-lowered
+    /// value — the `break <v>` of the scope.
+    fn genEndThrowValue(this: *Emitter, b: Ast.Builder, gs: GenScope, value: Ast.Expr) anyerror!Ast.Expr {
+        const group = if (gs.names.len > 0) try this.varGroupExpr(b, gs.names) else Ast.Expr.a("ok");
+        return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(gen_end_signal), Ast.Expr.v(gs.key), group, value })});
+    }
+
+    /// A `try x` with no rest to nest (an operand, a loop's body, an `if`
+    /// arm): `case X of {ok, V} -> V; {error, _} = E -> <E out> end`, where
+    /// `<E out>` is the scope's `break Error(e)` in a sequence (decision 122),
+    /// the runner's FAIL in a `test` body (decision 74), and otherwise
+    /// `throw({'__bp_try', E})` — caught by the function's guard
+    /// (`guardTry`), which answers `E` as the function's value.
+    fn tryThrowCase(this: *Emitter, b: Ast.Builder, inner: ast.Expr) anyerror!Ast.Expr {
+        const n = this.try_seq;
+        this.try_seq += 1;
+        const subject = try this.exprNode(b, inner);
+        const ok_var = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryV{d}", .{n}));
+        const err_var = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryE{d}", .{n}));
+        const err = try b.tuple(&.{ Ast.Expr.a("error"), err_var });
+        const on_error: Ast.Expr = if (this.in_test_body)
+            try b.remote("erlang", "error", &.{try b.tuple(&.{ Ast.Expr.a("bp_assert"), err_var, .{ .lexeme_binary = this.test_loc } })})
+        else if (this.gen_scope) |gs|
+            try this.genEndThrowValue(b, gs, err)
+        else blk: {
+            this.try_throw_used = true;
+            break :blk try b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(try_throw_signal), err })});
+        };
+        return b.caseOf(subject, &.{
+            try b.clause(&.{try b.tuple(&.{ Ast.Expr.a("ok"), ok_var })}, &.{}, &.{ok_var}),
+            try b.clause(&.{err}, &.{}, &.{on_error}),
+        });
+    }
+
+    /// `try Body catch throw:{'__bp_try', E} -> E end` — the guard of a
+    /// function whose body threw from a `try` with no rest to nest.
+    fn guardTry(this: *Emitter, b: Ast.Builder, body: Ast.Body) anyerror!Ast.Body {
+        _ = this;
+        const r_var = Ast.Expr.v("__BpTryR");
+        return b.body(&.{.{ .try_catch = .{
+            .body = body,
+            .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(try_throw_signal), r_var }))},
+                &.{},
+                &.{r_var},
+            )}),
+        } }});
+    }
+
     const ClosureMutation = struct {
         cc: @FieldType(@FieldType(ast.CallExprOf(.untyped), "kind"), "call"),
         names: []const []const u8,
@@ -5865,6 +5936,10 @@ const Emitter = struct {
         // function's value.
         const on_error: Ast.Expr = if (this.in_test_body)
             try b.remote("erlang", "error", &.{try b.tuple(&.{ Ast.Expr.a("bp_assert"), err_var, .{ .lexeme_binary = this.test_loc } })})
+        else if (this.gen_scope) |gs|
+            // Decision 122 — in a sequence whose item is a `@Result`, a
+            // failing `try` emits the Error as the last item and ends.
+            try this.genEndThrowValue(b, gs, err)
         else
             err;
         return b.caseOf(subject, &.{
@@ -6184,10 +6259,14 @@ const Emitter = struct {
                 const saved_cond_loop = this.cond_loop;
                 this.cond_loop = null;
                 defer this.cond_loop = saved_cond_loop;
-                // A `fun` is not the test body: its `try` is its own.
+                // A `fun` is not the test body: its `try` is its own, and its
+                // body is the statement sequence a `try` nests the rest of.
                 const saved_in_test = this.in_test_body;
                 this.in_test_body = false;
                 defer this.in_test_body = saved_in_test;
+                const saved_top = this.fn_top_body;
+                this.fn_top_body = func.kind.body;
+                defer this.fn_top_body = saved_top;
                 const params = try b.arena.alloc(Ast.Expr, func.kind.params.len);
                 for (func.kind.params, 0..) |p, i| {
                     params[i] = V(try this.arenaVar(b, p));
@@ -6256,7 +6335,7 @@ const Emitter = struct {
                 // accepted as the next expression.
                 .@"return" => |r| if (r) |val| this.exprNode(b, val.*) else A("undefined"),
                 .throw_ => |r| b.remote("erlang", "throw", &.{if (r) |val| try this.exprNode(b, val.*) else A("undefined")}),
-                .try_ => |t| if (t) |val| this.exprNode(b, val.*) else A("undefined"),
+                .try_ => |t| if (t) |val| this.tryThrowCase(b, val.*) else A("undefined"),
                 .await_ => |av| this.exprNode(b, av.*),
                 // A bare `break` leaves the enclosing loop. Erlang's list
                 // functions cannot be stopped from inside the fun, so the exit

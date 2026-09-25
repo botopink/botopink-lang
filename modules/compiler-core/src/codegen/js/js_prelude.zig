@@ -52,10 +52,15 @@ pub const Helper = enum {
     /// and then its own fields, which decision 5 made the one shape a record
     /// and a variant share.
     structural_eq,
+    /// An expression-position `try x` (decisions 121, 122 — `total + try r`,
+    /// `(try batch).length`): the Ok value, or — on an Error — a throw of
+    /// `{ __bp_try: r }` that the enclosing function's guard
+    /// (`commonJS.zig` `guardExprTry`) turns back into the propagated Result.
+    try_unwrap,
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .string_char_at, .range_from, .structural_eq, .show, .print, .print_as };
+pub const order = [_]Helper{ .assert_fatal, .string_char_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap };
 
 /// The receiver family of a primitive method call, as inference recorded it.
 pub const Receiver = enum { string, array, other };
@@ -82,6 +87,7 @@ pub fn name(h: Helper) []const u8 {
         .print => "__bp_print",
         .print_as => "__bp_print_as",
         .structural_eq => "__bp_eq",
+        .try_unwrap => "__bp_try",
     };
 }
 
@@ -95,6 +101,7 @@ pub fn decl(h: Helper) ast.Stmt {
         .print => print,
         .print_as => print_as,
         .structural_eq => structural_eq,
+        .try_unwrap => try_unwrap,
     };
 }
 
@@ -125,6 +132,21 @@ const assert_fatal: ast.Stmt = .{ .function = .{
             } }},
         } } }}, .layout = .spaced } },
     } }}, .layout = .spaced },
+} };
+
+const r_: ast.Expr = .{ .name = "r" };
+
+/// `function __bp_try(r) { if ("error" in r) { throw { __bp_try: r }; } return r.ok; }`
+const try_unwrap: ast.Stmt = .{ .function = .{
+    .name = "__bp_try",
+    .params = &.{.{ .pattern = .{ .name = "r" } }},
+    .body = .{ .stmts = &.{
+        .{ .if_ = .{
+            .cond = .{ .binary = .{ .op = "in", .lhs = &.{ .quoted = "error" }, .rhs = &r_, .parens = false } },
+            .then = &.{ .block = .{ .stmts = &.{.{ .throw_ = .{ .object = .{ .props = &.{.{ .kv = .{ .key = "__bp_try", .value = r_ } }} } } }}, .layout = .spaced } },
+        } },
+        .{ .return_ = .{ .member = .{ .object = &r_, .name = "ok" } } },
+    }, .layout = .spaced },
 } };
 
 const s: ast.Expr = .{ .name = "s" };

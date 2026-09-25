@@ -1,14 +1,12 @@
-//// Decision 95 of 1.0.10-beta — the two rows of the chain that need a target
-//// able to consume a future or an iterator, so they run here (commonJS and
-//// erlang) rather than in `run/effect_chain.bp`, which every backend runs.
+//// Decisions 120 and 121 of 1.0.10-beta — the two rows of the chain that need
+//// a target able to consume a Task or an iterator, so they run here (commonJS
+//// and erlang) rather than in `run/effect_chain.bp`, which every backend runs.
 ////
-////   `#[@future]`    ⊃ `@Result`   — `try` and `await` in one body
-////   `#[@resultGenerator]`  ⊃ `@Result`   — `try` and `yield` in one body
+////   `-> @Task<@Result<…>>`       — `try` (its value is a `@Result`) and `await`
+////   `-> @Iterator<@Result<…>>`   — `try` (its item is a `@Result`) and `yield`
 ////
 //// What each pins is that the body type-checks with BOTH capabilities in it and
-//// that the value it produces is the one the chain implies — a `try` that
-//// reaches its Ok branch inside an effect body that was refused the capability
-//// before this front.
+//// that the value it produces is the one the chain implies.
 
 fn parse(n: i32) -> @Result<i32, string> {
     if (n < 0) { throw "negative"; };
@@ -19,27 +17,27 @@ fn fetch(n: i32) -> @Task<i32> {
     return n * 2;
 }
 
-// `#[@future]` ⊃ `@Result`: `try` and `await` in one body.
-fn load(n: i32) -> @Task<i32> {
+// `@Task<@Result<…>>`: `try` and `await` in one body.
+fn load(n: i32) -> @Task<@Result<i32, string>> {
     val v = try parse(n);
     val w = await fetch(v);
     return w + 1;
 }
 
-// `#[@resultGenerator]` ⊃ `@Result`: `try` and `yield` in one body.
-fn upTo(n: i32) -> @Iterator<i32> {
+// `@Iterator<@Result<…>>`: `try` and `yield` in one body.
+fn upTo(n: i32) -> @Iterator<@Result<i32, string>> {
     val limit = try parse(n);
     var i = 0;
     while (i < limit) { yield i; i = i + 1; };
 }
 
-test "§95 a body holds the `try` its level grants" {
+test "decision 121 a Task body holds the `try` its @Result value grants" {
     val f = load(3);
     assert f != null;
 }
 
-test "§95 a body holds the `try` its level grants" {
+test "decision 121 an iterator body holds the `try` its @Result item grants" {
     var acc = "";
-    for (upTo(3)) { x -> acc = acc + x.toString(); };
+    for (upTo(3)) { r -> acc = acc + (try r catch 0).toString(); };
     assert acc == "012";
 }

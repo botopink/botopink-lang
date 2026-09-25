@@ -577,6 +577,59 @@ fn destructYSlots(pattern: ast.ParamDestruct) u32 {
 /// `lowerCase` allocates via `next_y += 1`, so the function's `{allocate, N, _}`
 /// frame is large enough for every binding (BEAM rejects a `{move, _, {y, k}}`
 /// into an unallocated slot — `{invalid_store, {y, k}}`).
+/// The throw of a propagating `try` inside a loop's fun (`emitTryError`).
+const try_throw_signal = "__bp_try";
+
+/// True when `body` holds a propagating `try` (a bare `try`, not
+/// `try … catch`) outside any lambda — one a loop's fun would have to carry
+/// out to the call site.
+fn bodyPropagates(body: []const ast.Stmt) bool {
+    for (body) |st| if (exprPropagates(st.expr)) return true;
+    return false;
+}
+
+fn exprPropagates(e: ast.Expr) bool {
+    return switch (e) {
+        .jump => |j| switch (j.kind) {
+            .try_ => true,
+            .@"return", .throw_ => |v| if (v) |x| exprPropagates(x.*) else false,
+            .@"break" => |b| if (b.value) |x| exprPropagates(x.*) else false,
+            .yield => |y| if (y.value) |x| exprPropagates(x.*) else false,
+            .await_ => |x| exprPropagates(x.*),
+            .@"continue" => false,
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| exprPropagates(i.cond.*) or bodyPropagates(i.then_) or (if (i.else_) |els| bodyPropagates(els) else false),
+            .tryCatch => false,
+        },
+        .loop => |lp| lp.generator == null and bodyPropagates(lp.body),
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| exprPropagates(lb.value.*),
+            .assign => |a| exprPropagates(a.value.*),
+            .localBindDestruct => |lb| exprPropagates(lb.value.*),
+        },
+        .binaryOp => |op| exprPropagates(op.lhs.*) or exprPropagates(op.rhs.*),
+        .unaryOp => |op| exprPropagates(op.expr.*),
+        .collection => |col| switch (col.kind) {
+            .grouped => |x| exprPropagates(x.*),
+            .case => |c| blk: {
+                for (c.arms) |arm| if (exprPropagates(arm.body)) break :blk true;
+                break :blk false;
+            },
+            else => false,
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| blk: {
+                if (cc.receiver) |r| if (exprPropagates(r.*)) break :blk true;
+                for (cc.args) |a| if (exprPropagates(a.value.*)) break :blk true;
+                break :blk false;
+            },
+            else => false,
+        },
+        else => false,
+    };
+}
+
 fn patternYSlots(p: ast.Pattern) u32 {
     return switch (p) {
         .wildcard, .numberLit, .stringLit, .@"or" => 0,
@@ -790,6 +843,9 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
         // loader error.
         .loop => |lp| {
             countLocalsInExpr(em, lp.iter.*, count);
+            // A loop whose fun may throw a propagating `try` is called inside
+            // a catch section of this frame (`guardLoopCall`): its tag slot.
+            if (lp.generator == null and !lp.condition and bodyPropagates(lp.body)) count.* += 1;
             // An annotated loop (decision 105) runs in this frame with its
             // item accumulator, and so does every `for` inside it that yields.
             if (lp.generator != null) {
@@ -4635,8 +4691,8 @@ const Emitter = struct {
                     return;
                 },
                 .try_ => |val| {
-                    // `try expr` (no catch): unwrap `{ok, V}`, or early-return the
-                    // `{error, E}` tuple to propagate it up.
+                    // `try expr` (no catch): unwrap `{ok, V}`, or propagate the
+                    // `{error, E}` tuple (`emitTryError`).
                     if (val) |v| {
                         try self.lowerExprIntoX0(v.*);
                         const err_label = self.allocLabel();
@@ -4645,7 +4701,7 @@ const Emitter = struct {
                         try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 1, Dst.xr(0));
                         try beamEmitter.writeJump(self.out, cont_label);
                         try beamEmitter.writeLabel(self.out, err_label);
-                        try self.emitReturn();
+                        try self.emitTryError();
                         try beamEmitter.writeLabel(self.out, cont_label);
                     }
                     return;
@@ -8906,7 +8962,16 @@ const Emitter = struct {
         try self.emitGroupInto(names.items, 1, 1);
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(2));
         try self.emitMakeFun(entry, 3, env_ops.items);
-        try beamEmitter.writeCall(self.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "foldl" } }, 0);
+        const Call = struct {
+            fn emit(_: @This(), em: *Emitter) anyerror!void {
+                try beamEmitter.writeCall(em.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "foldl" } }, 0);
+            }
+        };
+        if (bodyPropagates(body)) {
+            const tag = self.next_y;
+            self.next_y += 1;
+            try self.guardLoopCall(tag, Call{});
+        } else try Call.emit(.{}, self);
         try self.unpackGroupFromX0(names.items);
         return true;
     }
@@ -8988,6 +9053,56 @@ const Emitter = struct {
             try beamEmitter.writeJump(self.out, top);
         }
         try beamEmitter.writeLabel(self.out, exit);
+    }
+
+    /// The `{error, E}` in `x0` of a failing `try`, propagated: in a generator
+    /// scope it is the last item (decision 122 — pushed, then the scope
+    /// ends); in a loop's fun it is thrown as `{'__bp_try', E}` to the loop's
+    /// call site (`guardLoopCall`), since a return there only leaves the fun;
+    /// anywhere else it is this function's return value.
+    fn emitTryError(self: *Emitter) anyerror!void {
+        if (self.inGenLoop()) |gl| {
+            try beamEmitter.writeTestHeap(self.out, 2, @max(self.min_live, 1));
+            try beamEmitter.writePutList(self.out, Op.xr(0), Op.yr(gl.acc), Dst.yr(gl.acc));
+            try beamEmitter.writeJump(self.out, gl.exit);
+            return;
+        }
+        if (self.in_loop_lambda) {
+            try beamEmitter.writeTestHeap(self.out, 3, 1);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(try_throw_signal), Op.xr(0) });
+            try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+            return;
+        }
+        try self.emitReturn();
+    }
+
+    /// Emit `call` — a `lists:foreach` / `map` / `foldl` over a loop fun whose
+    /// body may throw `{'__bp_try', E}` (`emitTryError`) — inside a catch
+    /// section of this frame (`tag` is its y-slot): the thrown `E` is this
+    /// function's return value, or — when this frame is itself a loop's fun —
+    /// thrown on to the next call site. Any other raise is re-raised.
+    fn guardLoopCall(self: *Emitter, tag: u32, call: anytype) anyerror!void {
+        const caught = self.allocLabel();
+        const other = self.allocLabel();
+        const done = self.allocLabel();
+        try beamEmitter.writeTry(self.out, tag, caught);
+        try call.emit(self);
+        try beamEmitter.writeTryEnd(self.out, tag);
+        try beamEmitter.writeJump(self.out, done);
+        try beamEmitter.writeLabel(self.out, caught);
+        try beamEmitter.writeTryCase(self.out, tag);
+        try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom("throw") });
+        try beamEmitter.writeTest(self.out, .is_tagged_tuple, other, &.{ Op.xr(1), .{ .untagged = 2 }, Op.atom(try_throw_signal) });
+        if (self.in_loop_lambda) {
+            try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.xr(0));
+            try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
+        } else {
+            try beamEmitter.writeGetTupleElement(self.out, Op.xr(1), 1, Dst.xr(0));
+            try self.emitReturn();
+        }
+        try beamEmitter.writeLabel(self.out, other);
+        try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, done);
     }
 
     /// The annotated loop whose body is being emitted into the current frame.
@@ -9172,7 +9287,17 @@ const Emitter = struct {
         try self.emitMakeFun(labels.entry, 2, env_ops.items);
 
         const func = if (has_map) "map" else "foreach";
-        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = func } }, 0);
+        const Call = struct {
+            name: []const u8,
+            fn emit(c: @This(), em: *Emitter) anyerror!void {
+                try beamEmitter.writeCall(em.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = c.name } }, 0);
+            }
+        };
+        if (bodyPropagates(lp.body)) {
+            const tag = self.next_y;
+            self.next_y += 1;
+            try self.guardLoopCall(tag, Call{ .name = func });
+        } else try (Call{ .name = func }).emit(self);
     }
 
     /// Emit a string literal's lexeme content as a BEAM binary into `{x, dest}`:

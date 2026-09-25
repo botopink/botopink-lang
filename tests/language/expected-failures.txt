@@ -129,9 +129,8 @@ erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method 
 # which is 13 step 18; each backend's step 1 closes the separator half only.
 
 # ── §9 effects ────────────────────────────────────────────────────────────────
-# The three R9 rows were deleted by `00 · 01-checker` step 8: `reject/wrapper_without_annotation.bp`,
-# `reject/val_assert_after_catch.bp` and `reject/two_effect_markers.bp` are each refused for their own
-# reason, with the caret on the return type, the `catch` and the second annotation.
+# The three R9 rows were deleted by `00 · 01-checker` step 8; front 24 (decision 118) deleted
+# `reject/wrapper_without_annotation.bp` and `reject/two_effect_markers.bp` with the annotations.
 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
 
@@ -294,4 +293,3 @@ wasm     | run/effect_method.bp | 05-wasm | a record method looping over its own
 # run both cells; the eager erlang and wasm generator scopes do not yet.
 erlang   | run/generator_break_value.bp | C-30 (22-loops' eager generator scope) | decision 103: a bare `break` at the level of a generator body is thrown as `'__bp_break'` and never caught by the scope — `ends()` crashes the program after `0127` (`{nocatch,'__bp_break'}`)
 wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope) | decision 103: every `digits` answers the empty string — the eager generator scope yields nothing into the `for` that reads it (three empty lines)
-wasm     | run/generator_levels.bp | C-30 (22-loops' eager generator scope) | decision 103: a `try` inside a `@ResultGenerator` body plus a `#[@result]` `for` over it answers the empty string, and the plain `fn` over a `@Generator<T>` answers `0`

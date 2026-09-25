@@ -191,7 +191,7 @@ loop that is a value — a generator whose body is a closed generator scope.
 | `run/loop_range_inclusive.bp` | `for (1..4)` visits `1 2 3`, `for (1...4)` visits `1 2 3 4`, `for (3...2)` nothing |
 
 The `reject/` cells name one refusal each: `loop_break_value`, `loop_yield_plain_fn`,
-`for_over_condition`, `for_fallible_generator_plain_fn`, `for_future_generator_without_await`,
+`for_over_condition`, `for_future_generator_without_await` (`for-over-stream` since front 24),
 `generator_loop_use`, `generator_loop_await`, `generator_loop_break_outer`, `continue_outside_loop`,
 `yield_label_loop`, plus the parser's `loop_parenthesised` and `loop_condition_parameter`.
 
@@ -808,10 +808,11 @@ renamed with it), the completion channel `C` is gone, and two cells carry what t
 decision adds: `run/generator_break_value.bp` — `break v` at the level of a generator body
 emits `v` as the last item and ends, a bare `break` there ends it (`0127` / `1` / `56`;
 commonJS and beam run it, the eager erlang and wasm generator scopes are pinned);
-`run/generator_levels.bp` — a `@ResultGenerator` body holds `try`, the `#[@result]` body
-that iterates it holds the `for`'s implicit `try`, and a plain `fn` iterates a
-`@Generator<T>` (wasm pinned). 22-loops' `reject/for_fallible_generator_plain_fn.bp` is
-the refusal (`for-over-fallible-generator`).
+`run/generator_levels.bp` — re-spelled by front 24 (decisions 121, 122): an
+`@Iterator<@Result<i32, string>>` body holds `try` (a failing one emits the Error as the last
+item), the `-> @Result` body that iterates it propagates with an explicit `try r` (there is no
+implicit `try`), and a plain `fn` iterates an `@Iterator<i32>` — green on all four targets.
+22-loops' `reject/for_fallible_generator_plain_fn.bp` left with the rule it pinned.
 `reject/throw_in_generator.bp` (`throw` in a `#[@generator]` body names
 `@ResultGenerator<T, E>`), `test/effect_future_generator.bp` (a `@FutureGenerator<T, E>` body
 with `try` and `await`, and its `#[@future]` `for await` consumer) and
@@ -1157,8 +1158,10 @@ revoked — and a `use` in a nested closure, `reject/use_in_closure.bp`), `use-o
 module-level `val`, decision 87) and `context-anchor-violation`. A component's caller awaits it:
 `run/context_use.bp` drives the components from a `#[@future] fn run`, and the `test/` cells await
 them (a `test` body is a future context). `test/use_future_context.bp` is the server component that
-`use`s and `await`s under `#[@use]`; `reject/use_future_context_duplicate.bp` pins R5
-(`#[@future] #[@use]` is refused — its caret drift is `reject/two_effect_markers.bp`'s row).
+`use`s and `await`s under a `@Component` return. Front 24 (decision 118) deleted
+`reject/use_future_context_duplicate.bp`, `reject/two_effect_markers.bp`,
+`reject/wrapper_without_annotation.bp` and `reject/result_without_wrapper.bp` with the annotation
+rules they pinned — a function has one return, so it has one effect.
 `reject/use_tuple_arity.bp` and `reject/use_tuple_of_non_tuple.bp` are front 19 step 3's
 `use-tuple-arity` refusals, located at the binding.
 

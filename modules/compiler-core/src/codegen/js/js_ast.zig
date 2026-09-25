@@ -321,6 +321,16 @@ pub const Stmt = union(enum) {
     /// Statements written one per line at the same indentation — one botopink
     /// construct that lowers to several JS statements.
     group: []const Stmt,
+    /// `try { … } catch (<param>) { … }` — only the propagation guard of an
+    /// expression-position `try` uses it (`commonJS.zig` `guardExprTry`); a
+    /// botopink `try` never lowers to JS exceptions otherwise.
+    try_catch: TryCatch,
+};
+
+pub const TryCatch = struct {
+    body: Block,
+    param: []const u8,
+    handler: Block,
 };
 
 pub const Decl = struct {

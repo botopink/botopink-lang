@@ -2501,6 +2501,21 @@ decision 105's (22-loops): commonJS's `function*` and beam run
 `run/generator_break_value.bp`; the eager erlang and wasm scopes are pinned in
 `tests/language/expected-failures.txt`.
 
+A `try` with no rest of the function to nest in — an operand (`total + try r`,
+decision 122's consumer), a loop's body, an `if` arm — propagates on every backend:
+commonJS lowers it to `__bp_try(x)` (prelude `try_unwrap`), which throws
+`{ __bp_try: r }` to a guard `guardExprTry` wraps around the function, lambda,
+method, test or generator-loop body that used it (`return` it; `yield` it and end
+in a generator; the FAIL throw in a test); erlang lowers it to `tryThrowCase`
+(`throw({'__bp_try', E})`, or the scope's `break Error(e)` in a sequence) and wraps
+the function in `guardTry` — a `try` in the function's own statement sequence
+(`fn_top_body`, a lambda's body included) still nests the rest in its Ok arm;
+beam throws `{'__bp_try', E}` out of a loop's fun (`emitTryError`) to a catch
+section at the loop's call site (`guardLoopCall`, one y-slot counted by
+`bodyPropagates`), which returns it (or throws it on from a nested loop's fun);
+wasm's `lowerTryPropagate` pushes the Error and ends when a generator scope is
+open.
+
 `iter` / `stream` loops (decision 125) reach every backend as the prefixed
 `loop` node (`LoopExprOf.generator` = `.iterator` / `.stream`): the parser
 writes `iter for (xs) { … }` / `iter while (c) { … }` as

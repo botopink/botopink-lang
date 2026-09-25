@@ -870,6 +870,7 @@ const NameScan = struct {
                 break :blk false;
             },
             .group => |g| s.stmts(g, c),
+            .try_catch => |tc| s.stmts(tc.body.stmts, c) or s.stmts(tc.handler.stmts, c),
         };
     }
 
@@ -1059,6 +1060,11 @@ const Emitter = struct {
     /// so the runner's `catch` prints the FAIL line. Reset inside every nested
     /// function (a lambda is its own fallible context, or none).
     in_test_body: bool = false,
+    /// Set when the body being built lowered an expression-position `try`
+    /// through `__bp_try` (`total + try r`); the function-building site then
+    /// wraps the body in the guard that turns the thrown Result back into
+    /// the propagated one (`guardExprTry`). Saved and restored per function.
+    expr_try_used: bool = false,
     /// The innermost `loop` whose body is being built, which is what a
     /// `break` / `continue` / accumulator `yield` binds to. Reset to `.none`
     /// wherever a JS function boundary starts (an arrow, an IIFE), because a
@@ -1891,16 +1897,53 @@ const Emitter = struct {
         } }});
     }
 
+    /// The guard an expression-position `try` needs (`__bp_try` throws the
+    /// Error Result): `try { body } catch (__e) { if (<__e is one>) { … } throw
+    /// __e; }` — `return __e.__bp_try` in a function, `yield …; return;` in a
+    /// generator (decision 122: the error is the last item), the FAIL throw in
+    /// a `test` body (decision 74). A body that used no expression `try` is
+    /// returned as it is.
+    fn guardExprTry(self: *Emitter, body: []const js.Stmt, indent: usize) ![]const js.Stmt {
+        if (!self.expr_try_used) return body;
+        const e: js.Expr = .{ .name = "__e" };
+        const payload = try self.b.member(e, "__bp_try");
+        const is_try = try self.b.binaryBare("&&", try self.b.binaryBare("&&",
+            try self.b.binaryBare("!==", e, .null_),
+            try self.b.binaryBare("===", try self.b.unary("typeof ", e, false), .{ .quoted = "object" })),
+            try self.b.binaryBare("in", .{ .quoted = "__bp_try" }, e));
+        const on_error: []const js.Stmt = if (self.in_test_body) blk: {
+            const err_val = try self.b.member(payload, "error");
+            const is_string = try self.b.binaryBare("===", try self.b.unary("typeof ", err_val, false), .{ .quoted = "string" });
+            const rendered = try self.b.call(try self.b.member(.{ .name = "JSON" }, "stringify"), &.{err_val});
+            break :blk try self.b.stmts(&.{.{ .throw_ = try self.b.new_(.{ .name = "Error" }, &.{try self.b.ternary(is_string, err_val, rendered)}) }});
+        } else if (self.in_generator)
+            try self.b.stmts(&.{ .{ .expr = try self.b.yield_(payload) }, .{ .return_ = null } })
+        else
+            try self.b.stmts(&.{.{ .return_ = payload }});
+        return self.b.stmts(&.{.{ .try_catch = .{
+            .body = .{ .stmts = body, .indent = indent },
+            .param = "__e",
+            .handler = .{ .stmts = try self.b.stmts(&.{
+                try self.b.ifStmt(is_try, .{ .block = .{ .stmts = on_error, .layout = .spaced } }),
+                .{ .throw_ = e },
+            }), .indent = indent },
+        } }});
+    }
+
     fn buildFn(self: *Emitter, f: ast.FnDecl) anyerror!js.Stmt {
         self.try_seq = 0;
         const shape = effectShape(f.effect);
         const prev_in_generator = self.in_generator;
         self.in_generator = shape.is_generator;
         defer self.in_generator = prev_in_generator;
+        const prev_expr_try = self.expr_try_used;
+        self.expr_try_used = false;
+        defer self.expr_try_used = prev_expr_try;
         const params = try self.buildParams(f.params);
         const prev_fn_indent = self.current_indent;
         self.current_indent = 1;
         var body = try self.buildStmts(f.body);
+        body = @constCast(try self.guardExprTry(body, 1));
         self.current_indent = prev_fn_indent;
         const kw = shape.keyword();
         // A plain `function` only: a generator's `return f(…)` resumes an
@@ -1936,7 +1979,10 @@ const Emitter = struct {
         const prev_in_test = self.in_test_body;
         self.in_test_body = true;
         defer self.in_test_body = prev_in_test;
-        const body = try self.buildStmts(t.body);
+        const prev_expr_try = self.expr_try_used;
+        self.expr_try_used = false;
+        defer self.expr_try_used = prev_expr_try;
+        const body = try self.guardExprTry(try self.buildStmts(t.body), 1);
         self.current_indent = prev_fn_indent;
         return .{ .function = .{
             .keyword = "async function",
@@ -1973,7 +2019,10 @@ const Emitter = struct {
             const prev_in_generator = self.in_generator;
             self.in_generator = shape.is_generator;
             self.current_indent = 2;
-            const body = try self.buildStmts(m.body orelse &.{});
+            const prev_expr_try = self.expr_try_used;
+            self.expr_try_used = false;
+            const body = try self.guardExprTry(try self.buildStmts(m.body orelse &.{}), 2);
+            self.expr_try_used = prev_expr_try;
             self.current_indent = 0;
             self.in_generator = prev_in_generator;
             try members.append(self.arena(), .{
@@ -2163,7 +2212,10 @@ const Emitter = struct {
             const prev_in_generator = self.in_generator;
             self.in_generator = shape.is_generator;
             self.current_indent = 2;
-            const body = try self.buildStmts(m.body orelse &.{});
+            const prev_expr_try = self.expr_try_used;
+            self.expr_try_used = false;
+            const body = try self.guardExprTry(try self.buildStmts(m.body orelse &.{}), 2);
+            self.expr_try_used = prev_expr_try;
             self.current_indent = 0;
             self.in_generator = prev_in_generator;
             try members.append(self.arena(), .{
@@ -3003,8 +3055,12 @@ const Emitter = struct {
         }
         const ps = try self.arena().alloc(js.Param, params.len);
         for (params, 0..) |p, i| ps[i] = .{ .pattern = .{ .ident = p } };
+        const prev_expr_try = self.expr_try_used;
+        self.expr_try_used = false;
+        defer self.expr_try_used = prev_expr_try;
+        const lambda_body = try self.guardExprTry(try self.buildLambdaBody(body), self.current_indent);
         return self.b.arrowBlock(ps, .{
-            .stmts = try self.buildLambdaBody(body),
+            .stmts = lambda_body,
             .layout = .fixed,
             .indent = self.current_indent,
         });
@@ -3316,17 +3372,13 @@ const Emitter = struct {
                 .try_ => |t| {
                     // The parser always gives `try` an operand.
                     const val = t orelse return error.TryWithoutOperand;
-                    // Nested `try` in expression position: unwrap Ok, propagate Error
-                    // out of the surrounding IIFE. (Statement position is lowered in
-                    // `buildStmt` to a real enclosing-function `return`.)
-                    const n = self.try_seq;
-                    self.try_seq += 1;
-                    const temp = try self.tryName(n);
-                    return self.b.iife(&.{
-                        .{ .decl = .{ .pattern = .{ .name = temp }, .value = try self.buildExpr(val.*) } },
-                        try self.b.ifStmt(try self.errorIn(temp), .{ .return_ = .{ .name = temp } }),
-                        .{ .return_ = try self.b.member(.{ .name = temp }, "ok") },
-                    });
+                    // Nested `try` in expression position (`total + try r`):
+                    // `__bp_try(x)` answers the Ok value or throws the Error
+                    // Result to the enclosing function's guard, which returns
+                    // (or, in a generator, yields and ends) it — the same
+                    // propagation the statement form gets from `buildTryStmt`.
+                    self.expr_try_used = true;
+                    return self.b.call(self.helper(.try_unwrap), &.{try self.buildExpr(val.*)});
                 },
                 .await_ => |av| return self.b.await_(try self.buildExpr(av.*)),
                 // Generator `yield` (loop-accumulator yields are lowered at
@@ -3769,6 +3821,9 @@ const Emitter = struct {
             self.in_test_body = prev_in_test;
             self.current_indent = base;
         }
+        const prev_expr_try = self.expr_try_used;
+        self.expr_try_used = false;
+        defer self.expr_try_used = prev_expr_try;
         const body = try self.buildStmts(lp.body);
         const while_stmt = js.Stmt{ .while_ = .{
             .cond = .{ .name = "true" },
@@ -3777,7 +3832,7 @@ const Emitter = struct {
         return self.b.call(try self.b.paren(.{ .function = .{
             .keyword = shape.keyword(),
             .params = &.{},
-            .body = .{ .stmts = try self.b.stmts(&.{while_stmt}), .indent = base },
+            .body = .{ .stmts = try self.guardExprTry(try self.b.stmts(&.{while_stmt}), base), .indent = base },
         } }), &.{});
     }
 

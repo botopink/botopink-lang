@@ -487,6 +487,14 @@ pub fn writeStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
             try writeBlock(w, wh.body);
         },
         .block => |blk| try writeBlock(w, blk),
+        .try_catch => |tc| {
+            try w.writeAll("try ");
+            try writeBlock(w, tc.body);
+            try w.writeAll(" catch (");
+            try w.writeAll(tc.param);
+            try w.writeAll(") ");
+            try writeBlock(w, tc.handler);
+        },
         .function => |f| try writeFunctionDecl(w, f, indent),
         .class => |c| try writeClass(w, c, indent),
         .comment => |c| try writeComment(w, c),
