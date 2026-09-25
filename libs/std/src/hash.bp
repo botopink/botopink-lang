@@ -1,0 +1,84 @@
+//// std/hash — the digests the security fronts need in the shape they are
+//// compared in: base64url of the raw digest (RFC 7515), SHA-1 for the
+//// WebSocket accept key (RFC 6455), and a constant-time compare.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/crypto.html
+////              (`createHash`, `createHmac`, `.digest('base64' | 'base64url')`,
+////               `timingSafeEqual`)
+////   Erlang   — https://www.erlang.org/doc/apps/crypto/crypto.html
+////              (`crypto:hash/2`, `crypto:mac/4`, `crypto:hash_equals/2`)
+////              https://www.erlang.org/doc/apps/stdlib/base64.html
+////              (`base64:encode/2` with `#{mode => urlsafe, padding => false}`)
+////   RFC 4648 §5 (base64url), RFC 4231 (HMAC-SHA256), RFC 6455 §1.3
+////
+//// The hex digests (`sha256`, `sha512`, `md5`, `hmacSha256`) and
+//// `randomBytes` still live in `crypto.bp`; decision 106 folds the digests
+//// into this file at front 23. A std module cannot call another today, so
+//// the cells here call `crypto:hash/2` and `createHash` themselves — the
+//// duplication is in the template string, not in behaviour.
+////
+//// Text in: every input is the UTF-8 bytes of a `string` (there is no
+//// byte type — `language-gaps.md`), so an HMAC key is text too.
+
+// base64url (no padding) of the raw HMAC-SHA256 of `data` under `key` —
+// the JWS HS256 signature (RFC 7515 §3) and a session-cookie MAC.
+#[@External.Node("""require('crypto').createHmac('sha256', $0).update($1).digest('base64url')""")]
+#[@External.Erlang("""base64:encode(crypto:mac(hmac, sha256, $0, $1), #{mode => urlsafe, padding => false})""")]
+pub declare fn hmacSha256Base64Url(key: string, data: string) -> string;
+
+// Standard base64 (with padding) of the raw SHA-1 of `data` — the
+// `Sec-WebSocket-Accept` value of RFC 6455 §1.3. SHA-1 is here for that
+// handshake only; it is not a signature primitive.
+#[@External.Node("""require('crypto').createHash('sha1').update($0).digest('base64')""")]
+#[@External.Erlang("""base64:encode(crypto:hash(sha, $0))""")]
+pub declare fn sha1Base64(data: string) -> string;
+
+// base64url (no padding) of the raw SHA-256 of `data` — 43 characters.
+#[@External.Node("""require('crypto').createHash('sha256').update($0).digest('base64url')""")]
+#[@External.Erlang("""base64:encode(crypto:hash(sha256, $0), #{mode => urlsafe, padding => false})""")]
+pub declare fn sha256Base64Url(data: string) -> string;
+
+// `a == b` in time that depends only on the length, not on where the two
+// first differ — the compare a signature check must use (`==` on two
+// signature strings is a byte-at-a-time timing oracle on both backends).
+// Different lengths answer `false` without throwing: `timingSafeEqual` and
+// `crypto:hash_equals/2` both raise on a length mismatch, so each template
+// checks the byte length first (the length of a MAC is not secret).
+#[@External.Node("""(() => { const __a = Buffer.from($0, 'utf8'); const __b = Buffer.from($1, 'utf8'); return __a.length === __b.length && require('crypto').timingSafeEqual(__a, __b) })()""")]
+#[@External.Erlang("""(fun(__A, __B) -> byte_size(__A) =:= byte_size(__B) andalso crypto:hash_equals(__A, __B) end)($0, $1)""")]
+pub declare fn equalsConstantTime(a: string, b: string) -> bool;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "hash.hmacSha256Base64Url matches the published HMAC-SHA256 vector" {
+    // HMAC-SHA256("key", "The quick brown fox jumps over the lazy dog") is
+    // f7bc83f4…2d1a3cd8 in hex; this is the same 32 bytes as base64url.
+    val mac = hmacSha256Base64Url("key", "The quick brown fox jumps over the lazy dog");
+    assert mac == "97yD9DBThCSxMpjmqm-xQ-9NWaFJRhdZl0edvC0aPNg";
+    assert mac.length == 43;
+}
+
+test "hash.sha1Base64 reproduces the RFC 6455 accept key" {
+    val accept = sha1Base64("dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+    assert accept == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
+}
+
+test "hash.sha256Base64Url of the empty string is the published digest" {
+    assert sha256Base64Url("") == "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU";
+    assert sha256Base64Url("hello world") == "uU0nuZNNPgilLlLX2n2r-sSE7-N6U4DukIj3rOLvzek";
+}
+
+test "hash.equalsConstantTime compares a 43-character signature" {
+    val sig = hmacSha256Base64Url("secret", "header.payload");
+    assert sig.length == 43;
+    assert equalsConstantTime(sig, sig);
+    assert equalsConstantTime(sig, hmacSha256Base64Url("secret", "header.payload"));
+}
+
+test "hash.equalsConstantTime is false for a different value and never throws" {
+    assert equalsConstantTime("abcd", "abce").negate();
+    assert equalsConstantTime("abc", "abcd").negate();
+    assert equalsConstantTime("", "a").negate();
+    assert equalsConstantTime("", "");
+}

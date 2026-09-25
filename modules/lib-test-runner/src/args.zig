@@ -2,7 +2,7 @@
 ///
 ///   botopink-lib-test [--target <t>[,<t>…] | --target all]
 ///                     [--lib <name>] [--filter <s>] [--strict] [--bin <path>]
-///                     [--include-unsupported]
+///                     [--include-unsupported] [--jobs <n>]
 ///
 /// `--target` is repeatable and comma-separated. It accepts every codegen target
 /// plus the alias `node` → `commonJS`, and both the `--target <t>` and
@@ -74,12 +74,18 @@ pub const Options = struct {
     /// injected, plus per-cell `{"event":"cell_summary",…}` and a final
     /// `{"event":"run_summary",…}` record. Text-mode matrix is skipped.
     json: bool = false,
+    /// `--jobs <n>` — how many cells run at once. `null` → the runner's
+    /// default (`main.defaultJobs`: the CPU count, bounded by available
+    /// memory). Scheduling only: every cell runs either way, and the output is
+    /// emitted in discovery order, byte for byte what `--jobs 1` prints.
+    jobs: ?usize = null,
 };
 
 pub const ParseError = error{
     MissingArgument,
     InvalidTarget,
     UnknownFlag,
+    InvalidJobs,
 } || std.mem.Allocator.Error;
 
 /// Parse `args` (the slice *after* the program name). Allocations land in `arena`.
@@ -125,6 +131,12 @@ pub fn parse(arena: std.mem.Allocator, args: []const []const u8) ParseError!Opti
             i += 1;
             if (i >= args.len) return error.MissingArgument;
             opts.bin = args[i];
+        } else if (splitEq(a, "--jobs")) |v| {
+            opts.jobs = try parseJobs(v);
+        } else if (std.mem.eql(u8, a, "--jobs")) {
+            i += 1;
+            if (i >= args.len) return error.MissingArgument;
+            opts.jobs = try parseJobs(args[i]);
         } else if (std.mem.eql(u8, a, "--strict")) {
             opts.strict = true;
         } else if (std.mem.eql(u8, a, "--include-unsupported")) {
@@ -178,6 +190,13 @@ fn appendUnique(
         if (existing == t) return;
     }
     try out.append(arena, t);
+}
+
+/// A positive decimal worker count; `0` or anything else is refused.
+fn parseJobs(v: []const u8) ParseError!usize {
+    const n = std.fmt.parseUnsigned(usize, v, 10) catch return error.InvalidJobs;
+    if (n == 0) return error.InvalidJobs;
+    return n;
 }
 
 /// If `a` is exactly `flag` followed by `=`, return the value after `=`
@@ -334,4 +353,18 @@ test "--lib-root does not shadow --lib" {
     });
     try testing.expectEqualStrings("/store", opts.lib_roots[0]);
     try testing.expectEqualStrings("foo", opts.lib.?);
+}
+
+test "--jobs takes a positive count, both spellings; 0 and junk are refused" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const unset = try parse(arena.allocator(), &.{});
+    try testing.expect(unset.jobs == null);
+    const space = try parse(arena.allocator(), &.{ "--jobs", "3" });
+    try testing.expectEqual(@as(usize, 3), space.jobs.?);
+    const eq = try parse(arena.allocator(), &.{"--jobs=1"});
+    try testing.expectEqual(@as(usize, 1), eq.jobs.?);
+    try testing.expectError(error.InvalidJobs, parse(arena.allocator(), &.{ "--jobs", "0" }));
+    try testing.expectError(error.InvalidJobs, parse(arena.allocator(), &.{"--jobs=many"}));
+    try testing.expectError(error.MissingArgument, parse(arena.allocator(), &.{"--jobs"}));
 }

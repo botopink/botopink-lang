@@ -21,9 +21,25 @@ pub const Status = matrix.Status;
 /// target stops being skipped with no change here.
 const UNSUPPORTED_MARK = "currently supports only";
 
-/// Run one cell and return its status. Re-emits the child's captured stdout/stderr
-/// so its inline report still reaches the user. Returns an error only when the
-/// child cannot be spawned at all (e.g. the binary path is wrong).
+/// What one spawned cell left behind: the child's captured output and its
+/// verdict. `capture*` fills it (safe to call from a worker — it writes
+/// nothing to the runner's own stdout/stderr); `emit*` writes it out. The
+/// split is what lets `main.zig` run cells concurrently and still print every
+/// cell in discovery order, byte for byte what a serial run prints.
+pub const Captured = struct {
+    /// The child could not be spawned (e.g. the binary path is wrong). Re-raised
+    /// by `emit*` after the same message the serial runner printed.
+    spawn_err: ?anyerror = null,
+    stdout: []const u8 = "",
+    stderr: []const u8 = "",
+    status: Status = .fail,
+    counts: CellCounts = .{},
+};
+
+/// Run one `botopink test` cell and return its status: `captureTest` then
+/// `emitTest`. Re-emits the child's captured stdout/stderr so its inline
+/// report still reaches the user. Returns an error only when the child cannot
+/// be spawned at all (e.g. the binary path is wrong).
 ///
 /// When `json = true`, passes `--json` to the spawned `botopink test`,
 /// parses each JSONL record on the child's stdout, splices in
@@ -51,60 +67,121 @@ pub fn runCell(
     json: bool,
     restricted: bool,
 ) !Status {
-    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
-    try argv.append(arena, bin);
-    try argv.append(arena, "test");
-    try argv.append(arena, "--target");
-    try argv.append(arena, target.toString());
-    if (filter) |f| {
-        try argv.append(arena, "--filter");
-        try argv.append(arena, f);
-    }
-    if (json) try argv.append(arena, "--json");
+    const cap = captureTest(arena, io, bin, lib_dir, target, filter, strict, json);
+    return emitTest(arena, io, bin, lib_name, target, json, restricted, cap);
+}
 
+/// Spawn `botopink test --target <t>` in `lib_dir` and capture its output and
+/// verdict. Writes nothing to this process's stdout/stderr. `gpa` must be safe
+/// to use from the calling thread (a worker passes its own arena).
+pub fn captureTest(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    bin: []const u8,
+    lib_dir: []const u8,
+    target: Target,
+    filter: ?[]const u8,
+    strict: bool,
+    json: bool,
+) Captured {
+    var argv_buf: [7][]const u8 = undefined;
+    var n: usize = 0;
+    argv_buf[n] = bin;
+    n += 1;
+    argv_buf[n] = "test";
+    n += 1;
+    argv_buf[n] = "--target";
+    n += 1;
+    argv_buf[n] = target.toString();
+    n += 1;
+    if (filter) |f| {
+        argv_buf[n] = "--filter";
+        n += 1;
+        argv_buf[n] = f;
+        n += 1;
+    }
+    if (json) {
+        argv_buf[n] = "--json";
+        n += 1;
+    }
+    return spawnCaptured(gpa, io, argv_buf[0..n], lib_dir, .pass, strict, json);
+}
+
+/// Write a captured `botopink test` cell out — exactly what the serial runner
+/// wrote around the spawn: the text-mode header, the child's stdout (spliced
+/// JSONL under `--json`), its stderr, and the `cell_summary` record.
+pub fn emitTest(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    bin: []const u8,
+    lib_name: []const u8,
+    target: Target,
+    json: bool,
+    restricted: bool,
+    cap: Captured,
+) !Status {
     // Header to stderr (the status channel) so the cell's output is
     // attributable in text mode. JSON mode keeps stderr quiet so a tooling
     // consumer can pipe stderr without ANSI noise interleaving spawn errors.
     if (!json) std.debug.print("\n\x1b[36m── {s} · {s} ──\x1b[0m\n", .{ lib_name, target.toString() });
-
-    const result = std.process.run(arena, io, .{
-        .argv = argv.items,
-        .cwd = .{ .path = lib_dir },
-        .stdout_limit = .limited(16 * 1024 * 1024),
-        .stderr_limit = .limited(16 * 1024 * 1024),
-    }) catch |err| {
-        std.debug.print(
-            "\x1b[1m\x1b[31merror\x1b[0m: failed to spawn '{s}': {s}\n",
-            .{ bin, @errorName(err) },
-        );
-        return err;
-    };
+    if (cap.spawn_err) |err| return reportSpawnError(bin, err);
 
     // Re-emit the child's output inline.
     if (json) {
-        try emitJsonlWithCellFields(arena, io, lib_name, target.toString(), result.stdout);
-    } else if (result.stdout.len > 0) {
-        std.Io.File.stdout().writeStreamingAll(io, result.stdout) catch {};
+        try emitJsonlWithCellFields(arena, io, lib_name, target.toString(), cap.stdout);
+    } else if (cap.stdout.len > 0) {
+        std.Io.File.stdout().writeStreamingAll(io, cap.stdout) catch {};
     }
-    if (result.stderr.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stderr) catch {};
-
-    const code: u8 = switch (result.term) {
-        .exited => |c| c,
-        .signal, .stopped, .unknown => 1,
-    };
-
-    // Non-zero exit: distinguish a not-yet-runnable backend from a real failure.
-    const status = classifyWith(.pass, code, result.stdout, result.stderr, strict);
+    if (cap.stderr.len > 0) std.Io.File.stderr().writeStreamingAll(io, cap.stderr) catch {};
 
     if (json) {
         // The child's own `{"event":"summary",…}` record carries the test
         // tally; a cell that never compiled has none, which is `ran = false`
         // and NOT "zero failures" — the distinction is the whole point of the
         // ledger (a cell that does not build must never read as green).
-        const counts = parseChildSummary(result.stdout);
-        try emitCellSummary(arena, io, lib_name, target.toString(), status, restricted, counts);
+        try emitCellSummary(arena, io, lib_name, target.toString(), cap.status, restricted, cap.counts);
     }
-    return status;
+    return cap.status;
+}
+
+/// Spawn `argv` in `cwd`, capture both streams, and classify the exit:
+/// 0 is `ok_status`, the unsupported-target mark a skip (unless `strict`),
+/// anything else a failure (non-zero exit: distinguish a not-yet-runnable
+/// backend from a real failure). `json` also reads the child's test tally.
+fn spawnCaptured(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    argv: []const []const u8,
+    cwd: []const u8,
+    ok_status: Status,
+    strict: bool,
+    json: bool,
+) Captured {
+    const result = std.process.run(gpa, io, .{
+        .argv = argv,
+        .cwd = .{ .path = cwd },
+        .stdout_limit = .limited(16 * 1024 * 1024),
+        .stderr_limit = .limited(16 * 1024 * 1024),
+    }) catch |err| return .{ .spawn_err = err };
+
+    const code: u8 = switch (result.term) {
+        .exited => |c| c,
+        .signal, .stopped, .unknown => 1,
+    };
+    return .{
+        .stdout = result.stdout,
+        .stderr = result.stderr,
+        .status = classifyWith(ok_status, code, result.stdout, result.stderr, strict),
+        .counts = if (json) parseChildSummary(result.stdout) else .{},
+    };
+}
+
+fn reportSpawnError(bin: []const u8, err: anyerror) anyerror {
+    std.debug.print(
+        "\x1b[1m\x1b[31merror\x1b[0m: failed to spawn '{s}': {s}\n",
+        .{ bin, @errorName(err) },
+    );
+    return err;
 }
 
 /// The test tally of one cell, read from the child's JSONL.
@@ -167,36 +244,48 @@ pub fn compileCell(
     json: bool,
     restricted: bool,
 ) !Status {
-    const out_dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ COMPILE_OUT_DIR, target.toString() });
+    const cap = captureCompile(arena, io, bin, lib_dir, target, strict);
+    return emitCompile(arena, io, bin, lib_name, target, json, restricted, cap);
+}
+
+/// Spawn `botopink build --target <t> --out <COMPILE_OUT_DIR>/<t>` in
+/// `lib_dir` and capture its output and verdict. Writes nothing to this
+/// process's stdout/stderr.
+pub fn captureCompile(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    bin: []const u8,
+    lib_dir: []const u8,
+    target: Target,
+    strict: bool,
+) Captured {
+    const out_dir = std.fmt.allocPrint(gpa, "{s}/{s}", .{ COMPILE_OUT_DIR, target.toString() }) catch |err|
+        return .{ .spawn_err = err };
     const argv = [_][]const u8{ bin, "build", "--target", target.toString(), "--out", out_dir };
+    return spawnCaptured(gpa, io, &argv, lib_dir, .no_tests, strict, false);
+}
 
+/// Write a captured compile-only cell out, as the serial runner did.
+pub fn emitCompile(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    bin: []const u8,
+    lib_name: []const u8,
+    target: Target,
+    json: bool,
+    restricted: bool,
+    cap: Captured,
+) !Status {
     if (!json) std.debug.print("\n\x1b[36m── {s} · {s} (no tests: compile only) ──\x1b[0m\n", .{ lib_name, target.toString() });
+    if (cap.spawn_err) |err| return reportSpawnError(bin, err);
 
-    const result = std.process.run(arena, io, .{
-        .argv = &argv,
-        .cwd = .{ .path = lib_dir },
-        .stdout_limit = .limited(16 * 1024 * 1024),
-        .stderr_limit = .limited(16 * 1024 * 1024),
-    }) catch |err| {
-        std.debug.print(
-            "\x1b[1m\x1b[31merror\x1b[0m: failed to spawn '{s}': {s}\n",
-            .{ bin, @errorName(err) },
-        );
-        return err;
-    };
+    if (cap.stdout.len > 0) std.Io.File.stderr().writeStreamingAll(io, cap.stdout) catch {};
+    if (cap.stderr.len > 0) std.Io.File.stderr().writeStreamingAll(io, cap.stderr) catch {};
 
-    if (result.stdout.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stdout) catch {};
-    if (result.stderr.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stderr) catch {};
-
-    const code: u8 = switch (result.term) {
-        .exited => |c| c,
-        .signal, .stopped, .unknown => 1,
-    };
-    const status = classifyWith(.no_tests, code, result.stdout, result.stderr, strict);
     // No test ran: `ran = false`, so a compile red is never reported as
     // "0 failures" by the ledger.
-    if (json) try emitCellSummary(arena, io, lib_name, target.toString(), status, restricted, .{});
-    return status;
+    if (json) try emitCellSummary(arena, io, lib_name, target.toString(), cap.status, restricted, .{});
+    return cap.status;
 }
 
 /// A child's verdict from its exit code and output: 0 is `ok_status`'s pass, a
