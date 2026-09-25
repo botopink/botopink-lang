@@ -37,3 +37,4 @@ pub mod json;
 pub mod fs;
 pub mod http;
 pub mod async;
+pub mod content_hash;
