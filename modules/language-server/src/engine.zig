@@ -2875,7 +2875,16 @@ pub fn signatureHelp(
     for (bindings) |b| {
         if (!std.mem.eql(u8, b.name, fn_name)) continue;
         const t = b.type_.deref();
-        if (t.* != .func) continue;
+        if (t.* != .func) {
+            // A `type Name(f: T, …)` constructor is called like a fn but its
+            // binding is a `named` type (the checker's `buildRecordDeclName`
+            // text), not a `.func`: the field list is read from the
+            // declaration in this document instead (front 11, C-19).
+            if (t.* == .named) {
+                if (try recordCtorSignature(arena, source, fn_name, active_param)) |sh| return sh;
+            }
+            continue;
+        }
         const func = t.*.func;
 
         // Parameter labels are `name: Type` whenever the declaration is in this
@@ -3008,6 +3017,84 @@ fn builtinMethodSignature(
         };
         const active = if (nparams > 0)
             @min(active_param, @as(u32, @intCast(nparams - 1)))
+        else
+            0;
+        return proto.SignatureHelp{
+            .signatures = sigs,
+            .activeSignature = 0,
+            .activeParameter = active,
+        };
+    }
+    return null;
+}
+
+/// Signature help for a call of the `type <name>(f: T, …)` constructor declared
+/// in `source`: `Name(x: i32, y: i32) -> Name`, one parameter label per field,
+/// spelled exactly as the declaration writes it — the same text the hover
+/// prints, so nothing here can regress to a `record { … }` surface. Null when
+/// the document declares no such record (an enum, a fieldless `type`, or a
+/// declaration living in another module).
+fn recordCtorSignature(
+    arena: std.mem.Allocator,
+    source: []const u8,
+    name: []const u8,
+    active_param: u32,
+) !?proto.SignatureHelp {
+    var lexer = Lexer.init(source);
+    const tokens = lexer.scanAll(arena) catch return null;
+
+    var i: usize = 0;
+    while (i < tokens.len) : (i += 1) {
+        if (tokens[i].kind != .type) continue;
+        const span = typeDeclSpan(tokens, i) orelse continue;
+        const name_idx = span.name orelse continue;
+        if (!std.mem.eql(u8, tokens[name_idx].lexeme, name)) continue;
+        const fields = span.fields orelse return null;
+
+        // Each depth-1 comma-separated segment of `(…)` is one label, as the
+        // source spells it (`x: i32`, `tags: string[] = []`).
+        var labels: std.ArrayList([]const u8) = .empty;
+        var seg_start: usize = fields.open + 1;
+        var depth: u32 = 0;
+        var k = fields.open + 1;
+        while (k <= fields.close) : (k += 1) {
+            const kind = tokens[k].kind;
+            const closes = k == fields.close;
+            if (!closes) switch (kind) {
+                .leftParenthesis, .leftBrace, .leftSquareBracket, .lessThan => depth += 1,
+                .rightParenthesis, .rightBrace, .rightSquareBracket, .greaterThan => depth -|= 1,
+                else => {},
+            };
+            if (!closes and !(kind == .comma and depth == 0)) continue;
+            if (k > seg_start) {
+                const first = tokens[seg_start];
+                const last = tokens[k - 1];
+                const text = std.mem.trim(u8, source[first.offset .. last.offset + last.lexeme.len], " \t\r\n");
+                if (text.len > 0) try labels.append(arena, text);
+            }
+            seg_start = k + 1;
+        }
+
+        var lbl: std.ArrayList(u8) = .empty;
+        try lbl.appendSlice(arena, name);
+        try lbl.append(arena, '(');
+        for (labels.items, 0..) |pl, pi| {
+            if (pi > 0) try lbl.appendSlice(arena, ", ");
+            try lbl.appendSlice(arena, pl);
+        }
+        try lbl.appendSlice(arena, ") -> ");
+        try lbl.appendSlice(arena, name);
+
+        const params = try arena.alloc(proto.ParameterInformation, labels.items.len);
+        for (labels.items, 0..) |pl, pi| params[pi] = .{ .label = pl };
+
+        const sigs = try arena.alloc(proto.SignatureInformation, 1);
+        sigs[0] = .{
+            .label = try lbl.toOwnedSlice(arena),
+            .parameters = if (params.len > 0) params else null,
+        };
+        const active = if (params.len > 0)
+            @min(active_param, @as(u32, @intCast(params.len - 1)))
         else
             0;
         return proto.SignatureHelp{
