@@ -1,12 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Element = type implement @Context<Element, Element> { }
-fn state(initial: i32) -> @Context<Element, i32> {
-    initial;
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+    val push = { action -> f(base, action) };
+    #(base, push);
 }
 #[@context]
-fn Counter() -> Element {
-    val #(count, setCount) = use state(0);
+fn LikeWidget() -> Element {
+    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+    push(shown);
     Element();
 }
 ```
@@ -17,12 +19,18 @@ class Element {
 }
 Element.prototype.__bp = "Element";
 
-function state(initial) {
-    initial;
+function optimistic(base, f) {
+    const push = (action) => {
+    return f(base, action);
+};
+    [base, push];
 }
 
-function Counter() {
-    const [ count, setCount ] = state(0);
+function LikeWidget() {
+    const [ shown, push ] = optimistic(12, (c, a) => {
+    return (c + a);
+});
+    push(shown);
     new Element();
 }
 ```

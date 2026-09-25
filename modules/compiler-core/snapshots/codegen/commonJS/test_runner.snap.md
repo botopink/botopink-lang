@@ -104,13 +104,13 @@ TEST main.bp:5 addition works
 ----- RUN LOG -----
 ```logs
 ```
-  duration 0ms
+  duration <ms>ms
   ok   addition works
 TEST main.bp:10 test_1
 ----- RUN LOG -----
 ```logs
 ```
-  duration 0ms
+  duration <ms>ms
   ok   test_1
 2 passed, 0 failed
 ```

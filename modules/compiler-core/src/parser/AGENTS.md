@@ -58,7 +58,7 @@ parser/
 │                     the honest AST (an optional handler) waits for the formatter front
 ├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig
 └── tests/         ← parser tests, split by feature
-    ├── helpers.zig       ← shared harness (`assertParser`/`expectParseError`/…)
+    ├── helpers.zig       ← shared harness (`assertParser`/`expectParseError`/`expectErrorAt(src, kind, line, col)`/…)
     ├── imports.zig       ← import/activate/delegate declarations
     ├── declarations.zig  ← record/enum/interface/implement, val/pub/fn, effect fns, test blocks
     ├── expressions.zig   ← operator/lambda/array/tuple/case/builtin/control-flow
@@ -67,7 +67,7 @@ parser/
     ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
     ├── decision8.zig     ← decision 8's grammar, one section per row: `unknown` (N19), union types (N20), `is` (N21), `case` arms (N22)
     ├── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
-    └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body, R5 the index expression, R7 a bodyless `fn`, R8 `??`)
+    └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body, R5 the index expression, R7 a bodyless `fn`, R8 `??`, R9 the catch-all names its token, R10 the decided-against forms refused by name)
 ```
 
 ## Testing pattern
@@ -95,8 +95,8 @@ block that reads something between the `{` and its first statement — a prologu
 | `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` | inherits |
 | `if` then-branch | `{ x -> ` or `{ _ -> ` — the branch's value binding | `requiredExceptLast` | inherits |
 | lambda `{ a, b -> … }` | the parameter list | `optional` | fresh |
-| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `required` | fresh |
-| `loop (…) { x -> … }` body | the parameter list | `required` | inherits |
+| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `requiredExceptLast` (was `required` — the one block whose last statement could not drop its `;`; front 15 step 4b) | fresh |
+| `loop (…) { x -> … }` body | the parameter list | `requiredExceptLast` (was `required`; front 15 step 4b, with the trailing lambda) | inherits |
 
 **The static prefix of `use`** (front 19 of 1.0.10-beta, decision 88) is a
 property of the *function body*: every `use` precedes every `if`, `case`, `loop`
@@ -229,6 +229,9 @@ places, and the reason is trailing lambdas:
   consume trailing lambdas (`xs.forEach { … }`).
 
 The links are `.field`, `?.field`, `.method(args)`, `(args)` and `[index]`.
+At its exit `parsePostfixChain` refuses a decided-against infix form by name
+(`absentInfixKind`: the ternary's `?`, the bitwise operators) — see
+*A decided-against form is refused by name* below.
 
 A **builtin call** (`@name(args)`) continues with `parsePostfixChain` too
 (1.0.10-beta decision 73 — `@src().line` reads a field of the record `@src()`
@@ -416,6 +419,44 @@ carets under whatever happened to sit at that column.
 
 `line`/`col` are carried too, for callers that have no source text.
 
+## A decided-against form is refused by name (front 15 step 3)
+
+`unexpectedToken` is the catch-all, and a form the language decided against
+must never reach it: a reader cannot tell a deliberate absence from a gap when
+both say "this token cannot appear here" (`surface-gaps.md` of
+`specs/1.0.10-beta/00-compiler-carry-over/15-language-surface/`). Each such
+form has its own `ParseErrorType`, an `errorMessages` arm in `print.zig` that
+names the replacement — or says there is none — and an
+`expectErrorAt(src, kind, line, col)` case in `tests/language_surface.zig`
+(R10). The refusal is raised **once, at the site every spelling of the form
+reaches**, never per arm:
+
+| Form | Kind | Raised at |
+|---|---|---|
+| `c ? a : b` | `ternaryAbsent` | `parsePostfixChain`'s exit (`absentInfixKind`) — at the `?` |
+| `1 << 2`, `a >> 1`, `a & b`, `a ^ b` | `bitwiseOperatorAbsent` | same exit — at the operator |
+| `'a'` | `charLiteralAbsent` | `parsePrimary`, at the literal (`lexer.zig` hands it over as one `charLiteral` token) |
+| `fn inner(…) { … }` in a body | `nestedFnDecl` | `parsePrimary`'s `fn` arm, at the `fn` |
+| `[..a, 3]` | `listSpreadNotLast` | `parseArrayLitExpr`, at the element after the spread (the kind existed; nothing raised it) |
+| `[...a]` | `listSpreadDotDotDot` | `parseArrayLitExpr`, at the `...` |
+| `type P(…)` then `implement A for P { … }` | `implementClauseFor` | `types.zig` `parseImplementClause`, at the `for` — the bodyless type took `implement A` as its clause |
+| `#(x: 1, y: 2)` | `tupleLiteralLabel` | `parseTupleLitExpr`, at the label — the labeled construction is `01-checker`'s §6, and this replaces `novalBinding` at the value |
+
+**The infix refusals are hoisted the way the chain links are.** Every receiver
+ends at `parsePostfixChain`'s exit, so that is where `absentInfixKind` is
+asked, once; `parseExpr`'s call path (the statement-position chain, which
+returns before the climber when no operator follows) treats the same tokens as
+"the expression continues" in `isBinaryOpNext`, rolls back, and reaches the one
+site — `g(1) ? 1 : 2` was the case that proved a second copy would be needed
+otherwise. Nothing that parses puts `?`, `<<`, `>>`, `&` or `^` after a
+complete operand: `?` in a type is `parseTypeRef`'s, `>>` closing two generic
+lists is `parseTypeRef`'s, a pattern's `|` is `patterns.zig`'s.
+
+**Adding one:** a new decided-against form gets a variant beside these, an arm
+in `print.zig` (`removedErrorUnion` and `patternRangeExclusive` are the
+models), the check at the one site its every spelling reaches, and an R10 case.
+`grep -c unexpectedToken` over `src/parser/**` does not grow.
+
 ## `${…}` interpolation holes
 
 A hole's source is sub-lexed and sub-parsed on its own (`makeStringExpr` in
@@ -458,6 +499,10 @@ shapes (vocabulary in `libs/std/AGENTS.md`):
 - **Enum/member chains** — `.Erlang`, `Target.Erlang`: adjacent `.`/identifier
   tokens fold into one lexeme spanning the source bytes. A bare identifier or
   string literal goes through unchanged.
+- **A negative literal** — `#[mark(-20)]`: the `-` and the digits span into one
+  lexeme, `"-20"`, so the reader that evaluates the argument sees the number
+  (front 15 step 4b). It used to be the catch-all at the digits, with the `-`
+  taken as the whole argument.
 
 ## Module-level `var` (front 17, decision 38)
 
@@ -466,7 +511,8 @@ shapes (vocabulary in `libs/std/AGENTS.md`):
 reads it). An annotated binding — `#[@BeamMemory.Ets(keyed = true)] var hits:
 i32 = 0;` — is dispatched from the annotation branch of the top-level loop, and
 the annotations land on `ValDecl.annotations`; only the plain form takes them
-(an annotated shorthand is `UnexpectedToken`). What the annotation may say is
+(an annotated shorthand is `UnexpectedToken`, located at the annotation's first
+token rather than at whatever follows the form). What the annotation may say is
 checked by inference, not here.
 
 ## Comments and declaration ids

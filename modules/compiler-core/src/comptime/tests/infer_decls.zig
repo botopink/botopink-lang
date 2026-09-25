@@ -555,6 +555,59 @@ test "infer: external ---- fn no body typechecks" {
     );
 }
 
+// Front 20 F9 — `inline` on the two variants that declare it is accepted, in
+// both spellings the parser reads (`inline = true` and the bare trailing bool).
+test "infer: external ---- inline on erlang and beam typechecks" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\#[@External.Erlang("max($args)", inline = true),
+        \\  @External.Beam("""
+        \\  {call_ext, 2, {extfunc, erlang, max, 2}}.
+        \\  """, true)]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
+        \\
+        \\fn main() {
+        \\    val n = biggest(1, 2);
+        \\}
+    );
+}
+
+// `infer.zig`'s `external_variants` restates `pub type External implement
+// Annotation { … }` from `builtins.d.bp`, which the compiler does not parse
+// (the same reason `effect_chain.zig` restates the `extends` clauses). The
+// test reads the file and fails in both directions: a variant declared there
+// that the table does not carry, or whose `inline` the table gets wrong, and a
+// table row the file does not declare.
+test "infer: external ---- the variant table agrees with builtins.d.bp" {
+    const source: []const u8 = @import("std_prelude").builtins;
+    const head = "pub type External implement Annotation {";
+    const at = std.mem.indexOf(u8, source, head) orelse return error.ExternalNotDeclared;
+    const close = std.mem.indexOfScalarPos(u8, source, at + head.len, '}') orelse return error.ExternalNotClosed;
+    var declared: usize = 0;
+    var lines = std.mem.splitScalar(u8, source[at + head.len .. close], '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r,");
+        if (line.len == 0) continue;
+        const paren = std.mem.indexOfScalar(u8, line, '(') orelse return error.VariantWithoutPayload;
+        const name = line[0..paren];
+        const declares_inline = std.mem.indexOf(u8, line, "inline: bool = false") != null;
+        declared += 1;
+        const row = for (inferMod.external_variants) |v| {
+            if (std.mem.eql(u8, v.name, name)) break v;
+        } else {
+            std.debug.print("builtins.d.bp declares `External.{s}` and `external_variants` does not carry it\n", .{name});
+            return error.VariantNotCarried;
+        };
+        if (row.declares_inline != declares_inline) {
+            std.debug.print(
+                "`External.{s}`: builtins.d.bp {s} `inline`, `external_variants` says {s}\n",
+                .{ name, if (declares_inline) "declares" else "does not declare", if (row.declares_inline) "it does" else "it does not" },
+            );
+            return error.InlineDrifted;
+        }
+    }
+    try std.testing.expectEqual(inferMod.external_variants.len, declared);
+}
+
 test "infer: std package ---- import binds namespace" {
     try h.assertInfersOk(std.testing.allocator,
         \\import {order} from "std";

@@ -869,9 +869,16 @@ The rules, each with its diagnostic:
   to the top of the function body, before any `if`, `case`, `loop`, or
   `return``. A lambda body is another function: its own prefix starts over, so
   `use memo({ -> return count * 2; })` keeps the enclosing prefix intact.
-- **The type is `R`.** `val c = use state(0)` binds `c : State`. A tuple `R`
-  destructures positionally, `val #(a, b) = use pair()`, but its element types
-  are not propagated yet — each name is a fresh type variable (front 19 step 3).
+- **The type is `R`.** `val c = use state(0)` binds `c : State`, and
+  `val {value, set} = use state(0)` binds each name to the field of `R` it
+  names. A tuple `R` destructures positionally: with `optimistic : (i32, fn(i32,
+  i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)>`,
+  `val #(shown, push) = use optimistic(12, addLike)` binds `shown : i32` and
+  `push : fn(action: i32) -> i32`. The pattern's arity is the tuple's, and the
+  hook's `R` has to be a tuple; either failing is refused at the binding —
+  `` use-tuple-arity: `val #(…)` binds 1 name(s) but the hook yields a tuple
+  of 2 `` and `` use-tuple-arity: `val #(…)` binds 2 name(s) but the hook
+  yields 'i32', which is not a tuple `` — with no flag (decision 67).
 - **`use` never leaves a function body.** There is no module-level `use` and no
   `use client;` / `use server;` directive (decision 87 of 1.0.10-beta): a
   framework's boundary markers are its own decorators (`#[client]`).
@@ -1091,6 +1098,14 @@ Only `External.<Target>` is read. A lower-case `@external(node, …)` is a locat
 error naming the capitalised form (`` `#[@external]` binds no host — an external
 target is written `External.<Target>` ``), rather than a function left silently
 without a host.
+
+`inline = true`, written last on `External.Erlang` or `External.Beam`, opts the
+declaration out of the dispatch table so the backend's hand-coded shape keeps
+emitting. Those two variants alone declare it, because the erlang and beam
+emitters alone read it. Written on `Node`, `Wasm` or `Typescript`, anywhere but
+last, or with a value that is not a bool, it would be a switch nothing reads, so
+it is refused at the annotation (`` `External.Node` declares no `inline` — the
+flag is read by the erlang and beam emitters only ``).
 
 A relative path (`"./helpers.mjs"`, `"helpers"` on erlang) names a **sidecar** the
 library keeps beside its sources, in `<src>/sidecars/` or `<src>/`. `botopink

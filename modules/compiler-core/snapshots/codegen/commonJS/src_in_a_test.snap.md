@@ -142,14 +142,14 @@ TEST main.bp:2 src: in a test
 ```logs
 main.bp 3 15 src: in a test
 ```
-  duration 0ms
+  duration <ms>ms
   ok   src: in a test
 TEST main.bp:6 test_1
 ----- RUN LOG -----
 ```logs
 test_1
 ```
-  duration 0ms
+  duration <ms>ms
   ok   test_1
 2 passed, 0 failed
 ```

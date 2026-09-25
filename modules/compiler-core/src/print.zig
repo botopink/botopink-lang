@@ -55,6 +55,51 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         // wrong, and says that a DELIBERATE refusal looks different — which is
         // the distinction whose absence let seven missing forms be routed
         // around instead of filed (front 15).
+        .ternaryAbsent => .{
+            .code = "ternary-absent",
+            .message = "there is no `c ? a : b`",
+            .caretCaption = "write `if (c) { a } else { b }`",
+            .hint = "`if` is an expression: `val x = if (c) { a } else { b };` — and `a ?? b` is the default of an optional.",
+        },
+        .bitwiseOperatorAbsent => .{
+            .code = "bitwise-operator-absent",
+            .message = "the language has no bitwise operators",
+            .caretCaption = "not an operator",
+            .lexemeInCaption = true,
+            .hint = "There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[@External.<Target>(…)]` is the way to a bit operation.",
+        },
+        .charLiteralAbsent => .{
+            .code = "char-literal-absent",
+            .message = "there is no character literal",
+            .caretCaption = "write a one-character string, `\"a\"`",
+            .hint = "A character is a string of length one: `\"a\"`, and `s[0]` reads one from a string.",
+        },
+        .nestedFnDecl => .{
+            .code = "nested-fn-decl",
+            .message = "a `fn` is declared at module level, not inside a body",
+            .caretCaption = "bind a lambda instead",
+            .hint = "Inside a body a function is a value: `val inner = { x -> x + 1 };` — or move the declaration to module level.",
+        },
+        .listSpreadDotDotDot => .{
+            .code = "list-spread-dot-dot-dot",
+            .message = "`...` is a pattern's inclusive range, not a spread",
+            .caretCaption = "write `..`",
+            .hint = "An array literal spreads with two dots, and the spread comes last: `[1, 2, ..rest]`.",
+        },
+        .implementClauseFor => .{
+            .code = "implement-clause-for",
+            .message = "`for` in a type's `implement` clause",
+            .caretCaption = "the type is the receiver already",
+            .note = "the `implement` after a bodyless `type P(…)` is the TYPE's clause, `type P(…) implement A { … }`",
+            .hint = "Either write the clause, `type P(x: i32) implement A { … }`, or name a standalone block: `Impl implement A for P { … }`.",
+        },
+        .tupleLiteralLabel => .{
+            .code = "tuple-literal-label",
+            .message = "a tuple literal is positional",
+            .caretCaption = "no label here",
+            .note = "labels belong to the tuple TYPE, `#(x: i32, y: i32)`; the labeled construction `#(x: 1, y: 2)` is not parsed",
+            .hint = "Write `#(1, 2)` and read `.0` / `.1`, or read the labeled type's members by their labels.",
+        },
         .unexpectedToken => .{
             .message = "this token cannot appear here",
             .caretCaption = "unexpected",
@@ -70,8 +115,10 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .hint = "Provide a tail, e.g. [1, 2, ..rest]",
         },
         .listSpreadNotLast => .{
-            .message = "Elements cannot appear after a spread",
-            .hint = "Lists are singly-linked. Prepend items and reverse when done.",
+            .code = "list-spread-not-last",
+            .message = "the spread of an array literal comes last",
+            .caretCaption = "nothing after `..rest`",
+            .hint = "`[1, 2, ..rest]` — write the fixed elements first and the spread last.",
         },
         .uselessSpread => .{
             .message = "This spread does nothing",

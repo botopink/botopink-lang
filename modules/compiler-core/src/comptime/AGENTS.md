@@ -79,6 +79,19 @@ annotation and was dropped — the `declare fn` bound no host and `check` exited
 spells the target capitalised. It fires on the `@`-prefixed builtin form only: `#[external(…)]`
 without the `@` is a user-defined attribute and means something else.
 
+**An `inline` no emitter reads is refused** (front 20 F9, decision 67). `External`'s flag is read
+by `codegen/erlang.zig` and `codegen/beam_asm.zig` alone (`hasExternalInline`, over the LAST
+argument), so `builtins.d.bp` declares it on `Erlang` and `Beam` alone — and until this rule the
+checker never read that declaration, so `#[@External.Node("…", inline = true)]` checked and ran
+as a switch that did nothing. `external_variants` restates the five variants with their
+`declares_inline` bit (`comptime/tests/infer_decls.zig` reads `builtins.d.bp` through
+`std_prelude` and fails in both directions when they drift), and `refuseUnreadInline` reds at
+the annotation for the three unread shapes: the flag on `Node` / `Wasm` / `Typescript`, the flag
+anywhere but last, and a value that is not `true` / `false`. It runs from
+`validateExternalAnnotation` for a `declare fn` and from `validateExternalInline` — a program
+walk beside `validateEffectAnnotations` — for a behavior's and a type's methods, which the two
+emitters read the same way.
+
 **The wrapper without its annotation is an error too** (06 N25, decision 8 § 9).
 `@Future` / `@Iterator` / `@FutureGenerator` already demanded one; `@Result` did not — a plain
 `fn f() -> @Result<D, E>` was accepted and deliberately given NO special treatment (`return` did
@@ -374,7 +387,10 @@ as `R`. `effectMatchesReturn(env, .context, T)` accepts the `@Context<…>` wrap
 or a named type with a `contextBase`, so `#[@context] fn … -> Element` passes
 the effect ↔ wrapper check, and `returnTargetFor` makes such a body's `return`
 unify with the owner type as written. `val {v, s} = use …` binds leniently via
-`bindUseDestructure`; a tuple `R` binds fresh vars (front 19 step 3).
+`bindUseDestructure`; `val #(a, b) = use …` (front 19 step 3) binds each name to
+the element of a tuple `R` at its position, commits an unresolved `R` to a tuple
+of the pattern's arity, and refuses another arity or a non-tuple `R` at the
+binding (`useTupleArity` — `use-tuple-arity`, decision 67).
 
 Codegen lowers `use f(x)` to `f(x)` on **every** target — the prefix is the
 activation the checker validated, never a rename or an inferred dependency

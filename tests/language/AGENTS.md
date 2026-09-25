@@ -32,9 +32,10 @@ the rule; a capability decision 8 does not legislate gets a plain sentence.
 
 Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, §10), `effect_*`,
 `comptime_*` / `decorator_*`, `external_*`, `generic_*`, `string_*` / `array_*`, `type_identity_*`,
-`optional*` (`optional`, and decision 54's `optional_null_pattern` / `optional_variant_pattern`),
+`optional*` (`optional`, decision 54's `optional_null_pattern` / `optional_variant_pattern`, and
+1.0.10-beta's `00 · 05-wasm` `run/optional_record_carrier` — § `optional_record_carrier` below),
 `context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, two test cells, one run
-cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
+cell and eleven reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
 `run/index_past_the_end_is_null` — renamed from `…_fails` when C-02 landed, because the
 amendment makes an index past the end `null` and not a failure — `run/index_at_optional`,
 `run/index_tuple` with `reject/index_tuple_computed` and `reject/index_tuple_out_of_range`
@@ -70,20 +71,26 @@ because the checker refuses `effect-on-behavior-method-forbidden`), and
 `effect_chain` (1.0.10-beta front 20,
 decisions 95 and 98: one `test/`, two `run/` and five `reject/` cells; front 20
 also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
-decision 96, and `run/option_unwrap_or` + `reject/option_expect_removed` to
-`optional*` for F11), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
+decision 96, `run/option_unwrap_or` + `reject/option_expect_removed` to
+`optional*` for F11, and `reject/external_inline_unread` to `external_*` for F9 — `inline` on
+a variant whose emitter never reads it is refused at the annotation), and `enum_section_*` (1.0.10-beta's `00 · 01-checker`: which enum a
 leading-dot section path names — `run/enum_section_expected_type`, where two enums carry
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
 `reject/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
 candidates, and `run/enum_section_qualified_path`, where `Token.Color.Red.500` names its enum and
-needs no expectation at all), `run/case_arm_name_is_also_a_type` (§5.3b's collision: a
+needs no expectation at all), `run/case_value_string_arms` (1.0.10-beta's `00 · 05-wasm`: a `case` used as a VALUE with string
+arms, in BOTH arm spellings — the two took different paths through `wat.zig` and only the ARROW one
+was a string, so `val a = case x { 5 { "five" } … }` printed the arm's heap address `256` on wasm at
+exit 0 where the other three printed `five`; the `-> string` function form is `run/case_values`'
+question and not this one, because a declared return type registers the shape on its own),
+`run/case_arm_name_is_also_a_type` (§5.3b's collision: a
 module declaring a record `Block` and an enum section carrying a `Block` leaf — the arm over the
 section is the VARIANT, the arm over a union of records is still the type, and the cell asserts
 both values on all four targets. commonJS tested only `instanceof`, so the section arm never
 fired and the `case` answered `undefined` at exit 0, which is how emilia read 223/2 on commonJS
 against 225/0 on erlang from one source), and `narrowing_*` (the same front's
 `fix/null-narrowing`: which shapes of a null test rebind the name they test —
-§ `narrowing_*` below). One scenario group per
+§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `run/module_var` — a module-level `var` written twice through a `fn` prints `2` on commonJS and wasm and is listed against C-10 on erlang (unbound `Hits`, does not compile) and beam (the write is dropped and it prints `0` at exit 0 — the silent one); `test/beam_memory_noop` — the annotation is a no-op off the BEAM, each test writing and reading back through the binding (erlang listed against C-10 for the same reason); and seven `reject/` cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. The per-mode BEAM cells — `ProcessDict`, `Ets` (five processes × three increments reading `15`), `PersistentTerm` — are C-10's and specified in its front README, not written here, because there is nothing to run them against. One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -112,13 +119,35 @@ red the assignment — narrowing it would break programs that work today. `if (o
 does not narrow either: only a plain NAME is rebindable. `case x { null { … } v { … } }` and `if (x)
 { v -> … }` narrow already, each through a channel of its own.
 
-`run/narrowing_null_check.bp` passes on commonJS, erlang and beam; the guard-clause cell passes on
-commonJS and erlang. Their `expected-failures.txt` lines carry the two reasons, and neither is the
-checker's: wasm's `?T` is a box that a narrowed NAME is never unboxed from (`05 step 2` D1 — the
-lines TRAPPED before narrowing landed and answer a heap address now, which is the same missing
-unbox), and beam does not compile a module holding an optional reader in a record method AND one in
-a top-level `fn` (`UnknownFunction`, no location — the same program written with `??` fails
-identically).
+`run/narrowing_null_check.bp` passes on all four targets since `00 · 05-wasm` landed the missing
+unbox (`fix/wasm-optional`): a name a `!= null` test narrows is its PAYLOAD for the branch on wasm
+too, which is what the box needed and what the optional-binding form `if (x) { v -> … }` had always
+done. `run/narrowing_null_guard_clause.bp` passes on commonJS, erlang and wasm; its one remaining
+`expected-failures.txt` line is beam's and is not the checker's either — beam does not compile a
+module holding an optional reader in a record method AND one in a top-level `fn`
+(`UnknownFunction`, no location — the same program written with `??` fails identically).
+
+### `optional_record_carrier`
+
+One cell of 1.0.10-beta's `00 · 05-wasm` (`fix/wasm-optional`), green on all four targets, and
+here rather than in `narrowing_*` because what it pins is the wasm **carrier** of a `?T` and not
+the checker rebinding a name. A `?T` is an i32 offset there and `0` is absence (decision 3), so a
+scalar payload goes in a box and a pointer payload — a string, a record, an array — is its own
+offset; a RECORD element of an array was written into a box and read as a bare pointer, one
+indirection short at every reader. `es.at(0)?.key.length()` answered `276` where the other three
+answered `3`, `val k: string = first.key;` inside `if (first != null)` answered `272` where they
+answered `abc`, and `@print(es.at(0))` answered `296` where they printed the record — all at exit 0
+with nothing said, which is why every line asserts the VALUE. The cell walks the readers in order:
+the optional printed whole, `?.` on a field and a primitive method on what `?.` answered, the name a
+`!= null` test narrows, `??` with a record default, the same `.at()` reached through a record FIELD
+declared `Entry[]`, and a `?T[]` — an element that is itself a pointer for the same reason.
+
+Two shapes are left out and the header says why. `@print` of an ABSENT optional: every backend
+spells absence differently today (`null` on commonJS, the atom `undefined` on erlang and beam) and
+decision 47's row owns that disagreement, so the cell reads the absent value through `??` instead.
+And `.toString()` after a `?.` chain: `es.at(1)?.key.length().toString()` traps on wasm
+(`unresolved call: toString/0` — the chain loses the receiver's type for the SECOND method), a gap
+of its own.
 
 1.0.10-beta's `00 · 04-js` adds three more `run/` cells, every one of them measured by rakun's front
 05 while it wrote a configuration reader, and every one asserting the VALUE — each defect made
@@ -133,8 +162,9 @@ parameter used to bind a fresh type variable, and commonJS, which needs the rece
 that `.length()` is JavaScript's `length` PROPERTY, emitted a CALL on a number.
 `optional_length_method` (D7) is the same rename one layer deeper — `.length()` on a `?string` from
 `.at()`, on a `?string` field reached with `?.`, and on one a `!= null` test has just checked; its
-header names both the shape it deliberately leaves out (a field read off a `?Record`, which is
-narrowing's row) and why wasm is not in its `.targets`. `comment_in_braced_block` (D9) puts a `//`
+header names the shape it deliberately leaves out (a field read off a `?Record`, which is
+narrowing's row). It carried `.targets commonJS erlang` until `00 · 05-wasm` fixed wasm's optional
+carrier; the sidecar is gone and the cell runs on all four targets. `comment_in_braced_block` (D9) puts a `//`
 comment inside a braced `if` and inside a condition loop's body: commonJS writes some blocks on one
 line, so the comment ran on and swallowed the closing brace and everything after it, and the module
 did not parse.
@@ -908,7 +938,7 @@ table carried are gone: they parse. What is left is two rows and one correction.
 
 | Shape | At `aab5489` | Decision |
 |---|---|---|
-| a module-level `var` | `error: this token cannot appear here` at `1:1`, `var` and `pub var` alike | **still absent.** decision 28 of `specs/1.0.5-beta/decisions-taken.md` lists it as landed at `109f6c9`; it did not — front 15's own closeout says "module-level `var` — measured only", and `fronts.md`'s front-15 row repeats that. It needs a `.@"var"` arm in `parser.zig:441` **and** a `mutable` field on `ast.ValDecl`. A module-level `val` does parse |
+| a module-level `var` | parses since front 17 (`8146d2b6`): `var` and `pub var`, with or without a `#[@BeamMemory.<member>]` above it; a `val` assigned anywhere is a located error naming `var` (decision 38) | **landed.** `run/module_var` and `test/beam_memory_noop` pin it; what is still absent is the erlang/beam lowering (C-10), which is why both carry an erlang line and the first a beam line |
 | a block-shaped statement not last in its block | `error: this token cannot appear here` at the statement **after** it — in any block, not only a decorator body: `if (1 > 0) { … }` then `@print("b");` reds at the `@print`. With a `;` after the `}` it checks | **decision 29** — the `;` goes. Front 15 wrote the 76-line parser half and deliberately did not commit it: rejecting the trailing `;` rejects `libs/std`'s embedded prelude, so no single front can land it green. 44 sites in this suite, counted by front 15 |
 
 **Struck, because they now parse.** Each was measured at `aab5489`:
@@ -1062,6 +1092,14 @@ the static prefix (rows 4b and 4c as parse errors), `use-without-context-effect`
 body without `#[@context]`), `use-of-non-context-fn` (a `-> string` body, and a module-level `val` —
 decision 87), and `context-anchor-violation`. Green on commonJS, erlang, wasm and beam at the
 landing commit, with no line in `expected-failures.txt`.
+
+Step 3 (destructuring from a `use`) added to the same two cells a hook whose `R` is
+`#(i32, fn(action: i32) -> i32)`: `val #(shown, push) = use optimistic(12, …)` binds each name to
+its element — `push(shown)` types with nothing annotated — and a `use` inside a nested closure
+(row 5 of the front's table) runs under the enclosing owner. Its refusals are
+`reject/use_tuple_arity.bp` (one name against a tuple of two) and `reject/use_tuple_of_non_tuple.bp`
+(`val #(a, b) = use state(0)` where `state` yields an `i32`), both `use-tuple-arity`, located at the
+binding.
 
 Step 2 (decisions 89 and 90) added three more, also with no line in `expected-failures.txt`:
 `test/use_future_context.bp` — a `#[@future] fn Page() -> @Future<Element>` activates a hook with no

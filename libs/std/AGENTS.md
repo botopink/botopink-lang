@@ -27,7 +27,7 @@ std/
     ├── order.bp  dict.bp  sets.bp  string_builder.bp  queue.bp
     ├── math.bp  asserts.bp  path.bp  random.bp  querystring.bp  time.bp  url.bp
     ├── base64.bp  unicode.bp  process.bp  os.bp  env.bp  crypto.bp  regex.bp
-    ├── erlang.bp  json.bp  fs.bp  http.bp  snapshots.bp  mocks.bp
+    ├── erlang.bp  json.bp  fs.bp  http.bp  snapshots.bp  mocks.bp  async.bp
     ├── escape.bp            ← 1.0.10-beta front 01-std-lib-enablement (flat today; front 23 moves the `io/` ones)
     ├── __snapshots__/<suite>/<slug>.snap  ← recorded by `snapshots` from the inline tests (decision 72); a `.snap.new` beside one is a candidate a person reviews and renames
     └── sidecars/random.mjs  ← Mulberry32 PRNG used by `random` (the only sidecar: `mocks` keeps its tables on `globalThis`, not in a `.mjs`)
@@ -65,6 +65,7 @@ std/
 | `fs` | `type FileStat`, `readText`, `writeText`, `exists`, `list`, `mkdir`, `rm`, `copy`, `stat` (fallible ops return `@Result`); front 01 (`io/fs` after 23): `walk(root)` (regular files, relative, `/`-separated, sorted; a missing root is `Error`), `glob(pattern, root)` (`**` for depth; `fs.globSync` / `filelib:wildcard`). Private test cells `scratchDir`/`removeTree` — every walk/glob test builds its fixture under the host tmpdir and removes it |
 | `http` | `type Response`, `fetch`, `fetchStatus` (`@Future`) |
 | `escape` | Pure, every backend (1.0.10-beta front 01-std-lib-enablement, decision 106 root): `html` (`&` first, then `<` `>`), `attribute` (`html` + `"` `'`), `unescapeHtml` (the five entities, `&amp;` last), `jsString` (`\` `"` `<`→`\u003c`, `\n` `\r`, U+2028/U+2029 — a payload for a double-quoted JS string literal inside `<script>`) |
+| `async` | Combinators over `@Future<T>` (1.0.10-beta front 01-std step 6 / `02-std-async-primitives`). TWO surfaces, because `@Future<T>` lowers EAGERLY on erlang (`await` is identity — `codegen/erlang.zig`, `http.bp:16-18`). **Task surface** — `allOf`, `settleOf`, `raceOf`, `timeout` — takes `Array<fn() -> @Future<T>>`, UNSTARTED tasks, so the erlang cell can `spawn` one process per task and gather by index and the node cell can call each thunk into `Promise.allSettled`: genuinely concurrent on BOTH targets, and the surface a server front uses. **Future surface** — `all`, `allSettled`, `race` — takes `Array<@Future<T>>` for parity with JS: concurrent on commonJS, and on erlang honest rather than concurrent (`all` is a map, `allSettled` wraps every element `Ok`, `race` answers ELEMENT ZERO), with both behaviours asserted by the inline tests so a lazy-erlang backend change reds a test instead of silently making the docblock a lie. Instruments `delay(millis, value)` and `failed(message)`; `errorText(settled)` reads the `Error` side of a settled element (`@Result` has no builtin for it). Decision 67: `allOf`/`all` settle EVERY task and name EVERY failure in one message (`async.allOf: 2 of 3 tasks failed: [0] down; [2] boom`) rather than reporting the first and hiding the rest as `Promise.all` does; `raceOf`'s loser failure is the one dropped outcome and `async: raceOf ---- a loser failure is dropped, on purpose` is the cell that says so. NO cancellation: `raceOf`'s losers and `timeout`'s expired task run to completion. The erlang cells tag every reply with a `make_ref()` unique to their own call, so an expired task's late reply cannot be read by a later combinator in the same process |
 
 `mergeRecords(A, B)`, `partial(T)`, `omit(T, "f")` and `pick(T, ["f"])` are
 comptime type functions implemented in the compiler
@@ -86,7 +87,11 @@ matching `@External` raises `STD-001` (`comptime/tests/std_target_gating.zig`).
 
 `#[@External.<Target>(...)]` plus the signature define how a declaration lowers.
 Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
-`builtins.d.bp`. Several annotations combine in one `#[…]`, comma-separated.
+`builtins.d.bp`, and `External` stays a second declaration rather than
+`Target` itself: `Target` is a value a program holds and compares, `External.<T>`
+an annotation whose every variant carries a payload the compiler reads (front
+20 F9, the sentence in `builtins.d.bp`). Several annotations combine in one
+`#[…]`, comma-separated.
 
 - **Module + symbol** — `#[@External.Erlang("erlang", "abs")]`: call
   `module:symbol(args)` with args in declaration order.
@@ -110,6 +115,14 @@ Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
   runs; on a `declare fn` it emits `require("./file.mjs")`, which throws unless
   the file is shipped next to the emitted module. Name the native method, write
   a template, or keep host code in a sidecar (below).
+- **`inline`** — `#[@External.Erlang("…", inline = true)]` (or `@External.Beam`)
+  opts the `(target, method)` pair out of the dispatch table so the emitter's
+  hand-coded shape keeps emitting. Only those two variants declare it, because
+  only the erlang and beam emitters read it (`hasExternalInline`, over the last
+  argument); on `Node` / `Wasm` / `Typescript`, anywhere but last, or with a
+  non-bool value it is refused at the annotation (front 20 F9, decision 67 —
+  `comptime/infer.zig` `external_variants`, kept in step with the
+  `pub type External` block by a drift test).
 - **Template** — any `$` in the string switches to the shared renderer
   (`modules/compiler-core/src/comptime/primOpTemplate.zig`):
 
@@ -208,6 +221,16 @@ std module's `@Decl`-shaped `pub fn`s in `env.decorators` under `<mod>.<fn>`
 (`comptime/infer.zig` `markStdImports`), and an emission that resolves in both
 places — `#[mock]` cannot emit one text that is bare here and qualified there.
 
+`async`'s twenty-five inline tests run on both targets — `botopink test
+[--target erlang] --filter async` reads `25 passed, 0 failed`. Three of them are
+WALL-CLOCK budgets (`allOf`/`settleOf` of three 60 ms tasks in under 120 ms, and
+`timeout` of a 200 ms task under a 50 ms budget in under 150 ms): they are the
+only assertions that can tell a concurrent combinator from a sequential map, so
+they have to exist, and they are the flakiest cells in the file. Measured by
+planting a sequential gather in each backend's `settleOf` cell in turn: the
+serial node cell reds exactly the two commonJS elapsed cells and nothing else,
+the serial erlang cell reds exactly the two erlang ones.
+
 **No known red cell.** `scripts/known-red-libs.txt` carries no line, and
 `zig build test-libs` reads `std · commonJS: pass` and `std · erlang: pass`
 (11 passed, 0 failed, 0 known red across the workspace). The three rows this
@@ -287,6 +310,26 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
   `String.slice` / `Array.slice`'s lowering of a `null` bound. The wasm trap is
   what `snapshots/codegen/wasm/string_slice_without_end_arg_slices_to_source_length.snap.md`
   records since C-04 — the snapshot used to pin the arity error, which hid it.
+- **Three parser/emitter shapes measured 2026-09-21 writing `async.bp`, each with
+  a one-line workaround, none of them owned by std.**
+  1. A `declare fn` whose parameter list is wrapped and closed with a TRAILING
+     COMMA after a parameter whose type ends in a fn type does not parse —
+     `pub declare fn f<T>(` / `t: fn() -> T,` / `) -> T;` reds `this token cannot
+     appear here`, and with a generic return type it reds
+     `generic-arg-skip-forbidden` instead. The same signature on ONE line, or
+     wrapped without the trailing comma, compiles. **This is what `botopink
+     format` writes**, so formatting a file with such a signature produces a file
+     that no longer compiles; `src/async.bp` carries a DO-NOT-FORMAT banner and
+     `libs/std` is not one of `scripts/format-check.sh`'s canonical trees.
+  2. `Array<Array<T>>` (any doubled `>>`) as a parameter FOLLOWED BY another
+     parameter reds `generic-arg-skip-forbidden` on the next parameter —
+     `pub declare fn f<T>(xs: Array<Array<T>>, who: string) -> i32;`. Spell the
+     outer array `Array<T>[]` and it compiles. A doubled `>>` in the LAST
+     parameter or in a return type is fine (`Array<fn() -> @Future<T>>` is the
+     whole task surface), and so is a tripled `>>>` in a return type.
+  3. A `$N` marker called as a function in a Node template — `… => $0()` — emits
+     `() => {…}()` when the argument is a closure literal, which is a JS
+     `SyntaxError` (an arrow IIFE needs parentheses). Write `($0)()`.
 - A `val` bound to a generic call is not generalised: `val f = Function.constant(42)`
   accepts one argument type only.
 - Test an optional parameter with `!= null`, not truthiness: on commonJS

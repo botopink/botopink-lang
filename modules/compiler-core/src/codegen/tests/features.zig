@@ -214,15 +214,20 @@ test "codegen ---- use object destructure is a plain call" {
     );
 }
 
+// Front 19 step 3: the tuple form binds `R`'s elements (`shown : i32`,
+// `push : fn(action: i32) -> i32`), so the hook's `R` is a tuple here — the
+// lowering is the same plain call followed by the destructure.
 test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element, Element> { }
-        \\fn state(initial: i32) -> @Context<Element, i32> {
-        \\    initial;
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+        \\    val push = { action -> f(base, action) };
+        \\    #(base, push);
         \\}
         \\#[@context]
-        \\fn Counter() -> Element {
-        \\    val #(count, setCount) = use state(0);
+        \\fn LikeWidget() -> Element {
+        \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+        \\    push(shown);
         \\    Element();
         \\}
     );

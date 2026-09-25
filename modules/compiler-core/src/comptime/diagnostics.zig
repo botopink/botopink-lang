@@ -184,6 +184,10 @@ pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
 /// but whose fn is not `#[@context]`: only the annotated body activates a hook.
 pub const use_without_context_effect: []const u8 = "use-without-context-effect";
 
+/// Front 19 step 3 — `val #(a, b) = use …` whose hook yields a tuple of another
+/// arity, or no tuple at all. Located at the binding; no flag (decision 67).
+pub const use_tuple_arity: []const u8 = "use-tuple-arity";
+
 // ── RG1–RG4: §1G default-generic diagnostics ────────────────────────────────
 
 /// RG1 — `<T = default, U>` — required parameter follows a defaulted one.

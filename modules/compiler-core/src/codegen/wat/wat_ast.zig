@@ -435,9 +435,13 @@ pub const HelperGroup = enum {
     /// of `print_opt`: the two spell absence differently on purpose, because
     /// decision 52 settles the loop and the optional's spelling is still open.
     print_loop,
-    /// `$__str_at` — `s.at(i)` as a `?string`. Last in declaration order, so
-    /// every module that does not call it renders exactly as before it existed.
+    /// `$__str_at` — `s.at(i)` as a `?string`.
     str_at,
+    /// `$__print_opt_tagged` (+`_raw`) — a `?T` whose `T` is a record. The
+    /// tagged printer reads a header four bytes behind the value, so absence
+    /// has to be answered before it is called. Last in declaration order, so
+    /// every module that does not call it renders exactly as before it existed.
+    print_opt_tagged,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -449,6 +453,7 @@ pub const HelperGroup = enum {
             .arr_at_box => &.{.box_i32},
             .print_opt => &.{ .print, .print_bool, .print_str },
             .print_opt_f32 => &.{ .print, .print_f64, .print_opt },
+            .print_opt_tagged => &.{ .print, .print_opt, .print_shaped },
             .assert_fail => &.{.print},
             .print_shaped => &.{ .print, .print_bool, .print_f64 },
             .print_loop => &.{.print},
@@ -537,6 +542,8 @@ pub const Helper = enum {
     str_at,
     print_tagged_raw,
     print_tagged,
+    print_opt_tagged,
+    print_opt_tagged_raw,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -558,6 +565,7 @@ pub const Helper = enum {
             .print_undefined, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
             .print_opt_f32, .print_opt_f32_raw => .print_opt_f32,
             .print_tagged_raw, .print_tagged => .print_shaped,
+            .print_opt_tagged, .print_opt_tagged_raw => .print_opt_tagged,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

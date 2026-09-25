@@ -37,6 +37,11 @@ pub const TokenKind = enum {
     verticalBar, // |
     verticalBarVerticalBar, // ||
     amperAmper, // &&
+    /// `&` alone and `^` — lexed so the parser can refuse them BY NAME
+    /// (`bitwise-operator-absent`, front 15 step 3) instead of the lexer
+    /// stopping on an "unexpected character" no parse error can locate.
+    ampersand, // &
+    caret, // ^
     lessThanLessThan, // <<
     greaterThanGreaterThan, // >>
     pipe, // |>
@@ -57,6 +62,11 @@ pub const TokenKind = enum {
     multilineStringLiteral,
     linesStringLiteral, // `\\`-prefixed line string (Zig style): consecutive
     //                     `\\ …` lines join with newlines
+    /// `'a'` — a character literal, which the language does not have: lexed as
+    /// one token so `parsePrimary` refuses it as `char-literal-absent` and
+    /// names `"a"` (front 15 step 3). The lexeme runs from the opening `'` to
+    /// the closing one on the same line, or to the end of the line.
+    charLiteral, // 'a'
 
     // ── trivia ────────────────────────────────────────────────────────────────
     commentNormal, // // ...

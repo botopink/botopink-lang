@@ -99,11 +99,34 @@ test "lexer: comment does not consume next line tokens" {
     try std.testing.expectEqual(TokenKind.use, tokens[1].kind);
 }
 
-test "lexer: error on single ampersand" {
-    var l = Lexer.init("&");
-    const result = l.scanAll(std.testing.allocator);
+// A lone `&`, a `^` and a `'a'` used to stop the lexer with `UnexpectedCharacter`,
+// which no parse error can name or locate. Each is a token now, refused by the
+// parser by name (front 15 step 3: `bitwise-operator-absent`,
+// `char-literal-absent`). `&&` is unchanged.
+
+test "lexer: a single ampersand and a caret are tokens the parser refuses by name" {
+    var l = Lexer.init("a & b ^ c && d");
+    const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
-    try std.testing.expectError(error.UnexpectedCharacter, result);
+    try std.testing.expectEqual(TokenKind.ampersand, tokens[1].kind);
+    try std.testing.expectEqualStrings("&", tokens[1].lexeme);
+    try std.testing.expectEqual(TokenKind.caret, tokens[3].kind);
+    try std.testing.expectEqual(TokenKind.amperAmper, tokens[5].kind);
+}
+
+test "lexer: a character literal is one token, closed by the quote or the line" {
+    var l = Lexer.init("'a' '\\'' 'ab\nx");
+    const tokens = try l.scanAll(std.testing.allocator);
+    defer l.deinit(std.testing.allocator);
+    try std.testing.expectEqual(TokenKind.charLiteral, tokens[0].kind);
+    try std.testing.expectEqualStrings("'a'", tokens[0].lexeme);
+    try std.testing.expectEqual(TokenKind.charLiteral, tokens[1].kind);
+    try std.testing.expectEqualStrings("'\\''", tokens[1].lexeme);
+    // Unterminated: the token ends at the line, and the next line lexes on.
+    try std.testing.expectEqual(TokenKind.charLiteral, tokens[2].kind);
+    try std.testing.expectEqualStrings("'ab", tokens[2].lexeme);
+    try std.testing.expectEqual(TokenKind.identifier, tokens[3].kind);
+    try std.testing.expectEqual(@as(usize, 2), tokens[3].line);
 }
 
 test "lexer: tracks line numbers" {

@@ -375,5 +375,13 @@ pub fn parseImplementClause(this: *This, alloc: std.mem.Allocator) ParseError![]
         if (this.check(.leftBrace)) break;
         try list.append(alloc, try this.parseTypeRef(alloc));
     }
+    // `type P(x: i32)` on one line and `implement A for P { … }` on the next:
+    // the bodyless type took `implement A` as its own clause, and the `for`
+    // is the reader's standalone block, which has to be named. Refused here by
+    // name, at the `for` (front 15 step 3).
+    if (this.check(.@"for")) {
+        this.parseError = ParseErrorInfo.fromToken(.implementClauseFor, this.peek());
+        return ParseError.UnexpectedToken;
+    }
     return list.toOwnedSlice(alloc);
 }

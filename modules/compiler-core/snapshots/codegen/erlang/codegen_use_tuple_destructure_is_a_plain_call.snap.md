@@ -1,12 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Element = type implement @Context<Element, Element> { }
-fn state(initial: i32) -> @Context<Element, i32> {
-    initial;
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+    val push = { action -> f(base, action) };
+    #(base, push);
 }
 #[@context]
-fn Counter() -> Element {
-    val #(count, setCount) = use state(0);
+fn LikeWidget() -> Element {
+    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+    push(shown);
     Element();
 }
 ```
@@ -17,12 +19,21 @@ fn Counter() -> Element {
 
 %% type Element: 
 
-state(Initial) ->
-    Initial.
+optimistic(Base, F) ->
+    Push = fun(Action) ->
+        F(Base, Action)
+    end,
+    {Base, Push}.
 
-'Counter'() ->
-    {Count, SetCount} = state(0),
+'LikeWidget'() ->
+    {Shown, Push} = optimistic(12, fun(C, A) ->
+        '__bp_add'(C, A)
+    end),
+    Push(Shown),
     {main__t__element}.
+
+'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
+'__bp_add'(A, B) -> A + B.
 ```
 
 ----- ERLANG -- main__t__element.erl
