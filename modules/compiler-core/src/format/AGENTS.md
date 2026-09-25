@@ -44,9 +44,13 @@ nothing in a source file, a flag or the environment reaches it, and the last
 construct to be enabled deletes `fitsPinned` and the `measured` field with it.
 `Doc.widthChoice { flat, broken, flatWidth }` predates the repair and stays for the
 `fn` signature (decision 61 rule 4): its flat width is measured when the node is
-built and compared against the real column. `tests/predicate.zig` exercises both
-predicates on hand-built documents — the exact boundary, the trailing text, the
-break after the group, the hardline inside it, and a pinned group past the width.
+built and compared against the real column. `Doc.ifBreak(s)` is text that exists
+only in the enclosing group's broken spelling — the trailing comma of an open
+argument list — so a flat and a broken form share one document; `fits` never
+charges it flat and charges it in the trailing half when the group it sits in is
+broken. `tests/predicate.zig` exercises both predicates on hand-built documents —
+the exact boundary, the trailing text, the break after the group, the hardline
+inside it, a pinned group past the width, and `ifBreak` flat, broken and trailing.
 
 **The method chain is the first construct enabled, and its landing was measured
 rather than assumed** (2026-09-20, C-12's acceptance). Three binaries — `d55a3b87`
@@ -71,6 +75,20 @@ still-pinned argument list is what runs long. The HEAD output is idempotent
 (`format --check` over it reports only the files that never parsed) and every
 tree still parses. Commands: `zig build` in three worktrees, `find . -name '*.bp'
 | sort | xargs botopink format` per copy, `diff -ru`.
+
+**The call argument list is measured and still pinned** (2026-09-25). Enabled as
+the signature's shape (decision 61 rule 4: all-or-nothing, one argument per line
+`+4`, `ifBreak(",")`, `)` on its own line) and run over the six trees at the pinned
+sibling commits (245 files, the same walk), it moves **105 files, 879 hunks, +11 718
+−4 072 lines**, and takes the lines past 80 columns from **5 601 to 2 903** — but of
+the ~2 770 lists it opens, ~1 480 close on a line that goes on with an operator or
+a member access (`) != -1;`, `) + "…"`, `).length`): the list is opened for what
+*follows* it, because the binary expression, the `assert` and the `case` arm around
+it are pinned and cannot break first. That is the wrong middle decision 65 names,
+so the construct waits for the maintainer's order (the enclosing constructs first,
+or the list with them); the enabling is the two-line patch parked beside the
+front's README as `argument-list.patch`. `ifBreak` lands ahead of it, unused by any
+printer arm, so the six trees format byte-identically to the parent commit.
 
 ## Formatting rules
 

@@ -64,6 +64,11 @@ pub const Doc = union(enum) {
     /// the flat spelling at an unbounded width, and it counts what follows on the
     /// line as well, which is the other half `fits` cannot see.
     widthChoice: struct { flat: *const Doc, broken: *const Doc, flatWidth: usize },
+    /// Text that exists only in the broken spelling of the enclosing group —
+    /// nothing at all when the group renders flat. It is what puts the trailing
+    /// comma on the last argument of a broken call and on nothing else, so that
+    /// `f(a, b)` and the open form share one document.
+    ifBreak: []const u8,
 };
 
 // ── global singletons (zero-cost leaves) ──────────────────────────────────────
@@ -144,6 +149,11 @@ pub const Formatter = struct {
     /// `group`.
     pub fn widthChoice(this: *Formatter, flat: *const Doc, broken: *const Doc, flatWidth: usize) !*const Doc {
         return this.alloc(.{ .widthChoice = .{ .flat = flat, .broken = broken, .flatWidth = flatWidth } });
+    }
+
+    /// `s` in the enclosing group's broken spelling, nothing in its flat one.
+    pub fn ifBreak(this: *Formatter, s: []const u8) !*const Doc {
+        return this.alloc(.{ .ifBreak = s });
     }
 
     // ── higher-level combinators ───────────────────────────────────────────────
@@ -1402,6 +1412,13 @@ pub const Formatter = struct {
                     try this.text(")"),
                 }));
             } else {
+                // Still pinned. Enabled as the signature's shape (decision 61
+                // rule 4) it opens about half its lists for what *follows* them
+                // — `assert doc.indexOf(` / `"…",` / `) != -1;` — because the
+                // binary expression, `assert` and `case` arm around it are
+                // pinned and cannot break first: the middle decision 65 calls
+                // wrong. Measured and parked (`format/AGENTS.md`); the enabling
+                // is `groupMeasured` plus `ifBreak(",")` before the softline.
                 break :blk try this.group(try this.concatAll(&.{
                     try this.text("("),
                     try this.nest(INDENT, try this.concat(this.softline(), inner)),
@@ -2747,6 +2764,9 @@ fn fitsPinned(budget: isize, work: *std.ArrayList(Item)) bool {
             // Its flat spelling has a width that was measured, so — unlike every
             // other node here — this one can be charged for exactly.
             .widthChoice => |w| remaining -= @intCast(w.flatWidth),
+            .ifBreak => |s| if (item.mode == .break_) {
+                remaining -= @intCast(s.len);
+            },
         }
     }
     return remaining >= 0;
@@ -2806,6 +2826,8 @@ fn fits(
             .group => |g| try scratch.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = g.doc }),
             // Measured when the node was built, so it is charged exactly.
             .widthChoice => |w| remaining -= @intCast(w.flatWidth),
+            // Absent from the flat spelling by definition.
+            .ifBreak => {},
         }
         if (remaining < 0) return false;
     }
@@ -2836,6 +2858,9 @@ fn fits(
             // what descending in break mode charges for.
             .forceBreak => |d| try scratch.append(wa, .{ .indent = item.indent, .mode = .break_, .doc = d }),
             .widthChoice => |w| remaining -= @intCast(w.flatWidth),
+            .ifBreak => |s| if (item.mode == .break_) {
+                remaining -= @intCast(s.len);
+            },
         }
         if (remaining < 0) return false;
     }
@@ -2950,6 +2975,11 @@ pub fn render(allocator: std.mem.Allocator, doc: *const Doc, width: usize) ![]u8
                     .mode = item.mode,
                     .doc = if (fitsFlat) w.flat else w.broken,
                 });
+            },
+
+            .ifBreak => |s| if (item.mode == .break_) {
+                try out.appendSlice(allocator, s);
+                col += s.len;
             },
         }
     }
