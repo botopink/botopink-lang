@@ -23,7 +23,7 @@ scripts/
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── check-docs.sh      ← compiles every `botopink` fence of docs.md/README.md (`zig build test-docs`)
 ├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block (part of `zig build test`)
-├── snap_audit.sh      ← read-only audit of every *.snap.md (6 modes)
+├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
 ├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-node compile/load/run split
 └── git-hooks/
@@ -113,7 +113,9 @@ failing stage: staged-file checks (`--staged`: conflict markers, `zig fmt
 --check` on staged `.zig`), `zig build`, `scripts/format-check.sh` (`botopink
 format --check` over the compiler's canonical `.bp` trees — decision 66's
 caller), `zig build test` (`--cold` deletes
-`modules/compiler-core/.botopinkbuild/runtime-cache` first), `zig build
+`modules/compiler-core/.botopinkbuild/runtime-cache` first),
+`snap_audit.sh --mode=runtime-parity` (front 18 step 4: the codegen tree under
+both comptime runtimes, pairs equal but for their listing sections), `zig build
 test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs` (every `"targets"`-restricted cell included, checked against
 `restricted-targets.txt`), `zig build test-language` (`tests/language/`, expected failures in
@@ -286,7 +288,7 @@ up from this repo), runs `npm ci` when `node_modules/` is absent, then execs
 
 ## snap_audit.sh
 
-`scripts/snap_audit.sh --mode={runlog,legacy,values,coverage}`, and
+`scripts/snap_audit.sh --mode={runlog,legacy,values,coverage,runtime-parity}`, and
 `--mode={orphans,review} --trace=<file> [--reports=<dir>]` — pure shell +
 `awk` + `grep`, read-only, no build needed. Reports go to
 `build/snap-audit/<mode>.tsv` (git-ignored).
@@ -297,6 +299,7 @@ up from this repo), runs `npm ci` when `node_modules/` is absent, then execs
 | `legacy`   | Grep every snapshot's SOURCE block for retired surface (`*fn`, legacy `@external(<target>, …)`, `@[name]`, `when($argc==N)`, `string.length()`, `value:length()`). |
 | `values`   | Dump `(backend, source_sha1, path, runlog_text)` for observable codegen snapshots with a non-empty RUN LOG, for cross-checking against an external runner. |
 | `coverage` | Pivot of `runlog` by backend × label × state; printed and saved. |
+| `runtime-parity` | Front 18 step 4, a gate stage: every `codegen/<beam\|wat>/…` and `comptime/runtime/<beam\|wat>/…` file has its pair, and each pair is `diff`-equal once `withoutListings` sets aside the `COMPTIME ERLANG`/`COMPTIME WAT` fenced bodies (the only text the runtimes may differ in). A difference or a missing member prints a unified diff / a `MISSING` line and exits 3 — a defect in one runtime, never re-recorded away; no allow-list. |
 | `orphans`  | `kind\tpath` for every `*.snap.md` on disk (compiler-core + language-server) that no test checked in the traced run (`orphan`), and every traced path absent from disk (`missing`). Exits 3 when either list is non-empty. |
 | `review`   | The review worksheet, `suite\tslug\ttest\tpaths\tverdict`, one row per unique snapshot: codegen per target, the four `comptime/<runtime>/` copies collapsed into one row with every path. `test` is the test `file:line` from the trace (comma-joined when several tests write the same path — a slug collision); a snapshot traced without a location falls back to the test-source string literal that names it (the LSP asserts take a literal slug); `ORPHAN` when no test checked it. `verdict` is seeded from the 1.0.1-beta review reports (`--reports=<dir>`, default `../../specs/1.0.1-beta/06-snapshot-review` from the bot-lang root): every table row whose `verdict` column — located by its header cell, never by index — names the slug, restricted to the row's backend cell, as `<verdict> [report:line]`; `-` when no report names it. Report rows with a verdict that name no snapshot on disk (renamed or deleted tests, tests without a snapshot, harness-level rows) go to `review-unmatched.tsv`. Exits 3 when a row has no test `file:line`. |
 

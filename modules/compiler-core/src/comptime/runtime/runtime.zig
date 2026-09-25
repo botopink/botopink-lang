@@ -162,6 +162,37 @@ fn evalWat(arena: std.mem.Allocator, module: []const u8, code: []const u8, arg: 
     } };
 }
 
+// ── what a snapshot shows of an evaluation ───────────────────────────────────
+
+/// The listing of the module this thread's runtime ran: `erl_listing` (the
+/// lowered body and `main/1`, then `main/1`'s argument as `%%` comments) on
+/// the BEAM runtime; on the wat runtime the generated module's functions as
+/// lowered to wasm (`wat/program.zig`), then the same argument comments as
+/// `;;` lines — or the refusal, when the lowering refused the module.
+pub fn listingOf(arena: std.mem.Allocator, module: []const u8, code: []const u8, erl_listing: []const u8) EvalError![]const u8 {
+    if (current() == .beam) return erl_listing;
+    const built = try watProgram.build(module, code);
+    const body = switch (built) {
+        .ok => |o| o.listing,
+        .refused => |why| return std.fmt.allocPrint(arena, ";; not lowered: {s}\n", .{why}),
+    };
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    try out.appendSlice(arena, std.mem.trimEnd(u8, body, "\n"));
+    try out.append(arena, '\n');
+    const marker = "\n%% main/1 argument";
+    if (std.mem.indexOf(u8, erl_listing, marker)) |i| {
+        try out.append(arena, '\n');
+        var lines = std.mem.splitScalar(u8, erl_listing[i + 1 ..], '\n');
+        while (lines.next()) |line| {
+            if (line.len == 0) continue;
+            try out.appendSlice(arena, ";;");
+            try out.appendSlice(arena, if (std.mem.startsWith(u8, line, "%%")) line[2..] else line);
+            try out.append(arena, '\n');
+        }
+    }
+    return out.items;
+}
+
 // ── the BEAM runtime's staging ───────────────────────────────────────────────
 
 /// Stage `<dir>/<module>.erl` unless it is already there, and return its path

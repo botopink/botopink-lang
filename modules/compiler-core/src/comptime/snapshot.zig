@@ -1392,7 +1392,10 @@ pub fn buildSnapshot(allocator: std.mem.Allocator, output: comptimeMod.ComptimeO
 
     switch (output.outcome) {
         .ok => |ok| {
-            try comptimeMod.trace.render(allocator, &buf, ok.comptime_traces);
+            // The runtime exchanges (`COMPTIME ERLANG`/`COMPTIME WAT` +
+            // `COMPTIME REPLY`) are not here: they depend on the comptime
+            // runtime, the AST does not — `assertComptimeExchange` records
+            // them per runtime (front 18 step 4, `snapshot-layout.md` § 6).
             if (ok.comptime_script) |ct| {
                 const ctHdr = try std.fmt.allocPrint(allocator, "----- COMPTIME VALUES -- {s}\n```text\n", .{output.name});
                 defer allocator.free(ctHdr);
@@ -1525,6 +1528,49 @@ pub fn buildSnapshotMulti(allocator: std.mem.Allocator, outputs: []const comptim
         try buf.appendSlice(allocator, text);
     }
     return buf.toOwnedSlice(allocator);
+}
+
+/// The runtime exchanges of `outputs` — the source, then every evaluation's
+/// listing and reply — or null when no decorator or template ran.
+pub fn buildExchange(allocator: std.mem.Allocator, outputs: []const comptimeMod.ComptimeOutput) !?[]u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(allocator);
+    var any = false;
+    for (outputs) |output| {
+        const ok = switch (output.outcome) {
+            .ok => |ok| ok,
+            else => continue,
+        };
+        if (ok.comptime_traces.len == 0) continue;
+        if (any) try buf.appendSlice(allocator, "\n");
+        any = true;
+        try buf.print(allocator, "----- SOURCE CODE -- {s}.bp\n```botopink\n", .{output.name});
+        try buf.appendSlice(allocator, output.src);
+        try buf.appendSlice(allocator, "\n```\n\n");
+        try comptimeMod.trace.render(allocator, &buf, ok.comptime_traces);
+    }
+    if (!any) {
+        buf.deinit(allocator);
+        return null;
+    }
+    return try buf.toOwnedSlice(allocator);
+}
+
+/// Assert the runtime exchanges of `outputs`, evaluated on `runtime`, against
+/// `comptime/runtime/<runtime>/{slug}.snap.md` — nothing when no decorator or
+/// template ran (front 18 step 4: the AST is recorded once, the exchange once
+/// per runtime).
+pub fn assertComptimeExchange(
+    allocator: std.mem.Allocator,
+    runtime: []const u8,
+    slug: []const u8,
+    outputs: []const comptimeMod.ComptimeOutput,
+) !void {
+    const text = (try buildExchange(allocator, outputs)) orelse return;
+    defer allocator.free(text);
+    const snapName = try std.fmt.allocPrint(allocator, "comptime/runtime/{s}/{s}", .{ runtime, slug });
+    defer allocator.free(snapName);
+    try snapMod.checkText(allocator, snapName, text);
 }
 
 /// Assert the comptime AST against a snapshot file.

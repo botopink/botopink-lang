@@ -296,6 +296,8 @@ pub const Program = struct {
 
 pub const Output = struct {
     module: wat.Module,
+    /// The functions the listing shows (`Lowerer.listed`), in lowering order.
+    listed: []const []const u8,
     /// Literal bytes, laid out from offset 0 (`__lit`).
     data: []const u8,
 };
@@ -315,6 +317,13 @@ const Lowerer = struct {
     lifted: usize = 0,
     /// The Erlang function being lowered, for refusals.
     where: []const u8 = "",
+    /// The same, spelled for a lifted fun's symbol: no module atom for the
+    /// generated module (its atom is a content hash, and the listing must
+    /// not move when the hash does).
+    where_sym: []const u8 = "",
+    /// The lowered functions of the generated module (not `main/1`, not the
+    /// prelude's) — what the `COMPTIME WAT` listing shows.
+    listed: std.ArrayListUnmanaged([]const u8) = .empty,
 
     fn refuse(l: *Lowerer, comptime fmt: []const u8, args: anytype) Error {
         const what = std.fmt.allocPrint(l.ar, fmt, args) catch return error.OutOfMemory;
@@ -1063,7 +1072,8 @@ fn lowerFun(x: Ctx, fun: ep.Expr.Fun) Error!void {
     try freeVars(x.f, fun, &captured);
 
     l.lifted += 1;
-    const sym = try sanitize(l.ar, try std.fmt.allocPrint(l.ar, "fun{d}:{s}", .{ l.lifted, l.where }));
+    const sym = try sanitize(l.ar, try std.fmt.allocPrint(l.ar, "fun{d}:{s}", .{ l.lifted, l.where_sym }));
+    if (x.f.module == 0) try l.listed.append(l.ar, sym);
     const slot = try tableSlot(l, sym);
 
     // The lifted function.
@@ -1664,6 +1674,11 @@ fn finishFunction(l: *Lowerer, f: *Fn, sym: []const u8, exports: []const []const
 fn lowerFunction(l: *Lowerer, sym: []const u8, k: FnKey) Error!void {
     const func = l.findFunction(k.module, k.name, k.arity).?;
     l.where = try std.fmt.allocPrint(l.ar, "{s}:{s}/{d}", .{ l.prog.modules[k.module].name, k.name, k.arity });
+    l.where_sym = if (k.module == 0)
+        try std.fmt.allocPrint(l.ar, "{s}/{d}", .{ k.name, k.arity })
+    else
+        l.where;
+    if (k.module == 0 and !(std.mem.eql(u8, k.name, "main") and k.arity == 1)) try l.listed.append(l.ar, sym);
     var f: Fn = .{ .l = l, .module = k.module };
     var params: std.ArrayListUnmanaged(wat.Param) = .empty;
     var subjects: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -1742,5 +1757,5 @@ pub fn lowerProgram(ar: std.mem.Allocator, prog: Program, failure: *Failure) Err
     try items.append(ar, .{ .global = .{ .name = "__tbase", .ty = .i32, .init = "0" } });
     if (l.table.items.len > 0) try items.append(ar, .{ .table = l.table.items });
     try items.appendSlice(ar, l.funcs.items);
-    return .{ .module = .{ .items = items.items }, .data = l.data.items };
+    return .{ .module = .{ .items = items.items }, .data = l.data.items, .listed = l.listed.items };
 }

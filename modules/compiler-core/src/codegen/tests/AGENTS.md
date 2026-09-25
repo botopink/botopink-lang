@@ -9,7 +9,7 @@ WAT backend, `externals.zig` for `#[@External.<Target>(…)]` FFI declarations,
 sibling barrel `../tests.zig` for `test_root.zig`; shared harness
 (`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`.
 Snapshots are recorded per comptime runtime (front 18 step 4, decision 85):
-`helpers.runtimes` lists them, `snapshot_configs` (every target) and
+`helpers.runtimes` lists them (`beam`, `wat`), `snapshot_configs` (every target) and
 `test_mode_configs` (commonJS + erlang) are `configs` once per runtime with
 `comptime_runtime` set, and a fixture lands at
 `snapshots/codegen/<runtime>/<target>/<slug>.snap.md`

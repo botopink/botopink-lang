@@ -101,7 +101,8 @@ pub fn evaluate(
     if (traces) |list| try list.append(arena, .{
         .kind = .decorator,
         .name = dfn.name,
-        .erl = source.listing,
+        .listing = try hostRuntime.listingOf(arena, source.module, source.code, source.listing),
+        .lang = if (hostRuntime.current() == .wat) .wat else .erlang,
         .reply = switch (response) {
             .ok => |stdout| stdout,
             .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),
@@ -139,7 +140,7 @@ const Module = struct {
     module: []const u8,
     code: []const u8,
     /// The lowered body and `main/1`, with the argument as a comment
-    /// (`trace.Entry.erl`).
+    /// (`trace.Entry.listing` on the BEAM runtime).
     listing: []const u8,
     /// `main/1`'s argument: the handle, then the annotation arguments.
     argument: Term,

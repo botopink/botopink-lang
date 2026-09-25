@@ -77,7 +77,7 @@ pub const configs = [_]config.Config{
 
 /// The comptime runtimes every snapshot is recorded under (front 18 step 4,
 /// decision 85): `snapshots/codegen/<runtime>/<target>/<slug>.snap.md`.
-pub const runtimes = [_]config.ComptimeRuntime{.beam};
+pub const runtimes = [_]config.ComptimeRuntime{ .beam, .wat };
 
 /// `base` once per comptime runtime, each with `comptime_runtime` set — the
 /// generations a snapshot-writing helper loops over.

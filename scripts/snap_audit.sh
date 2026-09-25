@@ -9,6 +9,7 @@
 #   scripts/snap_audit.sh --mode={runlog,legacy,values,coverage}
 #   scripts/snap_audit.sh --mode=orphans --trace=<file>
 #   scripts/snap_audit.sh --mode=review  --trace=<file> [--reports=<dir>]
+#   scripts/snap_audit.sh --mode=runtime-parity
 #
 # `--trace=<file>` is the file a full `BOTOPINK_SNAP_TRACE=<file> zig build test`
 # run appended to (one `<snapshot path> TAB <test file:line|-> TAB <test fn|->`
@@ -47,6 +48,17 @@
 #                       the bot-lang root): every table row whose `verdict`
 #                       column names the slug, as `<verdict> [report:line]`,
 #                       joined by ` ; `; `-` when no report row names it
+#   runtime-parity
+#             Front 18 step 4 (decision 85): every codegen snapshot exists
+#             under both comptime runtimes — codegen/beam/<t>/<slug> and
+#             codegen/wat/<t>/<slug>, the same for errors/ and for
+#             comptime/runtime/{beam,wat}/<slug> — and every pair is equal once
+#             the listing sections are set aside (`COMPTIME ERLANG` on beam,
+#             `COMPTIME WAT` on wat: the only text that may differ). A
+#             difference — a COMPTIME REPLY, a RUN LOG, generated code — is a
+#             defect in one runtime and is printed as a unified diff; a
+#             missing pair member too. No allow-list. Columns of
+#             runtime-parity.tsv: verdict\tpath   (verdict ∈ {equal,differs,missing})
 #             Also writes review-unmatched.tsv: every report row with a verdict
 #             that names no snapshot on disk (report_row\tverdict\tslug_cell).
 #
@@ -55,13 +67,13 @@
 #   1  argument error / unknown mode
 #   2  IO error (snapshots dir missing, write failure, trace missing)
 #   3  orphans: an orphan or unrecorded path exists; review: a row has no
-#      test file:line
+#      test file:line; runtime-parity: a pair differs or misses a member
 
 set -euo pipefail
 
 usage() {
     cat >&2 <<'USAGE'
-usage: scripts/snap_audit.sh --mode={runlog,legacy,values,coverage}
+usage: scripts/snap_audit.sh --mode={runlog,legacy,values,coverage,runtime-parity}
        scripts/snap_audit.sh --mode=orphans --trace=<file>
        scripts/snap_audit.sh --mode=review  --trace=<file> [--reports=<dir>]
 
@@ -85,6 +97,7 @@ for arg in "$@"; do
         --mode=coverage) mode=coverage ;;
         --mode=orphans)  mode=orphans ;;
         --mode=review)   mode=review ;;
+        --mode=runtime-parity) mode=runtime-parity ;;
         --trace=*)       trace="${arg#--trace=}" ;;
         --reports=*)     reports="${arg#--reports=}" ;;
         -h|--help)       usage; exit 0 ;;
@@ -225,7 +238,53 @@ normalizeTrace() {
         }' "$trace"
 }
 
+# A snapshot with its comptime listing sections set aside: the header line
+# of `COMPTIME ERLANG` / `COMPTIME WAT` becomes `COMPTIME LISTING` and the
+# fenced body after it is dropped — the one part the runtimes may differ in.
+withoutListings() {
+    awk '
+        /^----- COMPTIME (ERLANG|WAT) -- / { sub(/COMPTIME (ERLANG|WAT)/, "COMPTIME LISTING"); print; skip = 1; next }
+        skip == 1 && /^```/ { skip = 2; next }
+        skip == 2 { if ($0 ~ /^```$/) skip = 0; next }
+        { print }
+    ' "$1"
+}
+
 case "$mode" in
+    runtime-parity)
+        out="$out_dir/runtime-parity.tsv"
+        : > "$out"
+        printf 'verdict\tpath\n' >> "$out"
+        bad=0
+        pairs=0
+        comptime_runtime_dir="$comptime_dir/runtime"
+        for tree in "$codegen_dir" "$comptime_runtime_dir"; do
+            [ -d "$tree/beam" ] || [ -d "$tree/wat" ] || continue
+            while IFS= read -r rel; do
+                b="$tree/beam/$rel"
+                w="$tree/wat/$rel"
+                shown="${tree#$botlang_root/}/{beam,wat}/$rel"
+                if [ ! -f "$b" ] || [ ! -f "$w" ]; then
+                    printf 'missing\t%s\n' "$shown" >> "$out"
+                    echo "runtime-parity: MISSING $shown (beam: $([ -f "$b" ] && echo present || echo absent), wat: $([ -f "$w" ] && echo present || echo absent))" >&2
+                    bad=$((bad + 1))
+                    continue
+                fi
+                pairs=$((pairs + 1))
+                if ! diff -u --label "beam/$rel" --label "wat/$rel" <(withoutListings "$b") <(withoutListings "$w") > "$out_dir/runtime-parity.diff.tmp"; then
+                    printf 'differs\t%s\n' "$shown" >> "$out"
+                    cat "$out_dir/runtime-parity.diff.tmp" >&2
+                    bad=$((bad + 1))
+                else
+                    printf 'equal\t%s\n' "$shown" >> "$out"
+                fi
+            done < <( { [ -d "$tree/beam" ] && (cd "$tree/beam" && find . -name '*.snap.md' | sed 's|^\./||');
+                        [ -d "$tree/wat" ] && (cd "$tree/wat" && find . -name '*.snap.md' | sed 's|^\./||'); } | LC_ALL=C sort -u )
+        done
+        rm -f "$out_dir/runtime-parity.diff.tmp"
+        printf 'runtime-parity: %d pairs, %d differing or missing — %s\n' "$pairs" "$bad" "$out"
+        [ "$bad" -eq 0 ] || exit 3
+        ;;
     runlog)
         # ---- F0.1 --mode=runlog
         out="$out_dir/runlog.tsv"

@@ -12,6 +12,7 @@ const inferMod = @import("../infer.zig");
 const comptimeMod = @import("../../comptime.zig");
 const errorMod = @import("../error.zig");
 const snapshot = @import("../snapshot.zig");
+const hostRuntime = @import("../runtime/runtime.zig");
 const Module = @import("../../module.zig").Module;
 const format = @import("../../format.zig");
 const Lexer = lexerMod.Lexer;
@@ -128,6 +129,12 @@ pub fn assertComptimeAstExpecting(
     var build_root_buf: [512]u8 = undefined;
     const build_root_path = try std.fmt.bufPrint(&build_root_buf, ".botopinkbuild/comptime/{s}", .{base_slug});
 
+    // The session is compiled once per comptime runtime (front 18 step 4):
+    // the AST is recorded from the BEAM pass and must be the same text on
+    // wat; each pass's decorator/template exchanges are recorded under
+    // `comptime/runtime/<runtime>/`.
+    const prev_rt = hostRuntime.select(.beam);
+    defer _ = hostRuntime.select(prev_rt);
     var session = try comptimeMod.compile(allocator, modules, io, build_root_path, null);
     defer session.deinit(allocator);
 
@@ -136,6 +143,11 @@ pub fn assertComptimeAstExpecting(
     for (session.outputs.items) |output| {
         try outputs.append(allocator, output);
     }
+
+    _ = hostRuntime.select(.wat);
+    var wat_session = try comptimeMod.compile(allocator, modules, io, build_root_path, null);
+    defer wat_session.deinit(allocator);
+    _ = hostRuntime.select(.beam);
 
     // One snapshot per test, under `comptime/ast/`. The AST snapshot never
     // included the per-runtime script, so the four `comptime/{node,erlang,wasm,
@@ -146,6 +158,22 @@ pub fn assertComptimeAstExpecting(
     snapshot.assertComptimeAst(allocator, base_slug, outputs.items) catch |err| {
         first_err = err;
     };
+    snapshot.assertComptimeExchange(allocator, "beam", base_slug, outputs.items) catch |err| {
+        if (first_err == null) first_err = err;
+    };
+    snapshot.assertComptimeExchange(allocator, "wat", base_slug, wat_session.outputs.items) catch |err| {
+        if (first_err == null) first_err = err;
+    };
+    {
+        const beam_ast = try snapshot.buildSnapshotMulti(allocator, outputs.items);
+        defer allocator.free(beam_ast);
+        const wat_ast = try snapshot.buildSnapshotMulti(allocator, wat_session.outputs.items);
+        defer allocator.free(wat_ast);
+        if (!std.mem.eql(u8, beam_ast, wat_ast)) {
+            std.debug.print("\n{s}: the typed AST differs between the comptime runtimes\n--- beam\n{s}\n--- wat\n{s}\n", .{ base_slug, beam_ast, wat_ast });
+            if (first_err == null) first_err = error.ComptimeAstDiffersByRuntime;
+        }
+    }
 
     // H3/H9 — the snapshot above now carries a `COMPILE DIAGNOSTIC` section for
     // every module that did not compile. Report it as a failure too, so a test

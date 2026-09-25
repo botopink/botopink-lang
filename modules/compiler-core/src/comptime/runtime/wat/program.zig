@@ -22,7 +22,9 @@ pub const Built = union(enum) {
     ok: struct {
         /// The linked module: the runtime plus the lowered program.
         wasm: []const u8,
-        /// The lowered program as `.wat` text (`COMPTIME WAT`).
+        /// The generated module's lowered functions as `.wat` text — the body
+        /// of a `COMPTIME WAT` snapshot section (not `main/1`, not the
+        /// prelude's functions, not the runtime).
         listing: []const u8,
     },
     /// What could not be lowered, and where.
@@ -118,7 +120,31 @@ fn buildUncached(ar: std.mem.Allocator, code: []const u8) Error!Built {
         error.OutOfMemory => return error.OutOfMemory,
         else => return .{ .refused = try std.fmt.allocPrint(ar, "the wat runtime could not link the module ({s})", .{@errorName(err)}) },
     };
-    return .{ .ok = .{ .wasm = wasm, .listing = aw.written() } };
+    return .{ .ok = .{ .wasm = wasm, .listing = try listingOf(ar, aw.written(), lowered.listed) } };
+}
+
+/// The `(func $<name> …)` forms of `listed`, cut out of the rendered module
+/// text in order, re-indented to the left margin.
+fn listingOf(ar: std.mem.Allocator, text: []const u8, listed: []const []const u8) Error![]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    for (listed) |name| {
+        const head = try std.fmt.allocPrint(ar, "\n  (func ${s}", .{name});
+        var at: usize = 0;
+        const start = while (std.mem.indexOfPos(u8, text, at, head)) |i| {
+            const after = i + head.len;
+            if (after < text.len and (text[after] == ' ' or text[after] == '\n')) break i + 1;
+            at = after;
+        } else continue;
+        const end = std.mem.indexOfPos(u8, text, start + 1, "\n  (") orelse text.len;
+        var lines = std.mem.splitScalar(u8, text[start..end], '\n');
+        while (lines.next()) |line| {
+            if (line.len == 0) continue;
+            try out.appendSlice(ar, if (std.mem.startsWith(u8, line, "  ")) line[2..] else line);
+            try out.append(ar, '\n');
+        }
+        try out.append(ar, '\n');
+    }
+    return out.items;
 }
 
 test "the resident preludes parse" {

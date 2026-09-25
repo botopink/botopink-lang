@@ -139,6 +139,12 @@ jobs:
           rm -rf modules/compiler-core/.botopinkbuild/runtime-cache
           zig build test
 
+      # Front 18 step 4: every snapshot is recorded under both comptime
+      # runtimes, and the pairs are equal but for their listing sections.
+      - name: comptime runtime parity
+        shell: bash
+        run: bash scripts/snap_audit.sh --mode=runtime-parity
+
       - name: zig build test-bpmp
         shell: bash
         run: zig build test-bpmp

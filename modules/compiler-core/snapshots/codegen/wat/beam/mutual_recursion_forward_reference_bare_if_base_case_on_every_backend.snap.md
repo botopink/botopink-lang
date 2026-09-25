@@ -1,0 +1,83 @@
+----- SOURCE CODE -- main.bp
+```botopink
+fn main() -> bool {
+    return isEven(10);
+}
+
+fn isEven(n: i32) -> bool {
+    if (n == 0) { return true; };
+    return isOdd(n - 1);
+}
+
+fn isOdd(n: i32) -> bool {
+    if (n == 0) { return false; };
+    return isEven(n - 1);
+}
+```
+
+----- BEAM ASSEMBLY -- main.S
+```erlang
+{module, test@main}.
+{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{attributes, []}.
+{labels, 14}.
+
+{function, main, 0, 3}.
+  {label, 2}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, main}, 0}.
+  {label, 3}.
+    {allocate, 0, 0}.
+    {move, {integer, 10}, {x, 0}}.
+    {call_last, 1, {f, 5}, 0}.
+
+{function, isEven, 1, 5}.
+  {label, 4}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, isEven}, 1}.
+  {label, 5}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test, is_eq, {f, 12}, [{y, 0}, {integer, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {deallocate, 1}.
+    return.
+  {label, 12}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
+    {call_last, 1, {f, 7}, 1}.
+
+{function, isOdd, 1, 7}.
+  {label, 6}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, isOdd}, 1}.
+  {label, 7}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test, is_eq, {f, 13}, [{y, 0}, {integer, 0}]}.
+    {move, {atom, false}, {x, 0}}.
+    {deallocate, 1}.
+    return.
+  {label, 13}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
+    {call_last, 1, {f, 5}, 1}.
+
+{function, '_botopink_main', 0, 9}.
+  {label, 8}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '_botopink_main'}, 0}.
+  {label, 9}.
+    {call_only, 0, {f, 3}}.
+
+{function, main, 1, 11}.
+  {label, 10}.
+    {line, [{location, "test@main.erl", 5}]}.
+    {func_info, {atom, test@main}, {atom, main}, 1}.
+  {label, 11}.
+    {call_only, 0, {f, 9}}.
+```
+
+----- RUN LOG -----
+```logs
+```
