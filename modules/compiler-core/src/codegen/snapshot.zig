@@ -123,13 +123,7 @@ pub fn buildSnapshot(
             }
 
             // RUN LOG section (if any)
-            if (result.run_output) |output| {
-                const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
-                defer alloc.free(runLogHdr);
-                try buf.appendSlice(alloc, runLogHdr);
-                try buf.appendSlice(alloc, output);
-                try buf.appendSlice(alloc, "```\n");
-            }
+            if (result.run_output) |output| try writeRunLog(alloc, &buf, output);
         },
         .erlang => {
             try writeComptimeSections(alloc, &buf, name, result);
@@ -143,13 +137,7 @@ pub fn buildSnapshot(
             try writeUnitSections(alloc, &buf, "ERLANG", ".erl", result);
 
             // RUN LOG section (if any)
-            if (result.run_output) |output| {
-                const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
-                defer alloc.free(runLogHdr);
-                try buf.appendSlice(alloc, runLogHdr);
-                try buf.appendSlice(alloc, output);
-                try buf.appendSlice(alloc, "```\n");
-            }
+            if (result.run_output) |output| try writeRunLog(alloc, &buf, output);
         },
         .beam => {
             try writeComptimeSections(alloc, &buf, name, result);
@@ -162,13 +150,7 @@ pub fn buildSnapshot(
             try buf.appendSlice(alloc, "```\n");
             try writeUnitSections(alloc, &buf, "BEAM ASSEMBLY", ".S", result);
 
-            if (result.run_output) |output| {
-                const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
-                defer alloc.free(runLogHdr);
-                try buf.appendSlice(alloc, runLogHdr);
-                try buf.appendSlice(alloc, output);
-                try buf.appendSlice(alloc, "```\n");
-            }
+            if (result.run_output) |output| try writeRunLog(alloc, &buf, output);
         },
         .wasm => {
             try writeComptimeSections(alloc, &buf, name, result);
@@ -180,17 +162,58 @@ pub fn buildSnapshot(
             try buf.appendSlice(alloc, result.js);
             try buf.appendSlice(alloc, "```\n");
 
-            if (result.run_output) |output| {
-                const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
-                defer alloc.free(runLogHdr);
-                try buf.appendSlice(alloc, runLogHdr);
-                try buf.appendSlice(alloc, output);
-                try buf.appendSlice(alloc, "```\n");
-            }
+            if (result.run_output) |output| try writeRunLog(alloc, &buf, output);
         },
     }
 
     return try buf.toOwnedSlice(alloc);
+}
+
+/// Appends the `----- RUN LOG -----` section. The `botopink test` envelope
+/// carries ONE nondeterministic line — `  duration <ms>ms`, the runner's wall
+/// clock around each test body — and a snapshot that pins its digits fails on
+/// any machine slower than the one that wrote it: `src_in_a_test` recorded
+/// `duration 0ms` and answered `duration 1ms` under load, the only line that
+/// differed. The digits are normalised to `<ms>` here, so the envelope stays
+/// visible in the file and the file compares equal on every machine.
+/// `tests/helpers.zig`'s `stripDurationLines` is the same rule for the
+/// run-log assertion that writes no snapshot.
+fn writeRunLog(alloc: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), output: []const u8) !void {
+    try buf.appendSlice(alloc, "\n----- RUN LOG -----\n```logs\n");
+    var it = std.mem.splitScalar(u8, output, '\n');
+    var first = true;
+    while (it.next()) |line| {
+        if (!first) try buf.append(alloc, '\n');
+        first = false;
+        if (isDurationLine(line)) {
+            try buf.appendSlice(alloc, "  duration <ms>ms");
+        } else {
+            try buf.appendSlice(alloc, line);
+        }
+    }
+    try buf.appendSlice(alloc, "```\n");
+}
+
+/// `  duration <digits>ms` — the envelope line, and nothing a program prints
+/// by accident: the two-space indent, the word, one or more digits, `ms`.
+fn isDurationLine(line: []const u8) bool {
+    const prefix = "  duration ";
+    if (!std.mem.startsWith(u8, line, prefix) or !std.mem.endsWith(u8, line, "ms")) return false;
+    const digits = line[prefix.len .. line.len - 2];
+    if (digits.len == 0) return false;
+    for (digits) |c| if (!std.ascii.isDigit(c)) return false;
+    return true;
+}
+
+test "writeRunLog normalises the envelope's duration line and nothing else" {
+    const alloc = std.testing.allocator;
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(alloc);
+    try writeRunLog(alloc, &buf, "ok src: in a test\n  duration 1ms\n  duration ms\nduration 3ms\n  duration 12ms\n");
+    try std.testing.expectEqualStrings(
+        "\n----- RUN LOG -----\n```logs\nok src: in a test\n  duration <ms>ms\n  duration ms\nduration 3ms\n  duration <ms>ms\n```\n",
+        buf.items,
+    );
 }
 
 /// Builds a multi-section snapshot for multiple codegen module outputs joined together.
