@@ -1055,6 +1055,14 @@ pub fn ComptimeExprOf(comptime phase: Phase) type {
             /// backend's existing lowering emits the fatal path unchanged; the
             /// flag is what lets the checker tell the two forms apart.
             fatal: bool = false,
+            /// Where the written `catch` is (01 R9) — the caret of
+            /// "after `catch` the value is not a @Result". Null for the
+            /// handler-less form. Left out of the AST dump.
+            catchLoc: ?Loc = null,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{"catchLoc"}, &.{});
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {

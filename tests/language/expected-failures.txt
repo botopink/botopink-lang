@@ -130,9 +130,9 @@ erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method 
 # which is 13 step 18; each backend's step 1 closes the separator half only.
 
 # ── §9 effects ────────────────────────────────────────────────────────────────
-*        | reject/wrapper_without_annotation.bp | 01 step 8 | R9: `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
-*        | reject/val_assert_after_catch.bp     | 01 step 8 | R9: `val assert Ok(n) = f() catch 0` is accepted (exit 0) and then fails at run time (`Ok is not defined` on commonJS, `variable 'N' unsafe in 'case'` on erlang)
-*        | reject/two_effect_markers.bp         | 01 step 8 | R9: the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
+# The three R9 rows were deleted by `00 · 01-checker` step 8: `reject/wrapper_without_annotation.bp`,
+# `reject/val_assert_after_catch.bp` and `reject/two_effect_markers.bp` are each refused for their own
+# reason, with the caret on the return type, the `catch` and the second annotation.
 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
 
@@ -166,8 +166,8 @@ wasm     | run/display_print.bp       | 05-wasm | re-measured 2026-09-21 by runn
 # fails silently" is gone, because nothing is dropped any more. wasm keeps one
 # line below, and it is a different defect: not the index, but `Array.at` on an
 # array OF arrays.
-commonJS | test/curried_call.bp       | 01 handover 15 | 15's R2 made `adder(3)(4)` parse; inference does not type it. The call carries its callee in `calleeExpr`, not `callee`, and nothing reads that: the whole cell reds with `unbound variable ''` at the second `(`
-erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell does not compile, so the failure is the file's, not a test's
+commonJS | test/curried_call.bp::calling the result of a call ;; calling the result of a call whose result is chosen at run time | C-09 (backend half) | 01 types `adder(3)(4)` now (the callee in `calleeExpr` is inferred and applied); commonJS does not read `calleeExpr` and emits `(4)`, dropping the callee
+erlang   | test/curried_call.bp       | C-09 (backend half) | 01 types it; erlang does not read `calleeExpr` and emits `''(4)`, which `erlc` refuses — the cell does not compile
 
 # ── run-time type identity (front 12 step 4.1) ────────────────────────────────
 # The botopink-level statement of `13-module-identity`: a value knows its own

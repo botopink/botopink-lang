@@ -1,8 +1,7 @@
 //// Calling the result of a call — `adder(3)(4)`. Front 15's R2 made a chain
-//// link chain from every receiver, so this parses; it does not check. The call
-//// carries its callee in `calleeExpr` rather than in `callee`, and inference
-//// never types that, so the whole cell answers `unbound variable ''` at the
-//// second `(`.
+//// link chain from every receiver, so this parses, and 01 types it: the callee
+//// travels in `calleeExpr`, inference types that expression and applies it. What
+//// is left is the backends' — none of them reads `calleeExpr` yet.
 ////
 //// Written as the language means it, not as the compiler takes it: the second
 //// test is the work-around the rest of the suite uses (`test/closure_capture.bp`
@@ -20,4 +19,4 @@ test "calling the result of a call, with the binding the suite works around it w
     assert f(4) == 7;
 }
 
-test "calling the result of a call whose result is chosen at run time" { assert pick(true)(5) == 5; }
+test "calling the result of a call whose result is chosen at run time" { assert pick(false)(5) == 0 - 5; }
