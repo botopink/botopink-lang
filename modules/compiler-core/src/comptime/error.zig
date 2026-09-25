@@ -55,12 +55,36 @@ pub const ComptimeError = struct {
 
 // ── TypeError ─────────────────────────────────────────────────────────────────
 
+/// Where a `@Result` value came from — what the E3.9 hint of a `typeMismatch`
+/// needs to say which fix applies (decisions 120–122, 124, 125). Recorded by
+/// inference on a fresh copy of the `@Result` type node (`Env.resultOrigins`),
+/// so the value keeps its origin through the type variables it flows into.
+pub const ResultOrigin = struct {
+    source: Source = .unknown,
+    /// The `throw` / `try` that made an INFERRED value a `@Result`: an
+    /// `async { }` block's, or an `iter` / `stream` loop's item.
+    made_at: ?Loc = null,
+    made_by: MadeBy = .try_,
+
+    pub const Source = enum {
+        unknown,
+        /// `await t` on a `@Task<@Result<U, E>>` — answers the `@Result`.
+        await_,
+        /// a `for` / `for await` item over a sequence of `@Result`s.
+        for_item,
+    };
+    pub const MadeBy = enum { try_, throw_ };
+};
+
 /// The kind of type error that occurred.
 pub const TypeErrorKind = union(enum) {
     /// Two types could not be unified.
     typeMismatch: struct {
         expected: *T.Type,
         got: *T.Type,
+        /// Where the `@Result` on the `got` side came from (E3.9), filled by
+        /// `unify.zig` from `Env.resultOrigins`; the default when unknown.
+        origin: ResultOrigin = .{},
     },
     /// Identifier not found in scope.
     unboundVariable: []const u8,
@@ -346,19 +370,42 @@ pub const TypeError = struct {
     }
 
     /// Decisions 120–122 (front 24 E3.9) — the most common error of the
-    /// migration: a `@Result` used where its value is expected (`await t` now
-    /// answers the `@Result`, a `for` item over `@Iterator<@Result<…>>` is the
-    /// `@Result`, and an `async { }` / `iter` value became one from its own
-    /// `throw` / `try`). Null when the mismatch is not that one.
-    pub fn resultMismatchHint(expected: *T.Type, got: *T.Type) ?[]const u8 {
+    /// migration: a `@Result` used where its value is expected. One hint per
+    /// source (`ResultOrigin`): after `await t` it suggests `try await t`, on a
+    /// `for` item `try r`, and a value inferred as `@Result` (an `async { }`
+    /// block, an `iter` / `stream` item) also points at the `try` / `throw`
+    /// that made it one. Null when the mismatch is not that one. Caller owns
+    /// the returned slice.
+    pub fn resultMismatchHint(gpa: std.mem.Allocator, expected: *T.Type, got: *T.Type, origin: ResultOrigin) !?[]u8 {
         const e = expected.deref();
         const g = got.deref();
         const eIsResult = e.* == .named and std.mem.eql(u8, e.named.name, "Result");
         const gIsResult = g.* == .named and std.mem.eql(u8, g.named.name, "Result");
         if (eIsResult == gIsResult) return null;
         if (e.* == .typeVar or g.* == .typeVar) return null;
-        return "a `@Result` stands where its value is expected: propagate it with `try` (`try await t` for a Task, `try r` for a `for` item) or handle it with `case` / `catch`; a value inferred as `@Result` became one from a `throw` / `try` in its own block";
+        if (!gIsResult) return try gpa.dupe(u8, generic_result_hint);
+        const fix: []const u8 = switch (origin.source) {
+            .await_ => "`await` answers the `@Result` the Task holds: write `try await t` to propagate its error, or handle it with `case` / `catch`",
+            .for_item => "a `for` over a sequence of `@Result`s hands over each item as the `@Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`",
+            .unknown => if (origin.made_at == null)
+                return try gpa.dupe(u8, generic_result_hint)
+            else
+                "a `@Result` stands where its value is expected: propagate it with `try`, or handle it with `case` / `catch`",
+        };
+        const at = origin.made_at orelse return try gpa.dupe(u8, fix);
+        return try std.fmt.allocPrint(gpa, "{s}; it is a `@Result` because of the `{s}` at {d}:{d} in its own block", .{
+            fix,
+            switch (origin.made_by) {
+                .try_ => "try",
+                .throw_ => "throw",
+            },
+            at.line,
+            at.col,
+        });
     }
+
+    /// The hint when nothing says where the `@Result` came from.
+    const generic_result_hint = "a `@Result` stands where its value is expected: propagate it with `try` (`try await t` for a Task, `try r` for a `for` item) or handle it with `case` / `catch`; a value inferred as `@Result` became one from a `throw` / `try` in its own block";
 
     /// Render a concise, human-readable message for this error. Caller owns the
     /// returned slice. Used by `botopink check` and the language server.
@@ -372,8 +419,10 @@ pub const TypeError = struct {
                 defer gpa.free(expected);
                 const got = try typeLabelAlloc(gpa, m.got);
                 defer gpa.free(got);
-                if (resultMismatchHint(m.expected, m.got)) |hint|
+                if (try resultMismatchHint(gpa, m.expected, m.got, m.origin)) |hint| {
+                    defer gpa.free(hint);
                     break :blk std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s} — {s}", .{ expected, got, hint });
+                }
                 break :blk std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s}", .{ expected, got });
             },
             .unboundVariable => |n| std.fmt.allocPrint(gpa, "unbound variable '{s}'", .{n}),

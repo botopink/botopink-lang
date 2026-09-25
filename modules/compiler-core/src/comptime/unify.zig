@@ -24,6 +24,24 @@ pub fn isUnknown(ty: *T.Type) bool {
 /// target-first (`unifyAt(param, arg)`), which is what makes the one-way rules
 /// below (`?T` accepting a `T`, and `unknown` accepting everything) sound.
 pub fn unify(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
+    unifyTypes(env, a, b) catch |err| {
+        if (err == error.TypeError) noteResultOrigin(env);
+        return err;
+    };
+}
+
+/// E3.9 — a mismatch whose `got` side is a `@Result` inference recorded the
+/// origin of (`Env.resultOrigins`) carries that origin, so the hint can name
+/// the fix for it (`try await t`, `try r`, the `try` / `throw` that made it).
+fn noteResultOrigin(env: *Env) void {
+    const le = if (env.lastError) |*e| e else return;
+    if (le.kind != .typeMismatch) return;
+    const m = &le.kind.typeMismatch;
+    if (m.origin.source != .unknown or m.origin.made_at != null) return;
+    if (env.resultOrigins.get(m.got.deref())) |o| m.origin = o;
+}
+
+fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
     const ta = a.deref();
     const tb = b.deref();
 

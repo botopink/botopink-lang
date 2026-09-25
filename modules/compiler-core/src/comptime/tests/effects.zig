@@ -783,6 +783,51 @@ test "chain error: `for` over @Iterator<@Result<…>> hands over the @Result —
     );
 }
 
+// Front 24 E3.9 — one hint per source of a `@Result` used as its `U`: an
+// `await` suggests `try await t`, a `for` item `try r`, and a value inferred
+// as `@Result` (an `async { }` block, an `iter` item) also points at the
+// `try` / `throw` that made it one. `tests/language/reject/result_hint_*.bp`.
+test "chain error: E3.9 — a @Result from `await` used as its value hints `try await`" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn fetchCount(n: i32) -> @Task<@Result<i32, string>> {
+        \\    return n;
+        \\}
+        \\fn run() -> @Task<@Result<i32, string>> {
+        \\    val count: i32 = await fetchCount(3);
+        \\    return count;
+        \\}
+    );
+}
+
+test "chain error: E3.9 — an async block made a @Result by its `try` points at the `try`" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn parse(s: string) -> @Result<i32, string> {
+        \\    return 1;
+        \\}
+        \\fn run() -> @Task<void> {
+        \\    val t = async {
+        \\        val n = try parse("7");
+        \\        return n + 1;
+        \\    };
+        \\    val v: i32 = await t;
+        \\}
+    );
+}
+
+test "chain error: E3.9 — an iter item made a @Result by its `throw` points at the `throw`" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn count(xs: string[]) -> i32 {
+        \\    val items = iter for (xs) { x ->
+        \\        if (x == "stop") { throw "stopped"; };
+        \\        yield 1;
+        \\    };
+        \\    var acc = 0;
+        \\    for (items) { r -> acc = acc + r; };
+        \\    return acc;
+        \\}
+    );
+}
+
 test "chain: a plain fn iterates a @Iterator<T> — infallible, no level needed" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn upTo(n: i32) -> @Iterator<i32> {

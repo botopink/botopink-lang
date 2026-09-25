@@ -14,6 +14,7 @@ const T = @import("./types.zig");
 const Env = @import("env.zig").Env;
 const envMod = @import("env.zig");
 const TypeError = @import("error.zig").TypeError;
+const errorMod = @import("error.zig");
 const diagnostics = @import("diagnostics.zig");
 const effectChain = @import("effect_chain.zig");
 const template = @import("template.zig");
@@ -8477,7 +8478,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 ).withLoc(loc);
                 return error.TypeError;
             }
-            const ty = unwrapTaskType(rawTy) orelse rawTy;
+            const ty = try markResultSource(env, unwrapTaskType(rawTy) orelse rawTy, .await_);
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .await_ = valPtr } } };
         },
         .@"continue" => {
@@ -8736,7 +8737,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             return error.TypeError;
         }
         if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "Stream") and iterTy.named.args.len >= 1) {
-            itemTy = iterTy.named.args[0];
+            itemTy = try markResultSource(env, iterTy.named.args[0], .for_item);
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
                 diagnostics.for_await_expects_stream ++ ": `for await` expects a `@Stream<T>` value",
@@ -8767,7 +8768,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             // Decision 122 — `for` over any `@Iterator<X>` is legal in any
             // function and hands over each `X`, a `@Result` when `X` is one:
             // there is no implicit `try`.
-            itemTy = n.args[0];
+            itemTy = try markResultSource(env, n.args[0], .for_item);
         }
     }
     for (lp.params) |p| try env.bind(p, itemTy orelse try env.freshVar());
@@ -8820,6 +8821,7 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
         try env.namedTypeArgs("Result", &.{ try env.freshVar(), et })
     else
         try env.freshVar();
+    if (fails) try noteInferredResult(env, item, lp.body);
     const wrapper = try env.namedTypeArgs(eff.returnWrapper(), &.{item});
     const iterTyped = try inferExprTyped(env, lp.iter.*);
     const iterPtr = try makeTypedPtr(env, iterTyped);
@@ -9909,6 +9911,34 @@ fn typeIsGround(ty: *T.Type, depth: usize) bool {
             break :blk true;
         },
     };
+}
+
+/// E3.9 — `ty` as the value of `source` (an `await`, a `for` item): when it is
+/// a `@Result`, a fresh copy of its type node carrying that origin in
+/// `env.resultOrigins` (and the `try` / `throw` the original was inferred
+/// from, if any), so a mismatch on it names the fix for that source. Any other
+/// type is answered as is.
+fn markResultSource(env: *Env, ty: *T.Type, source: errorMod.ResultOrigin.Source) InferError!*T.Type {
+    const d = ty.deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, "Result")) return ty;
+    var origin = env.resultOrigins.get(d) orelse errorMod.ResultOrigin{};
+    origin.source = source;
+    const copy = try env.arena.create(T.Type);
+    copy.* = d.*;
+    try env.resultOrigins.put(env.arena, copy, origin);
+    return copy;
+}
+
+/// E3.9 — `result` is the `@Result` an `async { }` block's value or an `iter` /
+/// `stream` item became on its own: record the first `try` / `throw` of
+/// `body` that made it one.
+fn noteInferredResult(env: *Env, result: *T.Type, body: []const ast.Stmt) InferError!void {
+    const at = ast.bodyFirstFail(body) orelse return;
+    const by: errorMod.ResultOrigin.MadeBy = if (ast.bodyFirstThrow(body)) |t|
+        (if (t.line == at.line and t.col == at.col) .throw_ else .try_)
+    else
+        .try_;
+    try env.resultOrigins.put(env.arena, result, .{ .made_at = at, .made_by = by });
 }
 
 /// The prelude enum a sequence steps with (decision 122), registered by
@@ -11518,6 +11548,7 @@ fn inferAsyncBlock(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) 
         errTy = e;
         target = u;
         value = try env.namedTypeArgs("Result", &.{ u, e });
+        try noteInferredResult(env, value, fk.body);
     } else {
         value = try env.freshVar();
         target = value;

@@ -452,6 +452,12 @@ pub const Env = struct {
     /// does for the record, so every backend builds and matches `Yield(value)`
     /// / `Done` through the enum path it already has.
     usesYieldStep: bool = false,
+    /// E3.9 — where a `@Result` value came from, keyed by the (fresh) type
+    /// node inference gave it: an `await`, a `for` item, or the `try` /
+    /// `throw` that made an `async { }` block's value or an `iter` / `stream`
+    /// item one. `unify.zig` copies it onto a `typeMismatch` whose `got` side
+    /// is that node, and the hint names the fix for that source.
+    resultOrigins: std.AutoHashMapUnmanaged(*T.Type, @import("error.zig").ResultOrigin) = .empty,
     /// Ordinal of the next `test` block in program order — the `test_<idx>`
     /// fallback name of an anonymous `test { … }` (the same index the commonJS
     /// registry uses). Reset by `inferProgram`/`inferProgramTyped`.
