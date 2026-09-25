@@ -626,8 +626,9 @@ pub const AtomFault = struct {
             ),
             // Two `type` declarations of one module rendering one identity: the
             // type atom lowercases the declaration name and folds every other
-            // character to `_`, so `Person`/`person` and `Foo_Bar`/`FooBar` are
-            // one atom — one module and one value tag for two types.
+            // character to `_` and collapses a run of `_`, so `Person`/`person`
+            // and `Foo_Bar`/`Foo__Bar` are one atom — one module and one value
+            // tag for two types.
             .duplicate_decl => std.fmt.allocPrint(
                 alloc,
                 "types `{s}` and `{s}` of module `{s}` both render to the erlang atom `{s}` — a type's identity is its lowercased name with every other character folded to `_`",
@@ -1287,4 +1288,62 @@ test "RESERVED is sorted and holds the eleven names `libs/std` already collides 
     try testing.expect(!isReserved("main"));
     try testing.expect(!isReserved("geometry"));
     try testing.expect(!isReserved("std@math"));
+}
+
+/// A `ComptimeOutput` whose program holds only the `type` declarations named —
+/// every other field of `OkData` empty. Enough for `build` to render each
+/// type's atom, which is what the `duplicate_decl` check reads.
+fn typesOnly(alloc: std.mem.Allocator, name: []const u8, decls: []ast.DeclKind) ComptimeOutput {
+    return .{ .name = name, .src = "", .outcome = .{ .ok = .{
+        .bindings = &.{},
+        .comptime_script = null,
+        .comptime_vals = std.StringHashMap([]const u8).init(alloc),
+        .transformed = .{ .decls = decls },
+        .type_ids = std.StringHashMap(usize).init(alloc),
+        .dispatch_rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc),
+        .js_method_renames = std.AutoHashMap(ast.Loc, []const u8).init(alloc),
+        .instance_lowerings = std.AutoHashMap(ast.Loc, @import("../comptime/env.zig").InstanceLowering).init(alloc),
+        .custom_ast = &.{},
+        .comptime_traces = &.{},
+    } } };
+}
+
+test "build: two types of one module rendering one atom is a duplicate_decl fault naming both" {
+    // `Person` and `person` both render `main__t__person`: the type atom
+    // lowercases the name (and folds every other character to `_`, so
+    // `Foo_Bar`/`Foo__Bar` collide the same way), which would be one module
+    // and one value tag for two types.
+    var no_fields: [0]ast.Field = .{};
+    var decls = [_]ast.DeclKind{
+        .{ .type_ = .{ .name = "Person", .shape = .{ .record = &no_fields } } },
+        .{ .type_ = .{ .name = "person", .shape = .{ .record = &no_fields } } },
+    };
+    var outputs = [_]ComptimeOutput{typesOnly(testing.allocator, "main", &decls)};
+    var xc = try build(testing.allocator, &outputs);
+    defer xc.deinit();
+
+    const fault = xc.atomFault("main") orelse return error.TestExpectedFault;
+    try testing.expectEqual(AtomFault.Reason.duplicate_decl, fault.reason);
+    try testing.expectEqualStrings("main__t__person", fault.atom);
+    try testing.expectEqualStrings("Person", fault.other);
+    try testing.expectEqualStrings("person", fault.decl);
+
+    const msg = try fault.message(testing.allocator);
+    defer testing.allocator.free(msg);
+    try testing.expect(std.mem.indexOf(u8, msg, "`person`") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "`Person`") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "`main__t__person`") != null);
+}
+
+test "build: two types whose atoms differ raise no fault, and the module's own atom stands" {
+    var no_fields: [0]ast.Field = .{};
+    var decls = [_]ast.DeclKind{
+        .{ .type_ = .{ .name = "Person", .shape = .{ .record = &no_fields } } },
+        .{ .type_ = .{ .name = "Vec", .shape = .{ .record = &no_fields } } },
+    };
+    var outputs = [_]ComptimeOutput{typesOnly(testing.allocator, "app/models", &decls)};
+    var xc = try build(testing.allocator, &outputs);
+    defer xc.deinit();
+    try testing.expect(xc.atomFault("app/models") == null);
+    try testing.expectEqualStrings("app@models", xc.atomFor("app/models"));
 }
