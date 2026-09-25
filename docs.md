@@ -1070,15 +1070,16 @@ level.
 | `#[@futureGenerator] fn … -> @FutureGenerator<T, E, C>` | `await` · `try` · `yield` | `@FutureGenerator` ⊃ `@Future` ⊃ `@Result` |
 | `#[@future] fn … -> @Future<T, E>` | `await` · `try` | `@Future` ⊃ `@Result` |
 | `#[@resultGenerator] fn … -> @ResultGenerator<T, E>` | `try` · `yield` | `@ResultGenerator` ⊃ `@Result` |
-| `#[@generator] fn … -> @Generator<T, R>` | `yield` | — no error channel |
+| `#[@generator] fn … -> @Generator<T>` | `yield` | — no error channel |
 | `#[@result] fn … -> @Result<T, E>` | `try` | — it is the base |
 
 Every effectful body can fail, so every wrapper but one extends `@Result`; a
 wrapper that suspends extends `@Future`. The chain grants **downwards and never
 upwards**: `yield` stays exclusive to the three generator-shaped wrappers and
 `use` to `@Context`, and neither is a level anything else reaches.
-`@Generator<T, R>` is the exception — it has no error channel, so `throw` and
-`try` are both refused in a `#[@generator]` body.
+`@Generator<T>` is the exception — it has no error channel, so `throw` and
+`try` are both refused in a `#[@generator]` body, naming `@ResultGenerator<T, E>`
+(decision 103); that is what lets any body, a plain `fn` included, iterate it.
 
 A capability written above the body's level is refused, located, naming the
 level it would need — there is no flag:
@@ -1087,7 +1088,8 @@ level it would need — there is no flag:
 error: effect-try-without-fallible-channel: `try` needs an effect that
 implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`,
 `#[@futureGenerator]` or `#[@context]`; `#[@generator]` is `@Generator`,
-which does not
+which does not; `@Generator` has no error channel; use
+`@ResultGenerator<T, E>`
 ```
 
 Two forms are **not** gated by the chain, because neither leaves the body.

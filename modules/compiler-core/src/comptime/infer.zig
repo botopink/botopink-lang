@@ -3904,10 +3904,10 @@ fn effectMatchesReturn(env: *Env, eff: ast.EffectKind, retType: *T.Type) bool {
 /// because the guard was written `if (env.starFn) |ctx|`).
 /// C1 — the type a `return <value>` unifies with inside a fn whose declared
 /// return type is `retType`: the wrapper's inner channel for an effect body
-/// (`#[@result]` → R of `@Result<R, E>`, `#[@future]` → T, `#[@generator]` → R of
-/// `@Generator<T, R>`, any `-> @Context<B, X>` → X), the declared type
-/// otherwise. Null when returns are not checked: no declared return type, a
-/// template fn, or an iterator effect (which forbids `return <expr>`).
+/// (`#[@result]` → R of `@Result<R, E>`, `#[@future]` → T, any
+/// `-> @Context<B, X>` → X), the declared type otherwise. Null when returns
+/// are not checked: no declared return type, a template fn, or a generator
+/// effect (all three forbid `return <expr>`, decision 103).
 fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Type {
     if (!checked) return null;
     const t = retType.deref();
@@ -3921,12 +3921,11 @@ fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Ty
     const args = t.named.args;
     return switch (e) {
         .result, .future => if (args.len >= 1) args[0] else null,
-        .generator => if (args.len >= 2) args[1] else null,
         // A `#[@context]` fn whose return is not the `@Context<B, X>` wrapper
         // (handled above) returns its owner type as written — a component's
         // `-> Element` (decision 88).
         .context => retType,
-        .resultGenerator, .futureGenerator => null,
+        .generator, .resultGenerator, .futureGenerator => null,
     };
 }
 
@@ -5738,7 +5737,7 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 /// `optional`, `tuple`) so the resolver leaves their arg-count checks alone.
 /// The defaulted tail (per §1G / `tasks/v0.beta.19/specs/frente-b-rules-tooling.md`):
 ///   - `@Future<T, E = any>`            → 1 required
-///   - `@Generator<T, R = void>`        → 1 required
+///   - `@Generator<T>`                  → 1 required
 ///   - `@ResultGenerator<T, E = any>`   → 1 required
 ///   - `@FutureGenerator<T, E = any, C = void>` → 1 required
 ///   - `@Result<R, E>`                  → 2 required
@@ -5764,7 +5763,7 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
 fn builtinMaxGenericArgs(name: []const u8) ?usize {
     const eq = std.mem.eql;
     if (eq(u8, name, "Future")) return 2;
-    if (eq(u8, name, "Generator")) return 2;
+    if (eq(u8, name, "Generator")) return 1;
     if (eq(u8, name, "ResultGenerator")) return 2;
     if (eq(u8, name, "FutureGenerator")) return 3;
     if (eq(u8, name, "Result")) return 2;
@@ -5782,7 +5781,6 @@ fn builtinMaxGenericArgs(name: []const u8) ?usize {
 ///
 /// Layouts (per §1G default tail):
 ///   - `Future<T, E = any>`              → `["any"]` for the E slot
-///   - `Generator<T, R = void>`          → `["void"]` for the R slot
 ///   - `ResultGenerator<T, E = any>`     → `["any"]` for the E slot
 ///   - `FutureGenerator<T, E = any, C = void>` → `["any", "void"]` for the E/C slots
 ///
@@ -5797,9 +5795,6 @@ fn builtinDefaultFilledArgs(env: *Env, name: []const u8, given: usize) ?[]const 
     // placeholders ("" — never read; the caller already filled them).
     if (eq(u8, name, "Future") and given < 2) {
         return &.{ "", "any" };
-    }
-    if (eq(u8, name, "Generator") and given < 2) {
-        return &.{ "", "void" };
     }
     if (eq(u8, name, "ResultGenerator") and given < 2) {
         return &.{ "", "any" };
@@ -5934,8 +5929,8 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // §1G default-fill — when fewer trailing args are supplied than the
             // builtin declares, the missing positions take their declared
             // defaults. `@Future<User>` ⇒ `@Future<User, any>`; `@ResultGenerator<i32>`
-            // ⇒ `@ResultGenerator<i32, any>`; `@Generator<i32>` ⇒
-            // `@Generator<i32, void>`. `@Result` and `@Context` declare no
+            // ⇒ `@ResultGenerator<i32, any>`; `@Generator<T>` has one parameter
+            // and nothing to fill. `@Result` and `@Context` declare no
             // defaults — RG3 above already rejected an under-supplied form.
             const filled_args = if (b.is_builtin)
                 builtinDefaultFilledArgs(env, b.name, b.args.len)
@@ -7896,13 +7891,14 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     }
                 }
             }
-            // RI1 (§1I / §2 R14) — `return <expr>;` inside `#[@resultGenerator]` /
-            // `#[@futureGenerator]` is forbidden: a generator carries no return
-            // channel (decision 103). The author writes `break <v>` to emit a
+            // RI1 (§1I / §2 R14) — `return <expr>;` inside any generator body
+            // (`#[@generator]` / `#[@resultGenerator]` / `#[@futureGenerator]`)
+            // is forbidden: a generator carries no return channel (decision 103). The author writes `break <v>` to emit a
             // last item and end, or bare `break` for a clean end. Bare
             // `return;` (no value, an implicit clean end) stays legal.
             if (r != null and
-                (inEffectContext(env, .resultGenerator) or
+                (inEffectContext(env, .generator) or
+                    inEffectContext(env, .resultGenerator) or
                     inEffectContext(env, .futureGenerator)))
             {
                 env.lastError = TypeError.custom(
@@ -8078,6 +8074,16 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     }
                 },
                 .plain => {
+                    // Decision 103 — `@Generator<T>` is infallible; the refusal
+                    // names the generator that has an error channel.
+                    if (env.fnEffect != null and env.fnEffect.? == .generator) {
+                        env.lastError = TypeError.custom(
+                            diagnostics.effect_throw_without_fallible_channel ++
+                                ": `throw` in a `#[@generator]` body — `@Generator` has no error channel; use `@ResultGenerator<T, E>`",
+                            "Annotate the fn `#[@resultGenerator]` and return `@ResultGenerator<T, E>`, whose `Error(e)` step carries the thrown value.",
+                        ).withLoc(loc);
+                        return error.TypeError;
+                    }
                     env.lastError = TypeError.throwWithoutResult().withLoc(loc);
                     return error.TypeError;
                 },
@@ -8103,7 +8109,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             // Decision 95 — bare `try` PROPAGATES: it returns the `Error` out of
             // the enclosing function, so the body needs an error channel, which
             // is `@Result` and everything that extends it. `#[@generator]` does
-            // not (question 97 — `@Generator<T, R>` has no error channel) and a
+            // not (decision 103 — `@Generator<T>` has no error channel) and a
             // plain `fn` does not either. `try … catch` is a different node
             // (`branch.tryCatch`): it supplies its own fallback, propagates
             // nothing and is not gated here. The check runs AFTER the operand
@@ -8148,7 +8154,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             // An unlabelled break inside a nested loop targets the loop, not
             // the generator — skip (§1I REGRAS DE ESCOPO).
             if (env.starFn) |ctx| {
-                if (ctx.effect == .resultGenerator or ctx.effect == .futureGenerator) {
+                if (effectChain.grants(ctx.effect, .yield_)) {
                     const targetsGenerator = blk: {
                         if (b.label) |lbl| {
                             if (ctx.fnLabel) |fl| break :blk std.mem.eql(u8, lbl, fl);

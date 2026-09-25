@@ -1,15 +1,14 @@
-//// Question 97 of 1.0.10-beta — `@Generator<T, R>` is the one wrapper with no
-//// error channel, and decision 95 leaves it out of the chain on purpose. So a
-//// `#[@generator]` body may not `try`: this cell asserts the refusal, not a
-//// capability. Its sibling `throw` has always been refused here; before this
-//// front `try` was not, which is the half of the status quo that was written
-//// down but not enforced.
+//// Decision 103 of 1.0.10-beta (question 97 (b)) — `@Generator<T>` is the one
+//// wrapper with no error channel, and decision 95 leaves it out of the chain on
+//// purpose. So a `#[@generator]` body may not `try`: the refusal names
+//// `@ResultGenerator<T, E>`, the generator that has a channel. Its sibling
+//// `throw` is refused the same way (`reject/throw_in_generator.bp`).
 
 #[@result]
 fn parse(n: i32) -> @Result<i32, string> { return n; }
 
 #[@generator]
-fn counted(n: i32) -> @Generator<i32, void> {
+fn counted(n: i32) -> @Generator<i32> {
     val v = try parse(n);
     yield v;
 }

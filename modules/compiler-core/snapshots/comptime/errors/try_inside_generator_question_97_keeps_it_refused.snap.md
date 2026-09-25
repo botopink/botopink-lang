@@ -12,13 +12,13 @@ fn fetch(n: i32) -> @Future<i32> {
     return n;
 }
 #[@generator]
-fn counted(n: i32) -> @Generator<i32, void> {
+fn counted(n: i32) -> @Generator<i32> {
     val v = try parse(n);
     yield v;
 }
 
 ----- ERROR
-error: effect-try-without-fallible-channel: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`, `#[@futureGenerator]` or `#[@context]`; `#[@generator]` is `@Generator`, which does not
+error: effect-try-without-fallible-channel: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`, `#[@futureGenerator]` or `#[@context]`; `#[@generator]` is `@Generator`, which does not; `@Generator` has no error channel; use `@ResultGenerator<T, E>`
   ┌─ :15:13
   │
 15 │     val v = try parse(n);

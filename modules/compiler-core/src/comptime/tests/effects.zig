@@ -602,14 +602,13 @@ test "chain: #[@context] implements @Future implements @Result — `use`, `await
     );
 }
 
-// Question 97 — `@Generator<T, R>` has no error channel and stays out of the
-// chain. Its cell asserts the REFUSAL, not a capability: the recommendation is
-// to keep the generator infallible until a body needs otherwise, since the
-// defaulted parameter can be added later and never removed.
+// Decision 103 (question 97 (b)) — `@Generator<T>` has no error channel and
+// stays out of the chain. Its cell asserts the REFUSAL, which names
+// `@ResultGenerator<T, E>`, the generator that has one.
 test "chain error: `try` inside #[@generator] — question 97 keeps it refused" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(), chain_preamble ++
         \\#[@generator]
-        \\fn counted(n: i32) -> @Generator<i32, void> {
+        \\fn counted(n: i32) -> @Generator<i32> {
         \\    val v = try parse(n);
         \\    yield v;
         \\}

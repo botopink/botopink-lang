@@ -116,15 +116,11 @@ pub behavior ResultGenerator<T, E = any> extends Result {
     fn next(self: Self) -> YieldStep<T, E>;
 }
 
-// ── generator ────────────────────────────────────────────────────────────────
-
-pub type Yield<T, R> {
-    Yielded(value: T),
-    Done(result: R),
-}
-
-pub behavior Generator<T, R> {
-    fn next(self: Self) -> Yield<T, R>;
+// `Generator<T>` — the infallible generator: no error channel (`try` and
+// `throw` are refused in a `#[@generator]` body, naming `@ResultGenerator`),
+// so a loop over it is legal in any body, a plain `fn` included.
+pub behavior Generator<T> {
+    fn next(self: Self) -> YieldStep<T, void>;
 }
 
 // ── future ───────────────────────────────────────────────────────────────────
@@ -324,7 +320,7 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //
 //   #[result]          fn parse(n: i32) -> Result<i32, string>
 //   #[future]          fn fetchUser(id: u64) -> Future<User, NetworkError>
-//   #[generator]       fn range(a: i32, b: i32) -> Generator<i32, void>
+//   #[generator]       fn range(a: i32, b: i32) -> Generator<i32>
 //   #[resultGenerator] fn lazyMap<T, U>(it: ResultGenerator<T>, f: fn(T) -> U) -> ResultGenerator<U, string> :a
 //   #[futureGenerator] fn stream() -> FutureGenerator<T, NetworkError, i32>
 //   #[context]         fn processarPagamento() -> Context<BasePagamento, bool>
@@ -350,7 +346,7 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //   ResultGenerator<T, E>    extends Result<T, E>
 //   FutureGenerator<T, E, C> extends Future<YieldStep<T, E>, E>
 //   Context<Base, Return>    extends Future<Return, any>
-//   Generator<T, R>          — NO clause. See below.
+//   Generator<T>             — NO clause. See below.
 //
 // What each body may therefore write:
 //
@@ -367,11 +363,11 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // error channel this needs, so `extends Result` adds no parameter and invents
 // no error type; the same holds for `@ResultGenerator<T, E = any>`.
 //
-// `@Generator<T, R>` is the exception and is left out on purpose: it has no
-// error channel, and whether a generator should answer `try` is open question
-// 97. Until it is answered, `throw` and `try` are BOTH refused in a
-// `#[generator]` body — a defaulted parameter can be added later and never
-// removed.
+// `@Generator<T>` is the exception and is left out on purpose: it has no
+// error channel (question 97, answered (b) by decision 103), so `throw` and
+// `try` are BOTH refused in a `#[generator]` body, naming
+// `@ResultGenerator<T, E>`, the wrapper that has one. That is what lets any
+// body — a plain `fn` included — iterate a `@Generator<T>`.
 //
 // The compiler reads this order from `comptime/effect_chain.zig`, which
 // restates it and carries a test that reads THIS FILE and fails if the two

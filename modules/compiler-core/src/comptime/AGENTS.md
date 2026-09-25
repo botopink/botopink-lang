@@ -184,6 +184,13 @@ past a builtin wrapper's declared arity — the `C` nothing reads is not dropped
 A generator `throw` is no longer recorded for a `@YieldStep.Error` rewrite (the
 consumer never existed); every backend lowers it as its own throw.
 
+`@Generator<T, R>` is `@Generator<T>` (`next -> YieldStep<T, void>`; `Yield<T, R>`
+is deleted): RI1 refuses `return <expr>` in all three generators, `break <v>`
+is the last item in a `#[@generator]` body as in the other two (the gate is
+`effectChain.grants(ctx.effect, .yield_)`), and `try` / `throw` in a
+`#[@generator]` body are refused naming `@ResultGenerator<T, E>`
+(`effect_chain.refusal`'s generator hint; the `.plain` arm of `throw`).
+
 ## Testing helpers (`tests/helpers.zig`)
 
 ```zig
@@ -455,11 +462,12 @@ the value:
   slot; before C5 `T` sat in `returnType`, so the call was typed `T` and the narrowing at the `if`
   was unreachable);
 - an effect body → the wrapper's inner channel: `#[@result]` → `R` of `@Result<R, E>`,
-  `#[@future]` → `T`, `#[@generator]` → `R` of `@Generator<T, R>`; any `-> @Context<B, X>` → `X`;
+  `#[@future]` → `T`; any `-> @Context<B, X>` → `X`;
 - a lambda → its expected return type, else a fresh var shared by its `return`s; a trailing
   lambda (`@block { … }`, `use memo { -> … }`) owns its `return`s too, and `@block` is typed as the
   value they carry;
-- no declared return type, a template fn (`-> @Expr<…>`), an iterator effect → unchecked.
+- no declared return type, a template fn (`-> @Expr<…>`), a generator effect (any of the three:
+  `return <expr>` is RI1 there, decision 103) → unchecked.
 
 A value that already is the declared wrapper (`return state(start)` in a `-> @Context<B, X>` hook,
 a `@Result` / `@Future` passthrough, `try` / `catch` forms) unifies with the whole declared type or

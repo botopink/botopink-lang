@@ -1,6 +1,6 @@
 ----- SOURCE CODE
 #[@generator]
-fn nums() -> @Generator<i32, void> :outer {
+fn nums() -> @Generator<i32> :outer {
     yield :nonsense 1;
 }
 

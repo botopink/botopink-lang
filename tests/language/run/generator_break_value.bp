@@ -31,6 +31,20 @@ fn ends() -> @ResultGenerator<i32, string> {
     yield 2;
 }
 
+// The same rule on the infallible generator: `#[@generator]` too.
+#[@generator]
+fn last() -> @Generator<i32> {
+    yield 5;
+    break 6;
+}
+
+// A plain `fn` iterates a `@Generator<T>`.
+fn plainDigits(g: @Generator<i32>) -> string {
+    var acc = "";
+    loop (g) { x -> acc = acc + x.toString(); };
+    return acc;
+}
+
 #[@result]
 fn digits(g: @ResultGenerator<i32, string>) -> @Result<string, string> {
     var acc = "";
@@ -41,4 +55,5 @@ fn digits(g: @ResultGenerator<i32, string>) -> @Result<string, string> {
 pub fn main() {
     @print(try digits(upto(3)) catch "error");
     @print(try digits(ends()) catch "error");
+    @print(plainDigits(last()));
 }

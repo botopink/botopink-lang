@@ -9,7 +9,7 @@
 //!     pub behavior ResultGenerator<T, E = any>           extends Result
 //!     pub behavior FutureGenerator<T, E = any, C = void> extends Future
 //!     pub behavior Context<ContextBase, Return>          extends Future
-//!     pub behavior Generator<T, R>                       // no clause — question 97
+//!     pub behavior Generator<T>                          // no clause — decision 103
 //!
 //! Decision 95 calls these `implement` clauses; a `behavior` carries `extends`
 //! and only a `type` writes `implement`, so `extends` is what the file spells
@@ -24,10 +24,10 @@
 //! `try`, `await`, `use`, `yield` — asks `grants` rather than switching on an
 //! effect kind, so adding a wrapper is a row in `clauses` and nothing else.
 //!
-//! `@Generator<T, R>` is deliberately absent from `clauses`: it is the one
-//! wrapper with no error channel, the maintainer has not decided whether a
-//! generator answers `try` (question 97), and the status quo — `throw` and
-//! `try` are not legal in a `#[@generator]` body — is what an empty row means.
+//! `@Generator<T>` is deliberately absent from `clauses`: it is the one
+//! wrapper with no error channel (decision 103 answers question 97 (b)), so
+//! `throw` and `try` are not legal in a `#[@generator]` body — what an empty
+//! row means — and `refusal` names `@ResultGenerator<T, E>` there.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -155,10 +155,17 @@ pub fn refusal(arena: std.mem.Allocator, code: []const u8, cap: Capability, eff:
     else
         "this fn carries no effect annotation";
 
+    // Decision 103 — the infallible generator names the wrapper that has the
+    // channel it lacks.
+    const hint: []const u8 = if (eff != null and eff.? == .generator and cap == .try_)
+        "; `@Generator` has no error channel; use `@ResultGenerator<T, E>`"
+    else
+        "";
+
     return std.fmt.allocPrint(
         arena,
-        "{s}: `{s}` needs {s} — {s}; {s}",
-        .{ code, cap.spelling(), level, names.items, body },
+        "{s}: `{s}` needs {s} — {s}; {s}{s}",
+        .{ code, cap.spelling(), level, names.items, body, hint },
     );
 }
 

@@ -8,8 +8,8 @@
 //!
 //! Happy path: `yield <expr>` inside a `#[@generator]` body, labelled
 //! `yield :outer` interacting with the enclosing fn label, and
-//! `#[@generator]` return shape (`@Generator<T, R>` — R is the
-//! return-value channel; a `@ResultGenerator` has none, decision 103).
+//! `#[@generator]` return shape (`@Generator<T>` — no return channel and
+//! no error channel, decision 103).
 //!
 //! NOTE: §1 R8 (`yield <expr>` outside a generator/iterator body) is
 //! NOT enforced at comptime by the current inference (the parser+typer
@@ -24,7 +24,7 @@ const h = @import("helpers.zig");
 test "§1 R10 — yield :nonsense inside #[@generator] reds yield-label-unbound" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@generator]
-        \\fn nums() -> @Generator<i32, void> :outer {
+        \\fn nums() -> @Generator<i32> :outer {
         \\    yield :nonsense 1;
         \\}
     );
@@ -35,7 +35,7 @@ test "§1 R10 — yield :nonsense inside #[@generator] reds yield-label-unbound"
 test "§1 happy path — yield <expr> inside #[@generator] type-checks" {
     try h.assertInfersOk(std.testing.allocator,
         \\#[@generator]
-        \\fn nums() -> @Generator<i32, void> {
+        \\fn nums() -> @Generator<i32> {
         \\    yield 1;
         \\    yield 2;
         \\    yield 3;
@@ -46,20 +46,49 @@ test "§1 happy path — yield <expr> inside #[@generator] type-checks" {
 test "§1 happy path — labelled yield :outer matches enclosing fn label" {
     try h.assertInfersOk(std.testing.allocator,
         \\#[@generator]
-        \\fn nums() -> @Generator<i32, void> :outer {
+        \\fn nums() -> @Generator<i32> :outer {
         \\    yield :outer 1;
         \\}
     );
 }
 
-test "§1 happy path — return <r> inside #[@generator] sets the R channel" {
-    // `#[@generator]` carries a return-value channel R (distinct from
-    // `#[@resultGenerator]`'s completion channel C). `return <r>` resolves R.
+test "RI1 — return <expr> inside #[@generator] reds iterator-return-forbidden" {
+    // Decision 103 — `@Generator<T>` has no return channel: the last value
+    // is an item (`break <v>`), never a `return <r>`.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@generator]
+        \\fn nums() -> @Generator<i32> {
+        \\    yield 1;
+        \\    return 2;
+        \\}
+    );
+}
+
+test "decision 103 — break <v> at the level of a #[@generator] body is its last item" {
     try h.assertInfersOk(std.testing.allocator,
         \\#[@generator]
-        \\fn nums() -> @Generator<i32, string> {
+        \\fn nums() -> @Generator<i32> {
         \\    yield 1;
-        \\    return "done";
+        \\    break 2;
+        \\}
+    );
+}
+
+test "decision 103 — throw inside #[@generator] names @ResultGenerator" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@generator]
+        \\fn nums() -> @Generator<i32> {
+        \\    yield 1;
+        \\    throw "no";
+        \\}
+    );
+}
+
+test "RG5 — a second argument on @Generator reds generic-arg-count-exceeded" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@generator]
+        \\fn nums() -> @Generator<i32, void> {
+        \\    yield 1;
         \\}
     );
 }
