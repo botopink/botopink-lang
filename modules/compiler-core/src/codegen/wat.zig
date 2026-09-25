@@ -96,7 +96,25 @@ fn isSyntheticEntrypointVal(v: ast.ValDecl) bool {
     return std.mem.startsWith(u8, v.name, "_");
 }
 
-fn watType(t: ast.TypeRef) []const u8 {
+/// The value an eager effect wrapper carries. wasm runs a `@Task<T>` and a
+/// `@Component<C, T>` in place (`await` and `use` are identity), so a value of
+/// either type IS its `T`: every question about its representation — a string,
+/// a `@Result` with a string payload, an array, a record — is asked of `T`.
+/// Nested wrappers peel all the way (`@Task<@Task<string>>` is a string).
+fn eagerTypeRef(t: ast.TypeRef) ast.TypeRef {
+    return switch (t) {
+        .generic => |g| if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Task"))
+            eagerTypeRef(g.args[0])
+        else if (g.is_builtin and g.args.len == 2 and std.mem.eql(u8, g.name, "Component"))
+            eagerTypeRef(g.args[1])
+        else
+            t,
+        else => t,
+    };
+}
+
+fn watType(t0: ast.TypeRef) []const u8 {
+    const t = eagerTypeRef(t0);
     switch (t) {
         .named => |n| {
             if (std.mem.eql(u8, n, "i32")) return "i32";
@@ -116,7 +134,7 @@ fn watTypeOpt(t: ?ast.TypeRef) []const u8 {
 }
 
 fn isNamedTypeRef(t: ast.TypeRef, name: []const u8) bool {
-    return switch (t) {
+    return switch (eagerTypeRef(t)) {
         .named => |n| std.mem.eql(u8, n, name),
         .optional => |inner| isNamedTypeRef(inner.*, name),
         else => false,
@@ -1130,7 +1148,7 @@ const Emitter = struct {
     /// Bare type-name behind a `TypeRef`, stripping `?T` and generic args.
     /// Returns `""` for shapes we can't reduce (fn types, tuples, etc.).
     fn typeRefName(t: ast.TypeRef) []const u8 {
-        return switch (t) {
+        return switch (eagerTypeRef(t)) {
             .named => |n| n,
             .optional => |inner| typeRefName(inner.*),
             .generic => |g| g.name,
@@ -4363,6 +4381,7 @@ const Emitter = struct {
                             const shape = self.result_subjects.get(subj) orelse ResultShape{};
                             if ((ref == .result_ok and shape.ok_str) or (ref == .result_err and shape.err_str))
                                 try self.str_locals.put(n, {});
+                            if (if (ref == .result_ok) shape.ok else shape.err) |pt| try self.noteTypedBinder(n, pt);
                         },
                         else => {},
                     }
@@ -5280,7 +5299,7 @@ const Emitter = struct {
 
     /// The element shape a `T[]` / `Array<T>` type spells, when it is an array.
     fn arrayElemOfTypeRef(t: ast.TypeRef) ?ElemKind {
-        const elem: ast.TypeRef = switch (t) {
+        const elem: ast.TypeRef = switch (eagerTypeRef(t)) {
             .array => |inner| inner.*,
             // An iterator runs eagerly here: it is the array of what it yields.
             .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
@@ -5315,6 +5334,35 @@ const Emitter = struct {
             try self.arr_elem_locals.put(sym, ek);
         }
         if (self.elemRecordOfTypeRef(t)) |rec| try self.arr_elem_recs.put(sym, rec);
+        if (resultShapeOfTypeRef(t)) |shape| try self.result_shape_locals.put(sym, shape);
+    }
+
+    /// A binder the source did not annotate but whose type is known from
+    /// where it is bound — a `case` arm's `Ok(v)` / `Error(e)` over a declared
+    /// `@Result`, a `for` element over a declared array or iterator: it gets
+    /// everything a parameter of that type gets, so a string payload prints as
+    /// text, a record payload's fields are found, a nested `@Result` can be
+    /// matched again.
+    fn noteTypedBinder(self: *Emitter, sym: []const u8, t: ast.TypeRef) !void {
+        if (self.resolveRecordName(typeRefName(t))) |rty| try self.local_types.put(sym, rty);
+        try self.noteParamShape(sym, t);
+        try self.local_typerefs.put(sym, t);
+    }
+
+    /// The declared element type of what a `for` walks — an array, an
+    /// `Array<T>`, an eager `@Iterator<T>` / `@Stream<T>` — when its type is
+    /// known.
+    fn elemTypeRefOf(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
+        const t = eagerTypeRef(self.typeRefOf(e) orelse return null);
+        return switch (t) {
+            .array => |inner| inner.*,
+            .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
+                std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "Stream")))
+                g.args[0]
+            else
+                null,
+            else => null,
+        };
     }
 
     /// A local bound to something `isArrayExpr` recognises is an array too,
@@ -6319,7 +6367,7 @@ const Emitter = struct {
     /// The record an `Entry[]` / `Array<Entry>` / `?Entry[]` spells, when the
     /// element names a record this module declared.
     fn elemRecordOfTypeRef(self: *Emitter, t: ast.TypeRef) ?[]const u8 {
-        const elem: ast.TypeRef = switch (t) {
+        const elem: ast.TypeRef = switch (eagerTypeRef(t)) {
             .array => |inner| inner.*,
             .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
                 std.mem.eql(u8, g.name, "Iterator")))
@@ -6938,6 +6986,8 @@ const Emitter = struct {
             .useHook => |uh| self.isStringExpr(uh.kind.inner.*),
             .jump => |j| switch (j.kind) {
                 .try_ => |v| if (v) |x| self.resultOfStringCall(x.*) else false,
+                // `await t` is `t` here (the eager `@Task`).
+                .await_ => |a| self.isStringExpr(a.*),
                 else => false,
             },
             else => false,
@@ -6947,6 +6997,8 @@ const Emitter = struct {
     /// `f()` where `f` is declared `-> @Result<string, …>`.
     fn resultOfStringCall(self: *Emitter, e: ast.Expr) bool {
         return switch (e) {
+            // A local or a record field declared `@Result<string, …>`.
+            .identifier => resultOfString(self.typeRefOf(e) orelse return false),
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     const sym = self.calleeSymbol(cc, c.loc) orelse break :blk false;
@@ -6958,17 +7010,33 @@ const Emitter = struct {
                 .grouped => |inner| self.resultOfStringCall(inner.*),
                 else => false,
             },
+            .jump => |j| switch (j.kind) {
+                .await_ => |a| self.resultOfStringCall(a.*),
+                else => false,
+            },
+            .useHook => |uh| self.resultOfStringCall(uh.kind.inner.*),
             else => false,
         };
     }
 
-    const ResultShape = struct { ok_str: bool = false, err_str: bool = false };
+    /// What a `@Result` value's payloads are: `ok_str` / `err_str` for the
+    /// shapes recovered from an expression alone, and — when a declared type
+    /// names them — the payload types themselves, so a `case` binder is typed
+    /// in full (a string, an array, a record, another `@Result`).
+    const ResultShape = struct {
+        ok_str: bool = false,
+        err_str: bool = false,
+        ok: ?ast.TypeRef = null,
+        err: ?ast.TypeRef = null,
+    };
 
     fn resultShapeOfTypeRef(t: ast.TypeRef) ?ResultShape {
-        return switch (t) {
+        return switch (eagerTypeRef(t)) {
             .generic => |g| if (std.mem.endsWith(u8, g.name, "Result") and g.args.len == 2) .{
                 .ok_str = isStringTypeRef(g.args[0]),
                 .err_str = isStringTypeRef(g.args[1]),
+                .ok = g.args[0],
+                .err = g.args[1],
             } else null,
             else => null,
         };
@@ -6977,8 +7045,10 @@ const Emitter = struct {
     fn resultShapeOf(self: *Emitter, e: ast.Expr) ?ResultShape {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.result_shape_locals.get(self.resolveName(n)),
-                else => null,
+                .ident => |n| self.result_shape_locals.get(self.resolveName(n)) orelse
+                    resultShapeOfTypeRef(self.typeRefOf(e) orelse return null),
+                // A record field declared `@Result<…>`.
+                else => resultShapeOfTypeRef(self.typeRefOf(e) orelse return null),
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
@@ -6991,13 +7061,18 @@ const Emitter = struct {
                 .grouped => |inner| self.resultShapeOf(inner.*),
                 else => null,
             },
+            .jump => |j| switch (j.kind) {
+                .await_ => |a| self.resultShapeOf(a.*),
+                else => null,
+            },
+            .useHook => |uh| self.resultShapeOf(uh.kind.inner.*),
             else => null,
         };
     }
 
     /// `@Result<string, E>`.
     fn resultOfString(t: ast.TypeRef) bool {
-        return switch (t) {
+        return switch (eagerTypeRef(t)) {
             .generic => |g| std.mem.endsWith(u8, g.name, "Result") and g.args.len > 0 and isStringTypeRef(g.args[0]),
             else => false,
         };
@@ -7381,6 +7456,7 @@ const Emitter = struct {
         const elem_ty = if (elem_kind == .f32) "f32" else "i32";
         try self.declareLocal(elem, elem_ty);
         if (elem_kind == .str) try self.str_locals.put(elem, {});
+        if (self.elemTypeRefOf(lp.iter.*)) |et| try self.noteTypedBinder(elem, et);
         // `for (es) { e -> … }` binds one ELEMENT: when the elements are
         // records, `e.key` needs the record type or it reads a slot by the
         // unique-field guess and prints the field's ADDRESS (`284` for

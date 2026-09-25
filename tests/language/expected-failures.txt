@@ -309,18 +309,4 @@ commonJS | test/yield_step_next.bp::decision 122 next answers Yield for each ite
 commonJS | test/yield_step_next.bp::decision 122 a failing item is a Yield of an Error, then Done | 24-effects-by-return (`next()` protocol, deferred) | the same
 erlang   | test/yield_step_next.bp | 24-effects-by-return (`next()` protocol, deferred) | an eager iterator is a list: `it.next()` has no lowering and the module does not compile
 *        | reject/yield_step_error_param.bp | 24-effects-by-return (`next()` protocol, deferred) | `YieldStep` is not a registered type, so its arity is not checked (exit 0)
-# wasm prints a string held in a `@Result` payload, a record field or an array
-# element as its heap address — pre-existing, measured at `82e32e36` (before
-# front 24) with a plain `-> @Result<i32, string>` parameter: `failed: 256`. Every
-# row below prints the right sequence of lines with a number where a string is owed.
-wasm     | run/component_hook_and_component.bp | 05-wasm (string payload printing) | `256: 12` for `clicks: 12` — the label read off the hook's record prints its address
-wasm     | run/component_result_try_await.bp | 05-wasm (string payload printing) | an `Error(e)` string prints its address (`error 268`)
-wasm     | run/iterator_result_item.bp | 05-wasm (string payload printing) | every `Error(e)` string prints its address (`try error 416`); the sequence (`Ok`, `Error`, `Done`) is right
-wasm     | run/iterator_result_items.bp | 05-wasm (string payload printing) | `sum failed: 472`, `error: 656` — the `Error` strings print their addresses; the values and the order are right
-wasm     | run/prefixed_loop_result_item.bp | 05-wasm (string payload printing) | the `Error` strings print their addresses (`try error 404`); the sequence is right
-wasm     | run/stream_pages.bp | 05-wasm (string payload printing) | the `Error` strings and the batch arrays print addresses; the paging stops at the failure as owed
-wasm     | run/task_await_result.bp | 05-wasm (string payload printing) | the `Ok` / `Error` strings print their addresses (`ok 356`)
-wasm     | run/task_return_layers.bp | 05-wasm (string payload printing) | `result error 256` — the `Error` string prints its address
-wasm     | run/async_block_return.bp | 05-wasm (string payload printing) | the block's `string` value prints its address (`292` for `positive`); the order of the lines is right
-wasm     | run/async_block_value_type.bp | 05-wasm (string payload printing) | the numbers and the `ok` rows are right; the `Error` strings print their addresses (`error 256`)
 wasm     | run/stream_loop_no_failure.bp | 24-effects-by-return (wasm stream loop in a record field) | only `done` prints: a `stream loop` stored in a record field and walked by `for await` yields nothing on the eager wasm lowering

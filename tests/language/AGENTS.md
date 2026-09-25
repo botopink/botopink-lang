@@ -58,6 +58,10 @@ templates deliberately build the pre-decision-21 `#{field => V}` map that an `.e
 consumer library still builds, and the boundary adopts it; `.targets` is `commonJS erlang` because
 neither wasm nor beam has a host vocabulary for these templates),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets),
+`result_string_payloads` (`05-wasm`: a `@Result`'s payload keeps its declared type through a
+`case` — a string in `Ok` / `Error`, a record payload's string fields, a record nested in one, an
+array of strings, from a call, a parameter, an annotated `val`, a `for` element and a record field
+with `try` on it; wasm printed each string as its heap address before, on all four targets),
 `std_default_fn_in_a_std_module` (1.0.10-beta `00 · 02-erlang`: a primitive-interface
 `default fn` — `String.slice`, `Array.slice` — reached INSIDE a `libs/std` module that
 `from "std"` compiled as an ordinary dependency; one `run/` cell and one `test/` cell,

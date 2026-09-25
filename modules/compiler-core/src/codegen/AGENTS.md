@@ -2166,6 +2166,20 @@ first three are now enforced by the model, not by discipline:
   `val #(a, b) = #(…)`), an array's element shape (for a loop parameter) and a
   top-level `val`'s initialiser (`str_globals`, `global_rec_types`). A value
   whose shape nothing recovers still prints through `$__print_i32`.
+- **A declared type answers for its eager wrapper and for its binders**:
+  `eagerTypeRef` peels `@Task<T>` and `@Component<C, T>` to `T` (both run in
+  place here; `await` / `use` are identity) before any shape question —
+  `watType`, `isNamedTypeRef`, `typeRefName`, the `@Result` and array readers —
+  so a `-> @Task<string>` fn, an `@Task<string>` record field or a
+  `-> @Component<C, string>` hook is a string, and `await e` / `use e` has the
+  shape of `e`. A `@Result`'s `ResultShape` carries its payload types
+  (`ok` / `err`), recovered from a call, a local, a **parameter**
+  (`noteParamShape`), a record field or an `await`; a `case` binder `Ok(v)` /
+  `Error(e)` gets everything a parameter of that type gets (`noteTypedBinder`:
+  string, array, record type, a nested `@Result`), and so does a `for` element
+  over a declared array / `@Iterator` / `@Stream` (`elemTypeRefOf`). Without
+  it a string payload printed its heap address (`error 256`) —
+  `run/result_string_payloads.bp` pins the shapes.
 - **`@print` of an array of strings, a tuple or an array of tuples** (semantics
   decision 1a) goes through `$__print_shaped_raw(v, shape, 1)`: the emitter
   interns a shape string (`i` i32, `f` f32 slot, `b` bool, `s` string, `[X` array
