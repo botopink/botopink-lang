@@ -37,6 +37,8 @@ parser/
 │                     (`a.b.c ("*" | "as" x)?`) and a braced group (`a: {b: {c}}`) flatten to the same `ImportPath`
 │                     per leaf, the group's prefix written into `segments`; `*`/`as` on a node that opens braces
 │                     is `importGroupModifier`; `parseImportItem` (one leaf) serves the `X*;` activation statement
+│                     the type alias `[pub] type Name<A> = T;` (`isTypeAliasAt` lookahead — `=` after the name and its
+│                     `<…>` —, `parseTypeAliasDecl`; plain parameter names, `;` required, no annotation),
 │                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)

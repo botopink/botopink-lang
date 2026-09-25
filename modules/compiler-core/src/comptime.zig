@@ -6,6 +6,7 @@ const std = @import("std");
 const ast = @import("./ast.zig");
 const infer = @import("./comptime/infer.zig");
 const transform = @import("./comptime/transform.zig");
+const alias_erase = @import("./comptime/alias_erase.zig");
 const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
@@ -1022,6 +1023,12 @@ fn registerExports(
     };
     for (bindings) |b| {
         if (b.name.len == 0 or b.decl == .use) continue;
+        // A type alias exports its declaration only — it names no value, and
+        // an importer re-registers it (`registerTypeDecl`) to substitute it.
+        if (b.decl == .typeAlias) {
+            if (b.decl.typeAlias.isPub) try typeDecls.put(b.name, b.decl);
+            continue;
+        }
         const is_pub = switch (b.decl) {
             .val => |v| v.isPub,
             .@"fn" => |f| f.isPub,
@@ -1237,6 +1244,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             for (program.decls) |decl| {
                 const is_pub_type = switch (decl) {
                     .type_ => |t| t.isPub,
+                    .typeAlias => |a| a.isPub,
                     else => false,
                 };
                 if (is_pub_type) try type_decls.append(env.arena, decl);
@@ -1472,7 +1480,8 @@ pub fn compileTypesOnly(
                     ) catch break :blk_t program_for_transform;
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, t, &succ.env) catch break :blk_t t;
                     const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
-                    break :blk_t withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
+                    const with_src = withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
+                    break :blk_t alias_erase.erase(arena_alloc, with_src, &succ.env.typeAliases) catch with_src;
                 };
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
@@ -1648,11 +1657,11 @@ pub fn compile(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
+                const transformed = try alias_erase.erase(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
                     try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections), &succ.env),
                     &succ.env,
-                ), &succ.env);
+                ), &succ.env), &succ.env.typeAliases);
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
                 for (succ.bindings) |b| {

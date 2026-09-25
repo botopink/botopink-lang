@@ -931,3 +931,15 @@ test "format: an annotation argument keeps its label" {
         \\pub declare fn f(s: string) -> string;
     );
 }
+
+test "format: type alias ---- plain, generic and pub round-trip" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\type Id = i32;
+        \\
+        \\pub type Parser<T> = @Result<T, ParseError>;
+        \\
+        \\type Pair<A, B> = #(A, B);
+        \\
+        \\type Handler = fn(string) -> ?i32;
+    );
+}

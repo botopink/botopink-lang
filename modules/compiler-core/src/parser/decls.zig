@@ -1606,3 +1606,73 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
         .is_default = true,
     };
 }
+
+// ── type alias ────────────────────────────────────────────────────────────────
+
+/// True when a type alias starts at `offset`: `[pub] type Name [<…>] =`. The
+/// generic list is skipped by bracket depth, so a `=` inside it (a default,
+/// refused by `parseTypeAliasDecl`) does not end the lookahead. Pure lookahead.
+pub fn isTypeAliasAt(this: *This, offset: usize) bool {
+    var i = offset;
+    if (this.peekAt(i).kind == .@"pub") i += 1;
+    if (this.peekAt(i).kind != .type) return false;
+    i += 1;
+    if (this.peekAt(i).kind != .identifier) return false;
+    i += 1;
+    if (this.peekAt(i).kind == .lessThan) {
+        var depth: usize = 0;
+        while (true) : (i += 1) {
+            switch (this.peekAt(i).kind) {
+                .lessThan => depth += 1,
+                .greaterThan => {
+                    depth -= 1;
+                    if (depth == 0) break;
+                },
+                .endOfFile, .leftBrace, .rightBrace, .semicolon => return false,
+                else => {},
+            }
+        }
+        i += 1;
+    }
+    return this.peekAt(i).kind == .equal;
+}
+
+/// `[pub] type Name<A, B> = Target;` (decision 118 rule 1). The parameters are
+/// plain names — a default is `type-alias-generic-default` — and the `;` is
+/// required: the target is a type, which has no closing token of its own.
+pub fn parseTypeAliasDecl(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeAliasDecl {
+    const isPub = this.match(.@"pub");
+    const kw = try this.consume(.type);
+    const name = (try this.consume(.identifier)).lexeme;
+    const genericParams = try parseTypeAliasParams(this, alloc);
+    errdefer alloc.free(genericParams);
+    _ = try this.consume(.equal);
+    const targetTok = this.peek();
+    var target = try this.parseTypeRef(alloc);
+    errdefer target.deinit(alloc);
+    _ = try this.consume(.semicolon);
+    return .{
+        .name = name,
+        .isPub = isPub,
+        .genericParams = genericParams,
+        .target = target,
+        .loc = locFromToken(kw),
+        .targetLoc = locFromToken(targetTok),
+    };
+}
+
+/// `<A, B>` after an alias's name: plain names only. A default (`<T = i32>`)
+/// is `type-alias-generic-default` at its `=`.
+fn parseTypeAliasParams(this: *This, alloc: std.mem.Allocator) ParseError![]GenericParam {
+    var list: std.ArrayList(GenericParam) = .empty;
+    errdefer list.deinit(alloc);
+    if (!this.match(.lessThan)) return list.toOwnedSlice(alloc);
+    while (!this.check(.greaterThan) and !this.check(.endOfFile)) {
+        const nameTok = try this.consume(.identifier);
+        if (this.check(.equal)) return failAt(this, .typeAliasGenericDefault, this.peek());
+        try list.append(alloc, .{ .name = nameTok.lexeme });
+        if (!this.match(.comma)) break;
+    }
+    _ = try this.consume(.greaterThan);
+    return list.toOwnedSlice(alloc);
+}

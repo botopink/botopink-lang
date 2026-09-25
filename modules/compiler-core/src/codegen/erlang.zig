@@ -1795,8 +1795,11 @@ fn emitErlangModule(
     // `-export` placeholder below shifts every form after it down by one.
     var decls_start = forms.items.len;
     for (program.decls) |decl| {
+        // A type alias is erased: the checker substituted its target.
+        if (decl == .typeAlias) continue;
         try forms.append(b.arena, .blank);
         switch (decl) {
+            .typeAlias => unreachable,
             // A `_`-named statement has no reader and no unique atom, so it lives
             // in `'_botopink_init'/0` alone (see `initForms`); every named `val`
             // keeps its 0-arity form (see `top_vals`). This does not depend on

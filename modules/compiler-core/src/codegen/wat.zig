@@ -884,7 +884,8 @@ const Emitter = struct {
             .type_ => |r| if (r.isRecord()) try self.emitInterfaceMethods(r.name, r.methods),
             // An import is linked statically: `emitWat` has already put the
             // owner's declarations in front of this module's.
-            .use, .behavior, .delegate, .mod, .@"test" => {},
+            // A type alias is erased: the checker substituted its target.
+            .use, .behavior, .delegate, .mod, .@"test", .typeAlias => {},
         }
     }
 

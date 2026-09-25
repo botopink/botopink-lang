@@ -1,0 +1,13 @@
+//// Decision 118 rule 1 — a `pub` type alias is imported like a type: the
+//// importer substitutes it, and the types its target names come along.
+
+pub type ParseError { Empty }
+
+pub type Parser<T> = @Result<T, ParseError>;
+pub type Port = i32;
+
+#[@result]
+pub fn portOf(s: string) -> @Result<Port, ParseError> {
+    if (s == "") { throw ParseError.Empty; };
+    return 8080;
+}

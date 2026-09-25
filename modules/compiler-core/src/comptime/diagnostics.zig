@@ -305,6 +305,21 @@ pub const fn_param_default_trailing_only_parse: []const u8 = "fn-param-default-t
 /// arity check.
 pub const fn_param_arity_exceeded: []const u8 = "fn-param-arity-exceeded";
 
+// ── type aliases (decision 118 rule 1) ───────────────────────────────────────
+
+/// `Parser<i32, string>` against `type Parser<T> = …;`, or a bare `Parser`:
+/// an alias is written with exactly as many arguments as it declares.
+pub const type_alias_arity: []const u8 = "type-alias-arity";
+
+/// `type A = B; type B = A[];` — an alias whose expansion reaches itself.
+/// An alias is a name for a type that already exists; a recursive type is a
+/// `type` declaration.
+pub const type_alias_recursive: []const u8 = "type-alias-recursive";
+
+/// `type Point = …;` in a module that already has a `type Point(…)` (or a
+/// primitive's name): one name, one type.
+pub const type_alias_name_taken: []const u8 = "type-alias-name-taken";
+
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
@@ -364,6 +379,9 @@ pub const all_codes = [_][]const u8{
     generator_loop_closed_scope,
     yield_label_not_generator,
     refutable_val_pattern,
+    type_alias_arity,
+    type_alias_recursive,
+    type_alias_name_taken,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

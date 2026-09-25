@@ -427,6 +427,36 @@ type Tree<T> {
 Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@ResultGenerator<T, E>`,
 `@Future<T>`, `@Expr<T>`. Optionals are `?T`; tuples are `#(A, B)`.
 
+### Type aliases
+
+```botopink
+type Id = i32;
+type Pair<A, B> = #(A, B);
+pub type Parser<T> = @Result<T, ParseError>;
+
+fn swap(p: Pair<Id, string>) -> Pair<string, Id> { return #(p.1, p.0); }
+```
+
+`type Name<A, B> = Target;` gives an existing type another name. The alias is
+**transparent**: wherever it is written — a parameter, a return, a field, a
+`val` annotation — the checker reads the target with the arguments substituted,
+so `Id` and `i32` are the same type and a mismatch against one is a mismatch
+against the other. Nothing of the alias reaches the emitted program.
+
+- The `;` is required, and the declaration takes no annotation
+  (`type-alias-annotated`) and no parameter default (`type-alias-generic-default`).
+- An alias is written with exactly the arguments it declares — `Pair<i32, i32>`,
+  never a bare `Pair` (`type-alias-arity`).
+- An alias names a type that already exists; one whose expansion reaches itself
+  is `type-alias-recursive` (a recursive type is a `type` declaration), and one
+  that takes the name of a type in scope is `type-alias-name-taken`.
+- A `pub` alias is imported like a type (`import {Parser} from "parse"`); the
+  types its target names come with it.
+- An alias of an effect wrapper **types** a function and never **activates** the
+  effect (decision 118): `-> Parser<i32>` is a function that hands a
+  `@Result<i32, ParseError>` value along, and the capabilities (`throw`, `try`,
+  `await`, …) are granted only by the wrapper written literally in the return.
+
 ### Union types, `unknown`, and `is`
 
 A union type is written `A | B`. `unknown` holds any value and, unlike a union,

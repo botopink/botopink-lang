@@ -10,7 +10,8 @@ harness lives in `helpers.zig`.
 When adding a test file here, register it in `../tests.zig` or it will not run.
 `declarations.zig` ends with front 17's rows: a module-level `var` keeps its
 keyword and its `#[@BeamMemory.…]` annotation, and a labelled annotation
-argument keeps its label (`assertFormat` + `assertIdempotent`).
+argument keeps its label (`assertFormat` + `assertIdempotent`). The last row is the type
+alias (decision 118 rule 1): plain, generic, `pub` and a function-type target, `assertFormatLossless`.
 
 ## The property `assertIdempotent` does not imply
 
