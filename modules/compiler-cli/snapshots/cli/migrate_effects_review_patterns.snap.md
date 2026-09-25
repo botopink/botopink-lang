@@ -216,6 +216,13 @@ fn drainAll() -> @Future<i32, string> {
 fn legacy(xs: Iterable) -> Yield<i32, string> {
     return 0;
 }
+
+// A decorator comparing the reflected return head against a renamed wrapper.
+pub fn page(comptime decl: @Decl) {
+    if (decl.returnType != "Future") decl.fail("#[page] must return @Future<Element>");
+    if ("Generator" == decl.returnType) decl.fail("#[page] is not a generator");
+    if (decl.returnType == "Element") decl.fail("unchanged: not a renamed wrapper");
+}
 ```
 
 ## `src/legacy.bp` — output (type-checked: no)
@@ -242,6 +249,15 @@ fn drainAll() -> @Task<@Result<i32, string>> {
 fn legacy(xs: Iterable) -> YieldStep<i32> {
     return 0;
 }
+
+// A decorator comparing the reflected return head against a renamed wrapper.
+pub fn page(comptime decl: @Decl) {
+    // TODO(migrate-effects): `.returnType` answers the head of the written return, and the migration renamed it: `@Future<…>` is `@Task<…>` now, so this compares against "Task" — update the comparison, and every message beside it that names the old wrapper or annotation
+    if (decl.returnType != "Future") decl.fail("#[page] must return @Future<Element>");
+    // TODO(migrate-effects): `.returnType` answers the head of the written return, and the migration renamed it: `@Generator<…>` is `@Iterator<…>` now, so this compares against "Iterator" — update the comparison, and every message beside it that names the old wrapper or annotation
+    if ("Generator" == decl.returnType) decl.fail("#[page] is not a generator");
+    if (decl.returnType == "Element") decl.fail("unchanged: not a renamed wrapper");
+}
 ```
 
 ## `src/legacy.bp` — marked for review
@@ -251,3 +267,5 @@ fn legacy(xs: Iterable) -> YieldStep<i32> {
 - line 12: this module was not type-checked, so this `for await` was not classified: if the stream can fail, its items are `@Result`s now and the implicit `try` is gone — write `try <item>` where it is used, or `case` over it
 - line 17: `Iterable` is gone: expose a method that returns an `@Iterator<T>` (`fn iter(self: Self) -> @Iterator<T>`)
 - line 18: `Yield<T, R>` → `YieldStep<T>`: the completion value `R` has no place in the step — end with `break v` (it emits `v` as the last item) or return it separately
+- line 25: `.returnType` answers the head of the written return, and the migration renamed it: `@Future<…>` is `@Task<…>` now, so this compares against "Task" — update the comparison, and every message beside it that names the old wrapper or annotation
+- line 27: `.returnType` answers the head of the written return, and the migration renamed it: `@Generator<…>` is `@Iterator<…>` now, so this compares against "Iterator" — update the comparison, and every message beside it that names the old wrapper or annotation

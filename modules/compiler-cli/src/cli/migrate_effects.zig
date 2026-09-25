@@ -76,6 +76,8 @@ pub const Input = struct {
     /// file is rewritten without types.
     module: ?[]const u8,
     source: []const u8,
+    /// A `.d.bp` the project compiles as declaration-only (`Module.declaration`).
+    declaration: bool = false,
 };
 
 pub const FileResult = struct {
@@ -132,7 +134,7 @@ pub fn migrate(gpa: Allocator, arena: Allocator, io: std.Io, inputs: []const Inp
     for (deps) |d| if (!d.declaration) try mods.append(arena, d);
     for (inputs, 0..) |in, i| {
         const name = in.module orelse continue;
-        try mods.append(arena, .{ .path = name, .source = s1[i], .srcPath = in.file });
+        try mods.append(arena, .{ .path = name, .source = s1[i], .srcPath = in.file, .declaration = in.declaration });
     }
     var log: bp.comptime_pipeline.ExprTypeLog = .{ .gpa = gpa };
     defer log.deinit();
@@ -1195,10 +1197,54 @@ fn stage2(arena: Allocator, s1: []const u8, facts: ?*const Facts) ![]const u8 {
     }
 
     try rewriteTypesIn(&ed, tk, .two, null);
+    try markReturnTypeNames(&ed, tk);
 
     if (facts) |fa| try semantic(&ed, tk, groups, fns, fa);
 
     return ed.apply();
+}
+
+/// The head a renamed wrapper answers in the comptime reflection: `@Decl`'s
+/// `returnType` is the head of the written return with no type argument
+/// (`"Future"` for `-> @Future<Element>`), so a decorator that compares it
+/// against an old wrapper's name refuses every function the migration
+/// rewrote.
+const renamed_heads = [_]struct { old: []const u8, new: []const u8 }{
+    .{ .old = "Future", .new = "Task" },
+    .{ .old = "Generator", .new = "Iterator" },
+    .{ .old = "ResultGenerator", .new = "Iterator" },
+    .{ .old = "FutureGenerator", .new = "Stream" },
+    .{ .old = "AsyncIterator", .new = "Stream" },
+    .{ .old = "Use", .new = "Component" },
+};
+
+/// `….returnType == "Future"` (either side, `==` or `!=`): marked, not
+/// rewritten — the literal is a decorator's rule, and whether the rule still
+/// holds under the new wrapper (a page that must be a `@Task`, a layout that
+/// must not be one) is the library's call, as is every message beside it
+/// that names the old annotation (decision 67).
+fn markReturnTypeNames(ed: *Editor, tk: Toks) !void {
+    var i: usize = 0;
+    while (i < tk.sig.len) : (i += 1) {
+        if (!tk.is(i, .stringLiteral)) continue;
+        const lx = tk.lexeme(i);
+        if (lx.len < 2) continue;
+        const name = lx[1 .. lx.len - 1];
+        const new = for (renamed_heads) |h| {
+            if (std.mem.eql(u8, h.old, name)) break h.new;
+        } else continue;
+        const left = i >= 3 and (tk.is(i - 1, .equalEqual) or tk.is(i - 1, .notEqual)) and
+            tk.isIdent(i - 2, "returnType") and tk.is(i - 3, .dot);
+        var right = false;
+        if (tk.is(i + 1, .equalEqual) or tk.is(i + 1, .notEqual)) {
+            var j = i + 2;
+            while (tk.is(j, .identifier) or tk.is(j, .dot)) : (j += 1) {
+                if (tk.isIdent(j, "returnType") and j > 0 and tk.is(j - 1, .dot) and !tk.is(j + 1, .dot)) right = true;
+            }
+        }
+        if (!left and !right) continue;
+        try ed.mark(tk.start(i), try std.fmt.allocPrint(ed.arena, "`.returnType` answers the head of the written return, and the migration renamed it: `@{s}<…>` is `@{s}<…>` now, so this compares against \"{s}\" — update the comparison, and every message beside it that names the old wrapper or annotation", .{ name, new, new }));
+    }
 }
 
 /// `#[@X] loop { for (xs) { … }; break; }` → `iter for (xs) { … }` when the
@@ -1432,10 +1478,6 @@ pub fn run(gpa: Allocator, io: std.Io, opts: Options, env_map: libs.EnvMap) !u8 
 
     // Every `.bp` / `.d.bp` under src/ and test/; the compiled ones carry
     // their module path so the checker types them.
-    var module_of: std.StringHashMapUnmanaged([]const u8) = .empty;
-    for (loaded.modules) |m| if (m.srcPath.len > 0) try module_of.put(arena, m.srcPath, m.path);
-    for (test_scan.modules) |m| if (m.srcPath.len > 0) try module_of.put(arena, m.srcPath, m.path);
-
     var files: std.ArrayListUnmanaged([]const u8) = .empty;
     for ([_][]const u8{ "src", "test" }) |dir| try collectFiles(arena, io, dir, &files);
     std.mem.sort([]const u8, files.items, {}, struct {
@@ -1448,17 +1490,49 @@ pub fn run(gpa: Allocator, io: std.Io, opts: Options, env_map: libs.EnvMap) !u8 
         return 1;
     }
 
-    var inputs: std.ArrayListUnmanaged(Input) = .empty;
-    for (files.items) |f| {
-        const src = std.Io.Dir.cwd().readFileAlloc(io, f, arena, .unlimited) catch |err| {
-            reporter.errMsg(try std.fmt.allocPrint(arena, "cannot read {s}: {s}", .{ f, @errorName(err) }));
+    // The compiled files go first, in the order the loaders hand them over:
+    // `sources.load` orders the module tree so an imported module is checked
+    // before its importer (the order `check` compiles in). Handing the checker
+    // the files sorted by path instead left `config.bp` ahead of the
+    // `runtime.bp` it imports — `unbound variable` in a module `check` passes,
+    // and every `await` of it marked instead of decided.
+    const inputs = try planInputs(arena, files.items, &.{ loaded.modules, test_scan.modules });
+    for (inputs) |*in| {
+        in.source = std.Io.Dir.cwd().readFileAlloc(io, in.file, arena, .unlimited) catch |err| {
+            reporter.errMsg(try std.fmt.allocPrint(arena, "cannot read {s}: {s}", .{ in.file, @errorName(err) }));
             return 1;
         };
-        try inputs.append(arena, .{ .file = f, .module = module_of.get(f), .source = src });
     }
 
-    const outcome = try migrate(gpa, arena, io, inputs.items, dep_modules, true);
+    const outcome = try migrate(gpa, arena, io, inputs, dep_modules, true);
+    std.mem.sort(FileResult, outcome.files, {}, struct {
+        fn lt(_: void, x: FileResult, y: FileResult) bool {
+            return std.mem.lessThan(u8, x.file, y.file);
+        }
+    }.lt);
     return report(arena, io, std.Io.Dir.cwd(), outcome, opts);
+}
+
+/// The files the codemod reads, in the order the checker must see them: the
+/// compiled ones first, in the order the loaders handed them over (each
+/// list in `compiled` is already ordered so an imported module comes before
+/// its importer), then the files no loader compiles (`module = null`). The
+/// sources are left empty for the caller to read.
+fn planInputs(arena: Allocator, files: []const []const u8, compiled: []const []const bp.Module) ![]Input {
+    var inputs: std.ArrayListUnmanaged(Input) = .empty;
+    var listed: std.StringHashMapUnmanaged(void) = .empty;
+    for (files) |f| try listed.put(arena, f, {});
+    var taken: std.StringHashMapUnmanaged(void) = .empty;
+    for (compiled) |mods| for (mods) |m| {
+        if (m.srcPath.len == 0 or !listed.contains(m.srcPath) or taken.contains(m.srcPath)) continue;
+        try taken.put(arena, m.srcPath, {});
+        try inputs.append(arena, .{ .file = m.srcPath, .module = m.path, .source = "", .declaration = m.declaration });
+    };
+    for (files) |f| {
+        if (taken.contains(f)) continue;
+        try inputs.append(arena, .{ .file = f, .module = null, .source = "" });
+    }
+    return inputs.items;
 }
 
 /// Print what the codemod did (or would do) and, unless `dry_run`, write it.
@@ -1805,6 +1879,13 @@ const review_legacy =
     \\    return 0;
     \\}
     \\
+    \\// A decorator comparing the reflected return head against a renamed wrapper.
+    \\pub fn page(comptime decl: @Decl) {
+    \\    if (decl.returnType != "Future") decl.fail("#[page] must return @Future<Element>");
+    \\    if ("Generator" == decl.returnType) decl.fail("#[page] is not a generator");
+    \\    if (decl.returnType == "Element") decl.fail("unchanged: not a renamed wrapper");
+    \\}
+    \\
 ;
 
 test "migrate effects: every automatic pattern (snapshot), idempotent" {
@@ -1839,6 +1920,68 @@ test "migrate effects: every review pattern carries a marker (snapshot), idempot
     }, &.{}, false);
     try testing.expect(!again.files[0].changed);
     try testing.expect(!again.files[1].changed);
+}
+
+test "planInputs: compiled files in the loaders' order, declarations kept, the rest after" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    // Sorted by path, `config.bp` comes before the `runtime.bp` it imports;
+    // the checker must see them in the module tree's order instead (rakun's
+    // `config.bp` was refused with `unbound variable 'rkSetProp'`).
+    const files = [_][]const u8{ "src/config.bp", "src/orphan.bp", "src/rakun.d.bp", "src/root.bp", "src/runtime.bp", "test/config_test.bp" };
+    const src_mods = [_]bp.Module{
+        .{ .path = "runtime", .source = "", .srcPath = "src/runtime.bp" },
+        .{ .path = "config", .source = "", .srcPath = "src/config.bp" },
+        .{ .path = "rakun", .source = "", .srcPath = "src/rakun.d.bp", .declaration = true },
+        .{ .path = "root", .source = "", .srcPath = "src/root.bp" },
+    };
+    const test_mods = [_]bp.Module{.{ .path = "config_test", .source = "", .srcPath = "test/config_test.bp" }};
+    const got = try planInputs(arena, &files, &.{ &src_mods, &test_mods });
+    const want = [_]struct { file: []const u8, module: ?[]const u8, decl: bool }{
+        .{ .file = "src/runtime.bp", .module = "runtime", .decl = false },
+        .{ .file = "src/config.bp", .module = "config", .decl = false },
+        .{ .file = "src/rakun.d.bp", .module = "rakun", .decl = true },
+        .{ .file = "src/root.bp", .module = "root", .decl = false },
+        .{ .file = "test/config_test.bp", .module = "config_test", .decl = false },
+        .{ .file = "src/orphan.bp", .module = null, .decl = false },
+    };
+    try testing.expectEqual(want.len, got.len);
+    for (want, got) |w, g| {
+        try testing.expectEqualStrings(w.file, g.file);
+        if (w.module) |m| try testing.expectEqualStrings(m, g.module.?) else try testing.expect(g.module == null);
+        try testing.expectEqual(w.decl, g.declaration);
+    }
+}
+
+test "migrate effects: the checker sees an imported module before its importer" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const runtime =
+        \\pub fn load() -> i32 { return 1; }
+        \\
+    ;
+    const app =
+        \\import {load} from "runtime";
+        \\
+        \\#[@future]
+        \\pub fn boot() -> @Future<i32> {
+        \\    val n = await start();
+        \\    return n + load();
+        \\}
+        \\
+        \\#[@future]
+        \\fn start() -> @Future<i32> { return 1; }
+        \\
+    ;
+    const out = try migrate(testing.allocator, arena, testing.io, &.{
+        .{ .file = "src/runtime.bp", .module = "runtime", .source = runtime },
+        .{ .file = "src/app.bp", .module = "app", .source = app },
+    }, &.{}, false);
+    try testing.expectEqual(@as(usize, 0), out.unchecked.len);
+    try testing.expect(!out.files[1].untyped);
+    try testing.expectEqual(@as(usize, 0), out.files[1].markers.len);
 }
 
 test "migrate effects: a file with no old syntax is left alone" {
