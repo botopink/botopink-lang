@@ -39,5 +39,6 @@ pub mod http;
 pub mod escape;
 pub mod encoding;
 pub mod hash;
+pub mod net;
 pub mod async;
 pub mod content_hash;
