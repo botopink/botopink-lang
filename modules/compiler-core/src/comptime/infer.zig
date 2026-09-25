@@ -7165,11 +7165,16 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
     // 00 · 01-checker — an expectation belongs to the position it was set for.
     // Only an identifier chain reads it (a leading-dot enum path) and only an
     // array literal passes it on (to its elements); every other node clears it
-    // so a nested expression never inherits its parent's expected type.
+    // so a nested expression never inherits its parent's expected type. A
+    // leading-dot call (`.Circle(radius: 1)`) reads it too: its head is the
+    // same path, and `inferCallExpr` clears it before the arguments.
     const outer_expected = env.expectedType;
     defer env.expectedType = outer_expected;
     switch (expr) {
         .identifier, .collection => {},
+        .call => |c| if (!isLeadingDotCall(c)) {
+            env.expectedType = null;
+        },
         else => env.expectedType = null,
     }
     return switch (expr) {
@@ -8480,6 +8485,27 @@ fn bindDestructPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, mu
     }
 }
 
+/// `.Circle(…)` — a call chained onto a leading-dot head.
+fn isLeadingDotCall(c: ast.CallExprOf(.untyped)) bool {
+    if (c.kind != .call) return false;
+    const ce = c.kind.call.calleeExpr orelse return false;
+    return ce.* == .identifier and ce.identifier.kind == .dotIdent;
+}
+
+/// The name of the enum the expected type names, when it declares a variant
+/// called `variant` (front 15 handover, `.Circle(radius: 1)`).
+fn expectedEnumDeclaring(env: *Env, variant: []const u8) ?[]const u8 {
+    const exp = env.expectedType orelse return null;
+    const d = exp.deref();
+    if (d.* != .named) return null;
+    const td = env.lookupTypeDef(d.named.name) orelse return null;
+    if (td != .enum_) return null;
+    for (td.enum_.variants) |v| {
+        if (std.mem.eql(u8, v.name, variant)) return d.named.name;
+    }
+    return null;
+}
+
 fn containsStr(haystack: []const []const u8, needle: []const u8) bool {
     for (haystack) |s| if (std.mem.eql(u8, s, needle)) return true;
     return false;
@@ -9693,6 +9719,46 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
     }
     return switch (c.kind) {
         .call => |call| {
+            // Front 15 handover — `.Circle(radius: 1)`: the parser chains the
+            // call onto a `.dotIdent` head, so the callee arrives as an
+            // expression with `callee == ""`. It is the variant constructor
+            // the leading dot names: `Shape.Circle(…)` when the expected type
+            // is an enum declaring that variant, and a located refusal when
+            // nothing says which type (decision 67 — no guess). The
+            // rewrite is recorded like `xs[k]`'s, so no backend learns a shape.
+            if (call.calleeExpr) |ce| {
+                if (ce.* == .identifier and ce.identifier.kind == .dotIdent) {
+                    const name = ce.identifier.kind.dotIdent;
+                    var direct = c;
+                    direct.kind.call.calleeExpr = null;
+                    direct.kind.call.callee = name;
+                    const en = expectedEnumDeclaring(env, name) orelse {
+                        const msg = try std.fmt.allocPrint(
+                            env.arena,
+                            "`.{s}(…)` names a variant by its leading dot, and nothing here says which type declares it",
+                            .{name},
+                        );
+                        const hint = try std.fmt.allocPrint(
+                            env.arena,
+                            "give the position a type that declares `{s}` (`val v: T = .{s}(…);`, a typed parameter or array), or write `T.{s}(…)`",
+                            .{ name, name, name },
+                        );
+                        env.lastError = TypeError.custom(msg, hint).withLoc(ce.identifier.loc);
+                        return error.TypeError;
+                    };
+                    env.expectedType = null;
+                    const recv = try env.arena.create(ast.Expr);
+                    recv.* = .{ .identifier = .{ .loc = ce.identifier.loc, .kind = .{ .ident = en } } };
+                    direct.kind.call.receiver = recv;
+                    // The backends read the untyped program: the transform
+                    // splices the named call in, through the index channel.
+                    const spliced = try env.arena.create(ast.Expr);
+                    spliced.* = .{ .call = direct };
+                    spliced.call.loc = loc;
+                    try env.indexRewrites.put(loc, spliced);
+                    return inferCallExpr(env, direct, loc);
+                }
+            }
             // C-02 (decision 63, amended 2026-09-19) — `xs[k]` IS `xs.at(k)`.
             // First of all, and before the arguments are inferred: the index
             // has no typing rule of its own, so there is nothing here to type
@@ -9816,6 +9882,34 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
             }
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
+
+            // 01 handover 15 — `adder(3)(4)`: what is called is the result of
+            // the previous call, carried in `calleeExpr` with `callee == ""`.
+            // Type that expression and apply it: it must be a function taking
+            // the written arguments (trailing lambdas after them), and the
+            // call's type is its return.
+            if (call.calleeExpr) |ce| {
+                const calleeTyped = try inferExprTyped(env, ce.*);
+                const argTypes = try env.arena.alloc(*T.Type, typedArgs.len + typedTrailing.len);
+                for (typedArgs, 0..) |a, i| argTypes[i] = a.value.getType();
+                for (typedTrailing, 0..) |_, i| argTypes[typedArgs.len + i] = try env.freshVar();
+                const ret = try env.freshVar();
+                const expectedFn = try env.funcType(argTypes, ret);
+                const got = calleeTyped.getType().deref();
+                if (got.* == .func and got.func.params.len != argTypes.len) {
+                    env.lastError = TypeError.arityMismatch("the called value", got.func.params.len, argTypes.len).withLoc(loc);
+                    return error.TypeError;
+                }
+                try unifyAt(env, got, expectedFn, loc);
+                return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+                    .receiver = null,
+                    .callee = call.callee,
+                    .is_builtin = false,
+                    .args = typedArgs,
+                    .trailing = typedTrailing,
+                    .calleeExpr = try makeTypedPtr(env, calleeTyped),
+                } } } };
+            }
 
             if (call.is_builtin) {
                 // Decision 8 §4 — `x is T`. The parser lands it as the `is`

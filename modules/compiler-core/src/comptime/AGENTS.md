@@ -644,6 +644,22 @@ The parser carries the dotted spelling in `TypeRef.named` (`parser/types.zig`). 
 spelling (`TokenText`) reds with a hint naming the path (`Env.sectionPathForFlatName`). A section
 declares no methods — `EnumSection` has no slot for them and nothing needs one yet.
 
+## A call whose callee is an expression (01 handover 15, front 15's handover)
+
+`adder(3)(4)` and `.Circle(radius: 1)` both reach `inferCallExpr` with `callee == ""` and the callee in
+`calleeExpr` (the parser's chain link). Two readings, decided in that order:
+
+- **a leading-dot head** (`.dotIdent`) is the variant constructor the dot names. The expected type of
+  the position (`val s: Shape = …`, a typed parameter, a typed array's element) must be an enum
+  declaring the variant; the call is then typed as `Shape.Circle(…)` and that untyped call is
+  recorded in `env.indexRewrites`, which the transform splices in — so no backend learns the shape.
+  With no such expected type it is a located refusal naming the two spellings that work (decision 67
+  — no guess by bare variant name). `inferExprTyped` keeps the expectation alive for this one call
+  shape (`isLeadingDotCall`) and `inferCallExpr` clears it before the arguments.
+- **anything else** is a function value: `calleeExpr` is inferred and must be a `fn` taking the
+  written arguments; the call's type is its return, and a count it does not take is an arity error
+  at the `(`. The typed node keeps `calleeExpr`; lowering it is each backend's (C-09's backend half).
+
 ## `val <Pattern> = <expr>;` — a pattern in binding position (01 R5)
 
 `val Circle(r) = s;`, `val Person(name, age) = p;` and `val [..rest] = xs;` bind through

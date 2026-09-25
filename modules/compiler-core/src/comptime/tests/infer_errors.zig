@@ -1209,3 +1209,65 @@ test "val destructure: a list pattern with elements is refused" {
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "refutable-val-pattern") != null);
 }
+
+// ── 01 handover 15: a call whose callee is an expression ──────────────────────
+
+test "chained call: calling what a call returned types by its return" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
+        \\fn main() { val x: i32 = adder(3)(4); @print(x); }
+    );
+}
+
+test "chained call: the result carries the returned fn's return type" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
+        \\fn main() { val x: string = adder(3)(4); @print(x); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected string, got i32") != null);
+}
+
+test "chained call: an argument count the returned fn does not take reds" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
+        \\fn main() { val x = adder(3)(4, 5); @print(x); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expects 1 argument(s), got 2") != null);
+}
+
+// ── front 15 handover: `.Variant(…)` in expression position ──────────────────
+
+test "leading-dot call: the expected type names the enum" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Shape = type { Circle(radius: i32), Square(side: i32) };
+        \\fn area(s: Shape) -> i32 { return 1; }
+        \\fn main() {
+        \\    val s: Shape = .Circle(radius: 1);
+        \\    val xs: Shape[] = [.Square(side: 2)];
+        \\    @print(area(.Circle(radius: 3)));
+        \\    @print(s);
+        \\    @print(xs);
+        \\}
+    );
+}
+
+test "leading-dot call: the payload is checked against the variant" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Shape = type { Circle(radius: i32), Square(side: i32) };
+        \\fn main() { val s: Shape = .Circle(radius: "x"); @print(s); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected i32, got string") != null);
+}
+
+test "leading-dot call: no expected type is a named refusal, not an empty name" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Shape = type { Circle(radius: i32), Square(side: i32) };
+        \\fn main() { val s = .Circle(radius: 1); @print(s); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`.Circle(…)` names a variant by its leading dot") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "''") == null);
+}
