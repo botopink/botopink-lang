@@ -1358,3 +1358,16 @@ test "type position: a module-level value is refused too" {
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "'n' is a value, not a type") != null);
 }
+
+// ── 01 R6: a behavior's associated fn types its result ───────────────────────
+
+test "associated fn: `Array.range` answers an array, so a method on it resolves" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\pub fn main() { val xs: i32[] = Array.range(0, 3).map({ x -> x + 2 }); @print(xs); }
+    );
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\pub fn main() { val b: bool = Array.range(0, 3); @print(b); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected bool, got array") != null);
+}

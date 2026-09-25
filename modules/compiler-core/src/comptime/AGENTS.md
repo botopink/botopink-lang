@@ -709,6 +709,15 @@ declares no methods — `EnumSection` has no slot for them and nothing needs one
 The `reject/` cells `wrapper_without_annotation`, `val_assert_after_catch` and `two_effect_markers`
 pin all three.
 
+## A behavior's associated fn through its own name (01 R6)
+
+`Array.range(0, 3)` resolves through `registerInterfaceAssociatedFns`' `Array.range` binding even
+though `Array` itself is bound (a function-typed binding in std): the guard that keeps a value of the
+same name on method dispatch now lets a behavior's own, non-`val` name through. The call types as
+`array<i32>`, so a method on its result (`.map`) records its primitive lowering — erlang emits
+`lists:map(…, array_range(0, 3))` instead of the `'__bp_prim_map'` run-time helper. Cell:
+`infer_errors.zig` `associated fn: …`.
+
 ## A type position takes a type, not any binding (01 R8)
 
 `Env.resolveTypeName`'s bindings arm used to answer any binding's type, so `val n = 5; val x: n = 7;`

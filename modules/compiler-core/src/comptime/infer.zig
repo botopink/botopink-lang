@@ -10438,7 +10438,15 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     // `registerInterfaceAssociatedFns`. Each call instantiates fresh
                     // generics. Guarded by `lookup(recvName) == null` so value
                     // bindings of the same name keep their normal method dispatch.
-                    if (env.lookup(recvName) == null) {
+                    //
+                    // 01 R6 — a behavior's own name is bound too (std's `Array`
+                    // is a function-typed binding), and that binding is not a
+                    // value that shadows the behavior: without this the
+                    // associated call (`Array.range(0, 3)`) fell through to a
+                    // fresh var, and the method on its result (`.map`) recorded
+                    // no lowering — erlang's `'__bp_prim_map'` run-time helper.
+                    const behaviorName = env.assocInterfaceDecls.contains(recvName) and !env.isVal(recvName);
+                    if (env.lookup(recvName) == null or behaviorName) {
                         const qn = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ recvName, call.callee });
                         if (env.lookup(qn)) |fnTy| {
                             return try inferAssociatedFnCall(env, recvName, call.callee, fnTy, typedReceiver, typedArgs, typedTrailing, loc);
