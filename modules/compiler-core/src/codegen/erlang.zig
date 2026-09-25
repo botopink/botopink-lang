@@ -8235,10 +8235,13 @@ const Emitter = struct {
         try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "behavior {s}", .{i.name})) });
         // Associated `default fn`s (no `self`) are pure botopink — local
         // functions so `Interface.method(...)` resolves locally (the interface
-        // decl is inlined into each consuming module). The name is mangled
-        // `Interface_method` (→ quoted `'Array_range'`) so it never collides with
-        // a consumer's own top-level fn of the same name. Instance default fns
-        // (with `self`) are not emitted here.
+        // decl is inlined into each consuming module; a behavior emits no
+        // module of its own, decision 23). The name is mangled by
+        // `interfaceAssocAtom` to `<interface>_<method>` with the first
+        // character lowercased — `array_range`, a bare unquoted atom, never
+        // `'Array_range'` — so it never collides with a consumer's own
+        // top-level fn of the same name. Instance default fns (with `self`)
+        // are not emitted here.
         for (i.methods) |m| {
             if (!m.is_default or m.body == null) continue;
             const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
