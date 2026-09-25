@@ -16,4 +16,4 @@ error: for-over-fallible-generator: `for` over a `@ResultGenerator` is an implic
 7 │     for (upTo(n)) { x -> acc = acc + x; };
   │     ^
 
-  hint: for-over-fallible-generator: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`, `#[@futureGenerator]` or `#[@context]`; this fn carries no effect annotation
+  hint: for-over-fallible-generator: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`, `#[@futureGenerator]` or `#[@use]`; this fn carries no effect annotation

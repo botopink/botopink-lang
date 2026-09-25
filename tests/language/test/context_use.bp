@@ -1,134 +1,127 @@
-//// Front 19 of 1.0.10-beta (C-27), decisions 87 and 88 — the `use` activation.
-//// A hook is `fn <noun>(…) -> @Context<Owner, R>` (no `use` prefix in its name);
-//// `val x = use <noun>(…)` binds `R` inside a `#[@context]` body whose return
-//// type is the owner (a component, `-> Element`) or implements
-//// `@Context<Owner, _>` (a custom hook). The owner type is declared here: the
-//// suite depends on no library. `use f(x)` lowers to `f(x)` on every backend,
-//// so the value a test observes is the hook body's own — the first-render value.
+//// Front 19 of 1.0.10-beta (C-27), decisions 87 and 88 — the `use` activation,
+//// as decisions 102/104 (front 21) spell it. A hook is
+//// `#[@use] fn <noun>(…) -> @Use<Owner, R>` (no `use` prefix in its name);
+//// `val x = use <noun>(…)` binds `R` inside a `#[@use]` body — a component
+//// (`-> @Component<Element>`) or another hook (`-> @Use<Element, _>`). A
+//// component is awaited by its caller (a `test` body runs in a future context,
+//// so it `await`s). The owner type is declared here: the suite depends on no
+//// library.
 
-type Element(count: i32, name: string) implement @Context<Element, Element>
-type State(value: i32, name: string) implement @Context<Element, State>
+type Element(count: i32, name: string) implement @Context<Element>
+type State(value: i32, name: string) implement @Context<Element>
 
 // `state` yields its initial value.
-fn state(initial: i32) -> @Context<Element, State> {
+#[@use]
+fn state(initial: i32) -> @Use<Element, State> {
     return State(value: initial, name: "state");
 }
 
 // A hook whose `R` is a tuple.
-fn pair(a: i32, b: i32) -> @Context<Element, #(i32, i32)> {
+#[@use]
+fn pair(a: i32, b: i32) -> @Use<Element, #(i32, i32)> {
     return #(a, b);
 }
 
 // A hook whose `R` is a tuple with a fn element — step 3 binds each name to
 // its element (`shown : i32`, `push : fn(action: i32) -> i32`), so `push(shown)`
 // types with no annotation on the binding.
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+#[@use]
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Use<Element, #(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
 
 // A void-ish hook activated as a bare statement.
-fn effect(cb: fn() -> i32) -> @Context<Element, i32> {
+#[@use]
+fn effect(cb: fn() -> i32) -> @Use<Element, i32> {
     return cb();
 }
 
 // A custom hook by the rule: a noun, no `use` prefix, composing another hook.
-// Its return implements `@Context<Element, _>`, so every `use` in it agrees on
-// `Element`, and `#[@context]` is what lets its body activate `state`.
-#[@context]
-fn counter(start: i32) -> @Context<Element, State> {
+// Its wrapper anchors at `Element`, so every `use` in it agrees on `Element`,
+// and `#[@use]` is what lets its body activate `state`.
+#[@use]
+fn counter(start: i32) -> @Use<Element, State> {
     val s = use state(start * 2);
     return s;
 }
 
-#[@context]
-fn Widget(n: i32) -> Element {
+#[@use]
+fn Widget(n: i32) -> @Component<Element> {
     val c = use state(n);
     return Element(count: c.value + 1, name: c.name);
 }
 
-#[@context]
-fn Fields() -> Element {
+#[@use]
+fn Fields() -> @Component<Element> {
     val {value, name} = use state(5);
     return Element(count: value, name: name);
 }
 
-#[@context]
-fn Composed() -> Element {
+#[@use]
+fn Composed() -> @Component<Element> {
     val k = use counter(10);
     return Element(count: k.value, name: k.name);
 }
 
-#[@context]
-fn Positional() -> Element {
+#[@use]
+fn Positional() -> @Component<Element> {
     val #(x, y) = use pair(3, 4);
     return Element(count: x + y, name: "pair");
 }
 
-#[@context]
-fn Effectful() -> Element {
+#[@use]
+fn Effectful() -> @Component<Element> {
     use effect({ -> return 9; });
     val c = use state(1);
     return Element(count: c.value, name: "effect");
 }
 
-#[@context]
-fn Liked() -> Element {
+#[@use]
+fn Liked() -> @Component<Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     return Element(count: push(shown), name: "optimistic");
 }
 
-// Row 5 — a `use` inside a nested closure: the lambda body starts its own
-// static prefix and inherits the enclosing body's owner.
-#[@context]
-fn Deferred() -> Element {
-    val f = { -> return use state(4); };
-    return Element(count: f().value, name: f().name);
-}
-
-// Without `use` the call is an ordinary call — no `#[@context]` needed.
-fn Plain() -> Element {
-    val c = state(7);
-    return Element(count: c.value, name: "plain");
+// No annotation: an ordinary function (question 92 (b)).
+fn Loading() -> Element {
+    return Element(count: 7, name: "plain");
 }
 
 test "val c = use state(n) binds R, the hook's yield" {
-    val e = Widget(41);
+    val e = await Widget(41);
     assert e.count == 42;
     assert e.name == "state";
 }
 
 test "val {a, b} = use … destructures R by field name" {
-    val e = Fields();
+    val e = await Fields();
     assert e.count == 5;
     assert e.name == "state";
 }
 
 test "a custom hook composes hooks under the same owner" {
-    assert Composed().count == 20;
-    assert Composed().name == "state";
+    val e = await Composed();
+    assert e.count == 20;
+    assert e.name == "state";
 }
 
 test "val #(a, b) = use … destructures a tuple R positionally" {
-    assert Positional().count == 7;
+    val e = await Positional();
+    assert e.count == 7;
 }
 
 test "val #(a, b) = use … binds each name to its element of R" {
-    val e = Liked();
+    val e = await Liked();
     assert e.count == 24;
     assert e.name == "optimistic";
 }
 
-test "a use inside a nested closure activates under the enclosing owner" {
-    val e = Deferred();
-    assert e.count == 4;
-    assert e.name == "state";
-}
-
 test "a bare use statement activates a void hook" {
-    assert Effectful().count == 1;
+    val e = await Effectful();
+    assert e.count == 1;
 }
 
-test "the un-activated call is an ordinary call" {
-    assert Plain().count == 7;
+test "an unannotated fn -> Element is an ordinary function" {
+    assert Loading().count == 7;
 }

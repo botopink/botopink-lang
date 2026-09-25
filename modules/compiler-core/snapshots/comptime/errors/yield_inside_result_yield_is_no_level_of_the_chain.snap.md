@@ -1,6 +1,7 @@
 ----- SOURCE CODE
-val Element = type implement @Context<Element, Element> { }
-fn state(initial: i32) -> @Context<Element, i32> {
+val Element = type implement @Context<Element> { }
+#[@use]
+fn state(initial: i32) -> @Use<Element, i32> {
     initial;
 }
 #[@result]
@@ -18,9 +19,9 @@ fn bad(n: i32) -> @Result<i32, string> {
 
 ----- ERROR
 error: yield-without-generator: `yield` needs a generator effect — `#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`; `#[@result]` is `@Result`, which does not
-  ┌─ :15:5
+  ┌─ :16:5
   │
-15 │     yield n;
+16 │     yield n;
   │     ^
 
   hint: A `yield` feeds the nearest generator scope: mark the fn `#[@generator]` (`-> @Generator<T>`) or write the loop as `#[@generator] loop { … }` (decision 105).

@@ -1,6 +1,7 @@
 ----- SOURCE CODE
-val Element = type implement @Context<Element, Element> { }
-fn state(initial: i32) -> @Context<Element, i32> {
+val Element = type implement @Context<Element> { }
+#[@use]
+fn state(initial: i32) -> @Use<Element, i32> {
     initial;
 }
 #[@result]
@@ -17,10 +18,10 @@ fn plain(n: i32) -> i32 {
 }
 
 ----- ERROR
-error: effect-try-without-fallible-channel: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`, `#[@futureGenerator]` or `#[@context]`; this fn carries no effect annotation
-  ┌─ :14:13
+error: effect-try-without-fallible-channel: `try` needs an effect that implements `@Result` — `#[@result]`, `#[@future]`, `#[@resultGenerator]`, `#[@futureGenerator]` or `#[@use]`; this fn carries no effect annotation
+  ┌─ :15:13
   │
-14 │     val v = try parse(n);
+15 │     val v = try parse(n);
   │             ^
 
   hint: Use `try <expr> catch <fallback>`, which handles the error here and needs no channel, or give the enclosing fn one.

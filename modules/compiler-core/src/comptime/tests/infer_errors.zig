@@ -702,7 +702,7 @@ test "infer error: RG5 ---- a third argument on @FutureGenerator reds generic-ar
     );
 }
 
-test "infer error: RC5 ---- @getContex outside #[@context] fn reds context-getcontex-outside-context-fn" {
+test "infer error: RC5 ---- @getContex outside #[@use] fn reds context-getcontex-outside-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
         \\fn lookup() -> User {
@@ -714,8 +714,8 @@ test "infer error: RC5 ---- @getContex outside #[@context] fn reds context-getco
 test "infer error: RC4 ---- @getContex(<value>) reds context-getcontex-expects-type" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
-        \\#[@context]
-        \\fn lookup() -> @Context<User, User> {
+        \\#[@use]
+        \\fn lookup() -> @Use<User, User> {
         \\    return @getContex(42);
         \\}
     );
@@ -725,8 +725,8 @@ test "infer error: RC6 ---- use of non-context fn reds use-of-non-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
         \\fn plain() -> User { return User(id: 1); }
-        \\#[@context]
-        \\fn lookup() -> @Context<User, User> {
+        \\#[@use]
+        \\fn lookup() -> @Use<User, User> {
         \\    val u = use plain();
         \\    return u;
         \\}
@@ -740,9 +740,9 @@ test "infer error: RC3 ---- @getContex(T) outside enclosing Anchor tree reds con
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type RootA(name: string)
         \\type RootB(name: string)
-        \\type LeafB(v: i32) implement @Context<RootB, RootB>
-        \\#[@context]
-        \\fn pickA() -> @Context<RootA, RootA> {
+        \\type LeafB(v: i32) implement @Context<RootB>
+        \\#[@use]
+        \\fn pickA() -> @Use<RootA, RootA> {
         \\    return @getContex(LeafB);
         \\}
     );
@@ -872,12 +872,14 @@ test "infer error: return ---- an @block value flows to the fn's return" {
     );
 }
 
-test "infer: return ---- a hook body returns the X of @Context<B, X>, or another hook" {
+test "infer: return ---- a hook body returns the X of @Use<B, X>, or another hook" {
     try h.assertInfersOk(std.testing.allocator,
         \\type El(tag: string)
         \\type Cell<T>(value: T)
-        \\fn state<T>(initial: T) -> @Context<El, Cell<T>> { return Cell(value: initial); }
-        \\fn counter(start: i32) -> @Context<El, Cell<i32>> { return state(start); }
+        \\#[@use]
+        \\fn state<T>(initial: T) -> @Use<El, Cell<T>> { return Cell(value: initial); }
+        \\#[@use]
+        \\fn counter(start: i32) -> @Use<El, Cell<i32>> { return state(start); }
     );
 }
 

@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 type User(id: i32)
-#[@context]
-fn lookup() -> @Context<User, User> {
+#[@use]
+fn lookup() -> @Use<User, User> {
     return @getContex(42);
 }
 

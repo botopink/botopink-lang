@@ -1,22 +1,26 @@
 ----- SOURCE CODE
-fn state(initial: i32) -> @Context<Element, i32> {
+val Element = type implement @Context<Element> { }
+val Http = type implement @Context<Http> { }
+#[@use]
+fn state(initial: i32) -> @Use<Element, i32> {
     initial;
 }
-fn connection() -> @Context<Http, i32> {
+#[@use]
+fn connection() -> @Use<Http, i32> {
     0;
 }
-#[@context]
-fn bad() -> @Context<Element, i32> {
+#[@use]
+fn bad() -> @Use<Element, i32> {
     val c = use connection();
     state(0);
 }
 
 ----- ERROR
 error: context-anchor-violation: ContextBase mismatch
-  ┌─ :9:13
+  ┌─ :13:13
   │
-9 │     val c = use connection();
+13 │     val c = use connection();
   │             ^
 
-  function returns @Context<Element, _>
-  but the `use` expression returns @Context<Http, _>
+  function anchors at `Element`
+  but the `use` expression returns @Use<Http, _>

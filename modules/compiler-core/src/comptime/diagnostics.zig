@@ -91,7 +91,7 @@ pub const yield_without_generator: []const u8 = "yield-without-generator";
 /// R9 — alias of R7 (`await` inside `#[@result]` body).
 pub const effect_await_without_future_in_result: []const u8 = effect_await_without_future;
 
-/// R10 — alias of R6 (`throw` inside `#[@context]` / `#[@generator]` body).
+/// R10 — alias of R6 (`throw` inside `#[@use]` / `#[@generator]` body).
 pub const effect_throw_without_fallible_channel_in_context: []const u8 = effect_throw_without_fallible_channel;
 
 /// R11 — `return Result::Ok(<r>)` inside `#[@result]` body (must be bare R).
@@ -129,7 +129,7 @@ pub const future_manual_construction_forbidden: []const u8 = "future-manual-cons
 /// R18 (E2) — alias of RC2 (`use <hook>()` violates anchor).
 /// R19 (E1) — alias of RC1 (`@getContex(T)` with no active provider).
 /// R20      — alias of RC3 (`@getContex(T)` outside the anchor).
-/// R21      — alias of RC6 (`use` of a non-`#[@context]` fn).
+/// R21      — alias of RC6 (`use` of a non-hook (a callee that is not `@Use<C, _>`)).
 //
 // The §1C addendum keeps the RC* names as the canonical surface; the R-table
 // numbers point to them via alias here for the catalogue.
@@ -172,7 +172,7 @@ pub const break_label_unbound: []const u8 = "break-label-unbound";
 /// RI6 — `yield break <expr>` (the deprecated form, removed in v0.beta.19).
 pub const yield_break_removed: []const u8 = "yield-break-removed";
 
-// ── RC1–RC6: §1C `#[@context]` Anchor diagnostics ───────────────────────────
+// ── RC1–RC6: §1C `#[@use]` Anchor diagnostics ───────────────────────────
 
 /// RC1 (E1) — `@getContex(T)` with no active provider of T on the scope stack.
 pub const context_unbound: []const u8 = "context-unbound";
@@ -193,14 +193,14 @@ pub const unknown_builtin: []const u8 = "unknown-builtin";
 /// RC4 — `@getContex(<value>)` (the argument must be a type).
 pub const context_getcontex_expects_type: []const u8 = "context-getcontex-expects-type";
 
-/// RC5 — `@getContex(…)` outside a `#[@context]` fn body.
+/// RC5 — `@getContex(…)` outside a `#[@use]` fn body.
 pub const context_getcontex_outside_context_fn: []const u8 = "context-getcontex-outside-context-fn";
 
-/// RC6 — `use <hook>()` where `<hook>` is not a `#[@context]` fn.
+/// RC6 — `use <hook>()` where `<hook>` is not a `@Use<C, _>` hook.
 pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
 
-/// RC7 (decision 88) — `use` in a body whose return type implements `@Context`
-/// but whose fn is not `#[@context]`: only the annotated body activates a hook.
+/// RC7 (decisions 88, 104) — `use` in a body whose fn is not `#[@use]`, or in a
+/// nested closure of one: only the annotated body activates a hook.
 pub const use_without_context_effect: []const u8 = "use-without-context-effect";
 
 /// Front 19 step 3 — `val #(a, b) = use …` whose hook yields a tuple of another

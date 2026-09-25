@@ -8,14 +8,16 @@
 //// anchored at a base the return type never declared, which the older RC2
 //// check catches before any anchor exists.
 
-type Element(count: i32) implement @Context<Element, Element>
-type Http(port: i32) implement @Context<Http, Http>
+type Element(count: i32) implement @Context<Element>
+type Http(port: i32) implement @Context<Http>
 
-fn state(initial: i32) -> @Context<Element, i32> { return initial; }
-fn connection() -> @Context<Http, i32> { return 8080; }
+#[@use]
+fn state(initial: i32) -> @Use<Element, i32> { return initial; }
+#[@use]
+fn connection() -> @Use<Http, i32> { return 8080; }
 
-#[@context]
-fn Mixed() -> Element {
+#[@use]
+fn Mixed() -> @Component<Element> {
     val a = use state(1);
     val b = use connection();
     return Element(count: a + b);

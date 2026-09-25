@@ -2,12 +2,13 @@
 //// tuple. `state` yields an `i32`, so `val #(a, b) = use state(0)` is refused at
 //// the binding rather than binding two fresh type variables (decision 67).
 
-type Element(count: i32) implement @Context<Element, Element>
+type Element(count: i32) implement @Context<Element>
 
-fn state(initial: i32) -> @Context<Element, i32> { return initial; }
+#[@use]
+fn state(initial: i32) -> @Use<Element, i32> { return initial; }
 
-#[@context]
-fn Counter() -> Element {
+#[@use]
+fn Counter() -> @Component<Element> {
     val #(count, setCount) = use state(0);
     return Element(count: count);
 }

@@ -83,7 +83,7 @@ test "surface: type Stack<T>(items) with a method is a generic record" {
 }
 
 test "surface: type Element(tag) implement @Context<…> {} keeps the implement clause" {
-    var parsed = try parse("type Element(tag: string) implement @Context<Element, Element> { }");
+    var parsed = try parse("type Element(tag: string) implement @Context<Element> { }");
     defer parsed.deinit();
     const t = try onlyType(parsed);
     try std.testing.expect(t.isRecord());

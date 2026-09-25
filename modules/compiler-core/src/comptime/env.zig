@@ -38,7 +38,7 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         fields: []FieldDef,
         implements: []const []const u8 = &.{},
-        /// ContextBase name when this type implements `@Context<B, R>` inline; null otherwise.
+        /// The base `B` when this type implements the owner marker `@Context<B>` inline; null otherwise.
         contextBase: ?[]const u8 = null,
     };
 
@@ -50,7 +50,7 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         fields: []FieldDef,
         implements: []const []const u8 = &.{},
-        /// ContextBase name when this type implements `@Context<B, R>` inline; null otherwise.
+        /// The base `B` when this type implements the owner marker `@Context<B>` inline; null otherwise.
         contextBase: ?[]const u8 = null,
     };
 
@@ -62,11 +62,11 @@ pub const TypeDef = union(enum) {
         genericDefaults: []const ?*T.Type = &.{},
         variants: []VariantDef,
         implements: []const []const u8 = &.{},
-        /// ContextBase name when this type implements `@Context<B, R>` inline; null otherwise.
+        /// The base `B` when this type implements the owner marker `@Context<B>` inline; null otherwise.
         contextBase: ?[]const u8 = null,
     };
 
-    /// The `ContextBase` of this type when it implements `@Context<B, R>` inline.
+    /// The base of this type when it implements the owner marker `@Context<B>` inline.
     /// Returns null for types that do not implement `@Context`.
     pub fn contextBase(self: TypeDef) ?[]const u8 {
         return switch (self) {
@@ -130,23 +130,21 @@ pub const ExtEntry = struct {
 /// Capability information about the function body currently being inferred.
 ///
 /// The function's return type decides whether `use` is allowed inside the body:
-/// the return must implement `@Context<ContextBase, Return>`. All `use` calls in
-/// the body must agree on the same `ContextBase`. `null` on the environment means
+/// it must be `@Use<C, _>` or `@Component<T: @Context<B>>` (decision 102). All
+/// `use` calls in the body must agree on the same base (decision 96). `null` on the environment means
 /// no function body is currently being inferred (top-level position).
 pub const FnContext = struct {
-    /// True when the function's return type implements `@Context<_, _>`.
+    /// True when the function's return type is `@Use<C, _>` or `@Component<T>`
+    /// with `T` an owner.
     implementsContext: bool,
     /// The `ContextBase` name when `implementsContext` is true; null otherwise.
     base: ?[]const u8 = null,
     /// Rendered return type, used in the "`use` not allowed" diagnostic.
     returnDisplay: []const u8 = "void",
-    /// True when the enclosing fn may activate a hook: it carries `#[@context]`
-    /// (decision 88), or it carries a wrapper effect — `#[@future]` today — and
-    /// its unwrapped return type owns the context (decision 90: the owner
-    /// answers the same question the annotation would, and R5 forbids spelling
-    /// both). A return type that implements `@Context` under **no** effect
-    /// annotation is an ordinary fn — a `use` in it is
-    /// `useWithoutContextEffect`, which names the annotation.
+    /// True when the enclosing fn carries `#[@use]` — and only then (decision
+    /// 104; decisions 89/90 revoked). It is the same flag as `Env.inContextFn`.
+    /// A `use` in any other body is `useWithoutContextEffect`, which names the
+    /// annotation.
     annotated: bool = false,
     /// The enclosing fn's name, for that diagnostic.
     fnName: []const u8 = "",
@@ -464,15 +462,15 @@ pub const Env = struct {
     fnContext: ?FnContext = null,
     /// C1 — the type a `return <value>` in the body currently being inferred
     /// must unify with: the declared return type, or an effect wrapper's inner
-    /// channel (`#[@result]` → R, `#[@future]` → T, `#[@generator]` → R,
-    /// `#[@context]` → X). Null where returns are not checked (no declared
+    /// channel (`#[@result]` → R, `#[@future]` → T, `#[@use]` → the `T` of
+    /// `@Use<C, T>` / `@Component<T>`). Null where returns are not checked (no declared
     /// return type, template fns, top level).
     returnTarget: ?*T.Type = null,
     /// C1 — a bare `return;` must unify with `void` (fn decls with a declared
     /// return type; not lambdas, whose target is a shared fresh var).
     returnBareIsVoid: bool = false,
     /// C1 — the fn's whole declared return type, for a returned value that is
-    /// already the wrapper (`return state(start)` in a `-> @Context<B, X>` hook).
+    /// already the wrapper (`return state(start)` in a `-> @Use<B, X>` hook).
     returnWhole: ?*T.Type = null,
     /// C1 — set while inferring a `case` block arm: its `return`s leave the
     /// enclosing fn, so the arm's lambda keeps the fn's return target.
@@ -488,10 +486,10 @@ pub const Env = struct {
     /// Active effect-fn context while inferring its body (for `await`/`yield`
     /// rules). The field name is historical — see `StarFnCtx` above.
     starFn: ?StarFnCtx = null,
-    /// True while inferring the body of a `#[@context]` fn. `#[@context]`
-    /// doesn't fit the `StarFnCtx` shape (no await/yield/iter), so it gets
-    /// its own gate. Read by the `@getContex` builtin-call handler for §1C
-    /// RC5 (the intrinsic is only valid inside a `#[@context]` fn body).
+    /// True while inferring the body of a `#[@use]` fn — the same question
+    /// as `FnContext.annotated` (decision 104: one flag, set by `#[@use]`
+    /// alone). Read by the `@getContex` builtin-call handler for §1C RC5 (the
+    /// intrinsic is only valid inside a `#[@use]` fn body).
     inContextFn: bool = false,
     /// Labels currently in scope (effect-fn label + enclosing loop labels),
     /// used to validate `yield :label` / `break :label`. Pushed/popped as

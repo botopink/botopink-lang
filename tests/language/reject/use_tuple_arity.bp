@@ -3,15 +3,16 @@
 //// tuple's: one name against a tuple of two is refused at the binding, with
 //// no flag (decision 67).
 
-type Element(count: i32) implement @Context<Element, Element>
+type Element(count: i32) implement @Context<Element>
 
-fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+#[@use]
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Use<Element, #(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
 
-#[@context]
-fn Liked() -> Element {
+#[@use]
+fn Liked() -> @Component<Element> {
     val #(shown) = use optimistic(12, { c, a -> c + a });
     return Element(count: shown);
 }

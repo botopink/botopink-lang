@@ -1084,8 +1084,8 @@ fn typeRefToString(arena: std.mem.Allocator, ref: ast.TypeRef) ![]const u8 {
     return buf.toOwnedSlice(arena);
 }
 
-/// If any of `impls` is `@Context<B, R>`, return the rendered `ContextBase` (`B`).
-/// Returns null when the type does not implement `@Context`.
+/// If any of `impls` is the owner marker `@Context<B>`, return the rendered
+/// base (`B`). Returns null when the type does not implement `@Context`.
 fn contextBaseFromImplements(arena: std.mem.Allocator, impls: []const ast.TypeRef) !?[]const u8 {
     for (impls) |im| {
         switch (im) {
@@ -1099,61 +1099,33 @@ fn contextBaseFromImplements(arena: std.mem.Allocator, impls: []const ast.TypeRe
     return null;
 }
 
-/// True for an effect whose return type *wraps* the value the body produces
-/// (`#[@future]` → `@Future<T>`, `#[@result]` → `@Result<D, E>`, …). `#[@context]`
-/// is the one effect that does not: it names the activation capability itself,
-/// and its return type is the owner (decision 88). Decision 90 reads this
-/// predicate — a wrapper effect whose unwrapped return type owns a context
-/// activates hooks on its own, since the wrapper says nothing about activation.
-fn isWrapperEffect(eff: ast.EffectKind) bool {
-    return eff != .context;
-}
-
-/// Look through a wrapper return type to the type that owns the context.
-/// Decision 89 — **only** `@Future<T>` is unwrapped, and only one level: a
-/// `#[@future] fn … -> @Future<Element>` has owner `Element`, so a hook declared
-/// `-> @Context<Element, R>` is type-legal in it. Every other return type,
-/// wrapper or not, is its own owner.
-fn unwrapContextOwner(retType: ast.TypeRef) ast.TypeRef {
-    return switch (retType) {
-        .generic => |g| if (std.mem.eql(u8, g.name, "Future") and g.args.len >= 1)
-            g.args[0]
-        else
-            retType,
-        else => retType,
-    };
-}
-
-/// Derive the `@Context` capability of a function from its declared return type.
-/// The owner is read after `unwrapContextOwner` (decision 89 — through `@Future<T>`
-/// to `T`), and implements `@Context` either directly (`@Context<B, R>`) or via a
-/// named type whose inline `implement` clause lists `@Context<B, R>` — the owner
-/// type of a component (`#[@context] fn Widget() -> Element`, decision 88).
-/// `eff` is the fn's effect annotation and decides `annotated`, the second half of
-/// the capability — a body activates a hook only when its return type owns a
-/// context **and** `annotated` is true (`inferUseHookExpr`). `annotated` is set by
-/// `#[@context]`, **or** (decision 90) by a wrapper effect whose unwrapped return
-/// type owns a context: `#[@future] fn Page() -> @Future<Element>` activates
-/// without a second annotation, which R5 forbids spelling anyway. A fn with no
-/// effect annotation, or one whose return owns no context, is untouched by this:
-/// the two refusals of decision 67 still fire.
+/// Derive the `use` capability of a function from its declared return type
+/// (decisions 102 and 104). The base is READ off the wrapper and nothing is
+/// unwrapped: `-> @Use<C, _>` anchors at `C`, and `-> @Component<T>` at the
+/// `B` of `T: @Context<B>` (the owner type's inline `implement` clause).
+/// `annotated` is `#[@use]` and nothing else — the same flag as
+/// `env.inContextFn` — so a body activates a hook only under `#[@use]`
+/// (`inferUseHookExpr`); decisions 89 and 90, which unwrapped `@Future<T>` to
+/// find an owner and let a wrapper effect activate on its own, are revoked.
 fn contextInfoFromReturn(env: *Env, retType: ?ast.TypeRef, eff: ?ast.EffectKind, fnName: []const u8) InferError!envMod.FnContext {
     const display = if (retType) |rt| try typeRefToString(env.arena, rt) else "void";
-    const contextAnnotated = eff == .context;
-    const wrapperEffect = if (eff) |e| isWrapperEffect(e) else false;
-    // Decision 90 — the owner answers the question the annotation would have.
-    const ownerActivates = contextAnnotated or wrapperEffect;
-    if (retType) |rt| switch (unwrapContextOwner(rt)) {
-        .generic => |g| if (std.mem.eql(u8, g.name, "Context")) {
-            const base = if (g.args.len >= 1) try typeRefToString(env.arena, g.args[0]) else null;
-            return .{ .implementsContext = true, .base = base, .returnDisplay = display, .annotated = ownerActivates, .fnName = fnName };
-        },
-        .named => |n| if (env.lookupTypeDef(n)) |td| {
-            if (td.contextBase()) |b| return .{ .implementsContext = true, .base = b, .returnDisplay = display, .annotated = ownerActivates, .fnName = fnName };
+    const annotated = eff == .use;
+    if (retType) |rt| switch (rt) {
+        .generic => |g| {
+            if (std.mem.eql(u8, g.name, "Use")) {
+                const base = if (g.args.len >= 1) try typeRefToString(env.arena, g.args[0]) else null;
+                return .{ .implementsContext = true, .base = base, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
+            }
+            if (std.mem.eql(u8, g.name, "Component") and g.args.len >= 1) {
+                const owner = try typeRefToString(env.arena, g.args[0]);
+                if (env.lookupTypeDef(owner)) |td| {
+                    if (td.contextBase()) |b| return .{ .implementsContext = true, .base = b, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
+                }
+            }
         },
         else => {},
     };
-    return .{ .implementsContext = false, .base = null, .returnDisplay = display, .annotated = contextAnnotated, .fnName = fnName };
+    return .{ .implementsContext = false, .base = null, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
 }
 
 /// The display name of a `ContextBase` type (a phantom, typically a plain named type).
@@ -1164,28 +1136,32 @@ fn baseNameOfType(ty: *T.Type) ?[]const u8 {
     };
 }
 
-/// The `ContextBase` of an inferred type, if it implements `@Context`.
-/// Handles both `@Context<B, R>` directly and named types implementing it inline.
-fn contextBaseOfType(env: *Env, ty: *T.Type) ?[]const u8 {
+/// The base a `use` operand anchors at: the `C` of a hook's `@Use<C, T>`.
+/// Anything else — an owner type, a `@Component<T>`, a plain value — is not a
+/// hook and has none (decision 104: `use` takes hooks only).
+fn hookBaseOfType(ty: *T.Type) ?[]const u8 {
     const t = ty.deref();
     return switch (t.*) {
-        .named => |n| blk: {
-            if (std.mem.eql(u8, n.name, "Context")) {
-                break :blk if (n.args.len >= 1) baseNameOfType(n.args[0]) else null;
-            }
-            if (env.lookupTypeDef(n.name)) |td| break :blk td.contextBase();
-            break :blk null;
-        },
+        .named => |n| if (std.mem.eql(u8, n.name, "Use") and n.args.len >= 1) baseNameOfType(n.args[0]) else null,
         else => null,
     };
 }
 
-/// The type a `use` binding destructures from: the `Return` (`R`) of `@Context<B, R>`
-/// when the hook's type is `@Context`, or the type itself for a named context type.
+/// The base of an owner type: the `B` of `T: @Context<B>`, or null.
+fn ownerBaseOfType(env: *Env, ty: *T.Type) ?[]const u8 {
+    const t = ty.deref();
+    return switch (t.*) {
+        .named => |n| if (env.lookupTypeDef(n.name)) |td| td.contextBase() else null,
+        else => null,
+    };
+}
+
+/// The type a `use` binding destructures from: the `T` of the hook's
+/// `@Use<C, T>`.
 fn bindingSourceType(ty: *T.Type) *T.Type {
     const t = ty.deref();
     return switch (t.*) {
-        .named => |n| if (std.mem.eql(u8, n.name, "Context") and n.args.len >= 2) n.args[1] else ty,
+        .named => |n| if (std.mem.eql(u8, n.name, "Use") and n.args.len >= 2) n.args[1] else ty,
         else => ty,
     };
 }
@@ -3576,8 +3552,9 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         // R6 (§2) — `throw` belongs to a fallible-channel effect. Allow it in
         // `#[@future]` / `#[@resultGenerator]` / `#[@futureGenerator]` bodies too — the
         // auto-wrap in `transform.zig` rewrites each form to the right wrapper.
-        // `#[@generator]` and `#[@context]` keep `.plain` (they have no error
-        // channel — throwing reds with `effect-throw-without-fallible-channel`).
+        // `#[@generator]` keeps `.plain` (it has no error channel), and so
+        // does `#[@use]`: its `throw` has no lowering yet, so it reds with
+        // `effect-throw-without-fallible-channel` rather than miscompiling.
         if (eff) |e| switch (e) {
             .future, .resultGenerator, .futureGenerator => throwCtx = .unchecked,
             else => {},
@@ -3599,15 +3576,30 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             // wrapper kind. The diagnostic carries the stable code from
             // `comptime/diagnostics.zig` so snapshot consumers can key on it.
             const retDeref = retType.deref();
-            const code: []const u8 = if (retDeref.* == .named)
+            // Decision 102 — an owner type written bare under `#[@use]`
+            // (`-> Element`) is the form that left: the wrapper is MISSING,
+            // not wrong. Every other named return names the wrong wrapper.
+            const bareOwner = e == .use and ownerBaseOfType(env, retType) != null;
+            const code: []const u8 = if (retDeref.* == .named and !bareOwner)
                 diagnostics.effect_wrapper_mismatch
             else
                 diagnostics.effect_missing_wrapper;
-            const msg = try std.fmt.allocPrint(
-                env.arena,
-                "{s}: `#[@{s}]` requires a `-> @{s}<…>` return type",
-                .{ code, e.annotationName(), e.returnWrapper() },
-            );
+            const wanted: []const u8 = if (e == .use)
+                "`-> @Component<…>` or `-> @Use<…>`"
+            else
+                try std.fmt.allocPrint(env.arena, "a `-> @{s}<…>`", .{e.returnWrapper()});
+            const msg = if (e == .use and retDeref.* == .named and std.mem.eql(u8, retDeref.named.name, "Component"))
+                try std.fmt.allocPrint(
+                    env.arena,
+                    "{s}: `@Component<T>` needs `T` to implement `@Context<Base>` — the base its hooks anchor at",
+                    .{code},
+                )
+            else
+                try std.fmt.allocPrint(
+                    env.arena,
+                    "{s}: `#[@{s}]` requires {s} return type",
+                    .{ code, e.annotationName(), wanted },
+                );
             var err = TypeError.custom(msg, "The effect annotation and the return wrapper must name the same effect.");
             if (fnLoc) |l| err = err.withLoc(l);
             env.lastError = err;
@@ -3615,8 +3607,8 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         }
     } else if (wrapperKind != .none) {
         var err = TypeError.custom(
-            "a function returning `@Future`/`@ResultGenerator`/`@FutureGenerator` needs an effect annotation",
-            "Mark it `#[@future]` / `#[@resultGenerator]` / `#[@futureGenerator]`.",
+            "a function returning `@Future`/`@ResultGenerator`/`@FutureGenerator`/`@Use`/`@Component` needs an effect annotation",
+            "Mark it `#[@future]` / `#[@resultGenerator]` / `#[@futureGenerator]` / `#[@use]`.",
         );
         if (fnLoc) |l| err = err.withLoc(l);
         env.lastError = err;
@@ -3671,11 +3663,12 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedUseAnchor = env.useAnchor;
     env.useAnchor = null;
     defer env.useAnchor = savedUseAnchor;
-    // §1C — `@getContex(T)` is only valid inside a `#[@context]` fn body
-    // (RC5). Save/restore the flag around the body so nested non-context
-    // closures fall back to false correctly.
+    // §1C — `@getContex(T)` is only valid inside a `#[@use]` fn body
+    // (RC5). Decision 104 — this is the SAME flag as `FnContext.annotated`:
+    // `#[@use]` sets both and nothing else does. Save/restore it around the
+    // body so nested non-`use` closures fall back to false correctly.
     const savedInContextFn = env.inContextFn;
-    env.inContextFn = if (eff) |e| e == .context else false;
+    env.inContextFn = eff == .use;
     defer env.inContextFn = savedInContextFn;
 
     // Self-recursion: bind the fn's own signature before walking the body so
@@ -3899,7 +3892,7 @@ fn inferTypeMethods(
     }
 }
 
-const WrapperReturnKind = enum { none, future, resultGenerator, futureGenerator };
+const WrapperReturnKind = enum { none, future, resultGenerator, futureGenerator, use };
 
 /// Classify a resolved return type as `@Future` / `@ResultGenerator` / `@FutureGenerator`.
 fn classifyWrapperReturn(ty: *T.Type) WrapperReturnKind {
@@ -3911,22 +3904,35 @@ fn classifyWrapperReturn(ty: *T.Type) WrapperReturnKind {
             .resultGenerator
         else if (std.mem.eql(u8, n.name, "FutureGenerator"))
             .futureGenerator
+        else if (std.mem.eql(u8, n.name, "Use") or std.mem.eql(u8, n.name, "Component"))
+            .use
         else
             .none,
         else => .none,
     };
 }
 
-/// True when `retType` is the builtin wrapper named by `eff` (an unresolved
-/// type variable stays lenient, matching the rest of the effect checks).
-/// `#[@context]` also accepts a named type that implements `@Context<B, _>`
-/// through its inline `implement` clause — the owner type of a component,
-/// `#[@context] fn Widget() -> Element` (decision 88).
+/// True when `retType` is one of the builtin wrappers `eff` accepts (an
+/// unresolved type variable stays lenient, matching the rest of the effect
+/// checks). `#[@use]` accepts `@Use<C, T>` and `@Component<T>` — the latter
+/// only when `T` implements the owner marker `@Context<B>` (decision 102);
+/// the bare owner (`-> Element`) is no longer accepted.
 fn effectMatchesReturn(env: *Env, eff: ast.EffectKind, retType: *T.Type) bool {
     const t = retType.deref();
     return switch (t.*) {
-        .named => |n| std.mem.eql(u8, n.name, eff.returnWrapper()) or
-            (eff == .context and contextBaseOfType(env, retType) != null),
+        .named => |n| blk: {
+            var accepted = false;
+            for (eff.returnWrappers()) |w| {
+                if (std.mem.eql(u8, n.name, w)) accepted = true;
+            }
+            if (!accepted) break :blk false;
+            if (std.mem.eql(u8, n.name, "Component")) {
+                if (n.args.len < 1) break :blk false;
+                if (n.args[0].deref().* == .typeVar) break :blk true;
+                break :blk ownerBaseOfType(env, n.args[0]) != null;
+            }
+            break :blk true;
+        },
         .typeVar => true,
         else => false,
     };
@@ -3936,31 +3942,26 @@ fn effectMatchesReturn(env: *Env, eff: ast.EffectKind, retType: *T.Type) bool {
 /// effect kind and its return type. EVERY effect gets one — `env.starFn` is
 /// null only in a plain `fn` — so a capability the chain does not grant is
 /// refused rather than falling through an absent context (decision 95 + 67;
-/// before this, `yield` in a `#[@result]` or `#[@context]` body was accepted
+/// before this, `yield` in a `#[@result]` or `#[@use]` body was accepted
 /// because the guard was written `if (env.starFn) |ctx|`).
 /// C1 — the type a `return <value>` unifies with inside a fn whose declared
 /// return type is `retType`: the wrapper's inner channel for an effect body
-/// (`#[@result]` → R of `@Result<R, E>`, `#[@future]` → T, any
-/// `-> @Context<B, X>` → X), the declared type otherwise. Null when returns
+/// (`#[@result]` → R of `@Result<R, E>`, `#[@future]` → T, `#[@use]` → the
+/// `T` of `@Use<C, T>` / `@Component<T>`), the declared type otherwise. Null when returns
 /// are not checked: no declared return type, a template fn, or a generator
 /// effect (all three forbid `return <expr>`, decision 103).
 fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Type {
     if (!checked) return null;
     const t = retType.deref();
-    // A hook returns `@Context<B, X>` with or without `#[@context]`: its body
-    // returns the `X` the `use` prefix binds (a `state` or `memo` hook).
-    if (t.* == .named and std.mem.eql(u8, t.named.name, "Context") and t.named.args.len >= 2) {
-        return t.named.args[1];
-    }
     const e = eff orelse return retType;
     if (t.* != .named) return null;
     const args = t.named.args;
     return switch (e) {
         .result, .future => if (args.len >= 1) args[0] else null,
-        // A `#[@context]` fn whose return is not the `@Context<B, X>` wrapper
-        // (handled above) returns its owner type as written — a component's
-        // `-> Element` (decision 88).
-        .context => retType,
+        // `#[@use]` returns the `T` of `@Use<C, T>` or of `@Component<T>`.
+        .use => if (std.mem.eql(u8, t.named.name, "Use"))
+            (if (args.len >= 2) args[1] else null)
+        else if (args.len >= 1) args[0] else null,
         .generator, .resultGenerator, .futureGenerator => null,
     };
 }
@@ -4830,7 +4831,7 @@ fn childrenCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
         .named => |n| std.mem.eql(u8, n.name, "Children") or
             std.mem.eql(u8, n.name, "array") or
             std.mem.eql(u8, n.name, "string") or
-            contextBaseOfType(env, source) != null,
+            ownerBaseOfType(env, source) != null,
         else => false,
     };
 }
@@ -4948,16 +4949,16 @@ fn inferBuiltinCallReturnType(
     }
     // §1C — `@getContex(T)` fetches the active provider of type `T` from
     // the context scope stack. The argument is a TYPE (not a value); the
-    // intrinsic is only valid inside a `#[@context]` fn body. RC1 (no
+    // intrinsic is only valid inside a `#[@use]` fn body. RC1 (no
     // active provider) requires the `contextStack.zig` provider tracker
     // — landed separately; RC3 (Anchor-tree reachability) is wired here.
     if (std.mem.eql(u8, callee, "getContex")) {
-        // RC5 — outside a `#[@context]` fn body the intrinsic is meaningless.
+        // RC5 — outside a `#[@use]` fn body the intrinsic is meaningless.
         if (!env.inContextFn) {
             var e = TypeError.custom(
                 diagnostics.context_getcontex_outside_context_fn ++
-                    ": `@getContex(T)` only resolves inside a `#[@context]` fn body",
-                "Mark the enclosing fn `#[@context]` (`-> @Context<Base, T>`) — `@getContex` walks the active provider stack maintained by the `use` blocks.",
+                    ": `@getContex(T)` only resolves inside a `#[@use]` fn body",
+                "Mark the enclosing fn `#[@use]` (`-> @Use<Base, T>` or `-> @Component<T>`) — `@getContex` walks the active provider stack maintained by the `use` blocks.",
             );
             if (typedArgs.len >= 1) e = e.withLoc(typedArgs[0].value.getLoc());
             env.lastError = e;
@@ -4992,12 +4993,12 @@ fn inferBuiltinCallReturnType(
             {
                 const msg = try std.fmt.allocPrint(
                     env.arena,
-                    "{s}: `@getContex({s})` is outside the enclosing `#[@context]` fn's Anchor tree (enclosing Anchor `{s}`, requested type's Anchor `{s}`)",
+                    "{s}: `@getContex({s})` is outside the enclosing `#[@use]` fn's Anchor tree (enclosing Anchor `{s}`, requested type's Anchor `{s}`)",
                     .{ diagnostics.context_getcontex_anchor_violation, requestedName, enclosingBase.?, requestedBase.? },
                 );
                 env.lastError = TypeError.custom(
                     msg,
-                    "Either provide the requested type under an Anchor reachable from the enclosing fn, or change the enclosing fn's `@Context<Base, …>` to share an Anchor with the requested type.",
+                    "Either provide the requested type under an Anchor reachable from the enclosing fn, or change the enclosing fn's `@Use<Base, …>` to share an Anchor with the requested type.",
                 ).withLoc(arg.getLoc());
                 return error.TypeError;
             }
@@ -5726,6 +5727,13 @@ fn unwrapFutureType(ty: *T.Type) ?*T.Type {
     return switch (t.*) {
         .named => |n| if (std.mem.eql(u8, n.name, "Future") and n.args.len >= 1)
             n.args[0]
+            // Decision 102 — the `use` wrappers extend `@Future`, and decision 104
+            // has every caller `await` a component: `@Use<C, T>` and
+            // `@Component<T>` both await to `T`.
+        else if (std.mem.eql(u8, n.name, "Use") and n.args.len >= 2)
+            n.args[1]
+        else if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 1)
+            n.args[0]
         else
             null,
         else => null,
@@ -5777,7 +5785,9 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 ///   - `@ResultGenerator<T, E = any>`   → 1 required
 ///   - `@FutureGenerator<T, E = any>`   → 1 required
 ///   - `@Result<R, E>`                  → 2 required
-///   - `@Context<Base, T>`              → 2 required
+///   - `@Context<Base>`                 → 1 required (the owner marker)
+///   - `@Use<C, T>`                     → 2 required
+///   - `@Component<T>`                  → 1 required
 ///   - `@Expr<T>` / `@ExprCustom<T>`    → 1 required
 fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     const eq = std.mem.eql;
@@ -5786,7 +5796,9 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     if (eq(u8, name, "ResultGenerator")) return 1;
     if (eq(u8, name, "FutureGenerator")) return 1;
     if (eq(u8, name, "Result")) return 2;
-    if (eq(u8, name, "Context")) return 2;
+    if (eq(u8, name, "Context")) return 1;
+    if (eq(u8, name, "Use")) return 2;
+    if (eq(u8, name, "Component")) return 1;
     if (eq(u8, name, "Expr")) return 1;
     if (eq(u8, name, "ExprCustom")) return 1;
     return null;
@@ -5803,7 +5815,9 @@ fn builtinMaxGenericArgs(name: []const u8) ?usize {
     if (eq(u8, name, "ResultGenerator")) return 2;
     if (eq(u8, name, "FutureGenerator")) return 2;
     if (eq(u8, name, "Result")) return 2;
-    if (eq(u8, name, "Context")) return 2;
+    if (eq(u8, name, "Context")) return 1;
+    if (eq(u8, name, "Use")) return 2;
+    if (eq(u8, name, "Component")) return 1;
     if (eq(u8, name, "Expr")) return 1;
     if (eq(u8, name, "ExprCustom")) return 1;
     return null;
@@ -8048,7 +8062,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         break :blk false;
                     };
                     // A value that is already the declared wrapper (`return
-                    // state(start)` in a `-> @Context<B, X>` hook) unifies with
+                    // state(start)` in a `-> @Use<B, X>` hook) unifies with
                     // the whole declared return type.
                     const whole: ?*T.Type = blk: {
                         const w = env.returnWhole orelse break :blk null;
@@ -8251,11 +8265,11 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
         .await_ => |e| {
             // R7, as decision 95 rewrites it — `await` belongs to `@Future`,
             // so every effect whose wrapper extends `@Future` answers it:
-            // `#[@future]`, `#[@futureGenerator]` and `#[@context]`.
+            // `#[@future]`, `#[@futureGenerator]` and `#[@use]`.
             if (env.starFn == null or !env.starFn.?.allowsAwait) {
                 env.lastError = TypeError.custom(
                     try effectChain.refusal(env.arena, diagnostics.effect_await_without_future, .await_, env.fnEffect),
-                    "Mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@context]`.",
+                    "Mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@use]` (`-> @Use<…>` / `-> @Component<…>`).",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -8264,9 +8278,9 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             // `await @Future<T>` yields `T`. A resolved non-`@Future` named type is
             // an error; an unresolved type variable stays lenient.
             const deref = rawTy.deref();
-            if (deref.* == .named and !std.mem.eql(u8, deref.named.name, "Future")) {
+            if (deref.* == .named and unwrapFutureType(rawTy) == null) {
                 env.lastError = TypeError.custom(
-                    "`await` expects a `@Future<_>` value",
+                    "`await` expects a `@Future<_>` value (or a `@Use<C, T>` / `@Component<T>`, which extend it)",
                     null,
                 ).withLoc(loc);
                 return error.TypeError;
@@ -8509,7 +8523,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         if (env.starFn == null or !env.starFn.?.allowsAwait) {
             env.lastError = TypeError.custom(
                 try effectChain.refusal(env.arena, diagnostics.effect_await_without_future, .await_, env.fnEffect),
-                "`for await` suspends at every item: mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@futureGenerator]`, or write the loop as a `#[@futureGenerator] loop { … }`.",
+                "`for await` suspends at every item: mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` or `#[@use]`, or write the loop as a `#[@futureGenerator] loop { … }`.",
             ).withLoc(loc);
             return error.TypeError;
         }
@@ -9247,8 +9261,8 @@ fn inferTemplateMethod(
             retType = try env.namedType("Source");
         } else if (std.mem.eql(u8, callee, "context")) {
             // The full second-layer input: source + text + shape. The record is
-            // `ExprContext`, not `Context`: `@Context<Base, Return>` is the hook
-            // wrapper and one name cannot mean both (front 20 F1).
+            // `ExprContext`, not `Context`: `@Context<Base>` is the owner
+            // marker and one name cannot mean both (front 20 F1).
             op = .context;
             retType = try env.namedType("ExprContext");
         } else if (std.mem.eql(u8, callee, "bindings")) {
@@ -9745,17 +9759,31 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
         env.lastError = TypeError.useNotAllowed("void").withLoc(loc);
         return error.TypeError;
     };
-    if (!fc.implementsContext) {
-        env.lastError = TypeError.useNotAllowed(fc.returnDisplay).withLoc(loc);
-        return error.TypeError;
-    }
-    // Decision 88 — the return type owns a context, but a body activates a
-    // hook only under an effect annotation: `#[@context]`, or (decision 90) a
-    // wrapper effect whose unwrapped return type owns the context. With no
-    // annotation the fn is an ordinary fn (a bare `-> Element` renders once, a
-    // bare `-> @Context<B, R>` is a hook declaration, and neither writes `use`).
+    // Decision 104 — `use` is legal only in a `#[@use]` body, whatever the
+    // return type: a `#[@future] fn … -> @Future<Element>` does not activate
+    // (decision 90 revoked), and neither does an unannotated fn.
     if (!fc.annotated) {
         env.lastError = TypeError.useWithoutContextEffect(fc.fnName, fc.returnDisplay).withLoc(loc);
+        return error.TypeError;
+    }
+    // A nested closure is not the `#[@use]` body: like `await`, which a
+    // closure does not inherit either (`env.starFn` is cleared there), `use`
+    // stays in the body that carries the annotation (decision 87: `use` never
+    // leaves a function body). On commonJS the hook is an `async function`
+    // (decision 104), and an `await` in a plain arrow would not parse.
+    if (env.starFn == null) {
+        env.lastError = TypeError.custom(
+            diagnostics.use_without_context_effect ++
+                ": `use` inside a nested closure — the closure is not the `#[@use]` body, and `use` is not inherited (as `await` is not)",
+            "Activate the hook in the `#[@use]` body itself (`val s = use state(0);`) and let the closure read `s`.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    // R1/R2 already required `@Use<C, _>` / `@Component<T: @Context<B>>`, so
+    // a `#[@use]` body always has a base; this is the belt for a return type
+    // still unresolved.
+    if (!fc.implementsContext) {
+        env.lastError = TypeError.useNotAllowed(fc.returnDisplay).withLoc(loc);
         return error.TypeError;
     }
 
@@ -9774,7 +9802,7 @@ fn isUseHookValue(value: *const ast.ExprOf(.untyped)) bool {
     return value.* == .useHook;
 }
 
-/// Verify a `use` expression returns `@Context<B, _>` whose `B` is the one
+/// Verify a `use` expression returns `@Use<B, _>` whose `B` is the one
 /// base this body resolves every `use` against (decision 96).
 ///
 /// Two questions, in this order. RC2 first: the enclosing function DECLARED a
@@ -9787,7 +9815,18 @@ fn isUseHookValue(value: *const ast.ExprOf(.untyped)) bool {
 /// is what holds the rule up where the declaration cannot answer, and it is
 /// what makes the diagnostic say which `use` the body is committed to.
 fn validateUseBase(env: *Env, valTy: *T.Type, fc: envMod.FnContext, loc: ast.Loc) InferError!void {
-    const useBase = contextBaseOfType(env, valTy) orelse {
+    const useBase = hookBaseOfType(valTy) orelse {
+        // Decision 104 — `use` takes a hook (`@Use<C, _>`). A component is
+        // CALLED (`Card()`), never `use`d: its refusal says so.
+        const d = valTy.deref();
+        if (d.* == .named and std.mem.eql(u8, d.named.name, "Component")) {
+            env.lastError = TypeError.custom(
+                diagnostics.use_of_non_context_fn ++
+                    ": `use` takes a hook (`@Use<C, _>`), and this is a `@Component<…>` — a component is called, not `use`d",
+                "Call it (`Card()`) where its value is needed; `use` activates hooks only.",
+            ).withLoc(loc);
+            return error.TypeError;
+        }
         const disp = baseNameOfType(valTy) orelse "value";
         env.lastError = TypeError.useNotContext(disp).withLoc(loc);
         return error.TypeError;

@@ -216,23 +216,15 @@ A rule this repository implements whose other half belongs to a library under
 `repository/` in the meta workspace. Written here because the core cannot land
 it and must not silently wait for it.
 
-- **`Element` carries its base type** — decision 96 of 1.0.10-beta, the library
-  half of front 20 step 3. `@Context<ContextBase, Return>` is the wrapper, and
-  the checker now holds the rule that **every `use` in one function resolves
-  against the same `ContextBase`**: the first `use` fixes the body's anchor and
-  a second one anchored elsewhere is refused at its own site, naming both bases
-  and the line that fixed the first. jhonstart's `Element` is its own base
-  today (`repository/jhonstart/modules/jhonstart/src/element.bp:8` —
-  `implement @Context<Element, Element>`), which makes "the same base" true of
-  every component for a reason that says nothing: there is one base because
-  there is one `Element`. A library gets no way to state that its hooks belong
-  to one tree and not another until `Element` declares a base type of its own
-  and names it in that clause — the name is jhonstart's to choose, and
-  `@Context<ContextBase, Return>` is what it fills. Nothing in this repository
-  changes when it does: the anchor rule reads whatever the first argument says.
-  Owner: jhonstart's own front. Until then the rule is real and its refusal
-  fires (`tests/language/reject/use_two_bases.bp`), it is just never the
-  refusal a jhonstart component meets.
+- **`Element` carries its base type** — decisions 96 and 102 of 1.0.10-beta.
+  `@Context<Base>` is the owner marker (one parameter); a hook is `#[@use] fn …
+  -> @Use<Base, T>` and a component `#[@use] fn … -> @Component<Element>`, whose
+  base is read off `Element`'s `implement @Context<Base>`. The checker holds
+  the rule that **every `use` in one function resolves against the same base**.
+  jhonstart's sweep to this surface (`element.bp` → `implement
+  @Context<ElementBase>`, `#[@context]` → `#[@use]`, the hook and component
+  wrappers) is front 21 step 4; until it lands, jhonstart's cells are listed in
+  `scripts/known-red-libs.txt`.
 
 ## Local gate
 

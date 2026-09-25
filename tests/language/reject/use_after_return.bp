@@ -2,11 +2,12 @@
 //// shape, not its first token: `val c = use …` after a `return` is refused at
 //// the `use`, like a bare `use …;` is.
 
-type Element(count: i32) implement @Context<Element, Element>
-fn state(initial: i32) -> @Context<Element, i32> { return initial; }
+type Element(count: i32) implement @Context<Element>
+#[@use]
+fn state(initial: i32) -> @Use<Element, i32> { return initial; }
 
-#[@context]
-fn Widget() -> Element {
+#[@use]
+fn Widget() -> @Component<Element> {
     return Element(count: 1);
     val c = use state(0);
 }

@@ -44,9 +44,6 @@
               "args": [
                 {
                   "named": "E"
-                },
-                {
-                  "named": "E"
                 }
               ],
               "is_builtin": true

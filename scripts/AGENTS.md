@@ -176,19 +176,15 @@ silence.
 
 `<lib> <target> <owner> <reason…>` per line, `#` comments. The owning front
 deletes its line in the commit that turns the cell green, which makes the cell
-a hard assert. **One live entry**, `emilia-card commonJS`, owned by `05-emilia`:
-that example's two class-body assertions deliberately pin the output of a
-commonJS defect (a `case` arm over a uniquely-named variant lowered to
-`instanceof`, which does not cross a package boundary, so two of its tokens went
-nowhere), with the reason written above them and a note that "the fix is visible
-as a change here". `fix/js-instanceof-boundary` is that fix, and the cell is the
-change: the class bodies now carry `font-size:1.875rem` and `font-size:1rem`.
-Updating the goldens is emilia's, not this repo's — a library's cell is listed,
-never edited from here. Before it, the last two were `jhonstart commonJS` and
-`jhonstart erlang`, `src/hooks.bp:109` writing `use` in a `-> Element` body
-without `#[@context]` (decision 88, `use-without-context-effect`) — deleted
-once the jhonstart library front landed the annotation (`repository/jhonstart`
-b89c787) and both cells passed.
+a hard assert. **Live entries**: front 21 step 2's window — `jhonstart`
+(both rows), `jhonstart-counter commonJS`, `jhonstart-html` (both rows),
+`jhonstart-todo commonJS` and `emilia-card commonJS` (it renders through
+jhonstart). The compiler spells decisions 102/104 (`#[@use]`, `@Use<C, T>`,
+`@Component<T>`, `@Context<Base>`) and the library still writes
+`#[@context]` / `@Context<Element, R>`; the lines are deleted by the compiler
+commit after the jhonstart sweep (front 21 step 4), and the two restricted
+cells the same window moved (`emilia-card erlang`, `jhonstart-todo erlang`,
+`0 → build`) go back to `0` in that commit.
 
 ## restricted-targets.txt
 

@@ -2,8 +2,9 @@
 //// activation and no `use client;` directive; the boundary markers are library
 //// decorators.
 
-type Element(count: i32) implement @Context<Element, Element>
-fn state(initial: i32) -> @Context<Element, i32> { return initial; }
+type Element(count: i32) implement @Context<Element>
+#[@use]
+fn state(initial: i32) -> @Use<Element, i32> { return initial; }
 
 val c = use state(0);
 

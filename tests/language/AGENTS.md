@@ -749,20 +749,14 @@ rows:
 | `?T` has one unwrap (front 20, F11) | 1 run + 1 reject | 2 |
 
 `run/effect_chain.bp` holds the two rows of decision 95's table every backend
-runs (`#[@result]` with `try`, `#[@context]` with `use` and `try`);
+runs (`#[@result]` with `try`, `#[@use]` with `use` and `try`);
 `test/effect_chain.bp` holds the two that need a target able to consume a future
-or an iterator. The third row — `await` inside a `#[@context]` body — has a cell
-of its own, `run/effect_context_await.bp`, written by 1.0.10-beta's `00 · 04-js`
-when it took the lowering: it is legal, it always ran on erlang, wasm and beam,
-and commonJS lowered `#[@context]` to a plain `function`, so the emitted `await`
-was a JS `SyntaxError` and the module did not load. It is a cell of its own and
-not three more lines in `run/effect_chain.bp` because it needs care that one
-does not: on commonJS a suspending function hands its CALLER a promise — as
-`#[@future]` already does — while erlang and wasm hand it the value, so every
-value the cell pins is printed from **inside** the awaiting body, where all
-three agree. It covers both return shapes (`-> @Context<Element, i32>` and
-decision 88's `-> Element`) and a `#[@context]` body that awaits nothing, whose
-caller still reads the field off what it returns.
+or a generator. `run/effect_context_await.bp` carries `await` inside a `#[@use]`
+body, for a hook (`-> @Use<Element, i32>`) and a component
+(`-> @Component<Element>`). Every `#[@use]` body is an `async function` on
+commonJS (decision 104), so its caller reads a promise there and the value on
+erlang, wasm and beam: both cells print every value from **inside** the body,
+where all four agree.
 
 `run/option_unwrap_or.bp` and `reject/option_expect_removed.bp` are F11's pair:
 `?T.expect(default)` was `unwrapOr` under a name that says the absent branch is
@@ -1127,32 +1121,22 @@ statement as a `run/`: `Person(name: "a", age: 1) == Vec(name: "a", age: 1)` pri
 four since `13-module-identity` half 3 put the declaration inside the value — it answered `true` on
 erlang and BEAM before, where two bare maps with the same keys were one term.
 
-**`@Context` / `use` is tested from botopink since front 19 of 1.0.10-beta** (decision 88 made
-`use f(x)` lower to `f(x)` on every backend, so no host framework is needed): `test/context_use.bp`,
-`run/context_use.bp` and six `reject/use_*.bp` cells declare their own owner type
-(`type Element(…) implement @Context<Element, Element>`) and pin the binding of `R`, field and
-positional destructuring, a custom hook composing hooks, a bare void `use`, the un-activated call,
-the static prefix (rows 4b and 4c as parse errors), `use-without-context-effect` (a `-> Element`
-body without `#[@context]`), `use-of-non-context-fn` (a `-> string` body, and a module-level `val` —
-decision 87), and `context-anchor-violation`. Green on commonJS, erlang, wasm and beam at the
-landing commit, with no line in `expected-failures.txt`.
-
-Step 3 (destructuring from a `use`) added to the same two cells a hook whose `R` is
-`#(i32, fn(action: i32) -> i32)`: `val #(shown, push) = use optimistic(12, …)` binds each name to
-its element — `push(shown)` types with nothing annotated — and a `use` inside a nested closure
-(row 5 of the front's table) runs under the enclosing owner. Its refusals are
-`reject/use_tuple_arity.bp` (one name against a tuple of two) and `reject/use_tuple_of_non_tuple.bp`
-(`val #(a, b) = use state(0)` where `state` yields an `i32`), both `use-tuple-arity`, located at the
-binding.
-
-Step 2 (decisions 89 and 90) added three more, also with no line in `expected-failures.txt`:
-`test/use_future_context.bp` — a `#[@future] fn Page() -> @Future<Element>` activates a hook with no
-`#[@context]`, because `@Future<T>` is looked through to `T`'s owner, and the future still chains
-through `await`; `reject/use_future_without_owner.bp` — the same wrapper effect over `@Future<i32>`
-is still `use-of-non-context-fn`, so the dispensation switches no refusal off; and
-`reject/use_future_context_duplicate.bp` — `#[@future] #[@context]` is still refused (R5), which is
-why the wrapper effect has to activate on its own. The last claims the message only: R5's caret
-drift is already owned by `reject/two_effect_markers.bp`'s row in `expected-failures.txt`.
+**`use` is tested from botopink since front 19 of 1.0.10-beta**, spelled to decisions 102/104
+(front 21): `test/context_use.bp`, `run/context_use.bp` and the `reject/use_*.bp` cells declare
+their own owner type (`type Element(…) implement @Context<Element>`), hooks as
+`#[@use] fn … -> @Use<Element, T>` and components as `#[@use] fn … -> @Component<Element>`, and
+pin the binding of `T`, field and positional destructuring, a custom hook composing hooks, a bare
+void `use`, an unannotated `fn … -> Element` as an ordinary function, the static prefix (rows 4b and
+4c as parse errors), `use-without-context-effect` (a `-> Element` body without `#[@use]`, a plain
+`-> string` body, a `#[@future]` body — `reject/use_future_without_owner.bp`, decisions 89/90
+revoked — and a `use` in a nested closure, `reject/use_in_closure.bp`), `use-of-non-context-fn` (a
+module-level `val`, decision 87) and `context-anchor-violation`. A component's caller awaits it:
+`run/context_use.bp` drives the components from a `#[@future] fn run`, and the `test/` cells await
+them (a `test` body is a future context). `test/use_future_context.bp` is the server component that
+`use`s and `await`s under `#[@use]`; `reject/use_future_context_duplicate.bp` pins R5
+(`#[@future] #[@use]` is refused — its caret drift is `reject/two_effect_markers.bp`'s row).
+`reject/use_tuple_arity.bp` and `reject/use_tuple_of_non_tuple.bp` are front 19 step 3's
+`use-tuple-arity` refusals, located at the binding.
 
 **Decisions 63–66, one cell or one sentence each (C-16).**
 

@@ -1,14 +1,16 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type implement @Context<Element, Element> { }
-fn state(initial: i32) -> @Context<Element, i32> {
+val Element = type implement @Context<Element> { }
+#[@use]
+fn state(initial: i32) -> @Use<Element, i32> {
     initial;
 }
-fn memo() -> @Context<Element, i32> {
+#[@use]
+fn memo() -> @Use<Element, i32> {
     0;
 }
-#[@context]
-fn Counter() -> Element {
+#[@use]
+fn Counter() -> @Component<Element> {
     val {count, setCount} = use state(0);
     val doubled = use memo { -> return count * 2; };
     Element();
@@ -21,17 +23,17 @@ class Element {
 }
 Element.prototype.__bp = "Element";
 
-function state(initial) {
+async function state(initial) {
     initial;
 }
 
-function memo() {
+async function memo() {
     0;
 }
 
-function Counter() {
-    const { count, setCount } = state(0);
-    const doubled = memo(() => {
+async function Counter() {
+    const { count, setCount } = await state(0);
+    const doubled = await memo(() => {
     return (count * 2);
 });
     new Element();

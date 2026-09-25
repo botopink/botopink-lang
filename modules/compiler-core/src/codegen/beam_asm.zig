@@ -2687,8 +2687,8 @@ const Emitter = struct {
         // effect), which is a plain function. The BEAM model is processes +
         // message passing (spawn/receive); this backend currently emits the
         // eager body, with full process-based lowering left as future work.
-        // `#[@context]` is a plain function too (decision 88: it gates `use`).
-        if (f.effect != null and f.effect.? != .result and f.effect.? != .context) {
+        // `#[@use]` is a plain function too (decision 88: it gates `use`).
+        if (f.effect != null and f.effect.? != .result and f.effect.? != .use) {
             try beamEmitter.writeTopComment(self.out, "#[@future] / #[@futureGenerator] — eager lowering", .{});
         }
         var fn_buf: [256]u8 = undefined;

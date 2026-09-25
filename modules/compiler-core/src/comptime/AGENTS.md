@@ -132,7 +132,7 @@ are built by `effectChain.refusal`, which names the level the body would need
 The body context `starCtxFromEffect` → `env.starFn: ?StarFnCtx{ allowsAwait,
 allowsYield, iterItem, effect }` is built for **every** effect (it is null only
 in a plain `fn`), with `allowsAwait` / `allowsYield` read off the chain. Before
-1.0.10-beta it was null for `#[@result]` and `#[@context]`, and the `yield`
+1.0.10-beta it was null for `#[@result]` and the context effect, and the `yield`
 guard was written `if (env.starFn) |ctx|` — so a `yield` in either body was
 accepted rather than refused. `throw` is gated separately, by
 `env.throwContext`, and bare `try` — the propagating form, which returns the
@@ -162,10 +162,7 @@ rejections (RF1/RF2/RF5) without firing inside other effects.
 `builtinRequiredGenericArgs` drive the syntactic rejections. Codegen reads
 `f.effect` directly (`commonJS.zig fnKeyword`: future → `async function`,
 generator/resultGenerator → `function*`, futureGenerator → `async function*`,
-result/context → plain `function`) — which is why `await` inside a
-`#[@context]` body, legal since decision 95, runs on erlang, wasm and beam and
-is a JS `SyntaxError` on commonJS. The legality is front 20's and the keyword is
-the backend's; the row is written up as a handoff in `tests/language/run/effect_chain.bp`.
+use → `async function` (decision 104), result → plain `function`).
 
 Default-parameter diagnostics: D5 (defaulted param followed by a required one)
 fires from `parser/decls.parseParamList`; D2 (positional arg after a named one)
@@ -198,7 +195,7 @@ is the last item in a `#[@generator]` body as in the other two (the gate is
 `#[@generator]` body are refused naming `@ResultGenerator<T, E>`
 (`effect_chain.refusal`'s generator hint; the `.plain` arm of `throw`).
 `FutureGenerator<T, E, C>` is `FutureGenerator<T, E = any>` (`builtinMaxGenericArgs` 2,
-`builtinDefaultFilledArgs` fills `E` only; a third argument is RG5). A `loop await`
+`builtinDefaultFilledArgs` fills `E` only; a third argument is RG5). A `for await`
 over it needs `await` (`effect-await-without-future`) and `try` in the iterating body.
 
 ## Testing helpers (`tests/helpers.zig`)
@@ -413,54 +410,52 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   `infer.registerImportedDecorator`, so `#[name(args)]` in an importing module
   both arg-checks and runs the body (mirror of the template registry path).
 
-## `@Context<B, R>` capability inference
+## `use` capability inference (decisions 88, 96, 102, 104)
 
 `use` is a **prefix operator** (`use <hookcall>`); bindings come from the
 enclosing `val`/`var` (`val {v, s} = use state(0)`, `use effect(…)` for void).
-AST node: `Expr.useHook { inner }`. It is gated by the function's return type
-**and** its effect annotation (decisions 88, 89 and 90 of 1.0.10-beta, front 19):
+AST node: `Expr.useHook { inner }`. `@Context<Base>` is the owner MARKER a type
+implements (`type Element(…) implement @Context<ElementBase>`); the `use`
+wrappers are `@Use<C, T>` (a hook) and `@Component<T>` (a component, `T` an
+owner, ≡ `@Use<B, T>`), both answered by `#[@use]` (`EffectKind.use`, whose
+`returnWrappers()` is the set `{Component, Use}`).
 
-- The return must implement `@Context<ContextBase, Return>` — directly
-  (`fn f() -> @Context<Element, R>`, a custom hook) or via a named type whose
-  `implement` clause lists `@Context<…>` (`fn Widget() -> Element`, a component
-  whose owner type is `Element`). The return is read through `@Future<T>` first
-  (`unwrapContextOwner`, decision 89 — **only** `@Future`, one level), so
-  `-> @Future<Element>` is owned by `Element`.
-- The fn must carry an effect annotation: `#[@context]`, or (decision 90) a
-  **wrapper effect** — every effect but `#[@context]`, `#[@future]` in practice
-  — whose unwrapped return type owns the context; `isWrapperEffect` is the
-  predicate. A body with **no** annotation activates nothing: a `-> Element`
-  without one is an ordinary fn; a `-> @Context<B, R>` without one is a hook
-  declaration whose body activates nothing. R5 is unamended — one annotation per
-  fn, so `#[@future] #[@context]` stays `effect-duplicate-annotation`, which is
-  why the wrapper effect has to be enough on its own.
-- Every `use` in the body must return `@Context<B, _>` with the **same**
-  `ContextBase` (transitive through custom hooks).
+- Only a `#[@use]` body activates: `FnContext.annotated` and `env.inContextFn`
+  are one flag, set by `#[@use]` and by nothing else (decision 104 — decisions
+  89/90 and their `unwrapContextOwner` / `isWrapperEffect` are deleted). A
+  `use` elsewhere is `useWithoutContextEffect` (`use-without-context-effect`,
+  RC7), located at the `use` and naming the fn and its return type — checked
+  first, so a `#[@future]` body and a plain `-> string` body get the same
+  refusal. A `use` inside a nested closure is the same code: a lambda clears
+  `env.starFn`, and `use`, like `await`, is not inherited.
+- R1/R2 (`effectMatchesReturn`) accept `@Use<…>` or `@Component<T>` with `T` an
+  owner (`ownerBaseOfType`); the bare owner (`-> Element`) is
+  `effect-missing-wrapper`, anything else — `@Component<i32>` included —
+  `effect-wrapper-mismatch`. `classifyWrapperReturn` makes `@Use`/`@Component`
+  without the annotation the "needs an effect annotation" refusal.
+- The base is READ, never unwrapped (`contextInfoFromReturn`): `C` of
+  `@Use<C, _>`, or `B` of `T: @Context<B>` for `@Component<T>`.
+- The operand is a hook: `validateUseBase` reads `hookBaseOfType` (`C` of
+  `@Use<C, _>`); a `@Component<…>` operand is refused (a component is called),
+  anything else is `useNotContext`. Every `use` in the body shares the base
+  (decision 96: `contextMismatch` against the declared base at the first `use`,
+  `contextBaseMixed` at a later one). The prefix is typed as `T`
+  (`bindingSourceType`).
+- `await` accepts `@Use<C, T>` / `@Component<T>` too (`unwrapFutureType` → `T`):
+  every caller awaits a component (decision 104).
 
-Wiring in `infer.zig`: `contextBaseFromImplements` computes `TypeDef.contextBase`;
-`inferFnDecl` records the body's capability in `env.fnContext`
-(`contextInfoFromReturn(env, returnType, effect, name)` → `FnContext
-{implementsContext, base, annotated, fnName}`, where `annotated` is the
-`#[@context]`-or-wrapper-effect test above and `returnDisplay` stays the return
-type **as written**, `@Future<Element>` and not `Element`); `inferUseHookExpr`
-checks `implementsContext` (else `useNotAllowed`), then `annotated` (else
-`useWithoutContextEffect` — `use-without-context-effect`, RC7 in
-`diagnostics.zig`, located at the `use` and naming the fn and its return type),
-then `validateUseBase` (`useNotContext`, `contextMismatch`) and types the prefix
-as `R`. `effectMatchesReturn(env, .context, T)` accepts the `@Context<…>` wrapper
-or a named type with a `contextBase`, so `#[@context] fn … -> Element` passes
-the effect ↔ wrapper check, and `returnTargetFor` makes such a body's `return`
-unify with the owner type as written. `val {v, s} = use …` binds leniently via
-`bindUseDestructure`; `val #(a, b) = use …` (front 19 step 3) binds each name to
-the element of a tuple `R` at its position, commits an unresolved `R` to a tuple
-of the pattern's arity, and refuses another arity or a non-tuple `R` at the
-binding (`useTupleArity` — `use-tuple-arity`, decision 67).
+`contextBaseFromImplements` computes `TypeDef.contextBase` from the marker.
+`val {v, s} = use …` binds leniently via `bindUseDestructure`; `val #(a, b) =
+use …` (front 19 step 3) binds each name to the element of a tuple `T` at its
+position, commits an unresolved `T` to a tuple of the pattern's arity, and
+refuses another arity or a non-tuple `T` at the binding (`useTupleArity` —
+`use-tuple-arity`, decision 67).
 
-Codegen lowers `use f(x)` to `f(x)` on **every** target — the prefix is the
-activation the checker validated, never a rename or an inferred dependency
-array (decision 88 deleted commonJS's React mapping). Phantom `@Context` base
-structs are erased — see `codegen/AGENTS.md`. Documented for users in
-`docs.md` § *use — imports, activation, and hooks*.
+Codegen lowers `use f(x)` to `f(x)` on erlang, wasm and beam and to
+`await f(x)` on commonJS, where every `#[@use]` body is an `async function`
+(decision 104). Phantom `@Context` base structs are erased — see
+`codegen/AGENTS.md`. Documented for users in `docs.md` § *use — imports,
+activation, and hooks*.
 
 ## `return` checking (06 C1)
 
@@ -472,14 +467,14 @@ the value:
   slot; before C5 `T` sat in `returnType`, so the call was typed `T` and the narrowing at the `if`
   was unreachable);
 - an effect body → the wrapper's inner channel: `#[@result]` → `R` of `@Result<R, E>`,
-  `#[@future]` → `T`; any `-> @Context<B, X>` → `X`;
+  `#[@future]` → `T`; `#[@use]` → the `T` of `@Use<C, T>` / `@Component<T>`;
 - a lambda → its expected return type, else a fresh var shared by its `return`s; a trailing
   lambda (`@block { … }`, `use memo { -> … }`) owns its `return`s too, and `@block` is typed as the
   value they carry;
 - no declared return type, a template fn (`-> @Expr<…>`), a generator effect (any of the three:
   `return <expr>` is RI1 there, decision 103) → unchecked.
 
-A value that already is the declared wrapper (`return state(start)` in a `-> @Context<B, X>` hook,
+A value that already is the declared wrapper (`return state(start)` in a `-> @Use<B, X>` hook,
 a `@Result` / `@Future` passthrough, `try` / `catch` forms) unifies with the whole declared type or
 is left alone. A named type returned where the fn declares a behavior it implements is accepted.
 Body annotations resolve the fn's generic params (`env.fnGenericMap`). A bare `return;` unifies

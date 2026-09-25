@@ -2232,12 +2232,14 @@ pub const EffectKind = enum {
     generator,
     resultGenerator,
     futureGenerator,
-    context,
+    /// `#[@use]` — the body may `use` a hook (decisions 102/104). The one
+    /// effect whose return wrapper is a SET: `@Use<C, T>` or `@Component<T>`.
+    use,
 
     /// Every effect, in declaration order. The one list: `fromAnnotationName`
     /// and `comptime/effect_chain.zig` both walk it, so a seventh effect is a
     /// value here and nowhere else.
-    pub const all = [_]EffectKind{ .result, .future, .generator, .resultGenerator, .futureGenerator, .context };
+    pub const all = [_]EffectKind{ .result, .future, .generator, .resultGenerator, .futureGenerator, .use };
 
     /// The annotation spelling — `#[@<name>]` — for this effect.
     pub fn annotationName(self: EffectKind) []const u8 {
@@ -2247,11 +2249,13 @@ pub const EffectKind = enum {
             .generator => "generator",
             .resultGenerator => "resultGenerator",
             .futureGenerator => "futureGenerator",
-            .context => "context",
+            .use => "use",
         };
     }
 
-    /// The builtin return-type wrapper this effect requires (`@Future`, …).
+    /// The builtin return-type wrapper this effect requires (`@Future`, …) —
+    /// for `#[@use]` the wrapper that names the capability, `@Use`; the full
+    /// set R1/R2 accept is `returnWrappers`.
     pub fn returnWrapper(self: EffectKind) []const u8 {
         return switch (self) {
             .result => "Result",
@@ -2259,7 +2263,21 @@ pub const EffectKind = enum {
             .generator => "Generator",
             .resultGenerator => "ResultGenerator",
             .futureGenerator => "FutureGenerator",
-            .context => "Context",
+            .use => "Use",
+        };
+    }
+
+    /// Every wrapper R1/R2 accept for this effect. `#[@use]` answers
+    /// `@Component<T>` or `@Use<C, T>` (decision 102: `@Component<T>` is sugar
+    /// for `@Use<B, T>` with `T: @Context<B>`); every other effect has one.
+    pub fn returnWrappers(self: EffectKind) []const []const u8 {
+        return switch (self) {
+            .result => &.{"Result"},
+            .future => &.{"Future"},
+            .generator => &.{"Generator"},
+            .resultGenerator => &.{"ResultGenerator"},
+            .futureGenerator => &.{"FutureGenerator"},
+            .use => &.{ "Component", "Use" },
         };
     }
 
@@ -2601,7 +2619,7 @@ pub const ImplementDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
-    /// interfaces being implemented, e.g. `[Drawable, @Context<E, E>]`.
+    /// interfaces being implemented, e.g. `[Drawable, @Context<B>]`.
     /// Each is a full `TypeRef` so generic interfaces (`Iface<A, B>`, `@Context<…>`)
     /// are supported, not just bare identifiers.
     interfaces: []TypeRef,

@@ -1,11 +1,11 @@
 ----- SOURCE CODE
-#[@context]
-fn bad() -> i32 {
+#[@use]
+fn bad() -> @Component<i32> {
     return 0;
 }
 
 ----- ERROR
-error: effect-wrapper-mismatch: `#[@context]` requires a `-> @Context<…>` return type
+error: effect-wrapper-mismatch: `@Component<T>` needs `T` to implement `@Context<Base>` — the base its hooks anchor at
   ┌─ :3:5
   │
 3 │     return 0;

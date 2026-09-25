@@ -1,0 +1,20 @@
+//// Decisions 87 and 104 of 1.0.10-beta (front 21) — `use` activates a hook in
+//// the `#[@use]` body itself. A nested closure is not that body: like `await`,
+//// which a closure does not inherit, `use` is refused there (on commonJS the
+//// hook is an `async function`, and an `await` in a plain arrow would not
+//// parse). The closure reads a value the body activated instead.
+
+type Element(count: i32) implement @Context<Element>
+
+#[@use]
+fn state(initial: i32) -> @Use<Element, i32> {
+    return initial;
+}
+
+#[@use]
+fn Deferred() -> @Component<Element> {
+    val f = { -> return use state(4); };
+    return Element(count: f());
+}
+
+pub fn main() { @print(1); }

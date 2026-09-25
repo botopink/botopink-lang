@@ -240,7 +240,7 @@ test "format: generic ---- nested ?T in @Result" {
 
 test "format: pub fn ---- comptime param with generic constraint" {
     try h.assertFormat(std.testing.allocator,
-        \\pub fn run(comptime ctx: @Context<i32, string>) {
+        \\pub fn run(comptime ctx: @Use<i32, string>) {
         \\    todo;
         \\}
     );
