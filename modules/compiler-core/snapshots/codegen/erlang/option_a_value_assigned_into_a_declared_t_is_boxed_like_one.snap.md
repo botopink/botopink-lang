@@ -31,7 +31,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Box: items
@@ -41,8 +41,8 @@ main() ->
         N
     end, 0, [1, 2]),
     '__bp_print'([Seen]),
-    B = {main__t__box, [3, 4]},
-    '__bp_print'([main__t__box:total(B)]),
+    B = {test@main@@Box, [3, 4]},
+    '__bp_print'([test@main@@Box:total(B)]),
     H = undefined,
     '__bp_print'([H]),
     H@1 = 5,
@@ -51,9 +51,9 @@ main() ->
         N
     end, undefined, [7, 8]),
     '__bp_print'([Acc]),
-    '__bp_print'([main__t__box:isBig(B)]),
-    '__bp_print'([main__t__box:doubled(B)]),
-    '__bp_print'([main__t__box:label(B)]).
+    '__bp_print'([test@main@@Box:isBig(B)]),
+    '__bp_print'([test@main@@Box:doubled(B)]),
+    '__bp_print'([test@main@@Box:label(B)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -81,9 +81,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__box.erl
+----- ERLANG -- test@main@@Box.erl
 ```erlang
--module(main__t__box).
+-module(test@main@@Box).
 -export([total/1, isBig/1, doubled/1, label/1, '__bp_get'/2, '__bp_format'/1]).
 
 total(Self) ->

@@ -14,39 +14,39 @@ val Invoice = type(
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 2}.
 ```
 
------ BEAM ASSEMBLY -- main__t__invoice.S
+----- BEAM ASSEMBLY -- test@main@@Invoice.S
 ```erlang
-{module, main__t__invoice}.
+{module, test@main@@Invoice}.
 {exports, [{total, 1}, {validate, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 15}.
 
 {function, total, 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__invoice.erl", 1}]}.
-    {func_info, {atom, main__t__invoice}, {atom, total}, 1}.
+    {line, [{location, "test@main@@Invoice.erl", 1}]}.
+    {func_info, {atom, test@main@@Invoice}, {atom, total}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 3, {atom, main__t__invoice}]}.
+    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 3, {atom, test@main@@Invoice}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 6}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 3, {atom, main__t__invoice}]}.
+    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 3, {atom, test@main@@Invoice}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 7}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 8}, [{x, 0}, 3, {atom, main__t__invoice}]}.
+    {test, is_tagged_tuple, {f, 8}, [{x, 0}, 3, {atom, test@main@@Invoice}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
   {label, 8}.
     {gc_bif, '*', {f, 0}, 3, [{x, 2}, {x, 0}], {x, 0}}.
@@ -56,8 +56,8 @@ val Invoice = type(
 
 {function, validate, 1, 5}.
   {label, 4}.
-    {line, [{location, "main__t__invoice.erl", 2}]}.
-    {func_info, {atom, main__t__invoice}, {atom, validate}, 1}.
+    {line, [{location, "test@main@@Invoice.erl", 2}]}.
+    {func_info, {atom, test@main@@Invoice}, {atom, validate}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -67,8 +67,8 @@ val Invoice = type(
 
 {function, '__bp_get', 2, 10}.
   {label, 9}.
-    {line, [{location, "main__t__invoice.erl", 3}]}.
-    {func_info, {atom, main__t__invoice}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Invoice.erl", 3}]}.
+    {func_info, {atom, test@main@@Invoice}, {atom, '__bp_get'}, 2}.
   {label, 10}.
     {test, is_eq_exact, {f, 11}, [{x, 1}, {atom, subtotal}]}.
     {move, {x, 0}, {x, 1}}.
@@ -85,8 +85,8 @@ val Invoice = type(
 
 {function, '__bp_format', 1, 14}.
   {label, 13}.
-    {line, [{location, "main__t__invoice.erl", 3}]}.
-    {func_info, {atom, main__t__invoice}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Invoice.erl", 3}]}.
+    {func_info, {atom, test@main@@Invoice}, {atom, '__bp_format'}, 1}.
   {label, 14}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

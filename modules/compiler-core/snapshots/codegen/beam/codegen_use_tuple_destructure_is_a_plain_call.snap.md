@@ -15,15 +15,15 @@ fn LikeWidget() -> Element {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 13}.
 
 {function, optimistic, 2, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, optimistic}, 2}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, optimistic}, 2}.
   {label, 3}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -40,8 +40,8 @@ fn LikeWidget() -> Element {
 
 {function, 'LikeWidget', 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, 'LikeWidget'}, 0}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, 'LikeWidget'}, 0}.
   {label, 5}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -64,15 +64,15 @@ fn LikeWidget() -> Element {
     {move, {y, 2}, {x, 1}}.
     {call_fun, 1}.
     {test_heap, 2, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__element}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Element}]}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
 
 {function, '-optimistic/2-fun-0-', 3, 7}.
   {label, 6}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '-optimistic/2-fun-0-'}, 3}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '-optimistic/2-fun-0-'}, 3}.
   {label, 7}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -88,8 +88,8 @@ fn LikeWidget() -> Element {
 
 {function, '__bp_add', 2, 11}.
   {label, 10}.
-    {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, '__bp_add'}, 2}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_add'}, 2}.
   {label, 11}.
     {test, is_binary, {f, 12}, [{x, 0}]}.
     {test, is_binary, {f, 12}, [{x, 1}]}.
@@ -103,8 +103,8 @@ fn LikeWidget() -> Element {
 
 {function, '-LikeWidget/0-fun-1-', 2, 9}.
   {label, 8}.
-    {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, '-LikeWidget/0-fun-1-'}, 2}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, '-LikeWidget/0-fun-1-'}, 2}.
   {label, 9}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -117,17 +117,17 @@ fn LikeWidget() -> Element {
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__element.S
+----- BEAM ASSEMBLY -- test@main@@Element.S
 ```erlang
-{module, main__t__element}.
+{module, test@main@@Element}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 4}.
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__element.erl", 1}]}.
-    {func_info, {atom, main__t__element}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Element.erl", 1}]}.
+    {func_info, {atom, test@main@@Element}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

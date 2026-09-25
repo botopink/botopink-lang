@@ -49,19 +49,9 @@ fn onlyBehavior(parsed: Parsed) !ast.BehaviorDecl {
     return parsed.program.decls[0].behavior;
 }
 
-/// The parse fails with `kind`, located at `line:col` (1-based).
-fn expectError(src: []const u8, kind: ParseErrorType, line: usize, col: usize) !void {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const a = arena.allocator();
-    var l = lexerMod.Lexer.init(src);
-    const tokens = try l.scanAll(a);
-    var p = parserMod.Parser.initWithSource(tokens, src);
-    if (p.parse(a)) |_| return error.TestExpectedParseError else |_| {}
-    const pe = p.parseError orelse return error.TestParseErrorInfoMissing;
-    try std.testing.expectEqual(kind, pe.kind);
-    try std.testing.expectEqual([2]usize{ line, col }, [2]usize{ pe.line, pe.col });
-}
+/// The parse fails with `kind`, located at `line:col` (1-based) — the shared
+/// harness `helpers.expectErrorAt`.
+const expectError = @import("helpers.zig").expectErrorAt;
 
 // ── type: shape resolution ────────────────────────────────────────────────────
 
@@ -397,14 +387,116 @@ test "surface: a method's $0 is self and $1 its first argument" {
     try std.testing.expectEqualStrings("\"lists:member($0, " ++ receiver_marker ++ ")\"", ann.args[0]);
 }
 
-// ── decision 8 §10 and 06 N27 ────────────────────────────────────────────────
+// ── decision 105 (the three loop keywords) and 06 N27 ────────────────────────
 
-test "surface: while (…) is removed-keyword-while at `while`" {
-    try expectError("fn f() { while (true) { }; }", .removedKeywordWhile, 1, 10);
+test "surface: loop (…) is removed-loop-parenthesised at `loop`" {
+    try expectError("fn f() { loop ([1, 2]) { x -> x; }; }", .removedLoopParenthesised, 1, 10);
+    try expectError("fn f() { var i = 0; loop (i < 3) { i = i + 1; }; }", .removedLoopParenthesised, 1, 21);
+    try expectError("fn f() { loop :l ([1]) { x -> x; }; }", .removedLoopParenthesised, 1, 10);
+}
+
+test "surface: while and loop bind nothing — a binder is loop-binds-nothing at the name" {
+    try expectError("fn f() { while (true) { x -> x; }; }", .loopBindsNothing, 1, 25);
+    try expectError("fn f() { loop { x -> x; }; }", .loopBindsNothing, 1, 17);
+}
+
+test "surface: a for without a binder is for-without-binder at the body's first token" {
+    try expectError("fn f() { for ([1, 2]) { @print(1); }; }", .forWithoutBinder, 1, 25);
+}
+
+test "surface: a for with two binders is for-binds-one-name at the second" {
+    try expectError("fn f() { for ([1, 2]) { x, i -> x; }; }", .forBindsOneName, 1, 28);
+}
+
+test "surface: an annotation block on a loop that is not a generator effect" {
+    // `#[@future]` is an effect, but not one the chain lets `yield`.
+    try expectError("fn f() { val g = #[@future] loop { break; }; }", .loopAnnotationNotGenerator, 1, 18);
+    // a user annotation
+    try expectError("fn f() { val g = #[custom] loop { break; }; }", .loopAnnotationNotGenerator, 1, 18);
+    // two blocks, both generator effects — one annotation, not two
+    try expectError("fn f() { val g = #[@generator, @futureGenerator] loop { break; }; }", .loopAnnotationNotGenerator, 1, 18);
+    // a generator annotation before `for` / `while`: only `loop` takes it
+    try expectError("fn f() { val g = #[@generator] for ([1]) { x -> yield x; }; }", .loopAnnotationNotGenerator, 1, 18);
+    try expectError("fn f() { val g = #[@generator] while (true) { break; }; }", .loopAnnotationNotGenerator, 1, 18);
+}
+
+test "surface: the annotated loop carries its effect and the three forms their keyword" {
+    var parsed = try parse(
+        \\fn f(xs: i32[]) {
+        \\    val g = #[@generator] loop :gen { yield 1; break 2; };
+        \\    val r = #[@iterator] loop { yield 1; };
+        \\    val fg = #[@futureGenerator] loop { yield 1; };
+        \\    for :outer (xs) { x -> x; };
+        \\    for await (fg) { x -> x; };
+        \\    while :w (true) { break :w; };
+        \\    loop { break; };
+        \\}
+    );
+    defer parsed.deinit();
+    const body = parsed.program.decls[0].@"fn".body;
+    const g = body[0].expr.binding.kind.localBind.value.loop;
+    try std.testing.expectEqual(ast.LoopKeyword.loop, g.keyword);
+    try std.testing.expectEqual(ast.EffectKind.generator, g.generator.?);
+    try std.testing.expectEqualStrings("gen", g.label.?);
+    try std.testing.expect(g.condition);
+    try std.testing.expectEqual(ast.EffectKind.iterator, body[1].expr.binding.kind.localBind.value.loop.generator.?);
+    try std.testing.expectEqual(ast.EffectKind.futureGenerator, body[2].expr.binding.kind.localBind.value.loop.generator.?);
+    const f = body[3].expr.loop;
+    try std.testing.expectEqual(ast.LoopKeyword.for_, f.keyword);
+    try std.testing.expect(f.generator == null);
+    try std.testing.expect(!f.condition);
+    try std.testing.expect(!f.awaitLoop);
+    try std.testing.expectEqualStrings("outer", f.label.?);
+    try std.testing.expectEqualStrings("x", f.params[0]);
+    try std.testing.expect(body[4].expr.loop.awaitLoop);
+    const w = body[5].expr.loop;
+    try std.testing.expectEqual(ast.LoopKeyword.while_, w.keyword);
+    try std.testing.expect(w.condition);
+    try std.testing.expectEqualStrings("w", w.label.?);
+    try std.testing.expectEqual(@as(usize, 0), w.params.len);
+    const l = body[6].expr.loop;
+    try std.testing.expectEqual(ast.LoopKeyword.loop, l.keyword);
+    try std.testing.expect(l.generator == null);
+    try std.testing.expect(l.condition);
+}
+
+test "surface: a while condition is delimited by its parentheses, so && and || are one condition" {
+    var parsed = try parse(
+        \\fn f(a: bool, b: bool) {
+        \\    while (a && b || !a) { break; };
+        \\}
+    );
+    defer parsed.deinit();
+    const w = parsed.program.decls[0].@"fn".body[0].expr.loop;
+    try std.testing.expect(w.iter.* == .binaryOp);
+    try std.testing.expectEqual(parserMod.Parser.BinOp.@"or", w.iter.binaryOp.op);
 }
 
 test "surface: throw new Error(…) is removed-keyword-new at `new`" {
     try expectError("fn f() { throw new Error(\"x\"); }", .removedKeywordNew, 1, 16);
+}
+
+// ── front 17, decision 38: the annotated binding takes the plain form only ────
+
+test "surface: an annotated `val` shorthand is refused at the annotation" {
+    // `val add = fn …` is a `fn` declaration in a `val` coat; the annotation
+    // would have nowhere to land, so the form is refused where it starts.
+    try expectError("#[@BeamMemory.Ets]\nval add = fn(x: i32) -> i32 { return x; }", .unexpectedToken, 1, 1);
+    try expectError("#[@BeamMemory.Ets] pub val add = fn(x: i32) -> i32 { return x; }", .unexpectedToken, 1, 1);
+}
+
+test "surface: `var` takes no shorthand — `var add = fn …` is not a fn declaration" {
+    var parsed = try parse(
+        \\var hits: i32 = 0;
+        \\#[@BeamMemory.PersistentTerm]
+        \\pub var version = 101;
+    );
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(usize, 2), parsed.program.decls.len);
+    try std.testing.expect(parsed.program.decls[0].val.mutable);
+    try std.testing.expect(parsed.program.decls[1].val.mutable);
+    try std.testing.expect(parsed.program.decls[1].val.isPub);
+    try std.testing.expectEqual(@as(usize, 1), parsed.program.decls[1].val.annotations.len);
 }
 
 test "surface: new, delegate and const are ordinary identifiers" {
@@ -417,11 +509,11 @@ test "surface: new, delegate and const are ordinary identifiers" {
     try std.testing.expectEqual(@as(usize, 3), parsed.program.decls.len);
 }
 
-test "surface: loop (condition) and loop { … } parse with no parameter" {
+test "surface: while (condition) and loop { … } parse with no parameter" {
     var parsed = try parse(
         \\fn f() {
         \\    var i = 0;
-        \\    loop (i < 3) { i = i + 1; };
+        \\    while (i < 3) { i = i + 1; };
         \\    loop { i = i + 1; break; };
         \\}
     );

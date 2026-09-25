@@ -555,6 +555,59 @@ test "infer: external ---- fn no body typechecks" {
     );
 }
 
+// Front 20 F9 — `inline` on the two variants that declare it is accepted, in
+// both spellings the parser reads (`inline = true` and the bare trailing bool).
+test "infer: external ---- inline on erlang and beam typechecks" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\#[@External.Erlang("max($args)", inline = true),
+        \\  @External.Beam("""
+        \\  {call_ext, 2, {extfunc, erlang, max, 2}}.
+        \\  """, true)]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
+        \\
+        \\fn main() {
+        \\    val n = biggest(1, 2);
+        \\}
+    );
+}
+
+// `infer.zig`'s `external_variants` restates `pub type External implement
+// Annotation { … }` from `builtins.d.bp`, which the compiler does not parse
+// (the same reason `effect_chain.zig` restates the `extends` clauses). The
+// test reads the file and fails in both directions: a variant declared there
+// that the table does not carry, or whose `inline` the table gets wrong, and a
+// table row the file does not declare.
+test "infer: external ---- the variant table agrees with builtins.d.bp" {
+    const source: []const u8 = @import("std_prelude").builtins;
+    const head = "pub type External implement Annotation {";
+    const at = std.mem.indexOf(u8, source, head) orelse return error.ExternalNotDeclared;
+    const close = std.mem.indexOfScalarPos(u8, source, at + head.len, '}') orelse return error.ExternalNotClosed;
+    var declared: usize = 0;
+    var lines = std.mem.splitScalar(u8, source[at + head.len .. close], '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r,");
+        if (line.len == 0) continue;
+        const paren = std.mem.indexOfScalar(u8, line, '(') orelse return error.VariantWithoutPayload;
+        const name = line[0..paren];
+        const declares_inline = std.mem.indexOf(u8, line, "inline: bool = false") != null;
+        declared += 1;
+        const row = for (inferMod.external_variants) |v| {
+            if (std.mem.eql(u8, v.name, name)) break v;
+        } else {
+            std.debug.print("builtins.d.bp declares `External.{s}` and `external_variants` does not carry it\n", .{name});
+            return error.VariantNotCarried;
+        };
+        if (row.declares_inline != declares_inline) {
+            std.debug.print(
+                "`External.{s}`: builtins.d.bp {s} `inline`, `external_variants` says {s}\n",
+                .{ name, if (declares_inline) "declares" else "does not declare", if (row.declares_inline) "it does" else "it does not" },
+            );
+            return error.InlineDrifted;
+        }
+    }
+    try std.testing.expectEqual(inferMod.external_variants.len, declared);
+}
+
 test "infer: std package ---- import binds namespace" {
     try h.assertInfersOk(std.testing.allocator,
         \\import {order} from "std";
@@ -562,6 +615,99 @@ test "infer: std package ---- import binds namespace" {
         \\fn main() {
         \\    val a: i32 = order.toInt(order.lt());
         \\    val b: i32 = order.toInt(order.reverse(order.gt()));
+        \\}
+    );
+}
+
+// ── decision 107: only the leaf enters scope ─────────────────────────────────
+
+test "infer: std package ---- a dotted path binds its leaf, a group binds several" {
+    // `Dict` (a type), `newDict` (an aliased fn), `gt`/`reverse`/`toInt`
+    // (fns) — and neither `dict` nor `order` is bound: only the leaf enters
+    // scope, so the namespace has to be imported on its own to be spelled.
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {dict.Dict, dict: {empty as newDict}, order: {gt, reverse, toInt}} from "std";
+        \\
+        \\fn main() {
+        \\    val d: Dict<string, i32> = newDict();
+        \\    val n: i32 = d.insert("a", 1).size();
+        \\    val o: i32 = toInt(reverse(gt()));
+        \\}
+    );
+}
+
+test "infer: std package ---- an intermediate node may be a leaf" {
+    // `import {io.fs}` will bind the module `fs` as a namespace once the tree
+    // of decision 106 lands; on the flat tree the same rule reads
+    // `dict: {empty}` beside `dict` itself: the prefix is a leaf if listed.
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {dict, dict: {empty}} from "std";
+        \\
+        \\fn main() {
+        \\    val a = dict.empty().insert("a", 1);
+        \\    val b = empty().insert("b", 2);
+        \\    val n: i32 = a.size() + b.size();
+        \\}
+    );
+}
+
+test "infer: std package ---- the namespace is not bound by a path through it" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {order.lt} from "std";
+        \\
+        \\fn main() {
+        \\    val a = order.toInt(lt());
+        \\}
+    );
+}
+
+test "infer: std package ---- two leaves binding one name collide at the second" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {url.parse, json.parse} from "std";
+        \\
+        \\fn main() {
+        \\    val u = parse("http://a");
+        \\}
+    );
+}
+
+test "infer: std package ---- an alias on either side clears the collision" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {url.parse as parseUrl, json: {parse as parseJson}} from "std";
+        \\
+        \\fn main() {
+        \\    val u = parseUrl("http://a/b");
+        \\    val j = parseJson("{}");
+        \\}
+    );
+}
+
+test "infer: std package ---- a type keeps its declared name" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {dict.Dict as D} from "std";
+        \\
+        \\fn main() {
+        \\    val d: D<string, i32> = D(pairs: []);
+        \\}
+    );
+}
+
+test "infer: std package ---- a path whose prefix is no module is refused at the item" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {collections.Dict} from "std";
+        \\
+        \\fn main() {
+        \\    val n = 1;
+        \\}
+    );
+}
+
+test "infer: std package ---- a leaf the module does not declare is refused at the item" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {dict: {Dict, emptyish}} from "std";
+        \\
+        \\fn main() {
+        \\    val n = 1;
         \\}
     );
 }
@@ -633,7 +779,7 @@ test "infer: mutual_recursion ---- renderToString and renderChildren call each o
         \\
         \\fn renderChildren(items: Element[]) -> string {
         \\    var out = "";
-        \\    loop (items) { c -> out = out + renderToString(c); };
+        \\    for (items) { c -> out = out + renderToString(c); };
         \\    return out;
         \\}
         \\

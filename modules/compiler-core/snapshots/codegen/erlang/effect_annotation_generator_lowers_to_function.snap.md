@@ -9,7 +9,7 @@ fn range(a: i32, b: i32) -> @Generator<i32> {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% #[@future] / #[@futureGenerator] — eager lowering
 range(A, B) ->

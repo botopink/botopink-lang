@@ -1,24 +1,24 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn sumEvens(arr: i32[]) -> i32[] {
-    return loop (arr) { x ->
+    var out = [];
+    for (arr) { x ->
         if (x % 2 != 0) { continue; };
-        yield x;
+        out.push(x);
     };
+    return out;
 }
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
 function sumEvens(arr) {
-    return (() => {
-        const _acc = [];
-        for (const x of arr) {
-            if (((x % 2) !== 0)) { continue; }
-            _acc.push(x);
-        }
-        return _acc;
-    })();
+    let out = [];
+    for (const x of arr) {
+    if (((x % 2) !== 0)) { continue; }
+    out.push(x);
+}
+    return out;
 }
 ```
 

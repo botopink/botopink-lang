@@ -7,7 +7,7 @@ fn allThree(a: bool, b: bool, c: bool) -> bool {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 allThree(A, B, C) ->
     ((A andalso B) andalso C).

@@ -13,12 +13,12 @@ fn safe() -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type NetError: code
 
 fetch() ->
-    {error, {main__t__neterror, 500}}.
+    {error, {test@main@@NetError, 500}}.
 
 safe() ->
     R = case try
@@ -33,9 +33,9 @@ safe() ->
     R.
 ```
 
------ ERLANG -- main__t__neterror.erl
+----- ERLANG -- test@main@@NetError.erl
 ```erlang
--module(main__t__neterror).
+-module(test@main@@NetError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, code) -> element(2, V).

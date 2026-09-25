@@ -4,7 +4,7 @@ val COMMANDS = ["calc", "noop", "help"];
 
 fn execute(comptime slug: string, input: i32) -> i32 {
     var output = 0;
-    loop (COMMANDS) { cmd ->
+    for (COMMANDS) { cmd ->
         if (cmd == slug) {
             output = input * 2;
         };
@@ -20,7 +20,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 'COMMANDS'() ->

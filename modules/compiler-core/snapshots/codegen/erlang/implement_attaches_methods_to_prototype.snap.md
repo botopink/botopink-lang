@@ -13,7 +13,7 @@ val PersonPrintable = implement Printable for Person {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% behavior Printable
 
@@ -25,9 +25,9 @@ print(Self) ->
     element(2, Self).
 ```
 
------ ERLANG -- main__t__person.erl
+----- ERLANG -- test@main@@Person.erl
 ```erlang
--module(main__t__person).
+-module(test@main@@Person).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, name) -> element(2, V).

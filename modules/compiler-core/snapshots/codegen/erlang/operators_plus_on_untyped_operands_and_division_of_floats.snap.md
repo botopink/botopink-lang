@@ -3,7 +3,7 @@
 fn average(xs: Array<f64>) -> f64 {
     var total = 0.0;
     var n = 0.0;
-    loop (xs) { x ->
+    for (xs) { x ->
         total = total + x;
         n = n + 1.0;
     };
@@ -18,7 +18,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 average(Xs) ->

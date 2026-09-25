@@ -11,23 +11,23 @@ fn makeCircle() -> Shape {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Shape
 %%   Circle(r)
 %%   Square(side)
 
 makeCircle() ->
-    {main__t__shape__v__circle, 5}.
+    {test@main@@Shape__v__circle, 5}.
 ```
 
------ ERLANG -- main__t__shape.erl
+----- ERLANG -- test@main@@Shape.erl
 ```erlang
--module(main__t__shape).
+-module(test@main@@Shape).
 -export(['__bp_format'/1]).
 
-'__bp_format'({main__t__shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"r", F0}]};
-'__bp_format'({main__t__shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]}.
+'__bp_format'({test@main@@Shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"r", F0}]};
+'__bp_format'({test@main@@Shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]}.
 ```
 
 ----- RUN LOG -----

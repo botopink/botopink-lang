@@ -51,9 +51,13 @@ run_beam() {
   # 13 half 1: an erlang/BEAM artifact is named by its module atom under
   # `out/<target>/`, because `erlc` refuses a `-module` atom that differs from
   # its file's basename. `-o out` still puts the `.beam` where `-pa out` looks.
-  ( cd "$dir" && "$BP_BIN" build --target beam && erlc +from_asm -o out out/beam/main.S )
+  # Decision 109: the atom starts with the package — the fixture's directory
+  # name is its `botopink.json` `name`.
+  local entry
+  entry="$(basename "$dir")@main"
+  ( cd "$dir" && "$BP_BIN" build --target beam && erlc +from_asm -o out "out/beam/$entry.S" )
   local got
-  got="$( cd "$dir" && erl -noshell -pa out -eval 'io:format("~p", [main:main()]), halt(0)' 2>/dev/null || true )"
+  got="$( cd "$dir" && erl -noshell -pa out -eval "io:format(\"~p\", [$entry:main()]), halt(0)" 2>/dev/null || true )"
   if [[ "$got" == "$want" ]]; then
     echo "  beam: main:main() => $got"
   else

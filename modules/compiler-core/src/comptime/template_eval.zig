@@ -434,7 +434,7 @@ pub fn listingWithArgument(arena: std.mem.Allocator, listing: []const u8, argume
 /// this front does not own. Until that carve-out, every comptime body is owned
 /// by one synthetic path, and the atom still names WHICH template it came from,
 /// which `template_<hash>` did not.
-pub const comptime_owner: crossModule.ModuleId = .of("bp/comptime");
+pub const comptime_owner: crossModule.ModuleId = .inPackage(crossModule.COMPILER_PACKAGE, "comptime");
 
 const placeholder_module = "template_module";
 

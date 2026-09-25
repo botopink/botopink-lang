@@ -16,7 +16,7 @@ val Color = type {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Color
 %%   Red
@@ -24,24 +24,24 @@ val Color = type {
 %%   Blue
 ```
 
------ ERLANG -- main__t__color.erl
+----- ERLANG -- test@main@@Color.erl
 ```erlang
--module(main__t__color).
+-module(test@main@@Color).
 -export([name/0, '__bp_format'/1]).
 
 name() ->
     case Self of
-        main__t__color__v__red ->
+        test@main@@Color__v__red ->
             <<"red">>;
-        main__t__color__v__green ->
+        test@main@@Color__v__green ->
             <<"green">>;
-        main__t__color__v__blue ->
+        test@main@@Color__v__blue ->
             <<"blue">>
     end.
 
-'__bp_format'(main__t__color__v__red) -> {variant, "Color.Red", []};
-'__bp_format'(main__t__color__v__green) -> {variant, "Color.Green", []};
-'__bp_format'(main__t__color__v__blue) -> {variant, "Color.Blue", []}.
+'__bp_format'(test@main@@Color__v__red) -> {variant, "Color.Red", []};
+'__bp_format'(test@main@@Color__v__green) -> {variant, "Color.Green", []};
+'__bp_format'(test@main@@Color__v__blue) -> {variant, "Color.Blue", []}.
 ```
 
 ----- RUN LOG -----

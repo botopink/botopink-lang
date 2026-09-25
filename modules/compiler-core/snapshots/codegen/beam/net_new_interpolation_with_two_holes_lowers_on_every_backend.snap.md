@@ -7,15 +7,15 @@ fn label(a: string, b: string) -> string {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 8}.
 
 {function, label, 2, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, label}, 2}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, label}, 2}.
   {label, 3}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -52,8 +52,8 @@ fn label(a: string, b: string) -> string {
 
 {function, '-bp_stringify-', 1, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '-bp_stringify-'}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '-bp_stringify-'}, 1}.
   {label, 5}.
     {allocate, 0, 1}.
     {test, is_binary, {f, 6}, [{x, 0}]}.

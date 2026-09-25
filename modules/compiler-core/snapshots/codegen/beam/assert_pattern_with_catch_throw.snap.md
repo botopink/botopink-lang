@@ -9,21 +9,21 @@ fn f() {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 6}.
 
 {function, f, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, f}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, f}, 0}.
   {label, 3}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {literal, <<"ann">>}, {x, 0}}.
     {test_heap, 4, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__person}, {x, 0}, {integer, 30}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Person}, {x, 0}, {integer, 30}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_tagged_tuple, {f, 5}, [{x, 0}, 3, {atom, 'Person'}]}.
@@ -43,17 +43,17 @@ fn f() {
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__person.S
+----- BEAM ASSEMBLY -- test@main@@Person.S
 ```erlang
-{module, main__t__person}.
+{module, test@main@@Person}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 8}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "main__t__person.erl", 1}]}.
-    {func_info, {atom, main__t__person}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Person.erl", 1}]}.
+    {func_info, {atom, test@main@@Person}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, name}]}.
     {move, {x, 0}, {x, 1}}.
@@ -70,8 +70,8 @@ fn f() {
 
 {function, '__bp_format', 1, 7}.
   {label, 6}.
-    {line, [{location, "main__t__person.erl", 1}]}.
-    {func_info, {atom, main__t__person}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Person.erl", 1}]}.
+    {func_info, {atom, test@main@@Person}, {atom, '__bp_format'}, 1}.
   {label, 7}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

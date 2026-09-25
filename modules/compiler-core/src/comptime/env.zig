@@ -357,6 +357,12 @@ pub const FutureJumpLowering = enum { wrap_resolved, wrap_rejected };
 /// codegen (no special-case lowering needed at this layer).
 pub const IteratorJumpLowering = enum { wrap_done, wrap_done_void, wrap_error };
 
+/// What the nearest enclosing construct does with a `break` (decision 105 and
+/// decision 2): a loop leaves it; a `comptime { … }` block and a `case` arm's
+/// block take `break <value>` as their value; nothing else takes a bare
+/// `break`, and a `break <value>` anywhere else needs a generator scope.
+pub const BreakScope = enum { none, loop, valueBlock };
+
 pub const Env = struct {
     /// Arena allocator ---- all Type and TypeCell nodes are allocated here.
     arena: std.mem.Allocator,
@@ -516,17 +522,28 @@ pub const Env = struct {
     /// used to validate `yield :label` / `break :label`. Pushed/popped as
     /// scopes nest.
     labelStack: std.ArrayListUnmanaged([]const u8) = .empty,
-    /// Number of `loop {…}` blocks currently enclosing the position being
-    /// inferred. Read by the `.@"break"` handler to apply §1I REGRAS DE
-    /// ESCOPO: an unlabelled `break` inside a nested loop targets the loop,
-    /// not the enclosing iterator fn, so RI2/RI3 only fire when `loopDepth`
-    /// is 0 (or the break is labelled with the fn's `StarFnCtx.fnLabel`).
-    /// The `.yield` handler reads it the same way and for the same reason: a
-    /// `yield` inside a loop feeds that loop's array (decision 8 § 10's
-    /// comprehension, condition loops included — `loop (j < 5) { j = j + 1;
-    /// yield j; }` collects), so only a `yield` that reaches the function is
-    /// the effect's and gated by the chain.
+    /// Number of loops (`for` / `while` / `loop`, the annotated `loop`
+    /// included) currently enclosing the position being inferred, counted
+    /// from the nearest fn, lambda or annotated-loop body. Read by the
+    /// `.@"break"` / `.@"continue"` handlers: a bare `break` inside a loop
+    /// leaves the loop and ends the generator only at depth 0; `continue`
+    /// needs a loop. `yield` and `break <value>` do not read it (decision
+    /// 105): they feed the nearest generator scope through every loop.
     loopDepth: u32 = 0,
+    /// Decision 105 / decision 2 — what the nearest enclosing construct does
+    /// with a `break`. `.loop` inside a loop body, `.valueBlock` inside a
+    /// `comptime { … }` block or a `case` arm's block (where `break <value>`
+    /// is the block's value), `.none` at a fn or lambda body.
+    breakScope: BreakScope = .none,
+    /// Decision 105 — the labels in scope OUTSIDE the nearest enclosing
+    /// annotated loop. Its body is closed like a closure: a `break :outer` /
+    /// `continue :outer` naming one of these is refused as crossing the
+    /// border rather than as unbound.
+    closedLabels: []const []const u8 = &.{},
+    /// Number of annotated loops (`#[@generator] loop { … }`) enclosing the
+    /// position being inferred. Their body runs later, on demand, so a `use`
+    /// inside one is refused (decision 105 — the annotated loop is closed).
+    generatorLoopDepth: u32 = 0,
     /// Decision 96 — the `ContextBase` this body resolved its FIRST `use`
     /// against, with the line that fixed it. The anchor is a property of the
     /// FUNCTION, not of each activation: every later `use` must agree with it,
@@ -584,10 +601,6 @@ pub const Env = struct {
     /// rewrite is the positional member access every backend already emits
     /// (`t[0]` → `t._0`) rather than a method call.
     indexRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
-    /// Decision 8 §10 — locs of the `loop`s whose `iter` inference typed `bool`
-    /// (`loop (flag) { … }`); the comptime transform marks them
-    /// `LoopExpr.condition` for the backends, which read the untyped AST.
-    conditionLoops: std.AutoHashMap(ast.Loc, void),
     /// Decision 54 — locs of the `case`s that are the optional's pattern form
     /// (`case x { null { … } v { … } }`), with the binder's name. Inference
     /// validates the shape and narrows the binder; the comptime transform
@@ -618,10 +631,17 @@ pub const Env = struct {
     /// exports table (pub fn name → inferred type). Shared registry tables,
     /// populated by the compile session before inference.
     stdModules: std.StringHashMap(std.StringHashMap(*T.Type)),
-    /// Local (alias-aware) names imported via `import {…} from "std"` —
-    /// marked during inference; only these gate qualified calls
-    /// (`bool.negate(x)`) against `stdModules`.
-    stdImports: std.StringHashMap(void),
+    /// Local (alias-aware) names imported via `import {…} from "std"` that
+    /// name a std MODULE (a namespace) → the module's key in `stdModules`
+    /// (`dict` → `dict`, `import {io.fs}` → `fs` → `io/fs`). Marked during
+    /// inference; only these gate qualified calls (`bool.negate(x)`) against
+    /// `stdModules`. A symbol leaf (`import {io.fs.readText}`) is an ordinary
+    /// value binding instead and is not here.
+    stdImports: std.StringHashMap([]const u8),
+    /// Every local name an `import` of this module binds → the item that
+    /// bound it, so a second item binding the same name is
+    /// `import-name-collision` (decision 107) at its own site.
+    importBound: std.StringHashMap(ast.ImportPath),
     /// Public type declarations (`pub record`/`struct`/`enum`) of each "std"
     /// package module, keyed by module name. Populated by `registerStdlib`;
     /// `markStdImports` registers them into the importing env so case
@@ -737,14 +757,14 @@ pub const Env = struct {
             .synthesisedEnumDecls = std.StringHashMap(ast.TypeDecl).init(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .indexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
-            .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
             .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = std.StringHashMap(ast.BehaviorDecl).init(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .jsMethodRenames = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .stdModules = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena),
-            .stdImports = std.StringHashMap(void).init(arena),
+            .stdImports = std.StringHashMap([]const u8).init(arena),
+            .importBound = std.StringHashMap(ast.ImportPath).init(arena),
             .stdModuleTypes = std.StringHashMap([]const ast.DeclKind).init(arena),
             .stdModuleFns = std.StringHashMap([]const ast.FnDecl).init(arena),
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
@@ -814,14 +834,14 @@ pub const Env = struct {
             .synthesisedEnumDecls = try tmpl.synthesisedEnumDecls.cloneWithAllocator(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .indexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
-            .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
             .optionalNullCases = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .assocInterfaceDecls = try tmpl.assocInterfaceDecls.cloneWithAllocator(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .jsMethodRenames = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .stdModules = try tmpl.stdModules.cloneWithAllocator(arena),
-            .stdImports = std.StringHashMap(void).init(arena),
+            .stdImports = std.StringHashMap([]const u8).init(arena),
+            .importBound = std.StringHashMap(ast.ImportPath).init(arena),
             .stdModuleTypes = try tmpl.stdModuleTypes.cloneWithAllocator(arena),
             .stdModuleFns = try tmpl.stdModuleFns.cloneWithAllocator(arena),
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
@@ -881,6 +901,7 @@ pub const Env = struct {
         // the compile session, not this env. Only the outer maps are ours.
         self.stdModules.deinit();
         self.stdImports.deinit();
+        self.importBound.deinit();
         self.stdModuleTypes.deinit();
         self.stdModuleFns.deinit();
         self.stdArrayLowerings.deinit();

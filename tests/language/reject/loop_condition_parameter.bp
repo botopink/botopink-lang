@@ -1,8 +1,9 @@
-//// Decision 8 §10 — a condition loop takes no parameter.
+//// Decision 105 — `while` and `loop` bind nothing; only `for` takes `{ x -> … }`.
+//// Refused by the parser at the binder, naming `for`.
 
 pub fn main() {
     var i = 0;
-    loop (i < 3) { x ->
+    while (i < 3) { x ->
         i = i + 1;
     };
     @print(i);

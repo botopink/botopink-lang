@@ -5,7 +5,7 @@ val array: string[] = ["65454"];
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 array() ->
     [<<"65454">>].

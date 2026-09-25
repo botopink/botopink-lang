@@ -5,7 +5,7 @@ val nested = #(#(1, 2), #(3, 4));
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 nested() ->
     {{1, 2}, {3, 4}}.

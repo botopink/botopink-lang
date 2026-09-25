@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    loop (0..10) { i ->
+    for (0..10) { i ->
         @print(i);
     };
 }
@@ -9,7 +9,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 main() ->

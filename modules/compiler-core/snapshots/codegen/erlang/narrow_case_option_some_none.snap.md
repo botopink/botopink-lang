@@ -15,7 +15,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Opt
@@ -24,15 +24,15 @@ fn main() {
 
 describe(Opt) ->
     case Opt of
-        main__t__opt__v__none ->
+        test@main@@Opt__v__none ->
             <<"empty">>;
-        {main__t__opt__v__some, V} ->
+        {test@main@@Opt__v__some, V} ->
             <<"value: ", ('__bp_text'(V))/binary>>
     end.
 
 main() ->
-    '__bp_print'([describe({main__t__opt__v__some, 42})]),
-    '__bp_print'([describe(main__t__opt__v__none)]).
+    '__bp_print'([describe({test@main@@Opt__v__some, 42})]),
+    '__bp_print'([describe(test@main@@Opt__v__none)]).
 
 '__bp_text'(Value) when is_binary(Value) -> Value;
 '__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
@@ -63,13 +63,13 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__opt.erl
+----- ERLANG -- test@main@@Opt.erl
 ```erlang
--module(main__t__opt).
+-module(test@main@@Opt).
 -export(['__bp_format'/1]).
 
-'__bp_format'(main__t__opt__v__none) -> {variant, "Opt.None", []};
-'__bp_format'({main__t__opt__v__some, F0}) -> {variant, "Opt.Some", [{"value", F0}]}.
+'__bp_format'(test@main@@Opt__v__none) -> {variant, "Opt.None", []};
+'__bp_format'({test@main@@Opt__v__some, F0}) -> {variant, "Opt.Some", [{"value", F0}]}.
 ```
 
 ----- RUN LOG -----

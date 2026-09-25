@@ -18,6 +18,28 @@ pub const ParseErrorType = parserMod.ParseErrorType;
 
 // ── Canonical messages ────────────────────────────────────────────────────────
 
+/// The three generator annotations, spelled for a diagnostic —
+/// "`#[@generator]`, `#[@iterator]` or `#[@futureGenerator]`" — derived at
+/// comptime from `EffectKind` and the chain, so a renamed effect renames the
+/// message with it.
+const generatorAnnotationsSpelled = blk: {
+    const effectChain = @import("./comptime/effect_chain.zig");
+    const ast = @import("./ast.zig");
+    var out: []const u8 = "";
+    var n: usize = 0;
+    var total: usize = 0;
+    for (ast.EffectKind.all) |e| {
+        if (effectChain.grants(e, .yield_)) total += 1;
+    }
+    for (ast.EffectKind.all) |e| {
+        if (!effectChain.grants(e, .yield_)) continue;
+        if (n > 0) out = out ++ (if (n + 1 == total) " or " else ", ");
+        out = out ++ "`#[@" ++ e.annotationName() ++ "]`";
+        n += 1;
+    }
+    break :blk out;
+};
+
 pub const ErrorMessages = struct {
     message: []const u8,
     hint: []const u8,
@@ -55,6 +77,51 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         // wrong, and says that a DELIBERATE refusal looks different — which is
         // the distinction whose absence let seven missing forms be routed
         // around instead of filed (front 15).
+        .ternaryAbsent => .{
+            .code = "ternary-absent",
+            .message = "there is no `c ? a : b`",
+            .caretCaption = "write `if (c) { a } else { b }`",
+            .hint = "`if` is an expression: `val x = if (c) { a } else { b };` — and `a ?? b` is the default of an optional.",
+        },
+        .bitwiseOperatorAbsent => .{
+            .code = "bitwise-operator-absent",
+            .message = "the language has no bitwise operators",
+            .caretCaption = "not an operator",
+            .lexemeInCaption = true,
+            .hint = "There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[@External.<Target>(…)]` is the way to a bit operation.",
+        },
+        .charLiteralAbsent => .{
+            .code = "char-literal-absent",
+            .message = "there is no character literal",
+            .caretCaption = "write a one-character string, `\"a\"`",
+            .hint = "A character is a string of length one: `\"a\"`, and `s[0]` reads one from a string.",
+        },
+        .nestedFnDecl => .{
+            .code = "nested-fn-decl",
+            .message = "a `fn` is declared at module level, not inside a body",
+            .caretCaption = "bind a lambda instead",
+            .hint = "Inside a body a function is a value: `val inner = { x -> x + 1 };` — or move the declaration to module level.",
+        },
+        .listSpreadDotDotDot => .{
+            .code = "list-spread-dot-dot-dot",
+            .message = "`...` is a pattern's inclusive range, not a spread",
+            .caretCaption = "write `..`",
+            .hint = "An array literal spreads with two dots, and the spread comes last: `[1, 2, ..rest]`.",
+        },
+        .implementClauseFor => .{
+            .code = "implement-clause-for",
+            .message = "`for` in a type's `implement` clause",
+            .caretCaption = "the type is the receiver already",
+            .note = "the `implement` after a bodyless `type P(…)` is the TYPE's clause, `type P(…) implement A { … }`",
+            .hint = "Either write the clause, `type P(x: i32) implement A { … }`, or name a standalone block: `Impl implement A for P { … }`.",
+        },
+        .tupleLiteralLabel => .{
+            .code = "tuple-literal-label",
+            .message = "a tuple literal is positional",
+            .caretCaption = "no label here",
+            .note = "labels belong to the tuple TYPE, `#(x: i32, y: i32)`; the labeled construction `#(x: 1, y: 2)` is not parsed",
+            .hint = "Write `#(1, 2)` and read `.0` / `.1`, or read the labeled type's members by their labels.",
+        },
         .unexpectedToken => .{
             .message = "this token cannot appear here",
             .caretCaption = "unexpected",
@@ -70,8 +137,10 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .hint = "Provide a tail, e.g. [1, 2, ..rest]",
         },
         .listSpreadNotLast => .{
-            .message = "Elements cannot appear after a spread",
-            .hint = "Lists are singly-linked. Prepend items and reverse when done.",
+            .code = "list-spread-not-last",
+            .message = "the spread of an array literal comes last",
+            .caretCaption = "nothing after `..rest`",
+            .hint = "`[1, 2, ..rest]` — write the fixed elements first and the spread last.",
         },
         .uselessSpread => .{
             .message = "This spread does nothing",
@@ -96,6 +165,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         .badInterpolation => .{
             .message = "Malformed `${…}` interpolation in string",
             .hint = "Each `${…}` must contain one complete expression, e.g. \"hi ${name}\"; escape a literal dollar with `\\${`",
+        },
+        .importGroupModifier => .{
+            .code = "import-group-modifier",
+            .message = "`*` and `as` belong to an import leaf, not to a group",
+            .caretCaption = "this node opens braces",
+            .hint = "write the modifier on the leaf: `io: {fs: {readText as read}}`, `collections: {ArraySets*}`",
         },
         .anonymousImplExtend => .{
             .message = "An `implement`/`extend` block must be named",
@@ -165,11 +240,35 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write a tuple `#(…)`",
             .hint = "Build `#(x, y)` from variables (their names become the labels), or `#(1, 2)` and give the destination a labeled type `#(x: i32, y: i32)`.",
         },
-        .removedKeywordWhile => .{
-            .code = "removed-keyword-while",
-            .message = "`while` does not exist — use loop (condition)",
-            .caretCaption = "write `loop (condition) { … }`",
-            .hint = "`loop (attempts < 3) { attempts = attempts + 1; }` repeats while the condition holds; `loop { … break; }` repeats until a break.",
+        .removedLoopParenthesised => .{
+            .code = "removed-loop-parenthesised",
+            .message = "`loop (…)` does not exist — `for` iterates, `while` repeats",
+            .caretCaption = "write `for (xs) { x -> … }` or `while (cond) { … }`",
+            .hint = "Decision 105: `for (xs) { x -> … }` iterates a collection, a range or a generator; `while (cond) { … }` repeats while the condition holds; `loop { … break; }` repeats until a break. `loop await (g)` is `for await (g) { x -> … }`.",
+        },
+        .loopBindsNothing => .{
+            .code = "loop-binds-nothing",
+            .message = "`while` and `loop` bind nothing — only `for` takes `{ x -> … }`",
+            .caretCaption = "remove the binder",
+            .hint = "`while (cond) { … }` repeats while the condition holds and `loop { … }` until a break; to bind each item write `for (xs) { x -> … }`.",
+        },
+        .forWithoutBinder => .{
+            .code = "for-without-binder",
+            .message = "a `for` binds the item it iterates: `for (xs) { x -> … }`",
+            .caretCaption = "open the body with `x ->`",
+            .hint = "To repeat without a value write `while (cond) { … }` or `loop { … break; }`.",
+        },
+        .forBindsOneName => .{
+            .code = "for-binds-one-name",
+            .message = "a `for` binds one name — there is no index binder",
+            .caretCaption = "one name before `->`",
+            .hint = "Iterate the positions to read an index: `for (0..xs.length) { i -> val x = xs[i]; … }`.",
+        },
+        .loopAnnotationNotGenerator => .{
+            .code = "loop-annotation-not-generator",
+            .message = "only a generator annotation goes on a `loop`, and only on `loop`",
+            .caretCaption = "not a generator `loop`",
+            .hint = "`#[@generator] loop { … }` is worth `@Generator<T>` (" ++ generatorAnnotationsSpelled ++ " are the three); a `for` or `while` inside it feeds it: `#[@generator] loop { for (xs) { x -> yield f(x); }; break; }`.",
         },
         .removedKeywordNew => .{
             .code = "removed-keyword-new",
@@ -211,7 +310,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "pattern-range-exclusive",
             .message = "`..` is iteration, not a pattern's range",
             .caretCaption = "write `...` — an inclusive range, both ends matched",
-            .hint = "`1...9` matches every value from 1 to 9; `..` belongs to `loop (0..n)` and slicing. An open end is a guard: `_ when (x < 0) { … }`.",
+            .hint = "`1...9` matches every value from 1 to 9; `..` belongs to `for (0..n)` and slicing. An open end is a guard: `_ when (x < 0) { … }`.",
         },
         .patternRangeMissingEnd => .{
             .code = "pattern-range-missing-end",

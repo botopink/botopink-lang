@@ -1,0 +1,7 @@
+//// Decision 41 — the only argument a `@BeamMemory` member takes is `keyed`;
+//// an unknown argument name under a known member is a located error naming it.
+
+#[@BeamMemory.Ets(keyd = true)]
+var hits: i32 = 0;
+
+pub fn main() { @print(hits); }

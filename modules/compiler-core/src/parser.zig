@@ -127,12 +127,30 @@ pub const ParseErrorType = enum {
     removedKeywordRecord,
     /// `enum E { … }` — `enum` was replaced by `type` in 1.0.3.
     removedKeywordEnum,
+    /// Decision 107 — `*` or `as` on an import node that opens braces
+    /// (`import {io* : {fs}}`, `import {io as x: {fs}}`). Both belong to a
+    /// leaf: an activation names one extension and an alias renames one
+    /// binding, and a group is neither.
+    importGroupModifier,
     /// `interface I { … }` — `interface` was renamed to `behavior` in 1.0.3.
     removedKeywordInterface,
     /// `record { x: 1 }` — anonymous records are tuples in 1.0.3.
     removedRecordLiteral,
-    /// `while (cond) { … }` — `while` is not part of the language (decision 8 §10).
-    removedKeywordWhile,
+    /// `loop (…) { … }` — decision 105: `loop` takes no parenthesis; a
+    /// collection is `for (xs) { x -> … }`, a condition `while (cond) { … }`.
+    removedLoopParenthesised,
+    /// `while (cond) { x -> … }` / `loop { x -> … }` — neither binds a name
+    /// (decision 105); only `for` takes `{ x -> … }`.
+    loopBindsNothing,
+    /// `for (xs) { … }` without `x ->` — a `for` binds the item it iterates.
+    forWithoutBinder,
+    /// `for (xs) { x, i -> … }` — a `for` binds one name; the index is
+    /// `for (0..xs.length) { i -> }` (decision 105).
+    forBindsOneName,
+    /// `#[…] loop` with an annotation that is not a generator effect, or a
+    /// generator annotation on `for` / `while` — only `loop` takes the
+    /// annotation, and only the three generator effects (decision 105).
+    loopAnnotationNotGenerator,
     /// `throw new Error(…)` — `new` is not a keyword (06 N27).
     removedKeywordNew,
     /// `{ x: i32 }` in type position — anonymous record types are tuples in 1.0.3.
@@ -188,6 +206,34 @@ pub const ParseErrorType = enum {
     /// declaration without a body says what it answers, even when the answer
     /// is nothing.
     bodylessFnNeedsReturnType,
+    /// `c ? 1 : 2` — there is no ternary; `if` is an expression (front 15
+    /// step 3). Located at the `?`.
+    ternaryAbsent,
+    /// `1 << 2`, `a >> 1`, `a & b`, `a ^ b` — the language has no bitwise
+    /// operators, and no replacement to name (front 15 step 3). Located at the
+    /// operator.
+    bitwiseOperatorAbsent,
+    /// `'a'` — there is no character literal; a character is a one-character
+    /// string (front 15 step 3). Located at the literal.
+    charLiteralAbsent,
+    /// `fn inner(x: i32) { … }` inside a body — a `fn` declares at module
+    /// level; inside a body a function is a value bound with `val` (front 15
+    /// step 3). Located at the `fn`.
+    nestedFnDecl,
+    /// `[...a, 3]` — `...` is a pattern's inclusive range; the spread of an
+    /// array literal is `..` (front 15 step 3). Located at the `...`.
+    listSpreadDotDotDot,
+    /// `type P(x: i32)` followed by `implement A for P { … }`: the `implement`
+    /// was read as the bodyless type's own clause, whose receiver is the type
+    /// itself, so `for` has nothing to name (front 15 step 3). Located at the
+    /// `for`.
+    implementClauseFor,
+    /// `#(x: 1, y: 2)` — a tuple LITERAL is positional; labels belong to the
+    /// tuple type `#(x: i32, y: i32)` (decision 8 §6). The labeled
+    /// construction is not parsed (`01-checker` §6); this names it instead of
+    /// blaming the value for a missing `val` (front 15 step 3). Located at the
+    /// label.
+    tupleLiteralLabel,
 };
 
 pub const ParseErrorInfo = struct {
@@ -441,9 +487,14 @@ pub const Parser = struct {
                 const d = try this.parseTestDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .@"test" = d };
-            } else if (this.check(.loop)) blk: {
+            } else if (this.check(.loop) or this.check(.@"while") or this.check(.@"for")) blk: {
                 // top-level loop statement: parsed as a val named "_loop"
-                const e = try this.parseLoopExpr(alloc);
+                const e = if (this.check(.loop))
+                    try this.parseLoopExpr(alloc, null)
+                else if (this.check(.@"while"))
+                    try this.parseWhileExpr(alloc)
+                else
+                    try this.parseForExpr(alloc);
                 const ePtr = try this.boxExpr(alloc, .{ .loop = e });
                 _ = this.match(.semicolon);
                 break :blk DeclKind{ .val = ast.ValDecl{ .name = "_loop", .value = ePtr } };
@@ -474,6 +525,7 @@ pub const Parser = struct {
                     // them — `val Name = fn …` and the other `val` shorthands do
                     // not, and are refused where the annotation is.
                     .val, .@"var" => blk2: {
+                        const annTok = this.peek();
                         const anns = try this.parseAnnotations(alloc);
                         var decl = try this.parseValForm(alloc);
                         switch (decl) {
@@ -482,6 +534,9 @@ pub const Parser = struct {
                                 decl.deinit(alloc);
                                 for (anns) |*ann| ann.deinit(alloc);
                                 alloc.free(anns);
+                                // Refused at the annotation, not at whatever
+                                // token follows the form (decision 67).
+                                this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, annTok);
                                 return ParseError.UnexpectedToken;
                             },
                         }
@@ -1077,6 +1132,16 @@ pub const Parser = struct {
                     var last = first;
                     while (this.check(.dot) or this.check(.identifier)) last = this.advance();
                     try args.append(alloc, spanLexemes(first, last));
+                } else if (this.check(.minus) and this.peekAt(1).kind == .numberLiteral) {
+                    // `#[mark(-20)]` — a negative literal is one argument, the
+                    // sign and the digits spanned into one lexeme, so the
+                    // reader that parses the lexeme as an expression sees
+                    // `-20`. It used to be the catch-all at the digits: the
+                    // `-` was taken as the whole argument and `20` had
+                    // nowhere to go (front 15 step 4b).
+                    const first = this.advance(); // `-`
+                    const last = this.advance(); // the digits
+                    try args.append(alloc, spanLexemes(first, last));
                 } else {
                     const tok = this.advance();
                     try args.append(alloc, tok.lexeme);
@@ -1518,6 +1583,9 @@ pub const Parser = struct {
     }
 
     pub const parseLoopExpr = exprs.parseLoopExpr;
+    pub const parseWhileExpr = exprs.parseWhileExpr;
+    pub const parseForExpr = exprs.parseForExpr;
+    pub const parseAnnotatedLoopExpr = exprs.parseAnnotatedLoopExpr;
 
     pub const parseRangeExpr = exprs.parseRangeExpr;
 };

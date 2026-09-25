@@ -8,7 +8,7 @@ fn pick(maybe: ?R) -> ?i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type R: a, b
 
@@ -16,9 +16,9 @@ pick(Maybe) ->
     (fun(undefined) -> undefined; (_Opt0) -> element(3, _Opt0) end)(Maybe).
 ```
 
------ ERLANG -- main__t__r.erl
+----- ERLANG -- test@main@@R.erl
 ```erlang
--module(main__t__r).
+-module(test@main@@R).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, a) -> element(2, V);

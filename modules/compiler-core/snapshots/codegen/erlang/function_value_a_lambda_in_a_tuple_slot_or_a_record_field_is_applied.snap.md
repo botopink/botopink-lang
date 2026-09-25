@@ -19,7 +19,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Ops: step
@@ -39,7 +39,7 @@ main() ->
         (N + 100)
     end},
     '__bp_print'([element(2, T)(2)]),
-    O = {main__t__ops, fun(N) ->
+    O = {test@main@@Ops, fun(N) ->
         (N - 1)
     end},
     '__bp_print'([(element(2, O))(10)]).
@@ -70,9 +70,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__ops.erl
+----- ERLANG -- test@main@@Ops.erl
 ```erlang
--module(main__t__ops).
+-module(test@main@@Ops).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, step) -> element(2, V).

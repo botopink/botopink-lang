@@ -22,7 +22,7 @@ fn parse(n: i32) -> @Result<i32, string> {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% #[@future] / #[@futureGenerator] — eager lowering
 fetch(X) ->

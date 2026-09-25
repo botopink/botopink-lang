@@ -102,7 +102,7 @@ pub const MissingExternal = struct {
 
 /// One EXTRA module a source file produced on a BEAM target — policy 3 of
 /// `13-module-identity`: every `type` declared in a file is its own erlang/BEAM
-/// module, named by `crossModule.typeAtom` (`app@models__t__person`), holding
+/// module, named by `crossModule.typeAtom` (`app@models@@Person`, decision 109), holding
 /// the type's methods. `atom` is the rendered module atom, which is also the
 /// artifact's basename (`out/erl/<atom>.erl`, `out/beam/<atom>.S`); `code` is
 /// the module's text in the target's language. Both owned by the

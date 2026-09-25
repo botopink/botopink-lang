@@ -463,7 +463,7 @@ test "format: a loop body keeps each statement's semicolon" {
     try h.assertFormat(std.testing.allocator,
         \\fn f(xs: Array<string>) -> string {
         \\    var a = "";
-        \\    loop (xs) { x ->
+        \\    for (xs) { x ->
         \\        if (x == "a") a = a + x;
         \\        val y = x;
         \\        a = a + y;
@@ -478,14 +478,14 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
         \\fn f(xs: Array<string>) -> string {
         \\    var a = "";
         \\    var b = "";
-        \\    loop (xs) { x -> if (x == "a") { a = a + x; }; if (x == "b") { b = b + x; }; };
+        \\    for (xs) { x -> if (x == "a") { a = a + x; }; if (x == "b") { b = b + x; }; };
         \\    return a + b;
         \\}
     ,
         \\fn f(xs: Array<string>) -> string {
         \\    var a = "";
         \\    var b = "";
-        \\    loop (xs) { x ->
+        \\    for (xs) { x ->
         \\        if (x == "a") a = a + x;
         \\        if (x == "b") b = b + x;
         \\    };
@@ -495,8 +495,61 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
     try h.assertIdempotent(std.testing.allocator,
         \\fn f(xs: Array<string>) -> string {
         \\    var a = "";
-        \\    loop (xs) { x -> if (x == "a") { a = a + x; }; if (x == "b") { a = a + x; }; };
+        \\    for (xs) { x -> if (x == "a") { a = a + x; }; if (x == "b") { a = a + x; }; };
         \\    return a;
+        \\}
+    );
+}
+
+// ── decision 105: the three loop keywords print back as written ──────────────
+
+test "format: for, for await, while, loop and the annotated loop round-trip" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(xs: i32[], gen: @FutureGenerator<i32>) {
+        \\    for :outer (xs) { x ->
+        \\        if (x == 2) break :outer;
+        \\    };
+        \\    for (0..xs.length) { i ->
+        \\        @print(i);
+        \\    };
+        \\    for (1...3) { i ->
+        \\        @print(i);
+        \\    };
+        \\    for await (gen) { v ->
+        \\        @print(v);
+        \\    };
+        \\    var n = 0;
+        \\    while :w (n < 3 && true) {
+        \\        n = n + 1;
+        \\        continue;
+        \\    };
+        \\    loop :l {
+        \\        n = n - 1;
+        \\        if (n == 0) break :l;
+        \\    };
+        \\    val g = #[@generator] loop :gen {
+        \\        n = n + 1;
+        \\        if (n == 10) break n * 2;
+        \\        yield n * 2;
+        \\    };
+        \\    val r = #[@iterator] loop {
+        \\        yield 1;
+        \\    };
+        \\    val fg = #[@futureGenerator] loop {
+        \\        yield 1;
+        \\    };
+        \\}
+    );
+}
+
+test "format: an empty loop body prints on one line and a body breaks" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn f(xs: i32[]) {
+        \\    for (xs) { x -> };
+        \\    while (true) { };
+        \\    loop {
+        \\        break;
+        \\    };
         \\}
     );
 }

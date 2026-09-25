@@ -9,18 +9,18 @@ fn describe(p: Point) -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Point: x, y, z
 
 describe(P) ->
-    {main__t__point, X, _, _} = P,
+    {test@main@@Point, X, _, _} = P,
     X.
 ```
 
------ ERLANG -- main__t__point.erl
+----- ERLANG -- test@main@@Point.erl
 ```erlang
--module(main__t__point).
+-module(test@main@@Point).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, x) -> element(2, V);

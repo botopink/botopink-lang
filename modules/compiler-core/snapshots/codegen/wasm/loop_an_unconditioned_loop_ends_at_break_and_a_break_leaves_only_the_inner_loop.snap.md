@@ -11,7 +11,7 @@ fn firstSquareOver(n: i32) -> i32 {
 fn nested() -> i32 {
     var outer = 0;
     var inner = 0;
-    loop (outer < 3) {
+    while (outer < 3) {
         outer = outer + 1;
         loop {
             inner = inner + 1;

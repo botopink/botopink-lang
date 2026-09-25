@@ -10,7 +10,7 @@ backend and the typedef backend share one set of lexical and layout rules.
 The split is the same one the BEAM side uses (`../beam/`):
 
 - **the backend builds a model** — it decides what shape a botopink construct
-  becomes (a `loop` becomes a `for…of`; a `try` becomes `"error" in _r`
+  becomes (a `for` becomes a `for…of`; a `try` becomes `"error" in _r`
   matching; a `record` becomes a `class`);
 - **the emitter renders it** — it decides how that shape is spelled (quoting,
   escaping, the reserved-word rename, parentheses, indentation, semicolons).
@@ -159,8 +159,7 @@ here so a later row that removes one knows what it is removing:
 | `buildExpr` `try … catch` | the same with a handler | **yes** |
 | `buildExpr` `val assert … catch` | bind `_match`, test the pattern, run the handler (decision 8 §9) | **yes** |
 | `buildIfExpr` | an `if` **used as a value** — decision 2 keeps `if` an expression | **yes** |
-| `buildLoop` (collection) | a `loop` used as a value: the accumulator and its `for…of` | **yes** |
-| `buildLoop` (condition) | the same for `loop (cond)`, including the `break <value>` form | **yes** |
+| `buildGeneratorLoop` | `#[@generator] loop { … }` — a `function*` IIFE around `while (true)` (decision 105; every other loop is a statement) | **yes** |
 | `buildCase` | a `case` used as a value: `const _s = …` and one statement per arm | **yes** |
 | `@block { body }` | a **block as a value** — the one site whose producer decision 2 removes | **no** |
 

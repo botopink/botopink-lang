@@ -312,7 +312,7 @@ test "format: comments ---- a method keeps its trailing comment on its own line"
 // `parser/exprs.zig` carried two inlined block loops, written before `parseBlock`
 // grew `trackEmptyLines`/`handleComments`: they recorded no `emptyLinesBefore` and
 // a `//` comment inside them was a **parse error**. They were the `if`
-// then-branch and the lambda body — which is every `loop (…) { x -> … }` body.
+// then-branch and the lambda body — which is every `for (…) { x -> … }` body.
 // `15-language-surface`'s `28e447e` routed both through `parseStmtListInBraces`,
 // and this printer has read the field since the two statement-sequence printers
 // became one, so the round trip closes without a further printer arm. These are
@@ -322,7 +322,7 @@ test "format: comments ---- a loop body keeps a blank line and a comment" {
     try h.assertFormatLossless(std.testing.allocator,
         \\fn f(xs: Array<i32>) -> i32 {
         \\    var n = 0;
-        \\    loop (xs) { x ->
+        \\    for (xs) { x ->
         \\        n = n + x;
         \\
         \\        // the second half
@@ -363,7 +363,7 @@ test "format: comments ---- all three blocks of one `if`/`loop` keep theirs at o
         \\        // else-branch
         \\        n = 4;
         \\    };
-        \\    loop (xs) { x ->
+        \\    for (xs) { x ->
         \\        n = n + x;
         \\
         \\        // loop body

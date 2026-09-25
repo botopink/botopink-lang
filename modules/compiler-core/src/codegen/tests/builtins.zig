@@ -297,7 +297,7 @@ test "js: builtin ---- @print with variable" {
 test "js: builtin ---- @print in loop" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn countdown(n: i32) {
-        \\    loop (0..n) { i ->
+        \\    for (0..n) { i ->
         \\        @print(n - i);
         \\    };
         \\}

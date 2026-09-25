@@ -28,6 +28,7 @@ std/
     ├── math.bp  asserts.bp  path.bp  random.bp  querystring.bp  time.bp  url.bp
     ├── base64.bp  unicode.bp  process.bp  os.bp  env.bp  crypto.bp  regex.bp
     ├── erlang.bp  json.bp  fs.bp  http.bp  snapshots.bp  mocks.bp  async.bp
+    ├── content_hash.bp      ← the content-hash half of the future `hash.bp` (1.0.10-beta `01-std` front 03); front 23 folds it into `hash.bp` with `crypto.bp`
     ├── __snapshots__/<suite>/<slug>.snap  ← recorded by `snapshots` from the inline tests (decision 72); a `.snap.new` beside one is a candidate a person reviews and renames
     └── sidecars/random.mjs  ← Mulberry32 PRNG used by `random` (the only sidecar: `mocks` keeps its tables on `globalThis`, not in a `.mjs`)
 ```
@@ -58,6 +59,7 @@ std/
 | `os` | `hostname`, `arch`, `cpuCount`, `tmpdir`, `userInfo` (`type UserInfo`), `eol` |
 | `env` | `read`, `write`, `clear`, `args`, `vars` (`get`/`set` are keywords) |
 | `crypto` | `sha256`, `sha512`, `md5`, `hmacSha256`, `randomBytes` (hex strings) |
+| `content_hash` | The content-hash half of `hash.bp` (1.0.10-beta `01-std` front 03, decision 106; lands flat, `00 · 23-std-purity` folds it into `hash.bp`): `contentHash` (djb2 as lowercase hex, the `emilia.hashHex` templates verbatim — fast, trivially collidable, for filenames and internal keys) and `strongHash` (SHA-256 truncated to 32 hex, for input the caller did not choose). Both are `declare fn` with a Node and an Erlang cell — no bitwise operators or `toString(radix)` in the language, so the fold lives in the template and neither runs on beam or wasm. `cacheKey(parts)` / `strongCacheKey(parts)` hash a FRAMED key — `<length>:<part>` joined by `|`, the private `frame` being the only place parts are rendered — so `["user:1", "profile"]` and `["user", "1:profile"]` cannot collide; pure `.bp`. `etag(body)` answers `"<hash>"` WITH the RFC 9110 quotes, `weakEtag` `W/"<hash>"`, and `matches(body, ifNoneMatch)` is the 304 decision over an exact match, the `*` wildcard or a comma-separated candidate list (membership by `indexOf`, not `Array.contains` — a `default fn` a consumer's embedded copy would emit verbatim). `fingerprint(fileName, contents)` answers `app.<hash>.js` — the extension stays last, a leading dot is not a boundary, no extension means no trailing dot; the extension is measured as the last `.`-piece because Erlang's `lastIndexOf` answers a byte offset where `length`/`slice` count characters. Every expected hex in the inline tests is a literal, which is what pins the two targets to each other. `emilia.hashHex` is a duplicate now; collapsing it is a later, `emilia`-owned change |
 | `regex` | `matches`, `replace`, `replaceAll`, `splitOn`, `type Match`, `match`, `matchAll` |
 | `erlang` | Erlang BIF bindings (`abs`, `element`, `spawn`, `send`, …); the erlang codegen reads this file to know which names are BIFs |
 | `json` | `parse`, `stringify` (validate + canonical re-encode, `@Result<string, string>`) |
@@ -78,6 +80,16 @@ Adding an importable module:
 No `build.zig`, `prelude.zig`, or `compiler-core` edit — `build.zig`
 (`stdPkgFilesFromRoot`) reads `root.bp` and generates the `std_pkg` registry.
 
+A nested module follows the module-tree rule of any package: `pub mod <dir>;`
+in `root.bp` resolves to `<dir>.bp` or the folder index `<dir>/mod.bp` —
+exactly one, the build panics on both or neither — and a folder index's own
+`pub mod <name>;` lines embed `<dir>/<name>.bp` under the registry key
+`std/<dir>/<name>`, depth-first (decision 106's `io/` and `testing/`). A
+consumer reaches it by path: `import {<dir>.<name>} from "std"` (the
+namespace) or `import {<dir>: {<name>: {f}}} from "std"` (a leaf). The folder
+index itself holds `mod` lines only and is not a module of the registry, so
+`import {<dir>} from "std"` is `unknown "std" module`.
+
 Importing a std module on a target where its host-bound declarations have no
 matching `@External` raises `STD-001` (`comptime/tests/std_target_gating.zig`).
 
@@ -85,7 +97,11 @@ matching `@External` raises `STD-001` (`comptime/tests/std_target_gating.zig`).
 
 `#[@External.<Target>(...)]` plus the signature define how a declaration lowers.
 Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
-`builtins.d.bp`. Several annotations combine in one `#[…]`, comma-separated.
+`builtins.d.bp`, and `External` stays a second declaration rather than
+`Target` itself: `Target` is a value a program holds and compares, `External.<T>`
+an annotation whose every variant carries a payload the compiler reads (front
+20 F9, the sentence in `builtins.d.bp`). Several annotations combine in one
+`#[…]`, comma-separated.
 
 - **Module + symbol** — `#[@External.Erlang("erlang", "abs")]`: call
   `module:symbol(args)` with args in declaration order.
@@ -109,6 +125,14 @@ Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
   runs; on a `declare fn` it emits `require("./file.mjs")`, which throws unless
   the file is shipped next to the emitted module. Name the native method, write
   a template, or keep host code in a sidecar (below).
+- **`inline`** — `#[@External.Erlang("…", inline = true)]` (or `@External.Beam`)
+  opts the `(target, method)` pair out of the dispatch table so the emitter's
+  hand-coded shape keeps emitting. Only those two variants declare it, because
+  only the erlang and beam emitters read it (`hasExternalInline`, over the last
+  argument); on `Node` / `Wasm` / `Typescript`, anywhere but last, or with a
+  non-bool value it is refused at the annotation (front 20 F9, decision 67 —
+  `comptime/infer.zig` `external_variants`, kept in step with the
+  `pub type External` block by a drift test).
 - **Template** — any `$` in the string switches to the shared renderer
   (`modules/compiler-core/src/comptime/primOpTemplate.zig`):
 

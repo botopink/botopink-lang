@@ -2,7 +2,7 @@
 ```botopink
 #[@result]
 fn validate(items: i32) -> @Result<i32, string> {
-    loop (0..items) { i ->
+    for (0..items) { i ->
         if (i > 2) { throw "too many"; };
     };
     return items;
@@ -14,7 +14,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 validate(Items) ->

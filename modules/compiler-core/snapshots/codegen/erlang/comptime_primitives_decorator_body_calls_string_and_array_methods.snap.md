@@ -81,7 +81,7 @@ main({Arg0}) ->
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 -export([describeUser/0]).
 
@@ -141,9 +141,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__user.erl
+----- ERLANG -- test@main@@User.erl
 ```erlang
--module(main__t__user).
+-module(test@main@@User).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, name) -> element(2, V);

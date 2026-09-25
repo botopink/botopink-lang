@@ -61,8 +61,8 @@ codegen/
 | File | Role |
 |---|---|
 | `config.zig` | `Config` (`targetSource`, `typeDefLanguage`, `build_root`, `test_mode`), `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `TypeDefLang` |
-| `moduleOutput.zig` | `AmbiguousVariant` (a bare variant name more than one enum of the program declares, written where nothing says which — `variant`, and two of the enums; `diagnostic(alloc)` renders the refusal with both qualified spellings, and the erlang emitter raises it through the same errdefer slot pattern `MissingExternal` uses). `MissingExternal` (06 C13 — the host-backed fn a backend has no `#[@External.<Target>(…)]` for: name, target and call site; `diagnostic(alloc)` renders it as a `Diagnostic.type`, so the failure reaches the driver LOCATED and only that module fails, instead of `error.MissingExternalTarget` aborting the build with its own name). `GenerateResult` (`js`, `typedef`, `units`, `comptime_script`, `comptime_err`, `diagnostic`, `run_output`; `failed()`) and `ModuleOutput` — shared between targets. `Unit` is one EXTRA module a source file produced on a BEAM target — policy 3 of `13-module-identity`: a `type` declared in the file is a module of its own, `atom` (`crossModule.typeAtom`, `app@models__t__person`) being both the `-module` and the artifact's basename, `code` its text. commonJS and wasm produce none — a class already is the type's identity there (decision 5) and wasm is single-module. Everywhere the file's own module goes, its units go with it: `cli/build.zig` writes them, `runtime.zig` compiles and loads them as `AuxFile`s, `snapshot.zig` renders one section each. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
-| `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external, erlang_backed, arity}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its methods as `MethodSig{name, arity}` — the arity is half a method's identity, so a consumer can ask whether two types of the program claim one `name/arity`, whether a `fn` export is host-backed, and whether that host-backed one carries an `erlang` target usable at its declared arity — the erlang backend routes such an import to the owner's wrapper, see [erlang](#erlang)); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. **`exports` is keyed by the bare symbol NAME, and a name is unique inside a module and never over a program** — `libs/std` declares `parse` in `json`, in `querystring` and in `url` today — so a plain `get` answered with whichever module the walk reached last, no dissent check and no diagnostic. `owners` is the population that collapse threw away: EVERY `pub` declaration of a name, in walk order. `pick(name, source, arity)` asks the question properly — the module the import's own `from "<mod>"` NAMES answers first (`ast.ImportSource.namesModule`: the full path or its last segment; a PACKAGE handle names the package and narrows nothing), then the arity the CALL takes (`ExportInfo.arity`, the `MethodSig` widening on the plain-`fn` axis), and when neither separates the candidates the answer is `.contested`, never the first one (decision 67). `picked` is the same for a caller with a dynamic fallback: a contest reads as absent. `export_faults` keys a `Contested` by the CONSUMER module path — a name several modules export is not itself the defect (refusing the declaration would refuse `libs/std`, thirteen of whose names collide), what cannot be answered is a consumer reaching for the bare name with nothing saying which — and every backend's `codegenEmit` turns it into a located diagnostic exactly as `atomFault` is turned, because the collapse is in this index and not in any one emitter. Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports and to pick which module it links in. **It also owns the Erlang/BEAM module atom** (option A + A2): `erlAtom(alloc, ModuleId)` renders the whole module path as a legal UNQUOTED atom (lowercase · `/` → `@` · anything outside `[a-z0-9_@]` → `_` · a run of `_` collapsed to one so `__` stays free for the qualifier · `bp@` prefixed when the first character is not `[a-z]` or when a single-segment name is in `RESERVED`), so `main` stays `main`, `std/math` is `std@math` and `web/api/http` is `web@api@http`. It was the path's BASENAME, which made `models/user` and `services/user` the same module and let eleven `libs/std` modules shadow the OTP module of the same name node-wide. `erlDeclAtom(alloc, id, Kind, decl, ?hash)` names an EXTRA module one source file produces (`<atom>__<t|b|im|tpl|dec>__<decl>[__<16 hex>]`), `decodeAtom` reads either shape back to its origin, `typeAtom(alloc, id, decl)` is the identity of a `type` — `erlDeclAtom(id, .t, decl)`, so `type Person` in `app/models.bp` is `app@models__t__person`: the module policy 3 puts its methods in AND the tag half 3 puts inside every value it builds, one renderer because the tag has to name the module that formats it — and `variantAtom(alloc, id, decl, variant)` appends `__v__<variant>` so the five `Circle`s of the ecosystem stay five atoms (`decodeAtom` reads that fifth segment back as `.variant`), `outputStem(target, alloc, id)` gives the artifact's basename (the atom for erlang/beam, the module path for commonJS/wasm), `RESERVED`/`isReserved` are the frozen OTP name list and `ATOM_MAX_BYTES` is 250 (the `<atom>.bea#` filename limit, not the atom limit). `CrossModule.atomFor(path)` reads the atom `build` rendered once per module and `ownerModuleAtom(name)` the owning module's; `atomFault(path)` is the **collision check** — two paths rendering one atom, a `RESERVED` hit or an over-long atom, which the erlang and BEAM `codegenEmit`s turn into a located diagnostic instead of letting one module silently overwrite the other. The same check runs over each module's **type** atoms (`duplicate_decl`, `too_long`): a type atom lowercases the declaration name and folds every other character to `_`, so `Person`/`person` and `Foo_Bar`/`FooBar` would be one module and one value tag for two types — across modules the path already tells them apart, so this half is per module and fails the module as a whole. `moduleBasename(path)` survives for the places that compare a SOURCE-level name (an `import { order } from "std"` namespace, a `wat.zig` import segment) and is no longer a module atom |
+| `moduleOutput.zig` | `AmbiguousVariant` (a bare variant name more than one enum of the program declares, written where nothing says which — `variant`, and two of the enums; `diagnostic(alloc)` renders the refusal with both qualified spellings, and the erlang emitter raises it through the same errdefer slot pattern `MissingExternal` uses). `MissingExternal` (06 C13 — the host-backed fn a backend has no `#[@External.<Target>(…)]` for: name, target and call site; `diagnostic(alloc)` renders it as a `Diagnostic.type`, so the failure reaches the driver LOCATED and only that module fails, instead of `error.MissingExternalTarget` aborting the build with its own name). `GenerateResult` (`js`, `typedef`, `units`, `comptime_script`, `comptime_err`, `diagnostic`, `run_output`; `failed()`) and `ModuleOutput` — shared between targets. `Unit` is one EXTRA module a source file produced on a BEAM target — policy 3 of `13-module-identity`: a `type` declared in the file is a module of its own, `atom` (`crossModule.typeAtom`, `app@models@@Person` — decision 109) being both the `-module` and the artifact's basename, `code` its text. commonJS and wasm produce none — a class already is the type's identity there (decision 5) and wasm is single-module. Everywhere the file's own module goes, its units go with it: `cli/build.zig` writes them, `runtime.zig` compiles and loads them as `AuxFile`s, `snapshot.zig` renders one section each. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
+| `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external, erlang_backed, arity}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its methods as `MethodSig{name, arity}` — the arity is half a method's identity, so a consumer can ask whether two types of the program claim one `name/arity`, whether a `fn` export is host-backed, and whether that host-backed one carries an `erlang` target usable at its declared arity — the erlang backend routes such an import to the owner's wrapper, see [erlang](#erlang)); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. **`exports` is keyed by the bare symbol NAME, and a name is unique inside a module and never over a program** — `libs/std` declares `parse` in `json`, in `querystring` and in `url` today — so a plain `get` answered with whichever module the walk reached last, no dissent check and no diagnostic. `owners` is the population that collapse threw away: EVERY `pub` declaration of a name, in walk order. `pick(name, source, arity)` asks the question properly — the module the import's own `from "<mod>"` NAMES answers first (`ast.ImportSource.namesModule`: the full path or its last segment; a PACKAGE handle names the package and narrows nothing), then the arity the CALL takes (`ExportInfo.arity`, the `MethodSig` widening on the plain-`fn` axis), and when neither separates the candidates the answer is `.contested`, never the first one (decision 67). `picked` is the same for a caller with a dynamic fallback: a contest reads as absent. `export_faults` keys a `Contested` by the CONSUMER module path — a name several modules export is not itself the defect (refusing the declaration would refuse `libs/std`, thirteen of whose names collide), what cannot be answered is a consumer reaching for the bare name with nothing saying which — and every backend's `codegenEmit` turns it into a located diagnostic exactly as `atomFault` is turned, because the collapse is in this index and not in any one emitter. Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports and to pick which module it links in. **It also owns the Erlang/BEAM module atom** (option A, amended by decision 109): `erlAtom(alloc, ModuleId)` renders the owning PACKAGE and the module path as one legal UNQUOTED atom — `package ++ "@" ++ path`, lowercase · `/` → `@` · anything outside `[a-z0-9_@]` → `_` · a run of `_` collapsed to one so `__` stays free for the comptime qualifier — so `main` of package `myapp` is `myapp@main`, `std/math` is `std@math` and `web/api/http` is `myapp@web@api@http`. `ModuleId` is `{path, package, package_in_path}`; `Packages{root, deps}` (`Config.packages`, set by the CLI from `botopink.json` — `libs.packagesOf`) answers `idOf(path)`: a path whose first segment names a dependency (the embedded `std` always does, `EMBEDDED_PACKAGE`) is that dependency's, with the package already in the path, and every other path is the root package's. A module of no package (`Packages.root` empty: compiled outside any `botopink.json`) renders no atom — `error.MissingPackage`, which `build` turns into the located `no_package` fault, so an erlang/BEAM compilation without a manifest is refused and never given a fallback name. The compiler's own tests compile under the implicit manifest `test` (`TEST_PACKAGE`, `test_packages`, set on every `tests/helpers.configs` entry and used by the runtime harness) — `test@main`, `test@main@@Person`. The comptime evaluators' modules live in `COMPILER_PACKAGE`, `bp` (`bp@comptime__tpl__…`), which `manifest` refuses as a `name`. A package that does not start with a lowercase letter is `error.InvalidPackageName`, never quoted (`manifest.nameRefusal` refuses it first). Every atom holds an `@`, so none is an OTP module's name: option A's `RESERVED` list and its `bp@` prefix are gone. It was the path's BASENAME, which made `models/user` and `services/user` the same module and let eleven `libs/std` modules shadow the OTP module of the same name node-wide. `declAtom(alloc, id, decl)` names the module a DECLARATION becomes (decision 109): `erlAtom(id) ++ "@@" ++ <Decl>`, the declaration KEEPING ITS CASE (only a character outside `[A-Za-z0-9_]` folds to `_`), so `type SourceLocation` in `main.bp` of `myapp` is `myapp@main@@SourceLocation` and `type File` in std's `io/fs.bp` is `std@io@fs@@File` — still an unquoted atom, and `DECL_SEP` (`@@`) can occur in no module atom (a path segment is never empty) and be produced by no source name. `<Decl>` is a `type`'s own name or the `val` an `implement` block is bound to (`pond_pkg@pond@@PatoNada`; nothing emits an `implement` module yet), and an inline `type Pato(…) implement Swimmer { … }` clause's methods are `pond_pkg@pond@@Pato`'s. `erlDeclAtom(alloc, id, Kind, decl, ?hash)` is left to the COMPTIME producers only (`bp@comptime__<tpl|dec>__<decl>__<16 hex>`) — `Kind` has no `t`/`b`/`im` any more. `typeAtom(alloc, id, decl)` is the identity of a `type` — `declAtom(id, decl)`, so `type Person` in `app/models.bp` of `myapp` is `myapp@app@models@@Person`: the module policy 3 puts its methods in AND the tag half 3 puts inside every value it builds, one renderer because the tag has to name the module that formats it — and `variantAtom(alloc, id, decl, variant)` appends `__v__<variant>` (the variant lowercased, its `_` runs collapsed) so the five `Circle`s of the ecosystem stay five atoms: `myapp@main@@Shape__v__circle`. `decodeAtom` is `split("@@")` for a declaration or a variant tag (the last `__v__` of the declaration half splits off the variant), the `__` qualifier for a comptime module, and the module half's first `@` for the package (`Decoded.package`; an atom with no `@` is `UndecodableAtom`). The atom is the identity on the two BEAM targets only: a commonJS value's identity is its class prototype (decision 5) and a wasm value's is its descriptor's ADDRESS (decision 22), whose bytes hold the bare declaration name `@print` shows — neither carries a module-qualified string, so nothing there spells the atom, `outputStem(target, alloc, id)` gives the artifact's basename (the atom for erlang/beam, the module path for commonJS/wasm), and `ATOM_MAX_BYTES` is 250 (the `<atom>.bea#` filename limit, not the atom limit). `CrossModule.atomFor(path)` reads the atom `build` rendered once per module and `ownerModuleAtom(name)` the owning module's; `atomFault(path)` is the **collision check** — two paths rendering one atom (`duplicate`), a module of no package (`no_package`), a package name that cannot start an atom (`invalid_package`) or an over-long atom (`too_long`), each which the erlang and BEAM `codegenEmit`s turn into a located diagnostic instead of letting one module silently overwrite the other. The same check runs over each module's **type** atoms (`duplicate_decl`, `too_long`), and it is **case-insensitive** (decision 109): `Person`/`person` are two atoms (`main@@Person`, `main@@person`) but one `.erl` on a case-insensitive file system, so the pair is refused and the message names both atoms; `Foo-Bar`/`Foo_Bar` fold to one atom outright and the message says so (`FooBar`/`Foo_Bar` do not collide); pinned by a `build` test on each — across modules the path already tells them apart, so this half is per module and fails the module as a whole. `moduleBasename(path)` survives for the places that compare a SOURCE-level name (an `import { order } from "std"` namespace, a `wat.zig` import segment) and is no longer a module atom |
 | `patterns.zig` | **Backend-agnostic pattern facts.** `bindsNames(pattern, ctx, isVariant)` answers whether a pattern binds at least one name — the question every backend asks before lowering a `val assert P = e [catch h];` (decision 8 § 9), which binds `P`'s names in the ENCLOSING scope. A pattern that binds nothing (`val assert 42 = answer catch 0;`) is a pure check and keeps the single-expression lowering it always had. `isVariant` is the backend's own variant table (a bare identifier is a binding only when it names no variant) |
 | `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The remaining `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
 | `beam/` | BEAM term model + emitters shared by `erlang.zig`, `beam_asm.zig` and the comptime evaluators: `term.zig` (`Term`), `erl_emitter.zig` (Erlang source: atom quoting incl. reserved words, variables, module names, binaries), `beam_emitter.zig` (`.S` operands and `move`s). One quoting rule for `.erl` and `.S`. See [`beam/AGENTS.md`](beam/AGENTS.md) |
@@ -113,7 +113,7 @@ codegen/
   top-level fn's declared return type, and a primitive method's declared return
   type (`zip` → `Array<#(T, U)>`); `"f"` is the float leaf, `f64`/`f32` in a
   written type. A tuple whose shape nothing recovers prints as an array, and an
-  `f64` whose shape nothing recovers prints as an integer — `loop (xs) { v ->
+  `f64` whose shape nothing recovers prints as an integer — `for (xs) { v ->
   break v * 0.15; }` is the measured case, and a union member (decision 26) is
   the other, since a union carries no single leaf.
 - **`@Result`** is `{ ok: V } | { error: E }`; `__bp_ok`/`__bp_error` build it for
@@ -147,14 +147,18 @@ codegen/
   else. Turning the row on for a record, an array or a variant needs the
   operand's type at the site — a per-`Loc` mark from inference, the way
   `method_lowerings` already does it — which crosses `01-checker`.
-- **`break <value>` in a condition loop** (decision 8 §10) is the loop's value.
-  A `loop { … }` / `loop (cond) { … }` used as a value with no `yield` in its
-  body is a **search**: `break <v>` becomes `return <v>` out of the IIFE and the
-  loop answers `null` if it never breaks (`LoopCtx.search`). With a `yield` it
-  is a comprehension and keeps the accumulator, where `break <v>` contributes
-  `v` and ends the loop. An **iteration** loop (`loop (xs) { x -> … }`) is
-  always a comprehension: `break <v>` there contributes, which is what
-  `fn find(arr: i32[]) -> i32[]` relies on.
+- **Loops are statements** (decision 105, front 22): `for (xs) { x -> … }` is
+  `for (const x of xs)`, `for await (gen) { x -> … }` is `for await (const x of
+  gen)`, `while (cond) { … }` and `loop { … }` are `while` — every one built by
+  `buildLoopStmt` under `LoopCtx.stmt`, where `break;` / `continue;` are the
+  native statements. No loop has a value: the comprehension, the search and
+  decision 52's `null` of decision 8 §10 are gone, and a `break <v>` reaches
+  this backend only inside a generator scope, where it is `yield v; return;`
+  (`buildBreakStmt`) from any loop depth. **`#[@generator] loop { … }`**
+  (`buildGeneratorLoop`) is a `function*` IIFE whose body runs under
+  `while (true)` — the captured `var`s are the closure's, so a counter the body
+  reassigns is generator state for free; `#[@futureGenerator] loop` is
+  `async function*`. `a...b` materialises one more element than `a..b`.
 - **`x is T`** (decision 8 §4, `buildIsCall`/`isTest`) tests the **value**, not
   where it came from, which is what makes one lowering answer for a known
   static type and for a value arriving through `unknown` or a union: an integer
@@ -369,6 +373,21 @@ codegen/
   package prefix — a path nothing emits, so the program built and then died at
   run time. The namespace-handle block below is skipped for it: the shorthand
   names no package, so there is no handle to bind.
+- **A path and a group bind their leaf (decision 107)**: every backend reads
+  `imp.leaf()` (the exported name), `imp.name()` (the local binding — the
+  alias when written) and `ImportDecl.leafSource` (the module the prefix
+  names, handed to `CrossModule.picked` in place of the decl's `from`), so
+  `import {url.parse, json: {parse as parseJson}}` reaches two owners.
+  commonJS destructures `{ leaf: alias }` (`js.ObjectPattern.Prop.bind`) —
+  from `std/<prefix>.js` for a std symbol leaf, or binds the module object
+  for a std namespace leaf (`comptimeMod.isStdModule` decides which;
+  `import {io.fs}` → `require("./std/io/fs.js")`); erlang keys `std_imports`
+  local name → std module path and maps an alias back to the declared name
+  at the remote call (`import_aliases`); beam records `imported_fn_owners`
+  (local → owner atom + declared name) ahead of the name-keyed
+  `crossOwnerOf`; wat, which links statically, registers the alias beside the
+  declared name in every fn table and maps it back at the `call`
+  (`import_aliases`).
 - **Lib namespace object**: when an import names the lib itself
   (`import {Lib} from "Lib"`) and that name has no emitted symbol, `emitUse`
   binds the lib's module object (`buildUse`: `const Lib = require(…)`, or
@@ -467,13 +486,11 @@ codegen/
   all yet: `xs[0]` is still `void`). Today `d["k"]` emits the JS property read
   and answers `undefined`. `01-checker` types the call by the receiver; the
   dict arm lands with it.
-- **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`;
-  an open-ended `a..` is the lazy `__bp_range_from(a)` prelude generator
-  (`function*` counting up forever), so `loop (x..) { i -> … break; }` runs.
-- **Indexed loops**: `loop (xs) { x, i -> … }` and `loop (xs, 0..)` iterate
-  `(xs).entries()`; any other index start pairs each item with it —
-  `Array.from(xs, (__x, __i) => [__i + (start), __x])` — so `loop (xs, 1..)`
-  counts from 1 (erlang's `lists:enumerate(Start, Xs)`).
+- **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`,
+  `a...b` the same with `b + 1` (decision 105: inclusive); an open-ended `a..`
+  is the lazy `__bp_range_from(a)` prelude generator (`function*` counting up
+  forever), so `for (x..) { i -> … break; }` runs. There is no index binder
+  (decision 105): `for (0..xs.length) { i -> }` is the spelling.
 - **Enum methods**: variant values carry no methods (a payload variant is a
   plain `{ tag, … }` object, a nullary one its name). A method whose first
   parameter is `self` or typed `Self` takes the value as a real first parameter
@@ -510,7 +527,7 @@ codegen/
   `.map()`. A `behavior`'s `default fn` is the one method kind that never
   carries one — the checker refuses `effect-on-behavior-method-forbidden`.
   Inside a generator, `return <iter>` becomes `yield* <iter>; return;` and
-  `loop (xs) { x -> yield x }` becomes `for…of`.
+  `for (xs) { x -> yield x; }` becomes `for…of`.
 - **A labelled argument claims its slot**: `docs.md` § Parameters with defaults
   — "a parameter the call names by label keeps the argument it was given,
   whichever position it is in". `labelledArgs` places the arguments of a
@@ -535,30 +552,19 @@ codegen/
 - **Control flow (no statement in expression position)**: a jump is a
   statement, so every position that can hold one is lowered by `buildStmt`:
   - an `if` in statement position whose branches `return` / `break` /
-    `continue` (or, inside a comprehension, `yield`) is a JS `if` statement
+    `continue` (or, inside a generator scope, `break <v>`) is a JS `if` statement
     (`buildIfStmt`; the `if (val e = …)` form keeps its binding in a `{ … }`
     block). Any other `if` stays the value IIFE, and a jumping `if` in a value
     position is `error.JumpInValuePosition`;
-  - a `loop` in statement position is `for…of` (`buildLoopStmt`, `loop_ctx =
-    .stmt`): `break;` / `continue;` are native, `break <v>` evaluates `v` and
-    continues;
-  - a `loop` used as a value is a comprehension (`buildLoop`): only top-level
-    `yield <v>` → `xs.map(…)`; anything else (`break <v>`, `continue`, a nested
-    `yield`) → an accumulating IIFE `(() => { const _acc = []; for (…) {
-    _acc.push(v); … } return _acc; })()` — `break <v>` contributes `v`,
-    `continue` drops the item, `break;` ends the iteration;
+  - a loop is a statement (decision 105): `for…of` / `for await…of` / `while`
+    (`buildLoopStmt`, `loop_ctx = .stmt`), `break;` / `continue;` native, and
+    inside a generator scope `break <v>` is `yield v; return;`; an annotated
+    `loop` is the generator IIFE (`buildGeneratorLoop`) — see the row above;
   - `return case … { … }` where an arm returns from the function (the
     `#[@result]` wrap puts `__bp_ok(…)` around a whole `case`, so `Fail -> throw
     e` is `return __bp_error(e)` inside it) lowers the `case` to statements in
     a block (`buildReturnCaseStmt`): value arms `return ({ ok: v })`, the jump
     arm keeps its own `return`;
-  - a condition loop (decision 8 §10, `LoopExpr.condition`: `loop (cond) { … }` /
-    `loop { … }`) is a JS `while` statement (`buildWhileStmt`, `loop_ctx = .stmt`);
-    used as a value it is an accumulating IIFE around the `while`
-    (`buildConditionLoopValue`, `loop_ctx = .cond_value`) where `yield <v>`
-    contributes and `break <v>` contributes and ends the loop. `while (…)` is not
-    part of the language (a parse error) — the old call-shaped `while` lowering
-    is gone;
   - `throw` in value position is a one-statement IIFE; a binding in value
     position is `error.BindingInValuePosition`. `try x catch return y` in value
     position still returns from the value IIFE (the `try`'s value becomes `y`);
@@ -568,7 +574,7 @@ codegen/
 
 - **One module per `type` — policy 3 of `13-module-identity`.** A source file
   emits its own module plus one per `type` it declares
-  (`crossModule.typeAtom` → `main__t__person`, `std@dict__t__dict`), carried out
+  (`crossModule.typeAtom` → `myapp@main@@Person`, `std@dict@@Dict` — decision 109; `test@main@@Person` in the snapshots, which compile under the implicit test manifest), carried out
   as `GenerateResult.units`. A type's instance methods, its associated fns and
   the behavior `default fn`s it adopts are that module's, exported under **the
   names the programmer wrote** — the module boundary is what erlang's flat
@@ -611,10 +617,11 @@ codegen/
   **A `type` with no bodied method emits no module**: an artifact holding one
   `-module` line is not written and no snapshot section shows one. Half 3 gives
   every type a `format/1` and the unit stops being empty then.
-  **A `behavior` emits no module of its own** (decision 23: `__b__` is reserved
-  and has no run-time representation). That is a deliberate departure from
-  policy 3 §2.2, which would put a behavior's associated `default fn` in
-  `<path>__b__<decl>` and emit it once: the assoc default keeps
+  **A `behavior` emits no module of its own** (decision 23: a behavior has no
+  run-time representation; were it reopened, its module would be
+  `<package>@<path>@@<Behavior>` like every declaration's, decision 109). That is a
+  deliberate departure from policy 3 §2.2, which would put a behavior's
+  associated `default fn` in a module of its own and emit it once: the assoc default keeps
   `interfaceAssocAtom`'s mangled local (`array_range/2`) in **every** consuming
   module, as it always has. Decision 23 is newer than §2.2 and wins; §2.2's
   "emitted once" is therefore still open, and it is the behavior module that
@@ -623,14 +630,14 @@ codegen/
   CALLING module, so a name this module imports but never defines must name its
   owner: `imported_fns` (built in `collectImportedTypes` from the cross index)
   maps an imported `pub fn`, and every method of a `pub` type of a module this
-  one imports from, to the owner atom — `a:twice(X)`, `lib:thenReturn(S, V)`. The
+  one imports from, to the owner atom — `test@a:twice(X)`, `test@lib:thenReturn(S, V)`. The
   owner atom is `Emitter.atomOf(path)`, i.e. `CrossModule.atomFor` — the whole
   module path joined with `@` (`std@dict:insert/3`), never the basename.
   A local definition of the same name and arity wins (an `@emit`ed body can
   define `find/2` beside an imported `find`). A method is reached in **the
   TYPE's** module, not the file's (policy 3, below): `imported_fns` maps it to
   `crossModule.typeAtom(owner path, type)`, so `stub.thenReturn(v)` is
-  `lib__t__stub:thenReturn/2` and the owner's type module exports it — unless
+  `test@lib@@Stub:thenReturn/2` and the owner's type module exports it — unless
   more than one type of the program declares that `name/arity`, in which case no
   owner belongs in the call at all and the value's tag answers
   (`methodOwnerContested`, above). **An import that names a MODULE, not a
@@ -816,32 +823,12 @@ codegen/
   path (`assertPatternStmts`) passes null, because its pattern is lowered twice —
   once as a `case` test, once as the enclosing match that binds — and is lowered
   exactly as it was.
-- **A condition loop's `break <value>` is the loop's value** (decision 8 §10).
-  It used to be refused outright, with an unlocated
-  `error.ConditionLoopValueUnsupported` — and on the bare `loop { … }` too, which
-  the parser gives the same node. The loop now answers a **pair**: running the
-  condition to its end gives `{FinalGroup, undefined}`, the break's throw gives
-  `{GroupAtTheJump, Value}` (a three-element `{Signal, Group, Value}` instead of
-  the bare-break two), and a one-clause `case` destructures it — the group's
-  variables are rebound, because a name bound in every clause is exported, and
-  the `case`'s own value is the break's. The refusal survives only for a
-  condition loop that **yields**, which is the bullet below. Expression position
-  also had to start carrying the group: `conditionLoopNode` was called with no
-  names from `exprNode`, so `val x = loop (i < 10) { … i = i + 1; };` built a fun
-  of no arguments, never advanced `i`, and did not terminate.
-- **A yielding condition loop collects, it does not discard** (decision 8 §9).
-  `yield <v>` lowered to the bare value expression, which an erlang clause body
-  throws away, so `#[@generator] fn nums(n) { var i = 0; loop (i < n) { yield i;
-  i = i + 1; }; }` answered its loop's final counter and the consuming
-  `lists:foldl/3` raised `no case clause matching 3` — the milestone's only
-  run-time crash. A synthetic local (`cond_yield_acc`, `__bp_cond_yield`) joins
-  the loop's variable **group**, so the threading that already carries a
-  reassigned `i` through the recursion carries the accumulator too: each `yield`
-  is `Acc@n = [V | Acc@n-1]`, the initial group passes `[]` in its slot (it has
-  no pre-loop value), and the loop answers `lists:reverse/1` of it. The name
-  begins with `_`, so it is a valid erlang variable and is exempt from the unused
-  warning. `isPlainYieldGenerator`'s eager-list path (`yield 1; yield 2;`) is
-  untouched.
+- **No loop has a value on erlang** (decision 105). Decision 8 §10's
+  `{Group, Value}` pair for a condition loop's `break <value>` and §9's
+  `__bp_cond_yield` accumulator in the loop's variable group left with the
+  loop's value: a `break <v>` or a `yield` belongs to the nearest generator
+  scope (§ Loops above), which collects under its own key, and the variable
+  group a loop threads is only the variables its body reassigns.
 - **The two embedded preludes are parsed once per process, not once per
   emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
   re-parsed `primitives.bp`, and `noAutoImportRefs`'s catalog re-parsed
@@ -921,7 +908,7 @@ codegen/
   happen (an unknown `__bp_*` op, an empty OR pattern) is an emit error, never an
   empty `raw`.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
-  `if` / `loop (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
+  `if` / `for (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
   values instead of binding them inside a `case` arm or `fun`:
   `Acc@1 = case C of true -> …, Acc@2; _ -> Acc end` and
@@ -1038,7 +1025,7 @@ codegen/
   `describe`. The offset came from whichever declaration the index kept, so
   erlang read `net`'s `.tag` at `parser`'s offset and printed the NEIGHBOURING
   field at exit 0 where commonJS and wasm printed the right one, and the typed
-  method call ran `parser__t__outcome:describe/1` over a `net` tuple. A
+  method call ran `language_tests@parser@@Outcome:describe/1` over a `net` tuple. A
   contested name sends the read to `'__bp_field'/2` and the call to
   `'__bp_method'/3`, which ask the value's own tag. Pinned by
   `tests/language/modules/type_name_collision`. Tuple index `t._N` and the
@@ -1088,7 +1075,7 @@ codegen/
 - **Enums**: `Order.Lt` → the variant atom, `Color.Rgb(r, g, b)` →
   `{VariantAtom, R, G, B}`, and since half 3 the tag is
   `crossModule.variantAtom` — the enum's type atom plus `__v__` plus the variant,
-  `main__t__shape__v__circle` — rendered against the module that declares the
+  `test@main@@Shape__v__circle` — rendered against the module that declares the
   ENUM. `variantTag` is the one choke point (constructor, `case` pattern, guard
   and the `.Variant` shorthand all go through it); `variant_enum` gives the enum
   back from a bare `.Circle`, and a variant this module cannot place (a comptime
@@ -1099,7 +1086,7 @@ codegen/
   own comment mitigated the hazard for a `case` SUBJECT only, so outside a
   `case` a bare `.Circle` took whichever enum the decl walk indexed first. With
   `Shape` and `Hole` both declaring `Circle`, a `Hole` value written `.Circle`
-  was tagged `main__t__shape__v__circle` and the `case` over it died with
+  was tagged `language_tests@main@@Shape__v__circle` and the `case` over it died with
   `case_clause` at run time, from a program that compiled without a word — and
   wasm answered correctly from the same source. A name two enums declare names
   neither now: `enumOfVariantPath` refuses to answer from it (the written
@@ -1131,41 +1118,46 @@ codegen/
   `case X of undefined -> <rest>; S -> <then> end` (its `case` value used to be
   discarded). A binding-form `if` in any position is exactly those two clauses:
   `undefined` runs the `else` body (it sat behind an unreachable `false` clause)
-  and no `_ -> ok` catch-all follows. `a..b` → `lists:seq(A, B - 1)`. `&&`/`||` are
+  and no `_ -> ok` catch-all follows. `&&`/`||` are
   `andalso`/`orelse` — botopink short-circuits, erlang's `and`/`or` do not.
   `if (x)` on a nullable local (`?T`, or a parameter defaulting to `null`) is the
   null test `(X =/= undefined)`, not a boolean test (`condNode`).
-- **Loops** lower by shape, not by name:
-  - a body producing a value per item (`yield`, or `break <expr>`) → `lists:map`;
-  - a body that is one `else`-less `if` ending in `break <expr>` → `lists:filtermap`
-    with `{true, V}` / `false` (`filterMapFunBody`) — the filter+map botopink means;
-  - a two-parameter loop — `loop (xs, 1..) { item, i -> … }`, or `loop (xs) { item, i -> … }`
-    counting from 0 — → `lists:enumerate(Start, Xs)` and a single `{I, Item}` tuple
-    parameter (`lists:map/foreach/foldl` pass ONE element, so two fun parameters
-    never matched). A two-parameter loop that reassigns outer variables folds over
-    the same enumeration (`mutatingFoldExpr` with a `FoldIndex`), so its
-    reassignments survive the loop;
-  - an open-ended range `loop (x..)` → a named fun that counts up and recurses
+- **Loops are statements** (decision 105, front 22), lowered by shape:
+  - `for (xs) { x -> … }` → `lists:foreach`; one that reassigns outer variables →
+    `lists:foldl` threading them (`mutatingFoldExpr`); one that `break`s or
+    `continue`s → a named fun that walks the list (`[X | Rest]`) and recurses
+    (`recursiveLoopCall`, the condition loop's machinery), because a fold cannot
+    be stopped from inside;
+  - an open-ended range `for (x..)` → a named fun that counts up and recurses
     (`fun __Loop(I) -> …, __Loop(I + 1) end`), since `lists:seq/2` has no `infinity`;
-  - everything else → `lists:foreach`.
-  - a condition loop (decision 8 §10, `LoopExpr.condition`) is a named fun that
-    tests, runs the body and recurses (`conditionLoopNode`): `{Out@3, I@3} = (fun
-    __Loop({Out@1, I@1}) -> case Cond of true -> …, __Loop({Out@2, I@2}); _ ->
-    {Out@1, I@1} end end)({Out, I})`, threading the variables the body reassigns
-    (with none it answers `ok`; a nested one is `__Loop1`, …). Inside it
-    (`cond_loop`, cleared behind a fun boundary) a `break` throws
-    `{'__bp_cond_break', Group}` caught around the call, and a `continue` throws
-    `{'__bp_cond_continue', Group}` caught around the body, so the recursion
-    carries the variables at the jump; each loop's `catch` binds its own
-    `__BpGroupN`. A `break` that carries a VALUE makes the loop an expression
-    whose value is that break's, and a body that `yield`s collects into the group
-    and answers the reversed list (the two bullets below, decision 8 §10 and §9).
-    `error.ConditionLoopValueUnsupported` survives for a yielding condition loop
-    in EXPRESSION position only (`val xs = loop (i < n) { yield i; };`), which
-    reaches `exprNode` rather than `mutatingExpr` and so has no group to join.
-  A value-less `break` is `erlang:throw('__bp_break')` and its loop is wrapped in
-  the `try … catch throw:'__bp_break' -> ok end` that ends it (`loopBreakCatch`,
-  `hasBareBreak`).
+  - `while (cond) { … }` / `loop { … }` → a named fun that tests, runs the body
+    and recurses (`conditionLoopNode`): `{Out@3, I@3} = (fun __Loop({Out@1, I@1})
+    -> case Cond of true -> …, __Loop({Out@2, I@2}); _ -> {Out@1, I@1} end
+    end)({Out, I})`, threading the variables the body reassigns (with none it
+    answers `ok`; a nested one is `__Loop1`, …; `loop`'s literal `true` is not
+    tested). Inside it (`cond_loop`, cleared behind a fun boundary) a bare
+    `break` throws `{'__bp_cond_break', Group}` caught around the call, and a
+    `continue` throws `{'__bp_cond_continue', Group}` caught around the body, so
+    the recursion carries the variables at the jump; each loop's `catch` binds
+    its own `__BpGroupN`.
+  - **A generator scope** — a `#[@generator]`/`#[@iterator]`/`#[@futureGenerator]`
+    fn or method (whose effect `methodEffect` reads off the annotations), or an
+    annotated `loop` — is eager: its items are pushed onto a list held in the
+    process dictionary under a fresh `make_ref()` (`GenScope`, `genPush`), so a
+    `yield` reaches the NEAREST scope from inside an `if`, a `lists:foreach` fun or
+    a loop's named fun without threading an accumulator. `break <v>` pushes and
+    ends the scope from any depth: `throw({'__bp_gen_end', Key, Group, V})`,
+    caught by the scope (`genEndCatch`, the key matched by a guard). A fn answers
+    `lists:reverse(erlang:erase(Key))` (`generatorFnBody`); a flat `yield` list
+    stays the literal list (`isPlainYieldGenerator`). `#[@generator] loop { … }`
+    (`generatorLoopNode`) runs as `loop { … }` does and is the list, the
+    variables it reassigns rebound after it — so a captured `var` counter is the
+    generator's state; `#[@futureGenerator] loop` is the same list (`await` is
+    identity here).
+  - `a..b` → `lists:seq(A, B - 1)`, `a...b` → `lists:seq(A, B)`.
+  A value-less `break` in a `lists:foreach` is `erlang:throw('__bp_break')` and
+  its loop is wrapped in the `try … catch throw:'__bp_break' -> ok end` that ends
+  it (`loopBreakCatch`, `hasBareBreak`).
 - **Module-level `val`s** (`topValForms`): erlang has no module-level storage, so a
   NAMED `val` is always a 0-arity function and a bare reference to it is the call
   `name()` (`top_vals`); a lambda-valued one applies what it answers,
@@ -1339,17 +1331,18 @@ codegen/
 
 - **One module per `type` — policy 3, the same split `erlang.zig` made.** A
   source file emits its own `.S` plus one per `type` it declares
-  (`crossModule.typeAtom` → `main__t__contador`, `std@dict__t__dict`), carried
+  (`crossModule.typeAtom` → `test@main@@Contador`, `std@dict@@Dict`), carried
   out as `GenerateResult.units`. This backend mangled **every** method as
   `'<Owner>_<method>'`, not only a colliding one, so a unit both moves its
   functions and renames them: `'Contador_atual'/1` in `main` becomes `atual/1`
-  in `main__t__contador`, and the call site becomes
-  `{call_ext, 1, {extfunc, main__t__contador, atual, 1}}`. `methodFnName` is
+  in `test@main@@Contador`, and the call site becomes
+  `{call_ext, 1, {extfunc, test@main@@Contador, atual, 1}}`. `methodFnName` is
   the one place the choice is made (bare inside that type's own module, mangled
   everywhere else), `typeModuleAtom` answers the module and `typeMethodModule`
   answers it **only when the type is what declares the method** — an
   `implement` / `extend` block's method on the same type stays the file
-  module's mangled local, because `__im__` is reserved and emits nothing.
+  module's mangled local, because an `implement` block emits no module yet
+  (its module would be `<package>@<path>@@<val>`, decision 109).
   A `behavior`'s `default fn` likewise keeps `'<Iface>_<method>'` wherever
   `emitNeededDefaults` puts it (decision 23).
 - **A unit is a whole module, so it gets a whole module's state**
@@ -1538,15 +1531,11 @@ codegen/
   block that did build a throwaway closure was removed by `ae813cc8`. The
   13 `make_fun3` hits `grep` finds in `beam_asm.zig` are all comments.
 - **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
-  `loop (xs) { x -> … }`, `loop (xs) { x, i -> … }` / `loop (xs, 1..) { … }`
-  or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
+  `for (xs) { x -> … }` or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
   (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
   `if`/`loop`/`forEach`) lowers to `lists:foldl/3` with those names as the
   accumulator (one value, or a tuple), unpacked back into the caller's slots
-  (`unpackGroupFromX0`); `break`/`continue` return the group. The two-parameter
-  form folds over `lists:enumerate(Start, Xs)` (`lowerEnumerateIntoX0`; 0
-  without a written range) and binds item and index from the `{Index, Item}`
-  pair. A statement `out.push(v)` on a local Array stores the grown list back
+  (`unpackGroupFromX0`); `break`/`continue` return the group. A statement `out.push(v)` on a local Array stores the grown list back
   into its slot (`receiverMutation`).
 - **Mutating closures** (`lowerMutatingClosure`, `mutating_closures`): a local
   `val emit = { w -> out = out + w; }` whose body reassigns names of the
@@ -1557,27 +1546,30 @@ codegen/
   as a mutation for an enclosing `loop`/`forEach`, so the fold threads the
   names on out. Parity with erlang's `mutatingClosureExpr`: a call whose value
   is used keeps the plain application (and raises `badarity`).
-- **Loops**: `loop (xs, 0..) { item, i -> … }` (or `loop (xs) { item, i -> … }`,
-  counting from 0) iterates `lists:enumerate(Start, Xs)` and binds both names
-  from the pair with the `element/2` guard BIF; the comprehension shape (a
-  single else-less `if` whose
-  branch ends in `break v`) lowers through `lists:filtermap/2`; an eager
-  `#[@iterator]` body ending in a yielding loop returns that loop's list.
-  A condition loop (decision 8 §10, `LoopExpr.condition`) runs in the
-  enclosing frame (`lowerConditionLoop`): `{label, Top}`, the condition as a
-  test jumping to `Exit`, the body, `{jump, {f, Top}}`, `{label, Exit}`. The
-  variables it reassigns are this frame's registers, so nothing is threaded;
-  `break` jumps to `Exit` and `continue` to `Top` (`cond_loop`, matched by the
-  output buffer so a lambda's jumps never take it), and its body's slots are
-  counted into the frame (`countLocalsInExpr`). A `break` that carries a VALUE
-  makes the loop an expression (decision 8 §10, `condLoopBreaksWithValue`): the
-  condition then tests to a `Fail` label of its own, every `break` leaves its
-  value in `{x, 0}` (a value-less one leaves `undefined`) before it jumps to
-  `Exit`, and `Fail` moves `undefined` in and falls through to `Exit` — so
-  `{x, 0}` at `Exit` is the break's value or `undefined`, the two answers the
-  erlang lowering's `{GroupAtTheJump, Value}` / `{FinalGroup, undefined}` pair
-  carries. A body that **yields** is still
-  `error.ConditionLoopValueUnsupported` (`condLoopYieldsValue`).
+- **Loops are statements** (decision 105). `for (xs) { x -> … }` is a
+  `lists:foreach` fun (`lowerLoop`); `while (cond) { … }` / `loop { … }` run
+  in the enclosing frame (`lowerConditionLoop`): `{label, Top}`, the condition
+  as a test jumping to `Exit`, the body, `{jump, {f, Top}}`, `{label, Exit}`.
+  The variables it reassigns are this frame's registers, so nothing is
+  threaded; `break` jumps to `Exit` and `continue` to `Top` (`cond_loop`,
+  matched by the output buffer so a lambda's jumps never take it), and its
+  body's slots are counted into the frame (`countLocalsInExpr`). `a...b` is
+  `lists:seq(A, B)`, `a..b` `lists:seq(A, B - 1)`.
+  **A generator scope** — a `#[@generator]`/`#[@iterator]`/`#[@futureGenerator]`
+  fn (`emitGeneratorBody`) or an annotated `loop` (`lowerGeneratorLoop`) — is
+  eager: a y-slot accumulator (`GenLoop`, matched by the output buffer like
+  `cond_loop`) that each `yield v` conses onto (`genPush`), reversed with
+  `lists:reverse/1` at the scope's `Exit`. `break <v>` pushes and jumps to that
+  `Exit` from any loop depth; a bare `break` or `return;` with no loop to leave
+  jumps there too. A `for` that yields inside a scope is walked in the frame
+  (`lowerInFrameFor`: `is_nonempty_list` / `get_list` over a y-slot list), so
+  its `yield`s reach the accumulator; `countGenForSlots` adds its slots to the
+  frame. A captured `var` is the frame's register, so an annotated loop's
+  counter is read after it at its last value. Generator METHODS are not scopes
+  yet (a method's effect is not read here — `run/effect_method.bp` is red on
+  beam for that reason and others). A body that yields outside any scope is
+  `error.ConditionLoopValueUnsupported` (`condLoopYieldsValue`) — the checker
+  refuses it first.
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
   (trailing lambdas materialized as funs); `from "std"` qualified calls
   (`math.floor(x)`) → `call_ext` via `collectStdImports`; interface
@@ -1671,7 +1663,7 @@ codegen/
   same AST and tables in both passes. Under-counting is not a wrong value, it is
   a module the assembler refuses (`{invalid_store, {y, N}}`, "Internal
   consistency check failed"), and `beam_export_audit.sh` cannot find it unless a
-  snapshot carries the shape: `loop ([1, 2, 3]) { x -> … }`, a loop over a
+  snapshot carries the shape: `for ([1, 2, 3]) { x -> … }`, a loop over a
   literal rather than over a name, had no cell and counted nothing until
   `tests/control_flow.zig`'s "a loop over an array literal" fixture.
 - **Registers**: parameters are spilled to `y0..y{arity-1}` by `bindParams` +
@@ -1707,7 +1699,7 @@ codegen/
   (`crossModule.erlAtom`, read through `Emitter.atomOf`); an imported record
   joins `record_fields` + `imported_types` (`collectRecordShapes`, which holds
   the TYPE's atom under policy 3, not the owner file's), its associated fn
-  lowers to `call_ext` into that module (`http__t__response:ok(…)`),
+  lowers to `call_ext` into that module (`test@http@@Response:ok(…)`),
   and the owner exports `'Type_method'/arity` when imported elsewhere. A field
   read on a `call_ext` result emits `is_map` before `get_map_elements` (the
   result is typed `any`, which the loader rejects otherwise). An imported
@@ -1796,21 +1788,19 @@ first three are now enforced by the model, not by discipline:
   is lowered as a plain binding rather than as "never matches":
   `patternTestIsReal`. A list pattern binds nothing, the same gap its `case`
   arms have), globals, case, pipeline (`a |> f` → `call $f`), range loops
-  (`lowerRangeLoop`), condition loops (`lowerConditionLoop`, decision 8 §10:
-  `i32.eqz` + `br_if $__break` at the top of each iteration; as a value, a
-  `break <v>` also leaves the loop — `cond_break_depth`) and array loops
-  (`lowerCollectionLoop` — the index of
-  `loop (xs, 1..) { x, i -> … }` counts from the range's start, as erlang's
-  `lists:enumerate(Start, Xs)`; a float array's element is an `f32` slot, bound
-  to an `f32` local), comprehensions,
+  (`lowerRangeLoop`; `a...b` tests `gt_s` where `a..b` tests `ge_s`), condition
+  loops (`lowerConditionLoop`: `i32.eqz` + `br_if $__break` at the top of each
+  iteration) and array loops (`lowerCollectionLoop` — a float array's element
+  is an `f32` slot, bound to an `f32` local), every one a statement (decision
+  105); the annotated `loop` (`lowerGeneratorLoop`, below),
   primitive methods, function values, `@print` via WASI `fd_write`,
   `_botopink_main`/`_start`.
 - **Known gaps** (loadable, but not yet right):
   - `loop` over anything that is not a range or a known array emits
     `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` accepts an array
     literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
-    parameter or fn result, an array-returning primitive method and a
-    comprehension, and nothing else, because walking the layout of a non-array
+    parameter or fn result, an array-returning primitive method and an
+    annotated `loop`, and nothing else, because walking the layout of a non-array
     would read its first word as an element count and trap;
   - an array of tuples/records prints as the element addresses (no printer);
   - every function value's parameters and result are `i32`;
@@ -1883,16 +1873,6 @@ first three are now enforced by the model, not by discipline:
 - **A `?T` box holding an `f32`** (`fs.at(0)` on a float array) prints through
   `$__print_opt_f32`, its own helper group. Read as a boxed `i32` it printed the
   float's **bits** — `1069547520` for `1.5`, exit 0, no diagnostic.
-- **`break <value>` is the loop's value, not one element of an array**
-  (decision 8 §10, `loopIsSearch` + `search_target`). The fork is the body: a
-  `yield` anywhere means the loop **collects** and keeps the `$__yield{n}`
-  accumulator; without one, a condition or infinite `loop` used as a value is a
-  **search** — `break <v>` stores `v` in `$__found{n}` and `br $__break`s, and
-  the loop answers that local.
-  An **iteration** loop (`loop (xs) { x -> … }`) always collects, which is what
-  `fn find(arr: i32[]) -> i32[]` relies on. `isArrayExpr` knows the difference,
-  or a search's value printed through the array printer. Both forms used to
-  answer `[3]` / `[8]`. The commonJS twin is `LoopCtx.search`.
 - **`==` between tuples compares elements** (decision 8 §6 T6; T5 — labels take
   no part): `tupleEqShape` + `emitTupleEq`. Both sides are pointers into the
   bump heap, so `i32.eq` on them answered `false` for `#(1, "a") == #(1, "a")`.
@@ -1914,30 +1894,15 @@ first three are now enforced by the model, not by discipline:
   prints as one too (`t.0` → `#(1, 2)`), which is **ahead of commonJS**: it prints
   `[1, 2]` there, dropping the `#` marker when no shape hint is passed — `04-js`'s
   row, so the fixture for this is wasm-only.
-- **A condition loop that never breaks answers `null`** (decision 52,
-  `search_flag` + `$__print_loop_i32`): it answered `0`, which is a value. The
-  loop's value is carried **unboxed** with `0` for absence — the representation
-  `??` already reads, and it was already right (`none ?? 42` answers `42`) — so
-  the value alone cannot tell "never broke" from `break 0`, and commonJS prints
-  `0` for the second. `lowerLoop` therefore declares a `$__got{n}` flag beside
-  `$__found{n}`, `break <v>` sets it, and `@print` pushes both into
-  `$__print_loop_i32`, which writes the number or `$__print_null`. The flag
-  shares `$__found{n}`'s name index, so the two can never disagree — including
-  under the pre-existing limit that sequential condition loops in one fn reuse
-  index `0`. **Only `@print` reads the flag**: the loop's value is unchanged
-  everywhere else, which is why no other snapshot moved.
-  `$__print_null` is deliberately **not** `$__print_undefined`: decision 52
-  settles the loop, and what an absent `?T` prints here — `undefined`, against
-  commonJS's `null` — is still open, so wasm now carries two absence texts on
-  purpose. erlang and beam owe the same row — erlang leaks the loop's variable
-  group (`3`) and beam answers an atom; front 12's
-  `tests/language/run/loop_condition_no_break.bp` measures all four.
-  **Two shapes, and the simpler one is the decision's headline**: a loop with no
-  `break <value>` **at all** builds neither accumulator, so `lowerConditionLoop`
-  leaves a bare `0` and there is no flag to read — absence is statically certain,
-  and `null_value_locals` + `valuelessLoopInit` make `@print` write
-  `$__print_null` without loading anything. The flag is only for the loop that
-  *might* have broken.
+- **A generator scope collects into an array** (decision 105): a generator
+  fn's body (`renderAccumulatingBody`, `$__yield_fn`) or an annotated `loop`
+  (`lowerGeneratorLoop`, `$__yield{n}` inside `(block $__gen{n} …)`) — each
+  `yield v` appends (`emitYield`), and `break <v>` appends and ends the scope
+  from any loop depth (`emitGenBreak`: `br $__gen{n}`, or the fn's
+  `return` of what it collected). The loop is the array. Every other loop is a
+  statement: decision 8 §10's search (`$__found{n}`), decision 52's
+  `$__got{n}` flag and `$__print_loop_i32` / `$__print_null`, and the
+  valueless-loop `null` all left with the loop's value.
 - **§7 F1 — a separator inside an array or a tuple is `, `, not `,`**
   (`wat_prelude.putSep`): `@print([1, 2])` writes `[1, 2]` and `@print(#(1, "a"))`
   writes `#(1, "a")`, where decision 1a's text had no space at all
@@ -2199,13 +2164,17 @@ first three are now enforced by the model, not by discipline:
   `executeBeamAsm` (`erlc +from_asm` + `erl`, assembling sibling `.S` aux modules
   so cross-module runs link), `executeWat` (`wasmtime run <module>.wat`).
   The scratch file of an erlang/BEAM module is named by its module ATOM
-  (`erlModuleAtom` → `crossModule.erlAtom`, so `std/dict` is `std@dict.erl`) and
+  (`erlModuleAtom` → `crossModule.erlAtom` over `test_packages`, exactly as the codegen it runs, so `std/dict` is `std@dict.erl` and `main` is `test@main.erl`; `HARNESS_VERSION` was bumped with it, so no cached RUN LOG of the old spelling answers) and
   `-s <atom>` runs it; a second module of the program claiming an atom already
   taken is a loud `HARNESS ERROR:` RUN LOG, where the aux loop used to overwrite
-  the first file silently. An `AuxFile` whose `atom` is set is a per-`type`
+  the first file silently — pinned by a test per backend (`my__mod/user` and
+  `my_mod/user` both render `test@my_mod@user`), which found the check reading a
+  freed key: `seen` keys on the atom slices it is handed, so every aux atom is
+  kept in `aux_atoms` until the function returns, never freed per iteration.
+  An `AuxFile` whose `atom` is set is a per-`type`
   module (`GenerateResult.units`, policy 3): its NAME already is an atom, so it
   is written as it stands instead of being rendered a second time, which would
-  collapse the `__` of `<path>__t__<decl>` to one `_`. A `.wat` carries no module
+  prepend the package a second time and lowercase the declaration half of `<package>@<path>@@<Decl>`. A `.wat` carries no module
   atom, so its scratch file keeps the basename.
   Captured text is stdout with stderr appended after a newline (wasm: stdout
   then stderr, no separator).

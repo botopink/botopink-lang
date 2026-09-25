@@ -42,7 +42,7 @@ of 1.0.5-beta). Two kinds of manifest exist: a **package** and a **workspace**
 
 | Field | Type | Default | Read by | Meaning |
 |---|---|---|---|---|
-| `name` | string, **required** | — | every reader | The package's **import name**: `from "acme-web"` resolves to the package named so. A workspace member is reached by this name, never by its directory. |
+| `name` | string, **required** | — | every reader | The package's **import name**: `from "acme-web"` resolves to the package named so. A workspace member is reached by this name, never by its directory. It also starts every erlang/BEAM module atom of the package (`acme_web@main`, `std@math@@PI` — decision 109 of 1.0.10-beta), so it must start with a lowercase letter, and `bp` (the compiler's own namespace) is refused. |
 | `version` | string | `"0.1.0"` | compiler, `bpmp` (`pack`, the auto-tag) | The package version. |
 | `description` | string | — | — (documentation) | One line. |
 | `src` | string | `"src/"` | compiler, LSP, loader | The source directory, relative to the manifest. |
@@ -208,6 +208,8 @@ application; nothing is shipped from it by design.
 | not an object | `botopink.json must be a JSON object` |
 | no `name` | `botopink.json has no "name"` |
 | `"name": 1` (any string field that is not a string) | `"name" must be a string` |
+| `"name": "MyApp"` (a name that does not start with a lowercase letter) | `"name" must start with a lowercase letter — every erlang module atom of the package starts with it` |
+| `"name": "bp"` | `"name" cannot be "bp" — it is the compiler's own namespace, the package of a module compiled outside any botopink.json` |
 | `"files": "root.bp"` (any array field that is not an array of strings) | `"files" must be an array of strings` · `"files" must be an array of strings — entry 2 is not a string` |
 
 ## Where each tool meets the manifest

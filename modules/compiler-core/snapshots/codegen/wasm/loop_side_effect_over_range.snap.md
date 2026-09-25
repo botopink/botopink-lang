@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    loop (0..10) { i ->
+    for (0..10) { i ->
         @print(i);
     };
 }
