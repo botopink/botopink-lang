@@ -56,7 +56,7 @@ std/
 | `url` | `type Url`, `parse`, `serialize` |
 | `base64` | `encode`, `decode`, `encodeUrlSafe`, `decodeUrlSafe` |
 | `unicode` | `fromCodepoint`, `firstCodepoint`, `codepoints`, `type NormalizationForm`, `normalize` |
-| `process` | `exit`, `cwd`, `platform`, `arch`, `pid` |
+| `process` | `exit`, `cwd`, `platform`, `arch`, `pid`; front 01 (`io/process` after 23): `type Exit(status, stdout, stderr)`, `run(cmd, args)` (no shell; `@Result<Exit, string>` — a process that ran is `Ok` whatever its status, `Error` only when it could not start; Erlang folds stderr into stdout through `stderr_to_stdout`, so `stderr` is `""` there), `runShell(cmd)` (`/bin/sh -c`, stdout+stderr as text, STATUS-LOSING on both targets). No `onSignal`: a closure handed to a host cell is unverified on erlang |
 | `os` | `hostname`, `arch`, `cpuCount`, `tmpdir`, `userInfo` (`type UserInfo`), `eol` |
 | `env` | `read`, `write`, `clear`, `args`, `vars` (`get`/`set` are keywords) |
 | `crypto` | `sha256`, `sha512`, `md5`, `hmacSha256`, `randomBytes` (hex strings) |
