@@ -245,3 +245,32 @@ test "erlang: std package ---- the test runner loads a std sibling and refuses a
         "{ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);\n                        _ -> ok",
     });
 }
+
+// Decision 106 — the root of std is pure: a module at `std/<name>` imports
+// nothing from `io/`, in either spelling, bare (the std package's own root)
+// or `from "std"`. The fixture is a module AT the path `std/probe`, not an
+// edit of `libs/std`: the refusal fires at the import item, before the
+// `io/` tree (step 3) exists, and holds on all four backends.
+test "js: std package ---- a root module importing from io is refused at the item" {
+    try h.assertJsExpecting(std.testing.allocator, @src(), &.{
+        .{ .path = "std/probe", .source =
+        \\import {path: {join}, io.fs.readText};
+        \\
+        \\pub fn peek(p: string) -> string {
+        \\    return readText(join([p, "a"]));
+        \\}
+        },
+    }, .expect_compile_error);
+}
+
+test "js: std package ---- a root module importing a group under io from std is refused" {
+    try h.assertJsExpecting(std.testing.allocator, @src(), &.{
+        .{ .path = "std/probe", .source =
+        \\import {io: {clock: {nowMillis}}} from "std";
+        \\
+        \\pub fn stamp() -> i32 {
+        \\    return nowMillis();
+        \\}
+        },
+    }, .expect_compile_error);
+}

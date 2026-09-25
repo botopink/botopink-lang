@@ -258,6 +258,15 @@ its declared name on every backend) and `import-alias-on-activation` (the
 dispatch rewrite emits the extension's declared name). A `resolveImports`
 refusal is the module's `typeError`, like one from inference.
 
+**The root of std is pure (decision 106).** `checkStdRootPurity`, first in
+`markStdImports`, refuses an import item whose first segment is `io` in a
+module at `std/<name>` (one segment — `env.modulePath`) when the list reads the
+std package, bare (`.root`) or `from "std"`: `std-root-imports-io`, located at
+the item. `std/io/*` and `std/testing/*` are two segments deep and not
+checked; neither is user code. No configuration (decision 67). Proved with a
+module AT the path `std/probe` (`codegen/tests/std_package.zig`), not by
+editing `libs/std`.
+
 **Package-default DSL**: a package may declare one `pub default mod <handle>;`
 (`ModDecl.isDefault`) and one `pub default fn` (`FnDecl.isDefault`), in any
 module. `registerExports` pairs them per package (`pkgKey` = module-path prefix

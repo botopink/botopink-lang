@@ -181,6 +181,18 @@ pub fn seven() -> i32 {
 }
 ```
 
+**The root of std is pure.** One criterion sorts the standard library:
+`io/` is everything that talks to the world outside the process — disk,
+network, clock, entropy, the environment — and a module at the root of std
+is pure by definition: same input, same output. The compiler holds the root
+to it: a std module at the root that imports anything under `io` (bare, or
+`from "std"`, in either spelling) is `std-root-imports-io`, located at the
+item, with no flag to turn it off. `io/` may import from the root, and
+`testing/` (the harness) from both. Outside std the rule is not checked:
+`io.` on an import line is a reading signal — `grep 'io\.'` lists what a
+module touches outside the process — not a guarantee, since a `declare fn`
+does what it wants.
+
 A library is imported the same way, under the name `botopink.json` declares it
 in `dependencies`:
 

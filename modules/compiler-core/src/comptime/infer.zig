@@ -93,6 +93,32 @@ fn noteImportBindings(env: *Env, u: ast.ImportDecl) InferError!void {
     }
 }
 
+/// Decision 106 — the root of std is pure: a module at `std/<name>` (one
+/// segment under `std/`) imports nothing from `io/`, whether it spells the
+/// std package bare (`import {io.fs.readText};`, the package's own root) or
+/// `from "std"`, in the dotted or the grouped form (`io: {fs}`), and
+/// including the namespace `io` itself. `io/` and `testing/` modules are two
+/// segments deep and are not checked; neither is user code, where `io.` on
+/// the import line is a reading signal and not a guarantee. No configuration
+/// (decision 67). Located at the offending item.
+fn checkStdRootPurity(env: *Env, u: ast.ImportDecl) InferError!void {
+    if (!std.mem.startsWith(u8, env.modulePath, "std/")) return;
+    const name = env.modulePath["std/".len..];
+    if (std.mem.indexOfScalar(u8, name, '/') != null) return;
+    const into_std = switch (u.source) {
+        .root => true,
+        .module => |m| std.mem.eql(u8, m, "std"),
+    };
+    if (!into_std) return;
+    for (u.imports) |imp| {
+        if (!std.mem.eql(u8, imp.segments[0], "io")) continue;
+        const path = try imp.dotted(env.arena);
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: std module `{s}` is at the root of std, which is pure; `{s}` imports from `io/`", .{ diagnostics.std_root_imports_io, name, path });
+        env.lastError = TypeError.custom(msg, "Move the module under `io/` (it talks to the world), or take the value it needs as a parameter.").withLoc(imp.loc);
+        return error.TypeError;
+    }
+}
+
 /// `import {bool} from "std"` — marks each imported std module in
 /// `env.stdImports` so qualified calls (`bool.negate(x)`) resolve against
 /// `env.stdModules`. Returns true when the decl was a `from "std"` import
@@ -104,6 +130,7 @@ fn noteImportBindings(env: *Env, u: ast.ImportDecl) InferError!void {
 /// `read`; `import {collections.Dict}` registers that one `pub type`. Only the
 /// leaf enters scope — neither `io` nor `fs` is bound by the last two.
 fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
+    try checkStdRootPurity(env, u);
     try noteImportBindings(env, u);
     const from_std = switch (u.source) {
         .module => |m| std.mem.eql(u8, m, "std"),

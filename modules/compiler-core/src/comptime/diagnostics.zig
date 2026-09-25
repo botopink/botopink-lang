@@ -235,6 +235,11 @@ pub const import_alias_on_type: []const u8 = "import-alias-on-type";
 /// rewrite reaches for.
 pub const import_alias_on_activation: []const u8 = "import-alias-on-activation";
 
+/// Decision 106 — a module at the root of std (`std/<name>`) is pure and
+/// imports nothing from `io/` (`import {io.fs.readText};`, `import {io: {clock}}
+/// from "std"`). Located at the item; `io/` and `testing/` are free; no flag.
+pub const std_root_imports_io: []const u8 = "std-root-imports-io";
+
 // ── D1–D6: fn-param-default-expansion diagnostics ────────────────────────────
 // Authored in `tasks/v0.beta.20/specs/prim-op.md` §"fn-param-default-expansion"
 // F2 — six diagnostics shared by every call surface (fn call / annotation /
@@ -314,6 +319,7 @@ pub const all_codes = [_][]const u8{
     import_name_collision,
     import_alias_on_type,
     import_alias_on_activation,
+    std_root_imports_io,
     fn_param_default_trailing_only,
     fn_param_positional_after_named,
     fn_param_default_arity_mismatch,
