@@ -13,7 +13,7 @@
 //// the failure is the `@Result` it carries, so the caller writes
 //// `try await http.fetch(url)` to propagate it). The node template turns a
 //// rejected `fetch` into `Error(message)` and a fulfilled one into
-//// `Ok({ status, body })`; the erlang template ensures `inets`/`ssl` are
+//// `Ok({ status, body })` — the conversion is the compiler's (decision 126); the erlang template ensures `inets`/`ssl` are
 //// started (idempotent — `{error, {already_started, _}}` is folded back to ok
 //// via `catch`) and lowers to a synchronous `httpc:request/4`, whose
 //// `{error, R}` becomes `Error(<R formatted>)`. Erlang is eager: `@Task<T>` is
@@ -41,15 +41,16 @@ pub type Response(
 // failure as `Error(message)` — never a rejection (decision 126).
 //
 // Node: `globalThis.fetch($0)` chained with `.text()` flattens the
-// `Response → Promise<text>` shape into one `{ ok: { status, body } }`; a
-// rejection anywhere in the chain resolves as `{ error: <message> }`, the
-// runtime shape of `@Result`'s `Error`.
+// `Response → Promise<text>` shape into one `{ status, body }`; the compiler
+// turns the Promise of a host fn declared `-> @Task<@Result<T, E>>` into
+// `Ok(value)`, and a rejection anywhere in the chain into `Error(<message>)`
+// (decision 126, `codegen/commonJS.zig` `host_task`).
 //
 // Erlang: idempotently start `inets` + `ssl` (caught so a second `fetch`
 // call doesn't bomb on `{already_started, _}`), then call `httpc:request/4`.
 // The OK arm answers `{ok, #{status => Code, body => Body}}`; the error arm
 // `{error, <the reason formatted>}`.
-#[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({ ok: { status: __r.status, body: __b } }))).catch(__e => ({ error: (__e && __e.message) ? __e.message : String(__e) }))""")]
+#[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({ status: __r.status, body: __b })))""")]
 #[@External.Erlang("""(fun(__U) -> (catch inets:start()), (catch ssl:start()), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> {ok, #{status => __C, body => iolist_to_binary(__B)}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn fetch(url: string) -> @Task<@Result<Response, string>>;
 

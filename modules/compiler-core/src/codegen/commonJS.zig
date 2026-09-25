@@ -601,6 +601,16 @@ const TryHead = union(enum) {
     yield_result,
 };
 
+/// True when a return written in source is `@Task<@Result<T, E>>` — a host
+/// function whose rejection is `Error(e)` (decision 126).
+fn isTaskOfResult(rt: ?ast.TypeRef) bool {
+    const t = rt orelse return false;
+    if (t != .generic or !t.generic.is_builtin or !std.mem.eql(u8, t.generic.name, "Task")) return false;
+    if (t.generic.args.len != 1) return false;
+    const inner = t.generic.args[0];
+    return inner == .generic and inner.generic.is_builtin and std.mem.eql(u8, inner.generic.name, "Result");
+}
+
 /// The operand of a transform-inserted `__bp_ok(<v>)` wrap, or null.
 fn okWrapOperand(e: ast.Expr) ?ast.Expr {
     if (e != .call or e.call.kind != .call) return null;
@@ -792,6 +802,57 @@ const ParamHoles = struct {
 /// The label a rewritten tail call continues when it sits inside a loop of the
 /// function's own — a bare `continue` would target that inner loop.
 const tc_label = "__bp_tc";
+
+/// True when a built JS statement list holds an `await` outside any nested
+/// function — what an IIFE wrapped around it has to be `async` for (an `await`
+/// in a plain arrow does not parse). Nested arrows / functions are their own.
+const AwaitScan = struct {
+    fn expr(e: js.Expr) bool {
+        return switch (e) {
+            .await_ => true,
+            .member => |m| expr(m.object.*),
+            .index => |ix| expr(ix.object.*) or expr(ix.index.*),
+            .call, .new_ => |cl| expr(cl.callee.*) or exprs(cl.args),
+            .binary => |b| expr(b.lhs.*) or expr(b.rhs.*),
+            .unary => |u| expr(u.operand.*),
+            .ternary => |t| expr(t.cond.*) or expr(t.then.*) or expr(t.else_.*),
+            .assign => |a| expr(a.target.*) or expr(a.value.*),
+            .paren => |p| expr(p.*),
+            .array => |a| exprs(a.elems),
+            .object => |o| blk: {
+                for (o.props) |pr| switch (pr) {
+                    .kv => |kv| if (expr(kv.value)) break :blk true,
+                    else => {},
+                };
+                break :blk false;
+            },
+            .yield_ => |y| if (y) |x| expr(x.*) else false,
+            else => false,
+        };
+    }
+    fn exprs(xs: []const js.Expr) bool {
+        for (xs) |x| if (expr(x)) return true;
+        return false;
+    }
+    fn stmt(st: js.Stmt) bool {
+        return switch (st) {
+            .expr, .throw_, .yield_delegate => |e| expr(e),
+            .decl => |d| expr(d.value),
+            .return_ => |e| if (e) |v| expr(v) else false,
+            .if_ => |i| expr(i.cond) or stmt(i.then.*) or (if (i.else_) |el| stmt(el.*) else false),
+            .for_of => |f| expr(f.iter) or stmts(f.body.stmts),
+            .while_ => |wh| expr(wh.cond) or stmts(wh.body.stmts),
+            .block => |b| stmts(b.stmts),
+            .group => |g| stmts(g),
+            .try_catch => |tc| stmts(tc.body.stmts) or stmts(tc.handler.stmts),
+            else => false,
+        };
+    }
+    fn stmts(list: []const js.Stmt) bool {
+        for (list) |st| if (stmt(st)) return true;
+        return false;
+    }
+};
 
 /// Walks a built JS subtree looking for a reference to one of `names`.
 /// `closure_only` counts a hit only when it sits inside a nested function,
@@ -1067,6 +1128,11 @@ const Emitter = struct {
     /// wraps the body in the guard that turns the thrown Result back into
     /// the propagated one (`guardExprTry`). Saved and restored per function.
     expr_try_used: bool = false,
+    /// Host functions of this module declared `-> @Task<@Result<T, E>>`
+    /// (decision 126): every call — and a `pub` template's exported wrapper —
+    /// goes through `__bp_host_task`, so a rejection becomes `Error(e)`.
+    host_task_externals: std.StringHashMap(void) = undefined,
+    host_task_externals_init: bool = false,
     /// The innermost `loop` whose body is being built, which is what a
     /// `break` / `continue` / accumulator `yield` binds to. Reset to `.none`
     /// wherever a JS function boundary starts (an arrow, an IIFE), because a
@@ -1475,9 +1541,14 @@ const Emitter = struct {
     /// aliased); without a node target it goes to `externals_missing` (so a
     /// call can fail with a clear error instead of an undefined identifier).
     fn collectExternals(self: *Emitter, program: ast.Program) !void {
+        if (!self.host_task_externals_init) {
+            self.host_task_externals = std.StringHashMap(void).init(self.arena());
+            self.host_task_externals_init = true;
+        }
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| {
                 if (!f.isExternal()) continue;
+                if (isTaskOfResult(f.returnType)) try self.host_task_externals.put(f.name, {});
                 // §A2 arity-branched template: `when(argc == N): "<tmpl>"`.
                 if (ast.externalHasArityBranches(f.annotations, "node")) {
                     var branches: std.ArrayList(ast.ArityBranch) = .empty;
@@ -1829,7 +1900,9 @@ const Emitter = struct {
             }
         } else {
             const value = try self.renderParamTemplate(call.symbol, &holes, names.items.len) orelse return null;
-            try body.append(self.arena(), .{ .return_ = value });
+            // Decision 126 — the exported face of a `-> @Task<@Result<…>>` host fn.
+            const wrapped = if (isTaskOfResult(f.returnType)) try self.b.call(self.helper(.host_task), &.{value}) else value;
+            try body.append(self.arena(), .{ .return_ = wrapped });
         }
         return .{ .function = .{
             .name = f.name,
@@ -3368,7 +3441,7 @@ const Emitter = struct {
                 // boundary: in value position it is a one-statement IIFE.
                 // The parser gives `throw` an operand (`throw;` is a parse
                 // error), so a missing one is a frontend defect.
-                .throw_ => |r| return self.b.iife(&.{.{
+                .throw_ => |r| return self.iife(&.{.{
                     .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*),
                 }}),
                 .try_ => |t| {
@@ -3412,7 +3485,7 @@ const Emitter = struct {
                         }
                         break :blk js.Stmt{ .return_ = value };
                     };
-                    return self.b.iife(&.{
+                    return self.iife(&.{
                         .{ .decl = .{ .pattern = .{ .name = temp }, .value = try self.buildExpr(tc.expr.*) } },
                         try self.b.ifStmt(try self.errorIn(temp), .{ .block = .{
                             .stmts = try self.b.stmts(&.{handled}),
@@ -3592,7 +3665,7 @@ const Emitter = struct {
                         try self.buildStmt(.{ .expr = ap.handler.* })
                     else
                         .{ .return_ = try self.buildExpr(ap.handler.*) };
-                    return self.b.iife(&.{
+                    return self.iife(&.{
                         .{ .decl = .{ .pattern = .{ .name = "_match" }, .value = try self.buildExpr(ap.expr.*) } },
                         try self.b.ifElse(
                             try self.buildPatternCheck(&ap.pattern, "_match"),
@@ -3843,6 +3916,19 @@ const Emitter = struct {
             .params = &.{},
             .body = .{ .stmts = try self.guardExprTry(try self.b.stmts(&.{while_stmt}), base), .indent = base },
         } }), &.{});
+    }
+
+    /// `(() => { … })()` — or, when the statements `await` (an expression
+    /// `try`/`catch` over an `await` in an async body), `await (async () =>
+    /// { … })()`: an `await` inside a plain arrow does not parse.
+    fn iife(self: *Emitter, items: []const js.Stmt) anyerror!js.Expr {
+        if (!AwaitScan.stmts(items)) return self.b.iife(items);
+        const fnx = try self.b.paren(.{ .function = .{
+            .keyword = "async function",
+            .params = &.{},
+            .body = try self.b.spacedBlock(items),
+        } });
+        return self.b.await_(try self.b.call(fnx, &.{}));
     }
 
     /// `async { … }` (decision 124) — an async function called in place:
@@ -4155,6 +4241,17 @@ const Emitter = struct {
     }
 
     fn buildCall(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
+        const out = try self.buildCallRaw(loc, cc);
+        // Decision 126 — a host call declared `-> @Task<@Result<T, E>>`.
+        if (!cc.is_builtin and cc.receiver == null and self.host_task_externals_init and
+            self.host_task_externals.contains(cc.callee))
+        {
+            return self.b.call(self.helper(.host_task), &.{out});
+        }
+        return out;
+    }
+
+    fn buildCallRaw(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
         if (cc.is_builtin) return self.buildBuiltinCall(cc);
         // builtin_node_dispatch: `declare fn` with `#[@External.Node]`.
         // Handles both template (`$0.method()`) and module+symbol

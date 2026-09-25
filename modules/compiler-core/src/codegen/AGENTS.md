@@ -2516,6 +2516,16 @@ section at the loop's call site (`guardLoopCall`, one y-slot counted by
 wasm's `lowerTryPropagate` pushes the Error and ends when a generator scope is
 open.
 
+The host rows (decision 126): a Node host function declared
+`-> @Task<@Result<T, E>>` is called through the prelude's `__bp_host_task`
+(`host_task_externals`, `isTaskOfResult`; a `pub` template's exported wrapper
+too), which resolves `{ ok: v }` and turns a rejection into `{ error: <message> }`
+— the Promise never rejects. An Erlang host answers the `{ok, V} | {error, R}`
+pair itself, which is already `@Result`'s shape there. An expression-position
+IIFE whose body `await`s (a `try … catch` over an `await` in an async body) is
+`await (async function() { … })()` (`Emitter.iife`, `AwaitScan`) — an `await`
+in a plain arrow does not parse.
+
 `async { … }` (decision 124) reaches every backend as a `.function` node with
 `syntax = .asyncBlock`: commonJS `(async function() { … })()` (`buildAsyncBlock`,
 its own expression-`try` guard); erlang `(fun() -> … end)()`; beam the lambda

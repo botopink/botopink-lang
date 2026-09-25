@@ -57,10 +57,14 @@ pub const Helper = enum {
     /// `{ __bp_try: r }` that the enclosing function's guard
     /// (`commonJS.zig` `guardExprTry`) turns back into the propagated Result.
     try_unwrap,
+    /// A host function declared `-> @Task<@Result<T, E>>` (decision 126): its
+    /// Promise resolves with `{ ok: v }`, and a rejection resolves with
+    /// `{ error: <message> }` instead of rejecting.
+    host_task,
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .string_char_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap };
+pub const order = [_]Helper{ .assert_fatal, .string_char_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task };
 
 /// The receiver family of a primitive method call, as inference recorded it.
 pub const Receiver = enum { string, array, other };
@@ -88,6 +92,7 @@ pub fn name(h: Helper) []const u8 {
         .print_as => "__bp_print_as",
         .structural_eq => "__bp_eq",
         .try_unwrap => "__bp_try",
+        .host_task => "__bp_host_task",
     };
 }
 
@@ -102,6 +107,7 @@ pub fn decl(h: Helper) ast.Stmt {
         .print_as => print_as,
         .structural_eq => structural_eq,
         .try_unwrap => try_unwrap,
+        .host_task => host_task,
     };
 }
 
@@ -147,6 +153,32 @@ const try_unwrap: ast.Stmt = .{ .function = .{
         } },
         .{ .return_ = .{ .member = .{ .object = &r_, .name = "ok" } } },
     }, .layout = .spaced },
+} };
+
+const p_: ast.Expr = .{ .name = "p" };
+const hv: ast.Expr = .{ .name = "v" };
+const he: ast.Expr = .{ .name = "e" };
+const he_message: ast.Expr = .{ .member = .{ .object = &he, .name = "message" } };
+
+/// `function __bp_host_task(p) { return Promise.resolve(p).then((v) => ({ ok: v }),
+/// (e) => ({ error: (e && e.message) ? e.message : String(e) })); }`
+const host_task: ast.Stmt = .{ .function = .{
+    .name = "__bp_host_task",
+    .params = &.{.{ .pattern = .{ .name = "p" } }},
+    .body = .{ .stmts = &.{.{ .return_ = .{ .call = .{
+        .callee = &.{ .member = .{
+            .object = &.{ .call = .{ .callee = &.{ .member = .{ .object = &.{ .name = "Promise" }, .name = "resolve" } }, .args = &.{p_} } },
+            .name = "then",
+        } },
+        .args = &.{
+            .{ .arrow = .{ .params = &.{.{ .pattern = .{ .name = "v" } }}, .body = .{ .expr = &.{ .paren = &.{ .object = .{ .props = &.{.{ .kv = .{ .key = "ok", .value = hv } }} } } } } } },
+            .{ .arrow = .{ .params = &.{.{ .pattern = .{ .name = "e" } }}, .body = .{ .expr = &.{ .paren = &.{ .object = .{ .props = &.{.{ .kv = .{ .key = "error", .value = .{ .ternary = .{
+                .cond = &.{ .paren = &.{ .binary = .{ .op = "&&", .lhs = &he, .rhs = &he_message, .parens = false } } },
+                .then = &he_message,
+                .else_ = &.{ .call = .{ .callee = &.{ .name = "String" }, .args = &.{he} } },
+            } } } }} } } } } } },
+        },
+    } } }}, .layout = .spaced },
 } };
 
 const s: ast.Expr = .{ .name = "s" };
