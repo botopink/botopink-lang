@@ -51,7 +51,7 @@ std/
 | `path` | `separator`, `delimiter`, `split`, `isAbsolute`, `basename`, `dirname`, `extname`, `join`, `normalize`, `relative(src, dst)`, `resolve` (posix only); front 01: `withoutExtension`, `isInside(parent, child)` (the traversal guard — both sides through `resolve`, a relative child resolved against the parent, `..` and `../…` refused) |
 | `random` | `float`, `coin`, `bool`, `intInRange`, `pick`, `shuffle`, `seed`, `seededFloat` |
 | `querystring` | `parse`, `stringify` |
-| `time` | `nowMillis`, `monotonicMillis`, `measureMillis`, `formatIso8601` |
+| `time` | `nowMillis`, `monotonicMillis`, `measureMillis`, `formatIso8601`; front 01 (`io/clock` after 23): `type Civil(year, month, day, hour, minute, second, weekday)` (UTC, ISO weekday Monday = 1), `type Duration(millis: i64)`, `parseIso8601` (`@Result<i64, string>`, RFC 3339 with the offset REQUIRED — Node's lenient `Date.parse` is gated by a shape check), `toCivil`, `offsetMinutes` (host timezone, minutes EAST of UTC), `millis`/`seconds`/`minutes`/`hours` (take `i32`: a literal is `i32` and never widens, so they cross a private identity cell `wide`), `add`, `toMillis`, `sleep(ms)` (synchronous: `Atomics.wait` / `timer:sleep`), `deadline(d)` (an absolute epoch reading), `isExpired(at)` |
 | `url` | `type Url`, `parse`, `serialize` |
 | `base64` | `encode`, `decode`, `encodeUrlSafe`, `decodeUrlSafe` |
 | `unicode` | `fromCodepoint`, `firstCodepoint`, `codepoints`, `type NormalizationForm`, `normalize` |

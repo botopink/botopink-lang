@@ -28,10 +28,14 @@
 //// `measureMillis<T>(body)` composes `nowMillis()` calls — pure
 //// botopink, no host call beyond what `nowMillis()` already lowers.
 ////
-//// `sleep` stays deferred: a `#[@future]`-annotated `declare fn` whose
-//// host body is a chained `new Promise(resolve => setTimeout(resolve,
-//// $0))` — both pieces (`#[@future]` over a bodyless declare + `new`-
-//// on-chained-call templates) land in `std-expansion-tail` §A3.
+//// `sleep(ms)` blocks the caller (1.0.10-beta front 01): `Atomics.wait`
+//// on Node, `timer:sleep/1` on Erlang. It is synchronous on purpose — the
+//// `@Future` spelling (`delay`) lives in `std/async`.
+////
+//// Front 01 also adds the calendar half below the readings: `parseIso8601`
+//// (RFC 3339, offset required), `toCivil` (UTC breakdown, ISO weekday),
+//// `offsetMinutes` (host timezone), the `Duration` builders and
+//// `deadline`/`isExpired`. Front 23 moves the file to `io/clock.bp`.
 ////
 //// `formatIso8601(epochMillis)` renders an RFC-3339 / ISO-8601 string
 //// for an epoch-milliseconds reading. Node uses `new Date($0).toISOString()`
@@ -103,6 +107,110 @@ pub fn measureMillis<T>(body: fn() -> T) -> #(T, i64) {
     return #(result, elapsed);
 }
 
+// ── 1.0.10-beta front 01 additions (`io/clock` after front 23) ──────────────
+//
+// Parsing, the civil breakdown, the host timezone offset, durations,
+// deadlines and `sleep`. The readings above are not edited.
+
+// A UTC calendar breakdown of an epoch reading. `month` is 1–12, `day`
+// 1–31, `weekday` ISO-8601 (Monday = 1 … Sunday = 7).
+pub type Civil(
+    year: i32,
+    month: i32,
+    day: i32,
+    hour: i32,
+    minute: i32,
+    second: i32,
+    weekday: i32,
+)
+
+// A span of time in milliseconds. Built by `millis`/`seconds`/`minutes`/
+// `hours`, combined by `add`, read back by `toMillis`.
+pub type Duration(millis: i64)
+
+// Parse an RFC 3339 timestamp (`2024-02-29T12:34:56Z`,
+// `2024-02-29T12:34:56.789+02:00`) into epoch milliseconds. The date, the
+// time AND the offset are required — a timestamp without an offset has no
+// single instant, so it is an `Error`, not a guess at the host timezone.
+// Node: `Date.parse` accepts far more than RFC 3339 (`"2024"`, `"Feb 1"`),
+// so the template checks the RFC 3339 shape first, then parses.
+// Erlang: `calendar:rfc3339_to_system_time/2` in milliseconds; it raises on
+// a malformed string, caught.
+#[@result]
+#[@External.Node("""(() => { const __s = String($0); const __t = /^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$/.test(__s) ? Date.parse(__s) : NaN; return Number.isNaN(__t) ? { error: 'not an RFC 3339 timestamp' } : { ok: __t } })()""")]
+#[@External.Erlang("""(fun(__S) -> try {ok, calendar:rfc3339_to_system_time(binary_to_list(__S), [{unit, millisecond}])} catch _:_ -> {error, <<"not an RFC 3339 timestamp">>} end end)($0)""")]
+pub declare fn parseIso8601(s: string) -> @Result<i64, string>;
+
+// The UTC civil breakdown of `epochMillis`.
+// Node: the `getUTC*` readers of a `Date`; `getUTCDay` counts Sunday = 0,
+// rotated to ISO (Monday = 1).
+// Erlang: `calendar:system_time_to_universal_time/2` + `day_of_the_week/3`
+// (already Monday = 1).
+#[@External.Node("""(() => { const __d = new Date($0); return { year: __d.getUTCFullYear(), month: __d.getUTCMonth() + 1, day: __d.getUTCDate(), hour: __d.getUTCHours(), minute: __d.getUTCMinutes(), second: __d.getUTCSeconds(), weekday: ((__d.getUTCDay() + 6) % 7) + 1 } })()""")]
+#[@External.Erlang("""(fun(__M) -> {{__Y, __Mo, __D}, {__H, __Mi, __S}} = calendar:system_time_to_universal_time(__M, millisecond), #{year => __Y, month => __Mo, day => __D, hour => __H, minute => __Mi, second => __S, weekday => calendar:day_of_the_week(__Y, __Mo, __D)} end)($0)""")]
+pub declare fn toCivil(epochMillis: i64) -> Civil;
+
+// The host timezone's offset from UTC at `epochMillis`, in minutes EAST of
+// UTC (`+02:00` is `120`) — the sign RFC 3339 writes. Node's
+// `getTimezoneOffset` counts minutes WEST, so the template negates it.
+// Erlang: local minus universal time of the same instant.
+#[@External.Node("""(0 - new Date($0).getTimezoneOffset())""")]
+#[@External.Erlang("""(fun(__M) -> __U = calendar:system_time_to_universal_time(__M, millisecond), __L = calendar:universal_time_to_local_time(__U), (calendar:datetime_to_gregorian_seconds(__L) - calendar:datetime_to_gregorian_seconds(__U)) div 60 end)($0)""")]
+pub declare fn offsetMinutes(epochMillis: i64) -> i32;
+
+// Internal: an `i32` read as an `i64`. An integer literal is `i32`, and
+// botopink has no widening conversion (an `i64 * 1000` is a type mismatch,
+// and so is `val k: i64 = 1000`), so the builders below take an `i32` and cross the host
+// boundary once to become `i64` — both hosts have one integer type.
+#[@External.Node("""($0)""")]
+#[@External.Erlang("""($0)""")]
+declare fn wide(n: i32) -> i64;
+
+pub fn millis(n: i32) -> Duration {
+    return Duration(millis: wide(n));
+}
+
+pub fn seconds(n: i32) -> Duration {
+    return Duration(millis: wide(n) * wide(1000));
+}
+
+pub fn minutes(n: i32) -> Duration {
+    return Duration(millis: wide(n) * wide(60000));
+}
+
+pub fn hours(n: i32) -> Duration {
+    return Duration(millis: wide(n) * wide(3600000));
+}
+
+pub fn add(a: Duration, b: Duration) -> Duration {
+    return Duration(millis: a.millis + b.millis);
+}
+
+pub fn toMillis(d: Duration) -> i64 {
+    return d.millis;
+}
+
+// Block the caller for `ms` milliseconds.
+// Node: `Atomics.wait` on a scratch `SharedArrayBuffer` — a synchronous
+// sleep that parks the thread instead of spinning (the value never
+// changes, so the wait always times out).
+// Erlang: `timer:sleep/1` — parks the calling process only.
+#[@External.Node("""(Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number($0)), undefined)""")]
+#[@External.Erlang("""(fun(__T) -> timer:sleep(__T), undefined end)($0)""")]
+pub declare fn sleep(ms: i32) -> void;
+
+// The epoch reading `d` from now. A deadline is an absolute wall-clock
+// value, so it survives being handed to another process (a cache entry, a
+// session).
+pub fn deadline(d: Duration) -> i64 {
+    return nowMillis() + d.millis;
+}
+
+// True once the wall clock has passed `at`.
+pub fn isExpired(at: i64) -> bool {
+    return nowMillis() > at;
+}
+
 // ── tests ────────────────────────────────────────────────────────────────────
 
 test "time.nowMillis returns a positive epoch reading" {
@@ -134,4 +242,67 @@ test "time.formatIso8601 renders an ISO-8601 prefix for the current time" {
     val s = formatIso8601(nowMillis());
     assert s.startsWith("20") || s.startsWith("21");
     assert s.contains("T");
+}
+
+test "time.parseIso8601 reads back formatIso8601 to the whole second" {
+    val t = nowMillis();
+    val whole = t - (t % wide(1000));
+    // Erlang renders whole seconds, Node keeps the milliseconds: the read-back
+    // lies between the truncated and the exact reading on both.
+    val back = parseIso8601(formatIso8601(t)).unwrapOr(wide(0));
+    assert back >= whole;
+    assert back <= t;
+    assert parseIso8601(formatIso8601(whole)).unwrapOr(wide(0)) == whole;
+}
+
+test "time.parseIso8601 reads a fixed timestamp with fraction and offset" {
+    assert parseIso8601("1970-01-01T00:00:01Z").unwrapOr(wide(0)) == 1000;
+    assert parseIso8601("2024-02-29T12:34:56.789Z").unwrapOr(wide(0)) == 1709210096789;
+    assert parseIso8601("2024-02-29T14:34:56+02:00").unwrapOr(wide(0)) == 1709210096000;
+}
+
+test "time.parseIso8601 refuses what is not an RFC 3339 timestamp" {
+    assert parseIso8601("not a date").isError();
+    assert parseIso8601("2024").isError();
+    assert parseIso8601("2024-02-29T12:34:56").isError();
+}
+
+test "time.toCivil breaks a fixed reading into the same UTC fields" {
+    // 2024-02-29T12:34:56.789Z was a Thursday (ISO weekday 4).
+    val c = toCivil(parseIso8601("2024-02-29T12:34:56.789Z").unwrapOr(wide(0)));
+    assert c.year == 2024;
+    assert c.month == 2;
+    assert c.day == 29;
+    assert c.hour == 12;
+    assert c.minute == 34;
+    assert c.second == 56;
+    assert c.weekday == 4;
+    // 1970-01-04 was a Sunday: ISO weekday 7, not 0.
+    assert toCivil(wide(259200000)).weekday == 7;
+}
+
+test "time.offsetMinutes is a whole quarter-hour within the UTC offset range" {
+    val off = offsetMinutes(nowMillis());
+    assert off >= -720;
+    assert off <= 840;
+    assert off % 15 == 0;
+}
+
+test "time.Duration builders agree and add" {
+    assert toMillis(seconds(2)) == 2000;
+    assert toMillis(minutes(1)) == toMillis(seconds(60));
+    assert toMillis(hours(1)) == 3600000;
+    assert toMillis(add(millis(250), seconds(1))) == 1250;
+}
+
+test "time.deadline is in the future and isExpired reads the wall clock" {
+    assert isExpired(deadline(seconds(60))).negate();
+    assert isExpired(wide(0));
+}
+
+test "time.sleep waits at least the asked monotonic milliseconds" {
+    val before = monotonicMillis();
+    sleep(20);
+    val after = monotonicMillis();
+    assert after - before >= 20;
 }
