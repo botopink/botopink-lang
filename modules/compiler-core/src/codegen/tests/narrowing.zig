@@ -324,3 +324,31 @@ test "codegen: is ---- a named type is tested by the tag the value carries" {
         \\}
     );
 }
+
+// `x is Enum.Variant` (status 148). `Token.Text` is the variant's static
+// factory and `Token.Eof` its singleton — neither is a class — so the old
+// `x instanceof Token.Text` threw `TypeError: Right-hand side of 'instanceof'
+// is not callable` at run time. The test is now the enum's class plus the
+// `tag` the variant's prototype carries, the same `tag` a `case` arm reads.
+// commonJS only: erlang answers `false` for every line and wasm traps, which
+// are 02-erlang's and 05-wasm's halves of the same row.
+test "js: is ---- an enum variant path is tested by the enum's class and its tag" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\pub type Token { Text(v: string), Num(n: i32), Eof }
+        \\
+        \\pub fn main() {
+        \\    val x: Token = Token.Text(v: "hi");
+        \\    @print(x is Token.Text);
+        \\    @print(x is Token.Num);
+        \\    val e: Token = Token.Eof;
+        \\    @print(e is Token.Eof);
+        \\    @print(e is Token.Text);
+        \\}
+    ,
+        \\true
+        \\false
+        \\true
+        \\false
+        \\
+    );
+}

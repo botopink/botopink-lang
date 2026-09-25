@@ -298,8 +298,14 @@ const assert_helper_source =
 ;
 
 /// The test-mode runner, appended after the `__bp_tests` registry.
+///
+/// It reads node's `process` through `globalThis`: a module that imports
+/// `std`'s `process` declares a module-level `const process`, which shadowed
+/// the global, and `process.argv[2]` threw before any test ran — the file
+/// printed no `N passed, M failed` line and its cells vanished from the count.
 const test_runner_source =
     \\async function __bp_run_tests() {
+    \\    const process = globalThis.process;
     \\    const filter = process.argv[2] || null;
     \\    const tests = filter ? __bp_tests.filter((t) => t.name.includes(filter)) : __bp_tests;
     \\    let passed = 0, failed = 0;
@@ -1178,6 +1184,10 @@ const Emitter = struct {
     /// instance of is deliberately NOT recorded: a variant's identity across
     /// modules is its `tag`, never its class (`patternTest`).
     unit_variant_names: std.StringHashMap(void),
+    /// `Enum.Variant` for every variant — payload-less or not — of every enum
+    /// this module declares. It says which dotted spellings `x is Enum.Variant`
+    /// may test through the enum's class (`isTest`).
+    enum_variant_paths: std.StringHashMap(void),
     /// `Enum.method` for every enum method this module declares that takes the
     /// receiver first (`fn area(self: Self)`, `fn check(m: Self)`). Enum values
     /// are plain objects / variant-name strings with no methods of their own,
@@ -1267,6 +1277,7 @@ const Emitter = struct {
             .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
             .variant_owner = std.StringHashMap([]const u8).init(alloc),
             .unit_variant_names = std.StringHashMap(void).init(alloc),
+            .enum_variant_paths = std.StringHashMap(void).init(alloc),
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
             .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
@@ -1302,6 +1313,7 @@ const Emitter = struct {
         self.variant_fields.deinit();
         self.variant_owner.deinit();
         self.unit_variant_names.deinit();
+        self.enum_variant_paths.deinit();
         self.enum_recv_methods.deinit();
         self.imported_enums.deinit();
         self.prelude_iface_externals.deinit();
@@ -1620,6 +1632,7 @@ const Emitter = struct {
             },
             .type_ => |e| if (!e.isRecord()) {
                 for (e.variants()) |v| {
+                    try self.enum_variant_paths.put(try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ e.name, v.name }), {});
                     if (v.fields.len == 0) {
                         // The name alone, so that `patternTest` can tell a
                         // variant from a binding. Two enums in one module may
@@ -4260,7 +4273,8 @@ const Emitter = struct {
     /// spelled inline, more than one needs the subject bound first.
     fn isTestReads(t: ast.TypeRef) usize {
         return switch (t) {
-            .named => |n| if (integerRange(n)) |r| blk: {
+            // `Enum.Variant`: the class test and the `tag` read (`isTest`).
+            .named => |n| if (isVariantPath(n)) 2 else if (integerRange(n)) |r| blk: {
                 var k: usize = 2; // typeof + Number.isInteger
                 if (r.lo != null) k += 1;
                 if (r.hi != null) k += 1;
@@ -4304,6 +4318,7 @@ const Emitter = struct {
                     return self.b.paren(acc);
                 }
                 if (std.mem.eql(u8, n, "unknown")) return .{ .name = "true" };
+                if (isVariantPath(n)) return self.variantIsTest(n, subject);
                 return self.b.binaryBare("instanceof", subject, .{ .name = n });
             },
             // `T[]` / `Array<T>`: the constructor only (§4.2 — an element type
@@ -4337,6 +4352,28 @@ const Emitter = struct {
             // A function type and a comptime typeparam have no run-time test.
             .function, .typeparam => return .{ .name = "false" },
         }
+    }
+
+    /// `x is Enum.Variant`. `Enum.Variant` is the variant's constructor (a
+    /// static factory) or its singleton, never a class, so `instanceof` on the
+    /// written path threw `TypeError` at run time. A variant is its enum's
+    /// class plus the `tag` its prototype carries — the same `tag` a `case`
+    /// arm tests (`patternTest`) — so the test is
+    /// `(x instanceof Enum && x.tag === "Variant")` when `Enum` is an enum
+    /// this module declares with that variant, or one it imports by name.
+    /// Any other path (a section's inner enum, which no module exports as a
+    /// class) is tested by its `tag` alone, guarded against `null`.
+    fn variantIsTest(self: *Emitter, path: []const u8, subject: js.Expr) anyerror!js.Expr {
+        const dot = std.mem.lastIndexOfScalar(u8, path, '.').?;
+        const owner = path[0..dot];
+        const tag_test = try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = path[dot + 1 ..] });
+        const known = owner.len > 0 and (self.enum_variant_paths.contains(path) or
+            (!isVariantPath(owner) and self.imported_enums.contains(owner)));
+        const guard = if (known)
+            try self.b.binaryBare("instanceof", subject, .{ .name = owner })
+        else
+            try self.b.binaryBare("!=", subject, .null_);
+        return self.b.paren(try self.b.binaryBare("&&", guard, tag_test));
     }
 
     /// `x is T` (`ast.is_builtin_name`). The subject is bound first when the

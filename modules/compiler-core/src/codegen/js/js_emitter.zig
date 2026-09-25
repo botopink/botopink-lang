@@ -112,7 +112,14 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
         .name => |n| try w.writeAll(n),
         .this => try w.writeAll("this"),
         .member => |m| {
+            // A number literal takes parentheses before a `.`: `42.toString()`
+            // lexes `42.` as a float and node refuses the module, so the
+            // receiver is spelled `(42).toString()` — what erlang and wasm
+            // already answer as `42`.
+            const paren_number = m.object.* == .number;
+            if (paren_number) try w.writeByte('(');
             try writeExpr(w, m.object.*, indent);
+            if (paren_number) try w.writeByte(')');
             try w.writeAll(if (m.optional) "?." else ".");
             try w.writeAll(m.name);
         },
@@ -712,6 +719,8 @@ test "js_emitter: expressions parenthesise the way the backend expects" {
     try expectExpr("(!x)", .{ .unary = .{ .op = "!", .operand = &x } });
     try expectExpr("x ? 1 : x", .{ .ternary = .{ .cond = &x, .then = &one, .else_ = &x } });
     try expectExpr("x.length", .{ .member = .{ .object = &x, .name = "length" } });
+    const n42 = Ast.Expr.num("42");
+    try expectExpr("(42).toString", .{ .member = .{ .object = &n42, .name = "toString" } });
     try expectExpr("x?.[1]", .{ .index = .{ .object = &x, .index = &one, .optional = true } });
     try expectExpr("new Person(1)", .{ .new_ = .{ .callee = &Ast.Expr{ .name = "Person" }, .args = &.{one} } });
     try expectExpr("await x", .{ .await_ = &x });

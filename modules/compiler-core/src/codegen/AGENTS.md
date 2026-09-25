@@ -16,7 +16,9 @@ Top-level `test { … }` declarations (`DeclKind.@"test"`) are **skipped by ever
 backend** in normal `build`/`run` output — they are only collected and emitted
 under `botopink test` (`Config.test_mode`): commonJS emits
 `async function __bp_test_N` functions + a `__bp_tests` registry +
-`__bp_run_tests()` runner; erlang emits `'__bp_test_N'/0` functions +
+`__bp_run_tests()` runner (which reads node's `process` through `globalThis`,
+so a module-level `const process` from `import { process } from "std"` cannot
+shadow it); erlang emits `'__bp_test_N'/0` functions +
 `'__bp_run_one'/1` / `'__bp_run_tests'/1` + a `main/1` escript entry. In test
 mode `assert` lowers to a recoverable per-test failure (JS: throwing
 `__bp_assert`; Erlang: `erlang:error({bp_assert, Msg, Loc})`) and `fn main/0`
@@ -170,7 +172,12 @@ codegen/
   number, `string`/`bool` the primitive, a tuple an array of the right arity
   with each element tested, `?T` null-or-`T`, an array its constructor only
   (§4.2 — an element type is not checkable), and a **named type** an
-  `instanceof`, free under decision 5. The subject is bound in an arrow
+  `instanceof`, free under decision 5. A **variant path** (`x is Token.Text`)
+  is `(_v instanceof Token && _v.tag === "Text")` when `Token` is an enum this
+  module declares with that variant or imports by name, and `(_v != null &&
+  _v.tag === "Text")` for any other path — `Token.Text` is a factory and
+  `Token.Eof` a singleton, never a class, so the written `instanceof` threw
+  `TypeError`. The subject is bound in an arrow
   (`((_v) => …)(x)`) only when the test reads it more than once, so a call on
   the left is evaluated once. An unrecognised spelling answers `false`. The
   parser synthesises this as the `is` builtin call with the type on `isType`
