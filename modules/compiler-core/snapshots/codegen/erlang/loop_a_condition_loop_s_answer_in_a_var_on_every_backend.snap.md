@@ -51,20 +51,16 @@ main() ->
     R = 0,
     {K@3, R@4} = try
         (fun __Loop({K@1, R@1}) ->
-            case true of
+            K@2 = (K@1 + 1),
+            R@3 = case (K@2 > 2) of
                 true ->
-                    K@2 = (K@1 + 1),
-                    R@3 = case (K@2 > 2) of
-                        true ->
-                            R@2 = K@2,
-                            erlang:throw({'__bp_cond_break', {K@2, R@2}}),
-                            R@2;
-                        _ ->
-                            R@1
-                    end,
-                    __Loop({K@2, R@3});
-                _ -> {K@1, R@1}
-            end
+                    R@2 = K@2,
+                    erlang:throw({'__bp_cond_break', {K@2, R@2}}),
+                    R@2;
+                _ ->
+                    R@1
+            end,
+            __Loop({K@2, R@3})
         end)({K, R})
     catch
         throw:{'__bp_cond_break', __BpGroup2} -> __BpGroup2

@@ -18,17 +18,25 @@ main() ->
         '__bp_print'([X])
     end, [1, 2, 3]),
     First = 0,
-    First@4 = lists:foldl(fun(X, First@1) ->
-        First@3 = case (X =:= 2) of
-            true ->
-                First@2 = (X * 10),
-                erlang:throw('__bp_break'),
-                First@2;
-            _ ->
-                First@1
-        end,
-        First@3
-    end, First, [1, 2, 3]),
+    First@4 = try
+        (fun __Loop(__BpIter1, First@1) ->
+            case __BpIter1 of
+                [X@1 | __BpRest1] ->
+                    First@3 = case (X@1 =:= 2) of
+                        true ->
+                            First@2 = (X@1 * 10),
+                            erlang:throw({'__bp_cond_break', First@2}),
+                            First@2;
+                        _ ->
+                            First@1
+                    end,
+                    __Loop(__BpRest1, First@3);
+                _ -> First@1
+            end
+        end)([1, 2, 3], First)
+    catch
+        throw:{'__bp_cond_break', __BpGroup1} -> __BpGroup1
+    end,
     '__bp_print'([First@4]).
 
 '__bp_print'(Values) ->
@@ -59,4 +67,8 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+1
+2
+3
+20
 ```

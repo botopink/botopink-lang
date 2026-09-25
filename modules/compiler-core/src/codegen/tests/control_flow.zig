@@ -1255,9 +1255,10 @@ test "erlang: loop ---- a bare loop's answer comes back in the var it reassigned
 // `yield <v>` inside a condition loop lowered to the bare value expression,
 // which an erlang clause body discards — so `#[@generator] fn nums` answered
 // its loop's final counter and the consuming `lists:foldl/3` raised
-// `no case clause matching 3` at run time. The yields are collected into a
-// synthetic member of the loop's variable group and the loop answers
-// `lists:reverse/1` of it.
+// `no case clause matching 3` at run time. Decision 105 moved the collection
+// from the loop to the generator scope: the fn's items are pushed under a
+// `make_ref()` key from wherever the `yield` sits, and the fn answers
+// `lists:reverse(erlang:erase(Key))`.
 
 test "erlang: generator ---- a condition-loop body yields its elements in order" {
     try h.assertErlangRunLog(std.testing.allocator,
@@ -1274,7 +1275,7 @@ test "erlang: generator ---- a condition-loop body yields its elements in order"
         \\  for (nums(0)) { x -> runs = runs + 1; };
         \\  @print(runs);
         \\}
-    , "012\n0\n", &.{"lists:reverse(__bp_cond_yield@3)"});
+    , "012\n0\n", &.{"lists:reverse(erlang:erase(__BpGen1))"});
 }
 
 test "erlang: generator ---- a bare-yield body still lowers to an eager list" {

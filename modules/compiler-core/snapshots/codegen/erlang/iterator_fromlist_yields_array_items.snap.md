@@ -27,9 +27,16 @@ fn main() {
 
 %% #[@future] / #[@futureGenerator] — eager lowering
 fromList(Xs) ->
-    lists:map(fun(Item) ->
-        Item
-    end, Xs).
+    __BpGen1 = make_ref(),
+    erlang:put(__BpGen1, []),
+    try
+        lists:foreach(fun(Item) ->
+            erlang:put(__BpGen1, [Item | erlang:get(__BpGen1)])
+        end, Xs)
+    catch
+        throw:{'__bp_gen_end', __BpGenK1, _, __BpGenV1} when (__BpGenK1 =:= __BpGen1) -> erlang:put(__BpGen1, [__BpGenV1 | erlang:get(__BpGen1)]), ok
+    end,
+    lists:reverse(erlang:erase(__BpGen1)).
 
 toList(Iter) ->
     Out = [],

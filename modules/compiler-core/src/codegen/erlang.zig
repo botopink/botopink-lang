@@ -20,6 +20,7 @@ const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
+const effectChain = @import("../comptime/effect_chain.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
 const Ast = @import("./beam/erl_ast.zig");
 const Term = @import("./beam/term.zig").Term;
@@ -610,11 +611,11 @@ const loop_fun_var = "__Loop";
 /// The throws a condition loop (decision 8 §10) catches: `{Signal, Group}`,
 /// the reassigned variables at the jump.
 const cond_break_signal = "__bp_cond_break";
-/// The synthetic local a yielding condition loop collects into. It travels in
-/// the loop's variable group like any reassigned name, so the existing
-/// threading carries it through the recursion (decision 8 §9).
-const cond_yield_acc = "__bp_cond_yield";
 const cond_continue_signal = "__bp_cond_continue";
+/// The throw a `break <v>` raises to end its generator scope (decision 105):
+/// `{Signal, Key, Group, V}` — the scope's key, the variables an annotated
+/// loop hands back, and the last item.
+const gen_end_signal = "__bp_gen_end";
 
 /// A `pub enum` of some module in the build, with its variants.
 const EnumExport = struct {
@@ -2388,6 +2389,19 @@ fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bo
 
 // ── Emitter ───────────────────────────────────────────────────────────────────
 
+/// A generator scope on erlang (decision 105). Erlang is eager: a generator
+/// is the list of its items, collected while the body runs. The list lives in
+/// the process dictionary under a fresh `make_ref()` held by `key`, so a
+/// `yield` anywhere below the scope — inside an `if` arm, a `lists:foreach`
+/// fun, a condition loop's named fun — pushes without threading an
+/// accumulator through every construct between them. `names` are the
+/// variables an annotated `loop` reassigns, which its `break <v>` hands back
+/// (empty for a generator fn, whose locals die with it).
+const GenScope = struct {
+    key: []const u8,
+    names: []const []const u8,
+};
+
 const Emitter = struct {
     cv: std.StringHashMap([]const u8),
     indent: usize = 0,
@@ -2608,13 +2622,11 @@ const Emitter = struct {
     /// while its body is emitted; null outside one and behind a fun boundary
     /// (a collection loop, a lambda). A `break` / `continue` there throws them.
     cond_loop: ?[]const []const u8 = null,
-    /// Set while lowering a condition loop whose `break` carries a value: the
-    /// break's throw then carries it too, and the loop answers it.
-    cond_loop_valued: bool = false,
-    /// The accumulator a YIELDING condition loop collects into, when it has one
-    /// (`cond_yield_acc`): each `yield <v>` conses onto it and the loop answers
-    /// the reversed list. Null outside such a loop, where a `yield` is dropped.
-    cond_loop_yield: ?[]const u8 = null,
+    /// The generator scope being lowered (decision 105): a `#[@generator]`
+    /// fn or an annotated `loop`. Null outside one.
+    gen_scope: ?GenScope = null,
+    /// Numbers the key variables of generator scopes (`__BpGen<n>`).
+    gen_seq: u32 = 0,
     /// Numbers the named funs of condition loops so a nested one does not
     /// shadow its parent's name.
     cond_loop_seq: u32 = 0,
@@ -3510,46 +3522,6 @@ const Emitter = struct {
             else => {},
         };
         return false;
-    }
-
-    /// The `lists:filtermap/2` fun body for a loop whose whole body is one
-    /// unconditional `if` (no `else`, no binding form) ending in `break <expr>`:
-    /// `case Cond of true -> …, {true, Value}; _ -> false end`. Null for every
-    /// other loop, which keeps its `map`/`foreach` lowering.
-    fn filterMapFunBody(this: *Emitter, b: Ast.Builder, lp: anytype) anyerror!?Ast.Body {
-        if (lp.body.len != 1 or lp.body[0].expr != .branch) return null;
-        const br = lp.body[0].expr.branch;
-        if (br.kind != .if_) return null;
-        const iff = br.kind.if_;
-        if (iff.else_ != null or iff.binding != null or iff.then_.len == 0) return null;
-        const last = iff.then_[iff.then_.len - 1].expr;
-        if (last != .jump or last.jump.kind != .@"break") return null;
-        const value = last.jump.kind.@"break".value orelse return null;
-
-        const saved = this.indent;
-        this.indent += 2;
-        defer this.indent = saved;
-        const cond = try this.condNode(b, iff.cond.*);
-        var body: std.ArrayListUnmanaged(Ast.Expr) = .empty;
-        for (iff.then_[0 .. iff.then_.len - 1]) |stmt| {
-            try body.append(b.arena, try this.exprNode(b, stmt.expr));
-        }
-        try body.append(b.arena, try b.tuple(&.{ Ast.Expr.a("true"), try this.exprNode(b, value.*) }));
-        const case = try b.caseOf(cond, &.{
-            .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = try b.body(body.items) },
-            try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{Ast.Expr.a("false")}),
-        });
-        this.indent = saved;
-        return try b.body(&.{case});
-    }
-
-    /// The first index a `loop (xs, <range>)` counts from — `0` for the usual
-    /// `0..`, the range's lower bound otherwise.
-    fn indexRangeStart(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
-        if (e == .collection and e.collection.kind == .range) {
-            return this.exprNode(b, e.collection.kind.range.start.*);
-        }
-        return Ast.Expr.t(Term.int(0));
     }
 
     /// A bare botopink name as a read: the local variable at its current
@@ -4495,8 +4467,77 @@ const Emitter = struct {
                 items[i] = if (stmt.expr.jump.kind.yield.value) |val| try this.exprNode(b, val.*) else Ast.Expr.a("undefined");
             }
             break :blk try b.body(&.{.{ .list = items }});
-        } else try this.bodyNode(b, f.body, 0, 1);
+        } else if (effectChain.grants(f.effect, .yield_))
+            try this.generatorFnBody(b, f.body)
+        else
+            try this.bodyNode(b, f.body, 0, 1);
         try out.append(b.arena, try blockFunction(b, f.name, params.items, body));
+    }
+
+    /// A generator fn's body whose items are not a flat `yield` list
+    /// (decision 105 — `yield` reaches the fn through every loop between):
+    ///
+    ///     __BpGen1 = make_ref(),
+    ///     erlang:put(__BpGen1, []),
+    ///     try Body catch throw:{'__bp_gen_end', __BpGen1, _, V} -> <push V> end,
+    ///     lists:reverse(erlang:erase(__BpGen1))
+    ///
+    /// `yield v` pushes onto the key's list; `break v` pushes and ends through
+    /// the throw, from any loop depth.
+    fn generatorFnBody(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt) anyerror!Ast.Body {
+        const key = try this.genKey(b);
+        const saved = this.gen_scope;
+        this.gen_scope = .{ .key = key, .names = &.{} };
+        defer this.gen_scope = saved;
+        const inner = try this.bodyNode(b, body, 0, 2);
+        return b.body(&.{
+            try b.match(Ast.Expr.v(key), try b.call("make_ref", &.{})),
+            try b.remote("erlang", "put", &.{ Ast.Expr.v(key), .{ .list = &.{} } }),
+            try this.genEndCatch(b, key, inner, false),
+            try b.remote("lists", "reverse", &.{try b.remote("erlang", "erase", &.{Ast.Expr.v(key)})}),
+        });
+    }
+
+    /// A fresh generator-scope key variable, `__BpGen<n>`.
+    fn genKey(this: *Emitter, b: Ast.Builder) anyerror![]const u8 {
+        this.gen_seq += 1;
+        return std.fmt.allocPrint(b.arena, "__BpGen{d}", .{this.gen_seq});
+    }
+
+    /// `try Body catch throw:{'__bp_gen_end', Key, G, V} -> <push V>, G end` —
+    /// where a `break <v>` of the scope lands. With `group` the catch answers
+    /// the variables the throw carried (an annotated loop's); without, `ok`.
+    fn genEndCatch(this: *Emitter, b: Ast.Builder, key: []const u8, body: Ast.Body, group: bool) anyerror!Ast.Expr {
+        const g_var = if (group) try std.fmt.allocPrint(b.arena, "__BpGenG{s}", .{key["__BpGen".len..]}) else "_";
+        const v_var = try std.fmt.allocPrint(b.arena, "__BpGenV{s}", .{key["__BpGen".len..]});
+        // The key is matched by a guard: a bound variable in the pattern
+        // draws erlc's "already bound" warning.
+        const k_var = try std.fmt.allocPrint(b.arena, "__BpGenK{s}", .{key["__BpGen".len..]});
+        return .{ .try_catch = .{
+            .body = body,
+            .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{
+                    Ast.Expr.a(gen_end_signal),
+                    Ast.Expr.v(k_var),
+                    Ast.Expr.v(g_var),
+                    Ast.Expr.v(v_var),
+                }))},
+                &.{try b.binop("=:=", Ast.Expr.v(k_var), Ast.Expr.v(key))},
+                &.{
+                    try this.genPush(b, key, Ast.Expr.v(v_var)),
+                    if (group) Ast.Expr.v(g_var) else Ast.Expr.a("ok"),
+                },
+            )}),
+        } };
+    }
+
+    /// `erlang:put(Key, [V | erlang:get(Key)])` — one item onto the scope's list.
+    fn genPush(this: *Emitter, b: Ast.Builder, key: []const u8, value: Ast.Expr) anyerror!Ast.Expr {
+        _ = this;
+        return b.remote("erlang", "put", &.{
+            Ast.Expr.v(key),
+            try b.cons(&.{value}, try b.remote("erlang", "get", &.{Ast.Expr.v(key)})),
+        });
     }
 
     /// A `test { … }` body as `'__bp_test_<idx>'() -> Body.`, registered with
@@ -4806,20 +4847,21 @@ const Emitter = struct {
                 else => return null,
             },
             .loop => |lp| {
+                // The annotated loop is a value (decision 105): `exprNode`.
+                if (lp.generator != null) return null;
                 if (lp.condition) {
                     try this.collectMutations(b.arena, lp.body, &.{}, &names);
                     if (names.items.len == 0) return null;
                     return try this.conditionLoopNode(b, lp, names.items);
                 }
-                // One loop parameter, or two — `loop (xs) { x, i -> … }` /
-                // `loop (xs, 0..) { … }` — whose second one is the index.
-                if (lp.params.len == 0 or lp.params.len > 2 or lp.awaitLoop) return null;
-                if (lp.indexRange != null and lp.params.len != 2) return null;
-                for (lp.body) |s| if (s.expr == .jump and s.expr.jump.kind == .yield) return null;
+                if (lp.params.len != 1 or unboundedRangeStart(lp.iter.*) != null) return null;
                 try this.collectMutations(b.arena, lp.body, lp.params, &names);
                 if (names.items.len == 0) return null;
-                const index: ?FoldIndex = if (lp.params.len == 2) .{ .name = lp.params[1], .range = lp.indexRange } else null;
-                return try this.mutatingFoldExpr(b, lp.params[0], index, lp.body, lp.iter.*, names.items);
+                // A `for` that leaves or skips on its own walks the list in a
+                // named fun (`lists:foldl` cannot be stopped from inside).
+                if (hasJump(lp.body, .@"break") or hasJump(lp.body, .@"continue"))
+                    return try this.conditionLoopNode(b, lp, names.items);
+                return try this.mutatingFoldExpr(b, lp.params[0], lp.body, lp.iter.*, names.items);
             },
             .binding => |bind| switch (bind.kind) {
                 .localBind => |lb| {
@@ -4853,7 +4895,7 @@ const Emitter = struct {
                 const each = forEachLambda(stmt.expr) orelse return null;
                 try this.collectMutations(b.arena, each.body, each.params, &names);
                 if (names.items.len == 0) return null;
-                return try this.mutatingFoldExpr(b, each.params[0], null, each.body, each.recv.*, names.items);
+                return try this.mutatingFoldExpr(b, each.params[0], each.body, each.recv.*, names.items);
             },
             else => return null,
         }
@@ -4880,68 +4922,66 @@ const Emitter = struct {
         };
     }
 
-    /// A condition loop (decision 8 §10) as a named fun that tests, runs the
-    /// body and recurses:
+    /// A condition loop (`while (c) { … }`, `loop { … }`) — or a `for` whose
+    /// body jumps on its own (decision 105) — as a named fun that recurses:
     ///
-    ///     Group' = (fun __Loop(GroupIn) -> case Cond of true -> Body, __Loop(GroupOut);
-    ///                                                   _ -> GroupIn end end)(Group)
+    ///     Group' = (fun __Loop(GroupIn) ->
+    ///                   case Cond of true -> Body, __Loop(GroupOut); _ -> GroupIn end
+    ///               end)(Group)
+    ///     Group' = (fun __Loop(__BpIter1, GroupIn) ->
+    ///                   case __BpIter1 of [X | __BpRest1] -> Body, __Loop(__BpRest1, GroupOut);
+    ///                                     _ -> GroupIn end
+    ///               end)(Xs, Group)
     ///
     /// The variables the body reassigns (`names`) travel as the fun's parameter
-    /// and come back as its value; with none the fun takes nothing and answers
-    /// `ok`. A `break` throws `{__bp_cond_break, Group}` at its versions, caught
-    /// around the call; a `continue` throws `{__bp_cond_continue, Group}`, caught
-    /// around the body so the recursion carries on.
+    /// and come back as its value; with none the fun answers `ok`. A bare
+    /// `break` throws `{__bp_cond_break, Group}` at its versions, caught around
+    /// the call; a `continue` throws `{__bp_cond_continue, Group}`, caught
+    /// around the body so the recursion carries on. `loop { … }`'s literal
+    /// `true` is not tested.
     fn conditionLoopNode(this: *Emitter, b: Ast.Builder, lp: anytype, names: []const []const u8) anyerror!Ast.Expr {
+        const call = try this.recursiveLoopCall(b, lp, names);
+        if (names.len == 0) return call;
+        return b.match(try this.bindVarGroupExpr(b, names), call);
+    }
+
+    /// The call `conditionLoopNode` binds: the loop's named fun applied to its
+    /// initial arguments, inside the `try` that catches a bare `break` when the
+    /// body has one. Its value is the group at exit (`ok` without one).
+    fn recursiveLoopCall(this: *Emitter, b: Ast.Builder, lp: anytype, names: []const []const u8) anyerror!Ast.Expr {
         const fun_name = if (this.cond_loop_seq == 0) loop_fun_var else try std.fmt.allocPrint(b.arena, "{s}{d}", .{ loop_fun_var, this.cond_loop_seq });
         this.cond_loop_seq += 1;
         defer this.cond_loop_seq -= 1;
         const saved_ctx = this.cond_loop;
         this.cond_loop = names;
         defer this.cond_loop = saved_ctx;
-        const valued = conditionLoopBreaksWithValue(lp.body);
-        const saved_valued = this.cond_loop_valued;
-        this.cond_loop_valued = valued;
-        defer this.cond_loop_valued = saved_valued;
-
-        // Decision 8 §9 — a generator whose body drives itself with a condition
-        // loop. `yield <v>` used to lower to the bare value expression, which an
-        // erlang clause body discards, so `#[@generator] fn nums` answered its
-        // loop's final counter and `lists:foldl/3` over it raised
-        // `no case clause matching 3`. The yields are collected instead: a
-        // synthetic local joins the loop's variable GROUP, so the threading that
-        // already carries a reassigned `i` through the recursion carries the
-        // accumulator too, and the loop answers `lists:reverse/1` of it.
-        const yielding = conditionLoopYieldsValue(lp.body);
-        const saved_yield = this.cond_loop_yield;
-        defer this.cond_loop_yield = saved_yield;
-        var all_names = names;
-        if (yielding) {
-            const with_acc = try b.arena.alloc([]const u8, names.len + 1);
-            @memcpy(with_acc[0..names.len], names);
-            with_acc[names.len] = cond_yield_acc;
-            all_names = with_acc;
-            this.addLocal(cond_yield_acc);
-            this.cond_loop_yield = cond_yield_acc;
-            this.cond_loop = all_names;
-        } else {
-            this.cond_loop_yield = null;
-        }
 
         this.cond_loop_vars += 1;
-        const caught_var = try std.fmt.allocPrint(b.arena, "__BpGroup{d}", .{this.cond_loop_vars});
+        const n = this.cond_loop_vars;
+        const caught_var = try std.fmt.allocPrint(b.arena, "__BpGroup{d}", .{n});
+        const walk = !lp.condition;
+        const iter_var = try std.fmt.allocPrint(b.arena, "__BpIter{d}", .{n});
+        const rest_var = try std.fmt.allocPrint(b.arena, "__BpRest{d}", .{n});
+        const has_group = names.len > 0;
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
-        const group_in: ?Ast.Expr = if (all_names.len > 0) try this.bindVarGroupExpr(b, all_names) else null;
+        const group_in: ?Ast.Expr = if (has_group) try this.bindVarGroupExpr(b, names) else null;
         var in_versions = try this.var_current.clone();
         defer in_versions.deinit();
         const arm_indent = this.indent + 3;
         const saved = this.indent;
         this.indent = arm_indent;
-        const cond = try this.condNode(b, lp.iter.*);
+        const subject: ?Ast.Expr = if (walk)
+            Ast.Expr.v(iter_var)
+        else if (isLiteralTrue(lp.iter.*)) null else try this.condNode(b, lp.iter.*);
         this.indent = saved;
+        const arm_pattern: Ast.Expr = if (walk)
+            try b.cons(&.{Ast.Expr.v(try this.patternBindVar(b, lp.params[0]))}, Ast.Expr.v(rest_var))
+        else
+            Ast.Expr.a("true");
 
         const body_stmts = (try this.bodyNode(b, lp.body, 0, arm_indent)).stmts;
-        const group_out = if (group_in != null) try this.varGroupExpr(b, all_names) else Ast.Expr.a("ok");
+        const group_out = if (has_group) try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
         var arm: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
         const next: Ast.Expr = if (hasJump(lp.body, .@"continue")) blk: {
             var tried: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
@@ -4959,109 +4999,102 @@ const Emitter = struct {
             try arm.appendSlice(b.arena, body_stmts);
             break :blk group_out;
         };
+        // No group to carry: a guarded body runs for its effects, then the
+        // recursion.
+        if (!has_group and next == .try_catch) try arm.append(b.arena, .{ .expr = next });
+        var rec_args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        if (walk) try rec_args.append(b.arena, Ast.Expr.v(rest_var));
+        if (has_group) try rec_args.append(b.arena, next);
         try arm.append(b.arena, .{ .expr = .{ .apply = .{
             .fun = try b.ptr(Ast.Expr.v(fun_name)),
-            .args = if (group_in != null) try b.exprs(&.{next}) else &.{},
+            .args = rec_args.items,
         } } });
-        if (group_in == null and next == .try_catch) {
-            // No group to carry: run the guarded body for its effects, then recurse.
-            arm.items[arm.items.len - 1] = .{ .expr = .{ .apply = .{ .fun = try b.ptr(Ast.Expr.v(fun_name)), .args = &.{} } } };
-            try arm.insert(b.arena, arm.items.len - 1, .{ .expr = next });
-        }
         try this.restoreVersions(&in_versions);
-        const done = if (group_in) |_| try this.varGroupExpr(b, all_names) else Ast.Expr.a("ok");
+        const done = if (has_group) try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
         try this.restoreVersions(&snapshot);
-        const case = try b.caseOf(cond, &.{
-            .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = .{ .stmts = arm.items } },
+        const fun_body: Ast.Body = if (subject) |subj| try b.body(&.{try b.caseOf(subj, &.{
+            .{ .patterns = try b.exprs(&.{arm_pattern}), .body = .{ .stmts = arm.items } },
             try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{done}),
-        });
+        })}) else .{ .stmts = arm.items };
+        var params: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        if (walk) try params.append(b.arena, Ast.Expr.v(iter_var));
+        if (group_in) |g| try params.append(b.arena, g);
         const fun: Ast.Expr = .{ .fun = .{
             .name = fun_name,
-            .params = if (group_in) |g| try b.exprs(&.{g}) else &.{},
-            .body = try b.body(&.{case}),
+            .params = params.items,
+            .body = fun_body,
         } };
-        // The accumulator has no value before the loop — it starts empty — so
-        // the initial group is built by hand rather than from the current
-        // versions: every other name is its variable, the accumulator is `[]`.
-        const initial_group: ?Ast.Expr = if (group_in == null) null else blk: {
-            if (!yielding) break :blk try this.varGroupExpr(b, all_names);
-            const vars = try b.arena.alloc(Ast.Expr, all_names.len);
-            for (all_names, 0..) |n, i| vars[i] = if (std.mem.eql(u8, n, cond_yield_acc))
-                Ast.Expr{ .list = &.{} }
-            else
-                Ast.Expr.v(try this.varRef(b, n));
-            break :blk if (vars.len == 1) vars[0] else Ast.Expr{ .tuple = vars };
-        };
+        var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        if (walk) try args.append(b.arena, try this.exprNode(b, lp.iter.*));
+        if (has_group) try args.append(b.arena, try this.varGroupExpr(b, names));
         const plain_call: Ast.Expr = .{ .apply = .{
             .fun = try b.ptr(try b.paren(fun)),
-            .args = if (initial_group) |g| try b.exprs(&.{g}) else &.{},
+            .args = args.items,
         } };
-        var call = plain_call;
-        if (valued) {
-            // Decision 8 §10 — `break <value>` is the loop's value. The loop
-            // answers a PAIR, `{Group, Value}`: running to the end of the
-            // condition gives `{FinalGroup, undefined}`, and the break's throw
-            // gives `{GroupAtTheJump, Value}`. A `case` with one clause then
-            // destructures it, so the group's variables are rebound (they are
-            // bound in every clause, so erlang exports them) and the case's own
-            // value — the loop's — is the break's.
-            const thrown_var = try std.fmt.allocPrint(b.arena, "__BpBreak{d}", .{this.cond_loop_vars});
-            const value_var = try std.fmt.allocPrint(b.arena, "__BpValue{d}", .{this.cond_loop_vars});
-            call = .{ .try_catch = .{
-                .body = try b.body(&.{try b.tuple(&.{ plain_call, Ast.Expr.a("undefined") })}),
-                .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
-                    &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{
-                        Ast.Expr.a(cond_break_signal),
-                        Ast.Expr.v(caught_var),
-                        Ast.Expr.v(thrown_var),
-                    }))},
-                    &.{},
-                    &.{try b.tuple(&.{ Ast.Expr.v(caught_var), Ast.Expr.v(thrown_var) })},
-                )}),
-            } };
-            const group_pat: Ast.Expr = if (group_in != null)
-                try this.bindVarGroupExpr(b, names)
-            else
-                Ast.Expr.v("_");
-            const out = Ast.Expr.v(value_var);
-            return b.caseOf(call, &.{
-                try b.clause(&.{try b.tuple(&.{ group_pat, out })}, &.{}, &.{out}),
-            });
-        }
-        if (hasJump(lp.body, .@"break")) {
-            const guarded = try b.body(&.{plain_call});
-            call = .{ .try_catch = .{
-                .body = guarded,
-                .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
-                    &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(cond_break_signal), Ast.Expr.v(caught_var) }))},
-                    &.{},
-                    &.{Ast.Expr.v(caught_var)},
-                )}),
-            } };
-        }
-        if (yielding) {
-            // `case <call> of {I@3, Acc@n} -> lists:reverse(Acc@n) end`: the
-            // group is rebound by the pattern (bound in the only clause, so
-            // erlang exports it) and the loop's own value is the collected
-            // list, in yield order.
-            // A group of one name is a bare variable rather than a tuple, and
-            // the `case` destructures that just as well, so there is no
-            // shorter form to special-case: the call has to be there either
-            // way, or the accumulator is never bound.
-            const group_pat = try this.bindVarGroupExpr(b, all_names);
-            const acc = Ast.Expr.v(try this.varRef(b, cond_yield_acc));
-            const reversed = try b.remote("lists", "reverse", &.{acc});
-            return b.caseOf(call, &.{try b.clause(&.{group_pat}, &.{}, &.{reversed})});
-        }
-        if (group_in == null) return call;
-        return b.match(try this.bindVarGroupExpr(b, names), call);
+        if (!hasJump(lp.body, .@"break")) return plain_call;
+        return .{ .try_catch = .{
+            .body = try b.body(&.{plain_call}),
+            .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(cond_break_signal), Ast.Expr.v(caught_var) }))},
+                &.{},
+                &.{Ast.Expr.v(caught_var)},
+            )}),
+        } };
+    }
+
+    /// `#[@generator] loop { … }` (decision 105) — eager on erlang: the body
+    /// runs as `loop { … }` does, its items collected under a fresh key, and
+    /// the expression is the list:
+    ///
+    ///     case make_ref() of
+    ///         __BpGen1 ->
+    ///             erlang:put(__BpGen1, []),
+    ///             Group' = try <the loop's call>
+    ///                      catch throw:{'__bp_gen_end', __BpGen1, G, V} -> <push V>, G end,
+    ///             lists:reverse(erlang:erase(__BpGen1))
+    ///     end
+    ///
+    /// The variables the body reassigns come back in the group, so a counter
+    /// the loop advances is read after it at its last value; a `break <v>`
+    /// hands them back through the throw. The single-clause `case` exports
+    /// the group's bindings. `#[@futureGenerator]` is the same list: erlang's
+    /// `await` is identity.
+    fn generatorLoopNode(this: *Emitter, b: Ast.Builder, lp: anytype) anyerror!Ast.Expr {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        try this.collectMutations(b.arena, lp.body, &.{}, &names);
+        const key = try this.genKey(b);
+        const saved_scope = this.gen_scope;
+        this.gen_scope = .{ .key = key, .names = names.items };
+        const call = blk: {
+            defer this.gen_scope = saved_scope;
+            break :blk try this.recursiveLoopCall(b, lp, names.items);
+        };
+        const caught = try this.genEndCatch(b, key, try b.body(&.{call}), names.items.len > 0);
+        var arm: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        try arm.append(b.arena, .{ .expr = try b.remote("erlang", "put", &.{ Ast.Expr.v(key), .{ .list = &.{} } }) });
+        try arm.append(b.arena, .{ .expr = if (names.items.len > 0)
+            try b.match(try this.bindVarGroupExpr(b, names.items), caught)
+        else
+            caught });
+        try arm.append(b.arena, .{ .expr = try b.remote("lists", "reverse", &.{try b.remote("erlang", "erase", &.{Ast.Expr.v(key)})}) });
+        return b.caseOf(try b.call("make_ref", &.{}), &.{
+            .{ .patterns = try b.exprs(&.{Ast.Expr.v(key)}), .body = .{ .stmts = arm.items } },
+        });
+    }
+
+    fn isLiteralTrue(e: ast.Expr) bool {
+        return e == .identifier and e.identifier.kind == .ident and std.mem.eql(u8, e.identifier.kind.ident, "true");
     }
 
     /// True when `body` jumps with `kind` for the loop it belongs to — directly
-    /// or under an `if`, not inside a nested loop or a lambda.
+    /// or under an `if`, not inside a nested loop or a lambda. A `break <v>`
+    /// is not the loop's: it ends the generator scope (decision 105).
     fn hasJump(body: []const ast.Stmt, kind: std.meta.Tag(ast.JumpExprOf(.untyped))) bool {
         for (body) |stmt| switch (stmt.expr) {
-            .jump => |j| if (j.kind == kind) return true,
+            .jump => |j| if (j.kind == kind) switch (j.kind) {
+                .@"break" => |brk| if (brk.value == null) return true,
+                else => return true,
+            },
             .branch => |br| switch (br.kind) {
                 .if_ => |i| {
                     if (hasJump(i.then_, kind)) return true;
@@ -5074,64 +5107,24 @@ const Emitter = struct {
         return false;
     }
 
-    /// A condition loop whose body YIELDS a value: the generator protocol's
-    /// shape, which has no erlang lowering of its own — `#[@generator]` rewrites
-    /// the yield before codegen sees it, so a yield reaching here is the form
-    /// that is still refused. A valued `break` is lowered (decision 8 §10) and
-    /// is `conditionLoopBreaksWithValue`'s question.
-    fn conditionLoopYieldsValue(body: []const ast.Stmt) bool {
-        return condLoopJumpHasValue(body, .yield);
-    }
-
-    /// A condition loop whose `break` carries a value — the loop is then an
-    /// expression whose value is that `break`'s (decision 8 §10).
-    fn conditionLoopBreaksWithValue(body: []const ast.Stmt) bool {
-        return condLoopJumpHasValue(body, .@"break");
-    }
-
-    /// True when `body` carries a `kind` jump WITH a value for the loop it
-    /// belongs to — directly or under an `if`, never inside a nested loop or a
-    /// lambda, which own their own jumps (the traversal `hasJump` uses).
-    fn condLoopJumpHasValue(body: []const ast.Stmt, comptime kind: std.meta.Tag(ast.JumpExprOf(.untyped))) bool {
-        for (body) |stmt| switch (stmt.expr) {
-            .jump => |j| if (j.kind == kind) switch (j.kind) {
-                .yield => |y| if (y.value != null) return true,
-                .@"break" => |brk| if (brk.value != null) return true,
-                else => {},
-            },
-            .branch => |br| switch (br.kind) {
-                .if_ => |i| {
-                    if (condLoopJumpHasValue(i.then_, kind)) return true;
-                    if (i.else_) |els| if (condLoopJumpHasValue(els, kind)) return true;
-                },
-                else => {},
-            },
-            else => {},
-        };
-        return false;
-    }
-
-    /// `Acc@n = [<value> | Acc@n-1]` — one `yield` inside a collecting condition
-    /// loop. The current version is read BEFORE the new one is bound, as an
-    /// ordinary reassignment does; the loop reverses at the end.
-    fn condYieldPush(this: *Emitter, b: Ast.Builder, acc: []const u8, value: anytype) anyerror!Ast.Expr {
-        const head = if (value) |val| try this.exprNode(b, val.*) else Ast.Expr.a("undefined");
-        const tail = Ast.Expr.v(try this.varRef(b, acc));
-        const bound = try this.bindVarGroupExpr(b, &.{acc});
-        return b.match(bound, try b.cons(&.{head}, tail));
-    }
-
-    /// The throw a `break` inside a condition loop raises. Without a value it is
-    /// `{Signal, Group}` — the reassigned variables at the jump, which the loop's
-    /// `try` rebinds. With one (decision 8 §10) it is `{Signal, Group, Value}`,
-    /// and `conditionLoopNode` destructures both.
-    fn condBreakThrow(this: *Emitter, b: Ast.Builder, names: []const []const u8, brk: anytype) anyerror!Ast.Expr {
+    /// The throw a bare `break` inside a recursive loop raises:
+    /// `{Signal, Group}` — the reassigned variables at the jump, which the
+    /// loop's `try` rebinds.
+    fn condBreakThrow(this: *Emitter, b: Ast.Builder, names: []const []const u8) anyerror!Ast.Expr {
         const group = if (names.len > 0) try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
-        if (!this.cond_loop_valued) {
-            return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(cond_break_signal), group })});
-        }
-        const value = if (brk.value) |bp| try this.exprNode(b, bp.*) else Ast.Expr.a("undefined");
-        return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(cond_break_signal), group, value })});
+        return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(cond_break_signal), group })});
+    }
+
+    /// `break <v>` in a generator scope: `throw({'__bp_gen_end', Key, Group, V})`.
+    /// The scope's `genEndCatch` pushes `V` and rebinds the group.
+    fn genBreakThrow(this: *Emitter, b: Ast.Builder, gs: GenScope, value: ast.Expr) anyerror!Ast.Expr {
+        const group = if (gs.names.len > 0) try this.varGroupExpr(b, gs.names) else Ast.Expr.a("ok");
+        return b.remote("erlang", "throw", &.{try b.tuple(&.{
+            Ast.Expr.a(gen_end_signal),
+            Ast.Expr.v(gs.key),
+            group,
+            try this.exprNode(b, value),
+        })});
     }
 
     const ClosureMutation = struct {
@@ -5358,16 +5351,8 @@ const Emitter = struct {
         return b.match(target, try b.caseOf(subject, clauses.items));
     }
 
-    /// The index parameter of a two-parameter loop and the range it counts
-    /// (`loop (xs, 1..) { x, i -> }`); `range` is null for `loop (xs) { x, i -> }`,
-    /// which counts from 0.
-    const FoldIndex = struct { name: []const u8, range: ?*const ast.Expr };
-
     /// `Group = lists:foldl(fun(Param, GroupIn) -> Body, GroupOut end, Group, Iter)`.
-    /// With an index the fold walks `lists:enumerate(Start, Iter)` and the item
-    /// parameter is the `{Index, Item}` pair — `lists:foldl` passes one element,
-    /// so two fun parameters would never match.
-    fn mutatingFoldExpr(this: *Emitter, b: Ast.Builder, param: []const u8, index: ?FoldIndex, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8) anyerror!Ast.Expr {
+    fn mutatingFoldExpr(this: *Emitter, b: Ast.Builder, param: []const u8, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8) anyerror!Ast.Expr {
         const saved_cond_loop = this.cond_loop;
         this.cond_loop = null;
         defer this.cond_loop = saved_cond_loop;
@@ -5375,22 +5360,14 @@ const Emitter = struct {
         defer snapshot.deinit();
 
         // Fun heads shadow: the parameters take the bare names.
-        const item = Ast.Expr.v(try this.arenaVar(b, param));
+        const pname = Ast.Expr.v(try this.arenaVar(b, param));
         this.addLocal(param);
-        const pname = if (index) |ix| blk: {
-            const idx = Ast.Expr.v(try this.arenaVar(b, ix.name));
-            this.addLocal(ix.name);
-            break :blk try b.tuple(&.{ idx, item });
-        } else item;
         // The accumulator parameter is a fresh version: fun heads always bind.
         const group_in = try this.bindVarGroupExpr(b, names);
         const fun_body = try this.armWithGroup(b, body, names, this.indent + 1);
         try this.restoreVersions(&snapshot);
         const group_init = try this.varGroupExpr(b, names);
-        const iter_expr = if (index) |ix| try b.remote("lists", "enumerate", &.{
-            if (ix.range) |r| try this.indexRangeStart(b, r.*) else Ast.Expr.t(Term.int(0)),
-            try this.exprNode(b, iter),
-        }) else try this.exprNode(b, iter);
+        const iter_expr = try this.exprNode(b, iter);
 
         const fold = try b.remote("lists", "foldl", &.{
             .{ .fun = .{ .params = try b.exprs(&.{ pname, group_in }), .body = fun_body } },
@@ -5890,10 +5867,11 @@ const Emitter = struct {
                 .case => |c| return this.caseNode(b, c.subjects, c.arms),
                 // `a..b` is half-open `[a, b)` (parity with wasm + `Array.range`),
                 // but erlang's `lists:seq/2` is inclusive — so the upper bound is
-                // `b - 1`; an open range `a..` iterates to `infinity`.
+                // `b - 1`; `a...b` (decision 105) is `b` itself; an open range
+                // `a..` iterates to `infinity`.
                 .range => |r| return b.remote("lists", "seq", &.{
                     try this.exprNode(b, r.start.*),
-                    if (r.end) |end| .{ .binop = .{
+                    if (r.end) |end| if (r.inclusive) try this.exprNode(b, end.*) else .{ .binop = .{
                         .op = "-",
                         .lhs = try b.ptr(try b.paren(try this.exprNode(b, end.*))),
                         .rhs = try b.ptr(Ast.Expr.t(Term.int(1))),
@@ -5920,11 +5898,19 @@ const Emitter = struct {
                 // is a throw the loop's `try` catches (`loopBreakCatch`). It
                 // used to render as nothing at all, which left a `;` where the
                 // clause body belonged and broke the whole module.
-                .@"break" => |brk| if (this.cond_loop) |names|
-                    this.condBreakThrow(b, names, brk)
-                else if (brk.value) |bp| this.exprNode(b, bp.*) else b.remote("erlang", "throw", &.{Ast.Expr.a(break_signal)}),
-                .yield => |y| if (this.cond_loop_yield) |acc|
-                    this.condYieldPush(b, acc, y.value)
+                // `break <v>` in a generator scope (decision 105) pushes `v`
+                // and ends the scope from any loop depth; anywhere else it is
+                // a `case` arm's or `comptime` block's value.
+                .@"break" => |brk| if (brk.value) |bp| (if (this.gen_scope) |gs|
+                    this.genBreakThrow(b, gs, bp.*)
+                else
+                    this.exprNode(b, bp.*)) else if (this.cond_loop) |names|
+                    this.condBreakThrow(b, names)
+                else
+                    b.remote("erlang", "throw", &.{Ast.Expr.a(break_signal)}),
+                // `yield v` pushes onto the nearest generator scope's list.
+                .yield => |y| if (this.gen_scope) |gs|
+                    this.genPush(b, gs.key, if (y.value) |val| try this.exprNode(b, val.*) else A("undefined"))
                 else if (y.value) |val| this.exprNode(b, val.*) else A("undefined"),
                 .@"continue" => if (this.cond_loop) |names|
                     b.remote("erlang", "throw", &.{try b.tuple(&.{ A(cond_continue_signal), if (names.len > 0) try this.varGroupExpr(b, names) else A("ok") })})
@@ -6000,104 +5986,62 @@ const Emitter = struct {
             },
 
             .loop => |lp| {
+                if (lp.generator != null) return this.generatorLoopNode(b, lp);
                 if (lp.condition) {
-                    if (conditionLoopYieldsValue(lp.body)) return error.ConditionLoopValueUnsupported;
                     // The variables the body reassigns travel through the loop
                     // fun as its group, exactly as in statement position
-                    // (`mutatingExpr`). Without them the fun took no argument,
-                    // so `loop (i < 10) { … i = i + 1; }` as a VALUE never
-                    // advanced `i` and did not terminate.
+                    // (`mutatingExpr`).
                     var names: std.ArrayListUnmanaged([]const u8) = .empty;
                     try this.collectMutations(b.arena, lp.body, &.{}, &names);
                     return this.conditionLoopNode(b, lp, names.items);
                 }
-                // A collection loop's body is a fun: its jumps are its own.
-                const saved_cond_loop = this.cond_loop;
-                this.cond_loop = null;
-                defer this.cond_loop = saved_cond_loop;
-                // A loop is a `lists:map` when its body produces a value per
-                // item: a `yield`, or a `break <expr>` (the mapped element —
-                // bare `break` carries no value and keeps the loop a foreach).
-                const yields = for (lp.body) |stmt| {
-                    if (stmt.expr != .jump) continue;
-                    switch (stmt.expr.jump.kind) {
-                        .yield => break true,
-                        .@"break" => |brk| if (brk.value != null) break true,
-                        else => {},
-                    }
-                } else false;
-                const op = if (yields) "map" else "foreach";
-                // `loop (xs, 0..) { item, i -> … }`: `lists:map/foreach` pass ONE
-                // element to the fun, so the two loop parameters cannot be two fun
-                // parameters (that raised `function_clause` at every call). The
-                // index range walks alongside the collection, which is exactly
-                // `lists:enumerate/2` — a list of `{Index, Item}` pairs matched by
-                // a single tuple parameter.
-                // `loop (xs) { item, i -> … }` (no written range) counts from 0.
-                if (lp.params.len == 2) {
-                    const idx = V(try this.arenaVar(b, lp.params[1]));
-                    this.addLocal(lp.params[1]);
-                    const item = V(try this.arenaVar(b, lp.params[0]));
-                    this.addLocal(lp.params[0]);
-                    const pair = try b.tuple(&.{ idx, item });
-                    const fun: Ast.Expr = .{ .fun = .{
-                        .params = try b.exprs(&.{pair}),
-                        .body = try this.bodyNode(b, lp.body, 0, this.indent + 1),
-                    } };
-                    const enumerated = try b.remote("lists", "enumerate", &.{
-                        if (lp.indexRange) |r| try this.indexRangeStart(b, r.*) else Ast.Expr.t(Term.int(0)),
-                        try this.exprNode(b, lp.iter.*),
-                    });
-                    return b.remote("lists", op, &.{ fun, enumerated });
-                }
-                const params = try b.arena.alloc(Ast.Expr, lp.params.len);
-                for (lp.params, 0..) |p, i| {
-                    params[i] = V(try this.arenaVar(b, p));
-                    this.addLocal(p);
-                }
-                // An open-ended range (`loop (x..) { i -> … }`) has no list to
+                // An open-ended range (`for (x..) { i -> … }`) has no list to
                 // walk — `lists:seq/2` cannot take `infinity` — so it becomes a
                 // named fun that counts up and calls itself. The bare `break`
                 // such a loop needs to terminate is the throw below.
                 if (unboundedRangeStart(lp.iter.*)) |start| {
-                    if (lp.params.len == 1) {
-                        var body: std.ArrayListUnmanaged(Ast.Expr) = .empty;
-                        const inner = try this.bodyNode(b, lp.body, 0, this.indent + 1);
-                        for (inner.stmts) |s| try body.append(b.arena, s.expr);
-                        const next: Ast.Expr = .{ .binop = .{
-                            .op = "+",
-                            .lhs = try b.ptr(params[0]),
-                            .rhs = try b.ptr(Ast.Expr.t(Term.int(1))),
-                            .parens = false,
-                        } };
-                        try body.append(b.arena, .{ .apply = .{
-                            .fun = try b.ptr(V(loop_fun_var)),
-                            .args = try b.exprs(&.{next}),
-                        } });
-                        const fun: Ast.Expr = .{ .fun = .{
-                            .name = loop_fun_var,
-                            .params = params,
-                            .body = try b.body(body.items),
-                        } };
-                        const call: Ast.Expr = .{ .apply = .{
-                            .fun = try b.ptr(try b.paren(fun)),
-                            .args = try b.exprs(&.{try this.exprNode(b, start.*)}),
-                        } };
-                        return this.loopBreakCatch(b, call, lp.body);
-                    }
+                    const saved_cond_loop = this.cond_loop;
+                    this.cond_loop = null;
+                    defer this.cond_loop = saved_cond_loop;
+                    const param = V(try this.arenaVar(b, lp.params[0]));
+                    this.addLocal(lp.params[0]);
+                    var body: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                    const inner = try this.bodyNode(b, lp.body, 0, this.indent + 1);
+                    for (inner.stmts) |s| try body.append(b.arena, s.expr);
+                    const next: Ast.Expr = .{ .binop = .{
+                        .op = "+",
+                        .lhs = try b.ptr(param),
+                        .rhs = try b.ptr(Ast.Expr.t(Term.int(1))),
+                        .parens = false,
+                    } };
+                    try body.append(b.arena, .{ .apply = .{
+                        .fun = try b.ptr(V(loop_fun_var)),
+                        .args = try b.exprs(&.{next}),
+                    } });
+                    const fun: Ast.Expr = .{ .fun = .{
+                        .name = loop_fun_var,
+                        .params = try b.exprs(&.{param}),
+                        .body = try b.body(body.items),
+                    } };
+                    const call: Ast.Expr = .{ .apply = .{
+                        .fun = try b.ptr(try b.paren(fun)),
+                        .args = try b.exprs(&.{try this.exprNode(b, start.*)}),
+                    } };
+                    return this.loopBreakCatch(b, call, lp.body);
                 }
-                // `loop (xs) { x -> if (cond) { break x; }; }` keeps only the
-                // items the guard admits — `lists:filtermap/2` exactly, with the
-                // fun answering `{true, Value}` or `false`. Lowered as a plain
-                // `foreach` this dropped every value the loop produced.
-                if (try this.filterMapFunBody(b, lp)) |body| {
-                    return b.remote("lists", "filtermap", &.{
-                        .{ .fun = .{ .params = params, .body = body } },
-                        try this.exprNode(b, lp.iter.*),
-                    });
-                }
-                const fun: Ast.Expr = .{ .fun = .{ .params = params, .body = try this.bodyNode(b, lp.body, 0, this.indent + 1) } };
-                return this.loopBreakCatch(b, try b.remote("lists", op, &.{ fun, try this.exprNode(b, lp.iter.*) }), lp.body);
+                // A `for` that skips an item walks the list in a named fun
+                // (`continue` is a throw its body's `try` catches).
+                if (hasJump(lp.body, .@"continue")) return this.conditionLoopNode(b, lp, &.{});
+                // Every other `for` is a `lists:foreach` (decision 105: a loop
+                // is a statement, `yield` pushes onto the generator scope). Its
+                // body is a fun, so its jumps are its own.
+                const saved_cond_loop = this.cond_loop;
+                this.cond_loop = null;
+                defer this.cond_loop = saved_cond_loop;
+                const param = V(try this.arenaVar(b, lp.params[0]));
+                this.addLocal(lp.params[0]);
+                const fun: Ast.Expr = .{ .fun = .{ .params = try b.exprs(&.{param}), .body = try this.bodyNode(b, lp.body, 0, this.indent + 1) } };
+                return this.loopBreakCatch(b, try b.remote("lists", "foreach", &.{ fun, try this.exprNode(b, lp.iter.*) }), lp.body);
             },
 
             .call => |c| return this.callNode(b, c),
@@ -7954,7 +7898,20 @@ const Emitter = struct {
             .params = m.params,
             .returnType = m.returnType,
             .body = m.body orelse &.{},
+            .effect = methodEffect(m),
         });
+    }
+
+    /// The effect a method declares — read back from its annotation list, as
+    /// commonJS's `methodEffect` does: `ast.BehaviorMethod` has no parsed
+    /// `effect` field. A `#[@generator]` method's body is a generator scope
+    /// (decision 105) exactly as a free fn's is.
+    fn methodEffect(m: anytype) ?ast.EffectKind {
+        for (m.annotations) |a| {
+            if (!a.is_builtin) continue;
+            if (ast.EffectKind.fromAnnotationName(a.name)) |k| return k;
+        }
+        return null;
     }
 
     fn recordForms(this: *Emitter, b: Ast.Builder, out: *Forms, r: ast.TypeDecl) !void {

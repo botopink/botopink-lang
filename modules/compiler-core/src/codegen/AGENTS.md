@@ -807,32 +807,12 @@ codegen/
   path (`assertPatternStmts`) passes null, because its pattern is lowered twice —
   once as a `case` test, once as the enclosing match that binds — and is lowered
   exactly as it was.
-- **A condition loop's `break <value>` is the loop's value** (decision 8 §10).
-  It used to be refused outright, with an unlocated
-  `error.ConditionLoopValueUnsupported` — and on the bare `loop { … }` too, which
-  the parser gives the same node. The loop now answers a **pair**: running the
-  condition to its end gives `{FinalGroup, undefined}`, the break's throw gives
-  `{GroupAtTheJump, Value}` (a three-element `{Signal, Group, Value}` instead of
-  the bare-break two), and a one-clause `case` destructures it — the group's
-  variables are rebound, because a name bound in every clause is exported, and
-  the `case`'s own value is the break's. The refusal survives only for a
-  condition loop that **yields**, which is the bullet below. Expression position
-  also had to start carrying the group: `conditionLoopNode` was called with no
-  names from `exprNode`, so `val x = loop (i < 10) { … i = i + 1; };` built a fun
-  of no arguments, never advanced `i`, and did not terminate.
-- **A yielding condition loop collects, it does not discard** (decision 8 §9).
-  `yield <v>` lowered to the bare value expression, which an erlang clause body
-  throws away, so `#[@generator] fn nums(n) { var i = 0; loop (i < n) { yield i;
-  i = i + 1; }; }` answered its loop's final counter and the consuming
-  `lists:foldl/3` raised `no case clause matching 3` — the milestone's only
-  run-time crash. A synthetic local (`cond_yield_acc`, `__bp_cond_yield`) joins
-  the loop's variable **group**, so the threading that already carries a
-  reassigned `i` through the recursion carries the accumulator too: each `yield`
-  is `Acc@n = [V | Acc@n-1]`, the initial group passes `[]` in its slot (it has
-  no pre-loop value), and the loop answers `lists:reverse/1` of it. The name
-  begins with `_`, so it is a valid erlang variable and is exempt from the unused
-  warning. `isPlainYieldGenerator`'s eager-list path (`yield 1; yield 2;`) is
-  untouched.
+- **No loop has a value on erlang** (decision 105). Decision 8 §10's
+  `{Group, Value}` pair for a condition loop's `break <value>` and §9's
+  `__bp_cond_yield` accumulator in the loop's variable group left with the
+  loop's value: a `break <v>` or a `yield` belongs to the nearest generator
+  scope (§ Loops above), which collects under its own key, and the variable
+  group a loop threads is only the variables its body reassigns.
 - **The two embedded preludes are parsed once per process, not once per
   emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
   re-parsed `primitives.bp`, and `noAutoImportRefs`'s catalog re-parsed
@@ -1122,41 +1102,46 @@ codegen/
   `case X of undefined -> <rest>; S -> <then> end` (its `case` value used to be
   discarded). A binding-form `if` in any position is exactly those two clauses:
   `undefined` runs the `else` body (it sat behind an unreachable `false` clause)
-  and no `_ -> ok` catch-all follows. `a..b` → `lists:seq(A, B - 1)`. `&&`/`||` are
+  and no `_ -> ok` catch-all follows. `&&`/`||` are
   `andalso`/`orelse` — botopink short-circuits, erlang's `and`/`or` do not.
   `if (x)` on a nullable local (`?T`, or a parameter defaulting to `null`) is the
   null test `(X =/= undefined)`, not a boolean test (`condNode`).
-- **Loops** lower by shape, not by name:
-  - a body producing a value per item (`yield`, or `break <expr>`) → `lists:map`;
-  - a body that is one `else`-less `if` ending in `break <expr>` → `lists:filtermap`
-    with `{true, V}` / `false` (`filterMapFunBody`) — the filter+map botopink means;
-  - a two-parameter loop — `loop (xs, 1..) { item, i -> … }`, or `loop (xs) { item, i -> … }`
-    counting from 0 — → `lists:enumerate(Start, Xs)` and a single `{I, Item}` tuple
-    parameter (`lists:map/foreach/foldl` pass ONE element, so two fun parameters
-    never matched). A two-parameter loop that reassigns outer variables folds over
-    the same enumeration (`mutatingFoldExpr` with a `FoldIndex`), so its
-    reassignments survive the loop;
-  - an open-ended range `loop (x..)` → a named fun that counts up and recurses
+- **Loops are statements** (decision 105, front 22), lowered by shape:
+  - `for (xs) { x -> … }` → `lists:foreach`; one that reassigns outer variables →
+    `lists:foldl` threading them (`mutatingFoldExpr`); one that `break`s or
+    `continue`s → a named fun that walks the list (`[X | Rest]`) and recurses
+    (`recursiveLoopCall`, the condition loop's machinery), because a fold cannot
+    be stopped from inside;
+  - an open-ended range `for (x..)` → a named fun that counts up and recurses
     (`fun __Loop(I) -> …, __Loop(I + 1) end`), since `lists:seq/2` has no `infinity`;
-  - everything else → `lists:foreach`.
-  - a condition loop (decision 8 §10, `LoopExpr.condition`) is a named fun that
-    tests, runs the body and recurses (`conditionLoopNode`): `{Out@3, I@3} = (fun
-    __Loop({Out@1, I@1}) -> case Cond of true -> …, __Loop({Out@2, I@2}); _ ->
-    {Out@1, I@1} end end)({Out, I})`, threading the variables the body reassigns
-    (with none it answers `ok`; a nested one is `__Loop1`, …). Inside it
-    (`cond_loop`, cleared behind a fun boundary) a `break` throws
-    `{'__bp_cond_break', Group}` caught around the call, and a `continue` throws
-    `{'__bp_cond_continue', Group}` caught around the body, so the recursion
-    carries the variables at the jump; each loop's `catch` binds its own
-    `__BpGroupN`. A `break` that carries a VALUE makes the loop an expression
-    whose value is that break's, and a body that `yield`s collects into the group
-    and answers the reversed list (the two bullets below, decision 8 §10 and §9).
-    `error.ConditionLoopValueUnsupported` survives for a yielding condition loop
-    in EXPRESSION position only (`val xs = loop (i < n) { yield i; };`), which
-    reaches `exprNode` rather than `mutatingExpr` and so has no group to join.
-  A value-less `break` is `erlang:throw('__bp_break')` and its loop is wrapped in
-  the `try … catch throw:'__bp_break' -> ok end` that ends it (`loopBreakCatch`,
-  `hasBareBreak`).
+  - `while (cond) { … }` / `loop { … }` → a named fun that tests, runs the body
+    and recurses (`conditionLoopNode`): `{Out@3, I@3} = (fun __Loop({Out@1, I@1})
+    -> case Cond of true -> …, __Loop({Out@2, I@2}); _ -> {Out@1, I@1} end
+    end)({Out, I})`, threading the variables the body reassigns (with none it
+    answers `ok`; a nested one is `__Loop1`, …; `loop`'s literal `true` is not
+    tested). Inside it (`cond_loop`, cleared behind a fun boundary) a bare
+    `break` throws `{'__bp_cond_break', Group}` caught around the call, and a
+    `continue` throws `{'__bp_cond_continue', Group}` caught around the body, so
+    the recursion carries the variables at the jump; each loop's `catch` binds
+    its own `__BpGroupN`.
+  - **A generator scope** — a `#[@generator]`/`#[@iterator]`/`#[@futureGenerator]`
+    fn or method (whose effect `methodEffect` reads off the annotations), or an
+    annotated `loop` — is eager: its items are pushed onto a list held in the
+    process dictionary under a fresh `make_ref()` (`GenScope`, `genPush`), so a
+    `yield` reaches the NEAREST scope from inside an `if`, a `lists:foreach` fun or
+    a loop's named fun without threading an accumulator. `break <v>` pushes and
+    ends the scope from any depth: `throw({'__bp_gen_end', Key, Group, V})`,
+    caught by the scope (`genEndCatch`, the key matched by a guard). A fn answers
+    `lists:reverse(erlang:erase(Key))` (`generatorFnBody`); a flat `yield` list
+    stays the literal list (`isPlainYieldGenerator`). `#[@generator] loop { … }`
+    (`generatorLoopNode`) runs as `loop { … }` does and is the list, the
+    variables it reassigns rebound after it — so a captured `var` counter is the
+    generator's state; `#[@futureGenerator] loop` is the same list (`await` is
+    identity here).
+  - `a..b` → `lists:seq(A, B - 1)`, `a...b` → `lists:seq(A, B)`.
+  A value-less `break` in a `lists:foreach` is `erlang:throw('__bp_break')` and
+  its loop is wrapped in the `try … catch throw:'__bp_break' -> ok end` that ends
+  it (`loopBreakCatch`, `hasBareBreak`).
 - **Module-level `val`s** (`topValForms`): erlang has no module-level storage, so a
   NAMED `val` is always a 0-arity function and a bare reference to it is the call
   `name()` (`top_vals`); a lambda-valued one applies what it answers,

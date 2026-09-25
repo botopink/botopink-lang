@@ -19,17 +19,25 @@ fn main() {
 
 find(Arr) ->
     Found = 0,
-    Found@4 = lists:foldl(fun(X, Found@1) ->
-        Found@3 = case (X > 10) of
-            true ->
-                Found@2 = X,
-                erlang:throw('__bp_break'),
-                Found@2;
-            _ ->
-                Found@1
-        end,
-        Found@3
-    end, Found, Arr),
+    Found@4 = try
+        (fun __Loop(__BpIter1, Found@1) ->
+            case __BpIter1 of
+                [X | __BpRest1] ->
+                    Found@3 = case (X > 10) of
+                        true ->
+                            Found@2 = X,
+                            erlang:throw({'__bp_cond_break', Found@2}),
+                            Found@2;
+                        _ ->
+                            Found@1
+                    end,
+                    __Loop(__BpRest1, Found@3);
+                _ -> Found@1
+            end
+        end)(Arr, Found)
+    catch
+        throw:{'__bp_cond_break', __BpGroup1} -> __BpGroup1
+    end,
     Found@4.
 
 main() ->
@@ -63,4 +71,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+15
 ```
