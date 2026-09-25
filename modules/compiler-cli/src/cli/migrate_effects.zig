@@ -1285,11 +1285,9 @@ fn semantic(ed: *Editor, tk: Toks, groups: []const AttrGroup, fns: []const FnInf
     // Per function: the old return, the new one, and whether it can fail.
     const new_ret = try a.alloc(?[]const u8, fns.len);
     const result_layer = try a.alloc(bool, fns.len);
-    const can_fail = try a.alloc(bool, fns.len);
     for (fns, 0..) |f, fi| {
         new_ret[fi] = null;
         result_layer[fi] = false;
-        can_fail[fi] = false;
         const r = f.ret orelse continue;
         var ctx: TypeCtx = .{ .arena = a, .stage = .two, .bases = null };
         const nr = try rewriteType(&ctx, tk.src[r.start..r.end]);
@@ -1332,14 +1330,12 @@ fn semantic(ed: *Editor, tk: Toks, groups: []const AttrGroup, fns: []const FnInf
                 _ = err;
                 if (result_layer[fi] and site.closure == 0) {
                     try ed.insert(site.off, "try ");
-                    can_fail[fi] = true;
                 } else {
                     try ed.mark(site.off, note_await_no_channel);
                 }
             },
             .throw_, .try_ => {
                 if (site.closure > 0 or f.effect == null) continue;
-                can_fail[fi] = true;
                 if (result_layer[fi]) continue;
                 try ed.mark(site.off, try throwNote(a, tk, f));
             },
@@ -1369,16 +1365,29 @@ fn semantic(ed: *Editor, tk: Toks, groups: []const AttrGroup, fns: []const FnInf
         }
     }
 
-    // JS consumers of a `pub` function whose failure used to reject.
+    // JS consumers of a `pub` function whose failure used to reject. Read
+    // off the signature — a declared `E` is the contract JS callers relied
+    // on — not off the body: a body that fails by passing another fallible
+    // future through (`return load(n);`) has no `throw` / `try` to see, and
+    // its Promise stops rejecting all the same.
     for (fns, 0..) |f, fi| {
-        if (!f.is_pub or f.effect == null or !can_fail[fi]) continue;
+        if (!f.is_pub or f.effect == null) continue;
         const r = f.ret orelse continue;
         const old = std.mem.trim(u8, tk.src[r.start..r.end], " \t\r\n");
         if (!std.mem.startsWith(u8, old, "@Future<")) continue;
+        if (!try declaresError(a, old)) continue;
         const nr = new_ret[fi] orelse continue;
         if (!std.mem.startsWith(u8, nr, "@Task<@Result<")) continue;
         try ed.mark(f.decl_start, note_js_reject);
     }
+}
+
+/// `Name<T, E>` with an error argument other than `any` — a declared failure.
+fn declaresError(a: Allocator, t: []const u8) !bool {
+    const open = std.mem.indexOfScalar(u8, t, '<') orelse return false;
+    const close = closeAngle(t, open) orelse return false;
+    const args = try splitArgs(a, t[open + 1 .. close]);
+    return args.len == 2 and !std.mem.eql(u8, std.mem.trim(u8, args[1], " \t\r\n"), "any");
 }
 
 /// `Name<X>` with exactly one type argument.
@@ -1773,6 +1782,13 @@ const review_patterns =
     \\pub fn fetchCount(n: i32) -> @Future<i32, string> {
     \\    if (n < 0) { throw "negative"; };
     \\    return n;
+    \\}
+    \\
+    \\// A pub fallible future that fails only by passing another one through:
+    \\// no throw / try in its body, yet its Promise stops rejecting too.
+    \\#[@future]
+    \\pub fn relay(n: i32) -> @Future<i32, string> {
+    \\    return fetchCount(n);
     \\}
     \\
     \\// await in a component whose T is not a @Result: the error has nowhere to go.

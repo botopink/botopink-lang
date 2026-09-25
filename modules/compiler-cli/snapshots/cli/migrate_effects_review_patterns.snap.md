@@ -14,6 +14,13 @@ pub fn fetchCount(n: i32) -> @Future<i32, string> {
     return n;
 }
 
+// A pub fallible future that fails only by passing another one through:
+// no throw / try in its body, yet its Promise stops rejecting too.
+#[@future]
+pub fn relay(n: i32) -> @Future<i32, string> {
+    return fetchCount(n);
+}
+
 // await in a component whose T is not a @Result: the error has nowhere to go.
 #[@use]
 fn Page() -> @Component<ElementBase, Element> {
@@ -105,6 +112,13 @@ pub fn fetchCount(n: i32) -> @Task<@Result<i32, string>> {
     return n;
 }
 
+// A pub fallible future that fails only by passing another one through:
+// no throw / try in its body, yet its Promise stops rejecting too.
+// TODO(migrate-effects): JavaScript callers: a failure of this function now resolves the Promise with `Error(…)` instead of rejecting it
+pub fn relay(n: i32) -> @Task<@Result<i32, string>> {
+    return fetchCount(n);
+}
+
 // await in a component whose T is not a @Result: the error has nowhere to go.
 fn Page() -> @Component<ElementBase, Element> {
     // TODO(migrate-effects): `await` now hands over the `@Result` (the awaited `@Future` could fail) and this function's return has no `@Result` to propagate it into: handle it here (`try await … catch …`, `case`, `notFound()`) or put `@Result` in the return
@@ -186,14 +200,15 @@ pub fn main() { @print(1); }
 ## `src/main.bp` — marked for review
 
 - line 4: JavaScript callers: a failure of this function now resolves the Promise with `Error(…)` instead of rejecting it
-- line 12: `await` now hands over the `@Result` (the awaited `@Future` could fail) and this function's return has no `@Result` to propagate it into: handle it here (`try await … catch …`, `case`, `notFound()`) or put `@Result` in the return
-- line 24: `throw` / `try` needs a `@Result` in the return now (a hook or component no longer propagates): return a `@Result`, or handle the error here with `catch` / `case`
-- line 31: `@Future<T>` could fail (`E = any`) and this body throws or tries, but `@Task<T>` cannot fail: return `@Task<@Result<T, E>>`, or handle the error here
-- line 49: `for` no longer does an implicit `try`: each item of this iterator is a `@Result` now — write `try <item>` where it is used (the return needs a `@Result`), or `case` over it
-- line 57: `for await` no longer does an implicit `try`: each item of this stream is a `@Result` now — write `try <item>` where it is used (the return needs a `@Result`), or `case` over it
-- line 64: `YieldStep<T>` has no `Error` arm any more: the error travels in the item (`@Iterator<@Result<T, E>>`) — rewrite this `case`
-- line 73: a host binding declared `@Future<T>` failed by rejecting (`E = any`); declared `@Task<T>`, a rejection is a fatal host failure — declare `@Task<@Result<T, E>>` if the host can fail
-- line 80: `.next()` on a fallible generator: the step has no `Error` any more, the item is a `@Result` — review how this code handles the error
+- line 12: JavaScript callers: a failure of this function now resolves the Promise with `Error(…)` instead of rejecting it
+- line 19: `await` now hands over the `@Result` (the awaited `@Future` could fail) and this function's return has no `@Result` to propagate it into: handle it here (`try await … catch …`, `case`, `notFound()`) or put `@Result` in the return
+- line 31: `throw` / `try` needs a `@Result` in the return now (a hook or component no longer propagates): return a `@Result`, or handle the error here with `catch` / `case`
+- line 38: `@Future<T>` could fail (`E = any`) and this body throws or tries, but `@Task<T>` cannot fail: return `@Task<@Result<T, E>>`, or handle the error here
+- line 56: `for` no longer does an implicit `try`: each item of this iterator is a `@Result` now — write `try <item>` where it is used (the return needs a `@Result`), or `case` over it
+- line 64: `for await` no longer does an implicit `try`: each item of this stream is a `@Result` now — write `try <item>` where it is used (the return needs a `@Result`), or `case` over it
+- line 71: `YieldStep<T>` has no `Error` arm any more: the error travels in the item (`@Iterator<@Result<T, E>>`) — rewrite this `case`
+- line 80: a host binding declared `@Future<T>` failed by rejecting (`E = any`); declared `@Task<T>`, a rejection is a fatal host failure — declare `@Task<@Result<T, E>>` if the host can fail
+- line 87: `.next()` on a fallible generator: the step has no `Error` any more, the item is a `@Result` — review how this code handles the error
 
 ## `src/legacy.bp` — input
 
