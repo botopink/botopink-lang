@@ -8,6 +8,19 @@ WAT backend, `externals.zig` for `#[@External.<Target>(…)]` FFI declarations,
 `comptime_module.zig` for `erlang.emitComptimeModule`). Aggregated by the
 sibling barrel `../tests.zig` for `test_root.zig`; shared harness
 (`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`.
+Snapshots are recorded per comptime runtime (front 18 step 4, decision 85):
+`helpers.runtimes` lists them (`beam`, `wat`), `snapshot_configs` (every target) and
+`test_mode_configs` (commonJS + erlang) are `configs` once per runtime with
+`comptime_runtime` set, and a fixture lands at
+`snapshots/codegen/<runtime>/<target>/<slug>.snap.md`
+(`codegen/<runtime>/errors/<target>/` for `assertJsError`).
+Every harness compile goes through `helpers.generate` — `codegen.generate`
+with **every comptime evaluation run on both runtimes** (front 18,
+`comptime/runtime/runtime.zig` `parity`): the fixture's runtime answers and the
+other one is asked the same question; a difference fails the fixture as
+`error.ComptimeRuntimeParity` with both answers printed. So each of the 33
+fixtures with a `COMPTIME REPLY` is also a parity check between the BEAM and
+the wat runtime.
 `assertJsRunLog(src, expected)` compiles `src` for commonJS, runs it and
 compares the entry's RUN LOG — for behaviour that lives in a sibling module
 (`std/<mod>.js`) a single-module snapshot does not show.
@@ -90,7 +103,7 @@ does not own.
   fails if the source ever starts compiling. Every call site carries a comment
   naming the missing feature and the spec that owns it (`DOCUMENTED SKIP —`).
 - `assertJsError` stays the helper for comptime validation errors that have a
-  dedicated `codegen/errors/<target>/` snapshot.
+  dedicated `codegen/<runtime>/errors/<target>/` snapshot.
 
 `wat.zig` also carries the decision 8 §5 `case` fixtures front `05-wasm` took
 from the three defects `01-checker` handed to the backends — a variant pattern

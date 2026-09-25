@@ -1,0 +1,52 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val Element = type implement @Context<Element, Element> { }
+fn cleanup() {
+    0;
+}
+fn effect() -> @Context<Element, i32> {
+    0;
+}
+#[@context]
+fn Widget() -> Element {
+    use effect { -> cleanup(); };
+    Element();
+}
+```
+
+----- JAVASCRIPT -- main.js
+```javascript
+class Element {
+}
+Element.prototype.__bp = "Element";
+
+function cleanup() {
+    0;
+}
+
+function effect() {
+    0;
+}
+
+function Widget() {
+    effect(() => {
+    return cleanup();
+});
+    new Element();
+}
+```
+
+----- TYPESCRIPT TYPEDEF -- main.d.ts
+```typescript
+
+
+
+
+
+
+
+```
+
+----- RUN LOG -----
+```logs
+```

@@ -7,6 +7,7 @@
 ///   zig build test-libs → compiles and tests every visible `.bp` library per target
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
+const wasm3 = @import("modules/wasm3/build.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -169,10 +170,40 @@ pub fn build(b: *std.Build) void {
         }
     }
 
+    // ── the wat comptime runtime: `rt.zig` → `bp_wat_rt.wasm`, embedded ──────
+    // Front 18 step 2. The term library a lowered comptime body links against
+    // (`comptime/runtime/wat/link.zig`) is compiled here for `wasm32-freestanding`
+    // at the MVP feature set wasm3 and every browser run, and reaches
+    // `wat/program.zig` as an `@embedFile` — in the native compiler and in the
+    // browser build alike. `__heap_base` is exported so the linker knows where
+    // the runtime's static memory (`.bss` included) ends.
+    const wat_rt = b.addExecutable(.{
+        .name = "bp_wat_rt",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/compiler-core/src/comptime/runtime/wat/rt.zig"),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .wasm32,
+                .os_tag = .freestanding,
+                .cpu_model = .{ .explicit = &std.Target.wasm.cpu.mvp },
+            }),
+            .optimize = .ReleaseSmall,
+        }),
+    });
+    wat_rt.entry = .disabled;
+    wat_rt.rdynamic = true;
+    wat_rt.root_module.export_symbol_names = &.{"__heap_base"};
+    for ([_]*std.Build.Module{ core_mod, core_test_mod }) |mod| {
+        mod.addAnonymousImport("bp_wat_rt.wasm", .{ .root_source_file = wat_rt.getEmittedBin() });
+    }
+    // wasm3 runs it in-process on every native build (`persistent_wat.zig`).
+    wasm3.exposeHeaders(b, core_mod);
+    wasm3.exposeHeaders(b, core_test_mod);
+
     const core_tests = b.addTest(.{
         .root_module = core_test_mod,
         .filters = test_filters,
     });
+    wasm3.link(b, core_tests);
 
     const run_core_tests = b.addRunArtifact(core_tests);
     // Ensure snapshots are written inside modules/compiler-core/,
@@ -257,6 +288,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const lsp_tests = b.addTest(.{ .root_module = lsp_test_mod, .filters = test_filters });
+    wasm3.link(b, lsp_tests);
 
     const run_lsp_tests = b.addRunArtifact(lsp_tests);
     run_lsp_tests.setCwd(b.path("modules/language-server"));
@@ -278,6 +310,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const cli_tests = b.addTest(.{ .root_module = cli_test_mod, .filters = test_filters });
+    wasm3.link(b, cli_tests);
 
     const run_cli_tests = b.addRunArtifact(cli_tests);
     run_cli_tests.setCwd(b.path("modules/compiler-cli"));
@@ -299,6 +332,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    wasm3.link(b, cli_exe);
     b.installArtifact(cli_exe);
 
     // ── language-server (botopink-lsp executable) ─────────────────────────────
@@ -316,6 +350,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    wasm3.link(b, lsp_exe);
     b.installArtifact(lsp_exe);
 
     // ── lib-test-runner (botopink-lib-test executable) ────────────────────────
@@ -485,6 +520,57 @@ pub fn build(b: *std.Build) void {
         prev_cli_script = &run_script.step;
         test_cli_step.dependOn(&run_script.step);
     }
+
+    // ── compiler-web: compiler-core for the browser (front 18 step 5) ─────────
+    // `zig build compiler-web` → zig-out/web/{botopink.wasm, glue.js, index.html}.
+    // A `wasm32-wasi` build of compiler-core's API (`modules/compiler-web/src/
+    // web_root.zig`: sources in, generated text out); the target is fixed here,
+    // not read from `-Dtarget`, because nothing else in this workspace builds
+    // for wasm and the CLI never will (it spawns processes). WASI provides the
+    // clock, stdout/stderr and randomness through the JS shim in `glue.js`;
+    // the comptime runtime and the RUN LOG executors are compiled out on wasm
+    // (`comptime/runtime/runtime.zig`), so the module imports no process spawn.
+    // `-Doptimize` applies; the size budget is measured at ReleaseSmall.
+    const web_target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
+    const web_core_mod = b.createModule(.{
+        .root_source_file = b.path("modules/compiler-core/src/root.zig"),
+        .target = web_target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "std_prelude", .module = stdPreludeModule(b, web_target, std_pkg_files, pkg_table_file) },
+        },
+    });
+    web_core_mod.addAnonymousImport("bp_wat_rt.wasm", .{ .root_source_file = wat_rt.getEmittedBin() });
+    const web_exe = b.addExecutable(.{
+        .name = "botopink",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/compiler-web/src/web_root.zig"),
+            .target = web_target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "botopink", .module = web_core_mod },
+            },
+        }),
+    });
+    web_exe.entry = .disabled; // a library of exports, not a `_start` program
+    web_exe.rdynamic = true; // keep every `export fn` in the wasm export table
+    const web_install = b.addInstallArtifact(web_exe, .{ .dest_dir = .{ .override = .{ .custom = "web" } } });
+    const web_step = b.step("compiler-web", "Build compiler-core for the browser (zig-out/web/)");
+    web_step.dependOn(&web_install.step);
+    web_step.dependOn(&b.addInstallFile(b.path("modules/compiler-web/glue.js"), "web/glue.js").step);
+    web_step.dependOn(&b.addInstallFile(b.path("modules/compiler-web/index.html"), "web/index.html").step);
+
+    // `zig build test-web` — the browser build answers like the native compiler:
+    // `modules/compiler-web/tests/smoke.js` loads `glue.js` and the built
+    // module under node, compiles one program to the four targets, and pins a
+    // rendered diagnostic and the comptime refusal. Needs `node`; NOT wired
+    // into `zig build test` (a wasm build is 15–50 s on top of the suite).
+    const test_web_run = b.addSystemCommand(&.{ "node", "modules/compiler-web/tests/smoke.js" });
+    test_web_run.addFileArg(web_exe.getEmittedBin());
+    test_web_run.setCwd(b.path("."));
+    test_web_run.has_side_effects = true; // spawns node — never cache
+    const test_web_step = b.step("test-web", "Run the browser build's smoke test under node");
+    test_web_step.dependOn(&test_web_run.step);
 
     // ── Run step ──────────────────────────────────────────────────────────────
 

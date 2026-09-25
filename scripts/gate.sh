@@ -12,6 +12,9 @@
 #   4. zig build test       compiler-core + language-server + CLI +
 #                           lib-test-runner unit suites
 #                           (--cold deletes the runtime cache first)
+#   4b. snap_audit.sh --mode=runtime-parity  every codegen snapshot recorded
+#                           under both comptime runtimes, the pairs equal but
+#                           for their listing sections (front 18 step 4)
 #   5. zig build test-bpmp  the package manager's unit suite
 #   6. beam_export_audit.sh every beam snapshot module assembles with every
 #                           function exported (needs erlc)
@@ -97,6 +100,10 @@ if [ "$cold" -eq 1 ]; then
 fi
 zig build test || fail "zig build test"
 pass "zig build test"
+
+stage "comptime runtime parity (snap_audit.sh --mode=runtime-parity)"
+bash scripts/snap_audit.sh --mode=runtime-parity || fail "scripts/snap_audit.sh --mode=runtime-parity (the diff above names the pair; a difference is a defect in one runtime, never re-recorded away)"
+pass "comptime runtime parity"
 
 stage "zig build test-bpmp"
 zig build test-bpmp || fail "zig build test-bpmp"

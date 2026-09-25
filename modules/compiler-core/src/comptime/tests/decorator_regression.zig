@@ -51,10 +51,10 @@ fn assertAcceptsWithReply(comptime loc: std.builtin.SourceLocation, src: []const
 
 fn expectLowering(traces: []const comptimeMod.trace.Entry, lowering: []const u8) !void {
     for (traces) |e| {
-        if (e.kind == .decorator and std.mem.indexOf(u8, e.erl, lowering) != null) return;
+        if (e.kind == .decorator and std.mem.indexOf(u8, e.listing, lowering) != null) return;
     }
     std.debug.print("\nno decorator lowered through \"{s}\"; generated:\n", .{lowering});
-    for (traces) |e| std.debug.print("{s}\n", .{e.erl});
+    for (traces) |e| std.debug.print("{s}\n", .{e.listing});
     return error.TestExpectedLowering;
 }
 

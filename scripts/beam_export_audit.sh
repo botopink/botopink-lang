@@ -6,7 +6,7 @@
 # `erlc +from_asm` drops an unexported function before `beam_validator` sees
 # it — so a register bug inside a function nothing exports never surfaces in
 # the RUN LOG. This script extracts each `----- BEAM ASSEMBLY -- <m>.S` block
-# from `modules/compiler-core/snapshots/codegen/beam/*.snap.md`, rewrites its
+# from `modules/compiler-core/snapshots/codegen/beam/beam/*.snap.md`, rewrites its
 # exports form to name every `{function, Name, Arity, _}` form, and assembles
 # it. Read-only: the snapshots are not touched.
 #
@@ -45,7 +45,9 @@ command -v erlc >/dev/null 2>&1 || { echo "beam_export_audit: erlc not found on 
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 botlang_root="$(cd "$script_dir/.." && pwd)"
-snap_dir="$botlang_root/modules/compiler-core/snapshots/codegen/beam"
+# The beam-runtime copy is the audited one: the audit is about the TARGET,
+# and both comptime runtimes record the same `.S` (decision 85).
+snap_dir="$botlang_root/modules/compiler-core/snapshots/codegen/beam/beam"
 if [ "${#files[@]}" -eq 0 ]; then
     [ -d "$snap_dir" ] || { echo "beam_export_audit: $snap_dir not found" >&2; exit 2; }
     while IFS= read -r f; do files+=("$f"); done < <(find "$snap_dir" -name '*.snap.md' | sort)
