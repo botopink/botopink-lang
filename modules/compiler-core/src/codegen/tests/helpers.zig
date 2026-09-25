@@ -75,6 +75,29 @@ pub const configs = [_]config.Config{
     },
 };
 
+/// The comptime runtimes every snapshot is recorded under (front 18 step 4,
+/// decision 85): `snapshots/codegen/<runtime>/<target>/<slug>.snap.md`.
+pub const runtimes = [_]config.ComptimeRuntime{.beam};
+
+/// `base` once per comptime runtime, each with `comptime_runtime` set — the
+/// generations a snapshot-writing helper loops over.
+fn perRuntime(comptime base: []const config.Config) [base.len * runtimes.len]config.Config {
+    var out: [base.len * runtimes.len]config.Config = undefined;
+    for (runtimes, 0..) |rt, r| {
+        for (base, 0..) |c, i| {
+            out[r * base.len + i] = c;
+            out[r * base.len + i].comptime_runtime = rt;
+        }
+    }
+    return out;
+}
+
+/// Every target × every comptime runtime: what `assertJs` and
+/// `assertJsError` record.
+pub const snapshot_configs = perRuntime(&configs);
+/// The two `botopink test` targets × every runtime (`assertJsTestMode`).
+pub const test_mode_configs = perRuntime(configs[0..2]);
+
 pub fn slugify(comptime s: []const u8) []const u8 {
     const n: usize = comptime blk: {
         var count: usize = 0;
@@ -316,7 +339,7 @@ pub fn assertJsExpecting(
     var must_compile_failed = false;
     var wasm_refused = false;
 
-    for (configs) |c| {
+    for (snapshot_configs) |c| {
         var cfg = c;
         cfg.build_root = build_root_path;
         const eff: CompileExpectation = switch (expectation) {
@@ -442,7 +465,7 @@ pub fn assertJsError(allocator: Allocator, comptime loc: std.builtin.SourceLocat
     // H10 — every backend is compared before the first failure is reported.
     var first_err: ?anyerror = null;
 
-    for (configs) |c| {
+    for (snapshot_configs) |c| {
         var outputs = try generate(
             allocator,
             &.{.{ .path = "", .source = src }},
@@ -563,7 +586,7 @@ pub fn assertJsTestMode(allocator: Allocator, comptime loc: std.builtin.SourceLo
     var first_err: ?anyerror = null;
     var any_module_failed = false;
 
-    for (configs[0..2]) |c| { // commonJS/node + erlang
+    for (test_mode_configs) |c| { // commonJS/node + erlang, per runtime
         var cfg = c;
         cfg.build_root = build_root_path;
         cfg.test_mode = true;

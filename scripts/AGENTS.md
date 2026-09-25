@@ -343,7 +343,7 @@ compile columns — what this front moves — stay comparable across steps.
 
 `scripts/beam_export_audit.sh [--jobs=N] [--keep=<dir>] [<snap.md>…]` — needs
 `erlc` on `PATH`, read-only. Extracts every `----- BEAM ASSEMBLY -- <m>.S` block
-from `modules/compiler-core/snapshots/codegen/beam/`, rewrites its
+from `modules/compiler-core/snapshots/codegen/beam/beam/`, rewrites its
 `{exports, […]}` form to name **every** `{function, …}` form, and assembles it
 with `erlc +from_asm`. A recorded module exports only its entrypoints, and
 `erlc +from_asm` drops an unexported function before `beam_validator` runs, so

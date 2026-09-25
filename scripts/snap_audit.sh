@@ -38,7 +38,7 @@
 #   review    The review worksheet: one row per unique snapshot (the four
 #             comptime runtime copies collapse into one row).
 #             Columns: suite\tslug\ttest\tpaths\tverdict
-#               suite   codegen/<target> · codegen/errors/<target> · comptime ·
+#               suite   codegen/<runtime>/<target> · codegen/<runtime>/errors/<target> · comptime ·
 #                       comptime/errors · comptime/<dir> · parser · lsp
 #               test    test file:line (comma-joined when several tests write
 #                       the same path); ORPHAN when no traced test checked it
@@ -130,19 +130,20 @@ fi
 out_dir="$botlang_root/build/snap-audit"
 mkdir -p "$out_dir"
 
-# Backend derived from the path component immediately after .../codegen/.
-# The codegen layout is codegen/<target>/<slug>.snap.md, plus a
-# codegen/errors/<target>/<slug>.snap.md tree. The "errors" leg
+# Backend derived from the target component of the path. The codegen layout
+# is codegen/<comptime runtime>/<target>/<slug>.snap.md, plus a
+# codegen/<comptime runtime>/errors/<target>/<slug>.snap.md tree (front 18
+# step 4, decision 85: runtime ∈ {beam, wat}). The "errors" leg
 # never carries a RUN LOG by contract — surface it under its own
 # backend label so the coverage pivot stays meaningful.
 backendOf() {
     local p="$1"
     case "$p" in
-        */codegen/errors/*) echo errors ;;
-        */codegen/commonJS/*) echo node ;;
-        */codegen/erlang/*) echo erlang ;;
-        */codegen/beam/*)   echo beam ;;
-        */codegen/wasm/*)   echo wasm ;;
+        */codegen/*/errors/*)   echo errors ;;
+        */codegen/*/commonJS/*) echo node ;;
+        */codegen/*/erlang/*)   echo erlang ;;
+        */codegen/*/beam/*)     echo beam ;;
+        */codegen/*/wasm/*)     echo wasm ;;
         *)                  echo unknown ;;
     esac
 }
@@ -493,8 +494,9 @@ role == "disk" {
     if (seg[2] == "language-server") { suite = "lsp"; fam = "lsp" }
     else if (seg[4] == "codegen") {
         fam = "codegen"
-        if (seg[5] == "errors" && n == 7) { suite = "codegen/errors/" seg[6]; be = seg[6] }
-        else { suite = "codegen/" seg[5]; be = seg[5] }
+        # codegen/<runtime>/<target>/<slug> · codegen/<runtime>/errors/<target>/<slug>
+        if (seg[6] == "errors" && n == 8) { suite = "codegen/" seg[5] "/errors/" seg[7]; be = seg[7] }
+        else { suite = "codegen/" seg[5] "/" seg[6]; be = seg[6] }
     }
     else if (seg[4] == "comptime") {
         fam = "comptime"

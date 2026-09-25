@@ -79,7 +79,7 @@ this the only backend where the program compiled and then died at run time
 (exit 134, stdout empty) — the divergence
 `tests/language/run/external_erlang_only.targets` existed to hold wasm out of.
 [Decision 67](../../../../../specs/1.0.5-beta/decisions-taken.md#67-the-most-restrictive-behaviour-and-no-configuration-that-bypasses-it) settles it: the refusal is
-located, and **no flag switches it off**. Ten `snapshots/codegen/wasm/external_*`
+located, and **no flag switches it off**. Ten `snapshots/codegen/beam/wasm/external_*`
 fixtures moved from a `WASM TEXT` block with that trap to a
 `COMPILE DIAGNOSTIC` section; their `externals.zig` tests carry the new
 `refused_on_wasm` expectation, which still requires commonJS, erlang and beam to
@@ -386,7 +386,7 @@ appear here"). So decision 2's enforcement leaves nothing dead here.
   not uniform (an `if` arm's body keeps the function column, an optional-field
   guard and a loop's scaffolding indent to 8), and `Func.locals` is a list of
   lines because the hand-tuned helpers group declarations. Don't "tidy" these:
-  `snapshots/codegen/wasm/` is byte-compared, and 280 `WASM TEXT` blocks are
+  `snapshots/codegen/beam/wasm/` is byte-compared, and 280 `WASM TEXT` blocks are
   expected to keep passing `wasmtime compile`.
 - **Never widen a `raw` escape hatch into the model.** There is deliberately no
   raw-text instruction: a construct wat cannot lower yet emits an honest
