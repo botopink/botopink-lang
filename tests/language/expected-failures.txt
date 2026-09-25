@@ -111,7 +111,6 @@
 # they are cells that do not compile in this tree.
 commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
 erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
-erlang   | test/case_unknown.bp::§4.1 §5.2 an i32 arm matches 3.0 by value, converted ;; §4.1 if (x is i32) narrows and converts inside the block | C-07 | re-classified 2026-09-21 by running: `is` LOWERS on erlang since C-01 half 3 step 16, so the cell compiles and four of its six tests pass. What is left is decision 8 §4.1's numeric half, which is not identity's: an `i32` arm is `is_integer(X)`, and `3.0` is a float term on this backend, where commonJS's `Number.isInteger(3.0)` answers true — the arm has to match by VALUE and the binding has to be converted (`3.0` → `3`, so `n.toString()` is `"3"`). commonJS passes both
 *        | reject/case_shorthand_on_unknown.bp   | 01 step 1, 01 step 5 | rejected by `unknown` assignability, without the "full name" diagnostic
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────

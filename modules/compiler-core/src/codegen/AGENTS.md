@@ -815,7 +815,11 @@ codegen/
   string { … } }` tests the subject's TYPE; erlang has no pattern that does, and
   emitted as the plain binders `I32` / `String` the first arm matched every
   subject, so the whole union answered through it. The arm keeps its variable and
-  the test becomes a guard on it — `I32 when is_integer(I32), (I32 >= …), (I32 =< …)`.
+  the test becomes a guard on it — `I32 when is_number(I32), (I32 == trunc(I32)),
+  (I32 >= …), (I32 =< …)`: by VALUE (decision 8 §4.1), so `3.0` takes an `i32`
+  arm and `2.5` does not. A binder on such an arm (`i32 { n -> … }`) is the
+  converted value — `N = trunc(I32)` (a float arm: `float(F64)`) opens the body
+  in place of the `N = I32` alias (`numericConversion`).
   The spelling table and the range table are deliberate twins of commonJS's
   `primitiveTypeName` / `integerRange` / `isTest`: `f32`/`f64`/`float` are
   `is_number` because commonJS's is `typeof === "number"`, which an integer
@@ -1065,8 +1069,9 @@ codegen/
   `tests/language/run/external_host_record.bp`.
 - **`x is T` and a `case` arm naming a type** (decision 8 §4.2 and §3.3):
   `typeTestNode` writes ONE boolean expression that is also a legal erlang
-  guard, so the two share a lowering — `is_binary` / `is_boolean` / `is_float`
-  / `is_integer` plus a range for a primitive, `is_list` for an array, `true`
+  guard, so the two share a lowering — `is_binary` / `is_boolean`, `is_number`
+  for a float type (§4.2: any number), `is_number(V) andalso V == trunc(V)`
+  plus a range for an integer type (§4.1: `2.0 is i32` holds), `is_list` for an array, `true`
   for `unknown`, `V =:= undefined orelse …` for `?T`, and for a named `type`
   what half 3 made testable: a record is `is_tuple(V) andalso tuple_size(V)
   =:= N andalso element(1, V) =:= <its atom>`, an enum every tag it builds
@@ -1075,7 +1080,11 @@ codegen/
   immediate fun, because the test reads it more than once. A `case` arm naming
   a type appends the same expression to the arm's guards
   (`patternNodeExtra`'s `.ident`): written as the bare binder it was, the first
-  arm of a `case` over `Person | Vec` matched every subject.
+  arm of a `case` over `Person | Vec` matched every subject. Inside
+  `if (x is i32) { … }` the local is the converted value (§4.1): the then-arm
+  opens with `X@n = trunc(X)` (`float` for a float type) — `isNarrowing`, at
+  each `if` lowering (plain, mutating, early-return and the fold's
+  single-assignment `if`); the version is restored after the arm.
 - **Enums**: `Order.Lt` → the variant atom, `Color.Rgb(r, g, b)` →
   `{VariantAtom, R, G, B}`, and since half 3 the tag is
   `crossModule.variantAtom` — the enum's type atom plus `__v__` plus the variant,
@@ -1329,7 +1338,10 @@ codegen/
 - **Effects**: non-`#[@result]` effect fns are lowered eagerly (a `@Future<T>`
   is `T`; a body of only `yield`s is a list); `__bp_future_resolved`/`rejected`
   markers become the value / `throw`.
-- Structural `==`/`!=` is `=:=`/`=/=`.
+- Structural `==`/`!=` is `=:=`/`=/=` (decision B2) — except with an operand
+  declared `unknown` (`isUnknownOperand`, read off `local_types`), where it is
+  erlang's by-value `==`/`/=`, so `2.0 == 2` holds (decision 8 §2.3). A value
+  entering `unknown` is stored as itself — no box (§11).
 
 ### beam_asm
 
