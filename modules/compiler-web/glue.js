@@ -12,12 +12,18 @@
 //      `addSource(path, source)`, `compile(target)` → the JSON object
 //      `web_root.zig` documents, `reset()`; `stdout`/`stderr` hold what the
 //      compiler printed during the last `compile`;
-//   3. when loaded as a Worker script (`new Worker("glue.js")`), a message
+//   3. `run(bytes)`: instantiate a program the `wasm` target produced (the
+//      module's `wasm` field, base64 — `wasmBytes` decodes it) and call its
+//      `_start`; the program's one import, `fd_write`, is served into
+//      captured text, any other import is refused by name. Answers
+//      `{ stdout, stderr, trap }` — `trap` is the engine's message or null;
+//   4. when loaded as a Worker script (`new Worker("glue.js")`), a message
 //      protocol: `{ id, op: "load", wasm }` → `{ id, ok }`, then
 //      `{ id, op: "compile", sources: [{ path, source }], target }` →
-//      `{ id, ok, status, result, stdout, stderr, ms }`. The page keeps the
-//      compiler off the main thread, where synchronous instantiation of the
-//      target program's wasm output is not size-limited.
+//      `{ id, ok, status, result, stdout, stderr, ms }`, and
+//      `{ id, op: "run", wasm }` (base64) → `{ id, ok, run, ms }`. The page
+//      keeps the compiler off the main thread, where synchronous
+//      instantiation of the target program's wasm output is not size-limited.
 //
 // Loaded three ways: `<script src="glue.js">` (defines `self.Botopink`),
 // `importScripts` / `new Worker` (the same, plus the protocol), and
@@ -211,6 +217,45 @@
     }
   }
 
+  // ── running the `wasm` target's output ─────────────────────────────────────
+
+  /// The bytes of a module's `wasm` field (base64).
+  function wasmBytes(b64) {
+    if (typeof atob === "function") {
+      const bin = atob(b64);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+    return new Uint8Array(Buffer.from(b64, "base64"));
+  }
+
+  /// Instantiate a program the `wasm` target produced and run its `_start`.
+  /// A program imports `wasi_snapshot_preview1.fd_write` at most; anything
+  /// else is refused by name before a byte runs.
+  function run(bytes) {
+    const module = new WebAssembly.Module(bytes);
+    const state = { memory: null, stdout: "", stderr: "" };
+    const served = wasiServed(state);
+    const imports = {};
+    for (const imp of WebAssembly.Module.imports(module)) {
+      if (imp.module !== WASI_MODULE || imp.name !== "fd_write") {
+        throw new Error(`the program imports ${imp.module}.${imp.name}, which the page does not serve`);
+      }
+      imports[WASI_MODULE] = { fd_write: served.fd_write };
+    }
+    let trap = null;
+    try {
+      const instance = new WebAssembly.Instance(module, imports);
+      state.memory = instance.exports.memory;
+      if (typeof instance.exports._start === "function") instance.exports._start();
+    } catch (err) {
+      if (!(err instanceof WebAssembly.RuntimeError)) throw err;
+      trap = err.message;
+    }
+    return { stdout: state.stdout, stderr: state.stderr, trap };
+  }
+
   // ── the Worker protocol ────────────────────────────────────────────────────
 
   function serveWorker(scope) {
@@ -229,6 +274,10 @@
           const result = compiler.compile(msg.target);
           const ms = nowMs() - t0;
           scope.postMessage({ id: msg.id, ok: true, status: result.status, result, stdout: compiler.stdout, stderr: compiler.stderr, ms });
+        } else if (msg.op === "run") {
+          const t0 = nowMs();
+          const result = run(wasmBytes(msg.wasm));
+          scope.postMessage({ id: msg.id, ok: true, run: result, ms: nowMs() - t0 });
         } else {
           throw new Error(`unknown op ${msg.op}`);
         }
@@ -238,5 +287,5 @@
     };
   }
 
-  return { Compiler, importsFor, serveWorker };
+  return { Compiler, importsFor, run, wasmBytes, serveWorker };
 });

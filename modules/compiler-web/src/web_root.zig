@@ -12,10 +12,14 @@
 //!   bp_output_ptr() / bp_output_len()             the JSON of the last `bp_compile`
 //!
 //! The output is one JSON object: `{ "target", "modules": [ { "name", "code",
-//! "typedef", "units": [ { "atom", "code" } ], "comptimeTrace", "diagnostic" } ] }`,
-//! where `diagnostic` is the rendered text the CLI would print for a module
+//! "typedef", "units": [ { "atom", "code" } ], "wasm", "comptimeTrace", "diagnostic" } ] }`,
+//! where `wasm` is the base64 of the binary module on the `wasm` target (null
+//! on the others) — the bytes the page instantiates, rendered from the same
+//! model as `code`, the `.wat` text —
+//! and `diagnostic` is the rendered text the CLI would print for a module
 //! that did not lex, parse, type-check or pass comptime validation, and null
-//! for one that compiled. The program is never executed: `execute = false`,
+//! for one that compiled. The compiler never executes the program (the page
+//! runs the `wasm` output itself, `glue.js` `run`): `execute = false`,
 //! and `codegen.zig` refuses `execute` on a host that cannot spawn
 //! (`comptime/runtime/runtime.zig`).
 const std = @import("std");
@@ -122,6 +126,12 @@ fn compile(target_source: bp.codegen.TargetSource) !i32 {
             try w.endObject();
         }
         try w.endArray();
+        try w.objectField("wasm");
+        if (r.wasm) |bin| {
+            const enc = std.base64.standard.Encoder;
+            const b64 = try arena.alloc(u8, enc.calcSize(bin.len));
+            try w.write(enc.encode(b64, bin));
+        } else try w.write(null);
         try w.objectField("comptimeTrace");
         try w.write(r.comptime_trace);
         try w.objectField("diagnostic");

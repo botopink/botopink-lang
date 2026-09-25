@@ -7,6 +7,10 @@
   once, and every compile after that is a message round trip — no request leaves
   the page (DevTools › Network stays at those two files).
 
+  On the `wasm` target the page also runs what it compiled: the module's binary
+  (rendered from the same model as the `.wat` text shown) is instantiated here
+  and its `_start` called; what it prints is the "run" tab.
+
   The sample with a decorator and a template shows the compiler's answer on a
   host with no comptime runtime: a located refusal, until front 18 step 2 lands
   the wat runtime. Everything else — the checker, the four emitters, the
@@ -56,6 +60,7 @@
     <section id="right">
       <nav role="tablist">
         <button role="tab" data-pane="code" aria-selected="true">output</button>
+        <button role="tab" data-pane="run">run</button>
         <button role="tab" data-pane="trace">comptime</button>
         <button role="tab" data-pane="diag">diagnostics</button>
         <button role="tab" data-pane="stderr">stderr</button>
@@ -95,7 +100,7 @@ fn main() {
     };
 
     const $ = (id) => document.getElementById(id);
-    const panes = { code: "", trace: "", diag: "", stderr: "" };
+    const panes = { code: "", run: "", trace: "", diag: "", stderr: "" };
     let current = "code";
 
     function show(pane) {
@@ -137,8 +142,15 @@ fn main() {
         panes.trace = modules.map((m) => m.comptimeTrace || "").join("\n") || "(no decorator or template was evaluated)";
         panes.diag = modules.map((m) => m.diagnostic || "").join("");
         panes.stderr = reply.stderr || "(nothing)";
-        $("status").textContent = `${reply.status === 0 ? "compiled" : "failed"} in ${reply.ms.toFixed(1)} ms`;
-        show(reply.status === 0 ? "code" : "diag");
+        panes.run = target === "wasm" ? "" : "(only the wasm target runs in the page)";
+        let ran = "";
+        if (target === "wasm" && reply.status === 0 && modules[0] && modules[0].wasm) {
+          const r = (await ask({ op: "run", wasm: modules[0].wasm })).run;
+          panes.run = r.stdout + r.stderr + (r.trap ? `\nRUNTIME TRAP: ${r.trap}\n` : "");
+          ran = r.trap ? ", trapped" : ", ran";
+        }
+        $("status").textContent = `${reply.status === 0 ? "compiled" : "failed"} in ${reply.ms.toFixed(1)} ms${ran}`;
+        show(reply.status !== 0 ? "diag" : ran ? "run" : "code");
       } catch (err) {
         panes.stderr = (err.stderr || "") + "\n" + (err.error || err.message || String(err));
         $("status").textContent = "the compiler trapped — see stderr";

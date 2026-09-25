@@ -339,7 +339,7 @@ capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
 
 - **Spawns are bounded.** `executeJavaScript`, `executeErlang` and
   `executeBeamAsm` go through `runWithTimeout` (120 s); a timeout yields an empty
-  RUN LOG. `executeWat` is a stub that returns an empty RUN LOG.
+  RUN LOG. `executeWat` runs `wasmtime` on the module's binary (`GenerateResult.wasm`).
 - **Erlang/BEAM early exit.** Both skip `erlc`/`erl` when the generated code has
   no `_botopink_main` or no I/O (`io:format`). If a test unexpectedly spawns erl,
   check for `_botopink_main` or `@print` in the output.

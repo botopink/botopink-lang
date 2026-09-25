@@ -808,9 +808,16 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
 /// nothing — a module that prints nothing can still trap, and that is what the
 /// log must show — and no aux modules: the wasm backend links imports into the
 /// module statically.
-pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, module_name: []const u8, io: anytype) ![]u8 {
+///
+/// `wasm_binary`, when given, is the same module in the binary format
+/// (`wat/wasm_binary_emitter.zig`), and it is what runs: every wasm RUN LOG is
+/// then the binary emitter's answer, checked against the fixture the text
+/// recorded. The text runs only where no binary was produced.
+pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, wasm_binary: ?[]const u8, module_name: []const u8, io: anytype) ![]u8 {
+    const code = wasm_binary orelse wat_code;
+    const ext = if (wasm_binary != null) "wasm" else "wat";
     var key: [64]u8 = undefined;
-    cacheKey(&key, "wasm", module_name, wat_code, &.{});
+    cacheKey(&key, ext, module_name, code, &.{});
     if (cacheRead(allocator, io, &key)) |hit| return hit;
 
     var dir_buf: [96]u8 = undefined;
@@ -819,11 +826,11 @@ pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, module_nam
 
     // wasm keeps the mirrored `out/<module path>` layout, and a `.wat` carries
     // no module atom at all, so the scratch file stays named by the basename.
-    const basename = try std.fmt.allocPrint(allocator, "{s}.wat", .{crossModule.moduleBasename(if (module_name.len > 0) module_name else "main")});
+    const basename = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ crossModule.moduleBasename(if (module_name.len > 0) module_name else "main"), ext });
     defer allocator.free(basename);
     const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, basename });
     defer allocator.free(path);
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = wat_code });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = code });
 
     // stdout and stderr are concatenated as written, with no separator: a
     // module's stderr (an `assert` message) and wasmtime's error chain both

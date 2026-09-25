@@ -130,7 +130,7 @@ pub fn generateWith(
                     const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
                     break :blk err_msg;
                 },
-                .wasm => runtime.executeWat(allocator, output.result.js, output.name, io) catch |err| blk: {
+                .wasm => runtime.executeWat(allocator, output.result.js, output.result.wasm, output.name, io) catch |err| blk: {
                     const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
                     break :blk err_msg;
                 },

@@ -124,6 +124,10 @@ pub const GenerateResult = struct {
     /// and wasm. Written, compiled and loaded wherever `js` is.
     units: []Unit = &.{},
     comptime_script: ?[]u8,
+    /// The binary module of a `wasm`-target output (`js` is its `.wat` text);
+    /// null on the other targets. Rendered from the same model as the text
+    /// (`wat/wasm_binary_emitter.zig`), so the two cannot disagree.
+    wasm: ?[]u8 = null,
     /// `COMPTIME ERLANG` / `COMPTIME REPLY` sections of the module's decorator
     /// and template evaluations (`comptime/trace.zig`), null when there are none.
     comptime_trace: ?[]u8 = null,
@@ -147,6 +151,7 @@ pub const GenerateResult = struct {
         if (self.units.len > 0) allocator.free(self.units);
         if (self.typedef) |t| allocator.free(t);
         if (self.comptime_script) |s| allocator.free(s);
+        if (self.wasm) |w| allocator.free(w);
         if (self.comptime_trace) |s| allocator.free(s);
         if (self.run_output) |o| allocator.free(o);
         if (self.diagnostic) |*d| d.deinit(allocator);

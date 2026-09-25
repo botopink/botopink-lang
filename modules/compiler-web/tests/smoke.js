@@ -11,7 +11,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { Compiler } = require(path.join(__dirname, "..", "glue.js"));
+const { Compiler, run, wasmBytes } = require(path.join(__dirname, "..", "glue.js"));
 
 const wasmPath = process.argv[2];
 if (!wasmPath) {
@@ -34,6 +34,15 @@ fn greet(name: string): string {
 
 fn main() {
   print(greet("web"))
+}
+`;
+
+const RUNNABLE = `fn greet(name: string) -> string {
+    return "hello, " + name;
+}
+
+fn main() {
+    @print(greet("web"));
 }
 `;
 
@@ -77,6 +86,16 @@ fn main() {
     assert(m.code.length > 0 && m.code.includes("hello, "), `${target}: the generated text carries the program`);
   }
 
+  // The `wasm` target's binary runs in the page: the same program, printed.
+  compiler.reset();
+  compiler.addSource("main", RUNNABLE);
+  const w = compiler.compile("wasm");
+  assert(w.status === 0 && typeof w.modules[0].wasm === "string", "wasm: the binary module is answered beside the text");
+  const ran = run(wasmBytes(w.modules[0].wasm));
+  assert(ran.trap === null && ran.stdout === "hello, web\n", `wasm: the binary runs and prints the program's output (got ${JSON.stringify(ran)})`);
+  const js = compiler.compile("commonJS");
+  assert(js.modules[0].wasm === null, "commonJS: no binary module");
+
   compiler.reset();
   compiler.addSource("main", BROKEN);
   const broken = compiler.compile("commonJS");
@@ -119,8 +138,10 @@ fn main() {
   const r = replies[1];
   assert(r.ok === true && r.status === 0 && r.result.modules[0].code.includes("(module"), "the Worker answers `compile` with the generated text");
   assert(typeof r.ms === "number" && r.ms >= 0, "the Worker reports the compile time");
+  await scope.onmessage({ data: { id: 4, op: "run", wasm: w.modules[0].wasm } });
+  assert(replies[2].ok === true && replies[2].run.trap === null && replies[2].run.stdout === "hello, web\n", "the Worker answers `run` with the program's output");
   await scope.onmessage({ data: { id: 3, op: "compile", target: "nope", sources: [] } });
-  assert(replies[2].ok === false && /unknown target/.test(replies[2].error), "a failed request comes back as `ok: false` with the error");
+  assert(replies[3].ok === false && /unknown target/.test(replies[3].error), "a failed request comes back as `ok: false` with the error");
 
   // The demo page loads two resources and nothing else after that: every
   // `src`/`href`/`fetch`/URL in index.html names glue.js or botopink.wasm.

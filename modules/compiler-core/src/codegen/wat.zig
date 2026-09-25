@@ -22,6 +22,7 @@ const crossModule = @import("./crossModule.zig");
 const envMod = @import("../comptime/env.zig");
 const wat = @import("./wat/wat_ast.zig");
 const watEmitter = @import("./wat/wat_emitter.zig");
+const wasmBinary = @import("./wat/wasm_binary_emitter.zig");
 const prelude = @import("./wat/wat_prelude.zig");
 
 const CrossModule = crossModule.CrossModule;
@@ -172,7 +173,7 @@ pub fn codegenEmit(
                 // driver as a located diagnostic naming the function, not as
                 // the bare error name that would abort the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const code = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &missing) catch |err| {
+                const emitted = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &missing) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -189,7 +190,8 @@ pub fn codegenEmit(
                     .name = ct.name,
                     .src = ct.src,
                     .result = .{
-                        .js = code,
+                        .js = emitted.text,
+                        .wasm = emitted.binary,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
                         .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
                         .comptime_err = null,
@@ -285,7 +287,7 @@ fn emitWat(
     linked: []const Linked,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
-) ![]u8 {
+) !Emitted {
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     defer em.deinit();
     errdefer if (missing) |slot| {
@@ -436,11 +438,19 @@ fn emitWat(
         if (em.b.helpers.has(group)) try items.appendSlice(ar, prelude.items(group));
     }
 
+    // One model, two renderings: the text the snapshot records and the binary
+    // an engine instantiates (`wasm_binary_emitter.zig`).
+    const module: wat.Module = .{ .items = items.items };
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
-    try watEmitter.renderModule(&aw.writer, .{ .items = items.items });
-    return aw.toOwnedSlice();
+    try watEmitter.renderModule(&aw.writer, module);
+    const binary = try wasmBinary.encodeModule(alloc, module);
+    errdefer alloc.free(binary);
+    return .{ .text = try aw.toOwnedSlice(), .binary = binary };
 }
+
+/// What `emitWat` renders a module to: the `.wat` text and the binary module.
+const Emitted = struct { text: []u8, binary: []u8 };
 
 // ── Emitter ──────────────────────────────────────────────────────────────────
 

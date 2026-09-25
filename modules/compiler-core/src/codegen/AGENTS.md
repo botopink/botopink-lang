@@ -2201,7 +2201,7 @@ first three are now enforced by the model, not by discipline:
 
 - `executeJavaScript` (`node`), `executeErlang` (`erlc` + `erl`),
   `executeBeamAsm` (`erlc +from_asm` + `erl`, assembling sibling `.S` aux modules
-  so cross-module runs link), `executeWat` (`wasmtime run <module>.wat`).
+  so cross-module runs link), `executeWat` (`wasmtime run <module>.wasm` — the binary; the `.wat` text only where no binary was produced).
   The scratch file of an erlang/BEAM module is named by its module ATOM
   (`erlModuleAtom` → `crossModule.erlAtom`, so `std/dict` is `std@dict.erl`) and
   `-s <atom>` runs it; a second module of the program claiming an atom already
@@ -2216,7 +2216,11 @@ first three are now enforced by the model, not by discipline:
 - **`executeWat` — the decision (06-wasm step 3): it executes.** It was turned
   on once a trap became a visible block and W1 had closed, so reaching
   `unreachable` means the program aborted rather than the backend giving up. It
-  runs `wasmtime run` on the `.wat` text in a scratch dir (the `_start` export),
+  runs `wasmtime run` in a scratch dir (the `_start` export) on the module's
+  **binary** (`GenerateResult.wasm`, `wat/wasm_binary_emitter.zig`, front 18) —
+  so every wasm RUN LOG checks the binary emitter against the recorded fixture —
+  and on the `.wat` text only where no binary was produced; the cache key is the
+  bytes run,
   through the content-keyed cache, with no aux leg (imports are linked into the
   module statically) and **no** early bail on modules that print nothing (a
   silent module can still trap, and the trap must show). A missing `wasmtime`
