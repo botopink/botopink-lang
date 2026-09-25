@@ -615,6 +615,14 @@ const Emitter = struct {
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
+    /// The function being emitted, when its body returns a call to itself in
+    /// tail position (00 · 05-wasm step 9): `return f(args)` re-binds the
+    /// parameters and branches to `$__tail`, the loop the body is wrapped in,
+    /// instead of pushing a frame. Null inside a lifted lambda, a method and
+    /// an accumulating (generator) body.
+    tail_self: ?TailSelf = null,
+    /// Set by `lowerSelfTailCall` — only then does `emitFn` wrap the body.
+    tail_self_used: bool = false,
     /// Sequence counter for the `$__mem{n}` scratch pointers used when building
     /// or destructuring aggregates (tuples, arrays, records, enum payloads).
     mem_seq: u32 = 0,
@@ -1574,6 +1582,8 @@ const Emitter = struct {
         self.yield_target = null;
         self.gen_end = null;
         self.loop_depth = 0;
+        self.tail_self = null;
+        self.tail_self_used = false;
     }
 
     /// Register a local for the current function. Idempotent, and the *only*
@@ -1845,7 +1855,9 @@ const Emitter = struct {
             (e == .iterator or e == .generator or e == .futureGenerator) and has_result and bodyYieldsDeep(f.body)
         else
             false;
-        const body = if (accumulates) try self.renderAccumulatingBody(f.body) else try self.renderBody(f.body, f);
+        if (!accumulates) try self.noteSelfTailCalls(f);
+        const rendered = if (accumulates) try self.renderAccumulatingBody(f.body) else try self.renderBody(f.body, f);
+        const body = if (self.tail_self_used) try self.wrapTailLoop(rendered) else rendered;
 
         const ar = self.arena();
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
@@ -2723,6 +2735,7 @@ const Emitter = struct {
         switch (stmt.expr) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
+                    if (r) |val| if (try self.lowerSelfTailCall(val.*)) return .terminated;
                     if (r) |val| {
                         // Coerce to the *declared* result: `fn area(…) -> f64`
                         // whose body multiplies f32 literals produced an f32
@@ -3211,6 +3224,7 @@ const Emitter = struct {
             },
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
+                    if (r) |val| if (try self.lowerSelfTailCall(val.*)) return;
                     if (r) |val| try self.lowerExpr(val.*);
                     try self.emit(.@"return");
                 },
@@ -5531,6 +5545,15 @@ const Emitter = struct {
                                     },
                                     else => last,
                                 };
+                                // The tail reads the ELEMENT parameter, whose
+                                // record type `lowerArrayHof` binds only while
+                                // it lowers the body — so it is bound here for
+                                // the duration of the question (`00 · 05-wasm`
+                                // step 9). Unbound, `es.map({ e -> e.key })`
+                                // answered `.i32` and `ks.at(0)` was read as a
+                                // boxed `?i32`: a heap address at exit 0.
+                                const held = self.holdElemParam(lam, recv);
+                                defer self.releaseElemParam(held);
                                 if (self.isStringExpr(v)) break :blk .str;
                                 if (self.wasmTypeOf(v)[0] == 'f') break :blk .f32;
                                 break :blk .i32;
@@ -5549,6 +5572,35 @@ const Emitter = struct {
             },
             else => .i32,
         };
+    }
+
+    /// What `holdElemParam` displaced, so `releaseElemParam` can put it back.
+    const HeldElemParam = struct {
+        name: ?[]const u8 = null,
+        prev_type: ?[]const u8 = null,
+        prev_str: bool = false,
+    };
+
+    /// Bind a HOF lambda's element parameter the way `lowerArrayHof` does —
+    /// its record type and its string-ness — so a shape question asked about
+    /// the body before it is lowered sees the element and not an unknown name.
+    fn holdElemParam(self: *Emitter, lam: LambdaView, recv: ast.Expr) HeldElemParam {
+        if (lam.params.len == 0) return .{};
+        const p = lam.params[0];
+        const held: HeldElemParam = .{
+            .name = p,
+            .prev_type = self.local_types.get(p),
+            .prev_str = self.str_locals.contains(p),
+        };
+        if (self.elemRecordOf(recv)) |r| self.local_types.put(p, r) catch {};
+        if (self.elemKindOf(recv) == .str) self.str_locals.put(p, {}) catch {};
+        return held;
+    }
+
+    fn releaseElemParam(self: *Emitter, held: HeldElemParam) void {
+        const p = held.name orelse return;
+        if (held.prev_type) |t| self.local_types.put(p, t) catch {} else _ = self.local_types.remove(p);
+        if (!held.prev_str) _ = self.str_locals.remove(p);
     }
 
     // ── function values ──────────────────────────────────────────────────────
@@ -6813,6 +6865,12 @@ const Emitter = struct {
             .branch => |b| switch (b.kind) {
                 .if_ => |i| blk: {
                     const els = i.else_ orelse break :blk false;
+                    // An optional-binding `if` — what `a ?? b` is written as
+                    // — has both arms of one type by construction, and the
+                    // payload arm reads a binder nothing typed, so the default
+                    // arm alone proves it. Requiring both made `["x", "yz"]
+                    // .at(1) ?? "none"` print the string's address at exit 0.
+                    if (i.binding != null) break :blk self.bodyIsString(i.then_) or self.bodyIsString(els);
                     break :blk self.bodyIsString(i.then_) and self.bodyIsString(els);
                 },
                 // Both sides have the payload's type; either one proves it.
@@ -7355,6 +7413,135 @@ const Emitter = struct {
             },
             else => false,
         };
+    }
+
+    // ── self-recursion in tail position (00 · 05-wasm step 9) ────────────────
+    //
+    // wasm has no tail calls without the tail-call proposal, and wasmtime's
+    // default does not enable it: `fn count(n, acc) { … return count(n - 1,
+    // acc + 1); }` answered `count(10000, 0)` and trapped `call stack
+    // exhausted` at `count(100000, 0)`, where the other three backends answer.
+    // A call to the function being emitted, in `return` position and with one
+    // argument per parameter, is not a call: every argument is evaluated onto
+    // the stack, the parameters are re-bound from it in reverse, and `br
+    // $__tail` restarts the body, which `emitFn` has wrapped in `(loop $__tail
+    // (result …) …)` — one frame for any depth. Only the `return f(…)` spelling
+    // is a tail call here; an implicit tail (`if (…) { acc } else { count(…) }`)
+    // still lowers to `call`.
+
+    const tail_label = "__tail";
+
+    const TailSelf = struct {
+        name: []const u8,
+        /// The parameter symbols, their wasm types and their declared types,
+        /// in declaration order — what a tail call re-binds.
+        syms: []const []const u8,
+        types: []const []const u8,
+        typerefs: []const ?ast.TypeRef,
+    };
+
+    /// Arm `tail_self` for `f` when its body returns a call to itself.
+    fn noteSelfTailCalls(self: *Emitter, f: ast.FnDecl) !void {
+        for (f.params) |p| if (std.mem.eql(u8, p.name, "self") or p.destruct != null) return;
+        if (!bodyHasSelfTailCall(f.body, f.name, f.params.len)) return;
+        const ra = self.reg_arena.allocator();
+        const syms = try ra.alloc([]const u8, f.params.len);
+        const types = try ra.alloc([]const u8, f.params.len);
+        const typerefs = try ra.alloc(?ast.TypeRef, f.params.len);
+        for (f.params, 0..) |p, i| {
+            syms[i] = try self.paramSymbol(p, i);
+            types[i] = watType(p.typeRef);
+            typerefs[i] = p.typeRef;
+        }
+        self.tail_self = .{ .name = f.name, .syms = syms, .types = types, .typerefs = typerefs };
+    }
+
+    /// `return f(a, …)` inside `fn f`: the argument list is `f`'s own.
+    fn isSelfTailCall(val: ast.Expr, name: []const u8, arity: usize) bool {
+        return switch (val) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc.receiver == null and !cc.is_builtin and cc.trailing.len == 0 and
+                    cc.args.len == arity and std.mem.eql(u8, cc.callee, name),
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| isSelfTailCall(inner.*, name, arity),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// A `return f(…)` reachable from `body` without crossing a lambda — the
+    /// arms of an `if` and the body of a loop are looked into, a closure is a
+    /// function of its own.
+    fn bodyHasSelfTailCall(body: []const ast.Stmt, name: []const u8, arity: usize) bool {
+        for (body) |st| switch (st.expr) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => |r| if (r) |v| if (isSelfTailCall(v.*, name, arity)) return true,
+                else => {},
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| {
+                    if (bodyHasSelfTailCall(i.then_, name, arity)) return true;
+                    if (i.else_) |els| if (bodyHasSelfTailCall(els, name, arity)) return true;
+                },
+                else => {},
+            },
+            .loop => |lp| if (bodyHasSelfTailCall(lp.body, name, arity)) return true,
+            else => {},
+        };
+        return false;
+    }
+
+    /// Lower `return f(args)` as the re-binding and the branch when `f` is the
+    /// function being emitted; false leaves the `return` to its ordinary path.
+    fn lowerSelfTailCall(self: *Emitter, val: ast.Expr) anyerror!bool {
+        const ts = self.tail_self orelse return false;
+        if (!isSelfTailCall(val, ts.name, ts.syms.len)) return false;
+        const call_expr = switch (val) {
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| inner.*,
+                else => val,
+            },
+            else => val,
+        };
+        const cc = switch (call_expr) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc,
+                else => unreachable,
+            },
+            else => unreachable,
+        };
+        // Every argument is evaluated before any parameter is re-bound, so
+        // `count(n - 1, acc + n)` reads the old `n` in both.
+        for (cc.args, 0..) |arg, i| {
+            if (self.boxesInto(ts.typerefs[i], arg.value.*))
+                try self.lowerBoxed(arg.value.*)
+            else
+                try self.lowerCoerced(arg.value.*, ts.types[i]);
+        }
+        var i = cc.args.len;
+        while (i > 0) {
+            i -= 1;
+            try self.emit(.{ .local_set = ts.syms[i] });
+        }
+        try self.emitC(.{ .br = tail_label }, "tail call");
+        self.tail_self_used = true;
+        return true;
+    }
+
+    /// `(loop $__tail (result …) <body>)` — the loop head a tail call branches to.
+    fn wrapTailLoop(self: *Emitter, body: Seq) !Seq {
+        var c: Capture = .{};
+        self.open(&c);
+        try self.emit(.{ .block = .{
+            .kind = .loop,
+            .label = tail_label,
+            .result = if (self.fn_has_result) vt(self.cur_result) else null,
+            .body = body,
+        } });
+        return self.seal(&c, body.stack);
     }
 
     /// `(block $__break (loop $__continue …))` around a lowered loop body, and

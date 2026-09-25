@@ -216,6 +216,7 @@ erlang   | test/curried_call.bp       | C-09 (backend half) | 01 types it; erlan
 # `undefined`, on wasm it prints `0`, and `Array.at` past the end answers
 # `undefined` on commonJS too. Every line names what it measured.
 commonJS | run/index_past_the_end_is_null.bp | C-18 | decision 47: `xs[9]` is `xs.at(9)` and reaches `Array.at`, which answers `undefined` where `null` is owed — `10` / `undefined` / `after`. The route is right and the spelling of absent is not (measured 2026-09-21)
+commonJS | run/map_record_field_length.bp | 04-js (the commonJS half of 05-wasm step 9's `map` row) | `ks.at(...)?.length is not a function`, exit 1: with nothing between `es.map({ e -> e.key })` and `ks.at(0)?.length()` the element type is unresolved at the read, and `length` is emitted as a property-then-call. wasm, erlang and beam answer `3`; `run/map_record_field_strings.bp` shows the same read answering once `ks.at(1) ?? "none"` has resolved the type (measured 2026-09-25)
 erlang   | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`, the atom
 wasm     | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`. It used to print `0` here, from wasm's own `$__arr_at`; through `Array.at` the four backends now disagree with the language in ONE way instead of two
 beam     | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`, the erlang shape through `erlc +from_asm`

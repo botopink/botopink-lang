@@ -1,0 +1,17 @@
+//// 1.0.10-beta `00 · 05-wasm` step 9 — the row's bare shape:
+//// `es.map({ e -> e.key })` and then `?.length()` on one element, nothing
+//// between them. wasm answered `276` (a heap address) at exit 0 and answers
+//// `3`; `run/map_record_field_strings.bp` holds the rest of the family.
+////
+//// commonJS fails it — `ks.at(...)?.length is not a function`: nothing
+//// between the `map` and the read resolves the element type, so `length` is
+//// taken for the array/string PROPERTY rename and called. That half is
+//// `00 · 04-js`'s, pinned in `expected-failures.txt`.
+
+type Entry(key: string) {}
+
+pub fn main() {
+    val es = [Entry(key: "abc"), Entry(key: "de")];
+    val ks = es.map({ e -> e.key });
+    @print(ks.at(0)?.length());
+}

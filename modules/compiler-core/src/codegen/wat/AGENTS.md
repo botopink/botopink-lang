@@ -269,14 +269,22 @@ syntax-dependent. `armIsString` is the only position allowed to look through a
 lambda node, and `run/case_value_string_arms.bp` pins both spellings on four
 targets.
 
-**Still open, measured here and left.** `es.map({ e -> e.key })` does not answer
-a string ARRAY: `elemKindOf`'s `map` arm asks `isStringExpr` of the lambda's
-tail while the parameter's record type is not yet bound, so the result is `.i32`
-and `ks.at(0)?.length()` reads the box as a string pointer (`284`). It needs the
-binding held for the duration of that question, and it is not wasm's alone —
-commonJS answers `ks.at(...)?.length is not a function` for the same line.
-Likewise `es.at(1)?.key.length().toString()` traps (`unresolved call:
-toString/0`): a `?.` chain loses the receiver's type for the SECOND method.
+**A `map`'s element shape is asked with the element bound** (`holdElemParam` /
+`releaseElemParam`, in `elemKindOf`'s `map` arm). The shape of `es.map({ e ->
+e.key })` is decided before the lambda is lowered, by asking `isStringExpr` of
+its tail — and `e`'s record type used to be registered only inside
+`lowerArrayHof`, so `e.key` was a field of an unknown name, the result an `i32`
+array, and `ks.at(0)?.length()` read the box as a string pointer (`276`, exit
+0). The parameter is bound for the question and released after it. Beside it,
+**an optional-binding `if` is a string when EITHER arm proves it**
+(`isStringExpr`'s `.if_` arm): `a ?? b` is written as one, its payload arm reads
+a binder nothing typed, and requiring both arms made `["x", "yz"].at(1) ??
+"none"` print the string's address. `run/map_record_field_strings.bp` and
+`run/map_record_field_length.bp` pin both.
+
+**Still open, measured here and left.** `es.at(1)?.key.length().toString()`
+traps (`unresolved call: toString/0`): a `?.` chain loses the receiver's type
+for the SECOND method.
 
 ## Two run-time rules this backend implements first (2026-09-19)
 
@@ -378,6 +386,21 @@ the table and left the arm answering a closure-cell address
 `lowerArmBody` inlines it instead. `@block { … }` is inlined by `lowerBuiltin`,
 and a bare `{ 1 + 2 }` in value position does not parse at all ("this token cannot
 appear here"). So decision 2's enforcement leaves nothing dead here.
+
+## Self-recursion in tail position (`00 · 05-wasm` step 9)
+
+**`return f(args)` inside `fn f` is a branch, not a call** (`noteSelfTailCalls`,
+`lowerSelfTailCall`, `wrapTailLoop` in `../wat.zig`). wasm has no tail calls
+unless the tail-call proposal is enabled, and wasmtime's default does not enable
+it: `count(100000, 0)` trapped `call stack exhausted` (exit 134) where the other
+three backends answer. Every argument is evaluated onto the stack, the
+parameters are re-bound from it in reverse — so `sumTo(n - 1, acc + n)` reads the
+OLD `n` in both — and `br $__tail` restarts the body, which `emitFn` wraps in
+`(loop $__tail (result …) …)` **only when such a call exists**, so no other
+function's text moves. Only the explicit `return f(…)` spelling is recognised
+(reached through `if` arms and loop bodies, never through a lambda); a method, a
+lifted lambda, a destructured parameter and an accumulating (generator) body
+keep `call`. `tests/language/run/tail_self_call.bp` pins it on four targets.
 
 ## Rules
 
