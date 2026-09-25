@@ -1253,8 +1253,8 @@ codegen/
   `Point(x: 1, y: 2)`, `{variant, "Shape.Dot", []}` → `Shape.Dot`, and
   `{text, …}` → a `Display` implementation's own string, nested containers
   included. Everything else — a Result `{ok, V}`, a host tuple, a plain atom,
-  `true`/`false`/`undefined` — keeps the `~p` it had. Numeric formatting stays
-  divergent by design: `~p` of `1.0` is `1.0` where commonJS writes `1`.
+  `true`/`false`/`undefined` — keeps the `~p` it had. Numeric formatting is
+  `~p`: `1.0` prints `1.0`, decision 8 §7's text on every backend.
 - **Every `type` has a module, and it answers about its own values** (half 3):
   `recordIdentityForms` / `enumIdentityForms` put `'__bp_format'/1` — and
   `'__bp_get'/2` for a record with fields — into the unit `openTypeUnit` opened,
@@ -1716,8 +1716,8 @@ codegen/
   argument list and call the synthesised `'__bp_print'/1`, which formats every
   value on one line, space-separated — a binary through `~ts` (its text),
   anything else through `~p` — the verb picked at run time, byte-identical to
-  the erlang backend's helper. Numeric formatting stays `~p` (`1.0`, where
-  commonJS prints `1`): an intended divergence. `assert cond[, msg]` (decision
+  the erlang backend's helper. Numeric formatting is `~p` (`1.0`, decision 8 §7's
+  text on every backend). `assert cond[, msg]` (decision
   4) is always fatal: `erlang:error({bp_assert, Msg, <<"<mod>.bp:<line>">>})`
   when the condition is not `true`; `val assert P = e [catch h]` is a two-arm
   case whose bindings stay visible (a y-register each). Its subject is still
