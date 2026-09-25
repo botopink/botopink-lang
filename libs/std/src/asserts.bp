@@ -5,7 +5,7 @@
 ////   Node.js  — https://nodejs.org/api/assert.html
 ////   Erlang   — (no equivalent module; pattern matching does the same job)
 ////
-//// Every assertion is `#[@result]` and answers `@Result<void, string>`:
+//// Every assertion answers `-> @Result<void, string>` (the return is the effect):
 //// success is `Ok`, failure is `Error(message)`. The caller writes
 //// `try asserts.equals(a, b);` and a failure propagates to the enclosing
 //// `test` body, which ends as `FAIL <name>  (<message>)  at <file>:<line>`
@@ -14,7 +14,7 @@
 //// with `try` and nothing else; nothing here panics.
 ////
 //// Five rules (`asserts-api.md` § The shape of every function):
-////   1. `#[@result]`, `-> @Result<void, string>`; the `ok` position is `return;`.
+////   1. `-> @Result<void, string>`; the `ok` position is `return;`.
 ////   2. `actual` first, `expected` second — everywhere (`matches(actual, pattern)`).
 ////   3. One literal message per function, `asserts.<fn>: <what>`; no value
 ////      rendering (a generic `T` has no `toString`). The call site's `@src()`
@@ -297,7 +297,7 @@ fn caughtMessage(r: @Result<i32, string>) -> string {
 }
 
 // Fails when `body` completes normally — for a `@panic` or a host throw from
-// code that is not `#[@result]` (a failing `@Result` is `isError`). Needs Node
+// code whose return carries no `@Result` (a failing `@Result` is `isError`). Needs Node
 // or Erlang at run time (`tryCatch`). End the body with `0;` (see `tryCatch`).
 pub fn throws(body: fn() -> i32) -> @Result<void, string> {
     val r = tryCatch(body);
@@ -331,7 +331,7 @@ pub fn fail(message: string) -> @Result<void, string> {
 }
 
 // The `Error` payload of an assertion's result, or `""` for `Ok`. Not
-// `#[@result]`: it is how a test reads a failure message to compare or
+// a `-> @Result` fn: it is how a test reads a failure message to compare or
 // snapshot it (`test-snap.md`), matching over the builtin `Result` enum in a
 // function the manual-construction rule does not apply to.
 pub fn errorText(r: @Result<void, string>) -> string {

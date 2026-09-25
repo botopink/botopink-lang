@@ -30,7 +30,7 @@
 ////
 //// `sleep(ms)` blocks the caller (1.0.10-beta front 01): `Atomics.wait`
 //// on Node, `timer:sleep/1` on Erlang. It is synchronous on purpose — the
-//// `@Future` spelling (`delay`) lives in `std/async`.
+//// `@Task` spelling (`delay`) lives in `std/async`.
 ////
 //// Front 01 also adds the calendar half below the readings: `parseIso8601`
 //// (RFC 3339, offset required), `toCivil` (UTC breakdown, ISO weekday),

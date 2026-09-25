@@ -7,7 +7,7 @@
 //! process, and a mode that silently fell back to another would still print
 //! the right number there.
 //!
-//! The processes are `std/async`'s: `allOf` spawns one per task on erlang and
+//! The processes are `std/async`'s: `runAll` spawns one per task on erlang and
 //! gathers the replies, which is what makes "five requests" five processes.
 
 const std = @import("std");
@@ -31,7 +31,7 @@ test "erlang: beam memory ---- a ProcessDict var is one value per process" {
         \\}
         \\
         \\fn main() -> @Task<void> {
-        \\    val seen = await async.allOf([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
+        \\    val seen = await async.runAll([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
         \\    @print(seen);
         \\    @print(hits);
         \\}
@@ -61,7 +61,7 @@ test "erlang: beam memory ---- an Ets var is one value per node, and survives th
         \\}
         \\
         \\fn main() -> @Task<void> {
-        \\    val done = await async.allOf([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
+        \\    val done = await async.runAll([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
         \\    @print(done.length());
         \\    @print(hits);
         \\}
@@ -87,7 +87,7 @@ test "erlang: beam memory ---- an Ets var written whole is read back from anothe
         \\fn main() -> @Task<void> {
         \\    hits = 40;
         \\    hits = hits - 2;
-        \\    val seen = await async.allOf([{ -> read() }]);
+        \\    val seen = await async.runAll([{ -> read() }]);
         \\    @print(seen);
         \\}
     , "[38]\n", &.{
@@ -110,7 +110,7 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
         \\}
         \\
         \\fn main() -> @Task<void> {
-        \\    val seen = await async.allOf([{ -> read() }, { -> read() }]);
+        \\    val seen = await async.runAll([{ -> read() }, { -> read() }]);
         \\    @print(seen);
         \\    @print(version);
         \\}

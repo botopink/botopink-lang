@@ -373,7 +373,7 @@ test "mocks: anyString() matches any argument" {
 //
 // LIMITATION: a `thenThrow` stub matched at run time raises a HOST throw from
 // `invoke`. botopink's `try … catch …` only unwraps an `@Result` produced by a
-// `#[@result]` fn — it does not catch a host throw from a plain (non-effect)
+// `-> @Result` fn — it does not catch a host throw from a plain (non-effect)
 // method call, so `try svc.name(0) catch …` does not compile: the callee is not
 // `-> @Result`. Modelling the throw as an effect (the synthesized method
 // answering `@Result<R, string>`) is a design change, not a port. The covered

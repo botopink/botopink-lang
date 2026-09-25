@@ -1,6 +1,6 @@
 // std — `@Result<R, E>` method API (B1 gap: Result map/flatMap/unwrapOr).
 //
-// A `@Result` value is only produced by `return`/`throw` inside a `#[@result]`
+// A `@Result` value is only produced by `return`/`throw` inside a `-> @Result<R, E>`
 // fn, so the suite carries its own tiny effectful producers and then exercises
 // the inference-resolved, inline-lowered method surface on the values they
 // return. Run by `botopink test` from `libs/std/`.

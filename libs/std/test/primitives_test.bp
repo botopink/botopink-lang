@@ -286,7 +286,7 @@ test "optional chaining short-circuits null" {
 
 // ── result ────────────────────────────────────────────────────────────────────
 // Builtin `result` namespace (no import): map/then/unwrap/isOk/isError. Producers
-// follow the rule: only a `#[@result]` fn (`-> @Result<D, E>`) gets
+// follow the rule: only a fn returning `-> @Result<D, E>` gets
 // checked-Result treatment. Migrated from result_test.bp.
 
 fn parse(n: i32) -> @Result<i32, string> {

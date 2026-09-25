@@ -1,6 +1,6 @@
 //// Front 17 step 4 — `#[@BeamMemory.ProcessDict]`, the default said out loud:
 //// the `var` is one value per BEAM process. `main` writes `5`; a process
-//// `async.allOf` spawns afterwards reads the declaration's `0`, and its own
+//// `async.runAll` spawns afterwards reads the declaration's `0`, and its own
 //// write never reaches `main`. On commonJS and wasm the execution context is
 //// the whole program, so the cell is the BEAM's (`.targets`); decision 43 makes
 //// the annotation a no-op there, which `test/beam_memory_noop` pins.
@@ -18,7 +18,7 @@ fn elsewhere() -> @Task<i32> {
 
 pub fn main() -> @Task<void> {
     scratch = 5;
-    val seen = await async.allOf([{ -> elsewhere() }]);
+    val seen = await async.runAll([{ -> elsewhere() }]);
     @print(seen);
     @print(scratch);
 }

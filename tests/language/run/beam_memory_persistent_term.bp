@@ -12,7 +12,7 @@ fn read() -> @Task<i32> {
 }
 
 pub fn main() -> @Task<void> {
-    val seen = await async.allOf([{ -> read() }]);
+    val seen = await async.runAll([{ -> read() }]);
     @print(seen);
     @print(version);
 }

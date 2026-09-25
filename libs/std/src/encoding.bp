@@ -11,7 +11,7 @@
 ////
 //// One import for the whole wire-format surface. Every encoder answers a
 //// string; every decoder that can meet malformed input answers
-//// `@Result<string, string>` through the template-owned `#[@result]`
+//// `@Result<string, string>` through the template-owned `-> @Result`
 //// wrapper (`fs.bp`'s shape) — nothing here returns a sentinel. Text in,
 //// text out: there is no byte type, so `base64Decode` and `hexDecode`
 //// answer the bytes read back as UTF-8 (a non-UTF-8 payload is lossy —
