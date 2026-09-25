@@ -5,7 +5,7 @@ import { foo, bar };
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% import foo, bar
 ```

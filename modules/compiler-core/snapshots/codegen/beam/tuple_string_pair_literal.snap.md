@@ -5,15 +5,15 @@ val t = #("56454", "85484");
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 4}.
 
 {function, t, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, t}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, t}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {move, {literal, <<"56454">>}, {x, 0}}.

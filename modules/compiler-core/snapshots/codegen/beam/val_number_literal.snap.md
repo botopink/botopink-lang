@@ -5,15 +5,15 @@ val x = 42;
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 4}.
 
 {function, x, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, x}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, x}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {move, {integer, 42}, {x, 0}}.

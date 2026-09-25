@@ -14,7 +14,7 @@ fn big(sh: Shape) -> string {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Shape
 %%   Circle(r)
@@ -22,20 +22,20 @@ fn big(sh: Shape) -> string {
 
 big(Sh) ->
     case Sh of
-        {main__t__shape__v__circle, R} when (R > 10) ->
+        {test@main@@Shape__v__circle, R} when (R > 10) ->
             <<"big circle">>;
         _ ->
             <<"other">>
     end.
 ```
 
------ ERLANG -- main__t__shape.erl
+----- ERLANG -- test@main@@Shape.erl
 ```erlang
--module(main__t__shape).
+-module(test@main@@Shape).
 -export(['__bp_format'/1]).
 
-'__bp_format'({main__t__shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"r", F0}]};
-'__bp_format'({main__t__shape__v__square, F0}) -> {variant, "Shape.Square", [{"s", F0}]}.
+'__bp_format'({test@main@@Shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"r", F0}]};
+'__bp_format'({test@main@@Shape__v__square, F0}) -> {variant, "Shape.Square", [{"s", F0}]}.
 ```
 
 ----- RUN LOG -----

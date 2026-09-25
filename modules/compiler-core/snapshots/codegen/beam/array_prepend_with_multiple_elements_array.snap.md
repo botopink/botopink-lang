@@ -5,15 +5,15 @@ val list3 = [1, 2, ..[3, 4]];
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 4}.
 
 {function, list3, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, list3}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, list3}, 0}.
   {label, 3}.
     {allocate, 2, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

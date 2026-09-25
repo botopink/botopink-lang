@@ -10,15 +10,15 @@ fn sumEvens(arr: i32[]) -> i32[] {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 8}.
 
 {function, sumEvens, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, sumEvens}, 1}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, sumEvens}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -33,8 +33,8 @@ fn sumEvens(arr: i32[]) -> i32[] {
 
 {function, '-sumEvens/1-fun-0-', 1, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '-sumEvens/1-fun-0-'}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '-sumEvens/1-fun-0-'}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.

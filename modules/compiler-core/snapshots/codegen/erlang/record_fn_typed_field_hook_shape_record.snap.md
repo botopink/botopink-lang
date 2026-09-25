@@ -7,12 +7,12 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type State: value, set
 
 make() ->
-    {main__t__state, 0, fun(N) ->
+    {test@main@@State, 0, fun(N) ->
         undefined
     end}.
 
@@ -21,9 +21,9 @@ apply(S) ->
     element(2, S).
 ```
 
------ ERLANG -- main__t__state.erl
+----- ERLANG -- test@main@@State.erl
 ```erlang
--module(main__t__state).
+-module(test@main@@State).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, value) -> element(2, V);

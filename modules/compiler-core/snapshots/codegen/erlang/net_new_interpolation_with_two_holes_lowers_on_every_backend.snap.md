@@ -7,7 +7,7 @@ fn label(a: string, b: string) -> string {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 label(A, B) ->
     <<A/binary, "-", B/binary>>.

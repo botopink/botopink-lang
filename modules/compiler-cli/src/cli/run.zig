@@ -50,7 +50,10 @@ pub fn run(
     // Resolve the entry-point file path. erlang and BEAM artifacts are named by
     // the module ATOM under `out/<target>/`; commonJS and wasm keep the mirrored
     // module-path tree (`build_cmd.artifactPath`).
-    const entry_path = try build_cmd.artifactPath(arena, opts.out_dir, target, opts.module, build_cmd.artifactExt(target));
+    // The entry is the project's own module: its atom starts with the
+    // project's package (decision 109).
+    const packages: bp.codegen.crossModule.Packages = .{ .root = proj.name };
+    const entry_path = try build_cmd.artifactPath(arena, opts.out_dir, target, packages, opts.module, build_cmd.artifactExt(target));
 
     // BEAM assembly is an artifact — direct execution requires `erlc +from_asm`
     // followed by an `erl` invocation. Tooling integration arrives in Fase 9.
@@ -69,7 +72,7 @@ pub fn run(
     // `undef` at run time even when the emitted code is correct. Compile the
     // whole output directory with `erlc` and run it on a code path that can see
     // all of it — the shape `tests/language/run.sh` already uses for beam.
-    if (target == .erlang) return runErlang(arena, io, opts);
+    if (target == .erlang) return runErlang(arena, io, opts, try bp.codegen.crossModule.erlAtom(arena, packages.idOf(opts.module)));
 
     // Build argv.
     const runner: []const u8 = switch (target) {
@@ -121,7 +124,7 @@ pub fn run(
 /// **Exit status.** A crashing program now exits `1` (`erl`'s status) where
 /// `escript` exited `127`. The number was escript's artefact; it is not mapped
 /// back, and the command contract in `modules/compiler-cli/AGENTS.md` says so.
-fn runErlang(arena: std.mem.Allocator, io: std.Io, opts: Options) !u8 {
+fn runErlang(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []const u8) !u8 {
     const dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ opts.out_dir, std.mem.trimEnd(u8, build_cmd.targetSubdir(.erlang), "/") });
 
     // Compile every emitted module, not just the entry: one left uncompiled is
@@ -143,7 +146,7 @@ fn runErlang(arena: std.mem.Allocator, io: std.Io, opts: Options) !u8 {
         if (code != 0) return code;
     }
 
-    const eval = try std.fmt.allocPrint(arena, "{s}:main([]), halt().", .{opts.module});
+    const eval = try std.fmt.allocPrint(arena, "{s}:main([]), halt().", .{entry_atom});
     return spawnWait(arena, io, &.{ "erl", "-noshell", "-pa", dir, "-eval", eval });
 }
 

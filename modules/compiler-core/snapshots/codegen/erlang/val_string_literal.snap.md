@@ -5,7 +5,7 @@ val greeting = "hello";
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 greeting() ->
     <<"hello">>.

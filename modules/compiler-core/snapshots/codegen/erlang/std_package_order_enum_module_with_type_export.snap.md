@@ -84,19 +84,19 @@ test "order case over Order" {
 %%   Gt
 
 lt() ->
-    std@order__t__order__v__lt.
+    std@order@@Order__v__lt.
 
 eq() ->
-    std@order__t__order__v__eq.
+    std@order@@Order__v__eq.
 
 gt() ->
-    std@order__t__order__v__gt.
+    std@order@@Order__v__gt.
 
 toInt(O) ->
     N = case O of
-        std@order__t__order__v__lt ->
+        std@order@@Order__v__lt ->
             (-1);
-        std@order__t__order__v__eq ->
+        std@order@@Order__v__eq ->
             0;
         _ ->
             1
@@ -105,12 +105,12 @@ toInt(O) ->
 
 reverse(O) ->
     R = case O of
-        std@order__t__order__v__lt ->
-            std@order__t__order__v__gt;
-        std@order__t__order__v__gt ->
-            std@order__t__order__v__lt;
+        std@order@@Order__v__lt ->
+            std@order@@Order__v__gt;
+        std@order@@Order__v__gt ->
+            std@order@@Order__v__lt;
         _ ->
-            std@order__t__order__v__eq
+            std@order@@Order__v__eq
     end,
     R.
 
@@ -118,14 +118,14 @@ reverse(O) ->
 
 ```
 
------ ERLANG -- std@order__t__order.erl
+----- ERLANG -- std@order@@Order.erl
 ```erlang
--module(std@order__t__order).
+-module(std@order@@Order).
 -export(['__bp_format'/1]).
 
-'__bp_format'(std@order__t__order__v__lt) -> {variant, "Order.Lt", []};
-'__bp_format'(std@order__t__order__v__eq) -> {variant, "Order.Eq", []};
-'__bp_format'(std@order__t__order__v__gt) -> {variant, "Order.Gt", []}.
+'__bp_format'(std@order@@Order__v__lt) -> {variant, "Order.Lt", []};
+'__bp_format'(std@order@@Order__v__eq) -> {variant, "Order.Eq", []};
+'__bp_format'(std@order@@Order__v__gt) -> {variant, "Order.Gt", []}.
 ```
 
 ----- RUN LOG -----
@@ -153,16 +153,16 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% import order
 
 describe(O) ->
     S = case O of
-        std@order__t__order__v__lt ->
+        std@order@@Order__v__lt ->
             <<"less">>;
-        std@order__t__order__v__gt ->
+        std@order@@Order__v__gt ->
             <<"greater">>;
         _ ->
             <<"equal">>

@@ -12,17 +12,17 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Person: name, age
 
-greet({main__t__person, Name, _}) ->
+greet({test@main@@Person, Name, _}) ->
     '__bp_print'([Name]),
     Name.
 
 main() ->
-    greet({main__t__person, <<"Ana">>, 30}).
+    greet({test@main@@Person, <<"Ana">>, 30}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -50,9 +50,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__person.erl
+----- ERLANG -- test@main@@Person.erl
 ```erlang
--module(main__t__person).
+-module(test@main@@Person).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, name) -> element(2, V);

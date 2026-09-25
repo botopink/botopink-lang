@@ -13,38 +13,38 @@ val PersonPrintable = implement Printable for Person {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, [{'Person_print', 1}]}.
 {attributes, []}.
 {labels, 5}.
 
 {function, 'Person_print', 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'Person_print'}, 1}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, 'Person_print'}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, main__t__person}]}.
+    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, test@main@@Person}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 4}.
     {deallocate, 1}.
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__person.S
+----- BEAM ASSEMBLY -- test@main@@Person.S
 ```erlang
-{module, main__t__person}.
+{module, test@main@@Person}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 7}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "main__t__person.erl", 1}]}.
-    {func_info, {atom, main__t__person}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Person.erl", 1}]}.
+    {func_info, {atom, test@main@@Person}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, name}]}.
     {move, {x, 0}, {x, 1}}.
@@ -56,8 +56,8 @@ val PersonPrintable = implement Printable for Person {
 
 {function, '__bp_format', 1, 6}.
   {label, 5}.
-    {line, [{location, "main__t__person.erl", 1}]}.
-    {func_info, {atom, main__t__person}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Person.erl", 1}]}.
+    {func_info, {atom, test@main@@Person}, {atom, '__bp_format'}, 1}.
   {label, 6}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

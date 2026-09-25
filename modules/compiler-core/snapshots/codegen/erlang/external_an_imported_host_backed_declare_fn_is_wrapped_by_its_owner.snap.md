@@ -14,7 +14,7 @@ pub declare fn nodeOnly(s: string) -> void;
 
 ----- ERLANG -- hostlib.erl
 ```erlang
--module(hostlib).
+-module(test@hostlib).
 -export([hostKey/1, hostLen/1]).
 
 %% external fn hostKey -> erlang template
@@ -44,15 +44,15 @@ pub fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 -export([main/0]).
 
 %% import hostKey, hostLen, nodeOnly
 
 main() ->
-    '__bp_print'([hostlib:hostKey(42)]),
-    '__bp_print'([hostlib:hostLen([<<"a">>, <<"b">>])]).
+    '__bp_print'([test@hostlib:hostKey(42)]),
+    '__bp_print'([test@hostlib:hostLen([<<"a">>, <<"b">>])]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

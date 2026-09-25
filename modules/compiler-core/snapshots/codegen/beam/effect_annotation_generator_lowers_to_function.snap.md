@@ -9,7 +9,7 @@ fn range(a: i32, b: i32) -> @Generator<i32> {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 4}.
@@ -17,8 +17,8 @@ fn range(a: i32, b: i32) -> @Generator<i32> {
 %% #[@future] / #[@futureGenerator] — eager lowering
 {function, range, 2, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, range}, 2}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, range}, 2}.
   {label, 3}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

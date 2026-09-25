@@ -17,16 +17,16 @@ type Pipeline(
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type List: tag
 
 %% type Pipeline: items
 ```
 
------ ERLANG -- main__t__list.erl
+----- ERLANG -- test@main@@List.erl
 ```erlang
--module(main__t__list).
+-module(test@main@@List).
 -export([each/2, '__bp_get'/2, '__bp_format'/1]).
 
 each(Items, F) ->
@@ -37,13 +37,13 @@ each(Items, F) ->
 '__bp_format'(V) -> {record, "List", [{"tag", element(2, V)}]}.
 ```
 
------ ERLANG -- main__t__pipeline.erl
+----- ERLANG -- test@main@@Pipeline.erl
 ```erlang
--module(main__t__pipeline).
+-module(test@main@@Pipeline).
 -export([doubled/1, '__bp_get'/2, '__bp_format'/1]).
 
 doubled(Self) ->
-    main__t__list:each(element(2, Self), fun() ->
+    test@main@@List:each(element(2, Self), fun() ->
         2
     end).
 

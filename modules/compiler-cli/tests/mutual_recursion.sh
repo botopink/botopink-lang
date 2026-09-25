@@ -69,10 +69,11 @@ if command -v erlc >/dev/null 2>&1 && command -v erl >/dev/null 2>&1; then
   echo "==> beam: build --target beam, erlc +from_asm, run main:main()"
   "$BP_BIN" build --target beam
   # 13 half 1: `out/beam/<atom>.S` — an erlang/BEAM artifact is named by its
-  # module atom, which `erlc` requires to equal the file's basename.
-  erlc +from_asm -o out out/beam/main.S
+  # module atom, which `erlc` requires to equal the file's basename; the atom
+  # starts with the package, `mutual_recursion` (decision 109).
+  erlc +from_asm -o out out/beam/mutual_recursion@main.S
   erl -noshell -pa out -eval \
-    'case main:main() of true -> io:format("  beam: main:main() => true~n"), halt(0); X -> io:format("  beam: WRONG result ~p~n", [X]), halt(1) end'
+    'case mutual_recursion@main:main() of true -> io:format("  beam: main:main() => true~n"), halt(0); X -> io:format("  beam: WRONG result ~p~n", [X]), halt(1) end'
 else
   echo "==> beam: SKIPPED (erlc/erl not on PATH)"
 fi

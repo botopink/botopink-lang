@@ -6,7 +6,7 @@ pub val HOST = "localhost";
 
 ----- ERLANG -- config.erl
 ```erlang
--module(config).
+-module(test@config).
 
 'PORT'() ->
     8080.
@@ -28,7 +28,7 @@ val port = PORT;
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% import PORT, HOST
 

@@ -5,7 +5,7 @@ val x = 42;
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 x() ->
     42.

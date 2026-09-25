@@ -1099,14 +1099,14 @@ test "js: mutual recursion ---- forward reference + bare-if base case on every b
 
 test "erlang: case ---- a variant pattern written with its path matches the bare tag" {
     // Handover 1. The constructor emits the tag the declaration renders
-    // (`{main__t__maybe__v__some, 7}` since half 3); the pattern emitted what
+    // (`{test@main@@Maybe__v__some, 7}` since half 3); the pattern emitted what
     // was written — `{'.Some', V}`, matching nothing, and a nullary `.None` as
     // the bare token `.None`, which is `syntax error before: '.'`.
     try h.assertErlangRunLog(std.testing.allocator,
         \\type Maybe { Some(v: i32), None }
         \\fn show(m: Maybe) { case m { .Some(v) { @print(v) } .None { @print(0) } }; }
         \\fn main() { show(Maybe.None); show(Maybe.Some(v: 7)); }
-    , "0\n7\n", &.{ "{main__t__maybe__v__some, V} ->", "main__t__maybe__v__none ->" });
+    , "0\n7\n", &.{ "{test@main@@Maybe__v__some, V} ->", "test@main@@Maybe__v__none ->" });
 }
 
 test "erlang: case ---- a one-parameter arm binds the whole subject" {
@@ -1127,7 +1127,7 @@ test "erlang: case ---- a one-parameter arm on a variant pattern aliases it" {
         \\type Maybe { Some(v: i32), None }
         \\fn show(m: Maybe) { case m { .Some(v) { w -> @print(v) } .None { @print(0) } }; }
         \\fn main() { show(Maybe.Some(v: 7)); }
-    , "7\n", &.{"W = {main__t__maybe__v__some, V} ->"});
+    , "7\n", &.{"W = {test@main@@Maybe__v__some, V} ->"});
 }
 
 // ── front 02-erlang, reopened: the three `patternNode` defects 01 isolated ────
@@ -1166,7 +1166,7 @@ test "erlang: case ---- `..` writes the fields the pattern does not name" {
         \\  case Shape.Rect(width: 5, height: 9) { Rect(width: w, ..) { @print(w) } Circle(..) { @print(0) } };
         \\  case Shape.Circle(radius: 1) { Rect(width: w, ..) { @print(w) } Circle(..) { @print(0) } };
         \\}
-    , "5\n0\n", &.{ "{main__t__shape__v__rect, W, _} ->", "{main__t__shape__v__circle, _} ->" });
+    , "5\n0\n", &.{ "{test@main@@Shape__v__rect, W, _} ->", "{test@main@@Shape__v__circle, _} ->" });
 }
 
 test "erlang: case ---- a tuple under `..` is a tuple_size guard, not a fixed arity" {

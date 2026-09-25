@@ -12,19 +12,19 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 -export(['_botopink_init'/0]).
 
 processamento() ->
-    case persistent_term:get({main, processamento}, '__bp_unset') of
+    case persistent_term:get({test@main, processamento}, '__bp_unset') of
         '__bp_unset' -> __BpV = lists:filtermap(fun(I) ->
             case ((I rem 2) =:= 0) of
                 true ->
                     {true, I};
                 _ -> false
             end
-        end, lists:seq(0, (10) - 1)), persistent_term:put({main, processamento}, __BpV), __BpV;
+        end, lists:seq(0, (10) - 1)), persistent_term:put({test@main, processamento}, __BpV), __BpV;
         __BpCached -> __BpCached
     end.
 

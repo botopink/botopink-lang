@@ -10,15 +10,15 @@ fn main() -> i32 {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
 {labels, 13}.
 
 {function, main, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, main}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -34,22 +34,22 @@ fn main() -> i32 {
 
 {function, '_botopink_main', 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '_botopink_main'}, 0}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '_botopink_main'}, 0}.
   {label, 5}.
     {call_only, 0, {f, 3}}.
 
 {function, main, 1, 7}.
   {label, 6}.
-    {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, main}, 1}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
 {function, '__bp_add', 2, 11}.
   {label, 10}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '__bp_add'}, 2}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_add'}, 2}.
   {label, 11}.
     {test, is_binary, {f, 12}, [{x, 0}]}.
     {test, is_binary, {f, 12}, [{x, 1}]}.
@@ -63,8 +63,8 @@ fn main() -> i32 {
 
 {function, '-main/0-fun-0-', 2, 9}.
   {label, 8}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '-main/0-fun-0-'}, 2}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '-main/0-fun-0-'}, 2}.
   {label, 9}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

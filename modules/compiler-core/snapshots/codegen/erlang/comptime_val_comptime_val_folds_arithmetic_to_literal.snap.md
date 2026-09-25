@@ -13,7 +13,7 @@ ct_0: val result = comptime 10 + 20 → 30
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 result() ->

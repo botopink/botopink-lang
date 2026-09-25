@@ -11,7 +11,7 @@ fn countUp(x: i32) {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 countUp(X) ->
     try

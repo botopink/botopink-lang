@@ -261,7 +261,7 @@ and `variant_enum` answered "which enum declares `Circle`" by declaration order 
 mitigated for a `case` SUBJECT only. The first cell is the spelling that always had an answer (the
 enum is written) and asserts six values on every target; the second is the spelling that has none,
 and it is refused now instead of tagged with one of the two — `Hole`'s value written `.Circle` was
-tagged `main__t__shape__v__circle` and died with `{case_clause, …}` at run time. Its `.targets` is
+tagged `language_tests@main@@Shape__v__circle` and died with `{case_clause, …}` at run time. Its `.targets` is
 `erlang` alone, and neither omission is the cell's shape: commonJS cannot run a leading-dot variant
 AT ALL (measured with the collision removed — `ReferenceError: Circle is not defined`, `00 · 04-js`'s
 row), and wasm places it correctly from the expected type, so it has nothing to refuse.
@@ -356,11 +356,15 @@ re-measured here:
 
 ```bash
 $ botopink run --target beam
-wrote out/main.S — BEAM Assembly is an artifact; compile with `erlc +from_asm out/main.S` …
+wrote out/beam/language_tests@main.S — BEAM Assembly is an artifact; compile with `erlc +from_asm …` …
 $ find out -name '*.S' | while read s; do erlc +from_asm -o out "$s"; done
-$ erl -noshell -pa out -eval 'main:main(), halt().'
+$ erl -noshell -pa out -eval 'language_tests@main:main(), halt().'
 hi
 ```
+
+Every cell's `botopink.json` is named `language_tests`, and an erlang/BEAM module atom starts with
+its package (decision 109 of 1.0.10-beta): the entry is `language_tests@main`, and a host template
+that builds a record's tag spells it `'language_tests@main@@Point'` (`run/external_host_record.bp`).
 
 `run.sh`'s `exec_run` is exactly that path (see its `§ beam` comment). Every `.S` is assembled, not
 only `out/*.S`: a `mod` tree and a `from "std"` import emit nested directories today

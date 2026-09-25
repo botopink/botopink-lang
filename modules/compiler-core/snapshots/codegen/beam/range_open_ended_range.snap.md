@@ -11,15 +11,15 @@ fn countUp(x: i32) {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 8}.
 
 {function, countUp, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, countUp}, 1}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, countUp}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -37,8 +37,8 @@ fn countUp(x: i32) {
 
 {function, '-countUp/1-fun-0-', 1, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '-countUp/1-fun-0-'}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '-countUp/1-fun-0-'}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.

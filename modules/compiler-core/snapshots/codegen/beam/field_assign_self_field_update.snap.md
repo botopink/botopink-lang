@@ -10,29 +10,29 @@ val Counter = type(
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 2}.
 ```
 
------ BEAM ASSEMBLY -- main__t__counter.S
+----- BEAM ASSEMBLY -- test@main@@Counter.S
 ```erlang
-{module, main__t__counter}.
+{module, test@main@@Counter}.
 {exports, [{inc, 1}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 10}.
 
 {function, inc, 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__counter.erl", 1}]}.
-    {func_info, {atom, main__t__counter}, {atom, inc}, 1}.
+    {line, [{location, "test@main@@Counter.erl", 1}]}.
+    {func_info, {atom, test@main@@Counter}, {atom, inc}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, main__t__counter}]}.
+    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, test@main@@Counter}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 4}.
     {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
@@ -47,8 +47,8 @@ val Counter = type(
 
 {function, '__bp_get', 2, 6}.
   {label, 5}.
-    {line, [{location, "main__t__counter.erl", 2}]}.
-    {func_info, {atom, main__t__counter}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Counter.erl", 2}]}.
+    {func_info, {atom, test@main@@Counter}, {atom, '__bp_get'}, 2}.
   {label, 6}.
     {test, is_eq_exact, {f, 7}, [{x, 1}, {atom, count}]}.
     {move, {x, 0}, {x, 1}}.
@@ -60,8 +60,8 @@ val Counter = type(
 
 {function, '__bp_format', 1, 9}.
   {label, 8}.
-    {line, [{location, "main__t__counter.erl", 2}]}.
-    {func_info, {atom, main__t__counter}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Counter.erl", 2}]}.
+    {func_info, {atom, test@main@@Counter}, {atom, '__bp_format'}, 1}.
   {label, 9}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

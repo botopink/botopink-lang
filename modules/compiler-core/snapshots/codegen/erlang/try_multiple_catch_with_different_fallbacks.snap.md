@@ -21,16 +21,16 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type UserError: msg
 
 fetchName() ->
-    {error, {main__t__usererror, <<"name missing">>}}.
+    {error, {test@main@@UserError, <<"name missing">>}}.
 
 fetchAge() ->
-    {error, {main__t__usererror, <<"age missing">>}}.
+    {error, {test@main@@UserError, <<"age missing">>}}.
 
 loadUser() ->
     Name = case try
@@ -82,9 +82,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__usererror.erl
+----- ERLANG -- test@main@@UserError.erl
 ```erlang
--module(main__t__usererror).
+-module(test@main@@UserError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, msg) -> element(2, V).

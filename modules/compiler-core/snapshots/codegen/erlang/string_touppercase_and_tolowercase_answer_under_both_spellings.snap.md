@@ -10,7 +10,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
@@ -48,6 +48,6 @@ main(_Args) ->
 ----- RUN LOG -----
 ```logs
 COMPILE ERROR (erlc):
-main.erl:5:19: function toUpperCase/1 undefined
-main.erl:6:19: function toLowerCase/1 undefined
+test@main.erl:5:19: function toUpperCase/1 undefined
+test@main.erl:6:19: function toLowerCase/1 undefined
 ```

@@ -20,15 +20,15 @@ fn main() {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
 {labels, 22}.
 
 {function, 'COMMANDS', 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'COMMANDS'}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, 'COMMANDS'}, 0}.
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -53,8 +53,8 @@ fn main() {
 
 {function, main, 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, main}, 0}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 5}.
     {allocate, 2, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -70,8 +70,8 @@ fn main() {
 
 {function, 'execute_$0', 1, 7}.
   {label, 6}.
-    {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, 'execute_$0'}, 1}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, 'execute_$0'}, 1}.
   {label, 7}.
     {allocate, 3, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -93,8 +93,8 @@ fn main() {
 
 {function, 'execute_$1', 1, 9}.
   {label, 8}.
-    {line, [{location, "main.erl", 4}]}.
-    {func_info, {atom, main}, {atom, 'execute_$1'}, 1}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, 'execute_$1'}, 1}.
   {label, 9}.
     {allocate, 3, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -116,22 +116,22 @@ fn main() {
 
 {function, '_botopink_main', 0, 11}.
   {label, 10}.
-    {line, [{location, "main.erl", 5}]}.
-    {func_info, {atom, main}, {atom, '_botopink_main'}, 0}.
+    {line, [{location, "test@main.erl", 5}]}.
+    {func_info, {atom, test@main}, {atom, '_botopink_main'}, 0}.
   {label, 11}.
     {call_only, 0, {f, 5}}.
 
 {function, main, 1, 13}.
   {label, 12}.
-    {line, [{location, "main.erl", 6}]}.
-    {func_info, {atom, main}, {atom, main}, 1}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 13}.
     {call_only, 0, {f, 11}}.
 
 {function, '-execute_$0/1-fun-0-', 4, 15}.
   {label, 14}.
-    {line, [{location, "main.erl", 4}]}.
-    {func_info, {atom, main}, {atom, '-execute_$0/1-fun-0-'}, 4}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '-execute_$0/1-fun-0-'}, 4}.
   {label, 15}.
     {allocate, 4, 4}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
@@ -151,8 +151,8 @@ fn main() {
 
 {function, '-execute_$1/1-fun-1-', 4, 19}.
   {label, 18}.
-    {line, [{location, "main.erl", 5}]}.
-    {func_info, {atom, main}, {atom, '-execute_$1/1-fun-1-'}, 4}.
+    {line, [{location, "test@main.erl", 5}]}.
+    {func_info, {atom, test@main}, {atom, '-execute_$1/1-fun-1-'}, 4}.
   {label, 19}.
     {allocate, 4, 4}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.

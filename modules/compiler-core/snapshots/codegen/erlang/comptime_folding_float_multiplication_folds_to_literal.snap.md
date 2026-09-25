@@ -17,7 +17,7 @@ ct_0: val pi2 = comptime {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% comptime val pi2

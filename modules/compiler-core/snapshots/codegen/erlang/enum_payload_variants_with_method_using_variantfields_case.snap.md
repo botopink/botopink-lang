@@ -17,7 +17,7 @@ val Shape = type {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Shape
 %%   Circle(radius)
@@ -25,26 +25,26 @@ val Shape = type {
 %%   Triangle(base, height)
 ```
 
------ ERLANG -- main__t__shape.erl
+----- ERLANG -- test@main@@Shape.erl
 ```erlang
--module(main__t__shape).
+-module(test@main@@Shape).
 -export([area/1, '__bp_format'/1]).
 
 area(Shape) ->
     case Shape of
-        {main__t__shape__v__circle, Radius} ->
+        {test@main@@Shape__v__circle, Radius} ->
             ((Radius * Radius) * 3.14);
-        {main__t__shape__v__square, Side} ->
+        {test@main@@Shape__v__square, Side} ->
             (Side * Side);
-        {main__t__shape__v__triangle, Base, Height} ->
+        {test@main@@Shape__v__triangle, Base, Height} ->
             ((Base * Height) * 0.5);
         _ ->
             0.0
     end.
 
-'__bp_format'({main__t__shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]};
-'__bp_format'({main__t__shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]};
-'__bp_format'({main__t__shape__v__triangle, F0, F1}) -> {variant, "Shape.Triangle", [{"base", F0}, {"height", F1}]}.
+'__bp_format'({test@main@@Shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]};
+'__bp_format'({test@main@@Shape__v__square, F0}) -> {variant, "Shape.Square", [{"side", F0}]};
+'__bp_format'({test@main@@Shape__v__triangle, F0, F1}) -> {variant, "Shape.Triangle", [{"base", F0}, {"height", F1}]}.
 ```
 
 ----- RUN LOG -----

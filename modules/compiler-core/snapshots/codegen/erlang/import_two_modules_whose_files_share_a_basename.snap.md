@@ -7,7 +7,7 @@ pub fn label() -> string {
 
 ----- ERLANG -- models/user.erl
 ```erlang
--module(models@user).
+-module(test@models@user).
 -export([label/0]).
 
 label() ->
@@ -27,7 +27,7 @@ pub fn tag() -> string {
 
 ----- ERLANG -- services/user.erl
 ```erlang
--module(services@user).
+-module(test@services@user).
 -export([tag/0]).
 
 tag() ->
@@ -51,7 +51,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% import label
@@ -59,8 +59,8 @@ fn main() {
 %% import tag
 
 main() ->
-    '__bp_print'([models@user:label()]),
-    '__bp_print'([services@user:tag()]).
+    '__bp_print'([test@models@user:label()]),
+    '__bp_print'([test@services@user:tag()]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
