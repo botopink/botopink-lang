@@ -379,6 +379,21 @@ the table and left the arm answering a closure-cell address
 and a bare `{ 1 + 2 }` in value position does not parse at all ("this token cannot
 appear here"). So decision 2's enforcement leaves nothing dead here.
 
+## Self-recursion in tail position (`00 · 05-wasm` step 9)
+
+**`return f(args)` inside `fn f` is a branch, not a call** (`noteSelfTailCalls`,
+`lowerSelfTailCall`, `wrapTailLoop` in `../wat.zig`). wasm has no tail calls
+unless the tail-call proposal is enabled, and wasmtime's default does not enable
+it: `count(100000, 0)` trapped `call stack exhausted` (exit 134) where the other
+three backends answer. Every argument is evaluated onto the stack, the
+parameters are re-bound from it in reverse — so `sumTo(n - 1, acc + n)` reads the
+OLD `n` in both — and `br $__tail` restarts the body, which `emitFn` wraps in
+`(loop $__tail (result …) …)` **only when such a call exists**, so no other
+function's text moves. Only the explicit `return f(…)` spelling is recognised
+(reached through `if` arms and loop bodies, never through a lambda); a method, a
+lifted lambda, a destructured parameter and an accumulating (generator) body
+keep `call`. `tests/language/run/tail_self_call.bp` pins it on four targets.
+
 ## Rules
 
 - **Layout is part of the model where the output depends on it** — as in

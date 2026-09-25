@@ -1042,3 +1042,32 @@ test "wat: prim method ---- String.at answers a one-character string, and null o
         \\}
     , "a\nc\nundefined\nundefined\nw\n");
 }
+
+// A self-call in `return` position is a branch to the function's own loop head
+// (`00 · 05-wasm` step 9). wasm has no tail calls unless the proposal is
+// enabled, and wasmtime's default does not enable it: `count(10000, 0)` answered
+// and `count(100000, 0)` trapped `call stack exhausted` at exit 134, where the
+// other three backends answer. `return f(args)` inside `fn f` now evaluates
+// every argument, re-binds the parameters in reverse and `br $__tail`s; the
+// body is wrapped in `(loop $__tail (result …))` only when such a call exists,
+// so no other function's text moves. `sumTo` pins that the accumulator reads the
+// OLD `n` — the arguments are on the stack before any parameter is re-bound.
+//
+// A RUN LOG and not a snapshot: the depth is the point, and the other three
+// backends already answer it. `tests/language/run/tail_self_call.bp` is the
+// cross-backend half.
+test "wat: tail call ---- a self-call in return position runs in one frame" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn count(n: i32, acc: i32) -> i32 {
+        \\    if (n == 0) { return acc; } else { return count(n - 1, acc + 1); }
+        \\}
+        \\fn sumTo(n: i32, acc: i32) -> i32 {
+        \\    if (n == 0) { return acc; };
+        \\    return sumTo(n - 1, acc + n);
+        \\}
+        \\fn main() {
+        \\    @print(count(1000000, 0));
+        \\    @print(sumTo(1000, 0));
+        \\}
+    , "1000000\n500500\n");
+}
