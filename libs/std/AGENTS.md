@@ -77,6 +77,16 @@ Adding an importable module:
 No `build.zig`, `prelude.zig`, or `compiler-core` edit — `build.zig`
 (`stdPkgFilesFromRoot`) reads `root.bp` and generates the `std_pkg` registry.
 
+A nested module follows the module-tree rule of any package: `pub mod <dir>;`
+in `root.bp` resolves to `<dir>.bp` or the folder index `<dir>/mod.bp` —
+exactly one, the build panics on both or neither — and a folder index's own
+`pub mod <name>;` lines embed `<dir>/<name>.bp` under the registry key
+`std/<dir>/<name>`, depth-first (decision 106's `io/` and `testing/`). A
+consumer reaches it by path: `import {<dir>.<name>} from "std"` (the
+namespace) or `import {<dir>: {<name>: {f}}} from "std"` (a leaf). The folder
+index itself holds `mod` lines only and is not a module of the registry, so
+`import {<dir>} from "std"` is `unknown "std" module`.
+
 Importing a std module on a target where its host-bound declarations have no
 matching `@External` raises `STD-001` (`comptime/tests/std_target_gating.zig`).
 
