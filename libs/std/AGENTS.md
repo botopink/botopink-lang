@@ -318,7 +318,7 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
   `s.slice(2)` does, and `xs.slice(2, null)` on an ARRAY answers `0` on wasm and
   `badarith` on beam where commonJS and erlang answer. Unowned; it is
   `String.slice` / `Array.slice`'s lowering of a `null` bound. The wasm trap is
-  what `snapshots/codegen/wasm/string_slice_without_end_arg_slices_to_source_length.snap.md`
+  what `snapshots/codegen/beam/wasm/string_slice_without_end_arg_slices_to_source_length.snap.md`
   records since C-04 — the snapshot used to pin the arity error, which hid it.
 - **Three parser/emitter shapes measured 2026-09-21 writing `async.bp`, each with
   a one-line workaround, none of them owned by std.**

@@ -15,13 +15,12 @@ pub const TypeDefLang = enum {
     typescript,
 };
 
+/// The VM a compilation's decorator and template bodies run on (front 18,
+/// `comptime/runtime/runtime.zig`): the BEAM (`persistent_erl.zig`) or wasm3
+/// (`persistent_wat.zig`).
+pub const ComptimeRuntime = enum { beam, wat };
+
 /// Top-level codegen configuration.
-///
-/// Note: this struct once carried a `comptimeRuntime` field selecting one of
-/// four backends (node/erlang/wasm/beam). The four-runtime architecture was
-/// retired: every comptime expression runs on the persistent `erl` server
-/// (`comptime/runtime/persistent_erl.zig`), so the field became dead weight and
-/// was removed.
 pub const Config = struct {
     /// Module source of the generated code.
     targetSource: TargetSource = .commonJS,
@@ -43,4 +42,11 @@ pub const Config = struct {
     /// erlang and BEAM module atoms start with it. The default is a
     /// compilation with no manifest, whose modules are `bp`'s.
     packages: @import("crossModule.zig").Packages = .{},
+
+    /// Which runtime evaluates this generation's decorators and templates.
+    /// Null — every driver — is decision 84: the target's VM (erlang/beam →
+    /// beam, commonJS/wasm → wat). Set only where one process generates the
+    /// same program under both runtimes (the codegen snapshot harness's
+    /// doubled tree); there is no flag or build option that reaches it.
+    comptime_runtime: ?ComptimeRuntime = null,
 };

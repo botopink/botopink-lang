@@ -291,7 +291,7 @@ const prelude_cache = struct {
     /// has always swallowed a prelude parse failure, and `primErlangDispatchCount`
     /// pins what that would cost.
     fn lock() void {
-        while (!mutex.tryLock()) std.Thread.yield() catch {};
+        while (!mutex.tryLock()) std.atomic.spinLoopHint();
     }
 
     fn primitives() ?ast.Program {

@@ -29,4 +29,5 @@ test {
     _ = @import("beam/beam_file.zig");
     _ = @import("beam/opcodes.zig");
     _ = @import("wat/wat_emitter.zig");
+    _ = @import("wat/wasm_binary_emitter.zig");
 }

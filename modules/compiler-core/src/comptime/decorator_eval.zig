@@ -26,13 +26,10 @@ const crossModule = @import("../codegen/crossModule.zig");
 const templateEval = @import("./template_eval.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
-const persistent_erl = @import("./runtime/persistent_erl.zig");
+const hostRuntime = @import("./runtime/runtime.zig");
 const preludeMod = @import("./runtime/prelude.zig");
 const etf = @import("./runtime/etf.zig");
 const trace = @import("./trace.zig");
-
-/// Sole comptime runtime.
-pub const Runtime = enum { erl };
 
 /// Reflection of the annotated declaration (`@Decl` in `builtins.d.bp`).
 pub const DeclHandle = struct {
@@ -86,23 +83,26 @@ pub fn evaluate(
         else => |e| return e,
     };
 
-    // Staged and renamed into place once per module (`template_eval.ensureModule`).
-    const path = try templateEval.ensureModule(arena, io, ".botopinkbuild/tmp/decorator", source.module, source.code);
-
-    const response = persistent_erl.evalWithArg(
+    // The runtime is the target's (decision 84, `runtime/runtime.zig`); the
+    // dispatcher stages the module for the BEAM runtime or lowers it for wat.
+    const result = try hostRuntime.evalWithArg(
         arena,
         io,
-        path,
+        "decorator",
+        ".botopinkbuild/tmp/decorator",
         source.module,
+        source.code,
         try etf.encode(arena, source.argument),
-    ) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        else => return transportFailure(arena, "decorator", err),
+    );
+    const response = switch (result) {
+        .response => |r| r,
+        .unavailable => |why| return .{ .err = why },
     };
     if (traces) |list| try list.append(arena, .{
         .kind = .decorator,
         .name = dfn.name,
-        .erl = source.listing,
+        .listing = try hostRuntime.listingOf(arena, source.module, source.code, source.listing),
+        .lang = if (hostRuntime.current() == .wat) .wat else .erlang,
         .reply = switch (response) {
             .ok => |stdout| stdout,
             .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),
@@ -114,19 +114,6 @@ pub fn evaluate(
         .compile_error => |detail| .{ .err = try errorText(arena, "the decorator module did not compile", detail) },
         .runtime_error => |detail| .{ .err = try errorText(arena, "the decorator body raised", detail) },
     };
-}
-
-/// What a failed round trip reports — the decorator twin of
-/// `templateEval.transportFailure`: the transport message when there is one,
-/// `error.EvalFailed` (and with it the caller's PATH hint) when the failure is
-/// `erl`/`erlc` missing rather than a broken stream.
-fn transportFailure(arena: std.mem.Allocator, host: []const u8, err: anyerror) EvalError!Outcome {
-    const detail = persistent_erl.lastTransportError() orelse return error.EvalFailed;
-    return .{ .err = try std.fmt.allocPrint(
-        arena,
-        "the {s} evaluator's erl runtime failed ({s}): {s}",
-        .{ host, @errorName(err), detail },
-    ) };
 }
 
 fn errorText(arena: std.mem.Allocator, what: []const u8, detail: []const u8) ![]const u8 {
@@ -153,7 +140,7 @@ const Module = struct {
     module: []const u8,
     code: []const u8,
     /// The lowered body and `main/1`, with the argument as a comment
-    /// (`trace.Entry.erl`).
+    /// (`trace.Entry.listing` on the BEAM runtime).
     listing: []const u8,
     /// `main/1`'s argument: the handle, then the annotation arguments.
     argument: Term,

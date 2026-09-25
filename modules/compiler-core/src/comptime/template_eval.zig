@@ -37,13 +37,10 @@ const crossModule = @import("../codegen/crossModule.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
-const persistent_erl = @import("./runtime/persistent_erl.zig");
+const hostRuntime = @import("./runtime/runtime.zig");
 const preludeMod = @import("./runtime/prelude.zig");
 const etf = @import("./runtime/etf.zig");
 const trace = @import("./trace.zig");
-
-/// Sole comptime runtime.
-pub const Runtime = enum { erl };
 
 // ── results ───────────────────────────────────────────────────────────────────
 
@@ -111,22 +108,26 @@ pub fn evaluate(
         else => |e| return e,
     };
 
-    const path = try ensureModule(arena, io, ".botopinkbuild/tmp/template", source.module, source.code);
-
-    const response = persistent_erl.evalWithArg(
+    // The runtime is the target's (decision 84, `runtime/runtime.zig`); the
+    // dispatcher stages the module for the BEAM runtime or lowers it for wat.
+    const result = try hostRuntime.evalWithArg(
         arena,
         io,
-        path,
+        "template",
+        ".botopinkbuild/tmp/template",
         source.module,
+        source.code,
         try etf.encode(arena, source.argument),
-    ) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        else => return transportFailure(arena, "template", err),
+    );
+    const response = switch (result) {
+        .response => |r| r,
+        .unavailable => |why| return .{ .err = why },
     };
     if (traces) |list| try list.append(arena, .{
         .kind = .template,
         .name = tfn.name,
-        .erl = source.listing,
+        .listing = try hostRuntime.listingOf(arena, source.module, source.code, source.listing),
+        .lang = if (hostRuntime.current() == .wat) .wat else .erlang,
         .reply = switch (response) {
             .ok => |stdout| stdout,
             .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),
@@ -208,59 +209,6 @@ pub fn rememberListing(module: []const u8, listing: []const u8) std.mem.Allocato
     return owned;
 }
 
-/// Stage `<dir>/<module>.erl` unless it is already there, and return its path
-/// either way. The atom **is** the content's hash, and `writeModule` stages and
-/// renames, so a file at that path is that content, complete — a second call
-/// site of one declaration would rewrite the same bytes. The check is a single
-/// `access`, and asking the filesystem rather than remembering means a cleared
-/// `.botopinkbuild/` or a changed working directory mid-process writes the file
-/// again instead of pointing the node at one that is gone.
-pub fn ensureModule(arena: std.mem.Allocator, io: std.Io, dir: []const u8, module: []const u8, code: []const u8) EvalError![]const u8 {
-    const path = try std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ dir, module });
-    if (std.Io.Dir.cwd().access(io, path, .{})) |_| return path else |_| {}
-    return writeModule(arena, io, dir, module, code);
-}
-
-/// Write `<dir>/<module>.erl` and return its path. The module is written to a
-/// uniquely named sibling first and renamed into place, so a reader never sees
-/// a partial file: two evaluations of the same body — concurrent tests, or two
-/// compiler processes sharing a working directory — derive the same
-/// content-hashed name, and a plain truncate-and-write let one `compile:file`
-/// read the file mid-rewrite and fail with no usable diagnostic.
-pub fn writeModule(arena: std.mem.Allocator, io: std.Io, dir: []const u8, module: []const u8, code: []const u8) EvalError![]const u8 {
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDirPath(io, dir) catch return error.EvalFailed;
-    const path = try std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ dir, module });
-    var nonce: [8]u8 = undefined;
-    io.random(&nonce);
-    const staging = try std.fmt.allocPrint(arena, "{s}.{x}.tmp", .{ path, std.mem.readInt(u64, &nonce, .little) });
-    cwd.writeFile(io, .{ .sub_path = staging, .data = code }) catch return error.EvalFailed;
-    cwd.rename(staging, cwd, path, io) catch {
-        cwd.deleteFile(io, staging) catch {};
-        return error.EvalFailed;
-    };
-    return path;
-}
-
-/// What a failed round trip reports. Every transport failure used to collapse
-/// into `error.EvalFailed`, which left `persistent_erl.lastTransportError()`
-/// dead and the caller's diagnostic — "the template evaluator failed to run" —
-/// with nothing behind it (1.0.4-beta's hygiene front recorded this residual
-/// inside this file and could not sweep it).
-///
-/// Now the message is carried when there is one. When there is not, the failure
-/// is `erl` or `erlc` missing rather than a broken stream, and `error.EvalFailed`
-/// is still the right answer: the caller's hint for that case names PATH, which
-/// is more useful than an error name.
-fn transportFailure(arena: std.mem.Allocator, host: []const u8, err: anyerror) EvalError!Outcome {
-    const detail = persistent_erl.lastTransportError() orelse return error.EvalFailed;
-    return .{ .err = try std.fmt.allocPrint(
-        arena,
-        "the {s} evaluator's erl runtime failed ({s}): {s}",
-        .{ host, @errorName(err), detail },
-    ) };
-}
-
 fn errorText(arena: std.mem.Allocator, what: []const u8, detail: []const u8) ![]const u8 {
     const shown = detail[0..@min(detail.len, max_error_detail)];
     const ellipsis = if (detail.len > max_error_detail) " …" else "";
@@ -284,7 +232,7 @@ const Module = struct {
     module: []const u8,
     code: []const u8,
     /// The lowered body and `main/1`, with the argument as a comment
-    /// (`trace.Entry.erl`).
+    /// (`trace.Entry.listing` on the BEAM runtime).
     listing: []const u8,
     /// `main/1`'s argument: one tuple element per parameter.
     argument: Term,
@@ -747,6 +695,14 @@ fn typedValue(arena: std.mem.Allocator, v: std.json.Value) std.mem.Allocator.Err
             while (it.next()) |e| : (i += 1) {
                 out[i] = .{ .key = e.key_ptr.*, .value = try typedValue(arena, e.value_ptr.*) };
             }
+            // Key order is the reply's canonical one (`runtime/reply_order.zig`),
+            // not the order the runtime's map happened to iterate in: it becomes
+            // the lifted tuple's label order.
+            std.mem.sort(TypedValue.KeyValuePair, out, {}, struct {
+                fn lessThan(_: void, a: TypedValue.KeyValuePair, b: TypedValue.KeyValuePair) bool {
+                    return std.mem.lessThan(u8, a.key, b.key);
+                }
+            }.lessThan);
             break :blk .{ .object = out };
         },
     };

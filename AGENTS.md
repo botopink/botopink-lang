@@ -25,10 +25,12 @@ botopink-lang/                 ← language core (this project)
 │   ├── bpmp/                  ← `bpmp` package + toolchain manager
 │   ├── compiler-cli/          ← `botopink` CLI
 │   ├── compiler-core/         ← lexer, parser, AST, infer, comptime, codegen
+│   ├── compiler-web/          ← the browser build of compiler-core: botopink.wasm + glue.js + the demo page
 │   ├── language-server/       ← `botopink-lsp` LSP server
 │   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
-│   └── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
+│   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
+│   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
 ├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
 │   └── std/                   ← standard library
 ├── examples/                  ← non-framework .bp example programs
@@ -56,6 +58,8 @@ zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.s
 zig build test-language # botopink language tests (tests/language/run.sh; `-- --compiler <botopink>` to run another binary)
 zig build test-docs     # every `botopink` fence of docs.md/README.md compiles (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
+zig build compiler-web  # compiler-core for the browser → zig-out/web/ (wasm32-wasi; `-Doptimize=ReleaseSmall` is the shipped size)
+zig build test-web      # the browser build's smoke test under node (modules/compiler-web/tests/smoke.js)
 ```
 
 `zig build test` also runs two greps that refuse rather than warn (decision 67,
@@ -244,6 +248,7 @@ run is [`scripts/gate.sh`](scripts/gate.sh):
 2. `zig build`;
 3. `scripts/format-check.sh` (`botopink format --check` over the compiler's canonical `.bp` trees — decision 66's caller; the trees, and the red ones with their causes, are named in the script);
 4. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
+4b. `scripts/snap_audit.sh --mode=runtime-parity` (every codegen snapshot exists under `snapshots/codegen/beam/` and `…/wat/`, and each pair is equal once the `COMPTIME ERLANG`/`COMPTIME WAT` listings are set aside — front 18 step 4, decision 85; no allow-list);
 5. `zig build test-bpmp` (the package manager's unit suite);
 6. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
 7. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
@@ -336,7 +341,7 @@ capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
 
 - **Spawns are bounded.** `executeJavaScript`, `executeErlang` and
   `executeBeamAsm` go through `runWithTimeout` (120 s); a timeout yields an empty
-  RUN LOG. `executeWat` is a stub that returns an empty RUN LOG.
+  RUN LOG. `executeWat` runs `wasmtime` on the module's binary (`GenerateResult.wasm`).
 - **Erlang/BEAM early exit.** Both skip `erlc`/`erl` when the generated code has
   no `_botopink_main` or no I/O (`io:format`). If a test unexpectedly spawns erl,
   check for `_botopink_main` or `@print` in the output.

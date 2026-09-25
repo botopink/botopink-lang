@@ -25,8 +25,9 @@
 #   --repeat R    builds per N; the minimum is reported (default 3)
 #   --project D   also copy D into a scratch tree, build it, and report its
 #                 in-node split. Repeatable. A `path:` dependency of D is
-#                 rewritten to the copy, so a git dependency must already be
-#                 vendored beside it.
+#                 copied beside it, so a git dependency must already be
+#                 vendored there; a workspace member (`{ "workspace": true }`)
+#                 is built inside a copy of its enclosing workspace.
 #   --target T    build target (default commonJS — a JavaScript build pays the
 #                 whole comptime cost, which is the point)
 #   --reps N      in-node repetitions per module (default 20, after a warm-up)
@@ -282,7 +283,27 @@ for p in ${projects+"${projects[@]}"}; do
     [ -d "$p" ] || { echo "comptime_bench: --project $p is not a directory" >&2; status=1; continue; }
     name="$(basename "$p")"
     dir="$scratch/$name"
-    cp -r "$p" "$dir"
+    # A workspace member (`{ "workspace": true }` dependencies) resolves them
+    # from the enclosing workspace, so the whole workspace is copied and the
+    # member is built inside the copy. A member with no enclosing workspace is
+    # refused here, not left to fail inside the timed build.
+    if grep -q '"workspace"[[:space:]]*:[[:space:]]*true' "$p/botopink.json" 2>/dev/null; then
+        ws="$(cd "$p" && pwd)"; member=""
+        while [ "$ws" != "/" ]; do
+            member="$(basename "$ws")${member:+/$member}"
+            ws="$(dirname "$ws")"
+            grep -q '"workspaces"' "$ws/botopink.json" 2>/dev/null && break
+        done
+        if [ "$ws" = "/" ]; then
+            echo "comptime_bench: --project $p has a { \"workspace\": true } dependency but no enclosing botopink.json declares \"workspaces\"" >&2
+            status=1; continue
+        fi
+        mkdir -p "$scratch/ws-$name"
+        tar -C "$ws" --exclude=.git --exclude=.botopinkbuild --exclude=out -cf - . | tar -C "$scratch/ws-$name" -xf -
+        dir="$scratch/ws-$name/$member"
+    else
+        cp -r "$p" "$dir"
+    fi
     rm -rf "$dir/.botopinkbuild" "$dir/out"
     # A `path:` dependency pointed at a sibling of the original is copied too,
     # so the copy resolves without reaching back into the repository.
