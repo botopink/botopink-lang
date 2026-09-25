@@ -1,0 +1,11 @@
+//// Decisions 122 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `#[@futureGenerator]` + `@FutureGenerator<T, E>`) —
+//// `@FutureGenerator<T, E>` is `effect-type-removed`, fix-it
+//// `@Stream<@Result<T, E>>`. The new form is `run/stream_pages.bp`.
+
+fn ticks(n: i32) -> @FutureGenerator<i32, string> {
+    var i = 0;
+    while (i < n) { yield i; i = i + 1; };
+}
+
+pub fn main() { ticks(2); }

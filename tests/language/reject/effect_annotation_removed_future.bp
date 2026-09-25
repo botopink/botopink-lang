@@ -1,0 +1,13 @@
+//// Decisions 118, 120 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `#[@future] fn f() -> @Future<T, E>`) — `#[@future]` is
+//// refused at the annotation even over a return that is already the new
+//// `@Task<@Result<T, E>>`, so the only thing wrong here is the annotation. The
+//// new form is `run/task_await_result.bp`.
+
+#[@future]
+fn fetch(n: i32) -> @Task<@Result<i32, string>> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+pub fn main() { fetch(1); }

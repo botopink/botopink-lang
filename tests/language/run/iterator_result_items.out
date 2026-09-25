@@ -1,0 +1,5 @@
+sum 6
+sum failed: negative -2
+1
+error: negative -2
+3

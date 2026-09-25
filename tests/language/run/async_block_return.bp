@@ -1,0 +1,27 @@
+//// Decisions 119 and 124 of 1.0.10-beta (front 24, § Cells "`async { }`", third
+//// line) — `return` inside `async { }` leaves the BLOCK with its value, never
+//// the enclosing function: `pick` goes on to print its own line and answers a
+//// `Holder`, while the block's `return`s answer `string`s (a `return` that left
+//// `pick` would not type). No line is printed inside the block, so the eager
+//// backends (the block runs in place) and commonJS (an async IIFE) print the
+//// same order. Printed from inside `run`.
+
+type Holder(t: @Task<string>)
+
+fn pick(n: i32) -> Holder {
+    val t = async {
+        if (n > 0) { return "positive"; };
+        return "not positive";
+    };
+    @print("after the block");
+    return Holder(t: t);
+}
+
+fn run() -> @Task<void> {
+    val a = pick(1);
+    @print(await a.t);
+    val b = pick(0);
+    @print(await b.t);
+}
+
+pub fn main() { run(); }

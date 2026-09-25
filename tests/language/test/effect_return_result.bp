@@ -1,0 +1,34 @@
+//// Decisions 118 and 119 of 1.0.10-beta (front 24, § Cells "Return and effect
+//// mode", first line; guide.md § 9, row `#[@result] fn f() -> @Result<T, E>`) —
+//// `-> @Result<T, E>` is the whole annotation: the body gains `throw` and `try`
+//// from the return alone. `return v` with `v: T` wraps (`Ok(v)`); `return r`
+//// with `r` already a `@Result<T, E>` passes through as is; `throw` is the
+//// error and `try` propagates it. `reject/effect_annotation_removed_result.bp`
+//// is the old spelling.
+
+fn check(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+fn doubled(n: i32) -> @Result<i32, string> {
+    val v = try check(n);
+    return v * 2;
+}
+
+fn firstOk(a: @Result<i32, string>, b: @Result<i32, string>) -> @Result<i32, string> {
+    if (a.isOk()) { return a; };
+    return b;
+}
+
+test "decision 119 return of a T wraps it in Ok" { assert (try check(7) catch -1) == 7; }
+test "decision 118 throw under a @Result return is the error" { assert (try check(-1) catch -1) == -1; }
+test "decision 118 try under a @Result return propagates" {
+    assert (try doubled(4) catch 0) == 8;
+    assert (try doubled(-4) catch 0) == 0;
+}
+test "decision 119 return of a @Result passes it through unwrapped" {
+    assert (try firstOk(check(2), check(5)) catch 0) == 2;
+    assert (try firstOk(check(-1), check(5)) catch 0) == 5;
+    assert firstOk(check(-1), check(-2)).isError();
+}

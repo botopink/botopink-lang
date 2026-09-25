@@ -1,0 +1,12 @@
+//// Decisions 122 and 127 of 1.0.10-beta (front 24, § Cells "Iterators" and
+//// "Migration"; guide.md § 5.6 and § 9, row `@Iterator<T, E>`) — the iterator
+//// does not fail, its items do: `@Iterator<T, E>` is
+//// `iterator-error-param-removed`, located at the error argument, with the
+//// fix-it `@Iterator<@Result<T, E>>`. The new form is
+//// `run/iterator_result_items.bp`.
+
+fn old(n: i32) -> @Iterator<i32, string> {
+    yield n;
+}
+
+pub fn main() { for (old(1)) { x -> @print(x); }; }

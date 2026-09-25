@@ -1,0 +1,47 @@
+//// Decision 122 of 1.0.10-beta (front 24 step E4, § Cells "Iterators", third
+//// line; guide.md § 5.2 and § 9, rows `#[@resultGenerator]` +
+//// `@ResultGenerator<T, E>`, `@Iterator<T, E>`, `#[@iterator]`) — `for` over
+//// `@Iterator<@Result<U, E>>` hands over the `@Result` and does NO implicit
+//// `try`. `sum` stops at the first error with an explicit `try r`, inside a
+//// function whose return carries a `@Result`; `printAll` carries on after the
+//// error with `case`, in a plain function — iterating a fallible iterator is
+//// legal anywhere (the `for-over-fallible-generator` rule is deleted, E3.8).
+//// `parseAll` yields each `@Result` as is, so the items after an error are
+//// still emitted.
+
+fn check(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative " + n.toString(); };
+    return n;
+}
+
+fn parseAll(xs: i32[]) -> @Iterator<@Result<i32, string>> {
+    for (xs) { x -> yield check(x); };
+}
+
+fn sum(xs: i32[]) -> @Result<i32, string> {
+    var total = 0;
+    for (parseAll(xs)) { r -> total = total + try r; };
+    return total;
+}
+
+fn printAll(xs: i32[]) {
+    for (parseAll(xs)) { r ->
+        case r {
+            Ok(v) -> @print(v);
+            Error(e) -> @print("error: " + e);
+        };
+    };
+}
+
+fn show(r: @Result<i32, string>) {
+    case r {
+        Ok(v) -> @print("sum " + v.toString());
+        Error(e) -> @print("sum failed: " + e);
+    };
+}
+
+pub fn main() {
+    show(sum([1, 2, 3]));
+    show(sum([1, -2, 3, -4]));
+    printAll([1, -2, 3]);
+}

@@ -1,0 +1,31 @@
+//// Decisions 122 and 125 of 1.0.10-beta (front 24, § Cells "Streams", second
+//// line; guide.md § 6.1 and § 9, row `#[@futureGenerator] loop { … }`) — a
+//// `stream loop` with no `throw` / `try` is `@Stream<T>`, not
+//// `@Stream<@Result<…>>`: `ticks` stores the UNANNOTATED loop in a field typed
+//// `@Stream<i32>`, which is where the inferred item is checked. The loop is
+//// closed and brings its own await channel, so it awaits inside a plain
+//// function; the consumer's `for await` is in a `@Task` body. A bare `break`
+//// ends the stream. Printed from inside `run`.
+
+type Ticker(s: @Stream<i32>)
+
+fn tick(n: i32) -> @Task<i32> {
+    return n * 100;
+}
+
+fn ticks(limit: i32) -> Ticker {
+    var i = 0;
+    val s = stream loop {
+        i = i + 1;
+        if (i > limit) { break; };
+        yield await tick(i);
+    };
+    return Ticker(s: s);
+}
+
+fn run() -> @Task<void> {
+    for await (ticks(3).s) { v -> @print(v); };
+    @print("done");
+}
+
+pub fn main() { run(); }
