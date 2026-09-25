@@ -1160,6 +1160,58 @@ test "beam: case ---- an inclusive range is two is_ge tests (decision 53)" {
     , "0\n1\n1\n2\n2\n0\n0\n1\n1\n0\n", &.{ "{test, is_ge, ", "[{x, 0}, {integer, 1}]", "[{integer, 3}, {x, 0}]" });
 }
 
+test "beam: case ---- a tuple pattern is the bare tuple, element by element" {
+    // C-07 D4 (P6, P7). `#(0, s)` reached the untested `.literals` arm, so the
+    // first tuple arm took every subject and bound nothing. It is `is_tuple` +
+    // `test_arity`, then each slot tested from `get_tuple_element`; under `..`
+    // the arity is a lower bound read with the guard BIF `element/2`.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn classify(p: #(i32, string)) -> string {
+        \\  return case p { #(0, s) { "zero " + s } #(n, "x") { "x " + n.toString() } #(_, s) { s } };
+        \\}
+        \\fn first(t: #(i32, i32, i32)) -> i32 { return case t { #(a, ..) { a } }; }
+        \\fn main() {
+        \\  @print(classify(#(0, "a"))); @print(classify(#(7, "x"))); @print(classify(#(7, "y")));
+        \\  @print(first(#(4, 5, 6)));
+        \\}
+    , "zero a\nx 7\ny\n4\n", &.{ "{test, test_arity, ", "{bif, element, " });
+}
+
+test "beam: case ---- `..` and labels read the declared variant" {
+    // C-07 D4 (P4, P7). `Rect(height: h, width: w)` binds by label, not by
+    // position, and `Circle(..)` / `Rect(5, ..)` take the arity the variant
+    // DECLARES — both used to match every subject.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+        \\fn width(s: Shape) -> i32 { return case s { Rect(height: h, width: w) { w * 100 + h } Circle(..) { 0 } }; }
+        \\fn five(s: Shape) -> i32 { return case s { Rect(5, ..) { 1 } _ { 0 } }; }
+        \\fn kind(s: Shape) -> string {
+        \\  return case s { .Rect(width: w, height: h) when (w == h) { "square" } .Rect(..) { "rect" } .Circle(..) { "circle" } };
+        \\}
+        \\fn main() {
+        \\  @print(width(Shape.Rect(width: 5, height: 9))); @print(width(Shape.Circle(radius: 1)));
+        \\  @print(five(Shape.Rect(width: 5, height: 9))); @print(five(Shape.Rect(width: 6, height: 9)));
+        \\  @print(kind(Shape.Rect(width: 2, height: 2))); @print(kind(Shape.Rect(width: 2, height: 3))); @print(kind(Shape.Circle(radius: 2)));
+        \\}
+    , "509\n0\n1\n0\nsquare\nrect\ncircle\n", &.{"{test, is_tagged_tuple, "});
+}
+
+test "beam: case ---- a primitive type or a bool literal is a test, not a binder" {
+    // C-07 D4 (§5.2). `i32 { … }`, `string { … }`, `true { … }` were plain
+    // binders, so the first arm answered for every subject.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn kind(v: i32 | string) -> string { return case v { i32 { "int" } string { "str" } }; }
+        \\fn yesNo(b: bool) -> string { return case b { true { "yes" } false { "no" } }; }
+        \\fn sign(x: i32) -> string {
+        \\  return case x { i32 when (x > 0) { "positive" } i32 when (x < 0) { "negative" } _ { "zero" } };
+        \\}
+        \\fn main() {
+        \\  @print(kind(3)); @print(kind("abcd")); @print(yesNo(true)); @print(yesNo(false));
+        \\  @print(sign(3)); @print(sign(-3)); @print(sign(0));
+        \\}
+    , "int\nstr\nyes\nno\npositive\nnegative\nzero\n", &.{ "{test, is_integer, ", "{test, is_binary, ", "{test, is_eq_exact, " });
+}
+
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
 //
 // `break <value>` out of `while (cond)` was refused outright with an unlocated

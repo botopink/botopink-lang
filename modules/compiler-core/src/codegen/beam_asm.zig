@@ -510,7 +510,11 @@ fn patternYSlots(p: ast.Pattern) u32 {
         .variant => |v| switch (v.payload) {
             .binding => 1,
             .fields => |f| @intCast(f.len),
-            .literals => 0,
+            .literals => |ls| blk: {
+                var n: u32 = 0;
+                for (ls) |sp| n += patternYSlots(sp);
+                break :blk n;
+            },
         },
         .list => |lst| if (lst.spread) |s| (if (s.len > 0) @as(u32, 1) else 0) else 0,
         .multi => |pats| blk: {
@@ -2194,7 +2198,7 @@ const Emitter = struct {
     fn rememberVariantOrder(self: *Emitter, enum_name: []const u8, variants: []const ast.EnumVariant) !void {
         if (self.enum_variant_names.contains(enum_name)) return;
         const shapes = try self.alloc.alloc(VariantShape, variants.len);
-        for (variants, 0..) |v, i| shapes[i] = .{ .name = v.name, .fields = v.fields.len };
+        for (variants, 0..) |v, i| shapes[i] = .{ .name = v.name, .fields = v.fields.len, .decl = v.fields };
         try self.enum_variant_names.put(enum_name, shapes);
     }
 
@@ -2207,7 +2211,30 @@ const Emitter = struct {
 
     /// One variant of an enum: its written name and the number of payload
     /// fields its tagged tuple carries (0 for a unit variant, an atom).
-    const VariantShape = struct { name: []const u8, fields: usize };
+    /// `decl` is the declaration's fields in constructor order: a pattern's
+    /// `..` (§5.1 P7) needs the arity and its labels (P4) the positions.
+    const VariantShape = struct { name: []const u8, fields: usize, decl: []const ast.Field = &.{} };
+
+    /// The declared shape of the variant a pattern writes, when an enum this
+    /// emit can place declares it; null for `Ok`/`Err` and a variant from
+    /// nowhere, whose written arity is all there is.
+    fn declaredVariantShape(self: *const Emitter, written: []const u8) ?VariantShape {
+        const bare = bareVariantName(written);
+        const enum_name = self.enumOfVariantPath(written, bare) orelse return null;
+        const shapes = self.enum_variant_names.get(enum_name) orelse return null;
+        for (shapes) |sh| if (std.mem.eql(u8, sh.name, bare)) return sh;
+        return null;
+    }
+
+    /// The primitive type spellings a pattern can write, which decision 8 §5.2
+    /// makes a type test rather than a binding. The twin of `erlang.zig`'s
+    /// `primitiveTypeName`: disagree and the two backends take different arms.
+    fn primitiveTypeName(name: []const u8) bool {
+        if (integerPatternRange(name) != null) return true;
+        return std.mem.eql(u8, name, "string") or std.mem.eql(u8, name, "bool") or
+            std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64") or
+            std.mem.eql(u8, name, "float");
+    }
 
     /// The range an integer spelling admits, or null when the name is not an
     /// integer type. The beam twin of `erlang.zig`'s `integerPatternRange`.
@@ -2235,33 +2262,40 @@ const Emitter = struct {
     /// no run-time test (a function type, a comptime type parameter), and the
     /// caller then jumps to `fail` unconditionally.
     fn emitTypeTestBranch(self: *Emitter, t: ast.TypeRef, fail: u32) anyerror!bool {
+        return self.emitTypeTestBranchOn(t, 0, fail);
+    }
+
+    /// `emitTypeTestBranch` against `{x, src}` — a pattern element tests the
+    /// register its `get_tuple_element` landed in.
+    fn emitTypeTestBranchOn(self: *Emitter, t: ast.TypeRef, src: u32, fail: u32) anyerror!bool {
+        const s = Op.xr(src);
         switch (t) {
             .named => |n| {
                 if (std.mem.eql(u8, n, "string")) {
-                    try beamEmitter.writeTest(self.out, .is_binary, fail, &.{Op.xr(0)});
+                    try beamEmitter.writeTest(self.out, .is_binary, fail, &.{s});
                     return true;
                 }
                 if (std.mem.eql(u8, n, "bool")) {
-                    try beamEmitter.writeTest(self.out, .is_boolean, fail, &.{Op.xr(0)});
+                    try beamEmitter.writeTest(self.out, .is_boolean, fail, &.{s});
                     return true;
                 }
                 if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "float")) {
-                    try beamEmitter.writeTest(self.out, .is_float, fail, &.{Op.xr(0)});
+                    try beamEmitter.writeTest(self.out, .is_float, fail, &.{s});
                     return true;
                 }
                 // Decision 8 §2: `unknown` is every value.
                 if (std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "any")) return true;
                 if (integerPatternRange(n)) |range| {
-                    try beamEmitter.writeTest(self.out, .is_integer, fail, &.{Op.xr(0)});
-                    if (range.lo) |lo| try beamEmitter.writeTest(self.out, .is_ge, fail, &.{ Op.xr(0), Op.num(lo) });
-                    if (range.hi) |hi| try beamEmitter.writeTest(self.out, .is_ge, fail, &.{ Op.num(hi), Op.xr(0) });
+                    try beamEmitter.writeTest(self.out, .is_integer, fail, &.{s});
+                    if (range.lo) |lo| try beamEmitter.writeTest(self.out, .is_ge, fail, &.{ s, Op.num(lo) });
+                    if (range.hi) |hi| try beamEmitter.writeTest(self.out, .is_ge, fail, &.{ Op.num(hi), s });
                     return true;
                 }
                 if (self.record_fields.get(n)) |fields| {
                     var tag_buf: [512]u8 = undefined;
                     const tag = try atomName(try self.recordTagAtom(n), &tag_buf);
                     try beamEmitter.writeTest(self.out, .is_tagged_tuple, fail, &.{
-                        Op.xr(0),
+                        s,
                         .{ .untagged = @as(i64, @intCast(fields.len + 1)) },
                         Op.atom(tag),
                     });
@@ -2276,7 +2310,7 @@ const Emitter = struct {
                         if (v.fields > 0) {
                             const skip = self.allocLabel();
                             try beamEmitter.writeTest(self.out, .is_tagged_tuple, skip, &.{
-                                Op.xr(0),
+                                s,
                                 .{ .untagged = @as(i64, @intCast(v.fields + 1)) },
                                 Op.atom(tag_atom),
                             });
@@ -2284,7 +2318,7 @@ const Emitter = struct {
                             try beamEmitter.writeLabel(self.out, skip);
                         } else {
                             // `is_ne_exact` branches when the two ARE equal.
-                            try beamEmitter.writeTest(self.out, .is_ne_exact, ok_l, &.{ Op.xr(0), Op.atom(tag_atom) });
+                            try beamEmitter.writeTest(self.out, .is_ne_exact, ok_l, &.{ s, Op.atom(tag_atom) });
                         }
                     }
                     try beamEmitter.writeJump(self.out, fail);
@@ -2294,27 +2328,27 @@ const Emitter = struct {
                 return false;
             },
             .array => {
-                try beamEmitter.writeTest(self.out, .is_list, fail, &.{Op.xr(0)});
+                try beamEmitter.writeTest(self.out, .is_list, fail, &.{s});
                 return true;
             },
             .generic => |g| {
                 if (std.mem.eql(u8, g.name, "Array")) {
-                    try beamEmitter.writeTest(self.out, .is_list, fail, &.{Op.xr(0)});
+                    try beamEmitter.writeTest(self.out, .is_list, fail, &.{s});
                     return true;
                 }
-                return self.emitTypeTestBranch(.{ .named = g.name }, fail);
+                return self.emitTypeTestBranchOn(.{ .named = g.name }, src, fail);
             },
             .optional => |inner| {
                 const ok_l = self.allocLabel();
-                try beamEmitter.writeTest(self.out, .is_ne_exact, ok_l, &.{ Op.xr(0), Op.atom("undefined") });
-                const ok = try self.emitTypeTestBranch(inner.*, fail);
+                try beamEmitter.writeTest(self.out, .is_ne_exact, ok_l, &.{ s, Op.atom("undefined") });
+                const ok = try self.emitTypeTestBranchOn(inner.*, src, fail);
                 try beamEmitter.writeLabel(self.out, ok_l);
                 return ok;
             },
             .tuple_, .labeledTuple => {
                 const elems = t.tupleElems().?;
-                try beamEmitter.writeTest(self.out, .is_tuple, fail, &.{Op.xr(0)});
-                try beamEmitter.writeTest(self.out, .test_arity, fail, &.{ Op.xr(0), .{ .untagged = @as(i64, @intCast(elems.len)) } });
+                try beamEmitter.writeTest(self.out, .is_tuple, fail, &.{s});
+                try beamEmitter.writeTest(self.out, .test_arity, fail, &.{ s, .{ .untagged = @as(i64, @intCast(elems.len)) } });
                 // The ELEMENT types are not tested: reading one is a call, and a
                 // call frees the register the remaining tests read. The erlang
                 // twin does test them (a guard may call `element/2`), so a
@@ -7262,43 +7296,170 @@ const Emitter = struct {
         try self.emitGuardPost(guard_ctx);
     }
 
-    /// Decision 53 — `A...B` is an inclusive range: the arm is taken when
-    /// `A =< x0 =< B` in term order, which is numeric order for numbers and
-    /// byte order for the binaries a string lowers to. Two `is_ge` tests, each
-    /// falling to the next arm. A string bound is materialised in `{x, 0}` with
-    /// the subject parked above the live floor and restored on both edges
-    /// (the `.stringLit` arm's choreography). Before this the payload fell into
-    /// the untested `.literals` arm and the range matched every subject.
-    fn emitRangeArm(self: *Emitter, bounds: []const ast.Pattern, arm: anytype, subj_y: ?u32, end_label: u32) anyerror!void {
-        std.debug.assert(bounds.len == 2);
+    /// Decision 8 §5 — test `pat` against the value in `{x, src}`: the emitted
+    /// tests FALL THROUGH on a match and jump to `fail` otherwise, and every
+    /// name the pattern binds is moved to a fresh y-slot (`patternYSlots`
+    /// counts them). Nothing below `{x, free}` is written, so the subject in
+    /// `{x, 0}` is intact on the fail edge and the next arm tests it as it was.
+    /// No instruction here calls, so the x-registers survive every test.
+    ///
+    /// - `A...B` (decision 53) is two `is_ge` tests in term order — numeric for
+    ///   numbers, byte order for the binaries a string lowers to.
+    /// - `#(a, b)` (P6) is `is_tuple` + `test_arity`; under `..` (P7) the arity
+    ///   is a lower bound, `tuple_size` + `is_ge`. No tag: a tuple is its elements.
+    /// - `Rect(width: w, ..)` takes its arity from the DECLARED variant and each
+    ///   labelled element (P4) the slot its label names.
+    /// - an element is tested recursively from the register its
+    ///   `get_tuple_element` landed in; a literal compares, a primitive type
+    ///   name (§5.2) is a type test and binds nothing.
+    fn emitSubPattern(self: *Emitter, src: u32, pat: ast.Pattern, fail: u32, free: u32) anyerror!void {
+        switch (pat) {
+            .wildcard => {},
+            .numberLit => |n| try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ Op.xr(src), Op.num(n) }),
+            .stringLit => |str| {
+                try self.emitStringLiteral(str, free);
+                try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ Op.xr(src), Op.xr(free) });
+            },
+            .ident => |written| {
+                const name = bareVariantName(written);
+                if (std.mem.eql(u8, written, "true") or std.mem.eql(u8, written, "false")) {
+                    try beamEmitter.writeTest(self.out, .is_eq_exact, fail, &.{ Op.xr(src), Op.atom(written) });
+                } else if (isVariantPath(written) or self.enum_variants.contains(name)) {
+                    var vbuf: [256]u8 = undefined;
+                    const vatom = try atomName(self.variantTag(written), &vbuf);
+                    try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ Op.xr(src), Op.atom(vatom) });
+                } else if (primitiveTypeName(name) or self.record_fields.contains(name) or self.enum_variant_names.contains(name)) {
+                    const testable = try self.emitTypeTestBranchOn(.{ .named = name }, src, fail);
+                    if (!testable) try beamEmitter.writeJump(self.out, fail);
+                } else if (!std.mem.eql(u8, name, "_")) {
+                    const y_idx = self.next_y;
+                    self.next_y += 1;
+                    try self.reg_map.put(name, .{ .y = y_idx });
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(src), Dst.yr(y_idx));
+                }
+            },
+            .variant => |v| switch (v.shape) {
+                .range => {
+                    for (v.payload.literals, 0..) |b, i| {
+                        const bound: Op = switch (b) {
+                            .numberLit => |n| Op.num(n),
+                            .stringLit => |str| blk: {
+                                try self.emitStringLiteral(str, free);
+                                break :blk Op.xr(free);
+                            },
+                            else => unreachable, // the parser admits a number or a string bound only
+                        };
+                        const ops: [2]Op = if (i == 0) .{ Op.xr(src), bound } else .{ bound, Op.xr(src) };
+                        try beamEmitter.writeTest(self.out, .is_ge, fail, &ops);
+                    }
+                },
+                .tuple => {
+                    const elems = v.payload.literals;
+                    try beamEmitter.writeTest(self.out, .is_tuple, fail, &.{Op.xr(src)});
+                    try self.emitArityTest(src, elems.len, v.rest, fail, free);
+                    for (elems, 0..) |e, i| try self.emitElementPattern(src, i, e, v.rest, fail, free);
+                },
+                .variant => {
+                    var vbuf: [256]u8 = undefined;
+                    const vatom = try atomName(self.variantTag(v.name), &vbuf);
+                    const written: usize = switch (v.payload) {
+                        .fields => |f| f.len,
+                        .literals => |l| l.len,
+                        .binding => 1,
+                    };
+                    const declared = self.declaredVariantShape(v.name);
+                    if (v.payload == .binding) {
+                        // `Ok ok`: the tag, and the whole value bound.
+                        try beamEmitter.writeTest(self.out, .is_tuple, fail, &.{Op.xr(src)});
+                        try beamEmitter.writeGetTupleElement(self.out, Op.xr(src), 0, Dst.xr(free));
+                        try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ Op.xr(free), Op.atom(vatom) });
+                        try self.emitSubPattern(src, .{ .ident = v.payload.binding }, fail, free);
+                        return;
+                    }
+                    if (declared) |d| {
+                        if (d.fields == 0) {
+                            try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ Op.xr(src), Op.atom(vatom) });
+                            return;
+                        }
+                        try beamEmitter.writeTest(self.out, .is_tagged_tuple, fail, &.{ Op.xr(src), .{ .untagged = @as(i64, @intCast(d.fields + 1)) }, Op.atom(vatom) });
+                    } else if (v.rest) {
+                        try beamEmitter.writeTest(self.out, .is_tuple, fail, &.{Op.xr(src)});
+                        try self.emitArityTest(src, written + 1, true, fail, free);
+                        try beamEmitter.writeBif(self.out, "element", fail, &.{ Op.int(1), Op.xr(src) }, Dst.xr(free));
+                        try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ Op.xr(free), Op.atom(vatom) });
+                    } else {
+                        try beamEmitter.writeTest(self.out, .is_tagged_tuple, fail, &.{ Op.xr(src), .{ .untagged = @as(i64, @intCast(written + 1)) }, Op.atom(vatom) });
+                    }
+                    for (0..written) |i| {
+                        const at = variantSlotIndex(v, if (declared) |d| d.decl else null, i) orelse continue;
+                        const elem: ast.Pattern = switch (v.payload) {
+                            .fields => |f| .{ .ident = f[i] },
+                            .literals => |l| l[i],
+                            .binding => unreachable,
+                        };
+                        try self.emitElementPattern(src, at + 1, elem, declared == null and v.rest, fail, free);
+                    }
+                },
+            },
+            // A list, `|` or multi-subject pattern nested inside a tuple or a
+            // payload has no lowering here. Refused rather than matched
+            // unconditionally, which is what it did before.
+            .list, .@"or", .multi => return error.NestedPatternUnsupported,
+        }
+    }
+
+    /// Slot `i` of the tuple in `{x, src}` against `pat`. A wildcard reads
+    /// nothing. `unsized` — the tuple's arity was only bounded (`..`), which
+    /// the loader's validator cannot see through, so the slot is read with the
+    /// guard BIF `element/2` rather than `get_tuple_element`.
+    fn emitElementPattern(self: *Emitter, src: u32, i: usize, pat: ast.Pattern, unsized: bool, fail: u32, free: u32) anyerror!void {
+        if (pat == .wildcard) return;
+        if (pat == .ident and std.mem.eql(u8, pat.ident, "_")) return;
+        if (unsized) {
+            try beamEmitter.writeBif(self.out, "element", fail, &.{ Op.int(i + 1), Op.xr(src) }, Dst.xr(free));
+        } else {
+            try beamEmitter.writeGetTupleElement(self.out, Op.xr(src), i, Dst.xr(free));
+        }
+        const saved_live = self.raiseLive(free + 1);
+        defer self.min_live = saved_live;
+        try self.emitSubPattern(free, pat, fail, free + 1);
+    }
+
+    /// The tuple in `{x, src}` has exactly `n` elements, or at least `n` under
+    /// `..` — asked as `element(n, T)`, which fails to `fail` when slot `n` does
+    /// not exist (a `tuple_size` + `is_ge` pair is right too, but the
+    /// validator does not carry the bound into the reads after it).
+    fn emitArityTest(self: *Emitter, src: u32, n: usize, at_least: bool, fail: u32, free: u32) anyerror!void {
+        if (!at_least) {
+            try beamEmitter.writeTest(self.out, .test_arity, fail, &.{ Op.xr(src), .{ .untagged = @as(i64, @intCast(n)) } });
+            return;
+        }
+        if (n == 0) return;
+        try beamEmitter.writeBif(self.out, "element", fail, &.{ Op.int(n), Op.xr(src) }, Dst.xr(free));
+    }
+
+    /// The constructor slot (0-based, after the tag) the payload element at `i`
+    /// fills: the position of the label the pattern WROTE when it wrote one
+    /// (§5.1 P4), else `i`. Null when the label names no declared field. The
+    /// twin of `erlang.zig`'s `slotIndex`.
+    fn variantSlotIndex(v: anytype, declared: ?[]const ast.Field, i: usize) ?usize {
+        if (v.labels.len > i and v.labels[i].len > 0) {
+            const d = declared orelse return i;
+            for (d, 0..) |f, at| if (std.mem.eql(u8, f.name, v.labels[i])) return at;
+            return null;
+        }
+        return i;
+    }
+
+    /// One arm whose pattern `emitSubPattern` tests from `{x, 0}`.
+    fn emitPatternArm(self: *Emitter, arm: anytype, subj_y: ?u32, end_label: u32) anyerror!void {
         const next = self.allocLabel();
-        var has_string = false;
-        for (bounds) |b| {
-            if (b == .stringLit) has_string = true;
-        }
-        const subj = self.scratchBase();
-        if (has_string) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(subj));
-        for (bounds, 0..) |b, i| {
-            const low = i == 0;
-            switch (b) {
-                .numberLit => |n| {
-                    const ops: [2]Op = if (low) .{ Op.xr(0), Op.num(n) } else .{ Op.num(n), Op.xr(0) };
-                    try beamEmitter.writeTest(self.out, .is_ge, next, &ops);
-                },
-                .stringLit => |s| {
-                    const saved_live = self.raiseLive(subj + 1);
-                    try self.emitStringLiteral(s, 0);
-                    self.min_live = saved_live;
-                    const ops: [2]Op = if (low) .{ Op.xr(subj), Op.xr(0) } else .{ Op.xr(0), Op.xr(subj) };
-                    try beamEmitter.writeTest(self.out, .is_ge, next, &ops);
-                    try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
-                },
-                else => unreachable, // the parser admits a number or a string bound only
-            }
-        }
+        const free = self.scratchBase();
+        const saved_live = self.raiseLive(free);
+        try self.emitSubPattern(0, arm.pattern, next, free);
+        self.min_live = saved_live;
         try self.emitArmTail(arm, subj_y, end_label);
         try beamEmitter.writeLabel(self.out, next);
-        if (has_string) try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
     }
 
     /// Lower a `case expr { pat -> body; ... }` into a chain of BEAM test
@@ -7375,6 +7536,11 @@ const Emitter = struct {
                         try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.atom(vatom) });
                         try self.emitArmTail(arm, subj_y, end_label);
                         try beamEmitter.writeLabel(self.out, next);
+                    } else if (std.mem.eql(u8, written, "true") or std.mem.eql(u8, written, "false") or primitiveTypeName(name)) {
+                        // `true { … }` compares the atom, and `i32 { … }` /
+                        // `string { … }` are §5.2's type tests. All three were
+                        // binders, so the first such arm took every subject.
+                        try self.emitPatternArm(arm, subj_y, end_label);
                     } else if (self.record_fields.contains(name) or self.enum_variant_names.contains(name)) {
                         // Decision 8 §3.3 — an arm naming a `type` is chosen by
                         // the VALUE's own type, which half 3 put in the value.
@@ -7414,8 +7580,12 @@ const Emitter = struct {
                     try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                 },
-                .variant => |v| if (v.shape == .range) {
-                    try self.emitRangeArm(v.payload.literals, arm, subj_y, end_label);
+                // Decision 8 §5's shapes the two arms below never read — a
+                // range, a tuple, `..`, labels, a literal or nested payload —
+                // are tested element by element (`emitSubPattern`). They used
+                // to reach an untested arm and match every subject.
+                .variant => |v| if (v.shape != .variant or v.rest or v.labels.len > 0 or v.payload == .literals) {
+                    try self.emitPatternArm(arm, subj_y, end_label);
                 } else switch (v.payload) {
                     .fields => |fields| {
                         const next = self.allocLabel();
@@ -7446,10 +7616,7 @@ const Emitter = struct {
                         try self.emitArmTail(arm, subj_y, end_label);
                         try beamEmitter.writeLabel(self.out, next);
                     },
-                    .literals => {
-                        // Literal-argument variants are not lowered specially yet.
-                        try self.emitArmTail(arm, subj_y, end_label);
-                    },
+                    .literals => unreachable, // `emitPatternArm` above
                 },
                 .list => |lst| {
                     const next = self.allocLabel();
