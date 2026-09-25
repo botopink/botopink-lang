@@ -5545,6 +5545,15 @@ const Emitter = struct {
                                     },
                                     else => last,
                                 };
+                                // The tail reads the ELEMENT parameter, whose
+                                // record type `lowerArrayHof` binds only while
+                                // it lowers the body — so it is bound here for
+                                // the duration of the question (`00 · 05-wasm`
+                                // step 9). Unbound, `es.map({ e -> e.key })`
+                                // answered `.i32` and `ks.at(0)` was read as a
+                                // boxed `?i32`: a heap address at exit 0.
+                                const held = self.holdElemParam(lam, recv);
+                                defer self.releaseElemParam(held);
                                 if (self.isStringExpr(v)) break :blk .str;
                                 if (self.wasmTypeOf(v)[0] == 'f') break :blk .f32;
                                 break :blk .i32;
@@ -5563,6 +5572,35 @@ const Emitter = struct {
             },
             else => .i32,
         };
+    }
+
+    /// What `holdElemParam` displaced, so `releaseElemParam` can put it back.
+    const HeldElemParam = struct {
+        name: ?[]const u8 = null,
+        prev_type: ?[]const u8 = null,
+        prev_str: bool = false,
+    };
+
+    /// Bind a HOF lambda's element parameter the way `lowerArrayHof` does —
+    /// its record type and its string-ness — so a shape question asked about
+    /// the body before it is lowered sees the element and not an unknown name.
+    fn holdElemParam(self: *Emitter, lam: LambdaView, recv: ast.Expr) HeldElemParam {
+        if (lam.params.len == 0) return .{};
+        const p = lam.params[0];
+        const held: HeldElemParam = .{
+            .name = p,
+            .prev_type = self.local_types.get(p),
+            .prev_str = self.str_locals.contains(p),
+        };
+        if (self.elemRecordOf(recv)) |r| self.local_types.put(p, r) catch {};
+        if (self.elemKindOf(recv) == .str) self.str_locals.put(p, {}) catch {};
+        return held;
+    }
+
+    fn releaseElemParam(self: *Emitter, held: HeldElemParam) void {
+        const p = held.name orelse return;
+        if (held.prev_type) |t| self.local_types.put(p, t) catch {} else _ = self.local_types.remove(p);
+        if (!held.prev_str) _ = self.str_locals.remove(p);
     }
 
     // ── function values ──────────────────────────────────────────────────────
@@ -6827,6 +6865,12 @@ const Emitter = struct {
             .branch => |b| switch (b.kind) {
                 .if_ => |i| blk: {
                     const els = i.else_ orelse break :blk false;
+                    // An optional-binding `if` — what `a ?? b` is written as
+                    // — has both arms of one type by construction, and the
+                    // payload arm reads a binder nothing typed, so the default
+                    // arm alone proves it. Requiring both made `["x", "yz"]
+                    // .at(1) ?? "none"` print the string's address at exit 0.
+                    if (i.binding != null) break :blk self.bodyIsString(i.then_) or self.bodyIsString(els);
                     break :blk self.bodyIsString(i.then_) and self.bodyIsString(els);
                 },
                 // Both sides have the payload's type; either one proves it.

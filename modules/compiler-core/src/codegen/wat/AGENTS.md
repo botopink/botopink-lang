@@ -269,14 +269,22 @@ syntax-dependent. `armIsString` is the only position allowed to look through a
 lambda node, and `run/case_value_string_arms.bp` pins both spellings on four
 targets.
 
-**Still open, measured here and left.** `es.map({ e -> e.key })` does not answer
-a string ARRAY: `elemKindOf`'s `map` arm asks `isStringExpr` of the lambda's
-tail while the parameter's record type is not yet bound, so the result is `.i32`
-and `ks.at(0)?.length()` reads the box as a string pointer (`284`). It needs the
-binding held for the duration of that question, and it is not wasm's alone —
-commonJS answers `ks.at(...)?.length is not a function` for the same line.
-Likewise `es.at(1)?.key.length().toString()` traps (`unresolved call:
-toString/0`): a `?.` chain loses the receiver's type for the SECOND method.
+**A `map`'s element shape is asked with the element bound** (`holdElemParam` /
+`releaseElemParam`, in `elemKindOf`'s `map` arm). The shape of `es.map({ e ->
+e.key })` is decided before the lambda is lowered, by asking `isStringExpr` of
+its tail — and `e`'s record type used to be registered only inside
+`lowerArrayHof`, so `e.key` was a field of an unknown name, the result an `i32`
+array, and `ks.at(0)?.length()` read the box as a string pointer (`276`, exit
+0). The parameter is bound for the question and released after it. Beside it,
+**an optional-binding `if` is a string when EITHER arm proves it**
+(`isStringExpr`'s `.if_` arm): `a ?? b` is written as one, its payload arm reads
+a binder nothing typed, and requiring both arms made `["x", "yz"].at(1) ??
+"none"` print the string's address. `run/map_record_field_strings.bp` and
+`run/map_record_field_length.bp` pin both.
+
+**Still open, measured here and left.** `es.at(1)?.key.length().toString()`
+traps (`unresolved call: toString/0`): a `?.` chain loses the receiver's type
+for the SECOND method.
 
 ## Two run-time rules this backend implements first (2026-09-19)
 
