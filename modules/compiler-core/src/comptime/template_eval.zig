@@ -38,6 +38,7 @@ const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
 const persistent_erl = @import("./runtime/persistent_erl.zig");
+const hostRuntime = @import("./runtime/runtime.zig");
 const preludeMod = @import("./runtime/prelude.zig");
 const etf = @import("./runtime/etf.zig");
 const trace = @import("./trace.zig");
@@ -110,6 +111,11 @@ pub fn evaluate(
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "template", tfn.name, unsupported) },
         else => |e| return e,
     };
+
+    // A build that carries no runtime (a wasm host before front 18 step 2)
+    // refuses here; what follows names `persistent_erl` and is analysed only
+    // where the BEAM runtime is built in.
+    if (comptime hostRuntime.active == null) return .{ .err = try noRuntimeText(arena, "template") };
 
     const path = try ensureModule(arena, io, ".botopinkbuild/tmp/template", source.module, source.code);
 
@@ -240,6 +246,11 @@ pub fn writeModule(arena: std.mem.Allocator, io: std.Io, dir: []const u8, module
         return error.EvalFailed;
     };
     return path;
+}
+
+/// The refusal of a build with no comptime runtime (`runtime/runtime.zig`).
+fn noRuntimeText(arena: std.mem.Allocator, host: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "the {s} evaluator has {s}", .{ host, hostRuntime.no_runtime_message });
 }
 
 /// What a failed round trip reports. Every transport failure used to collapse

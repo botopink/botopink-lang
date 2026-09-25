@@ -482,6 +482,56 @@ pub fn build(b: *std.Build) void {
         test_cli_step.dependOn(&run_script.step);
     }
 
+    // ── compiler-web: compiler-core for the browser (front 18 step 5) ─────────
+    // `zig build compiler-web` → zig-out/web/{botopink.wasm, glue.js, index.html}.
+    // A `wasm32-wasi` build of compiler-core's API (`modules/compiler-web/src/
+    // web_root.zig`: sources in, generated text out); the target is fixed here,
+    // not read from `-Dtarget`, because nothing else in this workspace builds
+    // for wasm and the CLI never will (it spawns processes). WASI provides the
+    // clock, stdout/stderr and randomness through the JS shim in `glue.js`;
+    // the comptime runtime and the RUN LOG executors are compiled out on wasm
+    // (`comptime/runtime/runtime.zig`), so the module imports no process spawn.
+    // `-Doptimize` applies; the size budget is measured at ReleaseSmall.
+    const web_target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
+    const web_core_mod = b.createModule(.{
+        .root_source_file = b.path("modules/compiler-core/src/root.zig"),
+        .target = web_target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "std_prelude", .module = stdPreludeModule(b, web_target, std_pkg_files, pkg_table_file) },
+        },
+    });
+    const web_exe = b.addExecutable(.{
+        .name = "botopink",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/compiler-web/src/web_root.zig"),
+            .target = web_target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "botopink", .module = web_core_mod },
+            },
+        }),
+    });
+    web_exe.entry = .disabled; // a library of exports, not a `_start` program
+    web_exe.rdynamic = true; // keep every `export fn` in the wasm export table
+    const web_install = b.addInstallArtifact(web_exe, .{ .dest_dir = .{ .override = .{ .custom = "web" } } });
+    const web_step = b.step("compiler-web", "Build compiler-core for the browser (zig-out/web/)");
+    web_step.dependOn(&web_install.step);
+    web_step.dependOn(&b.addInstallFile(b.path("modules/compiler-web/glue.js"), "web/glue.js").step);
+    web_step.dependOn(&b.addInstallFile(b.path("modules/compiler-web/index.html"), "web/index.html").step);
+
+    // `zig build test-web` — the browser build answers like the native compiler:
+    // `modules/compiler-web/tests/smoke.js` loads `glue.js` and the built
+    // module under node, compiles one program to the four targets, and pins a
+    // rendered diagnostic and the comptime refusal. Needs `node`; NOT wired
+    // into `zig build test` (a wasm build is 15–50 s on top of the suite).
+    const test_web_run = b.addSystemCommand(&.{ "node", "modules/compiler-web/tests/smoke.js" });
+    test_web_run.addFileArg(web_exe.getEmittedBin());
+    test_web_run.setCwd(b.path("."));
+    test_web_run.has_side_effects = true; // spawns node — never cache
+    const test_web_step = b.step("test-web", "Run the browser build's smoke test under node");
+    test_web_step.dependOn(&test_web_run.step);
+
     // ── Run step ──────────────────────────────────────────────────────────────
 
     const run_cmd = b.addRunArtifact(cli_exe);

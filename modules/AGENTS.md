@@ -20,6 +20,11 @@ modules/
 ├── compiler-core/           ← library: lexer / parser / AST / infer / comptime / codegen
 │   ├── src/                 ← all compiler stages
 │   └── snapshots/           ← parser / codegen / comptime snapshots
+├── compiler-web/            ← the browser build of compiler-core (`zig build compiler-web` → zig-out/web/)
+│   ├── src/web_root.zig     ← the wasm32-wasi exports: bp_add_source / bp_compile / bp_output_*
+│   ├── glue.js              ← WASI shim + `Botopink.Compiler` + the Worker protocol (no dependency)
+│   ├── index.html           ← the demo page
+│   └── tests/smoke.js       ← `zig build test-web`: the build answers like the native compiler, under node
 ├── language-server/         ← `botopink-lsp` LSP executable
 │   ├── src/                 ← JSON-RPC server + LSP features + tests
 │   └── snapshots/lsp/       ← LSP feature snapshots
@@ -41,6 +46,7 @@ modules/
 |---|---|---|---|
 | `compiler-cli/` | `botopink` executable | `compiler-core`, `manifest` | [link](compiler-cli/AGENTS.md) |
 | `compiler-core/` | library (lexer → codegen) | [`libs/std`](../libs/std/AGENTS.md) | [link](compiler-core/AGENTS.md) |
+| `compiler-web/` | `botopink.wasm` (wasm32-wasi) + `glue.js` + `index.html` | `compiler-core` | [link](compiler-web/AGENTS.md) |
 | `language-server/` | `botopink-lsp` executable | `compiler-core`, `manifest` | [link](language-server/AGENTS.md) |
 | `lib-test-runner/` | `botopink-lib-test` executable | `manifest` only (shells out to `botopink`) | [link](lib-test-runner/AGENTS.md) |
 | `manifest/` | library (the `botopink.json` model) | `std` only | [link](manifest/AGENTS.md) |
@@ -66,6 +72,8 @@ zig build test-vscode      # VS Code extension unit tests (needs node/npm)
 zig build test-backends    # compiler-cli/tests/backend_exec.sh (needs runtimes)
 zig build clean-tmp        # reap compiler-core/.botopinkbuild/tmp and every
                            # modules/*/.botopinkbuild/test-scratch root older than 1 day
+zig build compiler-web     # compiler-core for the browser → zig-out/web/ (fixed wasm32-wasi target)
+zig build test-web         # its smoke test under node (needs node; not part of `test`)
 ```
 
 No package carries a `build.zig` of its own (`bpmp` keeps only a `build.zig.zon`):
@@ -81,7 +89,9 @@ the std modules). The lib-test-runner's unit tests run under the workspace
 - When adding a new subdirectory under a package, create an `AGENTS.md` for it
   and link it from the parent.
 - Codegen is implemented entirely in Zig under `compiler-core/`. There is **no**
-  standalone Node.js/WASM compiler.
+  standalone Node.js/WASM compiler: `compiler-web/` is compiler-core itself built
+  for `wasm32-wasi`, with the comptime runtime and the RUN LOG executors compiled
+  out (`compiler-core/src/comptime/runtime/runtime.zig`).
 - Comptime evaluation (templates, decorators) runs through compiler-core's
   persistent `erl` process (`compiler-core/src/comptime/runtime/persistent_erl.zig`);
   the CLI and the LSP share that pipeline.

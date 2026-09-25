@@ -12,6 +12,7 @@ Zig by `../eval.zig` and never reach the VM.)
 ```text
 runtime/
 ├── AGENTS.md            ← you are here
+├── runtime.zig          ← which runtime THIS build carries (`active`, `can_spawn`); the browser build's refusal
 ├── prelude.zig          ← the resident host glue: two Erlang modules, rendered from erl_ast forms
 ├── server_source.zig    ← the resident server's Erlang source (no imports; shared by the runtime and the renderer)
 ├── render_resident.zig  ← BUILD-TIME tool: writes the three `.erl` for `erlc` (root build.zig runs it)
@@ -37,6 +38,7 @@ the compiler — the renderer's module root has to be compiler-core's `src/`, so
 
 | File | Role |
 |---|---|
+| `runtime.zig` | Decided at compile time by the host the compiler is built for (front 18 step 5): `can_spawn` (`!builtin.cpu.arch.isWasm()`) is the BEAM runtime's precondition and the RUN LOG executors'; `active: ?ComptimeRuntime` is `.beam` where a process can be spawned and **null** on a wasm host, where the wat runtime (step 2) is not built yet. `template_eval.evaluate` and `decorator_eval.evaluate` test `active == null` with `comptime` before naming `persistent_erl`, so on `wasm32` that file is never analysed and `std.process` never has to resolve; the evaluation is refused with `no_runtime_message` as a located `err` (decision 67 — never an empty reply). `../../codegen.zig` reads `can_spawn` the same way and refuses `execute` on such a host (`error.NoExecutorOnThisHost`). `ComptimeRuntime = enum { beam, wat }` is step 3's enum (decision 84), declared here so the callers already read one place. |
 | `prelude.zig` | The host glue every generated comptime module used to carry a copy of — 54 of the 295 lines of the smallest realistic module, byte-identical in every module the compiler has ever produced. It is rendered from the same `erl_ast` forms the generated modules are, into two Erlang modules compiled once at server warmup: **`bp_comptime_template`** (the capture API `text/1`, `parts/1`, `source/1`, `context/1`, `bindings/1`, `lookup/2`, `ref/1`; the result constructors `build/2`, `custom/3`, `expr/1`, `code/1`; the failure throws `fail/2`, `failAt/3`, `compilerError/1`; the reply encoder `'__bp_reply'/1`; and `erlang.comptime_helper_forms`) and **`bp_comptime_decorator`** (`fail/2`, `failAt/3`, `compilerError/1`, `emit/1`, `'__bp_emitted'/0` and the same helpers). The two cannot be one module: a template's `fail/2` throws `'__bp_template_fail'` with the capture's parameter name, a decorator's throws `'__bp_decorator_fail'` without it; each carries its own copy of the four untyped helpers so neither prelude has a cross-module call. A generated module reaches them by `-import` (`ComptimeModule.resident`, `../../codegen/erlang.zig`), which leaves the lowered body's own text unchanged — the `COMPTIME ERLANG` snapshots are byte-identical across the move. `exportRefs` derives both the prelude's `-export` and the generated module's `-import` from the same forms, so nothing can be imported that the prelude does not export. What stays in the generated module: the lowered body, the `'__bp_prim_…'` shims its own method calls reached, and `main/0`. |
 | `etf.zig` | `codegen/beam/term.zig` values as Erlang's external term format, so a capture or a `@Decl` handle reaches the node as `binary_to_term/1` input instead of a literal baked into the generated module — which is what leaves the module with nothing that depends on the call site. `encode(arena, term)` writes the version byte 131 and then the minimal tag for each variant: `SMALL_ATOM_UTF8_EXT`/`ATOM_UTF8_EXT` for an atom (and for `true`/`false`), `BINARY_EXT`, `SMALL_INTEGER_EXT`/`INTEGER_EXT`/`SMALL_BIG_EXT` by magnitude, `NEW_FLOAT_EXT`, `NIL_EXT`, `LIST_EXT` (never the `STRING_EXT` shorthand — one encoding per variant), `SMALL_TUPLE_EXT`/`LARGE_TUPLE_EXT`, `MAP_EXT`. **Not** source text re-parsed in the node: that is the `'__bp_erl_eval'/2` shape, measured at ≈ 50× a direct call in `../../codegen/beam/AGENTS.md`. Inline tests assert byte vectors read off `binary_to_list(term_to_binary(T))` on OTP 29, so the encoder is pinned to the format rather than to itself. |
 | `server_source.zig` | The resident server's Erlang source as a Zig string (`module_name` = `botopink_comptime_server`, `eval_timeout_ms` = 10 s spliced in as `-define(EVAL_TIMEOUT_MS, …)`, `source`). It has no imports of its own because two programs read it: the runtime, which embeds the compiled `.beam` and documents the protocol, and the build-time renderer, which must not import the runtime (the runtime embeds what the renderer produces). The protocol itself — `loop/0`'s four commands, `compile_then`/`load_then`, `load_beam`, `safe_call`, `read_frame`/`write_frame` — is described under `persistent_erl.zig`. |
@@ -45,6 +47,11 @@ the compiler — the renderer's module root has to be compiler-core's `src/`, so
 
 ## Notes
 
+- **The browser build carries no runtime.** `modules/compiler-web/` builds
+  compiler-core for `wasm32-wasi`; there `runtime.zig`'s `active` is null, both
+  evaluators refuse before staging anything, and nothing in this directory but
+  `runtime.zig` is analysed. When `persistent_wat.zig` (step 2) lands, `active`
+  becomes `.wat` there and the refusal disappears.
 - **Never inherit the parent's stdio into the `erl` child.** stdin/stdout are
   the protocol pipes; stderr goes to `.botopinkbuild/tmp/persistent_erl/erl.<id>.stderr.log`.
   An inherited stderr held open by an `erl` that outlives the test binary makes

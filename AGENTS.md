@@ -25,6 +25,7 @@ botopink-lang/                 ← language core (this project)
 │   ├── bpmp/                  ← `bpmp` package + toolchain manager
 │   ├── compiler-cli/          ← `botopink` CLI
 │   ├── compiler-core/         ← lexer, parser, AST, infer, comptime, codegen
+│   ├── compiler-web/          ← the browser build of compiler-core: botopink.wasm + glue.js + the demo page
 │   ├── language-server/       ← `botopink-lsp` LSP server
 │   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
@@ -56,6 +57,8 @@ zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.s
 zig build test-language # botopink language tests (tests/language/run.sh; `-- --compiler <botopink>` to run another binary)
 zig build test-docs     # every `botopink` fence of docs.md/README.md compiles (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
+zig build compiler-web  # compiler-core for the browser → zig-out/web/ (wasm32-wasi; `-Doptimize=ReleaseSmall` is the shipped size)
+zig build test-web      # the browser build's smoke test under node (modules/compiler-web/tests/smoke.js)
 ```
 
 `zig build test` also runs two greps that refuse rather than warn (decision 67,

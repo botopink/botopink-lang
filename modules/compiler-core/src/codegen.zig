@@ -8,6 +8,7 @@ const wat = @import("./codegen/wat.zig");
 const comptimeMod = @import("./comptime.zig");
 const moduleMod = @import("./module.zig");
 const runtime = @import("./codegen/runtime.zig");
+const hostRuntime = @import("./comptime/runtime/runtime.zig");
 
 pub const Module = moduleMod.Module;
 pub const ModuleOutput = moduleOutput.ModuleOutput;
@@ -90,6 +91,14 @@ pub fn generateWith(
         .wasm => wat.codegenEmit(allocator, session.outputs.items, config),
     };
 
+    // A host that cannot spawn a process (the browser build, front 18 step 5)
+    // has no executor: the harness's `execute` is refused there rather than
+    // answered with an empty RUN LOG, and `codegen/runtime.zig` is never
+    // analysed for it.
+    if (comptime !hostRuntime.can_spawn) {
+        if (options.execute) return error.NoExecutorOnThisHost;
+        return outputs;
+    }
     if (!options.execute) return outputs;
 
     // Sibling modules (multi-module compilations, e.g. the "std" package) are

@@ -1,0 +1,163 @@
+<!doctype html>
+<!--
+  index.html — the demo of the browser build (front 18 step 5).
+
+  Serve zig-out/web/ from any static server (`python3 -m http.server -d zig-out/web`)
+  and open it: the page loads glue.js in a Worker, the Worker fetches botopink.wasm
+  once, and every compile after that is a message round trip — no request leaves
+  the page (DevTools › Network stays at those two files).
+
+  The sample with a decorator and a template shows the compiler's answer on a
+  host with no comptime runtime: a located refusal, until front 18 step 2 lands
+  the wat runtime. Everything else — the checker, the four emitters, the
+  diagnostics — is the native compiler byte for byte.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>botopink in the browser</title>
+  <style>
+    :root { color-scheme: light dark; font: 14px/1.4 system-ui, sans-serif; }
+    body { margin: 0; display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+    header { display: flex; gap: .75rem; align-items: center; padding: .5rem 1rem; border-bottom: 1px solid #8884; flex-wrap: wrap; }
+    header h1 { font-size: 1rem; margin: 0 .5rem 0 0; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: 0; }
+    textarea, pre { font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 0; }
+    textarea { width: 100%; height: 100%; box-sizing: border-box; border: 0; border-right: 1px solid #8884; padding: .75rem; resize: none; background: transparent; color: inherit; }
+    #right { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+    nav { display: flex; border-bottom: 1px solid #8884; }
+    nav button { border: 0; background: transparent; padding: .5rem .9rem; cursor: pointer; color: inherit; }
+    nav button[aria-selected="true"] { border-bottom: 2px solid currentColor; }
+    pre { overflow: auto; padding: .75rem; white-space: pre-wrap; word-break: break-word; }
+    #status { margin-left: auto; opacity: .75; }
+    .bad { color: #d33; }
+    @media (max-width: 800px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } textarea { border-right: 0; border-bottom: 1px solid #8884; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>botopink in the browser</h1>
+    <label>sample <select id="sample">
+      <option value="plain">plain program</option>
+      <option value="comptime">decorator + template</option>
+    </select></label>
+    <label>target <select id="target">
+      <option>commonJS</option>
+      <option>erlang</option>
+      <option>beam</option>
+      <option>wasm</option>
+    </select></label>
+    <button id="compile" disabled>Compile</button>
+    <span id="status">loading botopink.wasm…</span>
+  </header>
+  <main>
+    <textarea id="source" spellcheck="false"></textarea>
+    <section id="right">
+      <nav role="tablist">
+        <button role="tab" data-pane="code" aria-selected="true">output</button>
+        <button role="tab" data-pane="trace">comptime</button>
+        <button role="tab" data-pane="diag">diagnostics</button>
+        <button role="tab" data-pane="stderr">stderr</button>
+      </nav>
+      <pre id="pane"></pre>
+    </section>
+  </main>
+  <script>
+    "use strict";
+    const SAMPLES = {
+      plain: `fn greet(name: string) -> string {
+    return "hello, " + name;
+}
+
+fn main() {
+    @print(greet("web"));
+}
+`,
+      comptime: `pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\\"" + q.text().toUpper() + "\\"");
+}
+
+pub fn describe(comptime decl: @Decl) {
+    @emit("pub fn describe" + decl.name + "() -> string { return \\"" + decl.name + "\\"; }");
+}
+
+#[describe]
+type User(name: string)
+
+val s = shout "browser";
+
+fn main() {
+    @print(s);
+    @print(describeUser());
+}
+`,
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const panes = { code: "", trace: "", diag: "", stderr: "" };
+    let current = "code";
+
+    function show(pane) {
+      current = pane;
+      for (const b of document.querySelectorAll("nav button")) b.setAttribute("aria-selected", String(b.dataset.pane === pane));
+      $("pane").textContent = panes[pane];
+      $("pane").className = pane === "diag" && panes.diag ? "bad" : "";
+    }
+    document.querySelector("nav").addEventListener("click", (e) => { if (e.target.dataset.pane) show(e.target.dataset.pane); });
+    $("sample").addEventListener("change", () => { $("source").value = SAMPLES[$("sample").value]; });
+    $("source").value = SAMPLES.plain;
+
+    // The compiler lives in a Worker (glue.js serves the protocol when loaded
+    // as one); the page only sends sources and shows what comes back.
+    const worker = new Worker("glue.js");
+    const pending = new Map();
+    let nextId = 1;
+    function ask(msg) {
+      return new Promise((resolve, reject) => {
+        const id = nextId++;
+        pending.set(id, { resolve, reject });
+        worker.postMessage({ id, ...msg });
+      });
+    }
+    worker.onmessage = (e) => {
+      const p = pending.get(e.data.id);
+      pending.delete(e.data.id);
+      if (e.data.ok) p.resolve(e.data); else p.reject(e.data);
+    };
+
+    async function compile() {
+      const target = $("target").value;
+      $("compile").disabled = true;
+      $("status").textContent = `compiling for ${target}…`;
+      try {
+        const reply = await ask({ op: "compile", target, sources: [{ path: "main", source: $("source").value }] });
+        const modules = reply.result.modules;
+        panes.code = modules.map((m) => `// ${m.name} — ${target}\n${m.code}${m.units.map((u) => `\n\n// unit ${u.atom}\n${u.code}`).join("")}`).join("\n\n");
+        panes.trace = modules.map((m) => m.comptimeTrace || "").join("\n") || "(no decorator or template was evaluated)";
+        panes.diag = modules.map((m) => m.diagnostic || "").join("");
+        panes.stderr = reply.stderr || "(nothing)";
+        $("status").textContent = `${reply.status === 0 ? "compiled" : "failed"} in ${reply.ms.toFixed(1)} ms`;
+        show(reply.status === 0 ? "code" : "diag");
+      } catch (err) {
+        panes.stderr = (err.stderr || "") + "\n" + (err.error || err.message || String(err));
+        $("status").textContent = "the compiler trapped — see stderr";
+        show("stderr");
+      } finally {
+        $("compile").disabled = false;
+      }
+    }
+    $("compile").addEventListener("click", compile);
+    $("source").addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") compile(); });
+
+    ask({ op: "load", wasm: "botopink.wasm" }).then(() => {
+      $("status").textContent = "ready — Ctrl+Enter compiles";
+      $("compile").disabled = false;
+    }, (err) => {
+      $("status").textContent = "could not load botopink.wasm";
+      panes.stderr = err.error || String(err);
+      show("stderr");
+    });
+  </script>
+</body>
+</html>

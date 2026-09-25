@@ -6,7 +6,11 @@
 Per-target codegen backends. The public façade lives at `../codegen.zig`
 (`generateWith(alloc, modules, io, config, options)` runs the comptime session,
 then the selected backend's `codegenEmit`, which returns one `ModuleOutput` per
-module — a failed one carrying its diagnostic).
+module — a failed one carrying its diagnostic). On a host that cannot spawn a
+process (`../comptime/runtime/runtime.zig` `can_spawn` — the browser build,
+`modules/compiler-web/`) `options.execute` is refused with
+`error.NoExecutorOnThisHost` and `runtime.zig` is never analysed; the executors
+below exist on native hosts only.
 
 Top-level `test { … }` declarations (`DeclKind.@"test"`) are **skipped by every
 backend** in normal `build`/`run` output — they are only collected and emitted

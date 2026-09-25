@@ -176,6 +176,13 @@ jobs:
         shell: bash
         run: zig build test-docs
 
+      # The browser build (front 18 step 5): compiler-core for wasm32-wasi,
+      # then modules/compiler-web/tests/smoke.js under node — one program to
+      # the four targets, a rendered diagnostic, the comptime refusal.
+      - name: zig build test-web
+        shell: bash
+        run: zig build test-web
+
   libs:
     name: zig build test-libs (sibling libraries, all runnable targets)
     needs: test
