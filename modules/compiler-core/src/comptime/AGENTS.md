@@ -374,7 +374,10 @@ as `R`. `effectMatchesReturn(env, .context, T)` accepts the `@Context<…>` wrap
 or a named type with a `contextBase`, so `#[@context] fn … -> Element` passes
 the effect ↔ wrapper check, and `returnTargetFor` makes such a body's `return`
 unify with the owner type as written. `val {v, s} = use …` binds leniently via
-`bindUseDestructure`; a tuple `R` binds fresh vars (front 19 step 3).
+`bindUseDestructure`; `val #(a, b) = use …` (front 19 step 3) binds each name to
+the element of a tuple `R` at its position, commits an unresolved `R` to a tuple
+of the pattern's arity, and refuses another arity or a non-tuple `R` at the
+binding (`useTupleArity` — `use-tuple-arity`, decision 67).
 
 Codegen lowers `use f(x)` to `f(x)` on **every** target — the prefix is the
 activation the checker validated, never a rename or an inferred dependency

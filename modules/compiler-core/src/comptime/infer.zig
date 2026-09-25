@@ -8360,7 +8360,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             // hook's Return type `R` need not be a record, so unknown fields bind
             // to fresh type vars rather than triggering a `notARecord` error.
             if (isUseHookValue(lb.value)) {
-                try bindUseDestructure(env, lb.pattern, valTyped.getType());
+                try bindUseDestructure(env, lb.pattern, valTyped.getType(), loc);
                 return TypedExpr{ .binding = .{ .loc = loc, .type_ = valTyped.getType(), .kind = .{ .localBindDestruct = .{
                     .pattern = lb.pattern,
                     .value = valPtr,
@@ -9414,9 +9414,18 @@ fn validateUseBase(env: *Env, valTy: *T.Type, fc: envMod.FnContext, loc: ast.Loc
     env.useAnchor = .{ .base = useBase, .line = loc.line };
 }
 
-/// Bind the names introduced by a destructuring `use { ... } = expr` against the
-/// hook's Return type. Falls back to fresh type vars when fields are unknown.
-fn bindUseDestructure(env: *Env, pattern: ast.ParamDestruct, srcTy: *T.Type) InferError!void {
+/// Bind the names introduced by a destructuring `val { … } = use …` /
+/// `val #(…) = use …` against the hook's Return type `R`.
+///
+/// The record form is lenient — `R` need not be a record, so a field `R` does
+/// not declare binds a fresh type var. The tuple form is not (front 19 step 3,
+/// decision 67): each name is bound to the element of `R` at its position, and
+/// a pattern of another arity, or a hook whose `R` is no tuple at all, is
+/// refused at the binding (`use-tuple-arity`). An `R` still unresolved — a
+/// generic hook whose instantiation left the tuple open — is committed to a
+/// tuple of the pattern's arity, so every element is one variable shared with
+/// the hook's own type, never a fresh one unrelated to it.
+fn bindUseDestructure(env: *Env, pattern: ast.ParamDestruct, srcTy: *T.Type, loc: ast.Loc) InferError!void {
     const derefed = srcTy.deref();
     switch (pattern) {
         .names => |n| {
@@ -9434,7 +9443,26 @@ fn bindUseDestructure(env: *Env, pattern: ast.ParamDestruct, srcTy: *T.Type) Inf
             }
         },
         .tuple_ => |t| {
-            for (t) |nm| try env.bind(nm, try env.freshVar());
+            switch (derefed.*) {
+                .named => |n| if (std.mem.eql(u8, n.name, "tuple")) {
+                    if (n.args.len != t.len) {
+                        env.lastError = TypeError.useTupleArity(t.len, n.args.len, srcTy).withLoc(loc);
+                        return error.TypeError;
+                    }
+                    for (t, n.args) |nm, elemTy| try env.bind(nm, elemTy);
+                    return;
+                },
+                .typeVar => {
+                    const elems = try env.arena.alloc(*T.Type, t.len);
+                    for (elems) |*e| e.* = try env.freshVar();
+                    try unifyAt(env, srcTy, try env.namedTypeArgs("tuple", elems), loc);
+                    for (t, elems) |nm, elemTy| try env.bind(nm, elemTy);
+                    return;
+                },
+                else => {},
+            }
+            env.lastError = TypeError.useTupleArity(t.len, null, srcTy).withLoc(loc);
+            return error.TypeError;
         },
         .list, .ctor => {},
     }
