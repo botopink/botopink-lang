@@ -64,6 +64,35 @@ fn frame(parts: string[]) -> string {
     return parts.map({ p -> p.length().toString() + ":" + p }).join("|");
 }
 
+// ── ETags (RFC 9110 § 8.8.3) ─────────────────────────────────────────────────
+
+// A strong ETag, quoted as RFC 9110 requires. The quotes are part of the value:
+// a caller who has to remember to add them is a caller who will forget.
+pub fn etag(body: string) -> string {
+    return "\"" + contentHash(body) + "\"";
+}
+
+pub fn weakEtag(body: string) -> string {
+    return "W/\"" + contentHash(body) + "\"";
+}
+
+// The 304 decision. Handles the three shapes a handler actually receives: an
+// exact match, the `*` wildcard, and a comma-separated candidate list. The
+// membership test is `indexOf`, not `Array.contains`: `contains` is a
+// `default fn`, which a consumer's embedded copy of this module emits
+// verbatim on commonJS (`libs/std/AGENTS.md` § Conventions).
+pub fn matches(body: string, ifNoneMatch: string) -> bool {
+    val header = ifNoneMatch.trim();
+    val wildcard = header == "*";
+    val current = etag(body);
+    val weak = weakEtag(body);
+    val candidates = header.split(",").map({ c -> c.trim() });
+    val exact = candidates.indexOf(current) != -1;
+    val loose = candidates.indexOf(weak) != -1;
+    val hit = if (exact) true else loose;
+    return if (wildcard) true else hit;
+}
+
 // ── tests ────────────────────────────────────────────────────────────────────
 //
 // Every expected hex below is a LITERAL, not a second call: a literal is the
@@ -121,4 +150,34 @@ test "content_hash.strongCacheKey frames like cacheKey over the strong hash" {
     assert strongCacheKey(["user:1", "profile"]) != strongCacheKey(["user", "1:profile"]);
     assert strongCacheKey(["user:1", "profile"]) == strongHash("6:user:1|7:profile");
     assert strongCacheKey(["user:1", "profile"]).length == 32;
+}
+
+test "content_hash.etag is quoted and carries exactly one hash" {
+    val e = etag("<p>hi</p>");
+    assert e == "\"3ad52bb9\"";
+    assert e.startsWith("\"");
+    assert e.endsWith("\"");
+    assert weakEtag("<p>hi</p>") == "W/\"3ad52bb9\"";
+}
+
+test "content_hash.matches answers the exact ETag and refuses a moved one" {
+    val body = "<p>hi</p>";
+    assert matches(body, etag(body));
+    assert matches(body, weakEtag(body));
+    assert matches(body, etag(body + "x")) == false;
+}
+
+test "content_hash.matches answers the wildcard for any body" {
+    assert matches("<p>hi</p>", "*");
+    assert matches("", "*");
+}
+
+test "content_hash.matches splits and trims a candidate list" {
+    val body = "<p>hi</p>";
+    assert matches(body, "\"aaa\", " + etag(body));
+    assert matches(body, "\"aaa\", \"bbb\"") == false;
+}
+
+test "content_hash.matches of an empty header is false" {
+    assert matches("<p>hi</p>", "") == false;
 }
