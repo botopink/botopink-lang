@@ -333,7 +333,8 @@ Two instruments, `evidence.md`'s E-1 and E-2:
 
 Every project is generated or copied into a `mktemp -d` (deleted unless `--keep`): the script writes
 nothing inside a repository. `--project DIR` copies a real project out of its checkout and builds it
-there; `BOTOPINK_LIB_ROOTS` is inherited, which is how a project whose libraries live in a sibling
+there — a workspace member (a `{ "workspace": true }` dependency) is built inside a copy of its
+enclosing workspace, and refused when no ancestor `botopink.json` declares `workspaces`; `BOTOPINK_LIB_ROOTS` is inherited, which is how a project whose libraries live in a sibling
 checkout resolves them. A module that takes its data as an argument exports `main/1` rather than
 `main/0` and cannot be run without that argument, so the `main()` column reads `-` for it while the
 compile columns — what this front moves — stay comparable across steps.
