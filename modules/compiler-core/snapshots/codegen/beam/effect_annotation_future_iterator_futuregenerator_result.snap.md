@@ -25,7 +25,7 @@ fn parse(n: i32) -> @Result<i32, string> {
 {module, main}.
 {exports, []}.
 {attributes, []}.
-{labels, 11}.
+{labels, 13}.
 
 %% #[@future] / #[@futureGenerator] — eager lowering
 {function, fetch, 1, 3}.
@@ -46,12 +46,19 @@ fn parse(n: i32) -> @Result<i32, string> {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, counter}, 0}.
   {label, 5}.
-    {allocate, 0, 0}.
+    {allocate, 1, 0}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, nil, {y, 0}}.
     {move, {integer, 1}, {x, 0}}.
-    {deallocate, 0}.
-    return.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, {y, 0}, {y, 0}}.
     {move, {integer, 2}, {x, 0}}.
-    {deallocate, 0}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, {y, 0}, {y, 0}}.
+  {label, 10}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, reverse, 1}}.
+    {deallocate, 1}.
     return.
 
 %% #[@future] / #[@futureGenerator] — eager lowering
@@ -60,9 +67,16 @@ fn parse(n: i32) -> @Result<i32, string> {
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, stream}, 0}.
   {label, 7}.
-    {allocate, 0, 0}.
+    {allocate, 1, 0}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, nil, {y, 0}}.
     {move, {integer, 1}, {x, 0}}.
-    {deallocate, 0}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, {y, 0}, {y, 0}}.
+  {label, 11}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, reverse, 1}}.
+    {deallocate, 1}.
     return.
 
 {function, parse, 1, 9}.
@@ -73,14 +87,14 @@ fn parse(n: i32) -> @Result<i32, string> {
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test, is_lt, {f, 10}, [{y, 0}, {integer, 0}]}.
+    {test, is_lt, {f, 12}, [{y, 0}, {integer, 0}]}.
     {move, {literal, <<"negative">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 1}.
     return.
-  {label, 10}.
+  {label, 12}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.

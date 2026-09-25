@@ -206,15 +206,9 @@ beam     | run/case_range_value.bp     | C-06 (beam half not landed) | decision 
 
 # ── the annotated loop and the inclusive range, backend by backend ──────────
 # Decision 105 — `#[@generator] loop { … }` as a generator expression, `for
-# await`, and `a...b`. commonJS and erlang landed first; beam and wasm land in
-# their own step-3 commits and delete their lines here. (`test/` cells do not
-# run on wasm, and wasm's decision-55 accumulator already answers the `run/`
-# generator cell by construction.)
-beam     | test/loop_generator_expr.bp | 22 step 3 (beam half) | decision 105: the annotated loop has no beam lowering yet
-beam     | test/loop_future_generator_expr.bp | 22 step 3 (beam half) | decision 105: the annotated loop has no beam lowering yet
-beam     | test/loop_yield_nearest_scope.bp | 22 step 3 (beam half) | decision 105: the same on beam
-beam     | run/loop_generator_dobros.bp | 22 step 3 (beam half) | decision 105: the annotated loop has no beam lowering yet
-beam     | run/loop_range_inclusive.bp | 22 step 3 (beam half) | decision 105: `a...b` still lowers as `a..b`
+# await`, and `a...b`. commonJS, erlang and beam landed first; wasm lands in
+# its own step-3 commit and deletes its line here. (`test/` cells run on
+# neither beam nor wasm.)
 wasm     | run/loop_range_inclusive.bp | 22 step 3 (wasm half) | decision 105: `a...b` still lowers as `a..b`
 
 # ── an index is a method call (decision 63, amended 2026-09-19) ──────────────

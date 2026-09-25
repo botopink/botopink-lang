@@ -1514,15 +1514,11 @@ codegen/
   block that did build a throwaway closure was removed by `ae813cc8`. The
   13 `make_fun3` hits `grep` finds in `beam_asm.zig` are all comments.
 - **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
-  `loop (xs) { x -> … }`, `loop (xs) { x, i -> … }` / `loop (xs, 1..) { … }`
-  or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
+  `for (xs) { x -> … }` or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
   (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
   `if`/`loop`/`forEach`) lowers to `lists:foldl/3` with those names as the
   accumulator (one value, or a tuple), unpacked back into the caller's slots
-  (`unpackGroupFromX0`); `break`/`continue` return the group. The two-parameter
-  form folds over `lists:enumerate(Start, Xs)` (`lowerEnumerateIntoX0`; 0
-  without a written range) and binds item and index from the `{Index, Item}`
-  pair. A statement `out.push(v)` on a local Array stores the grown list back
+  (`unpackGroupFromX0`); `break`/`continue` return the group. A statement `out.push(v)` on a local Array stores the grown list back
   into its slot (`receiverMutation`).
 - **Mutating closures** (`lowerMutatingClosure`, `mutating_closures`): a local
   `val emit = { w -> out = out + w; }` whose body reassigns names of the
@@ -1533,27 +1529,30 @@ codegen/
   as a mutation for an enclosing `loop`/`forEach`, so the fold threads the
   names on out. Parity with erlang's `mutatingClosureExpr`: a call whose value
   is used keeps the plain application (and raises `badarity`).
-- **Loops**: `loop (xs, 0..) { item, i -> … }` (or `loop (xs) { item, i -> … }`,
-  counting from 0) iterates `lists:enumerate(Start, Xs)` and binds both names
-  from the pair with the `element/2` guard BIF; the comprehension shape (a
-  single else-less `if` whose
-  branch ends in `break v`) lowers through `lists:filtermap/2`; an eager
-  `#[@iterator]` body ending in a yielding loop returns that loop's list.
-  A condition loop (decision 8 §10, `LoopExpr.condition`) runs in the
-  enclosing frame (`lowerConditionLoop`): `{label, Top}`, the condition as a
-  test jumping to `Exit`, the body, `{jump, {f, Top}}`, `{label, Exit}`. The
-  variables it reassigns are this frame's registers, so nothing is threaded;
-  `break` jumps to `Exit` and `continue` to `Top` (`cond_loop`, matched by the
-  output buffer so a lambda's jumps never take it), and its body's slots are
-  counted into the frame (`countLocalsInExpr`). A `break` that carries a VALUE
-  makes the loop an expression (decision 8 §10, `condLoopBreaksWithValue`): the
-  condition then tests to a `Fail` label of its own, every `break` leaves its
-  value in `{x, 0}` (a value-less one leaves `undefined`) before it jumps to
-  `Exit`, and `Fail` moves `undefined` in and falls through to `Exit` — so
-  `{x, 0}` at `Exit` is the break's value or `undefined`, the two answers the
-  erlang lowering's `{GroupAtTheJump, Value}` / `{FinalGroup, undefined}` pair
-  carries. A body that **yields** is still
-  `error.ConditionLoopValueUnsupported` (`condLoopYieldsValue`).
+- **Loops are statements** (decision 105). `for (xs) { x -> … }` is a
+  `lists:foreach` fun (`lowerLoop`); `while (cond) { … }` / `loop { … }` run
+  in the enclosing frame (`lowerConditionLoop`): `{label, Top}`, the condition
+  as a test jumping to `Exit`, the body, `{jump, {f, Top}}`, `{label, Exit}`.
+  The variables it reassigns are this frame's registers, so nothing is
+  threaded; `break` jumps to `Exit` and `continue` to `Top` (`cond_loop`,
+  matched by the output buffer so a lambda's jumps never take it), and its
+  body's slots are counted into the frame (`countLocalsInExpr`). `a...b` is
+  `lists:seq(A, B)`, `a..b` `lists:seq(A, B - 1)`.
+  **A generator scope** — a `#[@generator]`/`#[@iterator]`/`#[@futureGenerator]`
+  fn (`emitGeneratorBody`) or an annotated `loop` (`lowerGeneratorLoop`) — is
+  eager: a y-slot accumulator (`GenLoop`, matched by the output buffer like
+  `cond_loop`) that each `yield v` conses onto (`genPush`), reversed with
+  `lists:reverse/1` at the scope's `Exit`. `break <v>` pushes and jumps to that
+  `Exit` from any loop depth; a bare `break` or `return;` with no loop to leave
+  jumps there too. A `for` that yields inside a scope is walked in the frame
+  (`lowerInFrameFor`: `is_nonempty_list` / `get_list` over a y-slot list), so
+  its `yield`s reach the accumulator; `countGenForSlots` adds its slots to the
+  frame. A captured `var` is the frame's register, so an annotated loop's
+  counter is read after it at its last value. Generator METHODS are not scopes
+  yet (a method's effect is not read here — `run/effect_method.bp` is red on
+  beam for that reason and others). A body that yields outside any scope is
+  `error.ConditionLoopValueUnsupported` (`condLoopYieldsValue`) — the checker
+  refuses it first.
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
   (trailing lambdas materialized as funs); `from "std"` qualified calls
   (`math.floor(x)`) → `call_ext` via `collectStdImports`; interface
