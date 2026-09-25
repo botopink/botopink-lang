@@ -6,6 +6,7 @@ const parser = @import("../parser.zig");
 const ast = @import("../ast.zig");
 const token = @import("../lexer/token.zig");
 const lexer = @import("../lexer.zig");
+const effectChain = @import("../comptime/effect_chain.zig");
 
 const This = parser.Parser;
 const ParseError = parser.ParseError;
@@ -92,13 +93,6 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             } } } };
         }
         this.current = saved;
-    }
-
-    // `while (cond) { … }` is not part of the language (decision 8 §10).
-    if (this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "while") and
-        this.peekAt(1).kind == .leftParenthesis)
-    {
-        return this.failRemovedAt(.removedKeywordWhile, 0);
     }
 
     // throw expr — `new` is not a keyword (06 N27): `throw new Error(…)` gets
@@ -325,10 +319,27 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return Expr{ .comptime_ = .{ .loc = locFromToken(assertTok), .kind = .{ .assert = .{ .condition = conditionPtr, .message = message } } } };
     }
 
-    // loop (iter) { params -> body }  /  loop (iter, 0..) { item, i -> body }
+    // The three loop keywords (decision 105). Each ends the static prefix of
+    // `use` for the rest of the function body.
+    //   while [:label] (cond) { … }
+    //   for [await] [:label] (iter) { x -> … }
+    //   loop [:label] { … }
+    //   #[@generator] loop [:label] { … }
+    if (this.check(.@"while")) {
+        this.useBranchSeen = true;
+        return .{ .loop = try this.parseWhileExpr(alloc) };
+    }
+    if (this.check(.@"for")) {
+        this.useBranchSeen = true;
+        return .{ .loop = try this.parseForExpr(alloc) };
+    }
     if (this.check(.loop)) {
-        this.useBranchSeen = true; // static prefix of `use` ends at a `loop`
-        return .{ .loop = try this.parseLoopExpr(alloc) };
+        this.useBranchSeen = true;
+        return .{ .loop = try this.parseLoopExpr(alloc, null) };
+    }
+    if (this.check(.hash) and this.peekAt(1).kind == .leftSquareBracket) {
+        this.useBranchSeen = true;
+        return .{ .loop = try this.parseAnnotatedLoopExpr(alloc) };
     }
 
     // #(e1, e2, ...) ---- tuple literal
@@ -1136,7 +1147,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             // which is what this body has always applied: `{ x -> a b }` parses
             // today and tightening it would refuse a program that compiles.
             // What it gains is comment handling and empty-line tracking, so a
-            // `//` inside a lambda — and so inside every `loop (…) { x -> … }`
+            // `//` inside a lambda — and so inside every `for (…) { x -> … }`
             // body — parses, and a blank line inside one survives the printer.
             const body = try this.parseBlockBody(alloc, .{
                 .trackEmptyLines = true,
@@ -1836,7 +1847,7 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
         // `a, b ->` parameter list are this block's prologue. The semicolon
         // policy is the fn body's, `.requiredExceptLast`: it was `.required`,
         // the one block whose last statement could not drop its `;`, so
-        // `xs.map { x -> f(x) }` and every one-line `loop (xs) { x -> f(x) }`
+        // `xs.map { x -> f(x) }` and every one-line `for (xs) { x -> f(x) }`
         // body were the catch-all at the `}` while `{ x -> f(x) }` as a value
         // parsed (front 15 step 4b; C-11's `arrow_when_empty` is the printer
         // half). Strictly accepting: every body that parsed still does.
@@ -1860,118 +1871,186 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
     return lambdas.toOwnedSlice(alloc);
 }
 
-/// Parses a `loop` expression:
-///   `loop (iter) { param -> body }`
-///   `loop (iter, 0..) { item, i -> body }`
-///   `loop (start..end) { i -> body }`
-///   `loop (start..) { i -> body }`
-pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
+/// `loop [:label] { … }` — repeats until `break` (decision 105). With
+/// `generator` set it is the annotated `#[@generator] loop { … }`: the body is
+/// a generator scope and the node is an expression worth the wrapper.
+/// `while (…)` is refused at the keyword, naming `for` and `while`.
+pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator, generator: ?ast.EffectKind) ParseError!LoopExpr {
     const loopTok = this.advance(); // consume 'loop'
-
-    // `loop await (iter)` — iterate an `@FutureGenerator`, awaiting each item.
-    const awaitLoop = this.match(.await);
-
-    // Optional loop label: `loop :acc (iter) { ... }`.
-    var label: ?[]const u8 = null;
-    if (this.check(.colon)) {
-        _ = this.advance();
-        label = (try this.consume(.identifier)).lexeme;
+    const label = try parseLoopLabel(this);
+    if (this.check(.leftParenthesis)) {
+        this.parseError = ParseErrorInfo.fromToken(.removedLoopParenthesised, loopTok);
+        return ParseError.UnexpectedToken;
     }
-
-    // `loop { … break; }` (decision 8 §10) repeats until a break: it is the
-    // condition loop over `true`.
-    var iterPtr: *Expr = undefined;
-    var indexPtr: ?*Expr = null;
-    var condition = false;
-    if (this.check(.leftBrace)) {
-        iterPtr = try this.boxExpr(alloc, Expr{ .identifier = .{ .loc = locFromToken(loopTok), .kind = .{ .ident = "true" } } });
-        condition = true;
-    } else {
-        _ = try this.consume(.leftParenthesis);
-
-        // Parse primary iterator expression (a collection, a range or a condition)
-        const iterExpr = try this.parseRangeExpr(alloc);
-        iterPtr = try this.boxExpr(alloc, iterExpr);
-
-        // Optional index range: `loop (iter, 0..)`
-        if (this.match(.comma)) {
-            const idxExpr = try this.parseRangeExpr(alloc);
-            indexPtr = try this.boxExpr(alloc, idxExpr);
-        }
-
-        _ = try this.consume(.rightParenthesis);
-        condition = indexPtr == null and isSyntacticCondition(iterPtr.*);
+    // The condition loop over `true`: what the checker and the backends read.
+    const iterPtr = try this.boxExpr(alloc, Expr{ .identifier = .{ .loc = locFromToken(loopTok), .kind = .{ .ident = "true" } } });
+    errdefer {
+        iterPtr.deinit(alloc);
+        alloc.destroy(iterPtr);
     }
     _ = try this.consume(.leftBrace);
-
-    // Parameter list `param1, param2 ->` — only when the body opens with
-    // names followed by `->`; a condition loop's body starts with statements.
-    var params: std.ArrayList([]const u8) = .empty;
-    errdefer params.deinit(alloc);
-    var paramsLoc = locFromToken(loopTok);
     if (loopParamsAhead(this)) {
-        paramsLoc = locFromToken(this.peek());
-        while (this.check(.identifier)) {
-            try params.append(alloc, this.advance().lexeme);
-            if (!this.match(.comma)) break;
-        }
-        _ = try this.consume(.rightArrow);
+        this.parseError = ParseErrorInfo.fromToken(.loopBindsNothing, this.peek());
+        return ParseError.UnexpectedToken;
     }
-
-    // The shared block body — the `{` and the `x, y ->` parameter list are this
-    // block's prologue. The semicolon policy is the fn body's,
-    // `.requiredExceptLast`, as the trailing lambda's is: it was `.required`,
-    // so a one-line `loop (xs) { x -> f(x) }` was the catch-all at the `}`
-    // (front 15 step 4b; strictly accepting). What it gained before that was
-    // comment handling and empty-line tracking: a `//` inside a
-    // `loop (…) { x -> … }` body was a parse error, and a blank line inside
-    // one was dropped by the printer.
-    const body = try this.parseBlockBody(alloc, .{
-        .trackEmptyLines = true,
-        .handleComments = true,
-        .semicolonPolicy = .requiredExceptLast,
-        // A loop body is a branch's block, not a function: it inherits the
-        // enclosing body's static prefix, which the `loop` itself just ended,
-        // so a `use` inside it is `useAfterBranch`.
-        .useAfterBranchGuard = true,
-    });
-
+    const body = try parseLoopBody(this, alloc);
     return .{
         .loc = locFromToken(loopTok),
+        .keyword = .loop,
+        .generator = generator,
         .iter = iterPtr,
-        .indexRange = indexPtr,
-        .params = try params.toOwnedSlice(alloc),
+        .indexRange = null,
+        .params = &.{},
+        .paramsLoc = locFromToken(loopTok),
+        .condition = true,
+        .body = body,
+        .awaitLoop = false,
+        .label = label,
+    };
+}
+
+/// `while [:label] (cond) { … }` — repeats while `cond` holds; binds nothing.
+/// The condition is parsed at `prec.lowest`, as an `if` condition is: the
+/// parentheses delimit it, so `while (a && b)` reads as the one condition.
+pub fn parseWhileExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
+    const whileTok = this.advance(); // consume 'while'
+    const label = try parseLoopLabel(this);
+    _ = try this.consume(.leftParenthesis);
+    const cond = try this.parseBinaryExpr(alloc, prec.lowest);
+    const iterPtr = try this.boxExprOwned(alloc, cond);
+    errdefer {
+        iterPtr.deinit(alloc);
+        alloc.destroy(iterPtr);
+    }
+    _ = try this.consume(.rightParenthesis);
+    _ = try this.consume(.leftBrace);
+    if (loopParamsAhead(this)) {
+        this.parseError = ParseErrorInfo.fromToken(.loopBindsNothing, this.peek());
+        return ParseError.UnexpectedToken;
+    }
+    const body = try parseLoopBody(this, alloc);
+    return .{
+        .loc = locFromToken(whileTok),
+        .keyword = .while_,
+        .generator = null,
+        .iter = iterPtr,
+        .indexRange = null,
+        .params = &.{},
+        .paramsLoc = locFromToken(whileTok),
+        .condition = true,
+        .body = body,
+        .awaitLoop = false,
+        .label = label,
+    };
+}
+
+/// `for [await] [:label] (iter) { x -> … }` — iterates a collection, a range
+/// (`a..b` exclusive, `a...b` inclusive) or a generator, binding exactly one
+/// name; `for await` iterates an `@FutureGenerator`. A body that does not
+/// open with `x ->` is `for-without-binder`; two names are `for-binds-one-name`.
+pub fn parseForExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
+    const forTok = this.advance(); // consume 'for'
+    const awaitLoop = this.match(.await);
+    const label = try parseLoopLabel(this);
+    _ = try this.consume(.leftParenthesis);
+    const iterExpr = try this.parseRangeExpr(alloc);
+    const iterPtr = try this.boxExprOwned(alloc, iterExpr);
+    errdefer {
+        iterPtr.deinit(alloc);
+        alloc.destroy(iterPtr);
+    }
+    _ = try this.consume(.rightParenthesis);
+    _ = try this.consume(.leftBrace);
+    if (!loopParamsAhead(this)) {
+        this.parseError = ParseErrorInfo.fromToken(.forWithoutBinder, this.peek());
+        return ParseError.UnexpectedToken;
+    }
+    const paramsLoc = locFromToken(this.peek());
+    const nameTok = this.advance();
+    if (this.check(.comma)) {
+        this.parseError = ParseErrorInfo.fromToken(.forBindsOneName, this.peekAt(1));
+        return ParseError.UnexpectedToken;
+    }
+    _ = try this.consume(.rightArrow);
+    const params = try alloc.alloc([]const u8, 1);
+    errdefer alloc.free(params);
+    params[0] = nameTok.lexeme;
+    const body = try parseLoopBody(this, alloc);
+    return .{
+        .loc = locFromToken(forTok),
+        .keyword = .for_,
+        .generator = null,
+        .iter = iterPtr,
+        .indexRange = null,
+        .params = params,
         .paramsLoc = paramsLoc,
-        .condition = condition,
+        .condition = false,
         .body = body,
         .awaitLoop = awaitLoop,
         .label = label,
     };
 }
 
-/// An expression that is boolean by its shape: a comparison, `&&`/`||`, `not`,
-/// or the literal `true`/`false` (parenthesised or not).
-fn isSyntacticCondition(e: Expr) bool {
-    return switch (e) {
-        .binaryOp => |bin| switch (bin.op) {
-            .eq, .ne, .lt, .gt, .lte, .gte, .@"and", .@"or" => true,
-            else => false,
-        },
-        .unaryOp => |un| un.op == .not,
-        .identifier => |id| switch (id.kind) {
-            .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false"),
-            else => false,
-        },
-        .collection => |col| switch (col.kind) {
-            .grouped => |inner| isSyntacticCondition(inner.*),
-            else => false,
-        },
-        else => false,
+/// `#[@generator] loop [:label] { … }` — the annotated loop. The annotation
+/// block is parsed as on a `fn`; exactly one builtin annotation naming an
+/// effect the chain lets `yield` is accepted, and only before `loop` — every
+/// other block here is `loop-annotation-not-generator`, spanned over the
+/// block. The names are read through `effect_chain.grants`, never listed.
+pub fn parseAnnotatedLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
+    const hashTok = this.peek();
+    const annotations = try this.parseAnnotations(alloc);
+    defer {
+        for (annotations) |*ann| ann.deinit(alloc);
+        alloc.free(annotations);
+    }
+    const closeTok = this.tokens[this.current - 1];
+    const effect: ?ast.EffectKind = blk: {
+        if (annotations.len != 1 or !annotations[0].is_builtin) break :blk null;
+        const e = ast.EffectKind.fromAnnotationName(annotations[0].name) orelse break :blk null;
+        break :blk if (effectChain.grants(e, .yield_)) e else null;
     };
+    if (effect == null or !this.check(.loop)) {
+        this.parseError = ParseErrorInfo.fromTokenSpan(.loopAnnotationNotGenerator, hashTok, closeTok.offset + closeTok.lexeme.len - hashTok.offset);
+        return ParseError.UnexpectedToken;
+    }
+    return this.parseLoopExpr(alloc, effect);
 }
 
-/// True when the tokens at the cursor are `name (, name)* ->` — a loop's
-/// parameter list rather than the first statement of its body.
+/// The optional `:label` after a loop keyword (`for :outer (…)`).
+fn parseLoopLabel(this: *This) ParseError!?[]const u8 {
+    if (!this.check(.colon)) return null;
+    _ = this.advance();
+    return (try this.consume(.identifier)).lexeme;
+}
+
+/// The statements of a loop body, after the `{` and the optional `x ->`
+/// prologue. The semicolon policy stays `.required`, which is what a loop
+/// body has always applied; comments and empty lines are tracked as in every
+/// other block body. A loop body is a branch's block, not a function: it
+/// inherits the enclosing body's static prefix, which the loop itself just
+/// ended, so a `use` inside it is `useAfterBranch`.
+fn parseLoopBody(this: *This, alloc: std.mem.Allocator) ParseError![]Stmt {
+    // The shared block body of `for`, `while` and `loop` — the `{` and the
+    // `x ->` parameter are this block's prologue. The semicolon policy is the
+    // fn body's, `.requiredExceptLast`, as the trailing lambda's is: it was
+    // `.required`, so a one-line `for (xs) { x -> f(x) }` was the catch-all at
+    // the `}` (front 15 step 4b; strictly accepting). Comment handling and
+    // empty-line tracking: a `//` inside a loop body was a parse error, and a
+    // blank line inside one was dropped by the printer.
+    return this.parseBlockBody(alloc, .{
+        .trackEmptyLines = true,
+        .handleComments = true,
+        .semicolonPolicy = .requiredExceptLast,
+        // A loop body is a branch's block, not a function: it inherits the
+        // enclosing body's static prefix, which the loop itself just ended,
+        // so a `use` inside it is `useAfterBranch`.
+        .useAfterBranchGuard = true,
+    });
+}
+
+/// True when the tokens at the cursor are `name (, name)* ->` — a `for`'s
+/// binder (or the binder a `while`/`loop` refuses) rather than the first
+/// statement of the body.
 fn loopParamsAhead(this: *This) bool {
     var i: usize = 0;
     while (true) {
@@ -1985,28 +2064,35 @@ fn loopParamsAhead(this: *This) bool {
     }
 }
 
-/// Parses a range expression `expr..` or `expr..expr`, or falls back to
-/// a plain `parseEqExpr` if `..` is not present.
+/// Parses a range expression `expr..`, `expr..expr` or `expr...expr`
+/// (inclusive, decision 105), or falls back to a plain equality-level
+/// expression when neither token is present.
 pub fn parseRangeExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     const start = try this.parseBinaryExpr(alloc, prec.equality);
     // Nothing between here and the box can fail (`check`/`advance` do not), so
     // `start` needs no errdefer of its own — and must not have one: once boxed,
     // the box owns its children.
-    if (!this.check(.dotDot)) return start;
-    const dotTok = this.advance(); // consume '..'
+    if (!this.check(.dotDot) and !this.check(.dotDotDot)) return start;
+    const dotTok = this.advance(); // consume '..' or '...'
+    const inclusive = dotTok.kind == .dotDotDot;
     const startPtr = try this.boxExprOwned(alloc, start);
     errdefer {
         startPtr.deinit(alloc);
         alloc.destroy(startPtr);
     }
     // Optional end: `0..10` vs `0..`
-    // `]` closes an open-ended slice `xs[0..]`, like `)` closes `loop (0..)`.
+    // `]` closes an open-ended slice `xs[0..]`, like `)` closes `for (0..)`.
     const hasEnd = !this.check(.rightParenthesis) and !this.check(.comma) and
         !this.check(.rightSquareBracket) and !this.check(.endOfFile);
     if (hasEnd) {
         const end = try this.parseBinaryExpr(alloc, prec.equality);
         const endPtr = try this.boxExprOwned(alloc, end);
-        return Expr{ .collection = .{ .loc = locFromToken(dotTok), .kind = .{ .range = .{ .start = startPtr, .end = endPtr } } } };
+        return Expr{ .collection = .{ .loc = locFromToken(dotTok), .kind = .{ .range = .{ .start = startPtr, .end = endPtr, .inclusive = inclusive } } } };
+    }
+    // `a...` has no end to include: an open range is `a..`.
+    if (inclusive) {
+        this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, dotTok);
+        return ParseError.UnexpectedToken;
     }
     return Expr{ .collection = .{ .loc = locFromToken(dotTok), .kind = .{ .range = .{ .start = startPtr, .end = null } } } };
 }

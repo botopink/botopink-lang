@@ -2195,9 +2195,9 @@ fn isKeyword(name: []const u8) bool {
         "implement", "import",   "is",       "loop",     "mod",     "null",
         "pub",       "return",   "Self",     "syntax",   "test",    "throw",
         "try",       "type",     "unknown",  "use",      "val",     "var",
-        "yield",
+        "while",     "yield",
         // Not lexer keywords, but not renameable identifiers either.
-            "true",     "false",
+           "true",     "false",
     };
     for (keywords) |kw| {
         if (std.mem.eql(u8, name, kw)) return true;
@@ -4059,7 +4059,7 @@ fn isPrimitiveType(name: []const u8) bool {
 /// reclassified as a type by the caller).
 fn isKeywordKind(kind: TokenKind) bool {
     return switch (kind) {
-        .as, .assert, .await, .case, .default, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .behavior, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch", .unknown => true,
+        .as, .assert, .await, .case, .default, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .behavior, .type, .record, .use, .val, .@"var", .@"while", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch", .unknown => true,
         else => false,
     };
 }

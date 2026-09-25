@@ -118,7 +118,7 @@ right answer on another.
 | `test/narrowing_null.bp` | the same rules inside a `test` block, which is the third statement walk a program has |
 | `reject/if_optional_needs_a_binder.bp` | the limit: `if (x)` on a `?T` with no binder is refused ("expected bool, got optional"). There is no truthiness on an optional |
 
-**Shapes that do NOT narrow, measured and deliberate.** `loop (x != null) { … }` leaves its body
+**Shapes that do NOT narrow, measured and deliberate.** `while (x != null) { … }` leaves its body
 alone: a condition loop reassigns the name it tests (`cur = es.at(i)`), and a narrowed `cur` would
 red the assignment — narrowing it would break programs that work today. `if (o.inner != null)`
 does not narrow either: only a plain NAME is rebindable. `case x { null { … } v { … } }` and `if (x)
@@ -162,7 +162,7 @@ plain JS call and node has no tail-call elimination, so the program died with `R
 call stack size exceeded` while erlang, a tail-recursive VM, printed the sum. Its bound is a
 VARIABLE on purpose — a literal one could be folded and hide the depth — and the cell's header
 records the ceiling each backend still has. `loop_item_method` (D7/D8) calls `.length()` on what a
-`loop` binds — the item, a field of it, and a `val` bound from it inside the body: the loop
+`for` binds — the item, a field of it, and a `val` bound from it inside the body: the loop
 parameter used to bind a fresh type variable, and commonJS, which needs the receiver's type to know
 that `.length()` is JavaScript's `length` PROPERTY, emitted a CALL on a number.
 `optional_length_method` (D7) is the same rename one layer deeper — `.length()` on a `?string` from
@@ -173,6 +173,25 @@ carrier; the sidecar is gone and the cell runs on all four targets. `comment_in_
 comment inside a braced `if` and inside a condition loop's body: commonJS writes some blocks on one
 line, so the comment ran on and swallowed the closing brace and everything after it, and the module
 did not parse.
+
+### `loop_*` (decision 105)
+
+Front 22 of 1.0.10-beta: `loop { }` / `while (c) { }` / `for (xs) { x -> }` / `for await (g) { x -> }`
+are statements, and `#[@generator] loop { }` (with `#[@iterator]` / `#[@futureGenerator]`) is the one
+loop that is a value — a generator whose body is a closed generator scope.
+
+| Cell | Pins |
+|---|---|
+| `test/loop_generator_expr.bp` | an annotated loop typed `@Generator<i32>`: `yield v` emits, `break v` emits and ends, a bare `break` ends, a captured `var` is the generator's state, and a `for` inside the loop feeds it |
+| `test/loop_future_generator_expr.bp` | a `#[@futureGenerator] loop` awaiting in a plain `fn` body, consumed by a `#[@future]` body's `for await` |
+| `test/loop_yield_nearest_scope.bp` | `yield :out` from inside a `for` names the generator fn; an unannotated `loop` inside a generator fn is an ordinary loop |
+| `run/loop_generator_dobros.bp` | decision 105's own example: `2 4 … 18 20`, then the counter the generator left at `10` |
+| `run/loop_range_inclusive.bp` | `for (1..4)` visits `1 2 3`, `for (1...4)` visits `1 2 3 4`, `for (3...2)` nothing |
+
+The `reject/` cells name one refusal each: `loop_break_value`, `loop_yield_plain_fn`,
+`for_over_condition`, `for_fallible_generator_plain_fn`, `for_future_generator_without_await`,
+`generator_loop_use`, `generator_loop_await`, `generator_loop_break_outer`, `continue_outside_loop`,
+`yield_label_loop`, plus the parser's `loop_parenthesised` and `loop_condition_parameter`.
 
 ### The `modules/` kind
 
@@ -380,8 +399,8 @@ written against a layout that is about to move. Flipping it on is one line of `r
 closing step. The beam rows of `expected-failures.txt` already exist and
 `tests/language/run.sh --target beam` is green. Re-measured at `b09bf9c6`: **42 results, 19 passed,
 23 expected failures, 0 failed** — 18 of them `run/` and `modules/` results (7 passing:
-`run/smoke.bp`, `run/tuple_print.bp`, `run/print_nested.bp`, `run/loop_yield_and_break.bp` and all
-three `modules/` cells) and 24 `reject/` results, which run once under `targets[0]` and are counted
+`run/smoke.bp`, `run/tuple_print.bp`, `run/print_nested.bp`, the since-deleted
+`run/loop_yield_and_break.bp` and all three `modules/` cells) and 24 `reject/` results, which run once under `targets[0]` and are counted
 by both runs. Recounted from the file: the 11 beam lines are owned by `03 step 3` (5), `03 step 2` (3),
 `01 step 4` (2) and `03 handover 15` (1) — **no step 4 of `03-beam`, and three of them, not four,
 name `13 step 18`** as a second row, because a record and a variant cannot print their names before a
@@ -481,7 +500,7 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
   target and then carries one line per target, with two different owners — `test/tuple_labels.bp`
   is the worked example: `04 step 2` on commonJS, `02 step 4` on erlang, the same test name.
 - A `reject/` `.expect` names a short key phrase of the diagnostic decision 8 sketches (`use _ {`,
-  `not exhaustive`, `use loop (`…) and the location of the offending token. The front that implements
+  `not exhaustive`, `removed-loop-parenthesised`…) and the location of the offending token. The front that implements
   the diagnostic fixes its final wording and updates the `.expect` in the same change.
 - The runner fails on: an unlisted failure; a listed test that now passes ("delete its line", or
   "drop it from the line" when the line names several); a listed path or test that does not exist; a
@@ -872,7 +891,7 @@ them, by area:
 |---|---|---|
 | `case` (§5) | 8 test + 2 run + 9 reject | 19 |
 | tuples (§6) | 6 test + 1 run + 2 reject | 9 |
-| `loop` (§10) | 6 test + 5 run + 2 reject | 13 |
+| loops (§10, decision 105) | 5 test + 3 run + 11 reject | 19 |
 | effects (§9) | 5 test + 5 reject | 10 |
 | comptime, templates, decorators | 3 test | 3 |
 | host externals (§8) | 2 test + 1 reject | 3 |
@@ -989,7 +1008,7 @@ recounted at `b09bf9c6`: `test/nullish_default.bp` carries no line and the suite
 
 **The range pattern in a `case` arm — decision 53 settled the spelling and `run/case_range_value.bp`
 now pins the endpoints.** Decision 53 (2026-09-18) **amended** decisions 20 and 36 to Zig's split:
-`...` is inclusive in a **pattern**, `..` is exclusive in a **slice** and in `loop (a..b)`, and no
+`...` is inclusive in a **pattern**, `..` is exclusive in a **slice** and in `for (a..b)`, and no
 emitter moves. `zig version` 0.16.0 has both spellings in those two positions and `1..9` inside a
 `switch` does not exist there at all, so the compiler was the Zig-consistent side all along.
 
@@ -1023,13 +1042,14 @@ merging `origin/feat` `3cfb65cb` and none of them moved**, the range table above
 heap address the range defect used to be recorded with does **not** reproduce on either commit: wasm
 answers `0`, and it answers `0` at every endpoint.
 
-**A `.out` may encode a decision no backend implements yet, and that is the point.** Five cells do —
-`run/loop_yield_then_break_value.bp`, `run/loop_break_value_then_yield.bp`,
-`run/loop_yield_then_bare_break.bp` (decision 55), `run/loop_condition_no_break.bp` (decision 52) and
-`run/optional_null_pattern.bp` (decision 54). Each `.out` is the decision's answer, so when the
-backends are moved against it **exactly one file per cell** is involved and no `.out` is renegotiated
-in the same commit as an emitter. Each cell's header comment carries the per-backend measurement it
-was written against, dated and with the commit.
+**A `.out` may encode a decision no backend implements yet, and that is the point.**
+`run/optional_null_pattern.bp` (decision 54) does. (The four decision-55 cells and the decision-52
+cell that used to sit beside it were superseded by decision 105 — no loop has a value — and left with
+front 22; `reject/loop_break_value.bp` and `reject/loop_yield_plain_fn.bp` are what the language says
+now.) Each `.out` is the decision's answer, so when the backends are moved against it **exactly one
+file per cell** is involved and no `.out` is renegotiated in the same commit as an emitter. Each
+cell's header comment carries the per-backend measurement it was written against, dated and with
+the commit.
 
 **Never pin an erlang exit status or an `escript` warning as the point of a line.** `run.sh` runs
 `botopink run --target erlang`, which today is `escript out/main.erl`: escript compiles the file it is
@@ -1041,12 +1061,10 @@ reason line may *quote* either as evidence, and four of this front's do, but the
 be the wrong answer. A front that fixes an erlang lowering and still sees a byte mismatch should check
 which of the two moved.
 
-**Read a loop's result as `length` + `join(",")`, not as a printed array.** `@print` of an array is
-decision 8 §7's separator row and erlang and wasm still get it wrong (`[20,40,60]` for
-`[20, 40, 60]`), so a cell that prints the array carries a §7 line on two backends and the §10 rule
-it means to assert is hidden behind it. The five `loop` cells above read the result instead — and it
-is what makes `run/loop_yield_then_bare_break.bp` show that **wasm alone already answers decision
-55's fifth row**, as a pass, rather than as a §7 near-miss.
+**Read a collected result as `length` + `join(",")`, not as a printed array.** `@print` of an array
+is decision 8 §7's separator row and erlang and wasm still get it wrong (`[20,40,60]` for
+`[20, 40, 60]`), so a cell that prints the array carries a §7 line on two backends and the rule it
+means to assert is hidden behind it.
 
 **C-06's wasm half is verified by running, not by reading the diff.** `8594e4ba` landed
 `.tasks/wasm` as-is — the `A...B` range-pattern arm and `emitRangeBound` in `wat.zig`, a value `break`
@@ -1054,15 +1072,15 @@ as `emitYield` then `br $__break`, six `loop_*` wasm snapshots' RUN LOGs moved (
 `[20, 40, 60]` was), three `expected-failures.txt` lines deleted — without its verification. C-16
 compiled each of the six fixtures' `SOURCE CODE` as a fresh project, ran it with `botopink run
 --target wasm` (wasmtime), and compared stdout with the snapshot's RUN LOG **byte for byte**: all six
-match (`1 2 3 [20]`, `[15]`, `[0]`, `[250]`, `[115.0]`, `[20]`), and `run/case_range_value.bp`,
-`run/loop_yield_then_break_value.bp`, `run/loop_break_value_then_yield.bp` and
-`run/loop_yield_then_bare_break.bp` pass on wasm in the suite, so the three deleted lines stay deleted.
+match (`1 2 3 [20]`, `[15]`, `[0]`, `[250]`, `[115.0]`, `[20]`), and `run/case_range_value.bp` and
+the three decision-55 cells (since deleted by front 22) passed on wasm in the suite, so the three
+deleted lines stay deleted.
 No defect was found and `wat.zig` was not touched. One note carried from the landing: a range pattern
 over a **string** bound has no wasm ordering and answers `0` (`emitRangeBound`'s `else` arm) — no cell
 asserts it, since decision 53 legislates numeric endpoints only.
 
 **Decision 55 turned a cell that passed on all four backends into one that fails on all four.**
-`test/loop_collection.bp`'s last test asserted `loop ([1, 2, 3]) { x -> break x * 2; }` → `[2, 4, 6]`,
+`test/loop_collection.bp`'s last test asserted `for ([1, 2, 3]) { x -> break x * 2; }` → `[2, 4, 6]`,
 and every backend agreed, because they share one accumulator shape and none of them stops at a
 `break`. Decision 55 says `break <value>` contributes its value **and ends the loop**, so the answer
 is `[2]`; the assertion was rewritten to the language and now carries two lines. This is the rule at

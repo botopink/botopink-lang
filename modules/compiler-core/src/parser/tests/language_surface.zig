@@ -124,7 +124,7 @@ test "surface R3: the range and the float forms are unchanged" {
     try assertParser(std.testing.allocator, @src(),
         \\fn f() -> f64 {
         \\    var s = 0;
-        \\    loop (0..4) { i -> s = s + i; };
+        \\    for (0..4) { i -> s = s + i; };
         \\    val a = 1.5;
         \\    val b = 1_000;
         \\    val c = 1e10;
@@ -163,7 +163,7 @@ test "surface R4: a comment and a blank line inside an if branch" {
 test "surface R4: a comment inside a loop body and a lambda body" {
     try assertParser(std.testing.allocator, @src(),
         \\fn f() -> i32 {
-        \\    loop ([1, 2]) { x ->
+        \\    for ([1, 2]) { x ->
         \\        // a loop body is not a lambda body — it has its own block
         \\        println("a");
         \\
@@ -241,7 +241,7 @@ test "surface R5: an array literal is still an array literal" {
         \\    val xs = [1, 2];
         \\    val n = g([1, 2]);
         \\    var s = 0;
-        \\    loop (0..4) { i -> s = s + i; };
+        \\    for (0..4) { i -> s = s + i; };
         \\    return n + s;
         \\}
     );
@@ -479,7 +479,7 @@ test "surface R10: a decided-against form renders its code, the replacement and 
 // Both were found by library fronts paying for them, and both are strictly
 // accepting: `#[mark(-20)]` reds at the DIGITS because the annotation-argument
 // loop took the `-` as the whole argument; a one-line trailing-lambda body
-// (`xs.map { x -> f(x) }`, every `loop (xs) { x -> f(x) }`) reds at the `}`
+// (`xs.map { x -> f(x) }`, every `for (xs) { x -> f(x) }`) reds at the `}`
 // because that one block kept the `.required` semicolon policy while the same
 // lambda as a value parsed. Pre-fix each snapshot below is a parse error.
 
@@ -497,7 +497,7 @@ test "surface R11: a one-line trailing lambda body needs no `;`" {
         \\fn f(xs: i32[]) -> i32 {
         \\    val ys = xs.map { x -> x + 1 };
         \\    var acc = 0;
-        \\    loop (xs) { x -> acc = acc + x };
+        \\    for (xs) { x -> acc = acc + x };
         \\    xs.forEach { x -> @print(x.toString()) };
         \\    val z = calcular(fator: 2) { a, b -> a + b };
         \\    val w = memo { -> 42 };

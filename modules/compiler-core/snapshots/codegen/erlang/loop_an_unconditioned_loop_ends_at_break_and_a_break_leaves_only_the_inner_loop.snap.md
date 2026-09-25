@@ -11,7 +11,7 @@ fn firstSquareOver(n: i32) -> i32 {
 fn nested() -> i32 {
     var outer = 0;
     var inner = 0;
-    loop (outer < 3) {
+    while (outer < 3) {
         outer = outer + 1;
         loop {
             inner = inner + 1;
@@ -35,17 +35,13 @@ firstSquareOver(N) ->
     K = 0,
     K@3 = try
         (fun __Loop(K@1) ->
-            case true of
+            K@2 = (K@1 + 1),
+            case ((K@2 * K@2) > N) of
                 true ->
-                    K@2 = (K@1 + 1),
-                    case ((K@2 * K@2) > N) of
-                        true ->
-                            erlang:throw({'__bp_cond_break', K@2});
-                        _ -> ok
-                    end,
-                    __Loop(K@2);
-                _ -> K@1
-            end
+                    erlang:throw({'__bp_cond_break', K@2});
+                _ -> ok
+            end,
+            __Loop(K@2)
         end)(K)
     catch
         throw:{'__bp_cond_break', __BpGroup1} -> __BpGroup1
@@ -61,13 +57,9 @@ nested() ->
                 Outer@2 = (Outer@1 + 1),
                 Inner@4 = try
                     (fun __Loop1(Inner@2) ->
-                        case true of
-                            true ->
-                                Inner@3 = (Inner@2 + 1),
-                                erlang:throw({'__bp_cond_break', Inner@3}),
-                                __Loop1(Inner@3);
-                            _ -> Inner@2
-                        end
+                        Inner@3 = (Inner@2 + 1),
+                        erlang:throw({'__bp_cond_break', Inner@3}),
+                        __Loop1(Inner@3)
                     end)(Inner@1)
                 catch
                     throw:{'__bp_cond_break', __BpGroup3} -> __BpGroup3

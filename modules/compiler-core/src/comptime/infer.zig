@@ -3824,8 +3824,39 @@ fn inferTypeMethods(
 
         // Scope the return-type-derived `use`/effect context to this body.
         const savedFnCtx = env.fnContext;
-        env.fnContext = try contextInfoFromReturn(env, m.returnType, effectAnnotationOf(m.annotations), m.name);
+        const methodEffect = effectAnnotationOf(m.annotations);
+        env.fnContext = try contextInfoFromReturn(env, m.returnType, methodEffect, m.name);
         defer env.fnContext = savedFnCtx;
+        // An effect annotation on a method is the method's, exactly as on a
+        // free fn (decision 8 §9): the body gets the effect's context — a
+        // generator method is a generator scope for its `yield`s (decision
+        // 105), a plain method none.
+        const savedStarFn = env.starFn;
+        const savedFnEffect = env.fnEffect;
+        const savedThrowCtx = env.throwContext;
+        const savedLoopDepth = env.loopDepth;
+        const savedBreakScope = env.breakScope;
+        const savedLabelsLen = env.labelStack.items.len;
+        defer {
+            env.starFn = savedStarFn;
+            env.fnEffect = savedFnEffect;
+            env.throwContext = savedThrowCtx;
+            env.loopDepth = savedLoopDepth;
+            env.breakScope = savedBreakScope;
+            env.labelStack.shrinkRetainingCapacity(savedLabelsLen);
+        }
+        env.labelStack.shrinkRetainingCapacity(0);
+        env.loopDepth = 0;
+        env.breakScope = .none;
+        if (methodEffect) |e| {
+            const retTy = if (m.returnType) |rt| try resolveTypeRefInContext(env, rt, genericMap) else try env.freshVar();
+            env.starFn = starCtxFromEffect(e, retTy, null);
+            env.fnEffect = e;
+            env.throwContext = if (effectChain.grants(e, .try_)) .unchecked else .plain;
+        } else {
+            env.starFn = null;
+            env.fnEffect = null;
+        }
 
         // 06 C9 — a method body is part of the strict contract, like a
         // `default fn` interface body (`inferInterfaceDefaultBodies`). The walk
@@ -7856,6 +7887,27 @@ fn inEffectContext(env: *Env, kind: ast.EffectKind) bool {
     return ctx.effect == kind;
 }
 
+/// The refusal for `what` written outside a generator scope: the three
+/// annotations that open one, on a fn or on a `loop`, read off the chain.
+fn generatorScopeRefusal(env: *Env, code: []const u8, what: []const u8) ![]const u8 {
+    var buf: [6]ast.EffectKind = undefined;
+    const granting = effectChain.grantingEffects(.yield_, &buf);
+    var names: std.ArrayListUnmanaged(u8) = .empty;
+    for (granting, 0..) |e, i| {
+        if (i > 0) try names.appendSlice(env.arena, if (i + 1 == granting.len) " or " else ", ");
+        try names.appendSlice(env.arena, try std.fmt.allocPrint(env.arena, "`#[@{s}]`", .{e.annotationName()}));
+    }
+    const body: []const u8 = if (env.fnEffect) |e|
+        try std.fmt.allocPrint(env.arena, "`#[@{s}]` is `@{s}`, which is no generator", .{ e.annotationName(), e.returnWrapper() })
+    else
+        "this body carries no generator annotation";
+    return std.fmt.allocPrint(
+        env.arena,
+        "{s}: {s} needs a generator scope — {s} on the fn, or on a `loop`; {s}",
+        .{ code, what, names.items, body },
+    );
+}
+
 /// Infer type for jump expressions (return, throw, try, break, continue, yield)
 fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)), loc: ast.Loc) InferError!TypedExpr {
     return switch (j.kind) {
@@ -8120,69 +8172,68 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .try_ = valPtr } } };
         },
         .@"break" => |b| {
-            // RI5 (§1I) — `break :label` must name an enclosing labelled scope
-            // (a loop or `#[@iterator]` / `#[@futureGenerator]` fn). The label
-            // stack is shared with `yield`; an unbound label here is a parse-
-            // visible typo, not a backend issue.
+            // Decision 105 — a bare `break` leaves the nearest loop, or ends
+            // the generator scope when no loop encloses it; `break <value>`
+            // emits the value and ends the nearest generator scope — an
+            // annotated fn or an annotated `loop` — and needs one, unless it
+            // is the value of a `comptime` block or a `case` arm's block
+            // (decision 2). A label names an enclosing loop; the generator
+            // scope's own label (a fn's signature label, an annotated loop's)
+            // names it for `break :label <value>`.
+            const ctx = env.starFn;
+            const inGenerator = ctx != null and ctx.?.allowsYield;
             if (b.label) |lbl| {
+                for (env.closedLabels) |outer| {
+                    if (std.mem.eql(u8, outer, lbl)) {
+                        env.lastError = TypeError.custom(
+                            try std.fmt.allocPrint(env.arena, "{s}: `break :{s}` crosses the border of a `#[@{s}] loop` — its body is a closure and cannot leave a loop outside it", .{ diagnostics.generator_loop_closed_scope, lbl, ctx.?.effect.annotationName() }),
+                            "End the annotated loop (`break`) and leave the outer loop after it.",
+                        ).withLoc(loc);
+                        return error.TypeError;
+                    }
+                }
                 if (!env.hasLabel(lbl)) {
                     env.lastError = TypeError.custom(
                         diagnostics.break_label_unbound ++
                             ": `break :<label>` targets an unknown label",
-                        "Label a loop (`loop :name (...)`) or an iterator/futureGenerator fn (`#[@iterator] fn … -> @Iterator<…> :name`).",
+                        "Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`fn … -> @Generator<…> :name`, `#[@generator] loop :name {`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
             }
-            const typedPtr: ?*TypedExpr = if (b.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
-            // RI2 / RI3 (§1I) — when `break <expr>` targets the enclosing
-            // iterator/futureGenerator (top-level position OR labelled with
-            // the fn's signature label), the value type must satisfy the
-            // wrapper's `C` parameter. An unlabelled break inside a nested
-            // loop targets the loop, not the FSM — skip.
-            if (env.starFn) |ctx| {
-                if (ctx.effect == .iterator or ctx.effect == .futureGenerator) {
-                    const targetsIterator = blk: {
-                        if (b.label) |lbl| {
-                            if (ctx.fnLabel) |fl| break :blk std.mem.eql(u8, lbl, fl);
-                            break :blk false;
-                        }
-                        break :blk env.loopDepth == 0;
-                    };
-                    if (targetsIterator) {
-                        if (typedPtr) |vp| {
-                            // RI2 — `break <expr>` against an iterator.
-                            const completion = ctx.iterCompletion orelse try env.namedType("void");
-                            const completionDeref = completion.deref();
-                            if (completionDeref.* == .named and std.mem.eql(u8, completionDeref.named.name, "void")) {
-                                env.lastError = TypeError.custom(
-                                    diagnostics.iterator_break_without_completion_type ++
-                                        ": this iterator declares C = void; bare `break` is the only valid form",
-                                    "Extend the wrapper to opt into completion values: `@Iterator<T, E, <C-type>>` (or `@FutureGenerator<…>`).",
-                                ).withLoc(loc);
-                                return error.TypeError;
-                            }
-                            // RI2 — value must unify with the declared C.
-                            unifyAt(env, completion, vp.getType(), loc) catch {
-                                env.lastError = TypeError.custom(
-                                    diagnostics.iterator_break_type_mismatch ++
-                                        ": completion value type does not match the declared C parameter of @Iterator<T, E, C>",
-                                    "Either change the `break <expr>;` value to match C, or widen the wrapper's third generic.",
-                                ).withLoc(loc);
-                                return error.TypeError;
-                            };
-                            // F4I-tail — record `break <c>` for the transform
-                            // rewrite into `return @IteratorStep.Done(<c>);`.
-                            try env.iterator_jump_lowerings.put(loc, .wrap_done);
-                        } else {
-                            // F4I-tail — bare `break;` targeting the FSM:
-                            // record for rewrite into `return @IteratorStep.Done();`.
-                            try env.iterator_jump_lowerings.put(loc, .wrap_done_void);
-                        }
-                    }
+            if (b.value) |expr| {
+                const targetsGenerator = inGenerator and (b.label == null or
+                    (ctx.?.fnLabel != null and std.mem.eql(u8, b.label.?, ctx.?.fnLabel.?)));
+                if (targetsGenerator) {
+                    const typedPtr = try makeTypedPtr(env, try inferExprTyped(env, expr.*));
+                    if (ctx.?.iterItem) |item| try unifyAt(env, typedPtr.getType(), item, loc);
+                    return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = typedPtr } } } };
+                }
+                if (b.label == null and env.breakScope == .valueBlock) {
+                    const typedPtr = try makeTypedPtr(env, try inferExprTyped(env, expr.*));
+                    return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = null, .value = typedPtr } } } };
+                }
+                env.lastError = TypeError.custom(
+                    try generatorScopeRefusal(env, diagnostics.break_value_outside_generator, "`break <value>`"),
+                    "`break <value>` emits the value and ends the generator; a loop is a statement and has no value. Collect in a `var`, or with `map` / `filter`; end a loop with a bare `break`.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
+            // A bare `break` at loop depth 0 ends the generator scope; with
+            // no loop, no generator scope and no value block there is nothing
+            // to leave.
+            if (b.label == null and env.loopDepth == 0) {
+                if (inGenerator) {
+                    try env.iterator_jump_lowerings.put(loc, .wrap_done_void);
+                } else if (env.breakScope != .valueBlock) {
+                    env.lastError = TypeError.custom(
+                        diagnostics.break_outside_loop ++ ": `break` outside a loop",
+                        "A `break` leaves the nearest `for` / `while` / `loop`, or ends a generator scope.",
+                    ).withLoc(loc);
+                    return error.TypeError;
                 }
             }
-            return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = typedPtr } } } };
+            return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = null } } } };
         },
         .await_ => |e| {
             // R7, as decision 95 rewrites it — `await` belongs to `@Future`,
@@ -8210,55 +8261,54 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             const ty = unwrapFutureType(rawTy) orelse rawTy;
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .await_ = valPtr } } };
         },
-        .@"continue" => TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .@"continue" } },
+        .@"continue" => {
+            if (env.loopDepth == 0) {
+                env.lastError = TypeError.custom(
+                    diagnostics.continue_outside_loop ++ ": `continue` outside a loop",
+                    "`continue` starts the next round of the nearest `for` / `while` / `loop`.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
+            return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .@"continue" } };
+        },
         .yield => |y| {
-            // RI4 — `yield :label` must name an enclosing labelled effect-fn / loop.
+            // Decision 105 — `yield` feeds the NEAREST generator scope, an
+            // annotated fn or an annotated `loop`, through every unannotated
+            // loop between them; there is no other target. R8 as decision 95
+            // rewrites it: the scope is one whose wrapper the chain lets
+            // `yield`, and a body without one — a plain `fn`, a `#[@future]`,
+            // a `#[@result]` — refuses it naming the three annotations.
+            const ctx = env.starFn orelse null;
+            if (ctx == null or !ctx.?.allowsYield) {
+                env.lastError = TypeError.custom(
+                    try effectChain.refusal(env.arena, diagnostics.yield_without_generator, .yield_, env.fnEffect),
+                    "A `yield` feeds the nearest generator scope: mark the fn `#[@generator]` (`-> @Generator<T>`) or write the loop as `#[@generator] loop { … }` (decision 105).",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
+            // `yield :label` names the generator scope — the fn's signature
+            // label or the annotated loop's — never a plain loop.
             if (y.label) |lbl| {
-                if (!env.hasLabel(lbl)) {
+                const names_scope = if (ctx.?.fnLabel) |fl| std.mem.eql(u8, lbl, fl) else false;
+                if (!names_scope) {
+                    if (env.hasLabel(lbl)) {
+                        env.lastError = TypeError.custom(
+                            diagnostics.yield_label_not_generator ++ ": `yield :<label>` names a loop, and a `yield` feeds a generator scope",
+                            "Label the scope it feeds: `fn … -> @Generator<T> :name` or `#[@generator] loop :name { … }`; an unlabelled `yield` feeds the nearest one.",
+                        ).withLoc(loc);
+                        return error.TypeError;
+                    }
                     env.lastError = TypeError.custom(
                         diagnostics.yield_label_unbound ++
                             ": `yield` targets an unknown label",
-                        "Label a generator fn (`#[@iterator] fn … -> @Iterator<T> :name`) or a `loop :name (...)`.",
+                        "Label a generator fn (`fn … -> @Generator<T> :name`) or an annotated loop (`#[@generator] loop :name { … }`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
             }
             const typedPtr: ?*TypedExpr = if (y.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
-            // A `yield` has two possible targets, and only one of them is the
-            // effect's. Inside a loop an unlabelled `yield` feeds that loop's
-            // array — decision 8 § 10's comprehension, `loop (xs) { x -> yield
-            // … }` and `loop (i < n) { … yield i; }` alike — and a labelled one
-            // feeds whichever labelled scope it names; both are legal in any
-            // body, effect or not. A `yield` that reaches the FUNCTION is the
-            // effect's, and that is the one the chain gates. This is the same
-            // §1I REGRAS DE ESCOPO rule the `.@"break"` handler above applies,
-            // read off the same counter.
-            const targetsFn = blk: {
-                if (y.label) |lbl| {
-                    const ctx = env.starFn orelse break :blk false;
-                    const fl = ctx.fnLabel orelse break :blk false;
-                    break :blk std.mem.eql(u8, lbl, fl);
-                }
-                break :blk env.loopDepth == 0;
-            };
-            // R8, as decision 95 rewrites it — `yield` is exclusive to the three
-            // generator-shaped wrappers (`@Generator`, `@Iterator`,
-            // `@FutureGenerator`) and is granted by no level of the chain: a
-            // `#[@future]`, `#[@result]` or `#[@context]` body cannot yield, and
-            // neither can a plain `fn`.
-            if (targetsFn) {
-                if (env.starFn == null or !env.starFn.?.allowsYield) {
-                    env.lastError = TypeError.custom(
-                        try effectChain.refusal(env.arena, diagnostics.yield_without_generator, .yield_, env.fnEffect),
-                        "A `yield` that is not inside a `loop (…) { … }` body is the function's: mark the fn `#[@iterator]` (`-> @Iterator<T>`), `#[@generator]` or `#[@futureGenerator]`.",
-                    ).withLoc(loc);
-                    return error.TypeError;
-                }
-            }
-            if (env.starFn) |ctx| {
-                if (ctx.iterItem) |item| {
-                    if (typedPtr) |vp| try unifyAt(env, vp.getType(), item, loc);
-                }
+            if (ctx.?.iterItem) |item| {
+                if (typedPtr) |vp| try unifyAt(env, vp.getType(), item, loc);
             }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .yield = .{ .label = y.label, .value = typedPtr } } } };
         },
@@ -8424,105 +8474,207 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
     };
 }
 
-/// Infer type for loop expressions
+/// Decision 105 — the three loop keywords are statements typed `void`; the
+/// annotated `loop` is an expression worth its wrapper (`inferGeneratorLoop`).
 fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    if (lp.generator) |eff| return inferGeneratorLoop(env, lp, eff, loc);
     const iterTyped = try inferExprTyped(env, lp.iter.*);
     const iterPtr = try makeTypedPtr(env, iterTyped);
-    const indexRangePtr = if (lp.indexRange) |ir| try makeTypedPtr(env, try inferExprTyped(env, ir.*)) else null;
+    const iterTy = iterTyped.getType().deref();
 
-    // `loop await (iter)` requires an async context and an `@FutureGenerator<T, E>`
-    // iterable; the loop param binds to the item type `T`.
-    var awaitItem: ?*T.Type = null;
-    if (lp.awaitLoop) {
+    // The `for` parameter binds the ITEM of what is iterated: the element of
+    // an array, the integer of a range, the `T` of a generator. Nothing else
+    // is iterable, and a `bool` is a `while`. An unresolved type variable
+    // stays lenient, as every effect check does.
+    var itemTy: ?*T.Type = null;
+    if (lp.condition) {
+        // `while (cond) { … }` / `loop { … }` — the condition is a `bool`.
+        try unifyAt(env, try env.namedType("bool"), iterTyped.getType(), loc);
+    } else if (lp.awaitLoop) {
+        // `for await (gen) { x -> … }` — an `@FutureGenerator<T, E>` in a body
+        // that grants `await`; the loop param binds `T`.
         if (env.starFn == null or !env.starFn.?.allowsAwait) {
             env.lastError = TypeError.custom(
                 try effectChain.refusal(env.arena, diagnostics.effect_await_without_future, .await_, env.fnEffect),
-                "`loop await` suspends: mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@context]`.",
+                "`for await` suspends at every item: mark the enclosing fn `#[@future]` (`-> @Future<…>`) or `#[@futureGenerator]`, or write the loop as a `#[@futureGenerator] loop { … }`.",
             ).withLoc(loc);
             return error.TypeError;
         }
-        const iterTy = iterTyped.getType().deref();
         if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "FutureGenerator") and iterTy.named.args.len >= 1) {
-            awaitItem = iterTy.named.args[0];
+            itemTy = iterTy.named.args[0];
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
-                "`loop await` expects an `@FutureGenerator<T, E>` value",
-                null,
+                diagnostics.for_await_expects_future_generator ++ ": `for await` expects an `@FutureGenerator<T, E>` value",
+                "A `@Generator<T>` or a `@ResultGenerator<T, E>` is iterated by `for (gen) { x -> … }`; only a `@FutureGenerator` suspends between items.",
             ).withLoc(loc);
             return error.TypeError;
         }
-    }
-
-    // Decision 8 §10: `loop (condition) { … }` repeats while the condition
-    // holds and binds nothing — a parameter on it is an error at the parameter.
-    const isCondition = lp.condition or (!lp.awaitLoop and lp.indexRange == null and iterTyped.getType().deref().isNamed("bool"));
-    if (isCondition and !lp.condition) try env.conditionLoops.put(loc, {});
-    if (isCondition and lp.params.len > 0) {
+    } else if (iterTy.isNamed("bool")) {
         env.lastError = TypeError.custom(
-            "a condition loop takes no parameter",
-            "`loop (condition) { … }` binds nothing; iterate a collection with `loop (xs) { x -> … }`.",
-        ).withLoc(lp.paramsLoc);
+            diagnostics.for_over_condition ++ ": `for` iterates a collection, a range or a generator — a condition is a `while`",
+            "Write `while (cond) { … }`; it repeats while the condition holds and binds nothing.",
+        ).withLoc(loc);
         return error.TypeError;
+    } else if (iterTy.* == .named) {
+        const n = iterTy.named;
+        if (std.mem.eql(u8, n.name, "Range")) {
+            // `for (a..b) { i -> … }` — a range counts in integers.
+            itemTy = try env.namedType("i32");
+        } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "array")) {
+            itemTy = n.args[0];
+        } else if (n.args.len >= 1 and effectChain.grants(effectOfWrapper(n.name), .yield_)) {
+            // A generator (decision 103): `@Generator<T>` in any body; one that
+            // implements `@Result` is an implicit `try` at every item and needs
+            // a body that grants `try`; one that implements `@Future` needs
+            // `for await`.
+            if (effectChain.wrapperImplements(n.name, "Future")) {
+                env.lastError = TypeError.custom(
+                    diagnostics.for_over_future_generator ++ ": a `@FutureGenerator` suspends between items — iterate it with `for await`",
+                    "`for await (gen) { x -> … }` in a body that grants `await`.",
+                ).withLoc(loc);
+                return error.TypeError;
+            }
+            // The same gate bare `try` answers to: a body with a declared
+            // return type and no `try`-granting effect refuses; a `test`
+            // block, a lambda and a fn without a return type stay lenient.
+            if (effectChain.wrapperImplements(n.name, "Result") and env.throwContext == .plain and !effectChain.grants(env.fnEffect, .try_)) {
+                const msg = try std.fmt.allocPrint(
+                    env.arena,
+                    "{s}: `for` over a `@{s}` is an implicit `try` at every item, and this body grants no `try`",
+                    .{ diagnostics.for_over_fallible_generator, n.name },
+                );
+                env.lastError = TypeError.custom(
+                    msg,
+                    try effectChain.refusal(env.arena, diagnostics.for_over_fallible_generator, .try_, env.fnEffect),
+                ).withLoc(loc);
+                return error.TypeError;
+            }
+            itemTy = n.args[0];
+        }
     }
+    for (lp.params) |p| try env.bind(p, itemTy orelse try env.freshVar());
 
-    // The loop parameter binds the ITEM of what is iterated. It used to bind a
-    // fresh variable with no link to the collection, so nothing inside the body
-    // had a type: `loop (xs) { x -> x.length() }` over an `Array<string>` left
-    // commonJS with no receiver type to rename the call with, and it emitted a
-    // CALL on JavaScript's `length` PROPERTY — `TypeError: x.length is not a
-    // function`, at exit 1 — while erlang, which needs no receiver type to
-    // lower a primitive method, printed the right answer. A `val` bound from
-    // the parameter inherited the same nothing, and so did a field read off it.
-    const itemTy: ?*T.Type = if (awaitItem) |ai| ai else blk: {
-        if (isCondition) break :blk null;
-        const iter = iterTyped.getType().deref();
-        if (iter.* != .named) break :blk null;
-        // `loop (a..b) { i -> … }` — a range has no element argument to read,
-        // and decision 8 §10 counts it in integers.
-        if (std.mem.eql(u8, iter.named.name, "Range")) break :blk try env.namedType("i32");
-        if (iter.named.args.len == 1 and
-            (std.mem.eql(u8, iter.named.name, "array") or
-                std.mem.eql(u8, iter.named.name, "Iterator") or
-                std.mem.eql(u8, iter.named.name, "Generator")))
-            break :blk iter.named.args[0];
-        break :blk null;
-    };
-    for (lp.params, 0..) |p, i| {
-        // `loop (xs) { x, i -> … }` — the second parameter is the index.
-        const bound: *T.Type = if (i == 0)
-            itemTy orelse try env.freshVar()
-        else
-            try env.freshVar();
-        try env.bind(p, bound);
-    }
-
-    // A `loop :label (...)` adds its label to scope for `yield :label` inside it.
+    // The loop's own label is a `break :label` / `continue :label` target for
+    // its body; the body is one loop deeper and a bare `break` leaves it.
     const prevLabelsLen = env.labelStack.items.len;
     defer env.labelStack.shrinkRetainingCapacity(prevLabelsLen);
     if (lp.label) |lbl| try env.labelStack.append(env.arena, lbl);
-
-    // §1I REGRAS DE ESCOPO — track nested-loop depth so an unlabelled
-    // `break` inside the loop body targets the loop, not an enclosing
-    // iterator fn. RI2/RI3 in the `.@"break"` handler reads this counter.
+    const prevBreakScope = env.breakScope;
+    env.breakScope = .loop;
     env.loopDepth += 1;
-    defer env.loopDepth -= 1;
+    defer {
+        env.loopDepth -= 1;
+        env.breakScope = prevBreakScope;
+    }
     const typedBody = try inferStmtsTyped(env, lp.body);
-    const loopArrayArgs = try env.arena.alloc(*T.Type, 1);
-    loopArrayArgs[0] = try env.freshVar();
     return TypedExpr{ .loop = .{
         .loc = loc,
-        .type_ = try env.namedTypeArgs("array", loopArrayArgs),
+        .type_ = try env.namedType("void"),
+        .keyword = lp.keyword,
+        .generator = null,
         .iter = iterPtr,
-        .indexRange = indexRangePtr,
+        .indexRange = null,
         .params = lp.params,
         .paramsLoc = lp.paramsLoc,
-        .condition = isCondition,
+        .condition = lp.condition,
         .body = typedBody,
         .awaitLoop = lp.awaitLoop,
         .label = lp.label,
     } };
 }
 
+/// The effect whose return wrapper is `name`, or null — the chain is asked
+/// about wrappers through their effect, and a name that is no wrapper grants
+/// nothing.
+fn effectOfWrapper(name: []const u8) ?ast.EffectKind {
+    for (ast.EffectKind.all) |e| {
+        if (std.mem.eql(u8, e.returnWrapper(), name)) return e;
+    }
+    return null;
+}
+
+/// The wrapper an annotated loop is worth: `T` fresh (the type of its `yield`
+/// / `break v`), `E` fresh when the wrapper implements `@Result` (the type of
+/// its `throw`), and the wrapper's remaining defaults filled as a written
+/// `@Wrapper<T>` fills them.
+fn generatorLoopWrapper(env: *Env, eff: ast.EffectKind) InferError!*T.Type {
+    const name = eff.returnWrapper();
+    var args: std.ArrayListUnmanaged(*T.Type) = .empty;
+    try args.append(env.arena, try env.freshVar());
+    if (effectChain.wrapperImplements(name, "Result")) try args.append(env.arena, try env.freshVar());
+    if (builtinDefaultFilledArgs(env, name, args.items.len)) |names| {
+        for (names[args.items.len..]) |n| try args.append(env.arena, try env.namedType(n));
+    }
+    return env.namedTypeArgs(name, args.items);
+}
+
+/// Decision 105 — `#[@generator] loop { … }`: the body is a generator scope
+/// with exactly the annotation's capabilities, worth the annotation's wrapper.
+/// The scope is closed: the enclosing fn's effect, labels, `use` anchor and
+/// throw channel are all replaced for the body and restored after it, so a
+/// `use` or an `await` the annotation does not grant is refused inside it
+/// whatever the fn grants, and a `break :outer` / `continue :outer` naming an
+/// enclosing loop is refused as crossing the border. The loop itself is one
+/// loop deep for its body: a bare `break` ends it (and so the generator), a
+/// `continue` starts its next round.
+fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKind, loc: ast.Loc) InferError!TypedExpr {
+    const wrapper = try generatorLoopWrapper(env, eff);
+    const iterTyped = try inferExprTyped(env, lp.iter.*);
+    const iterPtr = try makeTypedPtr(env, iterTyped);
+
+    const prevStarFn = env.starFn;
+    const prevFnEffect = env.fnEffect;
+    const prevThrowCtx = env.throwContext;
+    const prevUseAnchor = env.useAnchor;
+    const prevInContextFn = env.inContextFn;
+    const prevLoopDepth = env.loopDepth;
+    const prevBreakScope = env.breakScope;
+    const prevClosedLabels = env.closedLabels;
+    const prevLabels = try env.arena.dupe([]const u8, env.labelStack.items);
+    defer {
+        env.starFn = prevStarFn;
+        env.fnEffect = prevFnEffect;
+        env.throwContext = prevThrowCtx;
+        env.useAnchor = prevUseAnchor;
+        env.inContextFn = prevInContextFn;
+        env.loopDepth = prevLoopDepth;
+        env.breakScope = prevBreakScope;
+        env.closedLabels = prevClosedLabels;
+        env.labelStack.shrinkRetainingCapacity(0);
+        env.labelStack.appendSlice(env.arena, prevLabels) catch {};
+        env.generatorLoopDepth -= 1;
+    }
+    env.closedLabels = prevLabels;
+    env.labelStack.shrinkRetainingCapacity(0);
+    if (lp.label) |lbl| try env.labelStack.append(env.arena, lbl);
+    env.starFn = starCtxFromEffect(eff, wrapper, lp.label);
+    env.fnEffect = eff;
+    // `throw` lands in the wrapper's error channel when it has one (the
+    // transform's auto-wrap, as for the annotated fn); a wrapper without one
+    // refuses it at the site.
+    env.throwContext = if (effectChain.grants(eff, .try_)) .unchecked else .plain;
+    env.useAnchor = null;
+    env.inContextFn = false;
+    env.loopDepth = 1;
+    env.breakScope = .loop;
+    env.generatorLoopDepth += 1;
+
+    const typedBody = try inferStmtsTyped(env, lp.body);
+    return TypedExpr{ .loop = .{
+        .loc = loc,
+        .type_ = wrapper,
+        .keyword = lp.keyword,
+        .generator = eff,
+        .iter = iterPtr,
+        .indexRange = null,
+        .params = lp.params,
+        .paramsLoc = lp.paramsLoc,
+        .condition = true,
+        .body = typedBody,
+        .awaitLoop = false,
+        .label = lp.label,
+    } };
+}
 /// Infer type for binding expressions (variable declarations and assignments)
 fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (b.kind) {
@@ -9566,6 +9718,16 @@ fn paramTypeInContext(env: *Env, p: ast.Param, gm: std.StringHashMap(*T.Type)) I
 /// ContextBase the hook expression must agree on. The capability was recorded in
 /// `env.fnContext` by `inferFnDecl` before the body was visited.
 fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
+    // Decision 105 — an annotated loop's body runs later, on demand: a `use`
+    // inside it would activate a hook outside the render. Closed, whatever
+    // the enclosing fn grants.
+    if (env.generatorLoopDepth > 0) {
+        env.lastError = TypeError.custom(
+            diagnostics.generator_loop_closed_scope ++ ": `use` cannot activate inside an annotated `loop` — its body runs on demand, at each `next`",
+            "Activate the hook before the loop and read its value inside; the annotated loop has only its own annotation's capabilities.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
     const fc = env.fnContext orelse {
         env.lastError = TypeError.useNotAllowed("void").withLoc(loc);
         return error.TypeError;
@@ -10884,6 +11046,17 @@ fn inferFunctionExprExpected(
         env.labelStack.shrinkRetainingCapacity(prevLabelsLen);
     }
     env.labelStack.shrinkRetainingCapacity(0);
+    // A lambda body is another function: no loop of the enclosing body is
+    // left by a `break` inside it (decision 105), and only a `case` arm's
+    // block keeps the value-block scope it was opened in.
+    const prevLoopDepth = env.loopDepth;
+    const prevBreakScope = env.breakScope;
+    env.loopDepth = 0;
+    if (env.breakScope != .valueBlock) env.breakScope = .none;
+    defer {
+        env.loopDepth = prevLoopDepth;
+        env.breakScope = prevBreakScope;
+    }
 
     const fk = func.kind;
     // Anonymous function expressions never carry an effect annotation, so the
@@ -11017,6 +11190,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             return TypedExpr{ .collection = .{ .loc = loc, .type_ = try env.namedType("Range"), .kind = .{ .range = .{
                 .start = startPtr,
                 .end = endPtr,
+                .inclusive = r.inclusive,
             } } } };
         },
 
@@ -11048,6 +11222,10 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             }
 
             const typedArms = try env.arena.alloc(ast.CaseArmOf(.typed), c.arms.len);
+            // An arm's block takes `break <value>` as its value (decision 2).
+            const prevBreakScope = env.breakScope;
+            env.breakScope = .valueBlock;
+            defer env.breakScope = prevBreakScope;
             for (c.arms, 0..) |arm, i| {
                 var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
                 defer snapshots.deinit(env.arena);
@@ -11153,6 +11331,9 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
         },
 
         .comptimeBlock => |cb| {
+            const prevBreakScope = env.breakScope;
+            env.breakScope = .valueBlock;
+            defer env.breakScope = prevBreakScope;
             const typedBody = try inferStmtsTyped(env, cb.body);
             // C2b — a `comptime { … }` block's value is its `break <value>`
             // (`eval.zig` `blockValue`'s rule), `void` when there is none.

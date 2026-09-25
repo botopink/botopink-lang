@@ -4,7 +4,7 @@ val COMMANDS = comptime ["calc", "noop", "help"];
 
 fn execute(comptime slug: string, input: i32) -> i32 {
     var output = 0;
-    loop (COMMANDS) { cmd ->
+    for (COMMANDS) { cmd ->
         if (cmd == slug) {
             output = input * 2;
         };

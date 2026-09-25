@@ -59,6 +59,14 @@ defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer
 stays `dotDot`, iteration and slicing. The scanner tries the third dot before
 settling for `..`, so no source that writes `..` changed meaning.
 
+## `while` is a keyword (decision 105)
+
+`while` lexes as `@"while"` since 1.0.10-beta's front 22; `for` was already a
+keyword the lexer produced and nothing consumed. The three loop keywords —
+`for`, `while`, `loop` — are one `LoopExpr` node in the parser
+(`../parser/AGENTS.md`). `while` was refused as `removed-keyword-while` before;
+that kind is gone.
+
 ## `??` is its own token (decision 28)
 
 `??` lexes as `questionQuestion`, tried after `?.` and before the bare `?`, the

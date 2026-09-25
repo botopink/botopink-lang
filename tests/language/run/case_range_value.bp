@@ -1,5 +1,5 @@
 //// Decision 53 — the range spelling is Zig's split: `...` is **inclusive** in a
-//// pattern (`..` stays exclusive in a slice and in `loop (a..b)`). So `1...9`
+//// pattern (`..` stays exclusive in a slice and in `for (a..b)`). So `1...9`
 //// matches 1, 5 and 9 and does not match 0 or 10.
 ////
 //// This cell exists because the three answers disagree, which is a defect under

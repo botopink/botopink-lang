@@ -56,7 +56,7 @@ pub fn main() {
     val ps = hostPoints();
     @print(ps.length);
     var total = 0;
-    loop (ps) { q -> total = total + sum(q); };
+    for (ps) { q -> total = total + sum(q); };
     @print(total);
 
     @print(sum(hostTaggedPoint()));

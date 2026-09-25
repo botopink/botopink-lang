@@ -22,7 +22,7 @@
 ////
 //// `if (x)` with no binder is NOT here: an optional condition without `{ e ->
 //// … }` is refused ("type mismatch: expected bool, got optional") and that
-//// refusal is `reject/if_optional_needs_a_binder.bp`. Neither is `loop (x !=
+//// refusal is `reject/if_optional_needs_a_binder.bp`. Neither is `while (x !=
 //// null)`: § the loop shape of `comptime/AGENTS.md`.
 ////
 //// wasm is in `.targets` and FAILS, with its line in `expected-failures.txt`:

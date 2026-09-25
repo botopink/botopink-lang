@@ -136,8 +136,21 @@ pub const ParseErrorType = enum {
     removedKeywordInterface,
     /// `record { x: 1 }` — anonymous records are tuples in 1.0.3.
     removedRecordLiteral,
-    /// `while (cond) { … }` — `while` is not part of the language (decision 8 §10).
-    removedKeywordWhile,
+    /// `loop (…) { … }` — decision 105: `loop` takes no parenthesis; a
+    /// collection is `for (xs) { x -> … }`, a condition `while (cond) { … }`.
+    removedLoopParenthesised,
+    /// `while (cond) { x -> … }` / `loop { x -> … }` — neither binds a name
+    /// (decision 105); only `for` takes `{ x -> … }`.
+    loopBindsNothing,
+    /// `for (xs) { … }` without `x ->` — a `for` binds the item it iterates.
+    forWithoutBinder,
+    /// `for (xs) { x, i -> … }` — a `for` binds one name; the index is
+    /// `for (0..xs.length) { i -> }` (decision 105).
+    forBindsOneName,
+    /// `#[…] loop` with an annotation that is not a generator effect, or a
+    /// generator annotation on `for` / `while` — only `loop` takes the
+    /// annotation, and only the three generator effects (decision 105).
+    loopAnnotationNotGenerator,
     /// `throw new Error(…)` — `new` is not a keyword (06 N27).
     removedKeywordNew,
     /// `{ x: i32 }` in type position — anonymous record types are tuples in 1.0.3.
@@ -474,9 +487,14 @@ pub const Parser = struct {
                 const d = try this.parseTestDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .@"test" = d };
-            } else if (this.check(.loop)) blk: {
+            } else if (this.check(.loop) or this.check(.@"while") or this.check(.@"for")) blk: {
                 // top-level loop statement: parsed as a val named "_loop"
-                const e = try this.parseLoopExpr(alloc);
+                const e = if (this.check(.loop))
+                    try this.parseLoopExpr(alloc, null)
+                else if (this.check(.@"while"))
+                    try this.parseWhileExpr(alloc)
+                else
+                    try this.parseForExpr(alloc);
                 const ePtr = try this.boxExpr(alloc, .{ .loop = e });
                 _ = this.match(.semicolon);
                 break :blk DeclKind{ .val = ast.ValDecl{ .name = "_loop", .value = ePtr } };
@@ -1565,6 +1583,9 @@ pub const Parser = struct {
     }
 
     pub const parseLoopExpr = exprs.parseLoopExpr;
+    pub const parseWhileExpr = exprs.parseWhileExpr;
+    pub const parseForExpr = exprs.parseForExpr;
+    pub const parseAnnotatedLoopExpr = exprs.parseAnnotatedLoopExpr;
 
     pub const parseRangeExpr = exprs.parseRangeExpr;
 };

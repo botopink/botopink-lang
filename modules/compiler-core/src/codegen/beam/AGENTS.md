@@ -149,7 +149,7 @@ helper's own writer, and four through `emitMakeFun` (which prefixes the
 | 5 | `lowerLambda` | the written lambda `{ x -> … }` | a lambda **is** a fun value |
 | 6 | `lowerMutatingFold` | the loop body | `lists:foldl/3` takes one |
 | 7 | `lowerMutatingClosure` | `val f = { p -> … }` that reassigns the frame's names | a closure the frame then calls |
-| 8 | `lowerLoop` | the loop body | `lists:map`/`foreach`/`filtermap` take one |
+| 8 | `lowerLoop` | the loop body | `lists:foreach` (or `lists:map` for a yielding body outside a generator scope's frame) takes one |
 
 **None of the eight is a block as a value**, so decision 2's R7 has no producer
 to remove on this backend. Two reasons, both checkable:

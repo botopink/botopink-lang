@@ -2,7 +2,7 @@
 ```botopink
 fn main() {
     val messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
-    loop (messages, 0..) { msg, i ->
+    for (messages) { msg ->
         @print(msg);
     };
 }
@@ -43,7 +43,7 @@ function __bp_print() {
 
 function main() {
     const messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
-    for (const [i, msg] of (messages).entries()) {
+    for (const msg of messages) {
     __bp_print(msg);
 }
 }

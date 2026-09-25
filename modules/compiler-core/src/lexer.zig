@@ -775,6 +775,7 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "use")) return .use;
         if (std.mem.eql(u8, text, "val")) return .val;
         if (std.mem.eql(u8, text, "var")) return .@"var";
+        if (std.mem.eql(u8, text, "while")) return .@"while";
         if (std.mem.eql(u8, text, "comptime")) return .@"comptime";
         if (std.mem.eql(u8, text, "syntax")) return .syntax;
         if (std.mem.eql(u8, text, "break")) return .@"break";

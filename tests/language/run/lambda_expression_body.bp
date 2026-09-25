@@ -1,7 +1,7 @@
 //// A lambda whose WHOLE body is one expression answers that expression's
 //// value. The lambda's last statement is its return position, and every form
-//// the language gives a value to lands there: an `if`, a `case`, a `loop`, a
-//// `try … catch`.
+//// the language gives a value to lands there: an `if`, a `case`, a
+//// `try … catch` (a loop is a statement — decision 105).
 ////
 //// Measured by emilia's theme front on commonJS, where `{ x -> if (c) { a }
 //// else { b } }` answered `undefined` for every element: the emitter wrapped
@@ -31,10 +31,6 @@ pub fn main() {
     @print(xs.map({ x -> if (x > 1) { x * 10 } else { x } }).join(","));
 
     @print(xs.map({ x -> case x { 1 { 100 } _ { 200 } } }).join(","));
-
-    @print(xs.map({ x -> (loop (0..x) { i -> yield i; }).length }).join(","));
-
-    @print(xs.map({ x -> loop (x > 0) { x = x - 1; break x; } }).join(","));
 
     @print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
 }

@@ -2,7 +2,7 @@
 ```botopink
 pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
     var acc = "\"\"";
-    loop (q.parts()) { p ->
+    for (q.parts()) { p ->
         if (p.kind == "Text") {
             acc = acc + " + \"" + p.text + "\"";
         };
