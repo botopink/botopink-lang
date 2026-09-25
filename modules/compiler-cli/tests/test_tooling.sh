@@ -110,6 +110,21 @@ libtest quietbad
 grep -q '"lib":"quietbad","target":"commonJS","status":"fail"' <<<"$out" || fail "quietbad should be fail"
 grep -q 'quietbad.bp' <<<"$out" || fail "the compile diagnostic should name quietbad.bp"
 
+# ── botopink-lib-test runs cells in parallel and prints them as --jobs 1 does ─
+# The pool changes when a cell runs, never what is printed: every cell is
+# emitted in discovery order by one thread, from the child's captured output.
+echo "==> [libs] --jobs 4 prints, byte for byte, what --jobs 1 prints"
+jobsrun() { # jobsrun <n> — every lib of the work root, both targets, merged streams
+  set +e
+  ( cd "$LIBWORK" && "$LIB_TEST_BIN" --json --bin "$BP_BIN" --lib-root "$LIBWORK/root" --jobs "$1" 2>&1 ) |
+    sed -E 's/ in [0-9.]+m?s/ in <t>/'
+  set -e
+}
+serial="$(jobsrun 1)"
+pooled="$(jobsrun 4)"
+[[ -n "$serial" ]] || fail "the serial run printed nothing"
+[[ "$serial" == "$pooled" ]] || { diff <(echo "$serial") <(echo "$pooled"); fail "--jobs 4 printed something --jobs 1 did not"; }
+
 # ── a library ships its erlang host module ───────────────────────────────────
 # `#[@External.Erlang("host", "fn")]` lowers to `host:fn(…)`. `host` is a module
 # the library authors in erlang and keeps beside its `.bp` sources; nothing
