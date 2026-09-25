@@ -6936,10 +6936,9 @@ const Emitter = struct {
                 // as a fresh variable and added an element no constructor ever
                 // materialised, so every arm failed with `case_clause`.)
                 //
-                // `.range` is decision 8 §5.2's `1...9`, whose name is empty as
-                // well; it keeps the shape it has until front 02 step 3 lowers it
-                // (`run/case_range_value.bp`).
-                .variant, .range => {
+                // `.range` is decision 53's `1...9`, both bounds included.
+                .range => return this.rangePatternNode(b, v, extras),
+                .variant => {
                     var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
                     try items.append(b.arena, Ast.Expr.a(this.variantTag(v.name)));
                     switch (v.payload) {
@@ -7150,6 +7149,24 @@ const Emitter = struct {
         if (isFloatTypeName(name)) return "float";
         if (integerPatternRange(name) != null) return "trunc";
         return null;
+    }
+
+    /// Decision 53 — `A...B`, both bounds included. Erlang has no range
+    /// pattern: the arm keeps a fresh variable and the bounds become its
+    /// guards, `_Rng0 when _Rng0 >= 1, _Rng0 =< 9`. Emitted through the
+    /// variant path it was `{'', 1, 9}`, which no value is, so the arm never
+    /// matched. Only a `case` arm carries guards (`PatternExtras`); a range
+    /// anywhere else — `val assert 1...9 = x` — is refused.
+    fn rangePatternNode(this: *Emitter, b: Ast.Builder, v: anytype, extras: ?*PatternExtras) anyerror!Ast.Expr {
+        const ex = extras orelse return error.RangePatternOutsideCase;
+        if (v.payload != .literals or v.payload.literals.len != 2) return error.InvalidArgs;
+        const bounds = v.payload.literals;
+        const n = this.try_seq;
+        this.try_seq += 1;
+        const subject = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_Rng{d}", .{n}));
+        try ex.guards.append(b.arena, try b.binop(">=", subject, try this.patternNodeExtra(b, bounds[0], null)));
+        try ex.guards.append(b.arena, try b.binop("=<", subject, try this.patternNodeExtra(b, bounds[1], null)));
+        return subject;
     }
 
     /// The runtime tag atom of a variant pattern. `@Result` is materialised as

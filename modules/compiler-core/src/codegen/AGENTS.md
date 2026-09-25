@@ -787,8 +787,13 @@ codegen/
   EMPTY name, so the variant lowering prepended the tag atom of a variant with no
   name — `{'', 0, S}`, which no constructor builds, so every tuple arm died with
   `case_clause`. `shape` is now read: `.tuple` writes the elements and nothing
-  else, and `.range` (§5.2's `1...9`) keeps the tagged shape until front 02 step 3
-  lowers it.
+  else.
+- **`A...B` is a guarded variable** (`rangePatternNode`, decision 53). Through
+  the variant path `1...9` was `{'', 1, 9}` and never matched; the arm now keeps
+  a fresh `_Rng<n>` and appends `_Rng<n> >= A, _Rng<n> =< B` to its guards, both
+  bounds included — in a tuple element and under an arm binder too. Only a `case`
+  arm carries guards, so a range where `PatternExtras` is null (`val assert`) is
+  refused with `RangePatternOutsideCase`.
 - **`..` writes the fields it stands for** (`variantPayloadSlots`). §5.1 P7's
   `rest` was never read: `Rect(width: w, ..)` was emitted `{'Rect', W}` against the
   `{'Rect', 5, 9}` a constructor builds, and `Circle(..)` collapsed to the bare

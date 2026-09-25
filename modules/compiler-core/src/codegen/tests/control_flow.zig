@@ -1460,3 +1460,23 @@ test "erlang: unknown ---- `is`, type arms and `==` answer by value" {
         "A@1 = trunc(A)",
     });
 }
+
+test "erlang: case ---- `A...B` matches both bounds, through guards" {
+    // Front 02 step 3 (C-06, decision 53). Lowered through the variant path the
+    // range was `{'', 1, 9}`, which no value is, so every probe fell to `_`. It
+    // is now a fresh variable guarded by both bounds — in an arm with a binder
+    // and inside a tuple pattern too.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn grade(n: i32) -> string {
+        \\  return case n { 1...9 { d -> "digit " + d.toString() } 10...99 { "two" } _ { "other" } };
+        \\}
+        \\fn main() {
+        \\  @print(grade(0), grade(1), grade(9), grade(10), grade(99), grade(100));
+        \\  val t = #(5, "x");
+        \\  case t { #(1...3, _) { @print("low") } #(4...6, s) { @print("mid " + s) } _ { @print("hi") } };
+        \\}
+    , "other digit 1 digit 9 two two other\nmid x\n", &.{
+        "D = _Rng0 when (_Rng0 >= 1), (_Rng0 =< 9) ->",
+        "{_Rng1, S} when (_Rng1 >= 4), (_Rng1 =< 6) ->",
+    });
+}
