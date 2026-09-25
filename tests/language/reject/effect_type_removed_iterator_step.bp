@@ -1,0 +1,10 @@
+//// Decision 127 of 1.0.10-beta (front 24, § Cells "Migration"; guide.md § 9,
+//// row `Iterable`, `IteratorStep`, `Yield<T, R>`) — the step enum is
+//// `YieldStep<T>` (`test/yield_step_next.bp`); `IteratorStep` stays gone.
+//// Measured at compiler `82e32e36`: accepted in silence in a parameter. The
+//// cell asks for `effect-type-removed` with the fix-it `YieldStep<T>`
+//// (reported as a choice).
+
+fn first(step: @IteratorStep<i32>) -> i32 { return 0; }
+
+pub fn main() { @print(1); }

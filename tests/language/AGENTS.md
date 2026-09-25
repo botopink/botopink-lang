@@ -198,6 +198,36 @@ The `reject/` cells name one refusal each: `loop_break_value`, `loop_yield_plain
 `generator_loop_use`, `generator_loop_await`, `generator_loop_break_outer`, `continue_outside_loop`,
 `yield_label_loop`, plus the parser's `loop_parenthesised` and `loop_condition_parameter`.
 
+### Effects by return (front 24, decisions 118–128)
+
+The § *Cells* suite of `specs/1.0.10-beta/00-compiler-carry-over/24-effects-by-return/README.md`,
+written against its `guide.md`: the return type is the annotation (`@Result`, `@Task`,
+`@Component<C, T>`, `@Iterator`, `@Stream`), only `@Result` fails, `async { }` and the `iter` /
+`stream` loop prefixes. Written before the compiler lands them, so each fails on today's compiler
+until the front's steps do; every header names the decision and the guide row it pins. A `run/`
+cell that awaits prints from inside its one `@Task` / `@Component` body (`run`, or the component
+`main` calls): commonJS hands a plain caller a Promise (decision 120), the other backends run the
+Task eagerly, and inside one body the order is the same everywhere.
+
+| Group | Cells |
+|---|---|
+| Return and effect mode | `test/effect_return_result`, `run/task_return_layers` (three layers), `run/effect_alias_passes_value`; `reject/effect_return_ambiguous_nesting`, `reject/effect_wrapper_behind_alias` |
+| `@Task` and failure | `run/task_await_no_try`, `run/task_await_result` (`await t` answers the `@Result`, `try await t`, `try await t catch x`), `run/task_throw_resolves_error` (`.targets commonJS`: the Promise resolves with `Error`, never rejects); `reject/task_throw_without_result`, `reject/task_try_await_without_result` |
+| Chain and `use` | `run/component_hook_and_component`, `run/component_result_try_await`; `reject/component_try_element`, `reject/await_under_result`, `reject/use_under_task`, `reject/component_two_bases`, `reject/use_of_component` |
+| `async { }` | `run/async_block_all_of` (`.targets commonJS erlang`: `std/async` is host-backed there only), `run/async_block_value_type`, `run/async_block_return`; `reject/async_block_use`, `reject/async_block_conflicting_errors` |
+| Iterators | `run/iterator_fibonacci`, `run/iterator_result_item`, `run/iterator_result_items` (step E4), `run/iterator_factory`, `test/yield_step_next`; `reject/iterator_throw_without_result`, `reject/iter_await`, `reject/iter_mixed_yield_return`, `reject/iterator_error_param_removed` |
+| Streams | `run/stream_pages` (a simulated http failing mid-way), `run/stream_loop_no_failure`; `reject/for_await_without_task` |
+| Prefixed loops | `run/prefixed_loop_forms`, `run/prefixed_loop_result_item`, `run/prefixed_loop_break_value`, `run/prefixed_loop_nearest_scope`, `test/contextual_words`; `reject/prefixed_loop_break_outer` |
+| Host (decision 126) | `run/host_node_task_result` (`.targets commonJS`), `run/host_erlang_task_result` (`.targets erlang`) |
+| Migration (decision 127, guide § 9's "Old names that left") | `effect-annotation-removed`: `reject/effect_annotation_removed_{result,future,use,generator,result_generator,future_generator}`, the three loop forms `…_{generator,result_generator,future_generator}_loop`, and the older `…_{context,iterator,async_generator}`; `effect-type-removed`: `reject/effect_type_removed_{future,future_no_error,use,generator,result_generator,future_generator}` and the older `…_{async_iterator,iterable,iterator_step,yield}`; the arity refusals `reject/component_one_type_argument` (`@Component<T>`), `reject/context_two_type_arguments` (`@Context<B, R>`), `reject/yield_step_error_param` (`YieldStep<T, E>`); and the existing refusals `reject/loop_condition_parenthesised`, `reject/loop_await_removed`, `reject/component_plain_return` |
+
+Every row of guide § 9 has a new-form cell above and an old-form `reject/` cell. Two
+`.expect` first lines are a code's shared tail on purpose: `without-fallible-channel`
+(`task_throw_without_result`, `iterator_throw_without_result`) holds both the README's
+`effect-try-without-fallible-channel` and today's `effect-throw-…` for a `throw` (the README's
+open point 2). The alias cells spell the guide's `type Name<T> = …;`, which does not parse at
+`82e32e36`.
+
 ### The `modules/` kind
 
 The kind for what a single file cannot express: `pub mod`, `import … from "<module>"`, a folder index

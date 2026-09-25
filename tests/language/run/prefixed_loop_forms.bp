@@ -1,0 +1,43 @@
+//// Decision 125 of 1.0.10-beta (front 24, § Cells "Prefixed loops", first line;
+//// guide.md § 6.1 and § 9, row `#[@generator] loop { … }`) — `iter` in front of
+//// any of the three loops makes it an expression worth `@Iterator<T>`: `iter
+//// loop` and `iter while` over captured `var`s (the iterator's state) and `iter
+//// for` over a literal, each bound to a `val` — one of them annotated — and an
+//// `iter for` passed straight as an argument. A bare `break` in the prefixed
+//// loop ends the sequence.
+
+fn line(it: @Iterator<i32>) -> string {
+    var acc = "";
+    for (it) { x ->
+        if (acc == "") { acc = x.toString(); } else { acc = acc + " " + x.toString(); };
+    };
+    return acc;
+}
+
+fn sum(it: @Iterator<i32>) -> i32 {
+    var total = 0;
+    for (it) { x -> total = total + x; };
+    return total;
+}
+
+pub fn main() {
+    var n = 0;
+    val doubled = iter loop {
+        n = n + 1;
+        if (n > 3) { break; };
+        yield n * 2;
+    };
+    @print(line(doubled));
+
+    var i = 3;
+    val countdown: @Iterator<i32> = iter while (i > 0) {
+        yield i;
+        i = i - 1;
+    };
+    @print(line(countdown));
+
+    val evens = iter for ([1, 2, 3, 4]) { x -> if (x % 2 == 0) { yield x; }; };
+    @print(line(evens));
+
+    @print(sum(iter for ([1, 2, 3]) { x -> yield x * x; }));
+}

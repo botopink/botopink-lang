@@ -1,0 +1,18 @@
+//// Decision 127 of 1.0.10-beta (front 24, § Cells "Migration"; guide.md § 9,
+//// row `#[@context]` / `@Context<B, R>` as an effect) — an effect annotation that
+//// had already left (decision 102 renamed it `#[@use]`, and 118 removed that)
+//// stays gone. Measured at compiler `82e32e36`: `#[@context]` is accepted in
+//// silence, as every unknown `#[@…]` annotation is. The cell asks for the
+//// refusal of its family, `effect-annotation-removed` — the code the README's
+//// table gives the six annotations; decision 127 says the older names "stay
+//// gone" without naming a code, so this is the recommended reading, reported
+//// as a choice. The new form is `run/component_hook_and_component.bp`.
+
+pub type ElementBase {}
+
+#[@context]
+fn state(initial: i32) -> @Component<ElementBase, i32> {
+    return initial;
+}
+
+pub fn main() { state(1); }

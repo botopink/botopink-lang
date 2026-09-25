@@ -1,0 +1,20 @@
+//// Decisions 121 and 128 of 1.0.10-beta (front 24, § Cells "Chain and `use`";
+//// guide.md § 4.5 `Propaga`) — `@Component ⊃ @Task`, never `@Result`: a
+//// component returns its `Element`, not a `@Result`, so it handles a failure in
+//// its body (`catch`, `case`, `notFound()`) and a propagating `try` is
+//// `effect-try-without-fallible-channel`, at the `try`.
+
+pub type ElementBase {}
+type Element(count: i32) implement @Context<ElementBase>
+
+fn fetchCount(n: i32) -> @Task<@Result<i32, string>> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+fn Propaga() -> @Component<ElementBase, Element> {
+    val n = try await fetchCount(1);
+    return Element(count: n);
+}
+
+pub fn main() { Propaga(); }

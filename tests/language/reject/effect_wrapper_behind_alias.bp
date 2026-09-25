@@ -1,0 +1,19 @@
+//// Decision 118 rule 1 of 1.0.10-beta (front 24, § Cells "Return and effect
+//// mode"; guide.md § 2.3) — the wrapper has to be written in the return: an
+//// alias types the function and never activates the effect, so the capability
+//// used under it is `effect-wrapper-behind-alias`, at the `throw`, with the
+//// fix-it "write `@Result<i32, ParseError>`". The alias declaration
+//// (`type Name<T> = …;`) is the guide's spelling; measured at compiler
+//// `82e32e36` it does not parse (`this token cannot appear here` at the `=`),
+//// which no step of front 24 lists — reported with the cell.
+//// `run/effect_alias_passes_value.bp` is the legal half.
+
+pub type ParseError { Empty }
+pub type Parser<T> = @Result<T, ParseError>;
+
+fn byAlias(s: string) -> Parser<i32> {
+    if (s == "") { throw ParseError.Empty; };
+    return 1;
+}
+
+pub fn main() { byAlias("a"); }

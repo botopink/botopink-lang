@@ -1,0 +1,17 @@
+//// Decisions 118 and 128 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `-> Element` on a component that uses a hook) — `use` is
+//// granted by a `@Component<C, T>` return and by nothing else; a component
+//// written `-> Element` is an ordinary function and its `use` is refused at
+//// the `use`. The new form is `run/component_hook_and_component.bp`.
+
+pub type ElementBase {}
+type Element(count: i32) implement @Context<ElementBase>
+
+fn state(initial: i32) -> @Component<ElementBase, i32> { return initial; }
+
+fn Widget() -> Element {
+    val c = use state(0);
+    return Element(count: c);
+}
+
+pub fn main() { @print(Widget().count); }

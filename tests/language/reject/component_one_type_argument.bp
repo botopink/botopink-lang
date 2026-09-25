@@ -1,0 +1,16 @@
+//// Decision 128 of 1.0.10-beta (front 24, § Cells "Migration"; guide.md § 9,
+//// row `#[@use] fn f() -> @Component<T>`) — one context wrapper,
+//// `@Component<C, T>`, whose base `C` is always written and never read off
+//// `T`'s `implement @Context<…>`. The one-argument form is a type-arity error:
+//// the code the checker already gives a missing generic argument (measured at
+//// compiler `82e32e36`, where it carries no location — hence no line 2). The
+//// codemod rewrites it to `@Component<ElementBase, Element>`.
+
+pub type ElementBase {}
+type Element(count: i32) implement @Context<ElementBase>
+
+fn Widget() -> @Component<Element> {
+    return Element(count: 1);
+}
+
+pub fn main() { Widget(); }

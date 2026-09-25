@@ -1,0 +1,33 @@
+//// Decision 125 of 1.0.10-beta (front 24, § Cells "Prefixed loops", third line)
+//// — `yield` in an UNPREFIXED `for` / `while` / `loop` feeds the nearest
+//// generator scope: the two nested `for`s inside `flat`'s `iter loop` feed it,
+//// and the bare `break` after them ends it. `yield :out` names another scope —
+//// here the signature label of `evens`, from inside a `for` labelled `:inner`
+//// (where a label sits on a prefixed loop itself is the README's open point 9,
+//// so no prefixed loop carries one).
+
+fn evens(xs: i32[]) -> @Iterator<i32> :out {
+    for :inner (xs) { x ->
+        if (x % 2 == 1) { continue; };
+        yield :out x;
+    };
+}
+
+fn line(it: @Iterator<i32>) -> string {
+    var acc = "";
+    for (it) { x ->
+        if (acc == "") { acc = x.toString(); } else { acc = acc + " " + x.toString(); };
+    };
+    return acc;
+}
+
+pub fn main() {
+    val flat = iter loop {
+        for ([1, 2]) { x ->
+            for ([10, 20]) { y -> yield x * y; };
+        };
+        break;
+    };
+    @print(line(flat));
+    @print(line(evens([1, 2, 3, 4])));
+}

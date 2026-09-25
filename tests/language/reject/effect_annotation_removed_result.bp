@@ -1,0 +1,13 @@
+//// Decisions 118 and 127 of 1.0.10-beta (front 24, § Cells "Migration"; guide.md § 9,
+//// row `#[@result] fn f() -> @Result<T, E>`) — the return is the annotation, and
+//// the six effect annotations leave with no compatibility window. `#[@result]` is
+//// parsed only to be refused, located at the annotation, with the fix-it "remove
+//// the annotation". The new form is `test/effect_return_result.bp`.
+
+#[@result]
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+pub fn main() { @print(try parse(1) catch 0); }

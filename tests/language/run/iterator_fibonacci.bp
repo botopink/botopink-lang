@@ -1,0 +1,45 @@
+//// Decisions 118, 122 and 123 of 1.0.10-beta (front 24, § Cells "Iterators",
+//// first line; guide.md § 5.1 and § 9, row `#[@generator]` + `@Generator<T>`)
+//// — `-> @Iterator<T>` with a `yield` is an iterator, and any function may
+//// iterate one (`main` is plain). `yield v` emits and continues; `break v`
+//// emits and ends (`firstNegative` stops at the first negative, which it
+//// emits).
+////
+//// The guide's `fibonacci` is `@Iterator<i64>` over `var a: i64 = 0`; the cell
+//// uses `i32` because an integer literal does not widen to `i64` at compiler
+//// `82e32e36` (`type mismatch: expected i64, got i32`), a gap that is not this
+//// cell's claim.
+
+fn fibonacci(limit: i32) -> @Iterator<i32> {
+    var a = 0;
+    var b = 1;
+    var i = 0;
+    while (i < limit) {
+        yield a;
+        val t = a + b;
+        a = b;
+        b = t;
+        i = i + 1;
+    };
+}
+
+fn firstNegative(xs: i32[]) -> @Iterator<i32> {
+    for (xs) { x ->
+        if (x < 0) { break x; };
+        yield x;
+    };
+}
+
+fn line(it: @Iterator<i32>) -> string {
+    var acc = "";
+    for (it) { x ->
+        if (acc == "") { acc = x.toString(); } else { acc = acc + " " + x.toString(); };
+    };
+    return acc;
+}
+
+pub fn main() {
+    @print(line(fibonacci(10)));
+    @print(line(firstNegative([3, 1, -4, 5, -9])));
+    @print(line(firstNegative([2, 7])));
+}

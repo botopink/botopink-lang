@@ -1,0 +1,18 @@
+//// Decisions 104 and 128 of 1.0.10-beta (front 24, § Cells "Chain and `use`";
+//// guide.md § 4.5 `Errado`) — a component is the `@Component<C, T>` whose `T`
+//// implements `@Context<C>`, and it is CALLED (`Counter()`); `use` is for hooks.
+//// The guide gives the refusal no code (README open point 2); line 1 is
+//// today's message, at the `use`.
+
+pub type ElementBase {}
+type Element(count: i32) implement @Context<ElementBase>
+
+fn Counter() -> @Component<ElementBase, Element> {
+    return Element(count: 1);
+}
+
+fn Errado() -> @Component<ElementBase, Element> {
+    return use Counter();
+}
+
+pub fn main() { Errado(); }

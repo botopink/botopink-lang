@@ -1,0 +1,7 @@
+try ok 1
+try error negative -2
+try done
+throw ok 1
+throw ok 2
+throw error stop at 3
+throw done

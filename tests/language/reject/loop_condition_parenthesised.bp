@@ -1,0 +1,10 @@
+//// Decisions 105 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `loop (xs) { x -> }` · `loop (cond)` · `loop await`) — the
+//// condition half of the row: `loop (cond)` is `while (cond)`. The existing
+//// refusal holds (`reject/loop_parenthesised.bp` is the collection half).
+
+pub fn main() {
+    var i = 0;
+    loop (i < 3) { i = i + 1; };
+    @print(i);
+}

@@ -1,0 +1,30 @@
+//// Decision 126 of 1.0.10-beta (front 24 step E5, § Cells "Host", first line;
+//// guide.md § 8) — a `#[@External.Node(…)]` function declared
+//// `-> @Task<@Result<T, string>>` turns a rejected Promise into `Error(e)`: the
+//// commonJS lowering is `try { await p } catch (e) { return {Error: …} }`, and a
+//// resolved value is the `T` the return wraps in `Ok` (decision 119).
+////
+//// The host rejects with a STRING, so `e` is the error value whichever way the
+//// lowering reads it (the payload of an `Error` object's `message` or the
+//// rejection itself — the README's table writes `{Error: …}`). Printed from
+//// inside `run`. `.targets` is `commonJS`: the claim is Node's;
+//// `run/host_erlang_task_result.bp` is Erlang's.
+
+#[@External.Node("""(($0 > 0) ? Promise.resolve($0 * 2) : Promise.reject('refused ' + $0))""")]
+declare fn hostDouble(n: i32) -> @Task<@Result<i32, string>>;
+
+fn show(r: @Result<i32, string>) {
+    case r {
+        Ok(v) -> @print("ok " + v.toString());
+        Error(e) -> @print("error " + e);
+    };
+}
+
+fn run() -> @Task<void> {
+    show(await hostDouble(21));
+    show(await hostDouble(0));
+    val sum = (try await hostDouble(1) catch 0) + (try await hostDouble(-1) catch 100);
+    @print(sum);
+}
+
+pub fn main() { run(); }

@@ -1,0 +1,16 @@
+//// Decision 127 of 1.0.10-beta (front 24, § Cells "Migration"; guide.md § 9,
+//// row `#[@iterator]` / `#[@asyncGenerator]` / `@AsyncIterator`) — the
+//// `#[@iterator]` of decision 103's era stays gone. Measured at compiler
+//// `82e32e36`: accepted in silence, as every unknown `#[@…]` annotation is. The
+//// cell asks for `effect-annotation-removed` (the family's code; decision 127
+//// names none for the older names — reported as a choice). The new form is
+//// `run/iterator_result_items.bp`.
+
+#[@iterator]
+fn upto(n: i32) -> @Iterator<@Result<i32, string>> {
+    if (n < 0) { throw "negative"; };
+    var i = 0;
+    while (i < n) { yield i; i = i + 1; };
+}
+
+pub fn main() { for (upto(2)) { r -> @print(r.unwrapOr(0)); }; }
