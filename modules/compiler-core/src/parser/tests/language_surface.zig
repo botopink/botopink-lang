@@ -13,6 +13,7 @@ const std = @import("std");
 const h = @import("helpers.zig");
 const assertParser = h.assertParser;
 const expectParseError = h.expectParseError;
+const expectErrorAt = h.expectErrorAt;
 
 // ── R1 — the array suffix is the type's, not the arm's ───────────────────────
 //
@@ -338,4 +339,178 @@ test "surface R9: the catch-all names the token and says a refusal looks differe
     ,
         \\fn main() -> i32 { return 1 @ 2; }
     );
+}
+
+// ── R10 — a decided-against form is refused by name, where it starts ─────────
+//
+// `surface-gaps.md` § (b) lists the forms the documents do not write and the
+// parser met with the catch-all — or, for `&`, `^` and `'a'`, with the lexer's
+// "unexpected character", which no parse error can name or locate. Each has a
+// `ParseErrorType` now, raised ONCE at the site every spelling reaches: the
+// infix forms at `parsePostfixChain`'s exit (every receiver ends there), the
+// literal forms in `parsePrimary`, the spread forms in the array literal, the
+// label in the tuple literal, the `for` in the type's implement clause. The
+// location is the token that starts the form, so a `reject/` cell pins both.
+
+test "surface R10: a ternary is refused at the `?`" {
+    try expectErrorAt("fn f(c: bool) -> i32 { return c ? 1 : 2; }", .ternaryAbsent, 1, 33);
+    // After a chain, a call, a literal and a grouped expression alike.
+    try expectErrorAt("fn f() -> i32 { return a.b ? 1 : 2; }", .ternaryAbsent, 1, 28);
+    try expectErrorAt("fn f() -> i32 { return g(1) ? 1 : 2; }", .ternaryAbsent, 1, 29);
+    try expectErrorAt("fn f() -> i32 { return (a == b) ? 1 : 2; }", .ternaryAbsent, 1, 33);
+}
+
+test "surface R10: the bitwise operators are refused at the operator" {
+    try expectErrorAt("fn f() -> i32 { return 1 << 2; }", .bitwiseOperatorAbsent, 1, 26);
+    try expectErrorAt("fn f() -> i32 { return 8 >> 2; }", .bitwiseOperatorAbsent, 1, 26);
+    try expectErrorAt("fn f(a: i32, b: i32) -> i32 { return a & b; }", .bitwiseOperatorAbsent, 1, 40);
+    try expectErrorAt("fn f(a: i32, b: i32) -> i32 { return a ^ b; }", .bitwiseOperatorAbsent, 1, 40);
+}
+
+test "surface R10: the boolean operators and the optional forms still parse" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(a: bool, b: bool, c: ?i32, d: Box<Box<i32>>) -> bool {
+        \\    val x = a && b || !a;
+        \\    val y = c ?? 0;
+        \\    val z = c?.toString();
+        \\    return x;
+        \\}
+    );
+}
+
+test "surface R10: a character literal is refused at the literal" {
+    try expectErrorAt("fn f() -> string { return 'a'; }", .charLiteralAbsent, 1, 27);
+    try expectErrorAt("fn f() -> string { val c = 'ab; return c; }", .charLiteralAbsent, 1, 28);
+}
+
+test "surface R10: a named fn inside a body is refused at the `fn`" {
+    try expectErrorAt(
+        \\fn main() -> i32 {
+        \\    fn inner(x: i32) -> i32 { return x + 1; }
+        \\    return inner(1);
+        \\}
+    , .nestedFnDecl, 2, 5);
+}
+
+test "surface R10: the anonymous fn expression and the lambda still parse in a body" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn main() -> i32 {
+        \\    val inner = fn(x) { return x + 1; };
+        \\    val twice = { x -> x * 2 };
+        \\    return inner(twice(1));
+        \\}
+    );
+}
+
+test "surface R10: a spread that is not last is list-spread-not-last, at the element" {
+    try expectErrorAt("fn f(a: i32[]) -> i32[] { return [..a, 3]; }", .listSpreadNotLast, 1, 40);
+    try expectErrorAt("fn f(a: i32[]) -> i32[] { return [0, ..a, 3]; }", .listSpreadNotLast, 1, 43);
+}
+
+test "surface R10: a three-dot spread is refused at the dots" {
+    try expectErrorAt("fn f(a: i32[]) -> i32[] { return [...a, 3]; }", .listSpreadDotDotDot, 1, 35);
+    try expectErrorAt("fn f(a: i32[]) -> i32[] { return [1, ...a]; }", .listSpreadDotDotDot, 1, 38);
+}
+
+test "surface R10: the spread forms that parse still parse" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(a: i32[]) -> i32[] {
+        \\    val b = [1, 2, ..a];
+        \\    val c = [..a];
+        \\    val d = [1, ..a,];
+        \\    return b;
+        \\}
+    );
+}
+
+test "surface R10: `for` in a bodyless type's implement clause is refused at the `for`" {
+    try expectErrorAt(
+        \\behavior A { fn f(self: Self) -> i32; }
+        \\type P(x: i32)
+        \\implement A for P { fn f(self: Self) -> i32 { return self.x; } }
+    , .implementClauseFor, 3, 13);
+}
+
+test "surface R10: the implement clause, and the named standalone block, still parse" {
+    try assertParser(std.testing.allocator, @src(),
+        \\behavior A { fn f(self: Self) -> i32; }
+        \\type P(x: i32) implement A { fn f(self: Self) -> i32 { return self.x; } }
+        \\type Q(x: i32)
+        \\Impl implement A for Q { fn f(self: Self) -> i32 { return self.x; } }
+    );
+}
+
+test "surface R10: a label in a tuple literal is refused at the label" {
+    try expectErrorAt("fn f() -> i32 { val t = #(x: 1, y: 2); return t.x; }", .tupleLiteralLabel, 1, 27);
+    try expectErrorAt("fn f() -> i32 { val t = #(1, y: 2); return t.0; }", .tupleLiteralLabel, 1, 30);
+}
+
+test "surface R10: a decided-against form renders its code, the replacement and the location" {
+    try expectParseError(std.testing.allocator,
+        \\error[ternary-absent]: there is no `c ? a : b`
+        \\ --> <test>:1:33
+        \\  |
+        \\1 | fn f(c: bool) -> i32 { return c ? 1 : 2; }
+        \\  |                                 ^ write `if (c) { a } else { b }`
+        \\  |
+        \\  = hint: `if` is an expression: `val x = if (c) { a } else { b };` — and `a ?? b` is the default of an optional.
+        \\
+        \\
+    ,
+        \\fn f(c: bool) -> i32 { return c ? 1 : 2; }
+    );
+    try expectParseError(std.testing.allocator,
+        \\error[bitwise-operator-absent]: the language has no bitwise operators
+        \\ --> <test>:1:26
+        \\  |
+        \\1 | fn f() -> i32 { return 1 << 2; }
+        \\  |                          ^^ not an operator `<<`
+        \\  |
+        \\  = hint: There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[@External.<Target>(…)]` is the way to a bit operation.
+        \\
+        \\
+    ,
+        \\fn f() -> i32 { return 1 << 2; }
+    );
+}
+
+// ── R11 — the two measured forms (step 4b) ───────────────────────────────────
+//
+// Both were found by library fronts paying for them, and both are strictly
+// accepting: `#[mark(-20)]` reds at the DIGITS because the annotation-argument
+// loop took the `-` as the whole argument; a one-line trailing-lambda body
+// (`xs.map { x -> f(x) }`, every `loop (xs) { x -> f(x) }`) reds at the `}`
+// because that one block kept the `.required` semicolon policy while the same
+// lambda as a value parsed. Pre-fix each snapshot below is a parse error.
+
+test "surface R11: a negative literal is one annotation argument" {
+    try assertParser(std.testing.allocator, @src(),
+        \\#[mark(-20)]
+        \\fn f() -> i32 { return 1; }
+        \\#[order(-100), tag("x", -1)]
+        \\fn g() -> i32 { return 2; }
+    );
+}
+
+test "surface R11: a one-line trailing lambda body needs no `;`" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(xs: i32[]) -> i32 {
+        \\    val ys = xs.map { x -> x + 1 };
+        \\    var acc = 0;
+        \\    loop (xs) { x -> acc = acc + x };
+        \\    xs.forEach { x -> @print(x.toString()) };
+        \\    val z = calcular(fator: 2) { a, b -> a + b };
+        \\    val w = memo { -> 42 };
+        \\    return acc;
+        \\}
+    );
+}
+
+test "surface R11: a trailing lambda body with several statements keeps its `;`" {
+    try expectErrorAt(
+        \\fn f(xs: i32[]) -> i32 {
+        \\    xs.forEach { x -> @print(x.toString()) @print(x.toString()); };
+        \\    return 1;
+        \\}
+    , .unexpectedToken, 2, 44);
 }

@@ -1594,6 +1594,7 @@ fn emitErlangModule(
         }
         em.enum_variant_names.deinit();
         em.imported_fns.deinit();
+        em.import_aliases.deinit();
         var ftf_it = em.fn_typed_fields.keyIterator();
         while (ftf_it.next()) |k| alloc.free(k.*);
         em.fn_typed_fields.deinit();
@@ -2440,7 +2441,11 @@ const Emitter = struct {
     user_erlang_templates: std.StringHashMap(PrimErlangCall),
     /// Module names imported via `import {…} from "std"` — a lowercase
     /// receiver naming one lowers to a remote call (`option:map(Args)`).
-    std_imports: std.StringHashMap(void),
+    std_imports: std.StringHashMap([]const u8),
+    /// Decision 107 — a bare import bound under an alias (`import {a.twice as
+    /// double}`): the local name → the `pub fn`'s declared name, which is what
+    /// the owner exports and the remote call has to spell.
+    import_aliases: std.StringHashMap([]const u8),
     /// When true, `fnForms` keeps the `self` parameter (extension methods take
     /// the receiver as an explicit first argument; ordinary fns drop `self`).
     keep_self: bool = false,
@@ -2770,7 +2775,8 @@ const Emitter = struct {
             .externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .externals_missing = std.StringHashMap(void).init(alloc),
             .external_record_returns = std.StringHashMap([]const u8).init(alloc),
-            .std_imports = std.StringHashMap(void).init(alloc),
+            .std_imports = std.StringHashMap([]const u8).init(alloc),
+            .import_aliases = std.StringHashMap([]const u8).init(alloc),
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .enum_names = std.StringHashMap(void).init(alloc),
             .enum_variants = std.StringHashMap(void).init(alloc),
@@ -3853,7 +3859,7 @@ const Emitter = struct {
         // module (`import {order} from "std"` brings `std/order`'s enums).
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
-                const name = imp.segments[imp.segments.len - 1];
+                const name = imp.leaf();
                 for (self.enum_exports) |ee| {
                     if (std.mem.eql(u8, ee.module, self.module_name)) continue;
                     if (!std.mem.eql(u8, ee.name, name) and !std.mem.eql(u8, crossModule.moduleBasename(ee.module), name)) continue;
@@ -3873,17 +3879,23 @@ const Emitter = struct {
         const xc = self.cross orelse return;
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
-                const name = imp.name();
+                // The LEAF is what the owner exports; the local binding may be
+                // an alias (decision 107), which the call site spells and the
+                // remote call has to translate back (`import_aliases`).
+                const name = imp.leaf();
                 // `pick`, not `exports.get`: the index is keyed by the bare
                 // name and several modules of a program may export one
                 // (`libs/std` declares `parse` in `json`, `querystring` and
                 // `url`), so the `from "<mod>"` this import wrote is what says
-                // which. Measured before this: a module importing `parse` from
-                // "one" emitted a remote call into "two" (`undef` at run time
-                // on erlang, the other module's ANSWER at exit 0 on commonJS).
-                // A contest is not resolved here — `export_faults` already
-                // failed this module in the driver.
-                const info = xc.picked(name, u.source, null) orelse {
+                // which — for a qualified item, the module its prefix names
+                // (`io.fs.readText` → `std/io/fs`). Measured before this: a
+                // module importing `parse` from "one" emitted a remote call
+                // into "two" (`undef` at run time on erlang, the other
+                // module's ANSWER at exit 0 on commonJS). A contest is not
+                // resolved here — `export_faults` already failed this module
+                // in the driver.
+                const leaf_src = try u.leafSource(imp, self.atom_arena.allocator(), false);
+                const info = xc.picked(name, leaf_src, null) orelse {
                     // Not a `pub` symbol: either a MODULE (`import {dict} from
                     // "std"`, a sibling `import {geometry}`) or a `behavior`,
                     // which decision 23 leaves out of the index because it has
@@ -3928,7 +3940,10 @@ const Emitter = struct {
                     // the owner has nothing to wrap: the call stays bare, and an
                     // unresolved one is a loud erlc error naming the function
                     // (see AGENTS.md).
-                    .@"fn" => if (!info.is_external or info.erlang_backed) try self.imported_fns.put(name, owner),
+                    .@"fn" => if (!info.is_external or info.erlang_backed) {
+                        try self.imported_fns.put(imp.name(), owner);
+                        if (imp.alias != null) try self.import_aliases.put(imp.name(), name);
+                    },
                     // A method is reached in the TYPE's module (policy 3).
                     .record, .@"enum" => {
                         const type_owner = try crossModule.typeAtom(self.atom_arena.allocator(), .of(info.module), name);
@@ -4219,7 +4234,11 @@ const Emitter = struct {
         return crossModule.erlAtom(b.arena, .of(path));
     }
 
-    /// Records every module name imported from the "std" package.
+    /// Records every module imported from the "std" package as a namespace:
+    /// the local name (`dict`; `fs` for `import {io.fs}`) → the module's path
+    /// inside std (`dict`, `io/fs`), which `stdModuleAtom` renders. A symbol
+    /// leaf (`io.fs.readText`, decision 107) is not a namespace — it reaches
+    /// `imported_fns` through the cross index like any imported `pub fn`.
     fn collectStdImports(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .use => |u| {
@@ -4229,7 +4248,10 @@ const Emitter = struct {
                 };
                 if (!from_std) continue;
                 for (u.imports) |imp| {
-                    try this.std_imports.put(imp.segments[imp.segments.len - 1], {});
+                    const whole = try imp.fullPath(this.atom_arena.allocator());
+                    if (!imp.isQualified() or comptimeMod.isStdModule(whole)) {
+                        try this.std_imports.put(imp.name(), whole);
+                    }
                 }
             },
             else => {},
@@ -6332,7 +6354,7 @@ const Emitter = struct {
             // reach the owner (`a:twice(X)`). A local definition of the same
             // name and arity wins (an `@emit`ed body next to the import).
             if (this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len)) |owner| {
-                return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
+                return b.remote(owner, this.import_aliases.get(cc.callee) orelse cc.callee, try this.callArgs(b, null, cc));
             }
             // A bare call to one of this file's own functions — remote from
             // inside a type module (policy 3), local everywhere else.
@@ -6362,7 +6384,7 @@ const Emitter = struct {
         // `"std"` package call: a lowercase receiver naming an imported std
         // module lowers to the remote `std@option:map(Args)`.
         if (recv.* == .identifier and recv.identifier.kind == .ident and this.std_imports.contains(recv.identifier.kind.ident)) {
-            const owner = try this.stdModuleAtom(b, recv.identifier.kind.ident);
+            const owner = try this.stdModuleAtom(b, this.std_imports.get(recv.identifier.kind.ident).?);
             return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
         }
         // Activated extension dispatch: `recv.m(args)` → the local `m(Recv, args)`

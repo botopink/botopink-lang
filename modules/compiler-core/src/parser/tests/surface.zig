@@ -49,19 +49,9 @@ fn onlyBehavior(parsed: Parsed) !ast.BehaviorDecl {
     return parsed.program.decls[0].behavior;
 }
 
-/// The parse fails with `kind`, located at `line:col` (1-based).
-fn expectError(src: []const u8, kind: ParseErrorType, line: usize, col: usize) !void {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const a = arena.allocator();
-    var l = lexerMod.Lexer.init(src);
-    const tokens = try l.scanAll(a);
-    var p = parserMod.Parser.initWithSource(tokens, src);
-    if (p.parse(a)) |_| return error.TestExpectedParseError else |_| {}
-    const pe = p.parseError orelse return error.TestParseErrorInfoMissing;
-    try std.testing.expectEqual(kind, pe.kind);
-    try std.testing.expectEqual([2]usize{ line, col }, [2]usize{ pe.line, pe.col });
-}
+/// The parse fails with `kind`, located at `line:col` (1-based) — the shared
+/// harness `helpers.expectErrorAt`.
+const expectError = @import("helpers.zig").expectErrorAt;
 
 // ── type: shape resolution ────────────────────────────────────────────────────
 
@@ -405,6 +395,29 @@ test "surface: while (…) is removed-keyword-while at `while`" {
 
 test "surface: throw new Error(…) is removed-keyword-new at `new`" {
     try expectError("fn f() { throw new Error(\"x\"); }", .removedKeywordNew, 1, 16);
+}
+
+// ── front 17, decision 38: the annotated binding takes the plain form only ────
+
+test "surface: an annotated `val` shorthand is refused at the annotation" {
+    // `val add = fn …` is a `fn` declaration in a `val` coat; the annotation
+    // would have nowhere to land, so the form is refused where it starts.
+    try expectError("#[@BeamMemory.Ets]\nval add = fn(x: i32) -> i32 { return x; }", .unexpectedToken, 1, 1);
+    try expectError("#[@BeamMemory.Ets] pub val add = fn(x: i32) -> i32 { return x; }", .unexpectedToken, 1, 1);
+}
+
+test "surface: `var` takes no shorthand — `var add = fn …` is not a fn declaration" {
+    var parsed = try parse(
+        \\var hits: i32 = 0;
+        \\#[@BeamMemory.PersistentTerm]
+        \\pub var version = 101;
+    );
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(usize, 2), parsed.program.decls.len);
+    try std.testing.expect(parsed.program.decls[0].val.mutable);
+    try std.testing.expect(parsed.program.decls[1].val.mutable);
+    try std.testing.expect(parsed.program.decls[1].val.isPub);
+    try std.testing.expectEqual(@as(usize, 1), parsed.program.decls[1].val.annotations.len);
 }
 
 test "surface: new, delegate and const are ordinary identifiers" {

@@ -1032,6 +1032,7 @@ pub fn renderTypeErrorBody(
         .contextMismatch => "context-anchor-violation: ContextBase mismatch",
         .contextBaseMixed => "context-anchor-violation: two ContextBases in one body",
         .useWithoutContextEffect => "use-without-context-effect: `use` needs `#[@context]` on the enclosing fn",
+        .useTupleArity => "use-tuple-arity: `val #(…)` from a `use` binds the tuple's elements",
         .throwWithoutResult => "throw outside @Result",
         .missingMethod => "missing interface method",
         .unknownMethod => "unknown method",
@@ -1192,6 +1193,21 @@ pub fn renderTypeErrorBody(
                 "\n  fn '{s}' returns '{s}', which implements @Context,\n  but a body with no effect annotation does not activate a hook (decisions 88, 90)\n",
                 .{ u.fnName, u.returnType },
             ));
+        },
+        .useTupleArity => |u| {
+            if (u.tupleLen) |n| {
+                try out.appendSlice(allocator, try std.fmt.allocPrint(
+                    tmp,
+                    "\n  the pattern binds {d} name(s), the hook yields a tuple of {d}\n",
+                    .{ u.patternLen, n },
+                ));
+            } else {
+                try out.appendSlice(allocator, try std.fmt.allocPrint(
+                    tmp,
+                    "\n  the pattern binds {d} name(s), but the hook's Return type is not a tuple\n",
+                    .{u.patternLen},
+                ));
+            }
         },
         .throwWithoutResult => {
             try out.appendSlice(allocator, "\n  'throw' requires the enclosing fn to return '@Result<D, E>'\n");

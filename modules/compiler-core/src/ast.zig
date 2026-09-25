@@ -24,18 +24,105 @@ pub const Comment = struct {
         allocator.free(this.text);
     }
 };
+/// One leaf of an import list (decision 107). The dotted spelling
+/// (`io.fs.readText as read`) and the grouped spelling
+/// (`io: {fs: {readText as read}}`) both flatten to this — the parser writes
+/// the group's prefix into `segments`, so nothing downstream knows which one
+/// was written. Only the leaf enters scope: `segments[0..len-1]` is the path
+/// of the module the leaf lives in (or, when the whole path names a module,
+/// the leaf is that module as a namespace).
 pub const ImportPath = struct {
     segments: []const []const u8,
     /// Trailing `*` — activates dispatch of the symbol's methods (impl or extend).
     activate: bool = false,
     /// `as` rename of the final binding (`std.List as L`); null when absent.
     alias: ?[]const u8 = null,
+    /// Where the item is written — its first own token (`json` in `json.parse`,
+    /// `parse` in `json: {parse}`), so a refusal such as `import-name-collision`
+    /// points at the item it is about. `line == 0` when synthesised.
+    loc: Loc = .{ .line = 0, .col = 0 },
 
     /// Final bound name: the alias when present, else the last path segment.
     pub fn name(this: ImportPath) []const u8 {
         return this.alias orelse this.segments[this.segments.len - 1];
     }
+
+    /// The AST snapshots serialise every field; `loc` is diagnostic
+    /// provenance, not shape, so it stays out of them — a snapshot recorded
+    /// before the field existed reads the same after it.
+    pub fn jsonStringify(this: ImportPath, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("segments");
+        try jws.write(this.segments);
+        try jws.objectField("activate");
+        try jws.write(this.activate);
+        try jws.objectField("alias");
+        try jws.write(this.alias);
+        try jws.endObject();
+    }
+
+    /// The last segment — the exported name the leaf refers to, whatever the
+    /// local binding (`alias`) is called.
+    pub fn leaf(this: ImportPath) []const u8 {
+        return this.segments[this.segments.len - 1];
+    }
+
+    /// True when the item carries a path (`a.b`, or a group leaf), so the leaf
+    /// is looked up in the module the prefix names rather than in the source
+    /// module itself.
+    pub fn isQualified(this: ImportPath) bool {
+        return this.segments.len > 1;
+    }
+
+    /// The segments before the leaf joined with `/` — the module path the
+    /// leaf is resolved in, relative to the import's source package. Empty for
+    /// a single-segment item.
+    pub fn prefixPath(this: ImportPath, alloc: std.mem.Allocator) ![]const u8 {
+        return joinSegments(alloc, this.segments[0 .. this.segments.len - 1]);
+    }
+
+    /// Every segment joined with `/` — the module path the whole item names
+    /// when the leaf is itself a module (`io.fs` → `io/fs`).
+    pub fn fullPath(this: ImportPath, alloc: std.mem.Allocator) ![]const u8 {
+        return joinSegments(alloc, this.segments);
+    }
+
+    /// The item as written, segments joined with `.` — for a diagnostic.
+    pub fn dotted(this: ImportPath, alloc: std.mem.Allocator) ![]const u8 {
+        const out = try joinSegments(alloc, this.segments);
+        for (@constCast(out)) |*c| {
+            if (c.* == '/') c.* = '.';
+        }
+        return out;
+    }
+
+    /// True when two items name the same thing: same path, same activation.
+    /// A repeated identical import (an `@emit` contribution re-importing what
+    /// its module already imports) is not a collision.
+    pub fn samePath(this: ImportPath, other: ImportPath) bool {
+        if (this.segments.len != other.segments.len) return false;
+        for (this.segments, other.segments) |a, b| {
+            if (!std.mem.eql(u8, a, b)) return false;
+        }
+        return this.activate == other.activate;
+    }
 };
+
+fn joinSegments(alloc: std.mem.Allocator, segs: []const []const u8) ![]const u8 {
+    var total: usize = 0;
+    for (segs, 0..) |s, i| total += s.len + @as(usize, if (i > 0) 1 else 0);
+    const out = try alloc.alloc(u8, total);
+    var at: usize = 0;
+    for (segs, 0..) |s, i| {
+        if (i > 0) {
+            out[at] = '/';
+            at += 1;
+        }
+        @memcpy(out[at .. at + s.len], s);
+        at += s.len;
+    }
+    return out;
+}
 
 /// Where an `import { … }` resolves from.
 pub const ImportSource = union(enum) {
@@ -83,6 +170,24 @@ pub const ImportDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
+
+    /// The module a qualified item's leaf lives in, as the source a lookup
+    /// narrows by (`ImportSource.namesModule`): `import {io.fs.readText} from
+    /// "std"` answers `std/io/fs`, `import {html.div} from "web"` answers
+    /// `web/html`, and the bare `import {shapes.circle.name};` answers
+    /// `shapes/circle` — the package's own module tree. A single-segment item
+    /// answers the decl's own source, and so does `from "std"` on a single
+    /// segment (the std namespace form). With `whole`, every segment is the
+    /// path: the item names a module (`io.fs` → `std/io/fs`) rather than a
+    /// symbol of one.
+    pub fn leafSource(this: ImportDecl, imp: ImportPath, alloc: std.mem.Allocator, whole: bool) !ImportSource {
+        if (!whole and !imp.isQualified()) return this.source;
+        const rel = if (whole) try imp.fullPath(alloc) else try imp.prefixPath(alloc);
+        return switch (this.source) {
+            .root => .{ .module = rel },
+            .module => |pkg| .{ .module = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ pkg, rel }) },
+        };
+    }
 };
 
 /// A `mod Name;` / `pub mod Name;` declaration — a node in the explicit module

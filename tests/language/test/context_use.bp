@@ -19,6 +19,14 @@ fn pair(a: i32, b: i32) -> @Context<Element, #(i32, i32)> {
     return #(a, b);
 }
 
+// A hook whose `R` is a tuple with a fn element — step 3 binds each name to
+// its element (`shown : i32`, `push : fn(action: i32) -> i32`), so `push(shown)`
+// types with no annotation on the binding.
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+    val push = { action -> f(base, action) };
+    return #(base, push);
+}
+
 // A void-ish hook activated as a bare statement.
 fn effect(cb: fn() -> i32) -> @Context<Element, i32> {
     return cb();
@@ -64,6 +72,20 @@ fn Effectful() -> Element {
     return Element(count: c.value, name: "effect");
 }
 
+#[@context]
+fn Liked() -> Element {
+    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+    return Element(count: push(shown), name: "optimistic");
+}
+
+// Row 5 — a `use` inside a nested closure: the lambda body starts its own
+// static prefix and inherits the enclosing body's owner.
+#[@context]
+fn Deferred() -> Element {
+    val f = { -> return use state(4); };
+    return Element(count: f().value, name: f().name);
+}
+
 // Without `use` the call is an ordinary call — no `#[@context]` needed.
 fn Plain() -> Element {
     val c = state(7);
@@ -89,6 +111,18 @@ test "a custom hook composes hooks under the same owner" {
 
 test "val #(a, b) = use … destructures a tuple R positionally" {
     assert Positional().count == 7;
+}
+
+test "val #(a, b) = use … binds each name to its element of R" {
+    val e = Liked();
+    assert e.count == 24;
+    assert e.name == "optimistic";
+}
+
+test "a use inside a nested closure activates under the enclosing owner" {
+    val e = Deferred();
+    assert e.count == 4;
+    assert e.name == "state";
 }
 
 test "a bare use statement activates a void hook" {

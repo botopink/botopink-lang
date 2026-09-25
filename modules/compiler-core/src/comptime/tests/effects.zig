@@ -823,3 +823,68 @@ test "chain: a plain fn iterates a @Generator<T> — infallible, no level needed
         \\}
     );
 }
+
+// Front 19 step 3 (1.0.10-beta): `val #(a, b) = use …` binds each name to the
+// element of `R` at its position — `push` is `fn(action: i32) -> i32`, so
+// `push(shown)` types and `push("x")` reds — and the arity is checked at the
+// binding, as is that `R` is a tuple at all (decision 67: located, no flag).
+test "context: use tuple destructure binds element types" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+        \\    val push = { action -> f(base, action) };
+        \\    #(base, push);
+        \\}
+        \\#[@context]
+        \\fn LikeWidget() -> Element {
+        \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+        \\    push(shown);
+        \\    Element();
+        \\}
+    );
+}
+
+test "context error: use tuple destructure element is R's, not a fresh var" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+        \\    val push = { action -> f(base, action) };
+        \\    #(base, push);
+        \\}
+        \\#[@context]
+        \\fn LikeWidget() -> Element {
+        \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+        \\    push("x");
+        \\    Element();
+        \\}
+    );
+}
+
+test "context error: use tuple destructure arity mismatch" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+        \\    val push = { action -> f(base, action) };
+        \\    #(base, push);
+        \\}
+        \\#[@context]
+        \\fn LikeWidget() -> Element {
+        \\    val #(shown) = use optimistic(12, { c, a -> c + a });
+        \\    Element();
+        \\}
+    );
+}
+
+test "context error: use tuple destructure of a hook whose R is not a tuple" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\#[@context]
+        \\fn Counter() -> Element {
+        \\    val #(count, setCount) = use state(0);
+        \\    Element();
+        \\}
+    );
+}

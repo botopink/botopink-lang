@@ -233,33 +233,103 @@ pub fn parseImportList(this: *This, alloc: std.mem.Allocator) ParseError![]const
         for (paths.items) |p| alloc.free(p.segments);
         paths.deinit(alloc);
     }
-    if (!this.check(.identifier)) return paths.toOwnedSlice(alloc);
-    try paths.append(alloc, try this.parseImportItem(alloc));
-    while (this.match(.comma)) {
-        if (this.check(.rightBrace)) break;
-        try paths.append(alloc, try this.parseImportItem(alloc));
-    }
+    try parseImportItems(this, alloc, &.{}, &paths);
     return paths.toOwnedSlice(alloc);
 }
 
-/// `dottedPath "*"? ("as" ident)?` — one import item.
-pub fn parseImportItem(this: *This, alloc: std.mem.Allocator) ParseError!ImportPath {
-    var segs: std.ArrayList([]const u8) = .empty;
-    errdefer segs.deinit(alloc);
-    try segs.append(alloc, (try this.consume(.identifier)).lexeme);
-    while (this.match(.dot)) {
-        try segs.append(alloc, (try this.consume(.identifier)).lexeme);
+/// `ImportList := ImportItem ("," ImportItem)* ","?` under `prefix` — the
+/// segments of every group this list is nested in (empty at the top). Each
+/// item appends one or more leaves to `out`.
+fn parseImportItems(
+    this: *This,
+    alloc: std.mem.Allocator,
+    prefix: []const []const u8,
+    out: *std.ArrayList(ImportPath),
+) ParseError!void {
+    if (!this.check(.identifier)) return;
+    try parseImportItemInto(this, alloc, prefix, out);
+    while (this.match(.comma)) {
+        if (this.check(.rightBrace)) break;
+        try parseImportItemInto(this, alloc, prefix, out);
     }
+}
+
+/// One import item (decision 107), in either spelling:
+///
+///     ImportItem := DottedName ("*" | "as" Ident)?   // a dotted path — one leaf
+///                 | Ident ":" "{" ImportList "}"     // a group — several leaves under one prefix
+///
+/// Both produce the same `ImportPath` per leaf — a group is flattened, its
+/// name prepended to every leaf inside it, so `io: {fs: {readText}}` and
+/// `io.fs.readText` are one path. `*` and `as` belong to a leaf; on a node
+/// that opens braces they are `importGroupModifier`.
+fn parseImportItemInto(
+    this: *This,
+    alloc: std.mem.Allocator,
+    prefix: []const []const u8,
+    out: *std.ArrayList(ImportPath),
+) ParseError!void {
+    const first = this.peek();
+    var own: std.ArrayList([]const u8) = .empty;
+    defer own.deinit(alloc);
+    try own.append(alloc, (try this.consume(.identifier)).lexeme);
+    while (this.match(.dot)) {
+        try own.append(alloc, (try this.consume(.identifier)).lexeme);
+    }
+    // A group: `Ident ":" "{" … "}"`. The grammar takes ONE identifier before
+    // the colon — a dotted prefix is written as nested groups or as a dotted
+    // leaf, never as `a.b: {…}` — so a dotted name followed by `:` is the
+    // ordinary unexpected-token refusal at the colon.
+    if (this.check(.colon) and own.items.len == 1) {
+        _ = this.advance();
+        _ = try this.consume(.leftBrace);
+        const nested = try alloc.alloc([]const u8, prefix.len + 1);
+        defer alloc.free(nested);
+        @memcpy(nested[0..prefix.len], prefix);
+        nested[prefix.len] = own.items[0];
+        try parseImportItems(this, alloc, nested, out);
+        _ = try this.consume(.rightBrace);
+        return;
+    }
+    const modifier_tok = this.peek();
     const activate = this.match(.star);
     const alias: ?[]const u8 = if (this.match(.as))
         (try this.consume(.identifier)).lexeme
     else
         null;
-    return ImportPath{
-        .segments = try segs.toOwnedSlice(alloc),
+    // `io* : {…}` / `io as x: {…}` — a modifier on a node that opens braces.
+    if (this.check(.colon) and (activate or alias != null)) {
+        this.parseError = ParseErrorInfo.fromToken(.importGroupModifier, modifier_tok);
+        return ParseError.UnexpectedToken;
+    }
+    const segs = try alloc.alloc([]const u8, prefix.len + own.items.len);
+    errdefer alloc.free(segs);
+    @memcpy(segs[0..prefix.len], prefix);
+    @memcpy(segs[prefix.len..], own.items);
+    try out.append(alloc, ImportPath{
+        .segments = segs,
         .activate = activate,
         .alias = alias,
-    };
+        .loc = This.locFromToken(first),
+    });
+}
+
+/// `dottedPath "*"? ("as" ident)?` — one import item with no group form: the
+/// activation statement (`ducks.PatoNada*;`) takes exactly one leaf.
+pub fn parseImportItem(this: *This, alloc: std.mem.Allocator) ParseError!ImportPath {
+    var paths: std.ArrayList(ImportPath) = .empty;
+    errdefer {
+        for (paths.items) |p| alloc.free(p.segments);
+        paths.deinit(alloc);
+    }
+    try parseImportItemInto(this, alloc, &.{}, &paths);
+    if (paths.items.len != 1) {
+        this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+        return ParseError.UnexpectedToken;
+    }
+    const one = paths.items[0];
+    paths.deinit(alloc);
+    return one;
 }
 
 /// Lookahead for a top-level activation statement: `ident ("." ident)* "*"`.

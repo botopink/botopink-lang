@@ -73,7 +73,7 @@ codegen/
 | `wat.zig` | WAT backend: builds `wat/wat_ast.zig` nodes and hands them to the emitter. See [wat](#wat) below |
 | `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **Decision 8 §3's union `A | B`** rides on `TypeRef.generic` under the reserved name `ast.union_type_name` (`"|"`), and takes TypeScript's own union (`TsType.union_`) rather than the generic path's `|<A, B>`, which is not TypeScript. **The `import { … };` shorthand** resolves through `CrossModule.exports` here too, one `import` per owning file, where it used to write the literal `from "./module"` |
 | `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below. `executeTestModule` runs a **test-mode** module the way `botopink test` does (`node main.js` / `escript main.erl`) and answers its output whatever the exit status — the decision-74 FAIL line is a non-zero exit, which the snapshot path records as an empty RUN LOG, and `executeErlang` never runs a test module (no `_botopink_main`) |
-| `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty. `writeUnitSections` adds one `----- ERLANG -- <atom>.erl` / `----- BEAM ASSEMBLY -- <atom>.S` section per `GenerateResult.units` entry, so a cell shows every module its program loads and `beam_export_audit.sh` — which keys on the `{module, …}` form, not on the fixture — assembles each of them |
+| `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty. `writeUnitSections` adds one `----- ERLANG -- <atom>.erl` / `----- BEAM ASSEMBLY -- <atom>.S` section per `GenerateResult.units` entry, so a cell shows every module its program loads and `beam_export_audit.sh` — which keys on the `{module, …}` form, not on the fixture — assembles each of them. `writeRunLog` is the one writer of the `----- RUN LOG -----` section on every backend, and it normalises the `botopink test` envelope's `  duration <digits>ms` line to `  duration <ms>ms` (`isDurationLine`: the two-space indent, the word, digits, `ms` — nothing a program prints by accident): that line is the runner's wall clock around each test body, the ONE nondeterministic line of the envelope, and a snapshot pinning its digits (`src_in_a_test` recorded `0ms`) failed on any machine slower than the one that wrote it — `1ms` under load, the only line that differed. `tests/helpers.zig`'s `stripDurationLines` is the same rule for `assertTestModeRunLog`, which writes no snapshot |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertJsNotContains`, `assertJsRunLog`, `assertDtsContains`, `assertConsumerJs`, `configs` — one config per target). The snapshot-free helpers are what a **single backend's** row uses: a snapshot carries the same program through all four, so a commonJS-only fixture would write into the erlang, beam and wasm snapshot directories other fronts own |
 
 ### commonJS
@@ -369,6 +369,21 @@ codegen/
   package prefix — a path nothing emits, so the program built and then died at
   run time. The namespace-handle block below is skipped for it: the shorthand
   names no package, so there is no handle to bind.
+- **A path and a group bind their leaf (decision 107)**: every backend reads
+  `imp.leaf()` (the exported name), `imp.name()` (the local binding — the
+  alias when written) and `ImportDecl.leafSource` (the module the prefix
+  names, handed to `CrossModule.picked` in place of the decl's `from`), so
+  `import {url.parse, json: {parse as parseJson}}` reaches two owners.
+  commonJS destructures `{ leaf: alias }` (`js.ObjectPattern.Prop.bind`) —
+  from `std/<prefix>.js` for a std symbol leaf, or binds the module object
+  for a std namespace leaf (`comptimeMod.isStdModule` decides which;
+  `import {io.fs}` → `require("./std/io/fs.js")`); erlang keys `std_imports`
+  local name → std module path and maps an alias back to the declared name
+  at the remote call (`import_aliases`); beam records `imported_fn_owners`
+  (local → owner atom + declared name) ahead of the name-keyed
+  `crossOwnerOf`; wat, which links statically, registers the alias beside the
+  declared name in every fn table and maps it back at the `call`
+  (`import_aliases`).
 - **Lib namespace object**: when an import names the lib itself
   (`import {Lib} from "Lib"`) and that name has no emitted symbol, `emitUse`
   binds the lib's module object (`buildUse`: `const Lib = require(…)`, or
@@ -1874,10 +1889,12 @@ first three are now enforced by the model, not by discipline:
   rewrites to, and commonJS, erlang and beam all answered it while `s.at(1)`
   trapped here. It lowers to `$__str_at` — `$__str_slice(s, i, i + 1)` behind an
   `i32.ge_u` bounds test — and answers a `?string` whose absence is the pointer
-  `0`, which `optInfoOf` routes to `$__print_opt_str`; printing it as a plain
-  string would read a length out of the WASI iovec at address 0 and answer
-  garbage with exit 0. `tests/language/run/string_at.bp` pins it on all four
-  targets.
+  `0`, which `optInfoOf` routes to `$__print_opt_str`; printed as a plain
+  string it used to read a length out of the WASI iovec at address 0 and
+  answer garbage with exit 0 — since `00 · 05-wasm` `$__print_str_raw` traps
+  on any pointer below the data floor (256) instead, see
+  [`wat/AGENTS.md`](wat/AGENTS.md). `tests/language/run/string_at.bp` pins it
+  on all four targets.
 - **A `?T` box holding an `f32`** (`fs.at(0)` on a float array) prints through
   `$__print_opt_f32`, its own helper group. Read as a boxed `i32` it printed the
   float's **bits** — `1069547520` for `1.5`, exit 0, no diagnostic.
@@ -2153,7 +2170,11 @@ first three are now enforced by the model, not by discipline:
   (`$__box_i32`), so a present `0` is not none. The box is made where a `T`
   flows into a declared `?T` — a `return` from a `-> ?T` fn, an annotated
   binding or global, an argument for a `?T` parameter, a `?T` record field —
-  and by `xs.at(i)`/`first()` (`$__arr_at_box`) and `recv?.scalarField`. The
+  and by `xs.at(i)`/`first()` over a SCALAR element (`$__arr_at_box`; a
+  string, record, array or tuple element is its own offset through
+  `$__arr_at`, and `arrayElemOpt` is the one place that decides which — the
+  writer and `optInfoOf` both read it, see [`wat/AGENTS.md`](wat/AGENTS.md))
+  and `recv?.scalarField`. The
   payload is read by `if (x) { v -> … }`, `@print` (`$__print_opt_*`: none
   prints `undefined`), a `==`/`!=` against a value (none equals nothing),
   string `+` (none renders `undefined`) and `unwrapOr`/`map`/`flatMap` (a

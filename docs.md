@@ -122,6 +122,77 @@ pub fn name() -> string {
 }
 ```
 
+**A path and a group are one tree, and only the leaf enters scope.** An item
+may walk into a module (`shapes.circle.name`), and several items under one
+prefix may be grouped (`shapes: {circle: {name}, helpers: {seven}}`) — both
+spellings bind exactly the same names: `a: {b: {c}}` is `a.b.c`. The dot serves
+one leaf, the braces several under one prefix; there is no formatter rule that
+converts one into the other. What an item binds is its **leaf** — `name`,
+`seven` — never the segments before it: `import {io.fs.readText}` brings
+`readText`, neither `io` nor `fs`; whoever wants both writes both
+(`import {io, io.fs.readText}`). An intermediate node may itself be a leaf
+(`import {io.fs}` binds the module `fs` as a namespace; inside a group the
+prefix is a leaf if listed: `io: {fs, fs: {readText}}`). `*` and `as` belong
+to the leaf in either spelling — `io: {fs: {readText as read}}` is
+`io.fs.readText as read`, `collections: {ArraySets*}` activates the same
+extension as `collections.ArraySets*` — and on a node that opens braces they
+are a syntax error (`import-group-modifier`). Two items binding one name are
+`import-name-collision` at the second item (`import {url.parse, json.parse}`);
+an alias on either side clears it (`url.parse as parseUrl, json: {parse as
+parseJson}`). A type keeps its declared name (`import-alias-on-type`), and an
+activation cannot be renamed (`import-alias-on-activation`).
+
+<!-- docs-check: project import_tree src/main.bp -->
+```botopink
+// src/main.bp
+pub mod shapes;
+import {shapes.circle.name as circleName, shapes: {helpers: {seven}}};
+import {dict.Dict, dict: {empty as newDict}, order: {gt, reverse, toInt}} from "std";
+
+fn main() {
+    @print(circleName());                  // circle
+    @print(seven());                       // 7
+    val d: Dict<string, i32> = newDict();
+    @print(d.insert("a", 1).size());       // 1
+    @print(toInt(reverse(gt())));          // -1
+}
+```
+
+<!-- docs-check: project import_tree src/shapes/mod.bp -->
+```botopink
+// src/shapes/mod.bp
+pub mod circle;
+pub mod helpers;
+```
+
+<!-- docs-check: project import_tree src/shapes/circle.bp -->
+```botopink
+// src/shapes/circle.bp
+pub fn name() -> string {
+    return "circle";
+}
+```
+
+<!-- docs-check: project import_tree src/shapes/helpers.bp -->
+```botopink
+// src/shapes/helpers.bp
+pub fn seven() -> i32 {
+    return 7;
+}
+```
+
+**The root of std is pure.** One criterion sorts the standard library:
+`io/` is everything that talks to the world outside the process — disk,
+network, clock, entropy, the environment — and a module at the root of std
+is pure by definition: same input, same output. The compiler holds the root
+to it: a std module at the root that imports anything under `io` (bare, or
+`from "std"`, in either spelling) is `std-root-imports-io`, located at the
+item, with no flag to turn it off. `io/` may import from the root, and
+`testing/` (the harness) from both. Outside std the rule is not checked:
+`io.` on an import line is a reading signal — `grep 'io\.'` lists what a
+module touches outside the process — not a guarantee, since a `declare fn`
+does what it wants.
+
 A library is imported the same way, under the name `botopink.json` declares it
 in `dependencies`:
 
@@ -753,7 +824,11 @@ activation) and an **expression prefix** (the hook activation). Grammar:
 
 <!-- docs-check: skip a grammar, not a module -->
 ```
-ImportItem     := DottedName "*"? ("as" Ident)?   // in `import { … } from "…"`
+ImportDecl     := "import" "{" ImportList "}" ("from" String)? ";"
+ImportList     := ImportItem ("," ImportItem)* ","?
+ImportItem     := DottedName ("*" | "as" Ident)?  // a dotted path — one leaf
+                | Ident ":" "{" ImportList "}"    // a group — several leaves under one prefix
+DottedName     := Ident ("." Ident)*
 ActivationStmt := DottedName "*" ";"              // module level only
 UseExpr        := "use" Expr                      // prefix; the operand is a call
 ```
@@ -869,9 +944,16 @@ The rules, each with its diagnostic:
   to the top of the function body, before any `if`, `case`, `loop`, or
   `return``. A lambda body is another function: its own prefix starts over, so
   `use memo({ -> return count * 2; })` keeps the enclosing prefix intact.
-- **The type is `R`.** `val c = use state(0)` binds `c : State`. A tuple `R`
-  destructures positionally, `val #(a, b) = use pair()`, but its element types
-  are not propagated yet — each name is a fresh type variable (front 19 step 3).
+- **The type is `R`.** `val c = use state(0)` binds `c : State`, and
+  `val {value, set} = use state(0)` binds each name to the field of `R` it
+  names. A tuple `R` destructures positionally: with `optimistic : (i32, fn(i32,
+  i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)>`,
+  `val #(shown, push) = use optimistic(12, addLike)` binds `shown : i32` and
+  `push : fn(action: i32) -> i32`. The pattern's arity is the tuple's, and the
+  hook's `R` has to be a tuple; either failing is refused at the binding —
+  `` use-tuple-arity: `val #(…)` binds 1 name(s) but the hook yields a tuple
+  of 2 `` and `` use-tuple-arity: `val #(…)` binds 2 name(s) but the hook
+  yields 'i32', which is not a tuple `` — with no flag (decision 67).
 - **`use` never leaves a function body.** There is no module-level `use` and no
   `use client;` / `use server;` directive (decision 87 of 1.0.10-beta): a
   framework's boundary markers are its own decorators (`#[client]`).
@@ -1115,6 +1197,14 @@ Only `External.<Target>` is read. A lower-case `@external(node, …)` is a locat
 error naming the capitalised form (`` `#[@external]` binds no host — an external
 target is written `External.<Target>` ``), rather than a function left silently
 without a host.
+
+`inline = true`, written last on `External.Erlang` or `External.Beam`, opts the
+declaration out of the dispatch table so the backend's hand-coded shape keeps
+emitting. Those two variants alone declare it, because the erlang and beam
+emitters alone read it. Written on `Node`, `Wasm` or `Typescript`, anywhere but
+last, or with a value that is not a bool, it would be a switch nothing reads, so
+it is refused at the annotation (`` `External.Node` declares no `inline` — the
+flag is read by the erlang and beam emitters only ``).
 
 A relative path (`"./helpers.mjs"`, `"helpers"` on erlang) names a **sidecar** the
 library keeps beside its sources, in `<src>/sidecars/` or `<src>/`. `botopink

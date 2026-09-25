@@ -1,0 +1,2 @@
+`keyed` needs a keyed container — a `string[]` has no key
+5:3

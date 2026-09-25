@@ -214,15 +214,20 @@ test "codegen ---- use object destructure is a plain call" {
     );
 }
 
+// Front 19 step 3: the tuple form binds `R`'s elements (`shown : i32`,
+// `push : fn(action: i32) -> i32`), so the hook's `R` is a tuple here — the
+// lowering is the same plain call followed by the destructure.
 test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element, Element> { }
-        \\fn state(initial: i32) -> @Context<Element, i32> {
-        \\    initial;
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+        \\    val push = { action -> f(base, action) };
+        \\    #(base, push);
         \\}
         \\#[@context]
-        \\fn Counter() -> Element {
-        \\    val #(count, setCount) = use state(0);
+        \\fn LikeWidget() -> Element {
+        \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+        \\    push(shown);
         \\    Element();
         \\}
     );
@@ -409,6 +414,77 @@ test "js: import ---- two modules whose files share a basename" {
         \\fn main() {
         \\    @print(label());
         \\    @print(tag());
+        \\}
+        },
+    });
+}
+
+// ── decision 107: a dotted path and a braced group are one tree ──────────────
+//
+// The consumer binds LEAVES through paths into a module tree — the dotted
+// spelling (`shapes.circle.name as circleName`) and the grouped spelling
+// (`shapes: {helpers: {seven}}`) — with no `from`: the package's own tree. Only
+// the leaf enters scope, under its alias when one is written, and the four
+// backends resolve the owner through the path, not through the bare name (the
+// two `label`s below live in different modules and both answer on commonJS,
+// erlang and beam). KNOWN-WRONG (wasm): the wasm backend links every imported
+// module statically into one flat namespace, so the second `label` is the
+// first one's function — the same single-module limit the dispatch cells
+// record; the alias itself maps back to `$name` correctly.
+test "js: import ---- a dotted path and a group bind their leaves across a module tree" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "shapes/circle", .source =
+        \\pub fn name() -> string {
+        \\    return "circle";
+        \\}
+        \\
+        \\pub fn label() -> string {
+        \\    return "shapes/circle";
+        \\}
+        },
+        .{ .path = "shapes/helpers", .source =
+        \\pub fn seven() -> i32 {
+        \\    return 7;
+        \\}
+        \\
+        \\pub fn label() -> string {
+        \\    return "shapes/helpers";
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import {shapes.circle.name as circleName, shapes: {helpers: {seven, label}, circle: {label as circleLabel}}};
+        \\
+        \\fn main() {
+        \\    @print(circleName());
+        \\    @print(seven());
+        \\    @print(label());
+        \\    @print(circleLabel());
+        \\}
+        },
+    });
+}
+
+// The same tree, with `*` and a type on the leaves: `pond: {Pato, PatoNada*}`
+// activates the imported extension exactly as `import {Pato, PatoNada*} from
+// "pond"` does (`dispatch_multi_module_extension_activated_via_star_import`).
+test "js: import ---- a group activates an extension on its leaf" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "pond", .source =
+        \\val Swimmer = behavior {
+        \\    fn swim(self: Self);
+        \\}
+        \\pub type Pato(id: i32)
+        \\pub val PatoNada = implement Swimmer for Pato {
+        \\    fn swim(self: Self) {
+        \\        return self.id;
+        \\    }
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import {pond: {Pato, PatoNada*}};
+        \\fn main() {
+        \\    val donald = Pato(2);
+        \\    @print(donald.swim());
         \\}
         },
     });

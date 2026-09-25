@@ -553,6 +553,11 @@ fn checkImportResolution(
             const from = ref.from orelse continue;
             const target = analysis.paths.get(from) orelse continue; // not a package module
             if (target == importer) continue;
+            // A leaf that is itself a module of the tree (`import {shapes.circle};`
+            // binds the namespace `circle`) is not an export of `shapes`.
+            var sub_buf: [512]u8 = undefined;
+            const sub = std.fmt.bufPrint(&sub_buf, "{s}/{s}", .{ from, ref.symbol }) catch null;
+            if (sub != null and analysis.paths.contains(sub.?)) continue;
             if (!symbolInList(analysis.exports[target], ref.symbol)) {
                 return fail(diag, diag_arena, .{
                     .kind = Error.UnexportedImport,
@@ -760,9 +765,19 @@ fn collectModuleRefs(
             for (u.imports) |imp| {
                 // The imported symbol's definition name is its last path segment
                 // (an `as` alias renames only the local binding, not the export).
+                // A qualified item (decision 107 — `shapes.circle.name`, or the
+                // group `shapes: {circle: {name}}`) is looked up in the module
+                // its prefix names, under the `from` module when there is one:
+                // that is the edge the dependency order and the export check
+                // read, so `import {name} from "shapes.circle"` and
+                // `import {shapes.circle.name};` are one import.
+                const leaf_from: ?[]const u8 = if (imp.isQualified() and (u.source == .root or from != null)) blk: {
+                    const prefix = try imp.prefixPath(sa);
+                    break :blk if (from) |f| try std.fmt.allocPrint(sa, "{s}/{s}", .{ f, prefix }) else prefix;
+                } else from;
                 try imps.append(sa, .{
-                    .from = from,
-                    .symbol = imp.segments[imp.segments.len - 1],
+                    .from = leaf_from,
+                    .symbol = imp.leaf(),
                     .line = loc.line,
                     .col = loc.col,
                 });

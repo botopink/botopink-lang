@@ -308,6 +308,15 @@ main({Arg0}) ->
   )
   (func $__print_str_raw (param $s i32)
     local.get $s
+    i32.const 256
+    i32.lt_u
+    (if
+      (then
+        ;; a pointer below the data floor is not a string
+        unreachable
+      )
+    )
+    local.get $s
     i32.const 4
     i32.add
     local.get $s

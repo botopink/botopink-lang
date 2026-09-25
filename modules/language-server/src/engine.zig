@@ -4687,8 +4687,10 @@ fn importsStdModule(source: []const u8, module_name: []const u8) bool {
             continue;
         };
         const list = source[brace + 1 .. from_idx];
-        // Match the bare module name as a whole identifier in the import list.
-        var it = std.mem.tokenizeAny(u8, list, " \t\r\n,{}*");
+        // Match the bare module name as a whole identifier in the import list —
+        // in either spelling of decision 107 (`io.fs`, `io: {fs}`), so the
+        // path separators split too.
+        var it = std.mem.tokenizeAny(u8, list, " \t\r\n,{}*:.");
         while (it.next()) |seg| {
             if (std.mem.eql(u8, seg, module_name)) return true;
         }

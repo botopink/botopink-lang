@@ -19,6 +19,7 @@ const template = @import("./comptime/template.zig");
 const T = @import("./comptime/types.zig");
 const Module = @import("./module.zig").Module;
 const validation = @import("./comptime/error.zig");
+const diagnostics = @import("./comptime/diagnostics.zig");
 
 // ── Re-exports for external consumers ────────────────────────────────────────
 
@@ -424,7 +425,14 @@ fn analyzeMerged(
         return .{ .validationError = .{ .info = err_info } };
     }
 
-    try resolveImports(&env, program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry);
+    resolveImports(&env, program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry) catch |err| switch (err) {
+        error.TypeError => {
+            const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
+            env.deinit();
+            return .{ .typeError = te };
+        },
+        else => return err,
+    };
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
             const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
@@ -549,7 +557,14 @@ fn analyzeSource(
         return .{ .validationError = .{ .info = err_info } };
     }
 
-    try resolveImports(&env, program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry);
+    resolveImports(&env, program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry) catch |err| switch (err) {
+        error.TypeError => {
+            const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
+            env.deinit();
+            return .{ .typeError = te };
+        },
+        else => return err,
+    };
     const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
         error.TypeError => {
             const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
@@ -706,6 +721,19 @@ pub const primitive_interfaces_src = @import("std_prelude").primitives;
 pub const array_interface_src = @import("std_prelude").primitives;
 pub const string_interface_src = @import("std_prelude").primitives;
 
+/// True when `key` is the path of an embedded std module relative to the
+/// package (`dict`, `io/fs`) — what an import item's segments joined with
+/// `/` spell when the item names a module rather than a symbol of one
+/// (decision 107). The codegens ask this to tell the namespace form
+/// (`import {io.fs}` binds the module) from the symbol form
+/// (`import {io.fs.readText}` binds one of its `pub` declarations).
+pub fn isStdModule(key: []const u8) bool {
+    for (std_pkg_modules) |spm| {
+        if (std.mem.eql(u8, spm.path["std/".len..], key)) return true;
+    }
+    return false;
+}
+
 /// True when `path` is a "std" package registry key (`std/<module>`).
 fn isStdPkgPath(path: []const u8) bool {
     return std.mem.startsWith(u8, path, "std/");
@@ -731,9 +759,15 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module) ![]const 
                 };
                 if (!from_std) continue;
                 for (u.imports) |imp| {
-                    const want = imp.segments[imp.segments.len - 1];
+                    // Decision 107 — the item names a module by its whole path
+                    // (`io.fs`, the namespace form) or a symbol of the module
+                    // its prefix names (`io.fs.readText`); a single segment is
+                    // both spellings of `dict`. Whichever matches is needed.
+                    const whole = try imp.fullPath(arena);
+                    const prefix = try imp.prefixPath(arena);
                     for (std_pkg_modules, 0..) |spm, i| {
-                        if (std.mem.eql(u8, spm.path["std/".len..], want)) {
+                        const key = spm.path["std/".len..];
+                        if (std.mem.eql(u8, key, whole) or (prefix.len > 0 and std.mem.eql(u8, key, prefix))) {
                             needed[i] = true;
                             any = true;
                         }
@@ -800,13 +834,23 @@ fn resolveImports(
                     }
                 }
                 for (u.imports) |imp| {
-                    const name = imp.name();
                     if (from_std) {
                         // `import {bool} from "std"` — handled inside
                         // inference (`inferProgramTyped` marks `stdImports`,
                         // gating qualified calls on `env.stdModules`).
                         continue;
                     }
+                    // Decision 107 — the item may carry a path: the leaf is
+                    // what is looked up (`name`), in the module the prefix
+                    // names (`leaf_src` — `import {html.div} from "web"`
+                    // narrows to `web/html`, the bare
+                    // `import {shapes.circle.name};` to `shapes/circle`), and
+                    // what is bound is the alias when one is written
+                    // (`local`). A single-segment item keeps today's shape:
+                    // `name == local`, `leaf_src == u.source`.
+                    const name = imp.leaf();
+                    const local = imp.name();
+                    const leaf_src = try u.leafSource(imp, env.arena, false);
                     // Bare import: same-package (project root) resolution only —
                     // never resolves "std" package modules. An imported nominal
                     // type carries its full declaration across the module
@@ -837,8 +881,16 @@ fn resolveImports(
                         var dit = typeDeclRegistry.iterator();
                         while (dit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (named_only and !u.source.namesModule(e.key_ptr.*)) continue;
+                            if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
                             if (e.value_ptr.get(name)) |type_decl| {
+                                // A type's identity is its declared name on
+                                // every backend; an alias would bind a name
+                                // the emitted code never defines.
+                                if (imp.alias != null) {
+                                    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a type; a type keeps its declared name", .{ diagnostics.import_alias_on_type, name });
+                                    env.lastError = validation.TypeError.custom(msg, "Import the type under its own name; `as` renames a value or a function.").withLoc(imp.loc);
+                                    return error.TypeError;
+                                }
                                 try infer.registerImportedTypeDecl(env, type_decl);
                                 bound_type_decl = true;
                                 break;
@@ -857,9 +909,9 @@ fn resolveImports(
                             var it = registry.iterator();
                             while (it.next()) |e| {
                                 if (isStdPkgPath(e.key_ptr.*)) continue;
-                                if (named_only and !u.source.namesModule(e.key_ptr.*)) continue;
+                                if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
                                 if (e.value_ptr.get(name)) |ty| {
-                                    try env.bind(name, ty);
+                                    try env.bind(local, ty);
                                     bound_value = true;
                                     break;
                                 }
@@ -869,7 +921,7 @@ fn resolveImports(
                     // Imported template fns (`-> @Expr<…>`) carry their decl
                     // across modules so call sites here can expand them.
                     if (templateRegistry.get(name)) |tfn| {
-                        try infer.registerImportedTemplateFn(env, name, tfn);
+                        try infer.registerImportedTemplateFn(env, local, tfn);
                     }
                     // Imported decorators (`comptime _: @Decl` first param) carry
                     // their decl across modules too, so `#[name(args)]` sites in
@@ -878,7 +930,7 @@ fn resolveImports(
                     // this a marker only fired in its defining module — a lib
                     // ships its decorators, but they are applied by importers.
                     if (decoratorRegistry.get(name)) |dfn| {
-                        infer.registerImportedDecorator(env, name, dfn);
+                        infer.registerImportedDecorator(env, local, dfn);
                     }
                     // Imported + activated extension (`import { Name* } from "mod"`):
                     // an `implement` block defined in another module is opted into

@@ -137,6 +137,14 @@ pub const TypeErrorKind = union(enum) {
         fnName: []const u8,
         returnType: []const u8,
     },
+    /// Front 19 step 3 — `val #(a, b) = use …` whose hook yields a tuple of
+    /// another arity (`tupleLen` set), or no tuple at all (`tupleLen` null).
+    /// Located at the binding; there is no flag (decision 67).
+    useTupleArity: struct {
+        patternLen: usize,
+        tupleLen: ?usize,
+        sourceType: *T.Type,
+    },
     /// `throw` used in a function whose return type is not `@Result<D, E>`.
     throwWithoutResult,
     /// An `implement` block does not provide a method required by an interface.
@@ -284,6 +292,10 @@ pub const TypeError = struct {
         return .{ .kind = .{ .useWithoutContextEffect = .{ .fnName = fnName, .returnType = returnType } } };
     }
 
+    pub fn useTupleArity(patternLen: usize, tupleLen: ?usize, sourceType: *T.Type) TypeError {
+        return .{ .kind = .{ .useTupleArity = .{ .patternLen = patternLen, .tupleLen = tupleLen, .sourceType = sourceType } } };
+    }
+
     pub fn throwWithoutResult() TypeError {
         return .{ .kind = .throwWithoutResult };
     }
@@ -360,6 +372,14 @@ pub const TypeError = struct {
             .contextMismatch => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: function returns @Context<{s}, _> but `use` returns @Context<{s}, _>", .{ m.fnBase, m.useBase }),
             .contextBaseMixed => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: every `use` in one function resolves against the same ContextBase: this body's is @Context<{s}, _>, fixed by the `use` on line {d}, and this one is @Context<{s}, _>", .{ m.anchorBase, m.anchorLine, m.useBase }),
             .useWithoutContextEffect => |u| std.fmt.allocPrint(gpa, "use-without-context-effect: `use` needs `#[@context]` on the enclosing fn '{s}': its return type '{s}' implements @Context, but a body with no effect annotation does not activate a hook", .{ u.fnName, u.returnType }),
+            .useTupleArity => |u| blk: {
+                const source = try typeLabelAlloc(gpa, u.sourceType);
+                defer gpa.free(source);
+                break :blk if (u.tupleLen) |n|
+                    try std.fmt.allocPrint(gpa, "use-tuple-arity: `val #(…)` binds {d} name(s) but the hook yields a tuple of {d}", .{ u.patternLen, n })
+                else
+                    try std.fmt.allocPrint(gpa, "use-tuple-arity: `val #(…)` binds {d} name(s) but the hook yields '{s}', which is not a tuple", .{ u.patternLen, source });
+            },
             .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-throw-without-fallible-channel: `throw` is only valid inside a fn whose effect declares an error channel: #[@result], #[@future], #[@resultGenerator], or #[@futureGenerator]", .{}),
             .methodNotActive => |m| std.fmt.allocPrint(gpa, "'{s}' has no active method '{s}' — activate the extension with `{s}*`", .{ m.typeName, m.method, m.hintSym }),
             .ambiguousExtension => |a| std.fmt.allocPrint(gpa, "'{s}.{s}' is provided by both '{s}' and '{s}' — qualify the call, e.g. `{s}.{s}(obj)`", .{ a.typeName, a.method, a.symA, a.symB, a.symA, a.method }),

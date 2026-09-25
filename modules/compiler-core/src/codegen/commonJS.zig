@@ -2565,12 +2565,40 @@ const Emitter = struct {
         // emitted alongside the project (`out/std/<mod>.js`), so qualified
         // calls (`bool.negate(x)`) resolve naturally at runtime.
         if (u.source == .module and std.mem.eql(u8, u.source.module, "std")) {
+            // Decision 107 — an item names a module (`dict`, `io.fs`,
+            // `io: {fs}`) and binds the module object under the leaf; or it
+            // names a `pub` declaration of the module its prefix spells
+            // (`io.fs.readText as read`) and destructures that one name, under
+            // the alias when there is one — one `const {…}` per std module,
+            // in the order the list first names each.
+            var symbol_mods: std.ArrayListUnmanaged([]const u8) = .empty;
+            var symbol_props: std.ArrayListUnmanaged(std.ArrayListUnmanaged(js.ObjectPattern.Prop)) = .empty;
             for (u.imports) |imp| {
                 if (self.seen_imports.contains(imp.name())) continue;
                 try self.seen_imports.put(imp.name(), {});
-                const mod = imp.segments[imp.segments.len - 1];
+                const whole = try imp.fullPath(self.arena());
+                if (!imp.isQualified() or comptimeMod.isStdModule(whole)) {
+                    try stmts.append(self.arena(), .{ .decl = .{
+                        .pattern = .{ .name = imp.name() },
+                        .value = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}std/{s}.js", .{ req_prefix, whole })),
+                    } });
+                    continue;
+                }
+                const mod = try imp.prefixPath(self.arena());
+                var slot: ?usize = null;
+                for (symbol_mods.items, 0..) |m, i| {
+                    if (std.mem.eql(u8, m, mod)) slot = i;
+                }
+                if (slot == null) {
+                    try symbol_mods.append(self.arena(), mod);
+                    try symbol_props.append(self.arena(), .empty);
+                    slot = symbol_mods.items.len - 1;
+                }
+                try symbol_props.items[slot.?].append(self.arena(), .{ .key = imp.leaf(), .bind = imp.alias });
+            }
+            for (symbol_mods.items, symbol_props.items) |mod, *props| {
                 try stmts.append(self.arena(), .{ .decl = .{
-                    .pattern = .{ .name = imp.name() },
+                    .pattern = .{ .object = .{ .props = try props.toOwnedSlice(self.arena()) } },
                     .value = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}std/{s}.js", .{ req_prefix, mod })),
                 } });
             }
@@ -2596,19 +2624,22 @@ const Emitter = struct {
                 // `from "<mod>"`, not of a name-keyed `get` whose winner was
                 // the walk order. Measured before this: `import {parse} from
                 // "one"` emitted `require("./two.js")` and node printed the
-                // other module's answer at exit 0.
-                const info = xm.picked(imp.name(), u.source, null) orelse continue;
+                // other module's answer at exit 0. A qualified item
+                // (decision 107) asks for its LEAF in the module its prefix
+                // names (`html.div` → `div` in `<lib>/html`), and binds it
+                // under the alias when one is written.
+                const info = xm.picked(imp.leaf(), try u.leafSource(imp, self.arena(), false), null) orelse continue;
                 if (seen.contains(info.module)) continue;
                 try seen.put(info.module, {});
                 // Names from this module not already bound here — `const {…}` for
                 // exactly those. If every one is already bound, emit no line.
                 var props: std.ArrayListUnmanaged(js.ObjectPattern.Prop) = .empty;
                 for (u.imports) |imp2| {
-                    const info2 = xm.picked(imp2.name(), u.source, null) orelse continue;
+                    const info2 = xm.picked(imp2.leaf(), try u.leafSource(imp2, self.arena(), false), null) orelse continue;
                     if (!std.mem.eql(u8, info2.module, info.module)) continue;
                     if (self.seen_imports.contains(imp2.name())) continue;
                     try self.seen_imports.put(imp2.name(), {});
-                    try props.append(self.arena(), .{ .key = imp2.name() });
+                    try props.append(self.arena(), .{ .key = imp2.leaf(), .bind = imp2.alias });
                 }
                 if (props.items.len == 0) continue;
                 try stmts.append(self.arena(), .{ .decl = .{
@@ -2687,7 +2718,7 @@ const Emitter = struct {
         for (u.imports) |imp| {
             if (self.seen_imports.contains(imp.name())) continue;
             try self.seen_imports.put(imp.name(), {});
-            try props.append(self.arena(), .{ .key = imp.name() });
+            try props.append(self.arena(), .{ .key = imp.leaf(), .bind = imp.alias });
         }
         if (props.items.len == 0) return self.b.group(&.{});
         return .{ .decl = .{

@@ -497,6 +497,47 @@ test "infer error: external ---- wrong arity" {
     );
 }
 
+// Front 20 F9, decision 67 — `inline` is read by two emitters (`erlang.zig` and
+// `beam_asm.zig`, `hasExternalInline` over the last argument), so it is declared
+// on `External.Erlang` and `External.Beam` alone, and a written flag no emitter
+// would read is refused at the annotation rather than accepted and ignored.
+test "infer error: external ---- inline on a variant that does not declare it" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Node("Math.max($args)", inline = true)]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
+    );
+}
+
+test "infer error: external ---- inline as a bare trailing bool is the same flag" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Typescript("Math.max($args)", true)]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
+    );
+}
+
+test "infer error: external ---- inline must be the last argument" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Erlang(inline = true, "max($args)")]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
+    );
+}
+
+test "infer error: external ---- inline is a bool" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@External.Beam("max($args)", inline = 1)]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
+    );
+}
+
+test "infer error: external ---- inline on a behavior method is checked the same way" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\pub behavior Shape {
+        \\    #[@External.Wasm("area", inline = true)]
+        \\    fn area(self: Self) -> i32;
+        \\}
+    );
+}
+
 test "infer error: std package ---- unknown module" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\import {linked_list} from "std";

@@ -166,7 +166,6 @@ wasm     | run/display_print.bp       | 05-wasm | re-measured 2026-09-21 by runn
 # fails silently" is gone, because nothing is dropped any more. wasm keeps one
 # line below, and it is a different defect: not the index, but `Array.at` on an
 # array OF arrays.
-wasm     | run/index_expression.bp    | C-18 (decision 47 on wasm) | the first three probes are right (`10`, `30`, `2`); the fourth, `rows[1][0]`, answers `0`. C-02 made it `rows.at(1).at(0)` and the inner step is where it goes wrong: `@print(rows.at(1))` — the method SPELLED BY HAND, no index anywhere — prints `280`, a raw heap address, and `.at(0)` of that is `0`. So `Array.at` does not carry a `?T` whose `T` is itself an array on wasm; the index expression only reaches it. Measured 2026-09-21
 commonJS | test/curried_call.bp       | 01 handover 15 | 15's R2 made `adder(3)(4)` parse; inference does not type it. The call carries its callee in `calleeExpr`, not `callee`, and nothing reads that: the whole cell reds with `unbound variable ''` at the second `(`
 erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell does not compile, so the failure is the file's, not a test's
 
@@ -317,8 +316,6 @@ beam     | run/module_init_order.bp | 03 (no step; the module body on the BEAM) 
 # field read off a `?Record` resolves and commonJS emits the `length` PROPERTY
 # instead of a call on a number. The two cells run on every target; what is left
 # is not the checker's.
-wasm     | run/narrowing_null_check.bp | 05 step 2 (D1) | wasm's `?T` is a BOX and a narrowed NAME is never unboxed, so a field read off it reads the box: `276` / `2` / `388` / `425` / `276` / `276/2` / `276` / `3`, exit 0, where `3` / `2` / `3` / `8` / `3` / `3/2` / `3` / `3` is owed. Only the `?string` line is right, because the `.length()` rename unwraps one optional layer by itself. Before narrowing landed the same lines TRAPPED (`unreachable`, exit 134) — the field read off a fresh type variable lowered to `unreachable`; the missing unbox is the same either way, and `if (es.at(0)) { f -> f.key.length() }` answers `3` on wasm today because that form DOES unbox. Re-measured after C-01 half 3 (`a8087490`): every address MOVED and nothing else did — a box carries its declaration now, so the numbers grew (`256`/`364`/`401` before the merge) while the narrowed name is still read off the box
-wasm     | run/narrowing_null_guard_clause.bp | 05 step 2 (D1) | the same box: `292` / `0` / `292/2` / `none` / `328` / `0`, exit 0, where `3` / `0` / `3/2` / `none` / `5` / `0` is owed. Every absent probe is right — nothing is read off a `null`. Re-measured after C-01 half 3 (`a8087490`), which moved the addresses only (`272`/`288` before it)
 beam     | run/narrowing_null_guard_clause.bp | 03 (no step; two optional readers in one module) | the module does not compile: `UnknownFunction`, no location. Not narrowing's — the same program written with `??` fails identically. Minimal shape: an optional reader in a record METHOD and another in a top-level `fn` in the same module (`type Row(cells: string[]) { fn widest(self: Self) -> i32 { return (self.cells.at(0) ?? "").length(); } }` plus `fn firstOf(ws: string[]) -> i32 { return (ws.at(0) ?? "").length(); }`) — either alone compiles and runs on beam, together they are `UnknownFunction`. `run/narrowing_null_check.bp` passes on beam
 
 # ── a field read whose receiver lost its type, on wasm ───────────────────────
@@ -369,3 +366,13 @@ erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's lab
 # body still traps (`wasm trap: unreachable`). The cell is listed whole because
 # the first failing row stops the run.
 wasm     | run/effect_method.bp | 05-wasm | a record method looping over its own array field answers `0`, and a method declared in an enum's body traps (`unreachable`). Measured with the effect annotations removed as well, so it is the method call and not the effect
+
+# ── front 17 (C-05 landed the carrier; C-10 owes the BEAM lowering) ──────────
+# A module-level `var` parses, is `let` on commonJS and `(mut i32)` on wasm, and
+# has no lowering on erlang or beam until C-10 (`@BeamMemory` steps 4–5, after
+# 13). Measured at `4fe1747e`: erlang emits `hits() -> 0.` and `Hits = (Hits +
+# 1).` — unbound, the module does not compile; beam writes `%% assign to unknown
+# variable: hits` into the `.S`, assembles, and prints `0` at exit 0.
+erlang   | run/module_var.bp | C-10 | a module `var` is still a 0-arity fn on erlang; the write is `Hits = (Hits + 1).` with `Hits` unbound, so the module does not compile
+beam     | run/module_var.bp | C-10 | the write is dropped (`%% assign to unknown variable: hits`) and the program prints `0` at exit 0 — the silent one of the two
+erlang   | test/beam_memory_noop.bp | C-10 | the five tests write through a module `var`; each write is an unbound `Hits`/`Bare`/… on erlang, so the cell does not compile — once C-10 lands, the annotated ones become mode cells, not no-op cells
