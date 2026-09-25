@@ -2184,7 +2184,7 @@ fn buildStructDeclName(env: *Env, s: ast.StructDecl) ![]const u8 {
 }
 
 /// Build a signature name for a behavior declaration binding — the 1.0.3
-/// surface: `"behavior Name<G> {\n    val x: T;\n    fn method(params);\n}"`.
+/// surface: `"behavior Name<G> {\n    val x: T;\n    fn method<G>(params) -> R;\n}"`.
 fn buildInterfaceDeclName(env: *Env, d: ast.BehaviorDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
     try buf.appendSlice(env.arena, "behavior ");
@@ -2201,6 +2201,7 @@ fn buildInterfaceDeclName(env: *Env, d: ast.BehaviorDecl) ![]const u8 {
     for (d.methods) |m| {
         try buf.appendSlice(env.arena, "    fn ");
         try buf.appendSlice(env.arena, m.name);
+        try appendGenericParamsStr(&buf, env.arena, m.genericParams);
         try buf.append(env.arena, '(');
         for (m.params, 0..) |p, i| {
             if (i > 0) try buf.appendSlice(env.arena, ", ");
@@ -2213,6 +2214,10 @@ fn buildInterfaceDeclName(env: *Env, d: ast.BehaviorDecl) ![]const u8 {
             try appendTypeRefStr(&buf, env.arena, p.typeRef);
         }
         try buf.append(env.arena, ')');
+        if (m.returnType) |rt| {
+            try buf.appendSlice(env.arena, " -> ");
+            try appendTypeRefStr(&buf, env.arena, rt);
+        }
         if (!m.is_default) try buf.appendSlice(env.arena, ";");
         try buf.append(env.arena, '\n');
     }
