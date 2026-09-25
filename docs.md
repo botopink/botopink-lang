@@ -122,6 +122,65 @@ pub fn name() -> string {
 }
 ```
 
+**A path and a group are one tree, and only the leaf enters scope.** An item
+may walk into a module (`shapes.circle.name`), and several items under one
+prefix may be grouped (`shapes: {circle: {name}, helpers: {seven}}`) — both
+spellings bind exactly the same names: `a: {b: {c}}` is `a.b.c`. The dot serves
+one leaf, the braces several under one prefix; there is no formatter rule that
+converts one into the other. What an item binds is its **leaf** — `name`,
+`seven` — never the segments before it: `import {io.fs.readText}` brings
+`readText`, neither `io` nor `fs`; whoever wants both writes both
+(`import {io, io.fs.readText}`). An intermediate node may itself be a leaf
+(`import {io.fs}` binds the module `fs` as a namespace; inside a group the
+prefix is a leaf if listed: `io: {fs, fs: {readText}}`). `*` and `as` belong
+to the leaf in either spelling — `io: {fs: {readText as read}}` is
+`io.fs.readText as read`, `collections: {ArraySets*}` activates the same
+extension as `collections.ArraySets*` — and on a node that opens braces they
+are a syntax error (`import-group-modifier`). Two items binding one name are
+`import-name-collision` at the second item (`import {url.parse, json.parse}`);
+an alias on either side clears it (`url.parse as parseUrl, json: {parse as
+parseJson}`). A type keeps its declared name (`import-alias-on-type`), and an
+activation cannot be renamed (`import-alias-on-activation`).
+
+<!-- docs-check: project import_tree src/main.bp -->
+```botopink
+// src/main.bp
+pub mod shapes;
+import {shapes.circle.name as circleName, shapes: {helpers: {seven}}};
+import {dict.Dict, dict: {empty as newDict}, order: {gt, reverse, toInt}} from "std";
+
+fn main() {
+    @print(circleName());                  // circle
+    @print(seven());                       // 7
+    val d: Dict<string, i32> = newDict();
+    @print(d.insert("a", 1).size());       // 1
+    @print(toInt(reverse(gt())));          // -1
+}
+```
+
+<!-- docs-check: project import_tree src/shapes/mod.bp -->
+```botopink
+// src/shapes/mod.bp
+pub mod circle;
+pub mod helpers;
+```
+
+<!-- docs-check: project import_tree src/shapes/circle.bp -->
+```botopink
+// src/shapes/circle.bp
+pub fn name() -> string {
+    return "circle";
+}
+```
+
+<!-- docs-check: project import_tree src/shapes/helpers.bp -->
+```botopink
+// src/shapes/helpers.bp
+pub fn seven() -> i32 {
+    return 7;
+}
+```
+
 A library is imported the same way, under the name `botopink.json` declares it
 in `dependencies`:
 
@@ -753,7 +812,11 @@ activation) and an **expression prefix** (the hook activation). Grammar:
 
 <!-- docs-check: skip a grammar, not a module -->
 ```
-ImportItem     := DottedName "*"? ("as" Ident)?   // in `import { … } from "…"`
+ImportDecl     := "import" "{" ImportList "}" ("from" String)? ";"
+ImportList     := ImportItem ("," ImportItem)* ","?
+ImportItem     := DottedName ("*" | "as" Ident)?  // a dotted path — one leaf
+                | Ident ":" "{" ImportList "}"    // a group — several leaves under one prefix
+DottedName     := Ident ("." Ident)*
 ActivationStmt := DottedName "*" ";"              // module level only
 UseExpr        := "use" Expr                      // prefix; the operand is a call
 ```

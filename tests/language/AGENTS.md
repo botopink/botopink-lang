@@ -24,6 +24,11 @@ rewrite a test to match current behaviour.
 | `reject/<name>.bp` + `<name>.expect` | a program that must not compile, run by `botopink check` | exit ≠ 0, stderr contains `.expect` line 1, and ` --> src/main.bp:<line 2>` when line 2 is present |
 | `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a second project inside it can be a `{ "path": "…" }` dependency | exit 0 and stdout equals `expected.out` byte for byte |
 | `expected-failures.txt` | the list of known failures | — |
+
+1.0.10-beta's `00 · 23-std-purity` step 1 (decision 107, the import tree) adds `modules/import_tree`
+— a dotted path and a braced group over the package's own tree and over std, aliases bound, only the
+leaves in scope, on commonJS/erlang/wasm — and three `reject/` cells: `import_name_collision` (the
+second item), `import_group_modifier` (`*` on a node that opens braces) and `import_alias_on_type`.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

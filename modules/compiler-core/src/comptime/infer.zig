@@ -59,53 +59,136 @@ pub const TypedBinding = struct {
 ///
 /// Returns a slice of `Binding` values in declaration order.
 /// All memory is allocated in `env.arena`.
+/// Decision 107 — every item of an import list binds exactly one local name
+/// (`ImportPath.name()`: the alias, else the leaf). The names one module's
+/// imports bind are unique: a second item binding a name already bound is
+/// `import-name-collision`, located at that second item, in either spelling.
+/// A repeated IDENTICAL item is not a collision — an `@emit` contribution
+/// re-imports what its module already imports, and codegen dedups it the
+/// same way (`seen_imports`). Runs for every `use` decl, `from "std"` or not,
+/// on both inference entry points.
+fn noteImportBindings(env: *Env, u: ast.ImportDecl) InferError!void {
+    if (u.activationOnly) return;
+    for (u.imports) |imp| {
+        // A `*` opts an extension in by its declared name; the dispatch rewrite
+        // emits `Name.method(recv)`, so a renamed binding is one it never
+        // reaches. Refused rather than bound half-way.
+        if (imp.activate and imp.alias != null) {
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}* as {s}` — an activation names the extension it opts in; it cannot be renamed", .{ diagnostics.import_alias_on_activation, imp.leaf(), imp.alias.? });
+            env.lastError = TypeError.custom(msg, "Drop the `as`: `import {Name*}` activates `Name` under its own name.").withLoc(imp.loc);
+            return error.TypeError;
+        }
+        const local = imp.name();
+        const gop = try env.importBound.getOrPut(local);
+        if (gop.found_existing) {
+            if (gop.value_ptr.samePath(imp)) continue;
+            const first = gop.value_ptr.*;
+            const first_path = try first.dotted(env.arena);
+            const this_path = try imp.dotted(env.arena);
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is already bound by the import of `{s}`; `{s}` would bind it again", .{ diagnostics.import_name_collision, local, first_path, this_path });
+            env.lastError = TypeError.custom(msg, "Rename one of the two with `as` (`url.parse as parseUrl`), or import the namespace and qualify the call.").withLoc(imp.loc);
+            return error.TypeError;
+        }
+        gop.value_ptr.* = imp;
+    }
+}
+
 /// `import {bool} from "std"` — marks each imported std module in
 /// `env.stdImports` so qualified calls (`bool.negate(x)`) resolve against
 /// `env.stdModules`. Returns true when the decl was a `from "std"` import
 /// (fully handled here); unknown std module → clear type error.
+///
+/// Decision 107 — an item may carry a path. `import {io.fs} from "std"` (or
+/// `io: {fs}`) binds the MODULE `io/fs` as the namespace `fs`;
+/// `import {io.fs.readText as read}` binds the module's `pub fn` as the value
+/// `read`; `import {collections.Dict}` registers that one `pub type`. Only the
+/// leaf enters scope — neither `io` nor `fs` is bound by the last two.
 fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
+    try noteImportBindings(env, u);
     const from_std = switch (u.source) {
         .module => |m| std.mem.eql(u8, m, "std"),
         .root => false,
     };
     if (!from_std) return false;
     for (u.imports) |imp| {
-        const mod_name = imp.segments[imp.segments.len - 1];
-        if (!env.stdModules.contains(mod_name)) {
-            env.lastError = TypeError.custom(
-                "unknown \"std\" module in import",
-                "Available std modules: bool. (`result` is builtin — call `result.map(r, f)` without importing.)",
-            );
-            return error.TypeError;
+        const whole = try imp.fullPath(env.arena);
+        // The leaf is a module (the namespace form, dotted or grouped).
+        if (env.stdModules.contains(whole)) {
+            try env.stdImports.put(imp.name(), whole);
+            // Type export: register the module's `pub` record/struct/enum decls
+            // into this env so case patterns and annotations can name them
+            // (e.g. `Order` from `import {order} from "std"`). Variant/constructor
+            // value bindings come along — construct via the module's fns
+            // (`order.lt()`), not the bare constructors (codegen has no local decl).
+            if (env.stdModuleTypes.get(whole)) |decls| {
+                for (decls) |d| try registerTypeDecl(env, d);
+            }
+            try checkStdTargetSupport(env, whole);
+            continue;
         }
-        try env.stdImports.put(mod_name, {});
-        // Type export: register the module's `pub` record/struct/enum decls
-        // into this env so case patterns and annotations can name them
-        // (e.g. `Order` from `import {order} from "std"`). Variant/constructor
-        // value bindings come along — construct via the module's fns
-        // (`order.lt()`), not the bare constructors (codegen has no local decl).
-        if (env.stdModuleTypes.get(mod_name)) |decls| {
-            for (decls) |d| try registerTypeDecl(env, d);
-        }
-        // STD-001 — when an active target is set on this env (the CLI codegen
-        // path), red on imports of std modules whose declares lack an
-        // `@external(<target>, …)` match. Pure-bp `pub fn` (with body) ship
-        // on every target without a host binding, so they're skipped. Only
-        // host-bound `pub declare fn` are gated.
-        if (env.target) |tgt| {
-            if (env.stdModuleFns.get(mod_name)) |fns| {
-                for (fns) |f| {
-                    if (f.body.len > 0) continue;
-                    if (!f.isExternal()) continue;
-                    if (f.externalFor(tgt) != null) continue;
-                    const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `@external` for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, f.name, tgt });
-                    env.lastError = TypeError.custom(msg, "Either add a per-target `@external` to the declare, or pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).");
-                    return error.TypeError;
+        // The leaf is a symbol of the module the prefix names.
+        if (imp.isQualified()) {
+            const mod_name = try imp.prefixPath(env.arena);
+            const exports = env.stdModules.get(mod_name) orelse {
+                const msg = try std.fmt.allocPrint(env.arena, "unknown \"std\" module `{s}` in import", .{mod_name});
+                env.lastError = TypeError.custom(msg, "Only the leaf of an import path enters scope; the segments before it name a std module (`libs/std/src/root.bp` lists them).").withLoc(imp.loc);
+                return error.TypeError;
+            };
+            const leaf = imp.leaf();
+            var bound_type = false;
+            if (env.stdModuleTypes.get(mod_name)) |decls| {
+                for (decls) |d| {
+                    const type_name = switch (d) {
+                        .type_ => |t| t.name,
+                        else => continue,
+                    };
+                    if (!std.mem.eql(u8, type_name, leaf)) continue;
+                    if (imp.alias != null) {
+                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a type; a type keeps its declared name", .{ diagnostics.import_alias_on_type, leaf });
+                        env.lastError = TypeError.custom(msg, "Import the type under its own name (`import {collections.Dict}`); `as` renames a value or a function.").withLoc(imp.loc);
+                        return error.TypeError;
+                    }
+                    try registerTypeDecl(env, d);
+                    bound_type = true;
+                    break;
                 }
             }
+            if (!bound_type) {
+                const ty = exports.get(leaf) orelse {
+                    const msg = try std.fmt.allocPrint(env.arena, "std module `{s}` has no public `{s}`", .{ mod_name, leaf });
+                    env.lastError = TypeError.custom(msg, "Check the name against the module's `pub` declarations (`libs/std/AGENTS.md` lists each module's surface).").withLoc(imp.loc);
+                    return error.TypeError;
+                };
+                try env.bind(imp.name(), ty);
+            }
+            try checkStdTargetSupport(env, mod_name);
+            continue;
         }
+        env.lastError = TypeError.custom(
+            "unknown \"std\" module in import",
+            "Available std modules: bool. (`result` is builtin — call `result.map(r, f)` without importing.)",
+        ).withLoc(imp.loc);
+        return error.TypeError;
     }
     return true;
+}
+
+/// STD-001 — when an active target is set on this env (the CLI codegen
+/// path), red on imports of std modules whose declares lack an
+/// `@external(<target>, …)` match. Pure-bp `pub fn` (with body) ship
+/// on every target without a host binding, so they're skipped. Only
+/// host-bound `pub declare fn` are gated.
+fn checkStdTargetSupport(env: *Env, mod_name: []const u8) InferError!void {
+    const tgt = env.target orelse return;
+    const fns = env.stdModuleFns.get(mod_name) orelse return;
+    for (fns) |f| {
+        if (f.body.len > 0) continue;
+        if (!f.isExternal()) continue;
+        if (f.externalFor(tgt) != null) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `@external` for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, f.name, tgt });
+        env.lastError = TypeError.custom(msg, "Either add a per-target `@external` to the declare, or pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).");
+        return error.TypeError;
+    }
 }
 
 /// Append one `TypedBinding` per imported symbol in a `use` decl so the LSP's
@@ -118,7 +201,10 @@ fn appendImportBindings(
     decl: ast.DeclKind,
     u: ast.ImportDecl,
 ) InferError!void {
-    if (try markStdImports(env, u)) return;
+    // A `from "std"` namespace item contributes no value binding; a symbol
+    // leaf of one (`import {dict.empty as newDict}`, decision 107) was bound
+    // by `markStdImports` and is listed like any other import.
+    _ = try markStdImports(env, u);
     for (u.imports) |imp| {
         const name = imp.name();
         if (env.lookup(name)) |ty| {
@@ -9838,8 +9924,8 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             if (call.receiver) |recvExpr| {
                 if (recvExpr.* == .identifier and recvExpr.*.identifier.kind == .ident) {
                     const recvName = recvExpr.*.identifier.kind.ident;
-                    if (env.stdImports.contains(recvName)) {
-                        if (env.stdModules.get(recvName)) |exports| {
+                    if (env.stdImports.get(recvName)) |std_key| {
+                        if (env.stdModules.get(std_key)) |exports| {
                             const exported = exports.get(call.callee) orelse {
                                 var e = TypeError.custom(
                                     "this \"std\" module has no such public function",

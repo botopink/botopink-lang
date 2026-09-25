@@ -215,6 +215,26 @@ pub const result_template_shape_mismatch: []const u8 = "result-template-shape-mi
 /// itself lands with `Env.target` threading + `stdModuleFns` population.
 pub const std_unsupported_on_target: []const u8 = "std-unsupported-on-target";
 
+/// Decision 107 — two import items bind one local name (`import {url.parse,
+/// json.parse}`), in either spelling. Located at the second item; an alias
+/// on either side (`url.parse as parseUrl`) is the remedy. A repeated
+/// identical item (an `@emit` contribution re-importing what its module
+/// already imports) is not a collision.
+pub const import_name_collision: []const u8 = "import-name-collision";
+
+/// Decision 107 — `as` on an item whose leaf is a nominal type
+/// (`import {dict.Dict as D} from "std"`). A type's identity is its declared
+/// name on every backend (the record shape, the class, the module a type
+/// module gets — policy 3), so an alias would bind a name the emitted code
+/// never defines. Refused rather than accepted half-way (decision 67).
+pub const import_alias_on_type: []const u8 = "import-alias-on-type";
+
+/// Decision 107 — `as` on an activated item (`import {PatoNada* as Voa}`).
+/// An activation opts an extension in BY NAME (the dispatch rewrite emits
+/// `PatoNada.swim(donald)`), so a renamed binding would never be the one the
+/// rewrite reaches for.
+pub const import_alias_on_activation: []const u8 = "import-alias-on-activation";
+
 // ── D1–D6: fn-param-default-expansion diagnostics ────────────────────────────
 // Authored in `tasks/v0.beta.20/specs/prim-op.md` §"fn-param-default-expansion"
 // F2 — six diagnostics shared by every call surface (fn call / annotation /
@@ -291,6 +311,9 @@ pub const all_codes = [_][]const u8{
     generic_arg_skip_forbidden,
     result_template_shape_mismatch,
     std_unsupported_on_target,
+    import_name_collision,
+    import_alias_on_type,
+    import_alias_on_activation,
     fn_param_default_trailing_only,
     fn_param_positional_after_named,
     fn_param_default_arity_mismatch,

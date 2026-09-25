@@ -32,6 +32,28 @@ test "js: builtin result namespace ---- qualified call lowers inline" {
     );
 }
 
+// Decision 107 over the std package: `dict.Dict` registers the type,
+// `dict: {empty as newDict}` binds the fn under its alias, `order: {gt,
+// reverse, toInt}` binds three leaves of one module — and neither `dict` nor
+// `order` is bound. commonJS destructures each leaf from `std/<module>.js`
+// (`{ empty: newDict }`); erlang and beam reach the owner remotely through
+// the item's own path, which is what tells `url.parse` from `json.parse`;
+// wasm links the std module statically and maps the alias back to the
+// declared name at the `call`. Pure-bp modules on purpose (`dict`, `order`):
+// a host-backed leaf would pin the wasm gap of that module instead of this
+// rule.
+test "js: std package ---- a dotted path and a group bind leaves of std modules" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\import {dict.Dict, dict: {empty as newDict}, order: {gt, reverse, toInt}} from "std";
+        \\
+        \\fn main() {
+        \\    val d: Dict<string, i32> = newDict();
+        \\    @print(d.insert("a", 1).size());
+        \\    @print(toInt(reverse(gt())));
+        \\}
+    );
+}
+
 // A `pub` template external reached through its module object: std's
 // `env.write`/`env.read`/`env.clear` are `#[@External.Node("…$0…")]` templates,
 // so the owning module has to export a real function for each (it used to

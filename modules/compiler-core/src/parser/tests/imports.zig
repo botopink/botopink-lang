@@ -52,6 +52,54 @@ test "parser: import mixed plain and activate" {
     try h.assertParser(std.testing.allocator, @src(), "import {Pato, PatoNada*, PatoVoa* as Voa, std.List as L} from \"ducks\";");
 }
 
+// ── decision 107: the grouped spelling ───────────────────────────────────────
+// A group flattens to the same `ImportPath`s the dotted spelling produces —
+// the snapshot shows `segments` only, never a group node.
+
+test "parser: import group flattens to dotted paths" {
+    try h.assertParser(std.testing.allocator, @src(), "import {io: {fs: {readText, writeText}, clock: {nowMillis}}} from \"std\";");
+}
+
+test "parser: import group and dotted path mix in one list" {
+    try h.assertParser(std.testing.allocator, @src(), "import {collections.Dict, io: {fs: {readText as read}}, collections: {ArraySets*}} from \"std\";");
+}
+
+test "parser: import group prefix is also a leaf when listed" {
+    try h.assertParser(std.testing.allocator, @src(), "import {io: {fs, fs: {readText}}} from \"std\";");
+}
+
+test "parser: import group without from resolves against the root" {
+    try h.assertParser(std.testing.allocator, @src(), "import {html: {Element, tag}, router.pathname};");
+}
+
+test "parser: import group nested three deep is a.b.c" {
+    try h.assertParser(std.testing.allocator, @src(), "import {a: {b: {c}}, bbb.rr.dd, ee.tt.rr*} from \"modulo\";");
+}
+
+test "parser: import star on a group node is refused" {
+    try h.expectParseError(std.testing.allocator,
+        \\error[import-group-modifier]: `*` and `as` belong to an import leaf, not to a group
+        \\ --> <test>:1:11
+        \\  |
+        \\1 | import {io* : {fs}} from "std";
+        \\  |           ^ this node opens braces
+        \\  |
+        \\  = hint: write the modifier on the leaf: `io: {fs: {readText as read}}`, `collections: {ArraySets*}`
+        \\
+        \\
+    , "import {io* : {fs}} from \"std\";");
+}
+
+test "parser: import alias on a group node is refused" {
+    try h.expectParseFails(std.testing.allocator, "import {io as x: {fs}} from \"std\";");
+}
+
+test "parser: import dotted name before a colon is refused" {
+    // A group takes ONE identifier before the colon; `a.b: {…}` is written as
+    // `a: {b: {…}}`.
+    try h.expectParseFails(std.testing.allocator, "import {a.b: {c}} from \"std\";");
+}
+
 test "parser: activate statement" {
     try h.assertParser(std.testing.allocator, @src(), "X*;");
 }
@@ -148,7 +196,3 @@ test "parser: delegate ---- shorthand pub with return type" {
         \\pub declare fn transform(input: string) -> string;
     );
 }
-
-
-
-

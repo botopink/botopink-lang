@@ -97,6 +97,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "Malformed `${…}` interpolation in string",
             .hint = "Each `${…}` must contain one complete expression, e.g. \"hi ${name}\"; escape a literal dollar with `\\${`",
         },
+        .importGroupModifier => .{
+            .code = "import-group-modifier",
+            .message = "`*` and `as` belong to an import leaf, not to a group",
+            .caretCaption = "this node opens braces",
+            .hint = "write the modifier on the leaf: `io: {fs: {readText as read}}`, `collections: {ArraySets*}`",
+        },
         .anonymousImplExtend => .{
             .message = "An `implement`/`extend` block must be named",
             .hint = "Give it a name, e.g. `Name implement Trait for Type { … }` or `Name extend Type { … }`",

@@ -613,10 +613,17 @@ pub const Env = struct {
     /// exports table (pub fn name → inferred type). Shared registry tables,
     /// populated by the compile session before inference.
     stdModules: std.StringHashMap(std.StringHashMap(*T.Type)),
-    /// Local (alias-aware) names imported via `import {…} from "std"` —
-    /// marked during inference; only these gate qualified calls
-    /// (`bool.negate(x)`) against `stdModules`.
-    stdImports: std.StringHashMap(void),
+    /// Local (alias-aware) names imported via `import {…} from "std"` that
+    /// name a std MODULE (a namespace) → the module's key in `stdModules`
+    /// (`dict` → `dict`, `import {io.fs}` → `fs` → `io/fs`). Marked during
+    /// inference; only these gate qualified calls (`bool.negate(x)`) against
+    /// `stdModules`. A symbol leaf (`import {io.fs.readText}`) is an ordinary
+    /// value binding instead and is not here.
+    stdImports: std.StringHashMap([]const u8),
+    /// Every local name an `import` of this module binds → the item that
+    /// bound it, so a second item binding the same name is
+    /// `import-name-collision` (decision 107) at its own site.
+    importBound: std.StringHashMap(ast.ImportPath),
     /// Public type declarations (`pub record`/`struct`/`enum`) of each "std"
     /// package module, keyed by module name. Populated by `registerStdlib`;
     /// `markStdImports` registers them into the importing env so case
@@ -738,7 +745,8 @@ pub const Env = struct {
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .jsMethodRenames = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .stdModules = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena),
-            .stdImports = std.StringHashMap(void).init(arena),
+            .stdImports = std.StringHashMap([]const u8).init(arena),
+            .importBound = std.StringHashMap(ast.ImportPath).init(arena),
             .stdModuleTypes = std.StringHashMap([]const ast.DeclKind).init(arena),
             .stdModuleFns = std.StringHashMap([]const ast.FnDecl).init(arena),
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
@@ -814,7 +822,8 @@ pub const Env = struct {
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .jsMethodRenames = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .stdModules = try tmpl.stdModules.cloneWithAllocator(arena),
-            .stdImports = std.StringHashMap(void).init(arena),
+            .stdImports = std.StringHashMap([]const u8).init(arena),
+            .importBound = std.StringHashMap(ast.ImportPath).init(arena),
             .stdModuleTypes = try tmpl.stdModuleTypes.cloneWithAllocator(arena),
             .stdModuleFns = try tmpl.stdModuleFns.cloneWithAllocator(arena),
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
@@ -874,6 +883,7 @@ pub const Env = struct {
         // the compile session, not this env. Only the outer maps are ours.
         self.stdModules.deinit();
         self.stdImports.deinit();
+        self.importBound.deinit();
         self.stdModuleTypes.deinit();
         self.stdModuleFns.deinit();
         self.stdArrayLowerings.deinit();
