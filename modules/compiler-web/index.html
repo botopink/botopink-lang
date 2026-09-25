@@ -12,8 +12,8 @@
   and its `_start` called; what it prints is the "run" tab.
 
   The sample with a decorator and a template shows the compiler's answer on a
-  host with no comptime runtime: a located refusal, until front 18 step 2 lands
-  the wat runtime. Everything else — the checker, the four emitters, the
+  host whose comptime engine is not reached yet: a located refusal naming the
+  runtime (front 18 step 5's comptime half wires the page's engine). Everything else — the checker, the four emitters, the
   diagnostics — is the native compiler byte for byte.
 -->
 <html lang="en">

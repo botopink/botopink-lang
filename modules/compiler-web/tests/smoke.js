@@ -5,8 +5,8 @@
 // Loads glue.js the way a page would, compiles one program to the four
 // targets, and pins the three answers the build must give: generated text
 // for a program that compiles, a rendered diagnostic for one that does not,
-// and — until front 18 step 2 lands — the located refusal for a program with
-// a decorator or a template, because a wasm host carries no comptime runtime.
+// and — until front 18 step 5's comptime half reaches the page's engine — the
+// located refusal for a program with a decorator or a template.
 // Every assertion is hard; the process exits 1 on the first failure.
 "use strict";
 const fs = require("fs");

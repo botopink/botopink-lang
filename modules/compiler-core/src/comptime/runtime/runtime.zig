@@ -6,10 +6,11 @@
 //! runtime (`persistent_erl.zig`); `commonJS` and `wasm` evaluate on the wat
 //! runtime (`persistent_wat.zig`, wasm3 in-process); a compilation that names
 //! no target (the language server's type pass) uses beam. No flag and no build
-//! option: a compilation selects from its target for the duration of its
-//! comptime pass (`select`), and the evaluators ask `current`. Until step 3
-//! wires `codegen.generateWith` to `select`, every evaluation runs on beam and
-//! the wat runtime answers only beside it, through `parity`.
+//! option: `codegen.generateWith` selects `Config.comptime_runtime orelse
+//! of(Config.targetSource)` for the duration of its comptime pass (`select`),
+//! and the evaluators ask `current` — the evaluators are reached through the
+//! type checker, which carries no configuration, so the selection travels on
+//! this thread rather than through every call between them.
 //!
 //! What a host can run is decided at compile time: the BEAM runtime needs a
 //! process the compiler can spawn (`can_spawn`, false on `wasm32`, where
@@ -32,7 +33,7 @@ const persistent_erl = if (is_wasm) struct {} else @import("persistent_erl.zig")
 const persistent_wat = @import("persistent_wat.zig");
 const watProgram = @import("wat/program.zig");
 
-pub const ComptimeRuntime = enum { beam, wat };
+pub const ComptimeRuntime = configMod.ComptimeRuntime;
 
 /// Whether this build can spawn a child process: the BEAM runtime's
 /// precondition, and the RUN LOG executors' (`codegen/runtime.zig`).
