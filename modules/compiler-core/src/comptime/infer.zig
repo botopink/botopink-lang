@@ -5915,6 +5915,7 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // see; a module that names it gets its declaration spliced in
             // (`comptime.zig`, `withSourceLocationDecl`).
             if (std.mem.eql(u8, n, source_location_type_name)) env.usesSourceLocation = true;
+            if (std.mem.eql(u8, n, yield_step_type_name)) env.usesYieldStep = true;
             if (!genericMap.contains(n)) {
                 if (env.typeAliases.get(n)) |alias| return expandTypeAlias(env, alias, &.{}, genericMap);
             }
@@ -5958,6 +5959,26 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
         .generic => |b| {
             if (!b.is_builtin) {
                 if (env.typeAliases.get(b.name)) |alias| return expandTypeAlias(env, alias, b.args, genericMap);
+                if (std.mem.eql(u8, b.name, yield_step_type_name)) env.usesYieldStep = true;
+                // RG5 on a declared type — an argument past the parameters
+                // the type declares is refused at the annotation, as it is on
+                // a builtin wrapper: `YieldStep<T, E>` after decision 122 took
+                // `E` away, and any `Pair<A, B>` written with a third.
+                if (env.lookupTypeDef(b.name)) |td| {
+                    const max = td.genericParams().len;
+                    if (b.args.len > max) {
+                        var err = TypeError.custom(
+                            try std.fmt.allocPrint(env.arena, "{s}: `{s}` takes {s}{d} type argument{s}, {d} given", .{ diagnostics.generic_arg_count_exceeded, b.name, if (max == 0) "" else "at most ", max, if (max == 1) "" else "s", b.args.len }),
+                            if (std.mem.eql(u8, b.name, yield_step_type_name))
+                                "`YieldStep<T>` is `{ Yield(value: T), Done }` (decision 122): an item that can fail is a `@Result`, so write `YieldStep<@Result<T, E>>`."
+                            else
+                                "Drop the extra type argument: the type declares no parameter for it.",
+                        );
+                        if (env.typeRefLoc) |l| err = err.withLoc(l);
+                        env.lastError = err;
+                        return error.TypeError;
+                    }
+                }
             }
             // Decision 8 §3 — `A | B` reaches inference as a `generic` under the
             // reserved name `ast.union_type_name`; `unionMembers()` reads the
@@ -9890,6 +9911,51 @@ fn typeIsGround(ty: *T.Type, depth: usize) bool {
     };
 }
 
+/// The prelude enum a sequence steps with (decision 122), registered by
+/// `comptime.zig` (`yield_step_src`) and spliced into a module that names it.
+pub const yield_step_type_name = "YieldStep";
+
+/// Decision 122 — `.next()` on an `@Iterator<T>` / `@Stream<T>` receiver, or
+/// null when the call is anything else.
+fn inferSequenceNext(
+    env: *Env,
+    recv: *TypedExpr,
+    callee: []const u8,
+    args: anytype,
+    trailing: anytype,
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    if (!std.mem.eql(u8, callee, "next") or args.len != 0 or trailing.len != 0) return null;
+    const rt = recv.getType().deref();
+    if (rt.* != .named or rt.named.args.len != 1) return null;
+    const kind: envMod.SequenceKind = if (std.mem.eql(u8, rt.named.name, "Iterator"))
+        .iterator
+    else if (std.mem.eql(u8, rt.named.name, "Stream"))
+        .stream
+    else
+        return null;
+    env.usesYieldStep = true;
+    try env.instanceLowerings.put(loc, .{ .sequence_next = kind });
+    const step_args = try env.arena.alloc(*T.Type, 1);
+    step_args[0] = rt.named.args[0];
+    const step = try env.namedTypeArgs(yield_step_type_name, step_args);
+    const ret = switch (kind) {
+        .iterator => step,
+        .stream => blk: {
+            const task_args = try env.arena.alloc(*T.Type, 1);
+            task_args[0] = step;
+            break :blk try env.namedTypeArgs("Task", task_args);
+        },
+    };
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+        .receiver = recv,
+        .callee = callee,
+        .is_builtin = false,
+        .args = args,
+        .trailing = trailing,
+    } } } };
+}
+
 /// Record how a value-receiver instance call `recv.callee(args)` lowers on the
 /// backends without native method dispatch (erlang/beam/wasm). A primitive
 /// receiver records its `PrimKind`; any other nominal type records as a record
@@ -10690,6 +10756,14 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         }
                     }
                 }
+            }
+
+            // Decision 122 — `seq.next()` called by hand on an `@Iterator<T>`
+            // answers `YieldStep<T>`, on a `@Stream<T>` `@Task<YieldStep<T>>`.
+            // Neither wrapper is a declared type, so no method table answers
+            // it: the lowering is recorded per call site for every backend.
+            if (typedReceiver) |recvPtr| {
+                if (try inferSequenceNext(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |te| return te;
             }
 
             // Static extension dispatch (F6): `obj.method(args)` resolved via

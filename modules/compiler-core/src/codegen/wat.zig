@@ -3159,6 +3159,10 @@ const Emitter = struct {
                     // linear-memory function `$<target>_<method>` before the
                     // ordinary call-kind handling.
                     if (try self.lowerDispatchCall(cc, c.loc)) return;
+                    if (self.instance_lowerings.get(c.loc)) |il| if (il == .sequence_next) {
+                        try self.lowerSequenceNext(cc);
+                        return;
+                    };
                     if (self.primKindAt(cc, c.loc)) |k| {
                         try self.lowerPrimMethod(k, cc);
                         return;
@@ -4738,7 +4742,7 @@ const Emitter = struct {
         const il = self.instance_lowerings.get(loc) orelse return null;
         return switch (il) {
             .prim => |k| k,
-            .type_, .field_of => null,
+            .type_, .field_of, .sequence_next => null,
         };
     }
 
@@ -5025,6 +5029,72 @@ const Emitter = struct {
                 try self.emit(b.helper(if (eq(u8, name, "prepend")) .arr_prepend else if (eq(u8, name, "append")) .arr_concat else .arr_zip));
             }
         }
+    }
+
+    /// Decision 122 — `seq.next()` by hand. The eager sequence is an array blob
+    /// (`[len][e0][e1]…`), so the step is its head: the prelude `YieldStep`'s
+    /// `Yield(e0)` when `len > 0`, `Done` otherwise. A local receiver is then
+    /// rebound to the rest (`$__arr_slice(seq, 1, len)`, a copy — an alias of
+    /// the same sequence keeps its items), as `push` rebinds it, so the next
+    /// `.next()` reads on. The item is copied as one 4-byte slot, which is
+    /// what every element layout of the blob is.
+    fn lowerSequenceNext(self: *Emitter, cc: anytype) anyerror!void {
+        const recv = cc.receiver.?.*;
+        const variants = self.enums.get("YieldStep") orelse {
+            try self.emitC(.@"unreachable", "YieldStep is not declared in this module");
+            return;
+        };
+        var yield_tag: ?u32 = null;
+        var done_tag: ?u32 = null;
+        for (variants, 0..) |v, i| {
+            if (std.mem.eql(u8, v.name, "Yield")) yield_tag = @intCast(i);
+            if (std.mem.eql(u8, v.name, "Done")) done_tag = @intCast(i);
+        }
+        const yi = yield_tag orelse return self.emitC(.@"unreachable", "YieldStep without Yield");
+        const di = done_tag orelse return self.emitC(.@"unreachable", "YieldStep without Done");
+        const local: ?[]const u8 = switch (recv) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| if (self.locals.contains(n)) n else null,
+                else => null,
+            },
+            else => null,
+        };
+
+        const seq = try self.memName(self.nextMem());
+        try self.lowerCoerced(recv, "i32");
+        try self.emit(.{ .local_tee = seq });
+        try self.emitC(.{ .load = .{} }, "items left");
+
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        const desc = try self.variantDescriptorAddr("YieldStep", variants[yi]);
+        const base = try self.allocTagged(desc orelse 0, 8);
+        try self.storeSlotConst(base, tag_header_bytes, yi);
+        try self.emit(.{ .local_get = base });
+        try self.emit(.{ .local_get = seq });
+        try self.emitC(.{ .load = .{ .offset = 4 } }, "the head");
+        try self.emit(.{ .store = .{ .offset = tag_header_bytes + 4 } });
+        if (local) |n| {
+            try self.emit(.{ .local_get = seq });
+            try self.emit(try self.constInt(1));
+            try self.emit(.{ .local_get = seq });
+            try self.emit(.{ .load = .{} });
+            try self.emit(self.builder().helper(.arr_slice));
+            try self.emitCf(.{ .local_set = n }, "{s} = the rest", .{n});
+        }
+        try self.loadTaggedBase(base);
+        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emitUnitVariant(variants, di, "YieldStep", "Done");
+        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+
+        try self.emit(.{ .@"if" = .{
+            .result = .i32,
+            .then = .{ .seq = then_seq },
+            .@"else" = .{ .seq = else_seq },
+        } });
     }
 
     /// `xs.push(v)` — the blob has a fixed size, so the receiver is rebound to
@@ -6466,7 +6536,7 @@ const Emitter = struct {
         const il = self.instance_lowerings.get(loc) orelse return null;
         const rec = switch (il) {
             .type_ => |r| r,
-            .prim, .field_of => return null,
+            .prim, .field_of, .sequence_next => return null,
         };
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
         if (!self.fn_sigs.contains(sym)) return null;

@@ -259,6 +259,43 @@ const source_location_decl_src =
     \\type SourceLocation(file: string, line: i32, column: i32, fnName: string)
 ;
 
+/// The prelude enum `YieldStep<T>` as a program declaration, when the module
+/// referenced it (`env.usesYieldStep` — an annotation or a `.next()` on a
+/// sequence): the same splice `withSourceLocationDecl` makes for the record, so
+/// each backend builds `Yield(v)` / `Done` and matches them through the enum
+/// path it already has. A module declaring its own `YieldStep` keeps it.
+fn withYieldStepDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+    if (!env.usesYieldStep) return prog;
+    for (prog.decls) |d| switch (d) {
+        .type_ => |t| if (std.mem.eql(u8, t.name, infer.yield_step_type_name)) return prog,
+        else => {},
+    };
+    var lx = Lexer.init(yield_step_decl_src);
+    const tokens = try lx.scanAll(arena);
+    var p = Parser.init(tokens);
+    const decl_prog = try p.parse(arena);
+    if (decl_prog.decls.len != 1) return prog;
+    const new_decls = try arena.alloc(ast.DeclKind, 1 + prog.decls.len);
+    new_decls[0] = decl_prog.decls[0];
+    @memcpy(new_decls[1..], prog.decls);
+    return ast.Program{ .decls = new_decls };
+}
+
+/// The declaration `withYieldStepDecl` splices: private, like
+/// `source_location_decl_src` — per module, the variants are what matter.
+const yield_step_decl_src =
+    \\type YieldStep<T> {
+    \\    Yield(value: T),
+    \\    Done,
+    \\}
+;
+
+test "yield step prelude matches builtins.d.bp" {
+    const builtins = @import("std_prelude").builtins;
+    try std.testing.expect(std.mem.indexOf(u8, builtins, yield_step_src) != null);
+    try std.testing.expect(std.mem.endsWith(u8, yield_step_src, yield_step_decl_src));
+}
+
 fn withSynthesisedEnumDecls(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
     if (env.synthesisedEnumDecls.count() == 0) return prog;
 
@@ -417,6 +454,7 @@ fn analyzeMerged(
     // The prelude registration may have named `SourceLocation`; only the
     // program's own references count (`withSourceLocationDecl`).
     env.usesSourceLocation = false;
+    env.usesYieldStep = false;
     env.templateEval = templateEvalCtx;
     env.skipDecoratorInvoke = true;
     env.target = target_name;
@@ -524,6 +562,7 @@ fn analyzeSource(
     // The prelude registration may have named `SourceLocation`; only the
     // program's own references count (`withSourceLocationDecl`).
     env.usesSourceLocation = false;
+    env.usesYieldStep = false;
     // Runtime-backed template expansion (F6-full) — null in tooling paths.
     env.templateEval = templateEvalCtx;
     env.skipDecoratorInvoke = skip_invoke;
@@ -708,6 +747,20 @@ const type_info_src =
     \\    Fn(params: RecordField[], returnType: string),
     \\    Optional(inner: string),
     \\    Generic(name: string, params: string[]),
+    \\}
+;
+
+/// `YieldStep<T>` (decision 122) — the one step of both sequences, `Yield`
+/// then `Done`, registered into the global env so an annotation, a `case` over
+/// its variants and a `.next()` called by hand type-check. The canonical copy
+/// is `libs/std/src/builtins.d.bp`'s (`comptime/effect_chain.zig`'s drift test
+/// reads it; `yield step prelude matches builtins.d.bp` below reads this one).
+/// A module that names it gets `yield_step_decl_src` spliced in
+/// (`withYieldStepDecl`).
+const yield_step_src =
+    \\pub type YieldStep<T> {
+    \\    Yield(value: T),
+    \\    Done,
     \\}
 ;
 
@@ -1181,6 +1234,17 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         _ = try infer.inferProgram(env, program);
     }
 
+    // `YieldStep<T>` (decision 122): the step `.next()` answers on an
+    // `@Iterator` / `@Stream`.
+    {
+        const alloc = env.arena;
+        var lx = Lexer.init(yield_step_src);
+        const tokens = try lx.scanAll(alloc);
+        var p = Parser.init(tokens);
+        const program = try p.parse(alloc);
+        _ = try infer.inferProgram(env, program);
+    }
+
     // `builtins_fns.d.bp`: the parseable fn-decl slice of `builtins.d.bp`
     // (todo / panic / trap / emit / module / getContext / field). Parse it
     // here so a bare `todo()` / `panic()` call at user code resolves to the
@@ -1481,7 +1545,8 @@ pub fn compileTypesOnly(
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, t, &succ.env) catch break :blk_t t;
                     const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
                     const with_src = withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
-                    break :blk_t alias_erase.erase(arena_alloc, with_src, &succ.env.typeAliases) catch with_src;
+                    const with_step = withYieldStepDecl(arena_alloc, with_src, &succ.env) catch with_src;
+                    break :blk_t alias_erase.erase(arena_alloc, with_step, &succ.env.typeAliases) catch with_step;
                 };
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
@@ -1657,11 +1722,11 @@ pub fn compile(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try alias_erase.erase(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
+                const transformed = try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
                     try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections), &succ.env),
                     &succ.env,
-                ), &succ.env), &succ.env.typeAliases);
+                ), &succ.env), &succ.env), &succ.env.typeAliases);
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
                 for (succ.bindings) |b| {

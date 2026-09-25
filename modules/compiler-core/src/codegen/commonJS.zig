@@ -1691,7 +1691,7 @@ const Emitter = struct {
         const lw = self.lowerings orelse return null;
         const type_name = switch (lw.get(loc) orelse return null) {
             .type_ => |n| n,
-            .prim, .field_of => return null,
+            .prim, .field_of, .sequence_next => return null,
         };
         if (self.imported_enums.contains(type_name)) return type_name;
         var buf: [256]u8 = undefined;
@@ -4048,7 +4048,7 @@ const Emitter = struct {
                             .string => "String",
                             else => break :blk null,
                         },
-                        .type_, .field_of => break :blk null,
+                        .type_, .field_of, .sequence_next => break :blk null,
                     };
                     const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
                     for (iface.methods) |m| {
@@ -4154,6 +4154,16 @@ const Emitter = struct {
         return null;
     }
 
+    /// Which sequence a `.next()` at `loc` steps, from inference's per-call-site
+    /// `.sequence_next` record (decision 122), or null.
+    fn sequenceNext(self: *Emitter, loc: ast.Loc) ?envMod.SequenceKind {
+        const lw = self.lowerings orelse return null;
+        return switch (lw.get(loc) orelse return null) {
+            .sequence_next => |k| k,
+            else => null,
+        };
+    }
+
     /// The prelude helper for `recv.method(args)` on a typed primitive
     /// receiver, from inference's per-call-site `.prim` record.
     fn primHelper(self: *Emitter, loc: ast.Loc, cc: anytype) ?jsPrelude.Helper {
@@ -4162,7 +4172,7 @@ const Emitter = struct {
         const il = lw.get(loc) orelse return null;
         const kind = switch (il) {
             .prim => |k| k,
-            .type_, .field_of => return null,
+            .type_, .field_of, .sequence_next => return null,
         };
         const receiver: jsPrelude.Receiver = switch (kind) {
             .string => .string,
@@ -4274,6 +4284,19 @@ const Emitter = struct {
         var slots: ?[]const []const u8 = null;
 
         if (cc.receiver) |recv| {
+            // Decision 122 — `seq.next()` by hand: the generator's own
+            // `{ value, done }` becomes the prelude `YieldStep` —
+            // `__bp_yield_step(it.next())` on an `@Iterator`, and
+            // `s.next().then(__bp_yield_step)` on a `@Stream`, whose `next()`
+            // is a Promise.
+            if (self.sequenceNext(loc)) |kind| {
+                const native = try self.b.call(try self.b.memberOpt(try self.buildExpr(recv.*), "next", cc.optional), &.{});
+                const step = self.helper(.yield_step);
+                return switch (kind) {
+                    .iterator => self.b.call(step, &.{native}),
+                    .stream => self.b.call(try self.b.member(native, "then"), &.{step}),
+                };
+            }
             // Static extension dispatch: lower `recv.m(args)` to
             // `Sym.m(recv, args)` at activated call sites.
             if (self.rewrites.get(loc)) |sym| {

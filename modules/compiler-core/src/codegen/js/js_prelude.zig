@@ -61,10 +61,15 @@ pub const Helper = enum {
     /// Promise resolves with `{ ok: v }`, and a rejection resolves with
     /// `{ error: <message> }` instead of rejecting.
     host_task,
+    /// `seq.next()` by hand (decision 122): a JS generator step `{ value, done }`
+    /// as the prelude enum `YieldStep` — `Yield(value)`, or `Done` once the
+    /// generator finished. The module declares `YieldStep` (the checker splices
+    /// the declaration into every module that steps a sequence).
+    yield_step,
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .string_char_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task };
+pub const order = [_]Helper{ .assert_fatal, .string_char_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .yield_step };
 
 /// The receiver family of a primitive method call, as inference recorded it.
 pub const Receiver = enum { string, array, other };
@@ -93,6 +98,7 @@ pub fn name(h: Helper) []const u8 {
         .structural_eq => "__bp_eq",
         .try_unwrap => "__bp_try",
         .host_task => "__bp_host_task",
+        .yield_step => "__bp_yield_step",
     };
 }
 
@@ -108,6 +114,7 @@ pub fn decl(h: Helper) ast.Stmt {
         .structural_eq => structural_eq,
         .try_unwrap => try_unwrap,
         .host_task => host_task,
+        .yield_step => yield_step,
     };
 }
 
@@ -178,6 +185,22 @@ const host_task: ast.Stmt = .{ .function = .{
                 .else_ = &.{ .call = .{ .callee = &.{ .name = "String" }, .args = &.{he} } },
             } } } }} } } } } } },
         },
+    } } }}, .layout = .spaced },
+} };
+
+const yield_step_class: ast.Expr = .{ .name = "YieldStep" };
+
+/// `function __bp_yield_step(r) { return r.done ? YieldStep.Done : YieldStep.Yield(r.value); }`
+const yield_step: ast.Stmt = .{ .function = .{
+    .name = "__bp_yield_step",
+    .params = &.{.{ .pattern = .{ .name = "r" } }},
+    .body = .{ .stmts = &.{.{ .return_ = .{ .ternary = .{
+        .cond = &.{ .member = .{ .object = &r_, .name = "done" } },
+        .then = &.{ .member = .{ .object = &yield_step_class, .name = "Done" } },
+        .else_ = &.{ .call = .{
+            .callee = &.{ .member = .{ .object = &yield_step_class, .name = "Yield" } },
+            .args = &.{.{ .member = .{ .object = &r_, .name = "value" } }},
+        } },
     } } }}, .layout = .spaced },
 } };
 

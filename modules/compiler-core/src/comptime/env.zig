@@ -106,6 +106,15 @@ pub const TypeDef = union(enum) {
     /// `resolveTypeRefInContext` to fill omitted trailing generic args at
     /// user-typeDef call sites (parallel to `builtinDefaultFilledArgs` for
     /// builtin wrappers).
+    /// The generic parameters the type declares (`Pair<A, B>` → `A`, `B`).
+    pub fn genericParams(self: TypeDef) []const []const u8 {
+        return switch (self) {
+            .record => |r| r.genericParams,
+            .struct_ => |s| s.genericParams,
+            .enum_ => |e| e.genericParams,
+        };
+    }
+
     pub fn genericDefaults(self: TypeDef) []const ?*T.Type {
         return switch (self) {
             .record => |r| r.genericDefaults,
@@ -313,7 +322,17 @@ pub const InstanceLowering = union(enum) {
     /// its index. A method call records `.type_`; only a field read records
     /// this, so a backend that dispatches natively can ignore it.
     field_of: []const u8,
+    /// Decision 122 — `seq.next()` called by hand on an `@Iterator<T>`
+    /// (answers `YieldStep<T>`) or a `@Stream<T>` (answers
+    /// `@Task<YieldStep<T>>`). commonJS maps the generator's `{ value, done }`
+    /// onto the variants; the eager backends (erlang, beam, wasm), whose
+    /// sequence is the list of its items, pop the head and rebind the receiver
+    /// to the rest when it is a local name.
+    sequence_next: SequenceKind,
 };
+
+/// Which sequence a `.next()` (`InstanceLowering.sequence_next`) steps.
+pub const SequenceKind = enum { iterator, stream };
 
 /// A recognized decorator's signature, minus its leading `comptime _: @Decl`
 /// parameter. `params` are the trailing argument parameters an `#[d(args)]`
@@ -426,6 +445,13 @@ pub const Env = struct {
     /// then prepends the record's declaration to the transformed program so the
     /// backends learn its field list the way they learn a user record's.
     usesSourceLocation: bool = false,
+    /// True once the module referenced the prelude enum `YieldStep<T>`
+    /// (decision 122 — an annotation, or a `.next()` called by hand on an
+    /// `@Iterator` / `@Stream`). `comptime.zig` then prepends the enum's
+    /// declaration to the transformed program, exactly as `usesSourceLocation`
+    /// does for the record, so every backend builds and matches `Yield(value)`
+    /// / `Done` through the enum path it already has.
+    usesYieldStep: bool = false,
     /// Ordinal of the next `test` block in program order — the `test_<idx>`
     /// fallback name of an anonymous `test { … }` (the same index the commonJS
     /// registry uses). Reset by `inferProgram`/`inferProgramTyped`.

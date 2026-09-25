@@ -1612,8 +1612,8 @@ codegen/
   `index_*` RUN LOG printed `[1, 2]` for `rows[0].length`), and the call
   aborted with `{unresolved_method, …}`.
 - **Synth helpers per module** (`HelperNames`, `takeHelperNames` /
-  `restoreHelperNames`): the once-per-module helpers (`'-bp_at-'/2`, the print
-  prelude, …) are cached by name, and a name is only good in the module whose
+  `restoreHelperNames`): the once-per-module helpers (`'-bp_at-'/2`,
+  `'-bp_yield_step-'/1`, the print prelude, …) are cached by name, and a name is only good in the module whose
   label table reserved it — a type's unit starts with none and the file module
   gets its own back. Shared, a helper a record METHOD reached first was reserved
   in the type's unit and the file's next call site failed `UnknownFunction`
@@ -2537,6 +2537,30 @@ then `call_fun 0`; wasm the lifted lambda called in place through the table
 writes `iter for (xs) { … }` / `iter while (c) { … }` as
 `iter loop { <the written loop>; break; }`, so the four annotated-loop lowerings
 of 22-loops serve all three keywords unchanged.
+
+`.next()` by hand (decision 122) reaches every backend as the call inference
+tagged `InstanceLowering.sequence_next`, and answers the prelude enum
+`YieldStep<T>` that `comptime.zig` spliced into the module (`withYieldStepDecl`),
+so each backend builds and matches `Yield(value)` / `Done` as it does any enum.
+commonJS maps the generator's own step: `__bp_yield_step(it.next())` on an
+`@Iterator` and `s.next().then(__bp_yield_step)` on a `@Stream` (prelude
+`yield_step`: `r.done ? YieldStep.Done : YieldStep.Yield(r.value)`). The eager
+backends hold a sequence as the list of its items, so the step is the head and
+a LOCAL receiver (a `val`, a `var`, a parameter) advances to the rest: erlang
+hoists `{BpStepN, It@v} = case It of [H | T] -> {{Yield, H}, T}; R -> {Done, R} end`
+in front of the statement (`hoistSequenceSteps`, over the positions
+`collectSeqNexts` knows run unconditionally — a call's receiver and arguments,
+an operand, a binding's value, a jump's operand, an `assert`) and the call reads
+`BpStepN`; one it cannot hoist (inside a branch or a lambda) is a
+`begin … end` in place; `collectMutations` counts the receiver as reassigned,
+so a loop that steps a sequence threads it. beam calls the synth
+`'-bp_yield_step-'/1` (`{Yield, H}` or `Done`) and moves the list's tail into
+the receiver's register (`is_nonempty_list` + `get_list`). wasm
+(`lowerSequenceNext`) builds `Yield(e0)` from the blob's first slot when
+`len > 0` (else `Done`) and rebinds the local to `$__arr_slice(seq, 1, len)`, a
+copy. A receiver that is not a local answers its first step and advances
+nothing. `run/yield_step_next.bp` runs the four; `features.zig`'s two
+`next by hand` rows snapshot them.
 
 Decision 104: `effectShape` answers `async function` for every `@Component`
 body — a hook and a component alike — as it does for `@Task`, so every caller

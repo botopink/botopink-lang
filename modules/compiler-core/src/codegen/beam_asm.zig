@@ -1751,6 +1751,8 @@ const Emitter = struct {
     add_helper_name: ?[]const u8 = null,
     eval_helper_name: ?[]const u8 = null,
     field_helper_name: ?[]const u8 = null,
+    /// `'-bp_yield_step-'/1` — `seq.next()` by hand (decision 122).
+    yield_step_helper_name: ?[]const u8 = null,
     /// Owns the parsed `primitives.bp` prelude (and every key string built for
     /// the tables below) for the whole emission.
     prelude_arena: std.heap.ArenaAllocator,
@@ -1932,6 +1934,7 @@ const Emitter = struct {
         if (self.indexOf_helper_name) |n| self.alloc.free(n);
         if (self.stringify_helper_name) |n| self.alloc.free(n);
         if (self.field_helper_name) |n| self.alloc.free(n);
+        if (self.yield_step_helper_name) |n| self.alloc.free(n);
     }
 
     /// §A5: collect `#[@External.Erlang(…)]` annotations on primitive behavior
@@ -2789,7 +2792,7 @@ const Emitter = struct {
                 .ident => |n| nums.get(n) orelse self.num_names.get(n),
                 .identAccess => |ia| if (self.instanceLowering(id.loc, ia.receiver.*)) |il| switch (il) {
                     .prim => .int,
-                    .type_, .field_of => null,
+                    .type_, .field_of, .sequence_next => null,
                 } else null,
                 else => null,
             },
@@ -3312,6 +3315,7 @@ const Emitter = struct {
         eval: ?[]const u8,
         join: ?[]const u8,
         field: ?[]const u8,
+        yield_step: ?[]const u8,
     };
 
     fn takeHelperNames(self: *Emitter) HelperNames {
@@ -3326,6 +3330,7 @@ const Emitter = struct {
             .eval = self.eval_helper_name,
             .join = self.join_helper_name,
             .field = self.field_helper_name,
+            .yield_step = self.yield_step_helper_name,
         };
         self.at_helper_name = null;
         self.index_helper_name = null;
@@ -3337,6 +3342,7 @@ const Emitter = struct {
         self.eval_helper_name = null;
         self.join_helper_name = null;
         self.field_helper_name = null;
+        self.yield_step_helper_name = null;
         return saved;
     }
 
@@ -3361,6 +3367,8 @@ const Emitter = struct {
         self.join_helper_name = saved.join;
         if (self.field_helper_name) |n| self.alloc.free(n);
         self.field_helper_name = saved.field;
+        if (self.yield_step_helper_name) |n| self.alloc.free(n);
+        self.yield_step_helper_name = saved.yield_step;
     }
 
     /// Open `type_name`'s module: its bodies write into `buf`, its labels start
@@ -5149,6 +5157,26 @@ const Emitter = struct {
                 },
                 // A field READ never reaches the call path.
                 .field_of => {},
+                // Decision 122 — `seq.next()` by hand. The eager sequence is
+                // the list of its items: `'-bp_yield_step-'/1` answers its
+                // head's step — `{Yield, Head}`, or `Done` on the empty list —
+                // and a local receiver then takes its tail, as an assignment
+                // would, so the next `.next()` reads on.
+                .sequence_next => {
+                    try self.lowerExprIntoX0(recv_expr.*);
+                    const helper = try self.ensureYieldStepHelper();
+                    const labels = try self.fnLabelsFor(helper, 1);
+                    try beamEmitter.writeCall(self.out, .normal, 1, .{ .local = labels.entry }, 0);
+                    if (recv_name) |rn| if (self.reg_map.get(rn)) |reg| {
+                        const done_l = self.allocLabel();
+                        const scratch = @max(self.scratchBase(), 1);
+                        try beamEmitter.writeTest(self.out, .is_nonempty_list, done_l, &.{reg.operand()});
+                        try beamEmitter.writeGetList(self.out, reg.operand(), Dst.xr(scratch), reg.dest());
+                        try beamEmitter.writeLabel(self.out, done_l);
+                    };
+                    if (mode == .tail) try self.emitReturn();
+                    return;
+                },
             };
             // §D2 — `"std"` package qualified call: a lowercase receiver naming
             // an imported std module (`math`, `path`, …) lowers to a remote
@@ -6551,6 +6579,44 @@ const Emitter = struct {
         try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
         buf.deinit();
         self.at_helper_name = name;
+        return name;
+    }
+
+    /// Emit (once per module) the synth helper backing `seq.next()` on an
+    /// eager sequence (decision 122): `(L)` answers `{{Yield, H}, T}` for a
+    /// non-empty list `[H | T]` and `{Done, L}` for the empty one, the tags
+    /// being the module's prelude `YieldStep` variants. Frameless — x-regs only.
+    fn ensureYieldStepHelper(self: *Emitter) anyerror![]const u8 {
+        if (self.yield_step_helper_name) |n| return n;
+        const name = try self.alloc.dupe(u8, "'-bp_yield_step-'");
+        try self.reserveFn(name, 1);
+        const labels = try self.fnLabelsFor(name, 1);
+        const yield_tag = try self.variantTagAtom("YieldStep", "Yield");
+        const done_tag = try self.variantTagAtom("YieldStep", "Done");
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &buf.writer;
+
+        const empty_l = self.allocLabel();
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, name, 1, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, name, 1);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try beamEmitter.writeTest(self.out, .is_nonempty_list, empty_l, &.{Op.xr(0)});
+        try beamEmitter.writeGetList(self.out, Op.xr(0), Dst.xr(1), Dst.xr(2)); // x1 = head, x2 = tail
+        try beamEmitter.writeTestHeap(self.out, 3, 2);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(yield_tag), Op.xr(1) });
+        try beamEmitter.writeReturn(self.out);
+        try beamEmitter.writeLabel(self.out, empty_l);
+        try beamEmitter.writeMoveOp(self.out, Op.atom(done_tag), Dst.xr(0));
+        try beamEmitter.writeReturn(self.out);
+
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.yield_step_helper_name = name;
         return name;
     }
 
@@ -9364,7 +9430,7 @@ const Emitter = struct {
                 }
                 return;
             },
-            .type_, .field_of => {},
+            .type_, .field_of, .sequence_next => {},
         };
 
         try self.lowerExprIntoX0(ia.receiver.*);
