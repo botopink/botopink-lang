@@ -689,12 +689,25 @@ an optional the same way this does.
 
 ### Loops
 
-Three keywords, one meaning each (decision 105): `for (coll) { x -> … }`
-iterates a collection, a range or a generator; `while (cond) { … }` repeats
-while the condition holds; `loop { … }` repeats until `break`. None of them is
-an expression. `continue` skips to the next round in all three.
+Three keywords, one meaning each (decision 105):
 
-A range excludes its end: `0..10` yields `0` to `9`.
+| Form | Does | An expression? |
+|---|---|---|
+| `loop { … }` | repeats until `break` | no |
+| `#[@generator] loop { … }` | the body is a generator: `yield v` / `break v` emit | **yes** — `@Generator<T>` |
+| `while (cond) { … }` | repeats while `cond` holds | no |
+| `for (coll) { x -> … }` | iterates a collection, a range or a generator | no |
+| `for await (gen) { x -> … }` | iterates a `@FutureGenerator` | no |
+
+A plain loop is a statement: bare `break` leaves it and `continue` starts its
+next round, in all three. `for` binds the item only — the index is
+`for (0..xs.length) { i -> … }`. The parentheses stay (`while (cond) {`), as
+they do on `if`: without them `while x {` could not tell the body from a record
+literal. `loop (…)` is an error naming `for` and `while`.
+
+A range `a..b` excludes its end and `a...b` includes it: `for (1..4)` visits
+`1 2 3`, `for (1...4)` visits `1 2 3 4`. A range is not a value — there is no
+`Range` and no `.rev()`; a countdown is a `while` or `xs.reverse()`.
 
 <!-- docs-check: body -->
 ```botopink
@@ -704,7 +717,7 @@ for (xs) { item ->
     @print(item);
 };
 
-for (0..10) { i ->
+for (1...3) { i ->
     @print(i);
 };
 
@@ -718,6 +731,45 @@ loop {
     if (n == 0) { break; };
 };
 ```
+
+**`yield v` and `break v` need a generator scope** — a `fn` annotated
+`#[@generator]`, `#[@iterator]` or `#[@futureGenerator]`, or a `loop` annotated
+the same way. `yield v` emits and continues; `break v` emits and ends. Outside a
+generator scope both are refused naming the three annotations: no loop answers
+a value, and collecting in a plain `fn` is `xs.map(…)` / `filter(…)` or a `var`.
+A `yield` inside an unannotated `for`, `while` or `loop` feeds the **nearest**
+generator scope; `yield :label v` names a scope's label instead.
+
+The annotated `loop` is a generator without parameters: it is worth the
+annotation's wrapper, `T` being the type of its `yield` / `break v`, and it
+captures the enclosing scope — a `var` it reassigns is its state:
+
+<!-- docs-check: body -->
+```botopink
+var count = 0;
+val doubles = #[@generator] loop {
+    count = count + 1;
+    if (count == 10) { break count * 2; };   // the last item: 20
+    yield count * 2;                          // 2 4 6 … 18
+};
+for (doubles) { d -> @print(d); };
+```
+
+Its body is **closed**: it has its own annotation's capabilities, never the
+enclosing function's. Inside a `#[@context]` fn a `#[@generator] loop` may
+neither `use` nor `await` (for `await`, write `#[@futureGenerator] loop`), and
+`break :outer` / `continue :outer` across its border are refused like leaving
+a closure. Only `loop` takes the annotation — `#[@generator] for` does not
+exist; write `#[@generator] loop { for (xs) { x -> yield f(x); }; break; }`.
+
+`for` over a generator is an implicit `try` / `await` when the generator can
+fail or suspend, so it needs the level: an `@Generator<T>` is iterable in any
+body, an `@Iterator` in a body that grants `try`, an `@FutureGenerator` only
+through `for await` in a body that grants `await`. `for` over a `bool` is
+refused naming `while`.
+
+Labels go on all three: `for :outer (xs) { x -> … }`, `while :w (…) { … }`,
+`loop :l { … }`, then `break :outer`, `continue :outer`.
 
 A `//` comment inside a loop body parses like any other comment.
 

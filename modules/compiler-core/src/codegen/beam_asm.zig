@@ -687,17 +687,15 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 countLocalsInExpr(em, ap.handler.*, count);
             },
         },
-        // `.function` (lambda) and `.loop` open their own frames — their inner
-        // bindings don't consume this frame's y-slots. A two-parameter loop's
-        // written index start that is neither a literal nor a local is staged
-        // with the iterable (`lowerEnumerateIntoX0`).
-        // A condition loop (decision 8 §10) runs in this frame: its condition
+        // `.function` (lambda) and a `for` open their own frames — their inner
+        // bindings don't consume this frame's y-slots.
+        // A condition loop (`while`, `loop`) runs in this frame: its condition
         // and body take this frame's slots.
         //
         // The **iterable** is lowered in this frame whichever loop it is
         // (`lowerLoop` materialises it before it builds the body closure, and
         // `lowerConditionLoop` re-evaluates the condition here), so its own
-        // slots are this frame's: `loop ([1, 2, 3]) { x -> … }` parks the cons
+        // slots are this frame's: `for ([1, 2, 3]) { x -> … }` parks the cons
         // accumulator of the array literal in a y-slot, and counting nothing
         // left the frame at `{allocate, 0, 0}` — the emitted `.S` did not
         // assemble (`{invalid_store, {y, 0}}`, "Internal consistency check
@@ -1409,7 +1407,7 @@ const Emitter = struct {
     deferred_lambdas: std.ArrayListUnmanaged([]u8) = .empty,
     /// True when emitting a loop body lambda — makes break emit return.
     in_loop_lambda: bool = false,
-    /// The innermost condition loop (decision 8 §10) being emitted in this
+    /// The innermost in-frame loop (`while`, `loop`, `lowerInFrameFor`) being emitted in this
     /// frame: its `break` jumps to `exit`, its `continue` to `top`. A lambda
     /// writes to another buffer (`out`), so its jumps never match.
     cond_loop: ?CondLoop = null,

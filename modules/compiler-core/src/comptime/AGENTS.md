@@ -848,7 +848,7 @@ either: a field read off it, a `val` bound from it, a chain starting at it.
 What that cost was one backend, not the checker's own answer. commonJS records the `.length()` →
 native `length` PROPERTY rename only for a receiver inference resolved as a named `string` or
 `array`, so an untyped receiver kept its call parens and the emitted module called a number:
-`loop (xs) { x -> x.length() }` over an `Array<string>` was `TypeError: x.length is not a function`
+`for (xs) { x -> x.length() }` over an `Array<string>` was `TypeError: x.length is not a function`
 at exit 1, while erlang — which needs no receiver type to lower a primitive method — printed the
 length. Measured by a consuming library while it wrote a configuration reader; pinned by
 `tests/language/run/loop_item_method.bp`, which asserts the VALUE.

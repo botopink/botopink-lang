@@ -3740,7 +3740,7 @@ const Emitter = struct {
         } };
     }
 
-    /// A condition loop (decision 8 §10) in statement position: a JS `while`;
+    /// `while (cond) { … }` / `loop { … }` (decision 105): a JS `while`;
     /// `break` / `continue` in its body bind to it.
     fn buildWhileStmt(self: *Emitter, cond: ast.Expr, body: []const ast.Stmt) anyerror!js.Stmt {
         const c = try self.buildExpr(cond);

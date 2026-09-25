@@ -545,7 +545,7 @@ const Emitter = struct {
     /// Module globals: wat value type, plus the string/bool shapes.
     global_types: std.StringHashMap([]const u8),
     str_globals: std.StringHashMap(void),
-    /// Names known to hold an `[len][e0][e1]…` array blob. `loop (xs) {…}`
+    /// Names known to hold an `[len][e0][e1]…` array blob. `for (xs) {…}`
     /// only walks the layout for these; anything else keeps the honest
     /// `;; loop over unknown iterable` no-op rather than reading garbage.
     arr_locals: std.StringHashMap(void),
@@ -581,8 +581,6 @@ const Emitter = struct {
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
-    /// The `loop_depth` of the innermost condition loop (decision 8 §10) used
-    /// as a value: there a `break <v>` contributes `v` and also ends the loop.
     /// Sequence counter for the `$__mem{n}` scratch pointers used when building
     /// or destructuring aggregates (tuples, arrays, records, enum payloads).
     mem_seq: u32 = 0,
@@ -7117,7 +7115,7 @@ const Emitter = struct {
         } });
     }
 
-    /// `loop (condition) { … }` / `loop { … }` (decision 8 §10): test the
+    /// `while (condition) { … }` / `loop { … }` (decision 105): test the
     /// condition at the top of every iteration, leave when it is false.
     fn lowerConditionLoop(self: *Emitter, lp: anytype, result: ?[]const u8) anyerror!void {
         var loop_c: Capture = .{};

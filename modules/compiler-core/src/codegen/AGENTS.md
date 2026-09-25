@@ -113,7 +113,7 @@ codegen/
   top-level fn's declared return type, and a primitive method's declared return
   type (`zip` → `Array<#(T, U)>`); `"f"` is the float leaf, `f64`/`f32` in a
   written type. A tuple whose shape nothing recovers prints as an array, and an
-  `f64` whose shape nothing recovers prints as an integer — `loop (xs) { v ->
+  `f64` whose shape nothing recovers prints as an integer — `for (xs) { v ->
   break v * 0.15; }` is the measured case, and a union member (decision 26) is
   the other, since a union carries no single leaf.
 - **`@Result`** is `{ ok: V } | { error: E }`; `__bp_ok`/`__bp_error` build it for
@@ -512,7 +512,7 @@ codegen/
   `.map()`. A `behavior`'s `default fn` is the one method kind that never
   carries one — the checker refuses `effect-on-behavior-method-forbidden`.
   Inside a generator, `return <iter>` becomes `yield* <iter>; return;` and
-  `loop (xs) { x -> yield x }` becomes `for…of`.
+  `for (xs) { x -> yield x; }` becomes `for…of`.
 - **A labelled argument claims its slot**: `docs.md` § Parameters with defaults
   — "a parameter the call names by label keeps the argument it was given,
   whichever position it is in". `labelledArgs` places the arguments of a
@@ -892,7 +892,7 @@ codegen/
   happen (an unknown `__bp_*` op, an empty OR pattern) is an emit error, never an
   empty `raw`.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
-  `if` / `loop (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
+  `if` / `for (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
   values instead of binding them inside a `case` arm or `fun`:
   `Acc@1 = case C of true -> …, Acc@2; _ -> Acc end` and
@@ -1646,7 +1646,7 @@ codegen/
   same AST and tables in both passes. Under-counting is not a wrong value, it is
   a module the assembler refuses (`{invalid_store, {y, N}}`, "Internal
   consistency check failed"), and `beam_export_audit.sh` cannot find it unless a
-  snapshot carries the shape: `loop ([1, 2, 3]) { x -> … }`, a loop over a
+  snapshot carries the shape: `for ([1, 2, 3]) { x -> … }`, a loop over a
   literal rather than over a name, had no cell and counted nothing until
   `tests/control_flow.zig`'s "a loop over an array literal" fixture.
 - **Registers**: parameters are spilled to `y0..y{arity-1}` by `bindParams` +

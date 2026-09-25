@@ -606,9 +606,9 @@ const prim_shim_prefix = "__bp_prim_";
 
 /// The atom a bare `break` throws and its loop's `try` catches.
 const break_signal = "__bp_break";
-/// The named-fun variable an unbounded `loop (x..)` recurses through.
+/// The named-fun variable an unbounded `for (x..)` and a recursive loop recurse through.
 const loop_fun_var = "__Loop";
-/// The throws a condition loop (decision 8 §10) catches: `{Signal, Group}`,
+/// The throws a recursive loop (`while`, `loop`, a jumping `for`) catches: `{Signal, Group}`,
 /// the reassigned variables at the jump.
 const cond_break_signal = "__bp_cond_break";
 const cond_continue_signal = "__bp_cond_continue";
@@ -2618,7 +2618,7 @@ const Emitter = struct {
     /// may call a std prelude helper (`stringSlice1`) the consuming module never
     /// declares, so bare callees also resolve against the prelude template index.
     in_iface_default: bool = false,
-    /// The variables the innermost condition loop (decision 8 §10) threads,
+    /// The variables the innermost recursive loop (`recursiveLoopCall`) threads,
     /// while its body is emitted; null outside one and behind a fun boundary
     /// (a collection loop, a lambda). A `break` / `continue` there throws them.
     cond_loop: ?[]const []const u8 = null,
@@ -4823,7 +4823,7 @@ const Emitter = struct {
     // expression that *returns* the new values:
     //
     //   if (c) { acc = acc + 1; }          Acc@1 = case C of true -> Acc@2 = …, Acc@2; _ -> Acc end
-    //   loop (xs) { x -> acc = acc + x; }  Acc@3 = lists:foldl(fun(X, Acc@1) -> Acc@2 = …, Acc@2 end, Acc, Xs)
+    //   for (xs) { x -> acc = acc + x; }   Acc@3 = lists:foldl(fun(X, Acc@1) -> Acc@2 = …, Acc@2 end, Acc, Xs)
     //
     // Several reassigned variables travel as a tuple. The names are the ones
     // already bound in the function (`locals`) that the statement assigns,
