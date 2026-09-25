@@ -1195,7 +1195,7 @@ codegen/
   (its own after the siblings load, each sibling's from `'__bp_load_siblings'`).
   What the modes cannot honour the checker refuses (`infer.zig`
   `refuseMemoryWrite`); `keyed = true` has no lowering yet and is refused on
-  erlang and beam.
+  erlang and beam. `beam_asm.zig` carries the same modes in assembly (step 5).
 - **The module body** (`'_botopink_init'/0`, `initForms`): a module-level `val` is
   evaluated ONCE, in declaration order, at module load — `docs.md` § `val`, and
   what `const x = f();` does on commonJS. `'_botopink_init'/0` is that body: a
@@ -1356,6 +1356,23 @@ codegen/
 - Structural `==`/`!=` is `=:=`/`=/=`.
 
 ### beam_asm
+
+- **Module-level `var`s — `@BeamMemory`** (front 17 step 5): the erlang
+  lowering in assembly. The reader `name/0` (`emitMemoryReader`) and every
+  write no register shadows (`emitAssign` → `emitMemoryWrite`) reach
+  `std/beam`'s primitives as `call_ext`s into `std@beam`, under
+  `'<file atom>@@<var>'` (`memoryKey` — the FILE's atom inside a type unit
+  too). A write only stages its operands into `x0..x2` and calls one of the
+  module's fixed helpers, written instruction by instruction:
+  `'__bp_pd_set'/2` (box and `pdPut`), `'__bp_ets'/2` + `'__bp_ets_wait'/3` +
+  `'__bp_ets_owner'/2` (the guard, the wait loop and the registered owner of
+  decision 39 — `etsNew` under `try`, seed, `register`, `timer:sleep(infinity)`),
+  `'__bp_ets_add'/3` (`etsBump`, the increment of `ast.classifyMemoryWrite`)
+  and `'__bp_ets_set'/3` (`etsPut` of the whole value). A `PersistentTerm` var
+  is put by `'__bp_load'/0`, named by `{attributes, [{on_load, [{'__bp_load',
+  0}]}]}` (`beamEmitter.writeOnLoadAttributes`) — the one attribute this
+  backend writes. The language cells `run/beam_memory_*` and `run/module_var`
+  print the erlang backend's values on beam.
 
 - **One module per `type` — policy 3, the same split `erlang.zig` made.** A
   source file emits its own `.S` plus one per `type` it declares
@@ -1617,14 +1634,16 @@ codegen/
   (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`)
   — correct but interpreted on every call (≈ 50× a direct call); its cost and
   the open keep-or-compile decision are in [`beam/AGENTS.md`](beam/AGENTS.md).
-  A module that only DECLARES a `pub` host-backed fn therefore exports nothing
-  and defines nothing, and a qualified call from another module
-  (`erlang.self()` → `{call_ext, 0, {extfunc, std@erlang, self, 0}}`) is `undef`
-  — decision 64's beam half. `hostDeclareWrapperNeeded(f)` (`isPub and
-  isHostDeclare`) is the predicate, **declared and not wired**: the three
-  `isHostDeclare` sites (reserve, export, emit) still skip every host declare,
-  and the wrapper body (parameters in `x` registers, then `lowerExternalCall`)
-  is C-03's open beam bullet.
+  Decision 64's beam half, for the plain form only: a `pub` host-backed fn
+  whose erlang target is `module:symbol` (`hostWrapperRef`, over
+  `hostDeclareWrapperNeeded`) gets a wrapper of its own — reserved, exported,
+  and emitted as `{call_ext_only, N, {extfunc, M, S, N}}` (`emitHostWrapper`)
+  — so a qualified call from another module (`erlang.node()`,
+  `std@beam:pdGet/1` from a module `var`) answers. Front 17 step 5 wired it
+  because the module-`var` lowering calls `std@beam`. A template target, arity
+  branches or an `@External.Beam` body still has no wrapper: its call sites
+  inline it, and a qualified call into it is still `undef` (C-03's open beam
+  bullet, narrowed).
   No beam or erlang target raises `MissingExternalTarget`. A call to an
   external another module declares lowers the same way.
 - **Primitive methods** (`emitPrimMethod`), walking the receiver kind's

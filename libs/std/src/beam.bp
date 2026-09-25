@@ -60,9 +60,9 @@
 //// return process.cwd(); }`). Decision 64 closed the erlang half: the
 //// backend emits a wrapper and an export per `pub` host-backed `declare
 //// fn`, whether or not the current build imports it by name. The beam
-//// backend's twin predicate is declared (`hostDeclareWrapperNeeded`) and
-//// not yet wired, so on `beam` a call through this module is still
-//// `undef` — a backend row, not a `.zig` line owed here.
+//// backend does the same for a plain `"<mod>", "<symbol>"` target — every
+//// declaration below — since front 17 step 5 lowered a module `var`'s
+//// reads and writes onto these ten calls on both BEAM targets.
 ////
 //// Adding a primitive: one `#[@External.Erlang("<mod>", "<symbol>")] pub
 //// declare fn <camelCase>(…) -> any;`. `root.bp` already declares this
