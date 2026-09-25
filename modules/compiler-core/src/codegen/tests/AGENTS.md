@@ -37,6 +37,13 @@ test` runner's own preamble — whether `'__bp_load_siblings'/0` is emitted at
 all, and what it does with a sibling `compile:file/2` refuses — which no
 `test { }` block can observe from the inside and no snapshot of a green program
 shows. Both live in `std_package.zig`.
+`beam_memory.zig` holds front 17's module-`var` fixtures (`@BeamMemory`, steps
+4–5): each runs its program with `assertErlangRunLog` and asserts what it
+printed across processes — `std/async`'s `allOf` spawns one process per task —
+because the three modes read alike inside one process: `ProcessDict` answers
+`[3, 3, 3, 3, 3]` then `0`, `Ets` reads `15` after five requests × three
+increments (decision 39's owner), `PersistentTerm` is put at load and read by a
+spawned process.
 For multi-module assertions without a snapshot, `assertConsumerJs(modules, present, absent)`
 generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in

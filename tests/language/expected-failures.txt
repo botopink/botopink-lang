@@ -230,13 +230,6 @@ erlang   | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` prints 
 wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent optional prints as `0` for `d.at("zz")` and as `undefined` for `s.at(7)`, where `null` is owed — re-measured at `fix/wasm-refusals`: `1` / `0` / `b` / `undefined`, exit 0. The second half this line used to carry is gone: `String.at` has a wasm lowering now (`$__str_at`), `s.at(1)` answers `b` instead of trapping, and `run/string_at.bp` pins that on all four targets
 beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `undefined` twice for the two absent probes
 
-# ── a qualified std host call on the BEAM (decision 64) ───────────────────────
-# `import { erlang } from "std"` then `erlang.node()`: the erlang backend emits a
-# wrapper per `pub` host-bound std `declare fn` since `a8db11e4` (C-03's erlang
-# half) and the cell passes there. commonJS and wasm refuse the program with
-# `std-unsupported-on-target` (the cell's two `.expect` sidecars claim exactly
-# that). beam's twin helper is declared and not wired.
-beam     | run/std_erlang_node.bp | C-03 | decision 64: dies at boot — `{undef, [{'std@erlang', node, [], []}, …]}`; `hostDeclareWrapperNeeded` in `beam_asm.zig` is declared and not wired (C-03's beam half)
 
 # ── the module body on wasm and on the BEAM ──────────────────────────────────
 # A module-level `val` is the module body: evaluated once, in declaration order,
@@ -296,12 +289,3 @@ erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's lab
 # the first failing row stops the run.
 wasm     | run/effect_method.bp | 05-wasm | a record method looping over its own array field answers `0`, and a method declared in an enum's body traps (`unreachable`). Measured with the effect annotations removed as well, so it is the method call and not the effect
 
-# ── front 17 (C-05 landed the carrier; C-10 owes the BEAM lowering) ──────────
-# A module-level `var` parses, is `let` on commonJS and `(mut i32)` on wasm, and
-# has no lowering on erlang or beam until C-10 (`@BeamMemory` steps 4–5, after
-# 13). Measured at `4fe1747e`: erlang emits `hits() -> 0.` and `Hits = (Hits +
-# 1).` — unbound, the module does not compile; beam writes `%% assign to unknown
-# variable: hits` into the `.S`, assembles, and prints `0` at exit 0.
-erlang   | run/module_var.bp | C-10 | a module `var` is still a 0-arity fn on erlang; the write is `Hits = (Hits + 1).` with `Hits` unbound, so the module does not compile
-beam     | run/module_var.bp | C-10 | the write is dropped (`%% assign to unknown variable: hits`) and the program prints `0` at exit 0 — the silent one of the two
-erlang   | test/beam_memory_noop.bp | C-10 | the five tests write through a module `var`; each write is an unbound `Hits`/`Bare`/… on erlang, so the cell does not compile — once C-10 lands, the annotated ones become mode cells, not no-op cells

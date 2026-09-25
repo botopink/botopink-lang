@@ -1,0 +1,12 @@
+//// Design §5(b) — under `@BeamMemory.Ets`, a write that recomputes the value
+//// from what it just read loses one of two concurrent runs. The increment
+//// (`hits += n`, `hits = hits + n`) is the one exception, because it lowers to
+//// the host's atomic counter; `hits * 2 + 1` is not an increment.
+
+#[@BeamMemory.Ets]
+var hits: i32 = 1;
+
+pub fn main() {
+    hits = hits * 2 + 1;
+    @print(hits);
+}

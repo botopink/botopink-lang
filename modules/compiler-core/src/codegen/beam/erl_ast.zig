@@ -258,6 +258,9 @@ pub const Form = union(enum) {
     import: Import,
     /// `-compile({no_auto_import,[f/1]}).`
     no_auto_import: []const FnRef,
+    /// `-on_load(f/0).` — the function the loader runs once the module is
+    /// loaded (front 17: a `PersistentTerm` var is put there).
+    on_load: FnRef,
     function: Function,
     /// A comment line.
     comment: Comment,

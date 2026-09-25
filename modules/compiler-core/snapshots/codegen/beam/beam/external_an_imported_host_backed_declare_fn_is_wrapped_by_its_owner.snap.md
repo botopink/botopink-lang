@@ -15,9 +15,16 @@ pub declare fn nodeOnly(s: string) -> void;
 ----- BEAM ASSEMBLY -- hostlib.S
 ```erlang
 {module, test@hostlib}.
-{exports, []}.
+{exports, [{hostLen, 1}]}.
 {attributes, []}.
-{labels, 2}.
+{labels, 4}.
+
+{function, hostLen, 1, 3}.
+  {label, 2}.
+    {line, [{location, "test@hostlib.erl", 1}]}.
+    {func_info, {atom, test@hostlib}, {atom, hostLen}, 1}.
+  {label, 3}.
+    {call_ext_only, 1, {extfunc, erlang, length, 1}}.
 ```
 
 ----- RUN LOG -----

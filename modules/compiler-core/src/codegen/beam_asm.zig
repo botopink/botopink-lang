@@ -209,6 +209,34 @@ fn hostDeclareWrapperNeeded(f: ast.FnDecl) bool {
     return f.isPub and isHostDeclare(f);
 }
 
+/// The `module:symbol` a wrapper for `f` tail-calls, when `f` needs one
+/// (`hostDeclareWrapperNeeded`) and its erlang target is that plain form. A
+/// template target (`erlang:monotonic_time(1000)`, `$0`, arity branches) or an
+/// `@External.Beam` body has no wrapper yet — its call sites still inline it,
+/// and a qualified call into it from another module is still `undef`.
+fn hostWrapperRef(f: ast.FnDecl) ?ast.ExternalRef {
+    if (!hostDeclareWrapperNeeded(f)) return null;
+    if (f.externalFor("beam") != null) return null;
+    if (ast.externalHasArityBranches(f.annotations, "erlang")) return null;
+    if (f.params.len > 0 and std.mem.eql(u8, f.params[0].name, "self")) return null;
+    const ref = f.externalFor("erlang") orelse return null;
+    if (ref.module.len == 0 or primOpTemplate.looksLikeTemplate(ref.symbol)) return null;
+    if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
+    return ref;
+}
+
+/// Front 17 — the helper functions a module with a module `var` carries
+/// (`emitPdSet`, `emitEtsHelpers`, `emitLoad`) and the box a `ProcessDict`
+/// value is stored in. Names are written pre-quoted, like `'_botopink_main'`.
+const MEM_PD_SET = "'__bp_pd_set'";
+const MEM_ETS_GUARD = "'__bp_ets'";
+const MEM_ETS_WAIT = "'__bp_ets_wait'";
+const MEM_ETS_OWNER = "'__bp_ets_owner'";
+const MEM_ETS_ADD = "'__bp_ets_add'";
+const MEM_ETS_SET = "'__bp_ets_set'";
+const MEM_LOAD = "'__bp_load'";
+const MEM_BOX = "__bp_var";
+
 fn isMain0(f: ast.FnDecl) bool {
     return std.mem.eql(u8, f.name, "main") and fnArityNoSelf(f) == 0;
 }
@@ -1170,6 +1198,27 @@ fn emitBeamAsm(
     try em.collectStdImports(program);
     try em.collectStringNames(program);
 
+    // Front 17 — the module `var`s and the storage helpers they lower onto.
+    var any_ets_var = false;
+    var pt_vars: std.ArrayListUnmanaged(ast.ValDecl) = .empty;
+    defer pt_vars.deinit(alloc);
+    defer em.module_vars.deinit(alloc);
+    defer em.module_var_decls.deinit(alloc);
+    for (program.decls) |decl| {
+        const v = switch (decl) {
+            .val => |x| x,
+            else => continue,
+        };
+        const mem = v.memory() orelse continue;
+        try em.module_vars.put(alloc, v.name, mem);
+        try em.module_var_decls.put(alloc, v.name, v);
+        switch (mem.mode) {
+            .ets => any_ets_var = true,
+            .persistentTerm => try pt_vars.append(alloc, v),
+            .processDict => {},
+        }
+    }
+
     // Detect main/0 entrypoint (drives wrapper emission).
     var has_main_0 = false;
     for (program.decls) |decl| {
@@ -1226,6 +1275,21 @@ fn emitBeamAsm(
         try em.reserveFn("'_botopink_main'", 0);
         try em.reserveFn("main", 1);
     }
+    if (em.module_vars.count() > 0) try em.reserveFn(MEM_PD_SET, 2);
+    if (any_ets_var) {
+        try em.reserveFn(MEM_ETS_GUARD, 2);
+        try em.reserveFn(MEM_ETS_WAIT, 3);
+        try em.reserveFn(MEM_ETS_OWNER, 2);
+        try em.reserveFn(MEM_ETS_ADD, 3);
+        try em.reserveFn(MEM_ETS_SET, 3);
+    }
+    if (pt_vars.items.len > 0) try em.reserveFn(MEM_LOAD, 0);
+    // Decision 64's beam half (C-03): a `pub` host-backed `declare fn` whose
+    // target is a plain `module:symbol` is answered by a wrapper of its own.
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| if (hostWrapperRef(f) != null) try em.reserveFn(f.name, f.params.len),
+        else => {},
+    };
 
     // Collect exports: pub fns + entrypoint wrappers when main/0 exists.
     var exports: std.ArrayListUnmanaged(ExportEntry) = .empty;
@@ -1245,6 +1309,8 @@ fn emitBeamAsm(
         switch (decl) {
             .@"fn" => |f| if (f.isPub and !isHostDeclare(f)) {
                 try exports.append(alloc, .{ .name = f.name, .arity = fnArityNoSelf(f) });
+            } else if (hostWrapperRef(f) != null) {
+                try exports.append(alloc, .{ .name = f.name, .arity = f.params.len });
             },
             // A `pub val` is reached from an importing module as a remote
             // 0-arity `call_ext` (`crossOwnerOf`), so the owner exports it.
@@ -1259,10 +1325,13 @@ fn emitBeamAsm(
         }
     }
 
+    // The `Ets` owner is started with `spawn/3`, which reaches it by name.
+    if (any_ets_var) try exports.append(alloc, .{ .name = MEM_ETS_OWNER, .arity = 2 });
+
     // Pass 2: emit each fn body into body_buf.
     for (program.decls) |decl| {
         switch (decl) {
-            .@"fn" => |f| if (!isHostDeclare(f)) try em.emitFn(f),
+            .@"fn" => |f| if (!isHostDeclare(f)) try em.emitFn(f) else if (hostWrapperRef(f)) |ref| try em.emitHostWrapper(f, ref),
             .val => |v| {
                 if (!isSyntheticEntrypointVal(v)) {
                     try em.emitTopVal(v);
@@ -1292,6 +1361,11 @@ fn emitBeamAsm(
     if (has_main_0) {
         try em.emitEntrypointWrappers();
     }
+
+    // Front 17 — the storage the module `var`s above lower onto.
+    if (em.module_vars.count() > 0) try em.emitPdSet();
+    if (any_ets_var) try em.emitEtsHelpers();
+    if (pt_vars.items.len > 0) try em.emitLoad(pt_vars.items);
 
     // Interface `default fn`s some call site reached (a default body may reach
     // another, so the list grows while it is drained), then the run-time
@@ -1326,7 +1400,10 @@ fn emitBeamAsm(
     defer header.deinit();
     try beamEmitter.writeModuleForm(&header.writer, module_atom);
     try beamEmitter.writeExports(&header.writer, exports.items);
-    try beamEmitter.writeAttributes(&header.writer);
+    if (pt_vars.items.len > 0)
+        try beamEmitter.writeOnLoadAttributes(&header.writer, MEM_LOAD, 0)
+    else
+        try beamEmitter.writeAttributes(&header.writer);
     try beamEmitter.writeLabels(&header.writer, em.next_label);
 
     // The module is the rendered preamble, the function forms, then the
@@ -1433,6 +1510,11 @@ const Emitter = struct {
     /// The file module's atom while a unit is open (`module_name` is the
     /// unit's then).
     file_atom: []const u8 = "",
+    /// Front 17 — this file's module-level `var`s, name → where each lives on
+    /// the BEAM (`ast.ValDecl.memory`), and each one's declaration (the `Ets`
+    /// seed and the initialisers are lowered from it).
+    module_vars: std.StringHashMapUnmanaged(ast.Memory) = .empty,
+    module_var_decls: std.StringHashMapUnmanaged(ast.ValDecl) = .empty,
     /// Every file-level function a unit reached remotely, so the file module
     /// exports it. Filled during pass 2, read when the header is written —
     /// which happens after pass 2, so the list is complete.
@@ -3458,6 +3540,7 @@ const Emitter = struct {
     // expressions are supported in Fase 1; richer values fall to Fase 2+.
 
     fn emitTopVal(self: *Emitter, v: ast.ValDecl) !void {
+        if (v.memory()) |mem| return self.emitMemoryReader(v, mem);
         const labels = try self.fnLabelsFor(v.name, 0);
         const func_info_label = labels.func_info;
         const entry_label = labels.entry;
@@ -3523,6 +3606,339 @@ const Emitter = struct {
     fn emitFrame(self: *Emitter, arity: usize) !void {
         try beamEmitter.writeAllocate(self.out, self.num_y, arity);
         if (self.num_y > 0) try beamEmitter.writeInitYregs(self.out, self.num_y);
+    }
+
+    // ── module `var` storage (front 17, `@BeamMemory`) ────────────────────────
+    //
+    // The erlang backend's lowering in assembly (`erlang.zig` § module `var`
+    // storage): the reader `name/0` and every write that no local shadows go
+    // through `std/beam`'s host primitives, called as `call_ext`s into
+    // `std@beam`, under the storage name `'<file atom>@@<var>'`. A write's
+    // call site only stages its operands and calls one of the fixed helpers
+    // below (`'__bp_pd_set'/2`, `'__bp_ets_add'/3`, `'__bp_ets_set'/3`), so
+    // the register discipline of the storage lives in one place per module.
+
+    /// The file module's atom — `module_name` is a type unit's while one is open.
+    fn fileModuleAtom(self: *const Emitter) []const u8 {
+        return if (self.cur_type != null) self.file_atom else self.module_name;
+    }
+
+    /// `'<file atom>@@<name>'` — where module `var` `name` is stored.
+    fn memoryKey(self: *Emitter, name: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(self.atom_arena.allocator(), "{s}@@{s}", .{ self.fileModuleAtom(), name });
+    }
+
+    /// `std@beam` as this build spells it.
+    fn stdBeamAtom(self: *Emitter) ![]const u8 {
+        if (self.cross) |xc| if (xc.atoms.get("std/beam")) |a| return a;
+        return crossModule.erlAtom(self.atom_arena.allocator(), self.idOf("std/beam"));
+    }
+
+    fn beamPrimCall(self: *Emitter, kind: beamEmitter.CallKind, prim: []const u8, arity: usize, num_y: usize) !void {
+        try beamEmitter.writeCall(self.out, kind, arity, .{ .ext = .{ .module = try self.stdBeamAtom(), .function = prim } }, num_y);
+    }
+
+    /// A call to one of this file's storage helpers — local in the file's own
+    /// module, a `call_ext` from inside a type's (policy 3).
+    fn callFileHelper(self: *Emitter, name: []const u8, arity: usize) !void {
+        if (try self.tryFileCall(name, arity, .non_tail, @intCast(arity))) return;
+        const labels = try self.fnLabelsFor(name, arity);
+        try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0);
+    }
+
+    /// The header every helper function opens with.
+    fn beginHelper(self: *Emitter, name: []const u8, arity: usize) !void {
+        const labels = try self.fnLabelsFor(name, arity);
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, name, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, name, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        self.cur_line += 1;
+    }
+
+    /// `f(Args) -> Module:Symbol(Args).` — decision 64's wrapper for a `pub`
+    /// host-backed `declare fn`, so a qualified call from another module
+    /// (`erlang.self()`, `std@beam:pdGet/1` from a module `var`) finds it.
+    fn emitHostWrapper(self: *Emitter, f: ast.FnDecl, ref: ast.ExternalRef) !void {
+        try self.beginHelper(f.name, f.params.len);
+        try beamEmitter.writeCall(self.out, .only, f.params.len, .{ .ext = .{ .module = ref.module, .function = ref.symbol } }, 0);
+    }
+
+    /// The reader `name/0` of a module `var`, per mode — `ProcessDict`: this
+    /// process's boxed value, else the initialiser, put on the first read;
+    /// `Ets`: `lookup_element` on the table the guard answers; `PersistentTerm`:
+    /// the term `'__bp_load'/0` put at load.
+    fn emitMemoryReader(self: *Emitter, v: ast.ValDecl, mem: ast.Memory) !void {
+        const labels = try self.fnLabelsFor(v.name, 0);
+        self.resetFnState(0);
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeComment(self.out, "var {s} — @BeamMemory.{s}", .{ v.name, mem.mode.spelling() });
+        try beamEmitter.writeFunctionHeader(self.out, v.name, 0, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, v.name, 0);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        self.cur_line += 1;
+        const key = Op.atom(try self.memoryKey(v.name));
+        switch (mem.mode) {
+            .processDict => {
+                // y0 holds the fresh value across `pdPut`; the initialiser's own
+                // locals take the slots after it.
+                self.num_y = 1 + self.precountLocalsInExpr(v.value.*);
+                self.next_y = 1;
+                try self.emitFrame(0);
+                const miss = self.allocLabel();
+                try beamEmitter.writeMoveOp(self.out, key, Dst.xr(0));
+                try self.beamPrimCall(.normal, "pdGet", 1, 0);
+                try beamEmitter.writeTest(self.out, .is_tagged_tuple, miss, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom(MEM_BOX) });
+                try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 1, Dst.xr(0));
+                try self.emitReturn();
+                try beamEmitter.writeLabel(self.out, miss);
+                try self.lowerExprIntoX0(v.value.*);
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0));
+                try beamEmitter.writeTestHeap(self.out, 3, 1);
+                try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ Op.atom(MEM_BOX), Op.xr(0) });
+                try beamEmitter.writeMoveOp(self.out, key, Dst.xr(0));
+                try self.beamPrimCall(.normal, "pdPut", 2, 0);
+                try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+                try self.emitReturn();
+            },
+            .ets => {
+                self.num_y = self.precountLocalsInExpr(v.value.*);
+                try self.emitFrame(0);
+                try self.stageKeySeed(key, v.value.*);
+                try self.callFileHelper(MEM_ETS_GUARD, 2);
+                try beamEmitter.writeMoveOp(self.out, key, Dst.xr(0));
+                try beamEmitter.writeMoveOp(self.out, key, Dst.xr(1));
+                try beamEmitter.writeMoveOp(self.out, Op.int(2), Dst.xr(2));
+                try self.beamPrimCall(.last, "etsGet", 3, self.num_y);
+            },
+            .persistentTerm => {
+                try beamEmitter.writeMoveOp(self.out, key, Dst.xr(0));
+                try self.beamPrimCall(.only, "ptGet", 1, 0);
+            },
+        }
+    }
+
+    /// `{x,0}` ← the storage name, `{x,1}` ← the `Ets` seed.
+    fn stageKeySeed(self: *Emitter, key: Op, seed: ast.Expr) !void {
+        const st = try self.stageOperands(&.{seed}, &[_]ast.TrailingLambda{});
+        try self.emitParallelMove(&.{ key, st.ops[0] }, &.{ 0, 1 });
+    }
+
+    /// A write to module `var` `name`: stage the operands, call the helper.
+    fn emitMemoryWrite(self: *Emitter, name: []const u8, mem: ast.Memory, plus: bool, value: *const ast.Expr) anyerror!void {
+        const key = Op.atom(try self.memoryKey(name));
+        // `x += e` stores `x + e` — lowered as the binary `+` it is, so a
+        // string var concatenates.
+        var lhs: ast.Expr = .{ .identifier = .{ .loc = value.getLoc(), .kind = .{ .ident = name } } };
+        var rhs: ast.Expr = value.*;
+        const sum: ast.Expr = .{ .binaryOp = .{ .loc = value.getLoc(), .op = .add, .lhs = &lhs, .rhs = &rhs } };
+        const new_value: ast.Expr = if (plus) sum else value.*;
+        switch (mem.mode) {
+            .processDict => {
+                const st = try self.stageOperands(&.{new_value}, &[_]ast.TrailingLambda{});
+                try self.emitParallelMove(&.{ key, st.ops[0] }, &.{ 0, 1 });
+                try self.callFileHelper(MEM_PD_SET, 2);
+            },
+            .ets => {
+                const seed = self.module_var_decls.get(name).?.value.*;
+                switch (ast.classifyMemoryWrite(name, plus, value)) {
+                    // Decision 40: the host's atomic counter, integers only
+                    // (the checker has enforced it).
+                    .bump => |bump| {
+                        var neg: ast.Expr = undefined;
+                        const incr: ast.Expr = if (bump.negate) blk: {
+                            neg = .{ .unaryOp = .{ .loc = value.getLoc(), .op = .neg, .expr = @constCast(bump.incr) } };
+                            break :blk neg;
+                        } else bump.incr.*;
+                        const st = try self.stageOperands(&.{ seed, incr }, &[_]ast.TrailingLambda{});
+                        try self.emitParallelMove(&.{ key, st.ops[0], st.ops[1] }, &.{ 0, 1, 2 });
+                        try self.callFileHelper(MEM_ETS_ADD, 3);
+                    },
+                    .whole, .recompose => {
+                        const st = try self.stageOperands(&.{ seed, new_value }, &[_]ast.TrailingLambda{});
+                        try self.emitParallelMove(&.{ key, st.ops[0], st.ops[1] }, &.{ 0, 1, 2 });
+                        try self.callFileHelper(MEM_ETS_SET, 3);
+                    },
+                }
+            },
+            // Refused by the checker (design §5(a)); a put, should one arrive.
+            .persistentTerm => {
+                const st = try self.stageOperands(&.{new_value}, &[_]ast.TrailingLambda{});
+                try self.emitParallelMove(&.{ key, st.ops[0] }, &.{ 0, 1 });
+                try self.beamPrimCall(.normal, "ptPut", 2, 0);
+            },
+        }
+    }
+
+    /// `'__bp_pd_set'(Key, V) -> std@beam:pdPut(Key, {'__bp_var', V}).`
+    fn emitPdSet(self: *Emitter) !void {
+        try self.beginHelper(MEM_PD_SET, 2);
+        try beamEmitter.writeTestHeap(self.out, 3, 2);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ Op.atom(MEM_BOX), Op.xr(1) });
+        try self.beamPrimCall(.only, "pdPut", 2, 0);
+    }
+
+    /// The `Ets` guard, its wait loop, the owner (decision 39) and the two
+    /// write helpers — the assembly of `erlang.zig`'s `etsOwnerForms`:
+    /// `'__bp_ets'(Name, Seed)` answers `Name` once the table's owner is
+    /// registered, which it does only after creating and seeding the table.
+    fn emitEtsHelpers(self: *Emitter) !void {
+        const guard = (try self.fnLabelsFor(MEM_ETS_GUARD, 2)).entry;
+        const wait = (try self.fnLabelsFor(MEM_ETS_WAIT, 3)).entry;
+        const undef = Op.atom("undefined");
+
+        // '__bp_ets'(Name, Seed): y0 Name, y1 Seed.
+        try self.beginHelper(MEM_ETS_GUARD, 2);
+        {
+            const owned = self.allocLabel();
+            try beamEmitter.writeAllocate(self.out, 2, 2);
+            try beamEmitter.writeInitYregs(self.out, 2);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(1));
+            try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "whereis" } }, 0);
+            try beamEmitter.writeTest(self.out, .is_eq_exact, owned, &.{ Op.xr(0), undef });
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, undef, Dst.xr(2));
+            try beamEmitter.writeCall(self.out, .last, 3, .{ .local = wait }, 2);
+            try beamEmitter.writeLabel(self.out, owned);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+            try beamEmitter.writeDeallocate(self.out, 2);
+            try beamEmitter.writeReturn(self.out);
+        }
+
+        // '__bp_ets_wait'(Name, Seed, Cand): y0 Name, y1 Seed, y2 Cand, y3 Next.
+        try self.beginHelper(MEM_ETS_WAIT, 3);
+        {
+            const done = self.allocLabel();
+            const dead = self.allocLabel();
+            const keep = self.allocLabel();
+            const yield = self.allocLabel();
+            try beamEmitter.writeAllocate(self.out, 4, 3);
+            try beamEmitter.writeInitYregs(self.out, 4);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.yr(2));
+            try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "whereis" } }, 0);
+            try beamEmitter.writeTest(self.out, .is_eq_exact, done, &.{ Op.xr(0), undef });
+            // Our candidate is still running: keep waiting on it.
+            try beamEmitter.writeTest(self.out, .is_pid, dead, &.{Op.yr(2)});
+            try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.xr(0));
+            try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "is_process_alive" } }, 0);
+            try beamEmitter.writeTest(self.out, .is_eq_exact, dead, &.{ Op.xr(0), Op.atom("true") });
+            try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.yr(3));
+            try beamEmitter.writeJump(self.out, yield);
+            // No candidate: start one, unless a table exists (being seeded).
+            try beamEmitter.writeLabel(self.out, dead);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+            try self.beamPrimCall(.normal, "etsWhereis", 1, 0);
+            try beamEmitter.writeTest(self.out, .is_eq_exact, keep, &.{ Op.xr(0), undef });
+            try beamEmitter.writeTestHeap(self.out, 4, 0);
+            try beamEmitter.writePutList(self.out, Op.yr(1), Op.nil, Dst.xr(2));
+            try beamEmitter.writePutList(self.out, Op.yr(0), Op.xr(2), Dst.xr(2));
+            try beamEmitter.writeMoveOp(self.out, Op.atom(MEM_ETS_OWNER), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.atom(self.module_name), Dst.xr(0));
+            try beamEmitter.writeCall(self.out, .normal, 3, .{ .ext = .{ .module = "erlang", .function = "spawn" } }, 0);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(3));
+            try beamEmitter.writeJump(self.out, yield);
+            try beamEmitter.writeLabel(self.out, keep);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.yr(3));
+            try beamEmitter.writeLabel(self.out, yield);
+            try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = "erlang", .function = "yield" } }, 0);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.yr(3), Dst.xr(2));
+            try beamEmitter.writeCall(self.out, .last, 3, .{ .local = wait }, 4);
+            try beamEmitter.writeLabel(self.out, done);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+            try beamEmitter.writeDeallocate(self.out, 4);
+            try beamEmitter.writeReturn(self.out);
+        }
+
+        // '__bp_ets_owner'(Name, Seed): y0 Seed, y1 Name, y2 the try tag.
+        try self.beginHelper(MEM_ETS_OWNER, 2);
+        {
+            const caught = self.allocLabel();
+            const other = self.allocLabel();
+            try beamEmitter.writeAllocate(self.out, 3, 2);
+            try beamEmitter.writeInitYregs(self.out, 3);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(1));
+            try beamEmitter.writeTry(self.out, 2, caught);
+            try beamEmitter.writeMoveOp(self.out, .{ .term = Term.listOf(&.{ Term.atomOf("named_table"), Term.atomOf("public"), Term.atomOf("set") }) }, Dst.xr(1));
+            try self.beamPrimCall(.normal, "etsNew", 2, 0);
+            try beamEmitter.writeTryEnd(self.out, 2);
+            // Won the race: seed, register (registered means seeded), park
+            // outside this module so a reload leaves no frame of it to purge.
+            try beamEmitter.writeTestHeap(self.out, 3, 0);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ Op.yr(1), Op.yr(0) });
+            try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(0));
+            try self.beamPrimCall(.normal, "etsPut", 2, 0);
+            try beamEmitter.writeBif(self.out, "self", 0, &.{}, Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(0));
+            try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "register" } }, 0);
+            try beamEmitter.writeMoveOp(self.out, Op.atom("infinity"), Dst.xr(0));
+            try beamEmitter.writeCall(self.out, .last, 1, .{ .ext = .{ .module = "timer", .function = "sleep" } }, 3);
+            // Lost the race (`badarg`): another owner holds the table.
+            try beamEmitter.writeLabel(self.out, caught);
+            try beamEmitter.writeTryCase(self.out, 2);
+            try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(0), Op.atom("error") });
+            try beamEmitter.writeTest(self.out, .is_eq_exact, other, &.{ Op.xr(1), Op.atom("badarg") });
+            try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+            try beamEmitter.writeDeallocate(self.out, 3);
+            try beamEmitter.writeReturn(self.out);
+            try beamEmitter.writeLabel(self.out, other);
+            try beamEmitter.writeBif(self.out, "raise", 0, &.{ Op.xr(2), Op.xr(1) }, Dst.xr(0));
+        }
+
+        // '__bp_ets_add'(Name, Seed, Incr) -> etsBump('__bp_ets'(Name, Seed), Name, Incr).
+        try self.beginHelper(MEM_ETS_ADD, 3);
+        try self.emitEtsWriteHelper(guard, "etsBump", false);
+        // '__bp_ets_set'(Name, Seed, V) -> etsPut('__bp_ets'(Name, Seed), {Name, V}).
+        try self.beginHelper(MEM_ETS_SET, 3);
+        try self.emitEtsWriteHelper(guard, "etsPut", true);
+    }
+
+    fn emitEtsWriteHelper(self: *Emitter, guard: u32, prim: []const u8, whole: bool) !void {
+        try beamEmitter.writeAllocate(self.out, 2, 3);
+        try beamEmitter.writeInitYregs(self.out, 2);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.yr(1));
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = guard }, 0);
+        if (whole) {
+            try beamEmitter.writeTestHeap(self.out, 3, 0);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(1), &.{ Op.yr(0), Op.yr(1) });
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+            try self.beamPrimCall(.last, prim, 2, 2);
+        } else {
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(2));
+            try self.beamPrimCall(.last, prim, 3, 2);
+        }
+    }
+
+    /// `'__bp_load'/0`, the module's `-on_load` function: every
+    /// `PersistentTerm` var put under its storage name, in declaration order.
+    fn emitLoad(self: *Emitter, vars: []const ast.ValDecl) !void {
+        self.resetFnState(0);
+        try self.beginHelper(MEM_LOAD, 0);
+        var n: u32 = 0;
+        for (vars) |v| n += self.precountLocalsInExpr(v.value.*);
+        self.num_y = n;
+        try self.emitFrame(0);
+        for (vars) |v| {
+            try self.lowerExprIntoX0(v.value.*);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.atom(try self.memoryKey(v.name)), Dst.xr(0));
+            try self.beamPrimCall(.normal, "ptPut", 2, 0);
+        }
+        try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+        try self.emitReturn();
     }
 
     // ── entrypoint wrappers when main/0 exists ───────────────────────────────
@@ -3891,6 +4307,9 @@ const Emitter = struct {
     fn emitAssign(self: *Emitter, a: anytype) anyerror!void {
         switch (a.target) {
             .name => |name| {
+                if (!self.reg_map.contains(name)) if (self.module_vars.get(name)) |mem| {
+                    return self.emitMemoryWrite(name, mem, a.op == .plusAssign, a.value);
+                };
                 const reg = self.reg_map.get(name) orelse {
                     try beamEmitter.writeComment(self.out, "assign to unknown variable: {s}", .{name});
                     return;

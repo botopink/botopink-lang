@@ -377,6 +377,12 @@ pub const Env = struct {
     /// every other binding: `val n = 5; val x: n = 7;` names a value.
     typeValueNames: std.StringHashMap(void),
     valNames: std.StringHashMap(void),
+    /// Front 17 — every module `var` of this module, by name → its
+    /// `@BeamMemory` storage and the type it was bound with. The type pointer
+    /// is how an assignment tells the module binding from a local that
+    /// shadows it (`lookup(name)` answers the local's type then). Read by
+    /// `infer.zig`'s `refuseMemoryWrite`.
+    memoryVars: std.StringHashMapUnmanaged(MemoryVar) = .empty,
     /// Registered type definitions: type name → TypeDef.
     typeDefs: std.StringHashMap(TypeDef),
     /// Per-function typeparam constraints: function name → constraint list.
@@ -1019,6 +1025,9 @@ pub const Env = struct {
         try self.bindings.put(name, ty);
         _ = self.valNames.remove(name);
     }
+
+    /// A module `var`'s storage and bound type — see `memoryVars`.
+    pub const MemoryVar = struct { memory: ast.Memory, ty: *T.Type };
 
     /// `bind` for a `val` — local or module-level: the name is then refused
     /// as an assignment target until something else binds it (decision 38).

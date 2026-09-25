@@ -743,15 +743,30 @@ fn isStdPkgPath(path: []const u8) bool {
 /// module list with the required embedded std modules prepended (dependency
 /// order, deduplicated). Modules that fail to parse pass through untouched —
 /// `analyzeModule` reports the parse error later.
-fn expandStdImports(arena: std.mem.Allocator, modules: []const Module) ![]const Module {
+///
+/// On a BEAM target (`target_name` `erlang` or `beam`) a module that declares a
+/// module-level `var` needs `std/beam` too, whether or not it imports it: the
+/// emitters lower the binding's reads and writes onto that module's host
+/// primitives (front 17, decision 43's layer 2), so the module has to be in
+/// the build for the calls to answer.
+fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_name: ?[]const u8) ![]const Module {
     var needed = [_]bool{false} ** std_pkg_modules.len;
     var any = false;
+    const beam_target = if (target_name) |t| std.mem.eql(u8, t, "erlang") or std.mem.eql(u8, t, "beam") else false;
     for (modules) |mod| {
         var lx = Lexer.init(mod.source);
         const tokens = lx.scanAll(arena) catch continue;
         var p = Parser.init(tokens);
         const program = p.parse(arena) catch continue;
         for (program.decls) |decl| switch (decl) {
+            .val => |v| if (beam_target and v.mutable) {
+                for (std_pkg_modules, 0..) |spm, i| {
+                    if (std.mem.eql(u8, spm.path, "std/beam")) {
+                        needed[i] = true;
+                        any = true;
+                    }
+                }
+            },
             .use => |u| {
                 const from_std = switch (u.source) {
                     .module => |m| std.mem.eql(u8, m, "std"),
@@ -1341,7 +1356,7 @@ pub fn compileTypesOnly(
     // Non-std libs are ordinary input modules: the driver supplies their `.bp`
     // sources and `resolveImports` binds `from "<lib>"` through the shared
     // registry — the core names no specific lib (std is the one exception).
-    const all_modules = try expandStdImports(arena_alloc, modules);
+    const all_modules = try expandStdImports(arena_alloc, modules, null);
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";
@@ -1522,7 +1537,7 @@ pub fn compile(
     // Non-std libs are ordinary input modules: the driver supplies their `.bp`
     // sources and `resolveImports` binds `from "<lib>"` through the shared
     // registry — the core names no specific lib (std is the one exception).
-    const all_modules = try expandStdImports(arena_alloc, modules);
+    const all_modules = try expandStdImports(arena_alloc, modules, target_name);
 
     for (all_modules, 0..) |mod, idx| {
         const name: []const u8 = if (mod.path.len > 0) mod.path else "main";

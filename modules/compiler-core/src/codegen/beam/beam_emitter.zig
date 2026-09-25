@@ -131,6 +131,9 @@ pub const TestOp = enum {
     is_ge,
     is_lt,
     is_tagged_tuple,
+    /// `{test, is_pid, {f, F}, [Src]}` — the `Ets` owner wait loop
+    /// (`beam_asm.zig`, front 17) asks whether its candidate is a process.
+    is_pid,
     /// `{test, test_arity, {f, F}, [Src, N]}` — a tuple of exactly `N`
     /// elements. `is_tuple` alone leaves the arity unknown, which is what
     /// decision 8 §4.2's `x is #(i32, string)` has to answer about.
@@ -304,6 +307,15 @@ pub fn writeExports(w: *Writer, exports: []const Export) Error!void {
 /// `{attributes, []}.` — the backend emits no module attributes.
 pub fn writeAttributes(w: *Writer) Error!void {
     try w.writeAll("{attributes, []}.\n");
+}
+
+/// `{attributes, [{on_load, [{Name, Arity}]}]}.` — the one attribute the
+/// backend emits: the function the loader runs once the module is loaded
+/// (front 17 — where a `PersistentTerm` var is put).
+pub fn writeOnLoadAttributes(w: *Writer, name: []const u8, arity: usize) Error!void {
+    try w.writeAll("{attributes, [{on_load, [{");
+    try erl.writeAtom(w, name);
+    try w.print(", {d}}}]}}]}}.\n", .{arity});
 }
 
 /// `{labels, N}.` — one past the highest label the module uses.

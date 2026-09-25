@@ -14,6 +14,7 @@ test {
     _ = @import("tests/externals.zig");
     _ = @import("tests/narrowing.zig");
     _ = @import("tests/std_package.zig");
+    _ = @import("tests/beam_memory.zig");
     _ = @import("tests/wat.zig");
     _ = @import("tests/dts_skips_templates.zig");
     _ = @import("tests/runtime_scratch.zig");
