@@ -419,6 +419,77 @@ test "js: import ---- two modules whose files share a basename" {
     });
 }
 
+// ── decision 107: a dotted path and a braced group are one tree ──────────────
+//
+// The consumer binds LEAVES through paths into a module tree — the dotted
+// spelling (`shapes.circle.name as circleName`) and the grouped spelling
+// (`shapes: {helpers: {seven}}`) — with no `from`: the package's own tree. Only
+// the leaf enters scope, under its alias when one is written, and the four
+// backends resolve the owner through the path, not through the bare name (the
+// two `label`s below live in different modules and both answer on commonJS,
+// erlang and beam). KNOWN-WRONG (wasm): the wasm backend links every imported
+// module statically into one flat namespace, so the second `label` is the
+// first one's function — the same single-module limit the dispatch cells
+// record; the alias itself maps back to `$name` correctly.
+test "js: import ---- a dotted path and a group bind their leaves across a module tree" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "shapes/circle", .source =
+        \\pub fn name() -> string {
+        \\    return "circle";
+        \\}
+        \\
+        \\pub fn label() -> string {
+        \\    return "shapes/circle";
+        \\}
+        },
+        .{ .path = "shapes/helpers", .source =
+        \\pub fn seven() -> i32 {
+        \\    return 7;
+        \\}
+        \\
+        \\pub fn label() -> string {
+        \\    return "shapes/helpers";
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import {shapes.circle.name as circleName, shapes: {helpers: {seven, label}, circle: {label as circleLabel}}};
+        \\
+        \\fn main() {
+        \\    @print(circleName());
+        \\    @print(seven());
+        \\    @print(label());
+        \\    @print(circleLabel());
+        \\}
+        },
+    });
+}
+
+// The same tree, with `*` and a type on the leaves: `pond: {Pato, PatoNada*}`
+// activates the imported extension exactly as `import {Pato, PatoNada*} from
+// "pond"` does (`dispatch_multi_module_extension_activated_via_star_import`).
+test "js: import ---- a group activates an extension on its leaf" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "pond", .source =
+        \\val Swimmer = behavior {
+        \\    fn swim(self: Self);
+        \\}
+        \\pub type Pato(id: i32)
+        \\pub val PatoNada = implement Swimmer for Pato {
+        \\    fn swim(self: Self) {
+        \\        return self.id;
+        \\    }
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import {pond: {Pato, PatoNada*}};
+        \\fn main() {
+        \\    val donald = Pato(2);
+        \\    @print(donald.swim());
+        \\}
+        },
+    });
+}
+
 test "js: import ---- multi-module pub val import" {
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "config", .source =
@@ -563,10 +634,12 @@ test "js: pipeline ---- with labeled args" {
 
 test "js: range ---- iterate over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn sumTo(n: i32) -> i32[] {
-        \\    return loop (0..n) { i ->
-        \\        yield i;
+        \\fn sumTo(n: i32) -> i32 {
+        \\    var sum = 0;
+        \\    for (0..n) { i ->
+        \\        sum = sum + i;
         \\    };
+        \\    return sum;
         \\}
     );
 }
@@ -574,7 +647,7 @@ test "js: range ---- iterate over range" {
 test "js: range ---- open-ended range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn countUp(x: i32) {
-        \\    loop (x..) { i ->
+        \\    for (x..) { i ->
         \\        if (i > 100) {
         \\          break;
         \\        };
@@ -801,22 +874,22 @@ test "js: reserved word identifiers" {
 }
 
 test "js: iterator fromList yields array items" {
-    // An `#[@iterator] fn -> @Iterator<T>` generator: `loop (xs) { yield }` must
-    // lower to a real `for…of` with native `yield` (not `.map()`). Recursive
-    // delegation (the legacy `return <iter>` shortcut) is now forbidden by
-    // RI1 (§1I); spec-compliant delegation patterns get their own coverage in
-    // the F6 `effect_iterator.zig` suite.
+    // A `#[@generator] fn -> @Generator<T>` generator: `for (xs) { x -> yield x; }`
+    // must lower to a real `for…of` with native `yield` (not `.map()`).
+    // Recursive delegation (the legacy `return <iter>` shortcut) is forbidden
+    // by RI1 (§1I). A `@Generator<T>` is infallible, so a plain fn iterates it
+    // (decision 103); a fallible one needs a body that grants `try`.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
-        \\    loop (xs) { item ->
+        \\#[@generator]
+        \\fn fromList<T>(xs: Array<T>) -> @Generator<T> {
+        \\    for (xs) { item ->
         \\        yield item;
         \\    };
         \\}
         \\
-        \\fn toList<T>(iter: @Iterator<T>) -> Array<T> {
+        \\fn toList<T>(iter: @Generator<T>) -> Array<T> {
         \\    var out = [];
-        \\    loop (iter) { item ->
+        \\    for (iter) { item ->
         \\        out.push(item);
         \\    };
         \\    return out;

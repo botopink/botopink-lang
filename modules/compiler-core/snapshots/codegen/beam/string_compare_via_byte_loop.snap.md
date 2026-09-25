@@ -7,15 +7,15 @@ fn sameWord() -> bool {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 6}.
 
 {function, sameWord, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, sameWord}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, sameWord}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {move, {literal, <<"foo">>}, {x, 0}}.

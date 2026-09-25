@@ -150,6 +150,9 @@ pub const Arrow = struct {
 };
 
 pub const FunctionExpr = struct {
+    /// `function`, `async function`, `function*` or `async function*` — the
+    /// annotated `loop`'s generator IIFE is a `function*` expression.
+    keyword: []const u8 = "function",
     params: []const Param = &.{},
     body: Block,
 };
@@ -357,6 +360,8 @@ pub const ForOf = struct {
     pattern: Pattern,
     iter: Expr,
     body: Block,
+    /// `for await (const x of gen)` — `for await (gen) { x -> … }`.
+    is_await: bool = false,
 };
 
 /// A braced statement list. The layout is part of the model because the JS

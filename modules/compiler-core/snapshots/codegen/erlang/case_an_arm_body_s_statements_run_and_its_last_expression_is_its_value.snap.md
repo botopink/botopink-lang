@@ -15,7 +15,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Shape
@@ -23,11 +23,11 @@ fn main() {
 %%   Rect(width, height)
 
 main() ->
-    S = {main__t__shape__v__circle, 3},
+    S = {test@main@@Shape__v__circle, 3},
     case S of
-        {main__t__shape__v__circle, R} ->
+        {test@main@@Shape__v__circle, R} ->
             '__bp_print'([<<"circle">>]);
-        {main__t__shape__v__rect, W, H} ->
+        {test@main@@Shape__v__rect, W, H} ->
             '__bp_print'([<<"rect">>])
     end.
 
@@ -57,13 +57,13 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__shape.erl
+----- ERLANG -- test@main@@Shape.erl
 ```erlang
--module(main__t__shape).
+-module(test@main@@Shape).
 -export(['__bp_format'/1]).
 
-'__bp_format'({main__t__shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]};
-'__bp_format'({main__t__shape__v__rect, F0, F1}) -> {variant, "Shape.Rect", [{"width", F0}, {"height", F1}]}.
+'__bp_format'({test@main@@Shape__v__circle, F0}) -> {variant, "Shape.Circle", [{"radius", F0}]};
+'__bp_format'({test@main@@Shape__v__rect, F0, F1}) -> {variant, "Shape.Rect", [{"width", F0}, {"height", F1}]}.
 ```
 
 ----- RUN LOG -----

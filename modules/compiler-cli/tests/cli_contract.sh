@@ -415,8 +415,9 @@ expect_code 1 "build --frobnicate"
 expect_out "unknown flag '--frobnicate'" "names the unknown flag"
 run "$P" build --target=erlang --out out-eq
 expect_code 0 "build --target=erlang"
-# 13 half 1: an erlang artifact lands at `<out>/erl/<module atom><ext>`.
-[[ -f "$P/out-eq/erl/main.erl" && ! -e "$P/out-eq/main.js" ]] && ok "--target=erlang honoured" || fail "--target=erlang did not produce out-eq/erl/main.erl"
+# 13 half 1: an erlang artifact lands at `<out>/erl/<module atom><ext>`, and the
+# atom starts with the package (decision 109) — this project is named `c11`.
+[[ -f "$P/out-eq/erl/c11@main.erl" && ! -e "$P/out-eq/main.js" ]] && ok "--target=erlang honoured" || fail "--target=erlang did not produce out-eq/erl/c11@main.erl"
 run "$P" test --target wasm2
 expect_code 1 "test --target wasm2"
 

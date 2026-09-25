@@ -34,7 +34,7 @@ fn load(n: i32) -> @Future<i32> {
 fn upTo(n: i32) -> @Iterator<i32> {
     val limit = try parse(n);
     var i = 0;
-    loop (i < limit) { yield i; i = i + 1; };
+    while (i < limit) { yield i; i = i + 1; };
 }
 
 test "§95 a #[@future] body holds the `try` its level grants" {
@@ -44,6 +44,6 @@ test "§95 a #[@future] body holds the `try` its level grants" {
 
 test "§95 a #[@iterator] body holds the `try` its level grants" {
     var acc = "";
-    loop (upTo(3)) { x -> acc = acc + x.toString(); };
+    for (upTo(3)) { x -> acc = acc + x.toString(); };
     assert acc == "012";
 }

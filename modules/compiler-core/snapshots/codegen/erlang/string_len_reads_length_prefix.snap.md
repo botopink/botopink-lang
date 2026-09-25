@@ -8,7 +8,7 @@ fn n() -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 n() ->
     S = <<"hello">>,

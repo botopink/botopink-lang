@@ -18,6 +18,28 @@ pub const ParseErrorType = parserMod.ParseErrorType;
 
 // ── Canonical messages ────────────────────────────────────────────────────────
 
+/// The three generator annotations, spelled for a diagnostic —
+/// "`#[@generator]`, `#[@iterator]` or `#[@futureGenerator]`" — derived at
+/// comptime from `EffectKind` and the chain, so a renamed effect renames the
+/// message with it.
+const generatorAnnotationsSpelled = blk: {
+    const effectChain = @import("./comptime/effect_chain.zig");
+    const ast = @import("./ast.zig");
+    var out: []const u8 = "";
+    var n: usize = 0;
+    var total: usize = 0;
+    for (ast.EffectKind.all) |e| {
+        if (effectChain.grants(e, .yield_)) total += 1;
+    }
+    for (ast.EffectKind.all) |e| {
+        if (!effectChain.grants(e, .yield_)) continue;
+        if (n > 0) out = out ++ (if (n + 1 == total) " or " else ", ");
+        out = out ++ "`#[@" ++ e.annotationName() ++ "]`";
+        n += 1;
+    }
+    break :blk out;
+};
+
 pub const ErrorMessages = struct {
     message: []const u8,
     hint: []const u8,
@@ -144,6 +166,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "Malformed `${…}` interpolation in string",
             .hint = "Each `${…}` must contain one complete expression, e.g. \"hi ${name}\"; escape a literal dollar with `\\${`",
         },
+        .importGroupModifier => .{
+            .code = "import-group-modifier",
+            .message = "`*` and `as` belong to an import leaf, not to a group",
+            .caretCaption = "this node opens braces",
+            .hint = "write the modifier on the leaf: `io: {fs: {readText as read}}`, `collections: {ArraySets*}`",
+        },
         .anonymousImplExtend => .{
             .message = "An `implement`/`extend` block must be named",
             .hint = "Give it a name, e.g. `Name implement Trait for Type { … }` or `Name extend Type { … }`",
@@ -212,11 +240,35 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write a tuple `#(…)`",
             .hint = "Build `#(x, y)` from variables (their names become the labels), or `#(1, 2)` and give the destination a labeled type `#(x: i32, y: i32)`.",
         },
-        .removedKeywordWhile => .{
-            .code = "removed-keyword-while",
-            .message = "`while` does not exist — use loop (condition)",
-            .caretCaption = "write `loop (condition) { … }`",
-            .hint = "`loop (attempts < 3) { attempts = attempts + 1; }` repeats while the condition holds; `loop { … break; }` repeats until a break.",
+        .removedLoopParenthesised => .{
+            .code = "removed-loop-parenthesised",
+            .message = "`loop (…)` does not exist — `for` iterates, `while` repeats",
+            .caretCaption = "write `for (xs) { x -> … }` or `while (cond) { … }`",
+            .hint = "Decision 105: `for (xs) { x -> … }` iterates a collection, a range or a generator; `while (cond) { … }` repeats while the condition holds; `loop { … break; }` repeats until a break. `loop await (g)` is `for await (g) { x -> … }`.",
+        },
+        .loopBindsNothing => .{
+            .code = "loop-binds-nothing",
+            .message = "`while` and `loop` bind nothing — only `for` takes `{ x -> … }`",
+            .caretCaption = "remove the binder",
+            .hint = "`while (cond) { … }` repeats while the condition holds and `loop { … }` until a break; to bind each item write `for (xs) { x -> … }`.",
+        },
+        .forWithoutBinder => .{
+            .code = "for-without-binder",
+            .message = "a `for` binds the item it iterates: `for (xs) { x -> … }`",
+            .caretCaption = "open the body with `x ->`",
+            .hint = "To repeat without a value write `while (cond) { … }` or `loop { … break; }`.",
+        },
+        .forBindsOneName => .{
+            .code = "for-binds-one-name",
+            .message = "a `for` binds one name — there is no index binder",
+            .caretCaption = "one name before `->`",
+            .hint = "Iterate the positions to read an index: `for (0..xs.length) { i -> val x = xs[i]; … }`.",
+        },
+        .loopAnnotationNotGenerator => .{
+            .code = "loop-annotation-not-generator",
+            .message = "only a generator annotation goes on a `loop`, and only on `loop`",
+            .caretCaption = "not a generator `loop`",
+            .hint = "`#[@generator] loop { … }` is worth `@Generator<T>` (" ++ generatorAnnotationsSpelled ++ " are the three); a `for` or `while` inside it feeds it: `#[@generator] loop { for (xs) { x -> yield f(x); }; break; }`.",
         },
         .removedKeywordNew => .{
             .code = "removed-keyword-new",
@@ -258,7 +310,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "pattern-range-exclusive",
             .message = "`..` is iteration, not a pattern's range",
             .caretCaption = "write `...` — an inclusive range, both ends matched",
-            .hint = "`1...9` matches every value from 1 to 9; `..` belongs to `loop (0..n)` and slicing. An open end is a guard: `_ when (x < 0) { … }`.",
+            .hint = "`1...9` matches every value from 1 to 9; `..` belongs to `for (0..n)` and slicing. An open end is a guard: `_ when (x < 0) { … }`.",
         },
         .patternRangeMissingEnd => .{
             .code = "pattern-range-missing-end",

@@ -8,36 +8,36 @@ val Color = type {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 2}.
 ```
 
------ BEAM ASSEMBLY -- main__t__color.S
+----- BEAM ASSEMBLY -- test@main@@Color.S
 ```erlang
-{module, main__t__color}.
+{module, test@main@@Color}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 6}.
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__color.erl", 1}]}.
-    {func_info, {atom, main__t__color}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Color.erl", 1}]}.
+    {func_info, {atom, test@main@@Color}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 4}, [{x, 0}, {atom, main__t__color__v__red}]}.
+    {test, is_eq_exact, {f, 4}, [{x, 0}, {atom, test@main@@Color__v__red}]}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"Color.Red">>}, nil]}}.
     {deallocate, 2}.
     return.
   {label, 4}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 4, {atom, main__t__color__v__rgb}]}.
+    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 4, {atom, test@main@@Color__v__rgb}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 4}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.

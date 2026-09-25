@@ -1,22 +1,22 @@
-//// Decision 8 §10 — `loop (condition) { … }` repeats while the condition holds.
+//// Decision 8 §10 — `while (condition) { … }` repeats while the condition holds.
 
 test "§10 a condition loop repeats while true" {
     var attempts = 0;
-    loop (attempts < 3) { attempts = attempts + 1; };
+    while (attempts < 3) { attempts = attempts + 1; };
     assert attempts == 3;
 }
 
 test "§10 a condition false on entry runs no iteration" {
     var n = 10;
     var runs = 0;
-    loop (n < 3) { runs = runs + 1; };
+    while (n < 3) { runs = runs + 1; };
     assert runs == 0;
 }
 
 test "§10 several outer vars reassigned inside a condition loop" {
     var i = 0;
     var acc = "";
-    loop (i < 4) {
+    while (i < 4) {
         acc = acc + i.toString();
         i = i + 1;
     };

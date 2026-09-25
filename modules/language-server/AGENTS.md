@@ -61,7 +61,12 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
 
 The server maintains a **project index** (`src/project_index.zig`) that scans
 `.bp` files from the workspace `rootUri`, caching `pub` symbols for cross-module
-features (import suggestions, references, module completion).
+features (import suggestions, references, module completion). An import in
+either spelling of decision 107 (`import {dict.empty as newDict}`,
+`import {dict: {empty as newDict}}`) binds the same leaf here as in the CLI —
+the server compiles with the compiler's own `resolveImports`, and
+`importsStdModule` (`engine.zig`) splits on `.` and `:` so both spellings
+name the module for std completion.
 
 ### Project-graph compile
 

@@ -12,7 +12,7 @@ fn red500() -> Token {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type __Token__Color
 %%   Red(_inner)
@@ -25,32 +25,32 @@ fn red500() -> Token {
 %%   Color(_inner)
 
 red500() ->
-    {main__t__token__v__color, {main__t__token_color__v__red, main__t__token_color_red__v__500}}.
+    {test@main@@Token__v__color, {test@main@@__Token__Color__v__red, test@main@@__Token__Color__Red__v__500}}.
 ```
 
------ ERLANG -- main__t__token_color.erl
+----- ERLANG -- test@main@@__Token__Color.erl
 ```erlang
--module(main__t__token_color).
+-module(test@main@@__Token__Color).
 -export(['__bp_format'/1]).
 
-'__bp_format'({main__t__token_color__v__red, F0}) -> {variant, "__Token__Color.Red", [{"_inner", F0}]}.
+'__bp_format'({test@main@@__Token__Color__v__red, F0}) -> {variant, "__Token__Color.Red", [{"_inner", F0}]}.
 ```
 
------ ERLANG -- main__t__token_color_red.erl
+----- ERLANG -- test@main@@__Token__Color__Red.erl
 ```erlang
--module(main__t__token_color_red).
+-module(test@main@@__Token__Color__Red).
 -export(['__bp_format'/1]).
 
-'__bp_format'(main__t__token_color_red__v__100) -> {variant, "__Token__Color__Red.__100", []};
-'__bp_format'(main__t__token_color_red__v__500) -> {variant, "__Token__Color__Red.__500", []}.
+'__bp_format'(test@main@@__Token__Color__Red__v__100) -> {variant, "__Token__Color__Red.__100", []};
+'__bp_format'(test@main@@__Token__Color__Red__v__500) -> {variant, "__Token__Color__Red.__500", []}.
 ```
 
------ ERLANG -- main__t__token.erl
+----- ERLANG -- test@main@@Token.erl
 ```erlang
--module(main__t__token).
+-module(test@main@@Token).
 -export(['__bp_format'/1]).
 
-'__bp_format'({main__t__token__v__color, F0}) -> {variant, "Token.Color", [{"_inner", F0}]}.
+'__bp_format'({test@main@@Token__v__color, F0}) -> {variant, "Token.Color", [{"_inner", F0}]}.
 ```
 
 ----- RUN LOG -----

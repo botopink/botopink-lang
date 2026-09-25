@@ -28,7 +28,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% behavior Shape
@@ -41,16 +41,16 @@ fn main() {
 
 weight(S) ->
     case S of
-        main__t__size__v__small ->
+        test@main@@Size__v__small ->
             1;
-        {main__t__size__v__large, N} ->
+        {test@main@@Size__v__large, N} ->
             N
     end.
 
 main() ->
-    Sq = {main__t__square, 3},
-    '__bp_print'([main__t__square:area(Sq)]),
-    '__bp_print'([(weight({main__t__size__v__large, 5}) + weight(main__t__size__v__small))]).
+    Sq = {test@main@@Square, 3},
+    '__bp_print'([test@main@@Square:area(Sq)]),
+    '__bp_print'([(weight({test@main@@Size__v__large, 5}) + weight(test@main@@Size__v__small))]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -78,9 +78,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__square.erl
+----- ERLANG -- test@main@@Square.erl
 ```erlang
--module(main__t__square).
+-module(test@main@@Square).
 -export([area/1, '__bp_get'/2, '__bp_format'/1]).
 
 area(Self) ->
@@ -91,13 +91,13 @@ area(Self) ->
 '__bp_format'(V) -> {record, "Square", [{"side", element(2, V)}]}.
 ```
 
------ ERLANG -- main__t__size.erl
+----- ERLANG -- test@main@@Size.erl
 ```erlang
--module(main__t__size).
+-module(test@main@@Size).
 -export(['__bp_format'/1]).
 
-'__bp_format'(main__t__size__v__small) -> {variant, "Size.Small", []};
-'__bp_format'({main__t__size__v__large, F0}) -> {variant, "Size.Large", [{"n", F0}]}.
+'__bp_format'(test@main@@Size__v__small) -> {variant, "Size.Small", []};
+'__bp_format'({test@main@@Size__v__large, F0}) -> {variant, "Size.Large", [{"n", F0}]}.
 ```
 
 ----- RUN LOG -----

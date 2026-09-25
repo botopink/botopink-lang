@@ -12,12 +12,12 @@ fn f() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Error: msg
 
 fetch() ->
-    {error, {main__t__error, <<"boom">>}}.
+    {error, {test@main@@Error, <<"boom">>}}.
 
 f() ->
     {A, B} = case try
@@ -27,13 +27,13 @@ f() ->
     end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
-            erlang:throw({main__t__error, <<"failed">>})
+            erlang:throw({test@main@@Error, <<"failed">>})
     end.
 ```
 
------ ERLANG -- main__t__error.erl
+----- ERLANG -- test@main@@Error.erl
 ```erlang
--module(main__t__error).
+-module(test@main@@Error).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, msg) -> element(2, V).

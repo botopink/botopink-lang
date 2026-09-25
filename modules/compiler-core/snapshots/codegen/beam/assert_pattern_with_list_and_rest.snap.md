@@ -8,15 +8,15 @@ fn f() {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 6}.
 
 {function, f, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, f}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, f}, 0}.
   {label, 3}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.

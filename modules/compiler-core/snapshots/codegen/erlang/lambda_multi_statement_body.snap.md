@@ -7,7 +7,7 @@ fn process(f: syntax fn(x: i32) -> i32) -> i32 {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 process(F) ->
     F(5).

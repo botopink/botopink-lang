@@ -12,44 +12,44 @@ fn red500() -> Token {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 4}.
 
 {function, red500, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, red500}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, red500}, 0}.
   {label, 3}.
     {allocate, 2, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {atom, main__t__token_color_red__v__500}, {x, 0}}.
+    {move, {atom, test@main@@__Token__Color__Red__v__500}, {x, 0}}.
     {test_heap, 3, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__token_color__v__red}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@__Token__Color__v__red}, {x, 0}]}}.
     {test_heap, 3, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__token__v__color}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Token__v__color}, {x, 0}]}}.
     {deallocate, 2}.
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__token_color.S
+----- BEAM ASSEMBLY -- test@main@@__Token__Color.S
 ```erlang
-{module, main__t__token_color}.
+{module, test@main@@__Token__Color}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 5}.
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__token_color.erl", 1}]}.
-    {func_info, {atom, main__t__token_color}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@__Token__Color.erl", 1}]}.
+    {func_info, {atom, test@main@@__Token__Color}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, main__t__token_color__v__red}]}.
+    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, test@main@@__Token__Color__v__red}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -68,30 +68,30 @@ fn red500() -> Token {
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__token_color_red.S
+----- BEAM ASSEMBLY -- test@main@@__Token__Color__Red.S
 ```erlang
-{module, main__t__token_color_red}.
+{module, test@main@@__Token__Color__Red}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 6}.
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__token_color_red.erl", 1}]}.
-    {func_info, {atom, main__t__token_color_red}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@__Token__Color__Red.erl", 1}]}.
+    {func_info, {atom, test@main@@__Token__Color__Red}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 4}, [{x, 0}, {atom, main__t__token_color_red__v__100}]}.
+    {test, is_eq_exact, {f, 4}, [{x, 0}, {atom, test@main@@__Token__Color__Red__v__100}]}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"__Token__Color__Red.__100">>}, nil]}}.
     {deallocate, 2}.
     return.
   {label, 4}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 5}, [{x, 0}, {atom, main__t__token_color_red__v__500}]}.
+    {test, is_eq_exact, {f, 5}, [{x, 0}, {atom, test@main@@__Token__Color__Red__v__500}]}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"__Token__Color__Red.__500">>}, nil]}}.
     {deallocate, 2}.
@@ -103,23 +103,23 @@ fn red500() -> Token {
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__token.S
+----- BEAM ASSEMBLY -- test@main@@Token.S
 ```erlang
-{module, main__t__token}.
+{module, test@main@@Token}.
 {exports, [{'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 5}.
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "main__t__token.erl", 1}]}.
-    {func_info, {atom, main__t__token}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Token.erl", 1}]}.
+    {func_info, {atom, test@main@@Token}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, main__t__token__v__color}]}.
+    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, test@main@@Token__v__color}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.

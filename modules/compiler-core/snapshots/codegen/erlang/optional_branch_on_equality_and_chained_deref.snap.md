@@ -14,13 +14,13 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type R: kind
 
 main() ->
-    R = {main__t__r, 11},
+    R = {test@main@@R, 11},
     Maybe = R,
     case (Maybe =:= undefined) of
         true ->
@@ -55,9 +55,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__r.erl
+----- ERLANG -- test@main@@R.erl
 ```erlang
--module(main__t__r).
+-module(test@main@@R).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, kind) -> element(2, V).

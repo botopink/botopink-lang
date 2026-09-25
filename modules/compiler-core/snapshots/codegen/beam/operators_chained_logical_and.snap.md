@@ -7,15 +7,15 @@ fn allThree(a: bool, b: bool, c: bool) -> bool {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 8}.
 
 {function, allThree, 3, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, allThree}, 3}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, allThree}, 3}.
   {label, 3}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.

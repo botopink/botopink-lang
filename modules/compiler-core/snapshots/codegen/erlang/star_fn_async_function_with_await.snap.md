@@ -13,7 +13,7 @@ fn loadTwice(x: i32) -> @Future<i32> {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% #[@future] / #[@futureGenerator] — eager lowering
 fetch(X) ->

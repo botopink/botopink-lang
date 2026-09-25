@@ -5,15 +5,15 @@ val array: string[] = ["65454"];
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 4}.
 
 {function, array, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, array}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, array}, 0}.
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.

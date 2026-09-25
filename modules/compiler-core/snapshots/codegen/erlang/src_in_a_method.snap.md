@@ -13,7 +13,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type SourceLocation: file, line, column, fnName
@@ -21,7 +21,7 @@ fn main() {
 %% type Stub: n
 
 main() ->
-    Loc = main__t__stub:where({main__t__stub, 1}),
+    Loc = test@main@@Stub:where({test@main@@Stub, 1}),
     '__bp_print'([element(2, Loc), element(3, Loc), element(4, Loc), element(5, Loc)]).
 
 '__bp_print'(Values) ->
@@ -50,9 +50,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__sourcelocation.erl
+----- ERLANG -- test@main@@SourceLocation.erl
 ```erlang
--module(main__t__sourcelocation).
+-module(test@main@@SourceLocation).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, file) -> element(2, V);
@@ -63,13 +63,13 @@ main(_Args) ->
 '__bp_format'(V) -> {record, "SourceLocation", [{"file", element(2, V)}, {"line", element(3, V)}, {"column", element(4, V)}, {"fnName", element(5, V)}]}.
 ```
 
------ ERLANG -- main__t__stub.erl
+----- ERLANG -- test@main@@Stub.erl
 ```erlang
--module(main__t__stub).
+-module(test@main@@Stub).
 -export([where/1, '__bp_get'/2, '__bp_format'/1]).
 
 where(Self) ->
-    {main__t__sourcelocation, <<"main.bp">>, 3, 16, <<"Stub.where">>}.
+    {test@main@@SourceLocation, <<"main.bp">>, 3, 16, <<"Stub.where">>}.
 
 '__bp_get'(V, n) -> element(2, V).
 

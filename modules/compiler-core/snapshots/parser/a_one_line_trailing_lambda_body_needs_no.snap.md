@@ -160,11 +160,13 @@
                   "line": 4,
                   "col": 5
                 },
+                "keyword": "for_",
+                "generator": null,
                 "iter": {
                   "identifier": {
                     "loc": {
                       "line": 4,
-                      "col": 11
+                      "col": 10
                     },
                     "kind": {
                       "ident": "xs"
@@ -177,7 +179,7 @@
                 ],
                 "paramsLoc": {
                   "line": 4,
-                  "col": 17
+                  "col": 16
                 },
                 "condition": false,
                 "body": [
@@ -186,7 +188,7 @@
                       "binding": {
                         "loc": {
                           "line": 4,
-                          "col": 22
+                          "col": 21
                         },
                         "kind": {
                           "assign": {
@@ -198,14 +200,14 @@
                               "binaryOp": {
                                 "loc": {
                                   "line": 4,
-                                  "col": 32
+                                  "col": 31
                                 },
                                 "op": "add",
                                 "lhs": {
                                   "identifier": {
                                     "loc": {
                                       "line": 4,
-                                      "col": 28
+                                      "col": 27
                                     },
                                     "kind": {
                                       "ident": "acc"
@@ -216,7 +218,7 @@
                                   "identifier": {
                                     "loc": {
                                       "line": 4,
-                                      "col": 34
+                                      "col": 33
                                     },
                                     "kind": {
                                       "ident": "x"

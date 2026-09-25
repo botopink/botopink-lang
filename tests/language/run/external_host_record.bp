@@ -37,7 +37,7 @@ declare fn hostPoints() -> Point[];
 // A host that already builds decision 21's shape: adopting it again must be
 // adopting it once.
 #[@External.Node("""({ x: 10, y: 20 })""")]
-#[@External.Erlang("""{'main__t__point', 10, 20}""")]
+#[@External.Erlang("""{'language_tests@main@@Point', 10, 20}""")]
 declare fn hostTaggedPoint() -> Point;
 
 // The read goes through a TYPED parameter, so what this cell measures is the
@@ -56,7 +56,7 @@ pub fn main() {
     val ps = hostPoints();
     @print(ps.length);
     var total = 0;
-    loop (ps) { q -> total = total + sum(q); };
+    for (ps) { q -> total = total + sum(q); };
     @print(total);
 
     @print(sum(hostTaggedPoint()));

@@ -8,15 +8,15 @@ fn pick(maybe: ?R) -> ?i32 {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 7}.
 
 {function, pick, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, pick}, 1}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, pick}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -26,7 +26,7 @@ fn pick(maybe: ?R) -> ?i32 {
     {move, {atom, undefined}, {x, 0}}.
     {jump, {f, 6}}.
   {label, 4}.
-    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 3, {atom, main__t__r}]}.
+    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 3, {atom, test@main@@R}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
     {jump, {f, 6}}.
   {label, 5}.
@@ -36,17 +36,17 @@ fn pick(maybe: ?R) -> ?i32 {
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__r.S
+----- BEAM ASSEMBLY -- test@main@@R.S
 ```erlang
-{module, main__t__r}.
+{module, test@main@@R}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 8}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "main__t__r.erl", 1}]}.
-    {func_info, {atom, main__t__r}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@R.erl", 1}]}.
+    {func_info, {atom, test@main@@R}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, a}]}.
     {move, {x, 0}, {x, 1}}.
@@ -63,8 +63,8 @@ fn pick(maybe: ?R) -> ?i32 {
 
 {function, '__bp_format', 1, 7}.
   {label, 6}.
-    {line, [{location, "main__t__r.erl", 1}]}.
-    {func_info, {atom, main__t__r}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@R.erl", 1}]}.
+    {func_info, {atom, test@main@@R}, {atom, '__bp_format'}, 1}.
   {label, 7}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

@@ -437,11 +437,12 @@ test "decorator module: lowered body, handle term and host glue" {
     const m = try buildModule(arena, dfn, handle, &args, &unsupported);
 
     // A2: the atom names the declaration, not just a hash of the body, and it
-    // decodes back to `{gen, "bp/comptime", "dec", "route", <16 hex>}`.
+    // decodes back to `{gen, package "bp", "comptime", "dec", "route", <16 hex>}`.
     try std.testing.expect(std.mem.startsWith(u8, m.module, "bp@comptime__dec__"));
     try std.testing.expect(std.mem.startsWith(u8, m.code, "-module(bp@comptime__dec__"));
     const decoded = try crossModule.decodeAtom(arena, m.module);
-    try std.testing.expectEqualStrings("bp/comptime", decoded.path);
+    try std.testing.expectEqualStrings("bp", decoded.package);
+    try std.testing.expectEqualStrings("comptime", decoded.path);
     try std.testing.expectEqualStrings("dec", decoded.kind);
     // A2 lowercases the declaration segment, so `getMapping` is `getmapping`.
     var lowered: [64]u8 = undefined;

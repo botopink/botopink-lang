@@ -13,18 +13,18 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type Point: x, y
 
 describe(P) ->
-    {main__t__point, X, Y} = P,
+    {test@main@@Point, X, Y} = P,
     '__bp_print'([X, Y]),
     X.
 
 main() ->
-    describe({main__t__point, 3, 4}).
+    describe({test@main@@Point, 3, 4}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -52,9 +52,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__point.erl
+----- ERLANG -- test@main@@Point.erl
 ```erlang
--module(main__t__point).
+-module(test@main@@Point).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, x) -> element(2, V);

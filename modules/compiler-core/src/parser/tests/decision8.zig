@@ -297,7 +297,7 @@ test "decision 8 N22: a pattern range is written with three dots" {
         \\3 |         1..9 { "digit" }
         \\  |          ^^ write `...` — an inclusive range, both ends matched
         \\  |
-        \\  = hint: `1...9` matches every value from 1 to 9; `..` belongs to `loop (0..n)` and slicing. An open end is a guard: `_ when (x < 0) { … }`.
+        \\  = hint: `1...9` matches every value from 1 to 9; `..` belongs to `for (0..n)` and slicing. An open end is a guard: `_ when (x < 0) { … }`.
         \\
         \\
     ,

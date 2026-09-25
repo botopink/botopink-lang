@@ -12,7 +12,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -compile({no_auto_import,[abs/1]}).
 -export(['_botopink_main'/0, main/1]).
 

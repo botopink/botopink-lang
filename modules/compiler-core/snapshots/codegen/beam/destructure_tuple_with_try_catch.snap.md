@@ -12,20 +12,20 @@ fn f() {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, []}.
 {attributes, []}.
 {labels, 9}.
 
 {function, fetch, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, fetch}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, fetch}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {move, {literal, <<"boom">>}, {x, 0}}.
     {test_heap, 3, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__error}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Error}, {x, 0}]}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
@@ -34,8 +34,8 @@ fn f() {
 
 {function, f, 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, f}, 0}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, f}, 0}.
   {label, 5}.
     {allocate, 4, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
@@ -50,7 +50,7 @@ fn f() {
   {label, 7}.
     {move, {literal, <<"failed">>}, {x, 0}}.
     {test_heap, 3, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, main__t__error}, {x, 0}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@main@@Error}, {x, 0}]}}.
     {call_ext_only, 1, {extfunc, erlang, throw, 1}}.
   {label, 8}.
     {move, {x, 0}, {y, 1}}.
@@ -68,17 +68,17 @@ fn f() {
     return.
 ```
 
------ BEAM ASSEMBLY -- main__t__error.S
+----- BEAM ASSEMBLY -- test@main@@Error.S
 ```erlang
-{module, main__t__error}.
+{module, test@main@@Error}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 7}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "main__t__error.erl", 1}]}.
-    {func_info, {atom, main__t__error}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@main@@Error.erl", 1}]}.
+    {func_info, {atom, test@main@@Error}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, msg}]}.
     {move, {x, 0}, {x, 1}}.
@@ -90,8 +90,8 @@ fn f() {
 
 {function, '__bp_format', 1, 6}.
   {label, 5}.
-    {line, [{location, "main__t__error.erl", 1}]}.
-    {func_info, {atom, main__t__error}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@main@@Error.erl", 1}]}.
+    {func_info, {atom, test@main@@Error}, {atom, '__bp_format'}, 1}.
   {label, 6}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

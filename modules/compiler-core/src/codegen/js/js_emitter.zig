@@ -175,7 +175,7 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             }
         },
         .function => |f| {
-            try w.writeAll("function");
+            try w.writeAll(f.keyword);
             try writeParams(w, f.params, indent);
             try w.writeByte(' ');
             try writeBlock(w, f.body);
@@ -462,7 +462,7 @@ pub fn writeStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
             }
         },
         .for_of => |f| {
-            try w.writeAll("for (const ");
+            try w.writeAll(if (f.is_await) "for await (const " else "for (const ");
             try writePattern(w, f.pattern, indent);
             try w.writeAll(" of ");
             try writeExpr(w, f.iter, indent);

@@ -86,23 +86,27 @@ test "comptime module: forEach with a mutated var fuses into a fold" {
     try expectContains(out, "emit('__bp_add'(");
 }
 
-test "comptime module: a two-parameter loop folds over lists:enumerate" {
-    // A query template's `loop (xs) { x, i -> }` reassigning outer vars. It used
-    // to hand a 2-arity fun to `lists:foreach/2` and lose every reassignment.
+test "comptime module: a counted loop folds the counter through lists:foldl" {
+    // A query template's `for (xs) { x -> … }` reassigning outer vars — the
+    // index it reads is a counter it reassigns itself (decision 105 has no
+    // index binder). It used to hand the fun to `lists:foreach/2` and lose
+    // every reassignment.
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
         \\fn pick(comptime decl: @Decl) {
         \\    var first = "";
-        \\    loop (decl.fields) { f, idx ->
+        \\    var idx = 0;
+        \\    for (decl.fields) { f ->
         \\        if (idx == 0) { first = f.name; };
+        \\        idx = idx + 1;
         \\    };
         \\    @emit(first);
         \\}
     , .{ .host_enums = &.{"DeclKind"} });
-    try expectContains(out, "First@4 = lists:foldl(fun({Idx, F}, First@1) ->");
-    try expectContains(out, "end, First, lists:enumerate(0, maps:get(fields, Decl))),");
-    try expectContains(out, "emit(First@4)");
+    try expectContains(out, "lists:foldl(fun(F, {First@1, Idx@1}) ->");
+    try expectContains(out, "end, {First, Idx}, maps:get(fields, Decl)),");
+    try expectContains(out, "emit(First@");
     if (std.mem.indexOf(u8, out, "lists:foreach") != null) return error.TestUnexpectedForeach;
 }
 
@@ -128,7 +132,7 @@ test "comptime module: a closure reassigning outer vars takes and answers them" 
 }
 
 test "comptime module: a condition loop threads the variables its body reassigns" {
-    // `loop (cond) { … }` (decision 8 §10) in a comptime body — untyped, so
+    // `while (cond) { … }` (decision 8 §10) in a comptime body — untyped, so
     // the parser marks the loop a condition loop from its boolean shape.
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -136,7 +140,7 @@ test "comptime module: a condition loop threads the variables its body reassigns
         \\fn count(comptime decl: @Decl) {
         \\    var i = 0;
         \\    var names = "";
-        \\    loop (i < 3) {
+        \\    while (i < 3) {
         \\        names = names + decl.name;
         \\        i = i + 1;
         \\    };
@@ -151,13 +155,13 @@ test "comptime module: a condition loop threads the variables its body reassigns
     try expectContains(out, "emit(Names@3)");
 }
 
-test "comptime module: `while` is refused before lowering (decision 8 §10)" {
+test "comptime module: `loop (…)` is refused before lowering (decision 105)" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const result = lower(arena_state.allocator(),
         \\fn count(comptime decl: @Decl) {
         \\    var i = 0;
-        \\    while (i < 3) {
+        \\    loop (i < 3) {
         \\        i = i + 1;
         \\    };
         \\}

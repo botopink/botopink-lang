@@ -113,7 +113,7 @@ done
 #
 #     $ botopink run --target beam        # wrote out/main.S
 #     $ (cd out && erlc +from_asm *.S)    # main.S → main.beam
-#     $ erl -noshell -pa out -eval 'main:main(), halt().'
+#     $ erl -noshell -pa out -eval 'language_tests@main:main(), halt().'
 #     hi
 #
 # `erlc` and `erl` are already gate dependencies (every erlang cell, and stage 5
@@ -205,8 +205,10 @@ exec_run() { # <dir> <target>
     while IFS= read -r s; do
         erlc +from_asm -o "$dir/out" "$s" || return 1
     done < <(find "$dir/out" -name '*.S' | sort) 2>>"$dir/e.txt"
-    if [ -f "$dir/out/main.beam" ]; then
-        mod=main
+    # The entry's atom starts with the package (decision 109): every cell's
+    # botopink.json is named `language_tests`.
+    if [ -f "$dir/out/language_tests@main.beam" ]; then
+        mod=language_tests@main
     else
         mod="$(cd "$dir/out" && ls -1 ./*.beam 2>/dev/null | head -1)"
         mod="$(basename "${mod%.beam}")"

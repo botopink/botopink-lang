@@ -247,3 +247,38 @@ test "signature_help: an optional parameter is labelled `?string`" {
     try std.testing.expect(std.mem.indexOf(u8, result.?.signatures[0].label, "optional<") == null);
     try snap.assertSignatureHelp(gpa, "sig_optional_params", source, cursor, result);
 }
+
+// ── front 11 carve-out: a `type` constructor call ─────────────────────────────
+//
+// A record constructor's binding is a `named` type (`buildRecordDeclName`'s
+// text), not a `.func`, so `signatureHelp` reads the field list from the
+// declaration in the document (`recordCtorSignature`): `Point(x: i32, y: i32)
+// -> Point`, each label spelled as the source writes it — never `record { … }`
+// (C-19), and the same text the hover over `Point` prints.
+
+test "signature_help: a record constructor call lists the fields" {
+    const gpa = std.testing.allocator;
+
+    const bindings_source =
+        \\pub type Point(x: i32, y: i32)
+    ;
+    var c = try h.compile(gpa, bindings_source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+
+    const source =
+        \\pub type Point(x: i32, y: i32)
+        \\val p = Point(
+    ;
+    // col 14 = after the '(' in "val p = Point("
+    const cursor = h.pos(1, 14);
+    const result = try engine.signatureHelp(arena.allocator(), source, cursor, bindings);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings("Point(x: i32, y: i32) -> Point", result.?.signatures[0].label);
+    try std.testing.expectEqual(@as(u32, 0), result.?.activeParameter);
+
+    try snap.assertSignatureHelp(gpa, "sig_type_constructor", source, cursor, result);
+}

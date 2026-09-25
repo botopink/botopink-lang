@@ -13,38 +13,38 @@ pub val PatoNada = implement Swimmer for Pato {
 
 ----- BEAM ASSEMBLY -- pond.S
 ```erlang
-{module, pond}.
+{module, test@pond}.
 {exports, [{'Pato_swim', 1}]}.
 {attributes, []}.
 {labels, 5}.
 
 {function, 'Pato_swim', 1, 3}.
   {label, 2}.
-    {line, [{location, "pond.erl", 1}]}.
-    {func_info, {atom, pond}, {atom, 'Pato_swim'}, 1}.
+    {line, [{location, "test@pond.erl", 1}]}.
+    {func_info, {atom, test@pond}, {atom, 'Pato_swim'}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, pond__t__pato}]}.
+    {test, is_tagged_tuple, {f, 4}, [{x, 0}, 2, {atom, test@pond@@Pato}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 4}.
     {deallocate, 1}.
     return.
 ```
 
------ BEAM ASSEMBLY -- pond__t__pato.S
+----- BEAM ASSEMBLY -- test@pond@@Pato.S
 ```erlang
-{module, pond__t__pato}.
+{module, test@pond@@Pato}.
 {exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
 {labels, 7}.
 
 {function, '__bp_get', 2, 3}.
   {label, 2}.
-    {line, [{location, "pond__t__pato.erl", 1}]}.
-    {func_info, {atom, pond__t__pato}, {atom, '__bp_get'}, 2}.
+    {line, [{location, "test@pond@@Pato.erl", 1}]}.
+    {func_info, {atom, test@pond@@Pato}, {atom, '__bp_get'}, 2}.
   {label, 3}.
     {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, id}]}.
     {move, {x, 0}, {x, 1}}.
@@ -56,8 +56,8 @@ pub val PatoNada = implement Swimmer for Pato {
 
 {function, '__bp_format', 1, 6}.
   {label, 5}.
-    {line, [{location, "pond__t__pato.erl", 1}]}.
-    {func_info, {atom, pond__t__pato}, {atom, '__bp_format'}, 1}.
+    {line, [{location, "test@pond@@Pato.erl", 1}]}.
+    {func_info, {atom, test@pond@@Pato}, {atom, '__bp_format'}, 1}.
   {label, 6}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -90,23 +90,23 @@ fn main() {
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
-{module, main}.
+{module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
 {labels, 33}.
 
 {function, main, 0, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, main}, 0}.
+    {line, [{location, "test@main.erl", 1}]}.
+    {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, pond__t__pato}, {integer, 2}]}}.
+    {put_tuple2, {x, 0}, {list, [{atom, test@pond@@Pato}, {integer, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, pond, 'Pato_swim', 1}}.
+    {call_ext, 1, {extfunc, test@pond, 'Pato_swim', 1}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 9}}.
@@ -116,22 +116,22 @@ fn main() {
 
 {function, '_botopink_main', 0, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '_botopink_main'}, 0}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '_botopink_main'}, 0}.
   {label, 5}.
     {call_only, 0, {f, 3}}.
 
 {function, main, 1, 7}.
   {label, 6}.
-    {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, main}, 1}.
+    {line, [{location, "test@main.erl", 3}]}.
+    {func_info, {atom, test@main}, {atom, main}, 1}.
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
 {function, '__bp_print', 1, 9}.
   {label, 8}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '__bp_print'}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_print'}, 1}.
   {label, 9}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -150,24 +150,24 @@ fn main() {
 
 {function, '-bp_show_top-', 1, 13}.
   {label, 12}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '-bp_show_top-'}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '-bp_show_top-'}, 1}.
   {label, 13}.
     {move, {atom, true}, {x, 1}}.
     {call_only, 2, {f, 11}}.
 
 {function, '-bp_show_elem-', 1, 15}.
   {label, 14}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '-bp_show_elem-'}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '-bp_show_elem-'}, 1}.
   {label, 15}.
     {move, {atom, false}, {x, 1}}.
     {call_only, 2, {f, 11}}.
 
 {function, '__bp_show', 2, 11}.
   {label, 10}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '__bp_show'}, 2}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_show'}, 2}.
   {label, 11}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -248,8 +248,8 @@ fn main() {
 
 {function, '__bp_tagged', 2, 17}.
   {label, 16}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '__bp_tagged'}, 2}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_tagged'}, 2}.
   {label, 17}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -288,8 +288,8 @@ fn main() {
 
 {function, '__bp_render', 1, 19}.
   {label, 18}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '__bp_render'}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '__bp_render'}, 1}.
   {label, 19}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -332,8 +332,8 @@ fn main() {
 
 {function, '-bp_render_pair-', 1, 21}.
   {label, 20}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '-bp_render_pair-'}, 1}.
+    {line, [{location, "test@main.erl", 2}]}.
+    {func_info, {atom, test@main}, {atom, '-bp_render_pair-'}, 1}.
   {label, 21}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

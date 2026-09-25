@@ -8,7 +8,7 @@ fn render(words: Array<string>) -> string {
         count = count + 1;
     };
     emit("start");
-    loop (words) { w -> emit(w); };
+    for (words) { w -> emit(w); };
     return out + " " + count.toString();
 }
 fn main() {
@@ -18,7 +18,7 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 render(Words) ->

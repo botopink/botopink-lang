@@ -12,7 +12,7 @@ test {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export([main/1]).
 
 %% type SourceLocation: file, line, column, fnName
@@ -21,11 +21,11 @@ helper() ->
     1.
 
 '__bp_test_0'() ->
-    Loc = {main__t__sourcelocation, <<"main.bp">>, 3, 15, <<"src: in a test">>},
+    Loc = {test@main@@SourceLocation, <<"main.bp">>, 3, 15, <<"src: in a test">>},
     '__bp_print'([element(2, Loc), element(3, Loc), element(4, Loc), element(5, Loc)]).
 
 '__bp_test_1'() ->
-    '__bp_print'([element(5, {main__t__sourcelocation, <<"main.bp">>, 7, 12, <<"test_1">>})]).
+    '__bp_print'([element(5, {test@main@@SourceLocation, <<"main.bp">>, 7, 12, <<"test_1">>})]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -156,9 +156,9 @@ main(Args) ->
     '__bp_run_tests'(Filter).
 ```
 
------ ERLANG -- main__t__sourcelocation.erl
+----- ERLANG -- test@main@@SourceLocation.erl
 ```erlang
--module(main__t__sourcelocation).
+-module(test@main@@SourceLocation).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, file) -> element(2, V);

@@ -19,13 +19,13 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% type LoadError: msg
 
 load() ->
-    {error, {main__t__loaderror, <<"not found">>}}.
+    {error, {test@main@@LoadError, <<"not found">>}}.
 
 process() ->
     Prefix = 10,
@@ -71,9 +71,9 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
------ ERLANG -- main__t__loaderror.erl
+----- ERLANG -- test@main@@LoadError.erl
 ```erlang
--module(main__t__loaderror).
+-module(test@main@@LoadError).
 -export(['__bp_get'/2, '__bp_format'/1]).
 
 '__bp_get'(V, msg) -> element(2, V).

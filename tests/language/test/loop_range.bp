@@ -1,29 +1,30 @@
-//// Decision 8 §10 — `loop (a..b) { i -> … }` and the indexed form
-//// `loop (xs, start..) { x, i -> … }`.
+//// Decision 105 — `for (a..b) { i -> … }` over an exclusive range, and the
+//// index read off it: `for (0..xs.length) { i -> }` is the one indexed form.
 
 test "§10 loop over a range" {
     var sum = 0;
-    loop (0..4) { i -> sum = sum + i; };
+    for (0..4) { i -> sum = sum + i; };
     assert sum == 6;
 }
 
 test "§10 an empty range runs no iteration" {
     var n = 0;
-    loop (3..3) { i -> n = n + 1; };
+    for (3..3) { i -> n = n + 1; };
     assert n == 0;
 }
 
-test "§10 the indexed form honours the start of the range" {
+test "§10 an index read off a range over the length" {
+    val xs = [10, 20, 30];
     var weighted = 0;
-    loop ([10, 20, 30], 1..) { x, i -> weighted = weighted + x * i; };
+    for (0..xs.length) { i -> weighted = weighted + (xs[i] ?? 0) * (i + 1); };
     assert weighted == 140;
 }
 
-test "§10 the indexed form from 0" {
+test "§10 a counter the body reassigns survives every iteration" {
     var first = "";
     var count = 0;
-    loop (["x", "y"], 0..) { s, i ->
-        if (i == 0) { first = s; };
+    for (["x", "y"]) { s ->
+        if (count == 0) { first = s; };
         count = count + 1;
     };
     assert first == "x";

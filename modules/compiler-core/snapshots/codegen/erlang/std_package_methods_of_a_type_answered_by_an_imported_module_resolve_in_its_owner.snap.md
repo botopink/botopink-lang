@@ -247,7 +247,7 @@ test "dict empty boundary: size 0, at misses" {
 %% type Dict: pairs
 
 empty() ->
-    {std@dict__t__dict, []}.
+    {std@dict@@Dict, []}.
 
 
 
@@ -272,9 +272,9 @@ empty() ->
 
 ```
 
------ ERLANG -- std@dict__t__dict.erl
+----- ERLANG -- std@dict@@Dict.erl
 ```erlang
--module(std@dict__t__dict).
+-module(std@dict@@Dict).
 -compile({no_auto_import,[size/1]}).
 -export([at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2, '__bp_get'/2, '__bp_format'/1]).
 
@@ -316,10 +316,10 @@ insert(Self, Key, Value) ->
     Filtered = lists:filter(fun(P) ->
         (element(1, P) =/= Key)
     end, element(2, Self)),
-    {std@dict__t__dict, (Filtered ++ [{Key, Value}])}.
+    {std@dict@@Dict, (Filtered ++ [{Key, Value}])}.
 
 delete(Self, Key) ->
-    {std@dict__t__dict, lists:filter(fun(P) ->
+    {std@dict@@Dict, lists:filter(fun(P) ->
         (element(1, P) =/= Key)
     end, element(2, Self))}.
 
@@ -339,7 +339,7 @@ mapValues(Self, F) ->
     Out = lists:foldl(fun(P, Out) ->
         (Out ++ [{element(1, P), F(element(2, P))}])
     end, [], element(2, Self)),
-    {std@dict__t__dict, Out}.
+    {std@dict@@Dict, Out}.
 
 '__bp_get'(V, pairs) -> element(2, V).
 
@@ -363,15 +363,15 @@ fn main() {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 -export(['_botopink_main'/0, main/1]).
 
 %% import dict
 
 main() ->
-    D = std@dict__t__dict:insert(std@dict:empty(), <<"a">>, 1),
-    '__bp_print'([(fun(O) -> case O of undefined -> (0); V -> V end end)(std@dict__t__dict:at(D, <<"a">>))]),
-    '__bp_print'([std@dict__t__dict:size(std@dict__t__dict:insert(D, <<"b">>, 2))]).
+    D = std@dict@@Dict:insert(std@dict:empty(), <<"a">>, 1),
+    '__bp_print'([(fun(O) -> case O of undefined -> (0); V -> V end end)(std@dict@@Dict:at(D, <<"a">>))]),
+    '__bp_print'([std@dict@@Dict:size(std@dict@@Dict:insert(D, <<"b">>, 2))]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

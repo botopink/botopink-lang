@@ -14,14 +14,14 @@ val Invoice = type(
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% type Invoice: subtotal, taxRate
 ```
 
------ ERLANG -- main__t__invoice.erl
+----- ERLANG -- test@main@@Invoice.erl
 ```erlang
--module(main__t__invoice).
+-module(test@main@@Invoice).
 -export([total/1, validate/1, '__bp_get'/2, '__bp_format'/1]).
 
 total(Self) ->

@@ -5,7 +5,7 @@ declare fn Callback(msg: string) -> void;
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 %% delegate Callback
 ```

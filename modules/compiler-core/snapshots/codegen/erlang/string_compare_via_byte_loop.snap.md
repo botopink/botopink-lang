@@ -7,7 +7,7 @@ fn sameWord() -> bool {
 
 ----- ERLANG -- main.erl
 ```erlang
--module(main).
+-module(test@main).
 
 sameWord() ->
     (<<"foo">> =:= <<"bar">>).

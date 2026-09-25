@@ -190,7 +190,7 @@ test "js: comptime loop unrolling ---- single if condition resolved per element"
         \\
         \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
-        \\    loop (COMMANDS) { cmd ->
+        \\    for (COMMANDS) { cmd ->
         \\        if (cmd == slug) {
         \\            output = input * 2;
         \\        };
@@ -211,7 +211,7 @@ test "js: comptime loop unrolling ---- nested if-else chain fully folded" {
         \\
         \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
-        \\    loop (COMMANDS) { cmd ->
+        \\    for (COMMANDS) { cmd ->
         \\        if (cmd == slug) {
         \\            if (cmd == "calc") {
         \\                output = input * 2;
@@ -236,7 +236,7 @@ test "js: comptime loop unrolling ---- case expression folded inside unrolled lo
         \\
         \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
-        \\    loop (COMMANDS) { cmd ->
+        \\    for (COMMANDS) { cmd ->
         \\        if (cmd == slug) {
         \\            output = case cmd {
         \\                "calc" -> input * 2;
@@ -261,7 +261,7 @@ test "js: comptime partial ---- runtime array loop preserved, comptime param spe
         \\
         \\fn execute(comptime slug: string, input: i32) -> i32 {
         \\    var output = 0;
-        \\    loop (COMMANDS) { cmd ->
+        \\    for (COMMANDS) { cmd ->
         \\        if (cmd == slug) {
         \\            output = input * 2;
         \\        };
@@ -337,7 +337,7 @@ test "js: template end to end ---- holed html via parts() runs" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
         \\    var acc = "\"\"";
-        \\    loop (q.parts()) { p ->
+        \\    for (q.parts()) { p ->
         \\        if (p.kind == "Text") {
         \\            acc = acc + " + \"" + p.text + "\"";
         \\        };
@@ -379,7 +379,7 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
             .source =
             \\pub fn html(comptime q: @Expr<string>) -> @Expr<string> {
             \\    var acc = "\"\"";
-            \\    loop (q.parts()) { p ->
+            \\    for (q.parts()) { p ->
             \\        if (p.kind == "Text") {
             \\            acc = acc + " + \"" + p.text + "\"";
             \\        };

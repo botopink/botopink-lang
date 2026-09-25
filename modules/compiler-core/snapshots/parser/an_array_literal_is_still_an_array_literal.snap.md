@@ -273,11 +273,13 @@
                   "line": 6,
                   "col": 5
                 },
+                "keyword": "for_",
+                "generator": null,
                 "iter": {
                   "collection": {
                     "loc": {
                       "line": 6,
-                      "col": 12
+                      "col": 11
                     },
                     "kind": {
                       "range": {
@@ -285,7 +287,7 @@
                           "literal": {
                             "loc": {
                               "line": 6,
-                              "col": 11
+                              "col": 10
                             },
                             "kind": {
                               "numberLit": "0"
@@ -296,13 +298,14 @@
                           "literal": {
                             "loc": {
                               "line": 6,
-                              "col": 14
+                              "col": 13
                             },
                             "kind": {
                               "numberLit": "4"
                             }
                           }
-                        }
+                        },
+                        "inclusive": false
                       }
                     }
                   }
@@ -313,7 +316,7 @@
                 ],
                 "paramsLoc": {
                   "line": 6,
-                  "col": 19
+                  "col": 18
                 },
                 "condition": false,
                 "body": [
@@ -322,7 +325,7 @@
                       "binding": {
                         "loc": {
                           "line": 6,
-                          "col": 24
+                          "col": 23
                         },
                         "kind": {
                           "assign": {
@@ -334,14 +337,14 @@
                               "binaryOp": {
                                 "loc": {
                                   "line": 6,
-                                  "col": 30
+                                  "col": 29
                                 },
                                 "op": "add",
                                 "lhs": {
                                   "identifier": {
                                     "loc": {
                                       "line": 6,
-                                      "col": 28
+                                      "col": 27
                                     },
                                     "kind": {
                                       "ident": "s"
@@ -352,7 +355,7 @@
                                   "identifier": {
                                     "loc": {
                                       "line": 6,
-                                      "col": 32
+                                      "col": 31
                                     },
                                     "kind": {
                                       "ident": "i"
