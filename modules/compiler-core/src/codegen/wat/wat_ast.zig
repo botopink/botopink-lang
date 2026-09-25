@@ -430,11 +430,6 @@ pub const HelperGroup = enum {
     /// prints each field by its shape, so neither is complete without the
     /// other.
     print_shaped,
-    /// `$__print_null`, `$__print_loop_i32` (+`_raw`) — a condition loop's value
-    /// and decision 52's `null` when it never broke. Its own group and not part
-    /// of `print_opt`: the two spell absence differently on purpose, because
-    /// decision 52 settles the loop and the optional's spelling is still open.
-    print_loop,
     /// `$__str_at` — `s.at(i)` as a `?string`. Last in declaration order, so
     /// every module that does not call it renders exactly as before it existed.
     str_at,
@@ -451,7 +446,6 @@ pub const HelperGroup = enum {
             .print_opt_f32 => &.{ .print, .print_f64, .print_opt },
             .assert_fail => &.{.print},
             .print_shaped => &.{ .print, .print_bool, .print_f64 },
-            .print_loop => &.{.print},
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
             .f64_to_str => &.{ .i32_to_str, .alloc },
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
@@ -531,9 +525,6 @@ pub const Helper = enum {
     assert_fail,
     print_quoted_raw,
     print_shaped_raw,
-    print_null,
-    print_loop_i32,
-    print_loop_i32_raw,
     str_at,
     print_tagged_raw,
     print_tagged,
@@ -554,7 +545,6 @@ pub const Helper = enum {
             .print_arr_f32, .print_arr_f32_raw => .print_arr_f32,
             .write_err, .assert_fail => .assert_fail,
             .print_quoted_raw, .print_shaped_raw => .print_shaped,
-            .print_null, .print_loop_i32, .print_loop_i32_raw => .print_loop,
             .print_undefined, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
             .print_opt_f32, .print_opt_f32_raw => .print_opt_f32,
             .print_tagged_raw, .print_tagged => .print_shaped,

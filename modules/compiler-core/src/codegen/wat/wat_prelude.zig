@@ -41,7 +41,6 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
         .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw } },
         .print_opt_f32 => &.{ .{ .func = print_opt_f32_raw }, .{ .func = print_opt_f32 } },
-        .print_loop => &.{ .{ .func = print_null }, .{ .func = print_loop_i32_raw }, .{ .func = print_loop_i32 } },
         .print_opt => &.{
             .{ .func = print_undefined },    .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -1459,29 +1458,6 @@ const print_opt_f32_raw = func("__print_opt_f32_raw", &.{"p"}, null, &.{}, &.{
     whenElse(&.{call("__print_undefined")}, &.{ get("p"), .{ .load = .{ .ty = .f32 } }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw") }),
 });
 const print_opt_f32 = func("__print_opt_f32", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_f32_raw"), call("__print_nl") });
-
-/// `null` — decision 52's spelling for a condition loop that ran out without a
-/// `break <value>`. **Not** the same text as `$__print_undefined`, which is what
-/// an absent `?T` prints here: decision 52 settles the loop and says nothing
-/// about the optional, and the spelling of absence in general is still open
-/// (§7 names neither). Written through scratch `176..180` — the same region
-/// `$__print_undefined` uses, which is safe because each writes and flushes in
-/// one call.
-const print_null = func("__print_null", &.{}, null, &.{}, &.{
-    c32(176), .{ .@"const" = .{ .ty = .i32, .text = "1819047278" } }, store(0),
-    c32(176), c32(4),                                                 call("__write_bytes"),
-});
-
-/// `@print(<the value of a condition loop>)`: the value the loop's `break`
-/// carried, or `null` when it never broke. `got` is the companion flag
-/// `lowerLoop` declares beside `$__found{n}` — the value alone cannot answer
-/// this, because `break 0` and "never broke" are the same `i32` and every other
-/// backend prints `0` for the first.
-const print_loop_i32_raw = func("__print_loop_i32_raw", &.{ "v", "got" }, null, &.{}, &.{
-    get("got"),
-    whenElse(&.{ get("v"), call("__print_i32_raw") }, &.{call("__print_null")}),
-});
-const print_loop_i32 = func("__print_loop_i32", &.{ "v", "got" }, null, &.{}, &.{ get("v"), get("got"), call("__print_loop_i32_raw"), call("__print_nl") });
 
 /// `$__write_bytes` to stderr (fd 2), through the same iovec scratch.
 const write_err = func("__write_err", &.{ "p", "n" }, null, &.{}, &.{

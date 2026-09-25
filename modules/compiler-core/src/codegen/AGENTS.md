@@ -537,7 +537,7 @@ codegen/
 - **Control flow (no statement in expression position)**: a jump is a
   statement, so every position that can hold one is lowered by `buildStmt`:
   - an `if` in statement position whose branches `return` / `break` /
-    `continue` (or, inside a comprehension, `yield`) is a JS `if` statement
+    `continue` (or, inside a generator scope, `break <v>`) is a JS `if` statement
     (`buildIfStmt`; the `if (val e = …)` form keeps its binding in a `{ … }`
     block). Any other `if` stays the value IIFE, and a jumping `if` in a value
     position is `error.JumpInValuePosition`;
@@ -1771,21 +1771,19 @@ first three are now enforced by the model, not by discipline:
   is lowered as a plain binding rather than as "never matches":
   `patternTestIsReal`. A list pattern binds nothing, the same gap its `case`
   arms have), globals, case, pipeline (`a |> f` → `call $f`), range loops
-  (`lowerRangeLoop`), condition loops (`lowerConditionLoop`, decision 8 §10:
-  `i32.eqz` + `br_if $__break` at the top of each iteration; as a value, a
-  `break <v>` also leaves the loop — `cond_break_depth`) and array loops
-  (`lowerCollectionLoop` — the index of
-  `loop (xs, 1..) { x, i -> … }` counts from the range's start, as erlang's
-  `lists:enumerate(Start, Xs)`; a float array's element is an `f32` slot, bound
-  to an `f32` local), comprehensions,
+  (`lowerRangeLoop`; `a...b` tests `gt_s` where `a..b` tests `ge_s`), condition
+  loops (`lowerConditionLoop`: `i32.eqz` + `br_if $__break` at the top of each
+  iteration) and array loops (`lowerCollectionLoop` — a float array's element
+  is an `f32` slot, bound to an `f32` local), every one a statement (decision
+  105); the annotated `loop` (`lowerGeneratorLoop`, below),
   primitive methods, function values, `@print` via WASI `fd_write`,
   `_botopink_main`/`_start`.
 - **Known gaps** (loadable, but not yet right):
   - `loop` over anything that is not a range or a known array emits
     `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` accepts an array
     literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
-    parameter or fn result, an array-returning primitive method and a
-    comprehension, and nothing else, because walking the layout of a non-array
+    parameter or fn result, an array-returning primitive method and an
+    annotated `loop`, and nothing else, because walking the layout of a non-array
     would read its first word as an element count and trap;
   - an array of tuples/records prints as the element addresses (no printer);
   - every function value's parameters and result are `i32`;
@@ -1856,16 +1854,6 @@ first three are now enforced by the model, not by discipline:
 - **A `?T` box holding an `f32`** (`fs.at(0)` on a float array) prints through
   `$__print_opt_f32`, its own helper group. Read as a boxed `i32` it printed the
   float's **bits** — `1069547520` for `1.5`, exit 0, no diagnostic.
-- **`break <value>` is the loop's value, not one element of an array**
-  (decision 8 §10, `loopIsSearch` + `search_target`). The fork is the body: a
-  `yield` anywhere means the loop **collects** and keeps the `$__yield{n}`
-  accumulator; without one, a condition or infinite `loop` used as a value is a
-  **search** — `break <v>` stores `v` in `$__found{n}` and `br $__break`s, and
-  the loop answers that local.
-  An **iteration** loop (`loop (xs) { x -> … }`) always collects, which is what
-  `fn find(arr: i32[]) -> i32[]` relies on. `isArrayExpr` knows the difference,
-  or a search's value printed through the array printer. Both forms used to
-  answer `[3]` / `[8]`. The commonJS twin is `LoopCtx.search`.
 - **`==` between tuples compares elements** (decision 8 §6 T6; T5 — labels take
   no part): `tupleEqShape` + `emitTupleEq`. Both sides are pointers into the
   bump heap, so `i32.eq` on them answered `false` for `#(1, "a") == #(1, "a")`.
@@ -1887,30 +1875,15 @@ first three are now enforced by the model, not by discipline:
   prints as one too (`t.0` → `#(1, 2)`), which is **ahead of commonJS**: it prints
   `[1, 2]` there, dropping the `#` marker when no shape hint is passed — `04-js`'s
   row, so the fixture for this is wasm-only.
-- **A condition loop that never breaks answers `null`** (decision 52,
-  `search_flag` + `$__print_loop_i32`): it answered `0`, which is a value. The
-  loop's value is carried **unboxed** with `0` for absence — the representation
-  `??` already reads, and it was already right (`none ?? 42` answers `42`) — so
-  the value alone cannot tell "never broke" from `break 0`, and commonJS prints
-  `0` for the second. `lowerLoop` therefore declares a `$__got{n}` flag beside
-  `$__found{n}`, `break <v>` sets it, and `@print` pushes both into
-  `$__print_loop_i32`, which writes the number or `$__print_null`. The flag
-  shares `$__found{n}`'s name index, so the two can never disagree — including
-  under the pre-existing limit that sequential condition loops in one fn reuse
-  index `0`. **Only `@print` reads the flag**: the loop's value is unchanged
-  everywhere else, which is why no other snapshot moved.
-  `$__print_null` is deliberately **not** `$__print_undefined`: decision 52
-  settles the loop, and what an absent `?T` prints here — `undefined`, against
-  commonJS's `null` — is still open, so wasm now carries two absence texts on
-  purpose. erlang and beam owe the same row — erlang leaks the loop's variable
-  group (`3`) and beam answers an atom; front 12's
-  `tests/language/run/loop_condition_no_break.bp` measures all four.
-  **Two shapes, and the simpler one is the decision's headline**: a loop with no
-  `break <value>` **at all** builds neither accumulator, so `lowerConditionLoop`
-  leaves a bare `0` and there is no flag to read — absence is statically certain,
-  and `null_value_locals` + `valuelessLoopInit` make `@print` write
-  `$__print_null` without loading anything. The flag is only for the loop that
-  *might* have broken.
+- **A generator scope collects into an array** (decision 105): a generator
+  fn's body (`renderAccumulatingBody`, `$__yield_fn`) or an annotated `loop`
+  (`lowerGeneratorLoop`, `$__yield{n}` inside `(block $__gen{n} …)`) — each
+  `yield v` appends (`emitYield`), and `break <v>` appends and ends the scope
+  from any loop depth (`emitGenBreak`: `br $__gen{n}`, or the fn's
+  `return` of what it collected). The loop is the array. Every other loop is a
+  statement: decision 8 §10's search (`$__found{n}`), decision 52's
+  `$__got{n}` flag and `$__print_loop_i32` / `$__print_null`, and the
+  valueless-loop `null` all left with the loop's value.
 - **§7 F1 — a separator inside an array or a tuple is `, `, not `,`**
   (`wat_prelude.putSep`): `@print([1, 2])` writes `[1, 2]` and `@print(#(1, "a"))`
   writes `#(1, "a")`, where decision 1a's text had no space at all

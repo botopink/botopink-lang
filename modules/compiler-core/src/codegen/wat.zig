@@ -552,15 +552,6 @@ const Emitter = struct {
     /// Local name → the `$__print_shaped_raw` shape of its value, when it is
     /// an array or a tuple (`printShapeOf`).
     print_shape_locals: std.StringHashMap([]const u8),
-    /// Local name → the `search_flag` of the condition loop it was bound to
-    /// (decision 52). `@print` is the only reader.
-    search_flag_locals: std.StringHashMap([]const u8),
-    /// Locals bound to a condition loop that can **never** have a value — no
-    /// `break <value>` and no `yield` anywhere in its body, which is decision
-    /// 52's headline shape and the one `tests/language/run/loop_condition_no_break.bp`
-    /// writes. There is no flag to read: it would be `0` always, so the local is
-    /// simply known to be absent and `@print` writes `null` without loading it.
-    null_value_locals: std.StringHashMap(void),
     arr_globals: std.StringHashMap(void),
     bool_globals: std.StringHashMap(void),
     /// Every emitted WAT function symbol → its signature.
@@ -583,29 +574,15 @@ const Emitter = struct {
     module_name: []const u8 = "",
     /// The array local a comprehension's `yield`/`break <v>` appends to.
     yield_target: ?[]const u8 = null,
-    /// Decision 8 §10 — the local a **search** loop's `break <v>` writes. A
-    /// condition or infinite `loop` used as a value whose body has no `yield`
-    /// has exactly one value to give, the one its `break` carries, so there is
-    /// no accumulator: `break <v>` stores `v` here and ends the loop, and the
-    /// loop answers this local (`0` when it never broke).
-    search_target: ?[]const u8 = null,
-    /// Decision 52 — the companion flag of `search_target`: `0` until a
-    /// `break <v>` fires, `1` after. The value alone cannot say whether the
-    /// loop broke, because `break 0` and "never broke" are the same `i32`, and
-    /// every other backend prints `0` for the first and the `null` spelling for
-    /// the second. Only `@print` reads it; the loop's **value** stays the bare
-    /// `i32`, so `??` — which already reads `0` as absence — is untouched.
-    search_flag: ?[]const u8 = null,
-    /// The flag of the search loop most recently lowered, so the binding that
-    /// consumes the loop can adopt it. Read only when the initialiser *is* the
-    /// loop (`searchLoopInit`), never when a loop merely occurs inside one.
-    last_search_flag: ?[]const u8 = null,
+    /// The block label of the annotated `loop` being lowered (decision 105):
+    /// a `break <v>` inside it pushes `v` and branches here, out of every
+    /// loop between. Null outside one.
+    gen_end: ?[]const u8 = null,
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
     /// The `loop_depth` of the innermost condition loop (decision 8 §10) used
     /// as a value: there a `break <v>` contributes `v` and also ends the loop.
-    cond_break_depth: ?u32 = null,
     /// Sequence counter for the `$__mem{n}` scratch pointers used when building
     /// or destructuring aggregates (tuples, arrays, records, enum payloads).
     mem_seq: u32 = 0,
@@ -737,8 +714,6 @@ const Emitter = struct {
             .str_globals = std.StringHashMap(void).init(alloc),
             .arr_locals = std.StringHashMap(void).init(alloc),
             .print_shape_locals = std.StringHashMap([]const u8).init(alloc),
-            .search_flag_locals = std.StringHashMap([]const u8).init(alloc),
-            .null_value_locals = std.StringHashMap(void).init(alloc),
             .arr_globals = std.StringHashMap(void).init(alloc),
             .bool_globals = std.StringHashMap(void).init(alloc),
             .fn_sigs = std.StringHashMap(FnSig).init(alloc),
@@ -806,8 +781,6 @@ const Emitter = struct {
         self.str_globals.deinit();
         self.arr_locals.deinit();
         self.print_shape_locals.deinit();
-        self.search_flag_locals.deinit();
-        self.null_value_locals.deinit();
         self.arr_globals.deinit();
         self.bool_globals.deinit();
         self.fn_sigs.deinit();
@@ -1475,8 +1448,6 @@ const Emitter = struct {
         self.str_locals.clearRetainingCapacity();
         self.arr_locals.clearRetainingCapacity();
         self.print_shape_locals.clearRetainingCapacity();
-        self.search_flag_locals.clearRetainingCapacity();
-        self.null_value_locals.clearRetainingCapacity();
         self.arr_elem_locals.clearRetainingCapacity();
         self.result_shape_locals.clearRetainingCapacity();
         self.result_subjects.clearRetainingCapacity();
@@ -1499,6 +1470,7 @@ const Emitter = struct {
         self.res_seq = 0;
         self.loop_seq = 0;
         self.yield_target = null;
+        self.gen_end = null;
         self.loop_depth = 0;
     }
 
@@ -2684,29 +2656,11 @@ const Emitter = struct {
                 },
                 .@"break" => |br| {
                     if (br.value) |v| {
-                        // §10: in a search the break's value IS the loop's.
-                        if (self.search_target) |tgt| {
-                            try self.lowerCoerced(v.*, "i32");
-                            try self.emit(.{ .local_set = tgt });
-                            if (self.search_flag) |flag| {
-                                try self.emitC(one, "decision 52: it broke, so it has a value");
-                                try self.emit(.{ .local_set = flag });
-                            }
-                            try self.emit(.{ .br = break_label });
-                            return .terminated;
-                        }
+                        // Decision 105: `break <v>` in a generator scope
+                        // pushes `v` and ends the scope from any loop depth.
                         if (self.yield_target != null) {
-                            // Decision 55: the value is appended and the loop
-                            // ends there — in a collection loop as much as in a
-                            // condition loop. Before, only the condition loop
-                            // left (`cond_break_depth`); a collection loop ran on
-                            // and `[20, 40, 99]` printed as `[20, 40, 99, 60]`.
-                            try self.emitYield(v.*);
-                            if (self.loop_depth > 0) {
-                                try self.emit(.{ .br = break_label });
-                                return .terminated;
-                            }
-                            return .none;
+                            try self.emitGenBreak(v.*);
+                            return .terminated;
                         }
                         try self.lowerValue(v.*);
                         return .value;
@@ -2750,26 +2704,11 @@ const Emitter = struct {
                     // `emitLocalDecls` runs before the body, so its guess can
                     // differ from what lowering ends up pushing.
                     const lambda_idx: u32 = @intCast(self.lambdas.items.len);
-                    // Decision 52 — `val r = loop (…) { … }` adopts the loop's
-                    // `search_flag`, so `@print(r)` can tell the value a `break`
-                    // carried from the `null` an exhausted loop answers. Read
-                    // only when the initialiser *is* the loop: a loop merely
-                    // occurring inside a bigger expression (`loop(…) ?? 5`)
-                    // binds that expression's value, not the loop's.
-                    const is_search_init = searchLoopInit(lb.value.*);
-                    if (is_search_init) self.last_search_flag = null;
                     if (self.boxesInto(lb.typeAnnotation, lb.value.*))
                         try self.lowerBoxed(lb.value.*)
                     else
                         try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse "i32");
                     try self.emit(.{ .local_set = lb.name });
-                    if (is_search_init) {
-                        if (self.last_search_flag) |flag| try self.search_flag_locals.put(lb.name, flag);
-                    } else _ = self.search_flag_locals.remove(lb.name);
-                    if (valuelessLoopInit(lb.value.*))
-                        try self.null_value_locals.put(lb.name, {})
-                    else
-                        _ = self.null_value_locals.remove(lb.name);
                     if (lb.value.* == .function and self.lambdas.items.len > lambda_idx)
                         try self.closure_locals.put(lb.name, lambda_idx)
                     else
@@ -2949,7 +2888,7 @@ const Emitter = struct {
                 .@"continue" => if (self.loop_depth > 0) Tail.terminated else Tail.none,
                 .try_ => |v| if (v != null) Tail.value else Tail.none,
                 .@"break" => |jl| if (jl.value != null)
-                    (if (self.yield_target != null) Tail.none else Tail.value)
+                    (if (self.yield_target != null) Tail.terminated else Tail.value)
                 else if (self.loop_depth > 0) Tail.terminated else Tail.none,
                 .yield => |jl| if (jl.value != null and self.yield_target == null) Tail.value else Tail.none,
                 .await_ => |a| self.exprTail(a.*),
@@ -3175,9 +3114,8 @@ const Emitter = struct {
                 .@"break" => |br| {
                     if (br.value) |v| {
                         if (self.yield_target != null) {
-                            // Decision 55 — see the statement-position arm above.
-                            try self.emitYield(v.*);
-                            if (self.loop_depth > 0) try self.emit(.{ .br = break_label });
+                            // Decision 105 — see the statement-position arm above.
+                            try self.emitGenBreak(v.*);
                         } else try self.lowerExpr(v.*);
                     } else if (self.loop_depth > 0) try self.emit(.{ .br = break_label });
                 },
@@ -3354,40 +3292,6 @@ const Emitter = struct {
         try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
     }
 
-    /// The decision-52 flag of a local bound to a condition loop's value, when
-    /// `e` is a read of exactly that local. Nothing else has one: a loop lowered
-    /// straight into `@print` is not a fixture this backend has, and the flag is
-    /// a local of the enclosing function, not a property of the value.
-    fn searchFlagOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
-        return switch (e) {
-            .identifier => |id| switch (id.kind) {
-                .ident => |n| self.search_flag_locals.get(self.resolveName(n)),
-                else => null,
-            },
-            .collection => |col| switch (col.kind) {
-                .grouped => |inner| self.searchFlagOf(inner.*),
-                else => null,
-            },
-            else => null,
-        };
-    }
-
-    /// Whether `e` reads a local bound to a loop that can never have a value
-    /// (`null_value_locals`), or is such a loop written straight into `@print`.
-    fn isNullValueRead(self: *Emitter, e: ast.Expr) bool {
-        return switch (e) {
-            .identifier => |id| switch (id.kind) {
-                .ident => |n| self.null_value_locals.contains(self.resolveName(n)),
-                else => false,
-            },
-            .collection => |col| switch (col.kind) {
-                .grouped => |inner| self.isNullValueRead(inner.*),
-                else => false,
-            },
-            else => valuelessLoopInit(e),
-        };
-    }
-
     /// One `@print` argument. `last` decides whether the trailing newline is
     /// emitted here (the `_raw` helpers write the value only). The printer is
     /// picked from the argument's recovered shape — everything used to go
@@ -3421,27 +3325,6 @@ const Emitter = struct {
                 });
                 return;
             }
-        }
-        // Decision 52 — a condition loop that never broke has no value to give,
-        // and every backend owes the `null` spelling for it. wasm carries the
-        // value unboxed with `0` for absence (which is what `??` already reads),
-        // so the value alone cannot tell "never broke" from `break 0`, and
-        // commonJS prints `0` for the second. The companion flag decides.
-        if (self.searchFlagOf(arg)) |flag| {
-            try self.lowerCoerced(arg, "i32");
-            try self.emit(.{ .local_get = flag });
-            try self.emit(self.builder().helper(if (last) .print_loop_i32 else .print_loop_i32_raw));
-            return;
-        }
-        // The same decision, one shape simpler: a loop with no `break <value>`
-        // at all is absent with certainty, so there is nothing to load and no
-        // flag to test — `$__print_null` outright. This is the shape
-        // `run/loop_condition_no_break.bp` writes, and it printed the bare `0`
-        // that `lowerConditionLoop` leaves for a loop with no accumulator.
-        if (self.isNullValueRead(arg)) {
-            try self.emit(self.builder().helper(.print_null));
-            if (last) try self.emit(self.builder().helper(.print_nl));
-            return;
         }
         if (self.optInfoOf(arg)) |oi| {
             try self.lowerValue(arg);
@@ -6914,50 +6797,10 @@ const Emitter = struct {
     }
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
-        // A loop whose body `yield`s (or `break`s with a value) is a
-        // comprehension: every such value is appended to a fresh array, which
-        // is the loop's value. Inside an `#[@iterator]`/`#[@generator]` fn the
-        // fn's own accumulator (`emitFn`) collects them instead.
-        const saved_target = self.yield_target;
-        const saved_search = self.search_target;
-        const saved_flag = self.search_flag;
-        defer {
-            self.yield_target = saved_target;
-            self.search_target = saved_search;
-            self.search_flag = saved_flag;
-        }
-        var result: ?[]const u8 = null;
-        if (self.yield_target == null and bodyYields(lp.body)) {
-            // Decision 8 §10: the fork is the body. A `yield` anywhere means
-            // the loop **collects**; without one, a condition or infinite loop
-            // used as a value is a **search** and `break <v>` IS its value, not
-            // one element of an array. An iteration loop (`loop (xs) { x -> … }`)
-            // always collects — `fn find(xs) -> i32[]` relies on it.
-            if (loopIsSearch(lp)) {
-                const tgt = try std.fmt.allocPrint(self.reg_arena.allocator(), "__found{d}", .{self.loop_seq});
-                try self.declareLocal(tgt, "i32");
-                try self.emitC(zero, "§10: a search that never breaks has no value");
-                try self.emit(.{ .local_set = tgt });
-                self.search_target = tgt;
-                // Decision 52 — the flag that tells "never broke" from
-                // `break 0`, which are the same `i32` in `$__found{n}`.
-                const flag = try std.fmt.allocPrint(self.reg_arena.allocator(), "__got{d}", .{self.loop_seq});
-                try self.declareLocal(flag, "i32");
-                try self.emitC(zero, "decision 52: it has not broken yet");
-                try self.emit(.{ .local_set = flag });
-                self.search_flag = flag;
-                self.last_search_flag = flag;
-                result = tgt;
-            } else {
-                const tgt = try std.fmt.allocPrint(self.reg_arena.allocator(), "__yield{d}", .{self.loop_seq});
-                try self.declareLocal(tgt, "i32");
-                try self.emit(zero);
-                try self.emit(self.builder().helper(.arr_new));
-                try self.emit(.{ .local_set = tgt });
-                self.yield_target = tgt;
-                result = tgt;
-            }
-        }
+        if (lp.generator != null) return self.lowerGeneratorLoop(lp);
+        // Every other loop is a statement (decision 105); inside a generator
+        // fn its `yield`s feed the fn's accumulator (`renderAccumulatingBody`).
+        const result: ?[]const u8 = null;
         if (lp.condition) return self.lowerConditionLoop(lp, result);
         switch (lp.iter.*) {
             .collection => |col| switch (col.kind) {
@@ -6975,6 +6818,59 @@ const Emitter = struct {
         try self.emitC(zero, "loop over unknown iterable");
     }
 
+    /// `#[@generator] loop { … }` (decision 105) — eager on wasm: the body
+    /// runs as `loop { … }` does inside a block of its own, each `yield v`
+    /// appends to a fresh array, and the expression is the array:
+    ///
+    ///     (block $__gen<n> (block $__break (loop $__continue …)))  local.get $__yield<n>
+    ///
+    /// `break <v>` appends and branches to `$__gen<n>` from any loop depth; a
+    /// bare `break` leaves the loop, which falls out of the block too. A
+    /// captured `var` is this function's local, so the loop's reassignments
+    /// are read after it.
+    fn lowerGeneratorLoop(self: *Emitter, lp: anytype) anyerror!void {
+        const ra = self.reg_arena.allocator();
+        const n = self.loop_seq;
+        self.loop_seq += 1;
+        const tgt = try std.fmt.allocPrint(ra, "__yield{d}", .{n});
+        const label = try std.fmt.allocPrint(ra, "__gen{d}", .{n});
+        try self.declareLocal(tgt, "i32");
+        try self.emit(zero);
+        try self.emit(self.builder().helper(.arr_new));
+        try self.emit(.{ .local_set = tgt });
+        const saved_target = self.yield_target;
+        const saved_end = self.gen_end;
+        self.yield_target = tgt;
+        self.gen_end = label;
+        var c: Capture = .{};
+        self.open(&c);
+        {
+            defer {
+                self.yield_target = saved_target;
+                self.gen_end = saved_end;
+            }
+            try self.lowerConditionLoop(lp, null);
+            try self.emit(.drop);
+        }
+        const seq = self.seal(&c, .none);
+        try self.emit(.{ .block = .{ .kind = .block, .label = label, .body = seq } });
+        try self.emit(.{ .local_get = tgt });
+    }
+
+    /// `break <v>` in a generator scope: append `v`, then end the scope —
+    /// branch out of the annotated loop's block, or, in a generator fn,
+    /// return what the body collected.
+    fn emitGenBreak(self: *Emitter, v: ast.Expr) anyerror!void {
+        try self.emitYield(v);
+        if (self.gen_end) |label| {
+            try self.emit(.{ .br = label });
+            return;
+        }
+        try self.emitC(.{ .local_get = self.yield_target.? }, "everything the body yielded");
+        try self.emitConvert("i32", self.cur_result);
+        try self.emit(.@"return");
+    }
+
     /// Whether a loop body `yield`s or `break`s with a value — directly or in a
     /// nested `if`/`case` arm, but not inside a nested loop or lambda, whose
     /// values are their own.
@@ -6987,45 +6883,6 @@ const Emitter = struct {
     /// what tells a comprehension (which collects) from a search (whose value
     /// is the one its `break` carries). A nested loop is not descended into:
     /// its `yield`s are its own.
-    /// Decision 8 §10 — a condition or infinite `loop` used as a value whose
-    /// body holds no `yield`: its value is the one its `break` carries, not a
-    /// collection. An iteration loop always collects.
-    fn loopIsSearch(lp: anytype) bool {
-        return lp.condition and !bodyHasYield(lp.body);
-    }
-
-    /// Whether `e` **is** a search loop used as a value — the initialiser shape
-    /// that lets a binding adopt the loop's decision-52 flag. Parentheses are
-    /// transparent; anything else is not the loop's value.
-    fn searchLoopInit(e: ast.Expr) bool {
-        return switch (e) {
-            .loop => |lp| loopIsSearch(lp) and bodyYields(lp.body),
-            .collection => |col| switch (col.kind) {
-                .grouped => |inner| searchLoopInit(inner.*),
-                else => false,
-            },
-            else => false,
-        };
-    }
-
-    /// Whether `e` is a condition or infinite `loop` that can **never** have a
-    /// value: no `yield` and no `break <value>` anywhere in its body, so
-    /// `lowerLoop` builds neither accumulator and `lowerConditionLoop` leaves a
-    /// bare `0`. Decision 52's headline — "a loop with no `break <value>` has no
-    /// value to give" — is exactly this shape, and it needs no run-time flag:
-    /// absence is statically certain. An **iteration** loop is excluded: it
-    /// collects, and its value is an empty array, not absence.
-    fn valuelessLoopInit(e: ast.Expr) bool {
-        return switch (e) {
-            .loop => |lp| lp.condition and !bodyYields(lp.body),
-            .collection => |col| switch (col.kind) {
-                .grouped => |inner| valuelessLoopInit(inner.*),
-                else => false,
-            },
-            else => false,
-        };
-    }
-
     fn bodyHasYield(body: []const ast.Stmt) bool {
         for (body) |st| if (exprHasYield(st.expr)) return true;
         return false;
@@ -7128,8 +6985,8 @@ const Emitter = struct {
                 .arrayLit => true,
                 else => false,
             },
-            // a search answers the value its `break` carries, not an array
-            .loop => |lp| bodyYields(lp.body) and !loopIsSearch(lp),
+            // only the annotated loop has a value, and it is an array
+            .loop => |lp| lp.generator != null,
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .arr;
@@ -7148,10 +7005,9 @@ const Emitter = struct {
         };
     }
 
-    /// `loop (xs) { item -> … }` / `loop (xs, 0..) { item, i -> … }` over the
-    /// `[len][e0][e1]…` layout: a counted walk binding each element to the loop
-    /// parameter. The loop itself yields 0 — a `yield`/`break`-accumulating
-    /// comprehension still collects nothing (see codegen/AGENTS.md).
+    /// `for (xs) { item -> … }` over the `[len][e0][e1]…` layout: a counted
+    /// walk binding each element to the loop parameter. A statement (decision
+    /// 105): it leaves 0, or the generator's array when `result` names one.
     fn lowerCollectionLoop(self: *Emitter, lp: anytype, result: ?[]const u8) anyerror!void {
         const ra = self.reg_arena.allocator();
         const n = self.loop_seq;
@@ -7170,10 +7026,6 @@ const Emitter = struct {
         const elem_ty = if (elem_kind == .f32) "f32" else "i32";
         try self.declareLocal(elem, elem_ty);
         if (elem_kind == .str) try self.str_locals.put(elem, {});
-        const idx_param: ?[]const u8 = if (lp.params.len > 1) lp.params[1] else null;
-        if (idx_param) |ip| try self.declareLocal(ip, "i32");
-        // `loop (xs, 1..) { x, i -> … }` counts `i` from the range's start.
-        const start = try self.indexRangeStart(lp.indexRange, n);
 
         try self.lowerCoerced(lp.iter.*, "i32");
         try self.emit(.{ .local_set = base });
@@ -7196,21 +7048,6 @@ const Emitter = struct {
         try self.emitAt(8, opOf("i32", "add"));
         try self.emitAt(8, .{ .load = .{ .ty = vt(elem_ty), .offset = 4 } });
         try self.emitAt(8, .{ .local_set = elem });
-        if (idx_param) |ip| {
-            try self.emitAt(8, .{ .local_get = cur });
-            switch (start) {
-                .zero => {},
-                .constant => |k| {
-                    try self.emitAt(8, k);
-                    try self.emitAt(8, opOf("i32", "add"));
-                },
-                .local => |l| {
-                    try self.emitAt(8, .{ .local_get = l });
-                    try self.emitAt(8, opOf("i32", "add"));
-                },
-            }
-            try self.emitAt(8, .{ .local_set = ip });
-        }
         try self.emitIterationBody(lp.body);
         try self.emitAt(8, .{ .local_get = cur });
         try self.emitAt(8, one);
@@ -7221,39 +7058,6 @@ const Emitter = struct {
 
         try self.emitLoopBlock(loop_seq);
         if (result) |r| try self.emit(.{ .local_get = r }) else try self.emit(zero);
-    }
-
-    const IndexStart = union(enum) { zero, constant: Instr, local: []const u8 };
-
-    /// The first index of `loop (xs, <range>)`: the range's lower bound (`0`
-    /// without one, as erlang's `lists:enumerate(Start, Xs)`). An integer
-    /// literal is added as a constant; anything else is evaluated once, before
-    /// the walk, into `__start<n>`.
-    fn indexRangeStart(self: *Emitter, range: anytype, n: u32) anyerror!IndexStart {
-        const r = range orelse return .zero;
-        const start_expr = switch (r.*) {
-            .collection => |col| switch (col.kind) {
-                .range => |rg| rg.start.*,
-                else => return .zero,
-            },
-            else => return .zero,
-        };
-        switch (start_expr) {
-            .literal => |lit| switch (lit.kind) {
-                .numberLit => |text| if (isNumericLiteral(text) and numLitType(text)[0] == 'i') {
-                    const k = std.fmt.parseInt(i64, text, 10) catch return .zero;
-                    if (k == 0) return .zero;
-                    return .{ .constant = try self.constInt(k) };
-                },
-                else => {},
-            },
-            else => {},
-        }
-        const name = try std.fmt.allocPrint(self.reg_arena.allocator(), "__start{d}", .{n});
-        try self.declareLocal(name, "i32");
-        try self.lowerCoerced(start_expr, "i32");
-        try self.emit(.{ .local_set = name });
-        return .{ .local = name };
     }
 
     /// One iteration's statements. A body that `continue`s is wrapped in
@@ -7316,10 +7120,6 @@ const Emitter = struct {
     /// `loop (condition) { … }` / `loop { … }` (decision 8 §10): test the
     /// condition at the top of every iteration, leave when it is false.
     fn lowerConditionLoop(self: *Emitter, lp: anytype, result: ?[]const u8) anyerror!void {
-        const saved_depth = self.cond_break_depth;
-        self.cond_break_depth = if (result != null) self.loop_depth + 1 else null;
-        defer self.cond_break_depth = saved_depth;
-
         var loop_c: Capture = .{};
         self.open(&loop_c);
         try self.lowerCoerced(lp.iter.*, "i32");
@@ -7343,9 +7143,10 @@ const Emitter = struct {
         var loop_c: Capture = .{};
         self.open(&loop_c);
         if (r.end) |end| {
+            // `a..b` stops at `b`; `a...b` (decision 105) runs it too.
             try self.emitAt(8, .{ .local_get = param });
             try self.lowerExpr(end.*);
-            try self.emitAt(8, opOf("i32", "ge_s"));
+            try self.emitAt(8, opOf("i32", if (r.inclusive) "gt_s" else "ge_s"));
             try self.emitAt(8, .{ .br_if = break_label });
         }
 

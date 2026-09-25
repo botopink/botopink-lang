@@ -204,13 +204,6 @@ erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell d
 erlang   | run/case_range_value.bp     | C-06 (erlang half not landed) | decision 53: the `1...9` arm never matches — all five probes (5, 1, 9, 0, 10) answer the `_` arm's `0`
 beam     | run/case_range_value.bp     | C-06 (beam half not landed) | decision 53: the opposite — the `1...9` arm **always** matches, so 0 and 10 answer `1` too. beam does run (run.sh § beam assembles and executes it); "beam emits only out/main.S" is no longer the measurement (D4, `case` arms)
 
-# ── the annotated loop and the inclusive range, backend by backend ──────────
-# Decision 105 — `#[@generator] loop { … }` as a generator expression, `for
-# await`, and `a...b`. commonJS, erlang and beam landed first; wasm lands in
-# its own step-3 commit and deletes its line here. (`test/` cells run on
-# neither beam nor wasm.)
-wasm     | run/loop_range_inclusive.bp | 22 step 3 (wasm half) | decision 105: `a...b` still lowers as `a..b`
-
 # ── an index is a method call (decision 63, amended 2026-09-19) ──────────────
 # `xs[i]` IS `xs.at(i)` and `d["k"]` IS `d.at("k")` through the ambient
 # `Index<K, V>` behavior, and the expression's type is whatever the method
