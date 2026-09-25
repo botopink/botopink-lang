@@ -7697,17 +7697,16 @@ const Emitter = struct {
     /// expression (`{ n -> n + 1 }`), it is the closure's return value: lower it
     /// into `{x, 0}` and return. Plain `emitBody` would instead append a `move
     /// ok` fallback and discard that value, which makes closures passed to
-    /// `@Result`/`@Option` `map`/`flatMap` useless. Any other tail (an explicit
-    /// `return`, a `yield`/`break`, an `if`/`case`, …) keeps `emitBody`'s
-    /// behavior so loop and block lambdas are unaffected.
+    /// `@Result`/`@Option` `map`/`flatMap` useless. The value tails are
+    /// `armValueTail`'s — a `case` arm and a lambda share them — so an `if`,
+    /// a `case` and a `try … catch` answer their value too (03 handover 01:
+    /// `xs.map({ x -> if (x > 1) { x * 10 } else { x } })` answered `ok,ok,ok`).
+    /// An explicit `return`, a `yield`/`break` or a loop keeps `emitBody`'s
+    /// behavior.
     fn emitLambdaBody(self: *Emitter, body: []const ast.Stmt) anyerror!void {
         if (body.len > 0) {
             const last = body[body.len - 1].expr;
-            const is_value_tail = switch (last) {
-                .literal, .identifier, .binaryOp, .unaryOp, .call, .useHook => true,
-                else => false,
-            };
-            if (is_value_tail) {
+            if (armValueTail(last)) {
                 for (body[0 .. body.len - 1]) |stmt| try self.emitStmt(stmt);
                 try self.lowerExprIntoX0(last);
                 try self.emitReturn();

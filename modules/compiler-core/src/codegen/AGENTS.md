@@ -1498,6 +1498,12 @@ codegen/
   Every one of these used to match every subject and bind nothing
   (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
   `assertBeamRunLog` rows in `tests/control_flow.zig`.
+- **Lambda bodies** (`emitLambdaBody`): the last statement is the lambda's
+  value when it is a value tail — `armValueTail`'s set, shared with a `case`
+  arm's block, so an `if`, a `case` and a `try … catch` answer their value
+  (`xs.map({ x -> if (x > 1) { x * 10 } else { x } })` answered `ok,ok,ok`,
+  03 handover 01). An explicit `return`, a `yield`/`break` or a loop keeps
+  `emitBody`.
 - **Variant constructors** (`lowerTaggedTuple`): a labelled argument fills the
   slot of the field it names (`variantDeclOf`, the declared fields), as a record
   constructor's does — `Shape.Rect(height: 2, width: 5)` was built positionally

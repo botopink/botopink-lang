@@ -1228,6 +1228,26 @@ test "beam: an enum variant's labelled payload claims its declared slot" {
     , "502\n502\n502\n", &.{});
 }
 
+test "beam: a lambda whose body is an if, a case or a try answers its value" {
+    // 03 handover 01, `run/lambda_expression_body.bp`. `emitLambdaBody`
+    // treated only a literal/name/operator/call tail as the lambda's value;
+    // an `if`, a `case` and a `try … catch` fell to `emitBody`, which answers
+    // the atom `ok` — `ok,ok,ok` on each line. The value tails are now
+    // `armValueTail`'s, the set a `case` arm's block already used.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\#[@result]
+        \\fn tenth(x: i32) -> @Result<i32, string> {
+        \\    if (x > 1) { return x * 10; } else { throw "too small"; }
+        \\}
+        \\fn main() {
+        \\  val xs = [1, 2, 3];
+        \\  @print(xs.map({ x -> if (x > 1) { x * 10 } else { x } }).join(","));
+        \\  @print(xs.map({ x -> case x { 1 { 100 } _ { 200 } } }).join(","));
+        \\  @print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
+        \\}
+    , "1,20,30\n100,200,200\n0,20,30\n", &.{});
+}
+
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
 //
 // `break <value>` out of `while (cond)` was refused outright with an unlocated
