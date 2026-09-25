@@ -44,6 +44,52 @@ pub declare fn parse(s: string) -> @Result<string, string>;
 #[@External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
 pub declare fn stringify(s: string) -> @Result<string, string>;
 
+// ── 1.0.10-beta front 01 (decisions 116, 117): writing JSON ────────────────
+//
+// `quote`/`unquote` are one JSON string literal and its inverse; `array` and
+// `object` assemble already-encoded values. Every library that answers JSON
+// writes it with these instead of a private escaper (decision 116 rule 3).
+
+// A JSON string literal for `s`, quotes included (RFC 8259 §7): `"` → `\"`,
+// `\` → `\\`, U+0008/U+000C/U+000A/U+000D/U+0009 → `\b` `\f` `\n` `\r` `\t`,
+// every other code point below U+0020 → `\u00xx` (lowercase hex), and nothing
+// else — non-ASCII text, `/`, U+2028 and U+2029 pass through as UTF-8 (a JSON
+// value bound for `<script>` goes through `escape.scriptJson`).
+// Node: `JSON.stringify` of a string is exactly that.
+// Erlang: a byte walk — `json:encode/1` writes `\u001F` in UPPERCASE hex, so
+// the two targets would disagree; bytes of U+0080 and above pass through.
+#[@External.Node("""JSON.stringify(String($0))""")]
+#[@External.Erlang("""(fun(__S) -> iolist_to_binary([34, [case __C of 34 -> [92, 34]; 92 -> [92, 92]; 8 -> [92, 98]; 12 -> [92, 102]; 10 -> [92, 110]; 13 -> [92, 114]; 9 -> [92, 116]; _ when __C < 32 -> io_lib:format("~cu~4.16.0b", [92, __C]); _ -> __C end || <<__C>> <= __S], 34]) end)($0)""")]
+pub declare fn quote(s: string) -> string;
+
+// The inverse of `quote`: read ONE JSON string literal (surrounding
+// whitespace allowed) and answer its text. Anything else — a bare word, a
+// number, a missing quote, trailing text — is an `Error`.
+#[@result]
+#[@External.Node("""(() => { try { const __v = JSON.parse(String($0)); return typeof __v === 'string' ? { ok: __v } : { error: 'json.unquote: not a JSON string literal' } } catch (__e) { return { error: 'json.unquote: not a JSON string literal' } } })()""")]
+#[@External.Erlang("""(fun(__S) -> try json:decode(__S) of __V when is_binary(__V) -> {ok, __V}; _ -> {error, <<"json.unquote: not a JSON string literal">>} catch _:_ -> {error, <<"json.unquote: not a JSON string literal">>} end end)($0)""")]
+pub declare fn unquote(literal: string) -> @Result<string, string>;
+
+// A JSON array of `items`, each ALREADY encoded (the output of `quote`, a
+// number's text, `true`/`false`/`null`, or another writer's output). No
+// escaping happens here.
+pub fn array(items: Array<string>) -> string {
+    return ["[", items.join(","), "]"].join("");
+}
+
+// A JSON object of `fields` in the given order: each key goes through
+// `quote`, each value is ALREADY encoded (as for `array`).
+pub fn object(fields: Array<#(string, string)>) -> string {
+    val members = fields.map({ f -> [quote(f._0), ":", f._1].join("") });
+    return ["{", members.join(","), "}"].join("");
+}
+
+// Internal: the UTF-8 text of one code point. The tests build every
+// non-ASCII string with it (see `cp`), and `decode` writes `\u` escapes.
+#[@External.Node("""String.fromCodePoint($0)""")]
+#[@External.Erlang("""unicode:characters_to_binary([$0])""")]
+declare fn codepointText(cp: i32) -> string;
+
 // ── tests ────────────────────────────────────────────────────────────────────
 
 test "json.parse round-trips a valid object" {
@@ -60,3 +106,60 @@ test "json.parse normalises a value" {
     val r = parse("[1,2,3]").unwrapOr("");
     assert r == "[1,2,3]";
 }
+
+test "json.quote escapes a quote and a backslash" {
+    assert quote("a\"b\\c") == "\"a\\\"b\\\\c\"";
+    assert quote("") == "\"\"";
+}
+
+test "json.quote escapes every control character, lowercase hex" {
+    assert quote("\u{1}\u{8}\u{c}\u{1f}\n\t") == "\"\\u0001\\b\\f\\u001f\\n\\t\"";
+    assert quote("\r\u{0}") == "\"\\r\\u0000\"";
+}
+
+// Non-ASCII text enters the tests through `codepointText`, never a literal:
+// the erlang backend lowers a `\u{…}` escape above U+007F to ONE latin1 byte
+// (U+2028 becomes `<<40>>`), so a literal would compare truncated bytes on
+// both sides and pass for the wrong reason.
+fn cp(n: i32) -> string {
+    return codepointText(n);
+}
+
+test "json.quote leaves non-ASCII, the slash and U+2028 alone" {
+    val acao = ["a", cp(231), cp(227), "o"].join("");
+    assert quote(acao) == ["\"", acao, "\""].join("");
+    val odd = ["/", cp(8232), cp(128512)].join("");
+    assert quote(odd) == ["\"", odd, "\""].join("");
+}
+
+// Internal: `quote(s)` parses, and `unquote` reads `s` back.
+fn roundTrips(s: string) -> bool {
+    val parsed = parse(quote(s));
+    val back = unquote(quote(s));
+    return parsed.isOk() && back.unwrapOr("<err>") == s;
+}
+
+test "json.quote round-trips through parse and unquote" {
+    val table = ["", "\u{0}\u{1}\u{2}\u{3}\u{4}\u{5}\u{6}\u{7}\u{8}\t\n\u{b}\u{c}\r\u{e}\u{f}", "\u{10}\u{11}\u{12}\u{13}\u{14}\u{15}\u{16}\u{17}\u{18}\u{19}\u{1a}\u{1b}\u{1c}\u{1d}\u{1e}\u{1f}", "\"", "\\", "/", [cp(8232), cp(8233)].join(""), cp(128512), "plain text"];
+    assert table.filter({ s -> roundTrips(s) }).length == table.length;
+}
+
+test "json.unquote refuses what is not one string literal" {
+    assert unquote("abc").isError();
+    assert unquote("\"abc").isError();
+    assert unquote("1").isError();
+    assert unquote("\"a\" \"b\"").isError();
+    assert unquote(" \"ok\" ").unwrapOr("?") == "ok";
+}
+
+test "json.array joins already-encoded items" {
+    assert array([quote("a"), "1", "true"]) == "[\"a\",1,true]";
+    assert array([]) == "[]";
+}
+
+test "json.object keeps the order and quotes the keys" {
+    assert object([#("v", "1"), #("ok", "true"), #("s", quote("x"))]) == "{\"v\":1,\"ok\":true,\"s\":\"x\"}";
+    assert object([]) == "{}";
+    assert parse(object([#("a\"b", "1")])).isOk();
+}
+
