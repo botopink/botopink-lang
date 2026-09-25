@@ -93,6 +93,30 @@ pub fn matches(body: string, ifNoneMatch: string) -> bool {
     return if (wildcard) true else hit;
 }
 
+// ── fingerprints ─────────────────────────────────────────────────────────────
+
+// `app.js` → `app.<hash>.js`. The extension stays last: a browser and a CDN
+// both dispatch on it, and a hash appended after it breaks both. A leading
+// dot (`.gitignore`) is not an extension boundary, and a name without an
+// extension gains no trailing dot (`LICENSE` → `LICENSE.<hash>`).
+//
+// The extension is measured as the last `.`-separated piece rather than
+// found with `lastIndexOf`: on Erlang `lastIndexOf` answers a BYTE offset
+// while `length`/`slice` count characters, so a non-ASCII stem would be cut
+// in the wrong place. `length` and `slice` agree with each other on both
+// targets.
+pub fn fingerprint(fileName: string, contents: string) -> string {
+    val hash = contentHash(contents);
+    val pieces = fileName.split(".");
+    val tail = pieces.at(pieces.length - 1);
+    val extLen = if (tail != null) tail.length() + 1 else 0;
+    val hasExt = if (pieces.length > 1) extLen < fileName.length() else false;
+    val cut = fileName.length() - extLen;
+    val stem = if (hasExt) fileName.slice(0, cut) else fileName;
+    val ext = if (hasExt) fileName.slice(cut, fileName.length()) else "";
+    return stem + "." + hash + ext;
+}
+
 // ── tests ────────────────────────────────────────────────────────────────────
 //
 // Every expected hex below is a LITERAL, not a second call: a literal is the
@@ -180,4 +204,22 @@ test "content_hash.matches splits and trims a candidate list" {
 
 test "content_hash.matches of an empty header is false" {
     assert matches("<p>hi</p>", "") == false;
+}
+
+test "content_hash.fingerprint keeps the extension last" {
+    assert fingerprint("app.js", "body{}") == "app.f48a1b4b.js";
+    assert fingerprint("a.b.css", "body{}") == "a.b.f48a1b4b.css";
+}
+
+test "content_hash.fingerprint of a name without an extension adds no trailing dot" {
+    assert fingerprint("LICENSE", "body{}") == "LICENSE.f48a1b4b";
+}
+
+test "content_hash.fingerprint does not treat a leading dot as an extension" {
+    assert fingerprint(".gitignore", "body{}") == ".gitignore.f48a1b4b";
+}
+
+test "content_hash.fingerprint answers a different name for different contents" {
+    assert fingerprint("app.js", "body{x}") == "app.85cd8483.js";
+    assert fingerprint("app.js", "body{}") != fingerprint("app.js", "body{x}");
 }
