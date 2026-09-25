@@ -3462,6 +3462,15 @@ const Emitter = struct {
         this.local_types.put(this.alloc, name, t.named) catch {};
     }
 
+    /// A local declared `unknown` (`val a: unknown`, `x: unknown`) — what
+    /// decision 8 §2.3's by-value equality keys on.
+    fn isUnknownOperand(this: *const Emitter, e: ast.Expr) bool {
+        const n = identName(e) orelse return false;
+        if (!this.locals.contains(n)) return false;
+        const t = this.local_types.get(n) orelse return false;
+        return std.mem.eql(u8, t, "unknown");
+    }
+
     /// True when `t` is the `string` primitive.
     fn isStringType(t: ?ast.TypeRef) bool {
         const ty = t orelse return false;
@@ -4842,10 +4851,15 @@ const Emitter = struct {
                 const cond = try this.exprNode(b, ia.cond.*);
                 this.indent += 1;
                 defer this.indent -= 1;
+                const narrowing = try this.isNarrowing(b, ia.cond.*);
                 const then_val = try this.exprNode(b, ia.then_val.*);
+                if (narrowing) |n| try n.restore(this);
                 const else_val = if (ia.else_val) |ev| try this.exprNode(b, ev.*) else acc_var;
                 break :blk b.caseOf(cond, &.{
-                    try b.clause(&.{Ast.Expr.a("true")}, &.{}, &.{then_val}),
+                    if (narrowing) |n|
+                        try b.clause(&.{Ast.Expr.a("true")}, &.{}, &.{ n.bind, then_val })
+                    else
+                        try b.clause(&.{Ast.Expr.a("true")}, &.{}, &.{then_val}),
                     try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{else_val}),
                 });
             },
@@ -5343,6 +5357,42 @@ const Emitter = struct {
         return .{ .stmts = stmts.items };
     }
 
+    /// The rebinding an `if (x is i32)` then-arm opens with (decision 8 §4.1:
+    /// inside the block `x` is the converted value): `X@n = trunc(X)`, or
+    /// `float(X)` for a float type. Null when the condition is not a numeric
+    /// `is` over a local. `restore` puts `x`'s version back once the arm is
+    /// built, for the sites that keep no version snapshot of their own.
+    const IsNarrowing = struct {
+        name: []const u8,
+        prev: ?u32,
+        bind: Ast.Expr,
+
+        fn restore(n: IsNarrowing, this: *Emitter) !void {
+            if (n.prev) |v| try this.var_current.put(n.name, v) else _ = this.var_current.remove(n.name);
+        }
+    };
+
+    fn isNarrowing(this: *Emitter, b: Ast.Builder, cond: ast.Expr) anyerror!?IsNarrowing {
+        if (cond != .call or cond.call.kind != .call) return null;
+        const cc = cond.call.kind.call;
+        if (!std.mem.eql(u8, cc.callee, ast.is_builtin_name) or cc.args.len != 1) return null;
+        const t = cc.isType orelse return null;
+        if (t != .named) return null;
+        const conv = numericConversion(t.named) orelse return null;
+        const name = identName(cc.args[0].value.*) orelse return null;
+        if (!this.locals.contains(name) or this.pattern_discard) return null;
+        const prev = this.var_current.get(name);
+        const old = Ast.Expr.v(try this.varRef(b, name));
+        const fresh = Ast.Expr.v(try this.patternBindVar(b, name));
+        return .{ .name = name, .prev = prev, .bind = try b.match(fresh, try b.call(conv, &.{old})) };
+    }
+
+    /// `body` opened with the narrowing's rebinding, when there is one.
+    fn withNarrowing(b: Ast.Builder, n: ?IsNarrowing, body: Ast.Body) anyerror!Ast.Body {
+        const nar = n orelse return body;
+        return prependStmts(b, &.{nar.bind}, body);
+    }
+
     /// `Group = case Cond of true -> Then, Group'; _ -> Else, Group'' end`
     /// (the binding form `if (x) { b -> … }` matches `undefined` first).
     fn mutatingIfExpr(this: *Emitter, b: Ast.Builder, if_node: anytype, names: []const []const u8) anyerror!Ast.Expr {
@@ -5370,9 +5420,10 @@ const Emitter = struct {
         }
         const subject = try this.condNode(b, if_node.cond.*);
         const then_pattern = Ast.Expr.a("true");
+        const narrowing = try this.isNarrowing(b, if_node.cond.*);
         try clauses.append(b.arena, .{
             .patterns = try b.exprs(&.{then_pattern}),
-            .body = try this.armWithGroup(b, if_node.then_, names, arm_indent),
+            .body = try withNarrowing(b, narrowing, try this.armWithGroup(b, if_node.then_, names, arm_indent)),
         });
         try this.restoreVersions(&snapshot);
 
@@ -5491,8 +5542,11 @@ const Emitter = struct {
             });
         }
         const cond = try this.condNode(b, if_node.cond.*);
+        const narrowing = try this.isNarrowing(b, if_node.cond.*);
+        const then_body = try withNarrowing(b, narrowing, try this.bodyNode(b, if_node.then_, 0, arm_indent));
+        if (narrowing) |n| try n.restore(this);
         return b.caseOf(cond, &.{
-            .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = try this.bodyNode(b, if_node.then_, 0, arm_indent) },
+            .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = then_body },
             .{ .patterns = try b.exprs(&.{Ast.Expr.v("_")}), .body = try this.bodyNode(b, body, i + 1, arm_indent) },
         });
     }
@@ -5832,8 +5886,11 @@ const Emitter = struct {
                     .gt => ">",
                     .lte => "=<",
                     .gte => ">=",
-                    .eq => "=:=",
-                    .ne => "=/=",
+                    // Decision 8 §2.3: with an operand statically `unknown`,
+                    // numbers compare by value (`2.0 == 2` holds); two typed
+                    // operands keep decision B2's exact equality.
+                    .eq => if (this.isUnknownOperand(bin.lhs.*) or this.isUnknownOperand(bin.rhs.*)) "==" else "=:=",
+                    .ne => if (this.isUnknownOperand(bin.lhs.*) or this.isUnknownOperand(bin.rhs.*)) "/=" else "=/=",
                     // Short-circuiting, as botopink's `&&`/`||` are: erlang's
                     // `and`/`or` evaluate BOTH operands, so a right operand
                     // guarded by the left (`xs.length > 0 && xs.at(0) > 1`)
@@ -5974,7 +6031,9 @@ const Emitter = struct {
                         try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{bound}), .body = try this.bodyNode(b, i.then_, 0, arm_indent) });
                         return b.caseOf(cond, clauses.items);
                     }
-                    try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{A("true")}), .body = try this.bodyNode(b, i.then_, 0, arm_indent) });
+                    const narrowing = try this.isNarrowing(b, i.cond.*);
+                    try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{A("true")}), .body = try withNarrowing(b, narrowing, try this.bodyNode(b, i.then_, 0, arm_indent)) });
+                    if (narrowing) |n| try n.restore(this);
                     if (i.else_) |els| {
                         try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{A("false")}), .body = try this.bodyNode(b, els, 0, arm_indent) });
                     } else {
@@ -6754,6 +6813,15 @@ const Emitter = struct {
         const pattern = try this.patternNodeExtra(b, pat, extras);
         const name = armBinderName(body) orelse return pattern;
         const bound = Ast.Expr.v(try this.patternBindVar(b, name));
+        // `i32 { n -> … }` over `3.0` (decision 8 §4.1): the arm matched by
+        // value, and `n` is the converted `3` — `N = trunc(I32)` opens the
+        // body instead of the alias, which would bind the float.
+        if (pat == .ident and pattern == .variable and !std.mem.eql(u8, pattern.variable, "_")) {
+            if (numericConversion(pat.ident)) |conv| {
+                try extras.binds.append(b.arena, try b.match(bound, try b.call(conv, &.{pattern})));
+                return pattern;
+            }
+        }
         // `V = _` is legal erlang and says nothing: on a wildcard the variable
         // *is* the pattern.
         if (pattern == .variable and std.mem.eql(u8, pattern.variable, "_")) return bound;
@@ -6868,10 +6936,9 @@ const Emitter = struct {
                 // as a fresh variable and added an element no constructor ever
                 // materialised, so every arm failed with `case_clause`.)
                 //
-                // `.range` is decision 8 §5.2's `1...9`, whose name is empty as
-                // well; it keeps the shape it has until front 02 step 3 lowers it
-                // (`run/case_range_value.bp`).
-                .variant, .range => {
+                // `.range` is decision 53's `1...9`, both bounds included.
+                .range => return this.rangePatternNode(b, v, extras),
+                .variant => {
                     var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
                     try items.append(b.arena, Ast.Expr.a(this.variantTag(v.name)));
                     switch (v.payload) {
@@ -7053,13 +7120,53 @@ const Emitter = struct {
     fn appendPrimTypeGuards(b: Ast.Builder, ex: *PatternExtras, name: []const u8, subject: Ast.Expr) anyerror!void {
         if (std.mem.eql(u8, name, "string")) return ex.guards.append(b.arena, try b.call("is_binary", &.{subject}));
         if (std.mem.eql(u8, name, "bool")) return ex.guards.append(b.arena, try b.call("is_boolean", &.{subject}));
-        if (std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64") or std.mem.eql(u8, name, "float")) {
-            return ex.guards.append(b.arena, try b.call("is_number", &.{subject}));
-        }
+        if (isFloatTypeName(name)) return ex.guards.append(b.arena, try b.call("is_number", &.{subject}));
         const range = integerPatternRange(name) orelse return;
-        try ex.guards.append(b.arena, try b.call("is_integer", &.{subject}));
+        // §4.1: by value — `3.0` takes an `i32` arm, `2.5` does not.
+        try ex.guards.append(b.arena, try b.call("is_number", &.{subject}));
+        try ex.guards.append(b.arena, try integralTest(b, subject));
         if (range.lo) |lo| try ex.guards.append(b.arena, try b.binop(">=", subject, .{ .number = lo }));
         if (range.hi) |hi| try ex.guards.append(b.arena, try b.binop("=<", subject, .{ .number = hi }));
+    }
+
+    /// `f32` / `f64` / `float`.
+    fn isFloatTypeName(name: []const u8) bool {
+        return std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64") or std.mem.eql(u8, name, "float");
+    }
+
+    /// `X == trunc(X)` — a number with no fractional part (`2.0` and `2`), the
+    /// integral half of decision 8 §4.1's by-value test. A guard: `trunc` of a
+    /// non-number fails the guard, and an `is_number` test always precedes it.
+    fn integralTest(b: Ast.Builder, subject: Ast.Expr) anyerror!Ast.Expr {
+        return b.binop("==", subject, try b.call("trunc", &.{subject}));
+    }
+
+    /// The conversion a value takes once a numeric type test accepted it
+    /// (§4.1 "the value is converted inside the block"): `trunc` into an
+    /// integer type — `3.0` becomes `3` — and `float` into a float type; null
+    /// for every other type, which is tested and never converted.
+    fn numericConversion(name: []const u8) ?[]const u8 {
+        if (isFloatTypeName(name)) return "float";
+        if (integerPatternRange(name) != null) return "trunc";
+        return null;
+    }
+
+    /// Decision 53 — `A...B`, both bounds included. Erlang has no range
+    /// pattern: the arm keeps a fresh variable and the bounds become its
+    /// guards, `_Rng0 when _Rng0 >= 1, _Rng0 =< 9`. Emitted through the
+    /// variant path it was `{'', 1, 9}`, which no value is, so the arm never
+    /// matched. Only a `case` arm carries guards (`PatternExtras`); a range
+    /// anywhere else — `val assert 1...9 = x` — is refused.
+    fn rangePatternNode(this: *Emitter, b: Ast.Builder, v: anytype, extras: ?*PatternExtras) anyerror!Ast.Expr {
+        const ex = extras orelse return error.RangePatternOutsideCase;
+        if (v.payload != .literals or v.payload.literals.len != 2) return error.InvalidArgs;
+        const bounds = v.payload.literals;
+        const n = this.try_seq;
+        this.try_seq += 1;
+        const subject = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_Rng{d}", .{n}));
+        try ex.guards.append(b.arena, try b.binop(">=", subject, try this.patternNodeExtra(b, bounds[0], null)));
+        try ex.guards.append(b.arena, try b.binop("=<", subject, try this.patternNodeExtra(b, bounds[1], null)));
+        return subject;
     }
 
     /// The runtime tag atom of a variant pattern. `@Result` is materialised as
@@ -7398,13 +7505,14 @@ const Emitter = struct {
             .named => |n| {
                 if (std.mem.eql(u8, n, "string")) return try b.call("is_binary", &.{subject});
                 if (std.mem.eql(u8, n, "bool")) return try b.call("is_boolean", &.{subject});
-                if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "float")) {
-                    return try b.call("is_float", &.{subject});
-                }
+                // Decision 8 §4.1/§4.2: `f64` is any number, an integer type
+                // is a number whose value is integral and in range — `2.0 is
+                // i32` holds, `2.5 is i32` does not.
+                if (isFloatTypeName(n)) return try b.call("is_number", &.{subject});
                 // Decision 8 §2: `unknown` is every value.
                 if (std.mem.eql(u8, n, "unknown") or std.mem.eql(u8, n, "any")) return Ast.Expr.a("true");
                 if (integerPatternRange(n)) |range| {
-                    var acc = try b.call("is_integer", &.{subject});
+                    var acc = try b.binop("andalso", try b.call("is_number", &.{subject}), try integralTest(b, subject));
                     if (range.lo) |lo| acc = try b.binop("andalso", acc, try b.binop(">=", subject, .{ .number = lo }));
                     if (range.hi) |hi| acc = try b.binop("andalso", acc, try b.binop("=<", subject, .{ .number = hi }));
                     return acc;

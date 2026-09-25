@@ -1131,13 +1131,14 @@ test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
     // Defect 3. `i32` / `string` are §5.2's type-test arms. Lowered as the plain
     // binders `I32` / `String` the FIRST arm matched every subject, so `show("x")`
     // answered the `i32` arm; erlang cannot test a type in a pattern, so the test
-    // is a clause guard on the variable the arm keeps.
+    // is a clause guard on the variable the arm keeps — by value since step 2
+    // (§4.1: a number with no fractional part, in range).
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn show(v: i32 | string) {
         \\  case v { i32 { @print("int") } string { @print("str") } };
         \\}
         \\fn main() { show(3); show("abcd"); }
-    , "int\nstr\n", &.{ "I32 when is_integer(I32)", "String when is_binary(String) ->" });
+    , "int\nstr\n", &.{ "I32 when is_number(I32), (I32 == trunc(I32))", "String when is_binary(String) ->" });
 }
 
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
@@ -1423,4 +1424,59 @@ test "js: self tail call ---- a closure over a parameter keeps the recursion" {
         "return tally((n - 1), (acc + xs.length));",
     });
     try h.assertJsRunLog(std.testing.allocator, src, "6\n");
+}
+
+// ── front 02-erlang step 2: decision 8 at run time, by value ──────────────────
+
+test "erlang: unknown ---- `is`, type arms and `==` answer by value" {
+    // D1 (§4.1): `2.0 is i32` holds and `2.5 is i32` does not; an integer arm
+    // and `if (a is i32)` bind the converted `2` (`trunc`), a float arm the
+    // `float`. D2 (§11): a value entering `unknown` is stored as itself —
+    // `A = 2.0`, no box. D3 (§2.3): with an `unknown` operand `==` / `!=` are
+    // erlang's by-value `==` / `/=`; two typed operands keep `=:=`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn show(x: unknown) {
+        \\  case x { i32 { n -> @print(n) } f64 { f -> @print(f) } _ { @print("other") } };
+        \\}
+        \\fn main() {
+        \\  val a: unknown = 2.0;
+        \\  val c: unknown = 2.5;
+        \\  @print(a == 2, a != 2, c == 2);
+        \\  val i: i32 = 2;
+        \\  val j: i32 = 2;
+        \\  @print(i == j);
+        \\  if (a is i32) { @print(a + 1); };
+        \\  @print(a is i32, a is f64, c is i32, c is f64);
+        \\  show(a);
+        \\  show(c);
+        \\  show("s");
+        \\}
+    , "true false false\ntrue\n3\ntrue true false true\n2\n2.5\nother\n", &.{
+        "    A = 2.0,",
+        "(A == 2), (A /= 2), (C == 2)",
+        "(I =:= J)",
+        "N = trunc(I32)",
+        "F = float(F64)",
+        "A@1 = trunc(A)",
+    });
+}
+
+test "erlang: case ---- `A...B` matches both bounds, through guards" {
+    // Front 02 step 3 (C-06, decision 53). Lowered through the variant path the
+    // range was `{'', 1, 9}`, which no value is, so every probe fell to `_`. It
+    // is now a fresh variable guarded by both bounds — in an arm with a binder
+    // and inside a tuple pattern too.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn grade(n: i32) -> string {
+        \\  return case n { 1...9 { d -> "digit " + d.toString() } 10...99 { "two" } _ { "other" } };
+        \\}
+        \\fn main() {
+        \\  @print(grade(0), grade(1), grade(9), grade(10), grade(99), grade(100));
+        \\  val t = #(5, "x");
+        \\  case t { #(1...3, _) { @print("low") } #(4...6, s) { @print("mid " + s) } _ { @print("hi") } };
+        \\}
+    , "other digit 1 digit 9 two two other\nmid x\n", &.{
+        "D = _Rng0 when (_Rng0 >= 1), (_Rng0 =< 9) ->",
+        "{_Rng1, S} when (_Rng1 >= 4), (_Rng1 =< 6) ->",
+    });
 }

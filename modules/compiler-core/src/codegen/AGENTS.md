@@ -787,8 +787,13 @@ codegen/
   EMPTY name, so the variant lowering prepended the tag atom of a variant with no
   name — `{'', 0, S}`, which no constructor builds, so every tuple arm died with
   `case_clause`. `shape` is now read: `.tuple` writes the elements and nothing
-  else, and `.range` (§5.2's `1...9`) keeps the tagged shape until front 02 step 3
-  lowers it.
+  else.
+- **`A...B` is a guarded variable** (`rangePatternNode`, decision 53). Through
+  the variant path `1...9` was `{'', 1, 9}` and never matched; the arm now keeps
+  a fresh `_Rng<n>` and appends `_Rng<n> >= A, _Rng<n> =< B` to its guards, both
+  bounds included — in a tuple element and under an arm binder too. Only a `case`
+  arm carries guards, so a range where `PatternExtras` is null (`val assert`) is
+  refused with `RangePatternOutsideCase`.
 - **`..` writes the fields it stands for** (`variantPayloadSlots`). §5.1 P7's
   `rest` was never read: `Rect(width: w, ..)` was emitted `{'Rect', W}` against the
   `{'Rect', 5, 9}` a constructor builds, and `Circle(..)` collapsed to the bare
@@ -815,7 +820,11 @@ codegen/
   string { … } }` tests the subject's TYPE; erlang has no pattern that does, and
   emitted as the plain binders `I32` / `String` the first arm matched every
   subject, so the whole union answered through it. The arm keeps its variable and
-  the test becomes a guard on it — `I32 when is_integer(I32), (I32 >= …), (I32 =< …)`.
+  the test becomes a guard on it — `I32 when is_number(I32), (I32 == trunc(I32)),
+  (I32 >= …), (I32 =< …)`: by VALUE (decision 8 §4.1), so `3.0` takes an `i32`
+  arm and `2.5` does not. A binder on such an arm (`i32 { n -> … }`) is the
+  converted value — `N = trunc(I32)` (a float arm: `float(F64)`) opens the body
+  in place of the `N = I32` alias (`numericConversion`).
   The spelling table and the range table are deliberate twins of commonJS's
   `primitiveTypeName` / `integerRange` / `isTest`: `f32`/`f64`/`float` are
   `is_number` because commonJS's is `typeof === "number"`, which an integer
@@ -1065,8 +1074,9 @@ codegen/
   `tests/language/run/external_host_record.bp`.
 - **`x is T` and a `case` arm naming a type** (decision 8 §4.2 and §3.3):
   `typeTestNode` writes ONE boolean expression that is also a legal erlang
-  guard, so the two share a lowering — `is_binary` / `is_boolean` / `is_float`
-  / `is_integer` plus a range for a primitive, `is_list` for an array, `true`
+  guard, so the two share a lowering — `is_binary` / `is_boolean`, `is_number`
+  for a float type (§4.2: any number), `is_number(V) andalso V == trunc(V)`
+  plus a range for an integer type (§4.1: `2.0 is i32` holds), `is_list` for an array, `true`
   for `unknown`, `V =:= undefined orelse …` for `?T`, and for a named `type`
   what half 3 made testable: a record is `is_tuple(V) andalso tuple_size(V)
   =:= N andalso element(1, V) =:= <its atom>`, an enum every tag it builds
@@ -1075,7 +1085,11 @@ codegen/
   immediate fun, because the test reads it more than once. A `case` arm naming
   a type appends the same expression to the arm's guards
   (`patternNodeExtra`'s `.ident`): written as the bare binder it was, the first
-  arm of a `case` over `Person | Vec` matched every subject.
+  arm of a `case` over `Person | Vec` matched every subject. Inside
+  `if (x is i32) { … }` the local is the converted value (§4.1): the then-arm
+  opens with `X@n = trunc(X)` (`float` for a float type) — `isNarrowing`, at
+  each `if` lowering (plain, mutating, early-return and the fold's
+  single-assignment `if`); the version is restored after the arm.
 - **Enums**: `Order.Lt` → the variant atom, `Color.Rgb(r, g, b)` →
   `{VariantAtom, R, G, B}`, and since half 3 the tag is
   `crossModule.variantAtom` — the enum's type atom plus `__v__` plus the variant,
@@ -1253,8 +1267,8 @@ codegen/
   `Point(x: 1, y: 2)`, `{variant, "Shape.Dot", []}` → `Shape.Dot`, and
   `{text, …}` → a `Display` implementation's own string, nested containers
   included. Everything else — a Result `{ok, V}`, a host tuple, a plain atom,
-  `true`/`false`/`undefined` — keeps the `~p` it had. Numeric formatting stays
-  divergent by design: `~p` of `1.0` is `1.0` where commonJS writes `1`.
+  `true`/`false`/`undefined` — keeps the `~p` it had. Numeric formatting is
+  `~p`: `1.0` prints `1.0`, decision 8 §7's text on every backend.
 - **Every `type` has a module, and it answers about its own values** (half 3):
   `recordIdentityForms` / `enumIdentityForms` put `'__bp_format'/1` — and
   `'__bp_get'/2` for a record with fields — into the unit `openTypeUnit` opened,
@@ -1329,7 +1343,10 @@ codegen/
 - **Effects**: non-`#[@result]` effect fns are lowered eagerly (a `@Future<T>`
   is `T`; a body of only `yield`s is a list); `__bp_future_resolved`/`rejected`
   markers become the value / `throw`.
-- Structural `==`/`!=` is `=:=`/`=/=`.
+- Structural `==`/`!=` is `=:=`/`=/=` (decision B2) — except with an operand
+  declared `unknown` (`isUnknownOperand`, read off `local_types`), where it is
+  erlang's by-value `==`/`/=`, so `2.0 == 2` holds (decision 8 §2.3). A value
+  entering `unknown` is stored as itself — no box (§11).
 
 ### beam_asm
 
@@ -1716,8 +1733,8 @@ codegen/
   argument list and call the synthesised `'__bp_print'/1`, which formats every
   value on one line, space-separated — a binary through `~ts` (its text),
   anything else through `~p` — the verb picked at run time, byte-identical to
-  the erlang backend's helper. Numeric formatting stays `~p` (`1.0`, where
-  commonJS prints `1`): an intended divergence. `assert cond[, msg]` (decision
+  the erlang backend's helper. Numeric formatting is `~p` (`1.0`, decision 8 §7's
+  text on every backend). `assert cond[, msg]` (decision
   4) is always fatal: `erlang:error({bp_assert, Msg, <<"<mod>.bp:<line>">>})`
   when the condition is not `true`; `val assert P = e [catch h]` is a two-arm
   case whose bindings stay visible (a y-register each). Its subject is still
