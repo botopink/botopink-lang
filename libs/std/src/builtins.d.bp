@@ -289,7 +289,7 @@ pub type External implement Annotation {
 // F10 — the five intrinsics below are written in the file's own dialect:
 // `pub declare fn`, `->` before the return type, a closing `;`. They are
 // bodyless because the compiler IS the body — each is reached as a builtin
-// call (`@field`, `@trap`, `@emit`, `@module`, `@getContex`), never as a
+// call (`@field`, `@trap`, `@emit`, `@module`, `@getContext`), never as a
 // plain name — and `declare fn` is the language's bodyless form. They carry
 // no `#[@External.<Target>]` because no host supplies them.
 pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
@@ -415,11 +415,11 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 // form is removed (RI6). Labels (`-> ResultGenerator<…> :label`) disambiguate
 // nested generator scopes.
 //
-// §1C — `#[use]` Anchor + `getContex`. The wrapper is `Use<Base, T>` (or
+// §1C — `#[use]` Anchor + `getContext`. The wrapper is `Use<Base, T>` (or
 // `Component<T>`, whose `T: Context<Base>` names it); `Base` is the Anchor
 // that gates every `use` inside the body. EVERY `use` in one body resolves against the SAME `Base`
 // (decision 96): the first one fixes it, and a second anchored elsewhere is
-// refused at its own site with both bases named (RC2). `use getContex(T)`
+// refused at its own site with both bases named (RC2). `use getContext(T)`
 // requires `T` to be in the Anchor's inheritance tree (RC3) and finds the
 // active provider by inside-out walk of the activation stack (RC1 when
 // missing). `await` and `try` ARE legal here — `Use` extends `Future`
@@ -453,7 +453,7 @@ pub type Host implement Annotation {
 // `use`) are recognized as core builtins by the compiler — they are
 // lib-agnostic and take no arguments, so they need no signature here.
 //
-// `getContex(T)` is the context-retrieval intrinsic. It retrieves the
+// `getContext(T)` is the context-retrieval intrinsic. It retrieves the
 // active provider of context type `T` from the enclosing `#[use]`
 // fn's scope stack. `T` must be the enclosing fn's Anchor (or a subtype
 // thereof); the call returns `Use<T, V>` where `V` is the provider's
@@ -461,12 +461,12 @@ pub type Host implement Annotation {
 // is on the stack; [E2] context-anchor-violation when `T` is outside the
 // Anchor's tree. Only legal inside a `#[use]` fn body, behind `use`:
 //
-//   val ctx = use getContex(BasePagamento)
+//   val ctx = use getContext(BasePagamento)
 //
 // Declared `comptime` in its sole type argument because the Anchor check
 // runs at compile time; the runtime side is the inside-out walk inserted
 // by the lowering.
-pub declare fn getContex<T>(comptime _: type) -> Use<T, any>;
+pub declare fn getContext<T>(comptime _: type) -> Use<T, any>;
 
 // ── Expr template model (std.syntax) ─────────────────────────────────────────
 // Data model for `Expr` templates. Interfaces are pure behaviour contracts, so

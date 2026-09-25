@@ -1010,7 +1010,7 @@ through what `f` does; the pure body above is what every backend runs, and what
 the server renders.
 
 **The provider side.** `#[@use]` is also the effect under which
-`@getContex(T)` reads the active provider of `T` on the same owner tree; a
+`@getContext(T)` reads the active provider of `T` on the same owner tree; a
 provider stack is not part of this section.
 
 ## Functions

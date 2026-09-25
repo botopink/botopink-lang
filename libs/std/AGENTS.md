@@ -299,7 +299,7 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
   cannot be formatted at all — `fn await(self: Self)` in the `Future` behavior
   is a parse error (`await` is a keyword), which is a parser row, not a
   formatter one. Front 20 removed the file's other unparseable form: the five
-  intrinsics at the foot (`field` / `trap` / `emit` / `module` / `getContex`)
+  intrinsics at the foot (`field` / `trap` / `emit` / `module` / `getContext`)
   are `pub declare fn … -> …;` now, like every other bodyless fn here.
 - No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`.
 - `get`/`set`/`test`/`from`/`assert` are keywords (`new`, `delegate` and `const` are identifiers since 06 N27) — pick other names (`empty`/`at`/`insert`, `matches`, `src`, `asserts`).

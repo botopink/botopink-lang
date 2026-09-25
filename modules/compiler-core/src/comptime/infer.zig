@@ -3663,7 +3663,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedUseAnchor = env.useAnchor;
     env.useAnchor = null;
     defer env.useAnchor = savedUseAnchor;
-    // §1C — `@getContex(T)` is only valid inside a `#[@use]` fn body
+    // §1C — `@getContext(T)` is only valid inside a `#[@use]` fn body
     // (RC5). Decision 104 — this is the SAME flag as `FnContext.annotated`:
     // `#[@use]` sets both and nothing else does. Save/restore it around the
     // body so nested non-`use` closures fall back to false correctly.
@@ -4947,18 +4947,18 @@ fn inferBuiltinCallReturnType(
         }
         return env.namedType("void");
     }
-    // §1C — `@getContex(T)` fetches the active provider of type `T` from
+    // §1C — `@getContext(T)` fetches the active provider of type `T` from
     // the context scope stack. The argument is a TYPE (not a value); the
     // intrinsic is only valid inside a `#[@use]` fn body. RC1 (no
     // active provider) requires the `contextStack.zig` provider tracker
     // — landed separately; RC3 (Anchor-tree reachability) is wired here.
-    if (std.mem.eql(u8, callee, "getContex")) {
+    if (std.mem.eql(u8, callee, "getContext")) {
         // RC5 — outside a `#[@use]` fn body the intrinsic is meaningless.
         if (!env.inContextFn) {
             var e = TypeError.custom(
-                diagnostics.context_getcontex_outside_context_fn ++
-                    ": `@getContex(T)` only resolves inside a `#[@use]` fn body",
-                "Mark the enclosing fn `#[@use]` (`-> @Use<Base, T>` or `-> @Component<T>`) — `@getContex` walks the active provider stack maintained by the `use` blocks.",
+                diagnostics.context_getcontext_outside_context_fn ++
+                    ": `@getContext(T)` only resolves inside a `#[@use]` fn body",
+                "Mark the enclosing fn `#[@use]` (`-> @Use<Base, T>` or `-> @Component<T>`) — `@getContext` walks the active provider stack maintained by the `use` blocks.",
             );
             if (typedArgs.len >= 1) e = e.withLoc(typedArgs[0].value.getLoc());
             env.lastError = e;
@@ -4973,8 +4973,8 @@ fn inferBuiltinCallReturnType(
                 env.lookupTypeDef(arg.identifier.kind.ident) != null;
             if (!isTypeIdent) {
                 env.lastError = TypeError.custom(
-                    diagnostics.context_getcontex_expects_type ++
-                        ": `@getContex(T)` expects a type as its sole argument",
+                    diagnostics.context_getcontext_expects_type ++
+                        ": `@getContext(T)` expects a type as its sole argument",
                     "Pass a record/struct/enum name (the type whose provider you want to fetch); literals and value expressions are not accepted.",
                 ).withLoc(arg.getLoc());
                 return error.TypeError;
@@ -4993,8 +4993,8 @@ fn inferBuiltinCallReturnType(
             {
                 const msg = try std.fmt.allocPrint(
                     env.arena,
-                    "{s}: `@getContex({s})` is outside the enclosing `#[@use]` fn's Anchor tree (enclosing Anchor `{s}`, requested type's Anchor `{s}`)",
-                    .{ diagnostics.context_getcontex_anchor_violation, requestedName, enclosingBase.?, requestedBase.? },
+                    "{s}: `@getContext({s})` is outside the enclosing `#[@use]` fn's Anchor tree (enclosing Anchor `{s}`, requested type's Anchor `{s}`)",
+                    .{ diagnostics.context_getcontext_anchor_violation, requestedName, enclosingBase.?, requestedBase.? },
                 );
                 env.lastError = TypeError.custom(
                     msg,
@@ -5061,8 +5061,8 @@ const runtime_builtin_names = [_][]const u8{
 /// `inferBuiltinCallReturnType` and the intercepts in `inferCallExpr` included.
 /// Only read to suggest a spelling in `unknown-builtin`.
 const all_builtin_names = runtime_builtin_names ++ [_][]const u8{
-    "src",        "block",      "expr",  "code",      "typeInfo",      "TypeOf",
-    "makeRecord", "RecordKeys", "field", "getContex", "comptimeError",
+    "src",        "block",      "expr",  "code",       "typeInfo",      "TypeOf",
+    "makeRecord", "RecordKeys", "field", "getContext", "comptimeError",
 };
 
 fn isKnownBuiltinName(env: *Env, callee: []const u8) bool {

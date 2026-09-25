@@ -127,8 +127,8 @@ pub const generic_default_before_required: []const u8 = "generic-default-before-
 pub const future_manual_construction_forbidden: []const u8 = "future-manual-construction-forbidden";
 
 /// R18 (E2) — alias of RC2 (`use <hook>()` violates anchor).
-/// R19 (E1) — alias of RC1 (`@getContex(T)` with no active provider).
-/// R20      — alias of RC3 (`@getContex(T)` outside the anchor).
+/// R19 (E1) — alias of RC1 (`@getContext(T)` with no active provider).
+/// R20      — alias of RC3 (`@getContext(T)` outside the anchor).
 /// R21      — alias of RC6 (`use` of a non-hook (a callee that is not `@Use<C, _>`)).
 //
 // The §1C addendum keeps the RC* names as the canonical surface; the R-table
@@ -174,14 +174,14 @@ pub const yield_break_removed: []const u8 = "yield-break-removed";
 
 // ── RC1–RC6: §1C `#[@use]` Anchor diagnostics ───────────────────────────
 
-/// RC1 (E1) — `@getContex(T)` with no active provider of T on the scope stack.
+/// RC1 (E1) — `@getContext(T)` with no active provider of T on the scope stack.
 pub const context_unbound: []const u8 = "context-unbound";
 
 /// RC2 (E2) — `use <hook>()` whose `HookBase` is not assignable to enclosing Anchor.
 pub const context_anchor_violation: []const u8 = "context-anchor-violation";
 
-/// RC3 — `@getContex(T)` whose T is outside the enclosing fn's Anchor tree.
-pub const context_getcontex_anchor_violation: []const u8 = "context-getcontex-anchor-violation";
+/// RC3 — `@getContext(T)` whose T is outside the enclosing fn's Anchor tree.
+pub const context_getcontext_anchor_violation: []const u8 = "context-getcontext-anchor-violation";
 
 // ── `@src()` (1.0.10-beta front 01-std, decision 73) ─────────────────────────
 /// `@src(…)` was given an argument or a trailing lambda — the builtin takes none.
@@ -190,11 +190,11 @@ pub const src_takes_no_arguments: []const u8 = "src-takes-no-arguments";
 /// fallback that let a typo (`@pritn`) compile (decision 67: refuse).
 pub const unknown_builtin: []const u8 = "unknown-builtin";
 
-/// RC4 — `@getContex(<value>)` (the argument must be a type).
-pub const context_getcontex_expects_type: []const u8 = "context-getcontex-expects-type";
+/// RC4 — `@getContext(<value>)` (the argument must be a type).
+pub const context_getcontext_expects_type: []const u8 = "context-getcontext-expects-type";
 
-/// RC5 — `@getContex(…)` outside a `#[@use]` fn body.
-pub const context_getcontex_outside_context_fn: []const u8 = "context-getcontex-outside-context-fn";
+/// RC5 — `@getContext(…)` outside a `#[@use]` fn body.
+pub const context_getcontext_outside_context_fn: []const u8 = "context-getcontext-outside-context-fn";
 
 /// RC6 — `use <hook>()` where `<hook>` is not a `@Use<C, _>` hook.
 pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
@@ -334,9 +334,9 @@ pub const all_codes = [_][]const u8{
     yield_break_removed,
     context_unbound,
     context_anchor_violation,
-    context_getcontex_anchor_violation,
-    context_getcontex_expects_type,
-    context_getcontex_outside_context_fn,
+    context_getcontext_anchor_violation,
+    context_getcontext_expects_type,
+    context_getcontext_outside_context_fn,
     use_of_non_context_fn,
     use_without_context_effect,
     generic_required_arg_missing,

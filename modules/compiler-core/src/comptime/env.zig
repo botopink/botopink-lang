@@ -488,7 +488,7 @@ pub const Env = struct {
     starFn: ?StarFnCtx = null,
     /// True while inferring the body of a `#[@use]` fn — the same question
     /// as `FnContext.annotated` (decision 104: one flag, set by `#[@use]`
-    /// alone). Read by the `@getContex` builtin-call handler for §1C RC5 (the
+    /// alone). Read by the `@getContext` builtin-call handler for §1C RC5 (the
     /// intrinsic is only valid inside a `#[@use]` fn body).
     inContextFn: bool = false,
     /// Labels currently in scope (effect-fn label + enclosing loop labels),
@@ -661,7 +661,7 @@ pub const Env = struct {
     /// decorators are not re-invoked — no re-contribution, no infinite loop.
     skipDecoratorInvoke: bool = false,
     /// Fn declarations parsed by `registerStdlib` from `builtins_fns.d.bp`
-    /// (todo / panic / trap / emit / module / getContex / field). Made
+    /// (todo / panic / trap / emit / module / getContext / field). Made
     /// available to `transform.expandTrailingDefaults` so a bare `todo()` /
     /// `panic()` call site at user code resolves to the parsed `FnDecl` and
     /// its trailing literal default lands in `c.args` before dispatch.

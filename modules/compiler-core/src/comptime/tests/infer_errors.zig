@@ -702,21 +702,21 @@ test "infer error: RG5 ---- a third argument on @FutureGenerator reds generic-ar
     );
 }
 
-test "infer error: RC5 ---- @getContex outside #[@use] fn reds context-getcontex-outside-context-fn" {
+test "infer error: RC5 ---- @getContext outside #[@use] fn reds context-getcontext-outside-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
         \\fn lookup() -> User {
-        \\    return @getContex(User);
+        \\    return @getContext(User);
         \\}
     );
 }
 
-test "infer error: RC4 ---- @getContex(<value>) reds context-getcontex-expects-type" {
+test "infer error: RC4 ---- @getContext(<value>) reds context-getcontext-expects-type" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
         \\#[@use]
         \\fn lookup() -> @Use<User, User> {
-        \\    return @getContex(42);
+        \\    return @getContext(42);
         \\}
     );
 }
@@ -733,7 +733,7 @@ test "infer error: RC6 ---- use of non-context fn reds use-of-non-context-fn" {
     );
 }
 
-test "infer error: RC3 ---- @getContex(T) outside enclosing Anchor tree reds context-getcontex-anchor-violation" {
+test "infer error: RC3 ---- @getContext(T) outside enclosing Anchor tree reds context-getcontext-anchor-violation" {
     // The enclosing fn's Anchor is `RootA`; the requested type `LeafB`'s
     // Anchor is `RootB`. No `use` chain rooted at `RootA` can ever provide
     // `LeafB`, so the request is statically out of reach (RC3).
@@ -743,7 +743,7 @@ test "infer error: RC3 ---- @getContex(T) outside enclosing Anchor tree reds con
         \\type LeafB(v: i32) implement @Context<RootB>
         \\#[@use]
         \\fn pickA() -> @Use<RootA, RootA> {
-        \\    return @getContex(LeafB);
+        \\    return @getContext(LeafB);
         \\}
     );
 }

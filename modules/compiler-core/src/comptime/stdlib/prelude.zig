@@ -13,7 +13,7 @@ pub const primitives = @embedFile("primitives.bp");
 pub const builtins = @embedFile("builtins.d.bp");
 
 /// `builtins_fns.d.bp` carries the parseable fn-decl slice of `builtins.d.bp`
-/// (todo / panic / trap / emit / module / getContex / field) so
+/// (todo / panic / trap / emit / module / getContext / field) so
 /// `registerStdlib` can install them in the global env. Splitting them out
 /// keeps the synthetic-interface declarations (Result / Future / Generator /
 /// ResultGenerator / FutureGenerator / Context) in `builtins.d.bp` doc-only — those
