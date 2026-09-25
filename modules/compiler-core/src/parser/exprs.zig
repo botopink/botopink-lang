@@ -645,6 +645,7 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
                 }
 
                 if (this.match(.@"catch")) {
+                    const catchLoc = locFromToken(this.tokens[this.current - 1]);
                     const catchExpr = if (this.check(.leftBrace)) blk: {
                         const stmts = try this.parseBlockWithOptionalTrailingSemicolon(alloc);
                         errdefer {
@@ -660,6 +661,7 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
                         .pattern = pattern,
                         .expr = exprPtr,
                         .handler = catchExprPtr,
+                        .catchLoc = catchLoc,
                     } } } };
                 } else {
                     // 06 C12 / decision 8 § 9 — `val assert P = e;` with no

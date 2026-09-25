@@ -3640,14 +3640,18 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         // decision leaves one.
         const msg = try std.fmt.allocPrint(
             env.arena,
-            "{s}: a function returning `@Result<D, E>` needs `#[@result]`",
+            "{s}: @Result needs #[@result] — a function returning `@Result<D, E>` declares its effect",
             .{diagnostics.effect_missing_annotation},
         );
         var err = TypeError.custom(
             msg,
             "Mark it `#[@result]`: `return` then carries the success value and `throw` the error channel's own (decision 8 § 9). Without the annotation the wrapper is not built.",
         );
-        if (fnLoc) |l| err = err.withLoc(l);
+        // 01 R9 — the caret is on the return type the rule is about, not on
+        // the first statement of the body.
+        if (f.returnTypeLoc.line != 0) {
+            err = err.withLoc(f.returnTypeLoc);
+        } else if (fnLoc) |l| err = err.withLoc(l);
         env.lastError = err;
         return error.TypeError;
     }
@@ -6819,6 +6823,7 @@ fn checkAssertPatternSubject(
     subjectType: *T.Type,
     loc: ast.Loc,
     fatal: bool,
+    catchLoc: ?ast.Loc,
 ) InferError!void {
     const name = switch (pattern) {
         .variant => |v| v.name,
@@ -6834,10 +6839,11 @@ fn checkAssertPatternSubject(
     // the one that asserts a variant, and its failure is fatal.
     if (!fatal and eq(u8, n.name, "Result")) {
         var ce = TypeError.custom(
-            "a `val assert` over a `@Result` takes no `catch`",
+            "after `catch` the value is not a @Result — a `val assert` over a `@Result` takes no `catch`",
             "`catch` already yields the success value, so the pattern would be asserted against the unwrapped one. Write `val assert Ok(n) = parse(s);` — a failure is a fatal assert (decision 8 § 9).",
         );
-        env.lastError = ce.withLoc(loc);
+        // 01 R9 — the caret is on the `catch` that makes it an error.
+        env.lastError = ce.withLoc(catchLoc orelse loc);
         return error.TypeError;
     }
     const known = blk: {
@@ -11595,7 +11601,7 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             // `val assert Ok(n) = parse("42") catch 0;` the error the
             // decision writes: after `catch` the value is an `i32`, and
             // `Ok(…)` names no variant of it.
-            try checkAssertPatternSubject(env, ap.pattern, exprTyped.getType(), ap.expr.getLoc(), ap.fatal);
+            try checkAssertPatternSubject(env, ap.pattern, exprTyped.getType(), ap.expr.getLoc(), ap.fatal, ap.catchLoc);
             // Decision 8 § 9 — the pattern's names are bound in the ENCLOSING
             // scope (`val assert Ok(n) = parse("42"); @print(n);`), so the
             // snapshots a case arm would restore are deliberately dropped.

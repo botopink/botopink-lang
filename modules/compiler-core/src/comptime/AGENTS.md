@@ -697,6 +697,18 @@ The parser carries the dotted spelling in `TypeRef.named` (`parser/types.zig`). 
 spelling (`TokenText`) reds with a hint naming the path (`Env.sectionPathForFlatName`). A section
 declares no methods — `EnumSection` has no slot for them and nothing needs one yet.
 
+## The three N25 diagnostics, located (01 R9)
+
+- `fn f() -> @Result<…>` without `#[@result]` is `effect-missing-annotation: @Result needs #[@result]`
+  with the caret on the **return type** (`FnDecl.returnTypeLoc`), not the first body statement.
+- `val assert Ok(n) = f() catch 0;` is "after `catch` the value is not a @Result", with the caret on the
+  `catch` — `AssertPattern.catchLoc`, set by the parser and left out of the AST dump.
+- Two effect annotations on one fn (a parse error, `parser/decls.zig`) put the caret on the second
+  annotation's `#` (`annotationHashToken`), not on the body's `{`.
+
+The `reject/` cells `wrapper_without_annotation`, `val_assert_after_catch` and `two_effect_markers`
+pin all three.
+
 ## A type position takes a type, not any binding (01 R8)
 
 `Env.resolveTypeName`'s bindings arm used to answer any binding's type, so `val n = 5; val x: n = 7;`

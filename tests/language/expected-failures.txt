@@ -130,9 +130,9 @@ erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method 
 # which is 13 step 18; each backend's step 1 closes the separator half only.
 
 # ── §9 effects ────────────────────────────────────────────────────────────────
-*        | reject/wrapper_without_annotation.bp | 01 step 8 | R9: `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
-*        | reject/val_assert_after_catch.bp     | 01 step 8 | R9: `val assert Ok(n) = f() catch 0` is accepted (exit 0) and then fails at run time (`Ok is not defined` on commonJS, `variable 'N' unsafe in 'case'` on erlang)
-*        | reject/two_effect_markers.bp         | 01 step 8 | R9: the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
+# The three R9 rows were deleted by `00 · 01-checker` step 8: `reject/wrapper_without_annotation.bp`,
+# `reject/val_assert_after_catch.bp` and `reject/two_effect_markers.bp` are each refused for their own
+# reason, with the caret on the return type, the `catch` and the second annotation.
 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
 
