@@ -660,7 +660,12 @@ fn validateStructAccessors(env: *Env, s: ast.StructDecl) InferError!void {
 fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
     switch (decl) {
         .val => |v| {
-            const annType: ?*T.Type = if (v.typeAnnotation) |ann| try resolveTypeRef(env, ann) else null;
+            // 01 R8 — `ValDecl` carries no location for its annotation; an
+            // unlocated refusal there reds at the value.
+            const annType: ?*T.Type = if (v.typeAnnotation) |ann|
+                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
+            else
+                null;
             // When binding a lambda to a `fn(...) -> ...` annotation, feed the
             // annotation into the lambda so its params are typed from context.
             const typedExpr = if (annType != null and v.value.* == .function)
@@ -677,6 +682,7 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             // `option.map(head, f)` sees a bare `i32`).
             const bindTy = annType orelse ty;
             try validateMemoryAnnotations(env, v, bindTy);
+            try noteTypeValue(env, v.name, v.value.*, annType == null and !v.mutable);
             if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
             return .{ .name = v.name, .type_ = bindTy, .typedExpr = typedExpr, .decl = decl };
         },
@@ -2434,7 +2440,10 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
             // The annotation is resolved BEFORE the value so it can be this
             // position's expected type (00 · 01-checker) — see
             // `inferDeclTyped`'s `.val` case.
-            const annType: ?*T.Type = if (v.typeAnnotation) |ann| try resolveTypeRef(env, ann) else null;
+            const annType: ?*T.Type = if (v.typeAnnotation) |ann|
+                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, v.value.getLoc())
+            else
+                null;
             const ty = try inferExprExpecting(env, v.value.*, annType);
             // Bind the DECLARED (annotated) type when present.
             var bindTy = ty;
@@ -2443,6 +2452,7 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
                 bindTy = at;
             }
             try validateMemoryAnnotations(env, v, bindTy);
+            try noteTypeValue(env, v.name, v.value.*, annType == null and !v.mutable);
             if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
             return .{ .name = v.name, .type_ = bindTy };
         },
@@ -3621,14 +3631,18 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         // decision leaves one.
         const msg = try std.fmt.allocPrint(
             env.arena,
-            "{s}: a function returning `@Result<D, E>` needs `#[@result]`",
+            "{s}: @Result needs #[@result] — a function returning `@Result<D, E>` declares its effect",
             .{diagnostics.effect_missing_annotation},
         );
         var err = TypeError.custom(
             msg,
             "Mark it `#[@result]`: `return` then carries the success value and `throw` the error channel's own (decision 8 § 9). Without the annotation the wrapper is not built.",
         );
-        if (fnLoc) |l| err = err.withLoc(l);
+        // 01 R9 — the caret is on the return type the rule is about, not on
+        // the first statement of the body.
+        if (f.returnTypeLoc.line != 0) {
+            err = err.withLoc(f.returnTypeLoc);
+        } else if (fnLoc) |l| err = err.withLoc(l);
         env.lastError = err;
         return error.TypeError;
     }
@@ -4137,6 +4151,78 @@ pub fn registerImportedTemplateFn(env: *Env, name: []const u8, decl: ast.FnDecl)
 /// constructor with this module's own type ids.
 pub fn registerImportedTypeDecl(env: *Env, decl: ast.DeclKind) !void {
     try registerTypeDecl(env, decl);
+}
+
+/// 01 R2 — importing a type registers the closure of the types its
+/// declaration mentions (field types and method signature types,
+/// transitively) from the module it comes from, so `import { User }` works
+/// when `User(role: Role)` and `Role` was not named in the clause. Each type
+/// of the closure is registered as a TYPE only: the constructor and variant
+/// bindings its registration adds are removed again — naming it in the
+/// import is what brings its constructor into scope. Call before registering
+/// `decl` itself: its fields resolve against the closure.
+pub fn registerImportedTypeClosure(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    decl: ast.DeclKind,
+) !void {
+    try registerTypeClosureDepth(env, moduleDecls, decl, 0);
+}
+
+fn registerTypeClosureDepth(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    decl: ast.DeclKind,
+    depth: usize,
+) !void {
+    if (depth >= 32 or decl != .type_) return;
+    const td = decl.type_;
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer names.deinit(env.arena);
+    for (td.recordFields()) |f| try collectTypeRefNames(env, f.typeRef, &names);
+    for (td.variants()) |v| for (v.fields) |f| try collectTypeRefNames(env, f.typeRef, &names);
+    for (td.methods) |m| {
+        for (m.params) |p| try collectTypeRefNames(env, p.typeRef, &names);
+        if (m.returnType) |rt| try collectTypeRefNames(env, rt, &names);
+    }
+    for (names.items) |n| {
+        if (std.mem.eql(u8, n, td.name)) continue;
+        if (env.lookupTypeDef(n) != null) continue;
+        const dep = moduleDecls.get(n) orelse continue;
+        if (dep != .type_) continue;
+        try registerTypeClosureDepth(env, moduleDecls, dep, depth + 1);
+        if (env.lookupTypeDef(n) != null) continue;
+        // Register the type, then take back the bindings it added.
+        var before = std.StringHashMap(void).init(env.arena);
+        defer before.deinit();
+        var kit = env.bindings.keyIterator();
+        while (kit.next()) |k| try before.put(k.*, {});
+        try registerTypeDecl(env, dep);
+        var added: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer added.deinit(env.arena);
+        var ait = env.bindings.keyIterator();
+        while (ait.next()) |k| if (!before.contains(k.*)) try added.append(env.arena, k.*);
+        for (added.items) |k| _ = env.bindings.remove(k);
+    }
+}
+
+fn collectTypeRefNames(env: *Env, ref: ast.TypeRef, out: *std.ArrayListUnmanaged([]const u8)) !void {
+    switch (ref) {
+        .named => |n| try out.append(env.arena, n),
+        .array => |e| try collectTypeRefNames(env, e.*, out),
+        .optional => |e| try collectTypeRefNames(env, e.*, out),
+        .tuple_ => |es| for (es) |e| try collectTypeRefNames(env, e, out),
+        .labeledTuple => |lt| for (lt.elems) |e| try collectTypeRefNames(env, e, out),
+        .function => |f| {
+            for (f.params) |e| try collectTypeRefNames(env, e, out);
+            try collectTypeRefNames(env, f.returnType.*, out);
+        },
+        .generic => |g| {
+            try out.append(env.arena, g.name);
+            for (g.args) |e| try collectTypeRefNames(env, e, out);
+        },
+        .typeparam => |cs| for (cs) |e| try collectTypeRefNames(env, e, out),
+    }
 }
 
 // ── template call-site expansion (expr-templates F6, V1 driver) ───────────────
@@ -4813,8 +4899,30 @@ fn behaviorCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
         .struct_ => |st| st.implements,
         .enum_ => |e| e.implements,
     };
-    for (impls) |i| if (std.mem.eql(u8, i, t.named.name)) return true;
+    for (impls) |i| if (behaviorReaches(env, i, t.named.name, 0)) return true;
     return false;
+}
+
+/// 01 R4 — whether behavior `from` is `to` or extends it, through the
+/// `extends` chain. `depth` bounds a cyclic chain.
+fn behaviorReaches(env: *Env, from: []const u8, to: []const u8, depth: usize) bool {
+    if (std.mem.eql(u8, from, to)) return true;
+    if (depth >= 16) return false;
+    const decl = env.assocInterfaceDecls.get(from) orelse return false;
+    for (decl.extends) |parent| {
+        if (behaviorReaches(env, parent, to, depth + 1)) return true;
+    }
+    return false;
+}
+
+/// 01 R4 — an argument meets its declared parameter. A parameter (or a
+/// constructor field) typed by a behavior accepts a value whose type
+/// implements that behavior, directly or through `extends`; everything else
+/// is `unifyAt`. Target-first, like `unifyAt`: the coercion only ever widens
+/// an implementer into the behavior, never the reverse.
+fn unifyArgument(env: *Env, param: *T.Type, arg: *T.Type, loc: ast.Loc) InferError!void {
+    if (behaviorCoercion(env, param, arg)) return;
+    try unifyAt(env, param, arg, loc);
 }
 
 /// True when `source` coerces into a `Children`-typed `target`. A `Children`
@@ -6813,6 +6921,7 @@ fn checkAssertPatternSubject(
     subjectType: *T.Type,
     loc: ast.Loc,
     fatal: bool,
+    catchLoc: ?ast.Loc,
 ) InferError!void {
     const name = switch (pattern) {
         .variant => |v| v.name,
@@ -6828,10 +6937,11 @@ fn checkAssertPatternSubject(
     // the one that asserts a variant, and its failure is fatal.
     if (!fatal and eq(u8, n.name, "Result")) {
         var ce = TypeError.custom(
-            "a `val assert` over a `@Result` takes no `catch`",
+            "after `catch` the value is not a @Result — a `val assert` over a `@Result` takes no `catch`",
             "`catch` already yields the success value, so the pattern would be asserted against the unwrapped one. Write `val assert Ok(n) = parse(s);` — a failure is a fatal assert (decision 8 § 9).",
         );
-        env.lastError = ce.withLoc(loc);
+        // 01 R9 — the caret is on the `catch` that makes it an error.
+        env.lastError = ce.withLoc(catchLoc orelse loc);
         return error.TypeError;
     }
     const known = blk: {
@@ -7447,11 +7557,16 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
     // 00 · 01-checker — an expectation belongs to the position it was set for.
     // Only an identifier chain reads it (a leading-dot enum path) and only an
     // array literal passes it on (to its elements); every other node clears it
-    // so a nested expression never inherits its parent's expected type.
+    // so a nested expression never inherits its parent's expected type. A
+    // leading-dot call (`.Circle(radius: 1)`) reads it too: its head is the
+    // same path, and `inferCallExpr` clears it before the arguments.
     const outer_expected = env.expectedType;
     defer env.expectedType = outer_expected;
     switch (expr) {
         .identifier, .collection => {},
+        .call => |c| if (!isLeadingDotCall(c)) {
+            env.expectedType = null;
+        },
         else => env.expectedType = null,
     }
     return switch (expr) {
@@ -8706,7 +8821,14 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
 fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (b.kind) {
         .localBind => |lb| {
-            const annType: ?*T.Type = if (lb.typeAnnotation) |ann| try resolveTypeRef(env, ann) else null;
+            // 01 R8 — a refusal in the annotation needs a location; the
+            // binding carries none of its own for the annotation, so an
+            // unlocated one reds at the `val`. (Setting `typeRefLoc` instead
+            // would also enter every unresolved name into C10's pending list.)
+            const annType: ?*T.Type = if (lb.typeAnnotation) |ann|
+                resolveTypeRef(env, ann) catch |err| return locateTypeRefError(env, err, loc)
+            else
+                null;
             // Feed a `fn(...) -> ...` annotation into a lambda RHS so its
             // params are typed from context (mirrors `inferDeclTyped`).
             const valTyped = if (annType != null and lb.value.* == .function)
@@ -8720,6 +8842,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             // The annotation is the DECLARED type — bind it, not the RHS type
             // (`val head: ?i32 = 5;` must bind `?i32`).
             const bindTy = annType orelse valTyped.getType();
+            try noteTypeValue(env, lb.name, lb.value.*, annType == null and !lb.mutable);
             if (lb.mutable) try env.bind(lb.name, bindTy) else try env.bindVal(lb.name, bindTy);
             return TypedExpr{ .binding = .{ .loc = loc, .type_ = bindTy, .kind = .{ .localBind = .{
                 .name = lb.name,
@@ -8803,21 +8926,9 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                         try env.bind(nm, elemTy);
                     }
                 },
-                .list => |pat| {
-                    // Bind pattern variable names to fresh type vars.
-                    switch (pat) {
-                        .ident => |name| try env.bind(name, try env.freshVar()),
-                        .variant => |v| if (v.payload == .fields) for (v.payload.fields) |binding| try env.bind(binding, try env.freshVar()),
-                        else => {},
-                    }
-                },
-                .ctor => |pat| {
-                    switch (pat) {
-                        .ident => |name| try env.bind(name, try env.freshVar()),
-                        .variant => |v| if (v.payload == .fields) for (v.payload.fields) |binding| try env.bind(binding, try env.freshVar()),
-                        else => {},
-                    }
-                },
+                // 01 R5 — `val Circle(r) = s;` / `val [..rest] = xs;` bind
+                // through the walk a `case` arm uses, typed by the subject.
+                .list, .ctor => |pat| try bindDestructPattern(env, pat, valTyped.getType(), lb.mutable, loc),
             }
             return TypedExpr{ .binding = .{ .loc = loc, .type_ = valTyped.getType(), .kind = .{ .localBindDestruct = .{
                 .pattern = lb.pattern,
@@ -8826,6 +8937,121 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             } } } };
         },
     };
+}
+
+/// 01 R5 — a pattern in binding position: `val Circle(r) = s;`,
+/// `val Person(name, age) = p;`, `val [..rest] = xs;`.
+///
+/// The bare form has no failure path of its own, so it is legal only where the
+/// pattern matches **every** value of the subject's type: a one-variant `type`,
+/// a record's own constructor, a list pattern that is only a spread. Anything
+/// that can fail to match is refused at the binding (`refutable-val-pattern`),
+/// naming the two forms that say what a mismatch does — `val assert <Pattern>
+/// = e;` (fatal) and `case`. Nothing is left for a backend to decide: every
+/// program that checks destructures without a test.
+///
+/// The names land in the enclosing scope — the snapshots the walk collects
+/// are dropped, as `val assert` does — and a `val` binds them as `val`s.
+fn bindDestructPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, mutable: bool, loc: ast.Loc) InferError!void {
+    var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    defer snapshots.deinit(env.arena);
+    const st = subjectType.deref();
+    const covers: bool = switch (pattern) {
+        .list => |lst| lst.elems.len == 0 and lst.spread != null and
+            st.* == .named and std.mem.eql(u8, st.named.name, "array"),
+        .variant => |v| blk: {
+            if (v.shape != .variant or st.* != .named) break :blk false;
+            const bare = bareVariantName(v.name);
+            const td = env.lookupTypeDef(st.named.name) orelse break :blk false;
+            switch (td) {
+                .enum_ => |en| {
+                    if (en.variants.len != 1 or !std.mem.eql(u8, en.variants[0].name, bare)) break :blk false;
+                    if (!try variantPayloadIrrefutable(env, subjectType, v.name, v.payload)) break :blk false;
+                    try bindPatternNamesForSubject(env, pattern, subjectType, &snapshots);
+                    break :blk true;
+                },
+                .record => |rec| {
+                    if (!std.mem.eql(u8, rec.name, bare) or v.payload != .literals) break :blk false;
+                    const args = v.payload.literals;
+                    if (args.len > rec.fields.len or (args.len < rec.fields.len and !v.rest)) break :blk false;
+                    for (args, 0..) |a, i| {
+                        // A generic record's field types are its declaration's
+                        // cells; the subject's instantiation is not read here.
+                        const fieldTy = if (rec.genericParams.len == 0) rec.fields[i].type_ else try env.freshVar();
+                        if (!try patternIsIrrefutable(env, a, fieldTy)) break :blk false;
+                        try bindPatternNamesForSubject(env, a, fieldTy, &snapshots);
+                    }
+                    break :blk true;
+                },
+                .struct_ => break :blk false,
+            }
+        },
+        else => false,
+    };
+    if (!covers) {
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `val <Pattern> = e;` needs a pattern that matches every value of `{s}`, and this one can fail",
+            .{ diagnostics.refutable_val_pattern, try snapshotMod.typeNameOf(env.arena, subjectType) },
+        );
+        env.lastError = TypeError.custom(
+            msg,
+            "write `val assert <Pattern> = e;` (a mismatch is a fatal assert) or a `case` that says what a mismatch does",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    if (!mutable) {
+        for (snapshots.items) |sn| {
+            if (env.lookup(sn.name)) |ty| try env.bindVal(sn.name, ty);
+        }
+    }
+}
+
+/// `.Circle(…)` — a call chained onto a leading-dot head.
+fn isLeadingDotCall(c: ast.CallExprOf(.untyped)) bool {
+    if (c.kind != .call) return false;
+    const ce = c.kind.call.calleeExpr orelse return false;
+    return ce.* == .identifier and ce.identifier.kind == .dotIdent;
+}
+
+/// The name of the enum the expected type names, when it declares a variant
+/// called `variant` (front 15 handover, `.Circle(radius: 1)`).
+fn expectedEnumDeclaring(env: *Env, variant: []const u8) ?[]const u8 {
+    const exp = env.expectedType orelse return null;
+    const d = exp.deref();
+    if (d.* != .named) return null;
+    const td = env.lookupTypeDef(d.named.name) orelse return null;
+    if (td != .enum_) return null;
+    for (td.enum_.variants) |v| {
+        if (std.mem.eql(u8, v.name, variant)) return d.named.name;
+    }
+    return null;
+}
+
+/// 01 R8 — give an annotation's unlocated error the binding's location.
+fn locateTypeRefError(env: *Env, err: InferError, loc: ast.Loc) InferError {
+    if (env.lastError) |*e| {
+        if (e.loc == null) e.loc = loc;
+    }
+    return err;
+}
+
+/// 01 R8 — record whether `val name = value` binds a TYPE: `value` is a name
+/// that is itself a type (a primitive, a declared `type`/`behavior`, an
+/// imported constructor, or another such `val`). Checked before `name` is
+/// bound, so `val T = T;` cannot vouch for itself. A binding that is not one
+/// clears the mark, so a value shadowing a type alias is a value.
+fn noteTypeValue(env: *Env, name: []const u8, value: ast.Expr, eligible: bool) InferError!void {
+    const isType = eligible and blk: {
+        if (value != .identifier or value.identifier.kind != .ident) break :blk false;
+        const n = value.identifier.kind.ident;
+        if (env.typeDefs.contains(n) or env.assocInterfaceDecls.contains(n) or env.typeValueNames.contains(n)) break :blk true;
+        const ty = env.lookup(n) orelse break :blk false;
+        const d = ty.deref();
+        if (d.* == .func and d.func.ret.isNamed(n)) break :blk true;
+        break :blk d.isNamed(n);
+    };
+    if (isType) try env.typeValueNames.put(name, {}) else _ = env.typeValueNames.remove(name);
 }
 
 fn containsStr(haystack: []const []const u8, needle: []const u8) bool {
@@ -8932,7 +9158,7 @@ fn unifyFilledArgs(
     for (fill.slots, 0..) |slot, pi| {
         const ai = slot orelse continue;
         if (pi >= paramTypes.len) continue;
-        try unifyAt(env, paramTypes[pi], typedArgs[ai].value.getType(), typedArgs[ai].value.getLoc());
+        try unifyArgument(env, paramTypes[pi], typedArgs[ai].value.getType(), typedArgs[ai].value.getLoc());
     }
 }
 
@@ -10076,6 +10302,46 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
     }
     return switch (c.kind) {
         .call => |call| {
+            // Front 15 handover — `.Circle(radius: 1)`: the parser chains the
+            // call onto a `.dotIdent` head, so the callee arrives as an
+            // expression with `callee == ""`. It is the variant constructor
+            // the leading dot names: `Shape.Circle(…)` when the expected type
+            // is an enum declaring that variant, and a located refusal when
+            // nothing says which type (decision 67 — no guess). The
+            // rewrite is recorded like `xs[k]`'s, so no backend learns a shape.
+            if (call.calleeExpr) |ce| {
+                if (ce.* == .identifier and ce.identifier.kind == .dotIdent) {
+                    const name = ce.identifier.kind.dotIdent;
+                    var direct = c;
+                    direct.kind.call.calleeExpr = null;
+                    direct.kind.call.callee = name;
+                    const en = expectedEnumDeclaring(env, name) orelse {
+                        const msg = try std.fmt.allocPrint(
+                            env.arena,
+                            "`.{s}(…)` names a variant by its leading dot, and nothing here says which type declares it",
+                            .{name},
+                        );
+                        const hint = try std.fmt.allocPrint(
+                            env.arena,
+                            "give the position a type that declares `{s}` (`val v: T = .{s}(…);`, a typed parameter or array), or write `T.{s}(…)`",
+                            .{ name, name, name },
+                        );
+                        env.lastError = TypeError.custom(msg, hint).withLoc(ce.identifier.loc);
+                        return error.TypeError;
+                    };
+                    env.expectedType = null;
+                    const recv = try env.arena.create(ast.Expr);
+                    recv.* = .{ .identifier = .{ .loc = ce.identifier.loc, .kind = .{ .ident = en } } };
+                    direct.kind.call.receiver = recv;
+                    // The backends read the untyped program: the transform
+                    // splices the named call in, through the index channel.
+                    const spliced = try env.arena.create(ast.Expr);
+                    spliced.* = .{ .call = direct };
+                    spliced.call.loc = loc;
+                    try env.indexRewrites.put(loc, spliced);
+                    return inferCallExpr(env, direct, loc);
+                }
+            }
             // C-02 (decision 63, amended 2026-09-19) — `xs[k]` IS `xs.at(k)`.
             // First of all, and before the arguments are inferred: the index
             // has no typing rule of its own, so there is nothing here to type
@@ -10200,6 +10466,34 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
 
+            // 01 handover 15 — `adder(3)(4)`: what is called is the result of
+            // the previous call, carried in `calleeExpr` with `callee == ""`.
+            // Type that expression and apply it: it must be a function taking
+            // the written arguments (trailing lambdas after them), and the
+            // call's type is its return.
+            if (call.calleeExpr) |ce| {
+                const calleeTyped = try inferExprTyped(env, ce.*);
+                const argTypes = try env.arena.alloc(*T.Type, typedArgs.len + typedTrailing.len);
+                for (typedArgs, 0..) |a, i| argTypes[i] = a.value.getType();
+                for (typedTrailing, 0..) |_, i| argTypes[typedArgs.len + i] = try env.freshVar();
+                const ret = try env.freshVar();
+                const expectedFn = try env.funcType(argTypes, ret);
+                const got = calleeTyped.getType().deref();
+                if (got.* == .func and got.func.params.len != argTypes.len) {
+                    env.lastError = TypeError.arityMismatch("the called value", got.func.params.len, argTypes.len).withLoc(loc);
+                    return error.TypeError;
+                }
+                try unifyAt(env, got, expectedFn, loc);
+                return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+                    .receiver = null,
+                    .callee = call.callee,
+                    .is_builtin = false,
+                    .args = typedArgs,
+                    .trailing = typedTrailing,
+                    .calleeExpr = try makeTypedPtr(env, calleeTyped),
+                } } } };
+            }
+
             if (call.is_builtin) {
                 // Decision 8 §4 — `x is T`. The parser lands it as the `is`
                 // builtin with the tested type in the call's `isType` slot;
@@ -10268,7 +10562,15 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     // `registerInterfaceAssociatedFns`. Each call instantiates fresh
                     // generics. Guarded by `lookup(recvName) == null` so value
                     // bindings of the same name keep their normal method dispatch.
-                    if (env.lookup(recvName) == null) {
+                    //
+                    // 01 R6 — a behavior's own name is bound too (std's `Array`
+                    // is a function-typed binding), and that binding is not a
+                    // value that shadows the behavior: without this the
+                    // associated call (`Array.range(0, 3)`) fell through to a
+                    // fresh var, and the method on its result (`.map`) recorded
+                    // no lowering — erlang's `'__bp_prim_map'` run-time helper.
+                    const behaviorName = env.assocInterfaceDecls.contains(recvName) and !env.isVal(recvName);
+                    if (env.lookup(recvName) == null or behaviorName) {
                         const qn = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ recvName, call.callee });
                         if (env.lookup(qn)) |fnTy| {
                             return try inferAssociatedFnCall(env, recvName, call.callee, fnTy, typedReceiver, typedArgs, typedTrailing, loc);
@@ -10624,7 +10926,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 try captures.append(env.arena, try captureExprArg(env, call.callee, ep, call.args[i].value, ta, paramType));
                                 continue;
                             };
-                            try unifyAt(env, paramType, ta.value.getType(), ta.value.getLoc());
+                            try unifyArgument(env, paramType, ta.value.getType(), ta.value.getLoc());
                             // For template fns: collect the arg value as a JS literal.
                             if (maybeTfn != null and i < maybeTfn.?.params.len) {
                                 const jsVal = try literalSourceAlloc(env.arena, call.args[i].value) orelse {
@@ -10692,7 +10994,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 env.lastError = TypeError.unknownField(call.callee, lbl).withLoc(.{ .line = vloc.line, .col = labelCol });
                                 return error.TypeError;
                             };
-                            try unifyAt(env, f.params[idx], ta.value.getType(), ta.value.getLoc());
+                            try unifyArgument(env, f.params[idx], ta.value.getType(), ta.value.getLoc());
                         }
                         break :blk f.ret;
                     }
@@ -10705,7 +11007,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         }
                         for (typedArgs, f.params, 0..) |ta, paramType, i| {
                             if (typeparams) |constraints| if (isTypeparamIndex(constraints, i)) continue;
-                            try unifyAt(env, paramType, ta.value.getType(), ta.value.getLoc());
+                            try unifyArgument(env, paramType, ta.value.getType(), ta.value.getLoc());
                         }
                         break :blk f.ret;
                     }
@@ -10724,7 +11026,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             env.lastError = TypeError.arityMismatch(call.callee, f.params.len, nonSpreadCount).withLoc(loc);
                             return error.TypeError;
                         }
-                        try unifyAt(env, f.params[paramIndex], ta.value.getType(), ta.value.getLoc());
+                        try unifyArgument(env, f.params[paramIndex], ta.value.getType(), ta.value.getLoc());
                         paramIndex += 1;
                     }
                     break :blk f.ret;
@@ -11431,7 +11733,7 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             // `val assert Ok(n) = parse("42") catch 0;` the error the
             // decision writes: after `catch` the value is an `i32`, and
             // `Ok(…)` names no variant of it.
-            try checkAssertPatternSubject(env, ap.pattern, exprTyped.getType(), ap.expr.getLoc(), ap.fatal);
+            try checkAssertPatternSubject(env, ap.pattern, exprTyped.getType(), ap.expr.getLoc(), ap.fatal, ap.catchLoc);
             // Decision 8 § 9 — the pattern's names are bound in the ENCLOSING
             // scope (`val assert Ok(n) = parse("42"); @print(n);`), so the
             // snapshots a case arm would restore are deliberately dropped.

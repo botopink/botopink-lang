@@ -86,6 +86,29 @@ test "R5 — two effect markers on one fn rejected" {
     , .effectDuplicateAnnotation);
 }
 
+test "R5 — the caret is on the second effect marker (01 R9)" {
+    const alloc = std.testing.allocator;
+    const src =
+        \\#[@result]
+        \\#[@future]
+        \\fn bad() -> @Future<i32> { return 0; }
+    ;
+    var l = Lexer.init(src);
+    const tokens = try l.scanAll(alloc);
+    defer l.deinit(alloc);
+    var p = Parser.initWithSource(tokens, src);
+    if (p.parse(alloc)) |*prog| {
+        var owned = prog.*;
+        owned.deinit(alloc);
+        return error.TestExpectedParseError;
+    } else |_| {
+        const pe = p.parseError orelse return error.TestExpectedParseErrorInfo;
+        try std.testing.expectEqual(ParseErrorType.effectDuplicateAnnotation, pe.kind);
+        try std.testing.expectEqual(@as(usize, 2), pe.line);
+        try std.testing.expectEqual(@as(usize, 1), pe.col);
+    }
+}
+
 test "R5 — three effect markers also red" {
     try expectKind(
         \\#[@result]

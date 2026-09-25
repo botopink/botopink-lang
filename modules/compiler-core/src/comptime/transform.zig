@@ -904,7 +904,13 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     //
     // It sits after `@src()` and before C-04 for that reason: the fill and
     // the method lowering reshape an argument list, and there has to BE one.
-    if (expr_ptr.* == .call and expr_ptr.call.kind == .call and expr_ptr.call.kind.call.is_builtin) {
+    //
+    // The same channel carries front 15's leading-dot call: `.Circle(r: 1)`
+    // arrives with its callee in `calleeExpr` and is replaced by the named
+    // constructor call inference resolved (`Shape.Circle(r: 1)`).
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call and
+        (expr_ptr.call.kind.call.is_builtin or expr_ptr.call.kind.call.calleeExpr != null))
+    {
         if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
             expr_ptr.* = rewrite.*;
         }

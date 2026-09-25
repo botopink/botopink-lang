@@ -1,0 +1,8 @@
+pub mod users;
+
+import {User, makeUser} from "users";
+
+pub fn main() {
+    val u: User = makeUser();
+    @print(u.roleName());
+}

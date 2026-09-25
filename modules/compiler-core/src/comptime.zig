@@ -891,6 +891,7 @@ fn resolveImports(
                                     env.lastError = validation.TypeError.custom(msg, "Import the type under its own name; `as` renames a value or a function.").withLoc(imp.loc);
                                     return error.TypeError;
                                 }
+                                try infer.registerImportedTypeClosure(env, e.value_ptr.*, type_decl);
                                 try infer.registerImportedTypeDecl(env, type_decl);
                                 bound_type_decl = true;
                                 break;

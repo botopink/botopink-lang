@@ -475,8 +475,9 @@ pub fn parseFnBody(
 
     // R5 (§2) — at most one builtin `#[@<effect>]` annotation per fn.
     if (firstDuplicateEffect(annotations)) |dup| {
-        const tok = this.peek();
-        this.parseError = ParseErrorInfo.fromTokenDetail(.effectDuplicateAnnotation, tok, dup);
+        // 01 R9 — the caret is on the second annotation, not on the body.
+        const tok = annotationHashToken(this, dup.loc) orelse this.peek();
+        this.parseError = ParseErrorInfo.fromTokenDetail(.effectDuplicateAnnotation, tok, dup.name);
         return ParseError.UnexpectedToken;
     }
 
@@ -592,15 +593,26 @@ fn hasAnyExternalAnnotation(annotations: []const Annotation) bool {
 /// or more builtin `#[@<effect>]` markers, or null when at most one is present.
 /// Drives R5 (§2): `#[@result] #[@future] fn x()` reds with
 /// `effect-duplicate-annotation`.
-fn firstDuplicateEffect(annotations: []const Annotation) ?[]const u8 {
+fn firstDuplicateEffect(annotations: []const Annotation) ?Annotation {
     var seen: ?ast.EffectKind = null;
     for (annotations) |a| {
         if (!a.is_builtin) continue;
         const k = ast.EffectKind.fromAnnotationName(a.name) orelse continue;
-        if (seen != null) return a.name;
+        if (seen != null) return a;
         seen = k;
     }
     return null;
+}
+
+/// The `#` that opens the annotation whose name starts at `nameLoc` — the
+/// last `#` on that line before it. Null when the annotation was synthesised.
+fn annotationHashToken(this: *This, nameLoc: ?ast.Loc) ?token.Token {
+    const l = nameLoc orelse return null;
+    var found: ?token.Token = null;
+    for (this.tokens[0..this.current]) |t| {
+        if (t.kind == .hash and t.line == l.line and t.col < l.col) found = t;
+    }
+    return found;
 }
 
 /// `test { body }` / `test "name" { body }` — top-level test declaration.

@@ -207,6 +207,11 @@ pub const use_without_context_effect: []const u8 = "use-without-context-effect";
 /// arity, or no tuple at all. Located at the binding; no flag (decision 67).
 pub const use_tuple_arity: []const u8 = "use-tuple-arity";
 
+/// 01 R5 — `val <Pattern> = e;` whose pattern can fail to match the subject.
+/// The bare form has no failure path; `val assert` and `case` are the forms
+/// that say what a mismatch does.
+pub const refutable_val_pattern: []const u8 = "refutable-val-pattern";
+
 // ── RG1–RG4: §1G default-generic diagnostics ────────────────────────────────
 
 /// RG1 — `<T = default, U>` — required parameter follows a defaulted one.
@@ -364,6 +369,7 @@ pub const all_codes = [_][]const u8{
     for_await_expects_future_generator,
     generator_loop_closed_scope,
     yield_label_not_generator,
+    refutable_val_pattern,
 };
 
 test "every reserved code has a stable, non-empty spelling" {

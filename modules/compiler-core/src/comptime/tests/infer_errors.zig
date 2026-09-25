@@ -1182,3 +1182,226 @@ test "infer error: `keyed = true` on a list has no key (decision 51)" {
 test "infer: `@BeamMemory` accepts its three members, the default said out loud included" {
     try h.assertInfersOk(std.testing.allocator, "#[@BeamMemory.ProcessDict]\nvar a: i32 = 0;\n#[@BeamMemory.Ets]\nvar b: i32 = 0;\n#[@BeamMemory.PersistentTerm]\nvar c: i32 = 0;\n#[@BeamMemory.Ets(keyed = false)]\nvar d: i32 = 0;");
 }
+
+// ── 01 R5: a pattern in binding position ──────────────────────────────────────
+
+test "val destructure: a one-variant type binds its payload typed" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Round = type { Circle(radius: i32) };
+        \\fn main() {
+        \\    val s = Round.Circle(radius: 2);
+        \\    val Circle(r) = s;
+        \\    val n: i32 = r;
+        \\    @print(n);
+        \\}
+    );
+}
+
+test "val destructure: a record's constructor binds its fields typed" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Person = type(name: string, age: i32);
+        \\fn main() {
+        \\    val p = Person(name: "a", age: 3);
+        \\    val Person(name, age) = p;
+        \\    val s: string = name;
+        \\    val n: i32 = age;
+        \\    @print(s);
+        \\    @print(n);
+        \\}
+    );
+}
+
+test "val destructure: the bound name carries the payload's type" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Round = type { Circle(radius: i32) };
+        \\fn main() {
+        \\    val s = Round.Circle(radius: 2);
+        \\    val Circle(r) = s;
+        \\    val t: string = r;
+        \\    @print(t);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "string") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "i32") != null);
+}
+
+test "val destructure: a val-bound name cannot be assigned" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Round = type { Circle(radius: i32) };
+        \\fn main() {
+        \\    val Circle(r) = Round.Circle(radius: 2);
+        \\    r = 3;
+        \\    @print(r);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`r` is a `val`") != null);
+}
+
+test "val destructure: a pattern that can fail is refused, naming val assert" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Shape = type { Circle(radius: i32), Square(side: i32) };
+        \\fn main() {
+        \\    val s = Shape.Circle(radius: 2);
+        \\    val Circle(r) = s;
+        \\    @print(r);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "refutable-val-pattern") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`Shape`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "val assert") != null);
+}
+
+test "val destructure: a list pattern with elements is refused" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn main() {
+        \\    val xs = [1, 2];
+        \\    val [a, b] = xs;
+        \\    @print(a + b);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "refutable-val-pattern") != null);
+}
+
+// ── 01 handover 15: a call whose callee is an expression ──────────────────────
+
+test "chained call: calling what a call returned types by its return" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
+        \\fn main() { val x: i32 = adder(3)(4); @print(x); }
+    );
+}
+
+test "chained call: the result carries the returned fn's return type" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
+        \\fn main() { val x: string = adder(3)(4); @print(x); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected string, got i32") != null);
+}
+
+test "chained call: an argument count the returned fn does not take reds" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn adder(a: i32) -> fn(i32) -> i32 { return { b -> a + b }; }
+        \\fn main() { val x = adder(3)(4, 5); @print(x); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expects 1 argument(s), got 2") != null);
+}
+
+// ── front 15 handover: `.Variant(…)` in expression position ──────────────────
+
+test "leading-dot call: the expected type names the enum" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Shape = type { Circle(radius: i32), Square(side: i32) };
+        \\fn area(s: Shape) -> i32 { return 1; }
+        \\fn main() {
+        \\    val s: Shape = .Circle(radius: 1);
+        \\    val xs: Shape[] = [.Square(side: 2)];
+        \\    @print(area(.Circle(radius: 3)));
+        \\    @print(s);
+        \\    @print(xs);
+        \\}
+    );
+}
+
+test "leading-dot call: the payload is checked against the variant" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Shape = type { Circle(radius: i32), Square(side: i32) };
+        \\fn main() { val s: Shape = .Circle(radius: "x"); @print(s); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected i32, got string") != null);
+}
+
+test "leading-dot call: no expected type is a named refusal, not an empty name" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Shape = type { Circle(radius: i32), Square(side: i32) };
+        \\fn main() { val s = .Circle(radius: 1); @print(s); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`.Circle(…)` names a variant by its leading dot") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "''") == null);
+}
+
+// ── 01 R4: a behavior-typed parameter or field accepts an implementer ────────
+
+test "behavior-typed field and parameter accept an implementer, through extends" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Named = behavior { fn name(self: Self) -> string; };
+        \\val Handler = behavior extends Named { fn run(self: Self) -> i32; };
+        \\val H = type(id: i32) implement Handler {
+        \\    fn run(self: Self) -> i32 { return self.id; }
+        \\    fn name(self: Self) -> string { return "h"; }
+        \\};
+        \\val Holder = type(h: Handler);
+        \\fn use1(h: Handler) -> i32 { return h.run(); }
+        \\fn nm(n: Named) -> string { return n.name(); }
+        \\fn main() {
+        \\    val x = Holder(h: H(id: 1));
+        \\    @print(use1(H(id: 2)));
+        \\    @print(nm(H(id: 3)));
+        \\    @print(x.h.run());
+        \\}
+    );
+}
+
+test "behavior-typed field rejects a record that does not implement it" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Handler = behavior { fn run(self: Self) -> i32; };
+        \\val Other = type(id: i32);
+        \\val Holder = type(h: Handler);
+        \\fn main() { val x = Holder(h: Other(id: 1)); @print(x); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Handler") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Other") != null);
+}
+
+// ── 01 R8: a type position takes a type, not any binding ─────────────────────
+
+test "type position: a val bound to a type is a type" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val T = i32;
+        \\fn main() {
+        \\    val x: T = 1;
+        \\    val U = T;
+        \\    val y: U = 2;
+        \\    @print(x + y);
+        \\}
+    );
+}
+
+test "type position: a val bound to a value is refused, located" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn main() { val n = 5; val x: n = 7; @print(x); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "'n' is a value, not a type") != null);
+}
+
+test "type position: a module-level value is refused too" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val n = 5;
+        \\val x: n = 7;
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "'n' is a value, not a type") != null);
+}
+
+// ── 01 R6: a behavior's associated fn types its result ───────────────────────
+
+test "associated fn: `Array.range` answers an array, so a method on it resolves" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\pub fn main() { val xs: i32[] = Array.range(0, 3).map({ x -> x + 2 }); @print(xs); }
+    );
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\pub fn main() { val b: bool = Array.range(0, 3); @print(b); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected bool, got array") != null);
+}

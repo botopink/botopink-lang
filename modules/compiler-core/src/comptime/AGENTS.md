@@ -717,6 +717,93 @@ The parser carries the dotted spelling in `TypeRef.named` (`parser/types.zig`). 
 spelling (`TokenText`) reds with a hint naming the path (`Env.sectionPathForFlatName`). A section
 declares no methods — `EnumSection` has no slot for them and nothing needs one yet.
 
+## The three N25 diagnostics, located (01 R9)
+
+- `fn f() -> @Result<…>` without `#[@result]` is `effect-missing-annotation: @Result needs #[@result]`
+  with the caret on the **return type** (`FnDecl.returnTypeLoc`), not the first body statement.
+- `val assert Ok(n) = f() catch 0;` is "after `catch` the value is not a @Result", with the caret on the
+  `catch` — `AssertPattern.catchLoc`, set by the parser and left out of the AST dump.
+- Two effect annotations on one fn (a parse error, `parser/decls.zig`) put the caret on the second
+  annotation's `#` (`annotationHashToken`), not on the body's `{`.
+
+The `reject/` cells `wrapper_without_annotation`, `val_assert_after_catch` and `two_effect_markers`
+pin all three.
+
+## Importing a type brings its type closure (01 R2)
+
+`import { User } from "users"` where `User(role: Role)` used to red `unknown type 'Role'` until `Role` was
+named too. `comptime.zig`'s import loop now calls `registerImportedTypeClosure` before
+`registerImportedTypeDecl`: the types the declaration mentions — field, variant-field and method
+signature types, transitively, from the module the import names — are registered as **types only**
+(the constructor and variant bindings their registration adds are removed again), so naming a type
+in the clause is still what brings its constructor into scope: `Role(name: "x")` stays unbound. A
+name the module does not declare is left to the ordinary unknown-type diagnostic. Cell:
+`tests/language/modules/import_type_closure`.
+
+## A behavior's associated fn through its own name (01 R6)
+
+`Array.range(0, 3)` resolves through `registerInterfaceAssociatedFns`' `Array.range` binding even
+though `Array` itself is bound (a function-typed binding in std): the guard that keeps a value of the
+same name on method dispatch now lets a behavior's own, non-`val` name through. The call types as
+`array<i32>`, so a method on its result (`.map`) records its primitive lowering — erlang emits
+`lists:map(…, array_range(0, 3))` instead of the `'__bp_prim_map'` run-time helper. Cell:
+`infer_errors.zig` `associated fn: …`.
+
+## A type position takes a type, not any binding (01 R8)
+
+`Env.resolveTypeName`'s bindings arm used to answer any binding's type, so `val n = 5; val x: n = 7;`
+checked. It now accepts four kinds of binding only: one of function type (an imported constructor —
+the reason the arm exists — and std's `Array`, whose return is `array<T>`), a declaration's own binding
+(typed by the declaration's display name, `behavior Request { … }`, which holds a space no value's
+type can), a primitive (bound to itself by `registerBuiltins`), and a `val` recorded in
+`Env.typeValueNames` — `noteTypeValue` marks `val T = i32;` / `val U = T;` when the value is a name
+that is itself a type, and clears the mark when a value shadows it. Any other binding — a value — is
+`'n' is a value, not a type`, located at the `val` (a local)
+or the value (a module `val`), since neither carries its annotation's location. The location is added
+after the fact by `locateTypeRefError`, not through `typeRefLoc`, which would also enter every
+unresolved local annotation into C10's pending list. Cells: `infer_errors.zig` `type position: …`.
+
+## A behavior-typed parameter or field accepts an implementer (01 R4)
+
+An argument meets its parameter through `unifyArgument`: a parameter — or a record constructor's
+field — whose type is a behavior accepts a value whose type `implement`s it, directly or through the
+behavior's `extends` chain (`behaviorReaches`), and everything else goes to `unifyAt`. The same
+`behaviorCoercion` already served `return` of an implementer from a `-> Behavior` fn. The coercion is
+target-first and only widens (implementer → behavior); a record that does not implement the behavior
+reds at the value. Cells: `infer_errors.zig` `behavior-typed field …`.
+
+## A call whose callee is an expression (01 handover 15, front 15's handover)
+
+`adder(3)(4)` and `.Circle(radius: 1)` both reach `inferCallExpr` with `callee == ""` and the callee in
+`calleeExpr` (the parser's chain link). Two readings, decided in that order:
+
+- **a leading-dot head** (`.dotIdent`) is the variant constructor the dot names. The expected type of
+  the position (`val s: Shape = …`, a typed parameter, a typed array's element) must be an enum
+  declaring the variant; the call is then typed as `Shape.Circle(…)` and that untyped call is
+  recorded in `env.indexRewrites`, which the transform splices in — so no backend learns the shape.
+  With no such expected type it is a located refusal naming the two spellings that work (decision 67
+  — no guess by bare variant name). `inferExprTyped` keeps the expectation alive for this one call
+  shape (`isLeadingDotCall`) and `inferCallExpr` clears it before the arguments.
+- **anything else** is a function value: `calleeExpr` is inferred and must be a `fn` taking the
+  written arguments; the call's type is its return, and a count it does not take is an arity error
+  at the `(`. The typed node keeps `calleeExpr`; lowering it is each backend's (C-09's backend half).
+
+## `val <Pattern> = <expr>;` — a pattern in binding position (01 R5)
+
+`val Circle(r) = s;`, `val Person(name, age) = p;` and `val [..rest] = xs;` bind through
+`bindDestructPattern`, which runs the `case` arm walk (`bindPatternNamesForSubject`) typed by the
+subject and leaves the names in the enclosing scope — as `val`s unless the binding is `var`.
+
+**The failure behaviour is decided: a pattern that can fail does not check.** The bare form has no
+failure path of its own, so it is accepted only where the pattern matches every value of the
+subject's type: the one variant of a one-variant `type`, a record's own constructor (all binders, or
+fewer with `..`), a list pattern that is only a spread. Anything else — a variant of a many-variant
+`type`, a list pattern with elements, a subject whose type is not known yet — is
+`refutable-val-pattern` at the binding, whose hint names `val assert <Pattern> = e;` (a fatal
+mismatch) and `case`. No bypass (decision 67), and nothing is left for a backend to decide: every
+program that checks destructures without a test. The cells are `infer_errors.zig`'s
+`val destructure: …` tests.
+
 ## `val assert <pattern> = <expr> [catch <handler>]` (06 C12, decision 8 § 9)
 
 The subject and the handler are inferred like any other expression. Both used to swallow
