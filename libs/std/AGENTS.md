@@ -85,7 +85,11 @@ matching `@External` raises `STD-001` (`comptime/tests/std_target_gating.zig`).
 
 `#[@External.<Target>(...)]` plus the signature define how a declaration lowers.
 Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
-`builtins.d.bp`. Several annotations combine in one `#[…]`, comma-separated.
+`builtins.d.bp`, and `External` stays a second declaration rather than
+`Target` itself: `Target` is a value a program holds and compares, `External.<T>`
+an annotation whose every variant carries a payload the compiler reads (front
+20 F9, the sentence in `builtins.d.bp`). Several annotations combine in one
+`#[…]`, comma-separated.
 
 - **Module + symbol** — `#[@External.Erlang("erlang", "abs")]`: call
   `module:symbol(args)` with args in declaration order.
@@ -109,6 +113,14 @@ Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
   runs; on a `declare fn` it emits `require("./file.mjs")`, which throws unless
   the file is shipped next to the emitted module. Name the native method, write
   a template, or keep host code in a sidecar (below).
+- **`inline`** — `#[@External.Erlang("…", inline = true)]` (or `@External.Beam`)
+  opts the `(target, method)` pair out of the dispatch table so the emitter's
+  hand-coded shape keeps emitting. Only those two variants declare it, because
+  only the erlang and beam emitters read it (`hasExternalInline`, over the last
+  argument); on `Node` / `Wasm` / `Typescript`, anywhere but last, or with a
+  non-bool value it is refused at the annotation (front 20 F9, decision 67 —
+  `comptime/infer.zig` `external_variants`, kept in step with the
+  `pub type External` block by a drift test).
 - **Template** — any `$` in the string switches to the shared renderer
   (`modules/compiler-core/src/comptime/primOpTemplate.zig`):
 
