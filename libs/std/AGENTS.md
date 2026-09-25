@@ -84,7 +84,11 @@ matching `@External` raises `STD-001` (`comptime/tests/std_target_gating.zig`).
 
 `#[@External.<Target>(...)]` plus the signature define how a declaration lowers.
 Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
-`builtins.d.bp`. Several annotations combine in one `#[…]`, comma-separated.
+`builtins.d.bp`, and `External` stays a second declaration rather than
+`Target` itself: `Target` is a value a program holds and compares, `External.<T>`
+an annotation whose every variant carries a payload the compiler reads (front
+20 F9, the sentence in `builtins.d.bp`). Several annotations combine in one
+`#[…]`, comma-separated.
 
 - **Module + symbol** — `#[@External.Erlang("erlang", "abs")]`: call
   `module:symbol(args)` with args in declaration order.

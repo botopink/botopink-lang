@@ -265,16 +265,12 @@ pub behavior Annotation {
 // hand-coded shape worth opting out of adds the parameter here, the table row
 // and the `hasExternalInline` that honours it, in one change.
 //
-// F9, the other half — these five variants are the five `Target` values under
-// another name, and they stay two declarations. `Target` is DATA: a value a
-// program holds, compares and passes (`Target.Node`). `External.<T>` is a
-// MARKER whose variants each carry a payload — the template, and on two of
-// them the flag — and whose meaning is per variant, which is what the
-// annotation model spells (`type … implement Annotation`, one annotation key
-// per variant) and what a plain enum of five names cannot. Collapsing them
-// would mean either an annotation with no payload or a data enum carrying
-// per-value parameters nobody reads. The names coincide because there are five
-// backends; that is the only thing they share.
+// F9, the other half — `External` is not `Target`, because `Target` is a value
+// a program holds and compares (`Target.Node`) while `External.<T>` is an
+// annotation whose every variant carries a payload the compiler reads (the
+// template, and on two of them the flag), and one enum cannot be both a value
+// and an annotation with per-variant parameters. The names coincide because
+// there are five backends; that is the only thing they share.
 
 pub type External implement Annotation {
     Erlang(template: string, inline: bool = false),
