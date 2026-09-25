@@ -1271,3 +1271,37 @@ test "leading-dot call: no expected type is a named refusal, not an empty name" 
     try std.testing.expect(std.mem.indexOf(u8, msg, "`.Circle(…)` names a variant by its leading dot") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "''") == null);
 }
+
+// ── 01 R4: a behavior-typed parameter or field accepts an implementer ────────
+
+test "behavior-typed field and parameter accept an implementer, through extends" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Named = behavior { fn name(self: Self) -> string; };
+        \\val Handler = behavior extends Named { fn run(self: Self) -> i32; };
+        \\val H = type(id: i32) implement Handler {
+        \\    fn run(self: Self) -> i32 { return self.id; }
+        \\    fn name(self: Self) -> string { return "h"; }
+        \\};
+        \\val Holder = type(h: Handler);
+        \\fn use1(h: Handler) -> i32 { return h.run(); }
+        \\fn nm(n: Named) -> string { return n.name(); }
+        \\fn main() {
+        \\    val x = Holder(h: H(id: 1));
+        \\    @print(use1(H(id: 2)));
+        \\    @print(nm(H(id: 3)));
+        \\    @print(x.h.run());
+        \\}
+    );
+}
+
+test "behavior-typed field rejects a record that does not implement it" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\val Handler = behavior { fn run(self: Self) -> i32; };
+        \\val Other = type(id: i32);
+        \\val Holder = type(h: Handler);
+        \\fn main() { val x = Holder(h: Other(id: 1)); @print(x); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Handler") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Other") != null);
+}

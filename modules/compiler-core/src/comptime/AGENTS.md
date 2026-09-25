@@ -644,6 +644,15 @@ The parser carries the dotted spelling in `TypeRef.named` (`parser/types.zig`). 
 spelling (`TokenText`) reds with a hint naming the path (`Env.sectionPathForFlatName`). A section
 declares no methods — `EnumSection` has no slot for them and nothing needs one yet.
 
+## A behavior-typed parameter or field accepts an implementer (01 R4)
+
+An argument meets its parameter through `unifyArgument`: a parameter — or a record constructor's
+field — whose type is a behavior accepts a value whose type `implement`s it, directly or through the
+behavior's `extends` chain (`behaviorReaches`), and everything else goes to `unifyAt`. The same
+`behaviorCoercion` already served `return` of an implementer from a `-> Behavior` fn. The coercion is
+target-first and only widens (implementer → behavior); a record that does not implement the behavior
+reds at the value. Cells: `infer_errors.zig` `behavior-typed field …`.
+
 ## A call whose callee is an expression (01 handover 15, front 15's handover)
 
 `adder(3)(4)` and `.Circle(radius: 1)` both reach `inferCallExpr` with `callee == ""` and the callee in

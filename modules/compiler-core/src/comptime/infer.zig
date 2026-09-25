@@ -4570,8 +4570,30 @@ fn behaviorCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
         .struct_ => |st| st.implements,
         .enum_ => |e| e.implements,
     };
-    for (impls) |i| if (std.mem.eql(u8, i, t.named.name)) return true;
+    for (impls) |i| if (behaviorReaches(env, i, t.named.name, 0)) return true;
     return false;
+}
+
+/// 01 R4 — whether behavior `from` is `to` or extends it, through the
+/// `extends` chain. `depth` bounds a cyclic chain.
+fn behaviorReaches(env: *Env, from: []const u8, to: []const u8, depth: usize) bool {
+    if (std.mem.eql(u8, from, to)) return true;
+    if (depth >= 16) return false;
+    const decl = env.assocInterfaceDecls.get(from) orelse return false;
+    for (decl.extends) |parent| {
+        if (behaviorReaches(env, parent, to, depth + 1)) return true;
+    }
+    return false;
+}
+
+/// 01 R4 — an argument meets its declared parameter. A parameter (or a
+/// constructor field) typed by a behavior accepts a value whose type
+/// implements that behavior, directly or through `extends`; everything else
+/// is `unifyAt`. Target-first, like `unifyAt`: the coercion only ever widens
+/// an implementer into the behavior, never the reverse.
+fn unifyArgument(env: *Env, param: *T.Type, arg: *T.Type, loc: ast.Loc) InferError!void {
+    if (behaviorCoercion(env, param, arg)) return;
+    try unifyAt(env, param, arg, loc);
 }
 
 /// True when `source` coerces into a `Children`-typed `target`. A `Children`
@@ -8610,7 +8632,7 @@ fn unifyFilledArgs(
     for (fill.slots, 0..) |slot, pi| {
         const ai = slot orelse continue;
         if (pi >= paramTypes.len) continue;
-        try unifyAt(env, paramTypes[pi], typedArgs[ai].value.getType(), typedArgs[ai].value.getLoc());
+        try unifyArgument(env, paramTypes[pi], typedArgs[ai].value.getType(), typedArgs[ai].value.getLoc());
     }
 }
 
@@ -10335,7 +10357,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 try captures.append(env.arena, try captureExprArg(env, call.callee, ep, call.args[i].value, ta, paramType));
                                 continue;
                             };
-                            try unifyAt(env, paramType, ta.value.getType(), ta.value.getLoc());
+                            try unifyArgument(env, paramType, ta.value.getType(), ta.value.getLoc());
                             // For template fns: collect the arg value as a JS literal.
                             if (maybeTfn != null and i < maybeTfn.?.params.len) {
                                 const jsVal = try literalSourceAlloc(env.arena, call.args[i].value) orelse {
@@ -10403,7 +10425,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 env.lastError = TypeError.unknownField(call.callee, lbl).withLoc(.{ .line = vloc.line, .col = labelCol });
                                 return error.TypeError;
                             };
-                            try unifyAt(env, f.params[idx], ta.value.getType(), ta.value.getLoc());
+                            try unifyArgument(env, f.params[idx], ta.value.getType(), ta.value.getLoc());
                         }
                         break :blk f.ret;
                     }
@@ -10416,7 +10438,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         }
                         for (typedArgs, f.params, 0..) |ta, paramType, i| {
                             if (typeparams) |constraints| if (isTypeparamIndex(constraints, i)) continue;
-                            try unifyAt(env, paramType, ta.value.getType(), ta.value.getLoc());
+                            try unifyArgument(env, paramType, ta.value.getType(), ta.value.getLoc());
                         }
                         break :blk f.ret;
                     }
@@ -10435,7 +10457,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             env.lastError = TypeError.arityMismatch(call.callee, f.params.len, nonSpreadCount).withLoc(loc);
                             return error.TypeError;
                         }
-                        try unifyAt(env, f.params[paramIndex], ta.value.getType(), ta.value.getLoc());
+                        try unifyArgument(env, f.params[paramIndex], ta.value.getType(), ta.value.getLoc());
                         paramIndex += 1;
                     }
                     break :blk f.ret;
