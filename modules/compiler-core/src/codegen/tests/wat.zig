@@ -738,64 +738,26 @@ test "wat: index ---- a string slice's length" {
 
 // ── decision 8 §10 and §6 T6, the two twins of `04-js` steps 3 and 4 ─────────
 
-// §10 — `break <value>` makes the loop an expression. Both forms answered a
-// one-element array on wasm (`[3]`, `[8]`), because every value-carrying loop
-// was lowered as a comprehension. The fork is the body: a `yield` anywhere
-// means the loop collects; without one a condition or infinite loop is a
-// search, and the break's value IS the loop's. The last two prints hold the
-// other side — a loop with a `yield`, and an iteration loop, both of which
-// still collect.
-//
-// A RUN LOG and not a snapshot, the shape `04-js` used for the same programs:
-// erlang refuses a condition loop used as a value
-// (`ConditionLoopValueUnsupported`), so an all-backend fixture aborts before it
-// can record wasm's answer.
-test "wat: loop ---- break with a value is the loop's value, not a one-element array" {
+// Decision 105 — a `while` / `loop` is a statement: the answer a search finds
+// lives in a `var` the body reassigns before a bare `break`, and a loop that
+// ends without finding one leaves it as it was. A RUN LOG, not a snapshot: the
+// other backends' baselines of this program are their own fixtures'.
+test "wat: loop ---- a search leaves its answer in a var and ends at break" {
     try h.assertWasmRunLog(std.testing.allocator,
-        \\fn find(arr: i32[]) -> i32[] {
-        \\    return for (arr) { x -> if (x > 10) { break x; }; };
-        \\}
         \\fn main() {
         \\    var k = 0;
-        \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\    var r = 0;
+        \\    loop { k = k + 1; if (k > 2) { r = k; break; }; };
         \\    @print(r);
         \\    var i = 0;
-        \\    val found = while (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    var found = 0;
+        \\    while (i < 10) { if (i == 4) { found = i * 2; break; }; i = i + 1; };
         \\    @print(found);
-        \\    var j = 0;
-        \\    val collected = while (j < 5) { j = j + 1; yield j; };
-        \\    @print(collected);
-        \\    @print(find([5, 15, 20]));
-        \\}
-        // `find` answers `[15]`, not `[15, 20]`: decision 55 — a value `break` in a
-        // collection loop contributes its value **and ends the loop**.
-    , "3\n8\n[1, 2, 3, 4, 5]\n[15]\n");
-}
-
-// §10 and decision 52 — a search that never breaks has no value to give, and
-// the spelling of that is `null`, on every backend. wasm answered `0`: the value
-// is carried unboxed with `0` for absence (which is what `??` reads, and it was
-// already right — `none ?? 42` answers `42`), so the value alone cannot tell
-// "never broke" from `break 0`. `lowerLoop` declares a `$__got{n}` flag beside
-// `$__found{n}`, `break <v>` sets it, and `@print` reads both through
-// `$__print_loop_i32`. The third and fourth prints are the pair that makes the
-// flag necessary rather than decorative: commonJS answers `0` for `break 0` and
-// `null` for the exhausted loop, and so does this backend now.
-test "wat: loop ---- a search that never breaks answers null, and `break 0` answers 0" {
-    try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
         \\    var m = 0;
-        \\    val none = while (m < 3) { m = m + 1; if (m > 99) { break m; }; };
-        \\    @print(none);
-        \\    @print(none ?? 42);
-        \\    var i = 0;
-        \\    val zero = while (i < 10) { if (i == 0) { break i; }; i = i + 1; };
-        \\    @print(zero);
-        \\    var j = 0;
-        \\    val eight = while (j < 10) { if (j == 4) { break j * 2; }; j = j + 1; };
-        \\    @print(eight);
+        \\    while (m < 3) { m = m + 1; };
+        \\    @print(m);
         \\}
-    , "null\n42\n0\n8\n");
+    , "3\n8\n3\n");
 }
 
 // §6 T6 — a tuple is positional at run time and `==` compares its elements;
@@ -831,26 +793,6 @@ test "wat: tuple ---- equality compares elements, and labels take no part" {
         \\    @print(f1 == f3);
         \\}
     );
-}
-
-// Decision 52's headline shape, which the value-`break` fixture above does not
-// reach: a condition loop with **no** `break <value>` and no `yield` at all. It
-// builds neither accumulator, so `lowerConditionLoop` leaves a bare `0` and
-// `@print` wrote that `0`. Absence is statically certain here — there is no
-// `break` that could ever give the loop a value — so there is no flag to test and
-// nothing to load: `$__print_null` outright. `??` reads the same `0` and was
-// already right. `tests/language/run/loop_condition_no_break.bp` is front 12's
-// cell for this, and its `.out` is `null` on every backend.
-test "wat: loop ---- a condition loop with no value `break` at all answers null" {
-    try h.assertWasmRunLog(std.testing.allocator,
-        \\fn main() {
-        \\    var i = 0;
-        \\    val r = while (i < 3) { i = i + 1; };
-        \\    @print(r);
-        \\    @print(r ?? 9);
-        \\    @print(i);
-        \\}
-    , "null\n9\n3\n");
 }
 
 // §6 T4 / §7 — a tuple element is printed by its own shape, not by its address.

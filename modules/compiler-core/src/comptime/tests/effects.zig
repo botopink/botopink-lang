@@ -655,22 +655,17 @@ test "chain error: `yield` inside #[@context] — the top of the chain still can
     );
 }
 
-// The `yield` gate asks which scope the `yield` targets before it asks the
-// chain, exactly as the `break` gate does (§1I REGRAS DE ESCOPO). A `yield`
-// inside a loop feeds that loop's array — decision 8 § 10's comprehension —
-// and is legal in any body, which is what these two cells pin from both sides.
-test "chain: a loop comprehension yields in a body the chain grants no `yield`" {
-    try h.assertInfersOk(std.testing.allocator,
+// Decision 105 — a `yield` inside a `for` / `while` feeds the nearest generator
+// scope, and a body the chain grants no `yield` has none: the loop does not
+// make it legal. This is the cell that pinned the opposite (decision 8 §10's
+// comprehension) before the decision.
+test "chain error: `yield` inside a loop still needs a generator scope (decision 105)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@future]
-        \\fn collected() -> @Future<i32[]> {
-        \\    val xs = for ([1, 2, 3]) { x -> yield x * 2; };
-        \\    return xs;
-        \\}
-        \\#[@result]
-        \\fn counted() -> @Result<i32[], string> {
-        \\    var i = 0;
-        \\    val xs = while (i < 3) { i = i + 1; yield i; };
-        \\    return xs;
+        \\fn collected() -> @Future<i32> {
+        \\    var n = 0;
+        \\    for ([1, 2, 3]) { x -> yield x * 2; };
+        \\    return n;
         \\}
     );
 }

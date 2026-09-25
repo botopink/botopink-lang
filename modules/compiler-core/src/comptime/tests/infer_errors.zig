@@ -629,16 +629,6 @@ test "infer error: RI5 ---- break :unknown reds break-label-unbound" {
     );
 }
 
-test "infer error: RI3 ---- break <expr> with C=void reds iterator-break-without-completion-type" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn nums() -> @Iterator<i32> {
-        \\    yield 1;
-        \\    break 42;
-        \\}
-    );
-}
-
 test "infer error: RC5 ---- @getContex outside #[@context] fn reds context-getcontex-outside-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)
@@ -685,10 +675,12 @@ test "infer error: RC3 ---- @getContex(T) outside enclosing Anchor tree reds con
     );
 }
 
-test "infer error: RI2 ---- break <wrongType> reds iterator-break-type-mismatch" {
+test "infer error: break <wrongType> in a generator reds a type mismatch against T (decision 103)" {
+    // `break v` emits `v` and ends the generator: `v` is an item, so it must
+    // be a `T`. The completion channel `C` is gone (decision 103).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@iterator]
-        \\fn nums() -> @Iterator<i32, string, i32> {
+        \\fn nums() -> @Iterator<i32, string> {
         \\    yield 1;
         \\    break "not an i32";
         \\}

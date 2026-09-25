@@ -244,28 +244,41 @@ test "types: negation ---- unary minus" {
 
 test "types: range ---- iterate 0 to n" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn sumTo(n: i32) {
+        \\fn sumTo(n: i32) -> i32 {
+        \\    var sum = 0;
         \\    for (0..n) { i ->
-        \\        yield i;
+        \\        sum = sum + i;
         \\    };
+        \\    return sum;
         \\}
     );
 }
 
-test "types: loop ---- break with value" {
+test "types: generator loop ---- worth the annotation's wrapper, its break v an item" {
+    // Decision 105 — `#[@generator] loop { … }` types as `@Generator<T>` with
+    // `T` the type of its `yield` / `break v`; the loop that consumes it binds
+    // `T`.
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn find(arr: i32[]) -> i32[] {
-        \\    return for (arr) { x ->
-        \\        if (x > 10) { break x; };
+        \\fn firstOver(arr: i32[], limit: i32) -> i32 {
+        \\    var i = 0;
+        \\    val found = #[@generator] loop {
+        \\        if (i >= arr.length) { break 0; };
+        \\        val x = arr[i] ?? 0;
+        \\        i = i + 1;
+        \\        if (x > limit) { break x; };
         \\    };
+        \\    var out = 0;
+        \\    for (found) { v -> out = v; };
+        \\    return out;
         \\}
     );
 }
 
-test "types: loop ---- yield accumulation" {
+test "types: generator fn ---- a for inside it feeds its yields" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn doubles(arr: i32[]) -> i32[] {
-        \\    return for (arr) { x ->
+        \\#[@generator]
+        \\fn doubles(arr: i32[]) -> @Generator<i32> {
+        \\    for (arr) { x ->
         \\        yield x * 2;
         \\    };
         \\}

@@ -1,10 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn sumEvens(arr: i32[]) -> i32[] {
-    return for (arr) { x ->
+    var out = [];
+    for (arr) { x ->
         if (x % 2 != 0) { continue; };
-        yield x;
+        out.push(x);
     };
+    return out;
 }
 ```
 
@@ -14,14 +16,23 @@ fn sumEvens(arr: i32[]) -> i32[] {
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $sumEvens (param $arr i32) (result i32)
+    (local $__mem0 i32)
+    (local $out i32)
     (local $x i32)
-    (local $__yield0 i32)
     (local $__iter0 i32)
     (local $__idx0 i32)
     (local $__len0 i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
     i32.const 0
-    call $__arr_new
-    local.set $__yield0
+    i32.store
+    local.get $__mem0
+    local.set $out
     local.get $arr
     local.set $__iter0
     local.get $__iter0
@@ -57,10 +68,10 @@ fn sumEvens(arr: i32[]) -> i32[] {
       )
     )
     drop
-    local.get $__yield0
+    local.get $out
     local.get $x
     call $__arr_push
-    local.set $__yield0
+    local.set $out
         )
         local.get $__idx0
         i32.const 1
@@ -69,7 +80,9 @@ fn sumEvens(arr: i32[]) -> i32[] {
         br $__continue
       )
     )
-    local.get $__yield0
+    i32.const 0
+    drop
+    local.get $out
     return
   )
   (func $__alloc (param $n i32) (result i32)

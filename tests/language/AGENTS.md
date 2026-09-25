@@ -128,7 +128,7 @@ plain JS call and node has no tail-call elimination, so the program died with `R
 call stack size exceeded` while erlang, a tail-recursive VM, printed the sum. Its bound is a
 VARIABLE on purpose — a literal one could be folded and hide the depth — and the cell's header
 records the ceiling each backend still has. `loop_item_method` (D7/D8) calls `.length()` on what a
-`loop` binds — the item, a field of it, and a `val` bound from it inside the body: the loop
+`for` binds — the item, a field of it, and a `val` bound from it inside the body: the loop
 parameter used to bind a fresh type variable, and commonJS, which needs the receiver's type to know
 that `.length()` is JavaScript's `length` PROPERTY, emitted a CALL on a number.
 `optional_length_method` (D7) is the same rename one layer deeper — `.length()` on a `?string` from
@@ -341,8 +341,8 @@ written against a layout that is about to move. Flipping it on is one line of `r
 closing step. The beam rows of `expected-failures.txt` already exist and
 `tests/language/run.sh --target beam` is green. Re-measured at `b09bf9c6`: **42 results, 19 passed,
 23 expected failures, 0 failed** — 18 of them `run/` and `modules/` results (7 passing:
-`run/smoke.bp`, `run/tuple_print.bp`, `run/print_nested.bp`, `run/loop_yield_and_break.bp` and all
-three `modules/` cells) and 24 `reject/` results, which run once under `targets[0]` and are counted
+`run/smoke.bp`, `run/tuple_print.bp`, `run/print_nested.bp`, the since-deleted
+`run/loop_yield_and_break.bp` and all three `modules/` cells) and 24 `reject/` results, which run once under `targets[0]` and are counted
 by both runs. Recounted from the file: the 11 beam lines are owned by `03 step 3` (5), `03 step 2` (3),
 `01 step 4` (2) and `03 handover 15` (1) — **no step 4 of `03-beam`, and three of them, not four,
 name `13 step 18`** as a second row, because a record and a variant cannot print their names before a
@@ -833,7 +833,7 @@ them, by area:
 |---|---|---|
 | `case` (§5) | 8 test + 2 run + 9 reject | 19 |
 | tuples (§6) | 6 test + 1 run + 2 reject | 9 |
-| `loop` (§10) | 6 test + 5 run + 2 reject | 13 |
+| loops (§10, decision 105) | 5 test + 3 run + 11 reject | 19 |
 | effects (§9) | 5 test + 5 reject | 10 |
 | comptime, templates, decorators | 3 test | 3 |
 | host externals (§8) | 2 test + 1 reject | 3 |
@@ -984,13 +984,14 @@ merging `origin/feat` `3cfb65cb` and none of them moved**, the range table above
 heap address the range defect used to be recorded with does **not** reproduce on either commit: wasm
 answers `0`, and it answers `0` at every endpoint.
 
-**A `.out` may encode a decision no backend implements yet, and that is the point.** Five cells do —
-`run/loop_yield_then_break_value.bp`, `run/loop_break_value_then_yield.bp`,
-`run/loop_yield_then_bare_break.bp` (decision 55), `run/loop_condition_no_break.bp` (decision 52) and
-`run/optional_null_pattern.bp` (decision 54). Each `.out` is the decision's answer, so when the
-backends are moved against it **exactly one file per cell** is involved and no `.out` is renegotiated
-in the same commit as an emitter. Each cell's header comment carries the per-backend measurement it
-was written against, dated and with the commit.
+**A `.out` may encode a decision no backend implements yet, and that is the point.**
+`run/optional_null_pattern.bp` (decision 54) does. (The four decision-55 cells and the decision-52
+cell that used to sit beside it were superseded by decision 105 — no loop has a value — and left with
+front 22; `reject/loop_break_value.bp` and `reject/loop_yield_plain_fn.bp` are what the language says
+now.) Each `.out` is the decision's answer, so when the backends are moved against it **exactly one
+file per cell** is involved and no `.out` is renegotiated in the same commit as an emitter. Each
+cell's header comment carries the per-backend measurement it was written against, dated and with
+the commit.
 
 **Never pin an erlang exit status or an `escript` warning as the point of a line.** `run.sh` runs
 `botopink run --target erlang`, which today is `escript out/main.erl`: escript compiles the file it is
@@ -1002,12 +1003,10 @@ reason line may *quote* either as evidence, and four of this front's do, but the
 be the wrong answer. A front that fixes an erlang lowering and still sees a byte mismatch should check
 which of the two moved.
 
-**Read a loop's result as `length` + `join(",")`, not as a printed array.** `@print` of an array is
-decision 8 §7's separator row and erlang and wasm still get it wrong (`[20,40,60]` for
-`[20, 40, 60]`), so a cell that prints the array carries a §7 line on two backends and the §10 rule
-it means to assert is hidden behind it. The five `loop` cells above read the result instead — and it
-is what makes `run/loop_yield_then_bare_break.bp` show that **wasm alone already answers decision
-55's fifth row**, as a pass, rather than as a §7 near-miss.
+**Read a collected result as `length` + `join(",")`, not as a printed array.** `@print` of an array
+is decision 8 §7's separator row and erlang and wasm still get it wrong (`[20,40,60]` for
+`[20, 40, 60]`), so a cell that prints the array carries a §7 line on two backends and the rule it
+means to assert is hidden behind it.
 
 **C-06's wasm half is verified by running, not by reading the diff.** `8594e4ba` landed
 `.tasks/wasm` as-is — the `A...B` range-pattern arm and `emitRangeBound` in `wat.zig`, a value `break`
@@ -1015,9 +1014,9 @@ as `emitYield` then `br $__break`, six `loop_*` wasm snapshots' RUN LOGs moved (
 `[20, 40, 60]` was), three `expected-failures.txt` lines deleted — without its verification. C-16
 compiled each of the six fixtures' `SOURCE CODE` as a fresh project, ran it with `botopink run
 --target wasm` (wasmtime), and compared stdout with the snapshot's RUN LOG **byte for byte**: all six
-match (`1 2 3 [20]`, `[15]`, `[0]`, `[250]`, `[115.0]`, `[20]`), and `run/case_range_value.bp`,
-`run/loop_yield_then_break_value.bp`, `run/loop_break_value_then_yield.bp` and
-`run/loop_yield_then_bare_break.bp` pass on wasm in the suite, so the three deleted lines stay deleted.
+match (`1 2 3 [20]`, `[15]`, `[0]`, `[250]`, `[115.0]`, `[20]`), and `run/case_range_value.bp` and
+the three decision-55 cells (since deleted by front 22) passed on wasm in the suite, so the three
+deleted lines stay deleted.
 No defect was found and `wat.zig` was not touched. One note carried from the landing: a range pattern
 over a **string** bound has no wasm ordering and answers `0` (`emitRangeBound`'s `else` arm) — no cell
 asserts it, since decision 53 legislates numeric endpoints only.

@@ -1,10 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn sumEvens(arr: i32[]) -> i32[] {
-    return for (arr) { x ->
+    var out = [];
+    for (arr) { x ->
         if (x % 2 != 0) { continue; };
-        yield x;
+        out.push(x);
     };
+    return out;
 }
 ```
 
@@ -13,14 +15,17 @@ fn sumEvens(arr: i32[]) -> i32[] {
 -module(main).
 
 sumEvens(Arr) ->
-    lists:map(fun(X) ->
+    Out = [],
+    Out@3 = lists:foldl(fun(X, Out@1) ->
         case ((X rem 2) =/= 0) of
             true ->
                 %% continue;
             _ -> ok
         end,
-        X
-    end, Arr).
+        Out@2 = (Out@1 ++ [X]),
+        Out@2
+    end, Out, Arr),
+    Out@3.
 ```
 
 ----- RUN LOG -----

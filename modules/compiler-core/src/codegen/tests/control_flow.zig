@@ -286,60 +286,58 @@ test "js: loop ---- side-effect over range" {
     );
 }
 
-// KNOWN (wasm, decision 55): `break <v>` in a collection loop contributes `v`
-// and **ends the loop**, so the six fixtures below that break on every
-// iteration answer their first element on wasm — `[20]`, not `[20, 40, 60]`.
-// The four backends agreed on the old answer because they shared one
-// accumulator that never stopped; the agreement was the evidence the decision
-// overrides, not a proof. commonJS, erlang and beam still print the old lists
-// (04 step 3, 02 has no step, 03 step 3) and their snapshots say so.
-test "js: loop ---- map with break (add tax)" {
+// Decision 105 — a loop is a statement. What used to be collected by `break
+// <v>` / `yield v` out of a `loop (…)` is a `var` the body reassigns, or a
+// `map` / `filter`; the four fixtures below are the old comprehension shapes
+// written that way, and they answer what the comprehensions answered.
+test "js: loop ---- a var pushed to in a loop body (add tax)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val precosBrutos = [100, 250, 400];
-        \\val precosComTaxa = for (precosBrutos) { valor ->
-        \\    val taxa = valor * 0.15;
-        \\    break valor + taxa;
-        \\};
         \\fn main() {
+        \\    val precosBrutos = [100, 250, 400];
+        \\    var precosComTaxa = [];
+        \\    for (precosBrutos) { valor ->
+        \\        val taxa = valor * 0.15;
+        \\        precosComTaxa.push(valor + taxa);
+        \\    };
         \\    @print(precosComTaxa);
         \\}
     );
 }
 
-test "js: loop ---- filter with conditional break" {
+test "js: loop ---- a conditional push keeps some items" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val precosBrutos = [100, 250, 400];
-        \\val apenasGrandes = for (precosBrutos) { valor ->
-        \\    if (valor > 200) {
-        \\        break valor;
-        \\    };
-        \\};
         \\fn main() {
+        \\    val precosBrutos = [100, 250, 400];
+        \\    var apenasGrandes = [];
+        \\    for (precosBrutos) { valor ->
+        \\        if (valor > 200) {
+        \\            apenasGrandes.push(valor);
+        \\        };
+        \\    };
         \\    @print(apenasGrandes);
         \\}
     );
 }
 
-test "js: loop ---- map with break simple" {
+test "js: loop ---- map is the collecting form" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val ids = [10, 20, 30];
-        \\val dobrados = for (ids) { id ->
-        \\    break id * 2;
-        \\};
         \\fn main() {
+        \\    val ids = [10, 20, 30];
+        \\    val dobrados = ids.map({ id -> id * 2 });
         \\    @print(dobrados);
         \\}
     );
 }
 
-test "js: loop ---- even numbers with break" {
+test "js: loop ---- even numbers pushed from a range loop" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val processamento = for (0..10) { i ->
-        \\    if (i % 2 == 0) {
-        \\        break i;
-        \\    };
-        \\};
         \\fn main() {
+        \\    var processamento = [];
+        \\    for (0..10) { i ->
+        \\        if (i % 2 == 0) {
+        \\            processamento.push(i);
+        \\        };
+        \\    };
         \\    @print(processamento);
         \\}
     );
@@ -533,25 +531,27 @@ test "js: case ---- nested case in block arm" {
 // COLLECTION loop answers a one-element ARRAY, `[20]`, where §10 reads as the
 // value itself, `20`. commonJS, erlang, wasm and beam agree on `[20]`, so this
 // is the decision's row (front 03's step 3 D7 names it), not one backend's.
-test "js: loop ---- a loop over an array literal, and a value break out of one" {
+test "js: loop ---- a loop over an array literal, and a break out of one" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    for ([1, 2, 3]) { x -> @print(x); };
-        \\    val first = for ([1, 2, 3]) { x -> if (x == 2) { break x * 10; }; };
+        \\    var first = 0;
+        \\    for ([1, 2, 3]) { x -> if (x == 2) { first = x * 10; break; }; };
         \\    @print(first);
         \\}
     );
 }
 
-// The loop collects its `break` values into an array (erlang prints
-// `[15,20]`). `find` was declared `-> i32`; since 06 C1 a `return` unifies with
-// the declared type, so the fixture declares what the loop produces (N12).
-test "js: loop ---- break with value" {
+// A search leaves its answer in a `var` and ends the loop with a bare `break`
+// (decision 105: no loop has a value).
+test "js: loop ---- a search ends at break with its answer in a var" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn find(arr: i32[]) -> i32[] {
-        \\    return for (arr) { x ->
-        \\        if (x > 10) { break x; };
+        \\fn find(arr: i32[]) -> i32 {
+        \\    var found = 0;
+        \\    for (arr) { x ->
+        \\        if (x > 10) { found = x; break; };
         \\    };
+        \\    return found;
         \\}
         \\fn main() {
         \\    @print(find([5, 8, 15, 20]));
@@ -559,126 +559,68 @@ test "js: loop ---- break with value" {
     );
 }
 
-test "js: loop ---- a condition loop's break value is the loop's value" {
-    // Decision 8 §10 — `break <v>` makes the loop an expression. A condition
-    // loop with no `yield` is a search, not a comprehension: it collected into
-    // `_acc` and answered `[3]` / `[8]` where §10 asks for `3` / `8`. A loop
-    // that ends without breaking has no value to give, which is `null`.
-    //
-    // A RUN LOG, not a snapshot: the erlang, beam and wasm baselines of this
-    // program are not this front's to record. When this was written neither
-    // erlang nor beam compiled the form at all (`ConditionLoopValueUnsupported`);
-    // both do now — erlang since `a9e9d03` (02 step 5), beam since 03 step 3's
-    // D6 — and the four-backend fixture below records what they answer.
+test "js: loop ---- a condition loop's answer is read from a var" {
+    // Decision 105 — `while` and `loop` are statements: the answer a loop
+    // finds lives in a `var` the body reassigns before its bare `break`, and
+    // a loop that ends without finding one leaves the `var` as it was.
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
         \\    var k = 0;
-        \\    var i = 0;
-        \\    var n = 0;
-        \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\    var r = 0;
+        \\    loop { k = k + 1; if (k > 2) { r = k; break; }; };
         \\    @print(r);
-        \\    val found = while (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    var i = 0;
+        \\    var found = 0;
+        \\    while (i < 10) { if (i == 4) { found = i * 2; break; }; i = i + 1; };
         \\    @print(found);
-        \\    val never = while (n < 3) { n = n + 1; };
-        \\    @print(never);
+        \\    var n = 0;
+        \\    while (n < 3) { n = n + 1; };
+        \\    @print(n);
         \\}
-    , "3\n8\nnull\n");
+    , "3\n8\n3\n");
 }
 
-// ── front 03-beam step 3 D6: a condition loop's value break on beam ──────────
-//
-// Beam refused `break <value>` out of `while (cond)` — and out of the bare
-// `loop { … }`, which the parser gives the same node — with the same unlocated
-// `error.ConditionLoopValueUnsupported` erlang raised until `a9e9d03`. It was
-// the last backend on the row.
-//
-// The beam shape is not erlang's: a condition loop is a label-jump loop in the
-// caller's own frame, not a recursive fun, so there is no `{Group, Value}` tuple
-// to carry and no `case` to destructure. What it needs is a register the
-// condition's failure path cannot share with the `break`'s:
-//
-//   {label, Top}  {test, is_lt, {f, Fail}, [{y,0}, {integer,10}]}
-//                 … {gc_bif, '*', …, {x, 0}}  {jump, {f, Exit}}   % break i * 2
-//                 … {jump, {f, Top}}
-//   {label, Fail} {move, {atom, undefined}, {x, 0}}
-//   {label, Exit} …                                               % the value
-//
-// so `{x, 0}` at `Exit` is the break's value on the break path and `undefined`
-// when the condition ran out — the two answers erlang's `{GroupAtTheJump,
-// Value}` / `{FinalGroup, undefined}` pair carries. The `.S` is what the RUN LOG
-// below was assembled and run from, by hand as well:
-//
-//   $ botopink build --target beam
-//   $ (cd out && erlc +from_asm main.S)
-//   $ erl -noshell -pa out -eval "main:'_botopink_main'(), halt()."
-//   8
-//   4
-//   3
-//   undefined
-//
-// byte-identical to what the erlang cell answers for the same program.
-//
-// KNOWN (commonJS): the exhausted loop answers `null` where erlang and beam
-// answer `undefined` — the backends' standing spelling of absence, not this row.
-// KNOWN-WRONG (wasm, front 05): a condition loop still COLLECTS, so the three
-// values arrive as `[8]`, `[3]` and `[]`. commonJS was fixed by 04; erlang by
-// 02 step 5; wasm is the last one left on decision 8 §10.
-// KNOWN-WRONG (front 01, all four targets): the CHECKER types a condition loop
-// with a valued `break` as an ARRAY, so `val hit = while (j < 5) { if (j == 2)
-// { break j; }; j = j + 1; }; val n = hit + 1;` is refused with "type mismatch:
-// expected array, got i32" on commonJS, erlang and wasm alike. That is why this
-// fixture only prints its loops and never does arithmetic on one.
-test "js: loop ---- a condition loop's value break is the loop's value on every backend" {
+test "js: loop ---- a condition loop's answer in a var, on every backend" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    var i = 0;
-        \\    val found = while (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    var found = 0;
+        \\    while (i < 10) { if (i == 4) { found = i * 2; break; }; i = i + 1; };
         \\    @print(found);
         \\    @print(i);
         \\    var k = 0;
-        \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\    var r = 0;
+        \\    loop { k = k + 1; if (k > 2) { r = k; break; }; };
         \\    @print(r);
         \\    var n = 0;
-        \\    val never = while (n < 3) { if (n == 99) { break n; }; n = n + 1; };
+        \\    var never = 0;
+        \\    while (n < 3) { if (n == 99) { never = n; break; }; n = n + 1; };
         \\    @print(never);
         \\}
     );
-}
-
-test "js: loop ---- a condition loop that yields still collects" {
-    // The other side of the same fork: a `yield` in the body makes it a
-    // comprehension, and a `break <v>` there contributes its value and ends
-    // the loop.
-    try h.assertJsRunLog(std.testing.allocator,
-        \\fn main() {
-        \\    var i = 0;
-        \\    val xs = while (i < 10) {
-        \\        i = i + 1;
-        \\        if (i > 3) { break i; };
-        \\        yield i;
-        \\    };
-        \\    @print(xs);
-        \\}
-    , "[1, 2, 3, 4]\n");
 }
 
 test "js: loop ---- continue in iteration" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn sumEvens(arr: i32[]) -> i32[] {
-        \\    return for (arr) { x ->
+        \\    var out = [];
+        \\    for (arr) { x ->
         \\        if (x % 2 != 0) { continue; };
-        \\        yield x;
+        \\        out.push(x);
         \\    };
+        \\    return out;
         \\}
     );
 }
 
-test "js: loop ---- yield accumulation" {
+test "js: loop ---- a var accumulates what a body pushes" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn doubles(arr: i32[]) -> i32[] {
-        \\    return for (arr) { x ->
-        \\        yield x * 2;
+        \\    var out = [];
+        \\    for (arr) { x ->
+        \\        out.push(x * 2);
         \\    };
+        \\    return out;
         \\}
         \\fn main() {
         \\    @print(doubles([1, 2, 3]));
@@ -1206,22 +1148,30 @@ test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
 // a one-clause `case` destructures it: the group's variables are rebound and
 // the case's value is the break's.
 
-test "erlang: loop ---- a value break out of a condition loop is the loop's value" {
+// ── front 02-erlang step 5, re-specified by decision 105 ─────────────────────
+//
+// A condition loop is a statement: the variables its body reassigns travel
+// through the loop fun as its group and come back — the answer a search finds
+// is one of them, set before a bare `break`.
+
+test "erlang: loop ---- a condition loop's answer comes back in the var it reassigned" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() {
         \\  var i = 0;
-        \\  val found = while (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\  var found = 0;
+        \\  while (i < 10) { if (i == 4) { found = i * 2; break; }; i = i + 1; };
         \\  @print(found);
         \\  @print(i);
         \\}
-    , "8\n4\n", &.{"erlang:throw({'__bp_cond_break', I@1, (I@1 * 2)})"});
+    , "8\n4\n", &.{});
 }
 
-test "erlang: loop ---- a value break out of a bare loop is the loop's value" {
+test "erlang: loop ---- a bare loop's answer comes back in the var it reassigned" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() {
         \\  var k = 0;
-        \\  val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\  var r = 0;
+        \\  loop { k = k + 1; if (k > 2) { r = k; break; }; };
         \\  @print(r);
         \\  @print(k);
         \\}
@@ -1277,8 +1227,8 @@ test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
 // other three rows are the same defect found while scoping it. `case` never had
 // it (it is a `.collection`) and is the control in the language cell.
 //
-// The `while` row is the condition loop: `buildLoopStmt` answers a statement for
-// it, so before the fix the lambda dropped it too.
+// The loop rows this cell used to carry left with decision 105: a loop is a
+// statement, not a value a lambda's tail could answer.
 //
 // A RUN LOG plus the shapes, not a snapshot: the erlang, beam and wasm baselines
 // of this program are not this front's to record. The language cell
@@ -1293,8 +1243,6 @@ test "js: lambda ---- an expression body is the lambda's value" {
         \\fn main() {
         \\    val xs = [1, 2, 3];
         \\    @print(xs.map({ x -> if (x > 1) { x * 10 } else { x } }).join(","));
-        \\    @print(xs.map({ x -> (for (0..x) { i -> yield i; }).length }).join(","));
-        \\    @print(xs.map({ x -> while (x > 0) { x = x - 1; break x; } }).join(","));
         \\    @print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
         \\}
     ;
@@ -1304,8 +1252,6 @@ test "js: lambda ---- an expression body is the lambda's value" {
     });
     try h.assertJsRunLog(std.testing.allocator, src,
         \\1,20,30
-        \\1,2,3
-        \\0,1,2
         \\0,20,30
         \\
     );

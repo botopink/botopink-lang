@@ -1,0 +1,8 @@
+//// Decision 105 — `continue` starts the next round of the nearest `for` /
+//// `while` / `loop`; with no loop there is nothing to continue.
+
+pub fn main() {
+    val n = 1;
+    if (n == 1) { continue; };
+    @print(n);
+}

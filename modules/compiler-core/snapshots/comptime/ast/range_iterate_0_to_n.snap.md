@@ -1,9 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn sumTo(n: i32) {
+fn sumTo(n: i32) -> i32 {
+    var sum = 0;
     for (0..n) { i ->
-        yield i;
+        sum = sum + i;
     };
+    return sum;
 }
 ```
 
@@ -21,10 +23,16 @@ fn sumTo(n: i32) {
           "type": "i32"
         }
       ],
-      "return_type": "void",
+      "return_type": "i32",
       "body": [
         {
+          "source": "var sum = 0;"
+        },
+        {
           "source": "for (0..n) { i ->"
+        },
+        {
+          "source": "return sum;"
         }
       ]
     }

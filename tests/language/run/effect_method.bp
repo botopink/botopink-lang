@@ -21,8 +21,8 @@
 //// shape of a suspending effect on that backend and not this cell's claim.
 
 type Box(items: Array<i32>) {
-    #[@iterator]
-    fn each(self: Self) -> @Iterator<i32> {
+    #[@generator]
+    fn each(self: Self) -> @Generator<i32> {
         for (self.items) { x ->
             yield x;
         };
@@ -30,8 +30,8 @@ type Box(items: Array<i32>) {
 }
 
 type Tally(seed: i32) implement Tally {
-    #[@iterator]
-    fn upto(self: Self, n: i32) -> @Iterator<i32> {
+    #[@generator]
+    fn upto(self: Self, n: i32) -> @Generator<i32> {
         var i = self.seed;
         while (i < n) {
             yield i;
@@ -56,8 +56,8 @@ type Shape {
     Rect(width: i32, height: i32),
     Dot,
 
-    #[@iterator]
-    fn counts(self: Self, n: i32) -> @Iterator<i32> {
+    #[@generator]
+    fn counts(self: Self, n: i32) -> @Generator<i32> {
         var i = 0;
         while (i < n) {
             yield i;
@@ -66,7 +66,7 @@ type Shape {
     }
 }
 
-fn digits(xs: @Iterator<i32>) -> i32 {
+fn digits(xs: @Generator<i32>) -> i32 {
     var acc = 0;
     for (xs) { v ->
         acc = acc * 10 + v;

@@ -45,8 +45,6 @@ pub const EnumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
 /// emit and **none of them learns a new rule**.
 pub const IndexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
 /// Decision 8 §10 — locs of loops inference typed as condition loops.
-pub const ConditionLoops = std.AutoHashMap(ast.Loc, void);
-
 /// C-04 (01 step 7, N1) — map of call sites (by source loc) to the argument
 /// fill inference planned for them. Written whenever a call omitted an argument
 /// whose parameter declares a default; the transform materialises the plan so
@@ -88,7 +86,6 @@ const Aggregator = struct {
     /// method the language says it is.
     index_rewrites: *const IndexRewrites,
     /// Decision 8 §10 — loops to mark `condition` (their `iter` is a `bool`).
-    condition_loops: *const ConditionLoops,
     optional_null_cases: *const OptionalNullCases,
     /// True for the aggregator that walks method bodies: every map but
     /// `src_rewrites` is empty and the one unconditional rewrite (the `${}`
@@ -116,7 +113,7 @@ const Aggregator = struct {
     /// sites need their defaults as much as a fn body's do.
     default_injections: *const DefaultInjections,
 
-    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, index_rewrites: *const IndexRewrites, condition_loops: *const ConditionLoops, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
+    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, index_rewrites: *const IndexRewrites, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
         return .{
             .spec_cache = specialize.SpecCache.init(allocator),
             .method_lowerings = method_lowerings,
@@ -127,7 +124,6 @@ const Aggregator = struct {
             .std_array_lowerings = std_array_lowerings,
             .enum_section_rewrites = enum_section_rewrites,
             .index_rewrites = index_rewrites,
-            .condition_loops = condition_loops,
             .optional_null_cases = optional_null_cases,
             .total_calls = std.StringHashMap(usize).init(allocator),
             .specialized_calls = std.StringHashMap(usize).init(allocator),
@@ -191,12 +187,11 @@ pub fn transform(
     std_array_lowerings: *const StdArrayLowerings,
     enum_section_rewrites: *const EnumSectionRewrites,
     index_rewrites: *const IndexRewrites,
-    condition_loops: *const ConditionLoops,
     optional_null_cases: *const OptionalNullCases,
     ctor_params: std.StringHashMap([]const ast.Param),
     default_injections: *const DefaultInjections,
 ) !ast.Program {
-    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, condition_loops, optional_null_cases, ctor_params, default_injections);
+    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
 
     // The method-body aggregator (`src_only`): the `@src()` splice alone.
@@ -212,15 +207,13 @@ pub fn transform(
     defer empty_sa.deinit();
     var empty_es = EnumSectionRewrites.init(allocator);
     defer empty_es.deinit();
-    var empty_cl = ConditionLoops.init(allocator);
-    defer empty_cl.deinit();
     var empty_onc = OptionalNullCases.init(allocator);
     defer empty_onc.deinit();
     const empty_vals = std.StringHashMap([]const u8).init(allocator);
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, &empty_sa, &empty_es, index_rewrites, &empty_cl, &empty_onc, empty_ctor, default_injections);
+    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, &empty_sa, &empty_es, index_rewrites, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
     defer src_agg.deinit(allocator);
 
@@ -790,7 +783,6 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             },
         },
         .loop => |*lp| {
-            if (agg.condition_loops.contains(lp.loc)) lp.condition = true;
             rewriteExpr(agg, fn_decls, comptime_arrays, lp.iter) catch return ScanError.OutOfMemory;
             if (lp.indexRange) |ir| rewriteExpr(agg, fn_decls, comptime_arrays, ir) catch return ScanError.OutOfMemory;
             for (lp.body) |*s| rewriteStmt(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
@@ -979,7 +971,6 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             },
         },
         .loop => |*lp| {
-            if (agg.condition_loops.contains(lp.loc)) lp.condition = true;
             rewriteExpr(agg, fn_decls, comptime_arrays, lp.iter) catch return ScanError.OutOfMemory;
             if (lp.indexRange) |ir| rewriteExpr(agg, fn_decls, comptime_arrays, ir) catch return ScanError.OutOfMemory;
             for (lp.body) |*s| rewriteStmt(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;

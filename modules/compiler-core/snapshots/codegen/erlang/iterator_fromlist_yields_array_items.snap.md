@@ -1,13 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@iterator]
-fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
+#[@generator]
+fn fromList<T>(xs: Array<T>) -> @Generator<T> {
     for (xs) { item ->
         yield item;
     };
 }
 
-fn toList<T>(iter: @Iterator<T>) -> Array<T> {
+fn toList<T>(iter: @Generator<T>) -> Array<T> {
     var out = [];
     for (iter) { item ->
         out.push(item);

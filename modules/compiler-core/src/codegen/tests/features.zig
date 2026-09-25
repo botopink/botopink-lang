@@ -558,10 +558,12 @@ test "js: pipeline ---- with labeled args" {
 
 test "js: range ---- iterate over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn sumTo(n: i32) -> i32[] {
-        \\    return for (0..n) { i ->
-        \\        yield i;
+        \\fn sumTo(n: i32) -> i32 {
+        \\    var sum = 0;
+        \\    for (0..n) { i ->
+        \\        sum = sum + i;
         \\    };
+        \\    return sum;
         \\}
     );
 }
@@ -796,20 +798,20 @@ test "js: reserved word identifiers" {
 }
 
 test "js: iterator fromList yields array items" {
-    // An `#[@iterator] fn -> @Iterator<T>` generator: `for (xs) { x -> yield x; }` must
-    // lower to a real `for…of` with native `yield` (not `.map()`). Recursive
-    // delegation (the legacy `return <iter>` shortcut) is now forbidden by
-    // RI1 (§1I); spec-compliant delegation patterns get their own coverage in
-    // the F6 `effect_iterator.zig` suite.
+    // A `#[@generator] fn -> @Generator<T>` generator: `for (xs) { x -> yield x; }`
+    // must lower to a real `for…of` with native `yield` (not `.map()`).
+    // Recursive delegation (the legacy `return <iter>` shortcut) is forbidden
+    // by RI1 (§1I). A `@Generator<T>` is infallible, so a plain fn iterates it
+    // (decision 103); a fallible one needs a body that grants `try`.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
+        \\#[@generator]
+        \\fn fromList<T>(xs: Array<T>) -> @Generator<T> {
         \\    for (xs) { item ->
         \\        yield item;
         \\    };
         \\}
         \\
-        \\fn toList<T>(iter: @Iterator<T>) -> Array<T> {
+        \\fn toList<T>(iter: @Generator<T>) -> Array<T> {
         \\    var out = [];
         \\    for (iter) { item ->
         \\        out.push(item);
