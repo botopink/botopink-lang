@@ -10,7 +10,13 @@
 //// `unescapeHtml` runs the same five rules in reverse, `&amp;` LAST, so the
 //// two are inverses on the five entities.
 ////
-//// Pure — no host cell, no import (decision 106: a root module).
+//// No import (decision 106: a root module). Two private host cells, and
+//// only because of a codegen defect: the erlang backend lowers a string
+//// literal's `\u{…}` above U+007F to ONE latin1 byte (`"\u{2028}"` becomes
+//// `<<40>>`, the byte of `(`), so `replaceAll("\u{2028}", …)` rewrote every
+//// parenthesis on erlang. `lineSeparator()` / `paragraphSeparator()` build
+//// the two characters on the host instead; they go when the literal lowers
+//// to UTF-8.
 
 // Text content: the three characters that open or close markup.
 pub fn html(s: string) -> string {
@@ -50,9 +56,35 @@ pub fn jsString(s: string) -> string {
     val lt = dq.replaceAll("<", "\\u003c");
     val nl = lt.replaceAll("\n", "\\n");
     val cr = nl.replaceAll("\r", "\\r");
-    val ls = cr.replaceAll("\u{2028}", "\\u2028");
-    return ls.replaceAll("\u{2029}", "\\u2029");
+    val ls = cr.replaceAll(lineSeparator(), "\\u2028");
+    return ls.replaceAll(paragraphSeparator(), "\\u2029");
 }
+
+// JSON text made safe to inline in a `<script>` element (decision 116 rule 3,
+// front 01 after decision 117): `&` `<` `>` become `\u0026` `\u003c`
+// `\u003e`, and U+2028 / U+2029 become `\u2028` / `\u2029`. In JSON text
+// those five characters can only occur inside a string, where each `\u` form
+// is a valid escape — so the result is the SAME JSON value, and it holds no
+// `</script`, no `<!--` and no line terminator a script parser would see.
+// Not for arbitrary text: `jsString` is the JS-string-literal payload, `html`
+// the element content.
+pub fn scriptJson(json: string) -> string {
+    val amp = json.replaceAll("&", "\\u0026");
+    val lt = amp.replaceAll("<", "\\u003c");
+    val gt = lt.replaceAll(">", "\\u003e");
+    val ls = gt.replaceAll(lineSeparator(), "\\u2028");
+    return ls.replaceAll(paragraphSeparator(), "\\u2029");
+}
+
+// Internal: U+2028 LINE SEPARATOR, built on the host (see the module doc).
+#[@External.Node("""String.fromCharCode(8232)""")]
+#[@External.Erlang("""<<226, 128, 168>>""")]
+declare fn lineSeparator() -> string;
+
+// Internal: U+2029 PARAGRAPH SEPARATOR, built on the host.
+#[@External.Node("""String.fromCharCode(8233)""")]
+#[@External.Erlang("""<<226, 128, 169>>""")]
+declare fn paragraphSeparator() -> string;
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
@@ -94,5 +126,30 @@ test "escape.jsString escapes the backslash and the quote" {
 
 test "escape.jsString escapes the line terminators" {
     assert jsString("a\nb\rc") == "a\\nb\\rc";
-    assert jsString("x\u{2028}y") == "x\\u2028y";
+    assert jsString(["x", lineSeparator(), "y"].join("")) == "x\\u2028y";
+    assert jsString(["x", paragraphSeparator(), "y"].join("")) == "x\\u2029y";
+}
+
+test "escape.jsString leaves parentheses alone on every target" {
+    // The regression: a `"\u{2028}"` literal lowered to `(` on erlang.
+    assert jsString("f(x)") == "f(x)";
+}
+
+test "escape.scriptJson leaves no markup character and keeps the JSON value" {
+    val raw = "{\"h\":\"</script><!--&\"}";
+    val safe = scriptJson(raw);
+    assert safe == "{\"h\":\"\\u003c/script\\u003e\\u003c!--\\u0026\"}";
+    assert safe.contains("<").negate();
+    assert safe.contains(">").negate();
+    assert safe.contains("&").negate();
+}
+
+test "escape.scriptJson escapes U+2028 and U+2029 inside a string" {
+    val raw = ["\"a", lineSeparator(), "b", paragraphSeparator(), "\""].join("");
+    assert scriptJson(raw) == "\"a\\u2028b\\u2029\"";
+}
+
+test "escape.scriptJson leaves JSON with none of the five unchanged" {
+    val plain = "{\"a\":[1,true,null,\"x y\"]}";
+    assert scriptJson(plain) == plain;
 }
