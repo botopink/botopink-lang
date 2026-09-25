@@ -13,6 +13,11 @@ fn pair(a: i32, b: i32) -> @Context<Element, #(i32, i32)> {
     return #(a, b);
 }
 
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Context<Element, #(i32, fn(action: i32) -> i32)> {
+    val push = { action -> f(base, action) };
+    return #(base, push);
+}
+
 fn effect(cb: fn() -> i32) -> @Context<Element, i32> {
     return cb();
 }
@@ -54,6 +59,18 @@ fn Effectful() -> Element {
     return Element(count: c.value);
 }
 
+#[@context]
+fn Liked() -> Element {
+    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+    return Element(count: push(shown));
+}
+
+#[@context]
+fn Deferred() -> Element {
+    val f = { -> return use state(4); };
+    return Element(count: f().value);
+}
+
 fn Plain() -> Element {
     val c = state(7);
     return Element(count: c.value);
@@ -66,4 +83,6 @@ pub fn main() {
     @print(Positional().count);
     @print(Effectful().count);
     @print(Plain().count);
+    @print(Liked().count);
+    @print(Deferred().count);
 }

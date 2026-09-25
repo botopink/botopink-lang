@@ -34,7 +34,7 @@ Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, �
 `comptime_*` / `decorator_*`, `external_*`, `generic_*`, `string_*` / `array_*`, `type_identity_*`,
 `optional*` (`optional`, and decision 54's `optional_null_pattern` / `optional_variant_pattern`),
 `context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, two test cells, one run
-cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
+cell and eleven reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
 `run/index_past_the_end_is_null` — renamed from `…_fails` when C-02 landed, because the
 amendment makes an index past the end `null` and not a failure — `run/index_at_optional`,
 `run/index_tuple` with `reject/index_tuple_computed` and `reject/index_tuple_out_of_range`
@@ -1062,6 +1062,14 @@ the static prefix (rows 4b and 4c as parse errors), `use-without-context-effect`
 body without `#[@context]`), `use-of-non-context-fn` (a `-> string` body, and a module-level `val` —
 decision 87), and `context-anchor-violation`. Green on commonJS, erlang, wasm and beam at the
 landing commit, with no line in `expected-failures.txt`.
+
+Step 3 (destructuring from a `use`) added to the same two cells a hook whose `R` is
+`#(i32, fn(action: i32) -> i32)`: `val #(shown, push) = use optimistic(12, …)` binds each name to
+its element — `push(shown)` types with nothing annotated — and a `use` inside a nested closure
+(row 5 of the front's table) runs under the enclosing owner. Its refusals are
+`reject/use_tuple_arity.bp` (one name against a tuple of two) and `reject/use_tuple_of_non_tuple.bp`
+(`val #(a, b) = use state(0)` where `state` yields an `i32`), both `use-tuple-arity`, located at the
+binding.
 
 Step 2 (decisions 89 and 90) added three more, also with no line in `expected-failures.txt`:
 `test/use_future_context.bp` — a `#[@future] fn Page() -> @Future<Element>` activates a hook with no
