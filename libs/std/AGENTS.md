@@ -95,6 +95,21 @@ namespace) or `import {<dir>: {<name>: {f}}} from "std"` (a leaf). The folder
 index itself holds `mod` lines only and is not a module of the registry, so
 `import {<dir>} from "std"` is `unknown "std" module`.
 
+Two things a module's own inline tests cannot see, because they only show when
+a CONSUMER imports it (measured by front 01 from a scratch package importing
+`{escape, encoding, hash, net, time, random, regex, path, fs}`, green on both
+targets):
+
+- On erlang a std module compiled as a dependency loses the default-fn shim of
+  a one-argument `String.slice(start)` — `string_slice/2 undefined`, and the
+  whole module refuses to load. Write the end explicitly:
+  `s.slice(start, s.length)`.
+- On commonJS `import {process} from "std"` binds a local `process` that
+  shadows Node's global, so the generated test runner's `process.argv` throws
+  and nothing runs — a codegen defect (an imported module named after a host
+  global is not renamed), not a std rule; until it is fixed, a consumer's test
+  module does not import `process`.
+
 Importing a std module on a target where its host-bound declarations have no
 matching `@External` raises `STD-001` (`comptime/tests/std_target_gating.zig`).
 

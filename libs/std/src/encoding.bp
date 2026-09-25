@@ -116,7 +116,7 @@ pub fn formParse(q: string) -> Array<#(string, string)> {
 fn formField(f: string) -> #(string, string) {
     val eq = f.indexOf("=");
     val rawName = if (eq < 0) f else f.slice(0, eq);
-    val rawValue = if (eq < 0) "" else f.slice(eq + 1);
+    val rawValue = if (eq < 0) "" else f.slice(eq + 1, f.length);
     return #(formDecode(rawName), formDecode(rawValue));
 }
 
