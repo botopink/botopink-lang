@@ -1498,6 +1498,22 @@ codegen/
   Every one of these used to match every subject and bind nothing
   (`case 0 { 1...9 { 1 } _ { 0 } }` answered `1`). Pinned by the
   `assertBeamRunLog` rows in `tests/control_flow.zig`.
+- **A read or a call the emit cannot place asks the value** (decision 21;
+  05-wasm step 9's beam row, `modules/{field,method,type}_name_collision`):
+  a name decides a record only when nothing else in the PROGRAM declares it
+  (`programFieldDeclarers`, `programTypeDeclarers`), not only what this file
+  imported. A field read with no placeable type goes to `'-bp_field-'/2` (a
+  map → `maps:get/3`; a record → its type module's `'__bp_get'/2` through
+  `erlang:apply/3`; `length` of a list or a string → its length), and a method
+  call to `erlang:apply(element(1, V), Method, [V | Args])`
+  (`lowerDynamicMethodCall`) — when no type is known and some type declares the
+  method, or when the type's NAME is declared by two modules. Both are calls,
+  so `exprMayCall` says so (`dynamicFieldRead`), and a field read's receiver is
+  counted in this frame (`countLocalsInExpr`'s `.identifier` arm). Before,
+  the read fell through its `is_map` / `is_tagged_tuple` test leaving the
+  RECEIVER in the destination (`h.rest.length` printed the whole record; one
+  `index_*` RUN LOG printed `[1, 2]` for `rows[0].length`), and the call
+  aborted with `{unresolved_method, …}`.
 - **Synth helpers per module** (`HelperNames`, `takeHelperNames` /
   `restoreHelperNames`): the once-per-module helpers (`'-bp_at-'/2`, the print
   prelude, …) are cached by name, and a name is only good in the module whose

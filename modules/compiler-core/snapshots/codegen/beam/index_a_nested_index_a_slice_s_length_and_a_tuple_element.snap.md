@@ -20,7 +20,7 @@ fn main() {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 52}.
+{labels, 57}.
 
 {function, 'Array_range', 2, 3}.
   {label, 2}.
@@ -137,9 +137,8 @@ fn main() {
     {move, {y, 3}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call, 2, {f, 42}}.
-    {test, is_map, {f, 46}, [{x, 0}]}.
-    {get_map_elements, {f, 46}, {x, 0}, {list, [{atom, length}, {x, 0}]}}.
-  {label, 46}.
+    {move, {atom, length}, {x, 1}}.
+    {call, 2, {f, 47}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 17}}.
@@ -469,28 +468,62 @@ fn main() {
     {deallocate, 2}.
     return.
 
-{function, '__bp_erl_eval', 2, 49}.
+{function, '-bp_field-', 2, 47}.
+  {label, 46}.
+    {line, [{location, "test@main.erl", 4}]}.
+    {func_info, {atom, test@main}, {atom, '-bp_field-'}, 2}.
+  {label, 47}.
+    {test, is_map, {f, 48}, [{x, 0}]}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
+    {move, {atom, undefined}, {x, 2}}.
+    {call_ext_only, 3, {extfunc, maps, get, 3}}.
   {label, 48}.
+    {test, is_tuple, {f, 49}, [{x, 0}]}.
+    {bif, element, {f, 51}, [{integer, 1}, {x, 0}], {x, 2}}.
+    {test, is_atom, {f, 51}, [{x, 2}]}.
+    {test_heap, 4, 3}.
+    {put_list, {x, 1}, nil, {x, 3}}.
+    {put_list, {x, 0}, {x, 3}, {x, 3}}.
+    {move, {x, 2}, {x, 0}}.
+    {move, {atom, '__bp_get'}, {x, 1}}.
+    {move, {x, 3}, {x, 2}}.
+    {call_ext_only, 3, {extfunc, erlang, apply, 3}}.
+  {label, 49}.
+    {test, is_eq_exact, {f, 51}, [{x, 1}, {atom, length}]}.
+    {test, is_list, {f, 50}, [{x, 0}]}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    return.
+  {label, 50}.
+    {test, is_binary, {f, 51}, [{x, 0}]}.
+    {call_ext_only, 1, {extfunc, string, length, 1}}.
+  {label, 51}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_erl_eval', 2, 54}.
+  {label, 53}.
     {line, [{location, "test@main.erl", 6}]}.
     {func_info, {atom, test@main}, {atom, '__bp_erl_eval'}, 2}.
-  {label, 49}.
+  {label, 54}.
     {allocate, 1, 2}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 1}, {y, 0}}.
     {call_ext, 1, {extfunc, erlang, binary_to_list, 1}}.
     {call_ext, 1, {extfunc, erl_scan, string, 1}}.
-    {test, is_tagged_tuple, {f, 50}, [{x, 0}, 3, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 55}, [{x, 0}, 3, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
     {call_ext, 1, {extfunc, erl_parse, parse_exprs, 1}}.
-    {test, is_tagged_tuple, {f, 50}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 55}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erl_eval, exprs, 2}}.
-    {test, is_tagged_tuple, {f, 50}, [{x, 0}, 3, {atom, value}]}.
+    {test, is_tagged_tuple, {f, 55}, [{x, 0}, 3, {atom, value}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
     {deallocate, 1}.
     return.
-  {label, 50}.
+  {label, 55}.
     {call_ext_last, 1, {extfunc, erlang, error, 1}, 1}.
 
 {function, '__bp_prim_at', 2, 45}.
@@ -503,17 +536,17 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 47}, [{x, 0}]}.
+    {test, is_list, {f, 52}, [{x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_last, 2, {f, 42}, 2}.
-  {label, 47}.
+  {label, 52}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 51}, [{x, 0}]}.
+    {test, is_binary, {f, 56}, [{x, 0}]}.
     {put_map_assoc, {f, 0}, {literal, #{}}, {x, 1}, 0, {list, [{atom, '__BpSelf'}, {y, 0}, {atom, '__BpA0'}, {y, 1}]}}.
     {move, {literal, <<"(fun(__S, __I) -> case (__I >= 0) andalso (__I < string:length(__S)) of true -> string:slice(__S, __I, 1); false -> undefined end end)(__BpSelf, __BpA0).">>}, {x, 0}}.
-    {call_last, 2, {f, 49}, 2}.
-  {label, 51}.
+    {call_last, 2, {f, 54}, 2}.
+  {label, 56}.
     %% unresolved_method: at/2
     {move, {literal, {unresolved_method, at, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
@@ -526,7 +559,7 @@ fn main() {
 [[1, 2], [3, 4]]
 [3, 4]
 3
-[1, 2]
+2
 2
 2
 #(2, "b")

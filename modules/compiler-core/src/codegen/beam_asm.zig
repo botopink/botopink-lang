@@ -543,6 +543,13 @@ fn countLocalsRec(em: *Emitter, body: []const ast.Stmt, count: *u32) void {
 
 fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
     switch (e) {
+        // A field read evaluates its receiver in this frame
+        // (`h.rest.length`, `f().toArray().length`), so the receiver's slots
+        // are this frame's too.
+        .identifier => |id| switch (id.kind) {
+            .identAccess => |ia| countLocalsInExpr(em, ia.receiver.*, count),
+            else => {},
+        },
         .binding => |b| switch (b.kind) {
             .localBind => |lb| {
                 count.* += 1;
@@ -1551,6 +1558,7 @@ const Emitter = struct {
     print_helper_name: ?[]const u8 = null,
     add_helper_name: ?[]const u8 = null,
     eval_helper_name: ?[]const u8 = null,
+    field_helper_name: ?[]const u8 = null,
     /// Owns the parsed `primitives.bp` prelude (and every key string built for
     /// the tables below) for the whole emission.
     prelude_arena: std.heap.ArenaAllocator,
@@ -1731,6 +1739,7 @@ const Emitter = struct {
         if (self.slice_helper_name) |n| self.alloc.free(n);
         if (self.indexOf_helper_name) |n| self.alloc.free(n);
         if (self.stringify_helper_name) |n| self.alloc.free(n);
+        if (self.field_helper_name) |n| self.alloc.free(n);
     }
 
     /// §A5: collect `#[@External.Erlang(…)]` annotations on primitive behavior
@@ -3080,6 +3089,7 @@ const Emitter = struct {
         add: ?[]const u8,
         eval: ?[]const u8,
         join: ?[]const u8,
+        field: ?[]const u8,
     };
 
     fn takeHelperNames(self: *Emitter) HelperNames {
@@ -3093,6 +3103,7 @@ const Emitter = struct {
             .add = self.add_helper_name,
             .eval = self.eval_helper_name,
             .join = self.join_helper_name,
+            .field = self.field_helper_name,
         };
         self.at_helper_name = null;
         self.index_helper_name = null;
@@ -3103,6 +3114,7 @@ const Emitter = struct {
         self.add_helper_name = null;
         self.eval_helper_name = null;
         self.join_helper_name = null;
+        self.field_helper_name = null;
         return saved;
     }
 
@@ -3125,6 +3137,8 @@ const Emitter = struct {
         self.eval_helper_name = saved.eval;
         if (self.join_helper_name) |n| self.alloc.free(n);
         self.join_helper_name = saved.join;
+        if (self.field_helper_name) |n| self.alloc.free(n);
+        self.field_helper_name = saved.field;
     }
 
     /// Open `type_name`'s module: its bodies write into `buf`, its labels start
@@ -4458,6 +4472,10 @@ const Emitter = struct {
                 // `undefined` it found (`{badfun, #{x => 1, y => 2}}` at run
                 // time).
                 .type_ => |type_name| {
+                    if (self.programTypeDeclarers(type_name) > 1 and !isSelfIdent(recv_expr.*)) {
+                        try self.lowerDynamicMethodCall(recv_expr, cc, mode);
+                        return;
+                    }
                     var nbuf: [256]u8 = undefined;
                     if (self.methodFnName(&nbuf, type_name, cc.callee)) |name| {
                         if (self.cur_type) |ct| if (std.mem.eql(u8, ct, type_name)) {
@@ -4643,6 +4661,10 @@ const Emitter = struct {
                         }
                         return;
                     }
+                }
+                if (self.programDeclaresMethod(cc.callee, total_arity + cc.trailing.len)) {
+                    try self.lowerDynamicMethodCall(recv_expr, cc, mode);
+                    return;
                 }
                 try self.materializeCallArgs(cc.args, cc.trailing);
                 try self.emitUnresolvedAbort("unresolved_method", cc.callee, total_arity);
@@ -7033,6 +7055,7 @@ const Emitter = struct {
                 .identAccess => |ia| blk: {
                     if (self.exprMayCall(strings, ia.receiver.*)) break :blk true;
                     if (tupleIndexMember(ia.member) != null) break :blk true;
+                    if (self.dynamicFieldRead(id.loc, ia)) break :blk true;
                     if (self.instanceLowering(id.loc, ia.receiver.*)) |il| {
                         if (il == .prim and il.prim == .string) break :blk true;
                     }
@@ -8693,6 +8716,14 @@ const Emitter = struct {
             try beamEmitter.writeLabel(self.out, fail_label);
             return;
         }
+        if (self.dynamicFieldRead(loc, ia)) {
+            const helper = try self.ensureFieldHelper();
+            const hl = try self.fnLabelsFor(helper, 2);
+            try beamEmitter.writeMoveOp(self.out, Op.atom(member), Dst.xr(1));
+            try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = hl.entry }, 0);
+            if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
+            return;
+        }
         const fail_label = self.allocLabel();
         // A receiver whose type this emit cannot place keeps the map read: an
         // anonymous record and a `@Behavior(…)` literal are maps and stay maps.
@@ -8708,7 +8739,10 @@ const Emitter = struct {
     fn recordTypeOfReceiver(self: *const Emitter, loc: ast.Loc, receiver: ast.Expr, member: []const u8) ?[]const u8 {
         return blk: {
             if (self.instance_lowerings.get(loc)) |il| switch (il) {
-                .field_of => |t| if (self.record_fields.contains(t)) break :blk t,
+                .field_of => |t| if (self.record_fields.contains(t)) {
+                    if (self.programTypeDeclarers(t) > 1 and !isSelfIdent(receiver)) return null;
+                    break :blk t;
+                },
                 else => {},
             };
             if (receiver == .identifier and receiver.identifier.kind == .ident and
@@ -8723,8 +8757,172 @@ const Emitter = struct {
                 if (found != null) return null;
                 found = e.key_ptr.*;
             }
+            // The name identifies a record only when nothing else in the
+            // PROGRAM declares it — not only what this file imported
+            // (`modules/field_name_collision`: `Ctx` imported, `Hit` not).
+            if (self.programFieldDeclarers(member) > 1) return null;
             break :blk found orelse return null;
         };
+    }
+
+    /// How many modules of the program declare a `type` named `name`. Above
+    /// one, the name inference recorded does not say WHICH (decision 21 — the
+    /// value's tag does), so a read or a call on it asks the value.
+    fn programTypeDeclarers(self: *const Emitter, name: []const u8) usize {
+        var n: usize = 0;
+        for (self.all_outputs) |*other| {
+            const ok = switch (other.outcome) {
+                .ok => |*o| o,
+                else => continue,
+            };
+            for (ok.transformed.decls) |d| switch (d) {
+                .type_ => |t| if (std.mem.eql(u8, t.name, name)) {
+                    n += 1;
+                },
+                else => {},
+            };
+        }
+        return n;
+    }
+
+    /// Whether some `type` of the program declares a bodied method `method`
+    /// taking `arity` arguments, the receiver included.
+    fn programDeclaresMethod(self: *const Emitter, method: []const u8, arity: usize) bool {
+        for (self.all_outputs) |*other| {
+            const ok = switch (other.outcome) {
+                .ok => |*o| o,
+                else => continue,
+            };
+            for (ok.transformed.decls) |d| switch (d) {
+                .type_ => |t| for (t.methods) |m| {
+                    if (m.body == null or m.is_declare) continue;
+                    if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) return true;
+                },
+                else => {},
+            };
+        }
+        return false;
+    }
+
+    /// A method call the emitter cannot place on one module, answered by the
+    /// value (decision 21): its element 1 is its type's module, whose method
+    /// takes the receiver first — `erlang:apply(element(1, V), Method, [V |
+    /// Args])`. Used when no type is known for the receiver but some type of
+    /// the program declares the method (`modules/method_name_collision`: two
+    /// `toArray/1`, a generic return), and when the type's NAME is declared by
+    /// two modules (`modules/type_name_collision`).
+    fn lowerDynamicMethodCall(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
+        const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
+        try self.placeStaged(&st);
+        const n: u32 = @intCast(1 + cc.args.len + cc.trailing.len);
+        try beamEmitter.writeTestHeap(self.out, 2 * n, n);
+        try beamEmitter.writePutList(self.out, Op.xr(n - 1), Op.nil, Dst.xr(n));
+        var i: u32 = n - 1;
+        while (i > 0) {
+            i -= 1;
+            try beamEmitter.writePutList(self.out, Op.xr(i), Op.xr(n), Dst.xr(n));
+        }
+        if (n != 2) try beamEmitter.writeMoveOp(self.out, Op.xr(n), Dst.xr(2));
+        try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(1), Op.xr(0) }, Dst.xr(0));
+        var mbuf: [256]u8 = undefined;
+        try beamEmitter.writeMoveOp(self.out, Op.atom(try atomName(cc.callee, &mbuf)), Dst.xr(1));
+        try beamEmitter.writeCall(
+            self.out,
+            if (mode == .tail) .last else .normal,
+            3,
+            .{ .ext = .{ .module = "erlang", .function = "apply" } },
+            self.num_y,
+        );
+    }
+
+    /// How many records of the whole program declare a field `member`.
+    fn programFieldDeclarers(self: *const Emitter, member: []const u8) usize {
+        var n: usize = 0;
+        for (self.all_outputs) |*other| {
+            const ok = switch (other.outcome) {
+                .ok => |*o| o,
+                else => continue,
+            };
+            for (ok.transformed.decls) |d| switch (d) {
+                .type_ => |t| if (t.shape == .record) {
+                    for (t.recordFields()) |f| if (std.mem.eql(u8, f.name, member)) {
+                        n += 1;
+                    };
+                },
+                else => {},
+            };
+        }
+        return n;
+    }
+
+    /// A field read the emitter could not place on a name some record of the
+    /// program declares: the value answers it (decision 21) through
+    /// `'-bp_field-'/2`, a call.
+    fn dynamicFieldRead(self: *const Emitter, loc: ast.Loc, ia: anytype) bool {
+        if (ia.optional or tupleIndexMember(ia.member) != null) return false;
+        if (self.recordTypeOfReceiver(loc, ia.receiver.*, ia.member) != null) return false;
+        if (std.mem.eql(u8, ia.member, "length")) return self.instanceLowering(loc, ia.receiver.*) == null;
+        return self.programFieldDeclarers(ia.member) > 0;
+    }
+
+    /// `'-bp_field-'(V, F)` (once per module): a map answers `maps:get(F, V,
+    /// undefined)`; a tuple is a record whose element 1 is its type's module
+    /// (decision 21), which answers through its exported `'__bp_get'/2`
+    /// (`erlang:apply/3`); `length` of a list or a string is its length (the
+    /// member a field read hands on untyped: `h.rest.length`); anything else
+    /// is `undefined`.
+    fn ensureFieldHelper(self: *Emitter) anyerror![]const u8 {
+        if (self.field_helper_name) |n| return n;
+        const name = try self.alloc.dupe(u8, "'-bp_field-'");
+        try self.reserveFn(name, 2);
+        const labels = try self.fnLabelsFor(name, 2);
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &buf.writer;
+        const w = self.out;
+        const not_map = self.allocLabel();
+        const not_tuple = self.allocLabel();
+        const not_list = self.allocLabel();
+        const undef = self.allocLabel();
+        try beamEmitter.writeBlankLine(w);
+        try beamEmitter.writeFunctionHeader(w, name, 2, labels.entry);
+        try beamEmitter.writeLabel(w, labels.func_info);
+        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(w, self.module_name, name, 2);
+        try beamEmitter.writeLabel(w, labels.entry);
+        try beamEmitter.writeTest(w, .is_map, not_map, &.{Op.xr(0)});
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(2));
+        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.xr(0));
+        try beamEmitter.writeMoveOp(w, Op.xr(2), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.atom("undefined"), Dst.xr(2));
+        try beamEmitter.writeCall(w, .only, 3, .{ .ext = .{ .module = "maps", .function = "get" } }, 0);
+        try beamEmitter.writeLabel(w, not_map);
+        try beamEmitter.writeTest(w, .is_tuple, not_tuple, &.{Op.xr(0)});
+        try beamEmitter.writeBif(w, "element", undef, &.{ Op.int(1), Op.xr(0) }, Dst.xr(2));
+        try beamEmitter.writeTest(w, .is_atom, undef, &.{Op.xr(2)});
+        try beamEmitter.writeTestHeap(w, 4, 3);
+        try beamEmitter.writePutList(w, Op.xr(1), Op.nil, Dst.xr(3));
+        try beamEmitter.writePutList(w, Op.xr(0), Op.xr(3), Dst.xr(3));
+        try beamEmitter.writeMoveOp(w, Op.xr(2), Dst.xr(0));
+        try beamEmitter.writeMoveOp(w, Op.atom("'__bp_get'"), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.xr(3), Dst.xr(2));
+        try beamEmitter.writeCall(w, .only, 3, .{ .ext = .{ .module = "erlang", .function = "apply" } }, 0);
+        try beamEmitter.writeLabel(w, not_tuple);
+        try beamEmitter.writeTest(w, .is_eq_exact, undef, &.{ Op.xr(1), Op.atom("length") });
+        try beamEmitter.writeTest(w, .is_list, not_list, &.{Op.xr(0)});
+        try beamEmitter.writeGcBif(w, .length, 1, &.{Op.xr(0)}, Dst.xr(0));
+        try beamEmitter.writeReturn(w);
+        try beamEmitter.writeLabel(w, not_list);
+        try beamEmitter.writeTest(w, .is_binary, undef, &.{Op.xr(0)});
+        try beamEmitter.writeCall(w, .only, 1, .{ .ext = .{ .module = "string", .function = "length" } }, 0);
+        try beamEmitter.writeLabel(w, undef);
+        try beamEmitter.writeMoveOp(w, Op.atom("undefined"), Dst.xr(0));
+        try beamEmitter.writeReturn(w);
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.field_helper_name = name;
+        return name;
     }
 
     /// Render a "simple" expression (literal number or identifier already
@@ -8758,6 +8956,11 @@ const Emitter = struct {
         }
     }
 };
+
+/// `self`, the one receiver whose type the emit always knows.
+fn isSelfIdent(e: ast.Expr) bool {
+    return e == .identifier and e.identifier.kind == .ident and std.mem.eql(u8, e.identifier.kind.ident, "self");
+}
 
 /// The name a written type reference spells, when it is a plain one.
 fn writtenTypeName(ref: ast.TypeRef) ?[]const u8 {

@@ -513,21 +513,23 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 
 ## Status and the gate
 
-**Front 00 · 03-beam (branch `front/03-beam`, on `feat` `52843fd5`) — `--target beam` only.**
+**Front 00 · 03-beam (branch `front/03-beam`, on `feat` `0e20844f`) — `--target beam` only.**
 Each step that deletes a beam line re-quotes this run; no commonJS/erlang/wasm line moves:
 
 ```
 $ tests/language/run.sh --target beam
-expected-failures.txt: 39 lines, 13 exercised by --target beam
-language tests: 110 passed, 13 expected failures, 4 failed
+expected-failures.txt: 36 lines, 10 exercised by --target beam
+language tests: 117 passed, 10 expected failures, 1 failed
 ```
 
-The 4 failures have no line: `modules/{field,method,type}_name_collision` (03's
-rows, carried from 05-wasm step 9) and `run/effect_method.bp`
-(`ConditionLoopValueUnsupported`: a `while` that `yield`s in an `implement` /
-enum-body method, whose frame opens no generator scope — 22-loops' lowering,
-decision 105). Deleted so far: `beam | run/case_range_value.bp` (C-06's beam
-half), `beam | run/lambda_expression_body.bp` (03 handover 01),
+The 1 failure has no line: `run/effect_method.bp` (`ConditionLoopValueUnsupported`:
+a `while` that `yield`s in an `implement` / enum-body method, whose frame opens
+no generator scope — 22-loops' lowering, decision 105). Passing since this
+front, with no beam line to delete: `run/labelled_arguments.bp` (a variant's
+labelled argument) and `modules/{field,method,type}_name_collision` (a read or
+a call the emit cannot place asks the value). Deleted so far:
+`beam | run/case_range_value.bp` (C-06's beam half),
+`beam | run/lambda_expression_body.bp` (03 handover 01),
 `beam | run/narrowing_null_guard_clause.bp` (a synth helper per module). `run/labelled_arguments.bp` had no beam line and passes since the
 variant constructor places a labelled argument by its declared field.
 
