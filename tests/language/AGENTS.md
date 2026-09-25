@@ -106,7 +106,7 @@ right answer on another.
 | `test/narrowing_null.bp` | the same rules inside a `test` block, which is the third statement walk a program has |
 | `reject/if_optional_needs_a_binder.bp` | the limit: `if (x)` on a `?T` with no binder is refused ("expected bool, got optional"). There is no truthiness on an optional |
 
-**Shapes that do NOT narrow, measured and deliberate.** `loop (x != null) { … }` leaves its body
+**Shapes that do NOT narrow, measured and deliberate.** `while (x != null) { … }` leaves its body
 alone: a condition loop reassigns the name it tests (`cur = es.at(i)`), and a narrowed `cur` would
 red the assignment — narrowing it would break programs that work today. `if (o.inner != null)`
 does not narrow either: only a plain NAME is rebindable. `case x { null { … } v { … } }` and `if (x)
@@ -442,7 +442,7 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
   target and then carries one line per target, with two different owners — `test/tuple_labels.bp`
   is the worked example: `04 step 2` on commonJS, `02 step 4` on erlang, the same test name.
 - A `reject/` `.expect` names a short key phrase of the diagnostic decision 8 sketches (`use _ {`,
-  `not exhaustive`, `use loop (`…) and the location of the offending token. The front that implements
+  `not exhaustive`, `removed-loop-parenthesised`…) and the location of the offending token. The front that implements
   the diagnostic fixes its final wording and updates the `.expect` in the same change.
 - The runner fails on: an unlisted failure; a listed test that now passes ("delete its line", or
   "drop it from the line" when the line names several); a listed path or test that does not exist; a
@@ -950,7 +950,7 @@ recounted at `b09bf9c6`: `test/nullish_default.bp` carries no line and the suite
 
 **The range pattern in a `case` arm — decision 53 settled the spelling and `run/case_range_value.bp`
 now pins the endpoints.** Decision 53 (2026-09-18) **amended** decisions 20 and 36 to Zig's split:
-`...` is inclusive in a **pattern**, `..` is exclusive in a **slice** and in `loop (a..b)`, and no
+`...` is inclusive in a **pattern**, `..` is exclusive in a **slice** and in `for (a..b)`, and no
 emitter moves. `zig version` 0.16.0 has both spellings in those two positions and `1..9` inside a
 `switch` does not exist there at all, so the compiler was the Zig-consistent side all along.
 
@@ -1023,7 +1023,7 @@ over a **string** bound has no wasm ordering and answers `0` (`emitRangeBound`'s
 asserts it, since decision 53 legislates numeric endpoints only.
 
 **Decision 55 turned a cell that passed on all four backends into one that fails on all four.**
-`test/loop_collection.bp`'s last test asserted `loop ([1, 2, 3]) { x -> break x * 2; }` → `[2, 4, 6]`,
+`test/loop_collection.bp`'s last test asserted `for ([1, 2, 3]) { x -> break x * 2; }` → `[2, 4, 6]`,
 and every backend agreed, because they share one accumulator shape and none of them stops at a
 `break`. Decision 55 says `break <value>` contributes its value **and ends the loop**, so the answer
 is `[2]`; the assertion was rewritten to the language and now carries two lines. This is the rule at

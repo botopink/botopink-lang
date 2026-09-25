@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn sumEvens(arr: i32[]) -> i32[] {
-    return loop (arr) { x ->
+    return for (arr) { x ->
         if (x % 2 != 0) { continue; };
         yield x;
     };

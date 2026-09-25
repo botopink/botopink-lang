@@ -1,4 +1,4 @@
-//// Decision 8 §10 — `loop (gen) { x -> … }` over an `#[@iterator]` generator.
+//// Decision 8 §10 — `for (gen) { x -> … }` over an `#[@iterator]` generator.
 
 #[@iterator]
 fn upToThree() -> @Iterator<i32> {
@@ -9,6 +9,6 @@ fn upToThree() -> @Iterator<i32> {
 
 test "§10 loop over a generator receives each yielded value" {
     var sum = 0;
-    loop (upToThree()) { x -> sum = sum + x; };
+    for (upToThree()) { x -> sum = sum + x; };
     assert sum == 6;
 }

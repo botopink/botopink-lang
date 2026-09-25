@@ -18,7 +18,7 @@
 //// answers `2` / `20,99` and its line is gone; the other three are unchanged.
 
 pub fn main() {
-    val r = loop ([10, 20, 30]) { x ->
+    val r = for ([10, 20, 30]) { x ->
         if (x == 20) { break 99; };
         yield x * 2;
     };

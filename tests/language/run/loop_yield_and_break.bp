@@ -9,11 +9,11 @@
 //// backends still get wrong, and a §7 row must not hide a §10 one.
 
 pub fn main() {
-    val yielded = loop ([10, 20, 30]) { x -> yield x * 2; };
+    val yielded = for ([10, 20, 30]) { x -> yield x * 2; };
     @print(yielded.length);
     @print(yielded.join(","));
 
-    val broken = loop ([10, 20, 30]) { x -> if (x == 20) { break x; }; };
+    val broken = for ([10, 20, 30]) { x -> if (x == 20) { break x; }; };
     @print(broken.length);
     @print(broken.join(","));
 }

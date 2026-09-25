@@ -2,7 +2,7 @@
 ```botopink
 #[@result]
 fn validate(items: i32) -> @Result<i32, string> {
-    loop (0..items) { i ->
+    for (0..items) { i ->
         if (i > 2) { throw "too many"; };
     };
     return items;

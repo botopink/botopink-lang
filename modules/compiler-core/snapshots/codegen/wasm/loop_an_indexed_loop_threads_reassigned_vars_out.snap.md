@@ -3,16 +3,18 @@
 fn pick(xs: Array<string>) -> string {
     var first = "";
     var last = "";
-    loop (xs) { x, i ->
+    var i = 0;
+    for (xs) { x ->
         if (i == 0) { first = x; };
         last = x;
+        i = i + 1;
     };
     return first + "-" + last;
 }
 fn weigh(xs: Array<i32>) -> i32 {
     var total = 0;
-    loop (xs, 1..) { x, i ->
-        total = total + x * i;
+    for (0..xs.length) { i ->
+        total = total + (xs[i] ?? 0) * (i + 1);
     };
     return total;
 }
@@ -36,8 +38,8 @@ fn main() {
   (func $pick (param $xs i32) (result i32)
     (local $first i32)
     (local $last i32)
-    (local $x i32)
     (local $i i32)
+    (local $x i32)
     (local $__iter0 i32)
     (local $__idx0 i32)
     (local $__len0 i32)
@@ -45,6 +47,8 @@ fn main() {
     local.set $first
     i32.const 256
     local.set $last
+    i32.const 0
+    local.set $i
     local.get $xs
     local.set $__iter0
     local.get $__iter0
@@ -65,8 +69,6 @@ fn main() {
         i32.add
         i32.load offset=4
         local.set $x
-        local.get $__idx0
-        local.set $i
     local.get $i
     i32.const 0
     i32.eq
@@ -83,6 +85,10 @@ fn main() {
     drop
     local.get $x
     local.set $last
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
         local.get $__idx0
         i32.const 1
         i32.add
@@ -101,47 +107,45 @@ fn main() {
   )
   (func $weigh (param $xs i32) (result i32)
     (local $total i32)
-    (local $x i32)
     (local $i i32)
-    (local $__iter0 i32)
-    (local $__idx0 i32)
-    (local $__len0 i32)
+    (local $__bp_nullish i32)
+    (local $__opt0 i32)
     i32.const 0
     local.set $total
-    local.get $xs
-    local.set $__iter0
-    local.get $__iter0
-    i32.load ;; element count
-    local.set $__len0
     i32.const 0
-    local.set $__idx0
+    local.set $i
     (block $__break
       (loop $__continue
-        local.get $__idx0
-        local.get $__len0
+        local.get $i
+    local.get $xs
+    i32.load ;; .length
         i32.ge_s
         br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
-        local.set $x
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $i
     local.get $total
-    local.get $x
+    local.get $xs
     local.get $i
+    call $__arr_at
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    local.set $__bp_nullish
+    local.get $__bp_nullish
+      )
+      (else
+    i32.const 0
+      )
+    )
+    local.get $i
+    i32.const 1
+    i32.add
     i32.mul
     i32.add
     local.set $total
-        local.get $__idx0
+        local.get $i
         i32.const 1
         i32.add
-        local.set $__idx0
+        local.set $i
         br $__continue
       )
     )
@@ -391,6 +395,29 @@ fn main() {
     local.get $s
     call $__print_str_raw
     call $__print_nl
+  )
+  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    i32.load
+    i32.ge_s
+    i32.or
+    (if (result i32)
+      (then i32.const 0)
+      (else
+        local.get $xs
+        local.get $i
+        i32.const 1
+        i32.add
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+      )
+    )
   )
   (func $__str_concat (param $a i32) (param $b i32) (result i32)
     (local $base i32) (local $alen i32) (local $blen i32)

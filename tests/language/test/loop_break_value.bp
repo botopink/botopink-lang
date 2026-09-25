@@ -8,6 +8,6 @@ test "§10 break with a value is the loop's value" {
 
 test "§10 break with a value out of a condition loop" {
     var i = 0;
-    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+    val found = while (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
     assert found == 8;
 }

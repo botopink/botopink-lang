@@ -2,14 +2,14 @@
 ```botopink
 fn main() {
     var i = 0;
-    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+    val found = while (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
     @print(found);
     @print(i);
     var k = 0;
     val r = loop { k = k + 1; if (k > 2) { break k; }; };
     @print(r);
     var n = 0;
-    val never = loop (n < 3) { if (n == 99) { break n; }; n = n + 1; };
+    val never = while (n < 3) { if (n == 99) { break n; }; n = n + 1; };
     @print(never);
 }
 ```

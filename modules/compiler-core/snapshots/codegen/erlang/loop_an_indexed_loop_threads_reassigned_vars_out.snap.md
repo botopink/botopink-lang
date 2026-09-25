@@ -3,16 +3,18 @@
 fn pick(xs: Array<string>) -> string {
     var first = "";
     var last = "";
-    loop (xs) { x, i ->
+    var i = 0;
+    for (xs) { x ->
         if (i == 0) { first = x; };
         last = x;
+        i = i + 1;
     };
     return first + "-" + last;
 }
 fn weigh(xs: Array<i32>) -> i32 {
     var total = 0;
-    loop (xs, 1..) { x, i ->
-        total = total + x * i;
+    for (0..xs.length) { i ->
+        total = total + (xs[i] ?? 0) * (i + 1);
     };
     return total;
 }
@@ -30,8 +32,9 @@ fn main() {
 pick(Xs) ->
     First = <<"">>,
     Last = <<"">>,
-    {First@4, Last@3} = lists:foldl(fun({I, X}, {First@1, Last@1}) ->
-        First@3 = case (I =:= 0) of
+    I = 0,
+    {First@4, Last@3, I@3} = lists:foldl(fun(X, {First@1, Last@1, I@1}) ->
+        First@3 = case (I@1 =:= 0) of
             true ->
                 First@2 = X,
                 First@2;
@@ -39,21 +42,34 @@ pick(Xs) ->
                 First@1
         end,
         Last@2 = X,
-        {First@3, Last@2}
-    end, {First, Last}, lists:enumerate(0, Xs)),
+        I@2 = (I@1 + 1),
+        {First@3, Last@2, I@2}
+    end, {First, Last, I}, Xs),
     <<First@4/binary, "-", Last@3/binary>>.
 
 weigh(Xs) ->
     Total = 0,
-    Total@3 = lists:foldl(fun({I, X}, Total@1) ->
-        Total@2 = (Total@1 + (X * I)),
+    Total@3 = lists:foldl(fun(I, Total@1) ->
+        Total@2 = (Total@1 + ((case '__bp_index'(Xs, I) of
+            undefined ->
+                0;
+            __bp_nullish ->
+                __bp_nullish
+        end) * ((I + 1)))),
         Total@2
-    end, Total, lists:enumerate(1, Xs)),
+    end, Total, lists:seq(0, (length(Xs)) - 1)),
     Total@3.
 
 main() ->
     '__bp_print'([pick([<<"a">>, <<"b">>, <<"c">>])]),
     '__bp_print'([weigh([10, 20, 30])]).
+
+'__bp_index'(Recv, I) when is_list(Recv), is_integer(I), I >= 0, I < length(Recv) -> lists:nth(I + 1, Recv);
+'__bp_index'(Recv, I) when is_binary(Recv), is_integer(I), I >= 0 -> string:slice(Recv, I, 1);
+'__bp_index'(Recv, I) when is_tuple(Recv), is_integer(I), I >= 0, I < tuple_size(Recv) -> element(I + 1, Recv);
+'__bp_index'(Recv, I) when is_list(Recv), is_integer(I) -> undefined;
+'__bp_index'(Recv, I) when is_tuple(Recv), is_integer(I) -> undefined;
+'__bp_index'(Recv, I) -> erlang:error({bp_unsupported_index, Recv, I}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

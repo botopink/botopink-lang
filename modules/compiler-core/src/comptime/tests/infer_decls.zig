@@ -633,7 +633,7 @@ test "infer: mutual_recursion ---- renderToString and renderChildren call each o
         \\
         \\fn renderChildren(items: Element[]) -> string {
         \\    var out = "";
-        \\    loop (items) { c -> out = out + renderToString(c); };
+        \\    for (items) { c -> out = out + renderToString(c); };
         \\    return out;
         \\}
         \\

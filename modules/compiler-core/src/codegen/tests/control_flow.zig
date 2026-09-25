@@ -152,31 +152,34 @@ test "js: loop ---- side-effect print in iterator" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
-        \\    loop (messages, 0..) { msg, i ->
+        \\    for (messages) { msg ->
         \\        @print(msg);
         \\    };
         \\}
     );
 }
 
-test "js: loop ---- two-parameter loop threads reassigned vars out" {
-    // `loop (xs) { x, i -> … }` names the index without writing a range. Its
-    // reassignments of outer `var`s must survive the loop like the
-    // one-parameter form's (a library's lexer written as a counter loop).
+test "js: loop ---- an indexed loop threads reassigned vars out" {
+    // Decision 105 has no index binder: `for (0..xs.length) { i -> }` is the
+    // spelling, and a counter the body reassigns is the other. Both must let
+    // the reassignments of outer `var`s survive the loop like the plain
+    // `for (xs) { x -> }` form's (a library's lexer written as a counter loop).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn pick(xs: Array<string>) -> string {
         \\    var first = "";
         \\    var last = "";
-        \\    loop (xs) { x, i ->
+        \\    var i = 0;
+        \\    for (xs) { x ->
         \\        if (i == 0) { first = x; };
         \\        last = x;
+        \\        i = i + 1;
         \\    };
         \\    return first + "-" + last;
         \\}
         \\fn weigh(xs: Array<i32>) -> i32 {
         \\    var total = 0;
-        \\    loop (xs, 1..) { x, i ->
-        \\        total = total + x * i;
+        \\    for (0..xs.length) { i ->
+        \\        total = total + (xs[i] ?? 0) * (i + 1);
         \\    };
         \\    return total;
         \\}
@@ -188,14 +191,14 @@ test "js: loop ---- two-parameter loop threads reassigned vars out" {
 }
 
 test "js: loop ---- a condition loop repeats while its condition holds and threads reassigned vars out" {
-    // Decision 8 §10: `loop (condition) { … }` re-tests the condition before
+    // Decision 8 §10: `while (condition) { … }` re-tests the condition before
     // every iteration, including a condition false on entry; `continue` skips
     // to the next test.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn count(limit: i32) -> i32 {
         \\    var i = 0;
         \\    var acc = "";
-        \\    loop (i < limit) {
+        \\    while (i < limit) {
         \\        acc = acc + i.toString();
         \\        i = i + 1;
         \\    };
@@ -205,7 +208,7 @@ test "js: loop ---- a condition loop repeats while its condition holds and threa
         \\fn evens(limit: i32) -> i32 {
         \\    var i = 0;
         \\    var sum = 0;
-        \\    loop (i < limit) {
+        \\    while (i < limit) {
         \\        i = i + 1;
         \\        if (i % 2 == 1) { continue; };
         \\        sum = sum + i;
@@ -236,7 +239,7 @@ test "js: loop ---- an unconditioned loop ends at break and a break leaves only 
         \\fn nested() -> i32 {
         \\    var outer = 0;
         \\    var inner = 0;
-        \\    loop (outer < 3) {
+        \\    while (outer < 3) {
         \\        outer = outer + 1;
         \\        loop {
         \\            inner = inner + 1;
@@ -264,7 +267,7 @@ test "js: lambda ---- a local closure reassigning outer vars threads them out" {
         \\        count = count + 1;
         \\    };
         \\    emit("start");
-        \\    loop (words) { w -> emit(w); };
+        \\    for (words) { w -> emit(w); };
         \\    return out + " " + count.toString();
         \\}
         \\fn main() {
@@ -276,7 +279,7 @@ test "js: lambda ---- a local closure reassigning outer vars threads them out" {
 test "js: loop ---- side-effect over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    loop (0..10) { i ->
+        \\    for (0..10) { i ->
         \\        @print(i);
         \\    };
         \\}
@@ -293,7 +296,7 @@ test "js: loop ---- side-effect over range" {
 test "js: loop ---- map with break (add tax)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val precosBrutos = [100, 250, 400];
-        \\val precosComTaxa = loop (precosBrutos) { valor ->
+        \\val precosComTaxa = for (precosBrutos) { valor ->
         \\    val taxa = valor * 0.15;
         \\    break valor + taxa;
         \\};
@@ -306,7 +309,7 @@ test "js: loop ---- map with break (add tax)" {
 test "js: loop ---- filter with conditional break" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val precosBrutos = [100, 250, 400];
-        \\val apenasGrandes = loop (precosBrutos) { valor ->
+        \\val apenasGrandes = for (precosBrutos) { valor ->
         \\    if (valor > 200) {
         \\        break valor;
         \\    };
@@ -320,7 +323,7 @@ test "js: loop ---- filter with conditional break" {
 test "js: loop ---- map with break simple" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val ids = [10, 20, 30];
-        \\val dobrados = loop (ids) { id ->
+        \\val dobrados = for (ids) { id ->
         \\    break id * 2;
         \\};
         \\fn main() {
@@ -331,7 +334,7 @@ test "js: loop ---- map with break simple" {
 
 test "js: loop ---- even numbers with break" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val processamento = loop (0..10) { i ->
+        \\val processamento = for (0..10) { i ->
         \\    if (i % 2 == 0) {
         \\        break i;
         \\    };
@@ -533,8 +536,8 @@ test "js: case ---- nested case in block arm" {
 test "js: loop ---- a loop over an array literal, and a value break out of one" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    loop ([1, 2, 3]) { x -> @print(x); };
-        \\    val first = loop ([1, 2, 3]) { x -> if (x == 2) { break x * 10; }; };
+        \\    for ([1, 2, 3]) { x -> @print(x); };
+        \\    val first = for ([1, 2, 3]) { x -> if (x == 2) { break x * 10; }; };
         \\    @print(first);
         \\}
     );
@@ -546,7 +549,7 @@ test "js: loop ---- a loop over an array literal, and a value break out of one" 
 test "js: loop ---- break with value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn find(arr: i32[]) -> i32[] {
-        \\    return loop (arr) { x ->
+        \\    return for (arr) { x ->
         \\        if (x > 10) { break x; };
         \\    };
         \\}
@@ -574,9 +577,9 @@ test "js: loop ---- a condition loop's break value is the loop's value" {
         \\    var n = 0;
         \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
         \\    @print(r);
-        \\    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    val found = while (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
         \\    @print(found);
-        \\    val never = loop (n < 3) { n = n + 1; };
+        \\    val never = while (n < 3) { n = n + 1; };
         \\    @print(never);
         \\}
     , "3\n8\nnull\n");
@@ -584,7 +587,7 @@ test "js: loop ---- a condition loop's break value is the loop's value" {
 
 // ── front 03-beam step 3 D6: a condition loop's value break on beam ──────────
 //
-// Beam refused `break <value>` out of `loop (cond)` — and out of the bare
+// Beam refused `break <value>` out of `while (cond)` — and out of the bare
 // `loop { … }`, which the parser gives the same node — with the same unlocated
 // `error.ConditionLoopValueUnsupported` erlang raised until `a9e9d03`. It was
 // the last backend on the row.
@@ -621,7 +624,7 @@ test "js: loop ---- a condition loop's break value is the loop's value" {
 // values arrive as `[8]`, `[3]` and `[]`. commonJS was fixed by 04; erlang by
 // 02 step 5; wasm is the last one left on decision 8 §10.
 // KNOWN-WRONG (front 01, all four targets): the CHECKER types a condition loop
-// with a valued `break` as an ARRAY, so `val hit = loop (j < 5) { if (j == 2)
+// with a valued `break` as an ARRAY, so `val hit = while (j < 5) { if (j == 2)
 // { break j; }; j = j + 1; }; val n = hit + 1;` is refused with "type mismatch:
 // expected array, got i32" on commonJS, erlang and wasm alike. That is why this
 // fixture only prints its loops and never does arithmetic on one.
@@ -629,14 +632,14 @@ test "js: loop ---- a condition loop's value break is the loop's value on every 
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    var i = 0;
-        \\    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    val found = while (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
         \\    @print(found);
         \\    @print(i);
         \\    var k = 0;
         \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
         \\    @print(r);
         \\    var n = 0;
-        \\    val never = loop (n < 3) { if (n == 99) { break n; }; n = n + 1; };
+        \\    val never = while (n < 3) { if (n == 99) { break n; }; n = n + 1; };
         \\    @print(never);
         \\}
     );
@@ -649,7 +652,7 @@ test "js: loop ---- a condition loop that yields still collects" {
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
         \\    var i = 0;
-        \\    val xs = loop (i < 10) {
+        \\    val xs = while (i < 10) {
         \\        i = i + 1;
         \\        if (i > 3) { break i; };
         \\        yield i;
@@ -662,7 +665,7 @@ test "js: loop ---- a condition loop that yields still collects" {
 test "js: loop ---- continue in iteration" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn sumEvens(arr: i32[]) -> i32[] {
-        \\    return loop (arr) { x ->
+        \\    return for (arr) { x ->
         \\        if (x % 2 != 0) { continue; };
         \\        yield x;
         \\    };
@@ -673,7 +676,7 @@ test "js: loop ---- continue in iteration" {
 test "js: loop ---- yield accumulation" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn doubles(arr: i32[]) -> i32[] {
-        \\    return loop (arr) { x ->
+        \\    return for (arr) { x ->
         \\        yield x * 2;
         \\    };
         \\}
@@ -943,7 +946,7 @@ test "js: throw ---- inside loop body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\#[@result]
         \\fn validate(items: i32) -> @Result<i32, string> {
-        \\    loop (0..items) { i ->
+        \\    for (0..items) { i ->
         \\        if (i > 2) { throw "too many"; };
         \\    };
         \\    return items;
@@ -1197,7 +1200,7 @@ test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
 
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
 //
-// `break <value>` out of `loop (cond)` was refused outright with an unlocated
+// `break <value>` out of `while (cond)` was refused outright with an unlocated
 // `ConditionLoopValueUnsupported`, on the bare `loop { … }` too — the parser
 // gives both the same node. The loop now answers a pair, `{Group, Value}`, and
 // a one-clause `case` destructures it: the group's variables are rebound and
@@ -1207,7 +1210,7 @@ test "erlang: loop ---- a value break out of a condition loop is the loop's valu
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() {
         \\  var i = 0;
-        \\  val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\  val found = while (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
         \\  @print(found);
         \\  @print(i);
         \\}
@@ -1239,14 +1242,14 @@ test "erlang: generator ---- a condition-loop body yields its elements in order"
         \\#[@generator]
         \\fn nums(n: i32) -> @Generator<i32> {
         \\  var i = 0;
-        \\  loop (i < n) { yield i; i = i + 1; };
+        \\  while (i < n) { yield i; i = i + 1; };
         \\}
         \\fn main() {
         \\  var acc = "";
-        \\  loop (nums(3)) { x -> acc = acc + x.toString(); };
+        \\  for (nums(3)) { x -> acc = acc + x.toString(); };
         \\  @print(acc);
         \\  var runs = 0;
-        \\  loop (nums(0)) { x -> runs = runs + 1; };
+        \\  for (nums(0)) { x -> runs = runs + 1; };
         \\  @print(runs);
         \\}
     , "012\n0\n", &.{"lists:reverse(__bp_cond_yield@3)"});
@@ -1259,7 +1262,7 @@ test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
         \\fn two() -> @Iterator<i32> { yield 1; yield 2; }
         \\fn main() {
         \\  var a = "";
-        \\  loop (two()) { x -> a = a + x.toString(); };
+        \\  for (two()) { x -> a = a + x.toString(); };
         \\  @print(a);
         \\}
     , "12\n", &.{});
@@ -1290,8 +1293,8 @@ test "js: lambda ---- an expression body is the lambda's value" {
         \\fn main() {
         \\    val xs = [1, 2, 3];
         \\    @print(xs.map({ x -> if (x > 1) { x * 10 } else { x } }).join(","));
-        \\    @print(xs.map({ x -> (loop (0..x) { i -> yield i; }).length }).join(","));
-        \\    @print(xs.map({ x -> loop (x > 0) { x = x - 1; break x; } }).join(","));
+        \\    @print(xs.map({ x -> (for (0..x) { i -> yield i; }).length }).join(","));
+        \\    @print(xs.map({ x -> while (x > 0) { x = x - 1; break x; } }).join(","));
         \\    @print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
         \\}
     ;
@@ -1366,7 +1369,7 @@ test "js: self tail call ---- a tail call is a round of a loop, not a frame" {
 test "js: self tail call ---- one inside the function's own loop is labelled" {
     const src =
         \\fn firstUnder(n: i32, limit: i32) -> i32 {
-        \\    loop (0..3) { k ->
+        \\    for (0..3) { k ->
         \\        if (n + k > limit) { return firstUnder(n - 1, limit); };
         \\    };
         \\    return n;

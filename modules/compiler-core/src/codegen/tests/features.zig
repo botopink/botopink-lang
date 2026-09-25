@@ -559,7 +559,7 @@ test "js: pipeline ---- with labeled args" {
 test "js: range ---- iterate over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn sumTo(n: i32) -> i32[] {
-        \\    return loop (0..n) { i ->
+        \\    return for (0..n) { i ->
         \\        yield i;
         \\    };
         \\}
@@ -569,7 +569,7 @@ test "js: range ---- iterate over range" {
 test "js: range ---- open-ended range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn countUp(x: i32) {
-        \\    loop (x..) { i ->
+        \\    for (x..) { i ->
         \\        if (i > 100) {
         \\          break;
         \\        };
@@ -796,7 +796,7 @@ test "js: reserved word identifiers" {
 }
 
 test "js: iterator fromList yields array items" {
-    // An `#[@iterator] fn -> @Iterator<T>` generator: `loop (xs) { yield }` must
+    // An `#[@iterator] fn -> @Iterator<T>` generator: `for (xs) { x -> yield x; }` must
     // lower to a real `for…of` with native `yield` (not `.map()`). Recursive
     // delegation (the legacy `return <iter>` shortcut) is now forbidden by
     // RI1 (§1I); spec-compliant delegation patterns get their own coverage in
@@ -804,14 +804,14 @@ test "js: iterator fromList yields array items" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\#[@iterator]
         \\fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
-        \\    loop (xs) { item ->
+        \\    for (xs) { item ->
         \\        yield item;
         \\    };
         \\}
         \\
         \\fn toList<T>(iter: @Iterator<T>) -> Array<T> {
         \\    var out = [];
-        \\    loop (iter) { item ->
+        \\    for (iter) { item ->
         \\        out.push(item);
         \\    };
         \\    return out;

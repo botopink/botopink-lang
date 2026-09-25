@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val processamento = loop (0..10) { i ->
+val processamento = for (0..10) { i ->
     if (i % 2 == 0) {
         break i;
     };

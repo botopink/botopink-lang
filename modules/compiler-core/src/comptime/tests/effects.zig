@@ -663,13 +663,13 @@ test "chain: a loop comprehension yields in a body the chain grants no `yield`" 
     try h.assertInfersOk(std.testing.allocator,
         \\#[@future]
         \\fn collected() -> @Future<i32[]> {
-        \\    val xs = loop ([1, 2, 3]) { x -> yield x * 2; };
+        \\    val xs = for ([1, 2, 3]) { x -> yield x * 2; };
         \\    return xs;
         \\}
         \\#[@result]
         \\fn counted() -> @Result<i32[], string> {
         \\    var i = 0;
-        \\    val xs = loop (i < 3) { i = i + 1; yield i; };
+        \\    val xs = while (i < 3) { i = i + 1; yield i; };
         \\    return xs;
         \\}
     );
@@ -795,7 +795,7 @@ test "F12: a type satisfies Iterable with a #[@iterator] fn iter" {
         \\type Bag(items: i32[]) implement Iterable<i32> {
         \\    #[@iterator]
         \\    fn iter(self: Self) -> @Iterator<i32> {
-        \\        loop (self.items) { x -> yield x; };
+        \\        for (self.items) { x -> yield x; };
         \\    }
         \\}
     );

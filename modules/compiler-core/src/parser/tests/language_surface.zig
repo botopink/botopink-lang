@@ -123,7 +123,7 @@ test "surface R3: the range and the float forms are unchanged" {
     try assertParser(std.testing.allocator, @src(),
         \\fn f() -> f64 {
         \\    var s = 0;
-        \\    loop (0..4) { i -> s = s + i; };
+        \\    for (0..4) { i -> s = s + i; };
         \\    val a = 1.5;
         \\    val b = 1_000;
         \\    val c = 1e10;
@@ -162,7 +162,7 @@ test "surface R4: a comment and a blank line inside an if branch" {
 test "surface R4: a comment inside a loop body and a lambda body" {
     try assertParser(std.testing.allocator, @src(),
         \\fn f() -> i32 {
-        \\    loop ([1, 2]) { x ->
+        \\    for ([1, 2]) { x ->
         \\        // a loop body is not a lambda body — it has its own block
         \\        println("a");
         \\
@@ -240,7 +240,7 @@ test "surface R5: an array literal is still an array literal" {
         \\    val xs = [1, 2];
         \\    val n = g([1, 2]);
         \\    var s = 0;
-        \\    loop (0..4) { i -> s = s + i; };
+        \\    for (0..4) { i -> s = s + i; };
         \\    return n + s;
         \\}
     );

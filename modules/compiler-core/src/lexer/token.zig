@@ -113,6 +113,9 @@ pub const TokenKind = enum {
     use,
     val,
     @"var",
+    /// `while (cond) { … }` — decision 105's condition loop. Refused as
+    /// `removed-keyword-while` until 1.0.10-beta; a keyword since.
+    @"while",
     @"comptime",
     syntax,
     @"break",

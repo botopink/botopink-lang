@@ -3,16 +3,18 @@
 fn pick(xs: Array<string>) -> string {
     var first = "";
     var last = "";
-    loop (xs) { x, i ->
+    var i = 0;
+    for (xs) { x ->
         if (i == 0) { first = x; };
         last = x;
+        i = i + 1;
     };
     return first + "-" + last;
 }
 fn weigh(xs: Array<i32>) -> i32 {
     var total = 0;
-    loop (xs, 1..) { x, i ->
-        total = total + x * i;
+    for (0..xs.length) { i ->
+        total = total + (xs[i] ?? 0) * (i + 1);
     };
     return total;
 }
@@ -58,17 +60,19 @@ function __bp_print() {
 function pick(xs) {
     let first = "";
     let last = "";
-    for (const [i, x] of (xs).entries()) {
+    let i = 0;
+    for (const x of xs) {
     (() => { if ((i === 0)) { return first = x; } })();
     last = x;
+    i = (i + 1);
 }
     return ((first + "-") + last);
 }
 
 function weigh(xs) {
     let total = 0;
-    for (const [i, x] of Array.from(xs, (__x, __i) => [__i + (1), __x])) {
-    total = (total + (x * i));
+    for (const i of Array.from({length: Math.max(0, (xs.length) - (0))}, (_, __i) => (0) + __i)) {
+    total = (total + (((() => { const __bp_nullish = xs[i]; if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })()) * ((i + 1))));
 }
     return total;
 }

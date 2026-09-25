@@ -42,15 +42,20 @@ parser/
 │                     `self`-first top-level fns on Erlang/Beam too), keeps the source in `Annotation.source_args`
 │                     (formatter, AST dump), and refuses `$self` / an out-of-range `$N` with a located
 │                     `template-self-marker` / `template-marker-out-of-range`
-├── exprs.zig      ← expression sub-grammar: precedence climbing, primary/pipeline/local-bind/lambda/loop/range,
-│                     string templates (`${…}` re-scan), tagged calls. `loop` has four forms (decision 8 §10):
-│                     `loop (xs) { x -> }`, `loop (0..n) { i -> }`, `loop (cond) { … }` (a body that does not
-│                     open with `name ->` takes no parameter; `LoopExpr.paramsLoc` locates the first one) and
-│                     `loop { … }` (the condition `true`). `LoopExpr.condition` is set here for `loop { … }` and a
-│                     syntactically boolean condition (a comparison, `&&`/`||`, `not`, `true`/`false`); the comptime
-│                     transform sets it for any other `iter` inference typed `bool` (`env.conditionLoops`). `while (…)` is `removed-keyword-while` and
-│                     `throw new X(…)` is `removed-keyword-new` (06 N26, N27) — `new`/`delegate`/`const` lex
-│                     as identifiers. `val assert P = e;` with no `catch` (decision 8 § 9) parses:
+├── exprs.zig      ← expression sub-grammar: precedence climbing, primary/pipeline/local-bind/lambda/loops/range,
+│                     string templates (`${…}` re-scan), tagged calls. The loops are decision 105's three keywords,
+│                     one parser each and one `LoopExpr` node (`keyword` says which): `parseForExpr` —
+│                     `for [await] [:label] (iter) { x -> … }` over a collection, a range (`a..b` exclusive,
+│                     `a...b` inclusive — `parseRangeExpr` reads both tokens) or a generator, binding exactly one
+│                     name (`for-without-binder` / `for-binds-one-name`; `paramsLoc` locates it); `parseWhileExpr` —
+│                     `while [:label] (cond) { … }`, the condition at `prec.lowest` like an `if`'s; `parseLoopExpr` —
+│                     `loop [:label] { … }` (`condition` over the literal `true`). A binder on `while`/`loop` is
+│                     `loop-binds-nothing`; `loop (…)` is `removed-loop-parenthesised` at the keyword, naming `for`
+│                     and `while`. `parseAnnotatedLoopExpr` reads `#[@generator] loop { … }` in expression position:
+│                     one builtin annotation whose effect `effect_chain.grants(…, .yield_)` (the names are never
+│                     listed here), before `loop` only — anything else is `loop-annotation-not-generator` spanning
+│                     the block; `LoopExpr.generator` carries the effect. `throw new X(…)` is
+│                     `removed-keyword-new` (06 N27) — `new`/`delegate`/`const` lex as identifiers. `val assert P = e;` with no `catch` (decision 8 § 9) parses:
 │                     `assertFatalHandler` desugars it into the handler `@panic("assert pattern did not
 │                     match")` and sets `AssertPattern.fatal`, so the AST keeps one shape and every
 │                     backend's handler lowering is the fatal path; the checker reads `fatal` to tell
@@ -96,12 +101,13 @@ block that reads something between the `{` and its first statement — a prologu
 | `if` then-branch | `{ x -> ` or `{ _ -> ` — the branch's value binding | `requiredExceptLast` | inherits |
 | lambda `{ a, b -> … }` | the parameter list | `optional` | fresh |
 | trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `required` | fresh |
-| `loop (…) { x -> … }` body | the parameter list | `required` | inherits |
+| `for (…) { x -> … }` body | the one binder (`parseLoopBody`) | `required` | inherits |
+| `while (…) { … }`, `loop { … }`, `#[@generator] loop { … }` body | — (`parseLoopBody`; a binder is refused) | `required` | inherits |
 
 **The static prefix of `use`** (front 19 of 1.0.10-beta, decision 88) is a
-property of the *function body*: every `use` precedes every `if`, `case`, `loop`
-and `return` of that body, at any nesting. `Parser.useBranchSeen` is set by the
-four constructs themselves when they are parsed (`parser/exprs.zig`), so a
+property of the *function body*: every `use` precedes every `if`, `case`, loop
+(`for`/`while`/`loop`) and `return` of that body, at any nesting.
+`Parser.useBranchSeen` is set by the constructs themselves when they are parsed (`parser/exprs.zig`), so a
 branch's own block sees the branch it is in (`if (a) { use … }` is refused) and
 a `val m = if (…) …` counts as a branch. `parseBlockBody` saves and restores the
 flag around every block; `freshUseScope` clears it on entry — a lambda body is

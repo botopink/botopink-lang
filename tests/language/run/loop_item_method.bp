@@ -16,11 +16,11 @@ type Entry(key: string, value: string) {}
 
 pub fn main() {
     val es = [Entry(key: "aa", value: "x"), Entry(key: "b", value: "yy")];
-    loop (es) { e ->
+    for (es) { e ->
         @print(e.key.length());
     };
     val words = ["alpha", "be"];
-    loop (words) { w ->
+    for (words) { w ->
         val t = w.trim();
         @print(w.length());
         @print(t.length());

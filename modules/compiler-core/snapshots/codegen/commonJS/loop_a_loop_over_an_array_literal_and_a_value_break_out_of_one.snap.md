@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    loop ([1, 2, 3]) { x -> @print(x); };
-    val first = loop ([1, 2, 3]) { x -> if (x == 2) { break x * 10; }; };
+    for ([1, 2, 3]) { x -> @print(x); };
+    val first = for ([1, 2, 3]) { x -> if (x == 2) { break x * 10; }; };
     @print(first);
 }
 ```

@@ -245,7 +245,7 @@ test "types: negation ---- unary minus" {
 test "types: range ---- iterate 0 to n" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn sumTo(n: i32) {
-        \\    loop (0..n) { i ->
+        \\    for (0..n) { i ->
         \\        yield i;
         \\    };
         \\}
@@ -255,7 +255,7 @@ test "types: range ---- iterate 0 to n" {
 test "types: loop ---- break with value" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn find(arr: i32[]) -> i32[] {
-        \\    return loop (arr) { x ->
+        \\    return for (arr) { x ->
         \\        if (x > 10) { break x; };
         \\    };
         \\}
@@ -265,7 +265,7 @@ test "types: loop ---- break with value" {
 test "types: loop ---- yield accumulation" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn doubles(arr: i32[]) -> i32[] {
-        \\    return loop (arr) { x ->
+        \\    return for (arr) { x ->
         \\        yield x * 2;
         \\    };
         \\}

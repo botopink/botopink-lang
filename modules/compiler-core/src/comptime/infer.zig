@@ -10764,6 +10764,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             return TypedExpr{ .collection = .{ .loc = loc, .type_ = try env.namedType("Range"), .kind = .{ .range = .{
                 .start = startPtr,
                 .end = endPtr,
+                .inclusive = r.inclusive,
             } } } };
         },
 

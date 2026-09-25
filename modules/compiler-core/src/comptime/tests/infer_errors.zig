@@ -378,7 +378,7 @@ test "infer error: loop await on a non-future-generator" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@future]
         \\fn bad() -> @Future<i32> {
-        \\    loop await (5) { x ->
+        \\    for await (5) { x ->
         \\        ping(x);
         \\    }
         \\}
@@ -773,17 +773,6 @@ test "infer error: record update ---- a wrong value type reds at the value (C11)
         \\type Person(name: string, age: i32)
         \\val alice = Person(name: "a", age: 1);
         \\val b = Person(..alice, age: "x");
-    );
-}
-
-test "infer error: loop ---- a condition loop takes no parameter (N26)" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\fn f() {
-        \\    var i = 0;
-        \\    loop (i < 3) { x ->
-        \\        i = i + 1;
-        \\    };
-        \\}
     );
 }
 

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn sumTo(n: i32) {
-    loop (0..n) { i ->
+    for (0..n) { i ->
         yield i;
     };
 }
@@ -24,7 +24,7 @@ fn sumTo(n: i32) {
       "return_type": "void",
       "body": [
         {
-          "source": "loop (0..n) { i ->"
+          "source": "for (0..n) { i ->"
         }
       ]
     }

@@ -27,11 +27,13 @@
                   "line": 2,
                   "col": 5
                 },
+                "keyword": "for_",
+                "generator": null,
                 "iter": {
                   "collection": {
                     "loc": {
                       "line": 2,
-                      "col": 11
+                      "col": 10
                     },
                     "kind": {
                       "arrayLit": {
@@ -40,7 +42,7 @@
                             "literal": {
                               "loc": {
                                 "line": 2,
-                                "col": 12
+                                "col": 11
                               },
                               "kind": {
                                 "numberLit": "1"
@@ -51,7 +53,7 @@
                             "literal": {
                               "loc": {
                                 "line": 2,
-                                "col": 15
+                                "col": 14
                               },
                               "kind": {
                                 "numberLit": "2"
@@ -74,7 +76,7 @@
                 ],
                 "paramsLoc": {
                   "line": 2,
-                  "col": 21
+                  "col": 20
                 },
                 "condition": false,
                 "body": [

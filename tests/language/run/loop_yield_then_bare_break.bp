@@ -14,7 +14,7 @@
 ////   wasm      2  20,40      — correct
 
 pub fn main() {
-    val r = loop ([10, 20, 30]) { x ->
+    val r = for ([10, 20, 30]) { x ->
         yield x * 2;
         if (x == 20) { break; };
     };

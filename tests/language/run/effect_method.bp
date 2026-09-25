@@ -2,7 +2,7 @@
 //// `fn`'s — decision 8 §9 names no exception for a receiver. commonJS read the
 //// effect off `ast.FnDecl.effect`, which a method has not, so `#[@iterator] fn
 //// each(self: Self) -> @Iterator<i32>` emitted as a plain method whose
-//// `loop … yield` lowered to a value-dropping `.map()`, and `loop (b.each())`
+//// `loop … yield` lowered to a value-dropping `.map()`, and `for (b.each())`
 //// died with `TypeError: b.each is not a function or its return value is not
 //// iterable` where erlang printed the elements.
 ////
@@ -23,7 +23,7 @@
 type Box(items: Array<i32>) {
     #[@iterator]
     fn each(self: Self) -> @Iterator<i32> {
-        loop (self.items) { x ->
+        for (self.items) { x ->
             yield x;
         };
     }
@@ -33,7 +33,7 @@ type Tally(seed: i32) implement Tally {
     #[@iterator]
     fn upto(self: Self, n: i32) -> @Iterator<i32> {
         var i = self.seed;
-        loop (i < n) {
+        while (i < n) {
             yield i;
             i = i + 1;
         };
@@ -43,7 +43,7 @@ type Tally(seed: i32) implement Tally {
     fn total(self: Self, n: i32) -> @Future<i32> {
         var acc = self.seed;
         var i = 0;
-        loop (i < n) {
+        while (i < n) {
             acc = acc + i;
             i = i + 1;
         };
@@ -59,7 +59,7 @@ type Shape {
     #[@iterator]
     fn counts(self: Self, n: i32) -> @Iterator<i32> {
         var i = 0;
-        loop (i < n) {
+        while (i < n) {
             yield i;
             i = i + 1;
         };
@@ -68,7 +68,7 @@ type Shape {
 
 fn digits(xs: @Iterator<i32>) -> i32 {
     var acc = 0;
-    loop (xs) { v ->
+    for (xs) { v ->
         acc = acc * 10 + v;
     };
     return acc;

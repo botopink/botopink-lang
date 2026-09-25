@@ -2,7 +2,7 @@
 ```botopink
 fn main() {
     val messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
-    loop (messages, 0..) { msg, i ->
+    for (messages) { msg ->
         @print(msg);
     };
 }
@@ -21,7 +21,6 @@ fn main() {
     (local $__mem0 i32)
     (local $messages i32)
     (local $msg i32)
-    (local $i i32)
     (local $__iter0 i32)
     (local $__idx0 i32)
     (local $__len0 i32)
@@ -65,8 +64,6 @@ fn main() {
         i32.add
         i32.load offset=4
         local.set $msg
-        local.get $__idx0
-        local.set $i
     local.get $msg
     call $__print_str
         local.get $__idx0

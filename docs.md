@@ -10,8 +10,9 @@ A type is declared with `type` and a contract with `behavior`; `record`, `enum`
 and `interface` are gone, and so are `auto`, `derive`, `get`, `macro`,
 `opaque`, `private`, `set`, `new` and `delegate` — all of them are ordinary
 identifiers now. An anonymous group of values is a tuple, `#(…)`, which
-replaces the old anonymous record. Repetition is `loop` only; `while` reports
-an error naming `loop (condition)`. A host template numbers its parameters
+replaces the old anonymous record. Repetition is three keywords with one meaning
+each — `for (xs) { x -> … }`, `while (cond) { … }`, `loop { … }` — and `loop (…)`
+reports an error naming `for` and `while`. A host template numbers its parameters
 positionally (`$0`, `$1`, …).
 
 The move from the previous surface, declaration by declaration, is in
@@ -422,7 +423,7 @@ Three shapes do **not** narrow, and each for its own reason:
 * `if (x)` on a `?T` with no binder is refused — "type mismatch: expected bool,
   got optional". There is no truthiness on an optional; write `if (x) { v -> … }`
   or `if (x != null)`.
-* `loop (x != null) { … }` leaves its body alone. A condition loop reassigns the
+* `while (x != null) { … }` leaves its body alone. A condition loop reassigns the
   name it tests, and a narrowed name could not be assigned the optional again.
 * A guard clause narrows a `val` and not a `var`, for the same reason: a `var`
   can be assigned below the guard.
@@ -686,10 +687,12 @@ An optional is **not** a variant: `case x { .Some(v) { … } .None { … } }` is
 arm. `Some` and `None` are not spellings this language has — `??` and `?.` read
 an optional the same way this does.
 
-### Loop
+### Loops
 
-`loop` is the only repetition form. It takes a collection, a range or a
-condition, or nothing at all; `break` leaves it.
+Three keywords, one meaning each (decision 105): `for (coll) { x -> … }`
+iterates a collection, a range or a generator; `while (cond) { … }` repeats
+while the condition holds; `loop { … }` repeats until `break`. None of them is
+an expression. `continue` skips to the next round in all three.
 
 A range excludes its end: `0..10` yields `0` to `9`.
 
@@ -697,16 +700,16 @@ A range excludes its end: `0..10` yields `0` to `9`.
 ```botopink
 val xs = [1, 2, 3];
 
-loop (xs) { item ->
+for (xs) { item ->
     @print(item);
 };
 
-loop (0..10) { i ->
+for (0..10) { i ->
     @print(i);
 };
 
 var n = 0;
-loop (n < 3) {
+while (n < 3) {
     n = n + 1;
 };
 
@@ -716,7 +719,7 @@ loop {
 };
 ```
 
-A `//` comment inside a `loop` body parses like any other comment.
+A `//` comment inside a loop body parses like any other comment.
 
 ### Assert
 
@@ -1011,9 +1014,9 @@ which does not
 Two forms are **not** gated by the chain, because neither leaves the body.
 `try <e> catch <f>` handles the error on the spot, so it needs no channel and
 is legal in a plain `fn` — it is bare `try`, which returns the `Error` out of
-the enclosing function, that needs one. And a `yield` inside a `loop (…) { … }`
-body feeds that loop's array rather than the function (see *Loop*), so it is
-legal in any body, effect or not.
+the enclosing function, that needs one. A `yield` inside a `for`, `while` or
+`loop` body feeds the nearest generator scope (see *Loops*), so it is gated like
+any other.
 
 ### Results
 
@@ -1397,12 +1400,12 @@ closes it, or says that it has none yet. Every row below was re-derived by
 
 | Rule | Today | Closes with |
 |---|---|---|
-| `break <value>` making the loop an expression | the loop's value is a **list** holding it: `val v = loop (0..10) { i -> if (i == 3) { break i; }; };` prints `[3]` on commonJS, on erlang and on wasm alike | 1.0.5-beta — three backends answer the same way, so the row is the rule's rather than one backend's; `01-checker` assigns the two commonJS suite lines to `04-js` |
+| `break <value>` making the loop an expression | the loop's value is a **list** holding it: `val v = for (0..10) { i -> if (i == 3) { break i; }; };` prints `[3]` on commonJS, on erlang and on wasm alike | 1.0.5-beta — three backends answer the same way, so the row is the rule's rather than one backend's; `01-checker` assigns the two commonJS suite lines to `04-js` |
 | `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.5-beta `01-checker` step 6 |
 | A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.5-beta `15-language-surface` step 2, with `16-formatter` (the formatter has to stop printing it in the same wave) |
 | A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value it answers something different on every backend: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, `0` on erlang and `256` on wasm | 1.0.5-beta — owner unassigned; the rule is decided (the `...` token, the diagnostic and the run-time semantics) |
 | `await` inside a `#[@context]` body (decision 95 — `@Context` extends `@Future`) | it type-checks, and it RUNS on erlang, wasm and beam (their `@Future<T>` is eager, so `await` is the identity). commonJS lowers `#[@context]` to a plain `function`, so the emitted `await` is `SyntaxError: await is only valid in async functions and the top level bodies of modules` | 1.0.10-beta — commonJS's own front: `fnKeyword` answering `async function` for a `#[@context]` body that awaits changes what a component's caller receives, which is a backend decision. Front 20 owns what is legal, not what is emitted |
-| An effect annotation on a record METHOD | ignored on commonJS: `fnKeyword` reads `ast.FnDecl.effect` and never sees a method, so `#[@iterator] fn iter(self: Self) -> @Iterator<T>` in a `type … implement Iterable<T> { … }` body emits as a plain `iter() { … }` and `loop (b.iter())` reds `b.iter is not a function or its return value is not iterable`. erlang runs it | 1.0.10-beta — owner unassigned; found by front 20 F12 while answering what `-> Iterator<T, E, C>` means on a behavior method |
+| An effect annotation on a record METHOD | ignored on commonJS: `fnKeyword` reads `ast.FnDecl.effect` and never sees a method, so `#[@iterator] fn iter(self: Self) -> @Iterator<T>` in a `type … implement Iterable<T> { … }` body emits as a plain `iter() { … }` and `for (b.iter()) { x -> … }` reds `b.iter is not a function or its return value is not iterable`. erlang runs it | 1.0.10-beta — owner unassigned; found by front 20 F12 while answering what `-> Iterator<T, E, C>` means on a behavior method |
 
 Seven of the twelve rows this table carried before this revision left it because
 the compiler now accepts the form: union types, the `unknown` type and its

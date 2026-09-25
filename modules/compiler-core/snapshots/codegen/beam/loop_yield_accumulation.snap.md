@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn doubles(arr: i32[]) -> i32[] {
-    return loop (arr) { x ->
+    return for (arr) { x ->
         yield x * 2;
     };
 }

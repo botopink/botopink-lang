@@ -55,11 +55,13 @@
                   "line": 3,
                   "col": 5
                 },
+                "keyword": "for_",
+                "generator": null,
                 "iter": {
                   "identifier": {
                     "loc": {
                       "line": 3,
-                      "col": 17
+                      "col": 16
                     },
                     "kind": {
                       "ident": "items"
@@ -72,7 +74,7 @@
                 ],
                 "paramsLoc": {
                   "line": 3,
-                  "col": 26
+                  "col": 25
                 },
                 "condition": false,
                 "body": [

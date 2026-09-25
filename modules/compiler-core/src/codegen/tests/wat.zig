@@ -753,17 +753,17 @@ test "wat: index ---- a string slice's length" {
 test "wat: loop ---- break with a value is the loop's value, not a one-element array" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn find(arr: i32[]) -> i32[] {
-        \\    return loop (arr) { x -> if (x > 10) { break x; }; };
+        \\    return for (arr) { x -> if (x > 10) { break x; }; };
         \\}
         \\fn main() {
         \\    var k = 0;
         \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
         \\    @print(r);
         \\    var i = 0;
-        \\    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    val found = while (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
         \\    @print(found);
         \\    var j = 0;
-        \\    val collected = loop (j < 5) { j = j + 1; yield j; };
+        \\    val collected = while (j < 5) { j = j + 1; yield j; };
         \\    @print(collected);
         \\    @print(find([5, 15, 20]));
         \\}
@@ -785,14 +785,14 @@ test "wat: loop ---- a search that never breaks answers null, and `break 0` answ
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
         \\    var m = 0;
-        \\    val none = loop (m < 3) { m = m + 1; if (m > 99) { break m; }; };
+        \\    val none = while (m < 3) { m = m + 1; if (m > 99) { break m; }; };
         \\    @print(none);
         \\    @print(none ?? 42);
         \\    var i = 0;
-        \\    val zero = loop (i < 10) { if (i == 0) { break i; }; i = i + 1; };
+        \\    val zero = while (i < 10) { if (i == 0) { break i; }; i = i + 1; };
         \\    @print(zero);
         \\    var j = 0;
-        \\    val eight = loop (j < 10) { if (j == 4) { break j * 2; }; j = j + 1; };
+        \\    val eight = while (j < 10) { if (j == 4) { break j * 2; }; j = j + 1; };
         \\    @print(eight);
         \\}
     , "null\n42\n0\n8\n");
@@ -845,7 +845,7 @@ test "wat: loop ---- a condition loop with no value `break` at all answers null"
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
         \\    var i = 0;
-        \\    val r = loop (i < 3) { i = i + 1; };
+        \\    val r = while (i < 3) { i = i + 1; };
         \\    @print(r);
         \\    @print(r ?? 9);
         \\    @print(i);

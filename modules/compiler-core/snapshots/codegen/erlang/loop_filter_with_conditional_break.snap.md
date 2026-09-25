@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val precosBrutos = [100, 250, 400];
-val apenasGrandes = loop (precosBrutos) { valor ->
+val apenasGrandes = for (precosBrutos) { valor ->
     if (valor > 200) {
         break valor;
     };

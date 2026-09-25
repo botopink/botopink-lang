@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val ids = [10, 20, 30];
-val dobrados = loop (ids) { id ->
+val dobrados = for (ids) { id ->
     break id * 2;
 };
 fn main() {

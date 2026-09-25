@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 #[@future]
 fn bad() -> @Future<i32> {
-    loop await (5) { x ->
+    for await (5) { x ->
         ping(x);
     }
 }
@@ -10,5 +10,5 @@ fn bad() -> @Future<i32> {
 error: `loop await` expects an `@FutureGenerator<T, E>` value
   ┌─ :3:5
   │
-3 │     loop await (5) { x ->
+3 │     for await (5) { x ->
   │     ^

@@ -21,7 +21,7 @@ test "§6 tuples as array elements" {
     val pairs = [#(1, "a"), #(2, "b"), #(3, "c")];
     var total = 0;
     var text = "";
-    loop (pairs) { p ->
+    for (pairs) { p ->
         total = total + p.0;
         text = text + p.1;
     };

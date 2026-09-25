@@ -32,9 +32,9 @@ pub fn main() {
 
     @print(xs.map({ x -> case x { 1 { 100 } _ { 200 } } }).join(","));
 
-    @print(xs.map({ x -> (loop (0..x) { i -> yield i; }).length }).join(","));
+    @print(xs.map({ x -> (for (0..x) { i -> yield i; }).length }).join(","));
 
-    @print(xs.map({ x -> loop (x > 0) { x = x - 1; break x; } }).join(","));
+    @print(xs.map({ x -> while (x > 0) { x = x - 1; break x; } }).join(","));
 
     @print(xs.map({ x -> try tenth(x) catch 0 }).join(","));
 }
