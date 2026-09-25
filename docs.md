@@ -1122,7 +1122,7 @@ level.
 | Body | May write | Because the wrapper extends |
 |---|---|---|
 | `#[@context] fn … -> @Context<B, R>` (or a type implementing it, e.g. `Element`) | `use` · `await` · `try` | `@Context` ⊃ `@Future` ⊃ `@Result` |
-| `#[@futureGenerator] fn … -> @FutureGenerator<T, E, C>` | `await` · `try` · `yield` | `@FutureGenerator` ⊃ `@Future` ⊃ `@Result` |
+| `#[@futureGenerator] fn … -> @FutureGenerator<T, E>` | `await` · `try` · `yield` | `@FutureGenerator` ⊃ `@Future` ⊃ `@Result` |
 | `#[@future] fn … -> @Future<T, E>` | `await` · `try` | `@Future` ⊃ `@Result` |
 | `#[@resultGenerator] fn … -> @ResultGenerator<T, E>` | `try` · `yield` | `@ResultGenerator` ⊃ `@Result` |
 | `#[@generator] fn … -> @Generator<T>` | `yield` | — no error channel |

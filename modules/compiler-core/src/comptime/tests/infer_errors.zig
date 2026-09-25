@@ -653,7 +653,7 @@ test "infer error: RI1 ---- return <expr> inside #[@resultGenerator] reds iterat
 test "infer error: RI1 ---- return <expr> inside #[@futureGenerator] reds iterator-return-forbidden" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@futureGenerator]
-        \\fn nums() -> @FutureGenerator<i32, string, i32> {
+        \\fn nums() -> @FutureGenerator<i32, string> {
         \\    yield 1;
         \\    return 42;
         \\}
@@ -687,6 +687,16 @@ test "infer error: RG5 ---- a third argument on @ResultGenerator reds generic-ar
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@resultGenerator]
         \\fn nums() -> @ResultGenerator<i32, string, i32> {
+        \\    yield 1;
+        \\}
+    );
+}
+
+test "infer error: RG5 ---- a third argument on @FutureGenerator reds generic-arg-count-exceeded" {
+    // Decision 103 — `@FutureGenerator<T, E>` lost its completion channel `C`.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\#[@futureGenerator]
+        \\fn nums() -> @FutureGenerator<i32, string, i32> {
         \\    yield 1;
         \\}
     );

@@ -1049,7 +1049,7 @@ pub const Env = struct {
             // other primitives
             "bool", "string", "void", "v128",
             // §1G — `any` is the unconstrained default for effect-wrapper error
-            // channels (`@Future<T, E = any>` / `@ResultGenerator<T, E = any, C = void>`).
+            // channels (`@Future<T, E = any>` / `@ResultGenerator<T, E = any>`).
             // It is treated as opaque at the type level — no operations beyond
             // being threaded through generics.
             "any",

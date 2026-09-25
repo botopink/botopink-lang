@@ -1,0 +1,36 @@
+//// Decision 103 of 1.0.10-beta — `@FutureGenerator<T, E>` extends `@Future`
+//// (the completion channel `C` is gone): its body answers `yield`, `await` and
+//// `try`, and a `for await` over it is an `await` and a `try` in the body that
+//// iterates it, so that body needs `#[@future]` or above
+//// (`reject/for_await_future_generator_in_result.bp` is the refusal). The
+//// cell compiles both on the four targets; a `test` block cannot await, so
+//// what it runs is the `#[@result]` half.
+
+#[@result]
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+#[@future]
+fn fetch(n: i32) -> @Future<i32, string> {
+    return n;
+}
+
+#[@futureGenerator]
+fn stream(n: i32) -> @FutureGenerator<i32, string> {
+    val limit = try parse(n);
+    var i = await fetch(0);
+    while (i < limit) { yield i; i = i + 1; };
+}
+
+#[@future]
+fn collect(n: i32) -> @Future<string, string> {
+    var acc = "";
+    for await (stream(n)) { x -> acc = acc + x.toString(); };
+    return acc;
+}
+
+test "decision 103 a future generator and its consumer compile" {
+    assert (try parse(3) catch 0) == 3;
+}

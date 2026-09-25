@@ -794,6 +794,11 @@ commonJS and beam run it, the eager erlang and wasm generator scopes are pinned)
 that iterates it holds the `for`'s implicit `try`, and a plain `fn` iterates a
 `@Generator<T>` (wasm pinned). 22-loops' `reject/for_fallible_generator_plain_fn.bp` is
 the refusal (`for-over-fallible-generator`).
+`reject/throw_in_generator.bp` (`throw` in a `#[@generator]` body names
+`@ResultGenerator<T, E>`), `test/effect_future_generator.bp` (a `@FutureGenerator<T, E>` body
+with `try` and `await`, and its `#[@future]` `for await` consumer) and
+`reject/for_await_future_generator_in_result.bp` (`effect-await-without-future` at the
+`for await` in a `#[@result]` body).
 
 Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
 

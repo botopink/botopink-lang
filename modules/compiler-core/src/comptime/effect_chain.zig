@@ -7,7 +7,7 @@
 //!
 //!     pub behavior Future<T, E = any>                    extends Result
 //!     pub behavior ResultGenerator<T, E = any>           extends Result
-//!     pub behavior FutureGenerator<T, E = any, C = void> extends Future
+//!     pub behavior FutureGenerator<T, E = any>           extends Future
 //!     pub behavior Context<ContextBase, Return>          extends Future
 //!     pub behavior Generator<T>                          // no clause — decision 103
 //!

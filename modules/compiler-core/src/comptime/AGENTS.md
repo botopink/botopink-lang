@@ -197,6 +197,9 @@ is the last item in a `#[@generator]` body as in the other two (the gate is
 `effectChain.grants(ctx.effect, .yield_)`), and `try` / `throw` in a
 `#[@generator]` body are refused naming `@ResultGenerator<T, E>`
 (`effect_chain.refusal`'s generator hint; the `.plain` arm of `throw`).
+`FutureGenerator<T, E, C>` is `FutureGenerator<T, E = any>` (`builtinMaxGenericArgs` 2,
+`builtinDefaultFilledArgs` fills `E` only; a third argument is RG5). A `loop await`
+over it needs `await` (`effect-await-without-future`) and `try` in the iterating body.
 
 ## Testing helpers (`tests/helpers.zig`)
 

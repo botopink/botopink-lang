@@ -139,10 +139,10 @@ pub behavior Future<T, E = any> extends Result {
 // A `Generator` whose steps are `Future`s: `next` answers a future of one step
 // rather than a step. The language spells suspension ONE way — `Future` — so
 // this wrapper borrows that noun rather than inventing a second one; the
-// `#[@futureGenerator]` annotation and the `@FutureGenerator<T, E, C>` wrapper
+// `#[@futureGenerator]` annotation and the `@FutureGenerator<T, E>` wrapper
 // share a name exactly as the other five pairs do (§ effect annotations below).
 
-pub behavior FutureGenerator<T, E = any, C = void> extends Future {
+pub behavior FutureGenerator<T, E = any> extends Future {
     fn next(self: Self) -> Future<YieldStep<T, E>, E>;
 }
 
@@ -322,7 +322,7 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //   #[future]          fn fetchUser(id: u64) -> Future<User, NetworkError>
 //   #[generator]       fn range(a: i32, b: i32) -> Generator<i32>
 //   #[resultGenerator] fn lazyMap<T, U>(it: ResultGenerator<T>, f: fn(T) -> U) -> ResultGenerator<U, string> :a
-//   #[futureGenerator] fn stream() -> FutureGenerator<T, NetworkError, i32>
+//   #[futureGenerator] fn stream() -> FutureGenerator<T, NetworkError>
 //   #[context]         fn processarPagamento() -> Context<BasePagamento, bool>
 //
 // The annotation marks an IMPLEMENTATION (a `fn` with a body): it gates the
@@ -344,7 +344,7 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //
 //   Future<T, E>             extends Result<T, E>
 //   ResultGenerator<T, E>    extends Result<T, E>
-//   FutureGenerator<T, E, C> extends Future<YieldStep<T, E>, E>
+//   FutureGenerator<T, E>    extends Future<YieldStep<T, E>, E>
 //   Context<Base, Return>    extends Future<Return, any>
 //   Generator<T>             — NO clause. See below.
 //

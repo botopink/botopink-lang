@@ -5775,7 +5775,7 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 ///   - `@Future<T, E = any>`            → 1 required
 ///   - `@Generator<T>`                  → 1 required
 ///   - `@ResultGenerator<T, E = any>`   → 1 required
-///   - `@FutureGenerator<T, E = any, C = void>` → 1 required
+///   - `@FutureGenerator<T, E = any>`   → 1 required
 ///   - `@Result<R, E>`                  → 2 required
 ///   - `@Context<Base, T>`              → 2 required
 ///   - `@Expr<T>` / `@ExprCustom<T>`    → 1 required
@@ -5801,7 +5801,7 @@ fn builtinMaxGenericArgs(name: []const u8) ?usize {
     if (eq(u8, name, "Future")) return 2;
     if (eq(u8, name, "Generator")) return 1;
     if (eq(u8, name, "ResultGenerator")) return 2;
-    if (eq(u8, name, "FutureGenerator")) return 3;
+    if (eq(u8, name, "FutureGenerator")) return 2;
     if (eq(u8, name, "Result")) return 2;
     if (eq(u8, name, "Context")) return 2;
     if (eq(u8, name, "Expr")) return 1;
@@ -5818,7 +5818,7 @@ fn builtinMaxGenericArgs(name: []const u8) ?usize {
 /// Layouts (per §1G default tail):
 ///   - `Future<T, E = any>`              → `["any"]` for the E slot
 ///   - `ResultGenerator<T, E = any>`     → `["any"]` for the E slot
-///   - `FutureGenerator<T, E = any, C = void>` → `["any", "void"]` for the E/C slots
+///   - `FutureGenerator<T, E = any>`     → `["any"]` for the E slot
 ///
 /// The returned slice always has the FULL declared arity (so the caller
 /// allocates an args slice sized to it and indexes positions
@@ -5835,8 +5835,8 @@ fn builtinDefaultFilledArgs(env: *Env, name: []const u8, given: usize) ?[]const 
     if (eq(u8, name, "ResultGenerator") and given < 2) {
         return &.{ "", "any" };
     }
-    if (eq(u8, name, "FutureGenerator") and given < 3) {
-        return &.{ "", "any", "void" };
+    if (eq(u8, name, "FutureGenerator") and given < 2) {
+        return &.{ "", "any" };
     }
     return null;
 }
