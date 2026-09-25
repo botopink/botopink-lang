@@ -1,11 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type implement @Context<Element, Element> { }
-fn state(initial: i32) -> @Context<Element, i32> {
+val Element = type implement @Context<Element> { }
+#[@use]
+fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
-#[@context]
-fn Counter() -> Element {
+#[@use]
+fn Counter() -> @Component<Element, Element> {
     val {count, setCount} = use state(0);
     Element();
 }

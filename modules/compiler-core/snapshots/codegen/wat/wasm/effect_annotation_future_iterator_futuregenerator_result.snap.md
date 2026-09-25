@@ -4,8 +4,8 @@
 fn fetch(x: i32) -> @Future<i32> {
     return x;
 }
-#[@iterator]
-fn counter() -> @Iterator<i32> {
+#[@resultGenerator]
+fn counter() -> @ResultGenerator<i32> {
     yield 1;
     yield 2;
 }
