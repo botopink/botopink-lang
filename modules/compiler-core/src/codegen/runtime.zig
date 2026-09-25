@@ -649,9 +649,18 @@ pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_
             },
         }
     }
+    // `seen` keys on the atom slices it is handed, so every aux atom has to
+    // outlive the loop: freed per iteration, the key of the first claim was
+    // dangling by the time the second claim was compared against it, and the
+    // refusal below read freed memory instead of firing.
+    var aux_atoms: std.ArrayListUnmanaged([]u8) = .empty;
+    defer {
+        for (aux_atoms.items) |m| allocator.free(m);
+        aux_atoms.deinit(allocator);
+    }
     for (aux) |a| {
         const aux_module = try auxAtom(allocator, a);
-        defer allocator.free(aux_module);
+        try aux_atoms.append(allocator, aux_module);
         if (std.mem.eql(u8, aux_module, entry_module)) continue;
         if (seen.get(aux_module)) |first| {
             const log = try duplicateAtomLog(allocator, aux_module, first, a.name);
@@ -757,9 +766,18 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
     }
 
     // Assemble sibling modules the entry calls into (cross-module `call_ext`).
+    // `seen` keys on the atom slices it is handed, so every aux atom has to
+    // outlive the loop: freed per iteration, the key of the first claim was
+    // dangling by the time the second claim was compared against it, and the
+    // refusal below read freed memory instead of firing.
+    var aux_atoms: std.ArrayListUnmanaged([]u8) = .empty;
+    defer {
+        for (aux_atoms.items) |m| allocator.free(m);
+        aux_atoms.deinit(allocator);
+    }
     for (aux) |a| {
         const aux_module = try auxAtom(allocator, a);
-        defer allocator.free(aux_module);
+        try aux_atoms.append(allocator, aux_module);
         if (std.mem.eql(u8, aux_module, entry_module)) continue;
         if (seen.get(aux_module)) |first| {
             const log = try duplicateAtomLog(allocator, aux_module, first, a.name);
@@ -922,4 +940,84 @@ test "compileFailureLog keeps the indented body of a validator rejection" {
             "  Error:       {{x,2},not_live}:\n",
         log,
     );
+}
+
+// 13-module-identity, half 1 step 3: the scratch filename IS the module atom,
+// so two aux modules rendering one atom used to be one file — the second
+// silently overwrote the first and the program ran against whichever won.
+// `my__mod/user` and `my_mod/user` both render `my_mod@user` (A2 § 4 collapses
+// a run of `_`, so `__` stays free for the qualifier), which is the one
+// collision `crossModule.build` diagnoses and the harness must refuse too.
+const duplicate_aux_erl = [_]AuxFile{
+    .{ .name = "my__mod/user", .code = "-module(my_mod@user).\n-export([who/0]).\nwho() -> first.\n" },
+    .{ .name = "my_mod/user", .code = "-module(my_mod@user).\n-export([who/0]).\nwho() -> second.\n" },
+};
+
+// The same pair as BEAM assembly: the first aux is assembled before the
+// second is compared, so it has to be a module `erlc +from_asm` accepts.
+const duplicate_aux_asm = [_]AuxFile{
+    .{ .name = "my__mod/user", .code = duplicateAuxAsm("first") },
+    .{ .name = "my_mod/user", .code = duplicateAuxAsm("second") },
+};
+
+fn duplicateAuxAsm(comptime answer: []const u8) []const u8 {
+    return "{module, my_mod@user}.\n" ++
+        "{exports, [{who, 0}]}.\n" ++
+        "{attributes, []}.\n" ++
+        "{labels, 3}.\n\n" ++
+        "{function, who, 0, 2}.\n" ++
+        "  {label, 1}.\n" ++
+        "    {line, []}.\n" ++
+        "    {func_info, {atom, my_mod@user}, {atom, who}, 0}.\n" ++
+        "  {label, 2}.\n" ++
+        "    {move, {atom, " ++ answer ++ "}, {x, 0}}.\n" ++
+        "    return.\n";
+}
+
+fn expectDuplicateAtomRefused(log: []const u8) !void {
+    try std.testing.expect(std.mem.startsWith(u8, log, "HARNESS ERROR:"));
+    try std.testing.expect(std.mem.indexOf(u8, log, "`my__mod/user`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, log, "`my_mod/user`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, log, "module atom `my_mod@user`") != null);
+    // The refusal is the whole log: nothing ran, so nothing printed.
+    try std.testing.expect(std.mem.indexOf(u8, log, "hi") == null);
+}
+
+test "executeErlang: two aux modules rendering one atom fail loudly instead of overwriting" {
+    const alloc = std.testing.allocator;
+    const entry =
+        \\-module(main).
+        \\-export(['_botopink_main'/0]).
+        \\'_botopink_main'() -> io:format("hi~n", []).
+        \\
+    ;
+    const log = try executeErlang(alloc, entry, "main", &duplicate_aux_erl, std.testing.io);
+    defer alloc.free(log);
+    // An empty log is the harness's "erlc not on PATH" answer, not a verdict.
+    if (log.len == 0) return error.SkipZigTest;
+    try expectDuplicateAtomRefused(log);
+}
+
+test "executeBeamAsm: two aux modules rendering one atom fail loudly instead of overwriting" {
+    const alloc = std.testing.allocator;
+    const entry =
+        \\{module, main}.
+        \\{exports, [{'_botopink_main', 0}]}.
+        \\{attributes, []}.
+        \\{labels, 3}.
+        \\
+        \\{function, '_botopink_main', 0, 2}.
+        \\  {label, 1}.
+        \\    {line, []}.
+        \\    {func_info, {atom, main}, {atom, '_botopink_main'}, 0}.
+        \\  {label, 2}.
+        \\    {move, {literal, <<"hi~n">>}, {x, 0}}.
+        \\    {move, nil, {x, 1}}.
+        \\    {call_ext_only, 2, {extfunc, io, format, 2}}.
+        \\
+    ;
+    const log = try executeBeamAsm(alloc, entry, "main", &duplicate_aux_asm, std.testing.io);
+    defer alloc.free(log);
+    if (log.len == 0) return error.SkipZigTest;
+    try expectDuplicateAtomRefused(log);
 }

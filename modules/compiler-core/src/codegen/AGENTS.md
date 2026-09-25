@@ -2196,7 +2196,11 @@ first three are now enforced by the model, not by discipline:
   (`erlModuleAtom` → `crossModule.erlAtom`, so `std/dict` is `std@dict.erl`) and
   `-s <atom>` runs it; a second module of the program claiming an atom already
   taken is a loud `HARNESS ERROR:` RUN LOG, where the aux loop used to overwrite
-  the first file silently. An `AuxFile` whose `atom` is set is a per-`type`
+  the first file silently — pinned by a test per backend (`my__mod/user` and
+  `my_mod/user` both render `my_mod@user`), which found the check reading a
+  freed key: `seen` keys on the atom slices it is handed, so every aux atom is
+  kept in `aux_atoms` until the function returns, never freed per iteration.
+  An `AuxFile` whose `atom` is set is a per-`type`
   module (`GenerateResult.units`, policy 3): its NAME already is an atom, so it
   is written as it stands instead of being rendered a second time, which would
   collapse the `__` of `<path>__t__<decl>` to one `_`. A `.wat` carries no module
