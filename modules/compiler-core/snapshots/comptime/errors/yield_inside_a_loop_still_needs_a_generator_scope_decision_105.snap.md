@@ -1,16 +1,15 @@
 ----- SOURCE CODE
-#[@future]
-fn collected() -> @Future<i32> {
+fn collected() -> @Task<i32> {
     var n = 0;
     for ([1, 2, 3]) { x -> yield x * 2; };
     return n;
 }
 
 ----- ERROR
-error: yield-without-generator: `yield` needs a generator effect — `#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`; `#[@future]` is `@Future`, which does not
-  ┌─ :4:28
+error: yield-without-generator: `yield` needs `-> @Iterator<…>` or `-> @Stream<…>` return — this fn returns `@Task<…>`, which does not
+  ┌─ :3:28
   │
-4 │     for ([1, 2, 3]) { x -> yield x * 2; };
+3 │     for ([1, 2, 3]) { x -> yield x * 2; };
   │                            ^
 
-  hint: A `yield` feeds the nearest generator scope: mark the fn `#[@generator]` (`-> @Generator<T>`) or write the loop as `#[@generator] loop { … }` (decision 105).
+  hint: A `yield` feeds the nearest generator scope: return `@Iterator<T>` (or `@Stream<T>`) from the fn, or write the loop as `iter loop { … }` (decision 125). To collect in a plain fn, use `map` / `filter` or a `var`.

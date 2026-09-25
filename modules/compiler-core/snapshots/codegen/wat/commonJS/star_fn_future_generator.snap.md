@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@futureGenerator]
-fn stream() -> @FutureGenerator<i32, string> {
+fn stream() -> @Stream<@Result<i32, string>> {
     yield 1;
     yield 2;
 }
@@ -10,8 +9,8 @@ fn stream() -> @FutureGenerator<i32, string> {
 ----- JAVASCRIPT -- main.js
 ```javascript
 async function* stream() {
-    yield 1;
-    yield 2;
+    yield ({ ok: 1 });
+    yield ({ ok: 2 });
 }
 ```
 

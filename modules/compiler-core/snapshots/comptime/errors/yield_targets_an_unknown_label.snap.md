@@ -1,14 +1,13 @@
 ----- SOURCE CODE
-#[@resultGenerator]
-fn gen() -> @ResultGenerator<i32> {
+fn gen() -> @Iterator<i32> {
     yield :nope 1;
 }
 
 ----- ERROR
 error: yield-label-unbound: `yield` targets an unknown label
-  ┌─ :3:5
+  ┌─ :2:5
   │
-3 │     yield :nope 1;
+2 │     yield :nope 1;
   │     ^
 
-  hint: Label a generator fn (`fn … -> @Generator<T> :name`) or an annotated loop (`#[@generator] loop :name { … }`).
+  hint: Label a generator fn (`fn … -> @Iterator<T> :name`) or a prefixed loop (`iter loop :name { … }`).

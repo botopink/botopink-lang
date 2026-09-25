@@ -1,11 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@future]
-fn fetch(x: i32) -> @Future<i32> {
+fn fetch(x: i32) -> @Task<i32> {
     return x;
 }
-#[@future]
-fn loadTwice(x: i32) -> @Future<i32> {
+fn loadTwice(x: i32) -> @Task<i32> {
     val a = await fetch(x);
     return a + a;
 }
@@ -18,7 +16,7 @@ fn loadTwice(x: i32) -> @Future<i32> {
 {attributes, []}.
 {labels, 9}.
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Task — eager lowering
 {function, fetch, 1, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
@@ -31,7 +29,7 @@ fn loadTwice(x: i32) -> @Future<i32> {
     {deallocate, 1}.
     return.
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Task — eager lowering
 {function, loadTwice, 1, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.

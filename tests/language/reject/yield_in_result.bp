@@ -5,7 +5,6 @@
 //// context, so this program was accepted and the `yield` emitted into a
 //// function that is not a generator.
 
-#[@result]
 fn bad(n: i32) -> @Result<i32, string> {
     yield n;
 }

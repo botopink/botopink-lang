@@ -426,7 +426,6 @@ test "wat: list literal of records len" {
 // F5.1 — try a `#[@result]` fn, catch the error and yield a default.
 test "wat: try catch on result with default fallback" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn maybeFail(should_fail: bool) -> @Result<i32, string> {
         \\    if (should_fail) {
         \\        throw "boom";
@@ -444,7 +443,6 @@ test "wat: try catch on result with default fallback" {
 // F5.2 — try expression with catch handler — the error path runs.
 test "wat: try catch returns handler value on error" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn maybeFail(should_fail: bool) -> @Result<i32, string> {
         \\    if (should_fail) {
         \\        throw "boom";
@@ -462,7 +460,6 @@ test "wat: try catch returns handler value on error" {
 // F5.3 — `try` propagation: the inner Error variant propagates up.
 test "wat: try propagation in result fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn inner(should_fail: bool) -> @Result<i32, string> {
         \\    if (should_fail) {
         \\        throw "inner-fail";
@@ -470,7 +467,6 @@ test "wat: try propagation in result fn" {
         \\        return 7;
         \\    }
         \\}
-        \\#[@result]
         \\fn outer(should_fail: bool) -> @Result<i32, string> {
         \\    val v = try inner(should_fail);
         \\    return v + 1;

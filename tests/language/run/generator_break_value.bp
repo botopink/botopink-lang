@@ -14,36 +14,32 @@
 //// run the cell; the eager erlang and wasm scopes are pinned in
 //// `expected-failures.txt`.
 
-#[@resultGenerator]
-fn upto(n: i32) -> @ResultGenerator<i32, string> {
+fn upto(n: i32) -> @Iterator<@Result<i32, string>> {
     var i = 0;
     while (i < n) { yield i; i = i + 1; };
     break 7;
 }
 
-#[@resultGenerator]
-fn ends() -> @ResultGenerator<i32, string> {
+fn ends() -> @Iterator<@Result<i32, string>> {
     yield 1;
     break;
     yield 2;
 }
 
 // The same rule on the infallible generator: `#[@generator]` too.
-#[@generator]
-fn last() -> @Generator<i32> {
+fn last() -> @Iterator<i32> {
     yield 5;
     break 6;
 }
 
-// A plain `fn` iterates a `@Generator<T>`.
-fn plainDigits(g: @Generator<i32>) -> string {
+// A plain `fn` iterates a `@Iterator<T>`.
+fn plainDigits(g: @Iterator<i32>) -> string {
     var acc = "";
     for (g) { x -> acc = acc + x.toString(); };
     return acc;
 }
 
-#[@result]
-fn digits(g: @ResultGenerator<i32, string>) -> @Result<string, string> {
+fn digits(g: @Iterator<@Result<i32, string>>) -> @Result<string, string> {
     var acc = "";
     for (g) { x -> acc = acc + x.toString(); };
     return acc;

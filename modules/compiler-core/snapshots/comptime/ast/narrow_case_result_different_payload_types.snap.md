@@ -2,7 +2,6 @@
 ```botopink
 type User(name: string)
 type AppError { NotFound, Timeout(msg: string) }
-#[@result]
 fn fetchUser(id: i32) -> @Result<User, AppError> {
     if (id == 0) { throw AppError.NotFound; };
     return User(name: "alice");

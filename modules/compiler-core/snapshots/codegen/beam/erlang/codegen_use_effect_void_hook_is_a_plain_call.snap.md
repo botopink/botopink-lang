@@ -4,11 +4,9 @@ val Element = type implement @Context<Element> { }
 fn cleanup() {
     0;
 }
-#[@use]
 fn effect() -> @Component<Element, i32> {
     0;
 }
-#[@use]
 fn Widget() -> @Component<Element, Element> {
     use effect { -> cleanup(); };
     Element();

@@ -407,11 +407,14 @@ const Builder = struct {
                 }), .sep = "; " } },
             }) };
         }
-        // `@Future<T>` → `Promise<T>`; `@ResultGenerator<T>` → `IterableIterator<T>`;
-        // `@FutureGenerator<T, E>` → `AsyncGenerator<T>` (TypeScript
-        // tracks only the item type).
+        // Decisions 120 / 122: `@Task<T>` → `Promise<T>`; `@Component<C, T>`
+        // → `Promise<T>` (it extends `@Task`); `@Iterator<T>` →
+        // `IterableIterator<T>`; `@Stream<T>` → `AsyncGenerator<T>`.
+        if (std.mem.eql(u8, g.name, "Component") and g.args.len >= 2) {
+            return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{try self.typeRef(g.args[1])}) } };
+        }
         const host: ?[]const u8 =
-            if (std.mem.eql(u8, g.name, "Future")) "Promise" else if (std.mem.eql(u8, g.name, "ResultGenerator")) "IterableIterator" else if (std.mem.eql(u8, g.name, "FutureGenerator")) "AsyncGenerator" else null;
+            if (std.mem.eql(u8, g.name, "Task")) "Promise" else if (std.mem.eql(u8, g.name, "Iterator")) "IterableIterator" else if (std.mem.eql(u8, g.name, "Stream")) "AsyncGenerator" else null;
         if (host) |h| if (g.args.len >= 1) {
             return .{ .generic = .{ .name = h, .args = try self.b.types(&.{try self.typeRef(g.args[0])}) } };
         };

@@ -1,13 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@generator]
-fn fromList<T>(xs: Array<T>) -> @Generator<T> {
+fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
     for (xs) { item ->
         yield item;
     };
 }
 
-fn toList<T>(iter: @Generator<T>) -> Array<T> {
+fn toList<T>(iter: @Iterator<T>) -> Array<T> {
     var out = [];
     for (iter) { item ->
         out.push(item);
@@ -27,7 +26,7 @@ fn main() {
 {attributes, []}.
 {labels, 48}.
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Iterator — eager lowering
 {function, fromList, 1, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.

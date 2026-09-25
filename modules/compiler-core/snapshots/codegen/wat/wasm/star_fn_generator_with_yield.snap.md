@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@resultGenerator]
-fn counter() -> @ResultGenerator<i32> {
+fn counter() -> @Iterator<i32> {
     yield 1;
     yield 2;
     yield 3;
@@ -13,7 +12,7 @@ fn counter() -> @ResultGenerator<i32> {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; #[@future] / #[@futureGenerator] — eager lowering
+  ;; @Iterator — eager lowering
   (func $counter (result i32)
     (local $__yield_fn i32)
     i32.const 0

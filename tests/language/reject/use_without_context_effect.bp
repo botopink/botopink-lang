@@ -4,7 +4,6 @@
 //// ordinary fn (question 92 (b)).
 
 type Element(count: i32) implement @Context<Element>
-#[@use]
 fn state(initial: i32) -> @Component<Element, i32> { return initial; }
 
 fn Widget() -> Element {

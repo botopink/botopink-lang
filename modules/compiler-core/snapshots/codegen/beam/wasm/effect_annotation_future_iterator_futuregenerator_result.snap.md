@@ -1,19 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@future]
-fn fetch(x: i32) -> @Future<i32> {
+fn fetch(x: i32) -> @Task<i32> {
     return x;
 }
-#[@resultGenerator]
-fn counter() -> @ResultGenerator<i32> {
+fn counter() -> @Iterator<i32> {
     yield 1;
     yield 2;
 }
-#[@futureGenerator]
-fn stream() -> @FutureGenerator<i32, string> {
+fn stream() -> @Stream<@Result<i32, string>> {
     yield 1;
 }
-#[@result]
 fn parse(n: i32) -> @Result<i32, string> {
     if (n < 0) { throw "negative"; };
     return n;
@@ -26,12 +22,12 @@ fn parse(n: i32) -> @Result<i32, string> {
   (memory (export "memory") 1)
   (data (i32.const 256) "\08\00\00\00negative")
   (global $__heap_ptr (mut i32) (i32.const 268))
-  ;; #[@future] / #[@futureGenerator] — eager lowering
+  ;; @Task — eager lowering
   (func $fetch (param $x i32) (result i32)
     local.get $x
     return
   )
-  ;; #[@future] / #[@futureGenerator] — eager lowering
+  ;; @Iterator — eager lowering
   (func $counter (result i32)
     (local $__yield_fn i32)
     i32.const 0
@@ -47,14 +43,27 @@ fn parse(n: i32) -> @Result<i32, string> {
     local.set $__yield_fn
     local.get $__yield_fn ;; everything the body yielded
   )
-  ;; #[@future] / #[@futureGenerator] — eager lowering
+  ;; @Stream — eager lowering
   (func $stream (result i32)
     (local $__yield_fn i32)
+    (local $_res0 i32)
     i32.const 0
     call $__arr_new
     local.set $__yield_fn
     local.get $__yield_fn
+    global.get $__heap_ptr
+    local.set $_res0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $_res0
+    i32.const 0
+    i32.store ;; Result tag (Ok)
+    local.get $_res0
     i32.const 1
+    i32.store offset=4 ;; payload
+    local.get $_res0
     call $__arr_push
     local.set $__yield_fn
     local.get $__yield_fn ;; everything the body yielded

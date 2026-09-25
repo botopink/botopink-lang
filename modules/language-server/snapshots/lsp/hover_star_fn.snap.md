@@ -1,16 +1,14 @@
 ----- SOURCE
 ```botopink
-#[@resultGenerator]
-fn counter() -> @ResultGenerator<i32> :gen { yield 1; }
+fn counter() -> @Iterator<i32> :gen { yield 1; }
    ↑
 ```
 
------ HOVER at (line 1, char 3)
+----- HOVER at (line 0, char 3)
 kind: markdown
 
 ```botopink
-#[@resultGenerator]
-fn counter() -> @ResultGenerator<i32> :gen
+fn counter() -> @Iterator<i32> :gen
 ```
 
 ---

@@ -24,17 +24,17 @@ test "parser: empty interface" {
     try h.assertParser(std.testing.allocator, @src(), "val Drawable = behavior {}");
 }
 
-test "parser: #[@future] annotation sets FnDecl.effect" {
+test "parser: a @Task return sets FnDecl.effect" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lx = Lexer.init("#[@future]\nfn f() -> @Future<i32> { return 0; }");
+    var lx = Lexer.init("fn f() -> @Task<i32> { return 0; }");
     const tokens = try lx.scanAll(alloc);
     var p = Parser.init(tokens);
     const program = try p.parse(alloc);
     try std.testing.expect(program.decls.len == 1);
     try std.testing.expect(program.decls[0] == .@"fn");
-    try std.testing.expectEqual(ast.EffectKind.future, program.decls[0].@"fn".effect.?);
+    try std.testing.expectEqual(ast.EffectKind.task, program.decls[0].@"fn".effect.?);
 }
 
 test "parser: a plain fn has no effect" {
@@ -945,37 +945,33 @@ test "parser: type guard ---- snapshot round-trip" {
 // v0.beta.19 (see errors.zig's deprecated-*fn test) and the sources had
 // already been migrated to the annotation form.
 
-test "parser: effect fn ---- #[@future] declaration" {
+test "parser: effect fn ---- @Task declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@future]
-        \\fn fetch(url: string) -> @Future<Response> {
+        \\fn fetch(url: string) -> @Task<Response> {
         \\    return download(url);
         \\}
     );
 }
 
-test "parser: effect fn ---- #[@resultGenerator] declaration" {
+test "parser: effect fn ---- @Iterator-of-Result declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@resultGenerator]
-        \\fn fib() -> @ResultGenerator<Int> {
+        \\fn fib() -> @Iterator<Int> {
         \\    yield 1;
         \\}
     );
 }
 
-test "parser: effect fn ---- #[@futureGenerator] declaration" {
+test "parser: effect fn ---- @Stream declaration" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@futureGenerator]
-        \\pub fn stream() -> @FutureGenerator<Int, Error> {
+        \\pub fn stream() -> @Stream<@Result<Int, Error>> {
         \\    yield 1;
         \\}
     );
 }
 
-test "parser: effect fn ---- #[@resultGenerator] label after return type" {
+test "parser: effect fn ---- @Iterator-of-Result label after return type" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@resultGenerator]
-        \\fn gen() -> @ResultGenerator<Int> :gen {
+        \\fn gen() -> @Iterator<Int> :gen {
         \\    yield :gen 1;
         \\}
     );

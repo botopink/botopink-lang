@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@futureGenerator]
-fn stream() -> @FutureGenerator<i32, string> {
+fn stream() -> @Stream<@Result<i32, string>> {
     yield 1;
     yield 2;
 }
@@ -11,9 +10,9 @@ fn stream() -> @FutureGenerator<i32, string> {
 ```erlang
 -module(test@main).
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Stream — eager lowering
 stream() ->
-    [1, 2].
+    [{ok, 1}, {ok, 2}].
 ```
 
 ----- RUN LOG -----

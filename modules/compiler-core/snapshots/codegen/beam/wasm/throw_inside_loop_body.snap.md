@@ -1,6 +1,5 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn validate(items: i32) -> @Result<i32, string> {
     for (0..items) { i ->
         if (i > 2) { throw "too many"; };

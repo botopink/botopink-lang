@@ -502,8 +502,7 @@ test "infer: pub val ---- infers same as private val" {
 
 test "infer: star fn ---- async returns @Future is valid" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@future]
-        \\fn fetch(x: i32) -> @Future<i32> {
+        \\fn fetch(x: i32) -> @Task<i32> {
         \\    return x;
         \\}
     );
@@ -511,8 +510,7 @@ test "infer: star fn ---- async returns @Future is valid" {
 
 test "infer: star fn ---- generator returns @ResultGenerator is valid" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@resultGenerator]
-        \\fn gen() -> @ResultGenerator<i32> {
+        \\fn gen() -> @Iterator<i32> {
         \\    yield 1;
         \\}
     );
@@ -714,7 +712,6 @@ test "infer: std package ---- a leaf the module does not declare is refused at t
 
 test "infer: builtin result namespace ---- qualified calls typecheck" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, string> {
         \\    if (n < 0) { throw "negative"; };
         \\    return n;

@@ -1,6 +1,5 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn parse() -> @Result<i32, string> {
     return 42;
 }

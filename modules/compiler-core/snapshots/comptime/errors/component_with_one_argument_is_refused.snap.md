@@ -1,6 +1,5 @@
 ----- SOURCE CODE
 val Element = type implement @Context<Element> { }
-#[@use]
 fn Card() -> @Component<Element> {
     return Element();
 }

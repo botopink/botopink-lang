@@ -1,10 +1,8 @@
 ----- SOURCE CODE
 val Element = type implement @Context<Element> { }
-#[@use]
 fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
-#[@use]
 fn Counter() -> @Component<Element, Element> {
     val #(count, setCount) = use state(0);
     Element();
@@ -12,9 +10,9 @@ fn Counter() -> @Component<Element, Element> {
 
 ----- ERROR
 error: use-tuple-arity: `val #(…)` from a `use` binds the tuple's elements
-  ┌─ :8:5
+  ┌─ :6:5
   │
-8 │     val #(count, setCount) = use state(0);
+6 │     val #(count, setCount) = use state(0);
   │     ^
 
   the pattern binds 2 name(s), but the hook's Return type is not a tuple

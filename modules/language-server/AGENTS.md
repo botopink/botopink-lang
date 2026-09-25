@@ -53,7 +53,9 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   types, interface methods vs free fns, the `*fn` effect marker, comptime params,
   enum members, record fields (`property`), generic type parameters, parameter
   *uses* inside the body, named-argument labels and `true`/`false`; effect fns
-  (`#[@resultGenerator]`, `*fn`) carry the `async` modifier; plus a sub-language overlay
+  (a `-> @Task` / `@Iterator` / … return; the annotation that used to mark them left
+  with decision 118, so the modifier is the tooling thread's to restore) carry the
+  `async` modifier; plus a sub-language overlay
   inside string literals — see below),
   `codeAction` (add type annotation, remove unused import, add missing case
   patterns, add missing import),

@@ -1,15 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@future]
-pub fn loadOne(x: i32) -> @Future<i32> {
+pub fn loadOne(x: i32) -> @Task<i32> {
     return x;
 }
-#[@resultGenerator]
-pub fn count() -> @ResultGenerator<i32> {
+pub fn count() -> @Iterator<i32> {
     yield 1;
 }
-#[@futureGenerator]
-pub fn pulses() -> @FutureGenerator<i32, string> {
+pub fn pulses() -> @Stream<@Result<i32, string>> {
     yield 1;
 }
 ```
@@ -21,7 +18,7 @@ pub fn pulses() -> @FutureGenerator<i32, string> {
 {attributes, []}.
 {labels, 10}.
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Task — eager lowering
 {function, loadOne, 1, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
@@ -34,7 +31,7 @@ pub fn pulses() -> @FutureGenerator<i32, string> {
     {deallocate, 1}.
     return.
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Iterator — eager lowering
 {function, count, 0, 5}.
   {label, 4}.
     {line, [{location, "test@main.erl", 2}]}.
@@ -52,7 +49,7 @@ pub fn pulses() -> @FutureGenerator<i32, string> {
     {deallocate, 1}.
     return.
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Stream — eager lowering
 {function, pulses, 0, 7}.
   {label, 6}.
     {line, [{location, "test@main.erl", 3}]}.
@@ -62,6 +59,9 @@ pub fn pulses() -> @FutureGenerator<i32, string> {
     {init_yregs, {list, [{y, 0}]}}.
     {move, nil, {y, 0}}.
     {move, {integer, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 0}, {y, 0}}.
   {label, 9}.

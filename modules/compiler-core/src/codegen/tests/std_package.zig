@@ -19,7 +19,6 @@ const h = @import("helpers.zig");
 
 test "js: builtin result namespace ---- qualified call lowers inline" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, string> {
         \\    if (n < 0) { throw "negative"; };
         \\    return n;

@@ -1,6 +1,5 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn parse(n: i32) -> @Result<string, string> {
     if (n < 0) { throw "negative"; };
     return "ok";

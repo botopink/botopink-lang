@@ -4,7 +4,7 @@
 pub fn main() {
     var n = 0;
     for :outer ([1, 2, 3]) { x ->
-        val g = #[@generator] loop {
+        val g = iter loop {
             n = n + 1;
             if (n > 2) { break :outer; };
             yield n;

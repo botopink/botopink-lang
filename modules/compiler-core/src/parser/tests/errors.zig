@@ -230,19 +230,18 @@ test "parser error: removed error union syntax T!E" {
 }
 
 test "parser error: deprecated *fn prefix" {
-    // v0.beta.12 introduced `#[@<effect>]` as the canonical effect marker and
-    // deprecated `*fn`; v0.beta.19 hard-removes the `*fn` parse path. A user
-    // migrating from an old codebase sees this diagnostic, which names the
-    // canonical replacement and points at the per-wrapper effect mapping.
+    // v0.beta.19 hard-removed the `*fn` parse path; since decision 118 the
+    // return type is the effect. A user migrating from an old codebase sees
+    // this diagnostic, which names the canonical replacement.
     try h.expectParseError(std.testing.allocator,
         \\error[deprecated-star-fn]: the `*fn` prefix was removed in v0.beta.19
         \\ --> <test>:1:1
         \\  |
         \\1 | *fn parse(n: i32) -> @Result<i32, string> { return n; }
-        \\  | ^^^ use a `#[@<effect>]` annotation instead
+        \\  | ^^^ write a plain `fn` whose return type is the effect wrapper
         \\  |
-        \\  = note: the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@ResultGenerator<…>` to `#[@resultGenerator]`, `@FutureGenerator<…>` to `#[@futureGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to what is now `#[@use]` (`-> @Component<…>`)
-        \\  = hint: rewrite as `#[@<effect>] fn <name>(...) -> @<Wrapper><...> { ... }`
+        \\  = note: the `*fn` form was deprecated in v0.beta.12; since decision 118 there is no effect marker at all — the return type is the effect
+        \\  = hint: rewrite as `fn <name>(...) -> @<Wrapper><...> { ... }` — `@Result`, `@Task`, `@Component`, `@Iterator` or `@Stream`
         \\
         \\
     , "*fn parse(n: i32) -> @Result<i32, string> { return n; }");

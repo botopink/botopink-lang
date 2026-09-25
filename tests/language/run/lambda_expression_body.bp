@@ -20,7 +20,6 @@
 //// only checked the program RAN would have passed before the fix — the defect
 //// is a wrong answer, not a crash — so every line asserts the VALUE.
 
-#[@result]
 fn tenth(x: i32) -> @Result<i32, string> {
     if (x > 1) { return x * 10; } else { throw "too small"; }
 }

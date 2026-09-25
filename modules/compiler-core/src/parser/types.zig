@@ -236,6 +236,27 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
         // `@Decl` (the annotation-processor reflection handle) is the one builtin
         // written WITHOUT type arguments — bare, like a nominal type. A decorator
         // declares its first parameter as `comptime _: @Decl`.
+        // Decisions 120 / 122 / 127 / 128 — the removed effect wrappers are
+        // recognised only to be refused, located on the wrapper's name.
+        const removedKind: ?parser.ParseErrorType = if (std.mem.eql(u8, name, "Future"))
+            .effectTypeRemovedFuture
+        else if (std.mem.eql(u8, name, "Generator"))
+            .effectTypeRemovedGenerator
+        else if (std.mem.eql(u8, name, "ResultGenerator"))
+            .effectTypeRemovedResultGenerator
+        else if (std.mem.eql(u8, name, "FutureGenerator"))
+            .effectTypeRemovedFutureGenerator
+        else if (std.mem.eql(u8, name, "Use"))
+            .effectTypeRemovedUse
+        else if (std.mem.eql(u8, name, "AsyncIterator") or std.mem.eql(u8, name, "Iterable") or
+            std.mem.eql(u8, name, "IteratorStep") or std.mem.eql(u8, name, "Yield"))
+            .effectTypeRemovedLegacy
+        else
+            null;
+        if (removedKind) |k| {
+            this.parseError = ParseErrorInfo.fromToken(k, tok);
+            return ParseError.UnexpectedToken;
+        }
         if (std.mem.eql(u8, name, "Decl") and !this.check(.lessThan)) {
             return ast.TypeRef{ .generic = .{ .name = name, .args = &.{}, .is_builtin = true } };
         }
@@ -249,6 +270,12 @@ fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.Typ
             args.deinit(alloc);
         }
         while (!this.checkGenericClose() and !this.check(.endOfFile)) {
+            // Decision 122 — `@Iterator<T, E>`: the second argument is the
+            // removed error parameter, refused where it is written.
+            if (args.items.len == 1 and std.mem.eql(u8, name, "Iterator")) {
+                this.parseError = ParseErrorInfo.fromToken(.iteratorErrorParamRemoved, this.peek());
+                return ParseError.UnexpectedToken;
+            }
             try args.append(alloc, try this.parseTypeRef(alloc));
             if (!this.match(.comma)) break;
             // RG4 (§1G) — a comma followed by another comma or by the closing

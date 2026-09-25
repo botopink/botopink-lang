@@ -5,13 +5,11 @@
 
 type Element(count: i32) implement @Context<Element>
 
-#[@use]
 fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
     return #(base, push);
 }
 
-#[@use]
 fn Liked() -> @Component<Element, Element> {
     val #(shown) = use optimistic(12, { c, a -> c + a });
     return Element(count: shown);

@@ -9,10 +9,65 @@
 # the cell into a hard assert. An unlisted cell that fails always fails the gate.
 #
 # Owners are the 1.0.4-beta fronts (specs/1.0.4-beta/fronts.md).
-jhonstart          commonJS  21-effect-chain  step 2 window: the compiler spells decisions 102/104 (`#[@use]`, `@Use<C, T>`, `@Component<T>`, `@Context<Base>`), and the library still writes `#[@context]` / `@Context<Element, R>`; deleted by the commit after the jhonstart sweep (step 4)
-jhonstart          erlang    21-effect-chain  the same window
-jhonstart-counter  commonJS  21-effect-chain  the same window — the example compiles against jhonstart's hooks
-jhonstart-html     commonJS  21-effect-chain  the same window
-jhonstart-html     erlang    21-effect-chain  the same window
-jhonstart-todo     commonJS  21-effect-chain  the same window
-emilia-card        commonJS  21-effect-chain  the same window — the example renders through jhonstart
+jhonstart          commonJS  24-effects-by-return  decisions 118–128: the compiler refuses `#[@use]` / `#[@future]` / `@Future` / `@Use` and the other pre-118 spellings the library still writes; deleted by the commit after the library's front-24 sweep (`front/24-libs`)
+jhonstart          erlang    24-effects-by-return  decisions 118–128: the compiler refuses `#[@use]` / `#[@future]` / `@Future` / `@Use` and the other pre-118 spellings the library still writes; deleted by the commit after the library's front-24 sweep (`front/24-libs`)
+jhonstart-counter  commonJS  24-effects-by-return  decisions 118–128: the compiler refuses `#[@use]` / `#[@future]` / `@Future` / `@Use` and the other pre-118 spellings the library still writes; deleted by the commit after the library's front-24 sweep (`front/24-libs`)
+jhonstart-html     commonJS  24-effects-by-return  decisions 118–128: the compiler refuses `#[@use]` / `#[@future]` / `@Future` / `@Use` and the other pre-118 spellings the library still writes; deleted by the commit after the library's front-24 sweep (`front/24-libs`)
+jhonstart-html     erlang    24-effects-by-return  decisions 118–128: the compiler refuses `#[@use]` / `#[@future]` / `@Future` / `@Use` and the other pre-118 spellings the library still writes; deleted by the commit after the library's front-24 sweep (`front/24-libs`)
+jhonstart-todo     commonJS  24-effects-by-return  decisions 118–128: the compiler refuses `#[@use]` / `#[@future]` / `@Future` / `@Use` and the other pre-118 spellings the library still writes; deleted by the commit after the library's front-24 sweep (`front/24-libs`)
+emilia-card        commonJS  24-effects-by-return  decisions 118–128: the compiler refuses `#[@use]` / `#[@future]` / `@Future` / `@Use` and the other pre-118 spellings the library still writes; deleted by the commit after the library's front-24 sweep (`front/24-libs`)
+emilia             commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia             erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-backgrounds commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-backgrounds erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-borders     commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-borders     erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-cascade     commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-cascade     erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-effects     commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-effects     erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-grid        commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-grid        erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-layout      commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-layout      erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-modifiers   commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-modifiers   erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-outline-ring commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-outline-ring erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-spacing     commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-spacing     erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-test        commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-test        erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-text-decoration commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-text-decoration erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-theme       commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-theme       erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-transforms  commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-transforms  erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-transitions commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-transitions erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-typography  commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+emilia-typography  erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+jhonstart-markup   commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+jhonstart-markup   erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+jhonstart-test     commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+jhonstart-test     erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-libs` lands
+rakun              commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-actuator     erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-cache        erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-client       erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-container-example commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-data         erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-example      commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-hateoas      erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-logging      erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-messaging    erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-scheduling   erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-security     erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-session      erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-ssr-example  commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-test         commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-test         erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-validation   commonJS  24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-validation   erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands
+rakun-web          erlang    24-effects-by-return  the same window — the cell compiles against a library that still writes the pre-118 effect spellings; deleted by the commit after `front/24-rakun` lands

@@ -265,7 +265,6 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // is inferred. Bail out early when contributions exist — the spliced
     // re-analysis does the real inference.
     try validateDecorators(env, program);
-    try validateEffectAnnotations(env, program);
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
     if (env.contributions.items.len > 0) {
@@ -340,7 +339,6 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // test`. The serialized handles read only the AST, so no body inference is
     // needed first.)
     try validateDecorators(env, program);
-    try validateEffectAnnotations(env, program);
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
     if (env.contributions.items.len > 0) {
@@ -1115,7 +1113,7 @@ fn contextBaseFromImplements(arena: std.mem.Allocator, impls: []const ast.TypeRe
 /// find an owner and let a wrapper effect activate on its own, are revoked.
 fn contextInfoFromReturn(env: *Env, retType: ?ast.TypeRef, eff: ?ast.EffectKind, fnName: []const u8) InferError!envMod.FnContext {
     const display = if (retType) |rt| try typeRefToString(env.arena, rt) else "void";
-    const annotated = eff == .use;
+    const annotated = eff == .component;
     if (retType) |rt| switch (rt) {
         .generic => |g| {
             if (std.mem.eql(u8, g.name, "Component")) {
@@ -2524,7 +2522,7 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
         env.starFn = prevStarFn;
         env.labelStack.shrinkRetainingCapacity(prevLabelsLen);
     }
-    // §A3 follow-up — tests run inside an implicit future context so
+    // §A3 follow-up — tests run inside an implicit task context so
     // callers can `await flush()` / `await fetch(url)` directly in
     // assertions. The lowering side (`commonJS.emitTestFn`) emits an
     // `async function` to match.
@@ -2533,7 +2531,7 @@ fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
         .allowsYield = false,
         .iterItem = null,
         .fnLabel = null,
-        .effect = .future,
+        .effect = .task,
     };
     env.labelStack.shrinkRetainingCapacity(0);
 
@@ -2731,37 +2729,6 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
         },
         else => {},
     };
-}
-
-/// Reject `#[@<effect>]` annotations where an effect is implementation-only
-/// (F1b): on an interface method, which is declarative and expresses its effect
-/// through the return wrapper alone. (Bodyless top-level `declare fn` is caught
-/// in `inferFnDecl`.)
-fn validateEffectAnnotations(env: *Env, program: ast.Program) InferError!void {
-    for (program.decls) |decl| switch (decl) {
-        .behavior => |i| {
-            for (i.methods) |m| {
-                if (effectAnnotationOf(m.annotations) != null) {
-                    env.lastError = TypeError.custom(
-                        "effect annotations mark an implementation; declare the effect in the return type",
-                        "A behavior method expresses its effect through the return wrapper (e.g. `-> @Future<T>`), with no annotation.",
-                    );
-                    return error.TypeError;
-                }
-            }
-        },
-        else => {},
-    };
-}
-
-/// The effect named by a builtin `#[@<effect>]` annotation, or null.
-fn effectAnnotationOf(anns: []const ast.Annotation) ?ast.EffectKind {
-    for (anns) |a| {
-        if (a.is_builtin) {
-            if (ast.EffectKind.fromAnnotationName(a.name)) |k| return k;
-        }
-    }
-    return null;
 }
 
 /// Check one declaration's annotation list. `owner` names the annotated
@@ -3462,49 +3429,6 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         }
     }
 
-    // ── effect annotation is implementation-only (F1b) ──────────────────────
-    // A `#[@<effect>]` marks a `fn` with a body; a bodyless `declare fn` (and a
-    // `.d.bp` declaration) expresses its effect through the return wrapper only.
-    //
-    // §A3 EXCEPTION — `#[@result] declare fn` / `#[@future] declare fn` are
-    // allowed when the fn carries at least one `@external(...)` annotation and
-    // its return type is the matching wrapper (`@Result<R, E>` / `@Future<T,
-    // E>`): the host template owns the wrapper shape, and the marker signals
-    // "this declare carries effect-wrapping at the host boundary" rather than
-    // wrapping a body. All other effects + the bare (no-external) form remain
-    // rejected.
-    if (f.body.len == 0 and f.effectAnnotation() != null) {
-        const allow = blk: {
-            const e = f.effectAnnotation() orelse break :blk false;
-            if (e != .result and e != .future) break :blk false;
-            var hasExternal = false;
-            for (f.annotations) |a| {
-                if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) {
-                    hasExternal = true;
-                    break;
-                }
-            }
-            if (!hasExternal) break :blk false;
-            const expectedWrapper = e.returnWrapper();
-            const isWrapperReturn = blk2: {
-                const rt = f.returnType orelse break :blk2 false;
-                break :blk2 switch (rt) {
-                    .named => |n| std.mem.eql(u8, n, expectedWrapper),
-                    .generic => |g| std.mem.eql(u8, g.name, expectedWrapper),
-                    else => false,
-                };
-            };
-            break :blk isWrapperReturn;
-        };
-        if (!allow) {
-            env.lastError = TypeError.custom(
-                "effect annotations mark an implementation; declare the effect in the return type",
-                "A `declare fn` expresses its effect through the return wrapper (e.g. `-> @Future<T>`), with no annotation.",
-            );
-            return error.TypeError;
-        }
-    }
-
     // Build generic map.
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
     defer genericMap.deinit();
@@ -3615,113 +3539,56 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     env.inTemplateFn = if (f.returnType) |rt| rt.isTemplateReturnType() else false;
     defer env.inTemplateFn = savedInTemplate;
 
-    // Determine how `throw` is checked inside this body:
-    //   - no declared return type             → unchecked (lenient: e.g. `catch throw …`)
-    //   - `#[@result] fn -> @Result<D, E>`    → checked-Result effect: thrown value
-    //     must match `E`; `return`/`throw` construct `{ok, V}`/`{error, E}` values
-    //   - plain `fn -> @Result<D, E>`         → NO special treatment: `throw` stays
-    //     a raw host exception (unchecked), values are not wrapped
-    //   - any other return type               → `throw` is illegal
-    const isResultFn = f.returnsResult();
+    // Decision 118 — the effect is read from the SYNTACTIC return
+    // (`f.effect`, set by the parser from the written wrapper). Decision 121 —
+    // `throw` / `try` follow the fallible channel, computed from the return
+    // apart from the level:
+    //   - no declared return type          → unchecked (lenient: e.g. `catch throw …`)
+    //   - a `@Result<U, E>` in some layer   → checked: the thrown value must be `E`;
+    //     `return` / `throw` construct `{ok, V}` / `{error, E}` values
+    //   - any other return type             → `throw` / `try` are illegal
+    //     (`effect-try-without-fallible-channel`), or — under an alias to an
+    //     effect wrapper — `effect-wrapper-behind-alias`
     const eff = f.effect;
     var throwCtx: envMod.ThrowContext = .unchecked;
     if (f.returnType) |_| {
         throwCtx = .plain;
-        if (isResultFn) {
-            throwCtx = .unchecked;
-            if (eff == .result) {
-                const rtDeref = retType.deref();
-                if (rtDeref.* == .named and rtDeref.named.args.len >= 2) {
-                    throwCtx = .{ .result = rtDeref.named.args[1] };
-                }
-            }
+        if (eff) |e| {
+            if (fallibleErrorOf(e, retType)) |errTy| throwCtx = .{ .result = errTy };
         }
-        // R6 (§2) — `throw` belongs to a fallible-channel effect. Allow it in
-        // `#[@future]` / `#[@resultGenerator]` / `#[@futureGenerator]` bodies too — the
-        // auto-wrap in `transform.zig` rewrites each form to the right wrapper.
-        // `#[@generator]` keeps `.plain` (it has no error channel), and so
-        // does `#[@use]`: its `throw` has no lowering yet, so it reds with
-        // `effect-throw-without-fallible-channel` rather than miscompiling.
-        if (eff) |e| switch (e) {
-            .future, .resultGenerator, .futureGenerator => throwCtx = .unchecked,
-            else => {},
-        };
     }
     const savedThrowCtx = env.throwContext;
     env.throwContext = throwCtx;
     defer env.throwContext = savedThrowCtx;
 
-    // ── effect ↔ return-type validation + async/generator context (F1) ───────
-    // An effect annotation must match its return wrapper (`#[@future]` →
-    // `@Future<…>`, etc.); a plain `fn` must NOT return one of the async
-    // wrappers (those need an effect annotation).
-    const wrapperKind = classifyWrapperReturn(retType);
-    const fnLoc: ?ast.Loc = if (f.body.len > 0) f.body[0].expr.getLoc() else null;
-    if (eff) |e| {
-        if (!effectMatchesReturn(env, e, retType)) {
-            // R3 / R4 — the annotation effect kind disagrees with the return
-            // wrapper kind. The diagnostic carries the stable code from
-            // `comptime/diagnostics.zig` so snapshot consumers can key on it.
-            const retDeref = retType.deref();
-            // Decision 102 — an owner type written bare under `#[@use]`
-            // (`-> Element`) is the form that left: the wrapper is MISSING,
-            // not wrong. Every other named return names the wrong wrapper.
-            const bareOwner = e == .use and ownerBaseOfType(env, retType) != null;
-            const code: []const u8 = if (retDeref.* == .named and !bareOwner)
-                diagnostics.effect_wrapper_mismatch
-            else
-                diagnostics.effect_missing_wrapper;
-            const wanted: []const u8 = if (e == .use)
-                "a `-> @Component<C, T>`"
-            else
-                try std.fmt.allocPrint(env.arena, "a `-> @{s}<…>`", .{e.returnWrapper()});
-            const msg = if (e == .use and retDeref.* == .named and std.mem.eql(u8, retDeref.named.name, "Component"))
-                try std.fmt.allocPrint(
-                    env.arena,
-                    "{s}: a component's `T` implements `@Context<C>` with the `C` of its `@Component<C, T>` — here `T` anchors elsewhere",
-                    .{code},
-                )
-            else
-                try std.fmt.allocPrint(
-                    env.arena,
-                    "{s}: `#[@{s}]` requires {s} return type",
-                    .{ code, e.annotationName(), wanted },
-                );
-            var err = TypeError.custom(msg, "The effect annotation and the return wrapper must name the same effect.");
-            if (fnLoc) |l| err = err.withLoc(l);
-            env.lastError = err;
-            return error.TypeError;
+    // Decision 118 rule 1 — an alias to an effect wrapper types the function
+    // but activates nothing: a capability used in its body is refused as
+    // `effect-wrapper-behind-alias`, naming the wrapper to write.
+    const savedAliasWrapper = env.aliasWrapper;
+    env.aliasWrapper = if (f.returnType != null and ast.EffectKind.fromReturnType(f.returnType) == null) aliasedWrapperOf(retType) else null;
+    defer env.aliasWrapper = savedAliasWrapper;
+
+    // Decision 128 — `@Component<C, T>` takes its base and its `T`: a
+    // component's `T` implements `@Context<C>` with the `C` it is written with.
+    if (eff != null and eff.? == .component) {
+        const rd = retType.deref();
+        if (rd.* == .named and rd.named.args.len >= 2) {
+            if (ownerBaseOfType(env, rd.named.args[1])) |ownerBase| {
+                if (baseNameOfType(rd.named.args[0])) |base| {
+                    if (!std.mem.eql(u8, ownerBase, base)) {
+                        const msg = try std.fmt.allocPrint(
+                            env.arena,
+                            "{s}: a component's `T` implements `@Context<C>` with the `C` of its `@Component<C, T>` — here `T` anchors at `{s}`, not `{s}`",
+                            .{ diagnostics.effect_wrapper_mismatch, ownerBase, base },
+                        );
+                        var err = TypeError.custom(msg, "Write the base the component's `T` owns: `-> @Component<" ++ "B, T>` where `T implement @Context<B>`.");
+                        if (f.returnTypeLoc.line != 0) err = err.withLoc(f.returnTypeLoc);
+                        env.lastError = err;
+                        return error.TypeError;
+                    }
+                }
+            }
         }
-    } else if (wrapperKind != .none) {
-        var err = TypeError.custom(
-            "a function returning `@Future`/`@ResultGenerator`/`@FutureGenerator`/`@Component` needs an effect annotation",
-            "Mark it `#[@future]` / `#[@resultGenerator]` / `#[@futureGenerator]` / `#[@use]`.",
-        );
-        if (fnLoc) |l| err = err.withLoc(l);
-        env.lastError = err;
-        return error.TypeError;
-    } else if (isResultFn) {
-        // N25 / decision 8 § 9 — the wrapper without its annotation is an
-        // error too. A plain `fn -> @Result<D, E>` used to be accepted and
-        // given NO special treatment: `return` did not wrap, `throw` stayed a
-        // raw host exception. That is a second, unwritten Result calculus; the
-        // decision leaves one.
-        const msg = try std.fmt.allocPrint(
-            env.arena,
-            "{s}: @Result needs #[@result] — a function returning `@Result<D, E>` declares its effect",
-            .{diagnostics.effect_missing_annotation},
-        );
-        var err = TypeError.custom(
-            msg,
-            "Mark it `#[@result]`: `return` then carries the success value and `throw` the error channel's own (decision 8 § 9). Without the annotation the wrapper is not built.",
-        );
-        // 01 R9 — the caret is on the return type the rule is about, not on
-        // the first statement of the body.
-        if (f.returnTypeLoc.line != 0) {
-            err = err.withLoc(f.returnTypeLoc);
-        } else if (fnLoc) |l| err = err.withLoc(l);
-        env.lastError = err;
-        return error.TypeError;
     }
 
     // Establish the effect context (saved/restored around the body) so nested
@@ -3744,8 +3611,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         env.starFn = null;
         env.labelStack.shrinkRetainingCapacity(0);
     }
-    // The `try` gate reads the effect directly: a `#[@result]` body answers
-    // `try` and carries no star context worth asking.
+    // The refusals name the body's effect: `env.fnEffect` is the return's.
     const savedFnEffect = env.fnEffect;
     env.fnEffect = eff;
     defer env.fnEffect = savedFnEffect;
@@ -3754,12 +3620,13 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedUseAnchor = env.useAnchor;
     env.useAnchor = null;
     defer env.useAnchor = savedUseAnchor;
-    // §1C — `@getContext(T)` is only valid inside a `#[@use]` fn body
-    // (RC5). Decision 104 — this is the SAME flag as `FnContext.annotated`:
-    // `#[@use]` sets both and nothing else does. Save/restore it around the
-    // body so nested non-`use` closures fall back to false correctly.
+    // §1C — `@getContext(T)` is only valid inside a `-> @Component<…>` fn
+    // body (RC5). Decision 104 — this is the SAME flag as
+    // `FnContext.annotated`: the `@Component` return sets both and nothing
+    // else does. Save/restore it around the body so nested closures fall back
+    // to false correctly.
     const savedInContextFn = env.inContextFn;
-    env.inContextFn = eff == .use;
+    env.inContextFn = eff == .component;
     defer env.inContextFn = savedInContextFn;
 
     // Self-recursion: bind the fn's own signature before walking the body so
@@ -3808,7 +3675,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedFnGenericMap = env.fnGenericMap;
     env.fnGenericMap = &genericMap;
     defer env.fnGenericMap = savedFnGenericMap;
-    env.returnBareIsVoid = env.returnTarget != null and (eff == null or eff.? == .result or eff.? == .future);
+    env.returnBareIsVoid = env.returnTarget != null and (eff == null or eff.? == .result or eff.? == .task);
 
     try inferBodyStmts(env, f.body);
 
@@ -3907,7 +3774,10 @@ fn inferTypeMethods(
 
         // Scope the return-type-derived `use`/effect context to this body.
         const savedFnCtx = env.fnContext;
-        const methodEffect = effectAnnotationOf(m.annotations);
+        // Decision 118 — the method's return type is its effect, as a free
+        // fn's is; decision 123 — an `@Iterator` return that yields nothing is
+        // a factory.
+        const methodEffect = ast.EffectKind.ofMethod(m.returnType, m.body);
         env.fnContext = try contextInfoFromReturn(env, m.returnType, methodEffect, m.name);
         defer env.fnContext = savedFnCtx;
         // An effect annotation on a method is the method's, exactly as on a
@@ -3935,7 +3805,8 @@ fn inferTypeMethods(
             const retTy = if (m.returnType) |rt| try resolveTypeRefInContext(env, rt, genericMap) else try env.freshVar();
             env.starFn = starCtxFromEffect(e, retTy, null);
             env.fnEffect = e;
-            env.throwContext = if (effectChain.grants(e, .try_)) .unchecked else .plain;
+            // Decision 121 — `throw` / `try` follow the fallible channel.
+            env.throwContext = if (fallibleErrorOf(e, retTy)) |errTy| .{ .result = errTy } else .plain;
         } else {
             env.starFn = null;
             env.fnEffect = null;
@@ -3983,94 +3854,87 @@ fn inferTypeMethods(
     }
 }
 
-const WrapperReturnKind = enum { none, future, resultGenerator, futureGenerator, use };
-
-/// Classify a resolved return type as `@Future` / `@ResultGenerator` / `@FutureGenerator`.
-fn classifyWrapperReturn(ty: *T.Type) WrapperReturnKind {
-    const t = ty.deref();
-    return switch (t.*) {
-        .named => |n| if (std.mem.eql(u8, n.name, "Future"))
-            .future
-        else if (std.mem.eql(u8, n.name, "ResultGenerator"))
-            .resultGenerator
-        else if (std.mem.eql(u8, n.name, "FutureGenerator"))
-            .futureGenerator
-        else if (std.mem.eql(u8, n.name, "Component"))
-            .use
-        else
-            .none,
-        else => .none,
+/// The value layer of an effect return — what a `return` carries through the
+/// wrapper (decision 119): `T` of `@Task<T>`, `T` of `@Component<C, T>`, the
+/// item `T` of `@Iterator<T>` / `@Stream<T>`; the return itself for
+/// `@Result<R, E>`, which IS the fallible layer.
+fn effectValueLayer(eff: ast.EffectKind, retType: *T.Type) ?*T.Type {
+    const t = retType.deref();
+    if (t.* != .named) return null;
+    const args = t.named.args;
+    return switch (eff) {
+        .result => retType,
+        .task, .iterator, .stream => if (args.len >= 1) args[0] else null,
+        .component => if (args.len >= 2) args[1] else null,
     };
 }
 
-/// True when `retType` is one of the builtin wrappers `eff` accepts (an
-/// unresolved type variable stays lenient, matching the rest of the effect
-/// checks). `#[@use]` accepts `@Component<C, T>` (decision 128) — a hook with
-/// any `T`, or a component whose `T` implements `@Context<C>`; a `T` that owns
-/// a context at another base is refused. The bare owner (`-> Element`) is no
-/// longer accepted (decision 102).
-fn effectMatchesReturn(env: *Env, eff: ast.EffectKind, retType: *T.Type) bool {
+/// True when `ty` resolves to `@Result<_, _>`.
+fn isResultType(ty: *T.Type) bool {
+    const t = ty.deref();
+    return t.* == .named and std.mem.eql(u8, t.named.name, "Result");
+}
+
+/// Decision 121 — the fallible channel: the `E` of the `@Result<U, E>` layer
+/// of an effect return (`@Result<U, E>` itself, `@Task<@Result<U, E>>`,
+/// `@Component<C, @Result<U, E>>`, `@Iterator<@Result<U, E>>`,
+/// `@Stream<@Result<U, E>>`), or null when no layer is a `@Result`. `throw`
+/// and `try` read this and nothing else.
+fn fallibleErrorOf(eff: ast.EffectKind, retType: *T.Type) ?*T.Type {
+    const layer = effectValueLayer(eff, retType) orelse return null;
+    const l = layer.deref();
+    if (l.* != .named or !std.mem.eql(u8, l.named.name, "Result") or l.named.args.len < 2) return null;
+    return l.named.args[1];
+}
+
+/// Decision 118 rule 1 — the effect wrapper an aliased return resolves to
+/// (`Parser<i32>` → `Result`), or null when the resolved return is no effect
+/// wrapper. Only asked of a return that is NOT written as the wrapper.
+fn aliasedWrapperOf(retType: *T.Type) ?[]const u8 {
     const t = retType.deref();
-    return switch (t.*) {
-        .named => |n| blk: {
-            var accepted = false;
-            for (eff.returnWrappers()) |w| {
-                if (std.mem.eql(u8, n.name, w)) accepted = true;
-            }
-            if (!accepted) break :blk false;
-            if (std.mem.eql(u8, n.name, "Component")) {
-                if (n.args.len < 2) break :blk false;
-                const ownerBase = ownerBaseOfType(env, n.args[1]) orelse break :blk true;
-                const base = baseNameOfType(n.args[0]) orelse break :blk true;
-                break :blk std.mem.eql(u8, ownerBase, base);
-            }
-            break :blk true;
+    if (t.* != .named) return null;
+    const e = ast.EffectKind.fromWrapperName(t.named.name) orelse return null;
+    return e.returnWrapper();
+}
+
+/// C1 — the type a `return <value>` unifies with inside a fn whose declared
+/// return type is `retType` (decision 119: `return` wraps through every
+/// layer): the value layer of the effect's wrapper — and, when that layer is
+/// `@Result<U, E>`, its `U` — the declared type otherwise. Null when returns
+/// are not checked: no declared return type, a template fn, or a sequence
+/// body (`@Iterator` / `@Stream` that yields, which forbids `return <expr>`).
+fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Type {
+    if (!checked) return null;
+    const e = eff orelse return retType;
+    if (retType.deref().* != .named) return null;
+    return switch (e) {
+        .result => blk: {
+            const args = retType.deref().named.args;
+            break :blk if (args.len >= 1) args[0] else null;
         },
-        .typeVar => true,
-        else => false,
+        .task, .component => blk: {
+            const layer = effectValueLayer(e, retType) orelse break :blk null;
+            const l = layer.deref();
+            if (l.* == .named and std.mem.eql(u8, l.named.name, "Result") and l.named.args.len >= 1) break :blk l.named.args[0];
+            break :blk layer;
+        },
+        .iterator, .stream => null,
     };
 }
 
 /// Build the effect body context (drives `await`/`yield` validation) from the
 /// effect kind and its return type. EVERY effect gets one — `env.starFn` is
 /// null only in a plain `fn` — so a capability the chain does not grant is
-/// refused rather than falling through an absent context (decision 95 + 67;
-/// before this, `yield` in a `#[@result]` or `#[@use]` body was accepted
-/// because the guard was written `if (env.starFn) |ctx|`).
-/// C1 — the type a `return <value>` unifies with inside a fn whose declared
-/// return type is `retType`: the wrapper's inner channel for an effect body
-/// (`#[@result]` → R of `@Result<R, E>`, `#[@future]` → T, `#[@use]` → the
-/// `T` of `@Component<C, T>`), the declared type otherwise. Null when returns
-/// are not checked: no declared return type, a template fn, or a generator
-/// effect (all three forbid `return <expr>`, decision 103).
-fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Type {
-    if (!checked) return null;
-    const t = retType.deref();
-    const e = eff orelse return retType;
-    if (t.* != .named) return null;
-    const args = t.named.args;
-    return switch (e) {
-        .result, .future => if (args.len >= 1) args[0] else null,
-        // `#[@use]` returns the `T` of `@Component<C, T>`.
-        .use => if (args.len >= 2) args[1] else null,
-        .generator, .resultGenerator, .futureGenerator => null,
-    };
-}
-
+/// refused rather than falling through an absent context (decision 95 + 67).
 fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8) envMod.StarFnCtx {
-    const t = retType.deref();
-    const item: ?*T.Type = switch (t.*) {
-        .named => |n| if (n.args.len >= 1) n.args[0] else null,
-        else => null,
-    };
-    // `iterItem` is the one item channel: only the three generator-shaped
-    // wrappers carry it, and both `yield <v>` and a generator-level `break <v>`
-    // unify with it (decision 103 — there is no completion channel).
+    // `iterItem` is the one item channel: only `@Iterator` / `@Stream` carry
+    // it, and both `yield <v>` and a sequence-level `break <v>` unify with it
+    // (decision 122 — there is no completion channel).
     const yields = effectChain.grants(eff, .yield_);
     return .{
         .allowsAwait = effectChain.grants(eff, .await_),
         .allowsYield = yields,
-        .iterItem = if (yields) item else null,
+        .iterItem = if (yields) effectValueLayer(eff, retType) else null,
         .fnLabel = fnLabel,
         .effect = eff,
     };
@@ -5142,8 +5006,8 @@ fn inferBuiltinCallReturnType(
         if (!env.inContextFn) {
             var e = TypeError.custom(
                 diagnostics.context_getcontext_outside_context_fn ++
-                    ": `@getContext(T)` only resolves inside a `#[@use]` fn body",
-                "Mark the enclosing fn `#[@use]` (`-> @Component<Base, T>`) — `@getContext` walks the active provider stack maintained by the `use` blocks.",
+                    ": `@getContext(T)` only resolves inside a `-> @Component<C, T>` fn body",
+                "Return `@Component<Base, T>` from the enclosing fn — `@getContext` walks the active provider stack maintained by the `use` blocks.",
             );
             if (typedArgs.len >= 1) e = e.withLoc(typedArgs[0].value.getLoc());
             env.lastError = e;
@@ -5178,7 +5042,7 @@ fn inferBuiltinCallReturnType(
             {
                 const msg = try std.fmt.allocPrint(
                     env.arena,
-                    "{s}: `@getContext({s})` is outside the enclosing `#[@use]` fn's Anchor tree (enclosing Anchor `{s}`, requested type's Anchor `{s}`)",
+                    "{s}: `@getContext({s})` is outside the enclosing `@Component` fn's base tree (enclosing base `{s}`, requested type's base `{s}`)",
                     .{ diagnostics.context_getcontext_anchor_violation, requestedName, enclosingBase.?, requestedBase.? },
                 );
                 env.lastError = TypeError.custom(
@@ -5906,30 +5770,17 @@ fn tryUnwrapOrError(env: *Env, rawTy: *T.Type, loc: ast.Loc) InferError!*T.Type 
     return InferError.TypeError;
 }
 
-/// `@Future<T>` -> `T`. Returns null when `ty` is not a `Future`.
-fn unwrapFutureType(ty: *T.Type) ?*T.Type {
+/// `@Task<T>` -> `T` (decision 120). `@Component<C, T>` extends `@Task`, and
+/// decision 104 has every caller `await` a component: it awaits to `T`
+/// (decision 128). `@Stream<T>` is iterated with `for await`, never awaited
+/// whole. Returns null when `ty` is no Task.
+fn unwrapTaskType(ty: *T.Type) ?*T.Type {
     const t = ty.deref();
     return switch (t.*) {
-        .named => |n| if (std.mem.eql(u8, n.name, "Future") and n.args.len >= 1)
+        .named => |n| if (std.mem.eql(u8, n.name, "Task") and n.args.len >= 1)
             n.args[0]
-            // Decision 102 — the `use` wrapper extends `@Future`, and decision 104
-            // has every caller `await` a component: `@Component<C, T>` awaits
-            // to `T` (decision 128).
         else if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 2)
             n.args[1]
-        else
-            null,
-        else => null,
-    };
-}
-
-/// `@ResultGenerator<T, E>` / `@FutureGenerator<T, E>` -> `T`. Returns null when `ty` is neither.
-fn unwrapIteratorType(ty: *T.Type) ?*T.Type {
-    const t = ty.deref();
-    return switch (t.*) {
-        .named => |n| if ((std.mem.eql(u8, n.name, "ResultGenerator") or
-            std.mem.eql(u8, n.name, "FutureGenerator")) and n.args.len >= 1)
-            n.args[0]
         else
             null,
         else => null,
@@ -5962,21 +5813,17 @@ fn typesSameShape(a: *T.Type, b: *T.Type) bool {
 /// Number of leading required generic arguments for a known builtin wrapper.
 /// Returns null for builtins without a fixed arity (e.g. `@Decl`, `array`,
 /// `optional`, `tuple`) so the resolver leaves their arg-count checks alone.
-/// The defaulted tail (per §1G / `tasks/v0.beta.19/specs/frente-b-rules-tooling.md`):
-///   - `@Future<T, E = any>`            → 1 required
-///   - `@Generator<T>`                  → 1 required
-///   - `@ResultGenerator<T, E = any>`   → 1 required
-///   - `@FutureGenerator<T, E = any>`   → 1 required
-///   - `@Result<R, E>`                  → 2 required
-///   - `@Context<Base>`                 → 1 required (the owner marker)
-///   - `@Component<C, T>`               → 2 required
-///   - `@Expr<T>` / `@ExprCustom<T>`    → 1 required
+///   - `@Task<T>` / `@Iterator<T>` / `@Stream<T>`  → 1 (decisions 120, 122)
+///   - `@Result<R, E>`                             → 2
+///   - `@Context<Base>`                            → 1 (the owner marker)
+///   - `@Component<C, T>`                          → 2 (decision 128: `C` is
+///     always written; `@Component<T>` is a type-arity error)
+///   - `@Expr<T>` / `@ExprCustom<T>`               → 1
 fn builtinRequiredGenericArgs(name: []const u8) ?usize {
     const eq = std.mem.eql;
-    if (eq(u8, name, "Future")) return 1;
-    if (eq(u8, name, "Generator")) return 1;
-    if (eq(u8, name, "ResultGenerator")) return 1;
-    if (eq(u8, name, "FutureGenerator")) return 1;
+    if (eq(u8, name, "Task")) return 1;
+    if (eq(u8, name, "Iterator")) return 1;
+    if (eq(u8, name, "Stream")) return 1;
     if (eq(u8, name, "Result")) return 2;
     if (eq(u8, name, "Context")) return 1;
     if (eq(u8, name, "Component")) return 2;
@@ -5988,50 +5835,20 @@ fn builtinRequiredGenericArgs(name: []const u8) ?usize {
 /// The FULL declared arity of a known builtin wrapper — required plus
 /// defaulted parameters — or null for builtins without a fixed arity. RG5: an
 /// argument past it is refused (decision 67 — a type argument nothing reads
-/// is not dropped silently).
+/// is not dropped silently). No effect wrapper declares a default any more.
 fn builtinMaxGenericArgs(name: []const u8) ?usize {
-    const eq = std.mem.eql;
-    if (eq(u8, name, "Future")) return 2;
-    if (eq(u8, name, "Generator")) return 1;
-    if (eq(u8, name, "ResultGenerator")) return 2;
-    if (eq(u8, name, "FutureGenerator")) return 2;
-    if (eq(u8, name, "Result")) return 2;
-    if (eq(u8, name, "Context")) return 1;
-    if (eq(u8, name, "Component")) return 2;
-    if (eq(u8, name, "Expr")) return 1;
-    if (eq(u8, name, "ExprCustom")) return 1;
-    return null;
+    return builtinRequiredGenericArgs(name);
 }
 
 /// Full default-position list for the known builtin wrappers, when the
-/// caller supplied `given` leading args (a value < total params). Returns
-/// the full param-name list (so the resolver can fill positions `given..len`
-/// with `env.namedType(<name>)`); returns null when the builtin declares no
-/// defaults or when no fill is needed.
-///
-/// Layouts (per §1G default tail):
-///   - `Future<T, E = any>`              → `["any"]` for the E slot
-///   - `ResultGenerator<T, E = any>`     → `["any"]` for the E slot
-///   - `FutureGenerator<T, E = any>`     → `["any"]` for the E slot
-///
-/// The returned slice always has the FULL declared arity (so the caller
-/// allocates an args slice sized to it and indexes positions
-/// `given..returned.len` for the type names to bind).
+/// caller supplied `given` leading args. Decisions 120 / 122 removed the last
+/// defaulted wrappers (`@Future<T, E = any>` and the generators), so none
+/// declares a default and the answer is always null; the hook stays for a
+/// wrapper that grows one.
 fn builtinDefaultFilledArgs(env: *Env, name: []const u8, given: usize) ?[]const []const u8 {
     _ = env;
-    const eq = std.mem.eql;
-    // Each entry is the FULL position list; the caller pulls names from
-    // position `given..len` for the unfilled tail. The leading slots are
-    // placeholders ("" — never read; the caller already filled them).
-    if (eq(u8, name, "Future") and given < 2) {
-        return &.{ "", "any" };
-    }
-    if (eq(u8, name, "ResultGenerator") and given < 2) {
-        return &.{ "", "any" };
-    }
-    if (eq(u8, name, "FutureGenerator") and given < 2) {
-        return &.{ "", "any" };
-    }
+    _ = name;
+    _ = given;
     return null;
 }
 
@@ -8087,38 +7904,68 @@ fn resultVariantCallName(expr: ast.Expr) ?[]const u8 {
     return wrapperMemberCallName(expr, "Result", &.{ "Ok", "Error" });
 }
 
-/// Returns the `Future` constructor name when `expr` is the form
-/// `Future.resolved(...)` / `Future.rejected(...)` (§1F / §2 RF1/RF2/RF5
-/// detection).
-fn futureConstructorCallName(expr: ast.Expr) ?[]const u8 {
-    return wrapperMemberCallName(expr, "Future", &.{ "resolved", "rejected" });
-}
-
-/// True when `env` is currently inside a body whose `#[@<effect>]` matches `kind`.
+/// True when `env` is currently inside a body whose effect is `kind`.
 fn inEffectContext(env: *Env, kind: ast.EffectKind) bool {
     const ctx = env.starFn orelse return false;
     return ctx.effect == kind;
 }
 
-/// The refusal for `what` written outside a generator scope: the three
-/// annotations that open one, on a fn or on a `loop`, read off the chain.
+/// The refusal for `what` written outside a generator scope: the returns and
+/// the loop prefixes that open one (decisions 122, 125), read off the chain.
 fn generatorScopeRefusal(env: *Env, code: []const u8, what: []const u8) ![]const u8 {
-    var buf: [6]ast.EffectKind = undefined;
-    const granting = effectChain.grantingEffects(.yield_, &buf);
-    var names: std.ArrayListUnmanaged(u8) = .empty;
-    for (granting, 0..) |e, i| {
-        if (i > 0) try names.appendSlice(env.arena, if (i + 1 == granting.len) " or " else ", ");
-        try names.appendSlice(env.arena, try std.fmt.allocPrint(env.arena, "`#[@{s}]`", .{e.annotationName()}));
-    }
+    const names = try effectChain.grantingReturnsSpelled(env.arena, .yield_);
     const body: []const u8 = if (env.fnEffect) |e|
-        try std.fmt.allocPrint(env.arena, "`#[@{s}]` is `@{s}`, which is no generator", .{ e.annotationName(), e.returnWrapper() })
+        try std.fmt.allocPrint(env.arena, "this fn returns `@{s}<…>`, which is no sequence", .{e.returnWrapper()})
     else
-        "this body carries no generator annotation";
+        "this body is no sequence";
     return std.fmt.allocPrint(
         env.arena,
-        "{s}: {s} needs a generator scope — {s} on the fn, or on a `loop`; {s}",
-        .{ code, what, names.items, body },
+        "{s}: {s} needs a generator scope — a {s} return that yields, or an `iter` / `stream` loop; {s}",
+        .{ code, what, names, body },
     );
+}
+
+/// Decision 121 — the refusal for `throw` / `try` in a body whose return
+/// carries no `@Result` layer, naming the return.
+fn fallibleChannelRefusal(env: *Env, what: []const u8) ![]const u8 {
+    const shape: []const u8 = if (env.fnEffect) |e| switch (e) {
+        .iterator, .stream => try std.fmt.allocPrint(env.arena, "the item of `@{s}<T>` has to be `@Result<T, E>` to use `throw` / `try`", .{e.returnWrapper()}),
+        else => try std.fmt.allocPrint(env.arena, "this fn returns `@{s}<…>` with no `@Result` in it", .{e.returnWrapper()}),
+    } else "this fn's return has no `@Result` in it";
+    return std.fmt.allocPrint(
+        env.arena,
+        "{s}: `{s}` needs a `@Result` in some layer of the return — {s}",
+        .{ diagnostics.effect_try_without_fallible_channel, what, shape },
+    );
+}
+
+/// Decision 118 rule 1 — refuse `what` (a capability) in a body whose return
+/// is an ALIAS of an effect wrapper: the alias types the function but
+/// activates nothing. Returns true (with `lastError` set) when it refused.
+fn refuseBehindAlias(env: *Env, what: []const u8, loc: ast.Loc) InferError!bool {
+    const w = env.aliasWrapper orelse return false;
+    env.lastError = TypeError.custom(
+        try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `{s}` under an aliased return — the alias resolves to `@{s}<…>`, and an alias does not activate the effect",
+            .{ diagnostics.effect_wrapper_behind_alias, what, w },
+        ),
+        try std.fmt.allocPrint(env.arena, "Write `@{s}<…>` literally in the return type to activate the effect (decision 118): whoever reads the signature has to see the `@`.", .{w}),
+    ).withLoc(loc);
+    return true;
+}
+
+/// The value of a `return` / `yield` that passes a wrapper layer through
+/// unchanged rather than being wrapped (decision 119): a `@Result` into a
+/// `@Result` layer, or the whole declared wrapper.
+fn valuePassesThrough(env: *Env, vt: *T.Type) bool {
+    const v = vt.deref();
+    if (v.* != .named) return false;
+    if (std.mem.eql(u8, v.named.name, "Result")) return true;
+    const w = env.returnWhole orelse return false;
+    const wd = w.deref();
+    return wd.* == .named and std.mem.eql(u8, wd.named.name, v.named.name) and
+        ast.EffectKind.fromWrapperName(v.named.name) != null;
 }
 
 /// Infer type for jump expressions (return, throw, try, break, continue, yield)
@@ -8126,22 +7973,23 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
     return switch (j.kind) {
         .@"return" => |r| {
             // R11 (§2) — `return Result.Ok(<r>);` / `return Result.Error(<e>);`
-            // inside a `#[@result]` body is the manual wrapping form that the
-            // auto-wrap contract forbids: the @Result variants are constructed
-            // by `return` / `throw` ALONE, never by the author.
+            // inside a body whose return carries a `@Result` is the manual
+            // wrapping form that the auto-wrap contract forbids: the @Result
+            // variants are constructed by `return` / `throw` ALONE, never by
+            // the author.
             if (env.throwContext == .result) {
                 if (r) |rv| {
                     if (resultVariantCallName(rv.*)) |variant| {
                         if (std.mem.eql(u8, variant, "Ok")) {
                             env.lastError = TypeError.custom(
                                 diagnostics.return_must_be_bare_R ++
-                                    ": a #[@result] fn must `return` a value of type R; the @Result::Ok wrapping is implicit.",
+                                    ": a body whose return carries `@Result<R, E>` must `return` a value of type R; the @Result::Ok wrapping is implicit.",
                                 "Drop the `Result.Ok(...)` wrapping — write `return <r>;` directly.",
                             ).withLoc(loc);
                         } else {
                             env.lastError = TypeError.custom(
                                 diagnostics.result_return_type_mismatch ++
-                                    ": a #[@result] fn returns R via `return`; use `throw` for the error variant.",
+                                    ": a body whose return carries `@Result<R, E>` returns R via `return`; use `throw` for the error variant.",
                                 "If the value is an error, change `return Result.Error(<e>);` to `throw <e>;`.",
                             ).withLoc(loc);
                         }
@@ -8149,67 +7997,45 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     }
                 }
             }
-            // RI1 (§1I / §2 R14) — `return <expr>;` inside any generator body
-            // (`#[@generator]` / `#[@resultGenerator]` / `#[@futureGenerator]`)
-            // is forbidden: a generator carries no return channel (decision 103). The author writes `break <v>` to emit a
-            // last item and end, or bare `break` for a clean end. Bare
-            // `return;` (no value, an implicit clean end) stays legal.
-            if (r != null and
-                (inEffectContext(env, .generator) or
-                    inEffectContext(env, .resultGenerator) or
-                    inEffectContext(env, .futureGenerator)))
-            {
-                env.lastError = TypeError.custom(
+            // RI1 (§1I / §2 R14) — `return <expr>;` inside a sequence body
+            // (an `@Iterator` / `@Stream` that yields, or an `iter` / `stream`
+            // loop) is forbidden: a sequence carries no return channel
+            // (decision 122). The author writes `break <v>` to emit a last
+            // item and end, or bare `break` for a clean end. Bare `return;`
+            // (no value, an implicit clean end) stays legal. Decision 123 —
+            // a body that RETURNS an iterator and never yields is a factory,
+            // and mixing the two is `iter-mixed-yield-return`.
+            if (r != null and (inEffectContext(env, .iterator) or inEffectContext(env, .stream))) {
+                const inLoop = env.generatorLoopDepth > 0;
+                env.lastError = if (inLoop) TypeError.custom(
                     diagnostics.iterator_return_forbidden ++
-                        ": a generator has no return channel — `break <v>` emits `v` as the last item and ends, bare `break` ends cleanly",
+                        ": a sequence has no return channel — `break <v>` emits `v` as the last item and ends, bare `break` ends cleanly",
                     "Replace `return <expr>;` with `break <expr>;` (the value is an item of type `T`), or with `yield <expr>; return;`.",
+                ).withLoc(loc) else TypeError.custom(
+                    diagnostics.iter_mixed_yield_return ++
+                        ": this body yields, so it is an iterator — and `return <value>` answers a ready one, which is a factory (decision 123)",
+                    "Pick one: keep the `yield`s and end with `break <v>` / `break`, or drop them and `return` the iterator (`return iter for (xs) { x -> … };`).",
                 ).withLoc(loc);
                 return error.TypeError;
-            }
-            // RF1 (§1F / §2 R17) — `return Future.resolved(<t>);` /
-            // `return Future.rejected(<e>);` inside a `#[@future]` body forbids
-            // the manual wrapping. The auto-wrap rewrites bare `return <t>;`
-            // to `@Future.resolved(<t>)` at AST level.
-            if (inEffectContext(env, .future)) {
-                if (r) |rv| {
-                    if (futureConstructorCallName(rv.*)) |ctor| {
-                        if (std.mem.eql(u8, ctor, "resolved")) {
-                            env.lastError = TypeError.custom(
-                                diagnostics.future_return_must_be_bare_T ++
-                                    ": a #[@future] fn must `return` a value of type T; the @Future.resolved wrapping is implicit.",
-                                "Drop the `Future.resolved(...)` wrapping — write `return <t>;` directly.",
-                            ).withLoc(loc);
-                        } else {
-                            env.lastError = TypeError.custom(
-                                diagnostics.future_return_type_mismatch ++
-                                    ": a #[@future] fn resolves T via `return`; use `throw` for the rejection variant.",
-                                "If the value is the rejection payload, change `return Future.rejected(<e>);` to `throw <e>;`.",
-                            ).withLoc(loc);
-                        }
-                        return error.TypeError;
-                    }
-                }
             }
             // 00 · 01-checker — the body's return target is the expected type
             // of a returned value (`fn pick() -> Token { return .Color.Red.500; }`).
             const valPtr: ?*TypedExpr = if (r) |rv| try makeTypedPtr(env, try inferExprTypedExpecting(env, rv.*, env.returnTarget)) else null;
-            // Inside a `-> @Result<…>` fn, a returned plain value must be wrapped
-            // into `{ok, V}` by the transform pass (`__bp_ok`). Skip values that
-            // are already a `@Result` (passthrough) and `try`/`catch` forms —
-            // those have dedicated statement-level lowerings in each backend.
+            // Decision 119 — inside a body whose return carries a `@Result`
+            // layer, a returned plain value is wrapped into `{ok, V}` by the
+            // transform pass (`__bp_ok`); a value already a `@Result`, or the
+            // whole declared wrapper, passes through; `try` / `catch` forms
+            // have dedicated statement-level lowerings in each backend.
             if (env.throwContext == .result) {
                 if (r) |rv| {
                     const isCatchForm = rv.* == .branch and rv.branch.kind == .tryCatch;
                     const isTryJump = rv.* == .jump and rv.jump.kind == .try_;
-                    const valIsResult = blk: {
-                        const vt = valPtr.?.getType().deref();
-                        break :blk vt.* == .named and std.mem.eql(u8, vt.named.name, "Result");
-                    };
+                    const passes = valuePassesThrough(env, valPtr.?.getType());
                     if (isTryJump) {
                         // `return try f()` — unwrap-then-rewrap is the identity;
                         // the transform returns `f()`'s Result directly.
                         try env.result_jump_lowerings.put(loc, .unwrap_passthrough);
-                    } else if (!isCatchForm and !valIsResult) {
+                    } else if (!isCatchForm and !passes) {
                         try env.result_jump_lowerings.put(loc, .wrap_ok);
                     }
                 } else {
@@ -8218,24 +8044,10 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     try env.result_jump_lowerings.put(loc, .wrap_ok);
                 }
             }
-            // §1F F4F-T1 — inside `#[@future]`, a bare `return <t>;` is the
-            // resolved-future shape. The transform wraps it in a
-            // `__bp_future_resolved(<t>)` call; commonJS strips that back to
-            // `return <t>;` (the `async function` machinery is the wrap).
-            // Skip values that are already a `@Future` (passthrough — the
-            // outer fn returns the inner future directly).
-            if (r != null and inEffectContext(env, .future)) {
-                const valIsFuture = blk: {
-                    const vt = valPtr.?.getType().deref();
-                    break :blk vt.* == .named and std.mem.eql(u8, vt.named.name, "Future");
-                };
-                if (!valIsFuture) {
-                    try env.future_jump_lowerings.put(loc, .wrap_resolved);
-                }
-            }
             // C1 — unify the returned value with the body's return target.
-            // A value that is already the wrapper (a `@Result` / `@Future`
-            // passthrough, `try` / `catch` forms) is not unwrapped here.
+            // A value that is already a wrapper layer (a `@Result` passthrough,
+            // `try` / `catch` forms, the whole declared wrapper) is not
+            // unwrapped here.
             if (env.returnTarget) |target| {
                 if (valPtr) |vp| {
                     const rv = r.?.*;
@@ -8243,9 +8055,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                         if (rv == .branch and rv.branch.kind == .tryCatch) break :blk true;
                         if (rv == .jump and rv.jump.kind == .try_) break :blk true;
                         const vt = vp.getType().deref();
-                        if (vt.* == .named and (env.throwContext == .result or inEffectContext(env, .future))) {
-                            if (std.mem.eql(u8, vt.named.name, "Result") or std.mem.eql(u8, vt.named.name, "Future")) break :blk true;
-                        }
+                        if (vt.* == .named and env.throwContext == .result and std.mem.eql(u8, vt.named.name, "Result")) break :blk true;
                         break :blk false;
                     };
                     // A value that is already the declared wrapper (`return
@@ -8272,20 +8082,21 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
         },
         .throw_ => |e| {
             // R11-mirror (§2) — `throw Result.Error(<e>)` / `throw Result.Ok(<r>)`
-            // inside a `#[@result]` body forbids the manual wrapping by §1.
+            // inside a body whose return carries a `@Result` forbids the
+            // manual wrapping by §1.
             if (env.throwContext == .result) {
                 if (e) |ev| {
                     if (resultVariantCallName(ev.*)) |variant| {
                         if (std.mem.eql(u8, variant, "Error")) {
                             env.lastError = TypeError.custom(
                                 diagnostics.throw_must_be_bare_E ++
-                                    ": a #[@result] fn must `throw` a value of type E; the @Result::Err wrapping is implicit.",
+                                    ": a body whose return carries `@Result<R, E>` must `throw` a value of type E; the @Result::Err wrapping is implicit.",
                                 "Drop the `Result.Error(...)` wrapping — write `throw <e>;` directly.",
                             ).withLoc(loc);
                         } else {
                             env.lastError = TypeError.custom(
                                 diagnostics.result_throw_type_mismatch ++
-                                    ": a #[@result] fn raises E via `throw`; use `return` for the success variant.",
+                                    ": a body whose return carries `@Result<R, E>` raises E via `throw`; use `return` for the success variant.",
                                 "If the value is the success payload, change `throw Result.Ok(<r>);` to `return <r>;`.",
                             ).withLoc(loc);
                         }
@@ -8293,95 +8104,60 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     }
                 }
             }
-            // RF2 (§1F / §2 R17) — `throw Future.rejected(<e>);` /
-            // `throw Future.resolved(<t>);` inside a `#[@future]` body forbids
-            // the manual wrapping. The auto-wrap rewrites bare `throw <e>;`
-            // to `@Future.rejected(<e>)` at AST level.
-            if (inEffectContext(env, .future)) {
-                if (e) |ev| {
-                    if (futureConstructorCallName(ev.*)) |ctor| {
-                        if (std.mem.eql(u8, ctor, "rejected")) {
-                            env.lastError = TypeError.custom(
-                                diagnostics.future_throw_must_be_bare_E ++
-                                    ": a #[@future] fn must `throw` a value of type E; the @Future.rejected wrapping is implicit.",
-                                "Drop the `Future.rejected(...)` wrapping — write `throw <e>;` directly.",
-                            ).withLoc(loc);
-                        } else {
-                            env.lastError = TypeError.custom(
-                                diagnostics.future_throw_type_mismatch ++
-                                    ": a #[@future] fn rejects E via `throw`; use `return` for the resolved variant.",
-                                "If the value is the success payload, change `throw Future.resolved(<t>);` to `return <t>;`.",
-                            ).withLoc(loc);
-                        }
-                        return error.TypeError;
-                    }
-                }
-            }
+            if (env.throwContext == .plain and try refuseBehindAlias(env, "throw", loc)) return error.TypeError;
             const valPtr: ?*TypedExpr = if (e) |ev| try makeTypedPtr(env, try inferExprTyped(env, ev.*)) else null;
-            // Validate the thrown value against the enclosing fn's error type.
+            // Validate the thrown value against the fallible channel's `E`
+            // (decision 121).
             switch (env.throwContext) {
                 .result => |errType| {
                     if (valPtr) |vp| {
                         // Order matters: `errType` is the expected `E`, the thrown
                         // value is what we got — so unify(expected, got).
                         try unifyAt(env, errType, vp.getType(), loc);
-                        // `throw e` in a `-> @Result<…>` fn produces the value
-                        // `{error, E}` — the transform rewrites it to
-                        // `return __bp_error(e)`.
-                        try env.result_jump_lowerings.put(loc, .wrap_error);
+                        // `throw e` produces the value `{error, E}`: returned
+                        // from a `@Result` / `@Task` / `@Component` body
+                        // (`return __bp_error(e)`), emitted as the last item of
+                        // a sequence whose item is the `@Result` (`break
+                        // __bp_error(e)`, decision 122 — it never rejects).
+                        const inSequence = env.starFn != null and env.starFn.?.allowsYield;
+                        try env.result_jump_lowerings.put(loc, if (inSequence) .break_error else .wrap_error);
                     }
                 },
                 .plain => {
-                    // Decision 103 — `@Generator<T>` is infallible; the refusal
-                    // names the generator that has an error channel.
-                    if (env.fnEffect != null and env.fnEffect.? == .generator) {
-                        env.lastError = TypeError.custom(
-                            diagnostics.effect_throw_without_fallible_channel ++
-                                ": `throw` in a `#[@generator]` body — `@Generator` has no error channel; use `@ResultGenerator<T, E>`",
-                            "Annotate the fn `#[@resultGenerator]` and return `@ResultGenerator<T, E>`, whose `Error(e)` step carries the thrown value.",
-                        ).withLoc(loc);
-                        return error.TypeError;
-                    }
-                    env.lastError = TypeError.throwWithoutResult().withLoc(loc);
+                    env.lastError = TypeError.custom(
+                        try fallibleChannelRefusal(env, "throw"),
+                        "Put a `@Result` in the return (`-> @Result<T, E>`, `-> @Task<@Result<T, E>>`, `-> @Iterator<@Result<T, E>>`, …) or handle the failure where it happens.",
+                    ).withLoc(loc);
                     return error.TypeError;
                 },
                 .unchecked => {},
             }
-            // §1F F4F-T1 — inside `#[@future]`, a bare `throw <e>;` is the
-            // rejected-future shape. The transform rewrites it as
-            // `return __bp_future_rejected(<e>);`; commonJS strips that back
-            // to `throw <e>;` (the `async function` machinery turns the throw
-            // into a rejected promise).
-            if (e != null and inEffectContext(env, .future)) {
-                try env.future_jump_lowerings.put(loc, .wrap_rejected);
-            }
-            // Inside `#[@resultGenerator]` / `#[@futureGenerator]`, a `throw <e>;`
-            // is the error channel's: every backend lowers it as its own throw
-            // and the consuming loop propagates it as a `try` (decision 103).
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .throw_ = valPtr } } };
         },
         .try_ => |e| {
             const valPtr: ?*TypedExpr = if (e) |ev| try makeTypedPtr(env, try inferExprTyped(env, ev.*)) else null;
             const rawTy = if (valPtr) |vp| vp.getType() else try env.freshVar();
             const ty = try tryUnwrapOrError(env, rawTy, loc);
-            // Decision 95 — bare `try` PROPAGATES: it returns the `Error` out of
-            // the enclosing function, so the body needs an error channel, which
-            // is `@Result` and everything that extends it. `#[@generator]` does
-            // not (decision 103 — `@Generator<T>` has no error channel) and a
-            // plain `fn` does not either. `try … catch` is a different node
-            // (`branch.tryCatch`): it supplies its own fallback, propagates
-            // nothing and is not gated here. The check runs AFTER the operand
-            // is known to be a `@Result`, so `try <non-result>` keeps its own,
-            // more specific refusal.
+            // Decision 121 — bare `try` PROPAGATES: it returns the `Error` out of
+            // the enclosing function (or, in a sequence whose item is a
+            // `@Result`, emits it as the last item), so the body needs the
+            // fallible channel — a `@Result` in some layer of the return. A
+            // plain `fn` and a return with no `@Result` layer have none.
+            // `try … catch` is a different node (`branch.tryCatch`): it
+            // supplies its own fallback, propagates nothing and is not gated
+            // here. The check runs AFTER the operand is known to be a
+            // `@Result`, so `try <non-result>` keeps its own, more specific
+            // refusal.
             //
-            // The gate reads `throwContext` for the same reason `throw` does: it
-            // is `.plain` exactly where a declared return type carries no error
-            // channel, and `.unchecked` in a body with no declared return type
-            // (a lambda, a `test` block), which stays lenient.
-            if (env.throwContext == .plain and !effectChain.grants(env.fnEffect, .try_)) {
+            // `throwContext` is `.plain` exactly where a declared return type
+            // carries no fallible channel, and `.unchecked` in a body with no
+            // declared return type (a lambda, a `test` block), which stays
+            // lenient.
+            if (env.throwContext == .plain) {
+                if (try refuseBehindAlias(env, "try", loc)) return error.TypeError;
                 env.lastError = TypeError.custom(
-                    try effectChain.refusal(env.arena, diagnostics.effect_try_without_fallible_channel, .try_, env.fnEffect),
-                    "Use `try <expr> catch <fallback>`, which handles the error here and needs no channel, or give the enclosing fn one.",
+                    try fallibleChannelRefusal(env, "try"),
+                    "Use `try <expr> catch <fallback>`, which handles the error here and needs no channel, or put a `@Result` in the return.",
                 ).withLoc(loc);
                 return error.TypeError;
             }
@@ -8402,8 +8178,8 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 for (env.closedLabels) |outer| {
                     if (std.mem.eql(u8, outer, lbl)) {
                         env.lastError = TypeError.custom(
-                            try std.fmt.allocPrint(env.arena, "{s}: `break :{s}` crosses the border of a `#[@{s}] loop` — its body is a closure and cannot leave a loop outside it", .{ diagnostics.generator_loop_closed_scope, lbl, ctx.?.effect.annotationName() }),
-                            "End the annotated loop (`break`) and leave the outer loop after it.",
+                            try std.fmt.allocPrint(env.arena, "{s}: `break :{s}` crosses the border of an `{s}` loop — its body is a closure and cannot leave a loop outside it", .{ diagnostics.generator_loop_closed_scope, lbl, if (ctx.?.effect == .stream) "stream" else "iter" }),
+                            "End the prefixed loop (`break`) and leave the outer loop after it.",
                         ).withLoc(loc);
                         return error.TypeError;
                     }
@@ -8412,7 +8188,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     env.lastError = TypeError.custom(
                         diagnostics.break_label_unbound ++
                             ": `break :<label>` targets an unknown label",
-                        "Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`fn … -> @Generator<…> :name`, `#[@generator] loop :name {`).",
+                        "Label a loop (`for :name (…)`, `while :name (…)`, `loop :name {`) or a generator scope (`fn … -> @Iterator<…> :name`, `iter loop :name {`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
@@ -8422,7 +8198,7 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     (ctx.?.fnLabel != null and std.mem.eql(u8, b.label.?, ctx.?.fnLabel.?)));
                 if (targetsGenerator) {
                     const typedPtr = try makeTypedPtr(env, try inferExprTyped(env, expr.*));
-                    if (ctx.?.iterItem) |item| try unifyAt(env, typedPtr.getType(), item, loc);
+                    if (ctx.?.iterItem) |item| try unifyItem(env, item, typedPtr.getType(), loc);
                     return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = typedPtr } } } };
                 }
                 if (b.label == null and env.breakScope == .valueBlock) {
@@ -8450,29 +8226,38 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"break" = .{ .label = b.label, .value = null } } } };
         },
         .await_ => |e| {
-            // R7, as decision 95 rewrites it — `await` belongs to `@Future`,
-            // so every effect whose wrapper extends `@Future` answers it:
-            // `#[@future]`, `#[@futureGenerator]` and `#[@use]`.
+            // Decision 120 — `await` belongs to `@Task`, so every return whose
+            // wrapper extends `@Task` answers it: `@Task`, `@Component` and
+            // `@Stream`, plus a `stream` loop. `@Iterator` has none (`iter-await`).
             if (env.starFn == null or !env.starFn.?.allowsAwait) {
+                if (try refuseBehindAlias(env, "await", loc)) return error.TypeError;
+                if (env.starFn != null and env.starFn.?.effect == .iterator) {
+                    env.lastError = TypeError.custom(
+                        diagnostics.iter_await ++ ": `await` does not exist in an `@Iterator` — its items are produced synchronously",
+                        "Use `@Stream<T>` (or a `stream` loop): a stream is the sequence that may wait between items.",
+                    ).withLoc(loc);
+                    return error.TypeError;
+                }
                 env.lastError = TypeError.custom(
-                    try effectChain.refusal(env.arena, diagnostics.effect_await_without_future, .await_, env.fnEffect),
-                    "Mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` (`-> @FutureGenerator<…>`) or `#[@use]` (`-> @Component<…>`).",
+                    try effectChain.refusal(env.arena, diagnostics.effect_await_without_task, .await_, env.fnEffect),
+                    "Change the return to `@Task<…>` (or `@Component<C, …>` / `@Stream<…>`), or consume the Task through its own functions (`.map`, `.then`).",
                 ).withLoc(loc);
                 return error.TypeError;
             }
             const valPtr = try makeTypedPtr(env, try inferExprTyped(env, e.*));
             const rawTy = valPtr.getType();
-            // `await @Future<T>` yields `T`. A resolved non-`@Future` named type is
-            // an error; an unresolved type variable stays lenient.
+            // `await @Task<T>` answers `T` and propagates nothing (decision
+            // 120). A resolved non-Task named type is an error; an unresolved
+            // type variable stays lenient.
             const deref = rawTy.deref();
-            if (deref.* == .named and unwrapFutureType(rawTy) == null) {
+            if (deref.* == .named and unwrapTaskType(rawTy) == null) {
                 env.lastError = TypeError.custom(
-                    "`await` expects a `@Future<_>` value (or a `@Component<C, T>`, which extends it)",
+                    "`await` expects a `@Task<_>` value (or a `@Component<C, T>`, which extends it)",
                     null,
                 ).withLoc(loc);
                 return error.TypeError;
             }
-            const ty = unwrapFutureType(rawTy) orelse rawTy;
+            const ty = unwrapTaskType(rawTy) orelse rawTy;
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .await_ = valPtr } } };
         },
         .@"continue" => {
@@ -8487,46 +8272,60 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
         },
         .yield => |y| {
             // Decision 105 — `yield` feeds the NEAREST generator scope, an
-            // annotated fn or an annotated `loop`, through every unannotated
-            // loop between them; there is no other target. R8 as decision 95
-            // rewrites it: the scope is one whose wrapper the chain lets
-            // `yield`, and a body without one — a plain `fn`, a `#[@future]`,
-            // a `#[@result]` — refuses it naming the three annotations.
+            // `@Iterator` / `@Stream` fn or an `iter` / `stream` loop, through
+            // every unprefixed loop between them; there is no other target. A
+            // body without one — a plain `fn`, a `@Task`, a `@Result` —
+            // refuses it naming the returns that grant it.
             const ctx = env.starFn orelse null;
             if (ctx == null or !ctx.?.allowsYield) {
+                if (try refuseBehindAlias(env, "yield", loc)) return error.TypeError;
                 env.lastError = TypeError.custom(
                     try effectChain.refusal(env.arena, diagnostics.yield_without_generator, .yield_, env.fnEffect),
-                    "A `yield` feeds the nearest generator scope: mark the fn `#[@generator]` (`-> @Generator<T>`) or write the loop as `#[@generator] loop { … }` (decision 105).",
+                    "A `yield` feeds the nearest generator scope: return `@Iterator<T>` (or `@Stream<T>`) from the fn, or write the loop as `iter loop { … }` (decision 125). To collect in a plain fn, use `map` / `filter` or a `var`.",
                 ).withLoc(loc);
                 return error.TypeError;
             }
             // `yield :label` names the generator scope — the fn's signature
-            // label or the annotated loop's — never a plain loop.
+            // label or the prefixed loop's — never a plain loop.
             if (y.label) |lbl| {
                 const names_scope = if (ctx.?.fnLabel) |fl| std.mem.eql(u8, lbl, fl) else false;
                 if (!names_scope) {
                     if (env.hasLabel(lbl)) {
                         env.lastError = TypeError.custom(
                             diagnostics.yield_label_not_generator ++ ": `yield :<label>` names a loop, and a `yield` feeds a generator scope",
-                            "Label the scope it feeds: `fn … -> @Generator<T> :name` or `#[@generator] loop :name { … }`; an unlabelled `yield` feeds the nearest one.",
+                            "Label the scope it feeds: `fn … -> @Iterator<T> :name` or `iter loop :name { … }`; an unlabelled `yield` feeds the nearest one.",
                         ).withLoc(loc);
                         return error.TypeError;
                     }
                     env.lastError = TypeError.custom(
                         diagnostics.yield_label_unbound ++
                             ": `yield` targets an unknown label",
-                        "Label a generator fn (`fn … -> @Generator<T> :name`) or an annotated loop (`#[@generator] loop :name { … }`).",
+                        "Label a generator fn (`fn … -> @Iterator<T> :name`) or a prefixed loop (`iter loop :name { … }`).",
                     ).withLoc(loc);
                     return error.TypeError;
                 }
             }
             const typedPtr: ?*TypedExpr = if (y.value) |expr| try makeTypedPtr(env, try inferExprTyped(env, expr.*)) else null;
             if (ctx.?.iterItem) |item| {
-                if (typedPtr) |vp| try unifyAt(env, vp.getType(), item, loc);
+                if (typedPtr) |vp| try unifyItem(env, item, vp.getType(), loc);
             }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .yield = .{ .label = y.label, .value = typedPtr } } } };
         },
     };
+}
+
+/// Decision 122 — an item `v` emitted by `yield v` / `break v` into a sequence
+/// of `item`: with an item `@Result<U, E>`, a `v: U` is emitted as `Ok(v)`
+/// (recorded for the transform's `__bp_ok` wrap) and a `v: @Result<U, E>`
+/// as is; otherwise `v` unifies with the item.
+fn unifyItem(env: *Env, item: *T.Type, got: *T.Type, loc: ast.Loc) InferError!void {
+    const it = item.deref();
+    if (it.* == .named and std.mem.eql(u8, it.named.name, "Result") and it.named.args.len >= 1 and !isResultType(got)) {
+        try unifyAt(env, it.named.args[0], got, loc);
+        try env.result_jump_lowerings.put(loc, .yield_ok);
+        return;
+    }
+    try unifyAt(env, got, item, loc);
 }
 
 /// Infer type for branch expressions (if and try-catch)
@@ -8705,27 +8504,29 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         // `while (cond) { … }` / `loop { … }` — the condition is a `bool`.
         try unifyAt(env, try env.namedType("bool"), iterTyped.getType(), loc);
     } else if (lp.awaitLoop) {
-        // `for await (gen) { x -> … }` — an `@FutureGenerator<T, E>` in a body
-        // that grants `await`; the loop param binds `T`.
+        // `for await (s) { x -> … }` — a `@Stream<T>` where there is an await
+        // channel (decision 122); the loop param binds `T`, a `@Result` when
+        // `T` is one (no implicit `try`).
         if (env.starFn == null or !env.starFn.?.allowsAwait) {
+            if (try refuseBehindAlias(env, "for await", loc)) return error.TypeError;
             env.lastError = TypeError.custom(
-                try effectChain.refusal(env.arena, diagnostics.effect_await_without_future, .await_, env.fnEffect),
-                "`for await` suspends at every item: mark the enclosing fn `#[@future]` (`-> @Future<…>`), `#[@futureGenerator]` or `#[@use]`, or write the loop as a `#[@futureGenerator] loop { … }`.",
+                try effectChain.refusal(env.arena, diagnostics.effect_await_without_task, .await_, env.fnEffect),
+                "`for await` suspends at every item: it needs an await channel — a `@Task<…>`, `@Component<C, …>` or `@Stream<…>` return, or a `stream` loop.",
             ).withLoc(loc);
             return error.TypeError;
         }
-        if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "FutureGenerator") and iterTy.named.args.len >= 1) {
+        if (iterTy.* == .named and std.mem.eql(u8, iterTy.named.name, "Stream") and iterTy.named.args.len >= 1) {
             itemTy = iterTy.named.args[0];
         } else if (iterTy.* != .typeVar) {
             env.lastError = TypeError.custom(
-                diagnostics.for_await_expects_future_generator ++ ": `for await` expects an `@FutureGenerator<T, E>` value",
-                "A `@Generator<T>` or a `@ResultGenerator<T, E>` is iterated by `for (gen) { x -> … }`; only a `@FutureGenerator` suspends between items.",
+                diagnostics.for_await_expects_stream ++ ": `for await` expects a `@Stream<T>` value",
+                "An `@Iterator<T>` is iterated by `for (it) { x -> … }`; only a `@Stream` suspends between items.",
             ).withLoc(loc);
             return error.TypeError;
         }
     } else if (iterTy.isNamed("bool")) {
         env.lastError = TypeError.custom(
-            diagnostics.for_over_condition ++ ": `for` iterates a collection, a range or a generator — a condition is a `while`",
+            diagnostics.for_over_condition ++ ": `for` iterates a collection, a range or an iterator — a condition is a `while`",
             "Write `while (cond) { … }`; it repeats while the condition holds and binds nothing.",
         ).withLoc(loc);
         return error.TypeError;
@@ -8736,33 +8537,16 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             itemTy = try env.namedType("i32");
         } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "array")) {
             itemTy = n.args[0];
-        } else if (n.args.len >= 1 and effectChain.grants(effectOfWrapper(n.name), .yield_)) {
-            // A generator (decision 103): `@Generator<T>` in any body; one that
-            // implements `@Result` is an implicit `try` at every item and needs
-            // a body that grants `try`; one that implements `@Future` needs
-            // `for await`.
-            if (effectChain.wrapperImplements(n.name, "Future")) {
-                env.lastError = TypeError.custom(
-                    diagnostics.for_over_future_generator ++ ": a `@FutureGenerator` suspends between items — iterate it with `for await`",
-                    "`for await (gen) { x -> … }` in a body that grants `await`.",
-                ).withLoc(loc);
-                return error.TypeError;
-            }
-            // The same gate bare `try` answers to: a body with a declared
-            // return type and no `try`-granting effect refuses; a `test`
-            // block, a lambda and a fn without a return type stay lenient.
-            if (effectChain.wrapperImplements(n.name, "Result") and env.throwContext == .plain and !effectChain.grants(env.fnEffect, .try_)) {
-                const msg = try std.fmt.allocPrint(
-                    env.arena,
-                    "{s}: `for` over a `@{s}` is an implicit `try` at every item, and this body grants no `try`",
-                    .{ diagnostics.for_over_fallible_generator, n.name },
-                );
-                env.lastError = TypeError.custom(
-                    msg,
-                    try effectChain.refusal(env.arena, diagnostics.for_over_fallible_generator, .try_, env.fnEffect),
-                ).withLoc(loc);
-                return error.TypeError;
-            }
+        } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "Stream")) {
+            env.lastError = TypeError.custom(
+                diagnostics.for_over_stream ++ ": a `@Stream` suspends between items — iterate it with `for await`",
+                "`for await (s) { x -> … }` where there is an await channel.",
+            ).withLoc(loc);
+            return error.TypeError;
+        } else if (n.args.len >= 1 and std.mem.eql(u8, n.name, "Iterator")) {
+            // Decision 122 — `for` over any `@Iterator<X>` is legal in any
+            // function and hands over each `X`, a `@Result` when `X` is one:
+            // there is no implicit `try`.
             itemTy = n.args[0];
         }
     }
@@ -8797,42 +8581,26 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
     } };
 }
 
-/// The effect whose return wrapper is `name`, or null — the chain is asked
-/// about wrappers through their effect, and a name that is no wrapper grants
-/// nothing.
-fn effectOfWrapper(name: []const u8) ?ast.EffectKind {
-    for (ast.EffectKind.all) |e| {
-        if (std.mem.eql(u8, e.returnWrapper(), name)) return e;
-    }
-    return null;
-}
-
-/// The wrapper an annotated loop is worth: `T` fresh (the type of its `yield`
-/// / `break v`), `E` fresh when the wrapper implements `@Result` (the type of
-/// its `throw`), and the wrapper's remaining defaults filled as a written
-/// `@Wrapper<T>` fills them.
-fn generatorLoopWrapper(env: *Env, eff: ast.EffectKind) InferError!*T.Type {
-    const name = eff.returnWrapper();
-    var args: std.ArrayListUnmanaged(*T.Type) = .empty;
-    try args.append(env.arena, try env.freshVar());
-    if (effectChain.wrapperImplements(name, "Result")) try args.append(env.arena, try env.freshVar());
-    if (builtinDefaultFilledArgs(env, name, args.items.len)) |names| {
-        for (names[args.items.len..]) |n| try args.append(env.arena, try env.namedType(n));
-    }
-    return env.namedTypeArgs(name, args.items);
-}
-
-/// Decision 105 — `#[@generator] loop { … }`: the body is a generator scope
-/// with exactly the annotation's capabilities, worth the annotation's wrapper.
-/// The scope is closed: the enclosing fn's effect, labels, `use` anchor and
-/// throw channel are all replaced for the body and restored after it, so a
-/// `use` or an `await` the annotation does not grant is refused inside it
-/// whatever the fn grants, and a `break :outer` / `continue :outer` naming an
-/// enclosing loop is refused as crossing the border. The loop itself is one
-/// loop deep for its body: a bare `break` ends it (and so the generator), a
-/// `continue` starts its next round.
+/// Decision 125 — `iter …` / `stream …`: the body is a generator scope with
+/// exactly the iterator's / stream's capabilities, worth `@Iterator<T>` /
+/// `@Stream<T>`. `T` is the type of its `yield` / `break v`; when the body has
+/// `throw` / `try` of its own the item becomes `@Result<U, E>` on its own,
+/// `U` from the `yield`s and `E` from the `throw` / `try`s. The scope is
+/// closed: the enclosing fn's effect, labels, `use` anchor and throw channel
+/// are all replaced for the body and restored after it, so a `use` or an
+/// `await` the prefix does not grant is refused inside it whatever the fn
+/// grants, and a `break :outer` / `continue :outer` naming an enclosing loop
+/// is refused as crossing the border. The loop itself is one loop deep for
+/// its body: a bare `break` ends it (and so the sequence), a `continue`
+/// starts its next round.
 fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKind, loc: ast.Loc) InferError!TypedExpr {
-    const wrapper = try generatorLoopWrapper(env, eff);
+    const fails = ast.bodyFails(lp.body);
+    const errTy: ?*T.Type = if (fails) try env.freshVar() else null;
+    const item: *T.Type = if (errTy) |et|
+        try env.namedTypeArgs("Result", &.{ try env.freshVar(), et })
+    else
+        try env.freshVar();
+    const wrapper = try env.namedTypeArgs(eff.returnWrapper(), &.{item});
     const iterTyped = try inferExprTyped(env, lp.iter.*);
     const iterPtr = try makeTypedPtr(env, iterTyped);
 
@@ -8844,6 +8612,8 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
     const prevLoopDepth = env.loopDepth;
     const prevBreakScope = env.breakScope;
     const prevClosedLabels = env.closedLabels;
+    const prevAliasWrapper = env.aliasWrapper;
+    const prevReturnWhole = env.returnWhole;
     const prevLabels = try env.arena.dupe([]const u8, env.labelStack.items);
     defer {
         env.starFn = prevStarFn;
@@ -8854,6 +8624,8 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
         env.loopDepth = prevLoopDepth;
         env.breakScope = prevBreakScope;
         env.closedLabels = prevClosedLabels;
+        env.aliasWrapper = prevAliasWrapper;
+        env.returnWhole = prevReturnWhole;
         env.labelStack.shrinkRetainingCapacity(0);
         env.labelStack.appendSlice(env.arena, prevLabels) catch {};
         env.generatorLoopDepth -= 1;
@@ -8863,12 +8635,14 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
     if (lp.label) |lbl| try env.labelStack.append(env.arena, lbl);
     env.starFn = starCtxFromEffect(eff, wrapper, lp.label);
     env.fnEffect = eff;
-    // `throw` lands in the wrapper's error channel when it has one (the
-    // transform's auto-wrap, as for the annotated fn); a wrapper without one
-    // refuses it at the site.
-    env.throwContext = if (effectChain.grants(eff, .try_)) .unchecked else .plain;
+    // `throw` / a failing `try` emit `Error(e)` as the last item when the
+    // item became a `@Result` (decision 122); with no `throw` / `try` in the
+    // body the channel is closed.
+    env.throwContext = if (errTy) |et| .{ .result = et } else .plain;
     env.useAnchor = null;
     env.inContextFn = false;
+    env.aliasWrapper = null;
+    env.returnWhole = null;
     env.loopDepth = 1;
     env.breakScope = .loop;
     env.generatorLoopDepth += 1;
@@ -8879,6 +8653,7 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
         .type_ = wrapper,
         .keyword = lp.keyword,
         .generator = eff,
+        .prefixedKeyword = lp.prefixedKeyword,
         .iter = iterPtr,
         .indexRange = null,
         .params = lp.params,
@@ -10044,13 +9819,13 @@ fn paramTypeInContext(env: *Env, p: ast.Param, gm: std.StringHashMap(*T.Type)) I
 /// ContextBase the hook expression must agree on. The capability was recorded in
 /// `env.fnContext` by `inferFnDecl` before the body was visited.
 fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
-    // Decision 105 — an annotated loop's body runs later, on demand: a `use`
-    // inside it would activate a hook outside the render. Closed, whatever
-    // the enclosing fn grants.
+    // Decision 125 — an `iter` / `stream` loop's body runs later, on demand:
+    // a `use` inside it would activate a hook outside the render. Closed,
+    // whatever the enclosing fn grants.
     if (env.generatorLoopDepth > 0) {
         env.lastError = TypeError.custom(
-            diagnostics.generator_loop_closed_scope ++ ": `use` cannot activate inside an annotated `loop` — its body runs on demand, at each `next`",
-            "Activate the hook before the loop and read its value inside; the annotated loop has only its own annotation's capabilities.",
+            diagnostics.generator_loop_closed_scope ++ ": `use` cannot activate inside an `iter` / `stream` loop — its body runs on demand, at each `next`",
+            "Activate the hook before the loop and read its value inside; the prefixed loop has only its own capabilities.",
         ).withLoc(loc);
         return error.TypeError;
     }
@@ -10073,8 +9848,8 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     if (env.starFn == null) {
         env.lastError = TypeError.custom(
             diagnostics.use_without_context_effect ++
-                ": `use` inside a nested closure — the closure is not the `#[@use]` body, and `use` is not inherited (as `await` is not)",
-            "Activate the hook in the `#[@use]` body itself (`val s = use state(0);`) and let the closure read `s`.",
+                ": `use` inside a nested closure — the closure is not the `@Component` body, and `use` is not inherited (as `await` is not)",
+            "Activate the hook in the `@Component` body itself (`val s = use state(0);`) and let the closure read `s`.",
         ).withLoc(loc);
         return error.TypeError;
     }
@@ -10354,21 +10129,8 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
         if (resultVariantCallName(.{ .call = c })) |_| {
             env.lastError = TypeError.custom(
                 diagnostics.result_manual_construction_forbidden ++
-                    ": the @Result type variants are only constructed by `return` / `throw` inside #[@result]; outside that the type is treated as opaque.",
-                "Replace the manual `Result.Ok(...)` / `Result.Error(...)` with the implicit form (`return <r>;` / `throw <e>;`), or move the construction outside the #[@result] body.",
-            ).withLoc(loc);
-            return error.TypeError;
-        }
-    }
-    // RF5 (§1F / §2 R17) — same shape for `#[@future]`: manual
-    // `Future.resolved(...)` / `Future.rejected(...)` calls anywhere inside
-    // the body are forbidden; the auto-wrap owns construction.
-    if (inEffectContext(env, .future)) {
-        if (futureConstructorCallName(.{ .call = c })) |_| {
-            env.lastError = TypeError.custom(
-                diagnostics.future_manual_construction_forbidden ++
-                    ": the @Future type variants are only constructed by `return` / `throw` inside #[@future]; outside that the type is treated as opaque.",
-                "Replace the manual `Future.resolved(...)` / `Future.rejected(...)` with the implicit form (`return <t>;` / `throw <e>;`), or move the construction outside the #[@future] body.",
+                    ": in a body whose return carries a `@Result`, the variants are constructed by `return` / `throw` alone.",
+                "Replace the manual `Result.Ok(...)` / `Result.Error(...)` with the implicit form (`return <r>;` / `throw <e>;`), or move the construction outside this body.",
             ).withLoc(loc);
             return error.TypeError;
         }

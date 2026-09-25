@@ -105,7 +105,7 @@ without the `function` word and in a fixed order — `static`, then `async`, the
 `*` — so `ClassMember` carries `is_async` and `is_generator` and `writeClass`
 writes them in that order. The backend fills them from one table
 (`commonJS.zig`'s `effectShape` / `methodEffect`), which is what makes
-`#[@resultGenerator] fn each(self: Self)` the `*each()` a `for…of` can consume.
+`fn each(self: Self) -> @Iterator<i32>` that yields the `*each()` a `for…of` can consume.
 
 `__bp` is what the §7 formatter tests, and it is the reason the formatter needs
 no `constructor` sniffing: a `Map`, a `@Result`'s `{ ok }` and any host object
@@ -159,7 +159,7 @@ here so a later row that removes one knows what it is removing:
 | `buildExpr` `try … catch` | the same with a handler | **yes** |
 | `buildExpr` `val assert … catch` | bind `_match`, test the pattern, run the handler (decision 8 §9) | **yes** |
 | `buildIfExpr` | an `if` **used as a value** — decision 2 keeps `if` an expression | **yes** |
-| `buildGeneratorLoop` | `#[@generator] loop { … }` — a `function*` IIFE around `while (true)` (decision 105; every other loop is a statement) | **yes** |
+| `buildGeneratorLoop` | `iter loop { … }` / `stream loop { … }` (and `iter for` / `iter while`, written as the prefixed `loop`) — a `function*` / `async function*` IIFE around `while (true)` (decisions 105, 125; every other loop is a statement) | **yes** |
 | `buildCase` | a `case` used as a value: `const _s = …` and one statement per arm | **yes** |
 | `@block { body }` | a **block as a value** — the one site whose producer decision 2 removes | **no** |
 

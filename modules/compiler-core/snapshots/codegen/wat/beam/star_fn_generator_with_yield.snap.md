@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@resultGenerator]
-fn counter() -> @ResultGenerator<i32> {
+fn counter() -> @Iterator<i32> {
     yield 1;
     yield 2;
     yield 3;
@@ -15,7 +14,7 @@ fn counter() -> @ResultGenerator<i32> {
 {attributes, []}.
 {labels, 5}.
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Iterator — eager lowering
 {function, counter, 0, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.

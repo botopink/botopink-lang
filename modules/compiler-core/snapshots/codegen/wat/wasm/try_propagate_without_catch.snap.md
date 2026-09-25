@@ -1,10 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn fetch() -> @Result<i32, string> {
     @todo();
 }
-#[@result]
 fn process() -> @Result<i32, string> {
     val r = try fetch();
     @print(r);

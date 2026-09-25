@@ -2,7 +2,7 @@
 ```botopink
 fn firstOver(arr: i32[], limit: i32) -> i32 {
     var i = 0;
-    val found = #[@generator] loop {
+    val found = iter loop {
         if (i >= arr.length) { break 0; };
         val x = arr[i] ?? 0;
         i = i + 1;
@@ -38,7 +38,7 @@ fn firstOver(arr: i32[], limit: i32) -> i32 {
           "source": "var i = 0;"
         },
         {
-          "source": "val found = #[@generator] loop {"
+          "source": "val found = iter loop {"
         },
         {
           "source": "var out = 0;"

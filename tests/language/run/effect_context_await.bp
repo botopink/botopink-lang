@@ -14,18 +14,15 @@
 
 type Element(count: i32) implement @Context<Element>
 
-#[@use]
 fn state(initial: i32) -> @Component<Element, i32> {
     return initial;
 }
 
-#[@future]
-fn answer(n: i32) -> @Future<i32> {
+fn answer(n: i32) -> @Task<i32> {
     return n;
 }
 
 // The explicit wrapper: `await` two levels down the chain.
-#[@use]
 fn page(n: i32) -> @Component<Element, i32> {
     val v = await answer(n);
     @print(v);
@@ -33,7 +30,6 @@ fn page(n: i32) -> @Component<Element, i32> {
 }
 
 // The component shape — `use` and `await` in one body.
-#[@use]
 fn Widget(n: i32) -> @Component<Element, Element> {
     val c = use state(1);
     val v = await answer(n);
@@ -43,7 +39,6 @@ fn Widget(n: i32) -> @Component<Element, Element> {
 
 // A component with no `await` of its own: its `use` is the suspension on
 // commonJS (decision 104), so it prints from inside too.
-#[@use]
 fn Plain(n: i32) -> @Component<Element, Element> {
     val c = use state(1);
     @print(c + n);

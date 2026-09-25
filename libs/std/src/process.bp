@@ -84,7 +84,6 @@ pub type Exit(
 // Node: `child_process.spawnSync`; a start failure is `r.error`, not a throw.
 // Erlang: `open_port({spawn_executable, Path}, [exit_status, …])`, the path
 // from `os:find_executable/1`, the output gathered until `exit_status`.
-#[@result]
 #[@External.Node("""(() => { const __r = require('child_process').spawnSync($0, $1, { encoding: 'utf8' }); return __r.error ? { error: String(__r.error.message ?? __r.error) } : { ok: { status: __r.status ?? -1, stdout: __r.stdout ?? '', stderr: __r.stderr ?? '' } } })()""")]
 #[@External.Erlang("""(fun(__C, __A) -> __X = case string:find(__C, <<"/">>) of nomatch -> os:find_executable(binary_to_list(__C)); _ -> binary_to_list(__C) end, case __X of false -> {error, iolist_to_binary([<<"process.run: not found: ">>, __C])}; _ -> try open_port({spawn_executable, __X}, [binary, exit_status, stderr_to_stdout, {args, [binary_to_list(__Y) || __Y <- __A]}]) of __P -> __L = fun __F(__Acc) -> receive {__Q, {data, __D}} when __Q =:= __P -> __F([__D | __Acc]); {__Q, {exit_status, __S}} when __Q =:= __P -> {__S, iolist_to_binary(lists:reverse(__Acc))} end end, {__St, __Out} = __L([]), {ok, #{status => __St, stdout => __Out, stderr => <<>>}} catch _:__E -> {error, iolist_to_binary(io_lib:format("process.run: ~p", [__E]))} end end end)($0, $1)""")]
 pub declare fn run(cmd: string, args: string[]) -> @Result<Exit, string>;

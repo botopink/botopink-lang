@@ -151,14 +151,13 @@ test "js: external ---- A2 method-on-global template keeps receiver bound" {
     );
 }
 
-// §A3: a `#[@result] declare fn` paired with `@external` accepts the
+// §A3: a `declare fn` paired with `@external` accepts the
 // effect annotation because the host template owns the wrapper shape.
 // The fn's return type is `@Result<R, E>`; the template renders an
 // `{ ok: ... } | { error: ... }` shape on Node and `{ok, _} | {error, _}`
 // on Erlang. Without §A3 this declare reds at R1 (effect on declare).
 test "js: external ---- A3 result-template-owned declare fn" {
     try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
-        \\#[@result]
         \\#[@External.Erlang( """(fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)($0)"""),
         \\  @External.Node("""(() => { const __n = Number($0); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })()""")]
         \\pub declare fn parseInt(s: string) -> @Result<i32, string>;

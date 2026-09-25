@@ -1,14 +1,12 @@
 //// Decision 103 — a `@FutureGenerator` suspends between items: it is
 //// iterated with `for await`, never with `for`.
 
-#[@futureGenerator]
-fn ticks(n: i32) -> @FutureGenerator<i32> {
+fn ticks(n: i32) -> @Stream<i32> {
     var i = 0;
     while (i < n) { yield i; i = i + 1; };
 }
 
-#[@future]
-fn total() -> @Future<i32> {
+fn total() -> @Task<i32> {
     var acc = 0;
     for (ticks(3)) { v -> acc = acc + v; };
     return acc;

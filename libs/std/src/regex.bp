@@ -104,7 +104,6 @@ pub type Regex(handle: any)
 // naming why.
 // Node: `new RegExp(pattern)` throws a `SyntaxError`, caught.
 // Erlang: `re:compile/1` answers `{error, {Reason, Offset}}`.
-#[@result]
 #[@External.Node("""(() => { try { return { ok: { handle: new RegExp($0) } } } catch (__e) { return { error: String(__e && __e.message ? __e.message : __e) } } })()""")]
 #[@External.Erlang("""(fun(__P) -> case re:compile(__P) of {ok, __M} -> {ok, #{handle => __M}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn compile(pattern: string) -> @Result<Regex, string>;

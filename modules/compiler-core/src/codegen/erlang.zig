@@ -137,23 +137,6 @@ fn identName(expr: ast.Expr) ?[]const u8 {
     };
 }
 
-/// Marker kinds emitted by `transform.zig::tryLowerFutureJump`.
-const FutureWrapKindErl = enum { resolved, rejected };
-
-/// Recognise the `__bp_future_resolved(<t>)` / `__bp_future_rejected(<e>)`
-/// builtin marker calls so the erlang return-statement emitter can strip
-/// them back to the eager-lowering shape (`<t>` for resolved, `throw(<e>)`
-/// for rejected). The promise wrap is implicit in erlang's sync rendering.
-fn futureWrapCallNameErl(e: ast.Expr) ?FutureWrapKindErl {
-    if (e != .call) return null;
-    if (e.call.kind != .call) return null;
-    const c = e.call.kind.call;
-    if (!c.is_builtin or c.args.len != 1) return null;
-    if (std.mem.eql(u8, c.callee, "__bp_future_resolved")) return .resolved;
-    if (std.mem.eql(u8, c.callee, "__bp_future_rejected")) return .rejected;
-    return null;
-}
-
 fn isZeroArgMainCallExpr(expr: ast.Expr) bool {
     return switch (expr) {
         .call => |c| switch (c.kind) {
@@ -4765,14 +4748,18 @@ const Emitter = struct {
     }
 
     fn fnForms(this: *Emitter, b: Ast.Builder, out: *Forms, f: ast.FnDecl) !void {
-        // An effect fn is async/generator — except `#[@result]` (checked-Result
-        // effect), which is a plain function. Erlang is eager: a `@Future<T>`
-        // resolves to `T` (so `await` is identity) and a finite `@ResultGenerator<T>`
-        // is a list.
-        // `#[@use]` is a plain function too: the annotation gates `use`
-        // in the body (decision 88); nothing about it is async.
-        if (f.effect != null and f.effect.? != .result and f.effect.? != .use) {
-            try out.append(b.arena, .{ .comment = Ast.Comment.doc("#[@future] / #[@futureGenerator] — eager lowering") });
+        // An effect fn is async/generator — except `-> @Result` (the
+        // checked-Result value), which is a plain function. Erlang is eager: a
+        // `@Task<T>` is `T` (so `await` is identity) and a finite
+        // `@Iterator<T>` is a list. `-> @Component` is a plain function too:
+        // the return gates `use` in the body (decision 88); nothing about it
+        // is async.
+        if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
+            try out.append(b.arena, .{ .comment = Ast.Comment.doc(switch (f.effect.?) {
+                .task => "@Task — eager lowering",
+                .iterator => "@Iterator — eager lowering",
+                else => "@Stream — eager lowering",
+            }) });
         }
         // Fresh local scope for this function (erlang vars are function-scoped).
         this.resetLocals();
@@ -5941,17 +5928,9 @@ const Emitter = struct {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
                     const val = r orelse return Ast.Expr.a("undefined");
-                    // `#[@future]` eager lowering: strip the
-                    // `__bp_future_resolved(<t>)` marker back to `<t>`, and map
-                    // `__bp_future_rejected(<e>)` to a plain `throw(<e>)` — the
-                    // promise wrap is implicit in erlang's sync rendering.
-                    if (futureWrapCallNameErl(val.*)) |kind| {
-                        const inner = try this.exprNode(b, val.*.call.kind.call.args[0].value.*);
-                        return switch (kind) {
-                            .resolved => inner,
-                            .rejected => b.call("throw", &.{inner}),
-                        };
-                    }
+                    // A `@Task` is eager here (decision 120): `return v` is
+                    // `v`, and a failure is the `{error, E}` value the
+                    // transform built — it never throws.
                     return this.exprNode(b, val.*);
                 },
                 else => return this.exprNode(b, e),
@@ -8339,16 +8318,12 @@ const Emitter = struct {
         });
     }
 
-    /// The effect a method declares — read back from its annotation list, as
-    /// commonJS's `methodEffect` does: `ast.BehaviorMethod` has no parsed
-    /// `effect` field. A `#[@generator]` method's body is a generator scope
+    /// The effect a method's return activates (decision 118), as commonJS's
+    /// `methodEffect` reads it: `ast.BehaviorMethod` has no parsed `effect`
+    /// field. An `@Iterator` method that yields is a generator scope
     /// (decision 105) exactly as a free fn's is.
     fn methodEffect(m: anytype) ?ast.EffectKind {
-        for (m.annotations) |a| {
-            if (!a.is_builtin) continue;
-            if (ast.EffectKind.fromAnnotationName(a.name)) |k| return k;
-        }
-        return null;
+        return ast.EffectKind.ofMethod(m.returnType, m.body);
     }
 
     fn recordForms(this: *Emitter, b: Ast.Builder, out: *Forms, r: ast.TypeDecl) !void {

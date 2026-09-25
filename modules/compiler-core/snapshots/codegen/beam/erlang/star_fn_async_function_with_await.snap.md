@@ -1,11 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@future]
-fn fetch(x: i32) -> @Future<i32> {
+fn fetch(x: i32) -> @Task<i32> {
     return x;
 }
-#[@future]
-fn loadTwice(x: i32) -> @Future<i32> {
+fn loadTwice(x: i32) -> @Task<i32> {
     val a = await fetch(x);
     return a + a;
 }
@@ -15,11 +13,11 @@ fn loadTwice(x: i32) -> @Future<i32> {
 ```erlang
 -module(test@main).
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Task — eager lowering
 fetch(X) ->
     X.
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Task — eager lowering
 loadTwice(X) ->
     A = fetch(X),
     '__bp_add'(A, A).

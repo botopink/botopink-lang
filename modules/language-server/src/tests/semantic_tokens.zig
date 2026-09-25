@@ -46,8 +46,7 @@ test "semanticTokens: free fn, interface method, and effect fn distinguished" {
     const source =
         \\fn free(a: i32) -> i32 { return a; }
         \\behavior Greeter { fn greet(self: Self) -> string; }
-        \\#[@resultGenerator]
-        \\fn counter() -> @ResultGenerator<i32> :gen { yield 1; }
+        \\fn counter() -> @Iterator<i32> :gen { yield 1; }
     ;
     try run(std.testing.allocator, "semantic_tokens_fn_kinds", source);
 }

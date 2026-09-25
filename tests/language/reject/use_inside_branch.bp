@@ -2,10 +2,8 @@
 //// the static prefix is the function body's, at any nesting.
 
 type Element(count: i32) implement @Context<Element>
-#[@use]
 fn effect(cb: i32) -> @Component<Element, i32> { return cb; }
 
-#[@use]
 fn Widget(a: bool) -> @Component<Element, Element> {
     if (a) { use effect(1); };
     return Element(count: 1);

@@ -3,11 +3,9 @@
 //// implement `@Future`, so `await` is one level above it and is refused,
 //// located, naming the level it would need (decision 67 — no flag).
 
-#[@future]
-fn fetch(n: i32) -> @Future<i32> { return n; }
+fn fetch(n: i32) -> @Task<i32> { return n; }
 
-#[@resultGenerator]
-fn bad(n: i32) -> @ResultGenerator<i32> {
+fn bad(n: i32) -> @Iterator<i32> {
     val w = await fetch(n);
     yield w;
 }

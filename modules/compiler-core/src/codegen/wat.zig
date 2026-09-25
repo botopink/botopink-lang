@@ -1823,13 +1823,18 @@ const Emitter = struct {
         self.fn_returns_result = (f.effect != null and f.effect.? == .result) or
             (if (f.returnType) |rt| resultShapeOfTypeRef(rt) != null else false);
 
-        // An effect fn is async/generator — except `#[@result]` (checked-Result
-        // effect), which is a plain function. WASM is single-threaded and eager
-        // here: `@Future<T>` resolves to `T` (`await` is identity); full
-        // generator state-machine lowering is not yet implemented.
-        // `#[@use]` is a plain function too (decision 88: it gates `use`).
-        if (f.effect != null and f.effect.? != .result and f.effect.? != .use) {
-            try self.itemComment("#[@future] / #[@futureGenerator] — eager lowering");
+        // An effect fn is async/generator — except `-> @Result` (the
+        // checked-Result value), which is a plain function. WASM is
+        // single-threaded and eager here: a `@Task<T>` is `T` (`await` is
+        // identity, decision 120); full generator state-machine lowering is
+        // not yet implemented. `-> @Component` is a plain function too
+        // (decision 88: it gates `use`).
+        if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
+            try self.itemComment(switch (f.effect.?) {
+                .task => "@Task — eager lowering",
+                .iterator => "@Iterator — eager lowering",
+                else => "@Stream — eager lowering",
+            });
         }
         // Params, and the locals the body needs, are registered *before* the
         // body is rendered so identifier lowering can tell a local from a global.
@@ -1849,10 +1854,10 @@ const Emitter = struct {
         try self.declareScratch("__mem", self.countMems(f.body));
         try self.emitLocalDecls(f.body);
 
-        // An `#[@resultGenerator]` / `#[@generator]` body runs eagerly: every `yield`
-        // is appended to one array, which is what the fn returns.
+        // An `@Iterator` / `@Stream` body runs eagerly: every `yield` is
+        // appended to one array, which is what the fn returns.
         const accumulates = if (f.effect) |e|
-            (e == .resultGenerator or e == .generator or e == .futureGenerator) and has_result and bodyYieldsDeep(f.body)
+            (e == .iterator or e == .stream) and has_result and bodyYieldsDeep(f.body)
         else
             false;
         if (!accumulates) try self.noteSelfTailCalls(f);
@@ -5258,7 +5263,7 @@ const Emitter = struct {
             .array => |inner| inner.*,
             // An iterator runs eagerly here: it is the array of what it yields.
             .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
-                std.mem.eql(u8, g.name, "ResultGenerator") or std.mem.eql(u8, g.name, "FutureGenerator")))
+                std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "Stream")))
                 g.args[0]
             else
                 return null,
@@ -6284,7 +6289,7 @@ const Emitter = struct {
         const elem: ast.TypeRef = switch (t) {
             .array => |inner| inner.*,
             .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
-                std.mem.eql(u8, g.name, "ResultGenerator")))
+                std.mem.eql(u8, g.name, "Iterator")))
                 g.args[0]
             else
                 return null,

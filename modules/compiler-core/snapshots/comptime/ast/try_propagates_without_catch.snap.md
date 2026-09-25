@@ -1,11 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type IoError(path: string)
-#[@result]
 fn load() -> @Result<string, IoError> {
     throw IoError(path: "/data");
 }
-#[@result]
 fn run() -> @Result<string, IoError> {
     val s = try load();
     return s;

@@ -370,7 +370,7 @@ pub const TypeError = struct {
             .useNotContext => |e| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` takes a hook: '{s}' is not a hook `@Component<C, _>`", .{e}),
             .contextMismatch => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: function anchors at `{s}` but `use` returns @Component<{s}, _>", .{ m.fnBase, m.useBase }),
             .contextBaseMixed => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: every `use` in one function resolves against the same ContextBase: this body's is `{s}`, fixed by the `use` on line {d}, and this one is @Component<{s}, _>", .{ m.anchorBase, m.anchorLine, m.useBase }),
-            .useWithoutContextEffect => |u| std.fmt.allocPrint(gpa, "use-without-context-effect: `use` needs `#[@use]` on the enclosing fn '{s}' (it returns '{s}'): only a `#[@use]` body activates a hook", .{ u.fnName, u.returnType }),
+            .useWithoutContextEffect => |u| std.fmt.allocPrint(gpa, "use-without-context-effect: `use` needs a `-> @Component<C, T>` return on the enclosing fn '{s}' (it returns '{s}'): only a `@Component` body activates a hook", .{ u.fnName, u.returnType }),
             .useTupleArity => |u| blk: {
                 const source = try typeLabelAlloc(gpa, u.sourceType);
                 defer gpa.free(source);
@@ -379,7 +379,7 @@ pub const TypeError = struct {
                 else
                     try std.fmt.allocPrint(gpa, "use-tuple-arity: `val #(…)` binds {d} name(s) but the hook yields '{s}', which is not a tuple", .{ u.patternLen, source });
             },
-            .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-throw-without-fallible-channel: `throw` is only valid inside a fn whose effect declares an error channel: #[@result], #[@future], #[@resultGenerator], or #[@futureGenerator]", .{}),
+            .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return", .{}),
             .methodNotActive => |m| std.fmt.allocPrint(gpa, "'{s}' has no active method '{s}' — activate the extension with `{s}*`", .{ m.typeName, m.method, m.hintSym }),
             .ambiguousExtension => |a| std.fmt.allocPrint(gpa, "'{s}.{s}' is provided by both '{s}' and '{s}' — qualify the call, e.g. `{s}.{s}(obj)`", .{ a.typeName, a.method, a.symA, a.symB, a.symA, a.method }),
             .notAnExtension => |name| std.fmt.allocPrint(gpa, "'{s}' does not name an implement/extend symbol", .{name}),

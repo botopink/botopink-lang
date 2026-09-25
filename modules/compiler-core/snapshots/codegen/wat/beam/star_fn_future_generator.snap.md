@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@futureGenerator]
-fn stream() -> @FutureGenerator<i32, string> {
+fn stream() -> @Stream<@Result<i32, string>> {
     yield 1;
     yield 2;
 }
@@ -14,7 +13,7 @@ fn stream() -> @FutureGenerator<i32, string> {
 {attributes, []}.
 {labels, 5}.
 
-%% #[@future] / #[@futureGenerator] — eager lowering
+%% @Stream — eager lowering
 {function, stream, 0, 3}.
   {label, 2}.
     {line, [{location, "test@main.erl", 1}]}.
@@ -24,9 +23,15 @@ fn stream() -> @FutureGenerator<i32, string> {
     {init_yregs, {list, [{y, 0}]}}.
     {move, nil, {y, 0}}.
     {move, {integer, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 0}, {y, 0}}.
     {move, {integer, 2}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, {y, 0}, {y, 0}}.
   {label, 4}.

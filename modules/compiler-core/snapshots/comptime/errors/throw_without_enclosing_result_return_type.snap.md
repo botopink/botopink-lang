@@ -4,10 +4,10 @@ fn run() -> i32 {
 }
 
 ----- ERROR
-error: throw outside @Result
+error: effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return — this fn's return has no `@Result` in it
   ┌─ :2:5
   │
 2 │     throw "x";
   │     ^
 
-  'throw' requires the enclosing fn to return '@Result<D, E>'
+  hint: Put a `@Result` in the return (`-> @Result<T, E>`, `-> @Task<@Result<T, E>>`, `-> @Iterator<@Result<T, E>>`, …) or handle the failure where it happens.

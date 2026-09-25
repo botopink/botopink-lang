@@ -4,7 +4,7 @@
 
 pub fn main() {
     var contador = 0;
-    val dobros = #[@generator] loop {
+    val dobros = iter loop {
         contador = contador + 1;
         if (contador == 10) { break contador * 2; };
         yield contador * 2;

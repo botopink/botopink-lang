@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type Status { Ok, Fail }
-#[@result]
 fn check(s: Status) -> @Result<i32, string> {
     return case s {
         Ok -> 1;

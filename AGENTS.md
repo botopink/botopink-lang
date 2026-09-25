@@ -220,15 +220,19 @@ A rule this repository implements whose other half belongs to a library under
 `repository/` in the meta workspace. Written here because the core cannot land
 it and must not silently wait for it.
 
-- **`Element` carries its base type** — decisions 96 and 102 of 1.0.10-beta.
-  `@Context<Base>` is the owner marker (one parameter); a hook is `#[@use] fn …
-  -> @Use<Base, T>` and a component `#[@use] fn … -> @Component<Element>`, whose
-  base is read off `Element`'s `implement @Context<Base>`. The checker holds
-  the rule that **every `use` in one function resolves against the same base**.
-  jhonstart's sweep to this surface (`element.bp` → `implement
-  @Context<ElementBase>`, `#[@context]` → `#[@use]`, the hook and component
-  wrappers) is front 21 step 4; until it lands, jhonstart's cells are listed in
-  `scripts/known-red-libs.txt`.
+- **`Element` carries its base type** — decisions 96, 102, 118 and 128 of 1.0.10-beta.
+  `@Context<Base>` is the owner marker (one parameter); a hook is
+  `fn … -> @Component<Base, T>` and a component `fn … -> @Component<Base, Element>`
+  (the return is the effect — there is no annotation; the base is always
+  written). The checker holds the rule that **every `use` in one function
+  resolves against the same base**.
+- **The libraries move to the return-is-the-effect surface** — front 24
+  (decisions 118–128). The compiler refuses `#[@result]` … `#[@futureGenerator]`,
+  `#[@use]`, `@Future`, `@Generator`, `@ResultGenerator`, `@FutureGenerator`,
+  `@Use` and `@Iterator<T, E>`; jhonstart, rakun and emilia (and their examples)
+  still write them, so their cells are listed in `scripts/known-red-libs.txt`
+  under `24-effects-by-return` until each library's sweep (`front/24-libs`,
+  `front/24-rakun`) lands and deletes its lines.
 
 ## Local gate
 

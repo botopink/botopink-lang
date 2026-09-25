@@ -23,16 +23,14 @@ test "erlang: beam memory ---- a ProcessDict var is one value per process" {
         \\#[@BeamMemory.ProcessDict]
         \\var hits: i32 = 0;
         \\
-        \\#[@future]
-        \\fn request() -> @Future<i32> {
+        \\fn request() -> @Task<i32> {
         \\    hits = hits + 1;
         \\    hits = hits + 1;
         \\    hits = hits + 1;
         \\    return hits;
         \\}
         \\
-        \\#[@future]
-        \\fn main() -> @Future<void> {
+        \\fn main() -> @Task<void> {
         \\    val seen = await async.allOf([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
         \\    @print(seen);
         \\    @print(hits);
@@ -55,16 +53,14 @@ test "erlang: beam memory ---- an Ets var is one value per node, and survives th
         \\#[@BeamMemory.Ets]
         \\var hits: i32 = 0;
         \\
-        \\#[@future]
-        \\fn request() -> @Future<i32> {
+        \\fn request() -> @Task<i32> {
         \\    hits = hits + 1;
         \\    hits = hits + 1;
         \\    hits += 1;
         \\    return 0;
         \\}
         \\
-        \\#[@future]
-        \\fn main() -> @Future<void> {
+        \\fn main() -> @Task<void> {
         \\    val done = await async.allOf([{ -> request() }, { -> request() }, { -> request() }, { -> request() }, { -> request() }]);
         \\    @print(done.length());
         \\    @print(hits);
@@ -84,13 +80,11 @@ test "erlang: beam memory ---- an Ets var written whole is read back from anothe
         \\#[@BeamMemory.Ets]
         \\var hits: i32 = 0;
         \\
-        \\#[@future]
-        \\fn read() -> @Future<i32> {
+        \\fn read() -> @Task<i32> {
         \\    return hits;
         \\}
         \\
-        \\#[@future]
-        \\fn main() -> @Future<void> {
+        \\fn main() -> @Task<void> {
         \\    hits = 40;
         \\    hits = hits - 2;
         \\    val seen = await async.allOf([{ -> read() }]);
@@ -111,13 +105,11 @@ test "erlang: beam memory ---- a PersistentTerm var is put at load and read from
         \\#[@BeamMemory.PersistentTerm]
         \\var version: i32 = 101;
         \\
-        \\#[@future]
-        \\fn read() -> @Future<i32> {
+        \\fn read() -> @Task<i32> {
         \\    return version;
         \\}
         \\
-        \\#[@future]
-        \\fn main() -> @Future<void> {
+        \\fn main() -> @Task<void> {
         \\    val seen = await async.allOf([{ -> read() }, { -> read() }]);
         \\    @print(seen);
         \\    @print(version);

@@ -9,18 +9,15 @@ type Element(count: i32) implement @Context<Element>
 type Request(code: i32)
 
 // A hook anchored at `Element`.
-#[@use]
 fn request() -> @Component<Element, Request> {
     return Request(code: 7);
 }
 
-#[@future]
-fn load(n: i32) -> @Future<i32> {
+fn load(n: i32) -> @Task<i32> {
     return n;
 }
 
 // `use` and `await` in one body, under one annotation.
-#[@use]
 fn Page() -> @Component<Element, Element> {
     val r = use request();
     val extra = await load(1);
@@ -28,18 +25,17 @@ fn Page() -> @Component<Element, Element> {
 }
 
 // The component composes with a `#[@future]` caller that awaits it.
-#[@future]
-fn rendered() -> @Future<i32> {
+fn rendered() -> @Task<i32> {
     val e = await Page();
     return e.count;
 }
 
-test "a #[@use] component uses and awaits" {
+test "a component uses and awaits" {
     val e = await Page();
     assert e.count == 8;
 }
 
-test "a #[@future] caller awaits the component" {
+test "a caller awaits the component" {
     val n = await rendered();
     assert n == 8;
 }

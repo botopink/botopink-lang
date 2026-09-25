@@ -1,6 +1,5 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
 fn main() {
     val n = parseAge("42").unwrapOr(0);

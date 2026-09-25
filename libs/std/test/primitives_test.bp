@@ -289,7 +289,6 @@ test "optional chaining short-circuits null" {
 // follow the rule: only a `#[@result]` fn (`-> @Result<D, E>`) gets
 // checked-Result treatment. Migrated from result_test.bp.
 
-#[@result]
 fn parse(n: i32) -> @Result<i32, string> {
     if (n < 0) throw "negative";
     return n;

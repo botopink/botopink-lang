@@ -1031,7 +1031,7 @@ pub fn renderTypeErrorBody(
         .useNotContext => "use-of-non-context-fn: `use` takes a hook",
         .contextMismatch => "context-anchor-violation: ContextBase mismatch",
         .contextBaseMixed => "context-anchor-violation: two ContextBases in one body",
-        .useWithoutContextEffect => "use-without-context-effect: `use` needs `#[@use]` on the enclosing fn",
+        .useWithoutContextEffect => "use-without-context-effect: `use` needs a `-> @Component<C, T>` return on the enclosing fn",
         .useTupleArity => "use-tuple-arity: `val #(…)` from a `use` binds the tuple's elements",
         .throwWithoutResult => "throw outside @Result",
         .missingMethod => "missing interface method",
@@ -1190,7 +1190,7 @@ pub fn renderTypeErrorBody(
         .useWithoutContextEffect => |u| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  fn '{s}' returns '{s}',\n  but only a `#[@use]` body activates a hook (decision 104)\n",
+                "\n  fn '{s}' returns '{s}',\n  but only a `-> @Component<C, T>` body activates a hook (decisions 104, 118)\n",
                 .{ u.fnName, u.returnType },
             ));
         },

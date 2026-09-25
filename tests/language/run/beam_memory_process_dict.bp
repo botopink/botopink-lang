@@ -10,15 +10,13 @@ import { async } from "std";
 #[@BeamMemory.ProcessDict]
 var scratch: i32 = 0;
 
-#[@future]
-fn elsewhere() -> @Future<i32> {
+fn elsewhere() -> @Task<i32> {
     val before = scratch;
     scratch = 99;
     return before;
 }
 
-#[@future]
-pub fn main() -> @Future<void> {
+pub fn main() -> @Task<void> {
     scratch = 5;
     val seen = await async.allOf([{ -> elsewhere() }]);
     @print(seen);

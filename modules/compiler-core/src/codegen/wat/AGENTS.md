@@ -291,7 +291,7 @@ for the SECOND method.
 **No loop has a value** ([decision 105](../../../../../specs/1.0.10-beta/decisions-taken.md),
 superseding decision 55's value `break`): `break <v>` belongs to a generator
 scope and ends it — `emitGenBreak` appends `v` and branches out of the
-annotated loop's `$__gen{n}` block, or returns a generator fn's array.
+`iter` loop's `$__gen{n}` block, or returns a generator fn's array.
 
 **A range pattern tests both ends** ([decision 53](../../../../../specs/1.0.5-beta/decisions-taken.md)):
 `1...9` arrives as a `.variant` whose `shape` is `.range` with the two bounds in

@@ -5,7 +5,6 @@
 //// that needs no channel (it handles the error on the spot); this one does
 //// not have it.
 
-#[@result]
 fn parse(n: i32) -> @Result<i32, string> { return n; }
 
 fn plain(n: i32) -> i32 {

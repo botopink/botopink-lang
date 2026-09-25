@@ -4,11 +4,9 @@
 //// whatever it wraps. The refusal names the annotation that does.
 
 type Element(count: i32) implement @Context<Element>
-#[@use]
 fn state(initial: i32) -> @Component<Element, i32> { return initial; }
 
-#[@future]
-fn Page() -> @Future<Element> {
+fn Page() -> @Task<Element> {
     val n = use state(0);
     return Element(count: n);
 }

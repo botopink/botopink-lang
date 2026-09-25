@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type AppError(msg: string)
-#[@result]
 fn fetch() -> @Result<i32, AppError> {
     throw AppError(msg: "fail");
 }

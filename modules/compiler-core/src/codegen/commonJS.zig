@@ -593,7 +593,19 @@ const TryHead = union(enum) {
     destruct: struct { mutable: bool, pattern: ast.ParamDestruct },
     ret,
     discard,
+    /// `yield try x` — the Ok value is the item.
+    yield_ok_value,
+    /// `yield __bp_ok(try x)` — the Ok Result is the item as it is.
+    yield_result,
 };
+
+/// The operand of a transform-inserted `__bp_ok(<v>)` wrap, or null.
+fn okWrapOperand(e: ast.Expr) ?ast.Expr {
+    if (e != .call or e.call.kind != .call) return null;
+    const c = e.call.kind.call;
+    if (!c.is_builtin or c.args.len != 1 or !std.mem.eql(u8, c.callee, "__bp_ok")) return null;
+    return c.args[0].value.*;
+}
 
 /// A handler that transfers control (`return`/`throw`/`break`/`continue`) is a
 /// statement, not a value, so it cannot sit inside a `?:` ternary.
@@ -605,23 +617,6 @@ fn isJumpHandler(h: ast.Expr) bool {
         },
         else => false,
     };
-}
-
-/// Marker kinds emitted by `transform.zig::tryLowerFutureJump`.
-const FutureWrapKind = enum { resolved, rejected };
-
-/// Recognise the `__bp_future_resolved(<t>)` / `__bp_future_rejected(<e>)`
-/// builtin marker calls so the commonJS return-statement lowering can strip
-/// them back to native `return <t>;` / `throw <e>;` (the JS `async function`
-/// keyword is the actual promise wrap).
-fn futureWrapCallName(e: ast.Expr) ?FutureWrapKind {
-    if (e != .call) return null;
-    if (e.call.kind != .call) return null;
-    const c = e.call.kind.call;
-    if (!c.is_builtin or c.args.len != 1) return null;
-    if (std.mem.eql(u8, c.callee, "__bp_future_resolved")) return .resolved;
-    if (std.mem.eql(u8, c.callee, "__bp_future_rejected")) return .rejected;
-    return null;
 }
 
 /// Recognise the try/catch shape of `e`, or null when it is not a try/catch.
@@ -1721,40 +1716,34 @@ const Emitter = struct {
         }
     };
 
-    /// The JS shape a botopink effect asks for.
-    ///   `#[@future]`          → `async function`
-    ///   `#[@resultGenerator]`        → `function*`
-    ///   `#[@generator]`       → `function*`
-    ///   `#[@futureGenerator]` → `async function*`
-    ///   `#[@result]`          → `function` (checked-Result effect — plain fn)
-    ///   `#[@use]`             → `async function`, awaiting or not (decision 104:
-    ///                           every hook and component answers a Promise and
-    ///                           every caller `await`s it)
-    ///   none                  → `function`
+    /// The JS shape a botopink effect asks for — read off the return
+    /// (decision 118):
+    ///   `-> @Task<T>`          → `async function` (decision 120)
+    ///   `-> @Component<C, T>`  → `async function`, awaiting or not (decision
+    ///                            104: every hook and component answers a
+    ///                            Promise and every caller `await`s it)
+    ///   `-> @Iterator<T>`      → `function*` (a body that yields; decision 123)
+    ///   `-> @Stream<T>`        → `async function*`
+    ///   `-> @Result<T, E>`     → `function` (the checked-Result value)
+    ///   none (and a factory)   → `function`
     fn effectShape(eff: ?ast.EffectKind) FnShape {
         const e = eff orelse return .{};
         return switch (e) {
-            .future => .{ .is_async = true },
-            .resultGenerator => .{ .is_generator = true },
-            .generator => .{ .is_generator = true },
-            .futureGenerator => .{ .is_async = true, .is_generator = true },
+            .task => .{ .is_async = true },
+            .component => .{ .is_async = true },
+            .iterator => .{ .is_generator = true },
+            .stream => .{ .is_async = true, .is_generator = true },
             .result => .{},
-            .use => .{ .is_async = true },
         };
     }
 
-    /// The effect a METHOD declares. `ast.FnDecl` carries a parsed `effect`
-    /// field; `ast.BehaviorMethod` — a record's or an enum's method, and a
-    /// `behavior`'s `default fn` — carries only its annotation list, so the
-    /// effect is read back from it. Reading `FnDecl.effect` alone is what made
-    /// `#[@resultGenerator] fn iter(self: Self)` emit as a plain method whose
-    /// `loop … yield` lowered to a value-dropping `.map()`.
+    /// The effect a METHOD's return activates (decision 118). `ast.FnDecl`
+    /// carries a parsed `effect` field; `ast.BehaviorMethod` — a record's or
+    /// an enum's method, and a `behavior`'s `default fn` — does not, so the
+    /// effect is read off its return type and body here, as the parser reads
+    /// a fn's.
     fn methodEffect(m: ast.BehaviorMethod) ?ast.EffectKind {
-        for (m.annotations) |a| {
-            if (!a.is_builtin) continue;
-            if (ast.EffectKind.fromAnnotationName(a.name)) |k| return k;
-        }
-        return null;
+        return ast.EffectKind.ofMethod(m.returnType, m.body);
     }
 
     /// A top-level `fn` decl: an external alias/template breadcrumb, or a real
@@ -2908,24 +2897,30 @@ const Emitter = struct {
                     // statements and every value arm returns (wrapped in
                     // `{ ok }` when `#[@result]` wrapped the case).
                     if (try self.buildReturnCaseStmt(rp.*)) |st| return st;
-                    // §1F F4F-T2 — strip the post-transform future markers
-                    // back to native shapes. The `async function` machinery
-                    // is the actual promise wrap; the markers exist for
-                    // backends that need an explicit form (and for uniform
-                    // post-transform AST).
-                    if (futureWrapCallName(rp.*)) |kind| {
-                        const inner = try self.buildExpr(rp.*.call.kind.call.args[0].value.*);
-                        return switch (kind) {
-                            .resolved => js.Stmt{ .return_ = inner },
-                            .rejected => js.Stmt{ .throw_ = inner },
-                        };
-                    }
-                    // `return <iter>` in an `#[@resultGenerator] fn -> @ResultGenerator`
+                    // `return <iter>` in a generator body
                     // delegates: `yield* <iter>; return;` (a plain
                     // `return <gen>` surfaces the generator object and
                     // yields nothing).
                     if (self.in_generator) return .{ .yield_delegate = try self.buildExpr(rp.*) };
                     return .{ .return_ = try self.buildExpr(rp.*) };
+                },
+                // Decision 122 — `yield try x` / `yield __bp_ok(try x)` in a
+                // sequence whose item is a `@Result`: a failing `try` emits
+                // the Error as the last item and ends; an Ok is emitted as
+                // the Result it already is.
+                .yield => |y| {
+                    if (y.value) |vp| {
+                        const inner: ?ast.Expr = if (classifyTry(vp.*) != null)
+                            vp.*
+                        else if (okWrapOperand(vp.*)) |op| (if (classifyTry(op) != null) op else null) else null;
+                        if (inner) |in| {
+                            if (classifyTry(in)) |form| if (form == .propagate) {
+                                const wrapped = classifyTry(vp.*) == null;
+                                return self.buildTryStmt(form, if (wrapped) .yield_result else .yield_ok_value);
+                            };
+                        }
+                    }
+                    return .{ .expr = try self.buildExpr(e) };
                 },
                 else => {
                     if (classifyTry(e)) |form| return self.buildTryStmt(form, .discard);
@@ -3028,6 +3023,9 @@ const Emitter = struct {
             } },
             .ret => js.Stmt{ .return_ = value },
             .discard => js.Stmt{ .expr = value },
+            .yield_ok_value => js.Stmt{ .expr = try self.b.yield_(value) },
+            // Unreachable: `tryValueStmt` yields the whole Result for it.
+            .yield_result => js.Stmt{ .expr = try self.b.yield_(value) },
         };
     }
 
@@ -3067,6 +3065,17 @@ const Emitter = struct {
                     const rendered = try self.b.call(try self.b.member(.{ .name = "JSON" }, "stringify"), &.{err_val});
                     const message = try self.b.ternary(is_string, err_val, rendered);
                     break :blk .{ .throw_ = try self.b.new_(.{ .name = "Error" }, &.{message}) };
+                } else if (self.in_generator) blk: {
+                    // Decision 122 — in a sequence whose item is a
+                    // `@Result`, a failing `try` emits the Error as the last
+                    // item and ends: `yield _tryN; return;`.
+                    break :blk .{ .block = .{
+                        .stmts = try self.b.stmts(&.{
+                            .{ .expr = try self.b.yield_(.{ .name = temp }) },
+                            .{ .return_ = null },
+                        }),
+                        .layout = .spaced,
+                    } };
                 } else .{ .return_ = .{ .name = temp } };
                 try stmts.append(self.arena(), try self.b.ifStmt(try self.errorIn(temp), on_error));
                 if (try self.tryValueStmt(head, temp)) |s| try stmts.append(self.arena(), s);
@@ -3085,6 +3094,8 @@ const Emitter = struct {
     /// `<head>_tryN.ok;`, unless the value is discarded.
     fn tryValueStmt(self: *Emitter, head: TryHead, temp: []const u8) !?js.Stmt {
         if (head == .discard) return null;
+        // `yield __bp_ok(try x)`: the Ok Result is the item as it is.
+        if (head == .yield_result) return js.Stmt{ .expr = try self.b.yield_(.{ .name = temp }) };
         return try self.tryHeadStmt(head, try self.b.member(.{ .name = temp }, "ok"));
     }
 
@@ -3170,8 +3181,6 @@ const Emitter = struct {
         }
         // The `#[@future]` markers outside a `return` (which strips them in
         // `buildStmt`): resolving is the value, rejecting throws.
-        if (std.mem.eql(u8, callee, "__bp_future_resolved")) return recv;
-        if (std.mem.eql(u8, callee, "__bp_future_rejected")) return self.b.iife(&.{.{ .throw_ = recv }});
         return error.UnknownResultOptionOp;
     }
 

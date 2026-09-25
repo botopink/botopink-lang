@@ -10,39 +10,35 @@
 //// reaches its Ok branch inside an effect body that was refused the capability
 //// before this front.
 
-#[@result]
 fn parse(n: i32) -> @Result<i32, string> {
     if (n < 0) { throw "negative"; };
     return n;
 }
 
-#[@future]
-fn fetch(n: i32) -> @Future<i32> {
+fn fetch(n: i32) -> @Task<i32> {
     return n * 2;
 }
 
 // `#[@future]` ⊃ `@Result`: `try` and `await` in one body.
-#[@future]
-fn load(n: i32) -> @Future<i32> {
+fn load(n: i32) -> @Task<i32> {
     val v = try parse(n);
     val w = await fetch(v);
     return w + 1;
 }
 
 // `#[@resultGenerator]` ⊃ `@Result`: `try` and `yield` in one body.
-#[@resultGenerator]
-fn upTo(n: i32) -> @ResultGenerator<i32> {
+fn upTo(n: i32) -> @Iterator<i32> {
     val limit = try parse(n);
     var i = 0;
     while (i < limit) { yield i; i = i + 1; };
 }
 
-test "§95 a #[@future] body holds the `try` its level grants" {
+test "§95 a body holds the `try` its level grants" {
     val f = load(3);
     assert f != null;
 }
 
-test "§95 a #[@resultGenerator] body holds the `try` its level grants" {
+test "§95 a body holds the `try` its level grants" {
     var acc = "";
     for (upTo(3)) { x -> acc = acc + x.toString(); };
     assert acc == "012";

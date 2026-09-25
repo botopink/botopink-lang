@@ -8,24 +8,20 @@
 
 type Element(count: i32) implement @Context<Element>
 
-#[@use]
 fn state(initial: i32) -> @Component<Element, i32> {
     return initial;
 }
 
-#[@use]
 fn memo(value: i32) -> @Component<Element, i32> {
     return value * 2;
 }
 
-#[@use]
 fn counter(start: i32) -> @Component<Element, i32> {
     val s = use state(start);
     val m = use memo(s);
     return s + m;
 }
 
-#[@use]
 fn Widget(n: i32) -> @Component<Element, Element> {
     val c = use state(n);
     val k = use counter(1);

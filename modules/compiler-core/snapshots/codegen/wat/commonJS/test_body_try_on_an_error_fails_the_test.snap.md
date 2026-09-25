@@ -1,10 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn failing() -> @Result<void, string> {
     throw "boom";
 }
-#[@result]
 fn passing() -> @Result<void, string> {
     return;
 }
@@ -93,9 +91,9 @@ async function __bp_test_2() {
 }
 
 const __bp_tests = [
-    { name: "t: fails", fn: __bp_test_0, loc: "main.bp:9" },
-    { name: "t: passes", fn: __bp_test_1, loc: "main.bp:13" },
-    { name: "t: a lambda's try is its own", fn: __bp_test_2, loc: "main.bp:17" },
+    { name: "t: fails", fn: __bp_test_0, loc: "main.bp:7" },
+    { name: "t: passes", fn: __bp_test_1, loc: "main.bp:11" },
+    { name: "t: a lambda's try is its own", fn: __bp_test_2, loc: "main.bp:15" },
 ];
 async function __bp_run_tests() {
     const process = globalThis.process;

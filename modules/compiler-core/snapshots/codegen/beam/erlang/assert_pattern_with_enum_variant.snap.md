@@ -1,6 +1,5 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn parse() -> @Result<i32, string> {
     return 42;
 }
@@ -21,8 +20,8 @@ parse() ->
 
 main() ->
     Result = parse(),
-    BpAssert7_9 = Result,
-    {ok, Value} = case BpAssert7_9 of {ok, _} -> BpAssert7_9; _ -> erlang:error({panic, <<"assert pattern did not match">>}) end,
+    BpAssert6_9 = Result,
+    {ok, Value} = case BpAssert6_9 of {ok, _} -> BpAssert6_9; _ -> erlang:error({panic, <<"assert pattern did not match">>}) end,
     '__bp_print'([Value]).
 
 '__bp_print'(Values) ->

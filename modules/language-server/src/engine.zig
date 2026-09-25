@@ -161,16 +161,10 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
 
     switch (b.decl) {
         .@"fn" => |f| {
-            // The effect is carried by a `#[@<effect>]` annotation; the
-            // deprecated `*` prefix marks a `*fn` that has no annotation.
-            if (f.effectAnnotation()) |e| {
-                try buf.appendSlice(gpa, "#[@");
-                try buf.appendSlice(gpa, e.annotationName());
-                try buf.appendSlice(gpa, "]\n");
-            }
+            // The effect is the return type (decision 118): the signature
+            // below carries it, with no annotation line.
             if (f.isPub) try buf.appendSlice(gpa, "pub ");
-            const isStar = f.effect != null and f.effectAnnotation() == null;
-            try buf.appendSlice(gpa, if (isStar) "*fn " else "fn ");
+            try buf.appendSlice(gpa, "fn ");
             try buf.appendSlice(gpa, b.name);
             try appendGenericParams(gpa, &buf, f.genericParams);
             try buf.append(gpa, '(');
@@ -261,8 +255,8 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
     try buf.appendSlice(gpa, "\n```");
 
     // For an effect fn, surface the unwrapped element type produced by
-    // `await` / `yield` / iteration (the `T` of `@Future<T>` /
-    // `@ResultGenerator<T>` / `@FutureGenerator<T, _>`).
+    // `await` / `yield` / iteration (the `T` of `@Task<T>` /
+    // `@Iterator<T>` / `@Stream<T>`).
     if (b.decl == .@"fn" and b.decl.@"fn".effect != null) {
         if (b.decl.@"fn".returnType) |rt| {
             if (asyncItemTypeRef(rt)) |item| {
@@ -385,14 +379,14 @@ fn getDeclDocComment(decl: ast.DeclKind) ?[]const u8 {
     };
 }
 
-/// The element type `T` of an async/generator return type
-/// (`@Future<T>` / `@ResultGenerator<T>` / `@FutureGenerator<T, _>`), or null.
+/// The element type `T` of an async/sequence return type
+/// (`@Task<T>` / `@Iterator<T>` / `@Stream<T>`), or null.
 fn asyncItemTypeRef(tr: ast.TypeRef) ?ast.TypeRef {
     return switch (tr) {
         .generic => |g| if (g.is_builtin and g.args.len >= 1 and
-            (std.mem.eql(u8, g.name, "Future") or
-                std.mem.eql(u8, g.name, "ResultGenerator") or
-                std.mem.eql(u8, g.name, "FutureGenerator")))
+            (std.mem.eql(u8, g.name, "Task") or
+                std.mem.eql(u8, g.name, "Iterator") or
+                std.mem.eql(u8, g.name, "Stream")))
             g.args[0]
         else
             null,
@@ -3647,13 +3641,9 @@ pub fn semanticTokens(
         }
 
         if (tok.kind == .builtinIdent) {
-            // `#[@resultGenerator]` / `#[@future]` / … : the annotation names an
-            // effect, so the fn it decorates is an effect function.
-            if (in_attribute and tok.lexeme.len >= 2 and
-                ast.EffectKind.fromAnnotationName(tok.lexeme[1..]) != null)
-            {
-                pending_effect_fn = true;
-            }
+            // Decision 118 removed the effect annotations: an effect function
+            // is one whose return is an effect wrapper, which this token walk
+            // does not see (painting it is `11-tooling`'s, after front 24).
             // `@Name` (PascalCase) → builtin type; `@name` → builtin fn.
             const is_type = tok.lexeme.len >= 2 and std.ascii.isUpper(tok.lexeme[1]);
             const ty = if (is_type) proto.SemanticTokenTypes.type_ else proto.SemanticTokenTypes.function;
@@ -3710,7 +3700,7 @@ pub fn semanticTokens(
                 pending_effect_fn = false;
                 generic_pending = nk == .lessThan;
             } else if (awaiting_fn_body and pk == .colon) {
-                // `fn counter() -> @ResultGenerator<i32> :gen { … }` — the trailing
+                // `fn counter() -> @Iterator<i32> :gen { … }` — the trailing
                 // `:label` of an effect fn is syntax, not a binding.
                 type_idx = proto.SemanticTokenTypes.keyword;
             } else if (pk == .val or pk == .record or pk == .@"enum" or pk == .interface or pk == .behavior or pk == .type) {
@@ -4736,10 +4726,10 @@ fn dotCompletion(
         if (t.* == .named) receiver_type_name = t.named.name;
         break;
     }
-    // Generator receivers (`@ResultGenerator` / `@FutureGenerator`) expose the iteration
+    // Sequence receivers (`@Iterator` / `@Stream`) expose the iteration
     // protocol: `next()`, `iter()` and `map()`.
     if (receiver_type_name) |rtn| {
-        if (std.mem.eql(u8, rtn, "ResultGenerator") or std.mem.eql(u8, rtn, "FutureGenerator")) {
+        if (std.mem.eql(u8, rtn, "Iterator") or std.mem.eql(u8, rtn, "Stream")) {
             const iter_methods = [_][]const u8{ "next", "iter", "map" };
             for (iter_methods) |m| {
                 try items.append(gpa, .{

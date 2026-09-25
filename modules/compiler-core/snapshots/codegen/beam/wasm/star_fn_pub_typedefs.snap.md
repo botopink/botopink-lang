@@ -1,15 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@future]
-pub fn loadOne(x: i32) -> @Future<i32> {
+pub fn loadOne(x: i32) -> @Task<i32> {
     return x;
 }
-#[@resultGenerator]
-pub fn count() -> @ResultGenerator<i32> {
+pub fn count() -> @Iterator<i32> {
     yield 1;
 }
-#[@futureGenerator]
-pub fn pulses() -> @FutureGenerator<i32, string> {
+pub fn pulses() -> @Stream<@Result<i32, string>> {
     yield 1;
 }
 ```
@@ -19,12 +16,12 @@ pub fn pulses() -> @FutureGenerator<i32, string> {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; #[@future] / #[@futureGenerator] — eager lowering
+  ;; @Task — eager lowering
   (func $loadOne (export "loadOne") (param $x i32) (result i32)
     local.get $x
     return
   )
-  ;; #[@future] / #[@futureGenerator] — eager lowering
+  ;; @Iterator — eager lowering
   (func $count (export "count") (result i32)
     (local $__yield_fn i32)
     i32.const 0
@@ -36,14 +33,27 @@ pub fn pulses() -> @FutureGenerator<i32, string> {
     local.set $__yield_fn
     local.get $__yield_fn ;; everything the body yielded
   )
-  ;; #[@future] / #[@futureGenerator] — eager lowering
+  ;; @Stream — eager lowering
   (func $pulses (export "pulses") (result i32)
     (local $__yield_fn i32)
+    (local $_res0 i32)
     i32.const 0
     call $__arr_new
     local.set $__yield_fn
     local.get $__yield_fn
+    global.get $__heap_ptr
+    local.set $_res0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $_res0
+    i32.const 0
+    i32.store ;; Result tag (Ok)
+    local.get $_res0
     i32.const 1
+    i32.store offset=4 ;; payload
+    local.get $_res0
     call $__arr_push
     local.set $__yield_fn
     local.get $__yield_fn ;; everything the body yielded

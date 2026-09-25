@@ -143,19 +143,18 @@ test "hover: empty bindings returns null" {
 test "hover: star fn shows async marker and element type" {
     const gpa = std.testing.allocator;
     const source =
-        \\#[@resultGenerator]
-        \\fn counter() -> @ResultGenerator<i32> :gen { yield 1; }
+        \\fn counter() -> @Iterator<i32> :gen { yield 1; }
     ;
 
     var c = try h.compile(gpa, source);
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // 'counter' starts on the `fn` line (line 1) at col 3 (`fn ` prefix).
-    const result = try engine.hover(gpa, source, h.pos(1, 3), bindings);
+    // 'counter' starts on the `fn` line (line 0) at col 3 (`fn ` prefix).
+    const result = try engine.hover(gpa, source, h.pos(0, 3), bindings);
     defer if (result) |hov| gpa.free(hov.contents.value);
 
-    try snap.assertHover(gpa, "hover_star_fn", source, h.pos(1, 3), result);
+    try snap.assertHover(gpa, "hover_star_fn", source, h.pos(0, 3), result);
 }
 
 // ── H-std — hover on a qualified std module member ────────────────────────────

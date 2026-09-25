@@ -1,5 +1,6 @@
-//! Stable diagnostic codes for the effect-annotation + default-generic ruleset
-//! authored in `tasks/v0.beta.19/specs/frente-b-rules-tooling.md` (§0–§4 + §1G).
+//! Stable diagnostic codes for the effect ruleset (1.0.10-beta decisions
+//! 118–128 — the return type is the effect) and the default-generic ruleset
+//! authored in `tasks/v0.beta.19/specs/frente-b-rules-tooling.md` (§1G).
 //!
 //! Each constant below is the **stable string** a snapshot or LSP consumer
 //! pattern-matches against (the test runner asserts the byte-exact diagnostic
@@ -19,38 +20,65 @@
 
 const std = @import("std");
 
-// ── R1–R17: §2 rejection cases ───────────────────────────────────────────────
+// ── decisions 118–128 — the return is the effect ────────────────────────────
+//
+// Decision 118 removed the effect annotations, so every rule that paired an
+// annotation with its wrapper left with them: `effect-on-declare-forbidden`,
+// `effect-on-behavior-method-forbidden`, `effect-missing-wrapper`,
+// `effect-missing-annotation` and `effect-duplicate-annotation` (a function
+// has one return, so it has one effect). Decision 121 merged
+// `effect-throw-without-fallible-channel` into
+// `effect-try-without-fallible-channel` — the guide spells both refusals with
+// the one code. Decision 122 deleted `for-over-fallible-generator` (a `for`
+// does no implicit `try`). `specs/1.0.10-beta/decisions-pending.md` records
+// these choices (front 24, open point 2).
 
-/// R1 — `#[@<effect>] declare fn …` (annotation on a bodyless declaration).
-pub const effect_on_declare_forbidden: []const u8 = "effect-on-declare-forbidden";
+/// Decisions 118 / 127 — `#[@result]`, `#[@future]`, `#[@use]`,
+/// `#[@generator]`, `#[@resultGenerator]`, `#[@futureGenerator]`: refused by
+/// the parser (`print.zig`), fix-it: remove it (on a loop: `iter` / `stream`).
+pub const effect_annotation_removed: []const u8 = "effect-annotation-removed";
 
-/// R2 — `behavior I { #[@<effect>] fn … }` (annotation on a behavior method).
-pub const effect_on_behavior_method_forbidden: []const u8 = "effect-on-behavior-method-forbidden";
+/// Decisions 120 / 122 / 127 / 128 — `@Future`, `@Generator`,
+/// `@ResultGenerator`, `@FutureGenerator`, `@Use` in a type: refused by the
+/// parser, fix-it: the new name.
+pub const effect_type_removed: []const u8 = "effect-type-removed";
 
-/// R3 — annotation effect kind disagrees with the return wrapper kind.
+/// Decision 122 — `@Iterator<T, E>`: refused by the parser, fix-it
+/// `@Iterator<@Result<T, E>>`.
+pub const iterator_error_param_removed: []const u8 = "iterator-error-param-removed";
+
+/// Decision 128 — a component `-> @Component<C, T>` whose `T` implements
+/// `@Context<B>` with a `B` other than `C`.
 pub const effect_wrapper_mismatch: []const u8 = "effect-wrapper-mismatch";
 
-/// R4 — annotation present, return wrapper missing (`#[@result] fn f() -> i32`).
-pub const effect_missing_wrapper: []const u8 = "effect-missing-wrapper";
+/// Decision 118 rule 1 — a capability (`throw`, `try`, `await`, `use`,
+/// `yield`) used under an ALIASED return: the alias types the function, never
+/// activates the effect. Fix-it: write the wrapper literally.
+pub const effect_wrapper_behind_alias: []const u8 = "effect-wrapper-behind-alias";
 
-/// N25 — return wrapper present, annotation missing (`fn f() -> @Result<D, E>`).
-/// The async wrappers have their own, older message; this one is the `@Result`
-/// half decision 8 § 9 added ("the wrapper without its annotation is an error").
-pub const effect_missing_annotation: []const u8 = "effect-missing-annotation";
+/// Decision 119 — a `return` whose value fits two layers of a nested wrapper
+/// (`-> @Result<@Result<i32, E>, E>`); asks for an explicit `Ok(…)`.
+/// Reserved: the refinement is deferred (front 24's priority order).
+pub const effect_return_ambiguous_nesting: []const u8 = "effect-return-ambiguous-nesting";
 
-/// R5 — more than one `#[@<effect>]` annotation on the same fn.
-pub const effect_duplicate_annotation: []const u8 = "effect-duplicate-annotation";
-
-/// R6 — `throw` outside a fallible-channel effect (result/future/iterator/futureGenerator).
-pub const effect_throw_without_fallible_channel: []const u8 = "effect-throw-without-fallible-channel";
-
-/// Decision 95 — bare `try` (the propagating form) in a body whose effect does
-/// not implement `@Result`: a `#[@generator]` body (question 97 — `@Generator`
-/// has no error channel) or a plain `fn`. The `try … catch` form supplies its
-/// own fallback and needs no channel, so it is not gated. Sibling of
-/// `effect-throw-without-fallible-channel`, which asks the same question of the
-/// other half of the pair.
+/// Decision 121 — `throw` or bare `try` (the propagating form) in a body whose
+/// return carries no `@Result` in any layer. The `try … catch` form supplies
+/// its own fallback and needs no channel, so it is not gated.
 pub const effect_try_without_fallible_channel: []const u8 = "effect-try-without-fallible-channel";
+
+/// Decision 120 — `await` (or `for await`) without an await channel: a
+/// `@Task`, `@Component` or `@Stream` return, or a `stream` loop.
+pub const effect_await_without_task: []const u8 = "effect-await-without-task";
+
+/// Decision 122 — `await` in an `@Iterator` body or an `iter` loop.
+pub const iter_await: []const u8 = "iter-await";
+
+/// Decision 123 — `yield` and `return <iterator>` in one body.
+pub const iter_mixed_yield_return: []const u8 = "iter-mixed-yield-return";
+
+/// Decisions 124 / 125 — two different `E`s in the body of `async { }` /
+/// `iter` / `stream`. Reserved: deferred with `async { }`.
+pub const gen_infer_conflicting_errors: []const u8 = "gen-infer-conflicting-errors";
 
 /// Front 20 F11 — `.expect(default)` on a `?T`. It was an alias of `unwrapOr`
 /// under a name that says the absent branch is unreachable, which is the
@@ -70,51 +98,41 @@ pub const break_outside_loop: []const u8 = "break-outside-loop";
 pub const continue_outside_loop: []const u8 = "continue-outside-loop";
 /// `for (cond) { x -> … }` over a `bool` — a condition is a `while`.
 pub const for_over_condition: []const u8 = "for-over-condition";
-/// `for` over a fallible generator in a body the chain grants no `try`.
-pub const for_over_fallible_generator: []const u8 = "for-over-fallible-generator";
-/// `for` (not `for await`) over an `@FutureGenerator`.
-pub const for_over_future_generator: []const u8 = "for-over-future-generator";
-/// `for await` over something that is not an `@FutureGenerator`.
-pub const for_await_expects_future_generator: []const u8 = "for-await-expects-future-generator";
+/// `for` (not `for await`) over a `@Stream`.
+pub const for_over_stream: []const u8 = "for-over-stream";
+/// `for await` over something that is not a `@Stream`.
+pub const for_await_expects_stream: []const u8 = "for-await-expects-stream";
 /// A `use`, or a `break :outer` / `continue :outer`, crossing the border of an
-/// annotated loop — its body is closed like a closure.
+/// `iter` / `stream` loop — its body is closed like a closure.
 pub const generator_loop_closed_scope: []const u8 = "generator-loop-closed-scope";
 /// `yield :label` naming a plain loop's label rather than a generator scope's.
 pub const yield_label_not_generator: []const u8 = "yield-label-not-generator";
 
-/// R7 — `await` outside `#[@future]` / `#[@futureGenerator]`.
-pub const effect_await_without_future: []const u8 = "effect-await-without-future";
-
-/// R8 — `yield` outside a yielding effect (generator/iterator/futureGenerator).
+/// R8 — `yield` outside a generator scope (an `@Iterator` / `@Stream` return
+/// that yields, or an `iter` / `stream` loop).
 pub const yield_without_generator: []const u8 = "yield-without-generator";
 
-/// R9 — alias of R7 (`await` inside `#[@result]` body).
-pub const effect_await_without_future_in_result: []const u8 = effect_await_without_future;
-
-/// R10 — alias of R6 (`throw` inside `#[@use]` / `#[@generator]` body).
-pub const effect_throw_without_fallible_channel_in_context: []const u8 = effect_throw_without_fallible_channel;
-
-/// R11 — `return Result::Ok(<r>)` inside `#[@result]` body (must be bare R).
+/// R11 — `return Result::Ok(<r>)` in a body whose return carries a `@Result` (must be bare R).
 pub const return_must_be_bare_R: []const u8 = "return-must-be-bare-R";
 
-/// R12 — manual `Result::Ok(...)`/`Result::Err(...)` construction inside `#[@result]`.
+/// R12 — manual `Result::Ok(...)`/`Result::Err(...)` construction in such a body.
 pub const result_manual_construction_forbidden: []const u8 = "result-manual-construction-forbidden";
 
-/// `throw Result::Err(<e>)` inside `#[@result]` body (must be bare E).
+/// `throw Result::Err(<e>)` in such a body (must be bare E).
 pub const throw_must_be_bare_E: []const u8 = "throw-must-be-bare-E";
 
-/// `return e;` where `e: E` inside `#[@result]` (auto-wrap targets R).
+/// `return Result.Error(e);` in such a body (auto-wrap targets R).
 pub const result_return_type_mismatch: []const u8 = "result-return-type-mismatch";
 
-/// `throw r;` where `r: R` inside `#[@result]` (auto-wrap targets E).
+/// `throw Result.Ok(r);` in such a body (auto-wrap targets E).
 pub const result_throw_type_mismatch: []const u8 = "result-throw-type-mismatch";
 
 /// `try { … }` block whose callee `E` differs from the enclosing `E`.
 pub const result_error_type_incompatible: []const u8 = "result-error-type-incompatible";
 
-/// R14 — `return <expr>` inside a generator body (`#[@generator]` /
-/// `#[@resultGenerator]` / `#[@futureGenerator]`): a generator has no return
-/// channel (decision 103) — `break <v>` emits the last item and ends.
+/// R14 — `return <expr>` inside an `iter` / `stream` loop: a sequence has no
+/// return channel (decision 122) — `break <v>` emits the last item and ends.
+/// (In a function body the same shape is `iter-mixed-yield-return`.)
 pub const iterator_return_forbidden: []const u8 = "iterator-return-forbidden";
 
 /// R15 — `yield :label <expr>` where the label is not bound.
@@ -123,9 +141,6 @@ pub const yield_label_unbound: []const u8 = "yield-label-unbound";
 /// R16 — generic parameter list `<T = default, U>` (required after defaulted).
 pub const generic_default_before_required: []const u8 = "generic-default-before-required";
 
-/// R17 — manual `Future::resolved(...)` / `Future::rejected(...)` inside `#[@future]`.
-pub const future_manual_construction_forbidden: []const u8 = "future-manual-construction-forbidden";
-
 /// R18 (E2) — alias of RC2 (`use <hook>()` violates anchor).
 /// R19 (E1) — alias of RC1 (`@getContext(T)` with no active provider).
 /// R20      — alias of RC3 (`@getContext(T)` outside the anchor).
@@ -133,24 +148,6 @@ pub const future_manual_construction_forbidden: []const u8 = "future-manual-cons
 //
 // The §1C addendum keeps the RC* names as the canonical surface; the R-table
 // numbers point to them via alias here for the catalogue.
-
-// ── RF1–RF5: §1F `#[@future]` auto-wrap diagnostics ─────────────────────────
-
-/// RF1 — `return Future::resolved(<t>)` inside `#[@future]` (must be bare T).
-pub const future_return_must_be_bare_T: []const u8 = "future-return-must-be-bare-T";
-
-/// RF2 — `throw Future::rejected(<e>)` inside `#[@future]` (must be bare E).
-pub const future_throw_must_be_bare_E: []const u8 = "future-throw-must-be-bare-E";
-
-/// RF3 — `return e;` where `e: E` inside `#[@future]` (auto-wrap targets T).
-pub const future_return_type_mismatch: []const u8 = "future-return-type-mismatch";
-
-/// RF4 — `throw r;` where `r: T` inside `#[@future]` (auto-wrap targets E).
-pub const future_throw_type_mismatch: []const u8 = "future-throw-type-mismatch";
-
-/// RF5 — manual `Future::resolved(...)` / `Future::rejected(...)` inside `#[@future]`.
-/// Identical to R17 (the §2 alias).
-pub const future_manual_construction_forbidden_alias: []const u8 = future_manual_construction_forbidden;
 
 // ── RI1–RI6: §1I generator-body syntax diagnostics ───────────────────────────
 
@@ -172,7 +169,7 @@ pub const break_label_unbound: []const u8 = "break-label-unbound";
 /// RI6 — `yield break <expr>` (the deprecated form, removed in v0.beta.19).
 pub const yield_break_removed: []const u8 = "yield-break-removed";
 
-// ── RC1–RC6: §1C `#[@use]` Anchor diagnostics ───────────────────────────
+// ── RC1–RC6: §1C `@Component` base diagnostics ───────────────────────────
 
 /// RC1 (E1) — `@getContext(T)` with no active provider of T on the scope stack.
 pub const context_unbound: []const u8 = "context-unbound";
@@ -193,14 +190,15 @@ pub const unknown_builtin: []const u8 = "unknown-builtin";
 /// RC4 — `@getContext(<value>)` (the argument must be a type).
 pub const context_getcontext_expects_type: []const u8 = "context-getcontext-expects-type";
 
-/// RC5 — `@getContext(…)` outside a `#[@use]` fn body.
+/// RC5 — `@getContext(…)` outside a `-> @Component<…>` fn body.
 pub const context_getcontext_outside_context_fn: []const u8 = "context-getcontext-outside-context-fn";
 
 /// RC6 — `use <hook>()` where `<hook>` is not a hook `@Component<C, _>` hook.
 pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
 
-/// RC7 (decisions 88, 104) — `use` in a body whose fn is not `#[@use]`, or in a
-/// nested closure of one: only the annotated body activates a hook.
+/// RC7 (decisions 88, 104, 118) — `use` in a body whose fn does not return
+/// `@Component<C, T>`, or in a nested closure of one: only that body
+/// activates a hook.
 pub const use_without_context_effect: []const u8 = "use-without-context-effect";
 
 /// Front 19 step 3 — `val #(a, b) = use …` whose hook yields a tuple of another
@@ -222,18 +220,18 @@ pub const generic_default_before_required_alias: []const u8 = generic_default_be
 /// here for documentation symmetry.
 pub const generic_all_defaults_legal_reserved: []const u8 = "";
 
-/// RG3 — required generic argument missing (e.g. `@Future<>` where T is required).
+/// RG3 — required generic argument missing (e.g. `@Component<T>`: decision 128 requires the base).
 pub const generic_required_arg_missing: []const u8 = "generic-required-arg-missing";
 
-/// RG4 — skipped middle generic argument (`@ResultGenerator<i32, , i64>`).
+/// RG4 — skipped middle generic argument (`@Result<i32, , i64>`).
 pub const generic_arg_skip_forbidden: []const u8 = "generic-arg-skip-forbidden";
 
 /// RG5 — more generic arguments than a builtin wrapper declares
-/// (`@ResultGenerator<i32, string, i32>`: the completion channel `C` left with
-/// decision 103, and an argument nothing reads is refused, not dropped).
+/// (`@Task<i32, string>`: a Task has no error parameter, decision 120, and an
+/// argument nothing reads is refused, not dropped).
 pub const generic_arg_count_exceeded: []const u8 = "generic-arg-count-exceeded";
 
-/// §A3 — `#[@result] declare fn` whose `@external(<target>, "<template>")`
+/// §A3 — a host `declare fn -> @Result<…>` whose `@external(<target>, "<template>")`
 /// body is missing the `ok` or `error` branch on at least one target.
 /// The template owns the wrapper shape — both branches must be present so
 /// callers see a complete `{ok, _} | {error, _}` lowering.
@@ -310,15 +308,17 @@ pub const fn_param_arity_exceeded: []const u8 = "fn-param-arity-exceeded";
 // ── Lookup table — every code (skipping aliases & reserved-empties) ─────────
 
 pub const all_codes = [_][]const u8{
-    effect_on_declare_forbidden,
-    effect_on_behavior_method_forbidden,
+    effect_annotation_removed,
+    effect_type_removed,
+    iterator_error_param_removed,
     effect_wrapper_mismatch,
-    effect_missing_wrapper,
-    effect_missing_annotation,
-    effect_duplicate_annotation,
-    effect_throw_without_fallible_channel,
+    effect_wrapper_behind_alias,
+    effect_return_ambiguous_nesting,
     effect_try_without_fallible_channel,
-    effect_await_without_future,
+    effect_await_without_task,
+    iter_await,
+    iter_mixed_yield_return,
+    gen_infer_conflicting_errors,
     yield_without_generator,
     return_must_be_bare_R,
     result_manual_construction_forbidden,
@@ -329,11 +329,6 @@ pub const all_codes = [_][]const u8{
     iterator_return_forbidden,
     yield_label_unbound,
     generic_default_before_required,
-    future_manual_construction_forbidden,
-    future_return_must_be_bare_T,
-    future_throw_must_be_bare_E,
-    future_return_type_mismatch,
-    future_throw_type_mismatch,
     iterator_break_type_mismatch,
     break_label_unbound,
     yield_break_removed,
@@ -364,9 +359,8 @@ pub const all_codes = [_][]const u8{
     break_outside_loop,
     continue_outside_loop,
     for_over_condition,
-    for_over_fallible_generator,
-    for_over_future_generator,
-    for_await_expects_future_generator,
+    for_over_stream,
+    for_await_expects_stream,
     generator_loop_closed_scope,
     yield_label_not_generator,
     refutable_val_pattern,

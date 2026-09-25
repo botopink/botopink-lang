@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@generator]
-fn doubles(arr: i32[]) -> @Generator<i32> {
+fn doubles(arr: i32[]) -> @Iterator<i32> {
     for (arr) { x ->
         yield x * 2;
     };
@@ -22,7 +21,7 @@ fn doubles(arr: i32[]) -> @Generator<i32> {
           "type": "i32[]"
         }
       ],
-      "return_type": "Generator<i32>",
+      "return_type": "Iterator<i32>",
       "body": [
         {
           "source": "for (arr) { x ->"

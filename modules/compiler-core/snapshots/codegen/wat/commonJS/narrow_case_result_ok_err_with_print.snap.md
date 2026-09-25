@@ -1,6 +1,5 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn fetch(ok: bool) -> @Result<string, string> {
     if (ok) { return "data"; };
     throw "fail";

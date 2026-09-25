@@ -105,11 +105,9 @@ test "js: try ---- propagate without catch" {
     // so that function needs an error channel of its own (decision 95): a plain
     // `fn process() -> i32` is `effect-try-without-fallible-channel`.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn fetch() -> @Result<i32, string> {
         \\    @todo();
         \\}
-        \\#[@result]
         \\fn process() -> @Result<i32, string> {
         \\    val r = try fetch();
         \\    @print(r);
@@ -120,7 +118,6 @@ test "js: try ---- propagate without catch" {
 
 test "js: try ---- with inline catch handler" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn fetch() -> @Result<i32, string> {
         \\    @todo();
         \\}
@@ -682,11 +679,9 @@ test "js: case ---- nested case in fn body" {
 test "js: try ---- catch with throw rethrow" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type ApiError(msg: string)
-        \\#[@result]
         \\fn fetch() -> @Result<i32, ApiError> {
         \\    throw ApiError(msg: "not found");
         \\}
-        \\#[@result]
         \\fn strict() -> @Result<i32, string> {
         \\    val r = try fetch() catch throw "fetch failed";
         \\    return r;
@@ -697,7 +692,6 @@ test "js: try ---- catch with throw rethrow" {
 test "js: try ---- catch with return fallback" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type NetError(code: i32)
-        \\#[@result]
         \\fn fetch() -> @Result<i32, NetError> {
         \\    throw NetError(code: 500);
         \\}
@@ -711,11 +705,9 @@ test "js: try ---- catch with return fallback" {
 test "js: try ---- nested try catch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type DbError(msg: string)
-        \\#[@result]
         \\fn inner() -> @Result<i32, DbError> {
         \\    throw DbError(msg: "conn refused");
         \\}
-        \\#[@result]
         \\fn outer() -> @Result<i32, DbError> {
         \\    throw DbError(msg: "timeout");
         \\}
@@ -761,12 +753,10 @@ test "js: throw ---- string literal" {
 // `Stmt.throw_` carry a required operand.
 test "js: throw ---- bare throw inside try catch is rejected" {
     try h.assertJsCompileError(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn g(x: i32) -> @Result<i32, string> {
         \\    if (x > 0) { return x; };
         \\    throw "neg";
         \\}
-        \\#[@result]
         \\fn f(x: i32) -> @Result<i32, string> {
         \\    val r = try g(x) catch { e -> throw; };
         \\    return r;
@@ -788,15 +778,12 @@ test "js: throw ---- record constructor" {
 test "js: try ---- propagate in multi-statement fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type IoError(path: string)
-        \\#[@result]
         \\fn step1() -> @Result<i32, IoError> {
         \\    throw IoError(path: "/data");
         \\}
-        \\#[@result]
         \\fn step2(x: i32) -> @Result<i32, IoError> {
         \\    throw IoError(path: "/out");
         \\}
-        \\#[@result]
         \\fn pipeline() -> @Result<i32, IoError> {
         \\    val a = try step1();
         \\    val b = try step2(a);
@@ -808,7 +795,6 @@ test "js: try ---- propagate in multi-statement fn" {
 test "js: try ---- catch with lambda handler" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type FetchError(url: string)
-        \\#[@result]
         \\fn fetch() -> @Result<i32, FetchError> {
         \\    throw FetchError(url: "/api");
         \\}
@@ -822,7 +808,6 @@ test "js: try ---- catch with lambda handler" {
 test "js: catch ---- tail on binary expression" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type CalcError(msg: string)
-        \\#[@result]
         \\fn getA() -> @Result<i32, CalcError> {
         \\    throw CalcError(msg: "overflow");
         \\}
@@ -836,7 +821,6 @@ test "js: catch ---- tail on binary expression" {
 test "js: try ---- catch with case handler" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val ErrorKind = type { NotFound, Timeout }
-        \\#[@result]
         \\fn fetch() -> @Result<i32, ErrorKind> {
         \\    throw ErrorKind.NotFound;
         \\}
@@ -850,7 +834,6 @@ test "js: try ---- catch with case handler" {
 test "js: throw ---- inside case arm" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Status { Ok, Fail }
-        \\#[@result]
         \\fn check(s: Status) -> @Result<i32, string> {
         \\    return case s {
         \\        Ok -> 1;
@@ -867,7 +850,6 @@ test "js: throw ---- inside case arm" {
 test "js: try ---- catch preserves surrounding bindings" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type LoadError(msg: string)
-        \\#[@result]
         \\fn load() -> @Result<i32, LoadError> {
         \\    throw LoadError(msg: "not found");
         \\}
@@ -886,7 +868,6 @@ test "js: try ---- catch preserves surrounding bindings" {
 
 test "js: throw ---- inside loop body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn validate(items: i32) -> @Result<i32, string> {
         \\    for (0..items) { i ->
         \\        if (i > 2) { throw "too many"; };
@@ -902,11 +883,9 @@ test "js: throw ---- inside loop body" {
 test "js: try ---- multiple catch with different fallbacks" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type UserError(msg: string)
-        \\#[@result]
         \\fn fetchName() -> @Result<string, UserError> {
         \\    throw UserError(msg: "name missing");
         \\}
-        \\#[@result]
         \\fn fetchAge() -> @Result<i32, UserError> {
         \\    throw UserError(msg: "age missing");
         \\}
@@ -924,7 +903,6 @@ test "js: try ---- multiple catch with different fallbacks" {
 test "js: catch ---- tail on function call no try" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type RiskError(level: i32)
-        \\#[@result]
         \\fn risky() -> @Result<i32, RiskError> {
         \\    throw RiskError(level: 5);
         \\}
@@ -1236,7 +1214,6 @@ test "beam: a lambda whose body is an if, a case or a try answers its value" {
     // the atom `ok` — `ok,ok,ok` on each line. The value tails are now
     // `armValueTail`'s, the set a `case` arm's block already used.
     try h.assertBeamRunLog(std.testing.allocator,
-        \\#[@result]
         \\fn tenth(x: i32) -> @Result<i32, string> {
         \\    if (x > 1) { return x * 10; } else { throw "too small"; }
         \\}
@@ -1331,7 +1308,7 @@ test "beam: is and == read numbers by value only where decision 8 says so" {
 
 // ── decision 105 on commonJS: the annotated loop, `break v`, `for await`, `a...b`
 //
-// `#[@generator] loop { … }` is a `function*` IIFE whose body runs under
+// `iter loop { … }` is a `function*` IIFE whose body runs under
 // `while (true)`: the captured `var` is the closure's, `yield v` is native,
 // `break v` is `yield v; return;`, a bare `break` leaves the `while` and ends
 // the generator. RUN LOGs, not snapshots: the other three backends record
@@ -1340,7 +1317,7 @@ test "js: generator loop ---- a var captured by an annotated loop is its state" 
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
         \\    var n = 0;
-        \\    val g = #[@generator] loop {
+        \\    val g = iter loop {
         \\        n = n + 1;
         \\        if (n == 4) { break n * 10; };
         \\        yield n * 10;
@@ -1353,8 +1330,7 @@ test "js: generator loop ---- a var captured by an annotated loop is its state" 
 
 test "js: generator loop ---- break v inside a for ends the whole generator" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\#[@generator]
-        \\fn firstOver(xs: i32[], limit: i32) -> @Generator<i32> {
+        \\fn firstOver(xs: i32[], limit: i32) -> @Iterator<i32> {
         \\    for (xs) { x ->
         \\        if (x > limit) { break x; };
         \\        yield 0;
@@ -1368,12 +1344,11 @@ test "js: generator loop ---- break v inside a for ends the whole generator" {
 
 test "js: generator loop ---- a futureGenerator loop awaits inside and for await consumes it" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\#[@future]
-        \\fn fetch(n: i32) -> @Future<i32> { return n * 2; }
-        \\type Ticker(gen: @FutureGenerator<i32>)
+        \\fn fetch(n: i32) -> @Task<i32> { return n * 2; }
+        \\type Ticker(gen: @Stream<i32>)
         \\fn ticks(limit: i32) -> Ticker {
         \\    var i = 0;
-        \\    val gen = #[@futureGenerator] loop {
+        \\    val gen = stream loop {
         \\        i = i + 1;
         \\        if (i > limit) { break; };
         \\        val v = await fetch(i);
@@ -1381,8 +1356,7 @@ test "js: generator loop ---- a futureGenerator loop awaits inside and for await
         \\    };
         \\    return Ticker(gen: gen);
         \\}
-        \\#[@future]
-        \\fn total(limit: i32) -> @Future<i32> {
+        \\fn total(limit: i32) -> @Task<i32> {
         \\    var sum = 0;
         \\    for await (ticks(limit).gen) { v -> sum = sum + v; };
         \\    @print(sum);
@@ -1434,7 +1408,7 @@ test "erlang: loop ---- a bare loop's answer comes back in the var it reassigned
 // ── front 02-erlang step 6: the generator protocol over a condition loop ─────
 //
 // `yield <v>` inside a condition loop lowered to the bare value expression,
-// which an erlang clause body discards — so `#[@generator] fn nums` answered
+// which an erlang clause body discards — so `fn nums` answered
 // its loop's final counter and the consuming `lists:foldl/3` raised
 // `no case clause matching 3` at run time. Decision 105 moved the collection
 // from the loop to the generator scope: the fn's items are pushed under a
@@ -1443,8 +1417,7 @@ test "erlang: loop ---- a bare loop's answer comes back in the var it reassigned
 
 test "erlang: generator ---- a condition-loop body yields its elements in order" {
     try h.assertErlangRunLog(std.testing.allocator,
-        \\#[@generator]
-        \\fn nums(n: i32) -> @Generator<i32> {
+        \\fn nums(n: i32) -> @Iterator<i32> {
         \\  var i = 0;
         \\  while (i < n) { yield i; i = i + 1; };
         \\}
@@ -1462,8 +1435,7 @@ test "erlang: generator ---- a condition-loop body yields its elements in order"
 test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
     // `isPlainYieldGenerator`'s path, untouched by the collecting loop.
     try h.assertErlangRunLog(std.testing.allocator,
-        \\#[@resultGenerator]
-        \\fn two() -> @ResultGenerator<i32> { yield 1; yield 2; }
+        \\fn two() -> @Iterator<i32> { yield 1; yield 2; }
         \\fn main() {
         \\  var a = "";
         \\  for (two()) { x -> a = a + x.toString(); };
@@ -1490,7 +1462,6 @@ test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
 // other backends.
 test "js: lambda ---- an expression body is the lambda's value" {
     const src =
-        \\#[@result]
         \\fn tenth(x: i32) -> @Result<i32, string> {
         \\    if (x > 1) { return x * 10; } else { throw "too small"; }
         \\}

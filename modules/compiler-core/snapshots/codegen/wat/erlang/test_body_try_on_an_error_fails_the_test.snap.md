@@ -1,10 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn failing() -> @Result<void, string> {
     throw "boom";
 }
-#[@result]
 fn passing() -> @Result<void, string> {
     return;
 }
@@ -37,14 +35,14 @@ passing() ->
     case failing() of
         {ok, _TryV0} ->
             '__bp_print'([<<"not reached">>]);
-        {error, _TryE0} -> erlang:error({bp_assert, _TryE0, <<"main.bp:9">>})
+        {error, _TryE0} -> erlang:error({bp_assert, _TryE0, <<"main.bp:7">>})
     end.
 
 '__bp_test_1'() ->
     case passing() of
         {ok, _TryV0} ->
             '__bp_print'([<<"reached">>]);
-        {error, _TryE0} -> erlang:error({bp_assert, _TryE0, <<"main.bp:13">>})
+        {error, _TryE0} -> erlang:error({bp_assert, _TryE0, <<"main.bp:11">>})
     end.
 
 '__bp_test_2'() ->
@@ -116,9 +114,9 @@ passing() ->
 
 '__bp_run_tests'(Filter) ->
     Tests = [
-        {<<"t: fails">>, fun '__bp_test_0'/0, <<"main.bp:9">>},
-        {<<"t: passes">>, fun '__bp_test_1'/0, <<"main.bp:13">>},
-        {<<"t: a lambda's try is its own">>, fun '__bp_test_2'/0, <<"main.bp:17">>}
+        {<<"t: fails">>, fun '__bp_test_0'/0, <<"main.bp:7">>},
+        {<<"t: passes">>, fun '__bp_test_1'/0, <<"main.bp:11">>},
+        {<<"t: a lambda's try is its own">>, fun '__bp_test_2'/0, <<"main.bp:15">>}
     ],
     Selected = case Filter of
         none -> Tests;

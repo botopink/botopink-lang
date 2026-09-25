@@ -636,8 +636,8 @@ pub fn BranchExprOf(comptime phase: Phase) type {
 /// one meaning each. `keyword` is what the formatter prints back; `condition`
 /// and `awaitLoop` are the shape the checker and the backends read.
 pub const LoopKeyword = enum {
-    /// `loop { … }` — repeats until `break`; `#[@generator] loop { … }` when
-    /// `generator` is set.
+    /// `loop { … }` — repeats until `break`; `iter loop { … }` /
+    /// `stream loop { … }` when `generator` is set.
     loop,
     /// `while (cond) { … }` — repeats while `cond` holds.
     while_,
@@ -656,8 +656,9 @@ pub const LoopKeyword = enum {
 
 /// Loop expressions: `loop`, `while` and `for` (decision 105).
 /// Flattened: loop fields live directly on the node (no `.kind` indirection).
-/// Every unannotated loop is a statement typed `void`; the annotated
-/// `#[@generator] loop { … }` is an expression worth the annotation's wrapper.
+/// Every unprefixed loop is a statement typed `void`; a prefixed
+/// `iter …` / `stream …` loop is an expression worth `@Iterator<T>` /
+/// `@Stream<T>` (decision 125).
 pub fn LoopExprOf(comptime phase: Phase) type {
     return struct {
         loc: Loc,
@@ -665,10 +666,18 @@ pub fn LoopExprOf(comptime phase: Phase) type {
             if (phase == .typed) undefined else {},
         /// The keyword written: `loop`, `while` or `for`.
         keyword: LoopKeyword = .loop,
-        /// `#[@generator] loop { … }` — the effect the annotation names; the
-        /// body is a generator scope and the node is worth the effect's
-        /// wrapper. Only `.loop` carries one.
+        /// `iter …` / `stream …` (decision 125) — `.iterator` or `.stream`; the
+        /// body is a generator scope and the node is an expression worth
+        /// `@Iterator<T>` / `@Stream<T>`. Only a `.loop` node carries one: the
+        /// parser writes `iter while (c) { … }` / `iter for (xs) { x -> … }` as
+        /// the prefixed `loop { <the unprefixed loop>; break; }` it means
+        /// (decision 125's own equivalence), and records the written keyword
+        /// in `prefixedKeyword` so the formatter prints the source back.
         generator: ?EffectKind = null,
+        /// The keyword written after `iter` / `stream`: `.loop` for `iter loop`,
+        /// `.while_` / `.for_` for the desugared forms (whose `body[0]` is the
+        /// written loop). Null on an unprefixed loop.
+        prefixedKeyword: ?LoopKeyword = null,
         /// `for (iter) { param -> body }`: the collection, range or generator
         /// iterated; `while (iter) { … }`: the condition. A `loop { … }` is the
         /// condition loop over the literal `true`.
@@ -690,6 +699,12 @@ pub fn LoopExprOf(comptime phase: Phase) type {
         /// for `break :label` / `continue :label`, and — on an annotated
         /// `loop` — for `yield :label` / `break :label v`.
         label: ?[]const u8 = null,
+
+        /// `prefixedKeyword` is left out of the AST dump when null, so the
+        /// slot moved no snapshot of an unprefixed loop.
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            return stringifyOmitting(this, jws, &.{"type_"}, &.{"prefixedKeyword"});
+        }
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             destroyExpr(allocator, this.iter);
@@ -2444,72 +2459,187 @@ pub const Program = struct {
 
 /// `pub fn name<T>(params) ReturnType { body }`
 /// `isPub` is false for module-private functions.
-/// The effect a function implements, named by a `#[@<effect>]` annotation. The
-/// matching `@Effect<…>` return wrapper carries the effect's type parameters;
-/// this enum is the source of truth for how the function lowers and which body
-/// operations (`await` / `yield` / `throw`) it permits.
+/// The effect a function implements — decision 118: the return type IS the
+/// annotation. A body gains a capability by writing the effect wrapper,
+/// literally, as its return type (`-> @Task<User>`); an alias to a wrapper
+/// types the function but activates nothing. This enum is the source of truth
+/// for how the function lowers and which body operations (`await` / `yield` /
+/// `use`) its level permits; `throw` / `try` follow the fallible channel (a
+/// `@Result` in some layer of the return, decision 121), not the level.
 pub const EffectKind = enum {
+    /// `-> @Result<T, E>` — the one fallible wrapper.
     result,
-    future,
-    generator,
-    resultGenerator,
-    futureGenerator,
-    /// `#[@use]` — the body may `use` a hook (decisions 102/104); its return
-    /// wrapper is `@Component<C, T>` (decision 128).
-    use,
+    /// `-> @Task<T>` — a value that has not arrived yet; never fails (decision 120).
+    task,
+    /// `-> @Iterator<T>` whose body yields — a synchronous sequence (decision 122).
+    iterator,
+    /// `-> @Stream<T>` whose body yields — an asynchronous sequence (decision 122).
+    stream,
+    /// `-> @Component<C, T>` — the body may `use` a hook (decision 128).
+    component,
 
-    /// Every effect, in declaration order. The one list: `fromAnnotationName`
-    /// and `comptime/effect_chain.zig` both walk it, so a seventh effect is a
+    /// Every effect, in declaration order. The one list: `fromWrapperName`
+    /// and `comptime/effect_chain.zig` both walk it, so a sixth effect is a
     /// value here and nowhere else.
-    pub const all = [_]EffectKind{ .result, .future, .generator, .resultGenerator, .futureGenerator, .use };
+    pub const all = [_]EffectKind{ .result, .task, .iterator, .stream, .component };
 
-    /// The annotation spelling — `#[@<name>]` — for this effect.
-    pub fn annotationName(self: EffectKind) []const u8 {
-        return switch (self) {
-            .result => "result",
-            .future => "future",
-            .generator => "generator",
-            .resultGenerator => "resultGenerator",
-            .futureGenerator => "futureGenerator",
-            .use => "use",
-        };
-    }
-
-    /// The builtin return-type wrapper this effect requires (`@Future`, …;
-    /// `#[@use]` → `@Component`, decision 128).
+    /// The builtin return-type wrapper that activates this effect (`@Task`, …).
     pub fn returnWrapper(self: EffectKind) []const u8 {
         return switch (self) {
             .result => "Result",
-            .future => "Future",
-            .generator => "Generator",
-            .resultGenerator => "ResultGenerator",
-            .futureGenerator => "FutureGenerator",
-            .use => "Component",
+            .task => "Task",
+            .iterator => "Iterator",
+            .stream => "Stream",
+            .component => "Component",
         };
     }
 
-    /// Every wrapper R1/R2 accept for this effect — one each; `#[@use]`
-    /// answers `@Component<C, T>` for hooks and components alike (decision 128).
-    pub fn returnWrappers(self: EffectKind) []const []const u8 {
-        return switch (self) {
-            .result => &.{"Result"},
-            .future => &.{"Future"},
-            .generator => &.{"Generator"},
-            .resultGenerator => &.{"ResultGenerator"},
-            .futureGenerator => &.{"FutureGenerator"},
-            .use => &.{"Component"},
-        };
-    }
-
-    /// Map a builtin annotation name (`future`, …) to its effect, or null when
-    /// the name is not one of the builtin effect markers.
-    pub fn fromAnnotationName(name: []const u8) ?EffectKind {
+    /// Map a builtin wrapper name (`Task`, …) to its effect, or null when the
+    /// name is not one of the five effect wrappers.
+    pub fn fromWrapperName(name: []const u8) ?EffectKind {
         for (all) |kind| {
-            if (std.mem.eql(u8, kind.annotationName(), name)) return kind;
+            if (std.mem.eql(u8, kind.returnWrapper(), name)) return kind;
         }
         return null;
     }
+
+    /// The effect a return type written in source activates (decision 118):
+    /// one of the five wrappers, spelled with its `@`, as the OUTERMOST type.
+    /// An alias (`-> Parser<i32>`) activates nothing — the checker resolves it
+    /// to type the function and refuses a capability used under it
+    /// (`effect-wrapper-behind-alias`).
+    pub fn fromReturnType(rt: ?TypeRef) ?EffectKind {
+        const t = rt orelse return null;
+        if (t != .generic or !t.generic.is_builtin) return null;
+        return fromWrapperName(t.generic.name);
+    }
+
+    /// The effect of a fn with return `rt` and body `body` (decision 123): an
+    /// `@Iterator` / `@Stream` return whose body neither `yield`s nor
+    /// `break v`s in its own scope is a FACTORY — an ordinary function that
+    /// returns a ready iterator — and carries no effect. A bodyless
+    /// declaration keeps the wrapper's effect.
+    pub fn ofFn(rt: ?TypeRef, body: []const Stmt, hasBody: bool) ?EffectKind {
+        const e = fromReturnType(rt) orelse return null;
+        if ((e == .iterator or e == .stream) and hasBody and !bodyYields(body)) return null;
+        return e;
+    }
+
+    /// `ofFn` for a method, whose body is optional (a bodyless member is a
+    /// declaration and keeps the wrapper's effect).
+    pub fn ofMethod(rt: ?TypeRef, body: ?[]const Stmt) ?EffectKind {
+        return ofFn(rt, body orelse &.{}, body != null);
+    }
 };
+
+/// The effect annotations that left the language, spelled as written after
+/// `#[@` — each is `effect-annotation-removed` (decision 127): the six decision
+/// 118 removed, and the pre-121 names that had already left (`#[@context]`,
+/// `#[@iterator]`, `#[@asyncGenerator]`), which stay refused.
+pub const removed_effect_annotations = [_][]const u8{ "result", "future", "use", "generator", "resultGenerator", "futureGenerator", "context", "iterator", "asyncGenerator" };
+
+/// True when `name` is one of the removed effect annotations.
+pub fn isRemovedEffectAnnotation(name: []const u8) bool {
+    for (removed_effect_annotations) |a| {
+        if (std.mem.eql(u8, a, name)) return true;
+    }
+    return false;
+}
+
+/// True when `body` yields in its OWN generator scope (decision 123): a `yield`
+/// or a `break v` reached without entering a closure, a prefixed `iter` /
+/// `stream` loop, or an `async { }` block — each of those is a scope of its own.
+pub fn bodyYields(body: []const Stmt) bool {
+    return bodyHasJump(body, isYieldJump);
+}
+
+/// True when `body` writes `throw` or a bare `try` in its OWN scope (the same
+/// borders as `bodyYields`) — what makes the item of an `iter` / `stream` loop
+/// a `@Result` on its own (decision 125).
+pub fn bodyFails(body: []const Stmt) bool {
+    return bodyHasJump(body, isFailJump);
+}
+
+fn isYieldJump(j: JumpExpr) bool {
+    return switch (j) {
+        .yield => true,
+        .@"break" => |b| b.value != null,
+        else => false,
+    };
+}
+
+fn isFailJump(j: JumpExpr) bool {
+    return switch (j) {
+        .throw_ => true,
+        .try_ => true,
+        else => false,
+    };
+}
+
+fn bodyHasJump(body: []const Stmt, comptime pred: fn (JumpExpr) bool) bool {
+    for (body) |s| {
+        if (exprHasJump(s.expr, pred)) return true;
+    }
+    return false;
+}
+
+fn exprHasJump(e: Expr, comptime pred: fn (JumpExpr) bool) bool {
+    return switch (e) {
+        .jump => |j| pred(j.kind) or switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| exprHasJump(x.*, pred) else false,
+            .await_ => |x| exprHasJump(x.*, pred),
+            .@"break" => |b| if (b.value) |x| exprHasJump(x.*, pred) else false,
+            .yield => |y| if (y.value) |x| exprHasJump(x.*, pred) else false,
+            .@"continue" => false,
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| exprHasJump(i.cond.*, pred) or bodyHasJump(i.then_, pred) or (if (i.else_) |els| bodyHasJump(els, pred) else false),
+            // `try x catch h` handles its own failure; only its operands count.
+            .tryCatch => |tc| exprHasJump(tc.expr.*, pred) or exprHasJump(tc.handler.*, pred),
+        },
+        // A prefixed loop is a scope of its own; an unprefixed one feeds the
+        // nearest generator scope (decision 125).
+        .loop => |lp| lp.generator == null and (exprHasJump(lp.iter.*, pred) or bodyHasJump(lp.body, pred)),
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| exprHasJump(lb.value.*, pred),
+            .assign => |a| exprHasJump(a.value.*, pred),
+            .localBindDestruct => |lb| exprHasJump(lb.value.*, pred),
+        },
+        .binaryOp => |op| exprHasJump(op.lhs.*, pred) or exprHasJump(op.rhs.*, pred),
+        .unaryOp => |op| exprHasJump(op.expr.*, pred),
+        .useHook => |u| exprHasJump(u.kind.inner.*, pred),
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| exprHasJump(inner.*, pred),
+            .case => |c| blk: {
+                for (c.subjects) |x| if (exprHasJump(x, pred)) break :blk true;
+                for (c.arms) |arm| if (exprHasJump(arm.body, pred)) break :blk true;
+                break :blk false;
+            },
+            .arrayLit => |al| blk: {
+                for (al.elems) |x| if (exprHasJump(x, pred)) break :blk true;
+                break :blk false;
+            },
+            .tupleLit => |tl| blk: {
+                for (tl.elems) |x| if (exprHasJump(x, pred)) break :blk true;
+                break :blk false;
+            },
+            else => false,
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| blk: {
+                if (cc.receiver) |r| if (exprHasJump(r.*, pred)) break :blk true;
+                for (cc.args) |a| if (exprHasJump(a.value.*, pred)) break :blk true;
+                if (cc.is_builtin and std.mem.eql(u8, cc.callee, "block") and cc.trailing.len > 0)
+                    break :blk bodyHasJump(cc.trailing[0].body, pred);
+                break :blk false;
+            },
+            else => false,
+        },
+        // A closure (and an `async { }` block, a closure called in place) is a
+        // scope of its own.
+        else => false,
+    };
+}
 
 pub const FnDecl = struct {
     isPub: bool,

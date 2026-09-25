@@ -1,15 +1,12 @@
 ----- SOURCE CODE
 val Element = type implement @Context<Element> { }
 val Http = type implement @Context<Http> { }
-#[@use]
 fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
-#[@use]
 fn connection() -> @Component<Http, i32> {
     0;
 }
-#[@use]
 fn bad() -> @Component<Element, i32> {
     val c = use connection();
     state(0);
@@ -17,9 +14,9 @@ fn bad() -> @Component<Element, i32> {
 
 ----- ERROR
 error: context-anchor-violation: ContextBase mismatch
-  ┌─ :13:13
+  ┌─ :10:13
   │
-13 │     val c = use connection();
+10 │     val c = use connection();
   │             ^
 
   function anchors at `Element`

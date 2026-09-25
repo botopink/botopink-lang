@@ -120,7 +120,6 @@ test "types: assert pattern ---- with number literal" {
 
 test "types: assert pattern ---- with enum variant" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn parse() -> @Result<i32, string> {
         \\    return 42;
         \\}
@@ -255,13 +254,13 @@ test "types: range ---- iterate 0 to n" {
 }
 
 test "types: generator loop ---- worth the annotation's wrapper, its break v an item" {
-    // Decision 105 — `#[@generator] loop { … }` types as `@Generator<T>` with
+    // Decision 105 — `iter loop { … }` types as `@Iterator<T>` with
     // `T` the type of its `yield` / `break v`; the loop that consumes it binds
     // `T`.
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn firstOver(arr: i32[], limit: i32) -> i32 {
         \\    var i = 0;
-        \\    val found = #[@generator] loop {
+        \\    val found = iter loop {
         \\        if (i >= arr.length) { break 0; };
         \\        val x = arr[i] ?? 0;
         \\        i = i + 1;
@@ -276,8 +275,7 @@ test "types: generator loop ---- worth the annotation's wrapper, its break v an 
 
 test "types: generator fn ---- a for inside it feeds its yields" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@generator]
-        \\fn doubles(arr: i32[]) -> @Generator<i32> {
+        \\fn doubles(arr: i32[]) -> @Iterator<i32> {
         \\    for (arr) { x ->
         \\        yield x * 2;
         \\    };

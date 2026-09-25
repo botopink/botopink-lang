@@ -25,10 +25,6 @@ pub const TemplateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr);
 /// to their value-construction lowering, produced by inference.
 pub const ResultJumpLowerings = std.AutoHashMap(ast.Loc, envMod.ResultJumpLowering);
 
-/// Map of `return`/`throw` sites inside `#[@future]` fns (by source loc) to
-/// their value-construction lowering, produced by inference. Mirrors the
-/// shape of `ResultJumpLowerings` — only the wrap callee names differ.
-pub const FutureJumpLowerings = std.AutoHashMap(ast.Loc, envMod.FutureJumpLowering);
 
 /// Map of stdlib-module method calls on builtin-array receivers (by source loc).
 pub const StdArrayLowerings = std.AutoHashMap(ast.Loc, envMod.StdArrayLowering);
@@ -71,9 +67,6 @@ const Aggregator = struct {
     src_rewrites: *const TemplateExpansions,
     /// `return`/`throw` → `__bp_ok`/`__bp_error` wrappings keyed by jump loc.
     result_jump_lowerings: *const ResultJumpLowerings,
-    /// `return`/`throw` → `__bp_future_resolved`/`__bp_future_rejected`
-    /// wrappings keyed by jump loc (#[@future] F4F-T1).
-    future_jump_lowerings: *const FutureJumpLowerings,
     /// Stdlib array method dispatch lowerings keyed by call loc.
     std_array_lowerings: *const StdArrayLowerings,
     /// §enum-sections F2 — untyped AST rewrites for dot-shorthand chains
@@ -113,14 +106,13 @@ const Aggregator = struct {
     /// sites need their defaults as much as a fn body's do.
     default_injections: *const DefaultInjections,
 
-    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, index_rewrites: *const IndexRewrites, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
+    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, index_rewrites: *const IndexRewrites, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
         return .{
             .spec_cache = specialize.SpecCache.init(allocator),
             .method_lowerings = method_lowerings,
             .template_expansions = template_expansions,
             .src_rewrites = src_rewrites,
             .result_jump_lowerings = result_jump_lowerings,
-            .future_jump_lowerings = future_jump_lowerings,
             .std_array_lowerings = std_array_lowerings,
             .enum_section_rewrites = enum_section_rewrites,
             .index_rewrites = index_rewrites,
@@ -183,7 +175,6 @@ pub fn transform(
     template_expansions: *const TemplateExpansions,
     src_rewrites: *const TemplateExpansions,
     result_jump_lowerings: *const ResultJumpLowerings,
-    future_jump_lowerings: *const FutureJumpLowerings,
     std_array_lowerings: *const StdArrayLowerings,
     enum_section_rewrites: *const EnumSectionRewrites,
     index_rewrites: *const IndexRewrites,
@@ -191,7 +182,7 @@ pub fn transform(
     ctor_params: std.StringHashMap([]const ast.Param),
     default_injections: *const DefaultInjections,
 ) !ast.Program {
-    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
+    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
 
     // The method-body aggregator (`src_only`): the `@src()` splice alone.
@@ -201,8 +192,6 @@ pub fn transform(
     defer empty_te.deinit();
     var empty_rj = ResultJumpLowerings.init(allocator);
     defer empty_rj.deinit();
-    var empty_fj = FutureJumpLowerings.init(allocator);
-    defer empty_fj.deinit();
     var empty_sa = StdArrayLowerings.init(allocator);
     defer empty_sa.deinit();
     var empty_es = EnumSectionRewrites.init(allocator);
@@ -213,7 +202,7 @@ pub fn transform(
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, &empty_sa, &empty_es, index_rewrites, &empty_onc, empty_ctor, default_injections);
+    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_sa, &empty_es, index_rewrites, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
     defer src_agg.deinit(allocator);
 
@@ -666,48 +655,26 @@ fn tryLowerResultJump(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!bool {
             const inner = rp.jump.kind.try_ orelse return false;
             expr_ptr.jump.kind = .{ .@"return" = inner };
         },
-    }
-    return true;
-}
-
-/// §1F F4F-T1 — if `expr_ptr` is a `return`/`throw` jump inside a `#[@future]`
-/// body, rewrite the jump into `return __bp_future_resolved(<t>);` or
-/// `return __bp_future_rejected(<e>);`. The codegens consume the uniform
-/// post-transform shape (commonJS strips the marker back to bare
-/// `return <t>;` / `throw <e>;`, relying on the `async function` machinery
-/// to materialise the promise).
-fn tryLowerFutureJump(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!bool {
-    if (expr_ptr.* != .jump) return false;
-    const loc = expr_ptr.jump.loc;
-    const lowering = agg.future_jump_lowerings.get(loc) orelse return false;
-    const arena = agg.spec_cache.arena;
-
-    const wrapCall = struct {
-        fn make(a: std.mem.Allocator, callee: []const u8, value: *ast.Expr, l: ast.Loc) ScanError!*ast.Expr {
-            const args = a.alloc(ast.CallArg, 1) catch return ScanError.OutOfMemory;
-            args[0] = .{ .label = null, .value = value, .comments = &.{} };
-            const call_expr = a.create(ast.Expr) catch return ScanError.OutOfMemory;
-            call_expr.* = ast.Expr{ .call = .{ .loc = l, .kind = .{ .call = .{
-                .receiver = null,
-                .callee = callee,
-                .is_builtin = true,
-                .args = args,
-                .trailing = &.{},
-            } } } };
-            return call_expr;
-        }
-    }.make;
-
-    switch (lowering) {
-        .wrap_resolved => {
-            if (expr_ptr.jump.kind != .@"return") return false;
-            const rp = expr_ptr.jump.kind.@"return" orelse return false;
-            expr_ptr.jump.kind = .{ .@"return" = try wrapCall(arena, "__bp_future_resolved", rp, loc) };
+        // Decision 122 — an item `U` of a sequence of `@Result<U, E>` is
+        // emitted as `Ok(v)`: `yield v` → `yield __bp_ok(v)`, `break v` →
+        // `break __bp_ok(v)`.
+        .yield_ok => switch (expr_ptr.jump.kind) {
+            .yield => |*y| {
+                const vp = y.value orelse return false;
+                y.value = try wrapCall(arena, "__bp_ok", vp, loc);
+            },
+            .@"break" => |*b| {
+                const vp = b.value orelse return false;
+                b.value = try wrapCall(arena, "__bp_ok", vp, loc);
+            },
+            else => return false,
         },
-        .wrap_rejected => {
+        // Decision 122 — `throw e` in such a sequence emits `Error(e)` as the
+        // last item and ends: `break __bp_error(e)`.
+        .break_error => {
             if (expr_ptr.jump.kind != .throw_) return false;
             const tp = expr_ptr.jump.kind.throw_ orelse return false;
-            expr_ptr.jump.kind = .{ .@"return" = try wrapCall(arena, "__bp_future_rejected", tp, loc) };
+            expr_ptr.jump.kind = .{ .@"break" = .{ .label = null, .value = try wrapCall(arena, "__bp_error", tp, loc) } };
         },
     }
     return true;
@@ -758,7 +725,6 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         },
         .jump => {
             _ = try tryLowerResultJump(agg, &stmt.expr);
-            _ = try tryLowerFutureJump(agg, &stmt.expr);
             switch (stmt.expr.jump.kind) {
                 .@"return" => |r| if (r) |rp| rewriteExpr(agg, fn_decls, comptime_arrays, rp) catch return ScanError.OutOfMemory,
                 .throw_ => |t| if (t) |tp| rewriteExpr(agg, fn_decls, comptime_arrays, tp) catch return ScanError.OutOfMemory,
@@ -952,7 +918,6 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         },
         .jump => {
             _ = try tryLowerResultJump(agg, expr_ptr);
-            _ = try tryLowerFutureJump(agg, expr_ptr);
             switch (expr_ptr.jump.kind) {
                 .@"return" => |r| if (r) |rp| rewriteExpr(agg, fn_decls, comptime_arrays, rp) catch return ScanError.OutOfMemory,
                 .@"break" => |b| if (b.value) |bp| rewriteExpr(agg, fn_decls, comptime_arrays, bp) catch return ScanError.OutOfMemory,

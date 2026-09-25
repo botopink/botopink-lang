@@ -1,8 +1,7 @@
-//// Decision 8 §9 — `#[@resultGenerator]` plus `-> @ResultGenerator<T>`: `yield` produces the
+//// Decision 8 §9 — `#[@resultGenerator]` plus `-> @Iterator<T>`: `yield` produces the
 //// elements and `for (gen)` consumes them.
 
-#[@resultGenerator]
-fn upto(n: i32) -> @ResultGenerator<i32> {
+fn upto(n: i32) -> @Iterator<i32> {
     var i = 0;
     while (i < n) { yield i; i = i + 1; };
 }

@@ -30,7 +30,6 @@ pub declare fn base64Encode(s: string) -> string;
 // `Buffer.from(_, 'base64')` silently drops what it cannot read, so the
 // template re-encodes and compares to detect it; Erlang's `base64:decode/1`
 // raises, and the template catches.
-#[@result]
 #[@External.Node("""(() => { const __s = String($0).replace(/=+$/, ''); const __b = Buffer.from(__s, 'base64'); return __b.toString('base64').replace(/=+$/, '') === __s ? { ok: __b.toString('utf8') } : { error: 'not base64' } })()""")]
 #[@External.Erlang("""(fun(__B) -> try {ok, base64:decode(__B)} catch _:_ -> {error, <<"not base64">>} end end)($0)""")]
 pub declare fn base64Decode(b: string) -> @Result<string, string>;
@@ -47,7 +46,6 @@ pub fn base64UrlEncode(s: string) -> string {
 
 // The inverse of `base64UrlEncode`: restore the `+/` alphabet, re-pad to a
 // multiple of four, decode.
-#[@result]
 pub fn base64UrlDecode(b: string) -> @Result<string, string> {
     val noDash = b.replaceAll("-", "+");
     val noUnder = noDash.replaceAll("_", "/");
@@ -71,7 +69,6 @@ pub declare fn hexEncode(s: string) -> string;
 // is an `Error` (Node's `Buffer.from(_, 'hex')` truncates silently at the
 // first bad digit, so the template validates first; Erlang's
 // `binary:decode_hex/1` raises `badarg`, caught).
-#[@result]
 #[@External.Node("""(() => { const __s = String($0); return /^([0-9a-fA-F]{2})*$/.test(__s) ? { ok: Buffer.from(__s, 'hex').toString('utf8') } : { error: 'not hex' } })()""")]
 #[@External.Erlang("""(fun(__H) -> try {ok, binary:decode_hex(__H)} catch _:_ -> {error, <<"not hex">>} end end)($0)""")]
 pub declare fn hexDecode(s: string) -> @Result<string, string>;
@@ -88,7 +85,6 @@ pub declare fn percentEncode(s: string) -> string;
 // The inverse of `percentEncode`. A `%` not followed by two hex digits, or a
 // sequence that is not UTF-8, is an `Error`. `+` is left as `+` — the form
 // codec below is what reads `+` as a space.
-#[@result]
 #[@External.Node("""(() => { try { return { ok: decodeURIComponent($0) } } catch (__e) { return { error: 'not percent-encoded' } } })()""")]
 #[@External.Erlang("""(fun(__S) -> try uri_string:unquote(__S) of __U when is_binary(__U) -> case unicode:characters_to_binary(__U) of __V when is_binary(__V) -> {ok, __V}; _ -> {error, <<"not percent-encoded">>} end; _ -> {error, <<"not percent-encoded">>} catch _:_ -> {error, <<"not percent-encoded">>} end end)($0)""")]
 pub declare fn percentDecode(s: string) -> @Result<string, string>;

@@ -47,7 +47,6 @@ test "js: narrow ---- case enum area with print" {
 
 test "js: narrow ---- case result ok err with print" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn fetch(ok: bool) -> @Result<string, string> {
         \\    if (ok) { return "data"; };
         \\    throw "fail";

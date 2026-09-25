@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type AppError(code: i32, msg: string)
-#[@result]
 fn load() -> @Result<string, AppError> {
     throw AppError(code: 500, msg: "boom");
 }

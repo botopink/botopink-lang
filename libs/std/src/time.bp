@@ -136,7 +136,6 @@ pub type Duration(millis: i64)
 // so the template checks the RFC 3339 shape first, then parses.
 // Erlang: `calendar:rfc3339_to_system_time/2` in milliseconds; it raises on
 // a malformed string, caught.
-#[@result]
 #[@External.Node("""(() => { const __s = String($0); const __t = /^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$/.test(__s) ? Date.parse(__s) : NaN; return Number.isNaN(__t) ? { error: 'not an RFC 3339 timestamp' } : { ok: __t } })()""")]
 #[@External.Erlang("""(fun(__S) -> try {ok, calendar:rfc3339_to_system_time(binary_to_list(__S), [{unit, millisecond}])} catch _:_ -> {error, <<"not an RFC 3339 timestamp">>} end end)($0)""")]
 pub declare fn parseIso8601(s: string) -> @Result<i64, string>;

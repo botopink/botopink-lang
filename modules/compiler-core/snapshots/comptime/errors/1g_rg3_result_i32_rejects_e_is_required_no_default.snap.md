@@ -1,5 +1,4 @@
 ----- SOURCE CODE
-#[@result]
 fn parse() -> @Result<i32> { return 0; }
 
 ----- ERROR

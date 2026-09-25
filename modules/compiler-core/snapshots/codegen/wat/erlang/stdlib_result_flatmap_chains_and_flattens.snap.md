@@ -1,8 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
-#[@result]
 fn validate(n: i32) -> @Result<i32, string> { @todo(); }
 fn main() {
     val r = parseAge("42").flatMap({ n -> validate(n) });

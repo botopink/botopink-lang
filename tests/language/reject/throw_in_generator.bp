@@ -1,9 +1,8 @@
-//// Decision 103 of 1.0.10-beta — `@Generator<T>` has no error channel, so
+//// Decision 103 of 1.0.10-beta — `@Iterator<T>` has no error channel, so
 //// `throw` in a `#[@generator]` body is refused, naming the generator that
-//// has one (`@ResultGenerator<T, E>`). `try` is `reject/try_in_generator.bp`.
+//// has one (`@Iterator<@Result<T, E>>`). `try` is `reject/try_in_generator.bp`.
 
-#[@generator]
-fn counted(n: i32) -> @Generator<i32> {
+fn counted(n: i32) -> @Iterator<i32> {
     yield n;
     throw "stop";
 }

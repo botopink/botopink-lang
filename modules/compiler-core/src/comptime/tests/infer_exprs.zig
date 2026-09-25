@@ -245,11 +245,9 @@ test "infer: try expression ---- result type unified with return" {
     // out of `process`, which therefore carries the channel it propagates into
     // (decision 95 — a plain `fn -> i32` is refused here).
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn fetch() -> @Result<i32, string> {
         \\    @todo();
         \\}
-        \\#[@result]
         \\fn process() -> @Result<i32, string> {
         \\    val r = try fetch();
         \\    return r;
@@ -260,7 +258,6 @@ test "infer: try expression ---- result type unified with return" {
 
 test "infer: try-catch ---- handler provides fallback" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn fetch() -> @Result<i32, string> {
         \\    @todo();
         \\}

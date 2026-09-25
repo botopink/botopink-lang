@@ -17,26 +17,22 @@
 
 type Element(count: i32) implement @Context<Element>
 
-#[@use]
 fn state(initial: i32) -> @Component<Element, i32> {
     return initial;
 }
 
-#[@result]
 fn parse(n: i32) -> @Result<i32, string> {
     if (n < 0) { throw "negative"; };
     return n;
 }
 
 // `#[@result]` — the base of the chain. It answers `try`.
-#[@result]
 fn doubled(n: i32) -> @Result<i32, string> {
     val v = try parse(n);
     return v * 2;
 }
 
 // `#[@use]` — `@Component` ⊃ `@Future` ⊃ `@Result`: `use` and `try` in one body.
-#[@use]
 fn Widget(n: i32) -> @Component<Element, Element> {
     val c = use state(1);
     val v = try parse(n);

@@ -1,6 +1,5 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn inner(should_fail: bool) -> @Result<i32, string> {
     if (should_fail) {
         throw "inner-fail";
@@ -8,7 +7,6 @@ fn inner(should_fail: bool) -> @Result<i32, string> {
         return 7;
     }
 }
-#[@result]
 fn outer(should_fail: bool) -> @Result<i32, string> {
     val v = try inner(should_fail);
     return v + 1;

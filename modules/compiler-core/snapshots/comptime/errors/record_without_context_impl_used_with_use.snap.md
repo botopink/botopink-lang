@@ -4,7 +4,6 @@ val Plain = type(x: i32)
 fn make() -> Plain {
     Plain(x: 0);
 }
-#[@use]
 fn comp() -> @Component<Element, i32> {
     val p = use make();
     0;
@@ -12,9 +11,9 @@ fn comp() -> @Component<Element, i32> {
 
 ----- ERROR
 error: use-of-non-context-fn: `use` takes a hook
-  ┌─ :8:13
+  ┌─ :7:13
   │
-8 │     val p = use make();
+7 │     val p = use make();
   │             ^
 
   `Plain` is not a hook — `use` requires a hook @Component<_, _>

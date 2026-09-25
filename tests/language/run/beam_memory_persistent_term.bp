@@ -7,13 +7,11 @@ import { async } from "std";
 #[@BeamMemory.PersistentTerm]
 var version: i32 = 101;
 
-#[@future]
-fn read() -> @Future<i32> {
+fn read() -> @Task<i32> {
     return version;
 }
 
-#[@future]
-pub fn main() -> @Future<void> {
+pub fn main() -> @Task<void> {
     val seen = await async.allOf([{ -> read() }]);
     @print(seen);
     @print(version);

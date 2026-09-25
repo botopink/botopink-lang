@@ -1,11 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@future]
-fn fetch(x: i32) -> @Future<i32> {
+fn fetch(x: i32) -> @Task<i32> {
     return x;
 }
-#[@future]
-fn loadTwice(x: i32) -> @Future<i32> {
+fn loadTwice(x: i32) -> @Task<i32> {
     val a = await fetch(x);
     return a + a;
 }
@@ -16,12 +14,12 @@ fn loadTwice(x: i32) -> @Future<i32> {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; #[@future] / #[@futureGenerator] — eager lowering
+  ;; @Task — eager lowering
   (func $fetch (param $x i32) (result i32)
     local.get $x
     return
   )
-  ;; #[@future] / #[@futureGenerator] — eager lowering
+  ;; @Task — eager lowering
   (func $loadTwice (param $x i32) (result i32)
     (local $a i32)
     local.get $x

@@ -1,14 +1,12 @@
-//// Decision 103 of 1.0.10-beta (question 97 (b)) — `@Generator<T>` is the one
+//// Decision 103 of 1.0.10-beta (question 97 (b)) — `@Iterator<T>` is the one
 //// wrapper with no error channel, and decision 95 leaves it out of the chain on
 //// purpose. So a `#[@generator]` body may not `try`: the refusal names
-//// `@ResultGenerator<T, E>`, the generator that has a channel. Its sibling
+//// `@Iterator<@Result<T, E>>`, the generator that has a channel. Its sibling
 //// `throw` is refused the same way (`reject/throw_in_generator.bp`).
 
-#[@result]
 fn parse(n: i32) -> @Result<i32, string> { return n; }
 
-#[@generator]
-fn counted(n: i32) -> @Generator<i32> {
+fn counted(n: i32) -> @Iterator<i32> {
     val v = try parse(n);
     yield v;
 }

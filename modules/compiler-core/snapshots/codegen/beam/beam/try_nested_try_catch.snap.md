@@ -1,11 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type DbError(msg: string)
-#[@result]
 fn inner() -> @Result<i32, DbError> {
     throw DbError(msg: "conn refused");
 }
-#[@result]
 fn outer() -> @Result<i32, DbError> {
     throw DbError(msg: "timeout");
 }

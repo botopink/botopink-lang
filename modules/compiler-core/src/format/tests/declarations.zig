@@ -400,8 +400,7 @@ test "format: const tuple ---- with comments" {
 
 test "format: star fn ---- async function" {
     try h.assertFormat(std.testing.allocator,
-        \\#[@future]
-        \\fn fetch(url: string) -> @Future<Response> {
+        \\fn fetch(url: string) -> @Task<Response> {
         \\    return download(url);
         \\}
     );
@@ -409,8 +408,7 @@ test "format: star fn ---- async function" {
 
 test "format: star fn ---- generator with label" {
     try h.assertFormat(std.testing.allocator,
-        \\#[@resultGenerator]
-        \\fn gen() -> @ResultGenerator<Int> :gen {
+        \\fn gen() -> @Iterator<Int> :gen {
         \\    yield :gen 1;
         \\}
     );

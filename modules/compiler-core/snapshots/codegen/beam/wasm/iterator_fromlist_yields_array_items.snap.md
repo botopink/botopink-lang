@@ -1,13 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@generator]
-fn fromList<T>(xs: Array<T>) -> @Generator<T> {
+fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
     for (xs) { item ->
         yield item;
     };
 }
 
-fn toList<T>(iter: @Generator<T>) -> Array<T> {
+fn toList<T>(iter: @Iterator<T>) -> Array<T> {
     var out = [];
     for (iter) { item ->
         out.push(item);
@@ -27,7 +26,7 @@ fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\01\00\00\00,")
   (global $__heap_ptr (mut i32) (i32.const 264))
-  ;; #[@future] / #[@futureGenerator] — eager lowering
+  ;; @Iterator — eager lowering
   (func $fromList (param $xs i32) (result i32)
     (local $item i32)
     (local $__yield_fn i32)
@@ -76,6 +75,9 @@ fn main() {
     (local $__mem0 i32)
     (local $out i32)
     (local $item i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -87,7 +89,38 @@ fn main() {
     i32.store
     local.get $__mem0
     local.set $out
-    i32.const 0 ;; loop over unknown iterable
+    local.get $iter
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $item
+    local.get $out
+    local.get $item
+    call $__arr_push
+    local.set $out
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    i32.const 0
     drop
     local.get $out
     return
@@ -617,5 +650,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-
+1,2,3
 ```

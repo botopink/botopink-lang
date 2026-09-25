@@ -1,19 +1,17 @@
 //// Decision 105 — `yield` feeds the NEAREST generator scope through every
-//// unannotated loop: a `for` inside a `#[@generator] fn` is transparent, and
+//// unannotated loop: a `for` inside a `fn` is transparent, and
 //// `yield :out` names the fn's signature label from inside it. An
 //// unannotated `loop` inside the scope is an ordinary loop: its bare `break`
 //// leaves it and the `yield`s pass through.
 
-#[@generator]
-fn evens(xs: i32[]) -> @Generator<i32> :out {
+fn evens(xs: i32[]) -> @Iterator<i32> :out {
     for (xs) { x ->
         if (x % 2 == 1) { continue; };
         yield :out x;
     };
 }
 
-#[@generator]
-fn countTo(n: i32) -> @Generator<i32> {
+fn countTo(n: i32) -> @Iterator<i32> {
     var i = 0;
     loop {
         i = i + 1;

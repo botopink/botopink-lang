@@ -714,13 +714,17 @@ pub const Formatter = struct {
             },
             .loop => |lp| blk: {
                 // Decision 105's three keywords, printed back as written:
-                //   `[#[@generator] ]loop [:label] {`
-                //   `while [:label] (cond) {`
-                //   `for [await] [:label] (iter) { x ->`
-                var doc: *const Doc = if (lp.generator) |g|
-                    try this.text(try std.fmt.allocPrint(this.arena, "#[@{s}] ", .{g.annotationName()}))
-                else
-                    try this.text("");
+                //   `[iter |stream ]loop [:label] {`
+                //   `[iter |stream ]while [:label] (cond) {`
+                //   `[iter |stream ]for [await] [:label] (iter) { x ->`
+                // A prefixed `while` / `for` is held as the prefixed
+                // `loop { <written loop>; break; }` (decision 125): print the
+                // prefix and the written loop.
+                const prefix: []const u8 = if (lp.generator) |g| (if (g == .stream) "stream " else "iter ") else "";
+                if (lp.prefixedKeyword) |pk| if (pk != .loop and lp.body.len >= 1 and lp.body[0].expr == .loop) {
+                    break :blk this.concat(try this.text(prefix), try this.fmtExpr(lp.body[0].expr));
+                };
+                var doc: *const Doc = try this.text(prefix);
                 doc = try this.concat(doc, try this.text(lp.keyword.spelling()));
                 if (lp.keyword == .for_ and lp.awaitLoop) doc = try this.concat(doc, try this.text(" await"));
                 if (lp.label) |lbl| {

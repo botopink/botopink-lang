@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@generator]
-fn range(a: i32, b: i32) -> @Generator<i32> {
+fn range(a: i32, b: i32) -> @Iterator<i32> {
     yield a;
     yield b;
 }

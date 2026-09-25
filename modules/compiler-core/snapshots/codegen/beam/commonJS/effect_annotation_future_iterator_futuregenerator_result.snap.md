@@ -1,19 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@future]
-fn fetch(x: i32) -> @Future<i32> {
+fn fetch(x: i32) -> @Task<i32> {
     return x;
 }
-#[@resultGenerator]
-fn counter() -> @ResultGenerator<i32> {
+fn counter() -> @Iterator<i32> {
     yield 1;
     yield 2;
 }
-#[@futureGenerator]
-fn stream() -> @FutureGenerator<i32, string> {
+fn stream() -> @Stream<@Result<i32, string>> {
     yield 1;
 }
-#[@result]
 fn parse(n: i32) -> @Result<i32, string> {
     if (n < 0) { throw "negative"; };
     return n;
@@ -32,7 +28,7 @@ function* counter() {
 }
 
 async function* stream() {
-    yield 1;
+    yield ({ ok: 1 });
 }
 
 function parse(n) {

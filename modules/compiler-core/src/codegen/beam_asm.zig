@@ -2893,13 +2893,17 @@ const Emitter = struct {
         try self.bindParams(names_buf[0..nparams]);
 
         try beamEmitter.writeBlankLine(self.out);
-        // An effect fn is async/generator — except `#[@result]` (checked-Result
-        // effect), which is a plain function. The BEAM model is processes +
-        // message passing (spawn/receive); this backend currently emits the
-        // eager body, with full process-based lowering left as future work.
-        // `#[@use]` is a plain function too (decision 88: it gates `use`).
-        if (f.effect != null and f.effect.? != .result and f.effect.? != .use) {
-            try beamEmitter.writeTopComment(self.out, "#[@future] / #[@futureGenerator] — eager lowering", .{});
+        // An effect fn is async/generator — except `-> @Result` (the
+        // checked-Result value), which is a plain function. The BEAM model is
+        // processes + message passing (spawn/receive); this backend emits the
+        // eager body (decision 120: a `@Task` is eager, `await` is identity).
+        // `-> @Component` is a plain function too (decision 88: it gates `use`).
+        if (f.effect != null and f.effect.? != .result and f.effect.? != .component) {
+            try beamEmitter.writeTopComment(self.out, "{s} — eager lowering", .{switch (f.effect.?) {
+                .task => "@Task",
+                .iterator => "@Iterator",
+                else => "@Stream",
+            }});
         }
         var fn_buf: [256]u8 = undefined;
         const fn_atom = try atomName(f.name, &fn_buf);

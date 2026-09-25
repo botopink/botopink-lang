@@ -1,14 +1,13 @@
 ----- SOURCE CODE
-#[@result]
 fn fetch() -> @Result<i32, string> {
     return Result.Error("boom");
 }
 
 ----- ERROR
-error: result-return-type-mismatch: a #[@result] fn returns R via `return`; use `throw` for the error variant.
-  ┌─ :3:5
+error: result-return-type-mismatch: a body whose return carries `@Result<R, E>` returns R via `return`; use `throw` for the error variant.
+  ┌─ :2:5
   │
-3 │     return Result.Error("boom");
+2 │     return Result.Error("boom");
   │     ^
 
   hint: If the value is an error, change `return Result.Error(<e>);` to `throw <e>;`.

@@ -55,10 +55,13 @@ parser/
 │                     `while [:label] (cond) { … }`, the condition at `prec.lowest` like an `if`'s; `parseLoopExpr` —
 │                     `loop [:label] { … }` (`condition` over the literal `true`). A binder on `while`/`loop` is
 │                     `loop-binds-nothing`; `loop (…)` is `removed-loop-parenthesised` at the keyword, naming `for`
-│                     and `while`. `parseAnnotatedLoopExpr` reads `#[@generator] loop { … }` in expression position:
-│                     one builtin annotation whose effect `effect_chain.grants(…, .yield_)` (the names are never
-│                     listed here), before `loop` only — anything else is `loop-annotation-not-generator` spanning
-│                     the block; `LoopExpr.generator` carries the effect. `throw new X(…)` is
+│                     and `while`. `parseGenLoopExpr` reads `iter` / `stream` before `loop` /
+│                     `while` / `for` (decision 125; `genLoopPrefixAhead` — the two words are contextual, an
+│                     identifier anywhere else): `iter loop` is the prefixed `loop` node, `iter while` / `iter for`
+│                     the prefixed `loop { <written loop>; break; }` with `prefixedKeyword` recording the keyword;
+│                     `LoopExpr.generator` carries `.iterator` / `.stream`. An annotation block before a loop is
+│                     `loop-annotation-not-generator` (`parseAnnotatedLoopExpr`), a removed effect annotation there
+│                     `effect-annotation-removed` with the `iter` / `stream` fix-it. `throw new X(…)` is
 │                     `removed-keyword-new` (06 N27) — `new`/`delegate`/`const` lex as identifiers. `val assert P = e;` with no `catch` (decision 8 § 9) parses:
 │                     `assertFatalHandler` desugars it into the handler `@panic("assert pattern did not
 │                     match")` and sets `AssertPattern.fatal`, so the AST keeps one shape and every
@@ -106,7 +109,7 @@ block that reads something between the `{` and its first statement — a prologu
 | lambda `{ a, b -> … }` | the parameter list | `optional` | fresh |
 | trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `requiredExceptLast` (was `required` — the one block whose last statement could not drop its `;`; front 15 step 4b) | fresh |
 | `for (…) { x -> … }` body | the one binder (`parseLoopBody`) | `requiredExceptLast` (was `required`; front 15 step 4b, with the trailing lambda) | inherits |
-| `while (…) { … }`, `loop { … }`, `#[@generator] loop { … }` body | — (`parseLoopBody`; a binder is refused) | `requiredExceptLast` (the same `parseLoopBody`) | inherits |
+| `while (…) { … }`, `loop { … }`, `iter loop { … }` body | — (`parseLoopBody`; a binder is refused) | `requiredExceptLast` (the same `parseLoopBody`) | inherits |
 
 **The static prefix of `use`** (front 19 of 1.0.10-beta, decision 88) is a
 property of the *function body*: every `use` precedes every `if`, `case`, loop

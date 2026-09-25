@@ -118,20 +118,17 @@ pub fn pathNamed(loc: SourceLocation, name: string) -> string {
 // ── private host cells (Node + Erlang) ───────────────────────────────────────
 
 // The file's text, or the host's error.
-#[@result]
 #[@External.Node("""(() => { try { return { ok: require('fs').readFileSync($0, 'utf8') } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 declare fn readFile(p: string) -> @Result<string, string>;
 
 // Write `text` to `p`, creating the parent directories; the host's error
 // on failure (a full disk is a test failure, not a silent pass).
-#[@result]
 #[@External.Node("""(() => { try { require('fs').mkdirSync(require('path').dirname($0), { recursive: true }); require('fs').writeFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__P, __T) -> case filelib:ensure_dir(__P) of ok -> case file:write_file(__P, __T) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
 declare fn writeFile(p: string, text: string) -> @Result<i32, string>;
 
 // Remove `p`; a file that is not there is `Ok` too.
-#[@result]
 #[@External.Node("""(() => { try { require('fs').rmSync($0, { force: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__P) -> case file:delete(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 declare fn removeFile(p: string) -> @Result<i32, string>;
@@ -144,7 +141,6 @@ declare fn exists(p: string) -> bool;
 // Remove a directory tree — the inline tests' scratch directories, so a run
 // leaves nothing under the host's tmpdir. A tree that is not there is `Ok`
 // too, so the tests can assert the removal succeeded.
-#[@result]
 #[@External.Node("""(() => { try { require('fs').rmSync($0, { recursive: true, force: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__P) -> case file:del_dir_r(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 declare fn removeTree(p: string) -> @Result<i32, string>;
@@ -225,7 +221,6 @@ fn verdict(recorded: string, testName: string, subject: string, actual: string) 
 }
 
 // Write the candidate `<path>.new`; a host failure is the test's failure.
-#[@result]
 fn writeCandidate(newPath: string, text: string) -> @Result<void, string> {
     val w = writeFile(newPath, text);
     if (w.isError()) {
@@ -235,7 +230,6 @@ fn writeCandidate(newPath: string, text: string) -> @Result<void, string> {
 }
 
 // The engine proper, over a computed `file` path.
-#[@result]
 fn check(loc: SourceLocation, file: string, subject: string, actual: string) -> @Result<void, string> {
     val expected = render(loc.fnName, subject, actual);
     val newPath = [file, ".new"].join("");
@@ -261,7 +255,6 @@ fn check(loc: SourceLocation, file: string, subject: string, actual: string) -> 
 }
 
 // Refuse a `loc` whose test name carries no suite (decision 67: no default).
-#[@result]
 fn requireSuite(loc: SourceLocation) -> @Result<void, string> {
     if (loc.fnName == "") {
         throw "snapshots: test name needs a suite - a @src() taken outside a test has no test name; take it inside test \"<suite>: <description>\" { ... }";
@@ -279,7 +272,6 @@ fn requireSuite(loc: SourceLocation) -> @Result<void, string> {
 // (the reason the module beside this one is `asserts`), so the entry point is
 // `assertText` — the `assert<Subject>` spelling of the contract's own
 // convention, for the subject the header records.
-#[@result]
 pub fn assertText(loc: SourceLocation, actual: string) -> @Result<void, string> {
     try assertAs(loc, "text", actual);
     return;
@@ -287,7 +279,6 @@ pub fn assertText(loc: SourceLocation, actual: string) -> @Result<void, string> 
 
 // What a `<lib>-test` helper calls: the same, with the helper's subject
 // (`css`, `html`, `route`, …) in the header.
-#[@result]
 pub fn assertAs(loc: SourceLocation, subject: string, actual: string) -> @Result<void, string> {
     try requireSuite(loc);
     try check(loc, path(loc), subject, actual);
@@ -295,14 +286,12 @@ pub fn assertAs(loc: SourceLocation, subject: string, actual: string) -> @Result
 }
 
 // A named second snapshot in the same test, subject `text`.
-#[@result]
 pub fn assertNamed(loc: SourceLocation, name: string, actual: string) -> @Result<void, string> {
     try assertNamedAs(loc, name, "text", actual);
     return;
 }
 
 // A named snapshot with a subject. `name` empty is refused.
-#[@result]
 pub fn assertNamedAs(loc: SourceLocation, name: string, subject: string, actual: string) -> @Result<void, string> {
     try requireSuite(loc);
     if (slugOf(name) == "") {

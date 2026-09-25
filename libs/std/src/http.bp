@@ -8,18 +8,18 @@
 ////              (`httpc:request/4`; requires `inets:start()` and,
 ////               for https URLs, `ssl:start()`).
 ////
-//// `fetch(url) -> @Future<Response>` is the single GET surface. The
+//// `fetch(url) -> @Task<Response>` is the single GET surface. The
 //// node template lowers to a `fetch` + `.text()` chain that resolves
 //// to a `{ status, body }` shape. The erlang template ensures
 //// `inets`/`ssl` are started (idempotent — `{error, {already_started,
 //// _}}` is folded back to ok via `catch`) and lowers to a synchronous
-//// `httpc:request/4`. Erlang is eager: `@Future<T>` resolves to `T`
+//// `httpc:request/4`. Erlang is eager: `@Task<T>` resolves to `T`
 //// in the eager-lowering arm documented in `codegen/erlang.zig`, so
 //// the caller's `await fetch(url)` is identity on that backend.
 ////
 //// Out of scope: methods other than GET, request headers/body,
 //// streaming responses. Richer shapes can land as separate `declare`s
-//// (`get`/`post`/`request`) on top of the same `@Future<Response>`
+//// (`get`/`post`/`request`) on top of the same `@Task<Response>`
 //// contract.
 ////
 //// BEAM and wasm targets are out of scope: `wat3` has no host fetch
@@ -39,7 +39,7 @@ pub type Response(
 // r.status, body: b})))` — the chained `.then` flattens the
 // `Response → Promise<text>` shape into a single `Promise<Response>`
 // whose payload matches the `Response` record. The Promise itself
-// satisfies the `@Future<Response>` contract on the node lowering
+// satisfies the `@Task<Response>` contract on the node lowering
 // (`#[@future]` async lowering keeps the Promise live across `await`).
 //
 // Erlang: idempotently start `inets` + `ssl` (caught so a second
@@ -49,17 +49,16 @@ pub type Response(
 // into the same record with `status = -1` and the error reason
 // formatted into `body`. Callers reading `status >= 200 andalso
 // status < 400` get the same go/no-go gate as the node side.
-#[@future]
 #[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({status: __r.status, body: __b})))""")]
 #[@External.Erlang("""(fun(__U) -> (catch inets:start()), (catch ssl:start()), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> #{status => __C, body => iolist_to_binary(__B)}; {error, __R} -> #{status => -1, body => iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
-pub declare fn fetch(url: string) -> @Future<Response>;
+pub declare fn fetch(url: string) -> @Task<Response>;
 
 // ── tests ────────────────────────────────────────────────────────────────────
 // No inline runtime tests: `fetch` needs network access, which the
 // per-backend lib-test runners do not provide. The surface is exercised
 // indirectly through the parser §A3 + infer §A3 acceptance gates
 // (`modules/compiler-core/src/parser/tests/effect_rejections.zig`)
-// which pin `#[@future] declare fn` with `#[@External.<Target>(…)]` as accepted.
+// which pin `declare fn` with `#[@External.<Target>(…)]` as accepted.
 //
 // A compile-only smoke fixture lives below to ensure callers can
 // `await fetch(url)` from a `#[@future]` body without the type checker
@@ -67,8 +66,7 @@ pub declare fn fetch(url: string) -> @Future<Response>;
 // at test time (its `await` would issue a network call), but the
 // fixture type-checks at compile time.
 
-#[@future]
-pub fn fetchStatus(url: string) -> @Future<i32> {
+pub fn fetchStatus(url: string) -> @Task<i32> {
     val resp = await fetch(url);
     return resp.status;
 }

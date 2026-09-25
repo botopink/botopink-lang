@@ -20,9 +20,8 @@ const h = @import("helpers.zig");
 
 // ── R11: manual Result.Ok in `return` forbidden ────────────────────────────
 
-test "§1 R11 — return Result.Ok(...) inside #[@result] reds return-must-be-bare-R" {
+test "§1 R11 — return Result.Ok(...) inside @Result reds return-must-be-bare-R" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn fetch() -> @Result<i32, string> {
         \\    return Result.Ok(42);
         \\}
@@ -31,9 +30,8 @@ test "§1 R11 — return Result.Ok(...) inside #[@result] reds return-must-be-ba
 
 // ── R12: `return Result.Error(...)` (wrong channel) reds ───────────────────
 
-test "§1 R12 — return Result.Error(...) inside #[@result] reds result-return-type-mismatch" {
+test "§1 R12 — return Result.Error(...) inside @Result reds result-return-type-mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn fetch() -> @Result<i32, string> {
         \\    return Result.Error("boom");
         \\}
@@ -42,9 +40,8 @@ test "§1 R12 — return Result.Error(...) inside #[@result] reds result-return-
 
 // ── R11-mirror: manual `throw Result.Error(...)` forbidden ─────────────────
 
-test "§1 R11-mirror — throw Result.Error(...) inside #[@result] reds throw-must-be-bare-E" {
+test "§1 R11-mirror — throw Result.Error(...) inside @Result reds throw-must-be-bare-E" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn fetch() -> @Result<i32, string> {
         \\    throw Result.Error("boom");
         \\}
@@ -53,9 +50,8 @@ test "§1 R11-mirror — throw Result.Error(...) inside #[@result] reds throw-mu
 
 // ── throw-mismatch: `throw Result.Ok(...)` (wrong channel) reds ────────────
 
-test "§1 throw-mismatch — throw Result.Ok(...) inside #[@result] reds result-throw-type-mismatch" {
+test "§1 throw-mismatch — throw Result.Ok(...) inside @Result reds result-throw-type-mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn fetch() -> @Result<i32, string> {
         \\    throw Result.Ok(42);
         \\}
@@ -64,13 +60,12 @@ test "§1 throw-mismatch — throw Result.Ok(...) inside #[@result] reds result-
 
 // ── happy path: bare return / throw + try-catch round-trip ─────────────────
 
-test "§1 happy path — bare return + throw inside #[@result] type-checks" {
+test "§1 happy path — bare return + throw inside @Result type-checks" {
     // The F4 transform rewrites the bare jumps to `__bp_ok`/`__bp_error`;
     // the typed-AST view here only asserts inference reaches the body's
     // tail without firing any R11/R12.
     try h.assertInfersOk(std.testing.allocator,
         \\type AppError(msg: string)
-        \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
         \\    return n;
@@ -81,7 +76,6 @@ test "§1 happy path — bare return + throw inside #[@result] type-checks" {
 test "§1 happy path — `try` unwraps @Result<D, E> to D" {
     try h.assertInfersOk(std.testing.allocator,
         \\type AppError(msg: string)
-        \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
         \\    return n;
@@ -93,15 +87,13 @@ test "§1 happy path — `try` unwraps @Result<D, E> to D" {
     );
 }
 
-test "§1 happy path — nested `#[@result]` call propagates Error via `try`" {
+test "§1 happy path — nested `@Result` call propagates Error via `try`" {
     try h.assertInfersOk(std.testing.allocator,
         \\type AppError(msg: string)
-        \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
         \\    return n;
         \\}
-        \\#[@result]
         \\fn double(n: i32) -> @Result<i32, AppError> {
         \\    val v = try parse(n);
         \\    return v + v;

@@ -408,39 +408,44 @@ test "surface: a for with two binders is for-binds-one-name at the second" {
     try expectError("fn f() { for ([1, 2]) { x, i -> x; }; }", .forBindsOneName, 1, 28);
 }
 
-test "surface: an annotation block on a loop that is not a generator effect" {
-    // `#[@future]` is an effect, but not one the chain lets `yield`.
-    try expectError("fn f() { val g = #[@future] loop { break; }; }", .loopAnnotationNotGenerator, 1, 18);
+test "surface: an annotation block on a loop is refused — a loop takes `iter` / `stream`" {
     // a user annotation
     try expectError("fn f() { val g = #[custom] loop { break; }; }", .loopAnnotationNotGenerator, 1, 18);
-    // two blocks, both generator effects — one annotation, not two
-    try expectError("fn f() { val g = #[@generator, @futureGenerator] loop { break; }; }", .loopAnnotationNotGenerator, 1, 18);
-    // a generator annotation before `for` / `while`: only `loop` takes it
-    try expectError("fn f() { val g = #[@generator] for ([1]) { x -> yield x; }; }", .loopAnnotationNotGenerator, 1, 18);
-    try expectError("fn f() { val g = #[@generator] while (true) { break; }; }", .loopAnnotationNotGenerator, 1, 18);
+    // the removed effect annotations name the prefix instead (decision 125)
+    try expectError("fn f() { val g = #[@future] loop { break; }; }", .effectAnnotationRemovedLoop, 1, 20);
+    try expectError("fn f() { val g = #[@generator] for ([1]) { x -> yield x; }; }", .effectAnnotationRemovedLoop, 1, 20);
+    try expectError("fn f() { val g = #[@generator] while (true) { break; }; }", .effectAnnotationRemovedLoop, 1, 20);
 }
 
-test "surface: the annotated loop carries its effect and the three forms their keyword" {
+test "surface: the prefixed loop carries its kind and the three forms their keyword" {
     var parsed = try parse(
         \\fn f(xs: i32[]) {
-        \\    val g = #[@generator] loop :gen { yield 1; break 2; };
-        \\    val r = #[@resultGenerator] loop { yield 1; };
-        \\    val fg = #[@futureGenerator] loop { yield 1; };
+        \\    val g = iter loop :gen { yield 1; break 2; };
+        \\    val r = iter for (xs) { x -> yield x; };
+        \\    val fg = stream loop { yield 1; };
         \\    for :outer (xs) { x -> x; };
         \\    for await (fg) { x -> x; };
         \\    while :w (true) { break :w; };
         \\    loop { break; };
+        \\    val sw = stream while (true) { yield 1; };
         \\}
     );
     defer parsed.deinit();
     const body = parsed.program.decls[0].@"fn".body;
     const g = body[0].expr.binding.kind.localBind.value.loop;
     try std.testing.expectEqual(ast.LoopKeyword.loop, g.keyword);
-    try std.testing.expectEqual(ast.EffectKind.generator, g.generator.?);
+    try std.testing.expectEqual(ast.EffectKind.iterator, g.generator.?);
+    try std.testing.expectEqual(ast.LoopKeyword.loop, g.prefixedKeyword.?);
     try std.testing.expectEqualStrings("gen", g.label.?);
     try std.testing.expect(g.condition);
-    try std.testing.expectEqual(ast.EffectKind.resultGenerator, body[1].expr.binding.kind.localBind.value.loop.generator.?);
-    try std.testing.expectEqual(ast.EffectKind.futureGenerator, body[2].expr.binding.kind.localBind.value.loop.generator.?);
+    // `iter for (xs) { … }` is the prefixed `loop { for (xs) { … }; break; }`.
+    const r = body[1].expr.binding.kind.localBind.value.loop;
+    try std.testing.expectEqual(ast.EffectKind.iterator, r.generator.?);
+    try std.testing.expectEqual(ast.LoopKeyword.for_, r.prefixedKeyword.?);
+    try std.testing.expectEqual(@as(usize, 2), r.body.len);
+    try std.testing.expectEqual(ast.LoopKeyword.for_, r.body[0].expr.loop.keyword);
+    try std.testing.expect(r.body[0].expr.loop.generator == null);
+    try std.testing.expectEqual(ast.EffectKind.stream, body[2].expr.binding.kind.localBind.value.loop.generator.?);
     const f = body[3].expr.loop;
     try std.testing.expectEqual(ast.LoopKeyword.for_, f.keyword);
     try std.testing.expect(f.generator == null);
@@ -458,6 +463,9 @@ test "surface: the annotated loop carries its effect and the three forms their k
     try std.testing.expectEqual(ast.LoopKeyword.loop, l.keyword);
     try std.testing.expect(l.generator == null);
     try std.testing.expect(l.condition);
+    const sw = body[7].expr.binding.kind.localBind.value.loop;
+    try std.testing.expectEqual(ast.EffectKind.stream, sw.generator.?);
+    try std.testing.expectEqual(ast.LoopKeyword.while_, sw.prefixedKeyword.?);
 }
 
 test "surface: a while condition is delimited by its parentheses, so && and || are one condition" {

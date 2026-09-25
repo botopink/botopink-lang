@@ -1,6 +1,5 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn outer() -> @Result<i32, string> {
     val cb = fn() {
         throw 404;

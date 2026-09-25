@@ -49,8 +49,8 @@ pub type Result<R, E> {
 //   result.isOk(r)                  ≡ r.isOk()
 //   result.isError(r)               ≡ r.isError()
 //
-// A `Result` value is only constructed by `return`/`throw` inside an
-// `#[result] fn -> Result<R, E>`; the runtime shape is `{ ok: V } | { error: E }`
+// A `Result` value is constructed by `return`/`throw` inside a body whose
+// return carries `@Result<R, E>` (decision 118); the runtime shape is `{ ok: V } | { error: E }`
 // (JS) / `{ok, V} | {error, E}` (erlang/beam).
 
 // ── option type ──────────────────────────────────────────────────────────────
@@ -83,67 +83,85 @@ pub type Result<R, E> {
 //
 //   obj.val?.prop      obj.val?.[expr]      obj.arr?.[index]      obj.func?.(args)
 
-// ── generators (decision 103) ────────────────────────────────────────────────
+// ── the effect wrappers (decisions 118–128) ─────────────────────────────────
 //
-// One protocol, one step enum. `YieldStep<T, E = void>` is what every
-// generator's `next` answers: `Yield(value)` emits, `Done` ends, `Error(error)`
-// lands in the error channel of the body that ITERATES the generator (a loop
-// over a fallible generator is a `try` there). There is no completion channel:
-// `break <v>` in a generator body emits `v` as the last item and ends
+// The return type IS the annotation (decision 118): a function gains a
+// capability by writing one of these wrappers, literally, as its return type,
+// and by nothing else. An alias to a wrapper (`type Job<T> = @Task<T>`) types
+// the function but activates nothing.
+//
+//   -> @Result<T, E>       throw · try            (the one fallible wrapper)
+//   -> @Task<T>            await
+//   -> @Component<C, T>    use · await            Component ⊃ Task
+//   -> @Iterator<T>        yield · break v
+//   -> @Stream<T>          yield · break v · await   Stream ⊃ Task
+//
+// Only `@Result` fails (decision 121). `@Task`, `@Component`, `@Iterator` and
+// `@Stream` never fail; when something can, the failure goes INSIDE the value
+// — `@Task<@Result<T, E>>`, `@Iterator<@Result<T, E>>` — and `throw` / `try`
+// are legal wherever a layer of the return is a `@Result`.
+//
+// The chain is on the declarations below, as `extends` clauses (a `behavior`
+// carries `extends`, not the `implement` a `type` writes, and `extends` cannot
+// carry type arguments), so the full clauses are:
+//
+//   Component<C, T>   extends Task<T>
+//   Stream<T>         extends Task<YieldStep<T>>
+//   Iterator<T>       — NO clause: it neither awaits nor fails.
+//
+// The compiler reads this order from `comptime/effect_chain.zig`, which
+// restates it and carries tests that read THIS FILE and fail if the two
+// drift: the file is not parsed into the type env (the whole `.d.bp` is
+// documentation, and `comptime.zig`'s embedded mirrors exist for the same
+// reason), so the drift gate is what keeps one declaration.
+//
+// `return` in an effect body (decision 119) wraps through every layer:
+// `return v` with `v: U` in `-> @Task<@Result<U, E>>` is a Task holding
+// `Ok(v)`; a value already of a layer's type passes through. `throw e` in a
+// body whose return carries `@Result<U, E>` is that layer's `Error(e)` — it
+// never rejects a Task (decision 120).
+
+// `Task<T>` — a value that has not arrived yet; `await` unwraps it. A Task
+// never fails: `await t` on a `@Task<@Result<U, E>>` answers the `@Result`,
+// and `try await t` propagates its error. A function with no await channel
+// consumes a Task through its own functions.
+pub behavior Task<T> {
+    fn map<R>(self: Self, transform: fn(value: T) -> R) -> Task<R>;
+    fn then<R>(self: Self, next: fn(value: T) -> Task<R>) -> Task<R>;
+}
+
+// ── sequences (decisions 122, 123, 125) ──────────────────────────────────────
+//
+// One step for both sequences: `Yield(value)` emits, `Done` ends. There is no
+// error step — an item that can fail is a `@Result` — and no completion
+// channel: `break v` in a sequence body emits `v` as the last item and ends
 // (≡ `yield v; break;`), and a bare `break` outside any loop ends it.
 //
-// The three generators are named by the chain level they extend
-// (`Future ⊃ Result`), so a reader derives the names without a table:
+// A function returning `@Iterator` / `@Stream` IS an iterator when its body
+// yields (`yield` or `break v`, in its own scope); without one it is an
+// ordinary function returning a ready iterator (a factory, decision 123). A
+// loop prefixed `iter` / `stream` is an iterator in the middle of a function
+// (decision 125). A type that wants to be iterated exposes an ordinary method
+// answering an iterator and the consumer calls it — `for (grid.iter())`;
+// there is no iterable behavior.
 //
-//   @Generator<T>           (isolated)       yield                 #[@generator]
-//   @ResultGenerator<T, E>  extends Result   yield · try           #[@resultGenerator]
-//   @FutureGenerator<T, E>  extends Future   yield · await · try   #[@futureGenerator]
-//
-// A type that wants to be iterated exposes an ordinary method answering a
-// generator and the consumer calls it — `for (grid.iter())`; there is no
-// iterable behavior (question 97 / decision 103: surface nobody uses drifts).
+// A `for` over an `@Iterator<X>` hands over each `X` — a `@Result` when `X` is
+// one; there is no implicit `try` (decision 122).
 
-pub type YieldStep<T, E = void> {
+pub type YieldStep<T> {
     Yield(value: T),
     Done,
-    Error(error: E),
 }
 
-// `ResultGenerator<T, E = any>` — a generator that may fail: `throw <e>` in a
-// `#[@resultGenerator]` body is the `Error(e)` step, and the loop that
-// iterates it needs `try`'s level (`#[@result]` or above).
-pub behavior ResultGenerator<T, E = any> extends Result {
-    fn next(self: Self) -> YieldStep<T, E>;
+// `Iterator<T>` — a synchronous sequence; iterated by `for` in any function.
+pub behavior Iterator<T> {
+    fn next(self: Self) -> YieldStep<T>;
 }
 
-// `Generator<T>` — the infallible generator: no error channel (`try` and
-// `throw` are refused in a `#[@generator]` body, naming `@ResultGenerator`),
-// so a loop over it is legal in any body, a plain `fn` included.
-pub behavior Generator<T> {
-    fn next(self: Self) -> YieldStep<T, void>;
-}
-
-// ── future ───────────────────────────────────────────────────────────────────
-
-pub behavior Future<T, E = any> extends Result {
-    // F5 — `await` is the UNWRAP, not the proof. What says a future can fail
-    // is the `implement` clause on the declaration line; `await` is only how a
-    // body reads the value out of one.
-    fn await(self: Self) -> Result<T, E>;
-    fn map<R>(self: Self, transform: fn(value: T) -> R) -> Future<R, E>;
-    fn flatMap<R>(self: Self, transform: fn(value: T) -> Future<R, E>) -> Future<R, E>;
-}
-
-// ── future generator (decision 98) ───────────────────────────────────────────
-//
-// A `Generator` whose steps are `Future`s: `next` answers a future of one step
-// rather than a step. The language spells suspension ONE way — `Future` — so
-// this wrapper borrows that noun rather than inventing a second one; the
-// `#[@futureGenerator]` annotation and the `@FutureGenerator<T, E>` wrapper
-// share a name exactly as the other five pairs do (§ effect annotations below).
-
-pub behavior FutureGenerator<T, E = any> extends Future {
-    fn next(self: Self) -> Future<YieldStep<T, E>, E>;
+// `Stream<T>` — an asynchronous sequence: finding the next item may need to
+// wait. Iterated by `for await`, which needs an await channel.
+pub behavior Stream<T> extends Task {
+    fn next(self: Self) -> Task<YieldStep<T>>;
 }
 
 // ── display (decision 8 §7, decision 27) ─────────────────────────────────────
@@ -194,23 +212,24 @@ pub behavior Slice<V> {
     fn slice(self: Self, start: i32, end: ?i32) -> V;
 }
 
-// ── context (hooks) — decisions 102 and 104 ──────────────────────────────────
+// ── context (hooks) — decisions 102, 104 and 128 ────────────────────────────
 //
 // `Context<Base>` is the owner MARKER, not a wrapper: the type that carries a
 // context tree implements it, naming the base its hooks anchor at
 // (`type Element(…) implement @Context<ElementBase>`; the name is the
 // library's). It grants no capability and has no methods.
 //
-// The wrapper of `use` is one, answered by `#[@use]` (decision 128):
-//   `Component<C, T>` — anchored at base `C`, returning `T`. A hook returns
-//                       any `T`; a component returns the owner itself,
-//                       `T: @Context<C>`.
+// The wrapper of `use` is one (decision 128):
+//   `Component<C, T>` — anchored at base `C`, returning `T`. `C` is always
+//                       written. A hook returns any `T`; a component returns
+//                       the owner itself, `T: @Context<C>`.
 // A component is called (`Card()`), never `use`d; `use f()` takes a hook
-// `@Component<C, _>` at the body's base, so hooks compose.
+// `@Component<C, _>` at the body's base, so hooks compose. `throw` / `try` in
+// a `@Component` body follow decision 121: legal only when `T` is a `@Result`.
 
 pub behavior Context<Base> { }
 
-pub behavior Component<C, T> extends Future { }
+pub behavior Component<C, T> extends Task { }
 
 // ── annotation marker ────────────────────────────────────────────────────────
 //
@@ -318,109 +337,23 @@ pub declare fn module() -> module;
 
 pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 
-// ── effect annotations ─────────────────────────────────────────────────────
+// ── effect return rules (the checker's side of the wrappers above) ─────────
 //
-// Spec: `tasks/v0.beta.19/specs/frente-b-rules-tooling.md` §0–§4 + §1G.
+// §1 — auto-wrap. The compiler intercepts `return v;` in a body whose return
+// carries `@Result<U, E>` and lowers it to `Ok(v)` (a value already a
+// `@Result` passes through); `throw e;` lowers to `Error(e)` — returned from a
+// `@Result` / `@Task` / `@Component` body, and emitted as the last item of an
+// `@Iterator` / `@Stream` body (`throw e` ≡ `break Error(e)`). Manual
+// `Result.Ok(…)` / `Result.Error(…)` construction as a `return` / `throw`
+// operand is rejected (R11/R12) — the variants are built by the sigils.
 //
-// An effect annotation names a function's effect — the implementation marker
-// (the `*fn` prefix it replaced was deprecated in v0.beta.12 and removed in
-// v0.beta.19). Each takes no arguments and pairs with the matching return
-// wrapper, which carries the effect's type parameters. The pairing is a
-// SPELLING rule, not a lookup table: the wrapper is the annotation with its
-// first letter capitalised, in all six rows and with no exception — decision
-// 98 renamed the one pair that used to break the rule, and named the reason
-// it broke, which is that the language spells suspension `Future` and nothing
-// else. The canonical signatures (§4):
-//
-//   #[result]          fn parse(n: i32) -> Result<i32, string>
-//   #[future]          fn fetchUser(id: u64) -> Future<User, NetworkError>
-//   #[generator]       fn range(a: i32, b: i32) -> Generator<i32>
-//   #[resultGenerator] fn lazyMap<T, U>(it: ResultGenerator<T>, f: fn(T) -> U) -> ResultGenerator<U, string> :a
-//   #[futureGenerator] fn stream() -> FutureGenerator<T, NetworkError>
-//   #[use]             fn processarPagamento() -> Component<BasePagamento, bool>
-//
-// The annotation marks an IMPLEMENTATION (a `fn` with a body): it gates the
-// body operations (`await` under future/futureGenerator; `yield` under
-// generator/resultGenerator/futureGenerator; `throw`/`try` under result,
-// future, resultGenerator, futureGenerator — the fallible-channel effects) and
-// drives codegen (future → `async function`, generator/resultGenerator → `function*`,
-// futureGenerator → `async function*`, use → `async function`, result →
-// plain `function`).
-// Interface methods and `declare fn` declarations are declarative — they
-// express the effect through the return wrapper alone, with NO annotation
-// (using one there is the R1/R2 error).
-//
-// §95 — THE CHAIN. The six wrappers are not six unrelated types: they form a
-// subsumption order, and an annotation grants every body operation at or below
-// its own level. The order is on the declarations above, as `extends` clauses
-// (a `behavior` carries `extends`, not the `implement` a `type` writes — the
-// same grammar limit § index / slice records of `primitives.bp`), and `extends`
-// cannot carry type arguments, so the full clauses are:
-//
-//   Future<T, E>             extends Result<T, E>
-//   ResultGenerator<T, E>    extends Result<T, E>
-//   FutureGenerator<T, E>    extends Future<YieldStep<T, E>, E>
-//   Component<C, T>          extends Future<T, any>   (decision 128)
-//   Generator<T>             — NO clause. See below.
-//
-// What each body may therefore write:
-//
-//   #[use]             use · await · try     Component ⊃ Future ⊃ Result
-//   #[futureGenerator] await · try · yield   FutureGenerator ⊃ Future ⊃ Result
-//   #[future]          await · try           Future ⊃ Result
-//   #[resultGenerator] try · yield           ResultGenerator ⊃ Result
-//   #[generator]       yield                 — no error channel
-//   #[result]          try                   — it is the base
-//
-// The chain grants DOWNWARDS and never upwards: `yield` stays exclusive to the
-// three generator-shaped wrappers and `use` to `#[@use]`, neither of which is
-// a level anything else reaches. `@Future<T, E = any>` already carries the
-// error channel this needs, so `extends Result` adds no parameter and invents
-// no error type; the same holds for `@ResultGenerator<T, E = any>`.
-//
-// `@Generator<T>` is the exception and is left out on purpose: it has no
-// error channel (question 97, answered (b) by decision 103), so `throw` and
-// `try` are BOTH refused in a `#[generator]` body, naming
-// `@ResultGenerator<T, E>`, the wrapper that has one. That is what lets any
-// body — a plain `fn` included — iterate a `@Generator<T>`.
-//
-// The compiler reads this order from `comptime/effect_chain.zig`, which
-// restates it and carries a test that reads THIS FILE and fails if the two
-// drift: the file is not parsed into the type env (the whole `.d.bp` is
-// documentation, and `comptime.zig`'s embedded mirrors exist for the same
-// reason), so the drift gate is what keeps one declaration.
-//
-// §1 — `#[result]` auto-wrap. The compiler intercepts `return r;` (where
-// `r: R`) inside a `#[result]` body and lowers it to `return Result.Ok(r)`;
-// `throw e;` (where `e: E`) lowers to `return Result.Error(e)`. Manual
-// `Result.Ok(…)` / `Result.Error(…)` construction inside the body is
-// rejected (R11/R12) — the wrapper variants are only constructed via the
-// `return`/`throw` sigils. Callers see `Result<R, E>` at the type level;
-// inline methods (`map`/`flatMap`/`unwrapOr`/`isOk`/`isError`) read it.
-//
-// §1F — `#[future]` dual contract. The wrapper is `Future<T, E = any>`;
-// `return t;` auto-wraps to `Future.resolved(t)`, `throw e;` to
-// `Future.rejected(e)`. `await <future>` suspends and unpacks the awaited
-// future's `T`. Manual `Future::resolved(…)` / `Future::rejected(…)`
-// constructors inside the body are rejected (RF1/RF2/RF5).
-//
-// §1I — `#[resultGenerator]` two-channel contract (decision 103). The wrapper
-// is `ResultGenerator<T, E = any>`; `yield <t>` emits, `yield :label <t>`
-// targets a named scope, `throw <e>` lands in the error channel, `break` ends
-// cleanly, `break <t>` emits `t` as the last item and ends. `return <expr>` is
-// forbidden (RI1) — a generator has no return channel. The legacy `yield break`
-// form is removed (RI6). Labels (`-> ResultGenerator<…> :label`) disambiguate
-// nested generator scopes.
-//
-// §1C — `#[use]` Anchor + `getContext`. The wrapper is `Component<Base, T>`
-// (decision 128, a hook and a component alike); `Base` is the Anchor
-// that gates every `use` inside the body. EVERY `use` in one body resolves against the SAME `Base`
-// (decision 96): the first one fixes it, and a second anchored elsewhere is
-// refused at its own site with both bases named (RC2). `use getContext(T)`
-// requires `T` to be in the Anchor's inheritance tree (RC3) and finds the
-// active provider by inside-out walk of the activation stack (RC1 when
-// missing). `await` and `try` ARE legal here — `Use` extends `Future`
-// extends `Result` (§95 above); `yield` is not.
+// §1C — `use` + `getContext`. The body of a `-> @Component<C, T>` fn anchors
+// every `use` at `C`: EVERY `use` in one body resolves against the SAME base
+// (decision 96), and a second anchored elsewhere is refused at its own site
+// with both bases named (RC2). `use getContext(T)` requires `T` to be in the
+// base's inheritance tree (RC3) and finds the active provider by inside-out
+// walk of the activation stack (RC1 when missing). `await` is legal here —
+// `Component` extends `Task`; `yield` is not.
 //
 // §1G — default generic parameters. A generic parameter may carry a
 // default type (`<T, U = string>`). Defaults must occupy the trailing
@@ -446,23 +379,19 @@ pub type Host implement Annotation {
     host,
 }
 
-// The markers (`result`, `future`, `generator`, `resultGenerator`, `futureGenerator`,
-// `use`) are recognized as core builtins by the compiler — they are
-// lib-agnostic and take no arguments, so they need no signature here.
-//
 // `getContext(T)` is the context-retrieval intrinsic. It retrieves the
-// active provider of context type `T` from the enclosing `#[use]`
-// fn's scope stack. `T` must be the enclosing fn's Anchor (or a subtype
-// thereof); the call returns `Component<T, V>` where `V` is the provider's
-// authored value slot. Errors: [E1] context-unbound when no `T` provider
-// is on the stack; [E2] context-anchor-violation when `T` is outside the
-// Anchor's tree. Only legal inside a `#[use]` fn body, behind `use`:
+// active provider of context type `T` from the enclosing `@Component` fn's
+// scope stack. `T` must be the enclosing fn's base (or a subtype thereof);
+// the call returns `Component<T, V>` where `V` is the provider's authored
+// value slot. Errors: [E1] context-unbound when no `T` provider is on the
+// stack; [E2] context-anchor-violation when `T` is outside the base's tree.
+// Only legal inside a `-> @Component<…>` fn body, behind `use`:
 //
 //   val ctx = use getContext(BasePagamento)
 //
-// Declared `comptime` in its sole type argument because the Anchor check
-// runs at compile time; the runtime side is the inside-out walk inserted
-// by the lowering.
+// Declared `comptime` in its sole type argument because the base check runs
+// at compile time; the runtime side is the inside-out walk inserted by the
+// lowering.
 pub declare fn getContext<T>(comptime _: type) -> Component<T, any>;
 
 // ── Expr template model (std.syntax) ─────────────────────────────────────────

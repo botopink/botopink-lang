@@ -1,16 +1,15 @@
 ----- SOURCE CODE
-#[@resultGenerator]
-fn nums() -> @ResultGenerator<i32, string> {
+fn nums() -> @Iterator<@Result<i32, string>> {
     yield 1;
     break "not an i32";
 }
 
 ----- ERROR
 error: type mismatch
-  ┌─ :4:5
+  ┌─ :3:5
   │
-4 │     break "not an i32";
+3 │     break "not an i32";
   │     ^
 
-  expected: string
-  found:    i32
+  expected: i32
+  found:    string

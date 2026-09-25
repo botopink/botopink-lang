@@ -18,28 +18,6 @@ pub const ParseErrorType = parserMod.ParseErrorType;
 
 // ── Canonical messages ────────────────────────────────────────────────────────
 
-/// The three generator annotations, spelled for a diagnostic —
-/// "`#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`" — derived at
-/// comptime from `EffectKind` and the chain, so a renamed effect renames the
-/// message with it.
-const generatorAnnotationsSpelled = blk: {
-    const effectChain = @import("./comptime/effect_chain.zig");
-    const ast = @import("./ast.zig");
-    var out: []const u8 = "";
-    var n: usize = 0;
-    var total: usize = 0;
-    for (ast.EffectKind.all) |e| {
-        if (effectChain.grants(e, .yield_)) total += 1;
-    }
-    for (ast.EffectKind.all) |e| {
-        if (!effectChain.grants(e, .yield_)) continue;
-        if (n > 0) out = out ++ (if (n + 1 == total) " or " else ", ");
-        out = out ++ "`#[@" ++ e.annotationName() ++ "]`";
-        n += 1;
-    }
-    break :blk out;
-};
-
 pub const ErrorMessages = struct {
     message: []const u8,
     hint: []const u8,
@@ -179,21 +157,66 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         .deprecatedStarFn => .{
             .code = "deprecated-star-fn",
             .message = "the `*fn` prefix was removed in v0.beta.19",
-            .caretCaption = "use a `#[@<effect>]` annotation instead",
-            .note = "the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@ResultGenerator<…>` to `#[@resultGenerator]`, `@FutureGenerator<…>` to `#[@futureGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to what is now `#[@use]` (`-> @Component<…>`)",
-            .hint = "rewrite as `#[@<effect>] fn <name>(...) -> @<Wrapper><...> { ... }`",
+            .caretCaption = "write a plain `fn` whose return type is the effect wrapper",
+            .note = "the `*fn` form was deprecated in v0.beta.12; since decision 118 there is no effect marker at all — the return type is the effect",
+            .hint = "rewrite as `fn <name>(...) -> @<Wrapper><...> { ... }` — `@Result`, `@Task`, `@Component`, `@Iterator` or `@Stream`",
         },
-        .effectOnDeclareForbidden => .{
-            .message = "effect-on-declare-forbidden: a #[@<effect>] annotation marks an IMPLEMENTATION (a fn with a body); `declare fn` declarations express the effect through the return wrapper alone.",
-            .hint = "Drop the #[@<effect>] annotation — the return-type wrapper (@Result/@Future/…) already carries the effect on a `declare fn`.",
+        .effectAnnotationRemoved => .{
+            .code = "effect-annotation-removed",
+            .message = "effect annotations were removed — the return type is the effect (decision 118)",
+            .caretCaption = "remove the annotation; write the wrapper in the return",
+            .note = "`#[@result]` → `-> @Result<T, E>`; `#[@future]` → `-> @Task<T>` (or `-> @Task<@Result<T, E>>` when it can fail); `#[@use]` → `-> @Component<C, T>`; `#[@generator]` → `-> @Iterator<T>`; `#[@resultGenerator]` → `-> @Iterator<@Result<T, E>>`; `#[@futureGenerator]` → `-> @Stream<@Result<T, E>>`",
+            .hint = "Delete the annotation: `fn f() -> @Task<User> { … }` — writing the wrapper in the return type is what activates `await` / `use` / `yield`, and a `@Result` in some layer of it is what activates `throw` / `try`.",
         },
-        .effectOnBehaviorMethodForbidden => .{
-            .message = "effect-on-behavior-method-forbidden: behavior methods are declarative — they express the effect through the return wrapper alone, never via #[@<effect>].",
-            .hint = "Drop the #[@<effect>] annotation; the implementing fn carries it.",
+        .effectAnnotationRemovedLoop => .{
+            .code = "effect-annotation-removed",
+            .message = "effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)",
+            .caretCaption = "remove the annotation; write `iter loop` (or `stream loop`)",
+            .note = "`#[@generator] loop` and `#[@resultGenerator] loop` are `iter loop`; `#[@futureGenerator] loop` is `stream loop`; `iter` / `stream` also prefix `while` and `for`",
+            .hint = "`val xs = iter loop { … yield x; … };` is worth `@Iterator<T>`; the item becomes `@Result<T, E>` on its own when the body has `throw` / `try`.",
         },
-        .effectDuplicateAnnotation => .{
-            .message = "effect-duplicate-annotation: at most one #[@<effect>] annotation per fn.",
-            .hint = "Keep the single annotation that matches the return-type wrapper (e.g. `#[@result]` for `-> @Result<…>`).",
+        .effectTypeRemovedFuture => .{
+            .code = "effect-type-removed",
+            .message = "`@Future` was removed — the wrapper is `@Task<T>`, which never fails (decision 120)",
+            .caretCaption = "write `@Task<@Result<T, E>>` (or `@Task<T>` when it cannot fail)",
+            .hint = "`@Future<T, E>` is `@Task<@Result<T, E>>`: `await t` then answers the `@Result`, and `try await t` propagates its error. `@Future<T>` is `@Task<T>`.",
+        },
+        .effectTypeRemovedGenerator => .{
+            .code = "effect-type-removed",
+            .message = "`@Generator` was renamed `@Iterator` (decision 122)",
+            .caretCaption = "write `@Iterator<T>`",
+            .hint = "`fn g() -> @Iterator<T> { yield …; }` — a body that yields is an iterator; `for (g()) { x -> … }` iterates it in any function.",
+        },
+        .effectTypeRemovedResultGenerator => .{
+            .code = "effect-type-removed",
+            .message = "`@ResultGenerator` was removed — the item carries the failure (decision 122)",
+            .caretCaption = "write `@Iterator<@Result<T, E>>`",
+            .hint = "`@ResultGenerator<T, E>` is `@Iterator<@Result<T, E>>`; a `for` over it hands over each `@Result` — write `try r` to propagate, or `case` to carry on.",
+        },
+        .effectTypeRemovedFutureGenerator => .{
+            .code = "effect-type-removed",
+            .message = "`@FutureGenerator` was removed — the asynchronous sequence is `@Stream` (decision 122)",
+            .caretCaption = "write `@Stream<@Result<T, E>>` (or `@Stream<T>`)",
+            .hint = "`@FutureGenerator<T, E>` is `@Stream<@Result<T, E>>`; iterate it with `for await` where there is an await channel.",
+        },
+        .effectTypeRemovedUse => .{
+            .code = "effect-type-removed",
+            .message = "`@Use` was removed — one context wrapper, `@Component<C, T>` (decision 128)",
+            .caretCaption = "write `@Component<C, T>`",
+            .hint = "`@Use<C, T>` is `@Component<C, T>`: `C` is the base the body's `use`s anchor at, `T` what the function returns — a hook returns any `T`, a component the context owner.",
+        },
+        .effectTypeRemovedLegacy => .{
+            .code = "effect-type-removed",
+            .message = "this sequence type left the language (decisions 103, 122)",
+            .caretCaption = "write `@Stream<T>`, `@Iterator<T>` or `YieldStep<T>`",
+            .note = "`@AsyncIterator<T>` is `@Stream<T>`; `@IteratorStep` and `@Yield<T, R>` are `YieldStep<T>`; there is no `@Iterable` — a type exposes a method answering `@Iterator<T>`",
+            .hint = "`fn iter(self: Self) -> @Iterator<T>` makes a type iterable: `for (g.iter()) { x -> … }`.",
+        },
+        .iteratorErrorParamRemoved => .{
+            .code = "iterator-error-param-removed",
+            .message = "`@Iterator` has no error parameter — the item carries the failure (decision 122)",
+            .caretCaption = "write `@Iterator<@Result<T, E>>`",
+            .hint = "`@Iterator<T, E>` is `@Iterator<@Result<T, E>>`: `yield v` emits `Ok(v)`, and `throw e` or a failing `try` emits `Error(e)` and ends.",
         },
         .genericDefaultBeforeRequired => .{
             .message = "generic-default-before-required: default-typed generic parameters must be the trailing parameters of the list.",
@@ -201,7 +224,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         },
         .yieldBreakRemoved => .{
             .message = "yield-break-removed: use `break <C>` to end an iterator with a completion value. The `yield break` form was removed in v0.beta.19.",
-            .hint = "Inside a #[@resultGenerator] / #[@futureGenerator] body, write `break <C>` to deliver a completion value, or bare `break` for a clean end.",
+            .hint = "Inside an `@Iterator` / `@Stream` body or an `iter` / `stream` loop, write `break <v>` to emit a last item and end, or bare `break` for a clean end.",
         },
         .genericArgSkipForbidden => .{
             .message = "generic-arg-skip-forbidden: cannot skip a defaulted argument while providing a later one.",
@@ -266,9 +289,9 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         },
         .loopAnnotationNotGenerator => .{
             .code = "loop-annotation-not-generator",
-            .message = "only a generator annotation goes on a `loop`, and only on `loop`",
-            .caretCaption = "not a generator `loop`",
-            .hint = "`#[@generator] loop { … }` is worth `@Generator<T>` (" ++ generatorAnnotationsSpelled ++ " are the three); a `for` or `while` inside it feeds it: `#[@generator] loop { for (xs) { x -> yield f(x); }; break; }`.",
+            .message = "a loop takes no annotation — it takes the `iter` / `stream` prefix",
+            .caretCaption = "not a loop annotation",
+            .hint = "`iter loop { … }` is worth `@Iterator<T>` and `stream loop { … }` `@Stream<T>` (decision 125); `iter` / `stream` also prefix `while` and `for`: `iter for (xs) { x -> yield f(x); }`.",
         },
         .removedKeywordNew => .{
             .code = "removed-keyword-new",

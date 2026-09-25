@@ -4,10 +4,8 @@
 
 type Element(count: i32) implement @Context<Element>
 
-#[@use]
 fn state(initial: i32) -> @Component<Element, i32> { return initial; }
 
-#[@use]
 fn Counter() -> @Component<Element, Element> {
     val #(count, setCount) = use state(0);
     return Element(count: count);

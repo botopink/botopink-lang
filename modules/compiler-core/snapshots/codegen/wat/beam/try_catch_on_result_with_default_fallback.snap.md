@@ -1,6 +1,5 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
 fn maybeFail(should_fail: bool) -> @Result<i32, string> {
     if (should_fail) {
         throw "boom";

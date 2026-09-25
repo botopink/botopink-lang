@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type LoadError(msg: string)
-#[@result]
 fn load() -> @Result<i32, LoadError> {
     throw LoadError(msg: "not found");
 }

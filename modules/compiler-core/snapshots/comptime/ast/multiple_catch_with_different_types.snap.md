@@ -1,11 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type UserError(msg: string)
-#[@result]
 fn getName() -> @Result<string, UserError> {
     throw UserError(msg: "missing");
 }
-#[@result]
 fn getAge() -> @Result<i32, UserError> {
     throw UserError(msg: "missing");
 }

@@ -196,15 +196,15 @@ silence.
 
 `<lib> <target> <owner> <reason…>` per line, `#` comments. The owning front
 deletes its line in the commit that turns the cell green, which makes the cell
-a hard assert. **Live entries**: front 21 step 2's window — `jhonstart`
-(both rows), `jhonstart-counter commonJS`, `jhonstart-html` (both rows),
-`jhonstart-todo commonJS` and `emilia-card commonJS` (it renders through
-jhonstart). The compiler spells decisions 102/104 (`#[@use]`, `@Use<C, T>`,
-`@Component<T>`, `@Context<Base>`) and the library still writes
-`#[@context]` / `@Context<Element, R>`; the lines are deleted by the compiler
-commit after the jhonstart sweep (front 21 step 4), and the two restricted
-cells the same window moved (`emilia-card erlang`, `jhonstart-todo erlang`,
-`0 → build`) go back to `0` in that commit.
+a hard assert. **Live entries**: front 24's window (`24-effects-by-return`,
+decisions 118–128) — every jhonstart, rakun and emilia cell (and the examples
+built on them): the compiler refuses the pre-118 effect spellings (`#[@use]`,
+`#[@future]`, `#[@result]`, `@Future<…>`, `@Use<…>`, `@Generator<…>`, …) the
+libraries still write. The jhonstart / emilia lines are deleted by the compiler
+commit after `front/24-libs` lands, the rakun ones after `front/24-rakun`; the
+restricted cells the same window moved to `build` (the rakun rows, and
+`emilia-card erlang`, `jhonstart-todo erlang` from front 21's window) go back to
+their measured counts in that commit.
 
 ## restricted-targets.txt
 

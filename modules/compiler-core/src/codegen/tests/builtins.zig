@@ -95,7 +95,6 @@ test "js: assert pattern ---- with number literal" {
 
 test "js: assert pattern ---- with enum variant" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn parse() -> @Result<i32, string> {
         \\    return 42;
         \\}
@@ -198,7 +197,6 @@ test "js: builtin ---- user fns named like type-manipulation builtins call their
 
 test "js: stdlib ---- Result.map transforms Ok, propagates Error intact" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
         \\fn main() {
         \\    val r = parseAge("42").map({ n -> n + 1 });
@@ -208,9 +206,7 @@ test "js: stdlib ---- Result.map transforms Ok, propagates Error intact" {
 
 test "js: stdlib ---- Result.flatMap chains and flattens" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
-        \\#[@result]
         \\fn validate(n: i32) -> @Result<i32, string> { @todo(); }
         \\fn main() {
         \\    val r = parseAge("42").flatMap({ n -> validate(n) });
@@ -220,7 +216,6 @@ test "js: stdlib ---- Result.flatMap chains and flattens" {
 
 test "js: stdlib ---- Result.unwrapOr returns data on Ok, default on Error" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
         \\fn main() {
         \\    val n = parseAge("42").unwrapOr(0);
@@ -230,7 +225,6 @@ test "js: stdlib ---- Result.unwrapOr returns data on Ok, default on Error" {
 
 test "js: stdlib ---- Result.isOk and isError predicates" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
         \\fn main() {
         \\    val r = parseAge("42");
@@ -256,9 +250,7 @@ test "js: stdlib ---- Option map, flatMap and unwrapOr mirror Result" {
 
 test "js: stdlib ---- chain map flatMap unwrapOr types correctly" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn parseAge(s: string) -> @Result<i32, string> { @todo(); }
-        \\#[@result]
         \\fn validate(n: i32) -> @Result<i32, string> { @todo(); }
         \\fn main() {
         \\    val r = parseAge("42")
@@ -585,11 +577,9 @@ test "js: test body ---- try on an Error fails the test" {
     // `-> @Result<void, string>`, and a `try` inside a lambda is the lambda's.
     // The RUN LOG is the runner's own output: one FAIL, two ok.
     try h.assertJsTestMode(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn failing() -> @Result<void, string> {
         \\    throw "boom";
         \\}
-        \\#[@result]
         \\fn passing() -> @Result<void, string> {
         \\    return;
         \\}
@@ -642,16 +632,14 @@ test "js: src ---- in a test run log" {
 
 test "js: test body ---- try on an Error prints the FAIL line" {
     // Decision 74 on both `botopink test` targets: the propagated Error ends
-    // `t: fails` as `FAIL t: fails  (boom)  at main.bp:9` — the error string
+    // `t: fails` as `FAIL t: fails  (boom)  at main.bp:7` — the error string
     // is the message, the `at` is the test's own line — and the statement
     // after the `try` never runs; `t: passes` reaches its print through the
     // empty `return;` of a `-> @Result<void, string>`. The runner exits 1.
     try h.assertTestModeRunLog(std.testing.allocator,
-        \\#[@result]
         \\fn failing() -> @Result<void, string> {
         \\    throw "boom";
         \\}
-        \\#[@result]
         \\fn passing() -> @Result<void, string> {
         \\    return;
         \\}
@@ -664,12 +652,12 @@ test "js: test body ---- try on an Error prints the FAIL line" {
         \\    @print("reached");
         \\}
     ,
-        \\TEST main.bp:9 t: fails
+        \\TEST main.bp:7 t: fails
         \\----- RUN LOG -----
         \\```logs
         \\```
-        \\  FAIL t: fails  (boom)  at main.bp:9
-        \\TEST main.bp:13 t: passes
+        \\  FAIL t: fails  (boom)  at main.bp:7
+        \\TEST main.bp:11 t: passes
         \\----- RUN LOG -----
         \\```logs
         \\reached

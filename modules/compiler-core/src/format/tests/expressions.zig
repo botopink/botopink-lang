@@ -395,8 +395,7 @@ test "format: multiline string ---- as function argument" {
 
 test "format: await ---- prefix expression" {
     try h.assertFormat(std.testing.allocator,
-        \\#[@future]
-        \\fn run() -> @Future<Int> {
+        \\fn run() -> @Task<Int> {
         \\    val x = await load(url);
         \\    return x;
         \\}
@@ -505,7 +504,7 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
 
 test "format: for, for await, while, loop and the annotated loop round-trip" {
     try h.assertFormatLossless(std.testing.allocator,
-        \\fn f(xs: i32[], gen: @FutureGenerator<i32>) {
+        \\fn f(xs: i32[], gen: @Stream<i32>) {
         \\    for :outer (xs) { x ->
         \\        if (x == 2) break :outer;
         \\    };
@@ -527,15 +526,15 @@ test "format: for, for await, while, loop and the annotated loop round-trip" {
         \\        n = n - 1;
         \\        if (n == 0) break :l;
         \\    };
-        \\    val g = #[@generator] loop :gen {
+        \\    val g = iter loop :gen {
         \\        n = n + 1;
         \\        if (n == 10) break n * 2;
         \\        yield n * 2;
         \\    };
-        \\    val r = #[@resultGenerator] loop {
+        \\    val r = iter loop {
         \\        yield 1;
         \\    };
-        \\    val fg = #[@futureGenerator] loop {
+        \\    val fg = stream loop {
         \\        yield 1;
         \\    };
         \\}

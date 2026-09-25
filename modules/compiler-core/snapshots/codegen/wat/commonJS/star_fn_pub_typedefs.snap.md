@@ -1,15 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@future]
-pub fn loadOne(x: i32) -> @Future<i32> {
+pub fn loadOne(x: i32) -> @Task<i32> {
     return x;
 }
-#[@resultGenerator]
-pub fn count() -> @ResultGenerator<i32> {
+pub fn count() -> @Iterator<i32> {
     yield 1;
 }
-#[@futureGenerator]
-pub fn pulses() -> @FutureGenerator<i32, string> {
+pub fn pulses() -> @Stream<@Result<i32, string>> {
     yield 1;
 }
 ```
@@ -27,7 +24,7 @@ function* count() {
 exports.count = count;
 
 async function* pulses() {
-    yield 1;
+    yield ({ ok: 1 });
 }
 exports.pulses = pulses;
 ```
@@ -40,7 +37,7 @@ export declare function loadOne(x: number): Promise<number>;
 export declare function count(): IterableIterator<number>;
 
 
-export declare function pulses(): AsyncGenerator<number>;
+export declare function pulses(): AsyncGenerator<{ tag: "Ok"; result: number } | { tag: "Error"; error: string }>;
 
 ```
 

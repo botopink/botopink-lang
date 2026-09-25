@@ -74,7 +74,6 @@ test "infer: narrow ---- if null check chained" {
 
 test "infer: narrow ---- case result ok err" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@result]
         \\fn parse(n: i32) -> @Result<string, string> {
         \\    if (n < 0) { throw "negative"; };
         \\    return "ok";
@@ -96,7 +95,6 @@ test "infer: narrow ---- case result different payload types" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\type User(name: string)
         \\type AppError { NotFound, Timeout(msg: string) }
-        \\#[@result]
         \\fn fetchUser(id: i32) -> @Result<User, AppError> {
         \\    if (id == 0) { throw AppError.NotFound; };
         \\    return User(name: "alice");

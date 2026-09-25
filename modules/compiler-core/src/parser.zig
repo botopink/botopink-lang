@@ -88,15 +88,31 @@ pub const ParseErrorType = enum {
     /// Removed `*fn` prefix (use `#[@<effect>]` annotation instead).
     /// Deprecation window was v0.beta.12; the prefix is hard-removed in v0.beta.19.
     deprecatedStarFn,
-    /// R1 (§2) — `#[@<effect>] declare fn …`: effect annotations mark an
-    /// implementation (a fn with a body); `declare fn` expresses the effect
-    /// through the return wrapper alone.
-    effectOnDeclareForbidden,
-    /// R2 (§2) — `interface I { #[@<effect>] fn … }`: interface methods are
-    /// declarative — they express the effect through the return wrapper alone.
-    effectOnBehaviorMethodForbidden,
-    /// R5 (§2) — more than one `#[@<effect>]` annotation on the same fn.
-    effectDuplicateAnnotation,
+    /// Decisions 118 / 127 — `#[@result]`, `#[@future]`, `#[@use]`,
+    /// `#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`: the
+    /// effect annotations left the language; the return type is the effect.
+    effectAnnotationRemoved,
+    /// The same annotation written before a loop: the loop takes the `iter` /
+    /// `stream` prefix instead (decision 125).
+    effectAnnotationRemovedLoop,
+    /// Decisions 120 / 127 — `@Future<…>` in a type: the wrapper is `@Task<T>`,
+    /// and a failure is `@Task<@Result<T, E>>`.
+    effectTypeRemovedFuture,
+    /// Decisions 122 / 127 — `@Generator<T>` in a type: `@Iterator<T>`.
+    effectTypeRemovedGenerator,
+    /// Decisions 122 / 127 — `@ResultGenerator<T, E>`: `@Iterator<@Result<T, E>>`.
+    effectTypeRemovedResultGenerator,
+    /// Decisions 122 / 127 — `@FutureGenerator<T, E>`: `@Stream<@Result<T, E>>`.
+    effectTypeRemovedFutureGenerator,
+    /// Decisions 128 / 127 — `@Use<C, T>`: `@Component<C, T>`.
+    effectTypeRemovedUse,
+    /// Decision 127 — a pre-122 sequence name that had already left
+    /// (`@AsyncIterator`, `@Iterable`, `@IteratorStep`, `@Yield`): refused,
+    /// naming the current one.
+    effectTypeRemovedLegacy,
+    /// Decisions 122 / 127 — `@Iterator<T, E>`: the iterator has no error
+    /// parameter; the item carries the failure, `@Iterator<@Result<T, E>>`.
+    iteratorErrorParamRemoved,
     /// R16 / RG1 (§1G) — a generic parameter without a default follows one
     /// with a default. Defaulted generics must be the trailing parameters.
     genericDefaultBeforeRequired,
@@ -1012,12 +1028,24 @@ pub const Parser = struct {
             }
             _ = this.advance(); // `#`
             _ = try this.consume(.leftSquareBracket);
+            // Decisions 118 / 127 — the six effect annotations are recognised
+            // only to be refused, located on the annotation's name.
+            var removed: ?Token = null;
             while (true) {
+                const nameTok = this.peek();
                 const ann = try this.parseAnnotationCall(alloc);
+                if (removed == null and ann.is_builtin and ast.isRemovedEffectAnnotation(ann.name)) removed = nameTok;
                 try list.append(alloc, ann);
                 if (!this.match(.comma)) break;
             }
             _ = try this.consume(.rightSquareBracket);
+            if (removed) |tok| {
+                // Before a loop the fix-it is the `iter` / `stream` prefix
+                // (decision 125); anywhere else it is the return type.
+                const onLoop = this.check(.loop) or this.check(.@"while") or this.check(.@"for");
+                this.parseError = ParseErrorInfo.fromToken(if (onLoop) .effectAnnotationRemovedLoop else .effectAnnotationRemoved, tok);
+                return ParseError.UnexpectedToken;
+            }
         }
         return list.toOwnedSlice(alloc);
     }
@@ -1586,6 +1614,7 @@ pub const Parser = struct {
     pub const parseWhileExpr = exprs.parseWhileExpr;
     pub const parseForExpr = exprs.parseForExpr;
     pub const parseAnnotatedLoopExpr = exprs.parseAnnotatedLoopExpr;
+    pub const parseGenLoopExpr = exprs.parseGenLoopExpr;
 
     pub const parseRangeExpr = exprs.parseRangeExpr;
 };

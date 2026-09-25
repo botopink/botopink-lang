@@ -473,41 +473,6 @@ pub fn parseFnBody(
         label = (try this.consume(.identifier)).lexeme;
     }
 
-    // R5 (§2) — at most one builtin `#[@<effect>]` annotation per fn.
-    if (firstDuplicateEffect(annotations)) |dup| {
-        // 01 R9 — the caret is on the second annotation, not on the body.
-        const tok = annotationHashToken(this, dup.loc) orelse this.peek();
-        this.parseError = ParseErrorInfo.fromTokenDetail(.effectDuplicateAnnotation, tok, dup.name);
-        return ParseError.UnexpectedToken;
-    }
-
-    // A `#[@<effect>]` annotation names the function's effect directly. (The
-    // deprecated `*fn` prefix used to derive it; v0.beta.19 hard-removed that
-    // path — see the `deprecatedStarFn` diagnostic.)
-    const effect = effectFromAnnotations(annotations);
-
-    // R1 (§2) — an effect annotation marks an implementation (a fn with a
-    // body); `declare fn` expresses the effect through the return wrapper
-    // alone. A `#[@<effect>] declare fn …` mixes the two surfaces, so reject.
-    //
-    // §A3 EXCEPTION — `#[@result] declare fn` / `#[@future] declare fn` are
-    // accepted when at least one `@external` annotation is present: the host
-    // template owns the wrapper shape (a JS `{ok,V}` object for `@result`, a
-    // Promise/native-future for `@future`), so the marker signals "this
-    // declare carries effect-wrapping at the host boundary" rather than
-    // pretending to wrap a body. All other effects stay rejected on declare
-    // fn (R1 is the contract: effect annotations gate IMPLEMENTATIONS).
-    if (isDeclare and effect != null and !this.check(.leftBrace)) {
-        const isTemplateOwned =
-            (effect.? == .result or effect.? == .future) and
-            hasAnyExternalAnnotation(annotations);
-        if (!isTemplateOwned) {
-            const tok = this.peek();
-            this.parseError = ParseErrorInfo.fromTokenDetail(.effectOnDeclareForbidden, tok, effect.?.annotationName());
-            return ParseError.UnexpectedToken;
-        }
-    }
-
     // Decision 33 (b) — a declaration without a body says what it answers,
     // even when the answer is nothing. `fn f(x: string)` with no body and no
     // return type at all is refused HERE, at the token a body would have
@@ -534,7 +499,7 @@ pub fn parseFnBody(
         _ = this.match(.semicolon);
         return FnDecl{
             .isPub = isPub,
-            .effect = effect,
+            .effect = ast.EffectKind.ofFn(returnType, &.{}, false),
             .isDeclare = true,
             .label = label,
             .name = name,
@@ -553,7 +518,9 @@ pub fn parseFnBody(
 
     return FnDecl{
         .isPub = isPub,
-        .effect = effect,
+        // Decision 118 — the syntactic return is the effect; decision 123 — an
+        // `@Iterator` / `@Stream` return whose body does not yield is a factory.
+        .effect = ast.EffectKind.ofFn(returnType, body, true),
         .isDeclare = isDeclare,
         .label = label,
         .name = name,
@@ -566,53 +533,6 @@ pub fn parseFnBody(
         .typeGuardType = typeGuardType,
         .body = body,
     };
-}
-
-/// The effect named by a builtin `#[@<effect>]` annotation in `annotations`,
-/// or null when none is present.
-fn effectFromAnnotations(annotations: []const Annotation) ?ast.EffectKind {
-    for (annotations) |a| {
-        if (a.is_builtin) {
-            if (ast.EffectKind.fromAnnotationName(a.name)) |k| return k;
-        }
-    }
-    return null;
-}
-
-/// §A3 — true when at least one `#[@External.<targert>(...)]` annotation is present.
-/// Used by R1 to admit `#[@result] declare fn` only when a host template
-/// owns the wrapper shape; effect-only declares stay rejected.
-fn hasAnyExternalAnnotation(annotations: []const Annotation) bool {
-    for (annotations) |a| {
-        if (a.is_builtin and std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) return true;
-    }
-    return false;
-}
-
-/// Returns the *second* effect annotation's name when `annotations` carries two
-/// or more builtin `#[@<effect>]` markers, or null when at most one is present.
-/// Drives R5 (§2): `#[@result] #[@future] fn x()` reds with
-/// `effect-duplicate-annotation`.
-fn firstDuplicateEffect(annotations: []const Annotation) ?Annotation {
-    var seen: ?ast.EffectKind = null;
-    for (annotations) |a| {
-        if (!a.is_builtin) continue;
-        const k = ast.EffectKind.fromAnnotationName(a.name) orelse continue;
-        if (seen != null) return a;
-        seen = k;
-    }
-    return null;
-}
-
-/// The `#` that opens the annotation whose name starts at `nameLoc` — the
-/// last `#` on that line before it. Null when the annotation was synthesised.
-fn annotationHashToken(this: *This, nameLoc: ?ast.Loc) ?token.Token {
-    const l = nameLoc orelse return null;
-    var found: ?token.Token = null;
-    for (this.tokens[0..this.current]) |t| {
-        if (t.kind == .hash and t.line == l.line and t.col < l.col) found = t;
-    }
-    return found;
 }
 
 /// `test { body }` / `test "name" { body }` — top-level test declaration.
@@ -1602,12 +1522,6 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
             this.check(.hash) or (this.check(.at) and this.peekAt(1).kind == .leftSquareBracket))
         {
             const memberAnnotations = try this.parseAnnotations(alloc);
-            if (effectFromAnnotations(memberAnnotations)) |k| {
-                freeAnnotations(alloc, memberAnnotations);
-                const tok = this.peek();
-                this.parseError = ParseErrorInfo.fromTokenDetail(.effectOnBehaviorMethodForbidden, tok, k.annotationName());
-                return ParseError.UnexpectedToken;
-            }
             const is_default = this.match(.default);
             const is_declare = this.match(.declare);
             var method = parseBehaviorMethod(this, alloc, is_default) catch |err| {

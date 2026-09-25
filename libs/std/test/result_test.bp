@@ -5,13 +5,11 @@
 // the inference-resolved, inline-lowered method surface on the values they
 // return. Run by `botopink test` from `libs/std/`.
 
-#[@result]
 fn parse(n: i32) -> @Result<i32, string> {
     if (n < 0) throw "negative";
     return n;
 }
 
-#[@result]
 fn half(n: i32) -> @Result<i32, string> {
     if (n % 2 != 0) throw "odd";
     return n / 2;

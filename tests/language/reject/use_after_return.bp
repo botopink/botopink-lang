@@ -3,10 +3,8 @@
 //// the `use`, like a bare `use …;` is.
 
 type Element(count: i32) implement @Context<Element>
-#[@use]
 fn state(initial: i32) -> @Component<Element, i32> { return initial; }
 
-#[@use]
 fn Widget() -> @Component<Element, Element> {
     return Element(count: 1);
     val c = use state(0);

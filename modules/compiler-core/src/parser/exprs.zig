@@ -6,7 +6,6 @@ const parser = @import("../parser.zig");
 const ast = @import("../ast.zig");
 const token = @import("../lexer/token.zig");
 const lexer = @import("../lexer.zig");
-const effectChain = @import("../comptime/effect_chain.zig");
 
 const This = parser.Parser;
 const ParseError = parser.ParseError;
@@ -295,7 +294,9 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             const labelTok = try this.consume(.identifier);
             label = labelTok.lexeme;
         }
-        const inner = try this.parseBinaryExpr(alloc, prec.equality);
+        // The operand is a whole expression: `yield try parsePort(line)` and
+        // `yield await next()` are the guide's own spellings (decision 122).
+        const inner = try this.parseExpr(alloc);
         const innerPtr = try this.boxExpr(alloc, inner);
         return Expr{ .jump = .{ .loc = locFromToken(yieldTok), .kind = .{ .yield = .{ .label = label, .value = innerPtr } } } };
     }
@@ -324,7 +325,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     //   while [:label] (cond) { … }
     //   for [await] [:label] (iter) { x -> … }
     //   loop [:label] { … }
-    //   #[@generator] loop [:label] { … }
+    //   iter|stream loop|while|for …   (decision 125)
     if (this.check(.@"while")) {
         this.useBranchSeen = true;
         return .{ .loop = try this.parseWhileExpr(alloc) };
@@ -340,6 +341,13 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     if (this.check(.hash) and this.peekAt(1).kind == .leftSquareBracket) {
         this.useBranchSeen = true;
         return .{ .loop = try this.parseAnnotatedLoopExpr(alloc) };
+    }
+    //   iter loop|while|for …  /  stream loop|while|for …   (decision 125)
+    // `iter` and `stream` are contextual: a keyword only immediately before a
+    // loop keyword, an identifier everywhere else (`g.iter()`, `val stream = 1`).
+    if (genLoopPrefixAhead(this)) |kind| {
+        this.useBranchSeen = true;
+        return .{ .loop = try this.parseGenLoopExpr(alloc, kind) };
     }
 
     // #(e1, e2, ...) ---- tuple literal
@@ -1094,6 +1102,28 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         this.peekAt(1).kind == .leftBrace)
     {
         return this.failRemovedAt(.removedRecordLiteral, 0);
+    }
+
+    // `try x` / `try x catch h` / `await x` as an OPERAND (`total + try r`,
+    // `(try batch).length`, `f(try await g())` — decisions 120 and 122 spell
+    // them there). The statement-level forms in `parseExpr` take a whole
+    // expression; an operand takes the next primary (postfix chain included).
+    if (this.check(.@"try")) {
+        const tryTok = this.advance();
+        const inner = try this.parsePrimary(alloc);
+        const innerPtr = try this.boxExpr(alloc, inner);
+        if (!this.noTailCatch and this.match(.@"catch")) {
+            const handler = try this.parsePrimary(alloc);
+            const handlerPtr = try this.boxExpr(alloc, handler);
+            return Expr{ .branch = .{ .loc = locFromToken(tryTok), .kind = .{ .tryCatch = .{ .expr = innerPtr, .handler = handlerPtr } } } };
+        }
+        return Expr{ .jump = .{ .loc = locFromToken(tryTok), .kind = .{ .try_ = innerPtr } } };
+    }
+    if (this.check(.await)) {
+        const awaitTok = this.advance();
+        const inner = try this.parsePrimary(alloc);
+        const innerPtr = try this.boxExpr(alloc, inner);
+        return Expr{ .jump = .{ .loc = locFromToken(awaitTok), .kind = .{ .await_ = innerPtr } } };
     }
 
     // Unary `-` — negation of any expression (-x, -123, -(a+b), etc.)
@@ -1874,8 +1904,9 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
 }
 
 /// `loop [:label] { … }` — repeats until `break` (decision 105). With
-/// `generator` set it is the annotated `#[@generator] loop { … }`: the body is
-/// a generator scope and the node is an expression worth the wrapper.
+/// `generator` set it is `iter loop { … }` / `stream loop { … }` (decision
+/// 125): the body is a generator scope and the node is an expression worth
+/// `@Iterator<T>` / `@Stream<T>`.
 /// `while (…)` is refused at the keyword, naming `for` and `while`.
 pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator, generator: ?ast.EffectKind) ParseError!LoopExpr {
     const loopTok = this.advance(); // consume 'loop'
@@ -1993,11 +2024,10 @@ pub fn parseForExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
     };
 }
 
-/// `#[@generator] loop [:label] { … }` — the annotated loop. The annotation
-/// block is parsed as on a `fn`; exactly one builtin annotation naming an
-/// effect the chain lets `yield` is accepted, and only before `loop` — every
-/// other block here is `loop-annotation-not-generator`, spanned over the
-/// block. The names are read through `effect_chain.grants`, never listed.
+/// A block of annotations before a loop. Decision 125 — a loop takes no
+/// annotation: the six effect annotations were already refused by
+/// `parseAnnotations` with the `iter` / `stream` fix-it, and any other block
+/// here is `loop-annotation-not-generator`, spanned over the block.
 pub fn parseAnnotatedLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
     const hashTok = this.peek();
     const annotations = try this.parseAnnotations(alloc);
@@ -2006,16 +2036,64 @@ pub fn parseAnnotatedLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!
         alloc.free(annotations);
     }
     const closeTok = this.tokens[this.current - 1];
-    const effect: ?ast.EffectKind = blk: {
-        if (annotations.len != 1 or !annotations[0].is_builtin) break :blk null;
-        const e = ast.EffectKind.fromAnnotationName(annotations[0].name) orelse break :blk null;
-        break :blk if (effectChain.grants(e, .yield_)) e else null;
-    };
-    if (effect == null or !this.check(.loop)) {
-        this.parseError = ParseErrorInfo.fromTokenSpan(.loopAnnotationNotGenerator, hashTok, closeTok.offset + closeTok.lexeme.len - hashTok.offset);
-        return ParseError.UnexpectedToken;
+    this.parseError = ParseErrorInfo.fromTokenSpan(.loopAnnotationNotGenerator, hashTok, closeTok.offset + closeTok.lexeme.len - hashTok.offset);
+    return ParseError.UnexpectedToken;
+}
+
+/// The generator kind when the cursor sits on the contextual `iter` / `stream`
+/// immediately followed by `loop`, `while` or `for` (decision 125); null
+/// otherwise — the word is then an ordinary identifier.
+pub fn genLoopPrefixAhead(this: *This) ?ast.EffectKind {
+    if (!this.check(.identifier)) return null;
+    const next = this.peekAt(1).kind;
+    if (next != .loop and next != .@"while" and next != .@"for") return null;
+    const word = this.peek().lexeme;
+    if (std.mem.eql(u8, word, "iter")) return .iterator;
+    if (std.mem.eql(u8, word, "stream")) return .stream;
+    return null;
+}
+
+/// `iter loop [:label] { … }`, `iter while [:label] (c) { … }`,
+/// `iter for [await] [:label] (xs) { x -> … }` and the `stream` forms
+/// (decision 125). `iter loop` is the prefixed `loop` node itself; the
+/// `while` / `for` forms are written as the prefixed
+/// `loop { <the loop as written>; break; }` they mean — decision 125's own
+/// equivalence (`#[@generator] loop { for (xs) { … }; break; }` is
+/// `iter for (xs) { … }`) — so the checker and the four backends lower ONE
+/// generator-loop shape. `prefixedKeyword` keeps the written keyword for the
+/// formatter; the label stays on the written loop (`break :l` / `continue :l`
+/// keep their meaning) and also names the generator scope (`yield :l v`).
+pub fn parseGenLoopExpr(this: *This, alloc: std.mem.Allocator, kind: ast.EffectKind) ParseError!LoopExpr {
+    const prefixTok = this.advance(); // `iter` / `stream`
+    if (this.check(.loop)) {
+        var lp = try this.parseLoopExpr(alloc, kind);
+        lp.prefixedKeyword = .loop;
+        lp.loc = locFromToken(prefixTok);
+        return lp;
     }
-    return this.parseLoopExpr(alloc, effect);
+    const inner: LoopExpr = if (this.check(.@"while"))
+        try this.parseWhileExpr(alloc)
+    else
+        try this.parseForExpr(alloc);
+    const loc = locFromToken(prefixTok);
+    const iterPtr = try this.boxExpr(alloc, Expr{ .identifier = .{ .loc = loc, .kind = .{ .ident = "true" } } });
+    const body = try alloc.alloc(ast.Stmt, 2);
+    body[0] = .{ .expr = .{ .loop = inner } };
+    body[1] = .{ .expr = .{ .jump = .{ .loc = loc, .kind = .{ .@"break" = .{ .label = null, .value = null } } } } };
+    return .{
+        .loc = loc,
+        .keyword = .loop,
+        .generator = kind,
+        .prefixedKeyword = inner.keyword,
+        .iter = iterPtr,
+        .indexRange = null,
+        .params = &.{},
+        .paramsLoc = loc,
+        .condition = true,
+        .body = body,
+        .awaitLoop = false,
+        .label = null,
+    };
 }
 
 /// The optional `:label` after a loop keyword (`for :outer (…)`).

@@ -1,27 +1,23 @@
 ----- SOURCE CODE
 val Element = type implement @Context<Element> { }
-#[@use]
 fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
-#[@result]
 fn parse(n: i32) -> @Result<i32, string> {
     return n;
 }
-#[@future]
-fn fetch(n: i32) -> @Future<i32> {
+fn fetch(n: i32) -> @Task<i32> {
     return n;
 }
-#[@result]
 fn bad(n: i32) -> @Result<i32, string> {
     yield n;
 }
 
 ----- ERROR
-error: yield-without-generator: `yield` needs a generator effect — `#[@generator]`, `#[@resultGenerator]` or `#[@futureGenerator]`; `#[@result]` is `@Result`, which does not
-  ┌─ :16:5
+error: yield-without-generator: `yield` needs `-> @Iterator<…>` or `-> @Stream<…>` return — this fn returns `@Result<…>`, which does not
+  ┌─ :12:5
   │
-16 │     yield n;
+12 │     yield n;
   │     ^
 
-  hint: A `yield` feeds the nearest generator scope: mark the fn `#[@generator]` (`-> @Generator<T>`) or write the loop as `#[@generator] loop { … }` (decision 105).
+  hint: A `yield` feeds the nearest generator scope: return `@Iterator<T>` (or `@Stream<T>`) from the fn, or write the loop as `iter loop { … }` (decision 125). To collect in a plain fn, use `map` / `filter` or a `var`.

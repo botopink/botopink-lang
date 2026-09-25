@@ -1,11 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type ApiError(msg: string)
-#[@result]
 fn fetch() -> @Result<i32, ApiError> {
     throw ApiError(msg: "not found");
 }
-#[@result]
 fn strict() -> @Result<i32, string> {
     val r = try fetch() catch throw "fetch failed";
     return r;

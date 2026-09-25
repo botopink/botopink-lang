@@ -1,7 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@future]
-fn fetch(x: i32) -> @Future<i32> {
+fn fetch(x: i32) -> @Task<i32> {
     return x;
 }
 ```
@@ -20,7 +19,7 @@ fn fetch(x: i32) -> @Future<i32> {
           "type": "i32"
         }
       ],
-      "return_type": "Future<i32,any>",
+      "return_type": "Task<i32>",
       "body": [
         {
           "source": "return x;"

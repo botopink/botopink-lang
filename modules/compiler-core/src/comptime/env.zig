@@ -140,10 +140,10 @@ pub const FnContext = struct {
     base: ?[]const u8 = null,
     /// Rendered return type, used in the "`use` not allowed" diagnostic.
     returnDisplay: []const u8 = "void",
-    /// True when the enclosing fn carries `#[@use]` — and only then (decision
-    /// 104; decisions 89/90 revoked). It is the same flag as `Env.inContextFn`.
-    /// A `use` in any other body is `useWithoutContextEffect`, which names the
-    /// annotation.
+    /// True when the enclosing fn's return is `@Component<C, T>` — and only
+    /// then (decisions 104, 118, 128). It is the same flag as
+    /// `Env.inContextFn`. A `use` in any other body is
+    /// `useWithoutContextEffect`, which names the return to write.
     annotated: bool = false,
     /// The enclosing fn's name, for that diagnostic.
     fnName: []const u8 = "",
@@ -157,9 +157,11 @@ pub const FnContext = struct {
 pub const ThrowContext = union(enum) {
     /// No declared return type (top-level or lambda) — `throw` is left unchecked.
     unchecked,
-    /// Enclosing fn returns `@Result<D, E>` — a thrown value must unify with `E`.
+    /// The enclosing fn's return carries `@Result<D, E>` in some layer (the
+    /// fallible channel, decision 121) — a thrown value must unify with `E`.
     result: *T.Type,
-    /// Enclosing fn has a declared non-`@Result` return type — `throw` is illegal.
+    /// Enclosing fn's declared return carries no `@Result` — `throw` / `try`
+    /// are illegal.
     plain,
 };
 
@@ -221,33 +223,31 @@ pub const TypeparamConstraint = struct {
 
 // ── environment ───────────────────────────────────────────────────────────────
 
-/// Context active while inferring the body of an effect fn (async /
-/// generator — i.e. one marked `#[@future]` / `#[@resultGenerator]` / `#[@generator]`
-/// / `#[@futureGenerator]`). Drives validation of `await` and `yield`; `null`
+/// Context active while inferring the body of an effect fn (a return of
+/// `@Result`, `@Task`, `@Component`, `@Iterator` or `@Stream`, decision 118)
+/// or of a prefixed `iter` / `stream` loop. Drives validation of `await` and
+/// `yield`; `null`
 /// inside normal functions and at the top level. (The type keeps its
 /// historical name `StarFnCtx` for the field on `Env`; the `*fn` prefix it
 /// alludes to was removed in v0.beta.19.)
 pub const StarFnCtx = struct {
-    /// `await` is permitted here — async function (`@Future`) or async
-    /// generator (`@FutureGenerator`).
+    /// `await` is permitted here — `@Task`, `@Component` or `@Stream`.
     allowsAwait: bool,
-    /// `yield` (and generator delegation) is permitted here — `@Generator` /
-    /// `@ResultGenerator` / `@FutureGenerator`. False for a pure `@Future`.
+    /// `yield` is permitted here — `@Iterator` / `@Stream`.
     allowsYield: bool,
-    /// `@Generator<T>` / `@ResultGenerator<T, _>` / `@FutureGenerator<T, _>`
-    /// item type that `yield <v>` AND `break <v>` values unify with (decision
-    /// 103: `break v` emits `v` and ends — the last item is an item like the
-    /// others, there is no completion channel); `null` when unknown or absent
-    /// (`@Future`).
+    /// `@Iterator<T>` / `@Stream<T>` item type that `yield <v>` AND
+    /// `break <v>` values unify with (decision 122: `break v` emits `v` and
+    /// ends — the last item is an item like the others, there is no
+    /// completion channel); `null` when unknown or absent (`@Task`). When it
+    /// is `@Result<U, E>`, a `U` is wrapped `Ok(v)`.
     iterItem: ?*T.Type,
-    /// The label declared on the fn signature (`#[@resultGenerator] fn … :name`),
+    /// The label declared on the fn signature (`fn … -> @Iterator<T> :name`),
     /// used to scope `break :name` to the generator vs. an enclosing loop.
     /// Drives the §1I REGRAS DE ESCOPO disambiguation in the `.@"break"`
     /// type-checker.
     fnLabel: ?[]const u8,
     /// The specific effect kind this context was built from. Drives effect-
-    /// specific rejections (RF1/RF2/RF5 fire only inside `#[@future]`, RI*
-    /// only inside `#[@resultGenerator]` / `#[@futureGenerator]`, etc.).
+    /// specific rejections (RI* only inside `@Iterator` / `@Stream`, etc.).
     effect: ast.EffectKind,
 };
 
@@ -323,23 +323,22 @@ pub const DecoratorSig = struct {
     fn_decl: ?ast.FnDecl = null,
 };
 
-/// A type-directed lowering for a `return`/`throw` jump inside a fn returning
-/// `@Result<D, E>`. Recorded by inference keyed by the jump's source `Loc` and
-/// consumed by the transform pass, which wraps the value in a `__bp_ok(…)` /
-/// `__bp_error(…)` builtin call (and rewrites `throw` into a `return`) so every
-/// backend materialises the same `{ok, V}` / `{error, E}` Result value.
-/// `unwrap_passthrough` handles `return try f()`: unwrapping then immediately
-/// re-wrapping is the identity, so the transform drops the `try` and returns
-/// `f()`'s Result directly.
-pub const ResultJumpLowering = enum { wrap_ok, wrap_error, unwrap_passthrough };
-
-/// §1F F4F-tail — `return`/`throw` jumps inside `#[@future]` fns. The transform
-/// rewrites `return <t>;` to `return __bp_future_resolved(<t>);` (wrap_resolved)
-/// and `throw <e>;` to `return __bp_future_rejected(<e>);` (wrap_rejected). The
-/// JS `async function` machinery handles the actual promise wrap, so commonJS
-/// strips the markers back to bare `return <t>;` / `throw <e>;` at codegen.
-/// Other backends (erlang/beam) consume the same uniform AST form.
-pub const FutureJumpLowering = enum { wrap_resolved, wrap_rejected };
+/// A type-directed lowering for a `return`/`throw`/`yield`/`break` jump inside
+/// a body whose return carries a `@Result<D, E>` layer (decisions 119, 121,
+/// 122). Recorded by inference keyed by the jump's source `Loc` and consumed by
+/// the transform pass, which wraps the value in a `__bp_ok(…)` /
+/// `__bp_error(…)` builtin call so every backend materialises the same
+/// `{ok, V}` / `{error, E}` Result value:
+///   - `wrap_ok`            — `return v` → `return __bp_ok(v)`
+///   - `wrap_error`         — `throw e` → `return __bp_error(e)`
+///   - `unwrap_passthrough` — `return try f()` → `return f()` (unwrap then
+///                            re-wrap is the identity)
+///   - `yield_ok`           — in an `@Iterator<@Result<U, E>>` / `@Stream<…>`
+///                            scope, `yield v` / `break v` with `v: U` →
+///                            `yield __bp_ok(v)` / `break __bp_ok(v)`
+///   - `break_error`        — in that scope, `throw e` → `break __bp_error(e)`:
+///                            the error is the last item and the sequence ends
+pub const ResultJumpLowering = enum { wrap_ok, wrap_error, unwrap_passthrough, yield_ok, break_error };
 
 /// What the nearest enclosing construct does with a `break` (decision 105 and
 /// decision 2): a loop leaves it; a `comptime { … }` block and a `case` arm's
@@ -464,15 +463,18 @@ pub const Env = struct {
     /// Result value, keyed by the jump's source location. Drives the AST
     /// transform `__bp_ok`/`__bp_error` wrapping.
     result_jump_lowerings: std.AutoHashMap(ast.Loc, ResultJumpLowering),
-    /// `return`/`throw` jumps inside `#[@future]` fns that the transform
-    /// rewrites to `__bp_future_resolved(...)` / `__bp_future_rejected(...)`
-    /// wrapper calls. Keyed by the jump's source location.
-    future_jump_lowerings: std.AutoHashMap(ast.Loc, FutureJumpLowering),
+    /// Decision 118 rule 1 — the effect wrapper an ALIASED return resolves to
+    /// (`-> Parser<i32>` with `type Parser<T> = @Result<T, E>`), set while
+    /// inferring that body: a capability used in it is
+    /// `effect-wrapper-behind-alias`, naming the wrapper to write. Null when
+    /// the return is written literally or is no wrapper at all.
+    aliasWrapper: ?[]const u8 = null,
     /// Capability scope of the function body currently being inferred (null at top level).
     fnContext: ?FnContext = null,
     /// C1 — the type a `return <value>` in the body currently being inferred
     /// must unify with: the declared return type, or an effect wrapper's inner
-    /// channel (`#[@result]` → R, `#[@future]` → T, `#[@use]` → the `T` of
+    /// channel (`@Result<R, E>` → R, `@Task<T>` → T — `U` when `T` is
+    /// `@Result<U, E>` —, `@Component<C, T>` → the `T` of
     /// `@Component<C, T>`). Null where returns are not checked (no declared
     /// return type, template fns, top level).
     returnTarget: ?*T.Type = null,
@@ -496,10 +498,10 @@ pub const Env = struct {
     /// Active effect-fn context while inferring its body (for `await`/`yield`
     /// rules). The field name is historical — see `StarFnCtx` above.
     starFn: ?StarFnCtx = null,
-    /// True while inferring the body of a `#[@use]` fn — the same question
-    /// as `FnContext.annotated` (decision 104: one flag, set by `#[@use]`
-    /// alone). Read by the `@getContext` builtin-call handler for §1C RC5 (the
-    /// intrinsic is only valid inside a `#[@use]` fn body).
+    /// True while inferring the body of a `-> @Component<…>` fn — the same
+    /// question as `FnContext.annotated` (decision 104: one flag, set by the
+    /// `@Component` return alone). Read by the `@getContext` builtin-call
+    /// handler for §1C RC5 (the intrinsic is only valid inside such a body).
     inContextFn: bool = false,
     /// Labels currently in scope (effect-fn label + enclosing loop labels),
     /// used to validate `yield :label` / `break :label`. Pushed/popped as
@@ -523,7 +525,7 @@ pub const Env = struct {
     /// `continue :outer` naming one of these is refused as crossing the
     /// border rather than as unbound.
     closedLabels: []const []const u8 = &.{},
-    /// Number of annotated loops (`#[@generator] loop { … }`) enclosing the
+    /// Number of prefixed loops (`iter loop { … }`) enclosing the
     /// position being inferred. Their body runs later, on demand, so a `use`
     /// inside one is refused (decision 105 — the annotated loop is closed).
     generatorLoopDepth: u32 = 0,
@@ -534,10 +536,9 @@ pub const Env = struct {
     /// cleared by `inferFnDecl` around each body, so a nested lambda or a
     /// sibling fn starts over.
     useAnchor: ?struct { base: []const u8, line: usize } = null,
-    /// The effect annotation of the fn whose body is being inferred, or null
-    /// for a plain `fn` (and at module level). Read by the `try` gate, which
-    /// has to ask the chain a question `env.starFn` cannot answer: a
-    /// `#[@result]` body has no star context and still answers `try`.
+    /// The effect the return of the fn whose body is being inferred activates
+    /// (decision 118), or null for a plain `fn` (and at module level). Read by
+    /// the refusals, which name it.
     fnEffect: ?ast.EffectKind = null,
     /// Registered `implement`/`extend` blocks, keyed by activation symbol name.
     extensions: std.StringHashMap(ExtEntry),
@@ -727,7 +728,6 @@ pub const Env = struct {
             .lastError = null,
             .method_lowerings = std.AutoHashMap(ast.Loc, MethodLowering).init(arena),
             .result_jump_lowerings = std.AutoHashMap(ast.Loc, ResultJumpLowering).init(arena),
-            .future_jump_lowerings = std.AutoHashMap(ast.Loc, FutureJumpLowering).init(arena),
             .fnContext = null,
             .throwContext = .unchecked,
             .starFn = null,
@@ -803,7 +803,6 @@ pub const Env = struct {
             .lastError = null,
             .method_lowerings = std.AutoHashMap(ast.Loc, MethodLowering).init(arena),
             .result_jump_lowerings = std.AutoHashMap(ast.Loc, ResultJumpLowering).init(arena),
-            .future_jump_lowerings = std.AutoHashMap(ast.Loc, FutureJumpLowering).init(arena),
             .fnContext = null,
             .throwContext = .unchecked,
             .starFn = null,
@@ -857,7 +856,6 @@ pub const Env = struct {
         self.typeDefs.deinit();
         self.method_lowerings.deinit();
         self.result_jump_lowerings.deinit();
-        self.future_jump_lowerings.deinit();
         self.fnTypeparams.deinit();
         self.fnExprParams.deinit();
         self.exprCaptures.deinit();
