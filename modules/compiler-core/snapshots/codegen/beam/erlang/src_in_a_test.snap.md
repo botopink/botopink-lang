@@ -107,13 +107,27 @@ helper() ->
             case filename:basename(Src) =:= Self of
                 true -> ok;
                 false ->
-                    case compile:file(Src, [binary, return_errors, {i, Dir}]) of
+                    case '__bp_prebuilt'(Src) of
                         {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
-                        Bad -> '__bp_dead_module'(Src, Bad)
+                        none ->
+                            case compile:file(Src, [binary, return_errors, {i, Dir}]) of
+                                {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
+                                Bad -> '__bp_dead_module'(Src, Bad)
+                            end
                     end
             end
         end, filelib:wildcard(filename:join([Dir, "**", "*.erl"])))
     end)().
+
+'__bp_prebuilt'(Src) ->
+    case file:read_file(filename:rootname(Src) ++ ".beam") of
+        {ok, Bin} ->
+            case beam_lib:chunks(Bin, []) of
+                {ok, {Mod, _}} -> {ok, Mod, Bin};
+                _ -> none
+            end;
+        _ -> none
+    end.
 
 '__bp_dead_module'(Src, Bad) ->
     io:format(standard_error,

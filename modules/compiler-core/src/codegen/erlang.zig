@@ -2163,13 +2163,34 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
             \\            case filename:basename(Src) =:= Self of
             \\                true -> ok;
             \\                false ->
-            \\                    case compile:file(Src, [binary, return_errors, {i, Dir}]) of
+            \\                    case '__bp_prebuilt'(Src) of
             \\                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
-            \\                        Bad -> '__bp_dead_module'(Src, Bad)
+            \\                        none ->
+            \\                            case compile:file(Src, [binary, return_errors, {i, Dir}]) of
+            \\                                {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
+            \\                                Bad -> '__bp_dead_module'(Src, Bad)
+            \\                            end
             \\                    end
             \\            end
             \\        end, filelib:wildcard(filename:join([Dir, "**", "*.erl"])))
             \\    end)()
+        };
+        // The `.beam` `botopink test` already compiled from this same `.erl`,
+        // in this run's own directory, before any runner started
+        // (`test_cmd.zig` `precompileErlang`, one `erl` per run instead of one
+        // `compile:file/2` per sibling per test module). It is written only
+        // when that compile succeeded, so a module that does not compile has
+        // none and takes the arm above, whose refusal is unchanged; a missing
+        // or unreadable `.beam` is the same arm.
+        const prebuilt: Ast.Expr = .{ .raw =
+            \\case file:read_file(filename:rootname(Src) ++ ".beam") of
+            \\        {ok, Bin} ->
+            \\            case beam_lib:chunks(Bin, []) of
+            \\                {ok, {Mod, _}} -> {ok, Mod, Bin};
+            \\                _ -> none
+            \\            end;
+            \\        _ -> none
+            \\    end
         };
         // Reported on standard_error, so `--json`'s stdout envelope stays pure
         // (`test_cmd.zig` forwards a child's stderr untouched), and `halt(1)`
@@ -2210,6 +2231,8 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
         try forms.appendSlice(b.arena, &.{
             .blank,
             try blockFunction(b, "__bp_load_siblings", &.{}, try b.body(&.{loader})),
+            .blank,
+            try blockFunction(b, "__bp_prebuilt", &.{V("Src")}, try b.body(&.{prebuilt})),
             .blank,
             try blockFunction(b, "__bp_dead_module", &.{ V("Src"), V("Bad") }, try b.body(&.{dead})),
             .blank,
