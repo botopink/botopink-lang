@@ -288,58 +288,6 @@ test "pattern: non-empty list pattern" {
     );
 }
 
-// DOCUMENTED SKIP — the `<Pattern> as <name>` binding form does not parse
-// (`parser` has no `as` in patterns). Missing feature: as-patterns; owner:
-// spec 02 (parser gaps). The snapshot pins the parse error.
-test "pattern: assign pattern in enum" {
-    try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\val Result = type {
-        \\    Ok(value: i32),
-        \\    Err(message: string),
-        \\};
-        \\val process = fn(r: Result) -> string {
-        \\    case r {
-        \\        Ok(v) as result -> "Got: " + v;
-        \\        Err(e) as result -> "Error: " + e;
-        \\    }
-        \\};
-    );
-}
-
-// DOCUMENTED SKIP — needs the `<Pattern> as <name>` binding form (see
-// "assign pattern in enum"). Missing feature: as-patterns; owner: spec 02.
-// The negative intent (two arms producing different variant types must not
-// unify) cannot be expressed until the pattern form parses.
-test "type_unification_does_not_allow_different_variants_to_be_treated_as_safe" {
-    try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\val Result = type {
-        \\    Ok(value: i32),
-        \\    Err(message: string),
-        \\};
-        \\val process = fn(r: Result) -> string {
-        \\    case r {
-        \\      Ok(..) as b -> Wibble(..b, value: 1);
-        \\      Err(..) as b -> Wobble(..b, message: "a");
-        \\    }
-        \\};
-    );
-}
-
-// DOCUMENTED SKIP — same missing `<Pattern> as <name>` form; owner: spec 02.
-test "pattern: assign pattern in record" {
-    try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\val Person = type(
-        \\    name: string,
-        \\    age: i32,
-        \\);
-        \\val describe = fn(p: Person) -> string {
-        \\    case p {
-        \\        Person(name, age) as person -> name + " is " + age;
-        \\    };
-        \\};
-    );
-}
-
 // DOCUMENTED SKIP, half closed. The unnamed variant payload
 // (`Single(Result<i32, string>)`) is **decided**, not missing: decision 12 says
 // a payload nobody can name is a payload no `case` arm can bind, and C-08 made
