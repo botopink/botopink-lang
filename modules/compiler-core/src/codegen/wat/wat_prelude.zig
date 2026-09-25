@@ -41,6 +41,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
         .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw } },
         .print_opt_f32 => &.{ .{ .func = print_opt_f32_raw }, .{ .func = print_opt_f32 } },
+        .print_opt_tagged => &.{ .{ .func = print_opt_tagged_raw }, .{ .func = print_opt_tagged } },
         .print_loop => &.{ .{ .func = print_null }, .{ .func = print_loop_i32_raw }, .{ .func = print_loop_i32 } },
         .print_opt => &.{
             .{ .func = print_undefined },    .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
@@ -354,10 +355,30 @@ const memmove = ast.Func{
     } },
 };
 
+/// Decision 67 — the most restrictive behaviour, and no flag that turns it off.
+/// A string here is a length-prefixed blob in a data segment or on the heap,
+/// and both start at the data floor (256); everything below it is the scratch
+/// area — `0..8` is the WASI iovec itself. So a pointer below the floor is not
+/// a string, it is an absent `?string` whose shape nothing registered, and the
+/// honest answer is to stop. Before this guard, `@print` of such a value loaded
+/// a length from address 0 and wrote whatever bytes were there at exit 0 with
+/// no diagnostic. Measured both ways by disabling the `s.at(i)` arm of
+/// `optInfoOf` and rebuilding: `@print(s.at(3))` on `"abc"` wrote six spaces at
+/// the tip the row was first written against and a bare newline at `2e6bb4ac`
+/// — whatever the iovec happens to hold — and traps here.
 const print_str_raw = ast.Func{
     .name = "__print_str_raw",
     .params = &.{.{ .name = "s", .ty = .i32 }},
     .body = .{ .stack = .none, .lines = &.{
+        .{ .indent = 4, .instr = .{ .local_get = "s" } },
+        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "256" } } },
+        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "lt_u" } } },
+        .{ .indent = 4, .instr = .{ .@"if" = .{
+            .then = .{ .seq = .{ .stack = .none, .lines = &.{
+                .{ .indent = 8, .instr = .{ .comment = "a pointer below the data floor is not a string" } },
+                .{ .indent = 8, .instr = .@"unreachable" },
+            } } },
+        } } },
         .{ .indent = 4, .instr = .{ .local_get = "s" } },
         .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
         .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
@@ -1482,6 +1503,16 @@ const print_loop_i32_raw = func("__print_loop_i32_raw", &.{ "v", "got" }, null, 
     whenElse(&.{ get("v"), call("__print_i32_raw") }, &.{call("__print_null")}),
 });
 const print_loop_i32 = func("__print_loop_i32", &.{ "v", "got" }, null, &.{}, &.{ get("v"), get("got"), call("__print_loop_i32_raw"), call("__print_nl") });
+
+/// A `?T` whose `T` is a record: the value IS the record's pointer, so `0` is
+/// absence and anything else carries the header the tagged printer reads four
+/// bytes behind it. Without the guard the tagged printer read that header out
+/// of the scratch area below address 0.
+const print_opt_tagged_raw = func("__print_opt_tagged_raw", &.{"v"}, null, &.{}, &.{
+    get("v"),                                                                            op("eqz"),
+    whenElse(&.{call("__print_undefined")}, &.{ get("v"), call("__print_tagged_raw") }),
+});
+const print_opt_tagged = func("__print_opt_tagged", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_opt_tagged_raw"), call("__print_nl") });
 
 /// `$__write_bytes` to stderr (fd 2), through the same iovec scratch.
 const write_err = func("__write_err", &.{ "p", "n" }, null, &.{}, &.{
