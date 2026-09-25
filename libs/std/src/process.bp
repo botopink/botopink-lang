@@ -61,6 +61,45 @@ pub declare fn arch() -> string;
 #[@External.Erlang("list_to_integer(os:getpid())")]
 pub declare fn pid() -> i32;
 
+// ── 1.0.10-beta front 01 additions (`io/process` after front 23) ────────────
+//
+// Child processes. The five introspections above are not edited. Signals
+// (`onSignal`) are not here: a closure handed to a host cell is unverified on
+// the Erlang target (`language-gaps.md`).
+
+// What a child process left behind. `stderr` is split out on Node; on Erlang
+// the port folds it into `stdout` (`stderr_to_stdout`) and `stderr` is `""`
+// — a caller that needs the two apart on both targets redirects through a
+// file and says so.
+pub type Exit(
+    status: i32,
+    stdout: string,
+    stderr: string,
+)
+
+// Run the executable `cmd` (looked up on `PATH` when it has no `/`) with
+// `args`, no shell, and wait for it. A process that RAN is `Ok` whatever its
+// status — a non-zero exit is an `Exit` carrying that status. `Error` means
+// it could not be started (not found, not executable).
+// Node: `child_process.spawnSync`; a start failure is `r.error`, not a throw.
+// Erlang: `open_port({spawn_executable, Path}, [exit_status, …])`, the path
+// from `os:find_executable/1`, the output gathered until `exit_status`.
+#[@result]
+#[@External.Node("""(() => { const __r = require('child_process').spawnSync($0, $1, { encoding: 'utf8' }); return __r.error ? { error: String(__r.error.message ?? __r.error) } : { ok: { status: __r.status ?? -1, stdout: __r.stdout ?? '', stderr: __r.stderr ?? '' } } })()""")]
+#[@External.Erlang("""(fun(__C, __A) -> __X = case string:find(__C, <<"/">>) of nomatch -> os:find_executable(binary_to_list(__C)); _ -> binary_to_list(__C) end, case __X of false -> {error, iolist_to_binary([<<"process.run: not found: ">>, __C])}; _ -> try open_port({spawn_executable, __X}, [binary, exit_status, stderr_to_stdout, {args, [binary_to_list(__Y) || __Y <- __A]}]) of __P -> __L = fun __F(__Acc) -> receive {__Q, {data, __D}} when __Q =:= __P -> __F([__D | __Acc]); {__Q, {exit_status, __S}} when __Q =:= __P -> {__S, iolist_to_binary(lists:reverse(__Acc))} end end, {__St, __Out} = __L([]), {ok, #{status => __St, stdout => __Out, stderr => <<>>}} catch _:__E -> {error, iolist_to_binary(io_lib:format("process.run: ~p", [__E]))} end end end)($0, $1)""")]
+pub declare fn run(cmd: string, args: string[]) -> @Result<Exit, string>;
+
+// Run `cmd` through `/bin/sh -c` and answer its output, stdout and stderr
+// together. STATUS-LOSING on both targets: the answer is text only, so a
+// failing command is indistinguishable from a quiet one — `os:cmd/1` answers
+// output only on Erlang, and the Node cell matches it. Use `run` when the
+// status matters.
+// Node: `spawnSync('/bin/sh', ['-c', 'exec 2>&1; ' + cmd])`.
+// Erlang: `os:cmd/1` (which runs `/bin/sh -c` and folds stderr in).
+#[@External.Node("""(require('child_process').spawnSync('/bin/sh', ['-c', 'exec 2>&1; ' + $0], { encoding: 'utf8' }).stdout ?? '')""")]
+#[@External.Erlang("""unicode:characters_to_binary(os:cmd(binary_to_list($0)))""")]
+pub declare fn runShell(cmd: string) -> string;
+
 // ── tests ────────────────────────────────────────────────────────────────────
 
 test "process.cwd is non-empty" {
@@ -84,4 +123,25 @@ test "process.arch is non-empty" {
 test "process.pid is positive" {
     val p = pid();
     assert p > 0;
+}
+
+test "process.run answers the child's status and stdout" {
+    val r = run("echo", ["hi"]);
+    assert r.isOk();
+    assert r.map({ e -> e.status }).unwrapOr(-1) == 0;
+    assert r.map({ e -> e.stdout }).unwrapOr("").startsWith("hi");
+}
+
+test "process.run of a missing binary is an Error, not a crash" {
+    assert run("definitely-not-a-binary-bp-std", []).isError();
+}
+
+test "process.run of a failing child is Ok carrying its status" {
+    val r = run("sh", ["-c", "exit 3"]);
+    assert r.map({ e -> e.status }).unwrapOr(-1) == 3;
+}
+
+test "process.runShell answers output and loses the status" {
+    assert runShell("echo hi").startsWith("hi");
+    assert runShell("exit 3") == "";
 }
