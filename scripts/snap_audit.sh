@@ -35,11 +35,10 @@
 #             no test checked in the traced run, and every traced path that
 #             is not on disk. Columns: kind\tpath
 #               kind ∈ {orphan,unrecorded}
-#   review    The review worksheet: one row per unique snapshot (the four
-#             comptime runtime copies collapse into one row).
+#   review    The review worksheet: one row per unique snapshot.
 #             Columns: suite\tslug\ttest\tpaths\tverdict
-#               suite   codegen/<target> · codegen/errors/<target> · comptime ·
-#                       comptime/errors · comptime/<dir> · parser · lsp
+#               suite   codegen/<target> · codegen/errors/<target> ·
+#                       comptime/<dir> (ast · errors · templates) · parser · lsp
 #               test    test file:line (comma-joined when several tests write
 #                       the same path); ORPHAN when no traced test checked it
 #               verdict seeded from the 1.0.1-beta review reports (`--reports`,
@@ -496,11 +495,7 @@ role == "disk" {
         if (seg[5] == "errors" && n == 7) { suite = "codegen/errors/" seg[6]; be = seg[6] }
         else { suite = "codegen/" seg[5]; be = seg[5] }
     }
-    else if (seg[4] == "comptime") {
-        fam = "comptime"
-        if (seg[5] ~ /^(node|erlang|wasm|beam)$/) suite = (n == 7 && seg[6] == "errors") ? "comptime/errors" : "comptime"
-        else suite = "comptime/" seg[5]
-    }
+    else if (seg[4] == "comptime") { fam = "comptime"; suite = "comptime/" seg[5] }
     else if (seg[4] == "parser") { suite = "parser"; fam = "parser" }
     else { suite = "other"; fam = "other" }
     key = suite SUBSEP slug
