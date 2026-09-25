@@ -610,10 +610,24 @@ fn exprPropagates(e: ast.Expr) bool {
         },
         .binaryOp => |op| exprPropagates(op.lhs.*) or exprPropagates(op.rhs.*),
         .unaryOp => |op| exprPropagates(op.expr.*),
+        // `(try batch).length` — the `try` is the receiver of a member read.
+        .identifier => |id| switch (id.kind) {
+            .identAccess => |ia| exprPropagates(ia.receiver.*),
+            else => false,
+        },
         .collection => |col| switch (col.kind) {
             .grouped => |x| exprPropagates(x.*),
             .case => |c| blk: {
+                for (c.subjects) |x| if (exprPropagates(x)) break :blk true;
                 for (c.arms) |arm| if (exprPropagates(arm.body)) break :blk true;
+                break :blk false;
+            },
+            .arrayLit => |al| blk: {
+                for (al.elems) |x| if (exprPropagates(x)) break :blk true;
+                break :blk false;
+            },
+            .tupleLit => |tl| blk: {
+                for (tl.elems) |x| if (exprPropagates(x)) break :blk true;
                 break :blk false;
             },
             else => false,
@@ -870,7 +884,7 @@ fn countGenForSlots(em: *Emitter, body: []const ast.Stmt, count: *u32) void {
             if (lp.generator != null) continue;
             if (lp.condition) {
                 countGenForSlots(em, lp.body, count);
-            } else if (lp.params.len == 1 and Emitter.hasYieldOrBreakValue(lp.body)) {
+            } else if (lp.params.len == 1 and ast.bodyYields(lp.body)) {
                 count.* += 2;
                 countLocalsRec(em, lp.body, count);
                 countGenForSlots(em, lp.body, count);
@@ -3594,6 +3608,16 @@ const Emitter = struct {
             break :blk names_buf[0 .. 1 + paramNames(m.params, names_buf[1..]).len];
         } else paramNames(m.params, &names_buf);
         self.num_y = @as(u32, @intCast(names.len)) + self.precountLocals(m.body.?);
+        // A method's effect is its return's (decision 118) — `BehaviorMethod`
+        // has no parsed `effect`, so it is read off the return type as
+        // erlang's `methodEffect` does. An `@Iterator` / `@Stream` method that
+        // yields is a generator scope exactly as a free fn is (`emitFn`).
+        const gen_fn = effectChain.grants(ast.EffectKind.ofMethod(m.returnType, m.body), .yield_) and m.body.?.len > 0;
+        if (gen_fn) {
+            var extra: u32 = 1;
+            countGenForSlots(self, m.body.?, &extra);
+            self.num_y += extra;
+        }
         try self.bindParams(names);
 
         try beamEmitter.writeBlankLine(self.out);
@@ -3607,6 +3631,7 @@ const Emitter = struct {
         try self.emitParamSpill(names.len);
 
         self.cur_line += 1;
+        if (gen_fn) return self.emitGeneratorBody(m.body.?);
         try self.emitBody(m.body.?);
     }
 
@@ -4256,7 +4281,10 @@ const Emitter = struct {
                     }
                     try self.emitReturn();
                 },
-                else => |k| try beamEmitter.writeComment(self.out, "unsupported jump: {s}", .{@tagName(k)}),
+                // `await e;` / `try e;` as a statement: the expression's
+                // effect, value dropped (the expression lowering is eager
+                // `await` and the `{ok, V}` unwrap of `try`).
+                .await_, .try_ => try self.lowerExprIntoX0(stmt.expr),
             },
             .branch => |b| switch (b.kind) {
                 .if_ => |i| try self.emitIf(i),
@@ -4290,11 +4318,11 @@ const Emitter = struct {
                     try self.lowerConditionLoop(lp);
                     return;
                 }
-                if (self.inGenLoop() != null and lp.params.len == 1 and hasYieldOrBreakValue(lp.body)) {
+                if (self.inGenLoop() != null and lp.params.len == 1 and ast.bodyYields(lp.body)) {
                     try self.lowerInFrameFor(lp);
                     return;
                 }
-                if (!lp.awaitLoop and !hasYieldOrBreakValue(lp.body)) {
+                if (!hasYieldOrBreakValue(lp.body)) {
                     if (try self.lowerMutatingFold(.{ .params = &.{lp.params[0]} }, lp.body, lp.iter.*)) return;
                 }
                 try self.lowerExprIntoX0(stmt.expr);

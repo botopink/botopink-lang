@@ -1466,7 +1466,8 @@ codegen/
   `get_map_elements` for a receiver whose type this emit cannot place),
   `comptime` nodes
   (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
-  the value of `e`).
+  the value of `e`; `await e;` / `try e;` as a statement are the same lowering,
+  value dropped).
 - **`@print` / `@println` / `@debug`** (`lowerPrint`, `ensurePrintHelper`) lower
   to `'__bp_print'([A, B, …])`, whose four synthesised functions are decision 8
   §7's formatter: `'__bp_print'/1` joins the arguments with a space and ends the
@@ -1700,7 +1701,11 @@ codegen/
   names on out. Parity with erlang's `mutatingClosureExpr`: a call whose value
   is used keeps the plain application (and raises `badarity`).
 - **Loops are statements** (decision 105). `for (xs) { x -> … }` is a
-  `lists:foreach` fun (`lowerLoop`); `while (cond) { … }` / `loop { … }` run
+  `lists:foreach` fun (`lowerLoop`) — `for await` too (a `@Stream` is an
+  eager list here), so one that reassigns outer names is the same `foldl`, and
+  one whose body propagates a `try` (`bodyPropagates`: through member reads,
+  `case` subjects, array/tuple literals too — `(try batch).length`) is called
+  inside `guardLoopCall`'s catch section; `while (cond) { … }` / `loop { … }` run
   in the enclosing frame (`lowerConditionLoop`): `{label, Top}`, the condition
   as a test jumping to `Exit`, the body, `{jump, {f, Top}}`, `{label, Exit}`.
   The variables it reassigns are this frame's registers, so nothing is
@@ -1714,13 +1719,16 @@ codegen/
   `cond_loop`) that each `yield v` conses onto (`genPush`), reversed with
   `lists:reverse/1` at the scope's `Exit`. `break <v>` pushes and jumps to that
   `Exit` from any loop depth; a bare `break` or `return;` with no loop to leave
-  jumps there too. A `for` that yields inside a scope is walked in the frame
-  (`lowerInFrameFor`: `is_nonempty_list` / `get_list` over a y-slot list), so
-  its `yield`s reach the accumulator; `countGenForSlots` adds its slots to the
-  frame. A captured `var` is the frame's register, so an `iter` loop's
-  counter is read after it at its last value. Generator METHODS are not scopes
-  yet (a method's effect is not read here — `run/effect_method.bp` is red on
-  beam for that reason and others). A body that yields outside any scope is
+  jumps there too. A `for` that yields inside a scope — its own `yield`, or
+  one in an unprefixed loop nested in it (`ast.bodyYields`, decision 125: the
+  nearest generator scope) — is walked in the frame (`lowerInFrameFor`:
+  `is_nonempty_list` / `get_list` over a y-slot list), so its `yield`s reach
+  the accumulator; `countGenForSlots` adds its slots to the frame. A captured
+  `var` is the frame's register, so an `iter` loop's counter is read after it
+  at its last value. A generator METHOD is a scope exactly as a fn is
+  (`emitMethodAsFn`): `ast.BehaviorMethod` has no parsed `effect`, so it is
+  read off the return type (`ast.EffectKind.ofMethod`, erlang's
+  `methodEffect`). A body that yields outside any scope is
   `error.ConditionLoopValueUnsupported` (`condLoopYieldsValue`) — the checker
   refuses it first.
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
