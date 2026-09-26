@@ -1412,7 +1412,12 @@ fn emitBeamAsm(
         switch (decl) {
             // A host-backed `declare fn` has no body: every call lowers to
             // its host target at the call site (`lowerExternalCall`).
-            .@"fn" => |f| if (!isHostDeclare(f)) try em.reserveFn(f.name, fnArityNoSelf(f)),
+            .@"fn" => |f| if (!isHostDeclare(f)) {
+                try em.reserveFn(f.name, fnArityNoSelf(f));
+                // Two arities under one name answer no single fun.
+                const gop = try em.top_fns.getOrPut(alloc, f.name);
+                gop.value_ptr.* = if (gop.found_existing and gop.value_ptr.* != fnArityNoSelf(f)) std.math.maxInt(usize) else fnArityNoSelf(f);
+            },
             .val => |v| if (!isSyntheticEntrypointVal(v)) {
                 try em.reserveFn(v.name, 0);
                 try em.top_vals.put(v.name, {});
@@ -1824,6 +1829,9 @@ const Emitter = struct {
     /// Named top-level `val`s of this module — each is a 0-arity function, so a
     /// bare reference is a local call.
     top_vals: std.StringHashMap(void),
+    /// This module's top-level `fn`s by name → arity (`maxInt` when two
+    /// arities share the name), for a name used as a value (`apply(one)`).
+    top_fns: std.StringHashMapUnmanaged(usize) = .empty,
     /// The module body, run in source order by `'_botopink_main'/0` before it
     /// calls `main/0`: the `_`-named synthetic statements, and the named
     /// `val`s whose initialiser can have an effect (`topValIsCached`), each
@@ -2025,6 +2033,7 @@ const Emitter = struct {
         self.std_imports.deinit();
         self.imported_fn_owners.deinit();
         self.top_vals.deinit();
+        self.top_fns.deinit(self.alloc);
         self.entry_stmts.deinit(self.alloc);
         self.string_locals.deinit();
         self.count_strings.deinit();
@@ -4712,6 +4721,17 @@ const Emitter = struct {
                     if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) {
                         try beamEmitter.writeMoveOp(self.out, Op.atom(n), Dst.xr(0));
                         return;
+                    }
+                    // A top-level `fn` of this module named as a value
+                    // (`apply(one)`, `xs.map(inc)`): its fun, a `make_fun3` over
+                    // the function's own entry with no environment — erlang's
+                    // `fun one/0`. It was `{unresolved_identifier, one}`.
+                    if (self.cur_type == null and self.top_fns.get(n) != null and self.top_fns.get(n).? != std.math.maxInt(usize)) {
+                        const arity = self.top_fns.get(n).?;
+                        if (self.fnLabelsFor(n, arity)) |labels| {
+                            try self.emitMakeFun(labels.entry, 0, &.{});
+                            return;
+                        } else |_| {}
                     }
                     // Nothing binds the name. It used to become the atom of its
                     // own name — a value, so the program printed the word. Now

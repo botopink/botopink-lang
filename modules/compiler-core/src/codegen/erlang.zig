@@ -3701,7 +3701,38 @@ const Emitter = struct {
     /// version, or the call `name()` when it is a module-level `val`.
     fn nameRefNode(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror!Ast.Expr {
         if (!this.locals.contains(name) and this.top_vals.contains(name)) return this.fileCall(b, name, &.{});
+        // A top-level `fn` named as a value (`apply(one)`, `xs.map(inc)`):
+        // erlang has no value for a plain function name, so `One` was an
+        // unbound variable and `erlc` refused the whole module. It is the
+        // function's fun — `fun one/0`, or, from a type's module, a fun that
+        // calls the file's (exported) function.
+        if (!this.locals.contains(name) and !this.untyped) {
+            if (this.fileFnArity(name)) |arity| {
+                if (this.cur_type == null) return .{ .fun_ref = .{ .name = name, .arity = arity } };
+                const params = try b.arena.alloc(Ast.Expr, arity);
+                for (params, 0..) |*p, i| p.* = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "__BpA{d}", .{i}));
+                return .{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
+                    try b.clause(params, &.{}, &.{try this.fileCall(b, name, params)}),
+                }) };
+            }
+        }
         return Ast.Expr.v(try this.varRef(b, name));
+    }
+
+    /// The arity of the file's top-level `fn` called `name`, when exactly one
+    /// arity is declared; null otherwise (a name overloaded by arity has no
+    /// single fun to answer).
+    fn fileFnArity(this: *const Emitter, name: []const u8) ?usize {
+        var found: ?usize = null;
+        var it = this.file_fns.keyIterator();
+        while (it.next()) |k| {
+            const slash = std.mem.lastIndexOfScalar(u8, k.*, '/') orelse continue;
+            if (!std.mem.eql(u8, k.*[0..slash], name)) continue;
+            const arity = std.fmt.parseInt(usize, k.*[slash + 1 ..], 10) catch continue;
+            if (found != null) return null;
+            found = arity;
+        }
+        return found;
     }
 
     /// A string `+` chain as one flat binary construction:
@@ -6259,10 +6290,9 @@ const Emitter = struct {
                     // they must stay lowercase atoms, never `True`/`False` vars.
                     if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) return A(n);
                     // A module-level `val` emitted as a 0-arity function: a bare
-                    // reference is the call `name()`. A local of the same name
-                    // shadows it.
-                    if (!this.locals.contains(n) and this.top_vals.contains(n)) return this.fileCall(b, n, &.{});
-                    return V(try this.varRef(b, n));
+                    // reference is the call `name()`; a top-level `fn` is its
+                    // fun. A local of the same name shadows both.
+                    return this.nameRefNode(b, n);
                 },
                 .identAccess => |ia| {
                     // Qualified enum member: `Order.Lt` → the variant atom.

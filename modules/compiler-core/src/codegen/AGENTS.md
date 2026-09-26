@@ -624,6 +624,12 @@ codegen/
   fun nested in the first clause (a `map`'s lambda) sees the outer one bound.
   They were `R`/`O`/`V`, and a program's `v` is `V`: the case pattern MATCHED
   the bound variable, so `val v = load(5); v.unwrapOr(1)` answered `1`.
+- **A top-level `fn` named as a value** (`apply(one)`, `xs.map(inc)`) is its
+  fun (`nameRefNode` → `fileFnArity`): `fun one/0`, or from a type's module a
+  `fun(__BpA0…) -> file:one(…) end`; a name declared at two arities stays a
+  variable. It was the unbound variable `One`, and `erlc` refused the whole
+  module. The beam twin is a `make_fun3` over the function's own entry
+  (`top_fns`), which was `{unresolved_identifier, one}`.
 - **Calling the result of a call** (`adder(3)(4)`, `cc.calleeExpr` with
   `callee == ""`): `(adder(3))(4)` — `applyParen` over the callee expression's
   node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which

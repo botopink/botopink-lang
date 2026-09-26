@@ -1329,6 +1329,42 @@ test "erlang: a @Result/@Option op does not capture the program's own names" {
     , "5\n7\n3\n6\n1\n", &.{"__BpV0"});
 }
 
+// A top-level `fn` named as a value is its fun: `fun one/0` on erlang, a
+// `make_fun3` over the function's entry on beam. erlang read `One` as an
+// unbound variable (`erlc` refused the whole module; a library front found it),
+// beam aborted `{unresolved_identifier, one}`.
+test "erlang: a top-level fn named as a value is its fun" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn one() -> i32 { return 1; }
+        \\fn inc(x: i32) -> i32 { return x + 1; }
+        \\fn apply(f: fn() -> i32) -> i32 { return f(); }
+        \\fn apply1(f: fn(x: i32) -> i32, v: i32) -> i32 { return f(v); }
+        \\fn main() {
+        \\  @print(apply(one));
+        \\  @print(apply1(inc, 4));
+        \\  val g = inc;
+        \\  @print(g(9));
+        \\  @print([1, 2].map(inc));
+        \\}
+    , "1\n5\n10\n[2, 3]\n", &.{"fun one/0"});
+}
+
+test "beam: a top-level fn named as a value is its fun" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn one() -> i32 { return 1; }
+        \\fn inc(x: i32) -> i32 { return x + 1; }
+        \\fn apply(f: fn() -> i32) -> i32 { return f(); }
+        \\fn apply1(f: fn(x: i32) -> i32, v: i32) -> i32 { return f(v); }
+        \\fn main() {
+        \\  @print(apply(one));
+        \\  @print(apply1(inc, 4));
+        \\  val g = inc;
+        \\  @print(g(9));
+        \\  @print([1, 2].map(inc));
+        \\}
+    , "1\n5\n10\n[2, 3]\n", &.{"{make_fun3, "});
+}
+
 test "erlang: calling the result of a call applies it (`calleeExpr`)" {
     // `test/curried_call.bp` (C-09's backend half): `adder(3)(4)` carries its
     // callee as an expression, and lowered as a name it was `''(4)`, which
