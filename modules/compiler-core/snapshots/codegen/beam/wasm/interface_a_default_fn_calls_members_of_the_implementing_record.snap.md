@@ -32,7 +32,8 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\0f\00\00\00R\05Money\01\05centsi")
+  (global $__heap_ptr (mut i32) (i32.const 276))
   (func $Money_min (param $self i32) (param $other i32) (result i32)
     local.get $self
     i32.load ;; .cents
@@ -65,15 +66,68 @@ fn main() {
     )
     return
   )
+  (func $Money_clamp (param $self i32) (param $lo i32) (param $hi i32) (result i32)
+    local.get $self
+    local.get $lo
+    call $Money_max
+    local.get $hi
+    call $Money_min
+    return
+  )
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $__mem2 i32)
     (local $m i32)
-    unreachable ;; unresolved call: clamp/2
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 260
+    i32.store
+    local.get $__mem0
+    i32.const 500
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    global.get $__heap_ptr
+    local.set $__mem1
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 260
+    i32.store
+    local.get $__mem1
+    i32.const 0
+    i32.store offset=4
+    local.get $__mem1
+    i32.const 4
+    i32.add
+    global.get $__heap_ptr
+    local.set $__mem2
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem2
+    i32.const 260
+    i32.store
+    local.get $__mem2
+    i32.const 120
+    i32.store offset=4
+    local.get $__mem2
+    i32.const 4
+    i32.add
+    call $Money_clamp
     local.set $m
     local.get $m
-    i32.load
+    i32.load ;; .cents
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -264,6 +318,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-RUNTIME TRAP (wasmtime):
-wasm trap: wasm `unreachable` instruction executed
+120
 ```

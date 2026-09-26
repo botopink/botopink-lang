@@ -458,6 +458,14 @@ answered, and each had its own `expected-failures.txt` line:
 - **A method declared `-> @Iterator<T>` / `-> @Stream<T>` accumulates its
   yields** (`methodYieldsEagerly` → `renderAccumulatingBody`), as a fn does; its
   body was rendered plain, every `yield` dropped.
+- **A type adopts its behaviors' `default fn`s** (`adoptedDefaults`,
+  `methodsWithDefaults`): each one the type does not write is emitted as its own
+  `$<Type>_<method>`, through `extends` too — `Money(…).clamp(lo, hi)` over
+  `Bounded`'s default and `Bag(…).isEmpty()` through `Counted extends Sized`
+  were `unresolved call` traps. A method call on a record value answers the
+  record its declared return names (`recordTypeOfExpr`), so `self.max(lo).min(hi)`
+  finds `Money_min` — and `Stub(n: 1).where().file` read the `SourceLocation`
+  fields as numbers (`308 3 16 320`, exit 0) until it did.
 - **A method on a value of an IMPORTED type** resolves through the receiver's
   record type (`recordMethodSym`'s fallback to `recordTypeOfExpr`): inference
   records no note for it, so `queryOf(xs).toArray().length` answered `0`.

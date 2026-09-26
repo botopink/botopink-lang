@@ -70,20 +70,20 @@ fn main() {
     call $Stub_where
     local.set $loc
     local.get $loc
-    i32.load
+    i32.load ;; .file
+    call $__print_str_raw
+    call $__print_sp
+    local.get $loc
+    i32.load offset=4 ;; .line
     call $__print_i32_raw
     call $__print_sp
     local.get $loc
-    i32.load offset=4
+    i32.load offset=8 ;; .column
     call $__print_i32_raw
     call $__print_sp
     local.get $loc
-    i32.load offset=8
-    call $__print_i32_raw
-    call $__print_sp
-    local.get $loc
-    i32.load offset=12
-    call $__print_i32
+    i32.load offset=12 ;; .fnName
+    call $__print_str
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -268,10 +268,32 @@ fn main() {
       )
     )
   )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 256
+    i32.lt_u
+    (if
+      (then
+        ;; a pointer below the data floor is not a string
+        unreachable
+      )
+    )
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-308 3 16 320
+main.bp 3 16 Stub.where
 ```

@@ -759,6 +759,9 @@ const Emitter = struct {
     /// `<Behavior>.<method>` → its declaration: what a behavior literal's
     /// field lambda is written against.
     behavior_methods: std.StringHashMapUnmanaged(ast.BehaviorMethod) = .empty,
+    /// Every behavior the program declares, by name (`registerTypes`): where a
+    /// type that implements one finds the `default fn`s it adopts.
+    behavior_decls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
     /// The parameters a lambda about to be lifted is written against when
     /// they come from a declaration rather than a function type — a behavior
     /// literal's method (`expected_fn`'s twin).
@@ -948,6 +951,7 @@ const Emitter = struct {
         self.field_lambdas.deinit(self.alloc);
         self.unknown_subjects.deinit(self.alloc);
         self.behavior_methods.deinit(self.alloc);
+        self.behavior_decls.deinit(self.alloc);
         self.ext_by_name.deinit();
         self.arr_elem_locals.deinit();
         self.arr_elem_globals.deinit();
@@ -991,7 +995,7 @@ const Emitter = struct {
             // extension methods (same `$<target>_<method>` mangling); `self` is the
             // record pointer + a method body's `self.field` walks the declared
             // layout via `self_type`.
-            .type_ => |r| try self.emitInterfaceMethods(r.name, r.methods),
+            .type_ => |r| try self.emitInterfaceMethods(r.name, try self.methodsWithDefaults(r)),
             // An import is linked statically: `emitWat` has already put the
             // owner's declarations in front of this module's.
             // A type alias is erased: the checker substituted its target.
@@ -1083,7 +1087,7 @@ const Emitter = struct {
             // An enum's methods too: `Shape.Rect(…).counts(3)` is
             // `$Shape_counts(self, 3)` exactly as a record's is — it used to
             // be an `unresolved call` trap.
-            .type_ => |r| try self.registerInterfaceSigs(r.name, r.methods),
+            .type_ => |r| try self.registerInterfaceSigs(r.name, try self.methodsWithDefaults(r)),
             .behavior => |i| for (i.methods) |m| {
                 try self.behavior_methods.put(self.alloc, try std.fmt.allocPrint(ra, "{s}.{s}", .{ i.name, m.name }), m);
                 const body = m.body orelse continue;
@@ -1237,8 +1241,60 @@ const Emitter = struct {
                     if (tn.len > 0) try self.fn_return_types.put(f.name, tn);
                 }
             },
+            .behavior => |b| try self.behavior_decls.put(self.alloc, b.name, b),
             else => {},
         };
+        // A `default fn` a record adopts returns `Self` as the record.
+        for (program.decls) |decl| switch (decl) {
+            .type_ => |tdecl| if (tdecl.isRecord()) {
+                for (try self.adoptedDefaults(tdecl)) |m| if (m.returnType) |rt| {
+                    const tn = typeRefName(rt);
+                    if (tn.len > 0) try self.fn_return_types.put(try std.fmt.allocPrint(ra, "{s}_{s}", .{ tdecl.name, m.name }), if (std.mem.eql(u8, tn, "Self")) tdecl.name else tn);
+                };
+            },
+            else => {},
+        };
+    }
+
+    /// The `default fn`s a type adopts from the behaviors it implements (and
+    /// the ones those extend) and does not write itself. They are emitted as
+    /// its own `$<Type>_<method>` — `Money(…).clamp(lo, hi)` over `Bounded`'s
+    /// default was an `unresolved call` trap.
+    fn adoptedDefaults(self: *Emitter, t: ast.TypeDecl) ![]const ast.BehaviorMethod {
+        var out: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+        var seen: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (t.implement) |tr| try self.collectDefaults(typeRefName(tr), t, &out, &seen);
+        return out.items;
+    }
+
+    fn collectDefaults(
+        self: *Emitter,
+        name: []const u8,
+        t: ast.TypeDecl,
+        out: *std.ArrayListUnmanaged(ast.BehaviorMethod),
+        seen: *std.ArrayListUnmanaged([]const u8),
+    ) !void {
+        for (seen.items) |n| if (std.mem.eql(u8, n, name)) return;
+        try seen.append(self.arena(), name);
+        const b = self.behavior_decls.get(name) orelse return;
+        outer: for (b.methods) |m| {
+            if (!m.is_default or m.body == null) continue;
+            if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+            for (t.methods) |own| if (std.mem.eql(u8, own.name, m.name)) continue :outer;
+            for (out.items) |got| if (std.mem.eql(u8, got.name, m.name)) continue :outer;
+            try out.append(self.arena(), m);
+        }
+        for (b.extends) |e| try self.collectDefaults(e, t, out, seen);
+    }
+
+    /// A type's own methods followed by the defaults it adopts.
+    fn methodsWithDefaults(self: *Emitter, t: ast.TypeDecl) ![]const ast.BehaviorMethod {
+        const adopted = try self.adoptedDefaults(t);
+        if (adopted.len == 0) return t.methods;
+        const all = try self.arena().alloc(ast.BehaviorMethod, t.methods.len + adopted.len);
+        @memcpy(all[0..t.methods.len], t.methods);
+        @memcpy(all[t.methods.len..], adopted);
+        return all;
     }
 
     /// Bare type-name behind a `TypeRef`, stripping `?T` and generic args.
@@ -1327,6 +1383,14 @@ const Emitter = struct {
                     switch (self.callKind(cc)) {
                         .record_ctor => break :blk self.resolveRecordName(cc.callee),
                         .plain => {
+                            // A method on a record value answers its declared
+                            // return — `self.max(lo)` is a `Money` when
+                            // `Money_max` returns `Self` — so a chained
+                            // `.min(hi)` finds its owner.
+                            if (cc.receiver != null) if (self.recordMethodSym(cc, c.loc)) |sym| {
+                                const tn = self.fn_return_types.get(sym) orelse break :blk null;
+                                break :blk self.resolveRecordName(tn);
+                            };
                             const key = self.assocSym(cc) orelse cc.callee;
                             const tn = self.fn_return_types.get(key) orelse break :blk null;
                             break :blk self.resolveRecordName(tn);
