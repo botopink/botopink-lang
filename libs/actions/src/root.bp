@@ -1,0 +1,12 @@
+//// actions — the server-action protocol (decision 116 rule 2): the texts a
+//// server action writes and a browser reads, and back. One implementation,
+//// compiled for erlang and commonJS, so the two sides cannot drift.
+////
+//// No wire NAME is built in: the hidden form field and the header that name an
+//// action are the deployment's values, passed to both sides by whoever wires
+//// them. This library holds only the texts whose shape is fixed.
+
+pub mod state;
+pub mod envelope;
+pub mod rpc;
+pub mod refresh;

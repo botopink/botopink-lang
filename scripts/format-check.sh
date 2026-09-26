@@ -42,6 +42,7 @@ bin="zig-out/bin/botopink"
 TREES=(
     examples/modules
     libs/routing
+    libs/actions
 )
 
 status=0

@@ -31,7 +31,8 @@ through the multi-root resolver (`BOTOPINK_LIB_ROOTS`, then
 libs/
 ├── AGENTS.md          ← you are here
 ├── std/               ← standard library (embedded in the compiler)
-└── routing/           ← bundled route matcher + routing wires (decision 115)
+├── routing/           ← bundled route matcher + routing wires (decision 115)
+└── actions/           ← bundled server-action protocol (decision 116)
 ```
 
 ## Packages
@@ -40,6 +41,7 @@ libs/
 |---|---|---|---|
 | `std/` | primitive interfaces, builtins, and the importable `std` modules | yes — `build.zig` embeds the files; `modules/compiler-core/src/comptime/stdlib/prelude.zig` exposes them | [link](std/AGENTS.md) |
 | `routing/` | the route matcher and the routing wires both halves run — route table, `k`/`z` blobs, URL rules, navigation signals (`nav:`), the `:param` grammar; pure `.bp`, erlang + commonJS, imports std only | yes — bundled by name (decision 115, `01-std/04-routing-lib` Step 2) | [link](routing/AGENTS.md) |
+| `actions/` | the server-action protocol both halves read and write — the `state` grammar and `ActionState`, the v1 envelope (`redirect` derived from `n`), the JSON-RPC body, `refresh`; pure `.bp`, erlang + commonJS, imports std and routing only, names no field or header | yes — bundled by name (decision 116, `01-std/05-actions-lib` Step 6) | [link](actions/AGENTS.md) |
 
 ## Conventions
 
