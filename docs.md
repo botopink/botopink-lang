@@ -432,6 +432,7 @@ Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Task<T>`,
 ### Type aliases
 
 ```botopink
+type ParseError { Empty, Bad(text: string) }
 type Id = i32;
 type Pair<A, B> = #(A, B);
 pub type Parser<T> = @Result<T, ParseError>;
