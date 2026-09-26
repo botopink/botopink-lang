@@ -1358,14 +1358,11 @@ const Emitter = struct {
     /// erlang's; scans `prelude.builtins` for top-level fn decls with
     /// `#[@External.Node(…)]` and indexes by callee name.
     ///
-    /// `libs/std/src/builtins.d.bp` is the *documented* surface for compiler
-    /// builtins and not strictly parseable (it carries forms the parser does
-    /// not accept: bodyless `fn`, keyword-named params, bare-return-type
-    /// shorthand, enum variant terminator `;`). The §A6 dispatch needs only
-    /// the `panic`/`todo` entries, so we register those directly from a
-    /// hand-rolled inline source that parses cleanly, then attempt the
-    /// best-effort whole-file parse to pick up anything else (silently
-    /// ignoring failures — pre-existing behaviour).
+    /// The arity-branched entries (`panic`/`todo`, and `print`/`println`/
+    /// `debug`) are registered inline first; the scan of the embedded prelude
+    /// then adds the rest and skips a name already registered. The prelude
+    /// parses (front 20) — a failure there stops the compiler, it is not
+    /// skipped (decision 67).
     fn collectBuiltinNodeDispatch(self: *Emitter) !void {
         try self.registerInlineBuiltinDispatch();
         // Scan `builtins_fns.d.bp` + `primitives.bp` for top-level `declare fn`
@@ -1383,10 +1380,27 @@ const Emitter = struct {
         var scan_arena = std.heap.ArenaAllocator.init(self.alloc);
         defer scan_arena.deinit();
         const alloc_arena = scan_arena.allocator();
+        // The embedded prelude (`builtins.d.bp`, `primitives.bp`) parses — a
+        // test in `codegen/tests/builtins.zig` pins it — so a failure here
+        // is a broken compiler, not a best-effort miss: it stops loudly instead
+        // of silently dropping every `#[External.*]` the file declares
+        // (decision 67).
         var lx = lexerMod.Lexer.init(src);
-        const tokens = lx.scanAll(alloc_arena) catch return;
-        var p = parserMod.Parser.init(tokens);
-        var program = p.parse(alloc_arena) catch return;
+        const tokens = lx.scanAll(alloc_arena) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => std.debug.panic("embedded std prelude does not lex: {s}", .{@errorName(err)}),
+        };
+        var p = parserMod.Parser.initWithSource(tokens, src);
+        var program = p.parse(alloc_arena) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.UnexpectedToken => {
+                const pe = p.parseError;
+                std.debug.panic("embedded std prelude does not parse at {d}:{d}", .{
+                    if (pe) |e| e.line else 0,
+                    if (pe) |e| e.col else 0,
+                });
+            },
+        };
         defer program.deinit(alloc_arena);
         for (program.decls) |decl| {
             if (decl == .behavior) {
@@ -1441,11 +1455,11 @@ const Emitter = struct {
         }
     }
 
-    /// Hand-rolls the `panic` / `todo` dispatch entries that `libs/std/src/
-    /// builtins.d.bp` documents. Mirrors the `#[@External.Node(when(argc == N))]`
-    /// annotation literally — kept here because the documented surface file
-    /// is intentionally not parseable, but the dispatch needs these two
-    /// callees registered to lower `@panic(…)` / `@todo(…)`.
+    /// Hand-rolls the `panic` / `todo` dispatch entries. Mirrors the
+    /// `#[@External.Node(when(argc == N))]` annotation literally — kept here
+    /// because `panic`/`todo` live in `builtins_fns.d.bp`, which the prelude
+    /// scan does not read, and the dispatch needs these two callees registered
+    /// to lower `@panic(…)` / `@todo(…)`.
     fn registerInlineBuiltinDispatch(self: *Emitter) !void {
         try self.putInlineBuiltin("todo", &.{
             .{ .argc = 0, .template = "(() => { throw new Error(\"not implemented\") })()" },
@@ -2332,7 +2346,7 @@ const Emitter = struct {
         }
         try stmts.append(self.arena(), .{ .comment = .{ .text = try head.toOwnedSlice(self.arena()) } });
         for (i.fields) |f| try stmts.append(self.arena(), .{ .comment = .{
-            .text = try std.fmt.allocPrint(self.arena(), "  {s}: {s}", .{ f.name, f.typeName }),
+            .text = try std.fmt.allocPrint(self.arena(), "  {s}: {f}", .{ f.name, f.typeRef }),
         } });
         for (i.methods) |m| try stmts.append(self.arena(), .{ .comment = .{
             .text = try std.fmt.allocPrint(

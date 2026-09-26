@@ -7,16 +7,16 @@
 // binary with `~ts` and any other value with `~p`); the codegen intercepts the
 // call before any `@External.Erlang` template, so the templates below only
 // name that helper.
-#[External.Node("console.log($args)"),
-  External.Erlang("'__bp_print'([$args])")]
+#[External.Node("console.log($args)")]
+#[External.Erlang("'__bp_print'([$args])")]
 pub declare fn print(message: string);
 
-#[External.Node("console.log($args)"),
-  External.Erlang("'__bp_print'([$args])")]
+#[External.Node("console.log($args)")]
+#[External.Erlang("'__bp_print'([$args])")]
 pub declare fn println(message: string);
 
-#[External.Node("console.debug($args)"),
-  External.Erlang("'__bp_print'([$args])")]
+#[External.Node("console.debug($args)")]
+#[External.Erlang("'__bp_print'([$args])")]
 pub declare fn debug(value: string);
 
 // ── result type ──────────────────────────────────────────────────────────────
@@ -227,9 +227,9 @@ pub behavior Slice<V> {
 // `@Component<C, _>` at the body's base, so hooks compose. `throw` / `try` in
 // a `@Component` body follow decision 121: legal only when `T` is a `@Result`.
 
-pub behavior Context<Base> { }
+pub behavior Context<Base> {}
 
-pub behavior Component<C, T> extends Task { }
+pub behavior Component<C, T> extends Task {}
 
 // ── annotation marker ────────────────────────────────────────────────────────
 //
@@ -248,7 +248,7 @@ pub behavior Component<C, T> extends Task { }
 // code) make of it.
 
 pub behavior Annotation {
-    default fn checkAnnotation(self: Self, comptime decl: Decl) { }
+    default fn checkAnnotation(self: Self, comptime decl: Decl) {}
 }
 
 // ── External — host-backed lowering ──────────────────────────────────────────
@@ -327,7 +327,6 @@ pub declare fn trap() -> noreturn;
 // ordinary code. May be called any number of times; each call appends.
 // Comptime-only.
 pub declare fn emit(source: string);
-
 
 // ── module imports ───────────────────────────────────────────────────────────
 
@@ -463,10 +462,10 @@ pub type ExprContext(
 // `Expr<string>` source text; `ref` optionally ties a node (a queried
 // collection, a column, …) to a caller-scope symbol via a `lookup` result.
 pub type CustomNode(
-    kind: string,             // lib-chosen tag: "select" / "field" / "predicate" / "literal" …
-    span: Span,               // offsets into the template's source text
-    label: string,            // tooling token category: "keyword"/"property"/"string"/"number"/"operator"
-    ref: ?Binding,            // optional association to an origin-scope symbol
+    kind: string, // lib-chosen tag: "select" / "field" / "predicate" / "literal" …
+    span: Span, // offsets into the template's source text
+    label: string, // tooling token category: "keyword"/"property"/"string"/"number"/"operator"
+    ref: ?Binding, // optional association to an origin-scope symbol
     children: CustomNode[],
 )
 
@@ -475,8 +474,8 @@ pub type CustomNode(
 // lowered to every backend — runtime behaviour is unchanged); the `ast` half is
 // stored by call-location and is reference-only (the language server reads it).
 pub type CustomExpr<T>(
-    code: Expr<T>,            // the botopink expression that actually runs
-    ast: CustomNode,          // the sub-language tree, reference only
+    code: Expr<T>, // the botopink expression that actually runs
+    ast: CustomNode, // the sub-language tree, reference only
 )
 
 pub behavior Expr<E> {
@@ -588,5 +587,3 @@ pub behavior Decl {
     fn fail(self: Self, message: string);
     fn failAt(self: Self, span: Span, message: string);
 }
-
-

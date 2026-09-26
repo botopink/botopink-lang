@@ -230,6 +230,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "generic-arg-skip-forbidden: cannot skip a defaulted argument while providing a later one.",
             .hint = "Either pass the middle argument explicitly, or rely on defaults for the contiguous trailing range.",
         },
+        .discardParamWithBody => .{
+            .code = "discard-param-with-body",
+            .message = "a `_` parameter needs a declaration without a body",
+            .caretCaption = "`_` names no parameter",
+            .hint = "`_` is a declaration's placeholder, e.g. `declare fn getContext<T>(comptime _: type) -> T;`. A function with a body names what it takes: write a name, e.g. `unused: i32`.",
+        },
         .fnParamDefaultTrailingOnly => .{
             .message = "fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.",
             .hint = "Move the defaulted parameter to the end of the list, or give the following parameter a default too.",

@@ -2926,11 +2926,10 @@ const Emitter = struct {
     /// callee name (`todo`, `panic`, …). `builtinAnnotationNode` consults
     /// this in the `if (cc.is_builtin)` branch before the hardcoded switches.
     ///
-    /// `libs/std/src/builtins.d.bp` is the *documented* surface and is not
-    /// strictly parseable, so we seed the dispatch with `panic` / `todo`
-    /// inline (matching the documented `@external(erlang, when(argc == N))`
-    /// template) and then attempt the file parse best-effort to pick up any
-    /// other entries that happen to parse.
+    /// The dispatch is seeded with `panic` / `todo` inline (their
+    /// arity-branched templates), then the embedded prelude is scanned for the
+    /// rest. The prelude parses (front 20); a failure there stops the compiler
+    /// instead of being skipped (decision 67).
     fn collectBuiltinErlangDispatch(this: *Emitter) !void {
         try this.registerInlineBuiltinErlangDispatch();
         // Scan `builtins_fns.d.bp` for top-level `declare fn` with
@@ -2949,10 +2948,27 @@ const Emitter = struct {
         var arena = std.heap.ArenaAllocator.init(this.alloc);
         defer arena.deinit();
         const alloc_arena = arena.allocator();
+        // The embedded prelude (`builtins.d.bp`, `primitives.bp`) parses — a
+        // test in `codegen/tests/builtins.zig` pins it — so a failure here
+        // is a broken compiler, not a best-effort miss: it stops loudly instead
+        // of silently dropping every `#[External.*]` the file declares
+        // (decision 67).
         var lx = lexerMod.Lexer.init(src);
-        const tokens = lx.scanAll(alloc_arena) catch return;
-        var p = parserMod.Parser.init(tokens);
-        var program = p.parse(alloc_arena) catch return;
+        const tokens = lx.scanAll(alloc_arena) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => std.debug.panic("embedded std prelude does not lex: {s}", .{@errorName(err)}),
+        };
+        var p = parserMod.Parser.initWithSource(tokens, src);
+        var program = p.parse(alloc_arena) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.UnexpectedToken => {
+                const pe = p.parseError;
+                std.debug.panic("embedded std prelude does not parse at {d}:{d}", .{
+                    if (pe) |e| e.line else 0,
+                    if (pe) |e| e.col else 0,
+                });
+            },
+        };
         defer program.deinit(alloc_arena);
         for (program.decls) |decl| {
             if (decl != .@"fn") continue;
@@ -2971,9 +2987,8 @@ const Emitter = struct {
     }
 
     /// Seeds `builtin_erlang_dispatch` with the `panic` / `todo` entries from
-    /// the documented `builtins.d.bp` surface (which itself is not strictly
-    /// parseable). Templates mirror the file's `@external(erlang, when(argc
-    /// == N))` clauses byte-for-byte.
+    /// `builtins_fns.d.bp` (which the prelude scan does not read). Templates
+    /// mirror the file's `when(argc == N)` clauses byte-for-byte.
     fn registerInlineBuiltinErlangDispatch(this: *Emitter) !void {
         try this.putInlineErlangBuiltin("todo", &.{
             .{ .argc = 0, .template = "erlang:error({todo, \"not implemented\"})" },

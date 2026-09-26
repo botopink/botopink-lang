@@ -2309,7 +2309,7 @@ fn buildInterfaceDeclName(env: *Env, d: ast.BehaviorDecl) ![]const u8 {
         try buf.appendSlice(env.arena, "    val ");
         try buf.appendSlice(env.arena, f.name);
         try buf.appendSlice(env.arena, ": ");
-        try buf.appendSlice(env.arena, f.typeName);
+        try appendTypeRefStr(&buf, env.arena, f.typeRef);
         try buf.appendSlice(env.arena, ";\n");
     }
     for (d.methods) |m| {
@@ -2951,7 +2951,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
             for (i.fields, 0..) |fld, idx| {
                 fields[idx] = .{
                     .name = fld.name,
-                    .typeName = fld.typeName,
+                    .typeName = declTypeName(fld.typeRef),
                     .annotations = &.{},
                 };
             }
@@ -9915,7 +9915,10 @@ fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8)
         else
             callee;
         for (decl.fields) |f| {
-            if (std.mem.eql(u8, f.name, field_name)) return try env.namedType(f.typeName);
+            if (std.mem.eql(u8, f.name, field_name)) return switch (f.typeRef) {
+                .named => |n| try env.namedType(n),
+                else => try resolveTypeRefInContext(env, f.typeRef, std.StringHashMap(*T.Type).init(env.arena)),
+            };
         }
 
         current = if (decl.extends.len > 0) decl.extends[0] else null;

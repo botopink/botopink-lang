@@ -523,6 +523,17 @@ codegen/
 - **Builtin dispatch is for free calls**: `builtin_node_dispatch` (`print`,
   `todo`, …) applies only to a call with no receiver — `d.print()` on a record
   is the record's method.
+- **The prelude scan stops on a parse failure** (decision 67): `scanDeclareFnExternal`
+  (commonJS and erlang) reads `builtins.d.bp` and `primitives.bp` and panics, naming the
+  line, if either does not lex or parse — it used to `catch return`, which hid that
+  `builtins.d.bp` did not parse at all. `codegen/tests/builtins.zig` pins that both parse.
+  What the parseable file adds, measured when front 20 made it parse: on commonJS nothing
+  observable (the free-call entries `print`/`println`/`debug` are registered inline first,
+  its behaviors carry no `@External.Node`, and `ambiguous_prim_renames` is the same set,
+  `at` and `contains`); on erlang the three `'__bp_print'([$args])` templates, which
+  `builtinCallNode` never consults for those names (`isPrintBuiltin` answers first) and
+  `preludeHelperNode` reads only for a bare call inside an inlined interface `default fn`
+  body, where no std body calls them. No codegen snapshot moved.
 - **Tuple index**: `t._N` and the bare `t.N` are `t[N]`.
 - **Effects**: `effectShape` is the one table — it answers the two JS
   modifiers (`is_async`, `is_generator`) an effect asks for, and `FnShape
