@@ -6,7 +6,7 @@ fn make() -> Plain {
 }
 fn comp() -> @Component<Element, i32> {
     val p = use make();
-    0;
+    return 0;
 }
 
 ----- ERROR

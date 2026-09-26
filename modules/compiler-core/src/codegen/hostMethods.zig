@@ -27,9 +27,12 @@ const envMod = @import("../comptime/env.zig");
 const moduleOutput = @import("./moduleOutput.zig");
 const CrossModule = @import("./crossModule.zig").CrossModule;
 
-/// A bodyless `declare fn` member carrying an `#[@External.<Target>(…)]`.
+/// A bodyless `declare fn` member: its body can only be a host binding, so
+/// one with no `#[@External.<Target>(…)]` at all is a host method that binds
+/// no backend — a call to it is refused on every target (`missingAt`), where
+/// it used to compile and fail as `… is not a function` / `undef` at run time.
 pub fn isHostMethod(m: ast.BehaviorMethod) bool {
-    return m.body == null and m.isExternal();
+    return m.body == null and (m.is_declare or m.isExternal());
 }
 
 /// True when the method's first parameter is its receiver.

@@ -1,0 +1,26 @@
+//// A method chain on a field of a narrowed optional whose type another
+//// package declares, the field's type a std type that package imports. The
+//// program imports `find` alone: neither `Found` nor `Dict` is named here.
+//// Importing a function did not bring the types its signature names, and the
+//// importer's type closure (01 R2, onze F2) skipped every `from "std"` import,
+//// so `found.params.at("id")` had no `Dict` to resolve against: erlang emitted
+//// a bare `unwrapOr/2` call (`erlc` refused the module) and commonJS called
+//// `.unwrapOr` on a plain value. The binder form `if (find(…)) { f -> … }` is
+//// the same read.
+
+import {find} from "routes";
+
+fn lookup(path: string) -> string {
+    val found = find(path);
+    if (found == null) return "none";
+    return found.params.at("id").unwrapOr("");
+}
+
+pub fn main() {
+    @print(lookup("/users"));
+    @print(lookup("/nope"));
+    if (find("/users")) { f ->
+        @print(f.params.size());
+        @print(f.name.length);
+    }
+}

@@ -4,7 +4,7 @@ val Element = type() implement @Context<Element>
 fn plain(a: i32) -> i32 { return a; }
 fn fails(a: i32) -> @Result<i32, string> { return a; }
 fn waits<T>(a: T) -> @Task<T> { return a; }
-fn hook(a: i32) -> @Component<Element, i32> { a; }
+fn hook(a: i32) -> @Component<Element, i32> { return a; }
 fn seq() -> @Iterator<i32> { yield 1; }
 fn pulses() -> @Stream<i32> { yield 1; }
 fn takes(t: @Task<i32>) -> i32[] { return [1]; }
@@ -53,7 +53,8 @@ type Box(v: i32) {
   (4,19) +10  type [defaultLibrary]  "@Component"
   (4,30) +7  type  "Element"
   (4,39) +3  type [defaultLibrary]  "i32"
-  (4,46) +1  parameter  "a"
+  (4,46) +6  keyword  "return"
+  (4,53) +1  parameter  "a"
   (5,0) +2  keyword  "fn"
   (5,3) +3  function [declaration,async]  "seq"
   (5,12) +9  type [defaultLibrary]  "@Iterator"
@@ -129,6 +130,7 @@ type Box(v: i32) {
   0 8 10 0 4
   0 11 7 0 0
   0 9 3 0 4
+  0 7 6 9 0
   0 7 1 6 0
   1 0 2 9 0
   0 3 3 4 9

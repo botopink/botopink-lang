@@ -1098,6 +1098,8 @@ fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) Parse
             this.advance()
         else
             try this.consumeMemberName();
+        // Decision 8 §1.3 — a method name is a name: `ctx.resolve<T>()`.
+        const typeArgs = try parseExplicitTypeArgs(this, alloc, fieldTok);
         if (this.check(.leftParenthesis)) {
             const args = try this.parseCallArgs(alloc);
             errdefer {
@@ -1107,6 +1109,7 @@ fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) Parse
             const recvPtr = try this.boxExpr(alloc, base);
             base = makeCall(fieldTok, recvPtr, fieldTok.lexeme, false, args, try alloc.alloc(TrailingLambda, 0));
             base.call.kind.call.optional = isOptional;
+            base.call.kind.call.typeArgs = typeArgs;
         } else {
             const recvPtr = try this.boxExpr(alloc, base);
             // Field-access links use the member token's loc — like the

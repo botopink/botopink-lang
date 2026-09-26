@@ -65,7 +65,7 @@ test "semanticTokens: async modifier follows each effect return wrapper" {
         \\fn plain(a: i32) -> i32 { return a; }
         \\fn fails(a: i32) -> @Result<i32, string> { return a; }
         \\fn waits<T>(a: T) -> @Task<T> { return a; }
-        \\fn hook(a: i32) -> @Component<Element, i32> { a; }
+        \\fn hook(a: i32) -> @Component<Element, i32> { return a; }
         \\fn seq() -> @Iterator<i32> { yield 1; }
         \\fn pulses() -> @Stream<i32> { yield 1; }
         \\fn takes(t: @Task<i32>) -> i32[] { return [1]; }

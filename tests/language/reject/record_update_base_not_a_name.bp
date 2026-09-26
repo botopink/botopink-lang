@@ -1,0 +1,14 @@
+//// A record update reads its base once per field it copies, so the base is a
+//// name or a path of names; a call there would run again for every field.
+//// Refused at the base, asking for a `val`.
+
+type Inner(v: i32, w: string)
+
+fn make() -> Inner {
+    return Inner(v: 1, w: "a");
+}
+
+pub fn main() {
+    val i = Inner(..make(), w: "z");
+    @print(i.v);
+}

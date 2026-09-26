@@ -1,0 +1,31 @@
+//// Decision 37's update form: `Name(..base, field: value)` is a new record
+//// with the fields it names replaced and every other field read from `base`.
+//// The checker matched each label to its field, but no backend lowered the
+//// `..` argument: each dropped it and zipped what was left, so
+//// `Cfg(..base, revalidate: 60)` built `Cfg(base, 60)` — the base record in
+//// the first field and the third one missing, on all four targets.
+
+type Cfg(a: i32, revalidate: i32, name: string)
+type Inner(v: i32, w: string)
+type Outer(inner: Inner, n: i32)
+type Box<T>(value: T, tag: string)
+
+pub fn main() {
+    val base = Cfg(a: 1, revalidate: 0, name: "x");
+    val c = Cfg(..base, revalidate: 60);
+    @print(c.a);
+    @print(c.revalidate);
+    @print(c.name);
+    @print(base.revalidate);
+    val o = Outer(inner: Inner(v: 5, w: "q"), n: 2);
+    val i = Inner(..o.inner, w: "z");
+    @print(i.v);
+    @print(i.w);
+    val both = Inner(..i, w: "y", v: 9);
+    @print(both.v);
+    @print(both.w);
+    val b = Box(value: 3, tag: "t");
+    val b2 = Box(..b, value: 4);
+    @print(b2.value);
+    @print(b2.tag);
+}

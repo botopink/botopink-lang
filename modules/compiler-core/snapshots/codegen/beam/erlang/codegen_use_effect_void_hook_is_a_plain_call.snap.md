@@ -5,11 +5,11 @@ fn cleanup() {
     0;
 }
 fn effect() -> @Component<Element, i32> {
-    0;
+    return 0;
 }
 fn Widget() -> @Component<Element, Element> {
     use effect { -> cleanup(); };
-    Element();
+    return Element();
 }
 ```
 

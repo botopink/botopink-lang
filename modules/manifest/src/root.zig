@@ -865,7 +865,19 @@ pub fn scanRoots(arena: std.mem.Allocator, io: std.Io, roots: []const []const u8
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         var it = d.iterate();
         while (it.next(io) catch null) |entry| {
-            if (entry.kind != .directory) continue;
+            // A symbolic link to a directory is a child like a directory:
+            // `bpmp install` materialises every dependency under
+            // `.botopinkbuild/deps/` as one.
+            const is_dir = switch (entry.kind) {
+                .directory => true,
+                .sym_link => blk: {
+                    var target = d.openDir(io, entry.name, .{}) catch break :blk false;
+                    target.close(io);
+                    break :blk true;
+                },
+                else => false,
+            };
+            if (!is_dir) continue;
             try names.append(arena, try arena.dupe(u8, entry.name));
         }
         std.mem.sort([]const u8, names.items, {}, struct {
@@ -1444,6 +1456,19 @@ test "scanRoots: a root's workspace child contributes its members; a plain packa
     try testing.expectEqualStrings(FIX ++ "/roots/repository/workspace/modules/acme-web", web.dir);
     try testing.expect(find(entries, "acme-app") != null);
     try testing.expect(find(entries, "nomanifest") == null);
+}
+
+test "scanRoots: a symbolic link to a package directory is a child like a directory (the `bpmp install` store)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    // `deps/side` links to `../packages/side`; `deps/not-a-dir` links to a file.
+    const roots = [_][]const u8{FIX ++ "/symlinked-store/deps"};
+    const entries = try scanRoots(a, testing.io, &roots);
+    try testing.expectEqual(@as(usize, 1), entries.len);
+    const side = find(entries, "side").?;
+    try testing.expectEqualStrings(FIX ++ "/symlinked-store/deps/side", side.dir);
+    try testing.expect(side.problem == null);
 }
 
 test "scanRoots: a root that is itself a workspace contributes its members, and a directory reached twice is one entry" {

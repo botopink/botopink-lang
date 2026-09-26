@@ -158,10 +158,6 @@ pub type RouteMatch(
 )
 
 // A bound path parameter by name, `""` when the route binds none of that name.
-// A `RouteMatch` reached through the optional binder of `if (matchPath(…)) { m
-// -> … }` has lost its type there, so `m.params.at(name)` lowers to a property
-// read and `.unwrapOr` is not a function on it; this reads it through a TYPED
-// parameter instead, and is the form fronts 23 and 26 should use.
 pub fn paramOf(m: RouteMatch, name: string) -> string {
     return m.params.at(name).unwrapOr("");
 }

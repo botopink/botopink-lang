@@ -1,0 +1,14 @@
+//// Decision 8 §1.3 — a type argument written at a method call is the method's
+//// type parameter: the argument and the destination must agree with it.
+
+type Ctx(n: i32) {
+    fn resolve<T>(self: Self, x: T) -> T {
+        return x;
+    }
+}
+
+pub fn main() {
+    val c = Ctx(n: 1);
+    val n = c.resolve<string>(1);
+    @print(n);
+}

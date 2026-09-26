@@ -1,0 +1,18 @@
+//// A generic type that comes with an imported function's signature, never
+//// named here: `box` alone is imported, and `Box` is registered as a type only
+//// (01 R2 for a function). Each instance reads its own `value`: the field is
+//// instantiated from the type's registration cells, which the constructor
+//// binding held — a type-only registration used to drop them, so the two
+//// instances shared one `T` (`expected string[], got bool`).
+
+pub mod boxes;
+import {box} from "boxes";
+
+pub fn main() {
+    val names = box(["a", "b"]);
+    val flag = box(true);
+    val list: string[] = names.value;
+    @print(list.length);
+    @print(flag.value == true);
+    @print(names.tag);
+}

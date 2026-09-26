@@ -245,11 +245,11 @@ test "codegen ---- use object destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type() implement @Context<Element>
         \\fn state(initial: i32) -> @Component<Element, i32> {
-        \\    initial;
+        \\    return initial;
         \\}
         \\fn Counter() -> @Component<Element, Element> {
         \\    val {count, setCount} = use state(0);
-        \\    Element();
+        \\    return Element();
         \\}
     );
 }
@@ -262,12 +262,12 @@ test "codegen ---- use tuple destructure is a plain call" {
         \\val Element = type() implement @Context<Element>
         \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
         \\    val push = { action -> f(base, action) };
-        \\    #(base, push);
+        \\    return #(base, push);
         \\}
         \\fn LikeWidget() -> @Component<Element, Element> {
         \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
         \\    push(shown);
-        \\    Element();
+        \\    return Element();
         \\}
     );
 }
@@ -276,15 +276,15 @@ test "codegen ---- use memo is a plain call with no inferred deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type() implement @Context<Element>
         \\fn state(initial: i32) -> @Component<Element, i32> {
-        \\    initial;
+        \\    return initial;
         \\}
         \\fn memo() -> @Component<Element, i32> {
-        \\    0;
+        \\    return 0;
         \\}
         \\fn Counter() -> @Component<Element, Element> {
         \\    val {count, setCount} = use state(0);
         \\    val doubled = use memo { -> return count * 2; };
-        \\    Element();
+        \\    return Element();
         \\}
     );
 }
@@ -296,11 +296,11 @@ test "codegen ---- use effect void hook is a plain call" {
         \\    0;
         \\}
         \\fn effect() -> @Component<Element, i32> {
-        \\    0;
+        \\    return 0;
         \\}
         \\fn Widget() -> @Component<Element, Element> {
         \\    use effect { -> cleanup(); };
-        \\    Element();
+        \\    return Element();
         \\}
     );
 }

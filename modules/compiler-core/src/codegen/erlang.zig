@@ -3500,8 +3500,10 @@ const Emitter = struct {
     fn typedMethodNode(this: *Emitter, b: Ast.Builder, tn: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!Ast.Expr {
         // A FIELD of function type, called like a method (`c.set(9)` on
         // `type State<T>(value: T, set: fn(next: T))`): the record has no
-        // `set/2` function — apply what the field holds.
-        if (this.fnTypedField(tn, cc.callee)) {
+        // `set/2` function — apply what the field holds. The record may be
+        // one this module never imported by name (its type came with an
+        // imported function's signature): the program's declaration answers.
+        if (this.programFnField(tn, cc.callee)) {
             const held = try this.fieldReadOf(b, tn, cc.callee, try this.exprNode(b, recv.*));
             return .{ .apply = .{
                 .fun = try b.ptr(try b.paren(held)),

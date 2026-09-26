@@ -318,7 +318,11 @@ fn add(x: i32, y: i32) -> i32 {
 
 A value leaves a function through `return`: a block is a statement, not a value, so a `fn` whose
 return type has a value must end every path with `return` (or `@panic` / `@todo`) —
-`fn f() -> i32 { val x = 1; }` is refused at `-> i32`.
+`fn f() -> i32 { val x = 1; }` is refused at `-> i32`. An effect return is judged by what
+running off the end would hand out: a `@Result` in any layer has a value (`Ok` or `Error`), so
+`-> @Result<void, E>` and `-> @Task<@Result<void, E>>` end with the empty `return;`, and so does a
+`@Task<T>` or `@Component<C, T>` whose `T` is a value; one whose `T` is `void` falls through as a
+`void` fn does. `@Iterator` and `@Stream` end by running off their body.
 
 ## Types
 
@@ -337,6 +341,18 @@ type Point(x: i32, y: i32)
 
 val p = Point(x: 1, y: 2);
 val px = p.x;
+```
+
+A record is immutable: a field is never assigned. A changed copy is the update
+form — `..base` and the fields that change, by label; every other field is read
+from `base`, which is a name or a path of names (a call there is refused, since
+it would run once per copied field — bind it with `val` first):
+
+```botopink
+type Point(x: i32, y: i32)
+
+val p = Point(x: 1, y: 2);
+val q = Point(..p, y: 5);    // Point(x: 1, y: 5)
 ```
 
 A body adds methods:
@@ -1859,7 +1875,9 @@ like every enum method), a function exported by the type's module on erlang and
 beam — so a method on an imported type is answered by its owner exactly as a
 bodied one is — and a declaration in the `.d.ts`. A method with no binding for
 the active backend is refused where it is **called**, naming `Type.method`
-(`` `Meter.plus` has no `#[@External.<Target>(…)]` for the wasm backend ``).
+(`` `Meter.plus` has no `#[@External.<Target>(…)]` for the wasm backend ``); a
+bodyless method with no binding at all binds no backend, and is refused on
+every one.
 
 Only `External.<Target>` is read. A lower-case `@external(node, …)` is a located
 error naming the capitalised form (`` `#[@external]` binds no host — an external

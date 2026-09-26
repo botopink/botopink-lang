@@ -997,8 +997,23 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
     }
     if (!any) return modules;
 
+    // A std module that imports another std module needs it too, however deep
+    // the chain goes, and each one is emitted after what it imports.
+    var changed = true;
+    while (changed) {
+        changed = false;
+        for (std_pkg_modules, 0..) |spm, i| {
+            if (!needed[i]) continue;
+            for (try stdImportsOf(arena, spm.source)) |dep| if (!needed[dep]) {
+                needed[dep] = true;
+                changed = true;
+            };
+        }
+    }
+
     var out: std.ArrayListUnmanaged(Module) = .empty;
-    for (std_pkg_modules, 0..) |spm, i| {
+    for (try stdModuleOrder(arena)) |i| {
+        const spm = std_pkg_modules[i];
         // An embedded std module is `libs/std/src/<name>.bp` inside its own
         // package, so that is what its `@src().file` answers (decision 73).
         if (needed[i]) try out.append(arena, .{
@@ -1008,6 +1023,60 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
         });
     }
     try out.appendSlice(arena, modules);
+    return out.toOwnedSlice(arena);
+}
+
+/// The std modules `source` (a std module) imports — `import {json} from "std"`
+/// or a leaf of one, `import {json.quote} from "std"` — as indices into
+/// `std_pkg_modules`. A source that does not parse imports nothing here; its
+/// own compile reports the error.
+fn stdImportsOf(arena: std.mem.Allocator, source: []const u8) ![]const usize {
+    var lx = Lexer.init(source);
+    const tokens = lx.scanAll(arena) catch return &.{};
+    var p = Parser.init(tokens);
+    const program = p.parse(arena) catch return &.{};
+    var out: std.ArrayListUnmanaged(usize) = .empty;
+    for (program.decls) |decl| {
+        if (decl != .use) continue;
+        const u = decl.use;
+        const from_std = switch (u.source) {
+            .module => |m| std.mem.eql(u8, m, "std"),
+            .root => false,
+        };
+        if (!from_std) continue;
+        for (u.imports) |imp| {
+            const whole = try imp.fullPath(arena);
+            const prefix = try imp.prefixPath(arena);
+            for (std_pkg_modules, 0..) |spm, i| {
+                const key = spm.path["std/".len..];
+                if (std.mem.eql(u8, key, whole) or (prefix.len > 0 and std.mem.eql(u8, key, prefix))) {
+                    try out.append(arena, i);
+                }
+            }
+        }
+    }
+    return out.toOwnedSlice(arena);
+}
+
+/// Every std module's index, each after the std modules it imports
+/// (`stdImportsOf`), otherwise in `std_pkg_modules` order. A cycle keeps the
+/// declaration order for the modules on it; checking the importer then reports
+/// the module it could not find.
+fn stdModuleOrder(arena: std.mem.Allocator) ![]const usize {
+    const n = std_pkg_modules.len;
+    const state = try arena.alloc(u8, n); // 0 unvisited · 1 on the path · 2 placed
+    @memset(state, 0);
+    var out: std.ArrayListUnmanaged(usize) = .empty;
+    const Visit = struct {
+        fn visit(a: std.mem.Allocator, i: usize, st: []u8, o: *std.ArrayListUnmanaged(usize)) !void {
+            if (st[i] != 0) return;
+            st[i] = 1;
+            for (try stdImportsOf(a, std_pkg_modules[i].source)) |dep| try visit(a, dep, st, o);
+            st[i] = 2;
+            try o.append(a, i);
+        }
+    };
+    for (0..n) |i| try Visit.visit(arena, i, state, &out);
     return out.toOwnedSlice(arena);
 }
 
@@ -1226,6 +1295,9 @@ fn resolveImports(
                                 if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
                                 if (e.value_ptr.get(name)) |ty| {
                                     try env.bind(local, ty);
+                                    // The types its signature names come
+                                    // with it, as types only (01 R2).
+                                    if (typeDeclRegistry.get(e.key_ptr.*)) |decls| try infer.registerImportedSignatureClosure(env, decls, ty);
                                     bound_value = true;
                                     break;
                                 }
@@ -1391,9 +1463,26 @@ fn addImportedTypeScope(
     for (decls) |d| {
         if (d != .use) continue;
         const u = d.use;
-        switch (u.source) {
-            .module => |m| if (std.mem.eql(u8, m, "std")) continue,
-            .root => {},
+        const from_std = switch (u.source) {
+            .module => |m| std.mem.eql(u8, m, "std"),
+            .root => false,
+        };
+        if (from_std) {
+            // A std type leaf (`import {collections.Dict} from "std"`) is in
+            // the scope too: `RouteMatch(params: Dict<…>)` imported from here
+            // gives its importer `Dict`'s methods without naming `Dict`, as a
+            // type of this package would. Only the leaf of a qualified item
+            // names a type; a module leaf (`{collections}`) brings none.
+            for (u.imports) |imp| {
+                if (!imp.isQualified()) continue;
+                const mod_path = try std.mem.concat(arena, u8, &.{ "std/", try imp.prefixPath(arena) });
+                const std_types = typeDeclRegistry.get(mod_path) orelse continue;
+                const decl = std_types.get(imp.leaf()) orelse continue;
+                if (decl != .type_ and decl != .typeAlias) continue;
+                const key = try std.mem.concat(arena, u8, &.{ P, imp.leaf() });
+                if (!typeDecls.contains(key)) try typeDecls.put(key, decl);
+            }
+            continue;
         }
         for (u.imports) |imp| {
             const name = imp.leaf();
@@ -1701,7 +1790,11 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         };
     }
 
-    for (std_pkg_modules) |spm| {
+    // A std module may import another (`import {json} from "std"`): each is
+    // inferred after the ones it imports, and sees their exports, types and
+    // functions exactly as a program's module does.
+    for (try stdModuleOrder(env.arena)) |spm_index| {
+        const spm = std_pkg_modules[spm_index];
         const mod_name = spm.path["std/".len..];
         // Each std module is inferred in a scratch env (so its fn names don't
         // flatten into — or collide across — the global env), sharing `env`'s
@@ -1717,6 +1810,14 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         // module may name in a signature (`snapshots.path(loc: SourceLocation)`);
         // the scratch env has to know the same prelude the importer's env does.
         try registerReflectionPrelude(&env2);
+        {
+            var it = env.stdModules.iterator();
+            while (it.next()) |e| try env2.stdModules.put(e.key_ptr.*, e.value_ptr.*);
+            var tit = env.stdModuleTypes.iterator();
+            while (tit.next()) |e| try env2.stdModuleTypes.put(e.key_ptr.*, e.value_ptr.*);
+            var fit = env.stdModuleFns.iterator();
+            while (fit.next()) |e| try env2.stdModuleFns.put(e.key_ptr.*, e.value_ptr.*);
+        }
         for (sources) |src| {
             var lx = Lexer.init(src);
             const tokens = try lx.scanAll(env.arena);
