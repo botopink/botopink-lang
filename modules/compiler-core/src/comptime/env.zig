@@ -918,6 +918,15 @@ pub const Env = struct {
     /// `"<Type>.<method>"` and **including** `self`, exactly as written.
     /// `setInherentMethodType` stores TYPES, which carry no defaults.
     inherentMethodParams: std.StringHashMap([]const ast.Param),
+    /// Decision 8 §1.3 — the declaration of every inherent method, keyed
+    /// `"<Type>.<method>"`: `recv.m<T>(…)` pins the method's own type
+    /// parameters, which only the declaration names in order.
+    inherentMethodDecls: std.StringHashMap(ast.BehaviorMethod),
+    /// 01 R2 — the constructor and variant bindings a type registered as a
+    /// TYPE only gave up (`registerTypesOnly`): not in scope, but still where
+    /// a generic type's registration cells are read from
+    /// (`instantiateFieldType`), so two instances never share one cell.
+    typeOnlyCtors: std.StringHashMap(*T.Type),
     /// Type aliases in scope (`type Parser<T> = @Result<T, ParseError>;`,
     /// decision 118 rule 1), the module's own and the imported ones. An alias
     /// is transparent: `resolveTypeRefInContext` substitutes its target. Never
@@ -983,6 +992,8 @@ pub const Env = struct {
             .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
             .fnParams = std.StringHashMap([]const ast.Param).init(arena),
             .inherentMethodParams = std.StringHashMap([]const ast.Param).init(arena),
+            .inherentMethodDecls = std.StringHashMap(ast.BehaviorMethod).init(arena),
+            .typeOnlyCtors = std.StringHashMap(*T.Type).init(arena),
             .typeGuardFns = std.StringHashMap(TypeGuardInfo).init(arena),
         };
     }
@@ -1062,6 +1073,8 @@ pub const Env = struct {
             .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
             .fnParams = try tmpl.fnParams.cloneWithAllocator(arena),
             .inherentMethodParams = try tmpl.inherentMethodParams.cloneWithAllocator(arena),
+            .inherentMethodDecls = try tmpl.inherentMethodDecls.cloneWithAllocator(arena),
+            .typeOnlyCtors = try tmpl.typeOnlyCtors.cloneWithAllocator(arena),
             .typeGuardFns = try tmpl.typeGuardFns.cloneWithAllocator(arena),
         };
     }
@@ -1124,6 +1137,8 @@ pub const Env = struct {
         self.defaultInjections.deinit();
         self.fnParams.deinit();
         self.inherentMethodParams.deinit();
+        self.inherentMethodDecls.deinit();
+        self.typeOnlyCtors.deinit();
         self.typeGuardFns.deinit();
         self.synthesisedEnumDecls.deinit();
         self.enumSectionRewrites.deinit();
@@ -1171,6 +1186,19 @@ pub const Env = struct {
         var buf: [256]u8 = undefined;
         const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ typeName, method }) catch return null;
         return self.inherentMethodParams.get(key);
+    }
+
+    /// Decision 8 §1.3 — store `typeName.method`'s declaration.
+    pub fn setInherentMethodDecl(self: *Env, typeName: []const u8, method: ast.BehaviorMethod) !void {
+        const key = try std.fmt.allocPrint(self.arena, "{s}.{s}", .{ typeName, method.name });
+        try self.inherentMethodDecls.put(key, method);
+    }
+
+    /// Decision 8 §1.3 — `typeName.method`'s declaration, if one was registered.
+    pub fn getInherentMethodDecl(self: *Env, typeName: []const u8, method: []const u8) ?ast.BehaviorMethod {
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ typeName, method }) catch return null;
+        return self.inherentMethodDecls.get(key);
     }
 
     pub fn isActivated(self: *Env, name: []const u8) bool {

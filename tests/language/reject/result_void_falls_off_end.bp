@@ -1,0 +1,18 @@
+//// Decision 2 over an effect return — `@Result<void, E>` has a value (`Ok` or
+//// `Error`), and its `ok` position is the empty `return;` (decision 74). A body
+//// that ran off its end checked: erlang answered the last statement's value
+//// (`case_clause` where the caller read `Ok(_)`) and commonJS `undefined`.
+//// Refused at the return type, as `-> i32` is.
+
+fn check(n: i32) -> @Task<@Result<void, string>> {
+    if (n < 0) { throw "negative"; }
+    val _seen = n;
+}
+
+pub fn main() -> @Task<void> {
+    val r = await check(1);
+    case r {
+        Ok(_) -> @print("ok");
+        Error(e) -> @print(e);
+    };
+}

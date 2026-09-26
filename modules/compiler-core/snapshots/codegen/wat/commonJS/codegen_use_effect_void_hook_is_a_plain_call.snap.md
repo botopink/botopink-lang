@@ -5,11 +5,11 @@ fn cleanup() {
     0;
 }
 fn effect() -> @Component<Element, i32> {
-    0;
+    return 0;
 }
 fn Widget() -> @Component<Element, Element> {
     use effect { -> cleanup(); };
-    Element();
+    return Element();
 }
 ```
 
@@ -24,14 +24,14 @@ function cleanup() {
 }
 
 async function effect() {
-    0;
+    return 0;
 }
 
 async function Widget() {
     await effect(() => {
     return cleanup();
 });
-    new Element();
+    return new Element();
 }
 ```
 

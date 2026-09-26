@@ -5,11 +5,11 @@ fn cleanup() {
     0;
 }
 fn effect() -> @Component<Element, i32> {
-    0;
+    return 0;
 }
 fn Widget() -> @Component<Element, Element> {
     use effect { -> cleanup(); };
-    Element();
+    return Element();
 }
 ```
 
@@ -24,6 +24,7 @@ fn Widget() -> @Component<Element, Element> {
   )
   (func $effect (result i32)
     i32.const 0
+    return
   )
   (func $Widget (result i32)
     (local $__mem0 i32)
@@ -41,6 +42,7 @@ fn Widget() -> @Component<Element, Element> {
     local.get $__mem0
     i32.const 4
     i32.add
+    return
   )
 )
 ```

@@ -2,11 +2,11 @@
 ```botopink
 val Element = type() implement @Context<Element>
 fn state(initial: i32) -> @Component<Element, i32> {
-    initial;
+    return initial;
 }
 fn Counter() -> @Component<Element, Element> {
     val {count, setCount} = use state(0);
-    Element();
+    return Element();
 }
 ```
 
@@ -26,7 +26,6 @@ fn Counter() -> @Component<Element, Element> {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.
     return.
 
@@ -55,7 +54,6 @@ fn Counter() -> @Component<Element, Element> {
     {move, {x, 1}, {x, 0}}.
     {test_heap, 2, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Element}]}}.
-    {move, {atom, ok}, {x, 0}}.
     {deallocate, 2}.
     return.
 ```

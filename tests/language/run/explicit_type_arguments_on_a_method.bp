@@ -1,0 +1,33 @@
+//// Decision 8 §1.3 — a method name is a name: `recv.m<T>(…)` pins the
+//// method's own type parameters, the receiver's type fills the type's. The
+//// link after a `.` never read the `<…>`, so `ctx.resolve<Repo>()` was read as
+//// `ctx.resolve < Repo > ()` and refused as an unknown field.
+
+type Ctx(n: i32) {
+    fn resolve<T>(self: Self, x: T) -> T {
+        return x;
+    }
+
+    fn none<T>(self: Self) -> ?T {
+        return null;
+    }
+}
+
+type Box<V>(value: V) {
+    fn pair<W>(self: Self<V>, w: W) -> #(V, W) {
+        return #(self.value, w);
+    }
+}
+
+pub fn main() {
+    val c = Ctx(n: 1);
+    val s: string = c.resolve<string>("a");
+    @print(s);
+    val nothing = c.none<i32>();
+    @print(nothing == null);
+    val p = Box(value: 2).pair<bool>(true);
+    val flag: bool = p._1;
+    @print(flag);
+    val a = 1;
+    @print(c.n < a);
+}

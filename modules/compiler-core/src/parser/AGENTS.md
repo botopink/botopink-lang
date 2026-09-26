@@ -316,7 +316,8 @@ expression on `ast.CallExpr.call.calleeExpr` with `callee = ""` and
 reads `receiver` to mean "the value before the `.`" must not see one.
 
 `name<T, …>(args)` — decision 8 §1.3's explicit type arguments — is read by
-`parseExplicitTypeArgs` in `parsePrimary`'s identifier arm, speculatively: only
+`parseExplicitTypeArgs` in `parsePrimary`'s identifier arm and after a method
+name in `parsePostfixChain` (`ctx.resolve<T>()`), speculatively: only
 when the `<` is adjacent to the name, every item parses as a type, `>` closes the
 list and `(` follows; otherwise the cursor and the parse error are restored and
 `<` is a comparison. The list lands on `ast.CallExpr.call.typeArgs` (null, and

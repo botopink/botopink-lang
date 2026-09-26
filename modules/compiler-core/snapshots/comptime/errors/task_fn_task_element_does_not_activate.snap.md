@@ -2,7 +2,7 @@
 val Element = type() implement @Context<Element>
 val Request = type(path: string)
 fn request() -> @Component<Element, Request> {
-    Request(path: "/");
+    return Request(path: "/");
 }
 fn Page() -> @Task<Element> {
     val r = use request();

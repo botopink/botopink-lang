@@ -34,6 +34,7 @@ const Lexer = @import("../lexer.zig").Lexer;
 const Parser = @import("../parser.zig").Parser;
 const Module = @import("../module.zig").Module;
 const comptimeMod = @import("../comptime.zig");
+const formatMod = @import("../format.zig");
 
 pub const InferError = error{ TypeError, OutOfMemory };
 
@@ -1427,6 +1428,35 @@ fn applyExplicitTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExp
         }
     }.f;
     const resultTy = typed.getType();
+    // A method call (`ctx.resolve<T>()`): the method's own type parameters
+    // take the arguments; the type's are the receiver's.
+    if (typed.call.kind == .call) if (typed.call.kind.call.receiver) |recv| {
+        const recvTy = recv.getType().deref();
+        const tn = nominalName(recvTy) orelse return countError(env, call.callee, 0, resolved.len, loc);
+        const m = env.getInherentMethodDecl(tn, call.callee) orelse return countError(env, call.callee, 0, resolved.len, loc);
+        if (m.genericParams.len != resolved.len) return countError(env, call.callee, m.genericParams.len, resolved.len, loc);
+        var gm = std.StringHashMap(*T.Type).init(env.arena);
+        defer gm.deinit();
+        if (env.lookupTypeDef(tn)) |td| {
+            const tps = td.genericParams();
+            for (tps, 0..) |tp, i| if (i < recvTy.named.args.len) try gm.put(tp, recvTy.named.args[i]);
+        }
+        try gm.put("Self", recv.getType());
+        for (m.genericParams, resolved) |gp, r| try gm.put(gp.name, r);
+        const args = typed.call.kind.call.args;
+        const declared = if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) m.params[1..] else m.params;
+        for (declared, 0..) |p, i| {
+            if (i >= args.len) break;
+            if (args[i].label != null) break;
+            const pt = try resolveTypeRefInContext(env, p.typeRef, gm);
+            try unifyAt(env, pt, args[i].value.getType(), args[i].value.getLoc());
+        }
+        if (m.returnType) |rtRef| {
+            const want = try resolveTypeRefInContext(env, rtRef, gm);
+            try unifyAt(env, want, resultTy, loc);
+        }
+        return typed;
+    };
     if (env.lookupTypeDef(call.callee)) |td| {
         const params = td.genericParams();
         if (params.len != resolved.len) return countError(env, call.callee, params.len, resolved.len, loc);
@@ -1605,6 +1635,7 @@ fn registerInherentMethodTypes(
         // return-type gate below: a method without an annotated return still
         // has declared defaults, and its call sites still have to fill them.
         try env.setInherentMethodParams(typeName, im.name, im.params);
+        try env.setInherentMethodDecl(typeName, im);
 
         // Only methods with an explicit return-type annotation get a stored
         // signature. Without one the true return type comes from body inference
@@ -3257,14 +3288,26 @@ fn checkDecoratorArgs(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, ow
         }
     }.fail;
 
-    // Arity: required params (no default) ≤ args ≤ total params.
+    // Arity: required params ≤ args ≤ total params. A parameter is optional
+    // only when its default is closed (`comptimeMod.isClosedDefault`): the
+    // decorator body runs in its own module, where a default naming a binding
+    // of the declaring module has nothing to read — the same rule C-04 applies
+    // to a function's default across a module boundary.
     var required: usize = 0;
-    for (sig.params) |p| {
-        if (p.default == null) required += 1;
+    for (sig.params, 0..) |p, i| {
+        const closed = if (p.default) |d| comptimeMod.isClosedDefault(d) else false;
+        if (!closed) required = i + 1;
+    }
+    if (a.args.len < required) {
+        const p = sig.params[required - 1];
+        if (p.default != null) {
+            const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` on `{s}` leaves out `{s}`, whose default names a binding the decorator body cannot read", .{ a.name, owner, p.name });
+            return decoratorError(env, a, msg, "A decorator argument's default must be closed — a literal, `true` / `false`, a sign, or an array / tuple of those; otherwise pass the argument.");
+        }
     }
     if (a.args.len < required or a.args.len > sig.params.len) {
         const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` on `{s}` expects {d} argument(s), got {d}", .{ a.name, owner, sig.params.len, a.args.len });
-        return fail(env, msg, "Match the decorator's declared parameters (after the leading `comptime _: @Decl`).");
+        return decoratorError(env, a, msg, "Match the decorator's declared parameters (after the leading `comptime _: @Decl`).");
     }
 
     // Per-argument kind check against the declared parameter type.
@@ -3312,10 +3355,20 @@ fn runDeclDecorators(
         const dfn = sig.fn_decl orelse continue; // bodyless `declare fn` marker
         if (dfn.body.len == 0) continue; // empty body — nothing to run
 
-        var plain = try env.arena.alloc(template.PlainArg, a.args.len);
-        for (a.args, 0..) |arg, i| {
+        // A parameter the annotation leaves out takes its declared default,
+        // written as the lexeme an annotation argument would be (arity was
+        // checked: every omitted parameter has a closed default).
+        const given = a.args.len;
+        var total = given;
+        while (total < sig.params.len) : (total += 1) {
+            const d = sig.params[total].default orelse break;
+            if (!comptimeMod.isClosedDefault(d)) break;
+        }
+        var plain = try env.arena.alloc(template.PlainArg, total);
+        for (0..total) |i| {
             const pname = if (i < sig.params.len) sig.params[i].name else "_";
-            plain[i] = .{ .paramName = pname, .source = arg };
+            const source = if (i < given) a.args[i] else try defaultLexeme(env.arena, sig.params[i].default.?);
+            plain[i] = .{ .paramName = pname, .source = source };
         }
 
         // Diagnostics point at the annotation. A `failAt` span has no source text
@@ -3340,6 +3393,14 @@ fn runDeclDecorators(
             .err => |m| return decoratorError(env, a, m, "the decorator could not be evaluated"),
         }
     }
+}
+
+/// A closed default (`comptimeMod.isClosedDefault`) as the source lexeme an
+/// annotation argument carries: the formatter's rendering of the expression.
+fn defaultLexeme(arena: std.mem.Allocator, e: ast.Expr) InferError![]const u8 {
+    var f = formatMod.Formatter.init(arena);
+    const doc = f.fmtExpr(e) catch return error.OutOfMemory;
+    return formatMod.render(arena, doc, std.math.maxInt(u16)) catch return error.OutOfMemory;
 }
 
 fn decoratorError(env: *Env, a: ast.Annotation, message: []const u8, hint: []const u8) InferError {
@@ -3560,7 +3621,7 @@ fn instantiateCtorType(env: *Env, callee: []const u8, ctorType: *T.Type) InferEr
 /// line up — never worse than the previous behavior.
 fn instantiateFieldType(env: *Env, typeName: []const u8, instArgs: []*T.Type, fieldType: *T.Type) InferError!*T.Type {
     if (instArgs.len == 0) return fieldType;
-    const ctor = env.lookup(typeName) orelse return fieldType;
+    const ctor = env.lookup(typeName) orelse env.typeOnlyCtors.get(typeName) orelse return fieldType;
     const ctorResolved = ctor.deref();
     if (ctorResolved.* != .func) return fieldType;
     const ret = ctorResolved.func.ret.deref();
@@ -4440,8 +4501,13 @@ fn aliasedWrapperOf(retType: *T.Type) ?[]const u8 {
 /// return type has a value and whose body can reach its end without one used
 /// to check — `fn f() -> i32 { val x = 1; }` — and each backend answered
 /// whatever its block-as-value lowering produced. Refused at the return type.
-/// A wrapper return (`@Result`, `@Task`, a generator, a component) is its own
-/// effect's business and is not judged here; neither is a type guard.
+/// A wrapper return is judged by what a fall-through would hand out: a
+/// `@Result` in any layer (`@Result<void, E>` included) has a value — `Ok` or
+/// `Error` — and its `ok` position is the empty `return;` (decision 74), so it
+/// is refused like any value; a `@Task` / `@Component` whose value layer is a
+/// value type is refused too; one whose value layer is `void` or `noreturn`
+/// falls through as a `void` fn does. `@Iterator` / `@Stream` end by running
+/// off their body and are not judged here; neither is a type guard.
 /// 01 R7 — decision 2's other half: an `if` in value position needs both
 /// branches, each ending in a value. `val y = if (c) { 1 };` checked and bound
 /// whatever each backend's block-as-value lowering produced when `c` is false.
@@ -4461,11 +4527,22 @@ fn refuseValuelessIf(env: *Env, value: ast.Expr) InferError!void {
 }
 
 fn refuseFallingOffTheEnd(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError!void {
-    if (f.returnType == null or f.effect != null or f.typeGuardParam != null or f.isDeclare) return;
+    if (f.returnType == null or f.typeGuardParam != null or f.isDeclare) return;
     if (env.inTemplateFn) return;
     for (f.annotations) |a| if (std.mem.startsWith(u8, a.name, "External")) return;
     const rt = retType.deref();
-    if (rt.* == .named and (std.mem.eql(u8, rt.named.name, "void") or std.mem.eql(u8, rt.named.name, "noreturn"))) return;
+    if (f.effect) |eff| {
+        switch (eff) {
+            .iterator, .stream => return,
+            .result => {},
+            .task, .component => {
+                const layer = (effectValueLayer(eff, retType) orelse return).deref();
+                if (layer.* != .named) return;
+                if (!std.mem.eql(u8, layer.named.name, "Result") and
+                    (std.mem.eql(u8, layer.named.name, "void") or std.mem.eql(u8, layer.named.name, "noreturn"))) return;
+            },
+        }
+    } else if (rt.* == .named and (std.mem.eql(u8, rt.named.name, "void") or std.mem.eql(u8, rt.named.name, "noreturn"))) return;
     if (!stmtsMayFallThrough(env, f.body)) return;
     const rendered = try snapshotMod.typeNameOf(env.arena, rt);
     const msg = try std.fmt.allocPrint(env.arena, "`{s}` declares `-> {s}` and its body can reach its end without a `return`", .{ f.name, rendered });
@@ -4800,8 +4877,53 @@ fn registerTypeClosureDepth(
         for (m.params) |p| try collectTypeRefNames(env, p.typeRef, &names);
         if (m.returnType) |rt| try collectTypeRefNames(env, rt, &names);
     }
-    for (names.items) |n| {
-        if (std.mem.eql(u8, n, td.name)) continue;
+    try registerTypesOnly(env, moduleDecls, names.items, td.name, depth);
+}
+
+/// 01 R2 for an imported FUNCTION: the types its signature names (a
+/// `matchPath(…) -> ?RouteMatch` imported without `RouteMatch`) are registered
+/// as types only, from the module it comes from, like a type's closure — so a
+/// value it returns has its fields and methods here. Naming the type in the
+/// import is still what brings its constructor into scope.
+pub fn registerImportedSignatureClosure(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    ty: *T.Type,
+) !void {
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer names.deinit(env.arena);
+    try collectTypeNames(env, ty, &names, 0);
+    try registerTypesOnly(env, moduleDecls, names.items, "", 0);
+}
+
+fn collectTypeNames(env: *Env, ty: *T.Type, out: *std.ArrayListUnmanaged([]const u8), depth: usize) !void {
+    if (depth >= 32) return;
+    const t = ty.deref();
+    switch (t.*) {
+        .named => |n| {
+            try out.append(env.arena, n.name);
+            for (n.args) |a| try collectTypeNames(env, a, out, depth + 1);
+        },
+        .func => |f| {
+            for (f.params) |p| try collectTypeNames(env, p, out, depth + 1);
+            try collectTypeNames(env, f.ret, out, depth + 1);
+        },
+        .union_ => |us| for (us) |u| try collectTypeNames(env, u, out, depth + 1),
+        else => {},
+    }
+}
+
+/// Register each of `names` the module declares (or imports, under the scope
+/// prefix) as a TYPE only, with its own closure first; `self_name` is skipped.
+fn registerTypesOnly(
+    env: *Env,
+    moduleDecls: std.StringHashMap(ast.DeclKind),
+    names: []const []const u8,
+    self_name: []const u8,
+    depth: usize,
+) InferError!void {
+    for (names) |n| {
+        if (std.mem.eql(u8, n, self_name)) continue;
         if (env.lookupTypeDef(n) != null) continue;
         // A type the module imported rather than declared is in its map
         // under the scope prefix (`comptime.imported_type_scope_prefix`).
@@ -4829,7 +4951,10 @@ fn registerTypeClosureDepth(
         defer added.deinit(env.arena);
         var ait = env.bindings.keyIterator();
         while (ait.next()) |k| if (!before.contains(k.*)) try added.append(env.arena, k.*);
-        for (added.items) |k| _ = env.bindings.remove(k);
+        for (added.items) |k| {
+            if (env.bindings.get(k)) |ty| try env.typeOnlyCtors.put(k, ty);
+            _ = env.bindings.remove(k);
+        }
     }
 }
 
@@ -7445,7 +7570,7 @@ fn variantPayloadTypes(env: *Env, subjectType: *T.Type, writtenName: []const u8)
     defer seen.deinit();
     if (en.genericParams.len > 0 and n.args.len == en.genericParams.len) {
         for (en.variants) |vd| {
-            const ctor = env.lookup(vd.name) orelse continue;
+            const ctor = env.lookup(vd.name) orelse env.typeOnlyCtors.get(vd.name) orelse continue;
             const cd = ctor.deref();
             const ret = if (cd.* == .func) cd.func.ret.deref() else cd;
             if (ret.* != .named or !eq(u8, ret.named.name, en.name) or ret.named.args.len != n.args.len) continue;
@@ -10409,6 +10534,70 @@ fn argumentParamSlots(
     return slots;
 }
 
+/// Decision 37's update form — `Name(..base, f: v)` — reaches every backend as
+/// the complete constructor call it means: one positional argument per field in
+/// declaration order, the labelled value where the call names the field and
+/// `base.<field>` where it does not. No backend lowers a `..` argument, and each
+/// used to drop it and zip what was left (`Cfg(..b, r: 60)` built
+/// `Cfg(b, 60)`). `base` is read once per field it supplies, so it must be a
+/// name or a path of names; any other expression would be evaluated again for
+/// every field, and is refused — bind it with `val` first.
+fn rewriteRecordUpdate(env: *Env, c: anytype, fields: anytype, loc: ast.Loc) InferError!void {
+    const call = c.kind.call;
+    var base: ?*ast.Expr = null;
+    for (call.args) |a| if (a.label) |l| if (std.mem.eql(u8, l, "..")) {
+        base = a.value;
+    };
+    const b = base orelse return;
+    if (!isNamePath(b.*)) {
+        env.lastError = TypeError.custom(
+            "the record a `..` update copies from must be a name",
+            "Bind it first — `val base = …; Name(..base, field: value)` — so it is evaluated once.",
+        ).withLoc(b.getLoc());
+        return error.TypeError;
+    }
+    const args = try env.arena.alloc(ast.CallArg, fields.len);
+    for (fields, 0..) |fd, fi| {
+        const written: ?*ast.Expr = for (call.args) |a| {
+            const l = a.label orelse continue;
+            if (std.mem.eql(u8, l, fd.name)) break a.value;
+        } else null;
+        const value = written orelse blk: {
+            // Each read gets a loc of its own — the base's line, a column no
+            // source reaches — and is inferred like a written `base.field`, so
+            // what a backend reads under a field access's loc (the record it
+            // belongs to) is there, and never mistaken for the base's own.
+            const bl = b.getLoc();
+            const read = try env.arena.create(ast.Expr);
+            read.* = .{ .identifier = .{
+                .loc = .{ .line = bl.line, .col = bl.col | (@as(usize, fi + 1) << 32) },
+                .kind = .{ .identAccess = .{ .receiver = b, .member = fd.name } },
+            } };
+            _ = try inferExpr(env, read.*);
+            break :blk read;
+        };
+        args[fi] = .{ .label = null, .value = value };
+    }
+    const rewrite = try env.arena.create(ast.Expr);
+    // An import alias already renamed the callee under this loc (decision 110).
+    var rc = if (env.enumSectionRewrites.get(loc)) |prev| (if (prev.* == .call) prev.call else c) else c;
+    rc.kind.call.args = args;
+    rewrite.* = .{ .call = rc };
+    try env.enumSectionRewrites.put(loc, rewrite);
+}
+
+/// `a` or `a.b.c` — an expression that reads a binding and nothing else.
+fn isNamePath(e: ast.Expr) bool {
+    return switch (e) {
+        .identifier => |id| switch (id.kind) {
+            .ident => true,
+            .identAccess => |ia| !ia.optional and isNamePath(ia.receiver.*),
+            .dotIdent => false,
+        },
+        else => false,
+    };
+}
+
 /// C-04 — plan the fill for a short call and record it under the call's loc for
 /// `transform.zig`. Answers the plan, or `null` when the call cannot be filled:
 /// that is N2, and the caller then raises the arity error it always raised.
@@ -12666,6 +12855,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             };
                             try unifyArgument(env, f.params[idx], ta.value.getType(), ta.value.getLoc());
                         }
+                        try rewriteRecordUpdate(env, c, fields, loc);
                         break :blk f.ret;
                     }
 

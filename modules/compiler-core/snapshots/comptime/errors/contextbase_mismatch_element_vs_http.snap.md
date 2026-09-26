@@ -2,14 +2,14 @@
 val Element = type() implement @Context<Element>
 val Http = type() implement @Context<Http> { }
 fn state(initial: i32) -> @Component<Element, i32> {
-    initial;
+    return initial;
 }
 fn connection() -> @Component<Http, i32> {
-    0;
+    return 0;
 }
 fn bad() -> @Component<Element, i32> {
     val c = use connection();
-    state(0);
+    return state(0);
 }
 
 ----- ERROR

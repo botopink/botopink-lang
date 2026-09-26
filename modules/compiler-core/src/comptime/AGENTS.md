@@ -472,16 +472,19 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   `compilerError/1` (a tagged throw reported like `fail`).
 - `validateDecorators` walks every declaration's annotations (record/enum/fn/
   interface + methods + record fields) and `checkDecoratorArgs` type-checks
-  `#[name(args)]` for recognized decorators: arity (honoring trailing defaults)
-  and a lexical kind check (`string`/numeric/`bool`/enum member). Unknown
-  markers stay lenient.
+  `#[name(args)]` for recognized decorators: arity (a trailing parameter is
+  optional only when its default is closed — `comptime.isClosedDefault`; one
+  naming a binding is refused at the annotation, since the body runs in its own
+  module) and a lexical kind check (`string`/numeric/`bool`/enum member).
+  Unknown markers stay lenient.
 - **Invocation:** `invokeDecorators` (skipped when `env.skipDecoratorInvoke` or
   no `env.templateEval`) builds a `decorator_eval.DeclHandle` per annotated
   decl — `Fn`, `Type` (a record shape with `FieldHandle`s, an enum shape with
   `variants`), `Behavior`, plus
   per-`Field` and per-`Method` handles — and `runDeclDecorators` calls
   `decoratorEval.evaluate` for each body-carrying decorator (annotation args
-  become `PlainArg`s). `fail` and `err` become a `TypeError` at the annotation
+  become `PlainArg`s; an omitted trailing argument becomes its declared
+  default's lexeme, `defaultLexeme` — the formatter's rendering). `fail` and `err` become a `TypeError` at the annotation
   (`ast.Annotation.loc`, via `decoratorError`; a `failAt` span is reported there
   too, since a declaration has no template text to map it onto) whose message
   carries the detail — for `err`, the Erlang compile/runtime diagnostic; `ok`
@@ -617,8 +620,10 @@ name, the items parse as types, `>` closes and `(` follows; `a < b` stays a comp
 `applyExplicitTypeArgs` pins the callee's type parameters in order: a constructor's are its type's
 (`Box<T>`, the result type's arguments unified with them), a generic fn's are its own — its
 declaration (`Env.fnDecls`) is re-read with each parameter bound to its argument and unified with
-the call's positional arguments and result. A count that does not match, or type arguments on a
-callee with none, is refused at the call. `Option<i32>.None` (type arguments before a `.`) is not
+the call's positional arguments and result; a method's (`ctx.resolve<T>(…)`) are its own, from
+its declaration (`Env.inherentMethodDecls`, keyed `"<Type>.<method>"`), with the type's parameters
+bound to the receiver's arguments. A count that does not match, or type arguments on a callee with
+none, is refused at the call. `Option<i32>.None` (type arguments before a `.`) is not
 parsed yet.
 
 ## Three rules the effects guide's page needs (maintainer, 24-box-1)
@@ -679,8 +684,11 @@ A block is a statement and a value leaves a body through `return` (or a value bl
 has a value and whose body can reach its end — `stmtsMayFallThrough` / `exprMayFallThrough`: the
 last statement is not a `return`/`throw`/`break`, an `if`/`else` or `case` every branch of which
 ends that way, a bare `loop { }`, or a `noreturn` builtin (`@panic`, `@todo`, `@trap`,
-`@compilerError`). Located at the return type. A wrapper return (`@Result`, `@Task`, a generator, a
-component), a type guard, a `declare`/`@External` fn and a template fn are not judged.
+`@compilerError`). Located at the return type. A wrapper return is judged by what running off the
+end hands out: a `@Result` in any layer — `@Result<void, E>` included, whose `ok` position is the
+empty `return;` (decision 74) — and a `@Task` / `@Component` whose value layer is a value are
+refused; one whose value layer is `void` / `noreturn` falls through as a `void` fn does. `@Iterator`
+/ `@Stream`, a type guard, a `declare`/`@External` fn and a template fn are not judged.
 `refuseValuelessIf` refuses an `if` without `else` bound by a `val`/`var` (local or module-level).
 Each backend's block-as-value lowering loses its producers: erlang's tail `case`, beam's
 `make_fun3`, commonJS's IIFE, wasm's `;; lambda` (residual-rows R7 names them for the four fronts).
@@ -960,7 +968,11 @@ run-time half. D4 (whether `is` grows a payload pattern) stands as the parser le
 ## a record is immutable (decision 37)
 
 `p.age = 31` and `self.count += 1` both checked and both mutated in place. The decided form is a new
-value — `Person(..p, age: 31)` — which the constructor's `..` spread already builds (06 C11), so
+value — `Person(..p, age: 31)` — which the constructor's `..` spread builds (06 C11; the checker
+matches each label to its field, and `rewriteRecordUpdate` records the complete positional call —
+the labelled value, or `base.<field>` inferred under a loc of its own — in `enumSectionRewrites`,
+whose call rewrite in `transform.zig` then moves the arguments too; the base must be a name or a
+path of names, anything else would run once per copied field), so
 `refuseRecordFieldAssign` (the `.fieldAccess` target of the `.assign` walk) reds at the assignment
 and spells that form out, naming the receiver when it is a plain name it can spread.
 
@@ -1073,9 +1085,19 @@ name the module does not declare is found among the types it IMPORTS: `registerE
 (`addImportedTypeScope`) records each imported type, and the imported-type scope of the module it
 came from, in the module's type-decl map under `"\x00" ++ name` — a key no import item can spell, so
 nothing is re-exported — and the closure reads it there (onze F2: `Canvas(outlines: Array<Outline>)`
-where `Outline` and its `Point` live in two other modules of the package). A name found in neither is
-left to the ordinary unknown-type diagnostic. Cells: `tests/language/modules/import_type_closure`,
-`tests/language/modules/import_type_closure_across_modules`.
+where `Outline` and its `Point` live in two other modules of the package). A std type leaf the module
+imports (`import {collections.Dict} from "std"`) is recorded there too, so `RouteMatch(params:
+Dict<…>)` imported from another package gives its importer `Dict`'s methods — a method chain on the
+field (`found.params.at(k).unwrapOr("")`) used to lower as a bare `unwrapOr/2` on erlang. A name
+found in neither is left to the ordinary unknown-type diagnostic. Cells:
+`tests/language/modules/import_type_closure`,
+`tests/language/modules/import_type_closure_across_modules`,
+`tests/language/modules/narrowed_optional_std_field_across_packages`. An imported FUNCTION brings the
+types its signature names the same way (`registerImportedSignatureClosure`, from the module that
+exports it): `import {matchPath}` alone gives `?RouteMatch`'s fields and methods to the value it
+returns, through a narrowing or an optional binder. The constructor and variant bindings a type-only
+registration takes back are kept in `Env.typeOnlyCtors`, out of scope, because a generic type's
+field instantiation reads its registration cells from them (`instantiateFieldType`).
 
 ## `/` over integers is integer division (onze F7)
 
@@ -1192,6 +1214,13 @@ reference (`type Outer(inner: Inner)` above `type Inner(…)`) therefore checks,
 typedef (the constructor binding) and a `behavior` name in type position
 (`Env.assocInterfaceDecls`). The list is cleared per program: `registerStdlib` infers one std module
 per call on one env, and a name left pending by one must not red in the next.
+
+**A std module may import another** (`import {encoding.percentEncode} from "std"` in
+`querystring`). `registerStdlib` infers the std modules in `stdModuleOrder` — each after the std
+modules it imports (`stdImportsOf`, a lexical scan of its `from "std"` items) — and hands each
+scratch env the exports, types and functions of those already registered, so the import resolves as
+a program's does; `expandStdImports` embeds the std modules a needed std module imports, transitively,
+in the same order.
 
 Only an annotation the parser located enters the list. `Env.typeRefLoc` is set by
 `resolveParamType` / `resolveFieldType` / `resolveReturnType` (infer.zig) from `Param.typeLoc`,

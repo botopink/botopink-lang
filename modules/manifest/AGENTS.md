@@ -31,9 +31,10 @@ manifest/
 └── tests/fixtures/      ← on-disk fixtures the unit tests read (cwd = modules/manifest)
     ├── workspace/       ← a good workspace: two library members, one library member without files, one example
     ├── bad/<case>/      ← one refused manifest per located error (nested-workspace, duplicate-member, …)
-    └── roots/           ← what `scanRoots` sees: repository/ (plain package + workspace), other/ (a second
-                            workspace re-declaring a member, a package in the retired array form, a duplicate
-                            plain package), named/ (an umbrella directory named like its core member), local/
+    ├── roots/           ← what `scanRoots` sees: repository/ (plain package + workspace), other/ (a second
+    │                       workspace re-declaring a member, a package in the retired array form, a duplicate
+    │                       plain package), named/ (an umbrella directory named like its core member), local/
+    └── symlinked-store/ ← deps/ as `bpmp install` writes it: a symbolic link to packages/side, and one to a file
 ```
 
 ## Surface (`src/root.zig`)
@@ -50,7 +51,7 @@ manifest/
 | `isCheckoutRoot(io, dir)` | True when `dir` holds `repository/` — the enclosing checkout (the meta workspace, a worktree of it under `.tasks/<name>`, CI's `botopink-lang` with the libraries cloned into `repository/`). The three root walk-ups add that directory's roots and stop: an ancestor belongs to another checkout, whose libraries would be every name a second time (decision 143). |
 | `enclosingWorkspace(arena, io, project_dir, &err)` | The nearest ancestor workspace that lists `project_dir` as a member, or null. |
 | `isLibraryPackage(io, m)` · `shipsNothing(io, m)` | A library (`root.bp`, not `main.bp`) member with no `files` ships nothing — the refusal `botopink test` and the runner report. |
-| `scanRoots(arena, io, roots)` → `[]Entry` | The shared discovery: a root that is a workspace contributes its members; otherwise each child holding a manifest is a package (named by directory) or a workspace (its members, named by manifest; the umbrella entry follows them with `is_workspace`). One directory reached twice is one entry. A refused manifest marks only its own `Entry.problem`. Two **members** with one name (or a member and a package) are both refused; two plain packages keep first-root-wins. |
+| `scanRoots(arena, io, roots)` → `[]Entry` | The shared discovery: a root that is a workspace contributes its members; otherwise each child holding a manifest — a directory, or a symbolic link that resolves to one (the `.botopinkbuild/deps/` store `bpmp install` writes) — is a package (named by directory) or a workspace (its members, named by manifest; the umbrella entry follows them with `is_workspace`). One directory reached twice is one entry. A refused manifest marks only its own `Entry.problem`. Two **members** with one name (or a member and a package) are both refused; two plain packages keep first-root-wins. |
 | `find(entries, name)` | The package or member so named; the umbrella only when no package is. |
 | `resolveDependency(arena, io, project, project_dir, dep, entries, fallback, &err)` | One `dependencies` entry → `{dir, manifest}`: `workspace` via the enclosing workspace, `path` from the project directory (must hold a package of that name; a sibling member or a workspace is refused), `git` by name across `entries` then `fallback` (a workspace so named is refused with its member list); `null` when nothing carries the name. |
 

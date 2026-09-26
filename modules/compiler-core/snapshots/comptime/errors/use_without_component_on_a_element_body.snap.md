@@ -1,7 +1,7 @@
 ----- SOURCE CODE
 val Element = type() implement @Context<Element>
 fn state(initial: i32) -> @Component<Element, i32> {
-    initial;
+    return initial;
 }
 fn Counter() -> Element {
     val n = use state(0);

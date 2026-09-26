@@ -5,11 +5,11 @@ fn cleanup() {
     0;
 }
 fn effect() -> @Component<Element, i32> {
-    0;
+    return 0;
 }
 fn Widget() -> @Component<Element, Element> {
     use effect { -> cleanup(); };
-    Element();
+    return Element();
 }
 ```
 
@@ -38,7 +38,6 @@ fn Widget() -> @Component<Element, Element> {
   {label, 5}.
     {allocate, 0, 0}.
     {move, {integer, 0}, {x, 0}}.
-    {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
 
@@ -57,7 +56,6 @@ fn Widget() -> @Component<Element, Element> {
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {test_heap, 2, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Element}]}}.
-    {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
 

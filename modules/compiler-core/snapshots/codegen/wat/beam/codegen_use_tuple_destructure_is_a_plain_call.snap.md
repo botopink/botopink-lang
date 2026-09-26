@@ -3,12 +3,12 @@
 val Element = type() implement @Context<Element>
 fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
     val push = { action -> f(base, action) };
-    #(base, push);
+    return #(base, push);
 }
 fn LikeWidget() -> @Component<Element, Element> {
     val #(shown, push) = use optimistic(12, { c, a -> c + a });
     push(shown);
-    Element();
+    return Element();
 }
 ```
 
@@ -33,7 +33,6 @@ fn LikeWidget() -> @Component<Element, Element> {
     {move, {x, 0}, {y, 2}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{y, 0}, {y, 2}]}}.
-    {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
 
@@ -64,7 +63,6 @@ fn LikeWidget() -> @Component<Element, Element> {
     {call_fun, 1}.
     {test_heap, 2, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Element}]}}.
-    {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
 

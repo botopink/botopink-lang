@@ -140,6 +140,22 @@ enum declaring `Error`), `run/decorator_calls_module_function` and
 functions), `run/decorator_emitted_proxies_dispatch` (two proxies a decorator emits call their own
 types) and `modules/namespace_import_module` (decision 107's namespace form over a dependency's
 module and the project's own).
+The second language-gaps sweep (`front/gaps-sweep-2`) adds a cell per row it fixed, every one
+failing on the parent binary: `reject/result_void_falls_off_end` (decision 2 over an effect return —
+a `@Result` in any layer, `@Result<void, E>` included, and a `@Task` / `@Component` whose value is a
+value, end with `return`), `modules/narrowed_optional_std_field_across_packages` (a method chain on a
+field of a narrowed optional, and of an optional binder, whose type another package declares and
+this module never names — its field a std type only that package imports;
+`modules/generic_type_through_imported_function` keeps two instances of such a generic type apart),
+`modules/decorator_argument_default` and `reject/decorator_default_not_closed` (a decorator
+argument the annotation leaves out takes its closed default; one naming a binding is refused at the
+annotation), `run/record_update` and `reject/record_update_base_not_a_name` (decision 37's
+`Name(..base, f: v)` builds the record it means on every target; the base is a name or a path of
+names), `run/explicit_type_arguments_on_a_method` and
+`reject/explicit_type_argument_on_a_method_disagrees` (decision 8 §1.3 at a method call,
+`ctx.resolve<T>()`), `run/std_module_imports_std_module` (`querystring` imports `encoding`'s
+percent codec; `.wasm.expect` — STD-001 at the import) and `run/bodyless_method_without_binding` (a
+bodyless method with no host binding is refused at the call on every target, `.<target>.expect`).
 The checker rows of `front/checker-rows` add a cell each, every one failing on the parent binary
 (or, where noted, pinning a rule the parent already held): `reject/self_param_free_fn` (`self`
 outside a type or behavior body is `self-param-outside-type`, at the name — jhonstart's

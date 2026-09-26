@@ -943,11 +943,14 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // 06 N24 — a tuple element of function type called by its LABEL
     // (`c.set(9)` on `#(value: i32, set: fn(…))`). Inference stashed the
     // positional callee under the call's loc; only the name moves, the
-    // arguments stay where they are.
+    // arguments stay where they are — unless the rewrite carries its own:
+    // a record update (`Name(..base, f: v)`) is recorded as the complete
+    // positional constructor call (`infer.rewriteRecordUpdate`).
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
         if (agg.enum_section_rewrites.get(expr_ptr.call.loc)) |rewrite| {
             if (rewrite.* == .call and rewrite.call.kind == .call) {
                 expr_ptr.call.kind.call.callee = rewrite.call.kind.call.callee;
+                if (rewrite.call.kind.call.args.len > 0) expr_ptr.call.kind.call.args = rewrite.call.kind.call.args;
             }
         }
     }

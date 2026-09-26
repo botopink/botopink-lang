@@ -2,10 +2,10 @@
 val Element = type() implement @Context<Element>
 val Http = type() implement @Context<Http> { }
 fn state(initial: i32) -> @Component<Element, i32> {
-    initial;
+    return initial;
 }
 fn connection() -> @Component<Http, i32> {
-    0;
+    return 0;
 }
 fn Mixed() -> @Component<Element, Element> {
     val a = use state(0);

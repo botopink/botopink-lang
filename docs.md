@@ -314,7 +314,11 @@ fn add(x: i32, y: i32) -> i32 {
 
 A value leaves a function through `return`: a block is a statement, not a value, so a `fn` whose
 return type has a value must end every path with `return` (or `@panic` / `@todo`) —
-`fn f() -> i32 { val x = 1; }` is refused at `-> i32`.
+`fn f() -> i32 { val x = 1; }` is refused at `-> i32`. An effect return is judged by what
+running off the end would hand out: a `@Result` in any layer has a value (`Ok` or `Error`), so
+`-> @Result<void, E>` and `-> @Task<@Result<void, E>>` end with the empty `return;`, and so does a
+`@Task<T>` or `@Component<C, T>` whose `T` is a value; one whose `T` is `void` falls through as a
+`void` fn does. `@Iterator` and `@Stream` end by running off their body.
 
 ## Types
 
@@ -333,6 +337,18 @@ type Point(x: i32, y: i32)
 
 val p = Point(x: 1, y: 2);
 val px = p.x;
+```
+
+A record is immutable: a field is never assigned. A changed copy is the update
+form — `..base` and the fields that change, by label; every other field is read
+from `base`, which is a name or a path of names (a call there is refused, since
+it would run once per copied field — bind it with `val` first):
+
+```botopink
+type Point(x: i32, y: i32)
+
+val p = Point(x: 1, y: 2);
+val q = Point(..p, y: 5);    // Point(x: 1, y: 5)
 ```
 
 A body adds methods:
@@ -1838,7 +1854,9 @@ like every enum method), a function exported by the type's module on erlang and
 beam — so a method on an imported type is answered by its owner exactly as a
 bodied one is — and a declaration in the `.d.ts`. A method with no binding for
 the active backend is refused where it is **called**, naming `Type.method`
-(`` `Meter.plus` has no `#[@External.<Target>(…)]` for the wasm backend ``).
+(`` `Meter.plus` has no `#[@External.<Target>(…)]` for the wasm backend ``); a
+bodyless method with no binding at all binds no backend, and is refused on
+every one.
 
 Only `External.<Target>` is read. A lower-case `@external(node, …)` is a located
 error naming the capitalised form (`` `#[@external]` binds no host — an external
@@ -2234,16 +2252,10 @@ names, and fatal when the match fails), a `//` comment inside a loop body, a
 and `await` inside a `@Component` body (an `async function` on commonJS, awaited
 by every caller).
 
-Two limits worth stating here, because a library meets them before it meets a
-rule. The checker half is `00 · 01-checker`'s:
-
-- A default on an **imported function** is not filled. The cross-module export
-  registry carries no plain `fn` declaration, so `import { greet } from "helper";
-  greet("w")` reds `'greet' expects 2 argument(s), got 1` where the same `greet`
-  called inside `helper` fills. An imported record's field default is filled.
-- On wasm a method called through a **behavior-typed** value traps
-  (`unreachable`) at run time; commonJS, erlang and beam dispatch it
-  (`00 · 05-wasm`'s).
+One limit worth stating here, because a library meets it before it meets a
+rule: on wasm a method called through a **behavior-typed** value traps
+(`unreachable`) at run time; commonJS, erlang and beam dispatch it
+(`00 · 05-wasm`'s).
 
 These forms are **deliberately absent**, so that none reads as unfinished work:
 

@@ -2,11 +2,11 @@
 ```botopink
 val Element = type() implement @Context<Element>
 fn state(initial: i32) -> @Component<Element, i32> {
-    initial;
+    return initial;
 }
 fn Counter() -> @Component<Element, Element> {
     val {count, setCount} = use state(0);
-    Element();
+    return Element();
 }
 ```
 
@@ -18,6 +18,7 @@ fn Counter() -> @Component<Element, Element> {
   (global $__heap_ptr (mut i32) (i32.const 272))
   (func $state (param $initial i32) (result i32)
     local.get $initial
+    return
   )
   (func $Counter (result i32)
     (local $__mem0 i32)
@@ -45,6 +46,7 @@ fn Counter() -> @Component<Element, Element> {
     local.get $__mem1
     i32.const 4
     i32.add
+    return
   )
 )
 ```

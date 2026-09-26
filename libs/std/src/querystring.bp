@@ -21,29 +21,11 @@
 //// reaches a header. `stringify` refuses a control character too, so every
 //// text it writes is one `parse` reads back.
 ////
-//// The two host cells below are `encoding.percentEncode` / `percentDecode`'s
-//// templates, private here because a std module cannot import a sibling
-//// (`01-std-lib-enablement` § Mechanism): the same bytes on commonJS and
-//// erlang, and the refusals above are decided in botopink before either
-//// cell runs.
+//// The percent codec is `encoding`'s (`percentEncode` / `percentDecode`),
+//// imported: the same bytes on commonJS and erlang, and the refusals above
+//// are decided in botopink before either cell runs.
 
-// `encoding.percentEncode`'s cell: RFC 3986 unreserved set, `%XX` uppercase;
-// the Node template also encodes the `!'()*` `encodeURIComponent` leaves.
-#[@External.Node("""encodeURIComponent($0).replace(/[!'()*]/g, __c => '%' + __c.charCodeAt(0).toString(16).toUpperCase())""")]
-#[@External.Erlang("uri_string:quote($0)")]
-declare fn percentEncode(s: string) -> string;
-
-// `encoding.percentDecode`'s cell: a sequence that is not UTF-8 is an `Error`.
-#[@External.Node("""(() => { try { return { ok: decodeURIComponent($0) } } catch (__e) { return { error: 'not percent-encoded' } } })()""")]
-#[@External.Erlang("""(fun(__S) -> try uri_string:unquote(__S) of __U when is_binary(__U) -> case unicode:characters_to_binary(__U) of __V when is_binary(__V) -> {ok, __V}; _ -> {error, <<"not percent-encoded">>} end; _ -> {error, <<"not percent-encoded">>} catch _:_ -> {error, <<"not percent-encoded">>} end end)($0)""")]
-declare fn percentDecode(s: string) -> @Result<string, string>;
-
-// `encoding.hexDecode`'s cell, for the tests only: non-ASCII text enters a
-// test through its UTF-8 hex, never a literal (the erlang backend lowers a
-// non-ASCII literal to latin1).
-#[@External.Node("""Buffer.from($0, 'hex').toString('utf8')""")]
-#[@External.Erlang("""binary:decode_hex($0)""")]
-declare fn utf8OfHex(h: string) -> string;
+import {encoding.percentEncode, encoding.percentDecode, encoding.hexDecode} from "std";
 
 // Strip an optional leading `?` from a URL's query portion. Idempotent.
 fn stripPrefix(query: string) -> string {
@@ -194,7 +176,7 @@ test "querystring.parse percent-decodes names and values" {
     assert pairsOf(parse("?a=%20b&k%3Dx=%26%3D%25")) == "a=> b|k=x=>&=%";
     // Two escapes that are one UTF-8 character: U+00E9.
     assert pairsOf(parse("n=caf%C3%A9")) == pairsOf(parse("n=caf%c3%a9"));
-    assert parse("n=caf%C3%A9").unwrapOr([]).at(0).unwrapOr(#("", ""))._1 == ["caf", utf8OfHex("c3a9")].join("");
+    assert parse("n=caf%C3%A9").unwrapOr([]).at(0).unwrapOr(#("", ""))._1 == ["caf", hexDecode("c3a9").unwrapOr("?")].join("");
 }
 
 test "querystring.parse keeps a plus sign, parseForm reads it as a space" {
