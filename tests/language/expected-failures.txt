@@ -164,7 +164,6 @@ wasm     | run/display_print.bp       | 05-wasm | re-measured 2026-09-21 by runn
 # line below, and it is a different defect: not the index, but `Array.at` on an
 # array OF arrays.
 commonJS | test/curried_call.bp::calling the result of a call ;; calling the result of a call whose result is chosen at run time | C-09 (backend half) | 01 types `adder(3)(4)` now (the callee in `calleeExpr` is inferred and applied); commonJS does not read `calleeExpr` and emits `(4)`, dropping the callee
-erlang   | test/curried_call.bp       | C-09 (backend half) | 01 types it; erlang does not read `calleeExpr` and emits `''(4)`, which `erlc` refuses — the cell does not compile
 
 # ── run-time type identity (front 12 step 4.1) ────────────────────────────────
 # The botopink-level statement of `13-module-identity`: a value knows its own
@@ -261,20 +260,6 @@ wasm     | modules/field_name_collision | 05-wasm | a field read off an optional
 # renamed to `toList`), wasm answers the same `0` / `0`, so what it is missing is
 # the imported receiver, not this cell's collision.
 wasm     | modules/method_name_collision | 05-wasm | a method call on a value answered by an imported fn answers `0`: `0` / `0` / `4` where the other two rows answer `3` / `2` / `4`. The local collision (the third line) is right on every row. Measured with the collision removed as well, so it is the imported receiver and not the owner guess
-
-# ── a labelled argument claims its slot, on erlang ───────────────────────────
-# `run/labelled_arguments.bp` writes a record constructor and an enum variant
-# out of declared order. `docs.md` § Parameters with defaults is the rule — "a
-# parameter the call names by label keeps the argument it was given, whichever
-# position it is in" — and the three backends disagree in three ways, which is
-# why the cell prints an asymmetric `width * 100 + height` rather than an area.
-# The RECORD row is right on all three. The enum-variant row is right on wasm
-# and on commonJS (1.0.10-beta `00 · 04-js`, this branch) and wrong on erlang:
-# `erlang.zig`'s record-constructor path places a labelled argument by field
-# index, and its enum-variant path does not, so `Shape.Rect(height: 2, width: 5)`
-# is built `Rect(2, 5)` and the cell prints `205` where it must print `502`.
-# Exit 0 either way, with nothing said — measured 2026-09-21.
-erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's labelled payload, reported 2026-09-21) | an enum variant's payload is zipped positionally even when every argument is labelled: `205` where the declared order asks for `502`. The record-constructor row of the same cell is right, which is what says it is the variant path and not the label
 
 # ── a method call and a loop over a field, on wasm ────────────────────────────
 # `run/effect_method.bp` puts an effect annotation on a method — a record's, an

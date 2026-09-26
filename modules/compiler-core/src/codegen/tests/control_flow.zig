@@ -1207,6 +1207,53 @@ test "beam: an enum variant's labelled payload claims its declared slot" {
     , "502\n502\n502\n", &.{});
 }
 
+test "erlang: calling the result of a call applies it (`calleeExpr`)" {
+    // `test/curried_call.bp` (C-09's backend half): `adder(3)(4)` carries its
+    // callee as an expression, and lowered as a name it was `''(4)`, which
+    // `erlc` refuses.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
+        \\fn pick(which: bool) -> fn(x: i32) -> i32 { return { x -> if (which) { x } else { 0 - x } }; }
+        \\fn main() {
+        \\  @print(adder(3)(4));
+        \\  @print(pick(false)(5));
+        \\  @print(adder(10)(adder(1)(2)));
+        \\}
+    , "7\n-5\n13\n", &.{"(adder(3))(4)"});
+}
+
+test "beam: calling the result of a call applies it (`calleeExpr`)" {
+    // The beam twin: the callee value is parked on the stack while the
+    // arguments are staged, then `call_fun` — it was
+    // `{unresolved_call, '', 1}` at run time.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
+        \\fn twice(n: i32) -> i32 { return adder(n)(n); }
+        \\fn main() {
+        \\  @print(adder(3)(4));
+        \\  @print(adder(10)(adder(1)(2)));
+        \\  @print(twice(4));
+        \\  val xs: Array<i32> = [1, 2];
+        \\  @print(xs.map({ x -> adder(x)(100) }));
+        \\}
+    , "7\n13\n8\n[101, 102]\n", &.{"{call_fun, 1}"});
+}
+
+test "erlang: an enum variant's labelled payload claims its declared slot" {
+    // `run/labelled_arguments.bp`'s erlang row: the variant constructor zipped
+    // by position, so `Shape.Rect(height: 2, width: 5)` was built
+    // `{…rect, 2, 5}` and the cell printed `205` (02-erlang, no step).
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Shape { Rect(width: i32, height: i32), Dot }
+        \\fn shown(s: Shape) -> i32 { return case s { Shape.Rect(w, h) -> w * 100 + h; Shape.Dot -> 0; }; }
+        \\fn main() {
+        \\  @print(shown(Shape.Rect(height: 2, width: 5)));
+        \\  @print(shown(Shape.Rect(width: 5, height: 2)));
+        \\  @print(shown(Shape.Rect(5, 2)));
+        \\}
+    , "502\n502\n502\n", &.{});
+}
+
 test "beam: a lambda whose body is an if, a case or a try answers its value" {
     // 03 handover 01, `run/lambda_expression_body.bp`. `emitLambdaBody`
     // treated only a literal/name/operator/call tail as the lambda's value;

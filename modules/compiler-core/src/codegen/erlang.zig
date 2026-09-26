@@ -6710,6 +6710,12 @@ const Emitter = struct {
     /// templates and externals, record constructors, fun-typed locals, or a
     /// plain local call. Reserved-word callees (`of`, `div`) are quoted atoms.
     fn plainCallNode(this: *Emitter, b: Ast.Builder, loc: anytype, cc: anytype) anyerror!Ast.Expr {
+        // `adder(3)(4)`: the callee is the previous call's value (`calleeExpr`,
+        // `callee == ""`), applied as a fun — `(adder(3))(4)`. Lowered as a
+        // name it was `''(4)`, which `erlc` refuses.
+        if (cc.calleeExpr) |ce| {
+            return b.applyParen(try this.exprNode(b, ce.*), try this.callArgs(b, null, cc));
+        }
         const recv = cc.receiver orelse {
             if (this.user_erlang_templates.contains(cc.callee)) {
                 // §A2 per-callee template / arity-branched annotation. With no
@@ -6863,6 +6869,22 @@ const Emitter = struct {
                 const items = try b.arena.alloc(Ast.Expr, cc.args.len + 1);
                 items[0] = Ast.Expr.a(this.qualifiedVariantTagOf(name, cc.callee) orelse cc.callee);
                 for (cc.args, 1..) |arg, i| items[i] = try this.exprNode(b, arg.value.*);
+                // A labelled argument fills the slot of the field it names, as
+                // a record constructor's does (`docs.md` § Parameters with
+                // defaults): zipped by position, `Shape.Rect(height: 2,
+                // width: 5)` was built `{…rect, 2, 5}` (`run/labelled_arguments.bp`
+                // printed `205` for `502`). The same declared fields a `case`
+                // pattern's labels read (`variant_fields`).
+                if (this.variant_fields.get(cc.callee)) |decl| if (decl.len == cc.args.len) {
+                    const placed = try b.arena.dupe(Ast.Expr, items);
+                    for (cc.args, 1..) |arg, i| {
+                        const lbl = arg.label orelse continue;
+                        for (decl, 1..) |f, at| if (std.mem.eql(u8, f, lbl)) {
+                            placed[at] = items[i];
+                        };
+                    }
+                    return .{ .tuple = placed };
+                };
                 return .{ .tuple = items };
             }
             // An associated `fn` of a LOCAL enum (`Shape.unit()`): the enum's

@@ -594,6 +594,18 @@ codegen/
 
 ### erlang
 
+- **Variant constructors** (`Shape.Rect(height: 2, width: 5)`): a labelled
+  argument fills the slot of the field it names (`variant_fields`, the declared
+  fields a `case` pattern's labels already read), as a record constructor's
+  does — built positionally it was `{…rect, 2, 5}` and
+  `run/labelled_arguments.bp` printed `205` for `502`. The beam twin is
+  `lowerTaggedTuple`'s `variantDeclOf`.
+- **Calling the result of a call** (`adder(3)(4)`, `cc.calleeExpr` with
+  `callee == ""`): `(adder(3))(4)` — `applyParen` over the callee expression's
+  node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which
+  `erlc` refuses (`test/curried_call.bp`, C-09's backend half). The beam twin
+  parks the value in a y-slot (`countLocalsInExpr` reserves it) and
+  `call_fun`s it, as a module-level `val` holding a fun is applied.
 - **One module per `type` — policy 3 of `13-module-identity`.** A source file
   emits its own module plus one per `type` it declares
   (`crossModule.typeAtom` → `myapp@main@@Person`, `std@dict@@Dict` — decision 109; `test@main@@Person` in the snapshots, which compile under the implicit test manifest), carried out

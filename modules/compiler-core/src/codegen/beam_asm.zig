@@ -819,6 +819,11 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 // Calling a module-level `val` that holds a fun parks the fun
                 // on the stack while the arguments are staged (`lowerCall`).
                 if (!cc.is_builtin and cc.receiver == null and em.top_vals.contains(cc.callee)) count.* += 1;
+                // `adder(3)(4)`: the callee value is parked the same way.
+                if (cc.calleeExpr) |ce| {
+                    countLocalsInExpr(em, ce.*, count);
+                    count.* += 1;
+                }
             },
             .pipeline => |pl| {
                 countLocalsInExpr(em, pl.lhs.*, count);
@@ -5168,6 +5173,23 @@ const Emitter = struct {
     /// Lower a `call.call` form into BEAM assembly. Evaluates each arg into
     /// `{x, i}`, then emits the appropriate call opcode.
     fn lowerCall(self: *Emitter, cc: anytype, mode: CallMode, loc: ast.Loc) anyerror!void {
+        // `adder(3)(4)`: the callee is the previous call's value (`calleeExpr`,
+        // `callee == ""`) — evaluate it, park it on the stack while the
+        // arguments are staged, then `call_fun`, as a module-level `val`
+        // holding a fun is applied. Lowered as a name it was
+        // `{unresolved_call, '', 1}` at run time.
+        if (cc.calleeExpr) |ce| {
+            const arity: u32 = @intCast(cc.args.len + cc.trailing.len);
+            try self.lowerExprIntoX0(ce.*);
+            const fun_y = self.next_y;
+            self.next_y += 1;
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(fun_y));
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(fun_y), Dst.xr(arity));
+            try beamEmitter.writeCallFun(self.out, arity);
+            if (mode == .tail) try self.emitReturn();
+            return;
+        }
         if (cc.is_builtin) {
             try self.lowerBuiltinCall(cc, mode);
             return;
