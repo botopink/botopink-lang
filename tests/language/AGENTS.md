@@ -66,6 +66,20 @@ before `main`, dependencies first, and a val read twice is evaluated once — on
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
+C-03's beam half adds `run/std_template_host_fns_across_modules` — std host functions whose
+`@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
+`encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's
+module through a folder namespace and a leaf import, on commonJS, erlang and beam (`.targets`: wasm
+refuses std's own call sites of those cells).
+`00 · 03-beam`'s split row adds `run/string_split_empty_separator` — `split("")` cuts into UTF-8
+codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator and an empty separator
+held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).
+01-std step 2 adds `run/std_asserts_on_every_target` — `import {testing.asserts}` and its pure
+assertions on all four targets — and `run/std_asserts_host_cell_on_wasm` — `asserts.deepEquals`
+on commonJS, erlang and beam, refused on wasm at the call (`.wasm.expect`: `deepEquals` calls
+`canonical`, which has no wasm binding). The same front's `reject/result_field_read` and
+`reject/result_unknown_method` refuse a member of a `@Result` that is not one of its methods
+(`result-member-not-a-method`).
 The onze front's compiler findings (`specs/1.0.10-beta/06-onze/49-onze-stand-up`, F1–F10) add a
 cell each: `modules/pub_val_in_a_test` (F1 — a sibling's `pub val` read by a TEST: the erlang runner
 did not load the sibling; the first project cell of the test kind), `modules/import_type_closure_across_modules`

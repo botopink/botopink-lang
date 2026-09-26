@@ -1299,15 +1299,24 @@ const str_trim = func("__str_trim", &.{ "s", "mode" }, .i32, i32s(&.{ "a", "b", 
     call("__str_slice"),
 });
 
+/// Whether byte `i` of string `s` starts a UTF-8 codepoint (it is not a
+/// `10xxxxxx` continuation byte).
+fn leadByte(comptime i: []const u8) [7]Instr {
+    return .{ get("s"), get(i), op("add"), load8(4), c32(192), op("and"), c32(128) };
+}
+
 /// `s` cut at every `sep`, as an array of fresh strings. An empty `sep` cuts
-/// between every byte.
+/// before every UTF-8 codepoint (`"%0Aéz"` → 5 pieces, as on the other
+/// targets); `""` answers no piece.
 const str_split = func("__str_split", &.{ "s", "sep" }, .i32, i32s(&.{ "n", "m", "i", "cnt", "arr", "start", "k" }), &([_]Instr{
     get("s"),   load(0),           set("n"),
     get("sep"), load(0),           set("m"),
     get("m"),   op("eqz"),
-    when(&([_]Instr{ get("n"), call("__arr_new"), set("arr") } ++ [_]Instr{loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++
-        slot("arr", "i") ++ [_]Instr{ get("s"), get("i"), get("i"), c32(1), op("add"), call("__str_slice"), store(0), get("i"), c32(1), op("add"), set("i"), again }))} ++
-        .{ get("arr"), ret })),
+    when(&([_]Instr{loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ leadByte("i") ++ [_]Instr{
+        op("ne"), when(&.{ get("cnt"), c32(1), op("add"), set("cnt") }), get("i"), c32(1), op("add"), set("i"), again,
+    }))} ++ [_]Instr{ get("cnt"), call("__arr_new"), set("arr"), c32(1), set("i") } ++ [_]Instr{loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ leadByte("i") ++ [_]Instr{
+        op("ne"), when(&(slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("i"), call("__str_slice"), store(0), get("k"), c32(1), op("add"), set("k"), get("i"), set("start") })), get("i"), c32(1), op("add"), set("i"), again,
+    }))} ++ [_]Instr{ get("n"), when(&(slot("arr", "k") ++ [_]Instr{ get("s"), get("start"), get("n"), call("__str_slice"), store(0) })), get("arr"), ret })),
     c32(1),     set("cnt"),
     loop(&.{
         get("i"), get("m"),  op("add"), get("n"),         op("gt_u"),                                                                                                                                      brk,

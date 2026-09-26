@@ -1,0 +1,13 @@
+//// Decision 67 on wasm, one call away from the host cell: `deepEquals` is a
+//// botopink function whose body calls `testing.asserts`' private `canonical`
+//// (Node and Erlang templates, no wasm binding). The program runs on
+//// commonJS, erlang and beam; wasm refuses the CALL, where it is written,
+//// naming the function and the cell it reaches (`.wasm.expect`) — not the
+//// import, which `std_asserts_on_every_target` builds on wasm.
+
+import {testing.asserts} from "std";
+
+pub fn main() {
+    @print(asserts.errorText(asserts.deepEquals([1, 2], [1, 2])).length);
+    @print(asserts.errorText(asserts.deepEquals([1, 2], [2, 1])));
+}

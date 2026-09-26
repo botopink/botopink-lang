@@ -577,8 +577,9 @@ fn loadOne(
         const mod_path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ dep, stem });
         errdefer gpa.free(mod_path);
         // `@src().file` (decision 73) is relative to the dependency's own
-        // package root: `<manifest.src>/<file>`.
-        const src_path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ m.src, file });
+        // package root: `<manifest.src>/<file>`, a trailing `/` of `src`
+        // dropped (`"src/"` gave `src//x.bp`).
+        const src_path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ std.mem.trimEnd(u8, m.src, "/"), file });
         errdefer gpa.free(src_path);
         std.mem.replaceScalar(u8, src_path, '\\', '/');
 

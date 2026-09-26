@@ -29,9 +29,9 @@
 ////      passes STD-001 on every target. The four functions that need a host
 ////      — `matches`, `deepEquals`, `throws`, `throwsWith` — sit on the three
 ////      PRIVATE cells `regexMatches`, `canonical` and `tryCatch`, which carry
-////      Node and Erlang templates: on beam and wasm those four are unresolved
-////      at lowering, which does not matter because `botopink test` does not
-////      run there (`asserts-api.md` § Backend notes).
+////      Node and Erlang templates: beam compiles the Erlang ones at build
+////      time, and wasm, which has no host, emits the module without those
+////      four and refuses a program that calls one, at the call.
 ////
 //// The module is named `asserts` (plural) because the unqualified `assert`
 //// is a reserved keyword statement; `import {asserts} from "std";` then
@@ -81,12 +81,11 @@ pub fn notEquals<T>(actual: T, expected: T) -> @Result<void, string> {
 }
 
 // Fails when `|actual - expected| > tolerance`. Pick a tolerance that fits the
-// operation's numerical budget, not `0.0`. The absolute value is an inline
-// `if` rather than `math.abs` — a std module does not import another.
+// operation's numerical budget, not `0.0`. `|d| > t` is written `d > t || -d >
+// t` rather than through `math.abs` — a std module does not import another.
 pub fn approxEquals(actual: f64, expected: f64, tolerance: f64) -> @Result<void, string> {
     val diff = actual - expected;
-    val absDiff = if (diff >= 0.0) diff else 0.0 - diff;
-    if (absDiff > tolerance) {
+    if (diff > tolerance || 0.0 - diff > tolerance) {
         throw "asserts.approxEquals: values differ by more than tolerance";
     }
     return;

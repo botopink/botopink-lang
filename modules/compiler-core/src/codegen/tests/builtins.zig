@@ -572,7 +572,7 @@ test "js: unknown builtin ---- Src is not src" {
 
 test "js: test body ---- try on an Error fails the test" {
     // Decision 74 — a test body is a fallible context: `try` on an `Error(e)`
-    // ends the test as `FAIL <name>  (<e>)  at main.bp:<line>` on both
+    // ends the test as `FAIL <name>  (<e>)  at <file>:<line>` on both
     // `botopink test` targets, an empty `return;` is the `ok` position of a
     // `-> @Result<void, string>`, and a `try` inside a lambda is the lambda's.
     // The RUN LOG is the runner's own output: one FAIL, two ok.

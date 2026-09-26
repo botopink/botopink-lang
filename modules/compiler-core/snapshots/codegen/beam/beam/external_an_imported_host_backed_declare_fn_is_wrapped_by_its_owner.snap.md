@@ -15,16 +15,40 @@ pub declare fn nodeOnly(s: string) -> void;
 ----- BEAM ASSEMBLY -- hostlib.S
 ```erlang
 {module, test@hostlib}.
-{exports, [{hostLen, 1}]}.
+{exports, [{hostKey, 1}, {hostLen, 1}]}.
 {attributes, []}.
-{labels, 4}.
+{labels, 8}.
 
-{function, hostLen, 1, 3}.
-  {label, 2}.
+{function, hostKey, 1, 5}.
+  {label, 4}.
     {line, [{location, "test@hostlib.erl", 1}]}.
+    {func_info, {atom, test@hostlib}, {atom, hostKey}, 1}.
+  {label, 5}.
+    {call_only, 1, {f, 3}}.
+
+{function, hostLen, 1, 7}.
+  {label, 6}.
+    {line, [{location, "test@hostlib.erl", 2}]}.
     {func_info, {atom, test@hostlib}, {atom, hostLen}, 1}.
-  {label, 3}.
+  {label, 7}.
     {call_ext_only, 1, {extfunc, erlang, length, 1}}.
+
+{function, '__bp_tpl_0', 1, 3}.
+  {label, 2}.
+    {func_info, {atom, test@hostlib}, {atom, '__bp_tpl_0'}, 1}.
+  {label, 3}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test_heap, 2, 0}.
+    {put_list, {y, 0}, nil, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {literal, [126, 48, 116, 112]}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, io_lib, format, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext_last, 1, {extfunc, erlang, iolist_to_binary, 1}, 2}.
 ```
 
 ----- RUN LOG -----

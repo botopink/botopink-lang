@@ -113,7 +113,7 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 `scripts/gate.sh [--cold] [--staged]` — one ordered run, stopping at the first
 failing stage (stages 4b–10 run side by side and are reported in this order —
 § Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
---check` on staged `.zig`), `zig build`, `scripts/format-check.sh` (`botopink
+--check` on staged `.zig`, no staged `*.snap.new` / `*.snap.md.new` candidate), `zig build`, `scripts/format-check.sh` (`botopink
 format --check` over the compiler's canonical `.bp` trees — decision 66's
 caller), `zig build test` (`--cold` deletes
 `modules/compiler-core/.botopinkbuild/runtime-cache` first),

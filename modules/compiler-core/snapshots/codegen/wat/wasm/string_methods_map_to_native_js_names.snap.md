@@ -394,34 +394,98 @@ fn main() {
     i32.eqz
     (if
       (then
-        local.get $n
-        call $__arr_new
-        local.set $arr
         (block $brk
           (loop $cont
             local.get $i
             local.get $n
             i32.ge_u
             br_if $brk
-            local.get $arr
-            i32.const 4
-            i32.add
-            local.get $i
-            i32.const 4
-            i32.mul
-            i32.add
             local.get $s
             local.get $i
-            local.get $i
-            i32.const 1
             i32.add
-            call $__str_slice
-            i32.store
+            i32.load8_u offset=4
+            i32.const 192
+            i32.and
+            i32.const 128
+            i32.ne
+            (if
+              (then
+                local.get $cnt
+                i32.const 1
+                i32.add
+                local.set $cnt
+              )
+            )
             local.get $i
             i32.const 1
             i32.add
             local.set $i
             br $cont
+          )
+        )
+        local.get $cnt
+        call $__arr_new
+        local.set $arr
+        i32.const 1
+        local.set $i
+        (block $brk
+          (loop $cont
+            local.get $i
+            local.get $n
+            i32.ge_u
+            br_if $brk
+            local.get $s
+            local.get $i
+            i32.add
+            i32.load8_u offset=4
+            i32.const 192
+            i32.and
+            i32.const 128
+            i32.ne
+            (if
+              (then
+                local.get $arr
+                i32.const 4
+                i32.add
+                local.get $k
+                i32.const 4
+                i32.mul
+                i32.add
+                local.get $s
+                local.get $start
+                local.get $i
+                call $__str_slice
+                i32.store
+                local.get $k
+                i32.const 1
+                i32.add
+                local.set $k
+                local.get $i
+                local.set $start
+              )
+            )
+            local.get $i
+            i32.const 1
+            i32.add
+            local.set $i
+            br $cont
+          )
+        )
+        local.get $n
+        (if
+          (then
+            local.get $arr
+            i32.const 4
+            i32.add
+            local.get $k
+            i32.const 4
+            i32.mul
+            i32.add
+            local.get $s
+            local.get $start
+            local.get $n
+            call $__str_slice
+            i32.store
           )
         )
         local.get $arr

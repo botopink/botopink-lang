@@ -825,6 +825,12 @@ const Emitter = struct {
     /// none was ever promised. Decision 67 — calling one is refused where it is
     /// written, not lowered to a trap (see `lowerPlainCall`).
     external_missing: std.StringHashMap(void),
+    /// A bodied function that reaches a function of `external_missing` (or of
+    /// this map) → the host cell it reaches (`collectHostBound`). It is not
+    /// emitted, and a call to it is refused where it is written, naming the
+    /// cell — the rule a host METHOD with no wasm binding already follows
+    /// (`hostMethods.zig`). `main/0` is never in it: its body is the program.
+    host_bound: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
     /// the driver gets a located diagnostic naming the fn and this backend
     /// instead of the bare error name.
@@ -969,6 +975,7 @@ const Emitter = struct {
         self.iface_assoc.deinit();
         self.host_fns.deinit();
         self.external_missing.deinit();
+        self.host_bound.deinit(self.alloc);
         self.aliases.deinit();
         self.pattern_locals.deinit();
         self.assoc_needed.deinit(self.alloc);
@@ -980,7 +987,7 @@ const Emitter = struct {
     /// Lower one top-level declaration into module items.
     fn emitDecl(self: *Emitter, decl: ast.DeclKind) !void {
         switch (decl) {
-            .@"fn" => |f| if (!f.isHost()) try self.emitFn(f),
+            .@"fn" => |f| if (!f.isHost() and !self.host_bound.contains(f.name)) try self.emitFn(f),
             .val => |v| {
                 if (!isSyntheticEntrypointVal(v)) {
                     try self.emitGlobalVal(v);
@@ -1006,6 +1013,39 @@ const Emitter = struct {
             // owner's declarations in front of this module's.
             // A type alias is erased: the checker substituted its target.
             .use, .behavior, .delegate, .mod, .@"test", .typeAlias => {},
+        }
+    }
+
+    /// Decision 67 on a function that is not itself host-backed: one whose
+    /// body calls a host cell with no wasm binding — directly, or through
+    /// another such function — cannot run here, so it goes into `host_bound`
+    /// with the cell it reaches, until nothing changes. `testing.asserts`'
+    /// `deepEquals` calls the private `canonical` (Node and Erlang templates
+    /// only): the module is emitted without it and imports on wasm, and a
+    /// program that CALLS `deepEquals` is refused at that call
+    /// (`lowerPlainCall`). Refusing inside `deepEquals`'s own body failed
+    /// every program that imported the module, called or not.
+    fn collectHostBound(self: *Emitter, program: ast.Program) !void {
+        if (self.external_missing.count() == 0) return;
+        var changed = true;
+        while (changed) {
+            changed = false;
+            for (program.decls) |decl| {
+                const f = switch (decl) {
+                    .@"fn" => |x| x,
+                    else => continue,
+                };
+                if (f.isHost() or f.body.len == 0 or isMain0(f) or self.host_bound.contains(f.name)) continue;
+                var seen: std.ArrayListUnmanaged([]const u8) = .empty;
+                for (f.body) |st| try self.collectIdents(st.expr, &seen);
+                for (seen.items) |n| {
+                    const cell = if (self.external_missing.contains(n)) n else self.host_bound.get(n) orelse continue;
+                    try self.host_bound.put(self.alloc, f.name, cell);
+                    _ = self.fn_sigs.remove(f.name);
+                    changed = true;
+                    break;
+                }
+            }
         }
     }
 
@@ -1115,6 +1155,7 @@ const Emitter = struct {
             },
             else => {},
         };
+        try self.collectHostBound(program);
         // Decision 107 — an import bound under an alias: the callee a body
         // spells is the alias, the function the linked owner defines is the
         // declared name. Register the alias beside the declared name in every
@@ -5417,6 +5458,15 @@ const Emitter = struct {
                 return;
             }
         }
+        // A call of a function that reaches a host cell (`host_bound`): bare,
+        // or qualified by its module (`asserts.deepEquals(a, b)` — the
+        // receiver is a namespace, which carries no instance lowering).
+        if (cc.calleeExpr == null and (cc.receiver == null or self.instance_lowerings.get(loc) == null)) {
+            if (self.host_bound.get(self.import_aliases.get(cc.callee) orelse cc.callee)) |cell| {
+                self.missing_external = .{ .name = cc.callee, .target = "wasm", .loc = loc, .via = cell };
+                return error.MissingExternalTarget;
+            }
+        }
         if (self.fn_sigs.get(cc.callee)) |sig| {
             var base: usize = 0;
             // `recv.m(a)` against a top-level `fn m(self, a)`: the receiver is
@@ -5657,12 +5707,12 @@ const Emitter = struct {
                 // `?string`, absent as the pointer 0. `.str` is its stack
                 // shape; `optInfoOf` is what routes the print through
                 // `$__print_opt_str`, and `$__str_at` is the lowering.
-                 .{ "at", 1, .str },
+                .{ "at", 1, .str },
                 // `00 · 05-wasm` step 6's audit: the rest of `primitives.bp`'s
                 // `String` that has a byte-level answer.
-                .{ "charCodeAt", 1, .i32 },  .{ "lastIndexOf", 1, .i32 },  .{ "padStart", 2, .str },
-                .{ "padEnd", 2, .str },      .{ "replace", 2, .str },      .{ "replaceAll", 2, .str },
-                .{ "chars", 0, .arr },
+                        .{ "charCodeAt", 1, .i32 },   .{ "lastIndexOf", 1, .i32 },
+                .{ "padStart", 2, .str },   .{ "padEnd", 2, .str },       .{ "replace", 2, .str },
+                .{ "replaceAll", 2, .str }, .{ "chars", 0, .arr },
             },
             .bool => &.{
                 .{ "negate", 0, .bool_ },      .{ "nor", 1, .bool_ },          .{ "nand", 1, .bool_ },
@@ -5823,8 +5873,8 @@ const Emitter = struct {
         } else if (eq(u8, name, "toString")) {
             // already the string
         } else if (eq(u8, name, "chars")) {
-            // One fresh string per byte: `$__str_split` with an empty
-            // separator cuts between every byte.
+            // One fresh string per UTF-8 codepoint: `$__str_split` with an
+            // empty separator cuts before every codepoint.
             const empty = try self.internString("");
             try self.emit(try self.constInt(empty.offset));
             try self.emit(b.helper(.str_split));

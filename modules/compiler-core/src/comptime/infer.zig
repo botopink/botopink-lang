@@ -8829,6 +8829,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             // this the field falls through every arm below and lands on a fresh
             // variable, so `a.x` on an `unknown` checks silently.
             try refuseUnknownUse(env, recvType, loc, "read a field of");
+            try refuseResultMemberAccess(env, recvType, ia.member, false, loc);
             // Decision 45 (1.0.5) — a member read off a `?T` is an error
             // naming `?.`: the value may be absent, and a plain `.` used to
             // check and then read a field off `null` (or, through a tuple
@@ -10576,6 +10577,39 @@ fn inferResultNamespaceCall(
     } } } };
 }
 
+/// The builtin methods of a `@Result<R, E>` value — `inferResultOptionMethod`
+/// resolves each; `libs/std/src/builtins.d.bp` documents them.
+const result_methods = [_][]const u8{ "map", "flatMap", "unwrapOr", "isOk", "isError" };
+
+/// A member of a `@Result<R, E>` value is one of its builtin methods, or
+/// refused. A `@Result` is its `Ok` / `Error` carrier, not the payload:
+/// `querystring.parse(q).length` read a field off `{ok, V}` — it checked,
+/// printed `null` on commonJS and crashed on erlang. A field read and a call
+/// of any other name are refused, located at the member, naming `try` and
+/// `unwrapOr`. `recvTy` is the receiver's type after an optional chain's
+/// unwrapping; a non-`@Result` receiver passes, and so does every receiver
+/// while the program declares a type named `Result` of its own.
+fn refuseResultMemberAccess(env: *Env, recvTy: *T.Type, member: []const u8, is_call: bool, loc: ast.Loc) InferError!void {
+    const t = recvTy.deref();
+    if (t.* != .named or !std.mem.eql(u8, t.named.name, "Result")) return;
+    // A program's own `type Result { … }` is that type, with its own fields
+    // and methods (`unknownField` answers for it), not the builtin carrier.
+    if (env.lookupTypeDef("Result") != null) return;
+    if (is_call) for (result_methods) |m| if (std.mem.eql(u8, m, member)) return;
+    const msg = try std.fmt.allocPrint(
+        env.arena,
+        diagnostics.result_member_not_a_method ++ ": `{s}` is not a member of a `@Result` — take the payload with `try` or `unwrapOr(<default>)` first; a `@Result`'s methods are `map`, `flatMap`, `unwrapOr`, `isOk` and `isError`",
+        .{member},
+    );
+    const hint = try std.fmt.allocPrint(
+        env.arena,
+        "A `@Result` is `Ok` or `Error`, not its payload: take the payload with `try` (`val v = try r;`, then `v.{s}`) or with a default (`r.unwrapOr(<default>).{s}`).",
+        .{ member, member },
+    );
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
 /// Resolve a builtin method call on a `@Result<R, E>` or `@Option<T>` receiver
 /// (`.map` / `.flatMap` / `.unwrapOr` / `.isOk` / `.isError`).
 ///
@@ -12159,6 +12193,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 if (try inferResultOptionMethod(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |dispatched| {
                     return dispatched;
                 }
+                try refuseResultMemberAccess(env, recvPtr.getType(), call.callee, true, loc);
 
                 // Compiler-provided template methods on `expr` / `Binding`
                 // receivers (expr-templates F4) — comptime-only.
