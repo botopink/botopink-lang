@@ -12,6 +12,9 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 keyword and its `#[@BeamMemory.…]` annotation, and a labelled annotation
 argument keeps its label (`assertFormat` + `assertIdempotent`). The last row is the type
 alias (decision 118 rule 1): plain, generic, `pub` and a function-type target, `assertFormatLossless`.
+`expressions.zig` carries front 24's new forms through `assertFormatLossless` (step E2): the
+annotated loop's `iter loop` / `stream loop`, and `async { … }` / `async {}`, `iter while`, `iter for`,
+`stream while`, `stream for`, `try await x` and `yield :label`.
 
 ## The property `assertIdempotent` does not imply
 

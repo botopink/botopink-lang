@@ -541,6 +541,41 @@ test "format: for, for await, while, loop and the annotated loop round-trip" {
     );
 }
 
+test "format: the front-24 forms round-trip — async block, the prefixed while / for, try await, yield :label" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(xs: i32[]) -> @Task<@Result<i32, string>> {
+        \\    val t = async {
+        \\        return try await load(1);
+        \\    };
+        \\    val e = async {};
+        \\    var i = 0;
+        \\    val w = iter while (i < 3) {
+        \\        i = i + 1;
+        \\        yield i;
+        \\    };
+        \\    val c = iter for (xs) { x ->
+        \\        yield x * 2;
+        \\    };
+        \\    val sw = stream while (i > 0) {
+        \\        i = i - 1;
+        \\        yield await load(i);
+        \\    };
+        \\    val sf = stream for (xs) { x ->
+        \\        yield x;
+        \\    };
+        \\    val n = try await load(2);
+        \\    val m = await t;
+        \\    return n;
+        \\}
+        \\
+        \\fn g(xs: i32[]) -> @Iterator<i32> :out {
+        \\    for (xs) { x ->
+        \\        yield :out x;
+        \\    };
+        \\}
+    );
+}
+
 test "format: an empty loop body prints on one line and a body breaks" {
     try h.assertFormat(std.testing.allocator,
         \\fn f(xs: i32[]) {
