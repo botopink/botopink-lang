@@ -7,8 +7,10 @@
 //! (specs/1.0.4-beta/05-cli-residuals/mutation-matrix.md): a rejecting fixture
 //! proves the failure path and is compared on the **whole** message; an
 //! accepting fixture over the same decorator body proves the lowering computed
-//! a real value, and asserts the shape of the Erlang the body lowered to
-//! (`OkData.comptime_traces`). A mutation of the lowering that keeps a single
+//! a real value, and asserts the shape the body lowered to
+//! (`OkData.comptime_traces`) — on the BEAM runtime the listing is the BEAM
+//! assembly that was loaded, so a lowering shows as the call it makes
+//! (`{extfunc, lists, foreach, 2}` for `lists:foreach/2`). A mutation of the lowering that keeps a single
 //! bit ("the first element is visited", "the length is greater than five")
 //! reds one of the two.
 
@@ -16,8 +18,8 @@ const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
 const h = @import("helpers.zig");
 
-/// The decorator body is accepted, and the Erlang it lowered to contains
-/// `lowering` (e.g. `lists:foreach(`) — the lowering the test guards.
+/// The decorator body is accepted, and the BEAM assembly it lowered to contains
+/// `lowering` (e.g. `{extfunc, lists, foreach, 2}`) — the lowering the test guards.
 fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8, lowering: []const u8) !void {
     const io = std.testing.io;
     const build_root = comptime h.buildRootPathFromSrc(loc);
@@ -110,7 +112,7 @@ test "decorator regression: loop in body accepts a clean record through lists:fo
         \\
         \\#[validate]
         \\type AllGood(good: i32, fine: string)
-    , "lists:foreach(");
+    , "{extfunc, lists, foreach, 2}");
 }
 
 // ── regression: conditional in body ───────────────────────────────────────────
@@ -142,7 +144,7 @@ test "decorator regression: conditional in body accepts exactly five fields" {
         \\
         \\#[checkFields]
         \\type Five(a: i32, b: i32, c: i32, d: i32, e: i32)
-    , "'__bp_len'(");
+    , "{extfunc, bp_comptime_decorator, '__bp_len', 2}");
 }
 
 test "decorator regression: conditional in body accepts three fields" {
@@ -150,7 +152,7 @@ test "decorator regression: conditional in body accepts three fields" {
         \\
         \\#[checkFields]
         \\type Three(a: i32, b: i32, c: i32)
-    , "'__bp_len'(");
+    , "{extfunc, bp_comptime_decorator, '__bp_len', 2}");
 }
 
 // ── regression: string concat in body ─────────────────────────────────────────
@@ -180,7 +182,7 @@ test "decorator regression: string concat in body accepts another name through '
         \\
         \\#[nameCheck]
         \\type Allowed(x: i32)
-    , "'__bp_add'(");
+    , "{extfunc, bp_comptime_decorator, '__bp_add', 2}");
 }
 
 // ── regression: @emit in body ─────────────────────────────────────────────────
@@ -197,7 +199,7 @@ test "decorator regression: @emit in body" {
         \\#[addHelper]
         \\type Service(x: i32)
         \\fn useHelper() -> i32 { return helper_Service(); }
-    , "'__bp_add'(",
+    , "{extfunc, bp_comptime_decorator, '__bp_add', 2}",
         \\{"kind":"ok","contributions":["pub fn helper_Service() -> i32 { return 42; }"]}
     );
 }
@@ -230,5 +232,5 @@ test "decorator regression: fold fusion accepts five fields through lists:foldl"
         \\
         \\#[countFields]
         \\type Five(a: i32, b: i32, c: i32, d: i32, e: i32)
-    , "lists:foldl(");
+    , "{extfunc, lists, foldl, 3}");
 }

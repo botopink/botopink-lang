@@ -41,5 +41,7 @@ test {
     _ = @import("./runtime/reply_order.zig");
     _ = @import("./runtime/wat/erl_parse.zig");
     _ = @import("./runtime/wat/program.zig");
+    _ = @import("./runtime/beam/lower.zig");
+    _ = @import("./runtime/beam/program.zig");
     _ = @import("./runtime/wat/rt.zig");
 }

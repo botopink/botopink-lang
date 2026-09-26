@@ -11,16 +11,29 @@ const replyOrder = @import("runtime/reply_order.zig");
 
 pub const Kind = enum { template, decorator };
 
-/// What the listing of an evaluation is: the generated Erlang (the BEAM
-/// runtime compiles it) or the wasm the wat runtime lowered it to.
+/// What the listing of an evaluation is: the BEAM assembly the BEAM runtime
+/// loaded (front 14 step 3), the generated Erlang when that declaration fell
+/// back to source (the listing's first line says why), or the wasm the wat
+/// runtime lowered it to.
 pub const Lang = enum {
+    beam,
     erlang,
     wat,
 
     fn section(l: Lang) []const u8 {
         return switch (l) {
+            .beam => "COMPTIME BEAM ASSEMBLY",
             .erlang => "COMPTIME ERLANG",
             .wat => "COMPTIME WAT",
+        };
+    }
+
+    /// The fence's info string: `.S` is Erlang term syntax, fenced as the
+    /// codegen `BEAM ASSEMBLY` sections are.
+    fn fence(l: Lang) []const u8 {
+        return switch (l) {
+            .beam, .erlang => "erlang",
+            .wat => "wat",
         };
     }
 };
@@ -43,7 +56,7 @@ pub const Entry = struct {
 pub fn render(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), entries: []const Entry) !void {
     for (entries) |e| {
         const kind = @tagName(e.kind);
-        try buf.print(allocator, "----- {s} -- {s} {s}\n```{s}\n", .{ e.lang.section(), kind, e.name, @tagName(e.lang) });
+        try buf.print(allocator, "----- {s} -- {s} {s}\n```{s}\n", .{ e.lang.section(), kind, e.name, e.lang.fence() });
         try appendBlock(allocator, buf, e.listing);
         try buf.print(allocator, "----- COMPTIME REPLY -- {s} {s}\n", .{ kind, e.name });
         if (try prettyJson(allocator, e.reply)) |json| {

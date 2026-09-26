@@ -98,17 +98,20 @@ pub fn evaluate(
         .response => |r| r,
         .unavailable => |why| return .{ .err = why },
     };
-    if (traces) |list| try list.append(arena, .{
-        .kind = .decorator,
-        .name = dfn.name,
-        .listing = try hostRuntime.listingOf(arena, source.module, source.code, source.listing),
-        .lang = if (hostRuntime.current() == .wat) .wat else .erlang,
-        .reply = switch (response) {
-            .ok => |stdout| stdout,
-            .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),
-            .runtime_error => |detail| try std.fmt.allocPrint(arena, "runtime error: {s}", .{detail}),
-        },
-    });
+    if (traces) |list| {
+        const listing = try hostRuntime.listingOf(arena, "decorator", source.module, source.code, source.listing);
+        try list.append(arena, .{
+            .kind = .decorator,
+            .name = dfn.name,
+            .listing = listing.text,
+            .lang = listing.lang,
+            .reply = switch (response) {
+                .ok => |stdout| stdout,
+                .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),
+                .runtime_error => |detail| try std.fmt.allocPrint(arena, "runtime error: {s}", .{detail}),
+            },
+        });
+    }
     return switch (response) {
         .ok => |stdout| parseOutcome(arena, stdout),
         .compile_error => |detail| .{ .err = try errorText(arena, "the decorator module did not compile", detail) },

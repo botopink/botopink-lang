@@ -313,7 +313,7 @@ up from this repo), runs `npm ci` when `node_modules/` is absent, then execs
 | `legacy`   | Grep every snapshot's SOURCE block for retired surface (`*fn`, legacy `@external(<target>, …)`, `@[name]`, `when($argc==N)`, `string.length()`, `value:length()`). |
 | `values`   | Dump `(backend, source_sha1, path, runlog_text)` for observable codegen snapshots with a non-empty RUN LOG, for cross-checking against an external runner. |
 | `coverage` | Pivot of `runlog` by backend × label × state; printed and saved. |
-| `runtime-parity` | Front 18 step 4, a gate stage: every `codegen/<beam\|wat>/…` and `comptime/runtime/<beam\|wat>/…` file has its pair, and each pair is `diff`-equal once `withoutListings` sets aside the `COMPTIME ERLANG`/`COMPTIME WAT` fenced bodies (the only text the runtimes may differ in). A difference or a missing member prints a unified diff / a `MISSING` line and exits 3 — a defect in one runtime, never re-recorded away; no allow-list. |
+| `runtime-parity` | Front 18 step 4, a gate stage: every `codegen/<beam\|wat>/…` and `comptime/runtime/<beam\|wat>/…` file has its pair, and each pair is `diff`-equal once `withoutListings` sets aside the `COMPTIME BEAM ASSEMBLY`/`COMPTIME ERLANG`/`COMPTIME WAT` fenced bodies (the only text the runtimes may differ in). A difference or a missing member prints a unified diff / a `MISSING` line and exits 3 — a defect in one runtime, never re-recorded away; no allow-list. |
 | `orphans`  | `kind\tpath` for every `*.snap.md` on disk (compiler-core + language-server) that no test checked in the traced run (`orphan`), and every traced path absent from disk (`missing`). Exits 3 when either list is non-empty. |
 | `review`   | The review worksheet, `suite\tslug\ttest\tpaths\tverdict`, one row per unique snapshot: codegen per target, comptime per directory (`comptime/{ast,errors,templates}` — one file per slug since the layout dedup). `test` is the test `file:line` from the trace (comma-joined when several tests write the same path — a slug collision); a snapshot traced without a location falls back to the test-source string literal that names it (the LSP asserts take a literal slug); `ORPHAN` when no test checked it. `verdict` is seeded from the 1.0.1-beta review reports (`--reports=<dir>`, default `../../specs/1.0.1-beta/06-snapshot-review` from the bot-lang root): every table row whose `verdict` column — located by its header cell, never by index — names the slug, restricted to the row's backend cell, as `<verdict> [report:line]`; `-` when no report names it. Report rows with a verdict that name no snapshot on disk (renamed or deleted tests, tests without a snapshot, harness-level rows) go to `review-unmatched.tsv`. Exits 3 when a row has no test `file:line`. |
 
@@ -365,7 +365,12 @@ from `modules/compiler-core/snapshots/codegen/beam/beam/`, rewrites its
 with `erlc +from_asm`. A recorded module exports only its entrypoints, and
 `erlc +from_asm` drops an unexported function before `beam_validator` runs, so
 a register-liveness bug in a method nothing exports stays invisible in the
-RUN LOG; this audit makes it a rejection. Each rejected module prints
+RUN LOG; this audit makes it a rejection. A `----- COMPTIME BEAM ASSEMBLY`
+block — a comptime body the compiler lowered and assembled itself and the node
+loads with no validator in between (front 14 step 3) — is assembled the same
+way, so this is where `beam_validator` reads the comptime lowering's output;
+pass `modules/compiler-core/snapshots/comptime/runtime/beam/*.snap.md` to
+cover the comptime tree's five. Each rejected module prints
 `REJECTED <slug> <module>` plus the validator's function, offset and reason;
 the last line is `beam_export_audit: <ok>/<total> modules assembled`. Exit `0`
 when every module assembled, `1` on any rejection, `2` on an argument error or

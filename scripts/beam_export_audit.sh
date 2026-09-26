@@ -10,6 +10,11 @@
 # exports form to name every `{function, Name, Arity, _}` form, and assembles
 # it. Read-only: the snapshots are not touched.
 #
+# A `----- COMPTIME BEAM ASSEMBLY` block (a comptime body the compiler
+# lowered and assembled itself, front 14 step 3) is assembled the same way:
+# the node loads it from bytes with no validator in between, so this is where
+# `beam_validator` reads it.
+#
 # Usage:
 #   scripts/beam_export_audit.sh [--jobs=N] [--keep=<dir>] [<snap.md>…]
 #
@@ -35,7 +40,7 @@ for a in "$@"; do
     case "$a" in
         --jobs=*) jobs="${a#--jobs=}" ;;
         --keep=*) keep="${a#--keep=}" ;;
-        -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
         --*) echo "beam_export_audit: unknown argument '$a'" >&2; exit 2 ;;
         *) files+=("$a") ;;
     esac
@@ -89,6 +94,7 @@ for f in "${files[@]}"; do
         }
         BEGIN { idx = start; in_asm = 0; want = 0; nl = 0; nf = 0 }
         /^----- BEAM ASSEMBLY -- / { want = 1; next }
+        /^----- COMPTIME BEAM ASSEMBLY -- / { want = 1; next }
         /^----- /                  { want = 0; next }
         want && /^```erlang/       { in_asm = 1; next }
         in_asm && /^```/           { in_asm = 0; want = 0; flush(); next }

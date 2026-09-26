@@ -3,10 +3,12 @@
 /// When the V1 classifier in `infer.zig` cannot reduce a template body by
 /// inspection, the body runs here:
 ///
-///   template `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─ `main/1` → .erl
+///   template `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─ `main/1` → Erlang text
 ///   captures + plain args ─ `Term` ─ comptime/runtime/etf ─ external term ─┐
-///     → comptime/runtime/persistent_erl `evalWithArg` (compile+load once,   │
-///       then call `<module>:main(<term>)` per call site) ←─────────────────┘
+///     → comptime/runtime/runtime `evalWithArg`: on the BEAM runtime the    │
+///       text lowered to `.beam` bytes (runtime/beam/) and loaded once, then │
+///       `<module>:main(<term>)` per call site; on the wat runtime the same  │
+///       text lowered to wasm ←─────────────────────────────────────────────┘
 ///     → JSON reply → `Outcome`
 ///
 /// The generated module carries the lowered body, the `'__bp_prim_…'` shims its
@@ -16,7 +18,7 @@
 /// (`runtime/prelude.zig`), and reached by the `-import` `emitComptimeModule`
 /// writes, so the body's own text is the same either way. **Nothing in the
 /// module depends on the call site**, so its content hash is a hash of the
-/// declaration: one `.erl` per template however many times it is called.
+/// declaration: one module per template however many times it is called.
 ///
 /// Reply format (`main/1`):
 ///   {"kind":"code","source":"…"}                  ← `q.build(src)` / `@code(src)`
@@ -123,17 +125,20 @@ pub fn evaluate(
         .response => |r| r,
         .unavailable => |why| return .{ .err = why },
     };
-    if (traces) |list| try list.append(arena, .{
-        .kind = .template,
-        .name = tfn.name,
-        .listing = try hostRuntime.listingOf(arena, source.module, source.code, source.listing),
-        .lang = if (hostRuntime.current() == .wat) .wat else .erlang,
-        .reply = switch (response) {
-            .ok => |stdout| stdout,
-            .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),
-            .runtime_error => |detail| try std.fmt.allocPrint(arena, "runtime error: {s}", .{detail}),
-        },
-    });
+    if (traces) |list| {
+        const listing = try hostRuntime.listingOf(arena, "template", source.module, source.code, source.listing);
+        try list.append(arena, .{
+            .kind = .template,
+            .name = tfn.name,
+            .listing = listing.text,
+            .lang = listing.lang,
+            .reply = switch (response) {
+                .ok => |stdout| stdout,
+                .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),
+                .runtime_error => |detail| try std.fmt.allocPrint(arena, "runtime error: {s}", .{detail}),
+            },
+        });
+    }
     return switch (response) {
         .ok => |stdout| parseOutcome(arena, stdout),
         .compile_error => |detail| .{ .err = try errorText(arena, "the template module did not compile", detail) },

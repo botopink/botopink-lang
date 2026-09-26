@@ -32,6 +32,8 @@ const is_wasm = builtin.cpu.arch.isWasm();
 const persistent_erl = if (is_wasm) struct {} else @import("persistent_erl.zig");
 const persistent_wat = @import("persistent_wat.zig");
 const watProgram = @import("wat/program.zig");
+const beamProgram = @import("beam/program.zig");
+const trace = @import("../trace.zig");
 
 pub const ComptimeRuntime = configMod.ComptimeRuntime;
 
@@ -130,9 +132,17 @@ pub fn evalOn(arena: std.mem.Allocator, io: std.Io, r: ComptimeRuntime, host: []
     };
 }
 
+/// The BEAM runtime: the module lowered to BEAM instructions and loaded as
+/// `.beam` bytes (cmd 4, no Erlang compiler — front 14 step 3); a module the
+/// lowering refuses is staged as `.erl` and compiled by the node (cmd 2), the
+/// per-declaration fallback its listing reports.
 fn evalBeam(arena: std.mem.Allocator, io: std.Io, host: []const u8, dir: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
-    const path = try ensureModule(arena, io, dir, module, code);
-    const response = persistent_erl.evalWithArg(arena, io, path, module, arg) catch |err| switch (err) {
+    const built = try beamProgram.build(module, try placeholderOf(arena, host), code);
+    const outcome = switch (built) {
+        .ok => |ok| persistent_erl.evalBeamWithArg(arena, io, ok.beam, module, arg),
+        .refused => persistent_erl.evalWithArg(arena, io, try ensureModule(arena, io, dir, module, code), module, arg),
+    };
+    const response = outcome catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => {
             // No message means `erl` is missing rather than a broken stream:
@@ -146,6 +156,13 @@ fn evalBeam(arena: std.mem.Allocator, io: std.Io, host: []const u8, dir: []const
         .compile_error => |b| .{ .compile_error = b },
         .runtime_error => |b| .{ .runtime_error = b },
     } };
+}
+
+/// The atom a listing names the module by: the evaluator's placeholder
+/// (`template_module`, `decorator_module`), so a listing does not move with
+/// the content hash in the real atom.
+fn placeholderOf(arena: std.mem.Allocator, host: []const u8) EvalError![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}_module", .{host});
 }
 
 fn evalWat(arena: std.mem.Allocator, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
@@ -164,25 +181,40 @@ fn evalWat(arena: std.mem.Allocator, module: []const u8, code: []const u8, arg: 
 
 // ── what a snapshot shows of an evaluation ───────────────────────────────────
 
-/// The listing of the module this thread's runtime ran: `erl_listing` (the
-/// lowered body and `main/1`, then `main/1`'s argument as `%%` comments) on
-/// the BEAM runtime; on the wat runtime the generated module's functions as
-/// lowered to wasm (`wat/program.zig`), then the same argument comments as
-/// `;;` lines — or the refusal, when the lowering refused the module.
-pub fn listingOf(arena: std.mem.Allocator, module: []const u8, code: []const u8, erl_listing: []const u8) EvalError![]const u8 {
-    if (current() == .beam) return erl_listing;
+/// What a snapshot shows of the module that ran, and in which language.
+pub const Listing = struct {
+    text: []const u8,
+    lang: trace.Lang,
+};
+
+/// The listing of the module this thread's runtime ran. On the BEAM runtime:
+/// the module as BEAM assembly (`beam/program.zig`), then `main/1`'s argument
+/// as `%%` comments — or, for a module the lowering refused, the Erlang it
+/// ran from (`erl_listing`: the lowered body and `main/1`, then the same
+/// comments) under a first line naming the refusal. On the wat runtime: the
+/// generated module's functions as lowered to wasm (`wat/program.zig`), then
+/// the same argument comments as `;;` lines — or the refusal.
+pub fn listingOf(arena: std.mem.Allocator, host: []const u8, module: []const u8, code: []const u8, erl_listing: []const u8) EvalError!Listing {
+    const marker = "\n%% main/1 argument";
+    const argument: ?[]const u8 = if (std.mem.indexOf(u8, erl_listing, marker)) |i| erl_listing[i + 1 ..] else null;
+    if (current() == .beam) {
+        const built = try beamProgram.build(module, try placeholderOf(arena, host), code);
+        return switch (built) {
+            .ok => |ok| .{ .lang = .beam, .text = if (argument) |a| try std.fmt.allocPrint(arena, "{s}\n{s}", .{ ok.listing, a }) else ok.listing },
+            .refused => |why| .{ .lang = .erlang, .text = try std.fmt.allocPrint(arena, "%% not lowered to BEAM assembly, run from this Erlang: {s}\n{s}", .{ why, erl_listing }) },
+        };
+    }
     const built = try watProgram.build(module, code);
     const body = switch (built) {
         .ok => |o| o.listing,
-        .refused => |why| return std.fmt.allocPrint(arena, ";; not lowered: {s}\n", .{why}),
+        .refused => |why| return .{ .lang = .wat, .text = try std.fmt.allocPrint(arena, ";; not lowered: {s}\n", .{why}) },
     };
     var out: std.ArrayListUnmanaged(u8) = .empty;
     try out.appendSlice(arena, std.mem.trimEnd(u8, body, "\n"));
     try out.append(arena, '\n');
-    const marker = "\n%% main/1 argument";
-    if (std.mem.indexOf(u8, erl_listing, marker)) |i| {
+    if (argument) |a| {
         try out.append(arena, '\n');
-        var lines = std.mem.splitScalar(u8, erl_listing[i + 1 ..], '\n');
+        var lines = std.mem.splitScalar(u8, a, '\n');
         while (lines.next()) |line| {
             if (line.len == 0) continue;
             try out.appendSlice(arena, ";;");
@@ -190,7 +222,7 @@ pub fn listingOf(arena: std.mem.Allocator, module: []const u8, code: []const u8,
             try out.append(arena, '\n');
         }
     }
-    return out.items;
+    return .{ .lang = .wat, .text = out.items };
 }
 
 // ── the BEAM runtime's staging ───────────────────────────────────────────────

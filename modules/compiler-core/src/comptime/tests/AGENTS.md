@@ -12,7 +12,7 @@ Inference/comptime tests, split by feature. Aggregated by the sibling barrel
 | Directory | Written by | Holds |
 |---|---|---|
 | `comptime/ast/` | `assertComptimeAst` (`../snapshot.zig`), through the `helpers.zig` wrapper | the typed-AST snapshot of a test that compiles (or records its `COMPILE DIAGNOSTIC`) — runtime-independent: the wrapper compiles the session on both comptime runtimes and fails `error.ComptimeAstDiffersByRuntime` if the two ASTs differ |
-| `comptime/runtime/{beam,wat}/` | `assertComptimeExchange` (`../snapshot.zig`), same wrapper | a test's decorator/template exchanges per comptime runtime (`SOURCE CODE`, `COMPTIME ERLANG` or `COMPTIME WAT`, `COMPTIME REPLY`) — only for a test where one ran (5 today); `snap_audit.sh --mode=runtime-parity` compares the pairs |
+| `comptime/runtime/{beam,wat}/` | `assertComptimeExchange` (`../snapshot.zig`), same wrapper | a test's decorator/template exchanges per comptime runtime (`SOURCE CODE`, `COMPTIME BEAM ASSEMBLY` or `COMPTIME WAT`, `COMPTIME REPLY`) — only for a test where one ran (5 today); `snap_audit.sh --mode=runtime-parity` compares the pairs |
 | `comptime/errors/` | `assertTypeErrorSnap` (`helpers.zig`) | the rendered type error of a test that must not infer |
 | `comptime/templates/` | `checkText` in `templates.zig` | the `@Expr` capture/expansion fixtures |
 

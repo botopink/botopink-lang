@@ -52,7 +52,8 @@
 #             under both comptime runtimes — codegen/beam/<t>/<slug> and
 #             codegen/wat/<t>/<slug>, the same for errors/ and for
 #             comptime/runtime/{beam,wat}/<slug> — and every pair is equal once
-#             the listing sections are set aside (`COMPTIME ERLANG` on beam,
+#             the listing sections are set aside (`COMPTIME BEAM ASSEMBLY` —
+#             or `COMPTIME ERLANG` for a body run from source — on beam,
 #             `COMPTIME WAT` on wat: the only text that may differ). A
 #             difference — a COMPTIME REPLY, a RUN LOG, generated code — is a
 #             defect in one runtime and is printed as a unified diff; a
@@ -238,11 +239,12 @@ normalizeTrace() {
 }
 
 # A snapshot with its comptime listing sections set aside: the header line
-# of `COMPTIME ERLANG` / `COMPTIME WAT` becomes `COMPTIME LISTING` and the
+# of `COMPTIME BEAM ASSEMBLY` / `COMPTIME ERLANG` / `COMPTIME WAT` becomes
+# `COMPTIME LISTING` and the
 # fenced body after it is dropped — the one part the runtimes may differ in.
 withoutListings() {
     awk '
-        /^----- COMPTIME (ERLANG|WAT) -- / { sub(/COMPTIME (ERLANG|WAT)/, "COMPTIME LISTING"); print; skip = 1; next }
+        /^----- COMPTIME (BEAM ASSEMBLY|ERLANG|WAT) -- / { sub(/COMPTIME (BEAM ASSEMBLY|ERLANG|WAT)/, "COMPTIME LISTING"); print; skip = 1; next }
         skip == 1 && /^```/ { skip = 2; next }
         skip == 2 { if ($0 ~ /^```$/) skip = 0; next }
         { print }
