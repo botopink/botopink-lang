@@ -1,0 +1,12 @@
+//// A keyword in a parameter's name position — and in a binding's — is
+//// `reserved-word-as-name`, naming the word. It was the catch-all "this
+//// token cannot appear here · unexpected `from`", whose hint sends the reader
+//// looking for a missing `;`.
+
+fn openerAfter(s: string, from: i32) -> i32 {
+    return s.length() + from;
+}
+
+pub fn main() {
+    @print(openerAfter("ab", 1));
+}

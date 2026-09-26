@@ -5,7 +5,7 @@ fn g(p: Pet) -> string { return case p { Dog(b) | Cat(b) -> f(b); }; }
 
 ----- ERROR
 error: type mismatch
-  ┌─ :3:63
+  ┌─ main.bp:3:63
   │
 3 │ fn g(p: Pet) -> string { return case p { Dog(b) | Cat(b) -> f(b); }; }
   │                                                               ^

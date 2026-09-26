@@ -15,7 +15,7 @@ val name = fn(c: Color) -> string {
 
 ----- ERROR
 error: unreachable case arm
-  ┌─ :10:16
+  ┌─ main.bp:10:16
   │
 10 │         Red -> "again";
   │                ^

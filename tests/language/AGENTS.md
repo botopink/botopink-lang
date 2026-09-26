@@ -104,6 +104,25 @@ enum declaring `Error`), `run/decorator_calls_module_function` and
 functions), `run/decorator_emitted_proxies_dispatch` (two proxies a decorator emits call their own
 types) and `modules/namespace_import_module` (decision 107's namespace form over a dependency's
 module and the project's own).
+The checker rows of `front/checker-rows` add a cell each, every one failing on the parent binary
+(or, where noted, pinning a rule the parent already held): `reject/self_param_free_fn` (`self`
+outside a type or behavior body is `self-param-outside-type`, at the name — jhonstart's
+`repro/self-param-free-fn`), `run/decl_type_name_spelled` (`@Decl`'s type names spell the type:
+`Array<string>`, `string[]`, `fn(i32) -> i32`, `#(string, string)`, `?i32`, a method's parameters
+and return), `reject/reserved_word_field_name` and `reject/reserved_word_param_name`
+(`reserved-word-as-name`, naming `from`), `run/external_wrapper_keeps_refusal` (a wrapper around a
+single-target host call inherits no restriction — refused on commonJS and wasm by
+`.<target>.expect` even though nothing calls it; the parent held this rule),
+`run/behavior_array_of_implementers` (`Array<Plugin>` of two implementers; `.targets`
+`commonJS erlang beam`, wasm answers `a a b b`), `modules/import_from_package_beside_same_name`
+(a project `pub fn attempt` beside another module's `import {match.attempt} from "pkg"`; wasm
+listed, the flat namespace), `run/host_array_slice_without_start` (commonJS's global `slice`
+patch reads a missing start as 0; `.targets commonJS`), `modules/decorator_calls_imported_function`
+and `modules/decorator_imported_function_name_conflict` (a decorator carries a function its module
+imports, and two functions of one name reaching one decorator are refused where it is applied),
+and decision 112's three rows — `modules/dsl_hygiene_private_helper`,
+`modules/dsl_hygiene_consumer_alias` and `modules/dsl_hygiene_consumer_double`, each printing `40`
+(the third's wasm line is the flat namespace's).
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
@@ -484,8 +503,8 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 | `modules/<name>/<target>.expect` | the `.<target>.expect` claim for a whole project: that target **refuses** it | exit ≠ 0 and the diagnostic contains line 1 (and ` --> <line 2>` when present — `src/<file>.bp:<L:C>`, the file named because a project has several). `modules/external_method_imported/wasm.expect` is the live one |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **Sixteen cells carry
-`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `behavior_method_by_receiver_type`, `behavior_method_host_value`, `behavior_value_from_implementer`, `external_host_record`, `external_method_on_host_record`, `external_template_refused_on_beam`, `host_erlang_task_result`, `host_node_task_result`, `number_literal_erlang_spellings`, `std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `task_throw_resolves_error`). The one the paragraph below was written about is
+Any other content in `.exit` is a malformed claim and fails the cell. **Eighteen cells carry
+`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `behavior_array_of_implementers`, `behavior_method_by_receiver_type`, `behavior_method_host_value`, `behavior_value_from_implementer`, `external_host_record`, `external_method_on_host_record`, `external_template_refused_on_beam`, `host_array_slice_without_start`, `host_erlang_task_result`, `host_node_task_result`, `number_literal_erlang_spellings`, `std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `task_throw_resolves_error`). The one the paragraph below was written about is
 `run/string_char_code_after_slice.bp`, which names `commonJS erlang` because
 `String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
 (`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it

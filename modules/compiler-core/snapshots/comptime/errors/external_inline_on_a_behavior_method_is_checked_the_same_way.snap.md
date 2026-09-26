@@ -6,7 +6,7 @@ pub behavior Shape {
 
 ----- ERROR
 error: `External.Wasm` declares no `inline` — the flag is read by the erlang and beam emitters only
-  ┌─ :2:7
+  ┌─ main.bp:2:7
   │
 2 │     #[@External.Wasm("area", inline = true)]
   │       ^

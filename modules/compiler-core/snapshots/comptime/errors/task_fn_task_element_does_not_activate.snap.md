@@ -11,7 +11,7 @@ fn Page() -> @Task<Element> {
 
 ----- ERROR
 error: use-without-context-effect: `use` needs a `-> @Component<C, T>` return on the enclosing fn
-  ┌─ :7:13
+  ┌─ main.bp:7:13
   │
 7 │     val r = use request();
   │             ^

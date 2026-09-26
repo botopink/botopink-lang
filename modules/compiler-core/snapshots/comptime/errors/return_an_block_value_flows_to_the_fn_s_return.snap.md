@@ -6,7 +6,7 @@ fn f() -> i32 {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :3:12
+  ┌─ main.bp:3:12
   │
 3 │     return s;
   │            ^

@@ -4,7 +4,7 @@ fn g(xs: i32[]) -> string { return case xs { [first, ..rest] -> f(first); _ -> "
 
 ----- ERROR
 error: type mismatch
-  ┌─ :2:67
+  ┌─ main.bp:2:67
   │
 2 │ fn g(xs: i32[]) -> string { return case xs { [first, ..rest] -> f(first); _ -> "n"; }; }
   │                                                                   ^

@@ -8,7 +8,7 @@ test "bad call" {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :5:17
+  ┌─ main.bp:5:17
   │
 5 │     val r = add("x", 3);
   │                 ^

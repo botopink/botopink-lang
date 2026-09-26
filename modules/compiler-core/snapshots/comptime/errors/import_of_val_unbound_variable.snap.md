@@ -4,7 +4,7 @@ val x = SECRET;
 
 ----- ERROR
 error: unbound variable
-  ┌─ :2:9
+  ┌─ main.bp:2:9
   │
 2 │ val x = SECRET;
   │         ^

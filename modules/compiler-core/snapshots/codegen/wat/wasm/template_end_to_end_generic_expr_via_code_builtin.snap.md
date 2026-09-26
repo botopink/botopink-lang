@@ -15,7 +15,7 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $main
+  (func $main (export "main")
     (local $p i32)
     i32.const 8080
     i32.const 1

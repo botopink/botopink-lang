@@ -7,7 +7,7 @@ fn collected() -> @Task<i32> {
 
 ----- ERROR
 error: yield-without-generator: `yield` needs `-> @Iterator<…>` or `-> @Stream<…>` return — this fn returns `@Task<…>`, which does not
-  ┌─ :3:28
+  ┌─ main.bp:3:28
   │
 3 │     for ([1, 2, 3]) { x -> yield x * 2; };
   │                            ^

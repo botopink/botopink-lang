@@ -6,7 +6,7 @@ val bad = coerce(3.14, 0);
 
 ----- ERROR
 error: type constraint not satisfied
-  ┌─ :4:18
+  ┌─ main.bp:4:18
   │
 4 │ val bad = coerce(3.14, 0);
   │                  ^

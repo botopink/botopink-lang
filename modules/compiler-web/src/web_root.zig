@@ -164,9 +164,9 @@ fn compile(target_source: bp.codegen.TargetSource) !i32 {
 /// The text the CLI prints for a module without an artifact
 /// (`compiler-cli/src/cli/diagnostics.zig`), or null for one that compiled.
 fn renderDiagnostic(arena: std.mem.Allocator, o: bp.codegen.ModuleOutput) !?[]const u8 {
-    if (o.result.comptime_err) |ce| return try ce.renderAlloc(arena, o.src);
-    const d = o.result.diagnostic orelse return null;
     const file = try std.fmt.allocPrint(arena, "{s}.bp", .{o.name});
+    if (o.result.comptime_err) |ce| return try ce.renderAlloc(arena, o.src, file);
+    const d = o.result.diagnostic orelse return null;
     return switch (d) {
         .syntax => |se| switch (se) {
             .lex => |lf| blk: {

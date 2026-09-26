@@ -1154,9 +1154,19 @@ fn main() {
 %%         multiline => false
 %%     },
 %%     bindings => [
-%%         #{name => <<"shout">>, kind => 'Fn'},
-%%         #{name => <<"s">>, kind => 'Val'},
-%%         #{name => <<"main">>, kind => 'Fn'}
+%%         #{
+%%             name => <<"shout">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@shout">>,
+%%             local => <<"shout">>
+%%         },
+%%         #{name => <<"s">>, kind => 'Val', identity => <<"main@@s">>, local => <<"s">>},
+%%         #{
+%%             name => <<"main">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@main">>,
+%%             local => <<"main">>
+%%         }
 %%     ]
 %% }
 ```
@@ -1177,7 +1187,7 @@ fn main() {
   (data (i32.const 256) "\42\00\00\00END,WORLD,BIG,HELLO|hello|big world|at|contains|startsWith|indexOf")
   (global $__heap_ptr (mut i32) (i32.const 328))
   (global $s (mut i32) (i32.const 256))
-  (func $main
+  (func $main (export "main")
     global.get $s
     call $__print_str
   )

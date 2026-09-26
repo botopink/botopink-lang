@@ -328,10 +328,30 @@ fn main() {
 ;;         multiline => true
 ;;     },
 ;;     bindings => [
-;;         #{name => <<"html">>, kind => 'Fn'},
-;;         #{name => <<"name">>, kind => 'Val'},
-;;         #{name => <<"page">>, kind => 'Val'},
-;;         #{name => <<"main">>, kind => 'Fn'}
+;;         #{
+;;             name => <<"html">>,
+;;             kind => 'Fn',
+;;             identity => <<"main@@html">>,
+;;             local => <<"html">>
+;;         },
+;;         #{
+;;             name => <<"name">>,
+;;             kind => 'Val',
+;;             identity => <<"main@@name">>,
+;;             local => <<"name">>
+;;         },
+;;         #{
+;;             name => <<"page">>,
+;;             kind => 'Val',
+;;             identity => <<"main@@page">>,
+;;             local => <<"page">>
+;;         },
+;;         #{
+;;             name => <<"main">>,
+;;             kind => 'Fn',
+;;             identity => <<"main@@main">>,
+;;             local => <<"main">>
+;;         }
 ;;     ]
 ;; }
 ```
@@ -348,6 +368,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export([main/0, name/0, page/0]).
 
 name() ->
     <<"world">>.

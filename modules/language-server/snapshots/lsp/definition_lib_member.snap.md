@@ -11,5 +11,5 @@ fn make(r: Response) -> Response {
 uri: file:///libs/rakun/http.bp
 range: (1,7) → (1,14)
 in file:///libs/rakun/http.bp:
-  pub fn created(self: Response, body: string) -> Response {
+  pub fn created(r: Response, body: string) -> Response {
          ^^^^^^^

@@ -5,7 +5,7 @@ test "bad assert" {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :2:12
+  ┌─ main.bp:2:12
   │
 2 │     assert 42;
   │            ^

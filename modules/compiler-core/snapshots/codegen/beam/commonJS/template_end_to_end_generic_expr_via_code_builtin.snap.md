@@ -47,6 +47,7 @@ function main() {
     const p = (8080 + 1);
     __bp_print(p);
 }
+exports.main = main;
 
 function _botopink_main() {
     main();

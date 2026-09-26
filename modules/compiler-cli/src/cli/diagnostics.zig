@@ -248,12 +248,12 @@ pub fn failedOutputs(
 /// Render the diagnostic a `generateWith` entry carries. Returns true when the
 /// entry is a failure.
 pub fn renderResult(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, o: bp.codegen.ModuleOutput) bool {
+    const file = fileLabel(arena, io, o.name);
     if (o.result.comptime_err) |ce| {
-        renderValidationError(gpa, ce, o.src);
+        renderValidationError(gpa, ce, o.src, file);
         return true;
     }
     const d = o.result.diagnostic orelse return false;
-    const file = fileLabel(arena, io, o.name);
     switch (d) {
         .syntax => |se| printSyntaxError(gpa, se, o.src, file),
         .type => |t| printTypeError(gpa, t.message, t.loc, o.src, file),
@@ -261,8 +261,8 @@ pub fn renderResult(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator
     return true;
 }
 
-fn renderValidationError(gpa: std.mem.Allocator, ce: anytype, source: []const u8) void {
-    const rendered = ce.renderAlloc(gpa, source) catch return;
+fn renderValidationError(gpa: std.mem.Allocator, ce: anytype, source: []const u8, file: []const u8) void {
+    const rendered = ce.renderAlloc(gpa, source, file) catch return;
     defer gpa.free(rendered);
     std.debug.print("{s}", .{rendered});
 }
@@ -301,7 +301,7 @@ pub fn renderOutcome(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocato
             return true;
         },
         .validationError => |ce| {
-            renderValidationError(gpa, ce, o.src);
+            renderValidationError(gpa, ce, o.src, fileLabel(arena, io, o.name));
             return true;
         },
         .typeError => |te| {

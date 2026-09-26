@@ -328,10 +328,30 @@ fn main() {
 ;;         multiline => true
 ;;     },
 ;;     bindings => [
-;;         #{name => <<"html">>, kind => 'Fn'},
-;;         #{name => <<"name">>, kind => 'Val'},
-;;         #{name => <<"page">>, kind => 'Val'},
-;;         #{name => <<"main">>, kind => 'Fn'}
+;;         #{
+;;             name => <<"html">>,
+;;             kind => 'Fn',
+;;             identity => <<"main@@html">>,
+;;             local => <<"html">>
+;;         },
+;;         #{
+;;             name => <<"name">>,
+;;             kind => 'Val',
+;;             identity => <<"main@@name">>,
+;;             local => <<"name">>
+;;         },
+;;         #{
+;;             name => <<"page">>,
+;;             kind => 'Val',
+;;             identity => <<"main@@page">>,
+;;             local => <<"page">>
+;;         },
+;;         #{
+;;             name => <<"main">>,
+;;             kind => 'Fn',
+;;             identity => <<"main@@main">>,
+;;             local => <<"main">>
+;;         }
 ;;     ]
 ;; }
 ```
@@ -380,11 +400,16 @@ function __bp_print() {
 
 const name = "world";
 
+exports.name = name;
+
 const page = ((("" + "<p>") + name) + "</p>");
+
+exports.page = page;
 
 function main() {
     __bp_print(page);
 }
+exports.main = main;
 
 function _botopink_main() {
     main();

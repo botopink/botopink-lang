@@ -5,7 +5,7 @@ fn fetch() -> @Task<i32> {
 
 ----- ERROR
 error: effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return — this fn returns `@Task<…>` with no `@Result` in it
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     throw "boom";
   │     ^

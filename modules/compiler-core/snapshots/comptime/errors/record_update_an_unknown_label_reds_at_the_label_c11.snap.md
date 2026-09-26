@@ -5,7 +5,7 @@ val b = Person(..alice, agee: 25);
 
 ----- ERROR
 error: unknown field
-  ┌─ :3:25
+  ┌─ main.bp:3:25
   │
 3 │ val b = Person(..alice, agee: 25);
   │                         ^

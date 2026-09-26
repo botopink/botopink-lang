@@ -9,7 +9,7 @@ fn process() -> i32 {
 
 ----- ERROR
 error: try on non-Result
-  ┌─ :5:13
+  ┌─ main.bp:5:13
   │
 5 │     val r = try fetch();
   │             ^

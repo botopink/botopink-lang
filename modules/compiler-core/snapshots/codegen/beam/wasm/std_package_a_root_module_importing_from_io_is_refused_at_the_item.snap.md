@@ -10,7 +10,7 @@ pub fn peek(p: string) -> string {
 ----- COMPILE DIAGNOSTIC -- std/probe
 ```text
 error: std-root-imports-io: std module `probe` is at the root of std, which is pure; `io.fs.readText` imports from `io/`
-  ┌─ :1:23
+  ┌─ std/probe.bp:1:23
   │
 1 │ import {path: {join}, io.fs.readText};
   │                       ^

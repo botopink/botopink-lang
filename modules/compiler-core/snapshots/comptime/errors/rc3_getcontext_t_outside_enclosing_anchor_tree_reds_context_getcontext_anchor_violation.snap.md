@@ -8,7 +8,7 @@ fn pickA() -> @Component<RootA, RootA> {
 
 ----- ERROR
 error: context-getcontext-anchor-violation: `@getContext(LeafB)` is outside the enclosing `@Component` fn's base tree (enclosing base `RootA`, requested type's base `RootB`)
-  ┌─ :5:24
+  ┌─ main.bp:5:24
   │
 5 │     return @getContext(LeafB);
   │                        ^

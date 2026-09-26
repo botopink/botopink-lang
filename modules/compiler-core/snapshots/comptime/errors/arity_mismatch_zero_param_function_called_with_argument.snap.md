@@ -6,7 +6,7 @@ val bad = hello(42);
 
 ----- ERROR
 error: arity mismatch
-  ┌─ :4:11
+  ┌─ main.bp:4:11
   │
 4 │ val bad = hello(42);
   │           ^

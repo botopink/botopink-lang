@@ -8,7 +8,7 @@ fn main() {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :5:22
+  ┌─ main.bp:5:22
   │
 5 │     val bad: i32 = b.second;
   │                      ^

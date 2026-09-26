@@ -43,8 +43,15 @@ pub const BindingKind = enum {
 
 /// One name visible in an expression's origin scope.
 pub const ScopeEntry = struct {
+    /// The name as the scope spells it — an import's alias when it has one.
     name: []const u8,
     kind: BindingKind,
+    /// Decision 112 — the declaration's own name (`area` for `area as
+    /// surface`) and identity (`<package>@<path>@@<Decl>`, decision 109):
+    /// what `lookup` answers, never the alias. Empty identity when the
+    /// declaration's module is not known (a std name, a builtin).
+    declName: []const u8 = "",
+    identity: []const u8 = "",
     /// true when the name arrives via an import (`use { … }`).
     isImport: bool = false,
 };
@@ -72,7 +79,12 @@ pub const ScopeSnapshot = struct {
 
     /// Record a visible name. A redeclaration keeps the latest kind.
     pub fn put(self: *ScopeSnapshot, name: []const u8, kind: BindingKind, isImport: bool) !void {
-        try self.entries.put(self.arena, name, .{ .name = name, .kind = kind, .isImport = isImport });
+        try self.entries.put(self.arena, name, .{ .name = name, .kind = kind, .isImport = isImport, .declName = name });
+    }
+
+    /// `put` with the declaration the name stands for (decision 112).
+    pub fn putDeclared(self: *ScopeSnapshot, name: []const u8, kind: BindingKind, isImport: bool, declName: []const u8, identity: []const u8) !void {
+        try self.entries.put(self.arena, name, .{ .name = name, .kind = kind, .isImport = isImport, .declName = declName, .identity = identity });
     }
 
     /// Resolve `name` in this scope; null on a miss (the `lookup` extension
@@ -182,8 +194,13 @@ pub const Span = struct {
 /// `kind` is the resolved binding's variant name ("Val"/"Fn"/…), kept as an
 /// opaque string: the core never interprets it.
 pub const NodeBinding = struct {
+    /// The declaration's own name (decision 112: never an import's alias).
     name: []const u8,
     kind: []const u8,
+    /// `<package>@<path>@@<Decl>` (decision 109); empty when not known.
+    identity: []const u8 = "",
+    /// The name at the call site — the alias an import bound, when it has one.
+    local: []const u8 = "",
 };
 
 /// The Zig-side shape of a `std.syntax.CustomNode`: one node of ANY embedded
@@ -205,6 +222,8 @@ pub fn parseCustomNodeFromTree(arena: std.mem.Allocator, tree: @import("./templa
     const ref: ?NodeBinding = if (tree.ref) |r| .{
         .name = try arena.dupe(u8, r.name),
         .kind = try arena.dupe(u8, r.kind),
+        .identity = try arena.dupe(u8, r.identity),
+        .local = try arena.dupe(u8, r.local),
     } else null;
 
     const children = try arena.alloc(CustomNode, tree.children.len);

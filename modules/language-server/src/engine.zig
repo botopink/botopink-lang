@@ -3508,7 +3508,6 @@ pub fn semanticTokens(
     var awaiting_fn_body = false; // params closed, the next `{` is the body
     var fn_body_depth: ?usize = null; // containers.len while inside that body
 
-
     // Generic type parameters of the enclosing declaration (`fn q<T>(…)`,
     // `record Box<T> { … }`). A `T` in the signature or in the body names a
     // type, not a value, so it must not fall through to `variable`. Cleared
@@ -3947,38 +3946,52 @@ pub fn mergeSemanticTokens(
 // LSP never learns SQL/HTML, only `CustomNode.ref`.
 
 /// Depth-first search for the deepest `CustomNode` whose absolute span covers
-/// `off`, returning its `ref.name`. The deepest match wins so a leaf (column)
-/// beats its container (table). Null when `off` is not on a ref-carrying node.
-fn refNameAtOffset(content_start: usize, node: CustomNode, off: usize) ?[]const u8 {
+/// `off`, returning its `ref`. The deepest match wins so a leaf (column) beats
+/// its container (table). Null when `off` is not on a ref-carrying node.
+fn refAtOffset(content_start: usize, node: CustomNode, off: usize) ?comptime_pipeline.NodeBinding {
     for (node.children) |child| {
-        if (refNameAtOffset(content_start, child, off)) |r| return r;
+        if (refAtOffset(content_start, child, off)) |r| return r;
     }
     const abs_start = content_start + node.span.start;
     const abs_end = content_start + node.span.end;
     if (node.ref) |r| {
-        if (abs_start <= off and off < abs_end) return r.name;
+        if (abs_start <= off and off < abs_end) return r;
     }
     return null;
 }
 
-/// The bound symbol name of the sub-language `CustomNode` under `pos`, across
-/// every `@ExprCustom` site in `source`. Drives hover / go-to-definition inside
-/// a sub-language literal; null when the cursor is not on a ref-carrying node.
+/// The binding of the sub-language `CustomNode` under `pos`, across every
+/// `@ExprCustom` site in `source`. Drives hover / go-to-definition inside a
+/// sub-language literal; null when the cursor is not on a ref-carrying node.
+/// Its `name` is the declaration's own (decision 112: `area` for
+/// `area as surface`), `local` the name this file binds it under.
+pub fn customRefAt(
+    source: []const u8,
+    pos: proto.Position,
+    entries: []const CustomAstEntry,
+) ?comptime_pipeline.NodeBinding {
+    const off = lsp_types.positionToOffset(source, pos);
+    for (entries) |entry| {
+        const content_start = customContentStart(source, entry) orelse continue;
+        if (refAtOffset(content_start, entry.root, off)) |r| return r;
+    }
+    return null;
+}
+
+/// The bound symbol name of the sub-language `CustomNode` under `pos` — the
+/// declaration's own name.
 pub fn customRefNameAt(
     source: []const u8,
     pos: proto.Position,
     entries: []const CustomAstEntry,
 ) ?[]const u8 {
-    const off = lsp_types.positionToOffset(source, pos);
-    for (entries) |entry| {
-        const content_start = customContentStart(source, entry) orelse continue;
-        if (refNameAtOffset(content_start, entry.root, off)) |r| return r;
-    }
-    return null;
+    const r = customRefAt(source, pos, entries) orelse return null;
+    return r.name;
 }
 
 /// Hover for a sub-language node bound to a caller-scope symbol: renders the
-/// same card the bound binding would show on its own declaration (F3).
+/// same card the bound binding would show on its own declaration (F3). An
+/// import is bound here under its local name, so that is the binding read.
 pub fn hoverCustomRef(
     gpa: std.mem.Allocator,
     source: []const u8,
@@ -3986,16 +3999,19 @@ pub fn hoverCustomRef(
     bindings: []const comptime_pipeline.TypedBinding,
     entries: []const CustomAstEntry,
 ) !?proto.Hover {
-    const name = customRefNameAt(source, pos, entries) orelse return null;
+    const r = customRefAt(source, pos, entries) orelse return null;
+    const local = if (r.local.len > 0) r.local else r.name;
     for (bindings) |b| {
-        if (std.mem.eql(u8, b.name, name)) return try renderBindingHover(gpa, b);
+        if (std.mem.eql(u8, b.name, local)) return try renderBindingHover(gpa, b);
     }
     return null;
 }
 
 /// Go-to-definition for a sub-language node bound to a caller-scope symbol:
-/// jumps to the declaration of `ref.name` in the current file (F3). Returns a
-/// `Location` whose `uri` is owned by the caller.
+/// jumps to the declaration of `ref.name` — in this file, or (decision 112: an
+/// import answers with the declaration it names, never the alias) in the
+/// module of `others` that declares it `pub`. Returns a `Location` whose
+/// `uri` is owned by the caller.
 pub fn definitionCustomRef(
     gpa: std.mem.Allocator,
     uri: []const u8,
@@ -4003,9 +4019,21 @@ pub fn definitionCustomRef(
     pos: proto.Position,
     tokens: []const Token,
     entries: []const CustomAstEntry,
+    others: []const ModuleSource,
 ) !?proto.Location {
-    const name = customRefNameAt(source, pos, entries) orelse return null;
-    return findDeclLocation(gpa, uri, name, tokens, false);
+    const r = customRefAt(source, pos, entries) orelse return null;
+    if (r.local.len == 0 or std.mem.eql(u8, r.local, r.name)) {
+        if (try findDeclLocation(gpa, uri, r.name, tokens, false)) |loc| return loc;
+    }
+    for (others) |m| {
+        if (std.mem.eql(u8, m.uri, uri)) continue;
+        var arena = std.heap.ArenaAllocator.init(gpa);
+        defer arena.deinit();
+        var lexer = Lexer.init(m.source);
+        const mod_tokens = lexer.scanAll(arena.allocator()) catch continue;
+        if (try findDeclLocation(gpa, m.uri, r.name, mod_tokens, true)) |loc| return loc;
+    }
+    return null;
 }
 
 /// Maps a top-level binding's declaration kind to a semantic token type.

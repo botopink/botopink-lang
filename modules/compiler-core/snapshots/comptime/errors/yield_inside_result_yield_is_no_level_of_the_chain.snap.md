@@ -15,7 +15,7 @@ fn bad(n: i32) -> @Result<i32, string> {
 
 ----- ERROR
 error: yield-without-generator: `yield` needs `-> @Iterator<…>` or `-> @Stream<…>` return — this fn returns `@Result<…>`, which does not
-  ┌─ :12:5
+  ┌─ main.bp:12:5
   │
 12 │     yield n;
   │     ^

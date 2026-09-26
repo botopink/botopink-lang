@@ -5,7 +5,7 @@ fn fetch() -> @Result<i32, string> {
 
 ----- ERROR
 error: throw-must-be-bare-E: a body whose return carries `@Result<R, E>` must `throw` a value of type E; the @Result::Err wrapping is implicit.
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     throw Result.Error("boom");
   │     ^

@@ -11,7 +11,7 @@ fn comp() -> @Component<Element, i32> {
 
 ----- ERROR
 error: use-of-non-context-fn: `use` takes a hook
-  ┌─ :7:13
+  ┌─ main.bp:7:13
   │
 7 │     val p = use make();
   │             ^

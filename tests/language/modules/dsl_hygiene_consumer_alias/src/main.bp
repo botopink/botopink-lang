@@ -1,0 +1,11 @@
+//// Decision 112, row 2: the consumer's text resolves at the call site, its
+//// aliases included (decision 110) — `surface` is `area` here — while the
+//// library's `double` still resolves in the library. Refused before like row
+//// 1, `unbound variable 'double'`.
+
+import shapesdsl, {area as surface} from "shapesdsl";
+
+pub fn main() {
+    val x = shapesdsl "surface(4, 5)";
+    @print(x);
+}

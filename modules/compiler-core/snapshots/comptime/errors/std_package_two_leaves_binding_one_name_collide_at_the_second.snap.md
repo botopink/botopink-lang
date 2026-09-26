@@ -7,7 +7,7 @@ fn main() {
 
 ----- ERROR
 error: import-name-collision: `parse` is already bound by the import of `url.parse`; `json.parse` would bind it again
-  ┌─ :1:20
+  ┌─ main.bp:1:20
   │
 1 │ import {url.parse, json.parse} from "std";
   │                    ^

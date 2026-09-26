@@ -6,7 +6,7 @@ fn describe(x: i32) -> string {
 
 ----- ERROR
 error: not a record type
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     val { result } = x;
   │     ^

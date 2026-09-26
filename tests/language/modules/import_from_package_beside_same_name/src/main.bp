@@ -1,0 +1,20 @@
+//// A module of the project declares `pub fn attempt`, and another module
+//// imports the dependency's `attempt` (`import {match.attempt} from "pkg"`) —
+//// jhonstart's `pub fn attempt` beside `import {match.attempt} from "routing"`.
+//// The dependency order resolved the import by its bare name to the project's
+//// own declarer, so `router` depended on `main` and `main` on `router`: the
+//// cycle compiled `main` first and `route` was `unbound variable 'route'` at a
+//// call that has nothing to do with `attempt`. An import under a `from "…"`
+//// clause depends only on the module the clause names.
+
+pub mod router;
+import {route} from "router";
+
+pub fn attempt(n: i32) -> i32 {
+    return n + 1;
+}
+
+pub fn main() {
+    @print(attempt(1));
+    @print(route("/a"));
+}

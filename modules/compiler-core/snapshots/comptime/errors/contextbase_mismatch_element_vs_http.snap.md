@@ -14,7 +14,7 @@ fn bad() -> @Component<Element, i32> {
 
 ----- ERROR
 error: context-anchor-violation: ContextBase mismatch
-  ┌─ :10:13
+  ┌─ main.bp:10:13
   │
 10 │     val c = use connection();
   │             ^

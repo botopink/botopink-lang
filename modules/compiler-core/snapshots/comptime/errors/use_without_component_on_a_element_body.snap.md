@@ -10,7 +10,7 @@ fn Counter() -> Element {
 
 ----- ERROR
 error: use-without-context-effect: `use` needs a `-> @Component<C, T>` return on the enclosing fn
-  ┌─ :6:13
+  ┌─ main.bp:6:13
   │
 6 │     val n = use state(0);
   │             ^

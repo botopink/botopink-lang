@@ -3,7 +3,7 @@ val bad = !42;
 
 ----- ERROR
 error: type mismatch
-  ┌─ :1:12
+  ┌─ main.bp:1:12
   │
 1 │ val bad = !42;
   │            ^

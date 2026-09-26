@@ -3,7 +3,7 @@ val x = undefinedFn(42);
 
 ----- ERROR
 error: unbound variable
-  ┌─ :1:9
+  ┌─ main.bp:1:9
   │
 1 │ val x = undefinedFn(42);
   │         ^

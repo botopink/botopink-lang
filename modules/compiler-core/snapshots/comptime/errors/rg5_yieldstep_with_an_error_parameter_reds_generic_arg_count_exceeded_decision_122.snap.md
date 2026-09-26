@@ -5,7 +5,7 @@ fn first(step: YieldStep<i32, string>) -> i32 {
 
 ----- ERROR
 error: generic-arg-count-exceeded: `YieldStep` takes at most 1 type argument, 2 given
-  ┌─ :1:16
+  ┌─ main.bp:1:16
   │
 1 │ fn first(step: YieldStep<i32, string>) -> i32 {
   │                ^

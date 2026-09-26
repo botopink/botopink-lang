@@ -16,6 +16,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export([main/0, name/0, page/0]).
 
 name() ->
     <<"world">>.

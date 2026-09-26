@@ -14,7 +14,7 @@ val CameraCharger = implement UsbCharger, SolarCharger for Camera {
 
 ----- ERROR
 error: ambiguous method
-  ┌─ :9:8
+  ┌─ main.bp:9:8
   │
 9 │     fn connect(self: Self) {
   │        ^

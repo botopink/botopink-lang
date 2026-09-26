@@ -7,7 +7,7 @@ fn main() {
 
 ----- ERROR
 error: unknown "std" module `dict` in import
-  ┌─ :1:9
+  ┌─ main.bp:1:9
   │
 1 │ import {dict.Dict} from "std";
   │         ^

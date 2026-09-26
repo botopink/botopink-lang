@@ -7,7 +7,7 @@ fn main() {
 
 ----- ERROR
 error: this "std" module has no such public function
-  ┌─ :4:25
+  ┌─ main.bp:4:25
   │
 4 │     val x = collections.collapse(true);
   │                         ^

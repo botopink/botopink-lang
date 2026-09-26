@@ -63,6 +63,7 @@ fn isTypeStart(kind: TokenKind) bool {
 /// The caller must have already consumed the opening `(`.
 pub fn parseParamList(this: *This, alloc: std.mem.Allocator) ParseError![]Param {
     this.discardParam = null;
+    this.selfParam = null;
     var params: std.ArrayList(Param) = .empty;
     errdefer {
         for (params.items) |*p| p.deinit(alloc);
@@ -423,6 +424,14 @@ pub fn parseFnBody(
     errdefer {
         for (params) |*p| p.deinit(alloc);
         alloc.free(params);
+    }
+    // `parseFnBody` parses a FREE function (a top-level `fn`, `declare fn` or
+    // `val name = fn …`); a method's signature goes through `parseSignature`.
+    // A free function has no receiver, so a parameter named `self` is refused
+    // at the name — the backends read `self` as a receiver and drop it.
+    if (this.selfParam) |tok| {
+        this.parseError = ParseErrorInfo.fromToken(.selfParamOutsideType, tok);
+        return ParseError.UnexpectedToken;
     }
 
     // The `)` that just closed the parameter list — decision 33 (b)'s
@@ -1294,6 +1303,11 @@ pub fn parseFieldList(this: *This, alloc: std.mem.Allocator) ParseError!FieldLis
         // that cannot even start with a name (`Circle(?i32)`, `Circle(#(a, b))`)
         // alike. Refused here, where it starts, with the field form named —
         // reading past it would report the missing `:` as a stray token.
+        // A keyword with a `:` after it IS a name the author wrote — one the
+        // language reserves (`type Edge(from: string, …)`). Say which word.
+        if (This.isKeywordName(this.peek()) and this.peekAt(1).kind == .colon) {
+            return failAt(this, .reservedWordAsName, this.peek());
+        }
         if (!This.isMemberName(this.peek().kind) or this.peekAt(1).kind != .colon) {
             return failAt(this, .fieldNeedsName, this.peek());
         }

@@ -8,7 +8,7 @@ val bob = Person(..alice, age: "thirty");
 
 ----- ERROR
 error: type mismatch
-  ┌─ :6:32
+  ┌─ main.bp:6:32
   │
 6 │ val bob = Person(..alice, age: "thirty");
   │                                ^

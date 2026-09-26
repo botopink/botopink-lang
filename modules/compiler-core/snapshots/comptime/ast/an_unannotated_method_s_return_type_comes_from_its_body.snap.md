@@ -13,7 +13,7 @@ fn main() {
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: type mismatch
-  ┌─ :6:23
+  ┌─ main.bp:6:23
   │
 6 │     val a: string = d.get();
   │                       ^

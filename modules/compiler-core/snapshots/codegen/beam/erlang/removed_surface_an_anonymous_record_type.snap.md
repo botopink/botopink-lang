@@ -8,7 +8,7 @@ fn f(p: { x: i32 }) -> i32 {
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: parse error (removedRecordType)
-  ┌─ :1:9
+  ┌─ main.bp:1:9
   │
 1 │ fn f(p: { x: i32 }) -> i32 {
 

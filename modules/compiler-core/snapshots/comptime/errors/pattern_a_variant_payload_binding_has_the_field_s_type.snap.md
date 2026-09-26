@@ -5,7 +5,7 @@ fn g(e: E) -> string { return case e { A(v) -> f(v); B -> "b"; }; }
 
 ----- ERROR
 error: type mismatch
-  ┌─ :3:50
+  ┌─ main.bp:3:50
   │
 3 │ fn g(e: E) -> string { return case e { A(v) -> f(v); B -> "b"; }; }
   │                                                  ^

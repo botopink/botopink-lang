@@ -21,22 +21,23 @@ pub const ComptimeError = struct {
 
     pub const Reason = enum { runtimeIdentifier, divisionByZero, negatedNonNumber };
 
-    /// Render the error to an allocated string. Caller owns the result.
-    pub fn renderAlloc(this: ComptimeError, allocator: std.mem.Allocator, src: []const u8) ![]u8 {
+    /// Render the error to an allocated string; the location box names
+    /// `file`. Caller owns the result.
+    pub fn renderAlloc(this: ComptimeError, allocator: std.mem.Allocator, src: []const u8, file: []const u8) ![]u8 {
         var aw: std.Io.Writer.Allocating = .init(allocator);
         defer aw.deinit();
-        try this.renderTo(&aw.writer, src);
+        try this.renderTo(&aw.writer, src, file);
         return aw.toOwnedSlice();
     }
 
-    fn renderTo(this: ComptimeError, writer: anytype, src: []const u8) !void {
+    fn renderTo(this: ComptimeError, writer: anytype, src: []const u8, file: []const u8) !void {
         const line_text = render.extractLine(src, this.loc.line);
         const line_w = render.digitWidth(this.loc.line);
         const gutter = line_w + 1;
 
         try writer.writeAll("error comptime: expression cannot be evaluated at compile time\n");
         try render.padSpaces(writer, gutter - 1);
-        try writer.print("┌─ :{d}:{d}\n", .{ this.loc.line, this.loc.col });
+        try writer.print("┌─ {s}:{d}:{d}\n", .{ file, this.loc.line, this.loc.col });
         try render.padSpaces(writer, gutter);
         try writer.writeAll("│\n");
         try writer.print("{d} │ {s}\n", .{ this.loc.line, line_text });

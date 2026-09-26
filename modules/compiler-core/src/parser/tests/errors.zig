@@ -370,6 +370,6 @@ test "parser: $self in an External template names the positional marker" {
         \\
     ,
         \\#[@External.Node("$self.trim()")]
-        \\declare fn trim(self: string) -> string;
+        \\declare fn trim(s: string) -> string;
     );
 }

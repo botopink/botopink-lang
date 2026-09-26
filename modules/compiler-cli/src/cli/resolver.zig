@@ -380,6 +380,11 @@ fn resolveRoot(
 const ImportRef = struct {
     from: ?[]const u8,
     symbol: []const u8,
+    /// The item was written under a `from "…"` clause. Such an import names
+    /// its source, so it depends on no module the clause does not name — in
+    /// particular not on whichever package module happens to declare a `pub`
+    /// of the same name (`importOwner`).
+    has_from: bool = false,
     /// Location of the `from "…"` string this item was written under, for the
     /// diagnostic. `line == 0` when the import has no `from` clause.
     line: usize = 0,
@@ -438,7 +443,8 @@ fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
 }
 
 /// The module an import DEPENDS on: the one its `from "<mod>"` names, when that
-/// is a project module exporting the symbol, and only then the symbol's owner.
+/// is a project module; none, when the clause names std or a library; and the
+/// symbol's owner only for an import written with no `from` clause.
 ///
 /// `Analysis.owner` maps a bare symbol name to the FIRST module that exports
 /// it, over the whole package — and a name is unique inside a module, never
@@ -460,13 +466,15 @@ fn importOwner(analysis: Analysis, ref: ImportRef) ?usize {
     else
         ref.symbol;
     if (analysis.paths.get(whole)) |i| return i;
-    if (ref.from) |from| if (analysis.paths.get(from)) |i| {
-        if (i < analysis.exports.len) {
-            for (analysis.exports[i]) |e| {
-                if (std.mem.eql(u8, e, ref.symbol)) return i;
-            }
-        }
-    };
+    if (ref.from) |from| if (analysis.paths.get(from)) |i| return i;
+    // A `from "…"` clause that names no package module is std or a library:
+    // the import depends on nothing in this package. Falling back to the bare
+    // name's owner drew an edge to an unrelated module — a `pub fn attempt`
+    // beside another module's `import {match.attempt} from "routing"` made
+    // that module depend on the declarer, the two formed a cycle, and the
+    // importer of the second was compiled first (`unbound variable` at an
+    // unrelated call).
+    if (ref.has_from) return null;
     return analysis.owner.get(ref.symbol);
 }
 
@@ -556,10 +564,9 @@ fn checkVisibility(
     diag: ?*Diagnostic,
 ) Error!void {
     if (analysis.imports.len != mods.len) return;
-    const owner = analysis.owner;
     for (analysis.imports, 0..) |imps, importer| {
         for (imps) |ref| {
-            const target = owner.get(ref.symbol) orelse continue;
+            const target = importOwner(analysis, ref) orelse continue;
             if (target == importer) continue;
             const b = visibilityBoundary(sa, mods, nodes, target) orelse continue;
             if (!withinSubtree(mods[importer].path, b.prefix)) {
@@ -826,6 +833,7 @@ fn collectModuleRefs(
                 try imps.append(sa, .{
                     .from = leaf_from,
                     .symbol = imp.leaf(),
+                    .has_from = u.source == .module,
                     .line = loc.line,
                     .col = loc.col,
                 });

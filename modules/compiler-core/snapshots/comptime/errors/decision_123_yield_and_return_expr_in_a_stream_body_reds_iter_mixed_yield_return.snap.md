@@ -6,7 +6,7 @@ fn nums() -> @Stream<@Result<i32, string>> {
 
 ----- ERROR
 error: iter-mixed-yield-return: this body yields, so it is an iterator — and `return <value>` answers a ready one, which is a factory (decision 123)
-  ┌─ :3:5
+  ┌─ main.bp:3:5
   │
 3 │     return 42;
   │     ^

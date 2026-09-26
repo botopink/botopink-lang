@@ -13,7 +13,7 @@ fn f(x: i32) -> @Result<i32, string> {
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: parse error (unexpectedToken)
-  ┌─ :6:40
+  ┌─ main.bp:6:40
   │
 6 │     val r = try g(x) catch { e -> throw; };
 

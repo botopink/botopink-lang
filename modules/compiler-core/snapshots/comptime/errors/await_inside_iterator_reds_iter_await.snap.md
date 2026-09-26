@@ -16,7 +16,7 @@ fn bad(n: i32) -> @Iterator<i32> {
 
 ----- ERROR
 error: iter-await: `await` does not exist in an `@Iterator` — its items are produced synchronously
-  ┌─ :12:13
+  ┌─ main.bp:12:13
   │
 12 │     val w = await fetch(n);
   │             ^

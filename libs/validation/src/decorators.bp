@@ -65,8 +65,8 @@ pub fn validated(comptime decl: @Decl) {
             val bare = a.args.join("|").replaceAll("\"", "");
             val n = a.name;
             val isText = t == "string";
-            val isList = t == "Array";
-            val nullable = t == "";
+            val isList = t.startsWith("Array<") || t.endsWith("[]");
+            val nullable = t.startsWith("?");
             var call = "";
             var why = "";
             if (n == "notNull")

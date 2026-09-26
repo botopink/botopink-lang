@@ -97,13 +97,15 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
     const capture_param = try b.map(&.{.{ .key = A("__bp_capture"), .value = V("Param"), .exact = true }});
     try forms.appendSlice(b.arena, &.{
         // lookup(#{bindings := Bindings}, Name) ->
-        //     case [B || B = #{name := N} <- Bindings, N =:= Name] of [Hit | _] -> Hit; [] -> undefined end.
+        //     case [B || B = #{local := N} <- Bindings, N =:= Name] of [Hit | _] -> Hit; [] -> undefined end.
+        // Matched on the name the call site spells (`local`); the hit carries
+        // the declaration's own `name` and `identity` (decision 112).
         try b.function("lookup", &.{ try b.map(&.{Ast.exactField("bindings", V("Bindings"))}), V("Name") }, &.{}, &.{
             try b.caseOf(.{ .list_comp = .{
                 .element = try b.ptr(V("B")),
                 .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
                     .{ .generator = .{
-                        .pattern = try b.match(V("B"), try b.map(&.{Ast.exactField("name", V("N"))})),
+                        .pattern = try b.match(V("B"), try b.map(&.{Ast.exactField("local", V("N"))})),
                         .list = V("Bindings"),
                     } },
                     .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("N")), .rhs = try b.ptr(V("Name")), .parens = false } } },
@@ -113,11 +115,11 @@ pub fn templateForms(b: Ast.Builder) Error![]const Ast.Form {
                 try b.clause(&.{try b.list(&.{})}, &.{}, &.{A("undefined")}),
             }),
         }),
-        // ref(#{name := Name}) -> {'__bp_code', __bp_text(Name)}.
+        // ref(#{local := Name}) -> {'__bp_code', __bp_text(Name)}.
         // `Binding.ref()` splices the caller-scope binding back into the
         // expansion as a bare reference, so `return b.ref();` for a hit on
         // `greeting` expands to the identifier `greeting`, not to its value.
-        try b.function("ref", &.{try b.map(&.{Ast.exactField("name", V("Name"))})}, &.{}, &.{
+        try b.function("ref", &.{try b.map(&.{Ast.exactField("local", V("Name"))})}, &.{}, &.{
             try b.tuple(&.{ code, try b.call("__bp_text", &.{V("Name")}) }),
         }),
         try b.function("build", &.{ V("_Capture"), V("Source") }, &.{}, &.{

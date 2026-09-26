@@ -4,7 +4,7 @@ pub default mod beta;
 
 ----- ERROR
 error: a package declares at most one `pub default mod` and one `pub default fn`
-  ┌─ :2:17
+  ┌─ main.bp:2:17
   │
 2 │ pub default mod beta;
   │                 ^

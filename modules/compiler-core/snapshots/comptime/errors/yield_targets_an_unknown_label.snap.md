@@ -5,7 +5,7 @@ fn gen() -> @Iterator<i32> {
 
 ----- ERROR
 error: yield-label-unbound: `yield` targets an unknown label
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     yield :nope 1;
   │     ^

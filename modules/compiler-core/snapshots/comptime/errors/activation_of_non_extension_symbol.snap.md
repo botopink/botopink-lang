@@ -4,7 +4,7 @@ Pato*;
 
 ----- ERROR
 error: not an extension symbol
-  ┌─ :2:1
+  ┌─ main.bp:2:1
   │
 2 │ Pato*;
   │ ^

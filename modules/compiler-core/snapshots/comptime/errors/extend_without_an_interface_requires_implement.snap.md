@@ -8,7 +8,7 @@ val PatoVoa = extend Pato {
 
 ----- ERROR
 error: extend requires a behavior
-  ┌─ :2:15
+  ┌─ main.bp:2:15
   │
 2 │ val PatoVoa = extend Pato {
   │               ^

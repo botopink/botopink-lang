@@ -133,7 +133,15 @@ val n = six "ignored";
 %%         text => <<"ignored">>,
 %%         multiline => false
 %%     },
-%%     bindings => [#{name => <<"six">>, kind => 'Fn'}, #{name => <<"n">>, kind => 'Val'}]
+%%     bindings => [
+%%         #{
+%%             name => <<"six">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@six">>,
+%%             local => <<"six">>
+%%         },
+%%         #{name => <<"n">>, kind => 'Val', identity => <<"main@@n">>, local => <<"n">>}
+%%     ]
 %% }
 ```
 

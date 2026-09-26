@@ -10,7 +10,7 @@ fn Page() -> @Component<Element, Element> {
 
 ----- ERROR
 error: use-of-non-context-fn: `use` takes a hook, and this is a component (its `T` implements `@Context<…>`) — a component is called, not `use`d
-  ┌─ :6:13
+  ┌─ main.bp:6:13
   │
 6 │     val c = use Card();
   │             ^

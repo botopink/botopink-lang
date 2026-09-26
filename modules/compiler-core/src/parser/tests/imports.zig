@@ -187,7 +187,7 @@ test "parser: delegate ---- val form with return type" {
 
 test "parser: delegate ---- shorthand simple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\declare fn log(self: Self);
+        \\declare fn log(message: string);
     );
 }
 

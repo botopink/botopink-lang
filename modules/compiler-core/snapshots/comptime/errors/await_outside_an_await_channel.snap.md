@@ -6,7 +6,7 @@ fn notAsync() -> i32 {
 
 ----- ERROR
 error: effect-await-without-task: `await` needs `-> @Task<…>`, `-> @Stream<…>` or `-> @Component<C, …>` return — this fn's return type is no effect wrapper
-  ┌─ :2:13
+  ┌─ main.bp:2:13
   │
 2 │     val x = await ready();
   │             ^

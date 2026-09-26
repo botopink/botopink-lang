@@ -7,7 +7,7 @@ fn main() {
 
 ----- ERROR
 error: unbound variable
-  ┌─ :4:13
+  ┌─ main.bp:4:13
   │
 4 │     val a = collections.toInt(lt());
   │             ^

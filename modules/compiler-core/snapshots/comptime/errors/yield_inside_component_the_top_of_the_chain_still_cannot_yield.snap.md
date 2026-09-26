@@ -15,7 +15,7 @@ fn Bad(n: i32) -> @Component<Element, Element> {
 
 ----- ERROR
 error: yield-without-generator: `yield` needs `-> @Iterator<…>` or `-> @Stream<…>` return — this fn returns `@Component<…>`, which does not
-  ┌─ :12:5
+  ┌─ main.bp:12:5
   │
 12 │     yield n;
   │     ^

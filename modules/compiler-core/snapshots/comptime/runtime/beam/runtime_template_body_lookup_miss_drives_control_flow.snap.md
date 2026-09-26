@@ -148,9 +148,19 @@ val r = need "x";
 %%         multiline => false
 %%     },
 %%     bindings => [
-%%         #{name => <<"Button">>, kind => 'Record_'},
-%%         #{name => <<"need">>, kind => 'Fn'},
-%%         #{name => <<"r">>, kind => 'Val'}
+%%         #{
+%%             name => <<"Button">>,
+%%             kind => 'Record_',
+%%             identity => <<"main@@Button">>,
+%%             local => <<"Button">>
+%%         },
+%%         #{
+%%             name => <<"need">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@need">>,
+%%             local => <<"need">>
+%%         },
+%%         #{name => <<"r">>, kind => 'Val', identity => <<"main@@r">>, local => <<"r">>}
 %%     ]
 %% }
 ```

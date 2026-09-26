@@ -248,6 +248,10 @@ written, rather than binding nothing in silence.
 
 ## Bindings
 
+A keyword is reserved in every position: no binding, parameter or field may
+take its name (`from`, `type`, `case`, …). Writing one where a name is declared
+is `reserved-word-as-name`, which names the word.
+
 ### val — immutable binding
 
 ```botopink
@@ -340,6 +344,11 @@ type Counter(n: i32) {
     }
 }
 ```
+
+`self` is the receiver of a method, and names nothing else: a parameter called
+`self` is written only in a `type`, `behavior`, `implement` or `extend` body.
+A free function that names one is `self-param-outside-type`, refused at the
+name.
 
 The field list is always written. A record with no fields is `type Name()`,
 and with members `type Name() { … }`; braces alone declare an enum, so
@@ -1762,6 +1771,19 @@ pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
 }
 ```
 
+The code a template builds has two authors, and each name in it resolves in
+the scope of whoever wrote it (decision 112). Text the library writes in
+`e.build` resolves in the **library's** module, its private functions
+included, and names that declaration wherever the template is expanded; the
+text from `e.text()` resolves at the **call site**, with the consumer's
+imports, aliases and locals. So `e.build("double(" + e.text() + ")")` calls
+the library's `double` even where the consumer declares its own, and
+`shapesdsl "surface(4, 5)"` reaches `area` through the consumer's
+`import {area as surface}`. `e.lookup(name)` resolves at the call site and
+answers the declaration — its own name and its `<package>@<path>@@<Decl>`
+identity, never the alias — which is what hover and go-to-definition inside
+the literal follow.
+
 ### Host bindings
 
 ```botopink
@@ -1891,6 +1913,14 @@ error: `listToBinary` has no `#[@External.<Target>(…)]` for the wasm backend
 | `erlang` | `@External.Erlang` | refused at compile time — "for the erlang backend" |
 | `beam` | `@External.Erlang` (the same vocabulary) | refused at compile time — "for the beam backend" |
 | `wasm` | `@External.Wasm` — nothing declares one today, so **every** host binding is refused here | refused at compile time — "for the wasm backend" |
+
+A declaration nothing calls is free on every target; a **call** is refused
+wherever it is written, whether or not anything reaches it. A function whose
+body is only a host call is an ordinary function and inherits no restriction:
+its call is statically present, so a target the declaration does not name
+refuses the program even when nothing calls the wrapper. A project that needs
+such a wrapper names its `targets`, or the declaration gains the other
+target's binding.
 
 wasm has no host to bind a declaration to, and no WASI call stands in for an
 arbitrary host symbol. Until 2026-09-21 it lowered such a call to a `wasm trap`

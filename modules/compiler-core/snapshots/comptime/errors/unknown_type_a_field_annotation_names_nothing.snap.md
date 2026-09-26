@@ -3,7 +3,7 @@ type Q(lat: bogusType)
 
 ----- ERROR
 error: unknown type
-  ┌─ :1:13
+  ┌─ main.bp:1:13
   │
 1 │ type Q(lat: bogusType)
   │             ^

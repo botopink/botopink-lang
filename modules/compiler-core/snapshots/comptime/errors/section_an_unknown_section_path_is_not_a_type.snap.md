@@ -4,7 +4,7 @@ fn f(t: Token.Nope) -> string { return "x"; }
 
 ----- ERROR
 error: unknown type
-  ┌─ :2:9
+  ┌─ main.bp:2:9
   │
 2 │ fn f(t: Token.Nope) -> string { return "x"; }
   │         ^

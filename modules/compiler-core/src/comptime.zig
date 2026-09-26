@@ -185,6 +185,47 @@ pub const ComptimeSession = struct {
 /// i.e. stdlib primitives (`Pair`, `Function`, `Array`). Codegen then emits their
 /// namespace objects so `Interface.method(...)` resolves at runtime. Local
 /// interfaces already in the program are skipped (avoids duplicate emission).
+/// True when `decls` declare a template function (`-> @Expr<T>` /
+/// `-> @ExprCustom<T>`).
+fn declaresTemplateFn(decls: []const ast.DeclKind) bool {
+    for (decls) |d| if (d == .@"fn") if (d.@"fn".returnType) |rt| if (rt.isTemplateReturnType()) return true;
+    return false;
+}
+
+/// Decision 112, at the backends' end. A consumer imports each name its
+/// expanded templates' LIBRARY wrote (`Env.templateImports`) under the alias
+/// inference bound it to — `import {<path>.<name> as <alias>} from "<pkg>"`,
+/// the qualified form every backend lowers. A module declaring a template
+/// (`declares_template`, read from the program before the transform dropped
+/// the templates) makes its private functions and values visible to those
+/// imports: `pub` from here on, where only the backends read it — the checker
+/// already refused every source import of them.
+fn withTemplateHygiene(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env, declares_template: bool) !ast.Program {
+    if (env.templateImports.count() == 0 and !declares_template) return prog;
+    var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    var it = env.templateImports.iterator();
+    while (it.next()) |e| {
+        var parts: std.ArrayListUnmanaged([]const u8) = .empty;
+        var seg = std.mem.splitScalar(u8, e.value_ptr.owner, '/');
+        while (seg.next()) |p| try parts.append(arena, p);
+        if (parts.items.len == 0) continue;
+        try parts.append(arena, e.value_ptr.name);
+        const items = try arena.alloc(ast.ImportPath, 1);
+        items[0] = .{ .segments = parts.items[1..], .alias = e.key_ptr.* };
+        try decls.append(arena, .{ .use = .{ .imports = items, .source = .{ .module = parts.items[0] } } });
+    }
+    for (prog.decls) |d| {
+        var out = d;
+        if (declares_template) switch (out) {
+            .@"fn" => |*f| f.isPub = true,
+            .val => |*v| v.isPub = true,
+            else => {},
+        };
+        try decls.append(arena, out);
+    }
+    return ast.Program{ .decls = decls.items };
+}
+
 fn withUsedAssocInterfaces(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
     if (env.usedAssocInterfaces.count() == 0) return prog;
     var extra: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
@@ -741,14 +782,17 @@ pub fn bundledPackage(name: []const u8) ?BundledPackage {
 
 /// True when `source` holds an import `from "<name>"` (or the dotted
 /// `from "<name>.<module>"`) — a lexical scan: the `from` keyword, spaces, then
-/// the quoted package name. A comment spelling one loads a package the program
-/// does not use, which costs compile time and changes nothing it emits for its
-/// own modules.
+/// the quoted package name, outside a `//` comment. A comment spelling one used
+/// to load the package: harmless where it compiles, and a refusal where it
+/// does not (a module header quoting `from "routing"` failed a wasm build on
+/// `routing`'s host calls, in a program that imports nothing from it).
 pub fn importsPackage(source: []const u8, name: []const u8) bool {
     var i: usize = 0;
     while (std.mem.indexOfPos(u8, source, i, "from")) |at| {
         i = at + 4;
         if (at > 0 and isIdentChar(source[at - 1])) continue;
+        const line_start = if (std.mem.lastIndexOfScalar(u8, source[0..at], '\n')) |nl| nl + 1 else 0;
+        if (std.mem.indexOf(u8, source[line_start..at], "//") != null) continue;
         var k = at + 4;
         if (k >= source.len or !(source[k] == ' ' or source[k] == '\t')) continue;
         while (k < source.len and (source[k] == ' ' or source[k] == '\t')) k += 1;
@@ -1002,6 +1046,7 @@ fn resolveImports(
                     // Template-fn binding so the call expands at comptime.
                     if (templateRegistry.get(pkg)) |tfn| {
                         try infer.registerImportedTemplateFn(env, pkg, tfn, pkg_owner);
+                        if (registry.getPtr(pkg_owner)) |ex| try env.templateOwnerExports.put(env.arena, pkg_owner, ex);
                     }
                 }
                 for (u.imports) |imp| {
@@ -1148,8 +1193,10 @@ fn resolveImports(
                     }
                     // Imported template fns (`-> @Expr<…>`) carry their decl
                     // across modules so call sites here can expand them.
+                    if (owner.len > 0) try env.importOwners.put(env.arena, local, .{ .owner = owner, .name = name });
                     if (owner.len > 0) if (templateRegistry.get(try comptimeRegistryKey(env.arena, owner, name))) |tfn| {
                         try infer.registerImportedTemplateFn(env, local, tfn, owner);
+                        if (registry.getPtr(owner)) |ex| try env.templateOwnerExports.put(env.arena, owner, ex);
                     };
                     // Imported decorators (`comptime _: @Decl` first param) carry
                     // their decl across modules too, so `#[name(args)]` sites in
@@ -1163,7 +1210,25 @@ fn resolveImports(
                         while (decoratorRegistry.get(try decoratorSupportKey(env.arena, owner, name, si))) |sf| : (si += 1) {
                             try support.append(env.arena, sf);
                         }
-                        try infer.registerImportedDecorator(env, local, dfn, owner, support.items);
+                        const conflict = if (decoratorRegistry.get(try decoratorConflictKey(env.arena, owner, name))) |c| c.name else null;
+                        try infer.registerImportedDecorator(env, local, dfn, owner, support.items, conflict);
+                    };
+                    // An imported plain function, with what it reaches in its
+                    // own module: a decorator of THIS module that calls it
+                    // carries it (`infer.decoratorSupport`). Bound under the
+                    // local name; under the declared one too when an alias
+                    // differs, since the function's own module calls it so.
+                    if (owner.len > 0) if (decoratorRegistry.get(try decoratorClosureKey(env.arena, owner, name, 0))) |head| {
+                        var closure: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+                        var renamed = head;
+                        renamed.name = local;
+                        try closure.append(env.arena, renamed);
+                        if (!std.mem.eql(u8, local, name)) try closure.append(env.arena, head);
+                        var ci: usize = 1;
+                        while (decoratorRegistry.get(try decoratorClosureKey(env.arena, owner, name, ci))) |cf| : (ci += 1) {
+                            try closure.append(env.arena, cf);
+                        }
+                        try env.importedFnSupport.put(env.arena, local, closure.items);
                     };
                     // Imported + activated extension (`import { Name* } from "mod"`):
                     // an `implement` block defined in another module is opted into
@@ -1223,6 +1288,23 @@ fn comptimeRegistryKey(arena: std.mem.Allocator, path: []const u8, name: []const
 /// can spell it: it holds two NULs.
 fn decoratorSupportKey(arena: std.mem.Allocator, path: []const u8, name: []const u8, i: usize) ![]const u8 {
     return std.fmt.allocPrint(arena, "{s}\x00{s}\x00support\x00{d}", .{ path, name, i });
+}
+
+/// Key of a `pub fn`'s closure in `decoratorRegistry`: entry 0 is the
+/// function, the rest what it reaches (`Env.importedFnSupport`).
+fn decoratorClosureKey(arena: std.mem.Allocator, path: []const u8, name: []const u8, i: usize) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}\x00{s}\x00closure\x00{d}", .{ path, name, i });
+}
+
+/// Key of an exported decorator's `infer.Support.conflict`. The registry holds
+/// `FnDecl`s, so the message rides in a bodyless one's name
+/// (`conflictCarrier`) — never a function anything calls.
+fn decoratorConflictKey(arena: std.mem.Allocator, path: []const u8, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}\x00{s}\x00conflict", .{ path, name });
+}
+
+fn conflictCarrier(message: []const u8) ast.FnDecl {
+    return .{ .name = message, .isPub = false, .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{} };
 }
 
 /// The package key for a module path: the segment before the first `/` (a lib
@@ -1313,8 +1395,21 @@ fn registerExports(
         .implement => |im| if (im.isPub) try extensions.put(im.name, im),
         else => {},
     };
+    // Decision 112 — a module declaring a template exports its PRIVATE
+    // functions and values too, under a key no import can spell
+    // (`envMod.templatePrivateKey`): the template's own text names them, and
+    // that text resolves in this module wherever it is expanded.
+    const declares_template = declaresTemplateFn(decls);
     for (bindings) |b| {
         if (b.name.len == 0 or b.decl == .use) continue;
+        if (declares_template and (b.decl == .@"fn" or b.decl == .val)) {
+            const private = switch (b.decl) {
+                .@"fn" => |f| !f.isPub,
+                .val => |v| !v.isPub,
+                else => false,
+            };
+            if (private) try exports.put(try envMod.templatePrivateKey(arena, b.name), env.lookup(b.name) orelse b.type_);
+        }
         // A type alias exports its declaration only — it names no value, and
         // an importer re-registers it (`registerTypeDecl`) to substitute it.
         if (b.decl == .typeAlias) {
@@ -1353,15 +1448,28 @@ fn registerExports(
                 // Decorators (`comptime _: @Decl` first param) export their decl
                 // too, so importing modules can run the body over their annotated
                 // declarations — generic, by shape, no lib name involved.
+                var fns = std.StringHashMap(ast.FnDecl).init(arena);
+                for (decls) |d| if (d == .@"fn") try fns.put(d.@"fn".name, d.@"fn");
                 if (infer.isDecoratorParams(f.params)) {
                     try decoratorRegistry.put(try comptimeRegistryKey(arena, path, b.name), f);
-                    // The module's functions its body reaches travel with it
-                    // (`decoratorSupportKey`): the importer's module does not
-                    // declare them, and the decorator module needs them.
-                    var fns = std.StringHashMap(ast.FnDecl).init(arena);
-                    for (decls) |d| if (d == .@"fn") try fns.put(d.@"fn".name, d.@"fn");
-                    const support = try infer.decoratorSupport(arena, fns, f);
-                    for (support, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), sf);
+                    // The functions its body reaches travel with it
+                    // (`decoratorSupportKey`) — its module's and the ones the
+                    // module imports: the importer's module declares none of
+                    // them, and the decorator module needs them.
+                    const support = try infer.decoratorSupport(arena, fns, &env.importedFnSupport, f);
+                    for (support.fns, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), sf);
+                    if (support.conflict) |c| try decoratorRegistry.put(try decoratorConflictKey(arena, path, b.name), conflictCarrier(c));
+                } else if (infer.isCarriableFn(f)) {
+                    // A plain `pub fn` carries itself and what it reaches
+                    // (`decoratorClosureKey`), so a decorator of a module
+                    // that imports it can call it: entry 0 is the function,
+                    // the rest are the functions of this module (and of its
+                    // own imports) its body reaches.
+                    try decoratorRegistry.put(try decoratorClosureKey(arena, path, b.name, 0), f);
+                    const support = try infer.decoratorSupport(arena, fns, &env.importedFnSupport, f);
+                    if (support.conflict == null) {
+                        for (support.fns, 1..) |sf, i| try decoratorRegistry.put(try decoratorClosureKey(arena, path, b.name, i), sf);
+                    }
                 }
             }
         }
@@ -1804,7 +1912,8 @@ pub fn compileTypesOnly(
                         &succ.env.resultPatternLocs,
                         &succ.env.namespaces,
                     ) catch break :blk_t program_for_transform;
-                    const with_assoc = withUsedAssocInterfaces(arena_alloc, t, &succ.env) catch break :blk_t t;
+                    const hygienic = withTemplateHygiene(arena_alloc, t, &succ.env, declaresTemplateFn(program_for_transform.decls)) catch break :blk_t t;
+                    const with_assoc = withUsedAssocInterfaces(arena_alloc, hygienic, &succ.env) catch break :blk_t hygienic;
                     const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
                     const with_src = withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
                     const with_step = withYieldStepDecl(arena_alloc, with_src, &succ.env) catch with_src;
@@ -1997,7 +2106,7 @@ pub fn compile(
                 };
                 const transformed = try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try withTemplateHygiene(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env, declaresTemplateFn(program_for_transform.decls)), &succ.env),
                     &succ.env,
                 ), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env);
 
@@ -2037,4 +2146,8 @@ test "importsPackage: the `from` keyword and the quoted name, dotted or not" {
     try std.testing.expect(!importsPackage("import {x} from \"shapesx\";", "shapes"));
     try std.testing.expect(!importsPackage("import {x} from \"std\";", "shapes"));
     try std.testing.expect(!importsPackage("val datefrom = \"shapes\";", "shapes"));
+    // A comment quoting an import loads nothing.
+    try std.testing.expect(!importsPackage("//// like `import {x} from \"shapes\"`\nval y = 1;", "shapes"));
+    try std.testing.expect(!importsPackage("val y = 1; // from \"shapes\"", "shapes"));
+    try std.testing.expect(importsPackage("// a comment\nimport {x} from \"shapes\";", "shapes"));
 }

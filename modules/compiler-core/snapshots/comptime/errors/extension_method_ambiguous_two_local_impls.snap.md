@@ -21,7 +21,7 @@ val r = donald.swim();
 
 ----- ERROR
 error: ambiguous extension method
-  ┌─ :19:16
+  ┌─ main.bp:19:16
   │
 19 │ val r = donald.swim();
   │                ^

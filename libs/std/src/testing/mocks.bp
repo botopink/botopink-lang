@@ -245,8 +245,8 @@ pub fn mock(comptime decl: @Decl) {
         val sig = if (params == "") "self: Self" else "self: Self, " + params;
         val keys = keyList.join(", ");
         val def = if (m.returnType == "string") "\"\"" else if (m.returnType == "bool") "false" else if (m.returnType.startsWith(
-            "Array"
-        )) "[]" else "0";
+            "Array<"
+        ) || m.returnType.endsWith("[]")) "[]" else "0";
         methods = methods + "  fn " + m.name + "(" + sig + ") -> " + m.returnType + " { return invoke(self.__id, \"" + m.name + "\", [" + keys + "], " + def + "); }\n";
     });
     @emit("type Mock" + decl.name + "(__id: string) implement " + decl.name + " {\n" + methods + "}");

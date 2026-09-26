@@ -6,7 +6,7 @@ fn f(t: Token) -> string {
 
 ----- ERROR
 error: non-exhaustive case
-  ┌─ :3:12
+  ┌─ main.bp:3:12
   │
 3 │     return case t { Text(Bold) -> "b"; Hover(h) -> "h"; };
   │            ^

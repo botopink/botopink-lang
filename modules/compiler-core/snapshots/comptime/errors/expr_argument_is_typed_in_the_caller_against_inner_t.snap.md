@@ -6,7 +6,7 @@ val c = check("not a bool");
 
 ----- ERROR
 error: type mismatch
-  ┌─ :4:15
+  ┌─ main.bp:4:15
   │
 4 │ val c = check("not a bool");
   │               ^

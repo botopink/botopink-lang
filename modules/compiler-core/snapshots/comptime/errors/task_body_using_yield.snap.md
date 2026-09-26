@@ -5,7 +5,7 @@ fn bad() -> @Task<i32> {
 
 ----- ERROR
 error: yield-without-generator: `yield` needs `-> @Iterator<…>` or `-> @Stream<…>` return — this fn returns `@Task<…>`, which does not
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     yield 1;
   │     ^

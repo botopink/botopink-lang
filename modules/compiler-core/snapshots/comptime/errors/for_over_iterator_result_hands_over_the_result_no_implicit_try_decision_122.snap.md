@@ -10,7 +10,7 @@ fn total(n: i32) -> i32 {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :6:38
+  ┌─ main.bp:6:38
   │
 6 │     for (upTo(n)) { x -> acc = acc + x; };
   │                                      ^

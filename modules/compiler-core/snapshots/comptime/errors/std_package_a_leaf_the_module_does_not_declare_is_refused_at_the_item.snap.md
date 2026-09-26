@@ -7,7 +7,7 @@ fn main() {
 
 ----- ERROR
 error: std module `collections` has no public `emptyish`
-  ┌─ :1:29
+  ┌─ main.bp:1:29
   │
 1 │ import {collections: {Dict, emptyish}} from "std";
   │                             ^

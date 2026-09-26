@@ -1,0 +1,8 @@
+a: Array<string>
+b: Array<#(string, string)>
+c: string[]
+d: fn(i32) -> i32
+e: #(string, string)
+f: ?i32
+g: string
+pick(Self, i32[], ?string) -> Array<i32>

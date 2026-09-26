@@ -24,7 +24,7 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 288))
   (global $name (mut i32) (i32.const 256))
   (global $page (mut i32) (i32.const 0))
-  (func $main
+  (func $main (export "main")
     global.get $page
     call $__print_str
   )

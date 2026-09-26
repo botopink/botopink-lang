@@ -1,0 +1,11 @@
+//// Decision 112, row 1: text the library writes in `e.build` resolves in the
+//// library's module, private names included. `double` is private to
+//// `shapesdsl`; the expansion `double(area(4, 5))` was checked in THIS
+//// module, where `double` does not exist — `unbound variable 'double'`.
+
+import shapesdsl, {area} from "shapesdsl";
+
+pub fn main() {
+    val x = shapesdsl "area(4, 5)";
+    @print(x);
+}

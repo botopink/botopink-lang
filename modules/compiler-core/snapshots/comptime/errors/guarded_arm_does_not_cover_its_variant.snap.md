@@ -14,7 +14,7 @@ val name = fn(c: Color) -> string {
 
 ----- ERROR
 error: non-exhaustive case
-  ┌─ :7:12
+  ┌─ main.bp:7:12
   │
 7 │     return case c {
   │            ^

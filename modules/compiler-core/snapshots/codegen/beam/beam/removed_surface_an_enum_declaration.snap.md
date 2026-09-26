@@ -6,7 +6,7 @@ enum Color { Red, Green }
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: parse error (removedKeywordEnum)
-  ┌─ :1:1
+  ┌─ main.bp:1:1
   │
 1 │ enum Color { Red, Green }
 

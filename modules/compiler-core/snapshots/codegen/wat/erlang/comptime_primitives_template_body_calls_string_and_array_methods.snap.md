@@ -2842,9 +2842,19 @@ fn main() {
 ;;         multiline => false
 ;;     },
 ;;     bindings => [
-;;         #{name => <<"shout">>, kind => 'Fn'},
-;;         #{name => <<"s">>, kind => 'Val'},
-;;         #{name => <<"main">>, kind => 'Fn'}
+;;         #{
+;;             name => <<"shout">>,
+;;             kind => 'Fn',
+;;             identity => <<"main@@shout">>,
+;;             local => <<"shout">>
+;;         },
+;;         #{name => <<"s">>, kind => 'Val', identity => <<"main@@s">>, local => <<"s">>},
+;;         #{
+;;             name => <<"main">>,
+;;             kind => 'Fn',
+;;             identity => <<"main@@main">>,
+;;             local => <<"main">>
+;;         }
 ;;     ]
 ;; }
 ```
@@ -2861,6 +2871,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export([main/0, s/0]).
 
 %% behavior String
 

@@ -5,7 +5,7 @@ fn isPositive(n: i32) -> n is i32 {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :2:12
+  ┌─ main.bp:2:12
   │
 2 │     return n;
   │            ^

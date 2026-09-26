@@ -15,7 +15,7 @@ fn main() {
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: type mismatch
-  ┌─ :3:9
+  ┌─ main.bp:3:9
   │
 3 │     if (b && b.weight > 10) {
   │         ^

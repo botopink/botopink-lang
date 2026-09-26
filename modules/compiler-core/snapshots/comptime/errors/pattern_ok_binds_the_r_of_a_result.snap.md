@@ -6,7 +6,7 @@ fn g() -> string { return case parse("1") { Ok(v) -> f(v); Err(e) -> "e"; }; }
 
 ----- ERROR
 error: type mismatch
-  ┌─ :4:56
+  ┌─ main.bp:4:56
   │
 4 │ fn g() -> string { return case parse("1") { Ok(v) -> f(v); Err(e) -> "e"; }; }
   │                                                        ^

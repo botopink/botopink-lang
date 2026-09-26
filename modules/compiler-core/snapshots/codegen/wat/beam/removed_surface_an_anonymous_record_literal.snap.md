@@ -8,7 +8,7 @@ fn main() {
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: parse error (removedRecordLiteral)
-  ┌─ :2:13
+  ┌─ main.bp:2:13
   │
 2 │     val p = record { x: 1 };
 

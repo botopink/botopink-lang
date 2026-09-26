@@ -14,11 +14,12 @@
 //! | Declaration                                   | Target          | `$0`        | `$N` (N ≥ 1) |
 //! |-----------------------------------------------|-----------------|-------------|--------------|
 //! | a method whose first parameter is `self`      | every target    | receiver    | `$(N-1)`     |
-//! | a top-level `fn` whose first parameter is `self` | Erlang, Beam | receiver    | `$(N-1)`     |
 //! | anything else                                  | —               | unchanged   | unchanged    |
 //!
-//! (commonJS already numbers a top-level `fn`'s parameters from `$0`.) A `$args`
-//! on a method means every declared parameter, the receiver first.
+//! A top-level `fn` has no receiver: the parser refuses a free function's
+//! `self` parameter (`self-param-outside-type`), so its `$N` is its N-th
+//! parameter on every target. A `$args` on a method means every declared
+//! parameter, the receiver first.
 //!
 //! Refused with a location: `$self` anywhere, and `$N` with N ≥ the number of
 //! declared parameters.
@@ -80,8 +81,8 @@ fn normalizeDecl(
 ) !?Failure {
     const has_self = params.len > 0 and std.mem.eql(u8, params[0].name, "self");
     for (annotations) |*a| {
-        const target = targetOf(a.name) orelse continue;
-        const shift = has_self and (site == .method or target == .erlang or target == .beam);
+        if (targetOf(a.name) == null) continue;
+        const shift = has_self and site == .method;
         var new_args: ?[][]const u8 = null;
         errdefer if (new_args) |na| {
             for (na) |x| alloc.free(x);

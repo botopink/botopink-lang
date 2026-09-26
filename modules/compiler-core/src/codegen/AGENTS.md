@@ -1469,7 +1469,9 @@ codegen/
   which inference leaves unlowered: `selfPrimKind` re-derives the primitive kind
   from the owning interface (following `-> Self` methods through chained calls — `-> Self<T>` too, read through `ast.TypeRef.isSelf()`, since decision 8 §1.2 has `libs/std` write the argument) and
   bare callees also resolve against the std prelude template index
-  (`preludeHelperNode`, `in_iface_default`).
+  (`preludeHelperNode`, `in_iface_default`): the helpers are free `declare fn`s
+  (`stringSlice0(s, start)`), so `$N` is the call's N-th argument — a free
+  function has no receiver (`self-param-outside-type`).
 - **Value-receiver instance methods**: record/enum/struct methods keep `self`
   (`isAssocMethod` gates `keep_self`); `recv.m(args)` lowers via the loc-keyed
   `instance_lowerings` table — `.record` → local (or `owner:`) call, `.prim` →

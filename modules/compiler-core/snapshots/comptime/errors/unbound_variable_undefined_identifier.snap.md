@@ -3,7 +3,7 @@ val x = undefinedIdent;
 
 ----- ERROR
 error: unbound variable
-  ┌─ :1:9
+  ┌─ main.bp:1:9
   │
 1 │ val x = undefinedIdent;
   │         ^

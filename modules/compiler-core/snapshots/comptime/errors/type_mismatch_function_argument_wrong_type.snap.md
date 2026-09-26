@@ -6,7 +6,7 @@ val bad = double("hello");
 
 ----- ERROR
 error: type mismatch
-  ┌─ :4:18
+  ┌─ main.bp:4:18
   │
 4 │ val bad = double("hello");
   │                  ^

@@ -161,7 +161,7 @@ pub fn home() -> ?string {
 ----- COMPILE DIAGNOSTIC -- std/probe
 ```text
 error: std-root-imports-io: std module `probe` is at the root of std, which is pure; `io.env.read` imports from `io/`
-  ┌─ :1:20
+  ┌─ std/probe.bp:1:20
   │
 1 │ import {io: {env: {read}}} from "std";
   │                    ^

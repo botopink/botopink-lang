@@ -5,7 +5,7 @@ fn nums() -> @Iterator<i32> :outer {
 
 ----- ERROR
 error: yield-label-unbound: `yield` targets an unknown label
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     yield :nonsense 1;
   │     ^

@@ -617,9 +617,14 @@ pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr
     if (cap.scope) |scope| {
         var it = scope.entries.iterator();
         while (it.next()) |e| {
-            const be = try arena.alloc(Term.MapEntry, 2);
-            be[0] = Term.field("name", Term.str(e.value_ptr.name));
+            // Decision 112: `name` is the declaration's own name and
+            // `identity` its `<package>@<path>@@<Decl>`; `local` is the name
+            // the scope spells — what `lookup` matches and `ref` splices.
+            const be = try arena.alloc(Term.MapEntry, 4);
+            be[0] = Term.field("name", Term.str(e.value_ptr.declName));
             be[1] = Term.field("kind", Term.atomOf(e.value_ptr.kind.variantName()));
+            be[2] = Term.field("identity", Term.str(e.value_ptr.identity));
+            be[3] = Term.field("local", Term.str(e.value_ptr.name));
             try bindings.append(arena, Term.mapOf(be));
         }
     }
@@ -744,6 +749,8 @@ fn customTree(arena: std.mem.Allocator, v: std.json.Value) std.mem.Allocator.Err
         .object => |ro| if (jsonString(ro.get("name"))) |name| .{
             .name = name,
             .kind = jsonString(ro.get("kind")) orelse "",
+            .identity = jsonString(ro.get("identity")) orelse "",
+            .local = jsonString(ro.get("local")) orelse name,
         } else null,
         else => null,
     } else null;

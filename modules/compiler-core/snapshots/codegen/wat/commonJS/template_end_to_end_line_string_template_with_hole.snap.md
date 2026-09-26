@@ -50,11 +50,16 @@ function __bp_print() {
 
 const name = "world";
 
+exports.name = name;
+
 const page = (("<div>\n  <p>" + name) + "</p>\n</div>");
+
+exports.page = page;
 
 function main() {
     __bp_print(page);
 }
+exports.main = main;
 
 function _botopink_main() {
     main();
