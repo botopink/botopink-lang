@@ -9,11 +9,11 @@ val Container = type {
     Multiple(Result<i32, string>[]),
 };
 val extract = fn(c: Container) -> i32 {
-    case c {
+    return case c {
         Single(Ok(v)) -> v;
         Multiple([Ok(v), ..]) -> v;
         _ -> 0;
-    }
+    };
 };
 ```
 

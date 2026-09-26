@@ -9,7 +9,7 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }
+function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
 
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {

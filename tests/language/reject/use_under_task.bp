@@ -3,7 +3,7 @@
 //// `@Component ⊃ @Task`, so a `@Task` return grants `await` and not `use`.
 //// `use-without-context-effect`, at the `use`.
 
-pub type ElementBase {}
+pub type ElementBase()
 type Element(count: i32) implement @Context<ElementBase>
 
 fn state(initial: i32) -> @Component<ElementBase, i32> { return initial; }

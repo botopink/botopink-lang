@@ -1540,8 +1540,22 @@ pub const Formatter = struct {
                 try this.text(if (is_optional) "?." else "."),
                 try this.text(c.callee),
             })
-        else
-            try this.text(if (is_builtin) try std.fmt.allocPrint(this.arena, "@{s}", .{c.callee}) else c.callee);
+        else blk: {
+            const name = try this.text(if (is_builtin) try std.fmt.allocPrint(this.arena, "@{s}", .{c.callee}) else c.callee);
+            // Decision 8 §1.3 (01-checker) — explicit type arguments at a use,
+            // `Box<i32>(value: 1)`, printed back adjacent to the name.
+            const typeArgs = if (@hasField(@TypeOf(c), "typeArgs")) c.typeArgs else null;
+            const tas = typeArgs orelse break :blk name;
+            var parts: std.ArrayListUnmanaged(*const Doc) = .empty;
+            try parts.append(this.arena, name);
+            try parts.append(this.arena, try this.text("<"));
+            for (tas, 0..) |ta, i| {
+                if (i > 0) try parts.append(this.arena, try this.text(", "));
+                try parts.append(this.arena, try this.fmtTypeRef(ta));
+            }
+            try parts.append(this.arena, try this.text(">"));
+            break :blk try this.concatAll(parts.items);
+        };
 
         // Check if there are any comments to force multiline formatting
         const hasComments = hasCommentsLoop: {
@@ -2468,7 +2482,8 @@ pub const Formatter = struct {
 
     /// `#[…] [pub] type Name<G>(fields) implement A { methods }` (record shape)
     /// or `#[…] [pub] type Name<G> implement A { Variant, …, methods }` (enum
-    /// shape) — the 1.0.3 surface. A record with no methods prints no body;
+    /// shape) — the 1.0.3 surface. A record always prints its field list (`()` when
+    /// empty, decision 138); a record with no methods prints no body;
     /// variants stay compact on one line unless the source had a trailing
     /// comma, the body holds a section or a method.
     fn fmtType(this: *Formatter, t: ast.TypeDecl) !*const Doc {
@@ -2493,7 +2508,11 @@ pub const Formatter = struct {
         }
 
         if (t.isRecord()) {
-            if (t.recordFields().len > 0) try parts.append(this.arena, try this.fmtFieldList(t.recordFields(), t.trailingComma));
+            // Decision 138: the field list is always written, `()` when empty.
+            if (t.recordFields().len > 0)
+                try parts.append(this.arena, try this.fmtFieldList(t.recordFields(), t.trailingComma))
+            else
+                try parts.append(this.arena, try this.text("()"));
             try this.appendImplement(&parts, t.implement);
             if (methodDocs.len > 0 or t.bodyComments.len > 0) {
                 try parts.append(this.arena, try this.text(" "));

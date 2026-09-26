@@ -5,7 +5,7 @@ val Shape = type {
     Square(side: f64),
 };
 val scale = fn(s: Shape, factor: f64) -> Shape {
-    case s {
+    return case s {
         Circle(r) -> Circle(radius: r * factor);
         Square(s) -> Square(side: s * factor);
     };
@@ -51,7 +51,7 @@ val scale = fn(s: Shape, factor: f64) -> Shape {
       "return_type": "Shape",
       "body": [
         {
-          "source": "case s {"
+          "source": "return case s {"
         }
       ]
     }

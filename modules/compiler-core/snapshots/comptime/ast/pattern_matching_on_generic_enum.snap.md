@@ -5,7 +5,7 @@ val Option = type <T> {
     None,
 };
 val map = fn(opt: Option<i32>, f: fn(i32) -> i32) -> Option<i32> {
-    case opt {
+    return case opt {
         Some(v) -> Some(value: f(v));
         None -> None;
     };
@@ -51,7 +51,7 @@ val map = fn(opt: Option<i32>, f: fn(i32) -> i32) -> Option<i32> {
       "return_type": "Option<i32>",
       "body": [
         {
-          "source": "case opt {"
+          "source": "return case opt {"
         }
       ]
     }

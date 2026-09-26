@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Element = type implement @Context<Element> { }
+val Element = type() implement @Context<Element>
 fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }

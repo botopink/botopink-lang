@@ -17,9 +17,9 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function __bp_string_char_at(s, i) { return (i >= 0 && i < s.length) ? s.charAt(i) : null; }
+function __bp_string_char_at(s, i) { return s.at(i) ?? null; }
 
-function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }
+function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
 
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
@@ -229,10 +229,11 @@ Array.prototype.sliding = function(n) {
 };
 Array.prototype.unique = function() {
     let out = [];
-    let seenLast = false;
+    let first = true;
     let prev = this.at(0);
     this.forEach((x) => {
-    return (() => { if (seenLast) { return (() => { if ((prev.unwrapOr(x) !== x)) { out = out.concat([x]); return prev = this.at(out.length); } })(); } else { out = out.concat([x]); seenLast = true; return prev = this.at(0); } })();
+    (() => { if (first) { out = out.concat([x]); return first = false; } else { return (() => { if ((prev !== x)) { return out = out.concat([x]); } })(); } })();
+    prev = x;
 });
     return out;
 };

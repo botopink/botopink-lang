@@ -1,0 +1,4 @@
+//// One of two modules exporting a template named `tag`.
+pub fn tag(comptime q: @Expr<string>) -> @Expr<string> {
+    return q.build("\"LOUD\"");
+}

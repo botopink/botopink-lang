@@ -848,10 +848,10 @@ test "comptime: net-new ---- nested template call inside a template body" {
 
 test "template: markup DSL ---- <Component/> tags resolve to calls" {
     try assertCompilesOk(@src(),
-        \\val Element = type implement @Context<Element> { }
-        \\fn fragment(items: Element[]) -> Element { Element(); }
-        \\fn Page1() -> Element { Element(); }
-        \\fn Page2() -> Element { Element(); }
+        \\val Element = type() implement @Context<Element>
+        \\fn fragment(items: Element[]) -> Element { return Element(); }
+        \\fn Page1() -> Element { return Element(); }
+        \\fn Page2() -> Element { return Element(); }
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<Element> {
         \\    return q.build("fragment([Page1(), Page2()])");
         \\}
@@ -861,9 +861,9 @@ test "template: markup DSL ---- <Component/> tags resolve to calls" {
 
 test "template: markup DSL ---- ${expr} splices as a text child" {
     try assertCompilesOk(@src(),
-        \\val Element = type implement @Context<Element> { }
-        \\fn fragment(items: Element[]) -> Element { Element(); }
-        \\fn text(value: string) -> Element { Element(); }
+        \\val Element = type() implement @Context<Element>
+        \\fn fragment(items: Element[]) -> Element { return Element(); }
+        \\fn text(value: string) -> Element { return Element(); }
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<Element> {
         \\    var acc = "fragment([";
         \\    for (q.parts()) { p ->

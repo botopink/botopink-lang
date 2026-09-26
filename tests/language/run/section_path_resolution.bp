@@ -1,0 +1,51 @@
+//// 01 step 12 — a section path resolves through the type it names or the
+//// type its position expects, never through a flat bare-name table:
+////   * a section leaf takes the leading-dot shorthand where the position is
+////     that section (`val b: Token.Layout.Break = .Zeta;`), even when a
+////     top-level variant of the enum shares the leaf's name (`Zeta(n: i32)`)
+////     — before, `unbound variable 'Zeta'`, or with the sibling, `expected
+////     __Token__Layout__Break, got function`;
+////   * a path whose leaf is a payload variant (`.Color.Hex("#abc")`) walks the
+////     annotated enum's sections, not an unrelated enum that declares a bare
+////     `Color` (`Ns`) — before, `'Hex' is not declared in any behavior
+////     implemented for 'Ns'`;
+////   * the qualified `Token.Text.Italic` is a `Token.Text` where the position
+////     expects one.
+
+pub type Ns {
+    Color,
+    Space,
+}
+
+pub type Token {
+    Layout { Break { Zeta, Eta } },
+    Color { Hex(v: string), Red },
+    Text { Bold, Italic },
+    Zeta(n: i32),
+}
+
+fn breakName(b: Token.Layout.Break) -> string {
+    return case b { .Zeta { "zeta" } .Eta { "eta" } };
+}
+
+fn colorOf(t: Token) -> string {
+    return case t {
+        Color(inner) { case inner { .Hex(v) { v } .Red { "red" } } }
+        _ { "other" }
+    };
+}
+
+fn textOf(t: Token.Text) -> string {
+    return case t { .Bold { "bold" } .Italic { "italic" } };
+}
+
+pub fn main() {
+    val b: Token.Layout.Break = .Zeta;
+    @print(breakName(b));
+    val h: Token = .Color.Hex("#abc");
+    @print(colorOf(h));
+    @print(colorOf(Token.Color.Hex("#def")));
+    val i: Token.Text = Token.Text.Italic;
+    @print(textOf(i));
+    @print(textOf(.Bold));
+}

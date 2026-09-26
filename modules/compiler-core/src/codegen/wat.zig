@@ -3316,6 +3316,12 @@ const Emitter = struct {
                         try self.emit(.{ .br = break_label });
                         return .terminated;
                     }
+                    // Decision 103: a bare `break` at a generator body's own
+                    // level ends it — nothing after it is emitted.
+                    if (self.yield_target != null) {
+                        try self.emitGenEnd();
+                        return .terminated;
+                    }
                     return .none;
                 },
                 .yield => |y| {
@@ -3828,7 +3834,12 @@ const Emitter = struct {
                             // Decision 105 — see the statement-position arm above.
                             try self.emitGenBreak(v.*);
                         } else try self.lowerExpr(v.*);
-                    } else if (self.loop_depth > 0) try self.emit(.{ .br = break_label });
+                    } else if (self.loop_depth > 0) {
+                        try self.emit(.{ .br = break_label });
+                    } else if (self.yield_target != null) {
+                        // Decision 103 — see the statement-position arm above.
+                        try self.emitGenEnd();
+                    }
                 },
                 .yield => |y| {
                     if (y.value) |v| {
@@ -5605,17 +5616,11 @@ const Emitter = struct {
                 .{ "findIndex", 1, .i32 },  .{ "fold", 2, .i32 },
             },
             .string => &.{
-                .{ "length", 0, .i32 },      .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
-                .{ "contains", 1, .bool_ },  .{ "startsWith", 1, .bool_ }, .{ "endsWith", 1, .bool_ },
-                .{ "indexOf", 1, .i32 },     .{ "trim", 0, .str },         .{ "trimStart", 0, .str },
-                .{ "trimEnd", 0, .str },     .{ "split", 1, .arr },        .{ "slice", 1, .str },
-                .{ "slice", 2, .str },       .{ "repeat", 1, .str },       .{ "toString", 0, .str },
-                // The host spellings `primitives.bp` gives `toUpper`/`toLower`
-                // through `#[@External.Node(…)]`. Source writes them
-                // (`tests/language/test/string_case_conversion.bp`), commonJS
-                // answers them because they are JavaScript's own, and this
-                // backend used to trap on an unlowered primitive method.
-                .{ "toUpperCase", 0, .str }, .{ "toLowerCase", 0, .str },
+                .{ "length", 0, .i32 },     .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
+                .{ "contains", 1, .bool_ }, .{ "startsWith", 1, .bool_ }, .{ "endsWith", 1, .bool_ },
+                .{ "indexOf", 1, .i32 },    .{ "trim", 0, .str },         .{ "trimStart", 0, .str },
+                .{ "trimEnd", 0, .str },    .{ "split", 1, .arr },        .{ "slice", 1, .str },
+                .{ "slice", 2, .str },      .{ "repeat", 1, .str },       .{ "toString", 0, .str },
                 // `Index<i32, string>.at` (decision 63's amendment) — a
                 // `?string`, absent as the pointer 0. `.str` is its stack
                 // shape; `optInfoOf` is what routes the print through
@@ -5773,10 +5778,8 @@ const Emitter = struct {
         try self.lowerCoerced(recv, "i32");
         if (eq(u8, name, "length")) {
             try self.emitC(.{ .load = .{} }, "string length");
-        } else if (eq(u8, name, "toUpper") or eq(u8, name, "toLower") or
-            eq(u8, name, "toUpperCase") or eq(u8, name, "toLowerCase"))
-        {
-            const upper = eq(u8, name, "toUpper") or eq(u8, name, "toUpperCase");
+        } else if (eq(u8, name, "toUpper") or eq(u8, name, "toLower")) {
+            const upper = eq(u8, name, "toUpper");
             try self.emit(try self.constInt(if (upper) @as(i32, 'a') else 'A'));
             try self.emit(try self.constInt(if (upper) @as(i32, 'z') else 'Z'));
             try self.emit(try self.constInt(if (upper) @as(i32, -32) else 32));
@@ -8361,6 +8364,14 @@ const Emitter = struct {
     /// return what the body collected.
     fn emitGenBreak(self: *Emitter, v: ast.Expr) anyerror!void {
         try self.emitYield(v);
+        try self.emitGenEnd();
+    }
+
+    /// End the generator scope without emitting: branch out of the annotated
+    /// loop's block, or, in a generator fn, return what the body collected —
+    /// a bare `break` at the body's own level (decision 103), and the tail
+    /// of `break <v>`.
+    fn emitGenEnd(self: *Emitter) anyerror!void {
         if (self.gen_end) |label| {
             try self.emit(.{ .br = label });
             return;

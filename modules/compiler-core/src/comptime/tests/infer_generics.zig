@@ -92,7 +92,7 @@ test "infer: generic enum Result<T> with Ok and Err" {
         \\    Ok(value: T),
         \\    Err(message: string),
         \\};
-        \\pub fn isOk(r: Result) -> bool {
+        \\pub fn isOk<T>(r: Result<T>) -> bool {
         \\    return true;
         \\}
         \\val r = Result.Ok(value: 42);
@@ -150,8 +150,8 @@ test "infer: generic fn ---- referenced as a value instantiates fresh vars" {
 test "infer: generic interface Container<T>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Container = behavior <T> {
-        \\    fn fetch(self: Self) -> T;
-        \\    fn store(self: Self, value: T);
+        \\    fn fetch(self: Self<T>) -> T;
+        \\    fn store(self: Self<T>, value: T);
         \\}
     );
 }
@@ -263,7 +263,7 @@ test "infer: net-new ---- inline test in a generic module resolves" {
 // `Element` with no ContextBase drift.
 test "infer: net-new ---- @Context across three hook layers stays Element-based" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type implement @Context<Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn layer1(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}

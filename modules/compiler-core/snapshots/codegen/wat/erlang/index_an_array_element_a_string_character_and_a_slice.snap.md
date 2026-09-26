@@ -45,12 +45,12 @@ array_repeat(Value, Times) ->
 main() ->
     Xs = [10, 20, 30],
     I = 1,
-    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Xs, 0)]),
-    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Xs, (I + 1))]),
+    '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Xs, 0)]),
+    '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Xs, (I + 1))]),
     Names = [<<"ana">>, <<"bo">>],
-    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Names, 1)]),
+    '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Names, 1)]),
     S = <<"hello">>,
-    '__bp_print'([(fun(__S, __I) -> case (__I >= 0) andalso (__I < string:length(__S)) of true -> string:slice(__S, __I, 1); false -> undefined end end)(S, 1)]),
+    '__bp_print'([(fun(__S, __I) -> __N = string:length(__S), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> string:slice(__S, __J, 1); false -> undefined end end)(S, 1)]),
     '__bp_print'([string_slice(S, 1, 3)]),
     '__bp_print'([string_slice(S, 3, undefined)]),
     '__bp_print'([array_slice(Xs, 1, undefined)]).

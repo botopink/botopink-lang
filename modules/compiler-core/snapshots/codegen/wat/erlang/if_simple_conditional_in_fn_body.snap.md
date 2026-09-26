@@ -11,53 +11,14 @@ fn main() {
 }
 ```
 
------ ERLANG -- main.erl
-```erlang
--module(test@main).
--export(['_botopink_main'/0, main/1]).
+----- COMPILE DIAGNOSTIC -- main
+```text
+error: an `if` without `else` has no value on its false side
+  ┌─ :2:13
+  │
+2 │     val r = if (n > 0) { "positive"; };
+  │             ^
 
-sign(N) ->
-    R = case (N > 0) of
-        true ->
-            <<"positive">>;
-        _ -> ok
-    end,
-    '__bp_print'([R]),
-    R.
-
-main() ->
-    sign(5),
-    sign((-3)).
-
-'__bp_print'(Values) ->
-    io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
-
-'__bp_show'(V, true) when is_binary(V) -> V;
-'__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
-'__bp_show'(undefined, _) -> "null";
-'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
-'__bp_show'(V, _) -> io_lib:format("~p", [V]).
-
-'__bp_tagged'(A, V) ->
-    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
-    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
-
-'__bp_render'({text, T}) -> T;
-'__bp_render'({variant, N, []}) -> N;
-'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
-
-'_botopink_main'() ->
-    main().
-
-main(_Args) ->
-    '_botopink_main'().
+  hint: Give it an `else` branch, or bind the value inside the branch (decision 2: a block is a statement).
 ```
 
------ RUN LOG -----
-```logs
-positive
-ok
-```

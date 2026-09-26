@@ -126,8 +126,8 @@ pub type Result<R, E> {
 // and `try await t` propagates its error. A function with no await channel
 // consumes a Task through its own functions.
 pub behavior Task<T> {
-    fn map<R>(self: Self, transform: fn(value: T) -> R) -> Task<R>;
-    fn then<R>(self: Self, next: fn(value: T) -> Task<R>) -> Task<R>;
+    fn map<R>(self: Self<T>, transform: fn(value: T) -> R) -> Task<R>;
+    fn then<R>(self: Self<T>, next: fn(value: T) -> Task<R>) -> Task<R>;
 }
 
 // ── sequences (decisions 122, 123, 125) ──────────────────────────────────────
@@ -155,13 +155,13 @@ pub type YieldStep<T> {
 
 // `Iterator<T>` — a synchronous sequence; iterated by `for` in any function.
 pub behavior Iterator<T> {
-    fn next(self: Self) -> YieldStep<T>;
+    fn next(self: Self<T>) -> YieldStep<T>;
 }
 
 // `Stream<T>` — an asynchronous sequence: finding the next item may need to
 // wait. Iterated by `for await`, which needs an await channel.
 pub behavior Stream<T> extends Task {
-    fn next(self: Self) -> Task<YieldStep<T>>;
+    fn next(self: Self<T>) -> Task<YieldStep<T>>;
 }
 
 // ── display (decision 8 §7, decision 27) ─────────────────────────────────────
@@ -205,11 +205,11 @@ pub behavior Display {
 // `implement` clause today — the conformance is named in a comment there.
 
 pub behavior Index<K, V> {
-    fn at(self: Self, key: K) -> ?V;
+    fn at(self: Self<K, V>, key: K) -> ?V;
 }
 
 pub behavior Slice<V> {
-    fn slice(self: Self, start: i32, end: ?i32) -> V;
+    fn slice(self: Self<V>, start: i32, end: ?i32) -> V;
 }
 
 // ── context (hooks) — decisions 102, 104 and 128 ────────────────────────────
@@ -479,18 +479,22 @@ pub type CustomExpr<T>(
 )
 
 pub behavior Expr<E> {
-    fn text(self: Self) -> string;
-    fn parts(self: Self) -> Part[];
-    fn source(self: Self) -> Source;
-    fn context(self: Self) -> ExprContext;
-    fn lookup(self: Self, name: string) -> ?Binding;
-    fn bindings(self: Self) -> Binding[];
-    fn build<R>(self: Self, source: string) -> Expr<R>;
+    fn text(self: Self<E>) -> string;
+    fn parts(self: Self<E>) -> Part[];
+    fn source(self: Self<E>) -> Source;
+    fn context(self: Self<E>) -> ExprContext;
+    fn lookup(self: Self<E>, name: string) -> ?Binding;
+    fn bindings(self: Self<E>) -> Binding[];
+    fn build<R>(self: Self<E>, source: string) -> Expr<R>;
     // Pack a reference tree + the executable code into the custom return — a
     // template fn opts into tooling visibility by returning `ExprCustom<T>`.
-    fn custom<R>(self: Self, ast: CustomNode, code: Expr<R>) -> CustomExpr<R>;
-    fn fail(self: Self, message: string);
-    fn failAt(self: Self, span: Span, message: string);
+    fn custom<R>(
+        self: Self<E>,
+        ast: CustomNode,
+        code: Expr<R>,
+    ) -> CustomExpr<R>;
+    fn fail(self: Self<E>, message: string);
+    fn failAt(self: Self<E>, span: Span, message: string);
 }
 
 // ── Source location (`@src()`) ───────────────────────────────────────────────

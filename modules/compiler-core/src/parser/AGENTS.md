@@ -170,7 +170,7 @@ the token that ends the form.
 The then-branch's binder accepts `_` as well as a name, and `_` binds the name
 `"_"` — the same discard `val _ = …` records. It is deliberately not a null
 `binding`: a null binding means "this `if` has no binder", and that is what makes
-an `?T` condition the type error `expected bool, got optional`. An author who
+an `?T` condition the type error `expected bool, got ?string`. An author who
 writes `_` is saying the payload is unwanted, not that the condition is a `bool`.
 
 ## A bodyless `fn` declares its return type (decision 33 (b))
@@ -299,6 +299,13 @@ copies. A chained call has no name for its callee, so the callee travels as an
 expression on `ast.CallExpr.call.calleeExpr` with `callee = ""` and
 `receiver = null` — a chained call is **not** a method call, and a consumer that
 reads `receiver` to mean "the value before the `.`" must not see one.
+
+`name<T, …>(args)` — decision 8 §1.3's explicit type arguments — is read by
+`parseExplicitTypeArgs` in `parsePrimary`'s identifier arm, speculatively: only
+when the `<` is adjacent to the name, every item parses as a type, `>` closes the
+list and `(` follows; otherwise the cursor and the parse error are restored and
+`<` is a comparison. The list lands on `ast.CallExpr.call.typeArgs` (null, and
+absent from the dump, when none was written).
 
 `xs[i]` is the `[index]` link, built by `makeIndexExpr` for both copies
 (decision 30). It is the reserved builtin call `ast.index_builtin_name` over
@@ -489,6 +496,7 @@ reaches**, never per arm:
 | `[..a, 3]` | `listSpreadNotLast` | `parseArrayLitExpr`, at the element after the spread (the kind existed; nothing raised it) |
 | `[...a]` | `listSpreadDotDotDot` | `parseArrayLitExpr`, at the `...` |
 | `type P(…)` then `implement A for P { … }` | `implementClauseFor` | `types.zig` `parseImplementClause`, at the `for` — the bodyless type took `implement A` as its clause |
+| `total + try r`, `-try x`, `(try r).len`, `!await t` | `tryAwaitOperand` | `parsePrimary`'s `try` / `await` arm and the group's `(` — at the keyword (decision 137; § *`try` and `await` begin an expression*) |
 | `#(x: 1, y: 2)` | `tupleLiteralLabel` | `parseTupleLitExpr`, at the label — the labeled construction is `01-checker`'s §6, and this replaces `novalBinding` at the value |
 
 **The infix refusals are hoisted the way the chain links are.** Every receiver
@@ -505,6 +513,32 @@ lists is `parseTypeRef`'s, a pattern's `|` is `patterns.zig`'s.
 in `print.zig` (`removedErrorUnion` and `patternRangeExclusive` are the
 models), the check at the one site its every spelling reaches, and an R10 case.
 `grep -c unexpectedToken` over `src/parser/**` does not grow.
+
+## `try` and `await` begin an expression (decision 137)
+
+`try` / `await` are read in one place, `parseExpr`'s prefix arms: the keyword,
+then a whole `parseExpr` (so `try a + b` is `try (a + b)` and `try await f()`
+is `try (await f())`), then an optional `catch` handler. Every position that
+calls `parseExpr` is therefore a position where they may stand — a statement, a
+`val` / `var` initializer, `x = …`, a `return` / `yield` / `break` / `throw`
+operand, a call argument, an array / tuple / record-literal element. Four
+positions the construct delimits read at a precedence level instead of through
+`parseExpr`; they go through `parseExprAtStart`, which hands a leading
+`try` / `await` to `parseExpr` (with `noTrailingLambda` set, so
+`case try g() { … }` leaves the `{` to the `case`) and anything else to
+`parseBinaryExpr`: the `if` / `while` condition, the `case` subjects, the
+right side of `x.f =` / `x.f +=`; `parseForExpr` does the same for its
+iterable.
+
+Everywhere else an operand is read — under a binary operator, a unary `-` /
+`!`, `??`, an index `[…]`, a range bound — the keyword reaches `parsePrimary`,
+which refuses it as `tryAwaitOperand` (`try-await-operand`, at the keyword,
+fix-it "bind it first: `val x = try …;`"). A group `(…)` refuses it too, right
+after its `(`: a group exists to become an operand, so `(try r).length` and
+`(try r catch 0) == 1` are the operand form. Pinned by
+`tests/effect_rejections.zig` ("decision 137: …") and the
+`tests/language/reject/{try_operand_of_operator,try_in_parentheses,await_operand_of_unary}`
+cells.
 
 ## `${…}` interpolation holes
 
@@ -577,6 +611,16 @@ Records and enums parse into one `DeclKind.type_` (`TypeDecl`, whose `shape` is
 `DeclKind.behavior` (`BehaviorDecl`). The surface syntax is still
 `record`/`enum`/`interface` (1.0.4-beta front 12 step 1).
 Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
+
+**The shape is decided by what was written (decision 138).** A field list —
+`()` included — makes a record; braces holding a variant or a section make an
+enum. A record always writes its field list: `type X()` is the empty record,
+`type X() { fn … }` one with members. `parseTypeDeclRest` refuses a `type`
+that ends up with neither (`type X {}`, `type X { fn … }`, a bare `type X`) as
+`typeWithoutFieldList` (`type-without-field-list`), located at the token after
+the name and generics — where the `()` belongs. The empty field list itself is
+legal (`parseFieldList` no longer refuses `()`), and the formatter prints `()`
+for every record with no fields.
 
 ### Member trivia and member order (front 16's carve-out)
 

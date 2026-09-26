@@ -1,0 +1,2 @@
+`f` declares `-> i32` and its body can reach its end without a `return`
+6:11

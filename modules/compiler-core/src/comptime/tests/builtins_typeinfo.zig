@@ -223,7 +223,7 @@ test "partial: record fields become optional" {
 
 test "partial: empty record works" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\type Empty {}
+        \\type Empty()
         \\val PartialE = partial(Empty);
     );
 }

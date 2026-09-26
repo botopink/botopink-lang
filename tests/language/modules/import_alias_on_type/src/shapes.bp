@@ -1,0 +1,6 @@
+//// A type and a type alias a consumer imports under other names.
+pub type Point(x: i32, y: i32) {
+    pub fn sum(self: Self) -> i32 { return self.x + self.y; }
+}
+
+pub type Pair<A, B> = #(A, B);

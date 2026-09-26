@@ -21,7 +21,7 @@ fn upto(n: i32) -> @Iterator<@Result<i32, string>> {
 // The iterating body reads each `@Result`; `try r` propagates.
 fn digits(n: i32) -> @Result<string, string> {
     var acc = "";
-    for (upto(n)) { r -> acc = acc + (try r).toString(); };
+    for (upto(n)) { r -> val v = try r; acc = acc + v.toString(); };
     return acc;
 }
 

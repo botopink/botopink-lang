@@ -11,10 +11,10 @@
 //// Both directions run, and through a binding as well as at the call, because
 //// the defect was in the TAG and a tag travels with the value.
 ////
-//// The spelling that has no answer is `run/variant_name_ambiguous.bp`, which
-//// the erlang emit refuses now instead of tagging with one of the two: it
-//// died with `{case_clause, language_tests@main@@Shape__v__circle}` over a `Hole` value
-//// before, while wasm answered correctly from the same source.
+//// The spelling that has no answer is `reject/variant_name_ambiguous.bp`, which
+//// the checker refuses on every target (01 step 12); erlang used to tag it with
+//// one of the two and die with `{case_clause, language_tests@main@@Shape__v__circle}`
+//// over a `Hole` value, while wasm answered correctly from the same source.
 
 pub type Shape {
     Circle,

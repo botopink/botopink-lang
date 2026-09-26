@@ -28,8 +28,17 @@
 
 pub type Dict<K, V>(
     pairs: Array<#(K, V)>,
-) implement Index<K, V> {
-    pub fn at(self: Self, key: K) -> ?V {
+) implement Index<K, V>, Display {
+    // Decision 8 §7 — `Dict("a": 1, "b": 2)`: the pairs in order, a string
+    // key or value quoted, anything else in its own text. `K` and `V` are
+    // generic, so which is a string is asked of the value (`is`, decision 8 §4).
+    pub fn display(self: Self<K, V>) -> string {
+        var parts: string[] = [];
+        self.pairs.forEach({ p -> parts.push(shown(p._0) + ": " + shown(p._1)) });
+        return "Dict(" + parts.join(", ") + ")";
+    }
+
+    pub fn at(self: Self<K, V>, key: K) -> ?V {
         // NOTE: written with `forEach` + accumulator rather than
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is
         // not lowered yet (tracked in tasks/v0.beta.4 Part A: primitive/option
@@ -39,37 +48,37 @@ pub type Dict<K, V>(
         return found;
     }
 
-    pub fn hasKey(self: Self, key: K) -> bool {
+    pub fn hasKey(self: Self<K, V>, key: K) -> bool {
         return self.pairs.filter({ p -> p._0 == key }).at(0) != null;
     }
 
-    pub fn size(self: Self) -> i32 {
+    pub fn size(self: Self<K, V>) -> i32 {
         return self.pairs.length;
     }
 
-    pub fn isEmpty(self: Self) -> bool {
+    pub fn isEmpty(self: Self<K, V>) -> bool {
         return self.pairs.length == 0;
     }
 
-    pub fn keys(self: Self) -> Array<K> {
+    pub fn keys(self: Self<K, V>) -> Array<K> {
         return self.pairs.map({ p -> p._0 });
     }
 
-    pub fn values(self: Self) -> Array<V> {
+    pub fn values(self: Self<K, V>) -> Array<V> {
         return self.pairs.map({ p -> p._1 });
     }
 
-    pub fn insert(self: Self, key: K, value: V) -> Dict<K, V> {
+    pub fn insert(self: Self<K, V>, key: K, value: V) -> Dict<K, V> {
         val filtered = self.pairs.filter({ p -> p._0 != key });
         return Dict(pairs: filtered.append([#(key, value)]));
     }
 
-    pub fn delete(self: Self, key: K) -> Dict<K, V> {
+    pub fn delete(self: Self<K, V>, key: K) -> Dict<K, V> {
         return Dict(pairs: self.pairs.filter({ p -> p._0 != key }));
     }
 
     // Right-biased merge: keys in both keep `other`'s value.
-    pub fn merge(self: Self, other: Dict<K, V>) -> Dict<K, V> {
+    pub fn merge(self: Self<K, V>, other: Dict<K, V>) -> Dict<K, V> {
         var out = self;
         other.pairs.forEach({ p ->
             out = out.insert(p._0, p._1);
@@ -78,7 +87,7 @@ pub type Dict<K, V>(
     }
 
     pub fn fold<A>(
-        self: Self,
+        self: Self<K, V>,
         initial: A,
         f: fn(acc: A, key: K, value: V) -> A,
     ) -> A {
@@ -89,8 +98,8 @@ pub type Dict<K, V>(
         return acc;
     }
 
-    pub fn mapValues<W>(self: Self, f: fn(value: V) -> W) -> Dict<K, W> {
-        var out = [];
+    pub fn mapValues<W>(self: Self<K, V>, f: fn(value: V) -> W) -> Dict<K, W> {
+        var out: #(K, W)[] = [];
         self.pairs.forEach({ p -> out.push(#(p._0, f(p._1))) });
         return Dict(pairs: out);
     }
@@ -98,6 +107,22 @@ pub type Dict<K, V>(
     pub fn empty() -> Dict<K, V> {
         return Dict(pairs: []);
     }
+}
+
+// One key or value of `Dict.display`: a string quoted, anything else as it
+// interpolates.
+fn shown<T>(x: T) -> string {
+    if (x is string) {
+        return "\"" + x + "\"";
+    };
+    return "${x}";
+}
+
+test "dict displays as its pairs, a string quoted (decision 8 §7)" {
+    val d = Dict.empty().insert("a", 1).insert("b", 2);
+    assert d.display() == "Dict(\"a\": 1, \"b\": 2)";
+    val n = Dict.empty().insert(1, "x");
+    assert n.display() == "Dict(1: \"x\")";
 }
 
 test "dict empty is empty" {
@@ -223,33 +248,33 @@ test "dict empty boundary: size 0, at misses" {
 pub type Set<T>(
     items: Array<T>,
 ) {
-    pub fn contains(self: Self, x: T) -> bool {
+    pub fn contains(self: Self<T>, x: T) -> bool {
         return self.items.indexOf(x) != -1;
     }
 
-    pub fn size(self: Self) -> i32 {
+    pub fn size(self: Self<T>) -> i32 {
         return self.items.length;
     }
 
-    pub fn isEmpty(self: Self) -> bool {
+    pub fn isEmpty(self: Self<T>) -> bool {
         return self.items.length == 0;
     }
 
-    pub fn toList(self: Self) -> Array<T> {
+    pub fn toList(self: Self<T>) -> Array<T> {
         return self.items;
     }
 
-    pub fn insert(self: Self, x: T) -> Set<T> {
+    pub fn insert(self: Self<T>, x: T) -> Set<T> {
         return if (self.items.indexOf(x) != -1) self else Set(items: self.items.append(
                 [x]
             ));
     }
 
-    pub fn delete(self: Self, x: T) -> Set<T> {
+    pub fn delete(self: Self<T>, x: T) -> Set<T> {
         return Set(items: self.items.filter({ item -> item != x }));
     }
 
-    pub fn union(self: Self, other: Set<T>) -> Set<T> {
+    pub fn union(self: Self<T>, other: Set<T>) -> Set<T> {
         var out = self;
         other.items.forEach({ x ->
             out = out.insert(x);
@@ -257,11 +282,11 @@ pub type Set<T>(
         return out;
     }
 
-    pub fn intersection(self: Self, other: Set<T>) -> Set<T> {
+    pub fn intersection(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(items: self.items.filter({ x -> other.items.indexOf(x) != -1 }));
     }
 
-    pub fn difference(self: Self, other: Set<T>) -> Set<T> {
+    pub fn difference(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(items: self.items.filter({ x -> other.items.indexOf(x) == -1 }));
     }
 
@@ -367,29 +392,29 @@ test "set empty boundary: size 0, contains misses, toList empty" {
 pub type Queue<T>(
     items: Array<T>,
 ) {
-    pub fn size(self: Self) -> i32 {
+    pub fn size(self: Self<T>) -> i32 {
         return self.items.length;
     }
 
-    pub fn isEmpty(self: Self) -> bool {
+    pub fn isEmpty(self: Self<T>) -> bool {
         return self.items.length == 0;
     }
 
-    pub fn enqueue(self: Self, item: T) -> Queue<T> {
+    pub fn enqueue(self: Self<T>, item: T) -> Queue<T> {
         return Queue(items: self.items.append([item]));
     }
 
-    pub fn dequeue(self: Self) -> #(Queue<T>, ?T) {
+    pub fn dequeue(self: Self<T>) -> #(Queue<T>, ?T) {
         val head = self.items.at(0);
         val rest = self.items.slice(1, self.items.length);
         return #(Queue(items: rest), head);
     }
 
-    pub fn peek(self: Self) -> ?T {
+    pub fn peek(self: Self<T>) -> ?T {
         return self.items.at(0);
     }
 
-    pub fn toList(self: Self) -> Array<T> {
+    pub fn toList(self: Self<T>) -> Array<T> {
         return self.items;
     }
 
@@ -532,7 +557,7 @@ test "order case over Order" {
 ----- ERLANG -- std/collections.erl
 ```erlang
 -module(std@collections).
--export([lt/0, eq/0, gt/0, toInt/1, reverse/1]).
+-export([lt/0, eq/0, gt/0, toInt/1, reverse/1, shown/1]).
 
 %%% std/collections — the four collection types, one namespace each (decision
 
@@ -583,6 +608,19 @@ test "order case over Order" {
 % one method name.
 
 %% type Dict: pairs
+
+% One key or value of `Dict.display`: a string quoted, anything else as it
+
+% interpolates.
+
+shown(X) ->
+    case is_binary(X) of
+        true ->
+            <<"\"", ('__bp_text'(X))/binary, "\"">>;
+        _ ->
+            <<('__bp_text'(X))/binary>>
+    end.
+
 
 
 
@@ -716,13 +754,22 @@ reverse(O) ->
 
 
 
+
+'__bp_text'(Value) when is_binary(Value) -> Value;
+'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 ```
 
 ----- ERLANG -- std@collections@@Dict.erl
 ```erlang
 -module(std@collections@@Dict).
 -compile({no_auto_import,[size/1]}).
--export([at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2, empty/0, '__bp_get'/2, '__bp_format'/1]).
+-export([display/1, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2, empty/0, '__bp_get'/2, '__bp_format'/1]).
+
+display(Self) ->
+    Parts = lists:foldl(fun(P, Parts) ->
+        (Parts ++ [<<(std@collections:shown(element(1, P)))/binary, ": ", (std@collections:shown(element(2, P)))/binary>>])
+    end, [], element(2, Self)),
+    <<"Dict(", ('__bp_text'(iolist_to_binary(lists:join(<<", ">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, Parts)))))/binary, ")">>.
 
 at(Self, Key) ->
     % NOTE: written with `forEach` + accumulator rather than
@@ -738,7 +785,7 @@ at(Self, Key) ->
     Found.
 
 hasKey(Self, Key) ->
-    ((fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(lists:filter(fun(P) ->
+    ((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(lists:filter(fun(P) ->
         (element(1, P) =:= Key)
     end, element(2, Self)), 0) =/= undefined).
 
@@ -792,7 +839,10 @@ empty() ->
 
 '__bp_get'(V, pairs) -> element(2, V).
 
-'__bp_format'(V) -> {record, "Dict", [{"pairs", element(2, V)}]}.
+'__bp_format'(V) -> {text, display(V)}.
+
+'__bp_text'(Value) when is_binary(Value) -> Value;
+'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 ```
 
 ----- ERLANG -- std@collections@@Set.erl
@@ -872,12 +922,12 @@ enqueue(Self, Item) ->
     {std@collections@@Queue, (element(2, Self) ++ [Item])}.
 
 dequeue(Self) ->
-    Head = (fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(element(2, Self), 0),
+    Head = (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(element(2, Self), 0),
     Rest = array_slice(element(2, Self), 1, length(element(2, Self))),
     {{std@collections@@Queue, Rest}, Head}.
 
 peek(Self) ->
-    (fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(element(2, Self), 0).
+    (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(element(2, Self), 0).
 
 toList(Self) ->
     element(2, Self).

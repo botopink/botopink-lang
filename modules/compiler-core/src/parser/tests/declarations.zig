@@ -105,7 +105,7 @@ test "parser: record with inline implement" {
 }
 
 test "parser: empty record (no fields, no methods)" {
-    try h.assertParser(std.testing.allocator, @src(), "val Point = type {}");
+    try h.assertParser(std.testing.allocator, @src(), "val Point = type()");
 }
 
 test "parser: record with two fields and no methods" {

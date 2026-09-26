@@ -3,7 +3,7 @@
 //// a `@Component` function an `async { }` may not `use`. Refused at the `use`
 //// with the code a closure's `use` gets (`reject/use_in_closure.bp`).
 
-pub type ElementBase {}
+pub type ElementBase()
 type Element(count: i32) implement @Context<ElementBase>
 
 fn state(initial: i32) -> @Component<ElementBase, i32> { return initial; }

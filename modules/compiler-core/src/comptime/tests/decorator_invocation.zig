@@ -110,7 +110,7 @@ test "decorator invocation: method decorator rejects a record" {
         \\    if (decl.kind != DeclKind.Method) { decl.fail("#[getMapping] must annotate a method"); }
         \\}
         \\#[getMapping("/x")]
-        \\type Nope { }
+        \\type Nope()
     , "must annotate a method");
 }
 
@@ -120,7 +120,7 @@ test "decorator invocation: body reads the reflected name" {
         \\    if (decl.name == "Bad") { decl.fail("the name Bad is reserved"); }
         \\}
         \\#[named]
-        \\type Bad { }
+        \\type Bad()
     , "the name Bad is reserved");
 }
 

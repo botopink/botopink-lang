@@ -28,12 +28,28 @@ rewrite a test to match current behaviour.
 1.0.10-beta's `00 · 23-std-purity` step 1 (decision 107, the import tree) adds `modules/import_tree`
 — a dotted path and a braced group over the package's own tree and over std, aliases bound, only the
 leaves in scope, on commonJS/erlang/wasm — and three `reject/` cells: `import_name_collision` (the
-second item), `import_group_modifier` (`*` on a node that opens braces) and `import_alias_on_type`.
+second item) and `import_group_modifier` (`*` on a node that opens braces); the third,
+`import_alias_on_type`, is now `modules/import_alias_on_type` — decision 110 made `as` legal on a type
+and a type alias (`01-checker`), and the cell imports `Point as P`, `Pair as Two` and std's
+`Dict as D` and runs on commonJS, erlang and wasm.
 `00 · 01-checker` step 8 R2 adds `modules/import_type_closure` — `import { User, makeUser }` where
 `User(role: Role)`, `Role` not named, on commonJS/erlang.
 Front 24's type aliases (decision 118 rule 1) add `run/type_alias` — `Id`, `Pair<A, B>`, `Ids` and
 an `@Result` alias typing a function that only passes the value along, on all four targets — and
 `modules/import_type_alias` — a `pub` alias imported like a type, the types its target names with it.
+Decision 137 (`try` / `await` begin an expression) adds `run/try_start_positions` — a `val`
+initializer, a call argument, an array and a tuple element, an `if` condition, a `case` subject, a
+`for` iterable, `x = …`, a `return` and `try … catch` in an argument, on all four targets (wasm listed:
+an array out of a `@Result` payload iterates as empty) — and three `reject/` cells, one per operand
+shape: `try_operand_of_operator` (`total + try r`), `try_in_parentheses` (`(try r).toString()`) and
+`await_operand_of_unary` (`!await ready()`).
+Decision 138 (the empty record is `type Name()`) adds `run/type_empty_record` — `type Marker()` and
+`type MathOps() { … }` constructed and called on all four targets — and two `reject/` cells,
+`type_empty_braces` (`type Marker {}`) and `type_without_field_list` (`type MathOps { fn … }`), both
+`type-without-field-list` where the `()` belongs.
+Decision 139 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
+`xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
+`String.at` / `s[-2]`, and a string array — on all four targets.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
@@ -118,7 +134,7 @@ both values on all four targets. commonJS tested only `instanceof`, so the secti
 fired and the `case` answered `undefined` at exit 0, which is how emilia read 223/2 on commonJS
 against 225/0 on erlang from one source), and `narrowing_*` (the same front's
 `fix/null-narrowing`: which shapes of a null test rebind the name they test —
-§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `run/module_var` — a module-level `var` written twice through a `fn` prints `2` on commonJS and wasm and is listed against C-10 on erlang (unbound `Hits`, does not compile) and beam (the write is dropped and it prints `0` at exit 0 — the silent one); `test/beam_memory_noop` — the annotation is a no-op off the BEAM, each test writing and reading back through the binding (erlang listed against C-10 for the same reason); and seven `reject/` cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. C-10 (front 17 step 4) adds the per-mode BEAM cells, each a `run/` cell with `.targets` = `erlang beam` (a `test/` cell cannot be narrowed to a target, and on commonJS the modes are one program-wide value): `run/beam_memory_process_dict` (a value written in `main` is not seen by a process `async.runAll` spawns, and its write does not reach `main` — `[0]` then `5`), `run/beam_memory_ets` (decision 39's fixture: five processes × three increments print `15`) and `run/beam_memory_persistent_term` (put at load, read by a spawned process: `[101]`); and the refusals its lowering needs — `reject/beam_memory_pt_write`, `reject/beam_memory_ets_recompose`, `reject/beam_memory_ets_bump_non_integer` (decision 40) and `reject/beam_memory_ets_initialiser` (a seed that is neither a literal nor `comptime`). `test/beam_memory_noop` no longer writes a `PersistentTerm` var (refused on every target) nor carries the `Ets(keyed = true)` `Dict` (no literal `Dict` seed exists; `keyed` is refused on the BEAM until it is lowered). `run/module_var` and `test/beam_memory_noop` pass on erlang, and the three `run/beam_memory_*` cells and `run/module_var` on beam (step 5). One scenario group per
+§ `narrowing_*` below), and the module-`var` cells of 1.0.10-beta's `00 · 17-beam-memory` (C-05, decisions 28, 38, 41, 43, 51): `run/module_var` — a module-level `var` written twice through a `fn` prints `2` on commonJS and wasm and is listed against C-10 on erlang (unbound `Hits`, does not compile) and beam (the write is dropped and it prints `0` at exit 0 — the silent one); `test/beam_memory_noop` — the annotation is a no-op off the BEAM, each test writing and reading back through the binding (erlang listed against C-10 for the same reason); and seven `reject/` cells, one per diagnostic — `val_assign_module` and `val_assign_local` (a `val` is immutable, the hint names `var`), `beam_memory_unknown_member`, `beam_memory_unknown_argument`, `beam_memory_keyed_scalar`, `beam_memory_keyed_list` (decision 51: `keyed` is `Dict`-only) and `beam_memory_on_val`. C-10 (front 17 step 4) adds the per-mode BEAM cells, each a `run/` cell with `.targets` = `erlang beam` (a `test/` cell cannot be narrowed to a target, and on commonJS the modes are one program-wide value): `run/beam_memory_process_dict` (a value written in `main` is not seen by a process `async.runAll` spawns, and its write does not reach `main` — `[0]` then `5`), `run/beam_memory_ets` (decision 39's fixture: five processes × three increments print `15`) and `run/beam_memory_persistent_term` (put at load, read by a spawned process: `[101]`); and the refusals its lowering needs — `reject/beam_memory_pt_write`, `reject/beam_memory_ets_recompose`, `reject/beam_memory_ets_bump_non_integer` (decision 40) and `reject/beam_memory_ets_initialiser` (a seed that is neither a literal nor `comptime`). `test/beam_memory_noop` no longer writes a `PersistentTerm` var (refused on every target) nor carries the `Ets(keyed = true)` `Dict` (no literal `Dict` seed exists; `keyed` is refused on the BEAM until it is lowered). `run/module_var` and `test/beam_memory_noop` pass on erlang, and the three `run/beam_memory_*` cells and `run/module_var` on beam (step 5). `01-checker` step 12 replaces `run/variant_name_ambiguous` (an erlang-only emit refusal) with `reject/variant_name_ambiguous` — the checker refuses `.Circle` with no expectation on every target — and adds `run/variant_leading_dot_expected` (the expected type decides `.Circle`; a qualified constructor is the enum written), `run/section_path_resolution` (a section leaf's shorthand, a payload section path through the annotated enum, a qualified section value) and `reject/section_leaf_without_expectation`; each fails on the `feat` binary. `modules/template_name_collision` (two modules exporting a template `tag`; the import from `loud` expands `loud`'s — the bare-name registry expanded `quiet`'s at exit 0) is 01 step 12's registry half. `run/try_catch_null_and_noreturn_narrowing`, `run/component_call_renders`, `run/component_call_awaited` (a written `await` of a component call inside a component body — jhonstart's layout chain) and `reject/try_catch_handler_mismatch` are the maintainer's 24-box-1 rows (the guide's page example): `catch null` is a `?T`, a `noreturn` call narrows, a component called in a component body renders; each fails on the `feat` binary. `run/labelled_arguments_reorder` (a label names the parameter it fills in a complete call — fn, record, method, primitive method, self tail call) and the `run/labelled_arguments.bp` erlang line's removal are 01's labelled-call row. 01 R7 (decision 2) adds `reject/fn_falls_off_end` and `reject/if_without_else_value`, both accepted by the `feat` binary. C-18's decision 45 adds `reject/member_of_optional` (a member read off a `?T` names `?.`) and moves `test/tuple_labels.bp` §6 T4 to `rs.at(0)?.b` — its two `expected-failures.txt` lines are gone, the label is carried on commonJS and erlang. Decision 15's annotation grammar (front 17 step 3's recorded row) adds `reject/annotation_unknown_family` (`#[@TotallyMadeUp.Nonsense(whatever = 42)]` on a `var`) and `reject/annotation_family_misspelled` (`#[@BeamMemroy.Ets]` names `@BeamMemory`). Pending 0203-a, answered (b), adds `reject/primitive_method_undeclared` (`s.toUpperCase()` names `toUpper`, the method whose host spelling it is) and `reject/primitive_method_unknown` (`"x".fooBar()`, no near name), and re-spells `test/string_case_conversion` to `toUpper` / `toLower` — its erlang line is gone. `01-checker` step 13 adds the two cells of "a local ends with its body": `reject/local_binding_escapes` (a `val` of one `fn` used by the next is refused at the use, naming `holder`) and `run/local_shadow_ends_with_body` (a local `p` shadows the module's `pub fn p` only inside its own `fn` — `3` then `p:x`); each was run with the `feat` binary and fails there as the step describes. One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -139,7 +155,7 @@ right answer on another.
 | `run/narrowing_null_check.bp` | `if (x != null)` over a `?Record` field, a `?string`, a `?T[]` and a `?i32`; `null != x`; `&&` narrowing BOTH names; the else side of `== null`; and that the narrowing ENDS with the branch |
 | `run/narrowing_null_guard_clause.bp` | `if (x == null) { return …; }` and then the rest of the block — in a top-level `fn` and in a record METHOD, plus the `\|\|` form. Each function is called twice, present and absent |
 | `test/narrowing_null.bp` | the same rules inside a `test` block, which is the third statement walk a program has |
-| `reject/if_optional_needs_a_binder.bp` | the limit: `if (x)` on a `?T` with no binder is refused ("expected bool, got optional"). There is no truthiness on an optional |
+| `reject/if_optional_needs_a_binder.bp` | the limit: `if (x)` on a `?T` with no binder is refused ("expected bool, got ?string" — the message spells the type as a source writes it). There is no truthiness on an optional |
 
 **Shapes that do NOT narrow, measured and deliberate.** `while (x != null) { … }` leaves its body
 alone: a condition loop reassigns the name it tests (`cur = es.at(i)`), and a narrowed `cur` would
@@ -353,16 +369,14 @@ crashes: erlang printed the NEIGHBOURING field (`net-note` for `.tag`, and `404`
 method call) at exit 0, where commonJS and wasm printed the right one. The cell walks all three
 axes — the field read, the method call and the construction — and every line asserts the VALUE.
 
-`run/variant_name_collision.bp` and `run/variant_name_ambiguous.bp` are the third axis, and the only
-one that fits in one file. Decision 21 puts the ENUM and the enum's module inside a variant's atom,
-and `variant_enum` answered "which enum declares `Circle`" by declaration order — first writer wins,
-mitigated for a `case` SUBJECT only. The first cell is the spelling that always had an answer (the
-enum is written) and asserts six values on every target; the second is the spelling that has none,
-and it is refused now instead of tagged with one of the two — `Hole`'s value written `.Circle` was
-tagged `language_tests@main@@Shape__v__circle` and died with `{case_clause, …}` at run time. Its `.targets` is
-`erlang` alone, and neither omission is the cell's shape: commonJS cannot run a leading-dot variant
-AT ALL (measured with the collision removed — `ReferenceError: Circle is not defined`, `00 · 04-js`'s
-row), and wasm places it correctly from the expected type, so it has nothing to refuse.
+`run/variant_name_collision.bp` and `reject/variant_name_ambiguous.bp` are the third axis. Decision
+21 puts the ENUM and the enum's module inside a variant's atom, and `variant_enum` answered "which
+enum declares `Circle`" by declaration order — first writer wins, mitigated for a `case` SUBJECT
+only. The first cell is the spelling that always had an answer (the enum is written) and asserts
+six values on every target. The second was an erlang-only `run/` cell the emitter refused; since
+`01-checker` step 12 the checker answers both halves for every target: a leading dot whose position
+expects an enum is that enum's (`run/variant_leading_dot_expected.bp`), and one whose position
+expects nothing is refused naming both enums (`reject/variant_name_ambiguous.bp`).
 
 ### `std_default_fn_in_a_std_module`
 
@@ -416,9 +430,8 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 | `modules/<name>/<target>.expect` | the `.<target>.expect` claim for a whole project: that target **refuses** it | exit ≠ 0 and the diagnostic contains line 1 (and ` --> <line 2>` when present — `src/<file>.bp:<L:C>`, the file named because a project has several). `modules/external_method_imported/wasm.expect` is the live one |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **Six cells carry
-`.targets`** (`external_host_record`, `external_method_on_host_record`, `optional_length_method`,
-`std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `variant_name_ambiguous`). The one the paragraph below was written about is
+Any other content in `.exit` is a malformed claim and fails the cell. **Eleven cells carry
+`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `external_host_record`, `external_method_on_host_record`, `host_erlang_task_result`, `host_node_task_result`, `std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `task_throw_resolves_error`). The one the paragraph below was written about is
 `run/string_char_code_after_slice.bp`, which names `commonJS erlang` because
 `String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
 (`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it
@@ -892,7 +905,8 @@ iterator effect is `#[@resultGenerator]` / `@ResultGenerator<T, E>` in every cel
 renamed with it), the completion channel `C` is gone, and two cells carry what the
 decision adds: `run/generator_break_value.bp` — `break v` at the level of a generator body
 emits `v` as the last item and ends, a bare `break` there ends it (`0127` / `1` / `56`;
-commonJS and beam run it, the eager erlang and wasm generator scopes are pinned);
+green on all four targets — erlang throws `'__bp_gen_stop'` to its scope, wasm returns
+what the body collected (`wat.zig` `emitGenEnd`));
 `run/generator_levels.bp` — re-spelled by front 24 (decisions 121, 122): an
 `@Iterator<@Result<i32, string>>` body holds `try` (a failing one emits the Error as the last
 item), the `-> @Result` body that iterates it propagates with an explicit `try r` (there is no
@@ -1175,7 +1189,7 @@ the commit.
 **Never pin an erlang exit status or an `escript` warning as the point of a line.** `run.sh` runs
 `botopink run --target erlang`, which today is `escript out/main.erl`: escript compiles the file it is
 handed, prints its **compile warnings on stdout** — which the `.out` comparison sees — and answers
-`127` when the program crashes. [Decision 56](../../specs/1.0.5-beta/decisions-taken.md) replaces that
+`127` when the program crashes. [Decision 56](../../../../specs/1.0.5-beta/decisions-taken.md) replaces that
 with `erlc -o <out>` over every emitted `.erl` and then `erl -pa <out>`, in front 13's `cli/run.zig`:
 the crash status becomes **`1`** and an `erlc` warning no longer reaches the program's stdout. So a
 reason line may *quote* either as evidence, and four of this front's do, but the defect it names must

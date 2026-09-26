@@ -58,7 +58,6 @@ pub const effect_wrapper_behind_alias: []const u8 = "effect-wrapper-behind-alias
 
 /// Decision 119 — a `return` whose value fits two layers of a nested wrapper
 /// (`-> @Result<@Result<i32, E>, E>`); asks for an explicit `Ok(…)`.
-
 pub const effect_return_ambiguous_nesting: []const u8 = "effect-return-ambiguous-nesting";
 
 /// Decision 121 — `throw` or bare `try` (the propagating form) in a body whose
@@ -186,6 +185,16 @@ pub const src_takes_no_arguments: []const u8 = "src-takes-no-arguments";
 /// A `@name(…)` call no builtin arm recognises. Replaces the silent `void`
 /// fallback that let a typo (`@pritn`) compile (decision 67: refuse).
 pub const unknown_builtin: []const u8 = "unknown-builtin";
+/// A method a primitive receiver's interface does not declare
+/// (`"abc".toUpperCase()` — `String` declares `toUpper`). Used to type as a
+/// fresh variable and reach the host under its own spelling (pending 0203-a,
+/// answered (b)): refused, with the declared method whose host spelling or
+/// name is nearest.
+pub const unknown_primitive_method: []const u8 = "unknown-primitive-method";
+/// A `#[@Family…]` annotation whose family the compiler does not read
+/// (`#[@TotallyMadeUp.Nonsense(whatever = 42)]`). It used to parse, check and
+/// be dropped (decision 15's failure mode; front 17 step 3's recorded row).
+pub const unknown_annotation: []const u8 = "unknown-annotation";
 
 /// RC4 — `@getContext(<value>)` (the argument must be a type).
 pub const context_getcontext_expects_type: []const u8 = "context-getcontext-expects-type";
@@ -252,13 +261,6 @@ pub const std_unsupported_on_target: []const u8 = "std-unsupported-on-target";
 /// identical item (an `@emit` contribution re-importing what its module
 /// already imports) is not a collision.
 pub const import_name_collision: []const u8 = "import-name-collision";
-
-/// Decision 107 — `as` on an item whose leaf is a nominal type
-/// (`import {collections.Dict as D} from "std"`). A type's identity is its declared
-/// name on every backend (the record shape, the class, the module a type
-/// module gets — policy 3), so an alias would bind a name the emitted code
-/// never defines. Refused rather than accepted half-way (decision 67).
-pub const import_alias_on_type: []const u8 = "import-alias-on-type";
 
 /// Decision 107 — `as` on an activated item (`import {PatoNada* as Voa}`).
 /// An activation opts an extension in BY NAME (the dispatch rewrite emits
@@ -360,7 +362,6 @@ pub const all_codes = [_][]const u8{
     result_template_shape_mismatch,
     std_unsupported_on_target,
     import_name_collision,
-    import_alias_on_type,
     import_alias_on_activation,
     std_root_imports_io,
     fn_param_default_trailing_only,

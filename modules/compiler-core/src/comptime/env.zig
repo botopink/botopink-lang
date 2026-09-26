@@ -409,6 +409,24 @@ pub const Env = struct {
     /// Template functions (`-> expr [T]` return): name → declaration. Calls to
     /// these are expanded at comptime (F6); the decls never reach codegen.
     templateFns: std.StringHashMap(ast.FnDecl),
+    /// C-01 (13 half 1, step 5) — the module path each comptime-evaluated
+    /// declaration (a template fn, a decorator with a body) was DECLARED in,
+    /// keyed by the declaration's identity: the address of its body, which the
+    /// defining module and every importer share because the registry hands the
+    /// same `ast.FnDecl` across. A name is not an identity here — two modules
+    /// may export a template of one name. Read by `comptimeOwnerOf` when the
+    /// evaluator names its module atom (`bp@comptime@<path>__tpl__<decl>__<hash>`).
+    comptimeOwners: std.AutoHashMap(usize, []const u8),
+    /// 01 step 12 — every enum variant's constructor under its QUALIFIED name
+    /// (`Shape.Circle`). The bare name is also bound in `bindings`, one flat
+    /// table in which the last enum to declare a name wins; a written
+    /// qualification is answered from here, so it cannot be overridden by
+    /// another enum that declares the same variant.
+    variantCtors: std.StringHashMap(*T.Type),
+    /// 01 step 12 — bare variant name → every enum declaring it, in
+    /// declaration order. Two or more claimants make the bare name ambiguous:
+    /// a use that relies on the flat table is refused naming them.
+    variantClaims: std.StringHashMap([]const []const u8),
     /// Call-site expansions: call loc → the expanded (untyped) expression that
     /// replaces the call. Recorded by inference (post splice + re-check); the
     /// transform pass rewrites the untyped AST from this map.
@@ -717,6 +735,39 @@ pub const Env = struct {
     /// decorator / template evaluation in this module, in order (snapshots).
     /// Allocated in `arena`.
     comptimeTraces: std.ArrayListUnmanaged(trace.Entry) = .empty,
+    /// Decision 57 (1.0.5-beta) — the checker's warning channel: diagnostics
+    /// that do not stop the compilation, each a located `TypeError` rendered
+    /// like an error. Filled through `warn`; surfaced as `OkData.warnings`.
+    /// Decision 8 §1.4 (a binding that falls to `unknown`) and §4.3 (an `is`
+    /// test that is always false) write here. Allocated in `arena`.
+    warnings: std.ArrayListUnmanaged(@import("error.zig").TypeError) = .empty,
+    /// 01 step 13 — the undo log of the body being inferred (`openBodyScope`).
+    bodyScope: ?*std.ArrayListUnmanaged(BindUndo) = null,
+    /// True while the operand of a `use` is inferred: a component call there
+    /// is `use`'s to refuse, not an implicit render (`inferComponentCall`).
+    inUseOperand: bool = false,
+    /// The location of the call written as `await`'s operand: a component call
+    /// there keeps its wrapper, the `await` being written (`inferComponentCall`).
+    awaitOperandLoc: ?ast.Loc = null,
+    /// Decision 110 — an imported type's `as` name → the declared name
+    /// (`registerImportedTypeAlias`); a constructor call through the alias is
+    /// renamed at the call so no backend sees the alias.
+    importedTypeAliases: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Decision 8 §1.3 — a top-level fn's declaration, for a call that writes
+    /// its type arguments (`first<string>([])`): the generic parameters, the
+    /// parameters and the return as written. Filled by `registerFnSignatures`.
+    fnDecls: std.StringHashMapUnmanaged(ast.FnDecl) = .empty,
+    /// Decision 8 §3.2 — where an inferred union was born: the `if` or `case`
+    /// whose branches disagreed. A use the union refuses names it, so the
+    /// author sees the widening and not only the refusal.
+    unionOrigins: std.AutoHashMapUnmanaged(*T.Type, struct { loc: ast.Loc, kind: []const u8 }) = .empty,
+    /// 01 step 13 — each name a top-level body introduced (it was unbound
+    /// before the body), mapped to that body's name, for the diagnostic a
+    /// later use outside it gets. Allocated in `arena`.
+    closedLocals: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Decision 8 §1.4 — bindings born as `[]` with no annotation, turned into
+    /// warnings once the module is inferred (`infer.zig` `flushBirthWarnings`).
+    birthWarnings: std.ArrayListUnmanaged(@import("infer.zig").BirthWarning) = .empty,
     /// Set on the second analysis pass (after splicing contributions) so
     /// decorators are not re-invoked — no re-contribution, no infinite loop.
     skipDecoratorInvoke: bool = false,
@@ -775,6 +826,9 @@ pub const Env = struct {
             .exprCaptures = std.AutoHashMap(ast.Loc, []const template.CapturedExpr).init(arena),
             .templateLowerings = std.AutoHashMap(ast.Loc, TemplateOp).init(arena),
             .templateFns = std.StringHashMap(ast.FnDecl).init(arena),
+            .comptimeOwners = std.AutoHashMap(usize, []const u8).init(arena),
+            .variantCtors = std.StringHashMap(*T.Type).init(arena),
+            .variantClaims = std.StringHashMap([]const []const u8).init(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
@@ -850,6 +904,9 @@ pub const Env = struct {
             .exprCaptures = std.AutoHashMap(ast.Loc, []const template.CapturedExpr).init(arena),
             .templateLowerings = std.AutoHashMap(ast.Loc, TemplateOp).init(arena),
             .templateFns = try tmpl.templateFns.cloneWithAllocator(arena),
+            .comptimeOwners = try tmpl.comptimeOwners.cloneWithAllocator(arena),
+            .variantCtors = try tmpl.variantCtors.cloneWithAllocator(arena),
+            .variantClaims = try tmpl.variantClaims.cloneWithAllocator(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
@@ -918,6 +975,9 @@ pub const Env = struct {
         self.exprCaptures.deinit();
         self.templateLowerings.deinit();
         self.templateFns.deinit();
+        self.comptimeOwners.deinit();
+        self.variantCtors.deinit();
+        self.variantClaims.deinit();
         self.templateExpansions.deinit();
         self.srcRewrites.deinit();
         self.customAstByLoc.deinit();
@@ -1051,8 +1111,57 @@ pub const Env = struct {
     }
 
     pub fn bind(self: *Env, name: []const u8, ty: *T.Type) !void {
+        try self.noteBind(name);
         try self.bindings.put(name, ty);
         _ = self.valNames.remove(name);
+    }
+
+    /// 01 step 13 — one entry of a body's undo log: what `name` was bound to
+    /// (and whether as a `val`) before the body bound it.
+    pub const BindUndo = struct { name: []const u8, prev: ?*T.Type, wasVal: bool };
+
+    /// Record `name`'s current binding in the open body scope, if any, before
+    /// it is overwritten.
+    fn noteBind(self: *Env, name: []const u8) !void {
+        const log = self.bodyScope orelse return;
+        try log.append(self.arena, .{ .name = name, .prev = self.bindings.get(name), .wasVal = self.valNames.contains(name) });
+    }
+
+    /// 01 step 13 — a body's bindings end with the body. `bindings` is one flat
+    /// table, so a `val` declared inside one `fn` used to stay bound for every
+    /// declaration inferred after it: `fn later() { return v; }` checked
+    /// against another function's local, and a local named like an exported
+    /// fn retyped it for the next function. `openBodyScope` starts an undo
+    /// log; `closeBodyScope` replays it backwards, which puts every name the
+    /// body bound (parameters, locals, pattern binders) back exactly as it was.
+    pub fn openBodyScope(self: *Env, log: *std.ArrayListUnmanaged(BindUndo)) ?*std.ArrayListUnmanaged(BindUndo) {
+        const outer = self.bodyScope;
+        self.bodyScope = log;
+        return outer;
+    }
+
+    pub fn closeBodyScope(self: *Env, log: *std.ArrayListUnmanaged(BindUndo), outer: ?*std.ArrayListUnmanaged(BindUndo), owner: []const u8) void {
+        self.bodyScope = outer;
+        if (outer == null) for (log.items) |u| {
+            if (u.prev == null and !self.closedLocals.contains(u.name))
+                self.closedLocals.put(self.arena, u.name, owner) catch {};
+        };
+        var i = log.items.len;
+        while (i > 0) {
+            i -= 1;
+            const u = log.items[i];
+            if (u.prev) |p| {
+                self.bindings.put(u.name, p) catch {};
+            } else {
+                _ = self.bindings.remove(u.name);
+            }
+            if (u.wasVal) {
+                self.valNames.put(u.name, {}) catch {};
+            } else {
+                _ = self.valNames.remove(u.name);
+            }
+        }
+        log.clearRetainingCapacity();
     }
 
     /// A module `var`'s storage and bound type — see `memoryVars`.
@@ -1061,6 +1170,7 @@ pub const Env = struct {
     /// `bind` for a `val` — local or module-level: the name is then refused
     /// as an assignment target until something else binds it (decision 38).
     pub fn bindVal(self: *Env, name: []const u8, ty: *T.Type) !void {
+        try self.noteBind(name);
         try self.bindings.put(name, ty);
         try self.valNames.put(name, {});
     }
@@ -1125,6 +1235,35 @@ pub const Env = struct {
     /// Look up the typeparam constraints for a function, or null if it has none.
     pub fn lookupTypeparams(self: *Env, name: []const u8) ?[]const TypeparamConstraint {
         return self.fnTypeparams.get(name);
+    }
+
+    /// Record a warning (decision 57). Inference may walk one expression more
+    /// than once (the untyped and the typed pass), so a warning already
+    /// recorded at the same location with the same text is not repeated.
+    pub fn warn(self: *Env, w: @import("error.zig").TypeError) !void {
+        for (self.warnings.items) |seen| {
+            const same_loc = if (seen.loc) |a| (if (w.loc) |b| a.line == b.line and a.col == b.col else false) else w.loc == null;
+            if (!same_loc) continue;
+            if (seen.kind == .custom and w.kind == .custom and std.mem.eql(u8, seen.kind.custom.message, w.kind.custom.message)) return;
+        }
+        try self.warnings.append(self.arena, w);
+    }
+
+    /// C-01 — record the module path `decl` was declared in (see
+    /// `comptimeOwners`). A bodyless declaration is never evaluated and has no
+    /// identity to key by, so it is not recorded. The first owner stays: the
+    /// defining module registers its own declaration before any importer sees it.
+    pub fn noteComptimeOwner(self: *Env, decl: ast.FnDecl, owner: []const u8) !void {
+        if (decl.body.len == 0) return;
+        const gop = try self.comptimeOwners.getOrPut(@intFromPtr(decl.body.ptr));
+        if (!gop.found_existing) gop.value_ptr.* = owner;
+    }
+
+    /// The module path `decl` was declared in, or "" when nothing recorded it
+    /// (the compiler's own tests evaluate a declaration no module owns).
+    pub fn comptimeOwnerOf(self: *const Env, decl: ast.FnDecl) []const u8 {
+        if (decl.body.len == 0) return "";
+        return self.comptimeOwners.get(@intFromPtr(decl.body.ptr)) orelse "";
     }
 
     /// Record the `expr` meta-kind params for a function (keyed by name).
@@ -1436,7 +1575,16 @@ pub fn planDefaultFill(
     labels: []const ?[]const u8,
 ) !?DefaultFill {
     if (labels.len > params.len) return error.CannotFill;
-    if (labels.len == params.len) return null;
+    // A complete call needs no plan unless a label moves an argument (01 —
+    // `diff(b: 1, a: 10)`, `P(y: "a", x: 1)`): the plan is then a pure
+    // reorder into declaration order, which every consumer applies alike.
+    if (labels.len == params.len) {
+        var any_label = false;
+        for (labels) |l| if (l != null) {
+            any_label = true;
+        };
+        if (!any_label) return null;
+    }
 
     const slots = try arena.alloc(?usize, params.len);
     @memset(slots, null);
@@ -1467,6 +1615,13 @@ pub fn planDefaultFill(
     // Pass 3 — N2: every slot the call left empty must declare a default.
     for (slots, params) |slot, p| {
         if (slot == null and p.default == null) return error.CannotFill;
+    }
+    // A complete call whose labels name the parameters in order moves nothing.
+    if (labels.len == params.len) {
+        const identity = for (slots, 0..) |slot, i| {
+            if (slot == null or slot.? != i) break false;
+        } else true;
+        if (identity) return null;
     }
     return DefaultFill{ .params = params, .slots = slots };
 }

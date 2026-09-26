@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type implement @Context<Element> { }
+val Element = type() implement @Context<Element>
 fn render() -> Element {
-    Element();
+    return Element();
 }
 ```
 

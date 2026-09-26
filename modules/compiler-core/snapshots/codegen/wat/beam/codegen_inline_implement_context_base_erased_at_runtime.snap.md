@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = type implement @Context<Element> { }
+val Element = type() implement @Context<Element>
 fn render() -> Element {
-    Element();
+    return Element();
 }
 ```
 
@@ -21,7 +21,6 @@ fn render() -> Element {
     {allocate, 0, 0}.
     {test_heap, 2, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Element}]}}.
-    {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
 ```

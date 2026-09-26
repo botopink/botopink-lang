@@ -202,8 +202,11 @@ pub const ParseErrorType = enum {
     caseBareNameArm,
     /// `case x { MAX { … } }` — a constant is not a pattern (§5.2, 06 N22).
     caseConstantPattern,
-    /// `type P()` — an empty field list; a record with no fields omits `()`.
-    typeEmptyFieldList,
+    /// `type P {}`, `type P { fn … }`, `type P` — a record without its field
+    /// list. The empty record is `type P()` and one with members
+    /// `type P() { … }` (decision 138); braces alone are an enum's. Located
+    /// where the `()` belongs.
+    typeWithoutFieldList,
     /// `#[x] type Name = T;` — an alias is a name for a type, not a
     /// declaration that carries metadata; it takes no annotation.
     typeAliasAnnotated,
@@ -233,6 +236,10 @@ pub const ParseErrorType = enum {
     /// declaration without a body says what it answers, even when the answer
     /// is nothing.
     bodylessFnNeedsReturnType,
+    /// `total + try r`, `-try x`, `(try x).len`, `!await ok()` — `try` and
+    /// `await` begin an expression and are never an operand (decision 137).
+    /// Located at the keyword.
+    tryAwaitOperand,
     /// `c ? 1 : 2` — there is no ternary; `if` is an expression (front 15
     /// step 3). Located at the `?`.
     ternaryAbsent,
@@ -650,7 +657,7 @@ pub const Parser = struct {
         _ = try this.consume(.mod);
         const nameTok = try this.consume(.identifier);
         _ = try this.consume(.semicolon);
-        return .{ .name = nameTok.lexeme, .isPub = isPub, .isDefault = isDefault };
+        return .{ .name = nameTok.lexeme, .isPub = isPub, .isDefault = isDefault, .loc = locFromToken(nameTok) };
     }
 
     /// Dispatches `val [pub] Name = <kind> ...` to the appropriate sub-parser.
@@ -1611,6 +1618,7 @@ pub const Parser = struct {
     };
 
     pub const parseBinaryExpr = exprs.parseBinaryExpr;
+    pub const parseExprAtStart = exprs.parseExprAtStart;
 
     pub const parsePrimary = exprs.parsePrimary;
 

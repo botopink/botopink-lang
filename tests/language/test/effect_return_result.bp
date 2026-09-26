@@ -21,14 +21,24 @@ fn firstOk(a: @Result<i32, string>, b: @Result<i32, string>) -> @Result<i32, str
     return b;
 }
 
-test "decision 119 return of a T wraps it in Ok" { assert (try check(7) catch -1) == 7; }
-test "decision 118 throw under a @Result return is the error" { assert (try check(-1) catch -1) == -1; }
+test "decision 119 return of a T wraps it in Ok" {
+    val v = try check(7) catch -1;
+    assert v == 7;
+}
+test "decision 118 throw under a @Result return is the error" {
+    val v = try check(-1) catch -1;
+    assert v == -1;
+}
 test "decision 118 try under a @Result return propagates" {
-    assert (try doubled(4) catch 0) == 8;
-    assert (try doubled(-4) catch 0) == 0;
+    val a = try doubled(4) catch 0;
+    assert a == 8;
+    val b = try doubled(-4) catch 0;
+    assert b == 0;
 }
 test "decision 119 return of a @Result passes it through unwrapped" {
-    assert (try firstOk(check(2), check(5)) catch 0) == 2;
-    assert (try firstOk(check(-1), check(5)) catch 0) == 5;
+    val a = try firstOk(check(2), check(5)) catch 0;
+    assert a == 2;
+    val b = try firstOk(check(-1), check(5)) catch 0;
+    assert b == 5;
     assert firstOk(check(-1), check(-2)).isError();
 }

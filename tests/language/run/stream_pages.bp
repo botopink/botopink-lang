@@ -6,7 +6,7 @@
 //// `p1`, fails at `p3`, and answers one page from `q1`. In the stream a failing
 //// `try await` emits `Error(e)` and ENDS; each `yield` of a `U` emits `Ok(…)`.
 ////
-//// `countUsers` stops at the first error with `(try batch)` (its return carries
+//// `countUsers` stops at the first error with `val users = try batch` (its return carries
 //// a `@Result`); `walk` carries on through the items with `case` and sees the
 //// `Error` as the last one. Both iterate with `for await` inside a `@Task`
 //// body — the await channel. Printed from inside `run`.
@@ -32,7 +32,8 @@ fn pages(url: string) -> @Stream<@Result<Array<string>, string>> {
 fn countUsers(url: string) -> @Task<@Result<i32, string>> {
     var n = 0;
     for await (pages(url)) { batch ->
-        n = n + (try batch).length;
+        val users = try batch;
+        n = n + users.length;
     };
     return n;
 }

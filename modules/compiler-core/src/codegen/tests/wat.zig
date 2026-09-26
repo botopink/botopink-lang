@@ -694,7 +694,7 @@ test "wat: index ---- a nested index, a slice's length and a tuple element" {
         \\    @print(rows);
         \\    @print(rows[1]);
         \\    @print(rows[1][0]);
-        \\    @print(rows[0].length);
+        \\    @print(rows[0]?.length);
         \\    val xs = [10, 20, 30];
         \\    @print(xs[0..2].length);
         \\    val sl = xs[0..2];
@@ -835,19 +835,14 @@ test "wat: tuple ---- an element prints by its shape, positional and labelled" {
 
 // ── step 6: the string case primitives ──────────────────────────────────────
 
-// `"aB".toUpperCase()` trapped on wasm (`prim method not lowered on wasm:
-// string.toUpperCase/0`). The language-facing name is `toUpper`; `toUpperCase`
-// is the host spelling `primitives.bp` gives it through
-// `#[@External.Node("toUpperCase")]`, which commonJS answers because it is
-// JavaScript's own. `tests/language/test/string_case_conversion.bp` writes it,
-// so both spellings now reach `$__str_case`. erlang and beam resolve the host
-// spelling to the method it spells (`erlang.zig`'s `primNodeAliasIn`), so the
-// four RUN LOGs agree (`00 · 02-erlang` step 7).
-test "wat: string ---- toUpperCase and toLowerCase answer, under both spellings" {
+// `"aB".toUpper()` reaches `$__str_case` on wasm. The host spellings
+// (`toUpperCase`, JavaScript's own, which `primitives.bp` gives `toUpper`
+// through `#[@External.Node("toUpperCase")]`) used to be lowered here too; the
+// checker refuses them now (pending 0203-a, answered (b):
+// `tests/language/reject/primitive_method_undeclared.bp`).
+test "wat: string ---- toUpper and toLower answer" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print("aB".toUpperCase());
-        \\    @print("aB".toLowerCase());
         \\    @print("aB".toUpper());
         \\    @print("aB".toLower());
         \\}
@@ -1013,8 +1008,9 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
 // `unreachable ;; prim method not lowered on wasm: string.at/1`, so
 // `tests/language/run/index_at_optional.bp` died at exit 134 on this backend
 // while commonJS, erlang and beam all answered. `$__str_at` is
-// `$__str_slice(s, i, i + 1)` behind one `i32.ge_u` bounds test — unsigned, so a
-// negative index wraps past any length and is rejected by the same compare.
+// `$__str_slice(s, i, i + 1)` behind one `i32.ge_u` bounds test, after a
+// negative index has been counted from the end (`i + len`, decision 139) — one
+// still negative wraps past any length and is rejected by the same compare.
 //
 // The absent probes are the half that makes the lowering safe rather than merely
 // present: `at` answers a `?string` whose absence is the pointer `0`, and
@@ -1034,9 +1030,10 @@ test "wat: prim method ---- String.at answers a one-character string, and null o
         \\    @print(s.at(2));
         \\    @print(s.at(3));
         \\    @print(s.at(0 - 1));
+        \\    @print(s.at(0 - 4));
         \\    @print("hello world".at(6));
         \\}
-    , "a\nc\nnull\nnull\nw\n");
+    , "a\nc\nnull\nc\nnull\nw\n");
 }
 
 // A self-call in `return` position is a branch to the function's own loop head
