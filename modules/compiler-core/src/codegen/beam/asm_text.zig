@@ -75,14 +75,21 @@ fn labelCount(m: bf.Module) u32 {
 fn writeInstr(w: *Writer, ins: bf.Instr, fun_index: ?usize) Error!void {
     const a = ins.args;
     switch (ins.op) {
-        .@"return", .if_end, .raw_raise, .build_stacktrace => try w.writeAll(@tagName(ins.op)),
-        .func_info, .call, .call_last, .call_ext, .call_ext_last, .call_ext_only, .call_only, .allocate, .deallocate, .test_heap, .move, .jump, .get_list, .get_tuple_element, .put_list, .badmatch, .case_end, .call_fun, .try_end, .try_case, .try_case_end, .init_yregs, .put_tuple2 => {
+        .@"return", .if_end, .raw_raise, .build_stacktrace, .send, .remove_message, .timeout => try w.writeAll(@tagName(ins.op)),
+        .func_info, .call, .call_last, .call_ext, .call_ext_last, .call_ext_only, .call_only, .allocate, .deallocate, .test_heap, .move, .jump, .get_list, .get_tuple_element, .put_list, .badmatch, .case_end, .call_fun, .try_end, .try_case, .try_case_end, .init_yregs, .put_tuple2, .loop_rec, .loop_rec_end, .wait, .wait_timeout, .catch_end => {
             try w.writeByte('{');
             try w.writeAll(@tagName(ins.op));
             for (a) |arg| {
                 try w.writeAll(", ");
                 try writeArg(w, arg);
             }
+            try w.writeByte('}');
+        },
+        .@"catch" => {
+            try w.writeAll("{'catch', ");
+            try writeArg(w, a[0]);
+            try w.writeAll(", ");
+            try writeArg(w, a[1]);
             try w.writeByte('}');
         },
         .@"try" => {

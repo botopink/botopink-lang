@@ -85,10 +85,22 @@ pub const MissingExternal = struct {
     target: []const u8,
     /// The call site.
     loc: @FieldType(comptimeMod.TypeError, "loc") = null,
+    /// Set when the target exists but its `#[@External.Erlang]` template does
+    /// not compile for the beam backend: the construct the reader or the
+    /// lowering refused, by name (decision 141).
+    refusal: ?[]const u8 = null,
 
     /// This as the diagnostic a failed module carries. The message is owned by
     /// `allocator`, like every other `Diagnostic.type`.
     pub fn diagnostic(self: MissingExternal, allocator: std.mem.Allocator) !Diagnostic {
+        if (self.refusal) |why| return .{ .type = .{
+            .message = try std.fmt.allocPrint(
+                allocator,
+                "`{s}`'s `#[@External.Erlang(…)]` template does not compile for the {s} backend: {s}",
+                .{ self.name, self.target, why },
+            ),
+            .loc = self.loc,
+        } };
         return .{ .type = .{
             .message = try std.fmt.allocPrint(
                 allocator,

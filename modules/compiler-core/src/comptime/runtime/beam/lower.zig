@@ -41,10 +41,19 @@
 //! segments — each segment tested as the segment type would test it, a
 //! mismatch raising `badarg` as the segment would.
 //!
+//! `receive` is the selective-receive loop `erlc` writes (`loop_rec` /
+//! `remove_message` / `loop_rec_end` / `wait` or `wait_timeout` + `timeout`);
+//! because the message stays in the queue until `remove_message`, the Y slots
+//! a failed clause wrote are cleared before `loop_rec_end` (`beam_validator`
+//! refuses a fragile term in a Y register there). `!` is `send`, the old
+//! `catch Expr` is `catch` / `catch_end`, `try … of` matches after `try_end`
+//! (no clause is `try_case_end`), and `try … after` runs its `after` body on
+//! both the value path and the exception path, which re-raises.
+//!
 //! What it cannot lower it **refuses** by name (`error.Unsupported`,
-//! `Failure.message`): the evaluator then runs that declaration from Erlang
-//! source — the counted, visible fallback of decision 67 — instead of loading
-//! code that might mean something else.
+//! `Failure.message`): a comptime module then does not compile, and a beam
+//! `@External.Erlang` template is a build error naming the construct
+//! (decision 67) — nothing falls back to evaluating Erlang source.
 const std = @import("std");
 const ep = @import("../wat/erl_parse.zig");
 const bf = @import("../../../codegen/beam/beam_file.zig");
@@ -77,30 +86,47 @@ fn frameArg() Arg {
 
 // ── the BIF tables ───────────────────────────────────────────────────────────
 
-/// Erlang's auto-imported functions (`erl_internal:bif/2`): a bare call to one
-/// of these that the module does not define is `erlang:<name>`.
+/// Erlang's auto-imported functions (`erl_internal:bif/2` over `erlang`'s
+/// exports, OTP 29): a bare call to one of these that the module does not
+/// define is `erlang:<name>`.
 const auto_imported = std.StaticStringMap(void).initComptime(.{
-    .{"abs/1"},                      .{"alias/0"},                    .{"alias/1"},                  .{"apply/2"},              .{"apply/3"},
-    .{"atom_to_binary/1"},           .{"atom_to_binary/2"},           .{"atom_to_list/1"},           .{"binary_part/2"},        .{"binary_part/3"},
-    .{"binary_to_atom/1"},           .{"binary_to_atom/2"},           .{"binary_to_existing_atom/1"}, .{"binary_to_existing_atom/2"}, .{"binary_to_float/1"},
-    .{"binary_to_integer/1"},        .{"binary_to_integer/2"},        .{"binary_to_list/1"},         .{"binary_to_list/3"},     .{"binary_to_term/1"},
-    .{"binary_to_term/2"},           .{"bit_size/1"},                 .{"bitstring_to_list/1"},      .{"byte_size/1"},          .{"ceil/1"},
-    .{"date/0"},                     .{"element/2"},                  .{"erase/0"},                  .{"erase/1"},              .{"error/1"},
-    .{"error/2"},                    .{"error/3"},                    .{"exit/1"},                   .{"exit/2"},               .{"float/1"},
-    .{"float_to_binary/1"},          .{"float_to_binary/2"},          .{"float_to_list/1"},          .{"float_to_list/2"},      .{"floor/1"},
-    .{"get/0"},                      .{"get/1"},                      .{"get_keys/0"},               .{"get_keys/1"},           .{"group_leader/0"},
-    .{"hd/1"},                       .{"integer_to_binary/1"},        .{"integer_to_binary/2"},      .{"integer_to_list/1"},    .{"integer_to_list/2"},
-    .{"iolist_size/1"},              .{"iolist_to_binary/1"},         .{"is_atom/1"},                .{"is_binary/1"},          .{"is_bitstring/1"},
-    .{"is_boolean/1"},               .{"is_float/1"},                 .{"is_function/1"},            .{"is_function/2"},        .{"is_integer/1"},
-    .{"is_list/1"},                  .{"is_map/1"},                   .{"is_map_key/2"},             .{"is_number/1"},          .{"is_pid/1"},
-    .{"is_port/1"},                  .{"is_reference/1"},             .{"is_tuple/1"},               .{"length/1"},             .{"list_to_atom/1"},
-    .{"list_to_binary/1"},           .{"list_to_bitstring/1"},        .{"list_to_existing_atom/1"},  .{"list_to_float/1"},      .{"list_to_integer/1"},
-    .{"list_to_integer/2"},          .{"list_to_tuple/1"},            .{"make_ref/0"},               .{"map_get/2"},            .{"map_size/1"},
-    .{"max/2"},                      .{"min/2"},                      .{"node/0"},                   .{"node/1"},               .{"put/2"},
-    .{"round/1"},                    .{"self/0"},                     .{"setelement/3"},             .{"size/1"},               .{"split_binary/2"},
-    .{"term_to_binary/1"},           .{"term_to_binary/2"},           .{"throw/1"},                  .{"time/0"},               .{"tl/1"},
-    .{"trunc/1"},                    .{"tuple_size/1"},               .{"tuple_to_list/1"},          .{"spawn/1"},              .{"spawn/3"},
-    .{"process_flag/2"},             .{"whereis/1"},                  .{"is_process_alive/1"},       .{"statistics/1"},         .{"nodes/0"},
+    .{"abs/1"}, .{"alias/0"}, .{"alias/1"}, .{"apply/2"}, .{"apply/3"},
+    .{"atom_to_binary/1"}, .{"atom_to_binary/2"}, .{"atom_to_list/1"}, .{"binary_part/2"}, .{"binary_part/3"},
+    .{"binary_to_atom/1"}, .{"binary_to_atom/2"}, .{"binary_to_existing_atom/1"}, .{"binary_to_existing_atom/2"}, .{"binary_to_float/1"},
+    .{"binary_to_integer/1"}, .{"binary_to_integer/2"}, .{"binary_to_list/1"}, .{"binary_to_list/3"}, .{"binary_to_term/1"},
+    .{"binary_to_term/2"}, .{"bit_size/1"}, .{"bitstring_to_list/1"}, .{"byte_size/1"}, .{"ceil/1"},
+    .{"check_old_code/1"}, .{"check_process_code/2"}, .{"check_process_code/3"}, .{"date/0"}, .{"delete_module/1"},
+    .{"demonitor/1"}, .{"demonitor/2"}, .{"disconnect_node/1"}, .{"element/2"}, .{"erase/0"},
+    .{"erase/1"}, .{"error/1"}, .{"error/2"}, .{"error/3"}, .{"exit/1"},
+    .{"exit/2"}, .{"exit/3"}, .{"exit_signal/2"}, .{"exit_signal/3"}, .{"float/1"},
+    .{"float_to_binary/1"}, .{"float_to_binary/2"}, .{"float_to_list/1"}, .{"float_to_list/2"}, .{"floor/1"},
+    .{"garbage_collect/0"}, .{"garbage_collect/1"}, .{"garbage_collect/2"}, .{"get/0"}, .{"get/1"},
+    .{"get_keys/0"}, .{"get_keys/1"}, .{"group_leader/0"}, .{"group_leader/2"}, .{"halt/0"},
+    .{"halt/1"}, .{"halt/2"}, .{"hd/1"}, .{"integer_to_binary/1"}, .{"integer_to_binary/2"},
+    .{"integer_to_list/1"}, .{"integer_to_list/2"}, .{"iolist_size/1"}, .{"iolist_to_binary/1"}, .{"is_alive/0"},
+    .{"is_atom/1"}, .{"is_binary/1"}, .{"is_bitstring/1"}, .{"is_boolean/1"}, .{"is_float/1"},
+    .{"is_function/1"}, .{"is_function/2"}, .{"is_integer/1"}, .{"is_integer/3"}, .{"is_list/1"},
+    .{"is_map/1"}, .{"is_map_key/2"}, .{"is_number/1"}, .{"is_pid/1"}, .{"is_port/1"},
+    .{"is_process_alive/1"}, .{"is_record/1"}, .{"is_record/2"}, .{"is_record/3"}, .{"is_reference/1"},
+    .{"is_tuple/1"}, .{"length/1"}, .{"link/1"}, .{"link/2"}, .{"list_to_atom/1"},
+    .{"list_to_binary/1"}, .{"list_to_bitstring/1"}, .{"list_to_existing_atom/1"}, .{"list_to_float/1"}, .{"list_to_integer/1"},
+    .{"list_to_integer/2"}, .{"list_to_pid/1"}, .{"list_to_port/1"}, .{"list_to_ref/1"}, .{"list_to_tuple/1"},
+    .{"load_module/2"}, .{"make_ref/0"}, .{"map_get/2"}, .{"map_size/1"}, .{"max/2"},
+    .{"min/2"}, .{"module_loaded/1"}, .{"monitor/2"}, .{"monitor/3"}, .{"monitor_node/2"},
+    .{"node/0"}, .{"node/1"}, .{"nodes/0"}, .{"nodes/1"}, .{"nodes/2"},
+    .{"now/0"}, .{"open_port/2"}, .{"pid_to_list/1"}, .{"port_close/1"}, .{"port_command/2"},
+    .{"port_command/3"}, .{"port_connect/2"}, .{"port_control/3"}, .{"port_to_list/1"}, .{"pre_loaded/0"},
+    .{"process_flag/2"}, .{"process_flag/3"}, .{"process_info/1"}, .{"process_info/2"}, .{"processes/0"},
+    .{"purge_module/1"}, .{"put/2"}, .{"ref_to_list/1"}, .{"register/2"}, .{"registered/0"},
+    .{"round/1"}, .{"self/0"}, .{"setelement/3"}, .{"size/1"}, .{"spawn/1"},
+    .{"spawn/2"}, .{"spawn/3"}, .{"spawn/4"}, .{"spawn_link/1"}, .{"spawn_link/2"},
+    .{"spawn_link/3"}, .{"spawn_link/4"}, .{"spawn_monitor/1"}, .{"spawn_monitor/2"}, .{"spawn_monitor/3"},
+    .{"spawn_monitor/4"}, .{"spawn_opt/2"}, .{"spawn_opt/3"}, .{"spawn_opt/4"}, .{"spawn_opt/5"},
+    .{"spawn_request/1"}, .{"spawn_request/2"}, .{"spawn_request/3"}, .{"spawn_request/4"}, .{"spawn_request/5"},
+    .{"spawn_request_abandon/1"}, .{"split_binary/2"}, .{"statistics/1"}, .{"term_to_binary/1"}, .{"term_to_binary/2"},
+    .{"term_to_iovec/1"}, .{"term_to_iovec/2"}, .{"throw/1"}, .{"time/0"}, .{"tl/1"},
+    .{"trunc/1"}, .{"tuple_size/1"}, .{"tuple_to_list/1"}, .{"unalias/1"}, .{"unlink/1"},
+    .{"unregister/1"}, .{"whereis/1"},
 });
 
 /// Guard BIFs (`erl_internal:guard_bif/2`), each marked with whether it can
@@ -251,6 +277,9 @@ const Fn = struct {
     /// Set for the one `clausesValue` that matches a `try`'s catch clauses:
     /// the raw stack's slot and, per clause, the variable its `:Stack` binds.
     catch_stack: ?CatchStack = null,
+    /// Set for the one `clausesValue` that matches a `receive`'s clauses: a
+    /// clause that matches removes the message before its body.
+    receive_clause: bool = false,
 
     fn ar(f: *Fn) std.mem.Allocator {
         return f.l.ar;
@@ -425,7 +454,7 @@ const Fn = struct {
 /// Whether control never falls through `ins` to the next instruction.
 fn isTerminal(ins: Instr) bool {
     return switch (ins.op) {
-        .@"return", .jump, .call_last, .call_ext_last, .call_only, .call_ext_only, .raw_raise, .case_end, .badmatch, .if_end, .try_case_end => true,
+        .@"return", .jump, .call_last, .call_ext_last, .call_only, .call_ext_only, .raw_raise, .case_end, .badmatch, .if_end, .try_case_end, .wait, .loop_rec_end => true,
         .call_ext => blk: {
             const e = ins.args[1].ext;
             if (!std.mem.eql(u8, e.module, "erlang")) break :blk false;
@@ -660,6 +689,8 @@ fn expr(f: *Fn, e: ep.Expr) Error!Arg {
         .case_ => |c| return caseExpr(f, c, false),
         .if_ => |cls| return ifExpr(f, cls, false),
         .try_ => |t| return tryExpr(f, t),
+        .receive_ => |r| return receiveExpr(f, r, false),
+        .catch_ => |c| return catchExpr(f, c.*),
         .block => |b| return body(f, b, false),
         .list_comp => |lc| return listComp(f, lc),
     }
@@ -699,6 +730,10 @@ fn tailExpr(f: *Fn, e: ep.Expr) Error!void {
         },
         .block => |b| {
             _ = try body(f, b, true);
+            return;
+        },
+        .receive_ => |r| {
+            _ = try receiveExpr(f, r, true);
             return;
         },
         else => {
@@ -798,6 +833,16 @@ fn mapExpr(f: *Fn, m: ep.Expr.MapExpr) Error!Arg {
 fn binop(f: *Fn, b: ep.Expr.BinOp) Error!Arg {
     const l = f.l;
     if (std.mem.eql(u8, b.op, "andalso") or std.mem.eql(u8, b.op, "orelse")) return shortCircuit(f, b);
+    if (std.mem.eql(u8, b.op, "!")) {
+        // `Dest ! Msg`: `send` takes x0/x1 and answers the message in x0.
+        const mark = f.temp_top;
+        const dest = try f.stable(try expr(f, b.lhs.*));
+        const msg = try expr(f, b.rhs.*);
+        try f.move(dest, Arg.xr(0));
+        try f.move(msg, Arg.xr(1));
+        try f.emit(.send, &.{});
+        return f.resultOf(mark);
+    }
     if (!body_binops.has(b.op)) return l.refuse("operator `{s}`", .{b.op});
     const mark = f.temp_top;
     const lhs = try f.stable(try expr(f, b.lhs.*));
@@ -1087,6 +1132,14 @@ fn collectUses(f: *Fn, e: ep.Expr, shadow: *std.StringHashMapUnmanaged(void), ou
             for (t.catches) |cl| try collectClauseUses(f, cl, shadow, out);
             for (t.after) |b| try collectUses(f, b, shadow, out);
         },
+        .receive_ => |r| {
+            for (r.clauses) |cl| try collectClauseUses(f, cl, shadow, out);
+            if (r.after) |a| {
+                try collectUses(f, a.timeout.*, shadow, out);
+                for (a.body) |b| try collectUses(f, b, shadow, out);
+            }
+        },
+        .catch_ => |c| try collectUses(f, c.*, shadow, out),
         .block => |b| for (b) |it| try collectUses(f, it, shadow, out),
         .list_comp => |lc| {
             var inner = try shadow.clone(ar);
@@ -1216,14 +1269,14 @@ fn pattern(f: *Fn, p: ep.Expr, subject: Arg, fail: u32) Error!void {
 }
 
 /// `<<Lit…, Rest/binary>>` (literal bytes, then an optional `/binary` tail),
-/// matched with guard BIFs: the size, the prefix by `binary_part/3`, the rest.
+/// matched with guard BIFs: the size, the prefix by `binary_part/3`, the rest;
+/// any other shape is `integerSegmentsPattern`'s.
 fn binaryPattern(f: *Fn, segs: []const ep.Segment, subject: Arg, fail: u32) Error!void {
-    const l = f.l;
     const last = segs[segs.len - 1];
     const rest_ok = last.types.len == 1 and std.mem.eql(u8, last.types[0], "binary") and last.size == null and last.value == .variable;
-    if (!rest_ok) return l.refuse("a binary pattern other than literal bytes and a `/binary` tail", .{});
-    const prefix = (try literalBinary(f.ar(), segs[0 .. segs.len - 1])) orelse
-        return l.refuse("a binary pattern other than literal bytes and a `/binary` tail", .{});
+    const lit_prefix = if (rest_ok) try literalBinary(f.ar(), segs[0 .. segs.len - 1]) else null;
+    if (lit_prefix == null) return integerSegmentsPattern(f, segs, subject, fail, rest_ok);
+    const prefix = lit_prefix.?;
     try f.move(subject, Arg.xr(0));
     try f.emit(.is_binary, &.{ Arg.lbl(fail), Arg.xr(0) });
     const size = f.temp();
@@ -1251,6 +1304,101 @@ fn binaryPattern(f: *Fn, segs: []const ep.Segment, subject: Arg, fail: u32) Erro
     try pattern(f, last.value, rest, fail);
 }
 
+/// The size in bits of an integer pattern segment — big-endian, unsigned, a
+/// literal size (8 when none) — or null for any other segment.
+fn integerSegmentBits(s: ep.Segment) ?u64 {
+    for (s.types) |t| {
+        if (!(std.mem.eql(u8, t, "integer") or std.mem.eql(u8, t, "unsigned") or std.mem.eql(u8, t, "big"))) return null;
+    }
+    const size = s.size orelse return 8;
+    return switch (size) {
+        .int => |n| if (n > 0) @intCast(n) else null,
+        else => null,
+    };
+}
+
+/// A binary pattern of fixed-size integer segments (`<<A:32, _:4, B:12>>`),
+/// optionally followed by a `/binary` tail when the fields fill whole bytes:
+/// the size is tested, the fields' bytes are read as one unsigned integer
+/// (`binary:decode_unsigned/1`) and each field is shifted and masked out of it
+/// — every step an ordinary call, so no bit-syntax matching opcode newer than
+/// OTP 24 is needed (decision 86). Each field is then matched as a pattern.
+fn integerSegmentsPattern(f: *Fn, segs: []const ep.Segment, subject: Arg, fail: u32, has_tail: bool) Error!void {
+    const l = f.l;
+    const fields = if (has_tail) segs[0 .. segs.len - 1] else segs;
+    var bits: u64 = 0;
+    for (fields) |s| bits += integerSegmentBits(s) orelse
+        return l.refuse("a binary pattern segment other than a fixed-size unsigned big-endian integer", .{});
+    if (bits % 8 != 0) return l.refuse("a binary pattern whose integer fields do not fill whole bytes", .{});
+    if (bits > 64 * 1024) return l.refuse("a binary pattern of more than 64 KiB of integer fields", .{});
+    const bytes: i64 = @intCast(bits / 8);
+
+    try f.move(subject, Arg.xr(0));
+    try f.emit(.is_binary, &.{ Arg.lbl(fail), Arg.xr(0) });
+    const size = f.temp();
+    try f.emit(.gc_bif1, &.{ Arg.lbl(fail), Arg.uint(1), Arg.extFn("erlang", "byte_size", 1), Arg.xr(0), size });
+    try f.move(size, Arg.xr(0));
+    if (has_tail) {
+        try f.emit(.is_ge, &.{ Arg.lbl(fail), Arg.xr(0), Arg.int(bytes) });
+    } else {
+        try f.emit(.is_eq_exact, &.{ Arg.lbl(fail), Arg.xr(0), Arg.int(bytes) });
+    }
+    const whole = f.temp();
+    if (bytes > 0) {
+        try f.move(subject, Arg.xr(0));
+        if (has_tail) {
+            try f.move(Arg.int(0), Arg.xr(1));
+            try f.move(Arg.int(bytes), Arg.xr(2));
+            try f.emit(.call_ext, &.{ Arg.uint(3), Arg.extFn("erlang", "binary_part", 3) });
+        }
+        try f.emit(.call_ext, &.{ Arg.uint(1), Arg.extFn("binary", "decode_unsigned", 1) });
+        try f.move(Arg.xr(0), whole);
+    }
+    var consumed: u64 = 0;
+    for (fields) |s| {
+        const n = integerSegmentBits(s).?;
+        consumed += n;
+        if (s.value == .variable and std.mem.eql(u8, s.value.variable, "_")) continue;
+        const shift: i64 = @intCast(bits - consumed);
+        const v = f.temp();
+        try f.move(whole, Arg.xr(0));
+        try f.move(Arg.int(shift), Arg.xr(1));
+        try f.emit(.call_ext, &.{ Arg.uint(2), Arg.extFn("erlang", "bsr", 2) });
+        try f.move(Arg.xr(0), v);
+        // The mask `2^n - 1`: a literal while it fits a small integer,
+        // computed (`1 bsl n - 1`) beyond.
+        const mask: Arg = if (n <= 59) Arg.int((@as(i64, 1) << @intCast(n)) - 1) else blk: {
+            const m = f.temp();
+            try f.move(Arg.int(1), Arg.xr(0));
+            try f.move(Arg.int(@as(i64, @intCast(n))), Arg.xr(1));
+            try f.emit(.call_ext, &.{ Arg.uint(2), Arg.extFn("erlang", "bsl", 2) });
+            try f.move(Arg.int(1), Arg.xr(1));
+            try f.emit(.call_ext, &.{ Arg.uint(2), Arg.extFn("erlang", "-", 2) });
+            try f.move(Arg.xr(0), m);
+            break :blk m;
+        };
+        try f.move(v, Arg.xr(0));
+        try f.move(mask, Arg.xr(1));
+        try f.emit(.call_ext, &.{ Arg.uint(2), Arg.extFn("erlang", "band", 2) });
+        try f.move(Arg.xr(0), v);
+        try pattern(f, s.value, v, fail);
+    }
+    if (has_tail) {
+        const rest_len = f.temp();
+        try f.move(size, Arg.xr(0));
+        try f.move(Arg.int(bytes), Arg.xr(1));
+        try f.emit(.call_ext, &.{ Arg.uint(2), Arg.extFn("erlang", "-", 2) });
+        try f.move(Arg.xr(0), rest_len);
+        try f.move(subject, Arg.xr(0));
+        try f.move(Arg.int(bytes), Arg.xr(1));
+        try f.move(rest_len, Arg.xr(2));
+        try f.emit(.call_ext, &.{ Arg.uint(3), Arg.extFn("erlang", "binary_part", 3) });
+        const rest = f.temp();
+        try f.move(Arg.xr(0), rest);
+        try pattern(f, segs[segs.len - 1].value, rest, fail);
+    }
+}
+
 // ── clauses and guards ───────────────────────────────────────────────────────
 
 const NoMatch = union(enum) {
@@ -1261,6 +1409,20 @@ const NoMatch = union(enum) {
     case_clause: Arg,
     /// None of a `try`'s catch clauses: re-raise class/reason/stack.
     reraise: [3]Arg,
+    /// None of a `try … of`'s clauses: `{try_clause, V}`.
+    try_clause: Arg,
+    /// None of a `receive`'s clauses: clear what the failed matches wrote
+    /// into Y registers (the message is still in the queue, so those terms
+    /// are fragile) and go to the next message.
+    receive_next: ReceiveNext,
+};
+
+const ReceiveNext = struct {
+    loop: u32,
+    /// The subject slot and the pattern variables no binding existed for.
+    slots: []const Arg,
+    /// The temporaries from here up to the high-water mark are cleared too.
+    temp_from: u32,
 };
 
 /// Clauses tried in order against `subjects`; the chosen body's value, or —
@@ -1280,6 +1442,8 @@ fn clausesValue(f: *Fn, cls: []const ep.Clause, subjects: []const Arg, no_match:
     f.catch_stack = null;
     const head = f.head;
     f.head = false;
+    const receive_clause = f.receive_clause;
+    f.receive_clause = false;
     var after: std.ArrayListUnmanaged([]const u8) = .empty;
     for (cls, 0..) |cl, ci| {
         if (cl.patterns.len != subjects.len) return l.refuse("a clause of {d} patterns for {d} values", .{ cl.patterns.len, subjects.len });
@@ -1305,6 +1469,7 @@ fn clausesValue(f: *Fn, cls: []const ep.Clause, subjects: []const Arg, no_match:
             try f.emit(.build_stacktrace, &.{});
             try f.move(Arg.xr(0), try f.bind(sv));
         };
+        if (receive_clause) try f.emit(.remove_message, &.{});
         if (tail) {
             _ = try body(f, cl.body, true);
         } else {
@@ -1332,6 +1497,16 @@ fn clausesValue(f: *Fn, cls: []const ep.Clause, subjects: []const Arg, no_match:
             try f.move(cr[1], Arg.xr(1));
             try f.move(cr[2], Arg.xr(2));
             try f.emit(.raw_raise, &.{});
+        },
+        .try_clause => |v| {
+            try f.move(v, Arg.xr(0));
+            try f.emit(.try_case_end, &.{Arg.xr(0)});
+        },
+        .receive_next => |rn| {
+            for (rn.slots) |slot| try f.move(Arg.nil, slot);
+            var t = rn.temp_from;
+            while (t < f.temp_max) : (t += 1) try f.move(Arg.nil, Arg.yr(temp_space + t));
+            try f.emit(.loop_rec_end, &.{Arg.lbl(rn.loop)});
         },
     }
     try f.label(done);
@@ -1529,9 +1704,8 @@ fn guardBif(f: *Fn, name: []const u8, args: []const ep.Expr, exc_lbl: u32) Error
 // ── try ──────────────────────────────────────────────────────────────────────
 
 fn tryExpr(f: *Fn, t: ep.Expr.Try) Error!Arg {
+    if (t.after.len > 0) return tryAfter(f, t);
     const l = f.l;
-    if (t.after.len > 0) return l.refuse("`try … after`", .{});
-    if (t.of.len > 0) return l.refuse("`try … of`", .{});
     const tag = Arg.yr(tag_space + f.tag_depth);
     f.tag_depth += 1;
     f.tag_max = @max(f.tag_max, f.tag_depth);
@@ -1543,11 +1717,22 @@ fn tryExpr(f: *Fn, t: ep.Expr.Try) Error!Arg {
     try f.emit(.@"try", &.{ tag, Arg.lbl(handler) });
     const mark = f.temp_top;
     const v = try body(f, t.body, false);
-    try f.move(v, result);
-    f.temp_top = mark;
-    try f.emit(.try_end, &.{tag});
+    if (t.of.len == 0) {
+        try f.move(v, result);
+        f.temp_top = mark;
+        try f.emit(.try_end, &.{tag});
+        f.tag_depth -= 1;
+    } else {
+        // `try … of`: the value is matched after `try_end`, so an exception
+        // in an `of` clause is not caught by this `try`.
+        const value = f.temp();
+        try f.move(v, value);
+        try f.emit(.try_end, &.{tag});
+        f.tag_depth -= 1;
+        _ = try clausesValue(f, t.of, &.{value}, .{ .try_clause = value }, false, false, result);
+        f.temp_top = mark;
+    }
     try f.jump(done);
-    f.tag_depth -= 1;
 
     // The handler: x0 = class, x1 = reason, x2 = the raw stack.
     try f.label(handler);
@@ -1559,6 +1744,14 @@ fn tryExpr(f: *Fn, t: ep.Expr.Try) Error!Arg {
     try f.move(Arg.xr(0), class);
     try f.move(Arg.xr(1), reason);
     try f.move(Arg.xr(2), stack);
+    if (t.catches.len == 0) {
+        try f.move(class, Arg.xr(0));
+        try f.move(reason, Arg.xr(1));
+        try f.move(stack, Arg.xr(2));
+        try f.emit(.raw_raise, &.{});
+        try f.label(done);
+        return result;
+    }
     var cls: std.ArrayListUnmanaged(ep.Clause) = .empty;
     var stack_vars: std.ArrayListUnmanaged(?[]const u8) = .empty;
     for (t.catches) |cl| {
@@ -1586,6 +1779,131 @@ fn tryExpr(f: *Fn, t: ep.Expr.Try) Error!Arg {
     _ = try clausesValue(f, cls.items, &.{ class, reason }, .{ .reraise = .{ class, reason, stack } }, false, false, result);
     try f.label(done);
     return result;
+}
+
+/// `try B [of …] [catch …] after A end`: the `try … of … catch` part is
+/// protected, and `A` runs for its effect on both ways out — after the value,
+/// and before re-raising what was raised (`erlc`'s shape).
+fn tryAfter(f: *Fn, t: ep.Expr.Try) Error!Arg {
+    const l = f.l;
+    const tag = Arg.yr(tag_space + f.tag_depth);
+    f.tag_depth += 1;
+    f.tag_max = @max(f.tag_max, f.tag_depth);
+    const result = f.temp();
+    const handler = l.label();
+    const done = l.label();
+    const before = f.trail.items.len;
+
+    try f.emit(.@"try", &.{ tag, Arg.lbl(handler) });
+    const mark = f.temp_top;
+    const v = if (t.of.len == 0 and t.catches.len == 0)
+        try body(f, t.body, false)
+    else
+        try tryExpr(f, .{ .body = t.body, .of = t.of, .catches = t.catches });
+    try f.move(v, result);
+    f.temp_top = mark;
+    try f.emit(.try_end, &.{tag});
+    f.tag_depth -= 1;
+    _ = try body(f, t.after, false);
+    f.temp_top = mark;
+    try f.jump(done);
+
+    try f.label(handler);
+    try f.emit(.try_case, &.{tag});
+    try f.restoreBound(before);
+    const class = f.temp();
+    const reason = f.temp();
+    const stack = f.temp();
+    try f.move(Arg.xr(0), class);
+    try f.move(Arg.xr(1), reason);
+    try f.move(Arg.xr(2), stack);
+    _ = try body(f, t.after, false);
+    try f.move(class, Arg.xr(0));
+    try f.move(reason, Arg.xr(1));
+    try f.move(stack, Arg.xr(2));
+    try f.emit(.raw_raise, &.{});
+    f.temp_top = mark;
+    try f.label(done);
+    // What the protected part bound is not safe after it (erlc refuses a use).
+    try f.restoreBound(before);
+    return result;
+}
+
+/// The old-style `catch E`: `E`'s value, or what `catch_end` makes of what it
+/// raised (`Reason` for a throw, `{'EXIT', …}` otherwise).
+fn catchExpr(f: *Fn, e: ep.Expr) Error!Arg {
+    const l = f.l;
+    const tag = Arg.yr(tag_space + f.tag_depth);
+    f.tag_depth += 1;
+    f.tag_max = @max(f.tag_max, f.tag_depth);
+    const handler = l.label();
+    const before = f.trail.items.len;
+    const mark = f.temp_top;
+    try f.emit(.@"catch", &.{ tag, Arg.lbl(handler) });
+    const v = try expr(f, e);
+    try f.move(v, Arg.xr(0));
+    f.tag_depth -= 1;
+    try f.label(handler);
+    try f.emit(.catch_end, &.{tag});
+    try f.restoreBound(before);
+    return f.resultOf(mark);
+}
+
+// ── receive ──────────────────────────────────────────────────────────────────
+
+/// `receive Clauses [after T -> A] end` as `erlc` writes it: `loop_rec` takes
+/// the next message into x0 (and jumps to the wait when there is none), the
+/// clauses match it, a matching clause `remove_message`s and runs its body,
+/// no match is `loop_rec_end` — on to the next message — and the wait is
+/// `wait` or, with `after`, `wait_timeout` + `timeout` + `A`.
+fn receiveExpr(f: *Fn, r: ep.Expr.Receive, tail: bool) Error!Arg {
+    const l = f.l;
+    const result: ?Arg = if (tail) null else f.temp();
+    var timeout: ?Arg = null;
+    if (r.after) |a| timeout = try f.stable(try expr(f, a.timeout.*));
+    const subject = f.temp();
+    const loop = l.label();
+    const wait = l.label();
+    const out = l.label();
+
+    // The pattern variables not bound before: a failed clause may have
+    // written their slots.
+    var slots: std.ArrayListUnmanaged(Arg) = .empty;
+    try slots.append(f.ar(), subject);
+    var names: std.StringHashMapUnmanaged(void) = .empty;
+    for (r.clauses) |cl| for (cl.patterns) |p| try collectPatternVars(f.ar(), p, &names);
+    var it = names.keyIterator();
+    while (it.next()) |k| if (!f.isBound(k.*)) try slots.append(f.ar(), try f.varSlot(k.*));
+
+    try f.label(loop);
+    try f.emit(.loop_rec, &.{ Arg.lbl(wait), Arg.xr(0) });
+    try f.move(Arg.xr(0), subject);
+    f.receive_clause = true;
+    _ = try clausesValue(f, r.clauses, &.{subject}, .{ .receive_next = .{ .loop = loop, .slots = slots.items, .temp_from = f.temp_top } }, tail, false, result);
+    if (!tail) try f.jump(out);
+
+    try f.label(wait);
+    if (r.after) |a| {
+        const t = timeout.?;
+        if (t == .literal and t.literal == .atom and std.mem.eql(u8, t.literal.atom, "infinity")) {
+            try f.emit(.wait, &.{Arg.lbl(loop)});
+        } else {
+            try f.emit(.wait_timeout, &.{ Arg.lbl(loop), t });
+            try f.emit(.timeout, &.{});
+            if (tail) {
+                _ = try body(f, a.body, true);
+            } else {
+                const mark = f.temp_top;
+                const v = try body(f, a.body, false);
+                try f.move(v, result.?);
+                f.temp_top = mark;
+            }
+        }
+    } else {
+        try f.emit(.wait, &.{Arg.lbl(loop)});
+    }
+    try f.label(out);
+    return result orelse Arg.nil;
 }
 
 // ── list comprehensions ──────────────────────────────────────────────────────

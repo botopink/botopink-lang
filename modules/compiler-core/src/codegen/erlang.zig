@@ -190,6 +190,18 @@ const TOP_VAL_UNSET: []const u8 = "__bp_unset";
 /// The default is `true` — a node this walk does not recognise is treated as
 /// effectful, so the worst a new AST shape can cause is a module-level `val`
 /// that is initialised and cached when it did not have to be.
+/// True when `program`'s module body is not empty — a runtime module-level
+/// `val` whose initialiser can have an effect — so the module emits and
+/// exports `'_botopink_init'/0` (the `module_body` of `emitErlangModule`).
+pub fn moduleHasInit(program: ast.Program) bool {
+    for (program.decls) |decl| switch (decl) {
+        .val => |v| if (!v.value.isComptimeExpr() and !isSyntheticMainEntrypointCall(v) and
+            initialiserCanHaveEffect(v.value.*)) return true,
+        else => {},
+    };
+    return false;
+}
+
 fn initialiserCanHaveEffect(e: ast.Expr) bool {
     return switch (e) {
         .literal => |lit| switch (lit.kind) {
@@ -500,7 +512,25 @@ pub fn codegenEmit(
                 // like a type error: only this module fails.
                 var missing: ?moduleOutput.MissingExternal = null;
                 var ambiguous: ?moduleOutput.AmbiguousVariant = null;
-                const emitted = emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, &missing, &ambiguous) catch |err| {
+                // Decision 140 — the bodies of the modules this one imports,
+                // transitively, run before its own: the entry calls each
+                // one's `'_botopink_init'/0`, dependencies first.
+                var closure: std.ArrayListUnmanaged([]const u8) = .empty;
+                defer closure.deinit(alloc);
+                var seen: std.StringHashMapUnmanaged(void) = .empty;
+                defer seen.deinit(alloc);
+                try seen.put(alloc, ct.name, {});
+                try crossModule.importClosure(alloc, outputs, &cross, ok.transformed, &seen, &closure);
+                var import_inits: std.ArrayListUnmanaged([]const u8) = .empty;
+                defer import_inits.deinit(alloc);
+                for (closure.items) |dep| for (outputs) |*o| {
+                    if (!std.mem.eql(u8, o.name, dep)) continue;
+                    switch (o.outcome) {
+                        .ok => |*dok| if (moduleHasInit(dok.transformed)) try import_inits.append(alloc, cross.atomFor(dep)),
+                        else => {},
+                    }
+                };
+                const emitted = emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, import_inits.items, &missing, &ambiguous) catch |err| {
                     const diag: moduleOutput.Diagnostic = if (missing) |me|
                         try me.diagnostic(alloc)
                     else if (ambiguous) |av|
@@ -1339,7 +1369,7 @@ pub fn emitComptimeModule(
     defer instance_lowerings.deinit();
     // A comptime module keeps its methods inline (`Emitter.type_units`), so
     // it never has units to hand back.
-    const emitted = try emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, module, null, null);
+    const emitted = try emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, &.{}, module, null, null);
     return emitted.code;
 }
 
@@ -1391,6 +1421,9 @@ fn emitErlang(
     test_mode: bool,
     cross: ?*const CrossModule,
     enum_exports: []const EnumExport,
+    /// The module atoms whose `'_botopink_init'/0` the entry runs before its
+    /// own module body (decision 140), dependencies first.
+    import_inits: []const []const u8,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
     /// the caller reports the function and the call site, not the error name.
     missing: ?*?moduleOutput.MissingExternal,
@@ -1398,7 +1431,7 @@ fn emitErlang(
     /// name two enums of the program declare, written where nothing says which.
     ambiguous: ?*?moduleOutput.AmbiguousVariant,
 ) !EmittedModule {
-    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, null, missing, ambiguous);
+    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, import_inits, null, missing, ambiguous);
 }
 
 /// What one source file emits on this backend: its own module and, under
@@ -1419,6 +1452,7 @@ fn emitErlangModule(
     test_mode: bool,
     cross: ?*const CrossModule,
     enum_exports: []const EnumExport,
+    import_inits: []const []const u8,
     comptime_module: ?ComptimeModule,
     missing: ?*?moduleOutput.MissingExternal,
     ambiguous: ?*?moduleOutput.AmbiguousVariant,
@@ -1496,6 +1530,7 @@ fn emitErlangModule(
         em.local_behaviors.deinit();
         em.local_types.deinit(em.alloc);
         em.imported_behaviors.deinit(em.alloc);
+        em.imported_vals.deinit(em.alloc);
     }
     defer em.nullable_locals.deinit();
     defer em.string_locals.deinit();
@@ -1757,6 +1792,15 @@ fn emitErlangModule(
     // Under `botopink test` another module's runner calls the load hook.
     if (pt_vars.items.len > 0 and test_mode) try exports.append(b.arena, .{ .name = MEM_LOAD, .arity = 0 });
     for (pub_fns.items) |f| try exports.append(b.arena, .{ .name = f.name, .arity = fnArityNoSelf(f) });
+    // A module-level `pub val` is its 0-arity function (`top_vals`); another
+    // module reads it as `owner:name()` (`imported_vals`), so it is exported
+    // like a `pub fn` (decision 140).
+    for (program.decls) |decl| switch (decl) {
+        .val => |v| if (v.isPub and !v.mutable and em.top_vals.contains(v.name)) {
+            try exports.append(b.arena, .{ .name = v.name, .arity = 0 });
+        },
+        else => {},
+    };
     // A host-backed `declare fn` another module imports is answered by the
     // wrapper the decl loop emits, so it is exported like any other pub fn.
     // `externalWrapperEmits` is the same predicate the decl loop applies, so the
@@ -1943,6 +1987,7 @@ fn emitErlangModule(
         // first, then `main/0`, which is what `require`ing a commonJS module and
         // letting it call `main()` does.
         var stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        for (import_inits) |dep| try stmts.append(b.arena, try b.remote(dep, "_botopink_init", &.{}));
         if (emit_init) try stmts.append(b.arena, try b.call("_botopink_init", &.{}));
         try stmts.append(b.arena, try b.call("main", &.{}));
         try forms.appendSlice(b.arena, &.{
@@ -1976,8 +2021,9 @@ fn emitErlangModule(
             em.imported_types.count() > 0 or
             em.std_imports.count() > 0 or
             em.module_vars.count() > 0 or
-            em.type_units.items.len > 0;
-        try testRunnerForms(b, &forms, tests, calls_out, emit_init, pt_vars.items.len > 0);
+            em.type_units.items.len > 0 or
+            import_inits.len > 0;
+        try testRunnerForms(b, &forms, tests, calls_out, import_inits, emit_init, pt_vars.items.len > 0);
     }
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -2093,7 +2139,7 @@ fn comments(b: Ast.Builder, lines: []const []const u8) ![]const Ast.Stmt {
 /// the first test, exactly where `'_botopink_main'/0` runs it before `main/0` in
 /// a build. A module-level `val` therefore has the same effect in both modes —
 /// the divergence that made module-load self-registration untestable on erlang.
-fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool, run_init: bool, run_load: bool) !void {
+fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool, import_inits: []const []const u8, run_init: bool, run_load: bool) !void {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const monotonic = try b.remote("erlang", "monotonic_time", &.{A("millisecond")});
@@ -2310,6 +2356,8 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
     // Front 17 — this module's `PersistentTerm` vars, put before the module
     // body and the tests read them (the build's `-on_load`; see `emitModule`).
     if (run_load) try main_stmts.append(b.arena, try b.call(MEM_LOAD, &.{}));
+    // Decision 140 — the imported modules' bodies first, dependencies first.
+    for (import_inits) |dep| try main_stmts.append(b.arena, try b.remote(dep, "_botopink_init", &.{}));
     if (run_init) try main_stmts.append(b.arena, try b.call("_botopink_init", &.{}));
     try main_stmts.appendSlice(b.arena, &.{
         try b.match(V("Filter"), filter),
@@ -2912,6 +2960,13 @@ const Emitter = struct {
     /// `behavior` is the only such name: decision 23 gives it no run-time
     /// representation, so it never reaches the cross-module link index.
     imported_behaviors: std.StringHashMapUnmanaged(void) = .empty,
+    /// Imported module-level `pub val`s, keyed by the name this module binds
+    /// (an alias when the import wrote one): the owner emits the value as a
+    /// 0-arity function (`top_vals`) and exports it, so a read here is the
+    /// remote call `owner:name()`. Keys and values borrow the AST / atom arena.
+    imported_vals: std.StringHashMapUnmanaged(ImportedVal) = .empty,
+
+    const ImportedVal = struct { owner: []const u8, name: []const u8 };
 
     fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
@@ -3694,6 +3749,9 @@ const Emitter = struct {
     /// version, or the call `name()` when it is a module-level `val`.
     fn nameRefNode(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror!Ast.Expr {
         if (!this.locals.contains(name) and this.top_vals.contains(name)) return this.fileCall(b, name, &.{});
+        // An imported `pub val` (decision 140): the owner's exported 0-arity
+        // function, called where it is read. A local of the same name wins.
+        if (!this.locals.contains(name)) if (this.imported_vals.get(name)) |iv| return b.remote(iv.owner, iv.name, &.{});
         // A top-level `fn` named as a value (`apply(one)`, `xs.map(inc)`):
         // erlang has no value for a plain function name, so `One` was an
         // unbound variable and `erlc` refused the whole module. It is the
@@ -4128,7 +4186,8 @@ const Emitter = struct {
                             if (!gop.found_existing) gop.value_ptr.* = type_owner;
                         }
                     },
-                    .val => {},
+                    // A module-level `pub val`: the owner's 0-arity function.
+                    .val => try self.imported_vals.put(self.alloc, imp.name(), .{ .owner = owner, .name = name }),
                 }
                 // A method may belong to a type the consumer never names
                 // (`when(...)` answers onze's `OnzeStub`, whose `thenReturn` is
@@ -6966,6 +7025,14 @@ const Emitter = struct {
             if (this.top_vals.contains(cc.callee)) {
                 return .{ .apply = .{
                     .fun = try b.ptr(try b.paren(try this.fileCall(b, cc.callee, &.{}))),
+                    .args = try this.callArgs(b, null, cc),
+                } };
+            }
+            // An imported `pub val` holding a lambda: apply what the owner's
+            // 0-arity function answers, as for a local one above.
+            if (this.imported_vals.get(cc.callee)) |iv| {
+                return .{ .apply = .{
+                    .fun = try b.ptr(try b.paren(try b.remote(iv.owner, iv.name, &.{}))),
                     .args = try this.callArgs(b, null, cc),
                 } };
             }

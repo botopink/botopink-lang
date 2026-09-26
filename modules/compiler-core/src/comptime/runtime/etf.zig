@@ -8,9 +8,9 @@
 //! with nothing that depends on the call site — so one module serves every call
 //! site of a declaration.
 //!
-//! **Not source text re-parsed in the node.** That shape exists
-//! (`'__bp_erl_eval'/2`) and is measured at ≈ 50× a direct call in
-//! `codegen/beam/AGENTS.md`; `binary_to_term/1` is a decode, not a compile.
+//! **Not source text re-parsed in the node.** That shape existed (the beam
+//! backend's retired `'__bp_erl_eval'/2`) and measured ≈ 50× a direct call
+//! (`codegen/beam/AGENTS.md`); `binary_to_term/1` is a decode, not a compile.
 //!
 //! Only the variants `Term` has are written, in the minimal encoding for each:
 //!

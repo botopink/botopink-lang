@@ -106,9 +106,9 @@ declare fn codepointText(cp: i32) -> string;
 // The reader walks the document's code points (one conversion up front) and
 // checks the whole grammar in botopink. Its private host cells are
 // conversions, none a parser: `codePointsOf` / `textsOf` (the document's code
-// points and their texts), `codepointText` (a `\u` escape's code point → its
-// text) and `numeralValue` (an already-validated numeral → its correctly
-// rounded `f64`).
+// points and their texts) and `codepointText` (a `\u` escape's code point → its
+// text). A numeral becomes its correctly rounded `f64` in botopink
+// (`numeralValue`, decision 142).
 
 pub type Json {
     Null,
@@ -424,8 +424,8 @@ fn digitsFrom(doc: Doc, i: i32) -> ParsedText {
 }
 
 // `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?` — RFC 8259 §6. The
-// grammar is checked here, in botopink; the validated numeral is then handed
-// to `numeralValue` in the canonical `<int>.<frac>e<exp>` spelling.
+// grammar is checked here, and the validated numeral converted by
+// `numeralValue`, both in botopink.
 fn readNumber(doc: Doc, start: i32) -> @Result<Parsed, string> {
     var i = start;
     var sign = "";
@@ -448,12 +448,11 @@ fn readNumber(doc: Doc, start: i32) -> @Result<Parsed, string> {
     if (exp.next < 0) {
         throw exp.text;
     }
-    val numeral = [sign, whole.text, ".", frac.text, "e", exp.text].join("");
-    val value = numeralValue(numeral);
-    if (value.isError()) {
+    val conv = numeralValue(doc, sign == "-", i, whole.next, frac.next, exp.next);
+    if (!conv.ok) {
         throw problemAt(doc, start, "number overflows f64");
     }
-    return Parsed(value: Json.Num(value: value.unwrapOr(0.0)), next: exp.next);
+    return Parsed(value: Json.Num(value: conv.value), next: exp.next);
 }
 
 // The digits after `.` at `i` (`"0"` when there is no `.`), or — with
@@ -479,17 +478,338 @@ fn exponentFrom(doc: Doc, i: i32) -> ParsedText {
     }
 }
 
-// Internal: the `f64` of a numeral `readNumber` has ALREADY validated, in the
-// spelling `-?D+.D+e-?D+`. The one host call `decode` makes besides the
-// `String` methods and `codepointText`: the language has no text → float
-// conversion, and scaling digits by powers of ten in botopink is not correctly
-// rounded (`1.7976931348623157e308` came out wrong). Both cells are the host's
-// correctly rounded `strtod`, so the targets agree bit for bit; an overflow is
-// an `Error` on both (`binary_to_float` raises `badarg`, `Number` answers
-// `Infinity`); an underflow is `0.0` on both.
-#[@External.Node("""(() => { const __v = Number($0); return Number.isFinite(__v) ? { ok: __v } : { error: 'overflow' } })()""")]
-#[@External.Erlang("""(fun(__S) -> try {ok, binary_to_float(__S)} catch _:_ -> {error, <<"overflow">>} end end)($0)""")]
-declare fn numeralValue(numeral: string) -> @Result<f64, string>;
+// ── the numeral → f64 conversion (decision 142) ─────────────────────────────
+//
+// A validated numeral becomes the `f64` nearest to its exact decimal value,
+// ties to even — what a correctly rounded `strtod` answers, written in
+// botopink so every target computes the same bits from the same code.
+//
+//   * the fast path (Clinger): at most 15 significant digits and a decimal
+//     exponent in -22…22 — the digits and the power of ten are both exact
+//     `f64`s, so one multiplication or division rounds once, correctly;
+//   * otherwise the value is the exact fraction `num / den` of big integers
+//     (`num` the digits, times `10^e` when `e ≥ 0`; `den` = `10^-e`
+//     otherwise), its binary exponent `e2` is chosen so the quotient
+//     `q = num / (den · 2^e2)` has 53 bits (fewer for a subnormal, never
+//     below `2^-1074`), `q` is found bit by bit by shift-and-subtract, and
+//     the remainder decides the rounding: above half up, at half to even.
+//
+// The result is assembled without an integer → float conversion: `q`'s bits
+// accumulate into an `f64` (exact below 2^53) and `q · 2^e2` is reached by
+// multiplying by powers of two, each step exact because every intermediate
+// value is representable. An exponent past `f64`'s range is an overflow
+// (`ok == false`); a value below half the least subnormal is `0.0`.
+//
+// Big integers are `Array<i32>` of 15-bit limbs, least significant first, so
+// every product and carry stays below 2^31 on every target, and an integer
+// quotient is spelled `(a - a % b) / b` (exact on commonJS, where `/` is a
+// float division).
+
+// A numeral's `f64`, and whether it was in range.
+type Conv(value: f64, ok: bool)
+
+// The conversion of the numeral `readNumber` validated: the digits of the
+// integer part are `cps[w0..w1)`, a fraction's `cps[w1 + 1..f1)` (none when
+// `f1 == w1`), an exponent's between `f1 + 1` and `e1` (none when `e1 == f1`).
+fn numeralValue(doc: Doc, negative: bool, w0: i32, w1: i32, f1: i32, e1: i32) -> Conv {
+    // The significant digits, leading zeros dropped, and the decimal exponent.
+    var digits: Array<i32> = [];
+    var e10 = 0;
+    var k = w0;
+    while (k < f1) {
+        if (k != w1) {
+            val d = cpAt(doc, k) - 48;
+            if (digits.length > 0 || d != 0) {
+                digits.push(d);
+            }
+            if (k > w1) {
+                e10 = e10 - 1;
+            }
+        }
+        k = k + 1;
+    }
+    e10 = e10 + exponentValue(doc, f1, e1);
+    // Trailing zeros only lengthen the arithmetic.
+    var nd = digits.length;
+    while (nd > 0 && digits.at(nd - 1).unwrapOr(0) == 0) {
+        nd = nd - 1;
+        e10 = e10 + 1;
+    }
+    val sign = if (negative) -1.0 else 1.0;
+    if (nd == 0) return Conv(value: 0.0 * sign, ok: true)
+    else if (nd + e10 > 309) return Conv(value: 0.0, ok: false)
+    else if (nd + e10 < -323) return Conv(value: 0.0 * sign, ok: true)
+    else if (nd <= 15 && e10 >= -22 && e10 <= 22) return Conv(value: fastPath(digits, nd, e10) * sign, ok: true)
+    else {
+        val c = slowPath(digits, nd, e10);
+        return Conv(value: c.value * sign, ok: c.ok);
+    }
+}
+
+// The exponent after `e`/`E` at `f1` (0 when there is none), clamped so a
+// thousand-digit exponent cannot overflow: past ±100000 every numeral is
+// already out of range or zero.
+fn exponentValue(doc: Doc, f1: i32, e1: i32) -> i32 {
+    if (e1 == f1) return 0
+    else {
+        var at = f1 + 1;
+        val s = cpAt(doc, at);
+        val neg = s == 45;
+        if (s == 43 || s == 45) {
+            at = at + 1;
+        }
+        var v = 0;
+        while (at < e1) {
+            if (v < 100000) {
+                v = v * 10 + (cpAt(doc, at) - 48);
+            }
+            at = at + 1;
+        }
+        return if (neg) 0 - v else v;
+    }
+}
+
+// At most 15 digits and |e10| ≤ 22: both operands exact, one rounding.
+fn fastPath(digits: Array<i32>, nd: i32, e10: i32) -> f64 {
+    var m = 0.0;
+    var i = 0;
+    while (i < nd) {
+        m = m * 10.0 + digitFloat(digits.at(i).unwrapOr(0));
+        i = i + 1;
+    }
+    var p = 1.0;
+    var j = 0;
+    val n = if (e10 < 0) 0 - e10 else e10;
+    while (j < n) {
+        p = p * 10.0;
+        j = j + 1;
+    }
+    return if (e10 < 0) m / p else m * p;
+}
+
+// A decimal digit as an `f64` (the language has no integer → float
+// conversion; ten literals are one).
+fn digitFloat(d: i32) -> f64 {
+    return if (d == 0) 0.0 else if (d == 1) 1.0 else if (d == 2) 2.0 else if (d == 3) 3.0 else if (d == 4) 4.0
+        else if (d == 5) 5.0 else if (d == 6) 6.0 else if (d == 7) 7.0 else if (d == 8) 8.0 else 9.0;
+}
+
+// The exact path: `num / den`, rounded to 53 bits (or to the subnormal grid).
+fn slowPath(digits: Array<i32>, nd: i32, e10: i32) -> Conv {
+    var num: Array<i32> = [];
+    var i = 0;
+    while (i < nd) {
+        num = bnMulAdd(num, 10, digits.at(i).unwrapOr(0));
+        i = i + 1;
+    }
+    var den: Array<i32> = [1];
+    if (e10 >= 0) {
+        num = bnMulPow10(num, e10);
+    } else {
+        den = bnMulPow10(den, 0 - e10);
+    }
+    // floor(log2(num / den)): the bit-length difference, or one less.
+    val guess = bnBitLen(num) - bnBitLen(den);
+    val above = if (guess >= 0) bnCmp(num, bnShl(den, guess)) >= 0 else bnCmp(bnShl(num, 0 - guess), den) >= 0;
+    val fl = if (above) guess else guess - 1;
+    var e2 = fl - 52;
+    if (e2 < -1074) {
+        e2 = -1074;
+    }
+    var a = if (e2 < 0) bnShl(num, 0 - e2) else num;
+    val b = if (e2 > 0) bnShl(den, e2) else den;
+    // q = floor(a / b) < 2^53, one bit at a time, from 2^53 down.
+    var q = 0.0;
+    var odd = false;
+    var bi = bnShl(b, 53);
+    var bit = 53;
+    while (bit >= 0) {
+        q = q * 2.0;
+        odd = false;
+        if (bnCmp(a, bi) >= 0) {
+            a = bnSub(a, bi);
+            q = q + 1.0;
+            odd = true;
+        }
+        bi = bnShr1(bi);
+        bit = bit - 1;
+    }
+    // Round: the remainder against half the divisor, ties to even.
+    val half = bnCmp(bnShl(a, 1), b);
+    if (half > 0 || (half == 0 && odd)) {
+        q = q + 1.0;
+    }
+    if (q == 9007199254740992.0) {
+        q = 4503599627370496.0;
+        e2 = e2 + 1;
+    }
+    if (e2 > 971) return Conv(value: 0.0, ok: false)
+    else return Conv(value: scaleBy2(q, e2), ok: true);
+}
+
+// `q · 2^e`, by exact multiplications: every intermediate value lies between
+// `q` and the (representable) result.
+fn scaleBy2(q: f64, e: i32) -> f64 {
+    var v = q;
+    var k = e;
+    while (k >= 64) {
+        v = v * 18446744073709551616.0;
+        k = k - 64;
+    }
+    while (k > 0) {
+        v = v * 2.0;
+        k = k - 1;
+    }
+    while (k <= -64) {
+        v = v * 5.421010862427522e-20;
+        k = k + 64;
+    }
+    while (k < 0) {
+        v = v * 0.5;
+        k = k + 1;
+    }
+    return v;
+}
+
+// ── big integers: 15-bit limbs, least significant first, no leading zero ──
+
+// `a · m + add`, with `m` and `add` below 2^15.
+fn bnMulAdd(a: Array<i32>, m: i32, add: i32) -> Array<i32> {
+    var out: Array<i32> = [];
+    var carry = add;
+    for (a) { limb ->
+        val t = limb * m + carry;
+        val lo = t % 32768;
+        out.push(lo);
+        carry = (t - lo) / 32768;
+    }
+    while (carry > 0) {
+        val lo = carry % 32768;
+        out.push(lo);
+        carry = (carry - lo) / 32768;
+    }
+    return bnNorm(out);
+}
+
+// `a · 10^n`, four decimal digits a step.
+fn bnMulPow10(a: Array<i32>, n: i32) -> Array<i32> {
+    var out = a;
+    var k = n;
+    while (k >= 4) {
+        out = bnMulAdd(out, 10000, 0);
+        k = k - 4;
+    }
+    while (k > 0) {
+        out = bnMulAdd(out, 10, 0);
+        k = k - 1;
+    }
+    return out;
+}
+
+// Without its most significant zero limbs.
+fn bnNorm(a: Array<i32>) -> Array<i32> {
+    var n = a.length;
+    while (n > 0 && a.at(n - 1).unwrapOr(0) == 0) {
+        n = n - 1;
+    }
+    return if (n == a.length) a else a.slice(0, n);
+}
+
+// The number of bits of `a` (0 for zero).
+fn bnBitLen(a: Array<i32>) -> i32 {
+    val n = a.length;
+    if (n == 0) return 0
+    else {
+        var top = a.at(n - 1).unwrapOr(0);
+        var bits = 0;
+        while (top > 0) {
+            top = (top - top % 2) / 2;
+            bits = bits + 1;
+        }
+        return (n - 1) * 15 + bits;
+    }
+}
+
+// -1, 0 or 1 as `a` is below, equal to or above `b`.
+fn bnCmp(a: Array<i32>, b: Array<i32>) -> i32 {
+    if (a.length != b.length) return if (a.length < b.length) -1 else 1
+    else {
+        var i = a.length - 1;
+        var r = 0;
+        while (i >= 0 && r == 0) {
+            val x = a.at(i).unwrapOr(0);
+            val y = b.at(i).unwrapOr(0);
+            if (x != y) {
+                r = if (x < y) -1 else 1;
+            }
+            i = i - 1;
+        }
+        return r;
+    }
+}
+
+// `a - b`, `a ≥ b`.
+fn bnSub(a: Array<i32>, b: Array<i32>) -> Array<i32> {
+    var out: Array<i32> = [];
+    var borrow = 0;
+    var i = 0;
+    while (i < a.length) {
+        var t = a.at(i).unwrapOr(0) - b.at(i).unwrapOr(0) - borrow;
+        borrow = 0;
+        if (t < 0) {
+            t = t + 32768;
+            borrow = 1;
+        }
+        out.push(t);
+        i = i + 1;
+    }
+    return bnNorm(out);
+}
+
+// `a · 2^s`, `s ≥ 0`.
+fn bnShl(a: Array<i32>, s: i32) -> Array<i32> {
+    if (a.length == 0 || s == 0) return a
+    else {
+        val r = s % 15;
+        val limbs = (s - r) / 15;
+        var mul = 1;
+        var j = 0;
+        while (j < r) {
+            mul = mul * 2;
+            j = j + 1;
+        }
+        var out: Array<i32> = [];
+        var z = 0;
+        while (z < limbs) {
+            out.push(0);
+            z = z + 1;
+        }
+        var carry = 0;
+        for (a) { limb ->
+            val t = limb * mul + carry;
+            val lo = t % 32768;
+            out.push(lo);
+            carry = (t - lo) / 32768;
+        }
+        if (carry > 0) {
+            out.push(carry);
+        }
+        return out;
+    }
+}
+
+// `floor(a / 2)`.
+fn bnShr1(a: Array<i32>) -> Array<i32> {
+    var out: Array<i32> = [];
+    var i = 0;
+    while (i < a.length) {
+        val limb = a.at(i).unwrapOr(0);
+        val next = a.at(i + 1).unwrapOr(0);
+        out.push((limb - limb % 2) / 2 + (next % 2) * 16384);
+        i = i + 1;
+    }
+    return bnNorm(out);
+}
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
@@ -720,6 +1040,39 @@ test "json.decode follows the RFC number grammar exactly" {
     assert decodesTo("1.7976931348623157e308", Json.Num(value: 1.7976931348623157e308));
     assert decodesTo("1e-400", Json.Num(value: 0.0));
     assert decodesTo("123456789012345678901234567890", Json.Num(value: 1.2345678901234568e29));
+}
+
+// Decision 142: the conversion is botopink's own, so each expectation is the
+// `f64` a correctly rounded `strtod` answers (the literal on the right, which
+// the host reads). Boundaries: the largest finite value and the halfway point
+// above it, the least subnormal and the halfway point below it, the largest
+// subnormal and the least normal, a tie broken to even above 2^53, `1e23`
+// (whose nearest `f64` is below it), and the fast path's two edges.
+test "json.decode rounds a numeral to the nearest f64, ties to even" {
+    assert decodesTo("1.7976931348623157e308", Json.Num(value: 1.7976931348623157e308));
+    assert decodesTo("1.7976931348623158e308", Json.Num(value: 1.7976931348623157e308));
+    assert decodeError("1.7976931348623159e308") == "json.decode: number overflows f64 at byte 0";
+    assert decodesTo("5e-324", Json.Num(value: 5.0e-324));
+    assert decodesTo("4.9406564584124654e-324", Json.Num(value: 5.0e-324));
+    assert decodesTo("2.4703282292062328e-324", Json.Num(value: 5.0e-324));
+    assert decodesTo("2.4703282292062327e-324", Json.Num(value: 0.0));
+    assert decodesTo("2.2250738585072014e-308", Json.Num(value: 2.2250738585072014e-308));
+    assert decodesTo("2.2250738585072011e-308", Json.Num(value: 2.225073858507201e-308));
+    assert decodesTo("2.2250738585072012e-308", Json.Num(value: 2.2250738585072014e-308));
+    assert decodesTo("0.1", Json.Num(value: 0.1));
+    assert decodesTo("0.3", Json.Num(value: 0.3));
+    assert decodesTo("1e23", Json.Num(value: 1.0e23));
+    assert decodesTo("1e22", Json.Num(value: 1.0e22));
+    assert decodesTo("1e-22", Json.Num(value: 1.0e-22));
+    assert decodesTo("9007199254740993", Json.Num(value: 9007199254740992.0));
+    assert decodesTo("9007199254740995", Json.Num(value: 9007199254740996.0));
+    assert decodesTo("123456789012345.6789e-3", Json.Num(value: 123456789012.3456789));
+    assert decodesTo("3.14159265358979323846264338327950288", Json.Num(value: 3.141592653589793));
+    assert decodesTo("0.000001e-300", Json.Num(value: 1.0e-306));
+    assert decodesTo("100000000000000000000000000000000000000000000000000e-50", Json.Num(value: 1.0));
+    assert decodesTo("-2.5e-3", Json.Num(value: 0.0 - 0.0025));
+    assert decodeError("1e99999999999999999999") == "json.decode: number overflows f64 at byte 0";
+    assert decodesTo("1e-99999999999999999999", Json.Num(value: 0.0));
 }
 
 test "json.decode reads the three literals" {

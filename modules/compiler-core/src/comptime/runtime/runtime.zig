@@ -382,11 +382,11 @@ test "the BEAM runtime refuses a module its lowering does not take, naming the c
     const code =
         \\-module(bp_runtime_refused).
         \\-export([main/1]).
-        \\main(_) -> receive X -> X end.
+        \\main(_) -> maybe X end.
     ;
     const result = try evalOn(arena_state.allocator(), std.testing.io, .beam, "template", "bp_runtime_refused", code, "\x83\x6a");
     try std.testing.expect(result == .response and result.response == .compile_error);
-    try std.testing.expect(std.mem.indexOf(u8, result.response.compile_error, "`receive`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.response.compile_error, "`maybe`") != null);
 }
 
 test "a native build carries both runtimes" {

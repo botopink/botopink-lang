@@ -10,9 +10,9 @@ val txt = box("hi");
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, []}.
+{exports, [{'_botopink_init', 0}]}.
 {attributes, []}.
-{labels, 15}.
+{labels, 17}.
 
 {function, node, 0, 3}.
   {label, 2}.
@@ -46,7 +46,7 @@ val txt = box("hi");
     {move, {literal, {test@main, many}}, {x, 0}}.
     {move, {atom, '$bp_unset'}, {x, 1}}.
     {call_ext, 2, {extfunc, persistent_term, get, 2}}.
-    {test, is_eq_exact, {f, 12}, [{x, 0}, {atom, '$bp_unset'}]}.
+    {test, is_eq_exact, {f, 14}, [{x, 0}, {atom, '$bp_unset'}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {call, 0, {f, 3}}.
@@ -64,7 +64,7 @@ val txt = box("hi");
     {move, {literal, {test@main, many}}, {x, 0}}.
     {call_ext, 2, {extfunc, persistent_term, put, 2}}.
     {move, {y, 1}, {x, 0}}.
-  {label, 12}.
+  {label, 14}.
     {deallocate, 2}.
     return.
 
@@ -78,7 +78,7 @@ val txt = box("hi");
     {move, {literal, {test@main, one}}, {x, 0}}.
     {move, {atom, '$bp_unset'}, {x, 1}}.
     {call_ext, 2, {extfunc, persistent_term, get, 2}}.
-    {test, is_eq_exact, {f, 13}, [{x, 0}, {atom, '$bp_unset'}]}.
+    {test, is_eq_exact, {f, 15}, [{x, 0}, {atom, '$bp_unset'}]}.
     {call, 0, {f, 3}}.
     {call, 1, {f, 5}}.
     {move, {x, 0}, {y, 0}}.
@@ -86,7 +86,7 @@ val txt = box("hi");
     {move, {literal, {test@main, one}}, {x, 0}}.
     {call_ext, 2, {extfunc, persistent_term, put, 2}}.
     {move, {y, 0}, {x, 0}}.
-  {label, 13}.
+  {label, 15}.
     {deallocate, 1}.
     return.
 
@@ -100,7 +100,7 @@ val txt = box("hi");
     {move, {literal, {test@main, txt}}, {x, 0}}.
     {move, {atom, '$bp_unset'}, {x, 1}}.
     {call_ext, 2, {extfunc, persistent_term, get, 2}}.
-    {test, is_eq_exact, {f, 14}, [{x, 0}, {atom, '$bp_unset'}]}.
+    {test, is_eq_exact, {f, 16}, [{x, 0}, {atom, '$bp_unset'}]}.
     {move, {literal, <<"hi">>}, {x, 0}}.
     {call, 1, {f, 5}}.
     {move, {x, 0}, {y, 0}}.
@@ -108,8 +108,21 @@ val txt = box("hi");
     {move, {literal, {test@main, txt}}, {x, 0}}.
     {call_ext, 2, {extfunc, persistent_term, put, 2}}.
     {move, {y, 0}, {x, 0}}.
-  {label, 14}.
+  {label, 16}.
     {deallocate, 1}.
+    return.
+
+{function, '_botopink_init', 0, 13}.
+  {label, 12}.
+    {line, [{location, "test@main.erl", 6}]}.
+    {func_info, {atom, test@main}, {atom, '_botopink_init'}, 0}.
+  {label, 13}.
+    {allocate, 0, 0}.
+    {call, 0, {f, 7}}.
+    {call, 0, {f, 9}}.
+    {call, 0, {f, 11}}.
+    {move, {atom, ok}, {x, 0}}.
+    {deallocate, 0}.
     return.
 ```
 

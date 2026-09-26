@@ -8,7 +8,11 @@ pub val HOST = "localhost";
 ```javascript
 const VERSION = 1;
 
+exports.VERSION = VERSION;
+
 const HOST = "localhost";
+
+exports.HOST = HOST;
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

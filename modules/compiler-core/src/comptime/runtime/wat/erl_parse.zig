@@ -9,8 +9,11 @@
 //! function clauses with guards, `case`/`if`/`try`/`begin`, `fun` (anonymous,
 //! named, `fun F/A`, `fun M:F/A`), list comprehensions, maps and map updates,
 //! binaries with segments, the operator table of the Erlang reference manual.
-//! `receive`, records, macros and bit-syntax sizes other than literals are not
-//! in the subset and are refused by name (`Error.Unsupported`, `failure`).
+//! `receive` (with its `after`), the send operator `!` and the old-style
+//! `catch Expr` are read too (the BEAM lowering compiles them; the wat
+//! lowering refuses them by name). `maybe`, records, macros and bit-syntax
+//! sizes other than literals are not in the subset and are refused by name
+//! (`Error.Unsupported`, `failure`).
 //!
 //! Source text is UTF-8 and read as Erlang reads it: a string literal is its
 //! code points (so `<<"é">>` is the one byte 233, as `erlc` compiles it).
@@ -40,6 +43,10 @@ pub const Expr = union(enum) {
     case_: Case,
     if_: []const Clause,
     try_: Try,
+    /// `receive Clauses [after Timeout -> Body] end`.
+    receive_: Receive,
+    /// The old-style `catch Expr`.
+    catch_: *const Expr,
     block: []const Expr,
     list_comp: ListComp,
 
@@ -56,6 +63,10 @@ pub const Expr = union(enum) {
     pub const Match = struct { pattern: *const Expr, value: *const Expr };
     pub const Case = struct { subject: *const Expr, clauses: []const Clause };
     pub const Try = struct { body: []const Expr, of: []const Clause = &.{}, catches: []const Clause, after: []const Expr = &.{} };
+    /// `clauses` may be empty (`receive after T -> B end`); `after` is null
+    /// when there is no `after` section.
+    pub const Receive = struct { clauses: []const Clause, after: ?After = null };
+    pub const After = struct { timeout: *const Expr, body: []const Expr };
     pub const ListComp = struct { element: *const Expr, qualifiers: []const Qualifier };
     /// `Pat <- List`, `<<Seg>> <= Bin` (a binary generator) or a filter.
     pub const Qualifier = union(enum) {
@@ -529,7 +540,10 @@ pub const Parser = struct {
     // ── expressions (precedence climbing) ────────────────────────────────
 
     pub fn expr(p: *Parser) Error!Expr {
-        if (p.isKw("catch")) return p.unsupported("`catch Expr` (the old-style catch)", .{});
+        if (p.isKw("catch")) {
+            try p.advance();
+            return .{ .catch_ = try p.box(try p.expr()) };
+        }
         return p.matchExpr();
     }
 
@@ -537,10 +551,15 @@ pub const Parser = struct {
         const lhs = try p.orelseExpr();
         if (p.isPunct("=")) {
             try p.advance();
-            const rhs = try p.matchExpr();
+            // `X = catch E` reads as `X = (catch E)`.
+            const rhs = try p.expr();
             return .{ .match = .{ .pattern = try p.box(lhs), .value = try p.box(rhs) } };
         }
-        if (p.isPunct("!")) return p.unsupported("message send `!`", .{});
+        if (p.isPunct("!")) {
+            try p.advance();
+            const rhs = try p.expr();
+            return .{ .binop = .{ .op = "!", .lhs = try p.box(lhs), .rhs = try p.box(rhs) } };
+        }
         return lhs;
     }
 
@@ -780,7 +799,7 @@ pub const Parser = struct {
                     try p.expectKw("end");
                     return .{ .block = b };
                 }
-                if (std.mem.eql(u8, k, "receive")) return p.unsupported("`receive`", .{});
+                if (std.mem.eql(u8, k, "receive")) return p.receiveExpr();
                 if (std.mem.eql(u8, k, "maybe")) return p.unsupported("`maybe`", .{});
                 return p.fail("unexpected `{s}`", .{k});
             },
@@ -962,6 +981,21 @@ pub const Parser = struct {
         return .{ .fun = .{ .name = name, .clauses = out.items } };
     }
 
+    fn receiveExpr(p: *Parser) Error!Expr {
+        try p.expectKw("receive");
+        var cls: []const Clause = &.{};
+        if (!p.isKw("after")) cls = try p.clauseList(true);
+        var after: ?Expr.After = null;
+        if (p.isKw("after")) {
+            try p.advance();
+            const timeout = try p.expr();
+            try p.expectPunct("->");
+            after = .{ .timeout = try p.box(timeout), .body = try p.body() };
+        }
+        try p.expectKw("end");
+        return .{ .receive_ = .{ .clauses = cls, .after = after } };
+    }
+
     fn tryExpr(p: *Parser) Error!Expr {
         try p.expectKw("try");
         const b = try p.body();
@@ -1047,6 +1081,6 @@ test "a construct outside the subset is refused by name" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     var failure: Failure = .{};
-    try std.testing.expectError(error.Unsupported, parseModule(arena_state.allocator(), "f() -> receive X -> X end.", &failure));
-    try std.testing.expect(std.mem.indexOf(u8, failure.message, "receive") != null);
+    try std.testing.expectError(error.Unsupported, parseModule(arena_state.allocator(), "f() -> maybe X end.", &failure));
+    try std.testing.expect(std.mem.indexOf(u8, failure.message, "maybe") != null);
 }

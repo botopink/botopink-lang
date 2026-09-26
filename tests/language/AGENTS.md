@@ -50,6 +50,13 @@ Decision 138 (the empty record is `type Name()`) adds `run/type_empty_record` �
 Decision 139 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
 `xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
 `String.at` / `s[-2]`, and a string array — on all four targets.
+Decision 140 adds `modules/pub_val_across_modules` — a module-level `pub val` of a record, an enum,
+an array, a primitive and a lambda imported from a sibling, one under an alias, read from `main`, a
+function and a method; the module bodies of `base` (imported only by `config`) and `config` run
+before `main`, dependencies first, and a val read twice is evaluated once — on all four targets.
+Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
+macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
+no longer evaluates a template it cannot compile from source at run time.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
