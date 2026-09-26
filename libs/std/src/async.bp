@@ -69,11 +69,17 @@ declare fn hostTarget() -> string;
 #[@External.Erlang("erlang:monotonic_time(1000)")]
 declare fn monoMillis() -> i64;
 
-// Answer `value` after at least `millis` milliseconds. The instrument every
-// ordering and elapsed-time assertion in this file is built on: without a
-// future of known duration there is no way to tell a concurrent `allOf` from a
-// sequential map.
-#[@External.Node("""new Promise(__r => setTimeout(() => __r($1), $0))""")]
+// Answer `value` after at least `millis` milliseconds of the host's monotonic
+// clock — the promise `monoMillis()` measures it by.
+// Node: `setTimeout` alone does not keep that promise. A timer starts from
+// libuv's CACHED loop time (whole milliseconds, read when the loop last woke),
+// so a timer armed after a long synchronous stretch — a loaded machine, a busy
+// test runner — fires early by that stretch. The cell reads `performance.now()`
+// when it is called and re-arms for whatever is left, so it never answers
+// early. The first wait is always a timer, so `delay(0, v)` still yields to the
+// timers phase rather than answering in the same microtask queue.
+// Erlang: `timer:sleep/1` never wakes early.
+#[@External.Node("""((__ms, __v) => new Promise((__r) => { const __end = performance.now() + __ms; const __tick = () => { const __left = __end - performance.now(); if (__left > 0) { setTimeout(__tick, Math.ceil(__left)); } else { __r(__v); } }; setTimeout(__tick, __ms); }))($0, $1)""")]
 #[@External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)""")]
 pub declare fn delay<T>(millis: i32, value: T) -> @Task<T>;
 
@@ -81,6 +87,51 @@ pub declare fn delay<T>(millis: i32, value: T) -> @Task<T>;
 // `timeout` are tested with. It does not reject: a Task never fails.
 pub fn failed<T>(message: string) -> @Task<@Result<T, string>> {
     throw message;
+}
+
+// ── gates ────────────────────────────────────────────────────────────────────
+
+// A one-shot signal between tasks: closed until `openGate`, open for good
+// after. The instrument a test orders tasks with WITHOUT a clock — "task B
+// answers only after task A has run" is a gate A opens and B awaits, where a
+// pair of `delay`s only says "probably, unless the machine is busy".
+// Node: an object holding the waiters' resolvers.
+// Erlang: a process that queues `{bp_gate_wait, Pid, Ref}` requests until it
+// receives `bp_gate_open`, then answers each and every later one at once —
+// a pid, so the gate crosses into a spawned task like any value. It is never
+// stopped: it is parked in `receive` and dies with the node.
+pub type Gate(handle: any)
+
+#[@External.Node("""({ opened: false, waiters: [] })""")]
+#[@External.Erlang("""erlang:spawn(fun() -> (fun BpGateClosed(__W) -> receive {bp_gate_wait, __P, __R} -> BpGateClosed([{__P, __R} | __W]); bp_gate_open -> lists:foreach(fun({__P2, __R2}) -> __P2 ! {__R2, bp_gate_open} end, __W), (fun BpGateOpen() -> receive {bp_gate_wait, __P3, __R3} -> __P3 ! {__R3, bp_gate_open}, BpGateOpen(); bp_gate_open -> BpGateOpen() end end)() end end)([]) end)""")]
+declare fn gateHandle() -> any;
+
+#[@External.Node("""((__g) => { __g.opened = true; for (const __w of __g.waiters.splice(0)) { __w(); } return undefined; })($0)""")]
+#[@External.Erlang("""(fun(__G) -> __G ! bp_gate_open, undefined end)($0)""")]
+declare fn gateOpen(handle: any) -> void;
+
+#[@External.Node("""((__g, __ms) => __g.opened ? Promise.resolve(true) : new Promise((__r) => { const __on = () => { clearTimeout(__t); __r(true); }; const __t = setTimeout(() => { __g.waiters = __g.waiters.filter((__w) => __w !== __on); __r(false); }, __ms); __g.waiters.push(__on); }))($0, $1)""")]
+#[@External.Erlang("""(fun(__G, __Ms) -> BpGateRef = erlang:make_ref(), __G ! {bp_gate_wait, self(), BpGateRef}, receive {BpGateRef, bp_gate_open} -> true after __Ms -> false end end)($0, $1)""")]
+declare fn gateAwait(handle: any, millis: i32) -> @Task<bool>;
+
+// A new, closed gate.
+pub fn newGate() -> Gate {
+    return Gate(handle: gateHandle());
+}
+
+// Open `gate`: every task awaiting it answers, and so does every later
+// `awaitGate`. Opening an open gate changes nothing.
+pub fn openGate(gate: Gate) -> void {
+    gateOpen(gate.handle);
+}
+
+// `true` once `gate` is open, `false` when `millis` pass first. The budget is
+// not the ordering — the gate is; it only turns a gate nobody opens into a red
+// assertion instead of a hang, so a test gives it a margin no scheduling delay
+// can cross (seconds) and opens every gate it closes. An open gate answers at
+// once and leaves no timer behind.
+pub fn awaitGate(gate: Gate, millis: i32) -> @Task<bool> {
+    return await gateAwait(gate.handle, millis);
 }
 
 // ── reading a settled element ────────────────────────────────────────────────
@@ -195,18 +246,52 @@ pub fn timeout<T>(task: fn() -> @Task<T>, millis: i32) -> @Task<@Result<T, strin
 
 // ── tests ────────────────────────────────────────────────────────────────────
 // Inline, the way every std module does it, run by `botopink test` and
-// `botopink test --target erlang` from `libs/std/`. Three kinds of assertion:
-// results and order (deterministic on both targets), ELAPSED TIME (the only
-// assertion that can tell a concurrent combinator from a sequential map, and
-// therefore the one that has to exist — wall clock, budget at roughly double
-// the longest task), and DOCUMENTED DIVERGENCE (the started surface's erlang
-// behaviour asserted as itself, so a backend change that makes erlang lazy reds
-// a test instead of silently making the docblock a lie).
+// `botopink test --target erlang` from `libs/std/`. Every verdict here is the
+// same on an idle machine and a loaded one. Three kinds of assertion:
+//   · results and order — deterministic on both targets;
+//   · ORDER BY SIGNAL — "a concurrent combinator ran task B while task A was
+//     still waiting", "the race was won by the task that answered" — told with
+//     a gate one task opens and another awaits, never with a pair of `delay`s
+//     and an elapsed-time budget: under load a 10 ms timer can fire after an
+//     80 ms one on erlang, and a sequential map can still finish inside
+//     "roughly double the longest task". A gate's budget (`gateBudget`) only
+//     turns a gate nobody opens into a red assertion instead of a hang;
+//   · a LOWER bound on elapsed time where the behaviour is a duration
+//     (`delay`, `timeout`'s budget) — a promise the cells keep however busy the
+//     machine is. There is no upper bound anywhere: an upper bound on elapsed
+//     time measures the machine, not the code;
+// plus DOCUMENTED DIVERGENCE (the started surface's erlang behaviour asserted
+// as itself, so a backend change that makes erlang lazy reds a test instead of
+// silently making the docblock a lie).
 //
-// `async` is not snapshotted (`01-std/test-snap.md`): an elapsed-time budget is
-// a `<`, never a recorded literal.
+// `async` is not snapshotted (`01-std/test-snap.md`).
 
 type Probe(id: i32, label: string)
+
+// How long a test task waits on a gate before it gives up. Every gate a test
+// closes is opened again, so this passes only when the code under test is
+// wrong — and then as a red assertion, not a hang.
+val gateBudget = 10000;
+
+// `value` once `gate` opens; a value naming the failure when it never does.
+fn gated(gate: Gate, value: string) -> @Task<string> {
+    val opened = await awaitGate(gate, gateBudget);
+    return if (opened) value else "gate never opened: " + value;
+}
+
+// Open `mine`, then answer `value` once `theirs` is open. Two of these over the
+// same pair of gates, crossed, can only BOTH answer when they run at the same
+// time: whichever runs first alone waits on a gate the other has not opened.
+fn handshake(mine: Gate, theirs: Gate, value: string) -> @Task<string> {
+    openGate(mine);
+    return await gated(theirs, value);
+}
+
+// `value` with no timer at all: resolved in the microtask queue on commonJS,
+// the process's first reply on erlang.
+fn answerNow(value: string) -> @Task<string> {
+    return value;
+}
 
 // ── delay and failed ─────────────────────────────────────────────────────────
 
@@ -233,6 +318,26 @@ test "async: failed ---- answers an Error value, it does not reject" {
     val r = await failed("down");
     assert r.isError();
     assert errorText(r) == "down";
+}
+
+// ── gates ────────────────────────────────────────────────────────────────────
+
+test "async: gate ---- a waiter answers once the gate opens, and later waiters at once" {
+    val gate = newGate();
+    val values = await runAll([
+        { -> gated(gate, "waited") },
+        { -> handshake(gate, gate, "opened") },
+    ]);
+    assert values.join(",") == "waited,opened";
+    assert await awaitGate(gate, gateBudget);
+}
+
+test "async: gate ---- a gate nobody opens answers false after its budget" {
+    val start = monoMillis();
+    val opened = await awaitGate(newGate(), 20);
+    val elapsed = monoMillis() - start;
+    assert opened == false;
+    assert elapsed >= 20;
 }
 
 // ── allOf and all ────────────────────────────────────────────────────────────
@@ -271,13 +376,19 @@ test "async: all ---- answers input order" {
 test "async: race ---- fastest on commonJS, element zero on erlang" {
     // The divergence, written as a test rather than as prose. `@Task<T>` is
     // eager on erlang: both Tasks have resolved by the time `race` is called,
-    // in list order, so `race` answers the FIRST element and the 10 ms Task
-    // never had a chance to win. On commonJS the Promises are live and the
-    // fastest wins. If a backend change ever makes erlang lazy, this reds.
-    val first = await race([delay(80, "zero"), delay(10, "one")]);
+    // in list order, so `race` answers the FIRST element even though the other
+    // one is instant. On commonJS the Promises are live and the one that
+    // answers wins — element zero waits on a gate opened only after the race,
+    // so it cannot. (A gate cannot be used on erlang: the eager Task would wait
+    // on it before `race` is even called.) If a backend change ever makes
+    // erlang lazy, this reds.
     if (hostTarget() == "erlang") {
+        val first = await race([delay(20, "zero"), answerNow("one")]);
         assert first == "zero";
     } else {
+        val gate = newGate();
+        val first = await race([gated(gate, "zero"), delay(0, "one")]);
+        openGate(gate);
         assert first == "one";
     }
 }
@@ -294,15 +405,16 @@ test "async: runAll ---- answers input order, not completion order" {
 }
 
 test "async: runAll ---- runs its tasks concurrently" {
-    val start = monoMillis();
+    // Each task opens its own gate and then waits for the other's. A sequential
+    // map, in either order, leaves the first task waiting on a gate the second
+    // has not opened yet, and it answers "gate never opened".
+    val left = newGate();
+    val right = newGate();
     val values = await runAll([
-        { -> delay(60, "a") },
-        { -> delay(60, "b") },
-        { -> delay(60, "c") },
+        { -> handshake(left, right, "a") },
+        { -> handshake(right, left, "b") },
     ]);
-    val elapsed = monoMillis() - start;
-    assert values.length == 3;
-    assert elapsed < 120;
+    assert values.join(",") == "a,b";
 }
 
 test "async: runAll ---- a fallible task answers its @Result in its slot" {
@@ -328,10 +440,14 @@ fn errorProbe() -> @Result<string, string> {
 // ── raceOf ───────────────────────────────────────────────────────────────────
 
 test "async: raceOf ---- answers the fastest task, not the first" {
+    // The first task in the list cannot answer before its gate opens, and the
+    // gate opens only once the race is over.
+    val gate = newGate();
     val first = await raceOf([
-        { -> delay(80, "slow") },
+        { -> gated(gate, "slow") },
         { -> delay(10, "fast") },
     ]);
+    openGate(gate);
     assert first == "fast";
 }
 
@@ -348,31 +464,54 @@ test "async: raceOf ---- a loser's answer is dropped, on purpose" {
 // ── timeout ──────────────────────────────────────────────────────────────────
 
 test "async: timeout ---- a fast task under a wide budget answers Ok" {
-    val answered = await timeout({ -> delay(10, "in time") }, 100);
+    // The task answers with no timer. On commonJS that settles the race in the
+    // microtask queue, before any timer can fire, so the budget is irrelevant
+    // and stays short (the expired clock keeps the event loop open until it
+    // fires). On erlang the two racers are processes, so the budget has to
+    // dwarf any scheduling delay.
+    val budget = if (hostTarget() == "erlang") gateBudget else 100;
+    val answered = await timeout({ -> answerNow("in time") }, budget);
     assert answered.isOk();
     assert answered.unwrapOr("") == "in time";
 }
 
 test "async: timeout ---- a slow task under a narrow budget answers Error timeout" {
+    // The task waits on a gate opened only after `timeout` answered, so it
+    // cannot answer first; a `timeout` that waited for its task would answer
+    // `Ok("gate never opened: …")` instead.
+    val gate = newGate();
     val start = monoMillis();
-    val answered = await timeout({ -> delay(200, "too late") }, 50);
+    val answered = await timeout({ -> gated(gate, "too late") }, 50);
     val elapsed = monoMillis() - start;
+    openGate(gate);
     assert answered.isError();
     assert errorText(answered) == "timeout";
-    assert elapsed < 150;
+    assert elapsed >= 50;
 }
 
 test "async: timeout ---- an expired task cannot corrupt a later answer" {
-    // The expired task finishes at 120 ms, long after `timeout` stopped waiting
-    // at 30 ms, and lands in the same host process. The erlang cells tag every
-    // reply with a `make_ref()` unique to their own call for exactly this: the
-    // `runAll` below must read its own replies, not the ghost of a task nobody
-    // is waiting for any more.
-    val answered = await timeout({ -> delay(120, "late") }, 30);
+    // The expired task is released only once `timeout` stopped waiting for it,
+    // and lands in the same host process while the `runAll` below is still
+    // gathering: `runAll`'s first task opens `release`, then waits until the
+    // expired task has answered (`ghostDone`) before answering itself. The
+    // erlang cells tag every reply with a `make_ref()` unique to their own
+    // call for exactly this: `runAll` must read its own replies, not the ghost
+    // of a task nobody is waiting for any more.
+    val release = newGate();
+    val ghostDone = newGate();
+    val answered = await timeout({ -> ghost(release, ghostDone) }, 30);
     assert answered.isError();
     val values = await runAll([
-        { -> delay(150, "a") },
-        { -> delay(5, "b") },
+        { -> handshake(release, ghostDone, "a") },
+        { -> answerNow("b") },
     ]);
     assert values.join(",") == "a,b";
+}
+
+// The expired task of the test above: waits for `release`, opens `done` and
+// answers.
+fn ghost(release: Gate, done: Gate) -> @Task<string> {
+    val v = await gated(release, "late");
+    openGate(done);
+    return v;
 }
