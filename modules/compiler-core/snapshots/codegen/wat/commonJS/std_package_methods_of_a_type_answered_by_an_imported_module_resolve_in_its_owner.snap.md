@@ -20,7 +20,16 @@
 
 pub type Dict<K, V>(
     pairs: Array<#(K, V)>,
-) implement Index<K, V> {
+) implement Index<K, V>, Display {
+    // Decision 8 §7 — `Dict("a": 1, "b": 2)`: the pairs in order, a string
+    // key or value quoted, anything else in its own text. `K` and `V` are
+    // generic, so which is a string is asked of the value (`is`, decision 8 §4).
+    pub fn display(self: Self<K, V>) -> string {
+        var parts: string[] = [];
+        self.pairs.forEach({ p -> parts.push(shown(p._0) + ": " + shown(p._1)) });
+        return "Dict(" + parts.join(", ") + ")";
+    }
+
     pub fn at(self: Self<K, V>, key: K) -> ?V {
         // NOTE: written with `forEach` + accumulator rather than
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is
@@ -88,6 +97,15 @@ pub type Dict<K, V>(
     }
 }
 
+// One key or value of `Dict.display`: a string quoted, anything else as it
+// interpolates.
+fn shown<T>(x: T) -> string {
+    if (x is string) {
+        return "\"" + x + "\"";
+    };
+    return "${x}";
+}
+
 pub fn empty<K, V>() -> Dict<K, V> {
     return Dict(pairs: []);
 }
@@ -132,6 +150,13 @@ test "dict insert overwrites duplicate" {
 test "dict size counts unique keys" {
     val d = empty().insert("a", 1).insert("b", 2);
     assert d.size() == 2;
+}
+
+test "dict displays as its pairs, a string quoted (decision 8 §7)" {
+    val d = empty().insert("a", 1).insert("b", 2);
+    assert d.display() == "Dict(\"a\": 1, \"b\": 2)";
+    val n = empty().insert(1, "x");
+    assert n.display() == "Dict(1: \"x\")";
 }
 
 test "dict keys" {
@@ -246,6 +271,14 @@ class Dict {
         this.pairs = pairs;
     }
 
+    display() {
+        let parts = [];
+        this.pairs.forEach((p) => {
+    return parts.push(((shown(p[0]) + ": ") + shown(p[1])));
+});
+        return (("Dict(" + parts.join(", ")) + ")");
+    }
+
     at(key) {
         // NOTE: written with `forEach` + accumulator rather than;
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is;
@@ -324,6 +357,15 @@ class Dict {
 Dict.prototype.__bp = "Dict";
 exports.Dict = Dict;
 
+// One key or value of `Dict.display`: a string quoted, anything else as it
+
+// interpolates.
+
+function shown(x) {
+    if (typeof x === "string") { return (("\"" + x) + "\""); }
+    return ("" + x);
+}
+
 function empty() {
     return new Dict([]);
 }
@@ -339,6 +381,7 @@ exports.empty = empty;
 export declare class Dict {
     readonly pairs: Array<[K, V]>;
     constructor(pairs: Array<[K, V]>);
+    display(): string;
     at(key: K): V | null;
     hasKey(key: K): boolean;
     size(): number;
@@ -351,6 +394,8 @@ export declare class Dict {
     fold(initial: A, f: (A, K, V) => A): A;
     mapValues(f: (V) => W): Dict<K, W>;
 }
+
+
 
 
 export declare function empty(): Dict<K, V>;

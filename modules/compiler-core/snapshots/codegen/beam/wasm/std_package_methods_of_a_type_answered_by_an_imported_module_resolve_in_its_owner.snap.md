@@ -20,7 +20,16 @@
 
 pub type Dict<K, V>(
     pairs: Array<#(K, V)>,
-) implement Index<K, V> {
+) implement Index<K, V>, Display {
+    // Decision 8 §7 — `Dict("a": 1, "b": 2)`: the pairs in order, a string
+    // key or value quoted, anything else in its own text. `K` and `V` are
+    // generic, so which is a string is asked of the value (`is`, decision 8 §4).
+    pub fn display(self: Self<K, V>) -> string {
+        var parts: string[] = [];
+        self.pairs.forEach({ p -> parts.push(shown(p._0) + ": " + shown(p._1)) });
+        return "Dict(" + parts.join(", ") + ")";
+    }
+
     pub fn at(self: Self<K, V>, key: K) -> ?V {
         // NOTE: written with `forEach` + accumulator rather than
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is
@@ -88,6 +97,15 @@ pub type Dict<K, V>(
     }
 }
 
+// One key or value of `Dict.display`: a string quoted, anything else as it
+// interpolates.
+fn shown<T>(x: T) -> string {
+    if (x is string) {
+        return "\"" + x + "\"";
+    };
+    return "${x}";
+}
+
 pub fn empty<K, V>() -> Dict<K, V> {
     return Dict(pairs: []);
 }
@@ -132,6 +150,13 @@ test "dict insert overwrites duplicate" {
 test "dict size counts unique keys" {
     val d = empty().insert("a", 1).insert("b", 2);
     assert d.size() == 2;
+}
+
+test "dict displays as its pairs, a string quoted (decision 8 §7)" {
+    val d = empty().insert("a", 1).insert("b", 2);
+    assert d.display() == "Dict(\"a\": 1, \"b\": 2)";
+    val n = empty().insert(1, "x");
+    assert n.display() == "Dict(1: \"x\")";
 }
 
 test "dict keys" {
@@ -210,8 +235,14 @@ test "dict empty boundary: size 0, at misses" {
 (module
   (memory (export "memory") 1)
   (table funcref (elem))
-  (data (i32.const 256) "\0e\00\00\00R\04Dict\01\05pairsi")
-  (global $__heap_ptr (mut i32) (i32.const 276))
+  (data (i32.const 256) "\02\00\00\00: ")
+  (data (i32.const 264) "\05\00\00\00Dict(")
+  (data (i32.const 276) "\02\00\00\00, ")
+  (data (i32.const 284) "\01\00\00\00)")
+  (data (i32.const 292) "\0e\00\00\00R\04Dict\01\05pairsi")
+  (data (i32.const 312) "\01\00\00\00\"")
+  (data (i32.const 320) "\00\00\00\00")
+  (global $__heap_ptr (mut i32) (i32.const 324))
   ;; Gleam-inspired `dict` module — a `type Dict<K, V>` wrapping an
   ;; association list `pairs: Array<#(K, V)>` for full backend portability
   ;; (no host-backing). O(n) read; camelCase convention.
@@ -229,6 +260,76 @@ test "dict empty boundary: size 0, at misses" {
   ;; expression has no typing rule of its own and rewrites to `d.at("k")`. The
   ;; reader was spelled `lookup` until that amendment gave every indexable type
   ;; one method name.
+  (func $Dict_display (param $self i32) (result i32)
+    (local $__mem0 i32)
+    (local $parts i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 0
+    i32.store
+    local.get $__mem0
+    local.set $parts
+    local.get $self
+    i32.load ;; .pairs
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $p
+    local.get $parts
+    local.get $p
+    i32.load
+    call $shown
+    i32.const 256
+    call $__str_concat
+    local.get $p
+    i32.load offset=4
+    call $shown
+    call $__str_concat
+    call $__arr_push
+    local.set $parts
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    i32.const 264
+    local.get $parts
+    i32.const 276
+    call $__arr_join_i32
+    call $__str_concat
+    i32.const 284
+    call $__str_concat
+    return
+  )
   (func $Dict_at (param $self i32) (param $key i32) (result i32)
     (local $found i32)
     (local $__iter0 i32)
@@ -557,7 +658,7 @@ test "dict empty boundary: size 0, at misses" {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 260
+    i32.const 296
     i32.store
     local.get $__mem0
     local.get $filtered
@@ -608,7 +709,7 @@ test "dict empty boundary: size 0, at misses" {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 260
+    i32.const 296
     i32.store
     local.get $__mem0
     local.get $self
@@ -865,7 +966,7 @@ test "dict empty boundary: size 0, at misses" {
     i32.add
     global.set $__heap_ptr
     local.get $__mem2
-    i32.const 260
+    i32.const 296
     i32.store
     local.get $__mem2
     local.get $out
@@ -873,6 +974,31 @@ test "dict empty boundary: size 0, at misses" {
     local.get $__mem2
     i32.const 4
     i32.add
+    return
+  )
+  ;; One key or value of `Dict.display`: a string quoted, anything else as it
+  ;; interpolates.
+  (func $shown (param $x i32) (result i32)
+    unreachable ;; §4.2 `is`: no run-time test for this type on wasm
+    (if (result i32)
+      (then
+    i32.const 312
+    local.get $x
+    call $__i32_to_str
+    call $__str_concat
+    i32.const 312
+    call $__str_concat
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    i32.const 320
+    local.get $x
+    call $__i32_to_str
+    call $__str_concat
     return
   )
   (func $empty (export "empty") (result i32)
@@ -885,7 +1011,7 @@ test "dict empty boundary: size 0, at misses" {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 260
+    i32.const 296
     i32.store
     local.get $__mem0
     global.get $__heap_ptr
@@ -906,6 +1032,53 @@ test "dict empty boundary: size 0, at misses" {
   )
   ;; ── option method API over `at`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
   ;; ── empty-collection boundary (B1) ──
+  (func $__str_concat (param $a i32) (param $b i32) (result i32)
+    (local $base i32) (local $alen i32) (local $blen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $b
+    i32.load
+    local.set $blen
+    global.get $__heap_ptr
+    local.set $base
+    ;; bump heap by 4 (length prefix) + alen + blen
+    global.get $__heap_ptr
+    i32.const 4
+    local.get $alen
+    i32.add
+    local.get $blen
+    i32.add
+    i32.add
+    global.set $__heap_ptr
+    ;; store combined length prefix
+    local.get $base
+    local.get $alen
+    local.get $blen
+    i32.add
+    i32.store
+    ;; copy a's bytes: base+4 <- a+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $alen
+    memory.copy
+    ;; copy b's bytes: base+4+alen <- b+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $alen
+    i32.add
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $blen
+    memory.copy
+    local.get $base
+  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32)
     global.get $__heap_ptr
@@ -918,6 +1091,82 @@ test "dict empty boundary: size 0, at misses" {
     i32.const -4
     i32.and
     global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__i32_to_str (param $n i32) (result i32)
+    (local $u i64) (local $pos i32) (local $len i32) (local $p i32) (local $neg i32)
+    i32.const 160
+    local.set $pos
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    local.set $neg
+    local.get $n
+    i64.extend_i32_s
+    local.set $u
+    local.get $neg
+    (if
+      (then
+        i64.const 0
+        local.get $u
+        i64.sub
+        local.set $u
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $pos
+        i32.const 1
+        i32.sub
+        local.set $pos
+        local.get $pos
+        local.get $u
+        i64.const 10
+        i64.rem_u
+        i32.wrap_i64
+        i32.const 48
+        i32.add
+        i32.store8
+        local.get $u
+        i64.const 10
+        i64.div_u
+        local.set $u
+        local.get $u
+        i64.eqz
+        br_if $brk
+        br $cont
+      )
+    )
+    local.get $neg
+    (if
+      (then
+        local.get $pos
+        i32.const 1
+        i32.sub
+        local.set $pos
+        local.get $pos
+        i32.const 45
+        i32.store8
+      )
+    )
+    i32.const 160
+    local.get $pos
+    i32.sub
+    local.set $len
+    local.get $len
+    i32.const 4
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $len
+    i32.store
+    local.get $p
+    i32.const 4
+    i32.add
+    local.get $pos
+    local.get $len
+    memory.copy
     local.get $p
   )
   (func $__arr_new (param $n i32) (result i32)
@@ -1004,6 +1253,159 @@ test "dict empty boundary: size 0, at misses" {
     memory.copy
     local.get $p
   )
+  (func $__arr_join_str (param $xs i32) (param $sep i32) (result i32)
+    (local $n i32) (local $i i32) (local $total i32) (local $p i32) (local $pos i32) (local $e i32)
+    local.get $xs
+    i32.load
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $total
+        local.get $xs
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        i32.load
+        i32.add
+        local.set $total
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $n
+    (if
+      (then
+        local.get $total
+        local.get $sep
+        i32.load
+        local.get $n
+        i32.const 1
+        i32.sub
+        i32.mul
+        i32.add
+        local.set $total
+      )
+    )
+    local.get $total
+    i32.const 4
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $total
+    i32.store
+    local.get $p
+    i32.const 4
+    i32.add
+    local.set $pos
+    i32.const 0
+    local.set $i
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $i
+        (if
+          (then
+            local.get $pos
+            local.get $sep
+            i32.const 4
+            i32.add
+            local.get $sep
+            i32.load
+            memory.copy
+            local.get $pos
+            local.get $sep
+            i32.load
+            i32.add
+            local.set $pos
+          )
+        )
+        local.get $xs
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        local.set $e
+        local.get $pos
+        local.get $e
+        i32.const 4
+        i32.add
+        local.get $e
+        i32.load
+        memory.copy
+        local.get $pos
+        local.get $e
+        i32.load
+        i32.add
+        local.set $pos
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+  )
+  (func $__arr_join_i32 (param $xs i32) (param $sep i32) (result i32)
+    (local $n i32) (local $i i32) (local $t i32)
+    local.get $xs
+    i32.load
+    local.set $n
+    local.get $n
+    call $__arr_new
+    local.set $t
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $t
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        local.get $xs
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        call $__i32_to_str
+        i32.store
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $t
+    local.get $sep
+    call $__arr_join_str
+  )
   (func $__box_i32 (param $v i32) (result i32)
     (local $p i32)
     i32.const 4
@@ -1063,10 +1465,86 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (table funcref (elem))
-  (data (i32.const 256) "\0e\00\00\00R\04Dict\01\05pairsi")
-  (data (i32.const 276) "\01\00\00\00a")
-  (data (i32.const 284) "\01\00\00\00b")
-  (global $__heap_ptr (mut i32) (i32.const 292))
+  (data (i32.const 256) "\02\00\00\00: ")
+  (data (i32.const 264) "\05\00\00\00Dict(")
+  (data (i32.const 276) "\02\00\00\00, ")
+  (data (i32.const 284) "\01\00\00\00)")
+  (data (i32.const 292) "\0e\00\00\00R\04Dict\01\05pairsi")
+  (data (i32.const 312) "\01\00\00\00\"")
+  (data (i32.const 320) "\00\00\00\00")
+  (data (i32.const 324) "\01\00\00\00a")
+  (data (i32.const 332) "\01\00\00\00b")
+  (global $__heap_ptr (mut i32) (i32.const 340))
+  (func $Dict_display (param $self i32) (result i32)
+    (local $__mem0 i32)
+    (local $parts i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 0
+    i32.store
+    local.get $__mem0
+    local.set $parts
+    local.get $self
+    i32.load ;; .pairs
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $p
+    local.get $parts
+    local.get $p
+    i32.load
+    call $shown
+    i32.const 256
+    call $__str_concat
+    local.get $p
+    i32.load offset=4
+    call $shown
+    call $__str_concat
+    call $__arr_push
+    local.set $parts
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    i32.const 264
+    local.get $parts
+    i32.const 276
+    call $__arr_join_i32
+    call $__str_concat
+    i32.const 284
+    call $__str_concat
+    return
+  )
   (func $Dict_at (param $self i32) (param $key i32) (result i32)
     (local $found i32)
     (local $__iter0 i32)
@@ -1395,7 +1873,7 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 260
+    i32.const 296
     i32.store
     local.get $__mem0
     local.get $filtered
@@ -1446,7 +1924,7 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 260
+    i32.const 296
     i32.store
     local.get $__mem0
     local.get $self
@@ -1703,7 +2181,7 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem2
-    i32.const 260
+    i32.const 296
     i32.store
     local.get $__mem2
     local.get $out
@@ -1711,6 +2189,29 @@ fn main() {
     local.get $__mem2
     i32.const 4
     i32.add
+    return
+  )
+  (func $shown (param $x i32) (result i32)
+    unreachable ;; §4.2 `is`: no run-time test for this type on wasm
+    (if (result i32)
+      (then
+    i32.const 312
+    local.get $x
+    call $__i32_to_str
+    call $__str_concat
+    i32.const 312
+    call $__str_concat
+    return
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    i32.const 320
+    local.get $x
+    call $__i32_to_str
+    call $__str_concat
     return
   )
   (func $empty (result i32)
@@ -1723,7 +2224,7 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 260
+    i32.const 296
     i32.store
     local.get $__mem0
     global.get $__heap_ptr
@@ -1746,12 +2247,12 @@ fn main() {
     (local $d i32)
     (local $_res0 i32)
     call $empty
-    i32.const 276
+    i32.const 324
     i32.const 1
     call $Dict_insert
     local.set $d
     local.get $d
-    i32.const 276
+    i32.const 324
     call $Dict_at
     local.set $_res0
     local.get $_res0 ;; Option (0 = None, else Some payload)
@@ -1765,7 +2266,7 @@ fn main() {
     )
     call $__print_i32
     local.get $d
-    i32.const 284
+    i32.const 332
     i32.const 2
     call $Dict_insert
     call $Dict_size
@@ -1954,6 +2455,53 @@ fn main() {
       )
     )
   )
+  (func $__str_concat (param $a i32) (param $b i32) (result i32)
+    (local $base i32) (local $alen i32) (local $blen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $b
+    i32.load
+    local.set $blen
+    global.get $__heap_ptr
+    local.set $base
+    ;; bump heap by 4 (length prefix) + alen + blen
+    global.get $__heap_ptr
+    i32.const 4
+    local.get $alen
+    i32.add
+    local.get $blen
+    i32.add
+    i32.add
+    global.set $__heap_ptr
+    ;; store combined length prefix
+    local.get $base
+    local.get $alen
+    local.get $blen
+    i32.add
+    i32.store
+    ;; copy a's bytes: base+4 <- a+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $alen
+    memory.copy
+    ;; copy b's bytes: base+4+alen <- b+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $alen
+    i32.add
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $blen
+    memory.copy
+    local.get $base
+  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32)
     global.get $__heap_ptr
@@ -1966,6 +2514,82 @@ fn main() {
     i32.const -4
     i32.and
     global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__i32_to_str (param $n i32) (result i32)
+    (local $u i64) (local $pos i32) (local $len i32) (local $p i32) (local $neg i32)
+    i32.const 160
+    local.set $pos
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    local.set $neg
+    local.get $n
+    i64.extend_i32_s
+    local.set $u
+    local.get $neg
+    (if
+      (then
+        i64.const 0
+        local.get $u
+        i64.sub
+        local.set $u
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $pos
+        i32.const 1
+        i32.sub
+        local.set $pos
+        local.get $pos
+        local.get $u
+        i64.const 10
+        i64.rem_u
+        i32.wrap_i64
+        i32.const 48
+        i32.add
+        i32.store8
+        local.get $u
+        i64.const 10
+        i64.div_u
+        local.set $u
+        local.get $u
+        i64.eqz
+        br_if $brk
+        br $cont
+      )
+    )
+    local.get $neg
+    (if
+      (then
+        local.get $pos
+        i32.const 1
+        i32.sub
+        local.set $pos
+        local.get $pos
+        i32.const 45
+        i32.store8
+      )
+    )
+    i32.const 160
+    local.get $pos
+    i32.sub
+    local.set $len
+    local.get $len
+    i32.const 4
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $len
+    i32.store
+    local.get $p
+    i32.const 4
+    i32.add
+    local.get $pos
+    local.get $len
+    memory.copy
     local.get $p
   )
   (func $__arr_new (param $n i32) (result i32)
@@ -2051,6 +2675,159 @@ fn main() {
     i32.mul
     memory.copy
     local.get $p
+  )
+  (func $__arr_join_str (param $xs i32) (param $sep i32) (result i32)
+    (local $n i32) (local $i i32) (local $total i32) (local $p i32) (local $pos i32) (local $e i32)
+    local.get $xs
+    i32.load
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $total
+        local.get $xs
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        i32.load
+        i32.add
+        local.set $total
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $n
+    (if
+      (then
+        local.get $total
+        local.get $sep
+        i32.load
+        local.get $n
+        i32.const 1
+        i32.sub
+        i32.mul
+        i32.add
+        local.set $total
+      )
+    )
+    local.get $total
+    i32.const 4
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $total
+    i32.store
+    local.get $p
+    i32.const 4
+    i32.add
+    local.set $pos
+    i32.const 0
+    local.set $i
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $i
+        (if
+          (then
+            local.get $pos
+            local.get $sep
+            i32.const 4
+            i32.add
+            local.get $sep
+            i32.load
+            memory.copy
+            local.get $pos
+            local.get $sep
+            i32.load
+            i32.add
+            local.set $pos
+          )
+        )
+        local.get $xs
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        local.set $e
+        local.get $pos
+        local.get $e
+        i32.const 4
+        i32.add
+        local.get $e
+        i32.load
+        memory.copy
+        local.get $pos
+        local.get $e
+        i32.load
+        i32.add
+        local.set $pos
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+  )
+  (func $__arr_join_i32 (param $xs i32) (param $sep i32) (result i32)
+    (local $n i32) (local $i i32) (local $t i32)
+    local.get $xs
+    i32.load
+    local.set $n
+    local.get $n
+    call $__arr_new
+    local.set $t
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $t
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        local.get $xs
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        call $__i32_to_str
+        i32.store
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $t
+    local.get $sep
+    call $__arr_join_str
   )
   (func $__box_i32 (param $v i32) (result i32)
     (local $p i32)

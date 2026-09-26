@@ -20,7 +20,16 @@
 
 pub type Dict<K, V>(
     pairs: Array<#(K, V)>,
-) implement Index<K, V> {
+) implement Index<K, V>, Display {
+    // Decision 8 §7 — `Dict("a": 1, "b": 2)`: the pairs in order, a string
+    // key or value quoted, anything else in its own text. `K` and `V` are
+    // generic, so which is a string is asked of the value (`is`, decision 8 §4).
+    pub fn display(self: Self<K, V>) -> string {
+        var parts: string[] = [];
+        self.pairs.forEach({ p -> parts.push(shown(p._0) + ": " + shown(p._1)) });
+        return "Dict(" + parts.join(", ") + ")";
+    }
+
     pub fn at(self: Self<K, V>, key: K) -> ?V {
         // NOTE: written with `forEach` + accumulator rather than
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is
@@ -88,6 +97,15 @@ pub type Dict<K, V>(
     }
 }
 
+// One key or value of `Dict.display`: a string quoted, anything else as it
+// interpolates.
+fn shown<T>(x: T) -> string {
+    if (x is string) {
+        return "\"" + x + "\"";
+    };
+    return "${x}";
+}
+
 pub fn empty<K, V>() -> Dict<K, V> {
     return Dict(pairs: []);
 }
@@ -132,6 +150,13 @@ test "dict insert overwrites duplicate" {
 test "dict size counts unique keys" {
     val d = empty().insert("a", 1).insert("b", 2);
     assert d.size() == 2;
+}
+
+test "dict displays as its pairs, a string quoted (decision 8 §7)" {
+    val d = empty().insert("a", 1).insert("b", 2);
+    assert d.display() == "Dict(\"a\": 1, \"b\": 2)";
+    val n = empty().insert(1, "x");
+    assert n.display() == "Dict(1: \"x\")";
 }
 
 test "dict keys" {
@@ -208,9 +233,9 @@ test "dict empty boundary: size 0, at misses" {
 ----- BEAM ASSEMBLY -- std/dict.S
 ```erlang
 {module, std@dict}.
-{exports, [{empty, 0}]}.
+{exports, [{empty, 0}, {shown, 1}]}.
 {attributes, []}.
-{labels, 4}.
+{labels, 13}.
 %%% Gleam-inspired `dict` module — a `type Dict<K, V>` wrapping an
 %%% association list `pairs: Array<#(K, V)>` for full backend portability
 %%% (no host-backing). O(n) read; camelCase convention.
@@ -228,12 +253,73 @@ test "dict empty boundary: size 0, at misses" {
 %%% expression has no typing rule of its own and rewrites to `d.at("k")`. The
 %%% reader was spelled `lookup` until that amendment gave every indexable type
 %%% one method name.
+% One key or value of `Dict.display`: a string quoted, anything else as it
+% interpolates.
 
-{function, empty, 0, 3}.
+{function, shown, 1, 3}.
   {label, 2}.
-    {line, [{location, "std@dict.erl", 12}]}.
-    {func_info, {atom, std@dict}, {atom, empty}, 0}.
+    {line, [{location, "std@dict.erl", 13}]}.
+    {func_info, {atom, std@dict}, {atom, shown}, 1}.
   {label, 3}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_binary, {f, 7}, [{x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 8}}.
+  {label, 7}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 8}.
+    {test, is_eq, {f, 6}, [{x, 0}, {atom, true}]}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {literal, <<"\"">>}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {literal, <<"\"">>}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 10}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {deallocate, 3}.
+    return.
+  {label, 6}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<"">>}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 10}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {deallocate, 3}.
+    return.
+
+{function, empty, 0, 5}.
+  {label, 4}.
+    {line, [{location, "std@dict.erl", 14}]}.
+    {func_info, {atom, std@dict}, {atom, empty}, 0}.
+  {label, 5}.
     {allocate, 0, 0}.
     {move, nil, {x, 0}}.
     {test_heap, 3, 1}.
@@ -242,20 +328,85 @@ test "dict empty boundary: size 0, at misses" {
     return.
 % ── option method API over `at`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
 % ── empty-collection boundary (B1) ──
+
+{function, '-bp_stringify-', 1, 10}.
+  {label, 9}.
+    {line, [{location, "std@dict.erl", 14}]}.
+    {func_info, {atom, std@dict}, {atom, '-bp_stringify-'}, 1}.
+  {label, 10}.
+    {allocate, 0, 1}.
+    {test, is_binary, {f, 11}, [{x, 0}]}.
+    {deallocate, 0}.
+    return.
+  {label, 11}.
+    {test, is_integer, {f, 12}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 12}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 0}.
 ```
 
 ----- BEAM ASSEMBLY -- std@dict@@Dict.S
 ```erlang
 {module, std@dict@@Dict}.
-{exports, [{at, 2}, {hasKey, 2}, {size, 1}, {isEmpty, 1}, {keys, 1}, {values, 1}, {insert, 3}, {delete, 2}, {merge, 2}, {fold, 3}, {mapValues, 2}, {'__bp_get', 2}, {'__bp_format', 1}]}.
+{exports, [{display, 1}, {at, 2}, {hasKey, 2}, {size, 1}, {isEmpty, 1}, {keys, 1}, {values, 1}, {insert, 3}, {delete, 2}, {merge, 2}, {fold, 3}, {mapValues, 2}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 73}.
+{labels, 84}.
 
-{function, at, 2, 3}.
+{function, display, 1, 3}.
   {label, 2}.
     {line, [{location, "std@dict@@Dict.erl", 1}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, at}, 2}.
+    {func_info, {atom, std@dict@@Dict}, {atom, display}, 1}.
   {label, 3}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 32}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 32}.
+    {move, {y, 1}, {x, 1}}.
+    {move, {x, 0}, {x, 2}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 3}.
+    {make_fun3, {f, 27}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 3, {extfunc, lists, foldl, 3}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<")">>}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call, 2, {f, 34}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<"Dict(">>}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 29}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {deallocate, 3}.
+    return.
+
+{function, at, 2, 5}.
+  {label, 4}.
+    {line, [{location, "std@dict@@Dict.erl", 2}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, at}, 2}.
+  {label, 5}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -263,136 +414,136 @@ test "dict empty boundary: size 0, at misses" {
     {move, {atom, undefined}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 28}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {test, is_tagged_tuple, {f, 39}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 28}.
+  {label, 39}.
     {move, {y, 2}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 25}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {make_fun3, {f, 36}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, hasKey, 2, 5}.
-  {label, 4}.
-    {line, [{location, "std@dict@@Dict.erl", 2}]}.
+{function, hasKey, 2, 7}.
+  {label, 6}.
+    {line, [{location, "std@dict@@Dict.erl", 3}]}.
     {func_info, {atom, std@dict@@Dict}, {atom, hasKey}, 2}.
-  {label, 5}.
+  {label, 7}.
     {allocate, 4, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 29}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {test, is_tagged_tuple, {f, 40}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 29}.
+  {label, 40}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 31}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {make_fun3, {f, 42}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
     {call_ext, 2, {extfunc, lists, filter, 2}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 35}}.
-    {test, is_ne_exact, {f, 37}, [{x, 0}, {atom, undefined}]}.
+    {call, 2, {f, 46}}.
+    {test, is_ne_exact, {f, 48}, [{x, 0}, {atom, undefined}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 38}}.
-  {label, 37}.
+    {jump, {f, 49}}.
+  {label, 48}.
     {move, {atom, false}, {x, 0}}.
-  {label, 38}.
+  {label, 49}.
     {deallocate, 4}.
     return.
 
-{function, size, 1, 7}.
-  {label, 6}.
-    {line, [{location, "std@dict@@Dict.erl", 3}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, size}, 1}.
-  {label, 7}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 39}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 39}.
-    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {deallocate, 1}.
-    return.
-
-{function, isEmpty, 1, 9}.
+{function, size, 1, 9}.
   {label, 8}.
     {line, [{location, "std@dict@@Dict.erl", 4}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, isEmpty}, 1}.
+    {func_info, {atom, std@dict@@Dict}, {atom, size}, 1}.
   {label, 9}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 40}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {test, is_tagged_tuple, {f, 50}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 40}.
+  {label, 50}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 41}, [{x, 0}, {integer, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 42}}.
-  {label, 41}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 42}.
     {deallocate, 1}.
     return.
 
-{function, keys, 1, 11}.
+{function, isEmpty, 1, 11}.
   {label, 10}.
     {line, [{location, "std@dict@@Dict.erl", 5}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, keys}, 1}.
+    {func_info, {atom, std@dict@@Dict}, {atom, isEmpty}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 43}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {test, is_tagged_tuple, {f, 51}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 43}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 45}, 0, 0, {x, 0}, {list, []}}.
-    {call_ext_last, 2, {extfunc, lists, map, 2}, 1}.
+  {label, 51}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {test, is_eq_exact, {f, 52}, [{x, 0}, {integer, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 53}}.
+  {label, 52}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 53}.
+    {deallocate, 1}.
+    return.
 
-{function, values, 1, 13}.
+{function, keys, 1, 13}.
   {label, 12}.
     {line, [{location, "std@dict@@Dict.erl", 6}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, values}, 1}.
+    {func_info, {atom, std@dict@@Dict}, {atom, keys}, 1}.
   {label, 13}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 46}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {test, is_tagged_tuple, {f, 54}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 46}.
+  {label, 54}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 48}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 56}, 0, 0, {x, 0}, {list, []}}.
     {call_ext_last, 2, {extfunc, lists, map, 2}, 1}.
 
-{function, insert, 3, 15}.
+{function, values, 1, 15}.
   {label, 14}.
     {line, [{location, "std@dict@@Dict.erl", 7}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, insert}, 3}.
+    {func_info, {atom, std@dict@@Dict}, {atom, values}, 1}.
   {label, 15}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 57}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 57}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 59}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext_last, 2, {extfunc, lists, map, 2}, 1}.
+
+{function, insert, 3, 17}.
+  {label, 16}.
+    {line, [{location, "std@dict@@Dict.erl", 8}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, insert}, 3}.
+  {label, 17}.
     {allocate, 5, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 49}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {test, is_tagged_tuple, {f, 60}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 49}.
+  {label, 60}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 51}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {make_fun3, {f, 62}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
     {call_ext, 2, {extfunc, lists, filter, 2}}.
     {move, {x, 0}, {y, 3}}.
     {move, nil, {x, 0}}.
@@ -410,33 +561,33 @@ test "dict empty boundary: size 0, at misses" {
     {deallocate, 5}.
     return.
 
-{function, delete, 2, 17}.
-  {label, 16}.
-    {line, [{location, "std@dict@@Dict.erl", 8}]}.
+{function, delete, 2, 19}.
+  {label, 18}.
+    {line, [{location, "std@dict@@Dict.erl", 9}]}.
     {func_info, {atom, std@dict@@Dict}, {atom, delete}, 2}.
-  {label, 17}.
+  {label, 19}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 54}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {test, is_tagged_tuple, {f, 65}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 54}.
+  {label, 65}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 56}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {make_fun3, {f, 67}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
     {call_ext, 2, {extfunc, lists, filter, 2}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@dict@@Dict}, {x, 0}]}}.
     {deallocate, 2}.
     return.
 
-{function, merge, 2, 19}.
-  {label, 18}.
-    {line, [{location, "std@dict@@Dict.erl", 9}]}.
+{function, merge, 2, 21}.
+  {label, 20}.
+    {line, [{location, "std@dict@@Dict.erl", 10}]}.
     {func_info, {atom, std@dict@@Dict}, {atom, merge}, 2}.
-  {label, 19}.
+  {label, 21}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -444,24 +595,24 @@ test "dict empty boundary: size 0, at misses" {
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 61}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {test, is_tagged_tuple, {f, 72}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 61}.
+  {label, 72}.
     {move, {y, 2}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 60}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 71}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, fold, 3, 21}.
-  {label, 20}.
-    {line, [{location, "std@dict@@Dict.erl", 10}]}.
+{function, fold, 3, 23}.
+  {label, 22}.
+    {line, [{location, "std@dict@@Dict.erl", 11}]}.
     {func_info, {atom, std@dict@@Dict}, {atom, fold}, 3}.
-  {label, 21}.
+  {label, 23}.
     {allocate, 4, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -470,24 +621,24 @@ test "dict empty boundary: size 0, at misses" {
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 64}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {test, is_tagged_tuple, {f, 75}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 64}.
+  {label, 75}.
     {move, {y, 3}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 63}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
+    {make_fun3, {f, 74}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, mapValues, 2, 23}.
-  {label, 22}.
-    {line, [{location, "std@dict@@Dict.erl", 11}]}.
+{function, mapValues, 2, 25}.
+  {label, 24}.
+    {line, [{location, "std@dict@@Dict.erl", 12}]}.
     {func_info, {atom, std@dict@@Dict}, {atom, mapValues}, 2}.
-  {label, 23}.
+  {label, 25}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -495,13 +646,13 @@ test "dict empty boundary: size 0, at misses" {
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 67}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
+    {test, is_tagged_tuple, {f, 78}, [{x, 0}, 2, {atom, std@dict@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 67}.
+  {label, 78}.
     {move, {y, 2}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 66}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {make_fun3, {f, 77}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 2}}.
     {test_heap, 3, 0}.
@@ -509,44 +660,118 @@ test "dict empty boundary: size 0, at misses" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_get', 2, 69}.
-  {label, 68}.
-    {line, [{location, "std@dict@@Dict.erl", 12}]}.
+{function, '__bp_get', 2, 80}.
+  {label, 79}.
+    {line, [{location, "std@dict@@Dict.erl", 13}]}.
     {func_info, {atom, std@dict@@Dict}, {atom, '__bp_get'}, 2}.
-  {label, 69}.
-    {test, is_eq_exact, {f, 70}, [{x, 1}, {atom, pairs}]}.
+  {label, 80}.
+    {test, is_eq_exact, {f, 81}, [{x, 1}, {atom, pairs}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 70}.
+  {label, 81}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 72}.
-  {label, 71}.
-    {line, [{location, "std@dict@@Dict.erl", 12}]}.
+{function, '__bp_format', 1, 83}.
+  {label, 82}.
+    {line, [{location, "std@dict@@Dict.erl", 13}]}.
     {func_info, {atom, std@dict@@Dict}, {atom, '__bp_format'}, 1}.
-  {label, 72}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, nil, {y, 1}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test_heap, 5, 1}.
-    {put_tuple2, {x, 0}, {list, [{literal, <<"pairs">>}, {x, 0}]}}.
-    {put_list, {x, 0}, {y, 1}, {y, 1}}.
-    {test_heap, 4, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Dict">>}, {y, 1}]}}.
-    {deallocate, 2}.
+  {label, 83}.
+    {allocate, 0, 1}.
+    {call, 1, {f, 3}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, text}, {x, 0}]}}.
+    {deallocate, 0}.
     return.
 
-{function, '-/2-fun-0-', 3, 25}.
-  {label, 24}.
+{function, '-bp_stringify-', 1, 29}.
+  {label, 28}.
     {line, [{location, "std@dict@@Dict.erl", 2}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, '-/2-fun-0-'}, 3}.
-  {label, 25}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-bp_stringify-'}, 1}.
+  {label, 29}.
+    {allocate, 0, 1}.
+    {test, is_binary, {f, 30}, [{x, 0}]}.
+    {deallocate, 0}.
+    return.
+  {label, 30}.
+    {test, is_integer, {f, 31}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 31}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 0}.
+
+{function, '-/1-fun-0-', 2, 27}.
+  {label, 26}.
+    {line, [{location, "std@dict@@Dict.erl", 2}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-/1-fun-0-'}, 2}.
+  {label, 27}.
+    {allocate, 5, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {call_ext, 1, {extfunc, std@dict, shown, 1}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<": ">>}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 1}, {x, 0}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {call_ext, 1, {extfunc, std@dict, shown, 1}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 29}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, append, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 5}.
+    return.
+
+{function, '-bp_join-', 2, 34}.
+  {label, 33}.
+    {line, [{location, "std@dict@@Dict.erl", 2}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-bp_join-'}, 2}.
+  {label, 34}.
+    {allocate, 1, 2}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 1}, {y, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 29}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {call_ext_last, 1, {extfunc, erlang, iolist_to_binary, 1}, 1}.
+
+{function, '-/2-fun-1-', 3, 36}.
+  {label, 35}.
+    {line, [{location, "std@dict@@Dict.erl", 3}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-/2-fun-1-'}, 3}.
+  {label, 36}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -556,24 +781,24 @@ test "dict empty boundary: size 0, at misses" {
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 26}, [{x, 0}, {y, 2}]}.
+    {test, is_eq_exact, {f, 37}, [{x, 0}, {y, 2}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {x, 0}, {y, 1}}.
-    {jump, {f, 27}}.
-  {label, 26}.
-  {label, 27}.
+    {jump, {f, 38}}.
+  {label, 37}.
+  {label, 38}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, '-/2-fun-1-', 2, 31}.
-  {label, 30}.
-    {line, [{location, "std@dict@@Dict.erl", 3}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, '-/2-fun-1-'}, 2}.
-  {label, 31}.
+{function, '-/2-fun-2-', 2, 42}.
+  {label, 41}.
+    {line, [{location, "std@dict@@Dict.erl", 4}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-/2-fun-2-'}, 2}.
+  {label, 42}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -582,41 +807,41 @@ test "dict empty boundary: size 0, at misses" {
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 32}, [{x, 0}, {y, 1}]}.
+    {test, is_eq_exact, {f, 43}, [{x, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 33}}.
-  {label, 32}.
+    {jump, {f, 44}}.
+  {label, 43}.
     {move, {atom, false}, {x, 0}}.
-  {label, 33}.
+  {label, 44}.
     {deallocate, 2}.
     return.
 
-{function, '-bp_at-', 2, 35}.
-  {label, 34}.
-    {line, [{location, "std@dict@@Dict.erl", 3}]}.
+{function, '-bp_at-', 2, 46}.
+  {label, 45}.
+    {line, [{location, "std@dict@@Dict.erl", 4}]}.
     {func_info, {atom, std@dict@@Dict}, {atom, '-bp_at-'}, 2}.
-  {label, 35}.
+  {label, 46}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 0}}.
-    {test, is_ge, {f, 36}, [{y, 0}, {integer, 0}]}.
+    {test, is_ge, {f, 47}, [{y, 0}, {integer, 0}]}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
-    {test, is_lt, {f, 36}, [{y, 0}, {x, 0}]}.
+    {test, is_lt, {f, 47}, [{y, 0}, {x, 0}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.
-  {label, 36}.
+  {label, 47}.
     {move, {atom, undefined}, {x, 0}}.
     {deallocate, 2}.
     return.
 
-{function, '-/1-fun-2-', 1, 45}.
-  {label, 44}.
-    {line, [{location, "std@dict@@Dict.erl", 6}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, '-/1-fun-2-'}, 1}.
-  {label, 45}.
+{function, '-/1-fun-3-', 1, 56}.
+  {label, 55}.
+    {line, [{location, "std@dict@@Dict.erl", 7}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-/1-fun-3-'}, 1}.
+  {label, 56}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -627,11 +852,11 @@ test "dict empty boundary: size 0, at misses" {
     {deallocate, 1}.
     return.
 
-{function, '-/1-fun-3-', 1, 48}.
-  {label, 47}.
-    {line, [{location, "std@dict@@Dict.erl", 7}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, '-/1-fun-3-'}, 1}.
-  {label, 48}.
+{function, '-/1-fun-4-', 1, 59}.
+  {label, 58}.
+    {line, [{location, "std@dict@@Dict.erl", 8}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-/1-fun-4-'}, 1}.
+  {label, 59}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -642,33 +867,11 @@ test "dict empty boundary: size 0, at misses" {
     {deallocate, 1}.
     return.
 
-{function, '-/3-fun-4-', 2, 51}.
-  {label, 50}.
-    {line, [{location, "std@dict@@Dict.erl", 8}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, '-/3-fun-4-'}, 2}.
-  {label, 51}.
-    {allocate, 2, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 1}, {x, 0}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_ne_exact, {f, 52}, [{x, 0}, {y, 1}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 53}}.
-  {label, 52}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 53}.
-    {deallocate, 2}.
-    return.
-
-{function, '-/2-fun-5-', 2, 56}.
-  {label, 55}.
+{function, '-/3-fun-5-', 2, 62}.
+  {label, 61}.
     {line, [{location, "std@dict@@Dict.erl", 9}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, '-/2-fun-5-'}, 2}.
-  {label, 56}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-/3-fun-5-'}, 2}.
+  {label, 62}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -677,20 +880,42 @@ test "dict empty boundary: size 0, at misses" {
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_ne_exact, {f, 57}, [{x, 0}, {y, 1}]}.
+    {test, is_ne_exact, {f, 63}, [{x, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 58}}.
-  {label, 57}.
+    {jump, {f, 64}}.
+  {label, 63}.
     {move, {atom, false}, {x, 0}}.
-  {label, 58}.
+  {label, 64}.
     {deallocate, 2}.
     return.
 
-{function, '-/2-fun-6-', 2, 60}.
-  {label, 59}.
+{function, '-/2-fun-6-', 2, 67}.
+  {label, 66}.
     {line, [{location, "std@dict@@Dict.erl", 10}]}.
     {func_info, {atom, std@dict@@Dict}, {atom, '-/2-fun-6-'}, 2}.
-  {label, 60}.
+  {label, 67}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 1}, {x, 0}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test, is_ne_exact, {f, 68}, [{x, 0}, {y, 1}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 69}}.
+  {label, 68}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 69}.
+    {deallocate, 2}.
+    return.
+
+{function, '-/2-fun-7-', 2, 71}.
+  {label, 70}.
+    {line, [{location, "std@dict@@Dict.erl", 11}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-/2-fun-7-'}, 2}.
+  {label, 71}.
     {allocate, 5, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -707,17 +932,17 @@ test "dict empty boundary: size 0, at misses" {
     {move, {y, 2}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 3, {f, 15}}.
+    {call, 3, {f, 17}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 5}.
     return.
 
-{function, '-/3-fun-7-', 3, 63}.
-  {label, 62}.
-    {line, [{location, "std@dict@@Dict.erl", 11}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, '-/3-fun-7-'}, 3}.
-  {label, 63}.
+{function, '-/3-fun-8-', 3, 74}.
+  {label, 73}.
+    {line, [{location, "std@dict@@Dict.erl", 12}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-/3-fun-8-'}, 3}.
+  {label, 74}.
     {allocate, 6, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -742,11 +967,11 @@ test "dict empty boundary: size 0, at misses" {
     {deallocate, 6}.
     return.
 
-{function, '-/2-fun-8-', 3, 66}.
-  {label, 65}.
-    {line, [{location, "std@dict@@Dict.erl", 12}]}.
-    {func_info, {atom, std@dict@@Dict}, {atom, '-/2-fun-8-'}, 3}.
-  {label, 66}.
+{function, '-/2-fun-9-', 3, 77}.
+  {label, 76}.
+    {line, [{location, "std@dict@@Dict.erl", 13}]}.
+    {func_info, {atom, std@dict@@Dict}, {atom, '-/2-fun-9-'}, 3}.
+  {label, 77}.
     {allocate, 7, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.

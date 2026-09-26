@@ -20,7 +20,16 @@
 
 pub type Dict<K, V>(
     pairs: Array<#(K, V)>,
-) implement Index<K, V> {
+) implement Index<K, V>, Display {
+    // Decision 8 §7 — `Dict("a": 1, "b": 2)`: the pairs in order, a string
+    // key or value quoted, anything else in its own text. `K` and `V` are
+    // generic, so which is a string is asked of the value (`is`, decision 8 §4).
+    pub fn display(self: Self<K, V>) -> string {
+        var parts: string[] = [];
+        self.pairs.forEach({ p -> parts.push(shown(p._0) + ": " + shown(p._1)) });
+        return "Dict(" + parts.join(", ") + ")";
+    }
+
     pub fn at(self: Self<K, V>, key: K) -> ?V {
         // NOTE: written with `forEach` + accumulator rather than
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is
@@ -88,6 +97,15 @@ pub type Dict<K, V>(
     }
 }
 
+// One key or value of `Dict.display`: a string quoted, anything else as it
+// interpolates.
+fn shown<T>(x: T) -> string {
+    if (x is string) {
+        return "\"" + x + "\"";
+    };
+    return "${x}";
+}
+
 pub fn empty<K, V>() -> Dict<K, V> {
     return Dict(pairs: []);
 }
@@ -132,6 +150,13 @@ test "dict insert overwrites duplicate" {
 test "dict size counts unique keys" {
     val d = empty().insert("a", 1).insert("b", 2);
     assert d.size() == 2;
+}
+
+test "dict displays as its pairs, a string quoted (decision 8 §7)" {
+    val d = empty().insert("a", 1).insert("b", 2);
+    assert d.display() == "Dict(\"a\": 1, \"b\": 2)";
+    val n = empty().insert(1, "x");
+    assert n.display() == "Dict(1: \"x\")";
 }
 
 test "dict keys" {
@@ -208,7 +233,7 @@ test "dict empty boundary: size 0, at misses" {
 ----- ERLANG -- std/dict.erl
 ```erlang
 -module(std@dict).
--export([empty/0]).
+-export([empty/0, shown/1]).
 
 %%% Gleam-inspired `dict` module — a `type Dict<K, V>` wrapping an
 
@@ -246,8 +271,21 @@ test "dict empty boundary: size 0, at misses" {
 
 %% type Dict: pairs
 
+% One key or value of `Dict.display`: a string quoted, anything else as it
+
+% interpolates.
+
+shown(X) ->
+    case is_binary(X) of
+        true ->
+            <<"\"", ('__bp_text'(X))/binary, "\"">>;
+        _ ->
+            <<('__bp_text'(X))/binary>>
+    end.
+
 empty() ->
     {std@dict@@Dict, []}.
+
 
 
 
@@ -270,13 +308,22 @@ empty() ->
 
 % ── empty-collection boundary (B1) ──
 
+
+'__bp_text'(Value) when is_binary(Value) -> Value;
+'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 ```
 
 ----- ERLANG -- std@dict@@Dict.erl
 ```erlang
 -module(std@dict@@Dict).
 -compile({no_auto_import,[size/1]}).
--export([at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2, '__bp_get'/2, '__bp_format'/1]).
+-export([display/1, at/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2, '__bp_get'/2, '__bp_format'/1]).
+
+display(Self) ->
+    Parts = lists:foldl(fun(P, Parts) ->
+        (Parts ++ [<<(std@dict:shown(element(1, P)))/binary, ": ", (std@dict:shown(element(2, P)))/binary>>])
+    end, [], element(2, Self)),
+    <<"Dict(", ('__bp_text'(iolist_to_binary(lists:join(<<", ">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, Parts)))))/binary, ")">>.
 
 at(Self, Key) ->
     % NOTE: written with `forEach` + accumulator rather than
@@ -343,7 +390,10 @@ mapValues(Self, F) ->
 
 '__bp_get'(V, pairs) -> element(2, V).
 
-'__bp_format'(V) -> {record, "Dict", [{"pairs", element(2, V)}]}.
+'__bp_format'(V) -> {text, display(V)}.
+
+'__bp_text'(Value) when is_binary(Value) -> Value;
+'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
 ```
 
 ----- RUN LOG -----

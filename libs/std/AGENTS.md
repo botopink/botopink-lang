@@ -417,11 +417,8 @@ to find a value's `display()` without the author having asked for it, which is t
 other builtin behavior is ambient rather than a `pub mod`. One declaration, read by the §7 step of
 all four backend fronts.
 
-**`Dict<K, V>` does not implement it yet, and the reason is measured, not forgotten.** §7's own
-example is `Dict("a": 1, "b": 2)` — a string key quoted, any other key bare. `K` is generic, so
-nothing static decides which, and the test has to be `p._0 is string` at run time (decision 8 §4).
-Written that way, `zig build test-libs` gives `std · commonJS: pass` and `std · erlang: FAIL`
-(`escript: There were compilation errors.`): `x is T` has a run-time lowering on commonJS only.
-The implementation lands with `is` on erlang, beam and wasm — `02-erlang`, `03-beam` and `05-wasm`
-step 2 — not before, because a `libs/std` that only compiles on one backend is worse than a `Dict`
-that prints its `pairs`.
+**`Dict<K, V>` implements it** (decision 8 §7, `00 · 01-checker` step 11): `Dict("a": 1, "b": 2)` — the
+pairs in order, a string key or value quoted (`shown`, which asks `x is string` of the generic
+value), anything else as it interpolates. It waited for `is` to have a run-time lowering on erlang;
+measured on commonJS and erlang (`dict.bp`'s own test). wasm prints a `Dict` as a heap address and
+traps in `display` — 05-wasm's rows.

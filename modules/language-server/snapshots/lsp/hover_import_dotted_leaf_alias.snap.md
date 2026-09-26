@@ -9,5 +9,5 @@ val d = newDict();
 kind: markdown
 
 ```botopink
-newDict : fn() -> Dict<T122, T123>
+newDict : fn() -> Dict<T134, T135>
 ```
