@@ -87,23 +87,145 @@ fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) !
 /// refusal names it exactly as before, and a source that says `-include` is
 /// left to the loader (its include dir is the script's, which this step does
 /// not know). The directory is this run's own, written above from this run's
-/// outputs, so a `.beam` here can only be this run's. A failure of the step
-/// itself — `erl` missing, a crash — leaves some or no `.beam` behind, which
-/// is the old path for the rest; its output is discarded.
-fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8) void {
+/// outputs. A failure of the step itself — `erl` missing, a crash — leaves some
+/// or no `.beam` behind, which is the old path for the rest; its output is
+/// discarded.
+///
+/// **The `.beam` cache** (`cache_dir`, see `beamCacheDir`; null = none). Every
+/// member of a workspace compiles the same dependency `.erl` text again — the
+/// fifteen `emilia-*` examples each compile `emilia` and `std`, every gate. A
+/// compiled `.beam` is therefore also kept at `<cache_dir>/<k[0..2]>/<k>.beam`,
+/// `k` the SHA-256 of the source bytes and of everything else the compile
+/// reads: the options, the OTP release, the erts / `compiler` / `stdlib`
+/// versions and `ERL_COMPILER_OPTIONS` (which `compile:file/2` appends). A
+/// source whose key is there is not compiled: the stored `.beam` is written
+/// beside it.
+///
+/// A `.beam` also records WHERE it was compiled — the `Line` table names the
+/// source path (every stack trace prints it), `CInf` the include dir and the
+/// absolute source, `Dbgi` the options — and each run's directory is new. An
+/// entry therefore stores the path and include dir it was compiled with, and a
+/// hit is **relocated**: those three chunks are rewritten to this run's source
+/// and include dir (`Relocate`), which gives byte for byte the `.beam` the
+/// compile would have written here — measured on the 4 093 modules of an
+/// `emilia-*` cell. An entry is stored only when relocating the fresh `.beam`
+/// to its own path answers the same bytes, so a layout `Relocate` does not
+/// understand is compiled every time instead of guessed at. Not cached
+/// either: a source that does not compile (nothing is written, so its refusal
+/// is the loader's, every time), and a source that names `parse_transform`
+/// (its output depends on the transform's code, which the key does not see),
+/// `?FILE` (the path is a literal in the code) or `-file` (more names in the
+/// `Line` table). Entries are written by staging under a unique name and
+/// renaming, so a reader sees a whole entry or none — two cells, or two gates,
+/// over one cache race to write the same bytes; an entry that does not decode
+/// or relocate is a miss. A hit refreshes the entry's mtime, and every run
+/// reaps one of the 256 shards at random: entries unused for 7 days, staging
+/// files older than a day (a writer that died between write and rename).
+fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache_dir: ?[]const u8) void {
     const eval =
-        \\[Dir] = init:get_plain_arguments(),
+        \\[Dir | CacheArg] = init:get_plain_arguments(),
+        \\Opts = [binary, return_errors, {i, Dir}],
+        \\Tag = case CacheArg of
+        \\    [_] ->
+        \\        try
+        \\            _ = crypto:hash(sha256, <<>>),
+        \\            term_to_binary({<<"botopink-beam-cache-2">>, [binary, return_errors],
+        \\                            erlang:system_info(otp_release), erlang:system_info(version),
+        \\                            filename:basename(code:lib_dir(compiler)),
+        \\                            filename:basename(code:lib_dir(stdlib)),
+        \\                            os:getenv("ERL_COMPILER_OPTIONS")})
+        \\        catch _:_ -> none
+        \\        end;
+        \\    _ -> none
+        \\end,
+        \\Publish = fun(Path, Bin) ->
+        \\    Tmp = iolist_to_binary([Path, ".", integer_to_list(erlang:unique_integer([positive])),
+        \\                            "-", os:getpid(), ".tmp"]),
+        \\    case file:write_file(Tmp, Bin) of
+        \\        ok ->
+        \\            case file:rename(Tmp, Path) of
+        \\                ok -> ok;
+        \\                _ -> file:delete(Tmp)
+        \\            end;
+        \\        _ -> file:delete(Tmp)
+        \\    end
+        \\end,
+        \\Relocate = fun(Bin, {Src0, Dir0}, {Src, Dir1}) ->
+        \\    S0 = unicode:characters_to_binary(Src0),
+        \\    S1 = unicode:characters_to_binary(Src),
+        \\    N0 = byte_size(S0),
+        \\    Swap = fun(O) -> [case X of {i, Dir0} -> {i, Dir1}; _ -> X end || X <- O] end,
+        \\    {ok, _, Chunks} = beam_lib:all_chunks(Bin),
+        \\    Fix = fun
+        \\        ("Line", <<H:16/binary, 1:32, Rest/binary>>) ->
+        \\            Items = binary:part(Rest, 0, byte_size(Rest) - 2 - N0),
+        \\            <<N0:16, S0:N0/binary>> = binary:part(Rest, byte_size(Rest) - 2 - N0, 2 + N0),
+        \\            <<H/binary, 1:32, Items/binary, (byte_size(S1)):16, S1/binary>>;
+        \\        ("CInf", D) ->
+        \\            term_to_binary([case X of
+        \\                                {options, O} -> {options, Swap(O)};
+        \\                                {source, _} -> {source, filename:absname(Src)};
+        \\                                _ -> X
+        \\                            end || X <- binary_to_term(D)]);
+        \\        ("Dbgi", D) ->
+        \\            {debug_info_v1, erl_abstract_code, {none, O}} = binary_to_term(D),
+        \\            term_to_binary({debug_info_v1, erl_abstract_code, {none, Swap(O)}});
+        \\        (_, D) -> D
+        \\    end,
+        \\    {ok, Out} = beam_lib:build_module([{Id, Fix(Id, D)} || {Id, D} <- Chunks]),
+        \\    Out
+        \\end,
+        \\EntryOf = fun(Text) ->
+        \\    Key = binary:encode_hex(crypto:hash(sha256, [Tag, Text]), lowercase),
+        \\    <<Shard:2/binary, _/binary>> = Key,
+        \\    [Cache] = CacheArg,
+        \\    filename:join([Cache, Shard, <<Key/binary, ".beam">>])
+        \\end,
+        \\Cacheable = fun(Text) ->
+        \\    Tag =/= none andalso
+        \\        lists:all(fun(W) -> binary:match(Text, W) =:= nomatch end,
+        \\                  [<<"parse_transform">>, <<"?FILE">>, <<"-file">>])
+        \\end,
         \\Compile = fun(Src) ->
         \\    {ok, Text} = file:read_file(Src),
         \\    case binary:match(Text, <<"-include">>) of
         \\        nomatch ->
-        \\            case compile:file(Src, [binary, return_errors, {i, Dir}]) of
-        \\                {ok, _Mod, Bin} ->
-        \\                    Beam = filename:rootname(Src) ++ ".beam",
-        \\                    Tmp = Beam ++ ".tmp",
-        \\                    ok = file:write_file(Tmp, Bin),
-        \\                    ok = file:rename(Tmp, Beam);
-        \\                _ -> ok
+        \\            Beam = filename:rootname(Src) ++ ".beam",
+        \\            Entry = case Cacheable(Text) of
+        \\                true -> EntryOf(Text);
+        \\                false -> none
+        \\            end,
+        \\            Cached = case Entry of
+        \\                none -> none;
+        \\                _ ->
+        \\                    try
+        \\                        {ok, Stored} = file:read_file(Entry),
+        \\                        {From, CBin} = binary_to_term(Stored),
+        \\                        Relocate(CBin, From, {Src, Dir})
+        \\                    catch _:_ -> none
+        \\                    end
+        \\            end,
+        \\            case Cached of
+        \\                none ->
+        \\                    case compile:file(Src, Opts) of
+        \\                        {ok, _Mod, Bin} ->
+        \\                            Publish(Beam, Bin),
+        \\                            case Entry of
+        \\                                none -> ok;
+        \\                                _ ->
+        \\                                    Here = {Src, Dir},
+        \\                                    case catch Relocate(Bin, Here, Here) of
+        \\                                        Bin ->
+        \\                                            filelib:ensure_dir(Entry),
+        \\                                            Publish(Entry, term_to_binary({Here, Bin}));
+        \\                                        _ -> ok
+        \\                                    end
+        \\                            end;
+        \\                        _ -> ok
+        \\                    end;
+        \\                _ ->
+        \\                    Publish(Beam, Cached),
+        \\                    file:change_time(Entry, erlang:localtime())
         \\            end;
         \\        _ -> ok
         \\    end
@@ -115,14 +237,56 @@ fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8) void 
         \\            Ref
         \\        end || S <- filelib:wildcard(filename:join([Dir, "**", "*.erl"]))],
         \\[receive R -> ok end || R <- Refs],
+        \\case Tag of
+        \\    none -> ok;
+        \\    _ ->
+        \\        catch begin
+        \\            [Root] = CacheArg,
+        \\            Pick = binary_to_list(binary:encode_hex(<<(rand:uniform(256) - 1)>>, lowercase)),
+        \\            Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
+        \\            Reap = fun(Pattern, MaxAge) ->
+        \\                [case filelib:last_modified(F) of
+        \\                     0 -> ok;
+        \\                     T ->
+        \\                         case Now - calendar:datetime_to_gregorian_seconds(T) > MaxAge of
+        \\                             true -> file:delete(F);
+        \\                             false -> ok
+        \\                         end
+        \\                 end || F <- filelib:wildcard(filename:join([Root, Pick, Pattern]))]
+        \\            end,
+        \\            Reap("*.beam", 7 * 86400),
+        \\            Reap("*.tmp", 86400)
+        \\        end
+        \\end,
         \\halt(0).
     ;
+    const argv: []const []const u8 = if (cache_dir) |c|
+        &.{ "erl", "-noshell", "-eval", eval, "-extra", dir, c }
+    else
+        &.{ "erl", "-noshell", "-eval", eval, "-extra", dir };
     const result = std.process.run(arena, io, .{
-        .argv = &.{ "erl", "-noshell", "-eval", eval, "-extra", dir },
+        .argv = argv,
         .stdout_limit = .limited(1024 * 1024),
         .stderr_limit = .limited(1024 * 1024),
     }) catch return;
     _ = result;
+}
+
+/// Where `precompileErlang` keeps its `.beam` cache: `$XDG_CACHE_HOME/botopink/beam`,
+/// else `$HOME/.cache/botopink/beam` — the per-user cache every checkout, worktree
+/// and gate of this machine shares, beside `bpmp`'s store (`$XDG_CACHE_HOME/bpmp`),
+/// because the cells that compile the same dependency `.erl` run from different
+/// project directories. Null (no cache — every source compiles, as before) when
+/// neither variable is set to an absolute path. `botopink clean` does not reach
+/// it; entries are content-keyed, so a stale one is never read — only kept until
+/// a run draws its shard (see `precompileErlang`).
+fn beamCacheDir(arena: std.mem.Allocator, env_map: libs.EnvMap) ?[]const u8 {
+    const m = env_map orelse return null;
+    if (m.get("XDG_CACHE_HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
+        return std.fs.path.join(arena, &.{ v, "botopink", "beam" }) catch null;
+    if (m.get("HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
+        return std.fs.path.join(arena, &.{ v, ".cache", "botopink", "beam" }) catch null;
+    return null;
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -316,7 +480,7 @@ pub fn run(
         _ = libs.shipErlSidecars(gpa, io, outputs.items, test_out, env_map) catch 0;
         // Every `.erl` of the run is now in place: compile each once, here,
         // instead of once per test module that loads it.
-        precompileErlang(arena, io, test_out);
+        precompileErlang(arena, io, test_out, beamCacheDir(arena, env_map));
     }
 
     // commonJS: root-source imports (`import {x};`) emit `require("./module")`

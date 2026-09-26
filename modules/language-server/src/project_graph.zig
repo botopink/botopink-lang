@@ -420,8 +420,9 @@ pub const ProjectGraph = struct {
     /// silently when missing on disk), then (2) walking up from `project_root`,
     /// for each ancestor `D` (nearest-first): `D` itself when it holds a
     /// workspace manifest (its members), `D/repository/botopink-lang/libs`
-    /// (bundled), `D/repository` (sibling projects), `D/libs` (legacy flat tree).
-    /// De-duped first-occurrence-wins so an env entry always shadows a duplicate
+    /// (bundled), `D/repository` (sibling projects), `D/libs` (legacy flat tree),
+    /// stopping after the first `D` that holds `repository/` — the enclosing
+    /// checkout (`manifest.isCheckoutRoot`). De-duped first-occurrence-wins so an env entry always shadows a duplicate
     /// walk-up root. With the env unset the result is byte-identical to the
     /// former pure walk-up. Caller owns the slice and each element via gpa.
     /// Test-only wrapper around the private `resolveRoots`. Keeps the production
@@ -471,6 +472,9 @@ pub const ProjectGraph = struct {
             try self.addRoot(&roots, &.{ dir, "repository", "botopink-lang", "libs" });
             try self.addRoot(&roots, &.{ dir, "repository" });
             try self.addRoot(&roots, &.{ dir, "libs" });
+            // The enclosing checkout ends the walk (`manifest.isCheckoutRoot`): a
+            // worktree nested in the meta checkout must not see its `repository/*`.
+            if (manifest.isCheckoutRoot(self.io, dir)) break;
             const parent = std.fs.path.dirname(dir) orelse break;
             if (std.mem.eql(u8, parent, dir)) break;
             dir = parent;

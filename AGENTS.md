@@ -101,8 +101,8 @@ the only way to name one. `zig build clean-tmp` reaps both at a 1-day TTL.
 
 `test-libs` is the lib ecosystem gate (`botopink-lib-test`): it runs
 `botopink test --target <t>` in `libs/std` and in every sibling library the
-checkout can see (`<ancestor>/repository/*` — the meta workspace, or the repos CI
-checks out) and in every **member** of a workspace among them (a `botopink.json`
+checkout can see (`<ancestor>/repository/*` of the enclosing checkout — the meta
+workspace or a worktree of it, or the repos CI checks out) and in every **member** of a workspace among them (a `botopink.json`
 with `"workspaces"`, one row per member, examples included), and reports each cell as pass, FAIL (with the failing module's
 diagnostic), known red, restricted, skipped (with the reason) or no tests — a library with
 no `test` block is still compiled (`botopink build --target <t>`), so it fails
@@ -189,7 +189,9 @@ commit SHA, and `bpmp install --frozen` fails when a dep has no lockfile entry.
 
 Library resolution (`modules/compiler-cli/src/cli/libs.zig`): roots from
 `BOTOPINK_LIB_ROOTS` first, then for each ancestor `D` of cwd:
-`D/repository/botopink-lang/libs`, `D/repository`, `D/libs`.
+`D/repository/botopink-lang/libs`, `D/repository`, `D/libs` — up to the first `D`
+that holds `repository/` (the enclosing checkout, `manifest.isCheckoutRoot`), so a
+meta worktree under `.tasks/<name>` sees only its own libraries (decision 143).
 
 ## Conventions
 
@@ -351,6 +353,13 @@ every later call site sends cmd 3 alone with its own capture. Comptime
 - **Output cache.** Executions are content-keyed and cached under
   `.botopinkbuild/runtime-cache/`. Keys ignore toolchain versions — delete the dir
   after upgrading node/erl.
+- **`.beam` cache of `botopink test --target erlang`.** `precompileErlang`
+  (`modules/compiler-cli/src/cli/test_cmd.zig`) keeps every compiled `.beam` in
+  `${XDG_CACHE_HOME:-$HOME/.cache}/botopink/beam/`, shared by every checkout,
+  worktree and gate of the machine. Its key does include the OTP / compiler
+  versions, and a hit is relocated to the run's own path, byte for byte what the
+  compile writes there; `botopink clean` does not touch it, and each run reaps
+  one random shard (entries unused for 7 days).
 
 ### General
 

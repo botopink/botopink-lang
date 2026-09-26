@@ -84,13 +84,19 @@ against an ordered **root list** (`resolveLibRoots`): `BOTOPINK_LIB_ROOTS`
 entries first, then, walking up from cwd, each ancestor `D` contributes — when
 present — `D` itself when its `botopink.json` is a workspace (its members),
 `D/repository/botopink-lang/libs` (bundled libs), `D/repository` (sibling
-projects), and `D/libs` (flat tree), de-duplicated first-occurrence-wins. After
+projects), and `D/libs` (flat tree), de-duplicated first-occurrence-wins; the walk
+stops after the first `D` that holds `repository/` — the enclosing checkout
+(`manifest.isCheckoutRoot`), so a meta worktree under `.tasks/<name>` never sees the
+main checkout's libraries a second time (decision 143). After
 those, `resolveFallbackRoots` adds `<project>/.botopinkbuild/deps/` (the symlink
 store written by `bpmp install`). `manifest.scanRoots` turns the roots into
 entries — a root's child holding a manifest, or every **member** of a workspace
 found there, named by its manifest — and `<name>` resolves to the first entry so
 named (a workspace by that name is refused with its member list; a name two
-members declare is refused on both). The loader reads the resolved manifest's
+members declare is refused on both). Dependencies are transitive (decision 143):
+each dependency's own entries resolve from its manifest and directory, every
+package loads once, after the packages it depends on; one import name meaning two
+directories in a build, or a cycle between packages, is refused, located. The loader reads the resolved manifest's
 `{src, files}` and feeds the lib's modules into compilation prefixed by name
 (`<name>/<module>`).
 The compiler core never names a lib — it sees ordinary `Module[]` and resolves
