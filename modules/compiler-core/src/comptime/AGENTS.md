@@ -567,6 +567,19 @@ binding list handed back is built tolerantly from imports, type declarations, `f
 `val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
 well-typed one binds, so the language server still lists it.
 
+## A local ends with its body (01 step 13)
+
+`Env.bindings` is one flat table, and a body's parameters and locals used to stay in it: a `val` of
+one `fn` was bound for every declaration inferred after it, and a local named like a module
+declaration retyped that declaration for the next function. `inferFnDecl`, `inferTestDecl` and
+each method of `inferTypeMethods` now open a **body scope** (`Env.openBodyScope`): every `bind` /
+`bindVal` inside records what the name was bound to before (`BindUndo`), and `closeBodyScope`
+replays the log backwards, so every name the body bound — parameters, locals, pattern binders — is
+back exactly as it was. A name a top-level body introduced is remembered in `Env.closedLocals`, so a
+later use outside it reds `unbound variable 'v' — `v` is a local of `holder`, …` (`unboundAt`).
+Closures do not open a scope of their own yet: a lambda's parameter is visible to the rest of the
+enclosing body, never beyond it.
+
 ## Generic types carry their arguments (decision 8 §1.1, §1.2 — 01 step 6, C-15)
 
 §1.1 — a written use of a `type` with type parameters supplies every parameter without a default:

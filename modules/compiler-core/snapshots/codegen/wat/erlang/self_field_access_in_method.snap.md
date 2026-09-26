@@ -3,7 +3,7 @@
 val Point = type(
     x: i32,
     y: i32) {
-    fn sum() -> i32 {
+    fn sum(self: Self) -> i32 {
         return self.x + self.y;
     }
 };
@@ -19,9 +19,9 @@ val Point = type(
 ----- ERLANG -- test@main@@Point.erl
 ```erlang
 -module(test@main@@Point).
--export([sum/0, '__bp_get'/2, '__bp_format'/1]).
+-export([sum/1, '__bp_get'/2, '__bp_format'/1]).
 
-sum() ->
+sum(Self) ->
     '__bp_add'(element(2, Self), element(3, Self)).
 
 '__bp_get'(V, x) -> element(2, V);

@@ -3,7 +3,7 @@
 val Point = type(
     x: i32,
     y: i32) {
-    fn sum() -> i32 {
+    fn sum(self: Self) -> i32 {
         return self.x + self.y;
     }
 };

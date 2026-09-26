@@ -1,0 +1,19 @@
+//// 01 step 13 — a local ends with its body. `v` belongs to `holder`; before
+//// the fix it stayed bound for every declaration inferred after it, so `later`
+//// checked, and then commonJS threw `ReferenceError: v is not defined` and
+//// erlang's `erlc` refused `variable 'V' is unbound`. Refused at the use, naming
+//// the function the binding belongs to.
+
+fn holder() -> string {
+    val v = "inner";
+    return v;
+}
+
+fn later() -> string {
+    return v;
+}
+
+pub fn main() {
+    @print(holder());
+    @print(later());
+}

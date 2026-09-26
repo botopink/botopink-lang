@@ -778,6 +778,17 @@ fn typeContainsUnknown(ty: *T.Type) bool {
     };
 }
 
+/// An unbound name, located. 01 step 13 — when the name was a local of a body
+/// already inferred (`Env.closedLocals`), the message names that body: the
+/// name existed, in another function, and a local ends with its body.
+fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
+    if (env.closedLocals.get(name)) |owner| {
+        const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — `{s}` is a local of `{s}`, and a local ends with its body", .{ name, name, owner });
+        return TypeError.custom(msg, "Declare it where it is used, or pass it in as a parameter.").withLoc(loc);
+    }
+    return TypeError.unboundVariable(name).withLoc(loc);
+}
+
 /// Decision 8 §2.4 — a `pub` declaration whose **inferred** type contains
 /// `unknown` is an error: a public API says what it answers, and `unknown`
 /// reached by inference is a type nobody chose. Writing `unknown` on purpose
@@ -2626,6 +2637,10 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
 /// rule that makes `await` an identity). `yield` stays rejected; `throw`
 /// is lenient (a panic surfaces as the test's red diagnostic).
 fn inferTestDecl(env: *Env, t: ast.TestDecl) InferError!void {
+    // 01 step 13 — a test's locals end with the test.
+    var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
+    const outerScope = env.openBodyScope(&bodyLog);
+    defer env.closeBodyScope(&bodyLog, outerScope, t.name orelse "test");
     const savedThrowCtx = env.throwContext;
     env.throwContext = .unchecked;
     defer env.throwContext = savedThrowCtx;
@@ -3543,6 +3558,10 @@ fn refuseLowerCaseExternal(env: *Env, a: ast.Annotation) InferError!void {
 }
 
 fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
+    // 01 step 13 — the parameters and every local end with the body.
+    var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
+    const outerScope = env.openBodyScope(&bodyLog);
+    defer env.closeBodyScope(&bodyLog, outerScope, f.name);
     // ── `@[external(…)]` annotation validation (F1) ─────────────────────────
     for (f.annotations) |a| {
         try refuseLowerCaseExternal(env, a);
@@ -3853,6 +3872,11 @@ fn inferTypeMethods(
     for (methods) |m| {
         const body = m.body orelse continue;
         if (m.is_declare) continue;
+
+        // 01 step 13 — a method's parameters and locals end with its body.
+        var bodyLog: std.ArrayListUnmanaged(Env.BindUndo) = .empty;
+        const outerScope = env.openBodyScope(&bodyLog);
+        defer env.closeBodyScope(&bodyLog, outerScope, m.name);
 
         // `@src().fnName` inside a method is `Type.method` (decision 73).
         const savedFnName = env.currentFnName;
@@ -8133,12 +8157,12 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 const inst = try instantiateGenericType(env, ty);
                 return TypedExpr{ .identifier = .{ .loc = loc, .type_ = inst, .kind = .{ .ident = name } } };
             }
-            env.lastError = TypeError.unboundVariable(name).withLoc(loc);
+            env.lastError = try unboundAt(env, name, loc);
             return error.TypeError;
         },
         .dotIdent => |name| {
             if (env.lookup(name)) |ty| return TypedExpr{ .identifier = .{ .loc = loc, .type_ = ty, .kind = .{ .dotIdent = name } } };
-            env.lastError = TypeError.unboundVariable(name).withLoc(loc);
+            env.lastError = try unboundAt(env, name, loc);
             return error.TypeError;
         },
         .identAccess => |ia| {
@@ -9318,7 +9342,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                             try refuseMemoryWrite(env, name, a.op == .plusAssign, a.value, loc);
                             try unifyAt(env, ty, valTyped.getType(), loc);
                         } else {
-                            env.lastError = TypeError.unboundVariable(name).withLoc(loc);
+                            env.lastError = try unboundAt(env, name, loc);
                             return error.TypeError;
                         }
                         break :blk .{ .name = name };
@@ -11394,7 +11418,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
 
             const calleeTypeRaw = if (env.lookup(call.callee)) |ty| ty else {
-                env.lastError = TypeError.unboundVariable(call.callee).withLoc(loc);
+                env.lastError = try unboundAt(env, call.callee, loc);
                 return error.TypeError;
             };
             // Generic record/struct/enum constructor: instantiate per call site

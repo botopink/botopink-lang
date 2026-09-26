@@ -304,11 +304,15 @@ test "js: assign ---- update var with plusEq" {
     );
 }
 
+// A record is immutable (decision 37): assigning `self.count` is refused at
+// the assignment, with the `..self` update named. The fixture used to write the
+// method without a `self` parameter and compiled only because another body's
+// `self` leaked into this one (01 step 13); every backend's output was wrong.
 test "js: field assign ---- self.field update" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsCompileError(std.testing.allocator, @src(),
         \\val Counter = type(
         \\    count: i32 = 0) {
-        \\    fn inc() {
+        \\    fn inc(self: Self) {
         \\        self.count += 1;
         \\    }
         \\};
@@ -320,7 +324,7 @@ test "js: self ---- field access in method" {
         \\val Point = type(
         \\    x: i32,
         \\    y: i32) {
-        \\    fn sum() -> i32 {
+        \\    fn sum(self: Self) -> i32 {
         \\        return self.x + self.y;
         \\    }
         \\};

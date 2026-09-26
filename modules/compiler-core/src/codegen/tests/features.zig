@@ -720,7 +720,7 @@ test "js: enum ---- method with case on self" {
         \\    Red,
         \\    Green,
         \\    Blue,
-        \\    fn name() -> string {
+        \\    fn name(self: Self) -> string {
         \\        case (self) {
         \\            Red -> "red";
         \\            Green -> "green";

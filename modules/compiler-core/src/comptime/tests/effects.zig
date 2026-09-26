@@ -713,7 +713,7 @@ test "anchor error: two `use`s at different bases in one body (decision 96)" {
         \\    initial;
         \\}
         \\fn connection() -> @Component<Http, i32> {
-        \\    initial;
+        \\    0;
         \\}
         \\fn Mixed() -> @Component<Element, Element> {
         \\    val a = use state(0);
@@ -731,7 +731,7 @@ test "anchor: each body starts over — a sibling fn may anchor elsewhere" {
         \\    initial;
         \\}
         \\fn connection() -> @Component<Http, i32> {
-        \\    initial;
+        \\    0;
         \\}
         \\fn Widget() -> @Component<Element, Element> {
         \\    val a = use state(0);

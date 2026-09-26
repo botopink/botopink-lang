@@ -731,6 +731,12 @@ pub const Env = struct {
     /// Decision 8 §1.4 (a binding that falls to `unknown`) and §4.3 (an `is`
     /// test that is always false) write here. Allocated in `arena`.
     warnings: std.ArrayListUnmanaged(@import("error.zig").TypeError) = .empty,
+    /// 01 step 13 — the undo log of the body being inferred (`openBodyScope`).
+    bodyScope: ?*std.ArrayListUnmanaged(BindUndo) = null,
+    /// 01 step 13 — each name a top-level body introduced (it was unbound
+    /// before the body), mapped to that body's name, for the diagnostic a
+    /// later use outside it gets. Allocated in `arena`.
+    closedLocals: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Decision 8 §1.4 — bindings born as `[]` with no annotation, turned into
     /// warnings once the module is inferred (`infer.zig` `flushBirthWarnings`).
     birthWarnings: std.ArrayListUnmanaged(@import("infer.zig").BirthWarning) = .empty,
@@ -1071,8 +1077,57 @@ pub const Env = struct {
     }
 
     pub fn bind(self: *Env, name: []const u8, ty: *T.Type) !void {
+        try self.noteBind(name);
         try self.bindings.put(name, ty);
         _ = self.valNames.remove(name);
+    }
+
+    /// 01 step 13 — one entry of a body's undo log: what `name` was bound to
+    /// (and whether as a `val`) before the body bound it.
+    pub const BindUndo = struct { name: []const u8, prev: ?*T.Type, wasVal: bool };
+
+    /// Record `name`'s current binding in the open body scope, if any, before
+    /// it is overwritten.
+    fn noteBind(self: *Env, name: []const u8) !void {
+        const log = self.bodyScope orelse return;
+        try log.append(self.arena, .{ .name = name, .prev = self.bindings.get(name), .wasVal = self.valNames.contains(name) });
+    }
+
+    /// 01 step 13 — a body's bindings end with the body. `bindings` is one flat
+    /// table, so a `val` declared inside one `fn` used to stay bound for every
+    /// declaration inferred after it: `fn later() { return v; }` checked
+    /// against another function's local, and a local named like an exported
+    /// fn retyped it for the next function. `openBodyScope` starts an undo
+    /// log; `closeBodyScope` replays it backwards, which puts every name the
+    /// body bound (parameters, locals, pattern binders) back exactly as it was.
+    pub fn openBodyScope(self: *Env, log: *std.ArrayListUnmanaged(BindUndo)) ?*std.ArrayListUnmanaged(BindUndo) {
+        const outer = self.bodyScope;
+        self.bodyScope = log;
+        return outer;
+    }
+
+    pub fn closeBodyScope(self: *Env, log: *std.ArrayListUnmanaged(BindUndo), outer: ?*std.ArrayListUnmanaged(BindUndo), owner: []const u8) void {
+        self.bodyScope = outer;
+        if (outer == null) for (log.items) |u| {
+            if (u.prev == null and !self.closedLocals.contains(u.name))
+                self.closedLocals.put(self.arena, u.name, owner) catch {};
+        };
+        var i = log.items.len;
+        while (i > 0) {
+            i -= 1;
+            const u = log.items[i];
+            if (u.prev) |p| {
+                self.bindings.put(u.name, p) catch {};
+            } else {
+                _ = self.bindings.remove(u.name);
+            }
+            if (u.wasVal) {
+                self.valNames.put(u.name, {}) catch {};
+            } else {
+                _ = self.valNames.remove(u.name);
+            }
+        }
+        log.clearRetainingCapacity();
     }
 
     /// A module `var`'s storage and bound type — see `memoryVars`.
@@ -1081,6 +1136,7 @@ pub const Env = struct {
     /// `bind` for a `val` — local or module-level: the name is then refused
     /// as an assignment target until something else binds it (decision 38).
     pub fn bindVal(self: *Env, name: []const u8, ty: *T.Type) !void {
+        try self.noteBind(name);
         try self.bindings.put(name, ty);
         try self.valNames.put(name, {});
     }

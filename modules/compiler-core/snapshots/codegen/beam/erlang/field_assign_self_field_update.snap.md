@@ -2,32 +2,20 @@
 ```botopink
 val Counter = type(
     count: i32 = 0) {
-    fn inc() {
+    fn inc(self: Self) {
         self.count += 1;
     }
 };
 ```
 
------ ERLANG -- main.erl
-```erlang
--module(test@main).
+----- COMPILE DIAGNOSTIC -- main
+```text
+error: a `Counter` is immutable — its field `count` cannot be assigned
+  ┌─ :4:9
+  │
+4 │         self.count += 1;
+  │         ^
 
-%% type Counter: count
+  hint: Build a new value instead: `Counter(..self, count: <value>)`.
 ```
 
------ ERLANG -- test@main@@Counter.erl
-```erlang
--module(test@main@@Counter).
--export([inc/0, '__bp_get'/2, '__bp_format'/1]).
-
-inc() ->
-    %% field assignment is not directly supported in Erlang.
-
-'__bp_get'(V, count) -> element(2, V).
-
-'__bp_format'(V) -> {record, "Counter", [{"count", element(2, V)}]}.
-```
-
------ RUN LOG -----
-```logs
-```
