@@ -695,7 +695,7 @@ test "wat: index ---- a nested index, a slice's length and a tuple element" {
         \\    @print(rows);
         \\    @print(rows[1]);
         \\    @print(rows[1][0]);
-        \\    @print(rows[0].length);
+        \\    @print(rows[0]?.length);
         \\    val xs = [10, 20, 30];
         \\    @print(xs[0..2].length);
         \\    val sl = xs[0..2];

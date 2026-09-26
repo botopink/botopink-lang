@@ -6437,6 +6437,21 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
         .generic => |b| {
             if (!b.is_builtin) {
                 if (env.typeAliases.get(b.name)) |alias| return expandTypeAlias(env, alias, b.args, genericMap);
+                // Decision 44 (1.0.5) — `?T` is the one optional spelling:
+                // `optional<T>` (the checker's own internal name, which used
+                // to check clean) and `Option<T>` / `Optional<T>` are refused
+                // with the `@Option<T>` diagnostic, unless the module declares
+                // a type of that name.
+                const isOptionalSpelling = std.mem.eql(u8, b.name, "optional") or std.mem.eql(u8, b.name, "Option") or std.mem.eql(u8, b.name, "Optional");
+                if (isOptionalSpelling and env.lookupTypeDef(b.name) == null and b.args.len == 1) {
+                    var err = TypeError.custom(
+                        try std.fmt.allocPrint(env.arena, "`{s}<T>` is not a type — the optional type is written `?T`", .{b.name}),
+                        "Replace the annotation with `?T` (e.g. `?i32`).",
+                    );
+                    if (env.typeRefLoc) |l| err = err.withLoc(l);
+                    env.lastError = err;
+                    return error.TypeError;
+                }
                 if (std.mem.eql(u8, b.name, yield_step_type_name)) env.usesYieldStep = true;
                 // The migration-only mode (24-d): in a legacy file the
                 // pre-122 `YieldStep<T, E>` is read as `YieldStep<T>` — its
@@ -8553,6 +8568,16 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             // this the field falls through every arm below and lands on a fresh
             // variable, so `a.x` on an `unknown` checks silently.
             try refuseUnknownUse(env, recvType, loc, "read a field of");
+            // Decision 45 (1.0.5) — a member read off a `?T` is an error
+            // naming `?.`: the value may be absent, and a plain `.` used to
+            // check and then read a field off `null` (or, through a tuple
+            // label, not get the label rewrite at all).
+            if (!ia.optional and recvType.* == .named and std.mem.eql(u8, recvType.named.name, "optional") and recvType.named.args.len == 1) {
+                const inner = try snapshotMod.typeNameOf(env.arena, recvType.named.args[0]);
+                const msg = try std.fmt.allocPrint(env.arena, "`{s}` is read off an optional `?{s}` — write `?.{s}`", .{ ia.member, inner, ia.member });
+                env.lastError = TypeError.custom(msg, "The value may be absent: `x?.field` answers `null` when it is, or narrow it first (`if (x != null) { x.field }`, `if (x) { v -> v.field }`).").withLoc(loc);
+                return error.TypeError;
+            }
             var outType: *T.Type = try env.freshVar();
             // Anonymous structural record: resolve the field directly.
             if (recvType.* == .record) {

@@ -113,8 +113,6 @@ commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the on
 erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
-commonJS | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 04 step 2 | a label is resolved to a position at the written type, and an element handed back by a generic method (`rs.at(0)`) has lost it: `rs.at(0).b` answers `undefined`. The element type is right, the label is not carried
-erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 02 step 4 | the same, louder: `rs.at(0).b` raises `bad map: {1,<<"x">>}` in `map_get/2` — the label is emitted as a map read against a tuple. (wasm answers `0`; no `test/` cell reaches wasm)
 
 # ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
 # Both rows deleted by `00 · 01-checker`: `test/case_sections.bp` matches on

@@ -567,6 +567,16 @@ binding list handed back is built tolerantly from imports, type declarations, `f
 `val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
 well-typed one binds, so the language server still lists it.
 
+## Decisions 44 and 45 (C-18)
+
+**44** — `?T` is the one optional spelling: `optional<T>` (the checker's own internal name, which a
+written annotation reached and checked clean) and `Option<T>` / `Optional<T>` are refused at the
+annotation with the `@Option<T>` diagnostic's text, unless the module declares a type of that name.
+**45** — a member read off a `?T` with a plain `.` is refused naming `?.` (the field-read arm of
+`inferIdentifierExpr`): `rs.at(0).b` used to check and answer `undefined` / `bad map`, the label
+rewrite never firing on an optional receiver. `x?.field`, narrowing, and the index of C-02
+(`rows[0]?.length`) are the spellings; a METHOD on an optional (`unwrapOr`, …) is not a member read.
+
 ## An integer literal takes the width its position asks for (01-std's handover)
 
 `inferLiteralExpr` types an integer literal as the integer type `env.expectedType` names (through

@@ -1555,3 +1555,29 @@ test "integer literal: widens to the i64 its position asks for, and a mismatch i
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected i64, got i32") != null);
 }
+
+// ── C-18: decisions 44 and 45 ────────────────────────────────────────────────
+
+test "decision 44: `optional<T>` and `Option<T>` are refused naming `?T`" {
+    for ([_][]const u8{
+        "fn main() { val v: optional<i32> = null; @print(v); }",
+        "fn main() { val v: Option<i32> = null; @print(v); }",
+    }) |src| {
+        const msg = try typeErrorMessage(std.testing.allocator, src);
+        defer std.testing.allocator.free(msg);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "the optional type is written `?T`") != null);
+    }
+}
+
+test "decision 45: a member read off a `?T` names `?.`; `?.` reads it" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type R(a: i32, b: string)
+        \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; @print(rs.at(0).b); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`b` is read off an optional `?R` — write `?.b`") != null);
+    try h.assertInfersOk(std.testing.allocator,
+        \\type R(a: i32, b: string)
+        \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; @print(rs.at(0)?.b); }
+    );
+}

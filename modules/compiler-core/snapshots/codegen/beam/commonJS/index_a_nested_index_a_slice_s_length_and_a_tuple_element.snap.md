@@ -5,7 +5,7 @@ fn main() {
     @print(rows);
     @print(rows[1]);
     @print(rows[1][0]);
-    @print(rows[0].length);
+    @print(rows[0]?.length);
     val xs = [10, 20, 30];
     @print(xs[0..2].length);
     val sl = xs[0..2];
@@ -203,7 +203,7 @@ function main() {
     __bp_print(rows);
     __bp_print(rows.at(1));
     __bp_print(rows.at(1).at(0));
-    __bp_print(rows.at(0).length);
+    __bp_print(rows.at(0)?.length);
     const xs = [10, 20, 30];
     __bp_print(xs.slice(0, 2).length);
     const sl = xs.slice(0, 2);
