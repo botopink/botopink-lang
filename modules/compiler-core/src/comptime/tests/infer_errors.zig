@@ -1581,3 +1581,20 @@ test "decision 45: a member read off a `?T` names `?.`; `?.` reads it" {
         \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; @print(rs.at(0)?.b); }
     );
 }
+
+// ── 01 R7: decision 2 — a value leaves a function through `return` ───────────
+
+test "decision 2: a fn that can fall off its end is refused; every exit form checks" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn a(c: bool) -> i32 { if (c) { return 1; } else { return 2; }; }
+        \\fn b(c: i32) -> string { return case c { 0 { "z" } _ { "o" } }; }
+        \\fn d() -> i32 { @todo(); }
+        \\fn e(c: i32) -> i32 { return case c { 0 { 1 } _ { 2 } }; }
+        \\fn main() { @print(a(true)); }
+    );
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn f(c: bool) -> i32 { if (c) { return 1; }; }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`f` declares `-> i32` and its body can reach its end without a `return`") != null);
+}

@@ -309,7 +309,7 @@ test "codegen ---- inline implement context base erased at runtime" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element> { }
         \\fn render() -> Element {
-        \\    Element();
+        \\    return Element();
         \\}
     );
 }

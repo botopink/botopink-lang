@@ -319,7 +319,7 @@ test "context error: record without @Context impl used with use" {
         \\val Element = type implement @Context<Element> { }
         \\val Plain = type(x: i32)
         \\fn make() -> Plain {
-        \\    Plain(x: 0);
+        \\    return Plain(x: 0);
         \\}
         \\fn comp() -> @Component<Element, i32> {
         \\    val p = use make();
@@ -465,9 +465,9 @@ test "context: record with a fn-typed field parses" {
 // a function type returns an array (`fn() -> T[]`), incl. nested/optional forms.
 test "context: fn() -> T[] parses" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn rows() -> i32[] { rows(); }
-        \\fn grid() -> i32[][] { grid(); }
-        \\fn maybe() -> ?i32[] { maybe(); }
+        \\fn rows() -> i32[] { return rows(); }
+        \\fn grid() -> i32[][] { return grid(); }
+        \\fn maybe() -> ?i32[] { return maybe(); }
         \\type Builder(make: fn() -> i32[])
     );
 }
@@ -494,7 +494,7 @@ test "context: {value, set} hook shape type-checks" {
 test "context: anonymous record type as return annotation" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn mk() -> #(value: i32, set: fn(next: i32)) {
-        \\    #(0, { n -> });
+        \\    return #(0, { n -> });
         \\}
     );
 }
@@ -504,8 +504,8 @@ test "context: anonymous record type as return annotation" {
 test "context: Element[] coerces into Children" {
     try h.assertInfersOk(std.testing.allocator,
         \\val Element = type implement @Context<Element> { }
-        \\fn div(children: Children) -> Element { Element(); }
-        \\fn a() -> Element { Element(); }
+        \\fn div(children: Children) -> Element { return Element(); }
+        \\fn a() -> Element { return Element(); }
         \\val list = div([a(), a()]);
         \\val one = div(a());
         \\val text = div("hello");

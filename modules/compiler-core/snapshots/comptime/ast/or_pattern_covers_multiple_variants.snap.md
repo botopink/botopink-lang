@@ -6,10 +6,10 @@ val Color = type {
     Blue,
 };
 val warm = fn(c: Color) -> bool {
-    case c {
+    return case c {
         Red | Green -> true;
         Blue -> false;
-    }
+    };
 };
 ```
 
@@ -45,7 +45,7 @@ val warm = fn(c: Color) -> bool {
       "return_type": "bool",
       "body": [
         {
-          "source": "case c {"
+          "source": "return case c {"
         }
       ]
     }

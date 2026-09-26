@@ -286,6 +286,10 @@ fn add(x: i32, y: i32) -> i32 {
 }
 ```
 
+A value leaves a function through `return`: a block is a statement, not a value, so a `fn` whose
+return type has a value must end every path with `return` (or `@panic` / `@todo`) —
+`fn f() -> i32 { val x = 1; }` is refused at `-> i32`.
+
 ## Types
 
 ### Primitives
@@ -688,6 +692,9 @@ The pipe operator `|>` is left-associative.
 val x = 1;
 val s = if (x > 0) { "positive" } else { "negative" };
 ```
+
+An `if` used as a value needs its `else`: `val s = if (x > 0) { "positive" };` has no value when
+the condition is false and is refused at the `if`.
 
 A condition is a whole expression, `&&` and `||` included — the grammar's own
 parentheses close it, so nothing has to be bound to a `val` first:

@@ -612,50 +612,6 @@ fn validateImplement(
     }
 }
 
-/// Resolve the declared type of struct field `name`, or null when there is no
-/// field with that name (e.g. a computed getter that backs no field).
-fn structFieldType(
-    env: *Env,
-    s: ast.StructDecl,
-    genericMap: std.StringHashMap(*T.Type),
-    name: []const u8,
-) InferError!?*T.Type {
-    for (s.members) |m| switch (m) {
-        .field => |f| if (std.mem.eql(u8, f.name, name)) {
-            return try resolveFieldType(env, f, genericMap);
-        },
-        else => {},
-    };
-    return null;
-}
-
-/// Check that each getter/setter named after a field agrees with that field's
-/// type: a getter must return the field type, a setter must accept it.
-fn validateStructAccessors(env: *Env, s: ast.StructDecl) InferError!void {
-    var genericMap = std.StringHashMap(*T.Type).init(env.arena);
-    defer genericMap.deinit();
-    for (s.genericParams) |gp| {
-        try genericMap.put(gp.name, try env.freshVar());
-    }
-
-    for (s.members) |m| switch (m) {
-        .getter => |g| {
-            const fieldTy = (try structFieldType(env, s, genericMap, g.name)) orelse continue;
-            const retTy = try env.resolveTypeName(g.returnType, genericMap);
-            try unify(env, fieldTy, retTy);
-        },
-        .setter => |st| {
-            const fieldTy = (try structFieldType(env, s, genericMap, st.name)) orelse continue;
-            // The value parameter follows `self`; skip malformed setters.
-            if (st.params.len < 2) continue;
-            const valueParam = st.params[st.params.len - 1];
-            const valueTy = try resolveTypeRefInContext(env, valueParam.typeRef, genericMap);
-            try unify(env, fieldTy, valueTy);
-        },
-        else => {},
-    };
-}
-
 // ── stdlib preload ────────────────────────────────────────────────────────────
 
 /// Parse and register all stdlib interface declarations into `env`.
@@ -666,6 +622,7 @@ fn validateStructAccessors(env: *Env, s: ast.StructDecl) InferError!void {
 fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
     switch (decl) {
         .val => |v| {
+            try refuseValuelessIf(env, v.value.*);
             // 01 R8 — `ValDecl` carries no location for its annotation; an
             // unlocated refusal there reds at the value.
             const annType: ?*T.Type = if (v.typeAnnotation) |ann|
@@ -1586,78 +1543,6 @@ fn inferAssociatedFnCall(
         .args = typedArgs,
         .trailing = typedTrailing,
     } } } };
-}
-
-fn registerStruct(env: *Env, s: ast.StructDecl) InferError!void {
-    var genericMap = std.StringHashMap(*T.Type).init(env.arena);
-    defer genericMap.deinit();
-    var genericIds = try env.arena.alloc([]const u8, s.genericParams.len);
-    for (s.genericParams, 0..) |gp, i| {
-        const tv = try env.freshVar();
-        try genericMap.put(gp.name, tv);
-        genericIds[i] = gp.name;
-    }
-
-    // Collect non-private fields.
-    var fieldCount: usize = 0;
-    for (s.members) |m| switch (m) {
-        .field => fieldCount += 1,
-        else => {},
-    };
-
-    var fields = try env.arena.alloc(envMod.FieldDef, fieldCount);
-    var fi: usize = 0;
-    for (s.members) |m| switch (m) {
-        .field => |f| {
-            fields[fi] = .{
-                .name = f.name,
-                .type_ = try resolveFieldType(env, f, genericMap),
-            };
-            fi += 1;
-        },
-        else => {},
-    };
-
-    // §1G — resolve generic defaults against the same map.
-    var genericDefaults = try env.arena.alloc(?*T.Type, s.genericParams.len);
-    for (s.genericParams, 0..) |gp, i| {
-        genericDefaults[i] = if (gp.default) |dft|
-            try resolveTypeRefInContext(env, dft, genericMap)
-        else
-            null;
-    }
-
-    const structTypeId = env.allocTypeId();
-    const implNames = try extractImplementNames(env.arena, s.implement);
-    const ctxBase = try contextBaseFromImplements(env.arena, s.implement);
-    try env.registerTypeDef(s.name, .{ .struct_ = .{
-        .name = s.name,
-        .id = structTypeId,
-        .genericParams = genericIds,
-        .genericDefaults = genericDefaults,
-        .fields = fields,
-        .implements = implNames,
-        .contextBase = ctxBase,
-    } });
-
-    var paramTypes = try env.arena.alloc(*T.Type, fields.len);
-    for (fields, 0..) |f, i| paramTypes[i] = f.type_;
-    const retType = try env.namedType(s.name);
-    const ctorType = try env.funcType(paramTypes, retType);
-    try env.bind(s.name, ctorType);
-
-    // Constructor params (F4 fn-param-default-expansion): mirror registerRecord.
-    try env.ctorParams.put(s.name, try structFieldsAsParams(env, s.members));
-
-    // Inherent method signatures (self = the struct instance, bare name to
-    // match the constructor's return type).
-    var structMethods: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
-    defer structMethods.deinit(env.arena);
-    for (s.members) |m| switch (m) {
-        .method => |im| try structMethods.append(env.arena, im),
-        else => {},
-    };
-    try registerInherentMethodTypes(env, s.name, retType, &genericMap, structMethods.items);
 }
 
 fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
@@ -2632,40 +2517,6 @@ fn appendGenericParamsStr(buf: *std.ArrayList(u8), arena: std.mem.Allocator, par
         try buf.appendSlice(arena, gp.name);
     }
     try buf.append(arena, '>');
-}
-
-/// Build a signature name for a struct declaration binding.
-/// Format: `"struct {\n    name: Type\n}"` ---- fields only.
-fn buildStructDeclName(env: *Env, s: ast.StructDecl) ![]const u8 {
-    var buf: std.ArrayList(u8) = .empty;
-    try buf.appendSlice(env.arena, "struct");
-    if (s.genericParams.len > 0) {
-        try buf.appendSlice(env.arena, " <");
-        for (s.genericParams, 0..) |gp, i| {
-            if (i > 0) try buf.appendSlice(env.arena, ", ");
-            try buf.appendSlice(env.arena, gp.name);
-        }
-        try buf.append(env.arena, '>');
-    }
-    try buf.appendSlice(env.arena, " {\n");
-    for (s.members) |m| {
-        switch (m) {
-            .field => |f| {
-                try buf.appendSlice(env.arena, "    ");
-                try buf.appendSlice(env.arena, f.name);
-                try buf.appendSlice(env.arena, ": ");
-                try buf.appendSlice(env.arena, try typeRefToString(env.arena, f.typeRef));
-                if (f.init) |_| {
-                    try buf.append(env.arena, '\n');
-                } else {
-                    try buf.append(env.arena, '\n');
-                }
-            },
-            else => {},
-        }
-    }
-    try buf.append(env.arena, '}');
-    return try buf.toOwnedSlice(env.arena);
 }
 
 /// Build a signature name for a behavior declaration binding — the 1.0.3
@@ -4079,6 +3930,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     env.returnBareIsVoid = env.returnTarget != null and (eff == null or eff.? == .result or eff.? == .task);
 
     try inferBodyStmts(env, f.body);
+    try refuseFallingOffTheEnd(env, f, retType);
 
     // Generalize (HM let-polymorphism): declared generic params still unbound
     // after the body is inferred become `.generic`. Every use site then gets a
@@ -4309,6 +4161,98 @@ fn aliasedWrapperOf(retType: *T.Type) ?[]const u8 {
 /// `@Result<U, E>`, its `U` — the declared type otherwise. Null when returns
 /// are not checked: no declared return type, a template fn, or a sequence
 /// body (`@Iterator` / `@Stream` that yields, which forbids `return <expr>`).
+/// 01 R7 — decision 2: a block is a statement, and a value leaves a body
+/// through `return` (or a `break` of a value block). A plain `fn` whose written
+/// return type has a value and whose body can reach its end without one used
+/// to check — `fn f() -> i32 { val x = 1; }` — and each backend answered
+/// whatever its block-as-value lowering produced. Refused at the return type.
+/// A wrapper return (`@Result`, `@Task`, a generator, a component) is its own
+/// effect's business and is not judged here; neither is a type guard.
+/// 01 R7 — decision 2's other half: an `if` in value position needs both
+/// branches, each ending in a value. `val y = if (c) { 1 };` checked and bound
+/// whatever each backend's block-as-value lowering produced when `c` is false.
+fn refuseValuelessIf(env: *Env, value: ast.Expr) InferError!void {
+    if (value != .branch) return;
+    const i = switch (value.branch.kind) {
+        .if_ => |i| i,
+        else => return,
+    };
+    if (i.else_ == null) {
+        env.lastError = TypeError.custom(
+            "an `if` without `else` has no value on its false side",
+            "Give it an `else` branch, or bind the value inside the branch (decision 2: a block is a statement).",
+        ).withLoc(value.branch.loc);
+        return error.TypeError;
+    }
+}
+
+fn refuseFallingOffTheEnd(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError!void {
+    if (f.returnType == null or f.effect != null or f.typeGuardParam != null or f.isDeclare) return;
+    if (env.inTemplateFn) return;
+    for (f.annotations) |a| if (std.mem.startsWith(u8, a.name, "External")) return;
+    const rt = retType.deref();
+    if (rt.* == .named and (std.mem.eql(u8, rt.named.name, "void") or std.mem.eql(u8, rt.named.name, "noreturn"))) return;
+    if (!stmtsMayFallThrough(f.body)) return;
+    const rendered = try snapshotMod.typeNameOf(env.arena, rt);
+    const msg = try std.fmt.allocPrint(env.arena, "`{s}` declares `-> {s}` and its body can reach its end without a `return`", .{ f.name, rendered });
+    var err = TypeError.custom(msg, "A value leaves a function through `return` (decision 2): end every path with `return <value>;`, or `@panic(…)` / `@todo()` where it cannot happen.");
+    if (f.returnTypeLoc.line > 0) err = err.withLoc(f.returnTypeLoc) else if (f.body.len > 0) err = err.withLoc(f.body[0].expr.getLoc());
+    env.lastError = err;
+    return error.TypeError;
+}
+
+/// Whether control can run off the end of `stmts` — the last statement is not
+/// a `return` / `throw`, an `if`/`else` or `case` whose every branch ends that
+/// way, a `loop { }` (left only by `break` or `return`), or a call to a
+/// `noreturn` builtin. Conservative the right way: anything it cannot read is
+/// "may fall through" only where the statement plainly has no exit.
+fn stmtsMayFallThrough(stmts: []const ast.Stmt) bool {
+    // A trailing comment is kept as a statement by the parser and is not one.
+    var n = stmts.len;
+    while (n > 0) : (n -= 1) {
+        const e = stmts[n - 1].expr;
+        if (e == .literal and e.literal.kind == .comment) continue;
+        return exprMayFallThrough(e);
+    }
+    return true;
+}
+
+fn exprMayFallThrough(e: ast.Expr) bool {
+    return switch (e) {
+        .jump => |j| switch (j.kind) {
+            .@"return", .throw_, .@"break", .@"continue" => false,
+            else => true,
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| blk: {
+                const els = i.else_ orelse break :blk true;
+                break :blk stmtsMayFallThrough(i.then_) or stmtsMayFallThrough(els);
+            },
+            else => true,
+        },
+        // A bare `loop { }` is left only by `break` (which ends the loop, and
+        // the body falls through after it) or by `return`; which one is not
+        // read here, so it is not refused — the lenient answer, never a false
+        // refusal. `while` and `for` can always end normally.
+        .loop => |l| l.keyword != .loop,
+        .collection => |c| switch (c.kind) {
+            .case => |cs| blk: {
+                if (cs.arms.len == 0) break :blk true;
+                for (cs.arms) |arm| if (exprMayFallThrough(arm.body)) break :blk true;
+                break :blk false;
+            },
+            .grouped => |g| exprMayFallThrough(g.*),
+            else => true,
+        },
+        .function => |fe| stmtsMayFallThrough(fe.kind.body),
+        .call => |c| switch (c.kind) {
+            .call => |cc| !(cc.is_builtin and (std.mem.eql(u8, cc.callee, "panic") or std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "trap") or std.mem.eql(u8, cc.callee, "compilerError"))),
+            else => true,
+        },
+        else => true,
+    };
+}
+
 fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Type {
     if (!checked) return null;
     const e = eff orelse return retType;
@@ -9670,6 +9614,7 @@ fn inferGeneratorLoop(env: *Env, lp: ast.LoopExprOf(.untyped), eff: ast.EffectKi
 fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (b.kind) {
         .localBind => |lb| {
+            try refuseValuelessIf(env, lb.value.*);
             // 01 R8 — a refusal in the annotation needs a location; the
             // binding carries none of its own for the annotation, so an
             // unlocated one reds at the `val`. (Setting `typeRefLoc` instead

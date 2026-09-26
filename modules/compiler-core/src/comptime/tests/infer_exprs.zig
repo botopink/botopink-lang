@@ -208,8 +208,10 @@ test "infer: optional annotation ---- ?i32 val with null" {
     );
 }
 
+// Decision 2 (01 R7): an `if` without `else` has no value on its false side,
+// so binding it is refused at the `if`.
 test "infer: if expression ---- result type from then branch" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
         \\fn sign(n: i32) -> string {
         \\    val r = if (n > 0) { "positive"; };
         \\    return r;
