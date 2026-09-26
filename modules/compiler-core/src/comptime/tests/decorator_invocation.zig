@@ -200,6 +200,37 @@ test "decorator invocation: @emit contributes a top-level declaration" {
     if (decoratorEmitted) return error.DecoratorFnNotDropped;
 }
 
+test "decorator invocation: the body runs on the compilation target's runtime (decision 84)" {
+    // `comptime.compile` chooses the runtime from the target name it is given,
+    // so every driver — `botopink build`, `test`, and `check` — evaluates a
+    // commonJS or wasm compilation's decorators on wat and an erlang or
+    // no-target one on the BEAM; a driver cannot forget to select.
+    const io = std.testing.io;
+    const build_root = comptime h.buildRootPathFromSrc(@src());
+    const src =
+        \\fn singleton(comptime decl: @Decl) {
+        \\    @emit("pub val wiredMarker = 99;");
+        \\}
+        \\#[singleton]
+        \\type Service(x: i32)
+    ;
+    const cases = [_]struct { target: ?[]const u8, lang: comptimeMod.trace.Lang }{
+        .{ .target = "node", .lang = .wat },
+        .{ .target = "wasm", .lang = .wat },
+        .{ .target = "erlang", .lang = .erlang },
+        .{ .target = null, .lang = .erlang },
+    };
+    for (cases) |c| {
+        var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, c.target);
+        defer session.deinit(std.testing.allocator);
+        const outcome = session.outputs.items[0].outcome;
+        try std.testing.expect(outcome == .ok);
+        const traces = outcome.ok.comptime_traces;
+        try std.testing.expect(traces.len > 0);
+        for (traces) |t| try std.testing.expectEqual(c.lang, t.lang);
+    }
+}
+
 test "decorator invocation: a body may reference an @emit'd declaration" {
     // Annotation processors run BEFORE bodies are inferred, so the generated decls
     // are spliced before any body that references them is type-checked. Here a `fn`

@@ -21,6 +21,7 @@ const T = @import("./comptime/types.zig");
 const Module = @import("./module.zig").Module;
 const validation = @import("./comptime/error.zig");
 const diagnostics = @import("./comptime/diagnostics.zig");
+const hostRuntime = @import("./comptime/runtime/runtime.zig");
 
 // ── Re-exports for external consumers ────────────────────────────────────────
 
@@ -1429,6 +1430,10 @@ pub fn compileTypesOnly(
     modules: []const Module,
     eval_ctx: ?envMod.TemplateEvalCtx,
 ) !ComptimeSession {
+    // No target: decision 84's default, beam (the language server's pass).
+    const prev_runtime = hostRuntime.select(hostRuntime.forTarget(null));
+    defer _ = hostRuntime.select(prev_runtime);
+
     var session = ComptimeSession{
         .arena = std.heap.ArenaAllocator.init(allocator),
         .outputs = .empty,
@@ -1611,6 +1616,12 @@ pub fn compile(
     build_root: ?[]const u8,
     target_name: ?[]const u8,
 ) !ComptimeSession {
+    // Decision 84: this compilation's decorator and template bodies run on the
+    // target's VM (`comptime/runtime/runtime.zig` `forTarget`) — chosen here,
+    // once, so no driver can compile for a target and evaluate on the other one.
+    const prev_runtime = hostRuntime.select(hostRuntime.forTarget(target_name));
+    defer _ = hostRuntime.select(prev_runtime);
+
     var session = ComptimeSession{
         .arena = std.heap.ArenaAllocator.init(allocator),
         .outputs = .empty,
