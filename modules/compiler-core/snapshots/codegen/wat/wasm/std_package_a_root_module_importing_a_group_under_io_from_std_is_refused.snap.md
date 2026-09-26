@@ -1,19 +1,170 @@
+----- SOURCE CODE -- std/io/env.bp
+```botopink
+//// std/env — process environment variables, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/process.html#processenv
+////   Erlang   — https://www.erlang.org/doc/man/os.html#getenv-1
+////
+//// `read(name)` looks up the host env var, returning `?string` (null
+//// when the var is unset). `write(name, value)` and `clear(name)`
+//// mutate the process env table — call ordering matters across modules
+//// that read the same vars. The fn names avoid the reserved keywords
+//// `get` / `set` (which introduce struct getters/setters in the
+//// grammar — see `parser.zig isMemberName`), so the env reads
+//// `env.read("HOME")` rather than `env.get("HOME")`.
+
+// Read the value of env var `name`, or `null` when unset.
+// Node: `(process.env[$0] ?? null)` (the property-access form keeps
+// arbitrary key names usable; `?? null` coerces `undefined` to the bp
+// `?string` representation).
+// Erlang: `os:getenv($0)` returns either a charlist or `false`; the
+// template lifts `false` to `undefined` (the bp `null`) and the
+// charlist to a binary.
+#[@External.Node("""(process.env[$0] ?? null)""")]
+#[@External.Erlang("""(fun(__N) -> case os:getenv(binary_to_list(__N)) of false -> undefined; __V -> list_to_binary(__V) end end)($0)""")]
+pub declare fn read(name: string) -> ?string;
+
+// Write `value` to env var `name`. The host APIs mutate the process
+// env table in place.
+#[@External.Node("""(process.env[$0] = $1)""")]
+#[@External.Erlang("os:putenv(binary_to_list($0), binary_to_list($1))")]
+pub declare fn write(name: string, value: string) -> void;
+
+// Clear env var `name`. After this call, `read(name)` returns `null`.
+#[@External.Node("""(delete process.env[$0])""")]
+#[@External.Erlang("os:unsetenv(binary_to_list($0))")]
+pub declare fn clear(name: string) -> void;
+
+// Program arguments, excluding the runtime and the script path.
+// Node: `process.argv.slice(2)` (drops `node` + the script entry).
+// Erlang: `init:get_plain_arguments/0` returns a list of charlists;
+// the template projects each through `list_to_binary/1` so the result
+// is `[binary()]`, matching the bp `string[]` representation.
+#[@External.Node("""(process.argv.slice(2))""")]
+#[@External.Erlang("""[list_to_binary(__A) || __A <- init:get_plain_arguments()]""")]
+pub declare fn args() -> string[];
+
+// All env vars as `(name, value)` pairs.
+// Node: `Object.entries(process.env)` — each entry arrives as a
+// `[name, value]` two-element array; per botopink's tuple
+// representation on Node, `#(string, string)` lowers to a two-element
+// array, so the shape passes through directly.
+// Erlang: walk `os:getenv/0` (returns `[Name=Value]` charlists),
+// split each entry on the first `=` and project to a `{binary, binary}`
+// 2-tuple matching the bp `#(string, string)` shape. (`os:list_env_vars/0`
+// would be cleaner but is not on every OTP release.)
+#[@External.Node("""(Object.entries(process.env))""")]
+#[@External.Erlang("""(fun() -> [(fun(__E) -> [__K, __V] = string:split(__E, "=", leading), {list_to_binary(__K), list_to_binary(__V)} end)(__E) || __E <- os:getenv()] end)()""")]
+pub declare fn vars() -> Array<#(string, string)>;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "env.write + env.read round-trips a value" {
+    write("BOTOPINK_TEST_KEY", "round-trip-value");
+    val v = read("BOTOPINK_TEST_KEY");
+    assert v.unwrapOr("missing") == "round-trip-value";
+}
+
+test "env.read returns null for an unset key" {
+    clear("BOTOPINK_TEST_UNSET");
+    val v = read("BOTOPINK_TEST_UNSET");
+    assert v.unwrapOr("absent") == "absent";
+}
+
+test "env.clear cancels a prior write" {
+    write("BOTOPINK_TEST_CYCLE", "alive");
+    clear("BOTOPINK_TEST_CYCLE");
+    val v = read("BOTOPINK_TEST_CYCLE");
+    assert v.unwrapOr("dead") == "dead";
+}
+
+test "env.args returns an array (possibly empty under the lib-test runner)" {
+    val xs = args();
+    assert xs.length >= 0;
+}
+
+test "env.vars yields a non-empty pair list after env.write" {
+    write("BOTOPINK_TEST_ARGSVARS", "alive");
+    val pairs = vars();
+    val n = pairs.length;
+    assert n > 0;
+    clear("BOTOPINK_TEST_ARGSVARS");
+}
+
+```
+
+----- WASM TEXT -- std/io/env.wat
+```wasm
+(module
+  (memory (export "memory") 1)
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  ;; std/env — process environment variables, cross-backend.
+  ;; 
+  ;; Reference:
+  ;;   Node.js  — https://nodejs.org/api/process.html#processenv
+  ;;   Erlang   — https://www.erlang.org/doc/man/os.html#getenv-1
+  ;; 
+  ;; `read(name)` looks up the host env var, returning `?string` (null
+  ;; when the var is unset). `write(name, value)` and `clear(name)`
+  ;; mutate the process env table — call ordering matters across modules
+  ;; that read the same vars. The fn names avoid the reserved keywords
+  ;; `get` / `set` (which introduce struct getters/setters in the
+  ;; grammar — see `parser.zig isMemberName`), so the env reads
+  ;; `env.read("HOME")` rather than `env.get("HOME")`.
+  ;; Read the value of env var `name`, or `null` when unset.
+  ;; Node: `(process.env[$0] ?? null)` (the property-access form keeps
+  ;; arbitrary key names usable; `?? null` coerces `undefined` to the bp
+  ;; `?string` representation).
+  ;; Erlang: `os:getenv($0)` returns either a charlist or `false`; the
+  ;; template lifts `false` to `undefined` (the bp `null`) and the
+  ;; charlist to a binary.
+  ;; declare fn read — no wasm implementation (host-backed)
+  ;; Write `value` to env var `name`. The host APIs mutate the process
+  ;; env table in place.
+  ;; declare fn write — no wasm implementation (host-backed)
+  ;; Clear env var `name`. After this call, `read(name)` returns `null`.
+  ;; declare fn clear — no wasm implementation (host-backed)
+  ;; Program arguments, excluding the runtime and the script path.
+  ;; Node: `process.argv.slice(2)` (drops `node` + the script entry).
+  ;; Erlang: `init:get_plain_arguments/0` returns a list of charlists;
+  ;; the template projects each through `list_to_binary/1` so the result
+  ;; is `[binary()]`, matching the bp `string[]` representation.
+  ;; declare fn args — no wasm implementation (host-backed)
+  ;; All env vars as `(name, value)` pairs.
+  ;; Node: `Object.entries(process.env)` — each entry arrives as a
+  ;; `[name, value]` two-element array; per botopink's tuple
+  ;; representation on Node, `#(string, string)` lowers to a two-element
+  ;; array, so the shape passes through directly.
+  ;; Erlang: walk `os:getenv/0` (returns `[Name=Value]` charlists),
+  ;; split each entry on the first `=` and project to a `{binary, binary}`
+  ;; 2-tuple matching the bp `#(string, string)` shape. (`os:list_env_vars/0`
+  ;; would be cleaner but is not on every OTP release.)
+  ;; declare fn vars — no wasm implementation (host-backed)
+  ;; ── tests ────────────────────────────────────────────────────────────────────
+)
+```
+
+----- RUN LOG -----
+```logs
+```
+
 ----- SOURCE CODE -- std/probe.bp
 ```botopink
-import {io: {clock: {nowMillis}}} from "std";
+import {io: {env: {read}}} from "std";
 
-pub fn stamp() -> i32 {
-    return nowMillis();
+pub fn home() -> ?string {
+    return read("HOME");
 }
 ```
 
 ----- COMPILE DIAGNOSTIC -- std/probe
 ```text
-error: std-root-imports-io: std module `probe` is at the root of std, which is pure; `io.clock.nowMillis` imports from `io/`
-  ┌─ :1:22
+error: std-root-imports-io: std module `probe` is at the root of std, which is pure; `io.env.read` imports from `io/`
+  ┌─ :1:20
   │
-1 │ import {io: {clock: {nowMillis}}} from "std";
-  │                      ^
+1 │ import {io: {env: {read}}} from "std";
+  │                    ^
 
   hint: Move the module under `io/` (it talks to the world), or take the value it needs as a parameter.
 ```

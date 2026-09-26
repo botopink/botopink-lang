@@ -1,9 +1,9 @@
 //// Modules: `from "std"` — the embedded std package used from a user project,
 //// with a method called on the imported type.
 
-import {dict} from "std";
+import {collections.Dict} from "std";
 
 pub fn main() {
-    val d = dict.empty().insert("a", 1);
+    val d = Dict.empty().insert("a", 1);
     @print(d.at("a").unwrapOr(0));
 }

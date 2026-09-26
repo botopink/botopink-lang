@@ -150,14 +150,14 @@ activation cannot be renamed (`import-alias-on-activation`).
 // src/main.bp
 pub mod shapes;
 import {shapes.circle.name as circleName, shapes: {helpers: {seven}}};
-import {dict.Dict, dict: {empty as newDict}, order: {gt, reverse, toInt}} from "std";
+import {collections.Dict, collections: {gt, reverse, toInt as rank}} from "std";
 
 fn main() {
     @print(circleName());                  // circle
     @print(seven());                       // 7
-    val d: Dict<string, i32> = newDict();
+    val d: Dict<string, i32> = Dict.empty();
     @print(d.insert("a", 1).size());       // 1
-    @print(toInt(reverse(gt())));          // -1
+    @print(rank(reverse(gt())));           // -1
 }
 ```
 
@@ -195,6 +195,16 @@ item, with no flag to turn it off. `io/` may import from the root, and
 `io.` on an import line is a reading signal — `grep 'io\.'` lists what a
 module touches outside the process — not a guarantee, since a `declare fn`
 does what it wants.
+
+| Where | Modules |
+|---|---|
+| the root (pure) | `collections` (`Dict`, `Set`, `Queue`, `Order` — a constructor is called on its type: `Dict.empty()`, `Set.fromList(xs)`), `math`, `path`, `url`, `querystring`, `json`, `regex`, `unicode`, `string_builder`, `encoding`, `hash`, `escape`, `async`; `erlang` and `beam` (the target's surface) |
+| `io` | `io.fs`, `io.http`, `io.net`, `io.clock`, `io.random`, `io.os`, `io.env`, `io.process` |
+| `testing` | `testing.asserts`, `testing.snapshots`, `testing.mocks` |
+
+```botopink
+import {collections: {Dict, Set}, io: {fs, clock}, testing.asserts} from "std";
+```
 
 A library is imported the same way, under the name `botopink.json` declares it
 in `dependencies`:
@@ -1818,8 +1828,8 @@ time — every backend emits the same code it emits for the constructor call
 
 `@src()` takes no arguments and no trailing lambda (`@src(1)` is
 `error[src-takes-no-arguments]`). It is a value like any other: `@src().line`
-reads a field in place. Its consumer is the test contract — `std/asserts`
-messages and `std/snapshots` paths are computed from the caller's `@src()`.
+reads a field in place. Its consumer is the test contract — `std/testing/asserts`
+messages and `std/testing/snapshots` paths are computed from the caller's `@src()`.
 
 ## Tests
 
@@ -1853,16 +1863,16 @@ test "t: a propagated error fails the test" {
 
 ### Mocks
 
-`std/mocks` is the Mockito-style double: `when(...)` stubs a return, the
+`std/testing/mocks` is the Mockito-style double: `when(...)` stubs a return, the
 matchers `eq` / `anyInt` / `anyString` pick which call a stub answers, and
 `verify(mock, spec)` checks how many matching calls were recorded. It is the
 old `onze` library, retired into std (1.0.10-beta front 01-std, decision 71).
 commonJS and erlang only — its cells are `pub declare fn` with a Node and an
-Erlang template each, so `import {mocks} from "std"` is refused on beam and
+Erlang template each, so `import {testing.mocks} from "std"` is refused on beam and
 wasm, where `botopink test` does not run.
 
 ```botopink
-import {mocks} from "std";
+import {testing.mocks} from "std";
 
 behavior UserRepo {
     fn find(self: Self, id: i32) -> string;
@@ -1891,7 +1901,7 @@ test "repo: eq(v) stubs only the matching argument" {
 methods through `@Decl` and `@emit`s the type plus a `mock<Name>()` factory.
 **It fires inside the module that declares it only.** `@emit` splices its text
 into the module that hosts the annotated behavior, and the text names the
-runtime bare (`invoke`, `key`, `newMock`), which resolves in `std/mocks` and
+runtime bare (`invoke`, `key`, `newMock`), which resolves in `std/testing/mocks` and
 nowhere else: a `from "std"` import binds the module handle (`mocks`), never
 its functions, and `#[mocks.mock]` is not looked up as a decorator at all. So a
 consumer writes the double by hand, as above. Recorded in

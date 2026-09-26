@@ -508,10 +508,10 @@ test "infer error: std package ---- unknown module" {
 
 test "infer error: std package ---- member missing" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\import {order} from "std";
+        \\import {collections} from "std";
         \\
         \\fn main() {
-        \\    val x = order.collapse(true);
+        \\    val x = collections.collapse(true);
         \\}
     );
 }

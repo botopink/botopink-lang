@@ -1,7 +1,7 @@
 //// actions: the `state` grammar and `ActionState`, on both targets. Every
 //// expected text is a literal.
 
-import {asserts} from "std";
+import {testing.asserts} from "std";
 import {ActionState, newActionState, writeState, parseState} from "state";
 
 test "actions: writeState answers the pinned state literal" {

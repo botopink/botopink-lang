@@ -302,7 +302,17 @@ Cross-command rules:
   error on the `dependencies` entry and exit 1, never a silent exit 0
   (decision 67 of 1.0.10-beta: no flag reduces it to a warning). Pinned by
   `tests/cli_contract.sh`, whose four rows red against a pre-fix binary
-  (`BOTOPINK_BIN=<old>`).
+  (`BOTOPINK_BIN=<old>`). A module name with a `/` is a dependency's
+  (`rakun/http` → owner `rakun`) unless the project's own `src` holds
+  `<name>.bp` — a module in a folder of the project itself (`io/random` in
+  `libs/std`'s own `botopink test`) probes the project's `src/sidecars/`
+  (`libs.zig` `shipMjsSidecars`).
+- **`botopink test` on erlang writes a module's type units beside it.** A
+  `type` is an erlang module of its own (policy 3); `test_cmd.zig` writes each
+  unit, named by its atom, in the directory of the module that declares it, so
+  the runner of a module in a folder (`io/net`), which loads the `.erl` files
+  of its own directory and below, finds them (a unit at the root of the run
+  was `{error,undef}` there).
 
 ### `botopink test` output format
 

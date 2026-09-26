@@ -1,6 +1,10 @@
-//// std/hash — the digests the security fronts need in the shape they are
-//// compared in: base64url of the raw digest (RFC 7515), SHA-1 for the
-//// WebSocket accept key (RFC 6455), and a constant-time compare.
+//// std/hash — every hash std has, pure functions all (decision 106): the hex
+//// digests (`sha256`, `sha512`, `md5`, `hmacSha256` — was `crypto`), the
+//// digests the security fronts need in the shape they are compared in
+//// (base64url of the raw digest, RFC 7515; SHA-1 for the WebSocket accept
+//// key, RFC 6455; a constant-time compare), and the content hashes for cache
+//// keys, ETags and asset fingerprints (was `content_hash`). `crypto`'s
+//// `randomBytes` reads entropy and lives in `io/random.bp`.
 ////
 //// Reference:
 ////   Node.js  — https://nodejs.org/api/crypto.html
@@ -12,11 +16,9 @@
 ////              (`base64:encode/2` with `#{mode => urlsafe, padding => false}`)
 ////   RFC 4648 §5 (base64url), RFC 4231 (HMAC-SHA256), RFC 6455 §1.3
 ////
-//// The hex digests (`sha256`, `sha512`, `md5`, `hmacSha256`) and
-//// `randomBytes` still live in `crypto.bp`; decision 106 folds the digests
-//// into this file at front 23. A std module cannot call another today, so
-//// the cells here call `crypto:hash/2` and `createHash` themselves — the
-//// duplication is in the template string, not in behaviour.
+//// Each cell calls `crypto:hash/2` / `createHash` itself rather than a
+//// sibling function — the duplication is in the template string, not in
+//// behaviour.
 ////
 //// Text in: every input is the UTF-8 bytes of a `string` (there is no
 //// byte type — `language-gaps.md`), so an HMAC key is text too.
@@ -81,4 +83,274 @@ test "hash.equalsConstantTime is false for a different value and never throws" {
     assert equalsConstantTime("abc", "abcd").negate();
     assert equalsConstantTime("", "a").negate();
     assert equalsConstantTime("", "");
+}
+
+// ── hex digests (was `crypto`) ───────────────────────────────────────────────
+
+#[@External.Node("""require('crypto').createHash('sha256').update($0).digest('hex')""")]
+#[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha256, $0))])""")]
+pub declare fn sha256(data: string) -> string;
+
+#[@External.Node("""require('crypto').createHash('sha512').update($0).digest('hex')""")]
+#[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha512, $0))])""")]
+pub declare fn sha512(data: string) -> string;
+
+#[@External.Node("""require('crypto').createHash('md5').update($0).digest('hex')""")]
+#[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(md5, $0))])""")]
+pub declare fn md5(data: string) -> string;
+
+// HMAC-SHA256. `key` is the secret material; `data` is the message.
+// Both lower to the host's keyed-hash primitive — Node's
+// `crypto.createHmac('sha256', key).update(data).digest('hex')` and
+// Erlang's `crypto:mac(hmac, sha256, key, data)`.
+#[@External.Node("""require('crypto').createHmac('sha256', $0).update($1).digest('hex')""")]
+#[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:mac(hmac, sha256, $0, $1))])""")]
+pub declare fn hmacSha256(key: string, data: string) -> string;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "hash.sha256 matches the canonical 'hello world' vector" {
+    val h = sha256("hello world");
+    assert h == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+}
+
+test "hash.sha256 of empty string is the well-known zero-length digest" {
+    val h = sha256("");
+    assert h == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+}
+
+test "hash.md5 of 'hello' matches the canonical digest" {
+    val h = md5("hello");
+    assert h == "5d41402abc4b2a76b9719d911017c592";
+}
+
+test "hash.sha512 of empty is the zero-length sha512 digest" {
+    val h = sha512("");
+    assert h.length == 128;
+}
+
+test "hash.hmacSha256 produces a 64-hex-char digest" {
+    val h = hmacSha256("secret", "message");
+    assert h.length == 64;
+}
+
+// ── content hashes (was `content_hash`) ──────────────────────────────────────
+// Content hashes (was `content_hash`) — stable hashes for cache keys, ETags and asset
+// fingerprints (1.0.10-beta `01-std` front 03).
+//
+// Reference:
+//   RFC 9110 § 8.8.3 — https://www.rfc-editor.org/rfc/rfc9110#field.etag
+//   Next.js caching  — https://nextjs.org/docs/app/getting-started/caching
+//   Erlang           — https://www.erlang.org/doc/apps/crypto/crypto.html#hash/2
+//
+// `strongHash` carries its own SHA-256 cell rather than calling `sha256`
+// above; the truncation lives in the template.
+//
+// TWO hashes, and the choice is not a matter of taste. `contentHash` is a
+// djb2 fold rendered as lowercase hex: fast, stable across both targets,
+// and TRIVIAL TO COLLIDE ON PURPOSE. Use it when a collision costs a wrong
+// cache hit you control — an asset filename, an internal fingerprint.
+// `strongHash` is SHA-256 truncated to 32 hex characters. Use it whenever
+// the hashed value came from outside: a request header, a client-supplied
+// tag, a key that spans a user boundary.
+//
+// The `contentHash` templates are lifted verbatim from
+// `repository/emilia/modules/emilia/src/emilia.bp` (`hashHex`), where they
+// were tuned until both targets agreed byte-for-byte; only the `__`-prefixed
+// variable names differ. Astral characters diverge (one codepoint on
+// Erlang, two UTF-16 units in JS) — the same caveat emilia carries.
+// `emilia.hashHex` is therefore a duplicate of `contentHash` now; collapsing
+// it onto std is a later, `emilia`-owned change — this milestone is additive
+// only.
+
+#[@External.Node("""(function(__S){ var __H = 5381; for (var __I = 0; __I < __S.length; __I++) { __H = (Math.imul(__H, 33) + __S.charCodeAt(__I)) >>> 0; } return __H.toString(16); })($0)""")]
+#[@External.Erlang("""(fun(__S) -> __H = lists:foldl(fun(__C, __A) -> (__A * 33 + __C) band 16#FFFFFFFF end, 5381, unicode:characters_to_list(__S)), list_to_binary(string:lowercase(integer_to_list(__H, 16))) end)($0)""")]
+pub declare fn contentHash(value: string) -> string;
+
+#[@External.Node("""require('crypto').createHash('sha256').update($0).digest('hex').slice(0, 32)""")]
+#[@External.Erlang("""binary:part(string:lowercase(binary:encode_hex(crypto:hash(sha256, $0))), 0, 32)""")]
+pub declare fn strongHash(value: string) -> string;
+
+// ── cache keys — framed, never joined ────────────────────────────────────────
+
+// A key over several parts. Each part is length-prefixed, so no two different
+// part lists can collide: ["user:1", "profile"] and ["user", "1:profile"] frame
+// to `6:user:1|7:profile` and `4:user|9:1:profile` and therefore hash to
+// different keys. A cache that collides across a user boundary serves one user
+// another user's page, so the framing is the whole reason this function exists
+// instead of a `join`.
+pub fn cacheKey(parts: string[]) -> string {
+    return contentHash(frame(parts));
+}
+
+// The same framing over the strong hash, for keys built from input the caller
+// did not choose.
+pub fn strongCacheKey(parts: string[]) -> string {
+    return strongHash(frame(parts));
+}
+
+// `<length>:<part>` per part, `|` between parts. The one place a multi-part
+// key is rendered, so no function in this module joins parts unframed.
+fn frame(parts: string[]) -> string {
+    return parts.map({ p -> p.length().toString() + ":" + p }).join("|");
+}
+
+// ── ETags (RFC 9110 § 8.8.3) ─────────────────────────────────────────────────
+
+// A strong ETag, quoted as RFC 9110 requires. The quotes are part of the value:
+// a caller who has to remember to add them is a caller who will forget.
+pub fn etag(body: string) -> string {
+    return "\"" + contentHash(body) + "\"";
+}
+
+pub fn weakEtag(body: string) -> string {
+    return "W/\"" + contentHash(body) + "\"";
+}
+
+// The 304 decision. Handles the three shapes a handler actually receives: an
+// exact match, the `*` wildcard, and a comma-separated candidate list. The
+// membership test is `indexOf`, not `Array.contains`: `contains` is a
+// `default fn`, which a consumer's embedded copy of this module emits
+// verbatim on commonJS (`libs/std/AGENTS.md` § Conventions).
+pub fn matches(body: string, ifNoneMatch: string) -> bool {
+    val header = ifNoneMatch.trim();
+    val wildcard = header == "*";
+    val current = etag(body);
+    val weak = weakEtag(body);
+    val candidates = header.split(",").map({ c -> c.trim() });
+    val exact = candidates.indexOf(current) != -1;
+    val loose = candidates.indexOf(weak) != -1;
+    val hit = if (exact) true else loose;
+    return if (wildcard) true else hit;
+}
+
+// ── fingerprints ─────────────────────────────────────────────────────────────
+
+// `app.js` → `app.<hash>.js`. The extension stays last: a browser and a CDN
+// both dispatch on it, and a hash appended after it breaks both. A leading
+// dot (`.gitignore`) is not an extension boundary, and a name without an
+// extension gains no trailing dot (`LICENSE` → `LICENSE.<hash>`).
+//
+// The extension is measured as the last `.`-separated piece rather than
+// found with `lastIndexOf`: on Erlang `lastIndexOf` answers a BYTE offset
+// while `length`/`slice` count characters, so a non-ASCII stem would be cut
+// in the wrong place. `length` and `slice` agree with each other on both
+// targets.
+pub fn fingerprint(fileName: string, contents: string) -> string {
+    val hash = contentHash(contents);
+    val pieces = fileName.split(".");
+    val tail = pieces.at(pieces.length - 1);
+    val extLen = if (tail != null) tail.length() + 1 else 0;
+    val hasExt = if (pieces.length > 1) extLen < fileName.length() else false;
+    val cut = fileName.length() - extLen;
+    val stem = if (hasExt) fileName.slice(0, cut) else fileName;
+    val ext = if (hasExt) fileName.slice(cut, fileName.length()) else "";
+    return stem + "." + hash + ext;
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+//
+// Every expected hex below is a LITERAL, not a second call: a literal is the
+// only form that catches the two targets drifting apart.
+
+test "hash.contentHash of 'hello' is the pinned djb2 hex on both targets" {
+    assert contentHash("hello") == "f923099";
+}
+
+test "hash.contentHash is stable within a process" {
+    val a = contentHash("hello");
+    val b = contentHash("hello");
+    assert a == b;
+}
+
+test "hash.contentHash differs between 'hello' and 'world'" {
+    assert contentHash("world") == "10a7356d";
+    assert contentHash("hello") != contentHash("world");
+}
+
+test "hash.contentHash of the empty string is djb2's seed, not empty" {
+    assert contentHash("") == "1505";
+}
+
+test "hash.strongHash of the empty string is the truncated empty SHA-256" {
+    val h = strongHash("");
+    assert h == "e3b0c44298fc1c149afbf4c8996fb924";
+    assert h.length == 32;
+}
+
+test "hash.strongHash of 'hello' is the pinned truncated SHA-256" {
+    assert strongHash("hello") == "2cf24dba5fb0a30e26e83b2ac5b9e29e";
+}
+
+test "hash.cacheKey framing does not collide across part boundaries" {
+    val a = cacheKey(["user:1", "profile"]);
+    val b = cacheKey(["user", "1:profile"]);
+    assert a != b;
+    // `6:user:1|7:profile` and `4:user|9:1:profile`, pinned on both targets.
+    assert a == "62d9003d";
+    assert b == "8aac687d";
+}
+
+test "hash.cacheKey distinguishes a trailing empty part" {
+    assert cacheKey(["a"]) != cacheKey(["a", ""]);
+    assert cacheKey(["a"]) == "b878b31";
+    assert cacheKey(["a", ""]) == "7e7c9f77";
+}
+
+test "hash.cacheKey of no parts is the hash of the empty frame" {
+    assert cacheKey([]) == "1505";
+}
+
+test "hash.strongCacheKey frames like cacheKey over the strong hash" {
+    assert strongCacheKey(["user:1", "profile"]) != strongCacheKey(["user", "1:profile"]);
+    assert strongCacheKey(["user:1", "profile"]) == strongHash("6:user:1|7:profile");
+    assert strongCacheKey(["user:1", "profile"]).length == 32;
+}
+
+test "hash.etag is quoted and carries exactly one hash" {
+    val e = etag("<p>hi</p>");
+    assert e == "\"3ad52bb9\"";
+    assert e.startsWith("\"");
+    assert e.endsWith("\"");
+    assert weakEtag("<p>hi</p>") == "W/\"3ad52bb9\"";
+}
+
+test "hash.matches answers the exact ETag and refuses a moved one" {
+    val body = "<p>hi</p>";
+    assert matches(body, etag(body));
+    assert matches(body, weakEtag(body));
+    assert matches(body, etag(body + "x")) == false;
+}
+
+test "hash.matches answers the wildcard for any body" {
+    assert matches("<p>hi</p>", "*");
+    assert matches("", "*");
+}
+
+test "hash.matches splits and trims a candidate list" {
+    val body = "<p>hi</p>";
+    assert matches(body, "\"aaa\", " + etag(body));
+    assert matches(body, "\"aaa\", \"bbb\"") == false;
+}
+
+test "hash.matches of an empty header is false" {
+    assert matches("<p>hi</p>", "") == false;
+}
+
+test "hash.fingerprint keeps the extension last" {
+    assert fingerprint("app.js", "body{}") == "app.f48a1b4b.js";
+    assert fingerprint("a.b.css", "body{}") == "a.b.f48a1b4b.css";
+}
+
+test "hash.fingerprint of a name without an extension adds no trailing dot" {
+    assert fingerprint("LICENSE", "body{}") == "LICENSE.f48a1b4b";
+}
+
+test "hash.fingerprint does not treat a leading dot as an extension" {
+    assert fingerprint(".gitignore", "body{}") == ".gitignore.f48a1b4b";
+}
+
+test "hash.fingerprint answers a different name for different contents" {
+    assert fingerprint("app.js", "body{x}") == "app.85cd8483.js";
+    assert fingerprint("app.js", "body{}") != fingerprint("app.js", "body{x}");
 }

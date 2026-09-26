@@ -608,11 +608,11 @@ test "infer: external ---- the variant table agrees with builtins.d.bp" {
 
 test "infer: std package ---- import binds namespace" {
     try h.assertInfersOk(std.testing.allocator,
-        \\import {order} from "std";
+        \\import {collections} from "std";
         \\
         \\fn main() {
-        \\    val a: i32 = order.toInt(order.lt());
-        \\    val b: i32 = order.toInt(order.reverse(order.gt()));
+        \\    val a: i32 = collections.toInt(collections.lt());
+        \\    val b: i32 = collections.toInt(collections.reverse(collections.gt()));
         \\}
     );
 }
@@ -620,41 +620,42 @@ test "infer: std package ---- import binds namespace" {
 // ── decision 107: only the leaf enters scope ─────────────────────────────────
 
 test "infer: std package ---- a dotted path binds its leaf, a group binds several" {
-    // `Dict` (a type), `newDict` (an aliased fn), `gt`/`reverse`/`toInt`
-    // (fns) — and neither `dict` nor `order` is bound: only the leaf enters
-    // scope, so the namespace has to be imported on its own to be spelled.
+    // `Dict` (a type, whose type-scoped `empty` builds it — decision 111),
+    // `gt`/`reverse` and `rank` (fns, the last aliased) — and `collections`
+    // is not bound: only the leaf enters scope, so the namespace has to be
+    // imported on its own to be spelled.
     try h.assertInfersOk(std.testing.allocator,
-        \\import {dict.Dict, dict: {empty as newDict}, order: {gt, reverse, toInt}} from "std";
+        \\import {collections.Dict, collections: {gt, reverse, toInt as rank}} from "std";
         \\
         \\fn main() {
-        \\    val d: Dict<string, i32> = newDict();
+        \\    val d: Dict<string, i32> = Dict.empty();
         \\    val n: i32 = d.insert("a", 1).size();
-        \\    val o: i32 = toInt(reverse(gt()));
+        \\    val o: i32 = rank(reverse(gt()));
         \\}
     );
 }
 
 test "infer: std package ---- an intermediate node may be a leaf" {
-    // `import {io.fs}` will bind the module `fs` as a namespace once the tree
-    // of decision 106 lands; on the flat tree the same rule reads
-    // `dict: {empty}` beside `dict` itself: the prefix is a leaf if listed.
+    // `io: {clock}` binds the module `clock` as a namespace, and inside the
+    // same group the prefix is a leaf too: `clock: {monotonicMillis}` beside
+    // `clock` itself.
     try h.assertInfersOk(std.testing.allocator,
-        \\import {dict, dict: {empty}} from "std";
+        \\import {io: {clock, clock: {monotonicMillis}}} from "std";
         \\
         \\fn main() {
-        \\    val a = dict.empty().insert("a", 1);
-        \\    val b = empty().insert("b", 2);
-        \\    val n: i32 = a.size() + b.size();
+        \\    val a = clock.monotonicMillis();
+        \\    val b = monotonicMillis();
+        \\    val n = b - a;
         \\}
     );
 }
 
 test "infer: std package ---- the namespace is not bound by a path through it" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\import {order.lt} from "std";
+        \\import {collections.lt} from "std";
         \\
         \\fn main() {
-        \\    val a = order.toInt(lt());
+        \\    val a = collections.toInt(lt());
         \\}
     );
 }
@@ -682,7 +683,7 @@ test "infer: std package ---- an alias on either side clears the collision" {
 
 test "infer: std package ---- a type keeps its declared name" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\import {dict.Dict as D} from "std";
+        \\import {collections.Dict as D} from "std";
         \\
         \\fn main() {
         \\    val d: D<string, i32> = D(pairs: []);
@@ -692,7 +693,7 @@ test "infer: std package ---- a type keeps its declared name" {
 
 test "infer: std package ---- a path whose prefix is no module is refused at the item" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\import {collections.Dict} from "std";
+        \\import {dict.Dict} from "std";
         \\
         \\fn main() {
         \\    val n = 1;
@@ -702,7 +703,7 @@ test "infer: std package ---- a path whose prefix is no module is refused at the
 
 test "infer: std package ---- a leaf the module does not declare is refused at the item" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\import {dict: {Dict, emptyish}} from "std";
+        \\import {collections: {Dict, emptyish}} from "std";
         \\
         \\fn main() {
         \\    val n = 1;

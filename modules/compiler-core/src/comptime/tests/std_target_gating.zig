@@ -29,11 +29,11 @@ fn projectOutcome(session: anytype) @TypeOf(session.outputs.items[0].outcome) {
     return items[items.len - 1].outcome;
 }
 
-test "STD-001: import of std/process from wasm target reds" {
+test "STD-001: import of std/io/process from wasm target reds" {
     const io = std.testing.io;
     var session = try comptimeMod.compile(
         std.testing.allocator,
-        &.{.{ .path = "main.bp", .source = "import {process} from \"std\";\n" }},
+        &.{.{ .path = "main.bp", .source = "import {io.process} from \"std\";\n" }},
         io,
         test_scratch.path(io, "comptime/std_target_gating_wasm"),
         "wasm",
@@ -46,11 +46,11 @@ test "STD-001: import of std/process from wasm target reds" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "wasm") != null);
 }
 
-test "STD-001: import of std/process from node target is accepted" {
+test "STD-001: import of std/io/process from node target is accepted" {
     const io = std.testing.io;
     var session = try comptimeMod.compile(
         std.testing.allocator,
-        &.{.{ .path = "main.bp", .source = "import {process} from \"std\";\n" }},
+        &.{.{ .path = "main.bp", .source = "import {io.process} from \"std\";\n" }},
         io,
         test_scratch.path(io, "comptime/std_target_gating_node"),
         "node",
@@ -63,7 +63,7 @@ test "STD-001: null target keeps the check off (tooling parity)" {
     const io = std.testing.io;
     var session = try comptimeMod.compile(
         std.testing.allocator,
-        &.{.{ .path = "main.bp", .source = "import {process} from \"std\";\n" }},
+        &.{.{ .path = "main.bp", .source = "import {io.process} from \"std\";\n" }},
         io,
         test_scratch.path(io, "comptime/std_target_gating_null"),
         null,

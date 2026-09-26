@@ -22,13 +22,13 @@
 //// and prints heap addresses for `url.parse(…).host` and for the queue's
 //// values, which is a wasm gap of its own (`05-wasm`) and not this cell's claim.
 
-import {querystring, path, url, queue} from "std";
+import {querystring, path, url, collections.Queue} from "std";
 
 pub fn main() {
     @print(querystring.parse("?a=1&b=2").length);
     @print(path.extname("dir/report.tar.gz"));
     @print(url.parse("https://example.com/a?b=1").host);
-    val r = queue.empty().enqueue(1).enqueue(2).dequeue();
+    val r = Queue.empty().enqueue(1).enqueue(2).dequeue();
     @print(r._1.unwrapOr(-1));
     @print(r._0.size());
 }

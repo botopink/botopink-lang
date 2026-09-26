@@ -283,11 +283,14 @@ pub fn run(
 
         // Policy 3 (`13-module-identity`): a `type` of the module is an erlang
         // module of its own, and the emitted test runner loads every `.erl` it
-        // finds beside itself — so the units have to be there. Named by their
-        // atom, flat at the root of the test output, the way `build` writes
-        // them under `out/erl/`.
+        // finds beside itself and below — so the units have to be there. Named
+        // by their atom, in the directory of the module that declares them: a
+        // runner at the root loads the whole tree, and the runner of a module
+        // in a folder (`io/net` under `libs/std`) loads only its own folder, so
+        // a unit written at the root was `{error,undef}` there.
+        const unit_dir = if (std.fs.path.dirname(o.name)) |d| try std.fmt.allocPrint(arena, "{s}/{s}", .{ test_out, d }) else test_out;
         for (o.result.units) |u| {
-            const unit_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, u.atom, ext });
+            const unit_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ unit_dir, u.atom, ext });
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
         }
     }

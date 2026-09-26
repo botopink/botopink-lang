@@ -1,6 +1,6 @@
 //// routing: the `k` blob, on both targets. Every expected wire is a literal.
 
-import {asserts} from "std";
+import {testing.asserts} from "std";
 import {RouteKind, parseKinds, writeKinds, routeKindOf} from "route_kinds";
 
 fn kindText(k: RouteKind) -> string {

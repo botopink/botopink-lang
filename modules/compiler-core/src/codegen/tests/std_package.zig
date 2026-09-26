@@ -1,5 +1,5 @@
 //! codegen: `"std"` package qualified calls and the builtin `result` namespace.
-//! `import {order} from "std"` pulls the embedded std module into the
+//! `import {collections} from "std"` pulls the embedded std module into the
 //! compilation (own output file); `order.reverse(x)` lowers to a remote call
 //! (erlang `order:reverse(...)`) / module-object member call (commonJS).
 //! `result.map(r, f)` needs NO import — it is a builtin namespace lowered
@@ -31,24 +31,24 @@ test "js: builtin result namespace ---- qualified call lowers inline" {
     );
 }
 
-// Decision 107 over the std package: `dict.Dict` registers the type,
-// `dict: {empty as newDict}` binds the fn under its alias, `order: {gt,
-// reverse, toInt}` binds three leaves of one module — and neither `dict` nor
-// `order` is bound. commonJS destructures each leaf from `std/<module>.js`
-// (`{ empty: newDict }`); erlang and beam reach the owner remotely through
-// the item's own path, which is what tells `url.parse` from `json.parse`;
-// wasm links the std module statically and maps the alias back to the
-// declared name at the `call`. Pure-bp modules on purpose (`dict`, `order`):
-// a host-backed leaf would pin the wasm gap of that module instead of this
-// rule.
+// Decision 107 over the std package: `collections.Dict` registers the type
+// (its constructor is type-scoped, `Dict.empty()` — decision 111),
+// `collections: {gt, reverse, toInt as rank}` binds three leaves of one
+// module, the last under its alias — and `collections` is not bound.
+// commonJS destructures each leaf from `std/<module>.js` (`{ toInt: rank }`);
+// erlang and beam reach the owner remotely through the item's own path,
+// which is what tells `url.parse` from `json.parse`; wasm links the std
+// module statically and maps the alias back to the declared name at the
+// `call`. A pure-bp module on purpose (`collections`): a host-backed leaf
+// would pin the wasm gap of that module instead of this rule.
 test "js: std package ---- a dotted path and a group bind leaves of std modules" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\import {dict.Dict, dict: {empty as newDict}, order: {gt, reverse, toInt}} from "std";
+        \\import {collections.Dict, collections: {gt, reverse, toInt as rank}} from "std";
         \\
         \\fn main() {
-        \\    val d: Dict<string, i32> = newDict();
+        \\    val d: Dict<string, i32> = Dict.empty();
         \\    @print(d.insert("a", 1).size());
-        \\    @print(toInt(reverse(gt())));
+        \\    @print(rank(reverse(gt())));
         \\}
     );
 }
@@ -57,11 +57,11 @@ test "js: std package ---- a dotted path and a group bind leaves of std modules"
 // `env.write`/`env.read`/`env.clear` are `#[@External.Node("…$0…")]` templates,
 // so the owning module has to export a real function for each (it used to
 // export nothing: "env.write is not a function"). The behaviour lives in
-// `std/env.js`, which the entry's snapshot does not show — so the RUN LOG is
+// `std/io/env.js`, which the entry's snapshot does not show — so the RUN LOG is
 // asserted directly.
 test "js: std package ---- env template externals resolve through the module object" {
     try h.assertJsRunLog(std.testing.allocator,
-        \\import {env} from "std";
+        \\import {io.env} from "std";
         \\
         \\fn main() {
         \\    env.write("BOTOPINK_F8_ENV", "hi");
@@ -130,7 +130,7 @@ test "erlang: std package ---- a qualified std host call reaches its owner's wra
 
 test "js: std package ---- order enum module with type export" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\import {order} from "std";
+        \\import {collections} from "std";
         \\
         \\fn describe(o: Order) -> string {
         \\    val s = case o {
@@ -142,18 +142,19 @@ test "js: std package ---- order enum module with type export" {
         \\}
         \\
         \\fn main() {
-        \\    @print(order.toInt(order.lt()));
-        \\    @print(describe(order.reverse(order.lt())));
+        \\    @print(collections.toInt(collections.lt()));
+        \\    @print(describe(collections.reverse(collections.lt())));
         \\}
     );
 }
 
-// A method on a type the consumer never names. `import {dict} from "std"` binds
-// the MODULE `std/dict`, not a `pub` symbol, so the cross-module index was never
-// consulted for `Dict` and erlang emitted a bare local `insert(D, K, V)` —
+// A method on a type answered by an imported module. Under the flat tree the
+// consumer never named the type (`import {dict} from "std"; dict.empty()`):
+// the import bound the MODULE `std/dict`, not a `pub` symbol, so the
+// cross-module index was never consulted for `Dict` and erlang emitted a bare local `insert(D, K, V)` —
 // `out/main.erl: function insert/3 undefined`, i.e. the program did not compile
 // while the same source ran on commonJS. The owner exports `insert/3` and
-// `at/2`; the consumer must remote-call them (`dict:insert/3`). The program
+// `at/2`; the consumer must remote-call them (`std@collections@@Dict:insert/3`). The program
 // means `1`, then `2` (two distinct keys), which commonJS and erlang both print.
 //
 // beam calls them remotely too, since `methodOwnerModule` in `beam_asm.zig`
@@ -173,10 +174,10 @@ test "js: std package ---- order enum module with type export" {
 // ask. Both prints are now the value the program means.
 test "js: std package ---- methods of a type answered by an imported module resolve in its owner" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\import {dict} from "std";
+        \\import {collections.Dict} from "std";
         \\
         \\fn main() {
-        \\    val d = dict.empty().insert("a", 1);
+        \\    val d = Dict.empty().insert("a", 1);
         \\    @print(d.at("a").unwrapOr(0));
         \\    @print(d.insert("b", 2).size());
         \\}
@@ -265,10 +266,10 @@ test "js: std package ---- a root module importing from io is refused at the ite
 test "js: std package ---- a root module importing a group under io from std is refused" {
     try h.assertJsExpecting(std.testing.allocator, @src(), &.{
         .{ .path = "std/probe", .source =
-        \\import {io: {clock: {nowMillis}}} from "std";
+        \\import {io: {env: {read}}} from "std";
         \\
-        \\pub fn stamp() -> i32 {
-        \\    return nowMillis();
+        \\pub fn home() -> ?string {
+        \\    return read("HOME");
         \\}
         },
     }, .expect_compile_error);

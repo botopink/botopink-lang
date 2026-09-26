@@ -1,7 +1,7 @@
 //// routing: the segment grammar, on both targets (moved with the matcher,
 //// decision 115). Every expected text is a literal.
 
-import {asserts} from "std";
+import {testing.asserts} from "std";
 import {parseSegment, parsePath, patternOf, slotOf, pathProblem, kindName, trimSlashes} from "segment";
 
 // ── step 1: the segment grammar ─────────────────────────────────────────────

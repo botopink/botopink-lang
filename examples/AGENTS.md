@@ -16,7 +16,7 @@ documentation, **not** part of any snapshot harness, and do not affect
 examples/
 ├── AGENTS.md               ← you are here
 ├── hello.bp                ← smallest runnable program (prints a line)
-├── stdlib-tour/            ← `import {dict, queue, sets, order} from "std"` + qualified calls,
+├── stdlib-tour/            ← `import {collections: {Dict, Queue, Set, Order, …}} from "std"` + type-scoped constructors,
 │   ├── botopink.json          Array combinators, an Order-driven sort, a Queue BFS — with `test {}` blocks
 │   └── src/main.bp
 ├── generic-loader-binding/ ← the three `from "<lib>"` forms against `erika` — with `test {}` blocks

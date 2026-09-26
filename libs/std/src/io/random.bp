@@ -263,3 +263,27 @@ test "random.uuidV4 has the version 4 layout" {
     assert u.split("").filter({ c -> "0123456789abcdef-".contains(c) }).length == 36;
     assert uuidV4() != u;
 }
+
+// ── randomBytes (was `crypto.randomBytes`) ───────────────────────────────────
+
+// `n` cryptographically-secure random bytes as a hex string of length
+// `2 * n` (each byte rendered as two lowercase hex chars). The hex shape
+// sidesteps the `Array<u8>` cross-backend representation gap — Node
+// `Buffer` and Erlang `binary()` don't share a bp-side type. Callers
+// that need bytes parse the hex back themselves.
+// Node: `require('crypto').randomBytes(n).toString('hex')`.
+// Erlang: `crypto:strong_rand_bytes/1` + the same per-byte hex format
+// string used by the hashes above.
+#[@External.Node("""require('crypto').randomBytes($0).toString('hex')""")]
+#[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:strong_rand_bytes($0))])""")]
+pub declare fn randomBytes(n: i32) -> string;
+
+test "random.randomBytes(16) returns 32 hex chars" {
+    val h = randomBytes(16);
+    assert h.length == 32;
+}
+
+test "random.randomBytes(0) is empty" {
+    val h = randomBytes(0);
+    assert h.length == 0;
+}

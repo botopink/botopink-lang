@@ -39,7 +39,7 @@ libs/validation/
 │   │                   currentLocale, templateFor, interpolate, message, builtInTemplate, showI32/I64/F64
 │   ├── spi.bp          Constraint, registerConstraint, constraintRegistered, registeredConstraints,
 │   │                   clearConstraints, unknownConstraintMessage, vConstraint   (registry: templates)
-│   ├── constraints.bp  the v* predicates (std `regex`, `time`), emailPattern
+│   ├── constraints.bp  the v* predicates (std `regex`, `io.clock`), emailPattern
 │   ├── binding.bp      bindInt, bindBool, bindRequired, bindEpochMillis, bindingReport, bindingCount,
 │   │                   bindingReset, bindingIsolated, isIntegerText, parseI32, parseI64   (accumulator: templates)
 │   └── decorators.bp   #[validated] and the thirteen constraint markers

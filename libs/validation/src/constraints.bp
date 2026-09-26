@@ -22,7 +22,7 @@
 
 import {Violation, violation, noViolation, oneViolation} from "report";
 import {Arg, arg, message, builtInTemplate, noArgs, showI32, showI64, showF64} from "messages";
-import {regex, time} from "std";
+import {regex, io.clock} from "std";
 
 fn fail(
     field: string,
@@ -191,19 +191,19 @@ pub fn vPattern(
 
 // ── time ────────────────────────────────────────────────────────────────────
 //
-// Epoch milliseconds against `std/time.nowMillis()` — `Date.now()` on node,
+// Epoch milliseconds against `std/clock.nowMillis()` — `Date.now()` on node,
 // `erlang:system_time(1000)` on the BEAM. The boundary is strict on both sides:
 // `now` itself is neither past nor future, so a value equal to the clock reads
 // is a violation for both markers rather than acceptable to both.
 
 pub fn vPastDate(field: string, value: i64) -> Array<Violation> {
-    if (value < time.nowMillis()) return noViolation() else return fail(field, "pastDate", showI64(
+    if (value < clock.nowMillis()) return noViolation() else return fail(field, "pastDate", showI64(
             value
         ), noArgs());
 }
 
 pub fn vFutureDate(field: string, value: i64) -> Array<Violation> {
-    if (value > time.nowMillis()) return noViolation() else return fail(field, "futureDate", showI64(
+    if (value > clock.nowMillis()) return noViolation() else return fail(field, "futureDate", showI64(
             value
         ), noArgs());
 }

@@ -90,11 +90,11 @@ test "codeAction: no actions on empty source" {
 test "codeAction: remove unused import" {
     const gpa = std.testing.allocator;
     const source =
-        \\import { order } from "std";
+        \\import { collections } from "std";
         \\val x = 42;
     ;
 
-    // Tokens-only action: no compile/bindings needed (`order` is never used).
+    // Tokens-only action: no compile/bindings needed (`collections` is never used).
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const tokens = try h.tokenize(arena.allocator(), source);

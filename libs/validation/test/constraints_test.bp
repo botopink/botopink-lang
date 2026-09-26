@@ -22,18 +22,18 @@ import {ValidationReport, Violation} from "report";
 import {constraintTableJson} from "table";
 import {vNotNull, vNotBlank, vNotEmpty, vNotEmptyList, vSizeBetween, vSizeBetweenList, vMinValueI32, vMaxValueI32, vMinValueF64, vMaxValueF64, vPositiveI32, vPositiveOrZeroI32, vPositiveI64, vPositiveOrZeroI64, vPositiveF64, vPositiveOrZeroF64, vEmail, vPattern, vPastDate, vFutureDate, emailPattern} from "constraints";
 import {vConstraint} from "spi";
-import {time} from "std";
+import {io.clock} from "std";
 
 // An `i64` cannot be written as a literal and an integer literal does not widen
 // to one in arithmetic, so the two epochs a temporal test needs are BUILT from
 // the clock. `zero` is the epoch itself (1970) and `far` is roughly twice now —
 // both comfortably outside any plausible test runtime.
 fn epochZero() -> i64 {
-    return time.nowMillis() - time.nowMillis();
+    return clock.nowMillis() - clock.nowMillis();
 }
 
 fn farFuture() -> i64 {
-    return time.nowMillis() + time.nowMillis();
+    return clock.nowMillis() + clock.nowMillis();
 }
 
 fn codesOf(vs: Array<Violation>) -> string {
