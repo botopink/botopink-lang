@@ -98,6 +98,9 @@ codegen/
   for a local from `localBind.mutable`. Node's `Assignment to constant variable`
   on a reassigned `const` is what made decision 38 a compile-time rule; the
   front's problem program prints `2` on node.
+  A `pub val` is followed by `exports.<name> = <binding>;` (`valExport`), as a
+  `pub fn` is (decision 139): the importer's `require` destructures it by
+  name, and read `undefined` before.
 - **`@print` / `@println` / `@debug`** (decision 8 §7, `buildPrintCall`) lower to
   the on-demand prelude helper `__bp_print(a, b)`, not to `console.log`: each
   argument is written by `__bp_show` — a top-level string bare, a nested string
@@ -410,11 +413,13 @@ codegen/
   for a std namespace leaf (`comptimeMod.isStdModule` decides which;
   `import {io.fs}` → `require("./std/io/fs.js")`); erlang keys `std_imports`
   local name → std module path and maps an alias back to the declared name
-  at the remote call (`import_aliases`); beam records `imported_fn_owners`
+  at the remote call (`import_aliases`; an imported `pub val` in
+  `imported_vals`); beam records `imported_fn_owners` / `imported_val_owners`
   (local → owner atom + declared name) ahead of the name-keyed
   `crossOwnerOf`; wat, which links statically, registers the alias beside the
   declared name in every fn table and maps it back at the `call`
-  (`import_aliases`).
+  (`import_aliases`) — and for a `pub val`, in every global table
+  (`aliasGlobal`), mapped back at the `global.get` (`globalName`).
 - **Lib namespace object**: when an import names the lib itself
   (`import {Lib} from "Lib"`) and that name has no emitted symbol, `emitUse`
   binds the lib's module object (`buildUse`: `const Lib = require(…)`, or
@@ -1346,8 +1351,18 @@ codegen/
   (`cachedValueExpr`) — node-wide, like the module-level binding it stands for,
   not per process. `'_botopink_init'/0` is exported: a module with neither
   `main/0` nor tests has nothing that calls it locally, and erlc would report it
-  unused. **Nothing calls it for that module** — cross-module module-load effects
-  wait on the build path having a sibling loader at all.
+  unused. An importing program's entry calls it (decision 139): the driver
+  walks `crossModule.importClosure` — every module the entry imports,
+  transitively, dependencies first — and `'_botopink_main'/0` (or the test
+  runner's `main/1`, `testRunnerForms(…, import_inits, …)`) calls
+  `<dep>:'_botopink_init'()` for each one that has a body (`moduleHasInit`)
+  before its own, which is the order `require` gives commonJS.
+- **A module-level `pub val` crosses modules** (decision 139): the owner exports
+  its 0-arity reader `name/0` beside its `pub fn`s, and an importer reads it as
+  `owner:name()` (`imported_vals`, keyed by the local name so an `as` alias
+  reaches the declared one; a call of an imported val holding a fun applies
+  what the reader answers). Before, the importer emitted the bare variable and
+  the owner exported nothing — an unbound variable at compile time.
 - **Strings**: `+` over a `string` is binary concatenation, flattened into ONE
   construction — `a + b + c` → `<<"a", (b())/binary, C/binary>>` (`stringConcatNode`).
   `isStringExpr` decides: a string literal, a `+` chain with a string operand, a
@@ -1698,7 +1713,13 @@ codegen/
   `'_botopink_main'/0` runs the module body in declaration order — the `_`
   statements inline, each cached `val` as the call to its reader — before
   `main/0`. Read per call, `val first = note("first")` printed `first` at each
-  read and after `main`. A constant initialiser stays a plain reader.
+  read and after `main`. A constant initialiser stays a plain reader. A module
+  without `main/0` whose body is not empty emits and exports
+  `'_botopink_init'/0` (`emitInitFunction`, `moduleHasInit`), and the entry's
+  `'_botopink_main'/0` `call_ext`s it for every module it imports, transitively,
+  dependencies first (`import_inits`, from `crossModule.importClosure`) —
+  decision 139; before, a library module's `_` statements never ran and its
+  effectful `val`s ran at their first read, after `main` had started.
 - **A read or a call the emit cannot place asks the value** (decision 21;
   05-wasm step 9's beam row, `modules/{field,method,type}_name_collision`):
   a name decides a record only when nothing else in the PROGRAM declares it
@@ -1978,9 +1999,11 @@ codegen/
   and the owner exports `'Type_method'/arity` when imported elsewhere. A field
   read on a `call_ext` result emits `is_map` before `get_map_elements` (the
   result is typed `any`, which the loader rejects otherwise). An imported
-  `pub fn`/`pub val` resolves through `crossOwnerOf` to a remote `call_ext` (a
-  `pub val` is a 0-arity function the owner exports, so a bare reference is a
-  call). A destructure emits the same `is_map` narrowing, and writes every
+  `pub fn`/`pub val` resolves to a remote `call_ext` (a `pub val` is a 0-arity
+  function the owner exports, so a bare reference is a call) — through this
+  module's own import first (`imported_fn_owners` / `imported_val_owners`,
+  alias-aware), then `crossOwnerOf`; a call of an imported val holding a fun
+  parks what the reader answers and `call_fun`s it. A destructure emits the same `is_map` narrowing, and writes every
   binding slot on *both* arms of the test — the validator reports
   `{unassigned, {y, N}}` after the merge otherwise.
 - **Builtins**: `@print`/`@println`/`@debug` (semantics decision 1) build the

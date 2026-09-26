@@ -1124,6 +1124,14 @@ const Emitter = struct {
                 const alias = imp.alias orelse continue;
                 const leaf = imp.leaf();
                 if (std.mem.eql(u8, alias, leaf)) continue;
+                // An imported module-level `pub val` under an alias: the global
+                // the linked owner defines is the declared name; every table a
+                // read consults answers the alias as it answers the leaf, and
+                // `global.get` is written with the leaf (`globalName`).
+                if (self.globals.contains(leaf)) {
+                    try self.aliasGlobal(alias, leaf);
+                    continue;
+                }
                 const sig = self.fn_sigs.get(leaf) orelse continue;
                 try self.import_aliases.put(alias, leaf);
                 try self.fn_sigs.put(alias, sig);
@@ -1137,6 +1145,27 @@ const Emitter = struct {
             },
             else => {},
         };
+    }
+
+    /// Register `alias` for the linked global `leaf` in every per-global table.
+    fn aliasGlobal(self: *Emitter, alias: []const u8, leaf: []const u8) !void {
+        try self.import_aliases.put(alias, leaf);
+        try self.globals.put(alias, {});
+        if (self.global_types.get(leaf)) |v| try self.global_types.put(alias, v);
+        if (self.global_typerefs.get(leaf)) |v| try self.global_typerefs.put(alias, v);
+        if (self.global_rec_types.get(leaf)) |v| try self.global_rec_types.put(alias, v);
+        if (self.folded_globals.get(leaf)) |v| try self.folded_globals.put(alias, v);
+        if (self.str_globals.contains(leaf)) try self.str_globals.put(alias, {});
+        if (self.bool_globals.contains(leaf)) try self.bool_globals.put(alias, {});
+        if (self.arr_globals.contains(leaf)) try self.arr_globals.put(alias, {});
+        if (self.arr_elem_globals.get(leaf)) |v| try self.arr_elem_globals.put(alias, v);
+        if (self.arr_elem_rec_globals.get(leaf)) |v| try self.arr_elem_rec_globals.put(alias, v);
+    }
+
+    /// The wasm global a read of `name` reaches: the declared name of an
+    /// imported `pub val` bound under an alias, else the name itself.
+    fn globalName(self: *const Emitter, name: []const u8) []const u8 {
+        return self.import_aliases.get(name) orelse name;
     }
 
     fn registerMethodSigs(self: *Emitter, target: []const u8, methods: []const ast.ImplementMethod) !void {
@@ -3691,7 +3720,7 @@ const Emitter = struct {
                             if (o.boxed) try self.emitC(.{ .load = .{} }, "narrowed optional payload");
                         }
                     } else if (self.globals.contains(n)) {
-                        try self.emit(.{ .global_get = n });
+                        try self.emit(.{ .global_get = self.globalName(n) });
                     } else if (self.fn_sigs.contains(n)) {
                         try self.lowerFnRef(self.import_aliases.get(n) orelse n);
                     } else if (self.findVariant(n)) |fv| {
@@ -6794,7 +6823,7 @@ const Emitter = struct {
         } else if (self.locals.contains(cc.callee)) {
             try self.emit(.{ .local_get = cc.callee });
         } else {
-            try self.emit(.{ .global_get = cc.callee });
+            try self.emit(.{ .global_get = self.globalName(cc.callee) });
         }
         try self.emit(.{ .local_set = tmp });
         const closure: ?Lifted = if (cc.calleeExpr == null and cc.receiver == null and self.locals.contains(cc.callee))

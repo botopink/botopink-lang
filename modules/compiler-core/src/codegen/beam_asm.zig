@@ -390,6 +390,24 @@ fn exprCanHaveEffect(e: ast.Expr) bool {
 /// A synthetic statement that only calls `main()` — the entrypoint wrapper
 /// already does, so it is not run a second time. Mirrors the erlang backend's
 /// `isSyntheticMainEntrypointCall`.
+/// True when `program` has a module body its importers run (decision 139): no
+/// `main/0` of its own, and a `_` statement or an effectful named `val` — the
+/// `entry_stmts` `emitBeamAsm` collects. Such a module exports
+/// `'_botopink_init'/0` (`emitInitFunction`).
+fn moduleHasInit(program: ast.Program) bool {
+    var body = false;
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| if (isMain0(f)) return false,
+        .val => |v| if (!isSyntheticEntrypointVal(v)) {
+            if (topValIsCached(v)) body = true;
+        } else if (!isSyntheticMainCall(v)) {
+            body = true;
+        },
+        else => {},
+    };
+    return body;
+}
+
 fn isSyntheticMainCall(v: ast.ValDecl) bool {
     if (std.mem.startsWith(u8, v.name, "_main")) return true;
     return isSyntheticEntrypointVal(v) and isZeroArgMainCall(v.value.*);
@@ -829,7 +847,8 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 }
                 // Calling a module-level `val` that holds a fun parks the fun
                 // on the stack while the arguments are staged (`lowerCall`).
-                if (!cc.is_builtin and cc.receiver == null and em.top_vals.contains(cc.callee)) count.* += 1;
+                if (!cc.is_builtin and cc.receiver == null and (em.top_vals.contains(cc.callee) or
+                    em.imported_val_owners.contains(cc.callee))) count.* += 1;
                 // `adder(3)(4)`: the callee value is parked the same way.
                 if (cc.calleeExpr) |ce| {
                     countLocalsInExpr(em, ce.*, count);
@@ -1519,8 +1538,8 @@ fn emitBeamAsm(
                 try em.top_vals.put(v.name, {});
                 // The module body evaluates an effectful named `val` once, in
                 // declaration order with the `_` statements (`cachedTopVal`).
-                if (has_main_0 and topValIsCached(v)) try em.entry_stmts.append(alloc, v);
-            } else if (has_main_0 and !isSyntheticMainCall(v)) {
+                if (topValIsCached(v)) try em.entry_stmts.append(alloc, v);
+            } else if (!isSyntheticMainCall(v)) {
                 try em.entry_stmts.append(alloc, v);
             },
             // Policy 3: a `type`'s methods belong to the TYPE's module, which
@@ -1547,6 +1566,27 @@ fn emitBeamAsm(
         try em.reserveFn("'_botopink_main'", 0);
         try em.reserveFn("main", 1);
     }
+    // Decision 139 — a module without `main/0` runs its body when a program
+    // that imports it starts: `'_botopink_init'/0`, called by the entry.
+    const emit_init = !has_main_0 and em.entry_stmts.items.len > 0;
+    if (emit_init) try em.reserveFn("'_botopink_init'", 0);
+    // The modules this one imports, transitively, whose body the entry runs
+    // before its own, dependencies first.
+    if (has_main_0) if (cross) |xc| {
+        var closure: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer closure.deinit(alloc);
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+        defer seen.deinit(alloc);
+        try seen.put(alloc, module_name, {});
+        try crossModule.importClosure(alloc, all_outputs, xc, program, &seen, &closure);
+        for (closure.items) |dep| for (all_outputs) |*o| {
+            if (!std.mem.eql(u8, o.name, dep)) continue;
+            switch (o.outcome) {
+                .ok => |*dok| if (moduleHasInit(dok.transformed)) try em.import_inits.append(alloc, xc.atomFor(dep)),
+                else => {},
+            }
+        };
+    };
     if (em.module_vars.count() > 0) try em.reserveFn(MEM_PD_SET, 2);
     if (any_ets_var) {
         try em.reserveFn(MEM_ETS_GUARD, 2);
@@ -1577,6 +1617,7 @@ fn emitBeamAsm(
         try exports.append(alloc, .{ .name = "'_botopink_main'", .arity = 0 });
         try exports.append(alloc, .{ .name = "main", .arity = 1 });
     }
+    if (emit_init) try exports.append(alloc, .{ .name = "'_botopink_init'", .arity = 0 });
     for (program.decls) |decl| {
         switch (decl) {
             .@"fn" => |f| if (f.isPub and !isHostDeclare(f)) {
@@ -1634,6 +1675,7 @@ fn emitBeamAsm(
     if (has_main_0) {
         try em.emitEntrypointWrappers();
     }
+    if (emit_init) try em.emitInitFunction();
 
     // Front 17 — the storage the module `var`s above lower onto.
     if (em.module_vars.count() > 0) try em.emitPdSet();
@@ -1922,6 +1964,11 @@ const Emitter = struct {
     /// `picked` with the item's own source, so `import {url.parse}` and
     /// `import {json.parse}` reach different modules.
     imported_fn_owners: std.StringHashMap(ImportedFn),
+    /// An imported module-level `pub val`, keyed by the name this module binds
+    /// (the alias when one is written): the owner's atom and the declared name
+    /// of the 0-arity function it exports. A read is `call_ext owner:name/0`;
+    /// the name-keyed index (`crossOwnerOf`) knows no alias.
+    imported_val_owners: std.StringHashMapUnmanaged(ImportedFn) = .empty,
     /// Named top-level `val`s of this module — each is a 0-arity function, so a
     /// bare reference is a local call.
     top_vals: std.StringHashMap(void),
@@ -1933,6 +1980,10 @@ const Emitter = struct {
     /// `val`s whose initialiser can have an effect (`topValIsCached`), each
     /// as the call to its reader.
     entry_stmts: std.ArrayListUnmanaged(ast.ValDecl) = .empty,
+    /// The module atoms whose `'_botopink_init'/0` `'_botopink_main'/0` calls
+    /// before its own body — every module this one imports, transitively,
+    /// that has a body (`moduleHasInit`), dependencies first (decision 139).
+    import_inits: std.ArrayListUnmanaged([]const u8) = .empty,
     /// Locals (and string-typed params) bound to a `string` in the frame being
     /// lowered — `isStringExpr` reads it to tell a string `+` from arithmetic.
     /// Cleared per function; a lambda/loop body inherits it (its captures).
@@ -2133,9 +2184,11 @@ const Emitter = struct {
         self.prim_beam_templates.deinit();
         self.std_imports.deinit();
         self.imported_fn_owners.deinit();
+        self.imported_val_owners.deinit(self.alloc);
         self.top_vals.deinit();
         self.top_fns.deinit(self.alloc);
         self.entry_stmts.deinit(self.alloc);
+        self.import_inits.deinit(self.alloc);
         self.string_locals.deinit();
         self.count_strings.deinit();
         self.string_names.deinit();
@@ -2519,7 +2572,7 @@ const Emitter = struct {
                         };
                     },
                     .@"fn" => try self.imported_fn_owners.put(imp.name(), .{ .owner = owner, .exported = name }),
-                    else => {},
+                    .val => try self.imported_val_owners.put(self.alloc, imp.name(), .{ .owner = owner, .exported = name }),
                 }
             },
             else => {},
@@ -4301,7 +4354,7 @@ const Emitter = struct {
         try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
         try beamEmitter.writeFuncInfo(self.out, self.module_name, "'_botopink_main'", 0);
         try beamEmitter.writeLabel(self.out, wrapper.entry);
-        if (self.entry_stmts.items.len == 0) {
+        if (self.entry_stmts.items.len == 0 and self.import_inits.items.len == 0) {
             try beamEmitter.writeCall(self.out, .only, 0, .{ .local = main0.entry }, 0);
         } else {
             self.resetFnState(0);
@@ -4312,6 +4365,10 @@ const Emitter = struct {
             }
             self.num_y = n;
             try self.emitFrame(0);
+            // Decision 139 — the imported modules' bodies first.
+            for (self.import_inits.items) |dep| {
+                try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = dep, .function = "'_botopink_init'" } }, 0);
+            }
             for (self.entry_stmts.items) |v| {
                 if (isSyntheticEntrypointVal(v)) {
                     try self.lowerExprIntoX0(v.value.*);
@@ -4332,6 +4389,38 @@ const Emitter = struct {
         try beamEmitter.writeFuncInfo(self.out, self.module_name, "main", 1);
         try beamEmitter.writeLabel(self.out, main1.entry);
         try beamEmitter.writeCall(self.out, .only, 0, .{ .local = wrapper.entry }, 0);
+        self.cur_line += 1;
+    }
+
+    /// `'_botopink_init'/0` of a module without `main/0`: its body — the `_`
+    /// statements and the effectful named `val`s' readers, in source order —
+    /// run once by the entry of a program that imports it (decision 139).
+    fn emitInitFunction(self: *Emitter) !void {
+        const labels = try self.fnLabelsFor("'_botopink_init'", 0);
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, "'_botopink_init'", 0, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, "'_botopink_init'", 0);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        self.resetFnState(0);
+        self.cur_fn_name = "_botopink_init";
+        var n: u32 = 0;
+        for (self.entry_stmts.items) |v| {
+            if (isSyntheticEntrypointVal(v)) n += self.precountLocalsInExpr(v.value.*);
+        }
+        self.num_y = n;
+        try self.emitFrame(0);
+        for (self.entry_stmts.items) |v| {
+            if (isSyntheticEntrypointVal(v)) {
+                try self.lowerExprIntoX0(v.value.*);
+            } else {
+                const reader = try self.fnLabelsFor(v.name, 0);
+                try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = reader.entry }, 0);
+            }
+        }
+        try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+        try self.emitReturn();
         self.cur_line += 1;
     }
 
@@ -4839,14 +4928,14 @@ const Emitter = struct {
                     // bare reference is a call — local for this module's own
                     // vals, remote for an imported `pub val` (which used to
                     // lower to the bare atom `'HOST'`).
-                    if (self.crossOwnerOf(n, .val)) |owner| {
+                    if (self.importedValOwner(n)) |imported| {
                         var name_buf: [256]u8 = undefined;
-                        const val_atom = atomName(n, &name_buf) catch n;
+                        const val_atom = atomName(imported.exported, &name_buf) catch imported.exported;
                         try beamEmitter.writeCall(
                             self.out,
                             .normal,
                             0,
-                            .{ .ext = .{ .module = owner, .function = val_atom } },
+                            .{ .ext = .{ .module = imported.owner, .function = val_atom } },
                             0,
                         );
                         return;
@@ -5731,6 +5820,22 @@ const Emitter = struct {
             return;
         }
 
+        // An imported `pub val` holding a fun: read it from its owner
+        // (`call_ext owner:name/0`), park it, stage the arguments, `call_fun`.
+        if (self.imported_val_owners.get(cc.callee)) |imported| {
+            var name_buf: [256]u8 = undefined;
+            const val_atom = atomName(imported.exported, &name_buf) catch imported.exported;
+            try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = imported.owner, .function = val_atom } }, 0);
+            const fun_y = self.next_y;
+            self.next_y += 1;
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(fun_y));
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(fun_y), Dst.xr(arity));
+            try beamEmitter.writeCallFun(self.out, arity);
+            if (mode == .tail) try self.emitReturn();
+            return;
+        }
+
         // A PascalCase callee that names a known record/struct (local or
         // cross-imported) is a constructor: `AppError(code: 400, msg: "x")` /
         // `App(8080, "/")` → a map `#{…}`. Positional args take their field name
@@ -5955,6 +6060,15 @@ const Emitter = struct {
     /// Owning module atom for a cross-module export of the given kind, or null
     /// when the name is local, shadowed by a register, or exported with a
     /// different shape.
+    /// The owner and declared name of an imported module-level `pub val` read
+    /// under `name`: this module's own import first (alias-aware), then the
+    /// name-keyed index for a val reached without one.
+    fn importedValOwner(self: *const Emitter, name: []const u8) ?ImportedFn {
+        if (self.imported_val_owners.get(name)) |iv| return iv;
+        const owner = self.crossOwnerOf(name, .val) orelse return null;
+        return .{ .owner = owner, .exported = name };
+    }
+
     fn crossOwnerOf(self: *const Emitter, name: []const u8, kind: crossModule.ExportKind) ?[]const u8 {
         const xc = self.cross orelse return null;
         const info = xc.exports.get(name) orelse return null;
@@ -8258,7 +8372,7 @@ const Emitter = struct {
         return switch (e) {
             .literal => false,
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.top_vals.contains(n) or self.crossOwnerOf(n, .val) != null,
+                .ident => |n| self.top_vals.contains(n) or self.importedValOwner(n) != null,
                 .dotIdent => false,
                 .identAccess => |ia| blk: {
                     if (self.exprMayCall(strings, ia.receiver.*)) break :blk true;

@@ -34,6 +34,10 @@ second item), `import_group_modifier` (`*` on a node that opens braces) and `imp
 Front 24's type aliases (decision 118 rule 1) add `run/type_alias` — `Id`, `Pair<A, B>`, `Ids` and
 an `@Result` alias typing a function that only passes the value along, on all four targets — and
 `modules/import_type_alias` — a `pub` alias imported like a type, the types its target names with it.
+Decision 139 adds `modules/pub_val_across_modules` — a module-level `pub val` of a record, an enum,
+an array, a primitive and a lambda imported from a sibling, one under an alias, read from `main`, a
+function and a method; the module bodies of `base` (imported only by `config`) and `config` run
+before `main`, dependencies first, and a val read twice is evaluated once — on all four targets.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

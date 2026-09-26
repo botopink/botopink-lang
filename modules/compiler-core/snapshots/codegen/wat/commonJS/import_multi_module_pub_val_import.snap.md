@@ -8,7 +8,11 @@ pub val HOST = "localhost";
 ```javascript
 const PORT = 8080;
 
+exports.PORT = PORT;
+
 const HOST = "localhost";
+
+exports.HOST = HOST;
 ```
 
 ----- TYPESCRIPT TYPEDEF -- config.d.ts

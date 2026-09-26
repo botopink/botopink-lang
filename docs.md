@@ -280,6 +280,11 @@ fn main() {
 at the same point relative to the program's own code. A backend that cannot run
 it is a gap in that backend, not a different meaning of `val`.
 
+A `pub val` is imported like a `pub fn` — `import {port} from "config";` — and
+may hold any type: a record, an enum, an array, a primitive, a function. The
+bodies of the modules a program imports run before its own, dependencies first,
+each once.
+
 ### var — mutable binding
 
 <!-- docs-check: body -->
