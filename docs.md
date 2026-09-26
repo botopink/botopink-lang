@@ -450,6 +450,26 @@ type Tree<T> {
 Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Task<T>`,
 `@Iterator<T>`, `@Expr<T>`. Optionals are `?T`; tuples are `#(A, B)`.
 
+A written generic type carries all of its type arguments — `fn get(b: Box)` for a
+`type Box<T>` is `error: Box needs 1 type argument`, and `Pair<i32>` for a
+`Pair<A, B>` names both counts. Inside a declaration with type parameters `Self`
+carries them too: `Self<T>`, and `Self<U>` for the same type over another
+argument. A declaration without type parameters writes `Self`, and so does a
+non-generic type implementing a generic behavior — the behavior's `Self<…>` is
+that type:
+
+```botopink
+type Box<T>(value: T) {
+    pub fn get(self: Self<T>) -> T { return self.value; }
+    pub fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Self<U> { return Box(value: f(self.value)); }
+}
+
+fn main() {
+    val b: Box<string> = Box(value: 1).map({ x -> "one" });
+    @print(b.get());
+}
+```
+
 ### Type aliases
 
 ```botopink
@@ -602,8 +622,8 @@ Which methods those are comes from two **ambient** behaviors — ambient like
 
 <!-- docs-check: skip the two behaviors as libs/std declares them, not a module -->
 ```botopink
-pub behavior Index<K, V> { fn at(self: Self, key: K) -> ?V; }
-pub behavior Slice<V>    { fn slice(self: Self, start: i32, end: ?i32) -> V; }
+pub behavior Index<K, V> { fn at(self: Self<K, V>, key: K) -> ?V; }
+pub behavior Slice<V>    { fn slice(self: Self<V>, start: i32, end: ?i32) -> V; }
 ```
 
 So indexing is not a privilege of the three built-in collections. `Array<T>`
@@ -1995,7 +2015,6 @@ closes it, or says that it has none yet. Every row below was re-derived by
 
 | Rule | Today | Closes with |
 |---|---|---|
-| `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.10-beta C-15 (`01-checker` step 6) |
 | A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.10-beta C-13 (decision 29): `15-language-surface`'s parser half first, `16-formatter` second (the formatter has to stop printing it in the same wave), then the sources |
 | A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value the four backends agree since C-06: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, erlang, beam and wasm (wasm printed `256` and erlang `0` before) | 1.0.10-beta C-06 (`02-erlang` step 3, `03-beam` step 3; decision 53 at run time). Decision 105 keeps both spellings and gives `a...b` a value in a `for` as well |
 

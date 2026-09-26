@@ -178,7 +178,7 @@ test "order case over Order" {
 pub type Dict<K, V>(
     pairs: Array<#(K, V)>,
 ) implement Index<K, V> {
-    pub fn at(self: Self, key: K) -> ?V {
+    pub fn at(self: Self<K, V>, key: K) -> ?V {
         // NOTE: written with `forEach` + accumulator rather than
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is
         // not lowered yet (tracked in tasks/v0.beta.4 Part A: primitive/option
@@ -188,37 +188,37 @@ pub type Dict<K, V>(
         return found;
     }
 
-    pub fn hasKey(self: Self, key: K) -> bool {
+    pub fn hasKey(self: Self<K, V>, key: K) -> bool {
         return self.pairs.filter({ p -> p._0 == key }).at(0) != null;
     }
 
-    pub fn size(self: Self) -> i32 {
+    pub fn size(self: Self<K, V>) -> i32 {
         return self.pairs.length;
     }
 
-    pub fn isEmpty(self: Self) -> bool {
+    pub fn isEmpty(self: Self<K, V>) -> bool {
         return self.pairs.length == 0;
     }
 
-    pub fn keys(self: Self) -> Array<K> {
+    pub fn keys(self: Self<K, V>) -> Array<K> {
         return self.pairs.map({ p -> p._0 });
     }
 
-    pub fn values(self: Self) -> Array<V> {
+    pub fn values(self: Self<K, V>) -> Array<V> {
         return self.pairs.map({ p -> p._1 });
     }
 
-    pub fn insert(self: Self, key: K, value: V) -> Dict<K, V> {
+    pub fn insert(self: Self<K, V>, key: K, value: V) -> Dict<K, V> {
         val filtered = self.pairs.filter({ p -> p._0 != key });
         return Dict(pairs: filtered.append([#(key, value)]));
     }
 
-    pub fn delete(self: Self, key: K) -> Dict<K, V> {
+    pub fn delete(self: Self<K, V>, key: K) -> Dict<K, V> {
         return Dict(pairs: self.pairs.filter({ p -> p._0 != key }));
     }
 
     // Right-biased merge: keys in both keep `other`'s value.
-    pub fn merge(self: Self, other: Dict<K, V>) -> Dict<K, V> {
+    pub fn merge(self: Self<K, V>, other: Dict<K, V>) -> Dict<K, V> {
         var out = self;
         other.pairs.forEach({ p ->
             out = out.insert(p._0, p._1);
@@ -227,7 +227,7 @@ pub type Dict<K, V>(
     }
 
     pub fn fold<A>(
-        self: Self,
+        self: Self<K, V>,
         initial: A,
         f: fn(acc: A, key: K, value: V) -> A,
     ) -> A {
@@ -238,7 +238,7 @@ pub type Dict<K, V>(
         return acc;
     }
 
-    pub fn mapValues<W>(self: Self, f: fn(value: V) -> W) -> Dict<K, W> {
+    pub fn mapValues<W>(self: Self<K, V>, f: fn(value: V) -> W) -> Dict<K, W> {
         var out: #(K, W)[] = [];
         self.pairs.forEach({ p -> out.push(#(p._0, f(p._1))) });
         return Dict(pairs: out);

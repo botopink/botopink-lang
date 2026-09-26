@@ -17,7 +17,7 @@ behavior Counted extends Sized {
 type Bag<T>(
     items: Array<T>,
 ) implement Counted {
-    pub fn size(self: Self) -> i32 {
+    pub fn size(self: Self<T>) -> i32 {
         return self.items.length;
     }
 }

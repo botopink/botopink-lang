@@ -1695,7 +1695,7 @@ const Emitter = struct {
         if (m.params.len == 0) return false;
         const first = m.params[0];
         if (std.mem.eql(u8, first.name, "self")) return true;
-        return first.typeRef == .named and std.mem.eql(u8, first.typeRef.named, "Self");
+        return first.typeRef.isSelf();
     }
 
     /// The enum whose method `recv.<method>(…)` calls, when inference typed the

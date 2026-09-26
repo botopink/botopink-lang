@@ -567,6 +567,24 @@ binding list handed back is built tolerantly from imports, type declarations, `f
 `val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
 well-typed one binds, so the language server still lists it.
 
+## Generic types carry their arguments (decision 8 §1.1, §1.2 — 01 step 6, C-15)
+
+§1.1 — a written use of a `type` with type parameters supplies every parameter without a default:
+`fn get(b: Box)` is `Box needs 1 type argument` and `Pair<i32>` for `Pair<A, B>` is `Pair needs 2
+type arguments, 1 given`, located at the annotation (`resolveTypeRefInContext`, `requiredGenericArgs`,
+`refuseGenericArity`). `env.resolveTypeName`'s "a bare generic name means any arguments" tail is no
+longer reached from a written annotation.
+
+§1.2 — `Self` follows §1.1. `checkSelfSpelling` walks every `type`'s and `behavior`'s method
+signatures at the declaration (before `Self` is bound to a receiver, where the declaration that was
+wrong can no longer be named): bare `Self` in a declaration with type parameters is `Self needs N
+type argument(s)`; `Self<…>` in one without is refused too. `Self<U>` resolves to the declaration's
+own type over the written arguments (`Box<U>`); where `Self` is bound to a non-generic implementer
+of a generic behavior (A1), `Self<…>` is that implementer as it is, so `Point(x: 1).map({ x -> "a" })`
+reds against `Mappable<i32>` while `Box(value: 1).map({ x -> "a" })` is a `Box<string>`. `libs/std`
+writes `Self<…>` in all its generic declarations; the backends read either spelling through
+`ast.TypeRef.isSelf()`.
+
 ## `unknown` (decision 8 §2, 1.0.4's 06 N19)
 
 `unknown` reaches inference as `TypeRef.named` under the reserved spelling `ast.unknown_type_name`;

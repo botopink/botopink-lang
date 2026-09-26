@@ -320,7 +320,7 @@ test "hover: interface method on array receiver shows signature" {
     // comment leaking into the signature (the bug this test now pins down).
     try std.testing.expectEqualStrings(
         \\```botopink
-        \\fn filter(self: Self, pred: fn(item: T) -> bool) -> Self
+        \\fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>
         \\```
         \\
         \\*from `behavior Array`*

@@ -3302,7 +3302,7 @@ const Emitter = struct {
                 try this.local_behaviors.put(i.name, i);
                 for (i.methods) |m| {
                     if (m.returnType) |rt| {
-                        if (rt == .named and std.mem.eql(u8, rt.named, "Self")) {
+                        if (rt.isSelf()) {
                             const sq = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ i.name, m.name });
                             try this.iface_self_returns.put(sq, {});
                         }
@@ -3342,7 +3342,7 @@ const Emitter = struct {
                 var key_buf: [256]u8 = undefined;
                 const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ i.name, m.name }) catch continue;
                 if (m.returnType) |rt| {
-                    if (rt == .named and std.mem.eql(u8, rt.named, "Self") and !this.iface_self_returns.contains(key)) {
+                    if (rt.isSelf() and !this.iface_self_returns.contains(key)) {
                         try this.iface_self_returns.put(try this.alloc.dupe(u8, key), {});
                     }
                 }

@@ -2038,6 +2038,18 @@ pub const TypeRef = union(enum) {
     /// Surface syntax (post-F0): `type` / `type string | int | bool`.
     typeparam: []TypeRef,
 
+    /// `Self` as written in a signature — bare, or with the type arguments a
+    /// declaration with type parameters writes (`Self<T>`, decision 8 §1.2).
+    /// The arguments are the checker's; a backend asking "does this method
+    /// return the receiver's type" reads both spellings the same.
+    pub fn isSelf(this: TypeRef) bool {
+        return switch (this) {
+            .named => |n| std.mem.eql(u8, n, "Self"),
+            .generic => |g| !g.is_builtin and std.mem.eql(u8, g.name, "Self"),
+            else => false,
+        };
+    }
+
     /// The members of a union type `A | B` (`union_type_name`); null otherwise.
     pub fn unionMembers(this: TypeRef) ?[]TypeRef {
         return switch (this) {

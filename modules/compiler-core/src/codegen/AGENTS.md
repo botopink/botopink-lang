@@ -1359,7 +1359,7 @@ codegen/
   module (a default body may call another), so only the defaults a call site
   actually reached are emitted. Inside such a body the receiver's type is `Self`,
   which inference leaves unlowered: `selfPrimKind` re-derives the primitive kind
-  from the owning interface (following `-> Self` methods through chained calls) and
+  from the owning interface (following `-> Self` methods through chained calls — `-> Self<T>` too, read through `ast.TypeRef.isSelf()`, since decision 8 §1.2 has `libs/std` write the argument) and
   bare callees also resolve against the std prelude template index
   (`preludeHelperNode`, `in_iface_default`).
 - **Value-receiver instance methods**: record/enum/struct methods keep `self`

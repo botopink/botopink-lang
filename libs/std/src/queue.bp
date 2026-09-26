@@ -10,29 +10,29 @@
 pub type Queue<T>(
     items: Array<T>,
 ) {
-    pub fn size(self: Self) -> i32 {
+    pub fn size(self: Self<T>) -> i32 {
         return self.items.length;
     }
 
-    pub fn isEmpty(self: Self) -> bool {
+    pub fn isEmpty(self: Self<T>) -> bool {
         return self.items.length == 0;
     }
 
-    pub fn enqueue(self: Self, item: T) -> Queue<T> {
+    pub fn enqueue(self: Self<T>, item: T) -> Queue<T> {
         return Queue(items: self.items.append([item]));
     }
 
-    pub fn dequeue(self: Self) -> #(Queue<T>, ?T) {
+    pub fn dequeue(self: Self<T>) -> #(Queue<T>, ?T) {
         val head = self.items.at(0);
         val rest = self.items.slice(1, self.items.length);
         return #(Queue(items: rest), head);
     }
 
-    pub fn peek(self: Self) -> ?T {
+    pub fn peek(self: Self<T>) -> ?T {
         return self.items.at(0);
     }
 
-    pub fn toList(self: Self) -> Array<T> {
+    pub fn toList(self: Self<T>) -> Array<T> {
         return self.items;
     }
 }

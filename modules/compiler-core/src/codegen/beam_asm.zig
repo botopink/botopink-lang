@@ -2083,7 +2083,7 @@ const Emitter = struct {
             .behavior => |i| for (i.methods) |m| {
                 const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ i.name, m.name });
                 if (m.returnType) |rt| {
-                    if (rt == .named and std.mem.eql(u8, rt.named, "Self")) try self.self_returns.put(key, {});
+                    if (rt.isSelf()) try self.self_returns.put(key, {});
                 }
                 if (!m.is_default or m.body == null) continue;
                 if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;

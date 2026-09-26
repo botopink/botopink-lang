@@ -1444,3 +1444,68 @@ test "public unknown: a `pub val` inferred as `unknown` is refused; a written on
         \\pub fn parse(s: string) -> unknown { return s; }
     );
 }
+
+// ── decision 8 §1.1 / §1.2: a written generic type carries its arguments ─────
+
+test "generics: a generic type written without its arguments is refused, located" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type Box<T>(value: T)
+        \\fn get(b: Box) -> i32 { return 0; }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Box needs 1 type argument") != null);
+}
+
+test "generics: too few arguments names both counts" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type Pair<A, B>(a: A, b: B)
+        \\fn f(p: Pair<i32>) -> i32 { return 0; }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Pair needs 2 type arguments, 1 given") != null);
+}
+
+test "generics: bare `Self` in a generic declaration names `Self<…>`; `Self` in a plain one stays" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type Box<T>(value: T) {
+        \\    pub fn get(self: Self) -> T { return self.value; }
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Self needs 1 type argument: `Box` declares 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Self<…>") != null);
+    const plain = try typeErrorMessage(std.testing.allocator,
+        \\type Point(x: i32) {
+        \\    pub fn get(self: Self<i32>) -> i32 { return self.x; }
+        \\}
+    );
+    defer std.testing.allocator.free(plain);
+    try std.testing.expect(std.mem.indexOf(u8, plain, "`Point` declares no type parameter") != null);
+}
+
+test "generics: `Self<U>` is the declaration over another argument; A1 binds a behavior's `Self<…>` to a plain implementer" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Box<T>(value: T) {
+        \\    pub fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Self<U> { return Box(value: f(self.value)); }
+        \\}
+        \\behavior Mappable<T> { fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Self<U>; }
+        \\type Point(x: i32) implement Mappable<i32> {
+        \\    fn map(self: Self, f: fn(x: i32) -> i32) -> Self { return Point(x: f(self.x)); }
+        \\}
+        \\fn main() {
+        \\    val b: Box<string> = Box(value: 1).map({ x -> "a" });
+        \\    val p: Point = Point(x: 1).map({ x -> x + 1 });
+        \\    @print(b.value);
+        \\    @print(p.x);
+        \\}
+    );
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\behavior Mappable<T> { fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Self<U>; }
+        \\type Point(x: i32) implement Mappable<i32> {
+        \\    fn map(self: Self, f: fn(x: i32) -> i32) -> Self { return Point(x: f(self.x)); }
+        \\}
+        \\fn main() { val p = Point(x: 1).map({ x -> "a" }); @print(p.x); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected i32, got string") != null);
+}

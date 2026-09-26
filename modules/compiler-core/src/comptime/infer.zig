@@ -255,6 +255,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
 
     // Pass 1: register type definitions and their constructors.
     try registerTypeAliases(env, program);
+    try checkSelfSpelling(env, program);
     for (program.decls) |decl| {
         try registerTypeDecl(env, decl);
     }
@@ -328,6 +329,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try validateUniqueDefaults(env, program);
 
     try registerTypeAliases(env, program);
+    try checkSelfSpelling(env, program);
     for (program.decls) |decl| {
         try registerTypeDecl(env, decl);
     }
@@ -6009,6 +6011,88 @@ fn resolveReturnType(
     return resolveTypeRefInContext(env, ref, genericMap);
 }
 
+/// Decision 8 §1.2 — `Self` follows §1.1: inside a `type` or `behavior` with
+/// type parameters it is written `Self<…>` (bare `Self` is refused), and in a
+/// declaration without them it is written `Self` (`Self<…>` is refused). A
+/// syntactic walk over each method's parameter and return annotations, at the
+/// declaration, because `Self` resolves to the RECEIVER wherever a behavior's
+/// signature is instantiated — too late to say which declaration was wrong.
+fn checkSelfSpelling(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .type_ => |t| try checkSelfInMethods(env, t.name, t.genericParams.len, t.methods),
+        .behavior => |b| try checkSelfInMethods(env, b.name, b.genericParams.len, b.methods),
+        else => {},
+    };
+}
+
+fn checkSelfInMethods(env: *Env, owner: []const u8, arity: usize, methods: []const ast.BehaviorMethod) InferError!void {
+    for (methods) |m| {
+        for (m.params) |p| try checkSelfRef(env, owner, arity, p.typeRef, p.typeLoc);
+        if (m.returnType) |rt| try checkSelfRef(env, owner, arity, rt, m.returnTypeLoc);
+    }
+}
+
+fn checkSelfRef(env: *Env, owner: []const u8, arity: usize, ref: ast.TypeRef, loc: ast.Loc) InferError!void {
+    switch (ref) {
+        .named => |n| if (arity > 0 and std.mem.eql(u8, n, "Self")) {
+            const msg = try std.fmt.allocPrint(env.arena, "Self needs {d} type argument{s}: `{s}` declares {d}", .{ arity, if (arity == 1) "" else "s", owner, arity });
+            var params: std.ArrayListUnmanaged(u8) = .empty;
+            for (0..arity) |i| try params.appendSlice(env.arena, if (i == 0) "…" else ", …");
+            const hint = try std.fmt.allocPrint(env.arena, "Inside a declaration with type parameters, `Self` carries them: write `Self<{s}>` (decision 8 §1.2).", .{params.items});
+            env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+            return error.TypeError;
+        },
+        .generic => |g| {
+            if (arity == 0 and std.mem.eql(u8, g.name, "Self")) {
+                const msg = try std.fmt.allocPrint(env.arena, "`{s}` declares no type parameter, so `Self` takes no type argument", .{owner});
+                env.lastError = TypeError.custom(msg, "Write `Self` (decision 8 §1.2).").withLoc(loc);
+                return error.TypeError;
+            }
+            for (g.args) |a| try checkSelfRef(env, owner, arity, a, loc);
+        },
+        .array => |e| try checkSelfRef(env, owner, arity, e.*, loc),
+        .optional => |e| try checkSelfRef(env, owner, arity, e.*, loc),
+        .tuple_ => |es| for (es) |e| try checkSelfRef(env, owner, arity, e, loc),
+        .labeledTuple => |lt| for (lt.elems) |e| try checkSelfRef(env, owner, arity, e, loc),
+        .function => |f| {
+            for (f.params) |e| try checkSelfRef(env, owner, arity, e, loc);
+            try checkSelfRef(env, owner, arity, f.returnType.*, loc);
+        },
+        else => {},
+    }
+}
+
+/// The type parameters of `td` a written use must supply: the leading ones
+/// with no declared default.
+fn requiredGenericArgs(td: envMod.TypeDef) usize {
+    const params = td.genericParams().len;
+    const dflts = td.genericDefaults();
+    if (dflts.len == 0) return params;
+    var n: usize = 0;
+    for (dflts) |d| {
+        if (d != null) break;
+        n += 1;
+    }
+    return n;
+}
+
+/// Decision 8 §1.1 / §1.2 — a written generic type (or `Self` of a generic
+/// declaration) without all of its type arguments. Located at the annotation.
+fn refuseGenericArity(env: *Env, name: []const u8, required: usize, declared: usize, given: usize) InferError {
+    const msg = if (given == 0)
+        try std.fmt.allocPrint(env.arena, "{s} needs {d} type argument{s}", .{ name, required, if (required == 1) "" else "s" })
+    else
+        try std.fmt.allocPrint(env.arena, "{s} needs {d} type argument{s}, {d} given", .{ name, required, if (required == 1) "" else "s", given });
+    const hint = if (std.mem.eql(u8, name, "Self"))
+        try std.fmt.allocPrint(env.arena, "Inside a declaration with type parameters `Self` carries them: write `Self<…>` with {d} argument{s} (decision 8 §1.2).", .{ declared, if (declared == 1) "" else "s" })
+    else
+        try std.fmt.allocPrint(env.arena, "A written type carries all of its type arguments (decision 8 §1.1): write `{s}<…>` with {d}.", .{ name, required });
+    var err = TypeError.custom(msg, hint);
+    if (env.typeRefLoc) |l| err = err.withLoc(l);
+    env.lastError = err;
+    return error.TypeError;
+}
+
 /// Resolve an `ast.TypeRef` to a `*T.Type` using a generic-parameter map.
 /// Used when the type ref appears inside a generic context (record/enum registration).
 fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHashMap(*T.Type)) InferError!*T.Type {
@@ -6021,6 +6105,13 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             if (std.mem.eql(u8, n, yield_step_type_name)) env.usesYieldStep = true;
             if (!genericMap.contains(n)) {
                 if (env.typeAliases.get(n)) |alias| return expandTypeAlias(env, alias, &.{}, genericMap);
+                // Decision 8 §1.1 — a written generic type carries all of its
+                // type arguments: `fn get(b: Box)` for a `type Box<T>` used to
+                // mean "any args" and check.
+                if (env.lookupTypeDef(n)) |td| {
+                    const required = requiredGenericArgs(td);
+                    if (required > 0) return refuseGenericArity(env, n, required, td.genericParams().len, 0);
+                }
             }
             return env.resolveTypeName(n, genericMap);
         },
@@ -6071,6 +6162,30 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
                 // (`inferSequenceNext`). Everywhere else it reds below.
                 if (b.args.len == 2 and legacyEffects(env) and std.mem.eql(u8, b.name, yield_step_type_name)) {
                     return resolveTypeRefInContext(env, .{ .generic = .{ .name = b.name, .args = b.args[0..1], .is_builtin = false } }, genericMap);
+                }
+                // Decision 8 §1.2 — `Self<…>` inside a declaration is the
+                // declaration's own type applied to the written arguments
+                // (`Self<U>` in `type Box<T>` is `Box<U>`). Where `Self` stands
+                // for a non-generic implementer of a generic behavior (A1),
+                // `Self<…>` is that implementer as it is.
+                if (std.mem.eql(u8, b.name, "Self")) {
+                    if (genericMap.get("Self")) |selfTy| {
+                        const sd = selfTy.deref();
+                        if (sd.* == .named) {
+                            if (sd.named.args.len == 0) return sd;
+                            if (sd.named.args.len != b.args.len)
+                                return refuseGenericArity(env, "Self", sd.named.args.len, sd.named.args.len, b.args.len);
+                            const sargs = try env.arena.alloc(*T.Type, b.args.len);
+                            for (b.args, 0..) |a, i| sargs[i] = try resolveTypeRefInContext(env, a, genericMap);
+                            return env.namedTypeArgs(sd.named.name, sargs);
+                        }
+                    }
+                }
+                // Decision 8 §1.1 — fewer arguments than the type's required
+                // parameters (`Pair<i32>` for a `Pair<A, B>`).
+                if (env.lookupTypeDef(b.name)) |td| {
+                    const required = requiredGenericArgs(td);
+                    if (b.args.len < required) return refuseGenericArity(env, b.name, required, td.genericParams().len, b.args.len);
                 }
                 // RG5 on a declared type — an argument past the parameters
                 // the type declares is refused at the annotation, as it is on

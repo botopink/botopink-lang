@@ -313,6 +313,13 @@ gone, not aliased (decision 127).
 
 ## Conventions
 
+- **`Self<…>` in a generic declaration** (decision 8 §1.2, enforced by the checker —
+  `comptime/AGENTS.md` § Generic types carry their arguments): `behavior Array<T>` writes
+  `self: Self<T>`, `type Dict<K, V>` writes `self: Self<K, V>`; a declaration without type
+  parameters writes `Self`. A written generic type carries all its arguments (`Dict<K, V>`,
+  never `Dict`). A binding born as `[]` carries its element type (`var out: T[] = [];`) —
+  the checker warns on the bare form (decision 8 §1.4).
+
 - Stable, additive signatures — renames force snapshot churn.
 - `.d.bp` files stay declarative (no bodies).
 - **Both `.d.bp` files are at the formatter's canonical form, and

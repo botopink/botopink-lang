@@ -134,8 +134,6 @@ erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
 
 # ── §1 generics ───────────────────────────────────────────────────────────────
-*        | reject/generic_missing_argument.bp | 01 step 6 | §1.1: a written generic type without its arguments is accepted (exit 0)
-*        | reject/self_without_argument.bp    | 01 step 6 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
 
 # ── §8 host externals ─────────────────────────────────────────────────────────
 

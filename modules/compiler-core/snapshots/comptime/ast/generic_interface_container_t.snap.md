@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Container = behavior <T> {
-    fn fetch(self: Self) -> T;
-    fn store(self: Self, value: T);
+    fn fetch(self: Self<T>) -> T;
+    fn store(self: Self<T>, value: T);
 }
 ```
 
@@ -22,7 +22,7 @@ val Container = behavior <T> {
           "params": [
             {
               "name": "self",
-              "type": "Self"
+              "type": "Self<T>"
             }
           ],
           "return_type": "T"
@@ -32,7 +32,7 @@ val Container = behavior <T> {
           "params": [
             {
               "name": "self",
-              "type": "Self"
+              "type": "Self<T>"
             },
             {
               "name": "value",

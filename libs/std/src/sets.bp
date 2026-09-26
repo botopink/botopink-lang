@@ -9,33 +9,33 @@
 pub type Set<T>(
     items: Array<T>,
 ) {
-    pub fn contains(self: Self, x: T) -> bool {
+    pub fn contains(self: Self<T>, x: T) -> bool {
         return self.items.indexOf(x) != -1;
     }
 
-    pub fn size(self: Self) -> i32 {
+    pub fn size(self: Self<T>) -> i32 {
         return self.items.length;
     }
 
-    pub fn isEmpty(self: Self) -> bool {
+    pub fn isEmpty(self: Self<T>) -> bool {
         return self.items.length == 0;
     }
 
-    pub fn toList(self: Self) -> Array<T> {
+    pub fn toList(self: Self<T>) -> Array<T> {
         return self.items;
     }
 
-    pub fn insert(self: Self, x: T) -> Set<T> {
+    pub fn insert(self: Self<T>, x: T) -> Set<T> {
         return if (self.items.indexOf(x) != -1) self else Set(items: self.items.append(
                 [x]
             ));
     }
 
-    pub fn delete(self: Self, x: T) -> Set<T> {
+    pub fn delete(self: Self<T>, x: T) -> Set<T> {
         return Set(items: self.items.filter({ item -> item != x }));
     }
 
-    pub fn union(self: Self, other: Set<T>) -> Set<T> {
+    pub fn union(self: Self<T>, other: Set<T>) -> Set<T> {
         var out = self;
         other.items.forEach({ x ->
             out = out.insert(x);
@@ -43,11 +43,11 @@ pub type Set<T>(
         return out;
     }
 
-    pub fn intersection(self: Self, other: Set<T>) -> Set<T> {
+    pub fn intersection(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(items: self.items.filter({ x -> other.items.indexOf(x) != -1 }));
     }
 
-    pub fn difference(self: Self, other: Set<T>) -> Set<T> {
+    pub fn difference(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(items: self.items.filter({ x -> other.items.indexOf(x) == -1 }));
     }
 }
