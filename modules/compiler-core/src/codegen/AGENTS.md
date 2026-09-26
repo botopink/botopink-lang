@@ -638,6 +638,10 @@ codegen/
   the program declares that fn field and none a method of the name — which
   applies `'__bp_field'(C, set)`. Names alone crossed before, and the call was
   a local `set(C, 5)` no module defines.
+- **beam `@todo` / `@panic`** raise `erlang:error({todo, Msg})` /
+  `{panic, Msg}`, the erlang backend's reason, with `builtins_fns.d.bp`'s
+  default message; `@todo()` raised the bare atom `undef`, which read as a
+  missing function (`{undef, main:notReady/0}`, reported by C-16).
 - **A bare `break` at a generator fn's own level** (decision 103) ends the
   generator (`genStopThrow`): `throw({'__bp_gen_stop', Key})`, which
   `genEndCatch` answers with `ok` — a second catch clause written only when

@@ -7293,8 +7293,18 @@ const Emitter = struct {
     /// and the rest of the builtins require strings/binaries (Fase 3+).
     fn lowerBuiltinCall(self: *Emitter, cc: anytype, mode: CallMode) anyerror!void {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
-            const atom: []const u8 = if (std.mem.eql(u8, cc.callee, "todo")) "undef" else "panic";
-            try beamEmitter.writeMove(self.out, Term.atomOf(atom), 0);
+            // `erlang:error({todo, Msg})` / `{panic, Msg}` — the erlang
+            // backend's reason, message defaulted as `builtins_fns.d.bp`
+            // declares it. `@todo()` raised the bare atom `undef`, which read
+            // as a missing function (`{undef, main:notReady/0}`).
+            const is_todo = std.mem.eql(u8, cc.callee, "todo");
+            if (cc.args.len > 0) {
+                try self.lowerExprIntoX0(cc.args[0].value.*);
+            } else {
+                try beamEmitter.writeMoveOp(self.out, Op.str(if (is_todo) "not implemented" else "panic"), Dst.xr(0));
+            }
+            try beamEmitter.writeTestHeap(self.out, 3, 1);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(if (is_todo) "todo" else "panic"), Op.xr(0) });
             try beamEmitter.writeCall(
                 self.out,
                 if (mode == .tail) .only else .normal,

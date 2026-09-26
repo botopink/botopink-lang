@@ -46,7 +46,9 @@ fn main() {
     {move, {y, 0}, {x, 0}}.
     {jump, {f, 10}}.
   {label, 11}.
-    {move, {atom, panic}, {x, 0}}.
+    {move, {literal, <<"assert pattern did not match">>}, {x, 0}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, panic}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {jump, {f, 10}}.
   {label, 10}.
