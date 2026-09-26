@@ -347,11 +347,17 @@ means, was consulted by neither. A name is unique inside a module and never
 over a program: `libs/std` declares `parse` in `json`, in `querystring` and in
 `url` today. Measured, a module importing `Outcome` from `"parser"` was bound
 to `"net"`'s record and the program was refused against the wrong record's
-fields ("expected i32, got string"). Both loops run twice now
-(`ast.ImportSource.namesModule` — the full path or its last segment): the
-module the source NAMES answers first, and the old whole-registry scan is the
-second pass, so a `from "<pkg>"` handle covering several modules, a bare
-`import { … };` and a module not yet analysed all reach exactly the scan they
+fields ("expected i32, got string"). Both loops run three passes now
+(`ast.ImportSource.admits(path, pass)`): the module the source NAMES answers
+first (`namesModule` — the full path or its last segment), then the modules of
+the PACKAGE it names (`inPackage` — `from "web"` covers every `web/…` path,
+bounded by the slash, so `web-app/…` is not `web`'s), then the whole registry.
+Without the package pass a `from "<pkg>"` handle narrowed nothing, and two
+libraries of one build declaring one name (a server library's `Response` and
+an HTML library's, both loaded by an application that uses the two) made every
+such import ambiguous — inside either library's own modules too
+(`tests/language/modules/import_same_name_from_two_packages`). A bare
+`import { … };` and a module not yet analysed still reach the scan they
 reached before.
 
 **Only the leaf of an import path enters scope (decision 107).** An item is

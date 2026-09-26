@@ -1,0 +1,4 @@
+//// A library over `web`: its `page` module imports `Response` and `ok` from
+//// the package `web`, not from a module of it.
+
+pub mod page;

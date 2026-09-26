@@ -254,6 +254,21 @@ pub const CrossModule = struct {
         };
         if (named_n == 1) return .{ .one = named_hit };
 
+        // The PACKAGE the import names, when it names no module: two libraries
+        // of one build may each declare a name (a server library's `Response`
+        // and an HTML library's), and `from "web"` says which.
+        var pkg_n: usize = 0;
+        var pkg_hit: ExportInfo = undefined;
+        if (named_n == 0) if (source) |src| for (list) |e| {
+            if (!src.inPackage(e.module)) continue;
+            pkg_n += 1;
+            pkg_hit = e;
+        };
+        if (pkg_n == 1) return .{ .one = pkg_hit };
+        // The candidates still standing: the named modules, else the package's,
+        // else every declaration.
+        const pass: u2 = if (named_n > 1) 0 else if (pkg_n > 1) 1 else 2;
+
         // The arity the CALL takes. This is `MethodSig`'s widening (`51a27b97`)
         // on the plain-`fn` axis: `parse/1` and `parse/2` are two functions and
         // a call site that passes one argument means the first.
@@ -261,7 +276,7 @@ pub const CrossModule = struct {
             var ar_n: usize = 0;
             var ar_hit: ExportInfo = undefined;
             for (list) |e| {
-                if (named_n > 1 and !source.?.namesModule(e.module)) continue;
+                if (pass < 2 and !source.?.admits(e.module, pass)) continue;
                 if (e.kind != .@"fn" or e.arity != want) continue;
                 ar_n += 1;
                 ar_hit = e;
@@ -272,7 +287,7 @@ pub const CrossModule = struct {
         // Two of the candidates still standing, for the message.
         var a: ?ExportInfo = null;
         for (list) |e| {
-            if (named_n > 1 and !source.?.namesModule(e.module)) continue;
+            if (pass < 2 and !source.?.admits(e.module, pass)) continue;
             if (a == null) {
                 a = e;
                 continue;
@@ -1496,6 +1511,47 @@ test "pick: a record name is contested by its name alone — there is no arity t
     // An arity cannot tell two records apart, so it changes nothing.
     try testing.expect(xc.picked("Outcome", null, 1) == null);
     try testing.expect(xc.picked("Outcome", null, null) == null);
+}
+
+test "pick: a package handle picks the one module of that package that declares the name" {
+    var owners = std.StringHashMap([]const ExportInfo).init(testing.allocator);
+    defer owners.deinit();
+    // A server library's `Response` and an HTML library's, in one build.
+    const responses = [_]ExportInfo{
+        .{ .module = "web/http", .kind = .record, .is_class = true },
+        .{ .module = "ui/stream", .kind = .record, .is_class = true },
+        .{ .module = "web-app/page", .kind = .record, .is_class = true },
+    };
+    try owners.put("Response", &responses);
+    var xc = pickIndex(&owners);
+    defer {
+        xc.exports.deinit();
+        xc.export_faults.deinit();
+        xc.imported.deinit();
+        xc.atoms.deinit();
+        xc.atom_faults.deinit();
+    }
+    const from_web: ast.ImportSource = .{ .module = "web" };
+    const from_ui: ast.ImportSource = .{ .module = "ui" };
+    try testing.expectEqualStrings("web/http", (xc.picked("Response", from_web, null) orelse return error.TestExpectedPick).module);
+    try testing.expectEqualStrings("ui/stream", (xc.picked("Response", from_ui, null) orelse return error.TestExpectedPick).module);
+    // `web-app/…` is not a module of `web`: the `/` bounds the handle.
+    const from_app: ast.ImportSource = .{ .module = "web-app" };
+    try testing.expectEqualStrings("web-app/page", (xc.picked("Response", from_app, null) orelse return error.TestExpectedPick).module);
+    // A handle naming no package of the build still narrows nothing.
+    try testing.expect(xc.picked("Response", .{ .module = "elsewhere" }, null) == null);
+}
+
+test "ImportSource.inPackage: every module under the handle, bounded by its slash" {
+    const pkg: ast.ImportSource = .{ .module = "web" };
+    try testing.expect(pkg.inPackage("web/http"));
+    try testing.expect(pkg.inPackage("web/request"));
+    try testing.expect(!pkg.inPackage("web-app/page"));
+    try testing.expect(!pkg.inPackage("web"));
+    const root: ast.ImportSource = .root;
+    try testing.expect(!root.inPackage("web/http"));
+    try testing.expect(pkg.admits("anything/else", 2));
+    try testing.expect(!pkg.admits("ui/stream", 1));
 }
 
 test "ImportSource.namesModule: the full path and its last segment, never a package handle" {

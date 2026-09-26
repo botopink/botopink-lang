@@ -1204,12 +1204,12 @@ fn resolveImports(
                     // used to reach the scan still reaches it.
                     var bound_type_decl = false;
                     var bound_behavior = false;
-                    for ([2]bool{ true, false }) |named_only| {
+                    for ([3]u2{ 0, 1, 2 }) |pass| {
                         if (bound_type_decl or bound_behavior) break;
                         var dit = typeDeclRegistry.iterator();
                         while (dit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
+                            if (!leaf_src.admits(e.key_ptr.*, pass)) continue;
                             if (e.value_ptr.get(name)) |type_decl| {
                                 // A behavior is not re-registered as a type:
                                 // its value binding below stays what it was,
@@ -1243,12 +1243,12 @@ fn resolveImports(
                     // first): a template or decorator evaluated here names it
                     // in its module atom.
                     var owner: []const u8 = "";
-                    for ([2]bool{ true, false }) |named_only| {
+                    for ([3]u2{ 0, 1, 2 }) |pass| {
                         if (owner.len > 0) break;
                         var oit = registry.iterator();
                         while (oit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
+                            if (!leaf_src.admits(e.key_ptr.*, pass)) continue;
                             if (e.value_ptr.contains(name)) {
                                 owner = e.key_ptr.*;
                                 break;
@@ -1265,12 +1265,12 @@ fn resolveImports(
                     // refused where it is written, naming both
                     // (`infer.unboundAt` reads `NamespaceImports.ambiguous`).
                     if (!bound_type_decl) ambiguity: {
-                        for ([2]bool{ true, false }) |named_only| {
+                        for ([3]u2{ 0, 1, 2 }) |pass| {
                             var owners: std.ArrayListUnmanaged([]const u8) = .empty;
                             var ait = registry.iterator();
                             while (ait.next()) |e| {
                                 if (isStdPkgPath(e.key_ptr.*)) continue;
-                                if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
+                                if (!leaf_src.admits(e.key_ptr.*, pass)) continue;
                                 if (e.value_ptr.contains(name)) try owners.append(env.arena, e.key_ptr.*);
                             }
                             if (owners.items.len == 0) continue;
@@ -1287,12 +1287,12 @@ fn resolveImports(
                         }
                     }
                     if (!bound_type_decl and !bound_value) {
-                        for ([2]bool{ true, false }) |named_only| {
+                        for ([3]u2{ 0, 1, 2 }) |pass| {
                             if (bound_value) break;
                             var it = registry.iterator();
                             while (it.next()) |e| {
                                 if (isStdPkgPath(e.key_ptr.*)) continue;
-                                if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
+                                if (!leaf_src.admits(e.key_ptr.*, pass)) continue;
                                 if (e.value_ptr.get(name)) |ty| {
                                     try env.bind(local, ty);
                                     // The types its signature names come
@@ -1488,12 +1488,12 @@ fn addImportedTypeScope(
             const name = imp.leaf();
             const leaf_src = try u.leafSource(imp, arena, false);
             var found = false;
-            for ([2]bool{ true, false }) |named_only| {
+            for ([3]u2{ 0, 1, 2 }) |pass| {
                 if (found) break;
                 var it = typeDeclRegistry.iterator();
                 while (it.next()) |e| {
                     if (isStdPkgPath(e.key_ptr.*)) continue;
-                    if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
+                    if (!leaf_src.admits(e.key_ptr.*, pass)) continue;
                     const decl = e.value_ptr.get(name) orelse continue;
                     const key = try std.mem.concat(arena, u8, &.{ P, name });
                     if (!typeDecls.contains(key)) try typeDecls.put(key, decl);

@@ -1,0 +1,6 @@
+import {Response, ok} from "web";
+
+pub fn served() -> i32 {
+    val r: Response = ok();
+    return r.status;
+}
