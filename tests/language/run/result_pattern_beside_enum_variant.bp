@@ -1,0 +1,46 @@
+//// `Ok(…)` and `Error(…)` over a `@Result` subject are the `@Result`'s
+//// variants, even in a module whose own enum declares `Error` and `Ok` — a
+//// log level, a status. The enum's variants still match its own values.
+////
+//// The gap this pins (rakun front 17, `bootLogging()` beside `Level.Error`):
+//// erlang tested the subject for the ENUM's `Error` and a `{error, E}` fell
+//// through every arm (`case_clause`); beam and wasm matched no arm at all
+//// and printed nothing at exit 0, and a `val assert Error(m)` was a fatal
+//// "did not match" although `isError()` answered `true`.
+
+type Level {
+    Info,
+    Error,
+}
+
+type Status {
+    Ok,
+    Down,
+}
+
+fn load(n: i32) -> @Result<string, string> {
+    if (n < 0) throw "negative";
+    return "loaded";
+}
+
+fn describe(r: @Result<string, string>) -> string {
+    return case r {
+        Ok(v) { "ok " + v }
+        Error(e) { "error " + e }
+    };
+}
+
+pub fn main() {
+    val failed = load(-1);
+    @print(failed.isError());
+    @print(describe(failed));
+    @print(describe(load(1)));
+    case load(-2) {
+        Error(e) { @print("statement " + e); }
+        Ok(v) { @print("statement " + v); }
+    };
+    val assert Error(message) = load(-3);
+    @print(message);
+    @print(case Level.Error { Info { "info" } Error { "level error" } });
+    @print(case Status.Ok { Ok { "status ok" } Down { "down" } });
+}

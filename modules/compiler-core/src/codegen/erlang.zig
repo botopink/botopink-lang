@@ -2026,7 +2026,7 @@ fn emitErlangModule(
             em.module_vars.count() > 0 or
             em.type_units.items.len > 0 or
             import_inits.len > 0;
-        try testRunnerForms(b, &forms, tests, calls_out, import_inits, emit_init, pt_vars.items.len > 0);
+        try testRunnerForms(b, &forms, tests, calls_out, import_inits, emit_init, pt_vars.items.len > 0, std.mem.count(u8, module_name, "/"));
     }
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -2142,7 +2142,7 @@ fn comments(b: Ast.Builder, lines: []const []const u8) ![]const Ast.Stmt {
 /// the first test, exactly where `'_botopink_main'/0` runs it before `main/0` in
 /// a build. A module-level `val` therefore has the same effect in both modes —
 /// the divergence that made module-load self-registration untestable on erlang.
-fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool, import_inits: []const []const u8, run_init: bool, run_load: bool) !void {
+fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool, import_inits: []const []const u8, run_init: bool, run_load: bool, depth: usize) !void {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const monotonic = try b.remote("erlang", "monotonic_time", &.{A("millisecond")});
@@ -2267,9 +2267,21 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
     // invisible until it was read off the emitted `.erl` by hand.
     var main_stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
     if (load_siblings) {
-        const loader: Ast.Expr = .{ .raw =
+        // The runner sits `depth` folders below the run's output root (a test
+        // file in `test/unit/`), and the modules it calls are anywhere in the
+        // tree — the project's own at the root. `Dir` is that root, so a
+        // nested runner loads what a flat one does; it used to be the
+        // runner's own folder, and every call into the project was
+        // `{error,undef}`.
+        var root: std.ArrayListUnmanaged(u8) = .empty;
+        for (0..depth + 1) |_| try root.appendSlice(b.arena, "filename:dirname(");
+        try root.appendSlice(b.arena, "filename:absname(escript:script_name())");
+        for (0..depth + 1) |_| try root.append(b.arena, ')');
+        const loader: Ast.Expr = .{ .raw = try std.mem.concat(b.arena, u8, &.{
             \\(fun() ->
-            \\        Dir = filename:dirname(escript:script_name()),
+            \\        Dir = 
+            , root.items,
+            \\,
             \\        Self = atom_to_list(?MODULE) ++ ".erl",
             \\        Loaded = lists:foldl(fun(Src, Acc) ->
             \\            case filename:basename(Src) =:= Self of
@@ -2288,7 +2300,7 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
             \\        [Mod:'__bp_load'() || Mod <- lists:reverse(Loaded), erlang:function_exported(Mod, '__bp_load', 0)],
             \\        ok
             \\    end)()
-        };
+        }) };
         // The `.beam` `botopink test` already compiled from this same `.erl`,
         // in this run's own directory, before any runner started
         // (`test_cmd.zig` `precompileErlang`, one `erl` per run instead of one
@@ -2539,6 +2551,16 @@ fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bo
 
 // ── Emitter ───────────────────────────────────────────────────────────────────
 
+/// `Result.Ok` / `Result.Err` / `Result.Error` — how the transform writes an
+/// `Ok(…)` / `Error(…)` pattern over a `@Result` subject
+/// (`Env.resultPatternLocs`). Always the `@Result` variant, even where a user
+/// enum declares one of those names.
+fn isResultPath(name: []const u8) bool {
+    if (!std.mem.startsWith(u8, name, "Result.")) return false;
+    const bare = name["Result.".len..];
+    return std.mem.eql(u8, bare, "Ok") or std.mem.eql(u8, bare, "Err") or std.mem.eql(u8, bare, "Error");
+}
+
 /// A generator scope on erlang (decision 105). Erlang is eager: a generator
 /// is the list of its items, collected while the body runs. The list lives in
 /// the process dictionary under a fresh `make_ref()` held by `key`, so a
@@ -2579,6 +2601,11 @@ const Emitter = struct {
     /// True while the body of a function `fnForms` guards with `guardTry` is
     /// lowered — the only place a thrown `return` is caught.
     fn_guarded: bool = false,
+    /// Set while a statement whose value is discarded — one that is not its
+    /// body's last — is lowered and holds a `return` the nesting of
+    /// `earlyReturnIfExpr` does not reach (`if (a) { …; if (b) return x; }`):
+    /// that `return` throws to the function's guard like one in a loop.
+    in_nested_return: bool = false,
     /// 06 C13 — the host-backed fn whose `#[@External.Erlang(…)]` is missing,
     /// filled at the throw site so `codegenEmit` can turn
     /// `error.MissingExternalTarget` into a located diagnostic naming it.
@@ -3862,7 +3889,7 @@ const Emitter = struct {
                     (if (!this.locals.contains(n)) this.num_names.get(n) else null),
                 .identAccess => if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
                     .prim => .int,
-                    .type_, .field_of, .sequence_next, .division => null,
+                    .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => null,
                 } else null,
                 else => null,
             },
@@ -4359,6 +4386,27 @@ const Emitter = struct {
             };
         };
         return found;
+    }
+
+    /// True when `name` is a record or enum of the program: this module's own,
+    /// or a `pub` one of any module in the cross-module index.
+    fn programRecordOrEnum(this: *const Emitter, name: []const u8) bool {
+        if (this.record_fields.contains(name) or this.enum_names.contains(name)) return true;
+        const xc = this.cross orelse return false;
+        const infos = xc.owners.get(name) orelse return false;
+        for (infos) |info| if (info.kind == .record or info.kind == .@"enum") return true;
+        return false;
+    }
+
+    /// True when record `type_name` — this module's or a `pub` one of the
+    /// program — declares `field` of function type: a call of it applies the
+    /// field, it is no method the value's module answers.
+    fn programFnField(this: *const Emitter, type_name: []const u8, field: []const u8) bool {
+        if (this.fnTypedField(type_name, field)) return true;
+        const xc = this.cross orelse return false;
+        const infos = xc.owners.get(type_name) orelse return false;
+        for (infos) |info| for (info.fn_fields) |f| if (std.mem.eql(u8, f, field)) return true;
+        return false;
     }
 
     /// True when some record of the module declares a field named `name`.
@@ -5010,6 +5058,9 @@ const Emitter = struct {
         const saved_in_loop = this.in_loop_body;
         this.in_loop_body = false;
         defer this.in_loop_body = saved_in_loop;
+        const saved_nested_return = this.in_nested_return;
+        this.in_nested_return = false;
+        defer this.in_nested_return = saved_nested_return;
         const raw_body: Ast.Body = if (isPlainYieldGenerator(f)) blk: {
             // Finite generator → eager list of yielded items: `[V1, V2, ...]`.
             const items = try b.arena.alloc(Ast.Expr, f.body.len);
@@ -5047,6 +5098,9 @@ const Emitter = struct {
         const saved_in_loop = this.in_loop_body;
         this.in_loop_body = false;
         defer this.in_loop_body = saved_in_loop;
+        const saved_nested_return = this.in_nested_return;
+        this.in_nested_return = false;
+        defer this.in_nested_return = saved_nested_return;
         const inner = try this.bodyNode(b, body, 0, 2);
         return b.body(&.{
             try b.match(Ast.Expr.v(key), try b.call("make_ref", &.{})),
@@ -5215,6 +5269,25 @@ const Emitter = struct {
                 if (if_node.else_ == null and bodyEndsWithReturn(if_node.then_) and !this.returnThrows()) {
                     try stmts.append(b.arena, .{ .expr = try this.earlyReturnIfExpr(b, body, i, if_node) });
                     break; // remaining statements are nested inside the false arm
+                }
+            }
+
+            // Any other statement whose value is discarded and which holds a
+            // `return` — an `if` nested in an `if` block, a `case` arm: the
+            // `return` throws to the function's guard (`returnNode`). Lowered
+            // as a plain statement, its `case` value was dropped and the
+            // function ran on past the `return`.
+            if (!is_last and !this.in_nested_return and sourceComment(stmt) == null and ast.exprReturns(stmt.expr)) {
+                this.in_nested_return = true;
+                defer this.in_nested_return = false;
+                if (this.returnThrows()) {
+                    try this.hoistSequenceSteps(b, stmt.expr, &stmts);
+                    if (try this.mutatingExpr(b, stmt)) |mutation| {
+                        try stmts.append(b.arena, .{ .expr = mutation });
+                    } else {
+                        try stmts.append(b.arena, .{ .expr = try this.stmtExpr(b, stmt) });
+                    }
+                    continue;
                 }
             }
 
@@ -5513,7 +5586,7 @@ const Emitter = struct {
         const il = this.instance_lowerings.get(e.call.loc) orelse return null;
         return switch (il) {
             .prim => |k| if (k == .array) name else null,
-            .type_, .field_of, .sequence_next, .division => null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => null,
         };
     }
 
@@ -5772,7 +5845,7 @@ const Emitter = struct {
 
     /// Whether a `return` here throws to the function's guard (`returnNode`).
     fn returnThrows(this: *const Emitter) bool {
-        return this.in_loop_body and this.fn_guarded and this.gen_scope == null and !this.in_test_body;
+        return (this.in_loop_body or this.in_nested_return) and this.fn_guarded and this.gen_scope == null and !this.in_test_body;
     }
 
     /// `try Body catch throw:{'__bp_try', E} -> E end` — the guard of a
@@ -5816,6 +5889,9 @@ const Emitter = struct {
         const saved_in_loop = this.in_loop_body;
         this.in_loop_body = false;
         defer this.in_loop_body = saved_in_loop;
+        const saved_nested_return = this.in_nested_return;
+        this.in_nested_return = false;
+        defer this.in_nested_return = saved_nested_return;
         // Its body answers the group, not a value a thrown `return` could be:
         // a `return` inside a loop in it keeps the old shape.
         const saved_guarded = this.fn_guarded;
@@ -6447,10 +6523,13 @@ const Emitter = struct {
                             const recv = try this.exprNode(b, ia.receiver.*);
                             return switch (k) {
                                 .string => b.remote("string", "length", &.{recv}),
-                                else => b.call("length", &.{recv}),
+                                // Qualified: a type of the module may declare
+                                // a `length/1` method, which the module then
+                                // defines under `no_auto_import`.
+                                else => b.remote("erlang", "length", &.{recv}),
                             };
                         },
-                        .type_, .field_of, .sequence_next, .division => {},
+                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => {},
                     };
                     // Same field access on a `Self`-typed receiver inside an
                     // interface instance `default fn` (`self.length`), which
@@ -6462,7 +6541,10 @@ const Emitter = struct {
                             const recv = try this.exprNode(b, ia.receiver.*);
                             return switch (k) {
                                 .string => b.remote("string", "length", &.{recv}),
-                                else => b.call("length", &.{recv}),
+                                // Qualified: a type of the module may declare
+                                // a `length/1` method, which the module then
+                                // defines under `no_auto_import`.
+                                else => b.remote("erlang", "length", &.{recv}),
                             };
                         }
                     }
@@ -6559,6 +6641,9 @@ const Emitter = struct {
                 const saved_in_loop = this.in_loop_body;
                 this.in_loop_body = false;
                 defer this.in_loop_body = saved_in_loop;
+                const saved_nested_return = this.in_nested_return;
+                this.in_nested_return = false;
+                defer this.in_nested_return = saved_nested_return;
                 // A `fun` is a function of its own: a `return` (or a `try`)
                 // thrown from a loop inside it is caught by ITS guard, not by
                 // the enclosing function's.
@@ -7194,6 +7279,15 @@ const Emitter = struct {
             // A field READ never reaches the call path, nor does a `/`.
             .field_of, .division => {},
             .sequence_next => return this.sequenceNextNode(b, loc, recv),
+            // A method a `behavior` declares, on a value typed by it: no owner
+            // module belongs in the call, whatever else the program declares
+            // under `name/arity` — the value answers (`'__bp_method'/3`: its
+            // own type's module, or the host-built map's own function).
+            .by_value => return this.dynamicMethodNode(b, recv, cc),
+            // A record or enum of the program this module never imported
+            // (`queryDict(q).at("y")` for std's `Dict`): its tag names the
+            // module that emits `at/2`.
+            .unplaced_type => |tn| if (this.programRecordOrEnum(tn) and !this.programFnField(tn, cc.callee)) return this.dynamicMethodNode(b, recv, cc),
         };
         // Inside an ADOPTED interface `default fn` body (`implement Sized`'s
         // `isEmpty`, emitted as one of the record's functions) inference records
@@ -7894,6 +7988,7 @@ const Emitter = struct {
     /// name: a comptime host enum has no declaration to read an enum off.
     fn variantTag(this: *Emitter, written: []const u8) []const u8 {
         const name = bareVariantName(written);
+        if (isResultPath(written)) return resultTag(name).?;
         if (this.enum_variants.contains(name)) {
             // A name two enums declare, written with nothing that says which:
             // there is no tag to render. Recorded here and raised by
@@ -8525,7 +8620,7 @@ const Emitter = struct {
         if (try this.primAnnotationNode(b, k, callee, recv, cc)) |node| return node;
         switch (k) {
             .array => if (eq(u8, callee, "len") or eq(u8, callee, "length") or eq(u8, callee, "size")) {
-                return try b.call("length", &.{try this.exprNode(b, recv.*)});
+                return try b.remote("erlang", "length", &.{try this.exprNode(b, recv.*)});
             },
             // `toString` is declared on `Integer`/`Float` with host annotations;
             // this covers a numeric receiver the interface chain doesn't know.

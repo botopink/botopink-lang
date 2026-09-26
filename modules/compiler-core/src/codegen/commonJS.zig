@@ -1206,6 +1206,12 @@ const Emitter = struct {
     /// statements (`buildReturnCaseStmt`): a value arm then returns
     /// `({ ok: v })`, while an arm that already returns keeps its own value.
     case_ok_wrap: bool = false,
+    /// Set while the arms of a `case` used as a STATEMENT are lowered inside
+    /// the arrow function a `case` becomes (`caseStmtWithReturns`): a
+    /// `return` there is the enclosing function's, so it answers
+    /// `{ __bp_return: true, value }`, which the statement after the call
+    /// returns. Reset by every nested function, like `case_ok_wrap`.
+    case_return_box: bool = false,
     /// `botopink test` compilation: `assert` lowers to the throwing
     /// `__bp_assert` helper instead of `console.assert`.
     test_mode: bool = false,
@@ -1771,7 +1777,7 @@ const Emitter = struct {
         const lw = self.lowerings orelse return null;
         const type_name = switch (lw.get(loc) orelse return null) {
             .type_ => |n| n,
-            .prim, .field_of, .sequence_next, .division => return null,
+            .prim, .field_of, .sequence_next, .division, .by_value, .unplaced_type => return null,
         };
         if (self.imported_enums.contains(type_name)) return type_name;
         var buf: [256]u8 = undefined;
@@ -3068,8 +3074,8 @@ const Emitter = struct {
                 // `{ error }` — the same key test the `case` arms use
                 // (`buildCaseArm`). `instanceof Ok` named a class no module
                 // ever emits, so every `val assert Ok(…)` took its handler.
-                if (self.variant_fields.get(v.name) == null) {
-                    if (resultKey(v.name)) |key| {
+                if (self.variant_fields.get(v.name) == null or isResultPath(v.name)) {
+                    if (resultKey(bareVariantName(v.name))) |key| {
                         return self.b.paren(try self.b.binaryBare("in", .{ .quoted = key }, subject));
                     }
                 }
@@ -3201,6 +3207,9 @@ const Emitter = struct {
                 .tryCatch => {},
             },
             .loop => |lp| return try self.buildLoopStmt(lp),
+            .collection => |col| if (col.kind == .case and !self.in_generator) {
+                if (try self.caseStmtWithReturns(col.kind.case)) |st| return st;
+            },
             .jump => |j| switch (j.kind) {
                 .@"break" => |br| return self.buildBreakStmt(br, false),
                 .throw_ => |r| return .{ .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*) },
@@ -3215,7 +3224,7 @@ const Emitter = struct {
         switch (e) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
-                    const rp = r orelse return .{ .return_ = null };
+                    const rp = r orelse return .{ .return_ = if (self.case_return_box) try self.returnBox(.{ .name = "undefined" }) else null };
                     if (classifyTry(rp.*)) |form| return self.buildTryStmt(form, .ret);
                     // `return case … { A -> v; B -> return x; }` — an arm that
                     // returns from the function cannot sit inside the IIFE a
@@ -3228,6 +3237,7 @@ const Emitter = struct {
                     // `return <gen>` surfaces the generator object and
                     // yields nothing).
                     if (self.in_generator) return .{ .yield_delegate = try self.buildExpr(rp.*) };
+                    if (self.case_return_box) return .{ .return_ = try self.returnBox(try self.buildExpr(rp.*)) };
                     return .{ .return_ = try self.buildExpr(rp.*) };
                 },
                 // Decision 122 — `yield try x` / `yield __bp_ok(try x)` in a
@@ -3309,6 +3319,47 @@ const Emitter = struct {
         return self.buildStmt(st);
     }
 
+    /// `{ __bp_return: true, value: <value> }` — a function's `return` from
+    /// inside the arrow a statement `case` lowers to (`case_return_box`).
+    fn returnBox(self: *Emitter, value: js.Expr) !js.Expr {
+        return self.b.paren(try self.b.object(&.{
+            .{ .kv = .{ .key = "__bp_return", .value = .{ .name = "true" } } },
+            .{ .kv = .{ .key = "value", .value = value } },
+        }));
+    }
+
+    /// A `case` used as a STATEMENT whose arms `return` from the function:
+    /// the arms still run inside the arrow a `case` lowers to, a `return`
+    /// there answers a box (`case_return_box`), and the statement after the
+    /// call returns the box's value:
+    ///
+    ///     const _case<N> = (() => { … return { __bp_return: true, value: "one" }; … })();
+    ///     if (_case<N> && _case<N>.__bp_return) return _case<N>.value;
+    ///
+    /// It used to be the bare call, and the arm's `return` returned from the
+    /// arrow: the function ran on past it. Null when no arm returns.
+    fn caseStmtWithReturns(self: *Emitter, c: anytype) anyerror!?js.Stmt {
+        var any_returns = false;
+        for (c.arms) |arm| {
+            if (armReturns(arm.body)) any_returns = true;
+        }
+        if (!any_returns) return null;
+        const n = self.try_seq;
+        self.try_seq += 1;
+        const name = try std.fmt.allocPrint(self.arena(), "_case{d}", .{n});
+        const prev_box = self.case_return_box;
+        self.case_return_box = true;
+        const call = try self.buildCase(c.subjects, c.arms);
+        self.case_return_box = prev_box;
+        const temp: js.Expr = .{ .name = name };
+        const cond = try self.b.binaryBare("&&", temp, try self.b.member(temp, "__bp_return"));
+        const ret: js.Stmt = .{ .return_ = if (self.case_return_box) try self.returnBox(try self.b.member(temp, "value")) else try self.b.member(temp, "value") };
+        return try self.b.group(&.{
+            .{ .decl = .{ .pattern = .{ .name = name }, .value = call } },
+            try self.b.ifStmt(cond, ret),
+        });
+    }
+
     /// `(params) => { body }` with implicit tail return.
     fn buildArrow(self: *Emitter, params: []const []const u8, body: []const ast.Stmt) !js.Expr {
         // A nested arrow is not a generator — its `return` stays `return` —
@@ -3317,15 +3368,18 @@ const Emitter = struct {
         const prev_ctx = self.loop_ctx;
         const prev_wrap = self.case_ok_wrap;
         const prev_in_test = self.in_test_body;
+        const prev_box = self.case_return_box;
         self.in_generator = false;
         self.loop_ctx = .none;
         self.case_ok_wrap = false;
         self.in_test_body = false;
+        self.case_return_box = false;
         defer {
             self.in_generator = prev_in_generator;
             self.loop_ctx = prev_ctx;
             self.case_ok_wrap = prev_wrap;
             self.in_test_body = prev_in_test;
+            self.case_return_box = prev_box;
         }
         const ps = try self.arena().alloc(js.Param, params.len);
         for (params, 0..) |p, i| ps[i] = .{ .pattern = .{ .ident = p } };
@@ -4140,6 +4194,9 @@ const Emitter = struct {
         self.in_generator = true;
         self.case_ok_wrap = false;
         self.in_test_body = false;
+        const prev_box_g = self.case_return_box;
+        self.case_return_box = false;
+        defer self.case_return_box = prev_box_g;
         self.current_indent = base + 2;
         defer {
             self.loop_ctx = prev_ctx;
@@ -4196,6 +4253,9 @@ const Emitter = struct {
         self.case_ok_wrap = false;
         self.in_test_body = false;
         self.expr_try_used = false;
+        const prev_box_f = self.case_return_box;
+        self.case_return_box = false;
+        defer self.case_return_box = prev_box_f;
         self.current_indent = base + 1;
         defer {
             self.loop_ctx = prev_ctx;
@@ -4293,7 +4353,7 @@ const Emitter = struct {
                             .string => "String",
                             else => break :blk null,
                         },
-                        .type_, .field_of, .sequence_next, .division => break :blk null,
+                        .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => break :blk null,
                     };
                     const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
                     for (iface.methods) |m| {
@@ -4417,7 +4477,7 @@ const Emitter = struct {
         const il = lw.get(loc) orelse return null;
         const kind = switch (il) {
             .prim => |k| k,
-            .type_, .field_of, .sequence_next, .division => return null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => return null,
         };
         const receiver: jsPrelude.Receiver = switch (kind) {
             .string => .string,
@@ -5166,7 +5226,7 @@ const Emitter = struct {
     /// the payload, `.Some(#(a, b))` tests the tuple.
     fn variantTest(self: *Emitter, v: anytype, subject: js.Expr) anyerror!js.Expr {
         const bare = bareVariantName(v.name);
-        const declared = self.variant_fields.get(bare);
+        const declared = if (isResultPath(v.name)) null else self.variant_fields.get(bare);
         if (declared == null) if (resultKey(bare)) |key| {
             return try self.b.binaryBare("in", .{ .quoted = key }, subject);
         };
@@ -5456,7 +5516,7 @@ const Emitter = struct {
                 }
                 if (v.shape == .range) return;
                 const bare = bareVariantName(v.name);
-                const declared = self.variant_fields.get(bare);
+                const declared = if (isResultPath(v.name)) null else self.variant_fields.get(bare);
                 if (declared == null) if (resultKey(bare)) |key| {
                     switch (v.payload) {
                         .binding => |binding| try body.append(self.arena(), .{ .decl = .{
@@ -5532,3 +5592,13 @@ const Emitter = struct {
         };
     }
 };
+
+/// `Result.Ok` / `Result.Err` / `Result.Error` — how the transform writes an
+/// `Ok(…)` / `Error(…)` pattern over a `@Result` subject
+/// (`Env.resultPatternLocs`). Always the `@Result` variant, even where a user
+/// enum declares one of those names.
+fn isResultPath(name: []const u8) bool {
+    if (!std.mem.startsWith(u8, name, "Result.")) return false;
+    const bare = name["Result.".len..];
+    return std.mem.eql(u8, bare, "Ok") or std.mem.eql(u8, bare, "Err") or std.mem.eql(u8, bare, "Error");
+}

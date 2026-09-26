@@ -11,6 +11,7 @@ const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
 const Lexer = @import("./lexer.zig").Lexer;
+const Token = @import("./lexer.zig").Token;
 const Parser = @import("./parser.zig").Parser;
 const LexicalError = @import("./lexer.zig").LexicalError;
 const ParseErrorInfo = @import("./parser.zig").ParseErrorInfo;
@@ -437,16 +438,33 @@ fn spliceContributions(arena: std.mem.Allocator, source: []const u8, contributio
 /// recursive `analyzeSource(spliced, …)` repaid the entire original lex+parse
 /// cost on every decorator that emits — visible as the ~10ms upper-half of
 /// the `decorator-bearing record still lists bindings (R2)` LSP test.
+///
+/// Each contribution's tokens are placed where `spliceContributions` would put
+/// them — after the module's own lines, one contribution after another — so
+/// no two declarations share a location. Every lowering inference records is
+/// keyed by location: parsed from line 1, two proxies a decorator emitted
+/// (`LedgerSec`, `RunbookSec`) wrote `self.inner.status()` at the same loc,
+/// the second record overwrote the first, and erlang called `Runbook:status`
+/// from `LedgerSec` — another type's code, silently.
 fn parseAndMergeContributions(
     arena: std.mem.Allocator,
+    source: []const u8,
     original: ast.Program,
     contributions: []const []const u8,
 ) !?ast.Program {
     var merged: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     try merged.appendSlice(arena, original.decls);
+    var line_shift: usize = std.mem.count(u8, source, "\n") + 1;
+    var offset_shift: usize = source.len + 1;
     for (contributions) |contrib| {
         var c_lexer = Lexer.init(contrib);
-        const c_tokens = c_lexer.scanAll(arena) catch return null;
+        const c_tokens = try arena.dupe(Token, c_lexer.scanAll(arena) catch return null);
+        for (c_tokens) |*t| {
+            t.line += line_shift;
+            t.offset += offset_shift;
+        }
+        line_shift += std.mem.count(u8, contrib, "\n") + 1;
+        offset_shift += contrib.len + 1;
         var c_parser = Parser.init(c_tokens);
         const c_program = c_parser.parse(arena) catch return null;
         try merged.appendSlice(arena, c_program.decls);
@@ -650,7 +668,7 @@ fn analyzeSource(
     // module bytes that the legacy text-splice path forced. Fallback to text
     // splicing only when a contribution fails to parse standalone.
     if (!skip_invoke and env.contributions.items.len > 0) {
-        if (try parseAndMergeContributions(arena, program, env.contributions.items)) |merged_program| {
+        if (try parseAndMergeContributions(arena, source, program, env.contributions.items)) |merged_program| {
             var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name);
             if (reanalysis == .success) {
                 try keepPassOneTraces(&reanalysis.success.env, &env);
@@ -996,6 +1014,37 @@ fn resolveImports(
                     const name = imp.leaf();
                     const local = imp.name();
                     const leaf_src = try u.leafSource(imp, env.arena, false);
+                    // Decision 107's namespace form over a module of this
+                    // package or a dependency: the item's whole path names a
+                    // module (`import {jwt} from "sec"` → `sec/jwt`, `import
+                    // {text};` → `text`), and the name binds a namespace its
+                    // calls resolve against — ahead of the bare-name scan
+                    // below, which would bind some other module's `text`.
+                    // A symbol of that name in the module the source names
+                    // wins (a lib's template handle `qlib` beside its module
+                    // `qlib/qlib`).
+                    const names_symbol = blk: {
+                        // …or in the module the whole path names
+                        // (`import {canvas} from "shapes"` for `shapes/canvas`'s
+                        // own `canvas`).
+                        switch (try u.leafSource(imp, env.arena, true)) {
+                            .module => |path| if (registry.get(path)) |exports| if (exports.contains(name)) break :blk true,
+                            .root => {},
+                        }
+                        var sit = registry.iterator();
+                        while (sit.next()) |e| {
+                            if (isStdPkgPath(e.key_ptr.*)) continue;
+                            if (leaf_src.namesModule(e.key_ptr.*) and e.value_ptr.contains(name)) break :blk true;
+                        }
+                        break :blk false;
+                    };
+                    if (!imp.activate and !names_symbol) switch (try u.leafSource(imp, env.arena, true)) {
+                        .module => |path| if (!isStdPkgPath(path)) if (registry.get(path)) |exports| {
+                            try env.namespaces.modules.put(env.arena, local, exports);
+                            continue;
+                        },
+                        .root => {},
+                    };
                     // Bare import: same-package (project root) resolution only —
                     // never resolves "std" package modules. An imported nominal
                     // type carries its full declaration across the module
@@ -1021,13 +1070,22 @@ fn resolveImports(
                     // not yet analysed is in neither pass — so every case that
                     // used to reach the scan still reaches it.
                     var bound_type_decl = false;
+                    var bound_behavior = false;
                     for ([2]bool{ true, false }) |named_only| {
-                        if (bound_type_decl) break;
+                        if (bound_type_decl or bound_behavior) break;
                         var dit = typeDeclRegistry.iterator();
                         while (dit.next()) |e| {
                             if (isStdPkgPath(e.key_ptr.*)) continue;
                             if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
                             if (e.value_ptr.get(name)) |type_decl| {
+                                // A behavior is not re-registered as a type:
+                                // its value binding below stays what it was,
+                                // and the importer only learns its methods.
+                                if (type_decl == .behavior) {
+                                    try env.importedBehaviorDecls.put(env.arena, name, type_decl.behavior);
+                                    bound_behavior = true;
+                                    break;
+                                }
                                 // A type's identity is its declared name on
                                 // every backend; an alias would bind a name
                                 // the emitted code never defines.
@@ -1064,8 +1122,8 @@ fn resolveImports(
                             }
                         }
                     }
+                    var bound_value = false;
                     if (!bound_type_decl) {
-                        var bound_value = false;
                         for ([2]bool{ true, false }) |named_only| {
                             if (bound_value) break;
                             var it = registry.iterator();
@@ -1092,7 +1150,12 @@ fn resolveImports(
                     // this a marker only fired in its defining module — a lib
                     // ships its decorators, but they are applied by importers.
                     if (owner.len > 0) if (decoratorRegistry.get(try comptimeRegistryKey(env.arena, owner, name))) |dfn| {
-                        try infer.registerImportedDecorator(env, local, dfn, owner);
+                        var support: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+                        var si: usize = 0;
+                        while (decoratorRegistry.get(try decoratorSupportKey(env.arena, owner, name, si))) |sf| : (si += 1) {
+                            try support.append(env.arena, sf);
+                        }
+                        try infer.registerImportedDecorator(env, local, dfn, owner, support.items);
                     };
                     // Imported + activated extension (`import { Name* } from "mod"`):
                     // an `implement` block defined in another module is opted into
@@ -1145,6 +1208,13 @@ const DefaultDsl = struct {
 /// handle (`registerExports`), which is what `import <pkg>` names.
 fn comptimeRegistryKey(arena: std.mem.Allocator, path: []const u8, name: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ path, name });
+}
+
+/// The `decoratorRegistry` key of the `i`-th function decorator `name` of
+/// module `path` needs beside it (`infer.decoratorSupport`). No import item
+/// can spell it: it holds two NULs.
+fn decoratorSupportKey(arena: std.mem.Allocator, path: []const u8, name: []const u8, i: usize) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}\x00{s}\x00support\x00{d}", .{ path, name, i });
 }
 
 /// The package key for a module path: the segment before the first `/` (a lib
@@ -1259,6 +1329,10 @@ fn registerExports(
             // for value use, but carry no cross-module `TypeDef`.
             switch (b.decl) {
                 .type_ => |t| if (t.isPub) try typeDecls.put(b.name, b.decl),
+                // A `pub behavior` too: an importer learns which methods it
+                // declares (`Env.importedBehaviorDecls`) — it registers no
+                // `TypeDef` from it.
+                .behavior => |bd| if (bd.isPub) try typeDecls.put(b.name, b.decl),
                 else => {},
             }
             // Template fns export their declaration too — importing modules
@@ -1271,7 +1345,16 @@ fn registerExports(
                 // Decorators (`comptime _: @Decl` first param) export their decl
                 // too, so importing modules can run the body over their annotated
                 // declarations — generic, by shape, no lib name involved.
-                if (infer.isDecoratorParams(f.params)) try decoratorRegistry.put(try comptimeRegistryKey(arena, path, b.name), f);
+                if (infer.isDecoratorParams(f.params)) {
+                    try decoratorRegistry.put(try comptimeRegistryKey(arena, path, b.name), f);
+                    // The module's functions its body reaches travel with it
+                    // (`decoratorSupportKey`): the importer's module does not
+                    // declare them, and the decorator module needs them.
+                    var fns = std.StringHashMap(ast.FnDecl).init(arena);
+                    for (decls) |d| if (d == .@"fn") try fns.put(d.@"fn".name, d.@"fn");
+                    const support = try infer.decoratorSupport(arena, fns, f);
+                    for (support, 0..) |sf, i| try decoratorRegistry.put(try decoratorSupportKey(arena, path, b.name, i), sf);
+                }
             }
         }
     }
@@ -1710,6 +1793,8 @@ pub fn compileTypesOnly(
                         &succ.env.optionalNullCases,
                         succ.env.ctorParams,
                         &succ.env.defaultInjections,
+                        &succ.env.resultPatternLocs,
+                        &succ.env.namespaces,
                     ) catch break :blk_t program_for_transform;
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, t, &succ.env) catch break :blk_t t;
                     const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
@@ -1904,7 +1989,7 @@ pub fn compile(
                 };
                 const transformed = try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections, &succ.env.resultPatternLocs, &succ.env.namespaces), &succ.env),
                     &succ.env,
                 ), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env);
 

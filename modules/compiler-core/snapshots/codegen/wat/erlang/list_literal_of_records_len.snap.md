@@ -16,7 +16,7 @@ fn main() {
 
 main() ->
     Pts = [{test@main@@P, 1, 2}, {test@main@@P, 3, 4}],
-    '__bp_print'([length(Pts)]).
+    '__bp_print'([erlang:length(Pts)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

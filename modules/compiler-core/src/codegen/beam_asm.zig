@@ -2117,6 +2117,9 @@ const Emitter = struct {
     /// (in `atom_arena`) — the text of the build error at its call site.
     template_refusal: ?[]const u8 = null,
     field_helper_name: ?[]const u8 = null,
+    /// `'-bp_method-'/3` — a method a `behavior` declares, called on a value
+    /// of that behavior (`InstanceLowering.behavior`).
+    method_helper_name: ?[]const u8 = null,
     /// `'-bp_yield_step-'/1` — `seq.next()` by hand (decision 122).
     yield_step_helper_name: ?[]const u8 = null,
     /// Owns the parsed `primitives.bp` prelude (and every key string built for
@@ -2306,6 +2309,7 @@ const Emitter = struct {
         if (self.indexOf_helper_name) |n| self.alloc.free(n);
         if (self.stringify_helper_name) |n| self.alloc.free(n);
         if (self.field_helper_name) |n| self.alloc.free(n);
+        if (self.method_helper_name) |n| self.alloc.free(n);
         if (self.yield_step_helper_name) |n| self.alloc.free(n);
     }
 
@@ -2675,7 +2679,7 @@ const Emitter = struct {
     /// keeps its own. Parity with the erlang backend's `variantTag`.
     fn variantTag(self: *Emitter, written: []const u8) []const u8 {
         const name = bareVariantName(written);
-        if (self.enum_variants.contains(name)) return self.qualifiedVariantTag(written, name) orelse name;
+        if (!isResultPath(written) and self.enum_variants.contains(name)) return self.qualifiedVariantTag(written, name) orelse name;
         if (std.mem.eql(u8, name, "Ok")) return "ok";
         if (std.mem.eql(u8, name, "Err") or std.mem.eql(u8, name, "Error")) return "error";
         return name;
@@ -3187,7 +3191,7 @@ const Emitter = struct {
                 .ident => |n| nums.get(n) orelse self.num_names.get(n),
                 .identAccess => |ia| if (self.instanceLowering(id.loc, ia.receiver.*)) |il| switch (il) {
                     .prim => .int,
-                    .type_, .field_of, .sequence_next, .division => null,
+                    .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => null,
                 } else null,
                 else => null,
             },
@@ -3714,6 +3718,7 @@ const Emitter = struct {
         add: ?[]const u8,
         join: ?[]const u8,
         field: ?[]const u8,
+        method: ?[]const u8,
         yield_step: ?[]const u8,
     };
 
@@ -3728,6 +3733,7 @@ const Emitter = struct {
             .add = self.add_helper_name,
             .join = self.join_helper_name,
             .field = self.field_helper_name,
+            .method = self.method_helper_name,
             .yield_step = self.yield_step_helper_name,
         };
         self.at_helper_name = null;
@@ -3739,6 +3745,7 @@ const Emitter = struct {
         self.add_helper_name = null;
         self.join_helper_name = null;
         self.field_helper_name = null;
+        self.method_helper_name = null;
         self.yield_step_helper_name = null;
         return saved;
     }
@@ -3762,6 +3769,8 @@ const Emitter = struct {
         self.join_helper_name = saved.join;
         if (self.field_helper_name) |n| self.alloc.free(n);
         self.field_helper_name = saved.field;
+        if (self.method_helper_name) |n| self.alloc.free(n);
+        self.method_helper_name = saved.method;
         if (self.yield_step_helper_name) |n| self.alloc.free(n);
         self.yield_step_helper_name = saved.yield_step;
     }
@@ -5664,6 +5673,18 @@ const Emitter = struct {
                 },
                 // A field READ never reaches the call path, nor does a `/`.
                 .field_of, .division => {},
+                // A method a `behavior` declares, on a value typed by it: the
+                // value answers — its own type's module, or its own table.
+                .by_value => {
+                    try self.lowerBehaviorMethodCall(recv_expr, cc, mode);
+                    return;
+                },
+                // A record or enum of the program this module never imported:
+                // the value's tag names the module (erlang's twin).
+                .unplaced_type => |tn| if (self.programTypeDeclarers(tn) > 0 and !self.programFnField(tn, cc.callee)) {
+                    try self.lowerBehaviorMethodCall(recv_expr, cc, mode);
+                    return;
+                },
                 // Decision 122 — `seq.next()` by hand. The eager sequence is
                 // the list of its items: `'-bp_yield_step-'/1` answers its
                 // head's step — `{Yield, Head}`, or `Done` on the empty list —
@@ -10044,7 +10065,7 @@ const Emitter = struct {
                 }
                 return;
             },
-            .type_, .field_of, .sequence_next, .division => {},
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => {},
         };
 
         try self.lowerExprIntoX0(ia.receiver.*);
@@ -10250,6 +10271,93 @@ const Emitter = struct {
         );
     }
 
+    /// `recv.m(args)` where `recv`'s static type is a `behavior` declaring `m`
+    /// without a body (`InstanceLowering.behavior`): no owner module belongs in
+    /// the call, whatever else the program declares under `m/arity`. The value
+    /// answers through `'-bp_method-'(m, Recv, [Recv | Args])` — a record of a
+    /// type implementing the behavior names its module in element 1 (decision
+    /// 21), and a host-built value is a map holding the function.
+    fn lowerBehaviorMethodCall(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
+        const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
+        try self.placeStaged(&st);
+        const n: u32 = @intCast(1 + cc.args.len + cc.trailing.len);
+        try beamEmitter.writeTestHeap(self.out, 2 * n, n);
+        try beamEmitter.writePutList(self.out, Op.xr(n - 1), Op.nil, Dst.xr(n));
+        var i: u32 = n - 1;
+        while (i > 0) {
+            i -= 1;
+            try beamEmitter.writePutList(self.out, Op.xr(i), Op.xr(n), Dst.xr(n));
+        }
+        if (n != 2) try beamEmitter.writeMoveOp(self.out, Op.xr(n), Dst.xr(2));
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+        var mbuf: [256]u8 = undefined;
+        try beamEmitter.writeMoveOp(self.out, Op.atom(try atomName(cc.callee, &mbuf)), Dst.xr(0));
+        const helper = try self.ensureMethodHelper();
+        const labels = try self.fnLabelsFor(helper, 3);
+        try beamEmitter.writeCall(
+            self.out,
+            if (mode == .tail) .last else .normal,
+            3,
+            .{ .local = labels.entry },
+            self.num_y,
+        );
+    }
+
+    /// `'-bp_method-'(M, V, All)` (once per module), `All` being `[V | Args]`:
+    /// a map is a host-built behavior value and holds the function —
+    /// `apply(map_get(M, V), All)`; anything else is a record whose element 1
+    /// is its type's module (decision 21) — `apply(element(1, V), M, All)`.
+    /// The erlang backend's `'__bp_method'/3`, one argument wider.
+    fn ensureMethodHelper(self: *Emitter) anyerror![]const u8 {
+        if (self.method_helper_name) |n| return n;
+        const name = try self.alloc.dupe(u8, "'-bp_method-'");
+        try self.reserveFn(name, 3);
+        const labels = try self.fnLabelsFor(name, 3);
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &buf.writer;
+        const w = self.out;
+        const not_map = self.allocLabel();
+        try beamEmitter.writeBlankLine(w);
+        try beamEmitter.writeFunctionHeader(w, name, 3, labels.entry);
+        try beamEmitter.writeLabel(w, labels.func_info);
+        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(w, self.module_name, name, 3);
+        try beamEmitter.writeLabel(w, labels.entry);
+        try beamEmitter.writeTest(w, .is_map, not_map, &.{Op.xr(1)});
+        try beamEmitter.writeBif(w, "map_get", 0, &.{ Op.xr(0), Op.xr(1) }, Dst.xr(0));
+        try beamEmitter.writeMoveOp(w, Op.xr(2), Dst.xr(1));
+        try beamEmitter.writeCall(w, .only, 2, .{ .ext = .{ .module = "erlang", .function = "apply" } }, 0);
+        try beamEmitter.writeLabel(w, not_map);
+        try beamEmitter.writeBif(w, "element", 0, &.{ Op.int(1), Op.xr(1) }, Dst.xr(3));
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.xr(3), Dst.xr(0));
+        try beamEmitter.writeCall(w, .only, 3, .{ .ext = .{ .module = "erlang", .function = "apply" } }, 0);
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.method_helper_name = name;
+        return name;
+    }
+
+    /// True when a record named `type_name` of the program declares `field` of
+    /// function type — a call of it applies the field (erlang's twin).
+    fn programFnField(self: *const Emitter, type_name: []const u8, field: []const u8) bool {
+        for (self.all_outputs) |*other| {
+            const ok = switch (other.outcome) {
+                .ok => |*o| o,
+                else => continue,
+            };
+            for (ok.transformed.decls) |d| switch (d) {
+                .type_ => |t| if (t.shape == .record and std.mem.eql(u8, t.name, type_name)) {
+                    for (t.recordFields()) |f| if (std.mem.eql(u8, f.name, field) and f.typeRef == .function) return true;
+                },
+                else => {},
+            };
+        }
+        return false;
+    }
+
     /// How many records of the whole program declare a field `member`.
     fn programFieldDeclarers(self: *const Emitter, member: []const u8) usize {
         var n: usize = 0;
@@ -10440,4 +10548,14 @@ fn comparisonTestOp(op: anytype) ?CmpTest {
         .ne => .{ .opcode = .is_ne_exact, .swap = false },
         else => null,
     };
+}
+
+/// `Result.Ok` / `Result.Err` / `Result.Error` — how the transform writes an
+/// `Ok(…)` / `Error(…)` pattern over a `@Result` subject
+/// (`Env.resultPatternLocs`). Always the `@Result` variant, even where a user
+/// enum declares one of those names.
+fn isResultPath(name: []const u8) bool {
+    if (!std.mem.startsWith(u8, name, "Result.")) return false;
+    const bare = name["Result.".len..];
+    return std.mem.eql(u8, bare, "Ok") or std.mem.eql(u8, bare, "Err") or std.mem.eql(u8, bare, "Error");
 }

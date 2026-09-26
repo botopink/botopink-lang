@@ -451,6 +451,15 @@ fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
 /// `parse` was refused on all four backends with `'parse' expects 1 argument(s),
 /// got 2` — `one`'s arity, quoted against `two`'s function.
 fn importOwner(analysis: Analysis, ref: ImportRef) ?usize {
+    // Decision 107's namespace form: the item names a MODULE of the package
+    // (`import {text};`, `import {shapes.circle}`), which its importer calls
+    // into — `text.shout(x)` — so it is that module the importer follows.
+    var whole_buf: [512]u8 = undefined;
+    const whole = if (ref.from) |from|
+        std.fmt.bufPrint(&whole_buf, "{s}/{s}", .{ from, ref.symbol }) catch ref.symbol
+    else
+        ref.symbol;
+    if (analysis.paths.get(whole)) |i| return i;
     if (ref.from) |from| if (analysis.paths.get(from)) |i| {
         if (i < analysis.exports.len) {
             for (analysis.exports[i]) |e| {

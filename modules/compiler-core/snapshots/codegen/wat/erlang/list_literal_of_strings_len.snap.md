@@ -13,7 +13,7 @@ fn main() {
 
 main() ->
     Labels = [<<"a">>, <<"bb">>, <<"ccc">>],
-    '__bp_print'([length(Labels)]).
+    '__bp_print'([erlang:length(Labels)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

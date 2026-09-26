@@ -1,0 +1,14 @@
+//// A method of an IMPORTED behavior, on a local bound from a call with no
+//// annotation: the value answers. On erlang the call went to the one other
+//// type of the program declaring `header/2` — `Response:header/2` — and
+//// printed `response Cookie` at exit 0 (beam: `badarg`), because the
+//// importer did not know `Request` was a behavior.
+
+pub mod web;
+import {Request, Response, hostRequest} from "web";
+
+pub fn main() {
+    val req = hostRequest();
+    @print(req.header("Cookie"));
+    @print(Response(status: 200).header("Server"));
+}

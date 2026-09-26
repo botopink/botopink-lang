@@ -1,0 +1,26 @@
+//// A `behavior` reached through `import` is the same type it is in its own
+//// module. Three shapes, each refused before with `expected behavior Request
+//// { … }, got …`:
+////
+////   * an imported fn-type alias whose body names `Request` and `Out`, used
+////     by a module that imports neither (this one) — the alias's names now
+////     resolve as in its own module;
+////   * an implementer imported beside the behavior, passed to a parameter
+////     typed by it (`pages.bp`);
+////   * the same implementer held in a `val` annotated with it (`pages.bp`).
+//// wasm is listed in `expected-failures.txt`: a method called through a
+//// behavior-typed value traps there.
+
+pub mod web;
+pub mod ssr;
+pub mod pages;
+import {PageRenderer, render} from "ssr";
+import {home} from "web";
+import {about, held} from "pages";
+
+pub fn main() {
+    val renderer: PageRenderer = { req, out -> req.path() + " " + out.tag };
+    @print(render(renderer, home()));
+    @print(about());
+    @print(held());
+}

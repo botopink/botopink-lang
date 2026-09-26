@@ -642,7 +642,9 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
                 // on `Token`.
                 try inferExprTypedExpecting(env, v.value.*, annType);
             const ty = typedExpr.getType();
-            if (annType) |at| try unifyAt(env, at, ty, v.value.getLoc());
+            // A behavior annotation takes an implementer (`val l: Lookup =
+            // memory();`), as a parameter and a return do (`unifyArgument`).
+            if (annType) |at| try unifyArgument(env, at, ty, v.value.getLoc());
             // The annotation is the DECLARED type — bind it, not the RHS type
             // (`val head: ?i32 = 5;` must bind `?i32`, or a later
             // `option.map(head, f)` sees a bare `i32`).
@@ -955,9 +957,37 @@ pub fn isDecoratorParams(params: []const ast.Param) bool {
 /// comptime. Mirrors `registerImportedTemplateFn` for the `@Expr` template case;
 /// the core stays lib-agnostic (it carries the decorator across modules by its
 /// generic `@Decl`-first shape, never by any lib's name). No-op for non-decorators.
-pub fn registerImportedDecorator(env: *Env, name: []const u8, fn_decl: ast.FnDecl, owner: []const u8) !void {
+pub fn registerImportedDecorator(env: *Env, name: []const u8, fn_decl: ast.FnDecl, owner: []const u8, support: []const ast.FnDecl) !void {
     registerDecoratorSig(env, name, fn_decl.params, fn_decl);
+    if (env.decorators.getPtr(name)) |sig| sig.support = support;
     try env.noteComptimeOwner(fn_decl, owner);
+}
+
+/// The top-level functions of `dfn`'s module that its body calls or names,
+/// directly or through one another — what a decorator module needs beside
+/// the decorator to compile. `lookup` answers a name with that module's
+/// function of that name. A decorator, a template and a bodyless `declare fn`
+/// are left out: none of them runs as a plain function in the decorator
+/// module. Before this a decorator body could call no function at all
+/// (`call to undefined function problemOf/1`).
+pub fn decoratorSupport(arena: std.mem.Allocator, lookup: anytype, dfn: ast.FnDecl) std.mem.Allocator.Error![]const ast.FnDecl {
+    var out: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+    var seen = std.StringHashMap(void).init(arena);
+    try seen.put(dfn.name, {});
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    try ast.collectNames(arena, dfn.body, &names);
+    var i: usize = 0;
+    while (i < names.items.len) : (i += 1) {
+        const n = names.items[i];
+        if (seen.contains(n)) continue;
+        try seen.put(n, {});
+        const f: ast.FnDecl = lookup.get(n) orelse continue;
+        if (f.body.len == 0 or isDecoratorParams(f.params)) continue;
+        if (f.returnType) |rt| if (rt.isTemplateReturnType()) continue;
+        try out.append(arena, f);
+        try ast.collectNames(arena, f.body, &names);
+    }
+    return out.items;
 }
 
 /// Register an `implement` block imported and activated from another module
@@ -2787,7 +2817,7 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
             // Bind the DECLARED (annotated) type when present.
             var bindTy = ty;
             if (annType) |at| {
-                try unifyAt(env, at, ty, v.value.getLoc());
+                try unifyArgument(env, at, ty, v.value.getLoc());
                 bindTy = at;
             }
             if (v.isPub and annType == null) try refusePublicUnknown(env, bindTy, v.name, "val", v.value.getLoc());
@@ -3221,7 +3251,12 @@ fn runDeclDecorators(
 
         // Diagnostics point at the annotation. A `failAt` span has no source text
         // to map onto for a declaration, so it is reported at the annotation too.
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, env.comptimeOwnerOf(dfn), dfn, handle, plain, &env.comptimeTraces) catch {
+        const owner = env.comptimeOwnerOf(dfn);
+        const support = if (std.mem.eql(u8, owner, env.modulePath))
+            try decoratorSupport(env.arena, env.fnDecls, dfn)
+        else
+            sig.support;
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, dfn, support, handle, plain, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.");
         };
         switch (outcome) {
@@ -4229,6 +4264,13 @@ fn inferTypeMethods(
             env.starFn = null;
             env.fnEffect = null;
         }
+        // The declared return, whole: a returned value that is already that
+        // wrapper (`return startApp(self)` in a `-> @Task<@Result<…>>` method)
+        // passes through rather than being wrapped `Ok(…)` again
+        // (`valuePassesThrough`), as in a free fn.
+        const savedReturnWhole = env.returnWhole;
+        defer env.returnWhole = savedReturnWhole;
+        env.returnWhole = if (m.returnType) |rt| try resolveTypeRefInContext(env, rt, genericMap) else null;
 
         // 06 C9 — a method body is part of the strict contract, like a
         // `default fn` interface body (`inferInterfaceDefaultBodies`). The walk
@@ -5447,7 +5489,7 @@ fn behaviorCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
 fn behaviorReaches(env: *Env, from: []const u8, to: []const u8, depth: usize) bool {
     if (std.mem.eql(u8, from, to)) return true;
     if (depth >= 16) return false;
-    const decl = env.assocInterfaceDecls.get(from) orelse return false;
+    const decl = env.assocInterfaceDecls.get(from) orelse env.importedBehaviorDecls.get(from) orelse return false;
     for (decl.extends) |parent| {
         if (behaviorReaches(env, parent, to, depth + 1)) return true;
     }
@@ -7313,6 +7355,21 @@ fn typeAnswersMember(env: *Env, td: envMod.TypeDef, member: []const u8) bool {
     return false;
 }
 
+/// Whether `iface` — or anything it extends — declares `method` as a method
+/// with no body (a `default fn` is emitted with the implementer, so it is not
+/// the value's own). `depth` bounds a cyclic `extends` chain.
+fn behaviorDeclaresBodyless(env: *Env, iface: []const u8, method: []const u8, depth: usize) bool {
+    if (depth >= 16) return false;
+    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return false;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, method)) return !m.is_default and !m.is_declare and m.body == null;
+    }
+    for (decl.extends) |parent| {
+        if (behaviorDeclaresBodyless(env, parent, method, depth + 1)) return true;
+    }
+    return false;
+}
+
 /// Whether `iface` — or anything it extends — declares `member`. `depth` bounds
 /// a cyclic `extends` chain.
 fn behaviorDeclaresMember(env: *Env, iface: []const u8, member: []const u8, depth: usize) bool {
@@ -7784,7 +7841,8 @@ fn checkAssertPatternSubject(
     catchLoc: ?ast.Loc,
 ) InferError!void {
     const name = switch (pattern) {
-        .variant => |v| v.name,
+        // A path names its variant by its last segment (`Result.Error`).
+        .variant => |v| bareVariantName(v.name),
         else => return,
     };
     const st = subjectType.deref();
@@ -8027,6 +8085,23 @@ fn variantPayloadFieldNames(env: *Env, subjectType: *T.Type, writtenName: []cons
         return out;
     }
     return null;
+}
+
+/// Record `pattern` at `at` when it is `Ok(…)` / `Err(…)` / `Error(…)` written
+/// bare against a `@Result` subject (`Env.resultPatternLocs`). The name is the
+/// `@Result` variant whatever else the module declares: a user enum with an
+/// `Error` variant made erlang, beam and wasm test the subject for THAT
+/// variant, and a `{error, E}` fell through every arm (`case_clause`, or no
+/// arm at all at exit 0).
+fn noteResultPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, at: ast.Loc) InferError!void {
+    if (pattern != .variant) return;
+    const name = pattern.variant.name;
+    if (std.mem.indexOfScalar(u8, name, '.') != null) return;
+    if (!std.mem.eql(u8, name, "Ok") and !std.mem.eql(u8, name, "Err") and !std.mem.eql(u8, name, "Error")) return;
+    const st = subjectType.deref();
+    if (st.* != .named or !std.mem.eql(u8, st.named.name, "Result")) return;
+    if (at.line == 0) return;
+    try env.resultPatternLocs.put(env.arena, at, {});
 }
 
 fn bindCaseArmPatternNames(
@@ -9902,7 +9977,8 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                 // type (`val t: Token = .Color.Red.500;`).
                 try inferExprTypedExpecting(env, lb.value.*, annType);
             const valPtr = try makeTypedPtr(env, valTyped);
-            if (annType) |at| try unifyAt(env, at, valTyped.getType(), lb.value.getLoc());
+            // A behavior annotation takes an implementer, as a parameter does.
+            if (annType) |at| try unifyArgument(env, at, valTyped.getType(), lb.value.getLoc());
             // The annotation is the DECLARED type — bind it, not the RHS type
             // (`val head: ?i32 = 5;` must bind `?i32`).
             const bindTy = annType orelse valTyped.getType();
@@ -9928,7 +10004,8 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                         if (env.lookup(name)) |ty| {
                             try refuseValAssign(env, name, loc);
                             try refuseMemoryWrite(env, name, a.op == .plusAssign, a.value, loc);
-                            try unifyAt(env, ty, valTyped.getType(), loc);
+                            // A `var` typed by a behavior takes an implementer.
+                            try unifyArgument(env, ty, valTyped.getType(), loc);
                         } else {
                             env.lastError = try unboundAt(env, name, loc);
                             return error.TypeError;
@@ -10285,6 +10362,32 @@ fn makeMethodCall(
     // no error to keep honest here; what was missing is the fill, and without it
     // `b.bump()` reached node as `bump()` and answered `NaN`.
     var checkedArgs: []ast.CallArgOf(.typed) = typedArgs;
+    // A method call is arity-checked like a function call: an argument short
+    // of what the method declares, with no default to fill it, and one too
+    // many are both `expects N argument(s)`. It used to check, and the
+    // backends passed the short list — `undef` on erlang, `undefined` read as
+    // the missing argument on commonJS.
+    if (recvPtr) |rp| if (nominalName(rp.getType())) |tn| {
+        if (env.getInherentMethodParams(tn, callee)) |declared| {
+            if (declared.len > 0 and std.mem.eql(u8, declared[0].name, "self")) {
+                const want = declared.len - 1;
+                const total = typedArgs.len + typedTrailing.len;
+                const fillable = typedTrailing.len == 0 and total < want and blk: {
+                    const labels = try env.arena.alloc(?[]const u8, typedArgs.len);
+                    for (typedArgs, 0..) |ta, i| labels[i] = ta.label;
+                    const planned = envMod.planDefaultFill(env.arena, declared[1..], labels) catch |e| switch (e) {
+                        error.CannotFill => break :blk false,
+                        else => |rest| return rest,
+                    };
+                    break :blk planned != null;
+                };
+                if (total != want and !fillable) {
+                    env.lastError = TypeError.arityMismatch(callee, want, total).withLoc(loc);
+                    return error.TypeError;
+                }
+            }
+        }
+    };
     if (typedTrailing.len == 0) {
         if (recvPtr) |rp| if (nominalName(rp.getType())) |tn| {
             if (env.getInherentMethodParams(tn, callee)) |declared| {
@@ -11635,7 +11738,8 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     // bindings (e.g. the primitive type name `bool`); the builtin
                     // `result` namespace is shadowable by a local binding.
                     if (env.stdImports.contains(rn) or
-                        (env.lookup(rn) == null and std.mem.eql(u8, rn, "result")))
+                        (env.lookup(rn) == null and std.mem.eql(u8, rn, "result")) or
+                        env.namespaces.modules.contains(rn))
                     {
                         break :blk try makeTypedPtr(env, TypedExpr{ .identifier = .{
                             .loc = recvExpr.*.identifier.loc,
@@ -11914,6 +12018,52 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 }
             }
 
+            // Decision 107's namespace form over a module of the program
+            // (`import {jwt} from "sec"`; `jwt.sign(x)`): the call resolves in
+            // the module's exports and is recorded for the transform, which
+            // writes it as a call of an aliased import every backend lowers.
+            if (call.receiver) |recvExpr| {
+                if (recvExpr.* == .identifier and recvExpr.*.identifier.kind == .ident) {
+                    const ns = recvExpr.*.identifier.kind.ident;
+                    // An explicit import wins over a same-named prelude
+                    // binding, as a `from "std"` one does.
+                    if (env.namespaces.modules.get(ns)) |exports| {
+                        const exported = exports.get(call.callee) orelse {
+                            const msg = try std.fmt.allocPrint(env.arena, "module `{s}` has no public `{s}`", .{ ns, call.callee });
+                            env.lastError = TypeError.custom(msg, "Check the name against the module's `pub` declarations.").withLoc(loc);
+                            return error.TypeError;
+                        };
+                        var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+                        defer seen.deinit();
+                        const instantiated = try instantiateType(env, exported, &seen, .allVars);
+                        const f = switch (instantiated.deref().*) {
+                            .func => |f| f,
+                            else => {
+                                const msg = try std.fmt.allocPrint(env.arena, "`{s}.{s}` is not a function", .{ ns, call.callee });
+                                env.lastError = TypeError.custom(msg, "Only a function is called through a module namespace; import the name itself for anything else.").withLoc(loc);
+                                return error.TypeError;
+                            },
+                        };
+                        const total = typedArgs.len + typedTrailing.len;
+                        if (f.params.len != total) {
+                            env.lastError = TypeError.arityMismatch(call.callee, f.params.len, total).withLoc(loc);
+                            return error.TypeError;
+                        }
+                        for (typedArgs, f.params[0..typedArgs.len]) |ta, p| {
+                            try unifyArgument(env, p, ta.value.getType(), ta.value.getLoc());
+                        }
+                        try env.namespaces.calls.put(env.arena, loc, .{ .namespace = ns, .callee = call.callee });
+                        return TypedExpr{ .call = .{ .loc = loc, .type_ = f.ret, .kind = .{ .call = .{
+                            .receiver = typedReceiver,
+                            .callee = call.callee,
+                            .is_builtin = false,
+                            .args = typedArgs,
+                            .trailing = typedTrailing,
+                        } } } };
+                    }
+                }
+            }
+
             // Decision 122 — `seq.next()` called by hand on an `@Iterator<T>`
             // answers `YieldStep<T>`, on a `@Stream<T>` `@Task<YieldStep<T>>`.
             // Neither wrapper is a declared type, so no method table answers
@@ -12026,6 +12176,26 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         try recordInstanceCall(env, loc, tn);
                         return try makeMethodCall(env, recvPtr, call.callee, typedArgs, typedTrailing, loc);
                     }
+                    // A receiver whose static type is a `behavior` declaring
+                    // `callee` without a body: the method is the VALUE's —
+                    // whichever type implements the behavior, or the host.
+                    // Recorded so a backend without native dispatch asks the
+                    // value instead of guessing an owner from the method's
+                    // name (erlang called another type's `query/2` that
+                    // shared the name, or a local no module defined).
+                    if (behaviorDeclaresBodyless(env, tn, call.callee, 0)) {
+                        try env.instanceLowerings.put(loc, .{ .by_value = tn });
+                    }
+                    // A FIELD of function type called like a method
+                    // (`out.write(x)`): recorded as the record's, so a backend
+                    // applies what the field holds instead of looking for a
+                    // method of that name — on erlang an imported record's
+                    // field call went to whichever type declared `write/2`
+                    // (another type's answer at exit 0), or to none (`undef`).
+                    if (env.lookupTypeDef(tn)) |td| if (td.findField(call.callee)) |fd| {
+                        if (fd.type_.deref().* == .func and env.instanceLowerings.get(loc) == null)
+                            try env.instanceLowerings.put(loc, .{ .type_ = tn });
+                    };
                 }
 
                 // A builtin-primitive receiver (`xs.map(f)`, `s.split(sep)`) has
@@ -12113,6 +12283,17 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 // refused before the permissive fresh-var tail below, which is
                 // what let `a.len()` check.
                 try refuseUnknownUse(env, recvPtr.getType(), loc, "call a method on");
+                // A nominal receiver this module has no declaration of (its
+                // type reached here through an imported fn's return, never
+                // imported itself): record the name, so a backend without
+                // native dispatch can ask the value rather than guess an owner
+                // from the method's name (erlang ran the untyped primitive
+                // shim: `bp_unsupported_method` for `Dict.at`).
+                if (nominalName(recvPtr.getType())) |tn| {
+                    if (env.lookupTypeDef(tn) == null and env.instanceLowerings.get(loc) == null and
+                        tn.len > 0 and std.ascii.isUpper(tn[0]) and !std.mem.eql(u8, tn, "Self"))
+                        try env.instanceLowerings.put(loc, .{ .unplaced_type = tn });
+                }
                 if (nominalName(recvPtr.getType())) |tn| {
                     if (env.lookupTypeDef(tn)) |td| if (!typeAnswersMember(env, td, call.callee)) {
                         var ext_err: ?TypeError = null;
@@ -13026,6 +13207,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                         try saveAndBindPatternName(env, &snapshots, binder, optionalInner(subjectTy.?).?);
                     }
                 } else try bindCaseArmPatternNames(env, arm.pattern, typedSubjects, &snapshots);
+                if (typedSubjects.len == 1) try noteResultPattern(env, arm.pattern, typedSubjects[0].getType(), arm.patternLoc);
 
                 // A guard clause must type-check to a boolean, with the
                 // pattern's bindings in scope.
@@ -13175,6 +13357,7 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             // snapshots a case arm would restore are deliberately dropped.
             var bound: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
             try bindPatternNamesForSubject(env, ap.pattern, exprTyped.getType(), &bound);
+            try noteResultPattern(env, ap.pattern, exprTyped.getType(), loc);
             const handlerExpr = ap.handler.*;
             const handlerTyped = try inferExprTyped(env, handlerExpr);
             const handlerPtr = try makeTypedPtr(env, handlerTyped);

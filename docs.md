@@ -466,8 +466,11 @@ type Person(name: string) implement Printable {
 }
 ```
 
-A behavior is a type: a parameter or a return typed by it takes any type that
-implements it, and a call on it dispatches to that type's method.
+A behavior is a type: a parameter, a return, a constructor field, an annotated
+`val` or a `var` typed by it takes any type that implements it, and a call on it
+dispatches to that type's method — the value's own, whatever other type declares
+a method of the same name. An imported behavior is the same type it is in its
+own module, and so is every name an imported type alias mentions.
 
 ```botopink
 behavior Greeter {
@@ -488,9 +491,6 @@ fn main() {
     @print(welcome(Bob(name: "bob")));
 }
 ```
-
-Across modules this is not accepted yet — see
-[Decided, not yet implemented](#decided-not-yet-implemented).
 
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
@@ -2200,19 +2200,15 @@ and `await` inside a `@Component` body (an `async function` on commonJS, awaited
 by every caller).
 
 Two limits worth stating here, because a library meets them before it meets a
-rule. The checker halves are `00 · 01-checker`'s:
+rule. The checker half is `00 · 01-checker`'s:
 
 - A default on an **imported function** is not filled. The cross-module export
   registry carries no plain `fn` declaration, so `import { greet } from "helper";
   greet("w")` reds `'greet' expects 2 argument(s), got 1` where the same `greet`
   called inside `helper` fills. An imported record's field default is filled.
-- A **behavior-typed** parameter or return takes a type that implements the
-  behavior in the same module (see [behavior](#behavior)), but not one imported
-  from a sibling module or a package: with `Greeter` and `Bob` both reached
-  through `import`, `useIt(Bob(n: "bob"))` reds `type mismatch: expected
-  behavior Greeter { … }, got Bob`. And on wasm a method called through a
-  behavior-typed parameter traps (`unreachable`) at run time; commonJS, erlang
-  and beam dispatch it (`00 · 05-wasm`'s).
+- On wasm a method called through a **behavior-typed** value traps
+  (`unreachable`) at run time; commonJS, erlang and beam dispatch it
+  (`00 · 05-wasm`'s).
 
 These forms are **deliberately absent**, so that none reads as unfinished work:
 

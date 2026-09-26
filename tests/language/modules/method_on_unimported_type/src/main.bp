@@ -1,0 +1,23 @@
+//// A method called on a value whose type this module never imported — the
+//// value came out of an imported function — is that type's method.
+////
+//// The erlang gaps this pins: `queryDict(q).at("y")` ran the untyped
+//// primitive shim and raised `bp_unsupported_method` (beam:
+//// `unresolved_method`), and `logger("a").isEnabled(1)` went to the one
+//// IMPORTED type declaring `isEnabled/2` — `DraftMode`, `undef` or its
+//// answer. The value's tag names its own module (decision 21).
+
+pub mod query;
+pub mod log;
+pub mod draft;
+import {queryDict} from "query";
+import {logger} from "log";
+import {DraftMode} from "draft";
+
+pub fn main() {
+    @print(queryDict("x=1&y=2").at("y") ?? "none");
+    @print(queryDict("x=1").size());
+    @print(logger("a").isEnabled(1));
+    @print(logger("a").isEnabled(3));
+    @print(DraftMode(on: true).isEnabled(0));
+}

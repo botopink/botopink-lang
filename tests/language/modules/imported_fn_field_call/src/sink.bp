@@ -1,0 +1,12 @@
+//// A record of functions — the seam a server passes a handler — and a type
+//// of the same module that declares a METHOD of the same name and arity.
+
+pub type ChunkWriter(write: fn(s: string) -> string, tag: string)
+
+pub fn writer(prefix: string) -> ChunkWriter {
+    return ChunkWriter(write: { s -> prefix + s }, tag: "w");
+}
+
+pub type File(path: string) {
+    pub fn write(self: Self, s: string) -> string { return "file " + s; }
+}

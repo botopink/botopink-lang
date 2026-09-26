@@ -1,0 +1,38 @@
+//// A value of a type implementing a behavior converts to the behavior
+//// wherever a position is typed by it — not only a parameter, a constructor
+//// field and a `return`, but an annotated `val` (local and module-level) and
+//// a `var`, both at its declaration and at an assignment.
+////
+//// The gap this pins: `val l: Lookup = memory();` was `type mismatch:
+//// expected Lookup, got Memory` on every target, while the same value passed
+//// to a `Lookup` parameter checked.
+//// Not scheduled on wasm: a method called through a behavior-typed value traps
+//// there (`docs.md` § the limits, 05-wasm's row).
+
+behavior Lookup {
+    fn find(self: Self, key: string) -> string;
+}
+
+type Memory(prefix: string) implement Lookup {
+    fn find(self: Self, key: string) -> string { return self.prefix + key; }
+}
+
+type Disk(root: string) implement Lookup {
+    fn find(self: Self, key: string) -> string { return self.root + "/" + key; }
+}
+
+fn memory() -> Memory {
+    return Memory(prefix: "m:");
+}
+
+val shared: Lookup = memory();
+
+pub fn main() {
+    val local: Lookup = memory();
+    @print(local.find("a"));
+    @print(shared.find("b"));
+    var current: Lookup = Disk(root: "/d");
+    @print(current.find("c"));
+    current = memory();
+    @print(current.find("d"));
+}

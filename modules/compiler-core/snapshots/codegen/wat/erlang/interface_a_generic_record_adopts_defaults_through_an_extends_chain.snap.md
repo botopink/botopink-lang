@@ -79,7 +79,7 @@ main(_Args) ->
 -export([size/1, twiceSize/1, isEmpty/1, '__bp_get'/2, '__bp_format'/1]).
 
 size(Self) ->
-    length(element(2, Self)).
+    erlang:length(element(2, Self)).
 
 twiceSize(Self) ->
     (size(Self) * 2).

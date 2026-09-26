@@ -74,6 +74,9 @@ pub fn evaluate(
     /// The module path `dfn` was declared in (`templateEval.ownerId`).
     owner: []const u8,
     dfn: ast.FnDecl,
+    /// The functions of `dfn`'s module its body reaches
+    /// (`infer.decoratorSupport`), compiled into the module beside it.
+    support: []const ast.FnDecl,
     handle: DeclHandle,
     plainArgs: []const template.PlainArg,
     /// Receives what was sent to and returned by the runtime (snapshots); null skips it.
@@ -81,7 +84,7 @@ pub fn evaluate(
 ) EvalError!Outcome {
     _ = build_root;
     var unsupported: erlang.UnsupportedMethod = .{};
-    const source = buildModule(arena, owner, dfn, handle, plainArgs, &unsupported) catch |err| switch (err) {
+    const source = buildModule(arena, owner, dfn, support, handle, plainArgs, &unsupported) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "decorator", dfn.name, unsupported) },
         else => |e| return e,
     };
@@ -221,6 +224,7 @@ fn buildModule(
     arena: std.mem.Allocator,
     owner: []const u8,
     dfn: ast.FnDecl,
+    support: []const ast.FnDecl,
     handle: DeclHandle,
     plainArgs: []const template.PlainArg,
     unsupported: *erlang.UnsupportedMethod,
@@ -230,8 +234,9 @@ fn buildModule(
     const forms = try mainForms(b, dfn, plans);
     const resident = try preludeMod.decoratorForms(b);
 
-    const decls = try arena.alloc(ast.DeclKind, 1);
+    const decls = try arena.alloc(ast.DeclKind, 1 + support.len);
     decls[0] = .{ .@"fn" = dfn };
+    for (support, 1..) |f, i| decls[i] = .{ .@"fn" = f };
     var config: erlang.ComptimeModule = .{
         .host_enums = &.{"DeclKind"},
         // `decl.failAt(Span(start, end, line), msg)` builds the span map.
@@ -427,7 +432,7 @@ test "decorator module: lowered body, handle term and host glue" {
     };
     const args = [_]template.PlainArg{.{ .paramName = "path", .source = "\"/x\"" }};
     var unsupported: erlang.UnsupportedMethod = .{};
-    const m = try buildModule(arena, "", dfn, handle, &args, &unsupported);
+    const m = try buildModule(arena, "", dfn, &.{}, handle, &args, &unsupported);
 
     // A2: the atom names the declaration, not just a hash of the body, and it
     // decodes back to `{gen, package "bp", "comptime", "dec", "route", <16 hex>}`.
@@ -495,7 +500,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
     const dfn = program.decls[0].@"fn";
 
     var unsupported: erlang.UnsupportedMethod = .{};
-    const first = try buildModule(arena, "", dfn, .{
+    const first = try buildModule(arena, "", dfn, &.{}, .{
         .kind = "Type",
         .name = "Alpha",
         .fields = &.{},
@@ -503,7 +508,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
         .returnType = "",
         .annotations = &.{},
     }, &.{}, &unsupported);
-    const second = try buildModule(arena, "", dfn, .{
+    const second = try buildModule(arena, "", dfn, &.{}, .{
         .kind = "Type",
         .name = "Omega",
         .fields = &.{.{ .name = "x", .typeName = "i32", .annotations = &.{} }},

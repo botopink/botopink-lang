@@ -220,6 +220,26 @@ pub const TemplateOp = enum { value, text, parts, source, context, lookup, bindi
 /// body in the external eval runtime (expr-templates F6-full). Null in
 /// tooling paths (`compileTypesOnly` / LSP) — only the full `compile`
 /// pipeline evaluates template bodies.
+/// `Env.namespaces` — what the transform needs to write `jwt.sign(x)` as a
+/// call of an imported function: each qualified call's loc names its
+/// namespace and function (`calls`), and every namespace import item is
+/// replaced by one aliased leaf per function called through it
+/// (`ns.aliasFor`), which every backend already lowers.
+pub const NamespaceImports = struct {
+    /// Bound name → the imported module's exports.
+    modules: std.StringHashMapUnmanaged(std.StringHashMap(*T.Type)) = .empty,
+    /// Call loc → the namespace and the function it calls.
+    calls: std.AutoHashMapUnmanaged(ast.Loc, Call) = .empty,
+
+    pub const Call = struct { namespace: []const u8, callee: []const u8 };
+
+    /// The local name a namespace call is rewritten to: an import alias no
+    /// source can spell (`$`), so it never collides with a declaration.
+    pub fn aliasFor(arena: std.mem.Allocator, namespace: []const u8, callee: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(arena, "__bp_ns_{s}__{s}", .{ namespace, callee });
+    }
+};
+
 pub const TemplateEvalCtx = struct {
     io: std.Io,
     build_root: []const u8,
@@ -334,6 +354,16 @@ pub const InstanceLowering = union(enum) {
     /// every backend) or over floats. Absent when the operands' type was never
     /// resolved (a generic `T`); a backend then keeps its own reading.
     division: DivisionKind,
+    /// A method call the VALUE answers, for a backend without native dispatch
+    /// — the receiver's type name: its static type is a `behavior` declaring
+    /// the method without a body, so the implementation is whichever type
+    /// implements it, or a host-built value.
+    by_value: []const u8,
+    /// A method call on a nominal type this module has no declaration of — a
+    /// `Dict` answered by an imported fn, whose type was never imported here.
+    /// The name only: a backend that finds a record or enum of that name in
+    /// the program asks the value, whose tag names its module (decision 21).
+    unplaced_type: []const u8,
 };
 
 /// Which `/` an `InstanceLowering.division` is.
@@ -355,6 +385,11 @@ pub const SequenceKind = enum { iterator, stream };
 pub const DecoratorSig = struct {
     params: []const ast.Param,
     fn_decl: ?ast.FnDecl = null,
+    /// The functions of the decorator's own module its body calls, directly
+    /// or through one another (`infer.decoratorSupport`) — compiled into the
+    /// decorator module beside it. Filled for an IMPORTED decorator; a local
+    /// one computes it from `Env.fnDecls` when it runs.
+    support: []const ast.FnDecl = &.{},
 };
 
 /// A type-directed lowering for a `return`/`throw`/`yield`/`break` jump inside
@@ -672,6 +707,21 @@ pub const Env = struct {
     /// `Array`) registered before user inference. Used to emit their namespace
     /// objects into the codegen output when a call site uses them.
     assocInterfaceDecls: std.StringHashMap(ast.BehaviorDecl),
+    /// `pub behavior` declarations this module IMPORTS, by name — read only to
+    /// tell that a method call's receiver is typed by a behavior declaring the
+    /// method (`InstanceLowering.behavior`). Kept apart from
+    /// `assocInterfaceDecls`, whose entries codegen emits.
+    importedBehaviorDecls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
+    /// The `Ok(…)` / `Error(…)` patterns matched against a `@Result` subject,
+    /// keyed by the arm's `patternLoc` (a `val assert`'s own loc). The
+    /// transform writes each as `Result.Ok` / `Result.Error`, so a backend
+    /// never reads the bare name as a variant of a user enum that declares
+    /// one (`type Level { Info, Error }`).
+    resultPatternLocs: std.AutoHashMapUnmanaged(ast.Loc, void) = .empty,
+    /// Decision 107's namespace form over a module of the program's own
+    /// package or a dependency (`import {jwt} from "sec"`, `import {jwt};`):
+    /// the bound name, its module's exports, and the calls made through it.
+    namespaces: NamespaceImports = .{},
     /// Interface names actually used as an associated-fn call receiver
     /// (`Pair.of(...)`), recorded during inference so codegen emits only the
     /// namespaces that are needed.
@@ -1458,6 +1508,12 @@ pub const Env = struct {
             for (params, 0..) |_, i| args[i] = try self.freshVar();
             return self.namedTypeArgs(name, args);
         }
+        // An imported `behavior` is the nominal type its own module names
+        // (`-> Request` there is `Request`), not the display name its import
+        // binding carries (`behavior Request { … }`): resolved to that, an
+        // alias or a signature written against the imported behavior never
+        // unified with a value the declaring module typed.
+        if (self.importedBehaviorDecls.contains(name)) return self.namedType(name);
         // Primitive / built-in names
         if (self.bindings.get(name)) |ty| {
             // A name bound to a *constructor function* (`fn(fields…) -> Name`)

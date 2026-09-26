@@ -19,7 +19,7 @@ main() ->
     Fn = <<"Fn">>,
     Kinds = {Type, Fn},
     Decl = #{kind => element(1, Kinds), name => <<"Service">>, fields => [{<<"x">>, <<"i32">>, []}], methods => [], returnType => <<"">>, annotations => []},
-    '__bp_print'([length('__bp_field'(Decl, fields))]).
+    '__bp_print'([erlang:length('__bp_field'(Decl, fields))]).
 
 '__bp_field'(V, F) when is_map(V) -> maps:get(F, V);
 '__bp_field'(V, F) -> apply(element(1, V), '__bp_get', [V, F]).
