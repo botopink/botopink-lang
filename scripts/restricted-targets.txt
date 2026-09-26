@@ -1,0 +1,82 @@
+# Every cell `zig build test-libs` would not run at all, because the member's
+# `botopink.json` declares a `"targets"` list that excludes the target. One
+# cell per line:
+#
+#   <lib> <target> <n-failed> <owner> <reason…>
+#
+# A restriction is an opt-out from the gate, and an opt-out with no line here
+# is refused. `test-libs.sh` passes `--include-unsupported` to the runner, so
+# every restricted cell RUNS on every gate, and its measured failed count is
+# compared with `<n-failed>`.
+#
+# `<n-failed>` is the number of FAILING TESTS the cell has, or the token
+# `build` when the cell does not compile at all — no test ran, so it has no
+# count, and reading that as "0 failed" is exactly the blindness this file
+# closes. Writing a line is a MEASUREMENT: run the cell
+# (`zig build test-libs -- --lib <lib> --target <target>`) and copy what it
+# prints. Never a guess.
+#
+# Only the FAILED count is pinned, never the passed one. A library that adds a
+# green test moves nothing here, so an ordinary library commit never has to
+# touch this repository — that is what makes a gate shared by seven fronts
+# livable.
+#
+# The gate is strict in BOTH directions:
+#
+#   · a restricted cell with no line here      → FAIL. A new restriction has to
+#                                                 be measured before it lands.
+#   · a line whose member no longer restricts
+#     that target                              → FAIL. Delete the line; the
+#                                                 cell became an ordinary
+#                                                 assert. (On an unfiltered
+#                                                 run, a line with no cell at
+#                                                 all is stale too.)
+#   · a count that moved, UP or DOWN           → FAIL. Up is a regression; down
+#                                                 is a fix, and it is banked by
+#                                                 editing the number here in the
+#                                                 same commit.
+#
+# There is no warning row and no flag that turns a line into a warning
+# (decision 67): fail beats warn.
+#
+# `<owner>` is the front that owns the member's `targets` array, taken from
+# `specs/1.0.10-beta/fronts.md` — the front that will delete the line by
+# widening the array, not whoever measured it.
+#
+# A restricted cell never consults `known-red-libs.txt`: its verdict is this
+# file's, and only this file's.
+#
+# Every line is measured by `botopink-lib-test --json --include-unsupported`
+# over each library checkout's own `feat` tip. 21 cells, one per member.
+
+# ── examples that declare one target (`02-packaging`'s examples row) ─────────
+jhonstart-counter       erlang    0      00/02-erlang          `"targets": ["commonJS"]`; was `build` while a `fn`-typed field called across a module boundary lowered to an undefined local (`set/2`) — `ExportInfo.fn_fields` carries the field types now (compiler `847add1c`), and the cell passes; the restriction outlived its reason
+jhonstart-todo          erlang    0      04-jhonstart          `"targets": ["commonJS"]`; was `build` while the example wrote bare `print(…)`, which type-checks everywhere and only commonJS lowers — jhonstart `bef57e2` spells it `@print`, and the cell now passes 3/3
+jhonstart-dom-test      erlang    1      04-jhonstart          `"targets": ["commonJS"]` — the member asserts front 30's browser functions against a minimal document (`fake_dom.mjs`, node-only cells); there is no DOM on the BEAM (04-jhonstart 30-g)
+
+# ── erika (no track this milestone; `09-ecosystem-residuals` keeps the tree) ─
+erika-linq              erlang    0      00/09-ecosystem-residuals  `"targets": ["commonJS"]`; the erlang row is green today — 9 pass, 0 fail, re-measured on `fix/erl-imported-method-owner`. The 8 reds were one compiler defect and not erika's: `Query` and `Grouping` both declare `toArray`, and an imported method was resolved by its NAME alone, so `Grouping`'s body ran `element(3, …)` over a `Query` tuple of size 2 (`{error, badarg}`). `00/02-erlang` counted the owner over the program instead — the method axis of `fcc0244b`'s field count — and the restriction outlived its reason
+
+# ── rakun: erlang-only (decision 113), the commonJS row is hidden ──────────
+# The measured commonJS count of each member, so a change there still shows.
+# A test module that does not load (a required sibling that did not compile, a
+# host binding node lacks) is one failure of its own (`botopink test --json`'s
+# `module_crashed`), so a cell with no running test reads a count, not `build`.
+rakun                   commonJS  30     03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-actuator          commonJS  5      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-actuator-api      commonJS  2      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-app               commonJS  2      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-cache             commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-client            commonJS  4      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-container-example commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-data              commonJS  5      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-example           commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-hateoas           commonJS  1      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-logging           commonJS  6      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-messaging         commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-scheduling        commonJS  6      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-security          commonJS  9      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-session           commonJS  6      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-ssr-example       commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-test              commonJS  9      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-web               commonJS  9      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding

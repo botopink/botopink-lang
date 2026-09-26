@@ -1,0 +1,27 @@
+//// Decision 53 — the range spelling is Zig's split: `...` is **inclusive** in a
+//// pattern (`..` stays exclusive in a slice and in `for (a..b)`). So `1...9`
+//// matches 1, 5 and 9 and does not match 0 or 10.
+////
+//// This cell exists because the three answers disagree, which is a defect under
+//// any spelling. Measured at `b5a9b85d` (2026-09-18), the five lines below are:
+////
+////   commonJS  1 1 1 0 0   — correct
+////   erlang    0 0 0 0 0   — the range arm never matches; every value falls to `_`
+////   wasm      0 0 0 0 0   — the same
+////   beam      1 1 1 1 1   — the range arm always matches, 0 and 10 included
+////
+//// Two backends never take the arm and one always takes it, so the single-value
+//// probe decision 53 quotes (`case 9 …` → 1 / 0 / 256) reads beam's answer as
+//// right when it is a false positive. The endpoints are what separates the three.
+////
+//// Re-measured at `85f883bd` (2026-09-20), after C-06's wasm half (`8594e4ba`, the
+//// `A...B` arm in `wat.zig`): **wasm answers `1 1 1 0 0`** and its line is gone.
+//// erlang and beam are unchanged; their lines name `C-06 (<backend> half not landed)`.
+
+pub fn main() {
+    @print(case 5 { 1...9 { 1 } _ { 0 } });
+    @print(case 1 { 1...9 { 1 } _ { 0 } });
+    @print(case 9 { 1...9 { 1 } _ { 0 } });
+    @print(case 0 { 1...9 { 1 } _ { 0 } });
+    @print(case 10 { 1...9 { 1 } _ { 0 } });
+}

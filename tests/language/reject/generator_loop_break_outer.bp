@@ -1,0 +1,14 @@
+//// Decision 105 — an annotated loop's border is a closure's: a `break :outer`
+//// naming a loop outside it is refused as crossing the border, not as unbound.
+
+pub fn main() {
+    var n = 0;
+    for :outer ([1, 2, 3]) { x ->
+        val g = iter loop {
+            n = n + 1;
+            if (n > 2) { break :outer; };
+            yield n;
+        };
+    };
+    @print(n);
+}

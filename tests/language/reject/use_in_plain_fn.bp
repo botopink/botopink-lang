@@ -1,0 +1,12 @@
+//// `use` in a plain fn — decision 104: only a `#[@use]` body activates a hook,
+//// and the refusal names the annotation.
+
+type Element(count: i32) implement @Context<Element>
+fn state(initial: i32) -> @Component<Element, i32> { return initial; }
+
+fn label() -> string {
+    val c = use state(0);
+    return "n";
+}
+
+pub fn main() { @print(label()); }

@@ -1,0 +1,22 @@
+//// Front 12 step 4.4 — "no external target for the active backend". A
+//// host-backed `declare fn` bound to one host is a program for that host: on
+//// erlang (and beam, which consumes the Erlang vocabulary) it runs and prints
+//// `hi`; on commonJS the compiler **refuses** it, naming the declaration and the
+//// backend — `external_erlang_only.commonJS.expect` carries that diagnostic, the
+//// shape of a `reject/` cell on one target.
+////
+//// wasm refuses it too — `external_erlang_only.wasm.expect`, the same sentence
+//// with its own backend named. It did not until `fix/wasm-refusals`: measured
+//// at `85f883bd` and again at `fa30a214`, `wat.zig` (`lowerPlainCall`) lowered
+//// a host-backed `declare fn` with no wasm host to `unreachable` "so the module
+//// still loads", and the program trapped at run time (exit 134, stdout empty)
+//// where the other three answered at compile time. This cell held an
+//// `external_erlang_only.targets` sidecar keeping wasm out for that reason;
+//// decision 67's refusal landed, so the sidecar is gone and all four run here.
+
+#[@External.Erlang("erlang", "list_to_binary")]
+declare fn listToBinary(codes: i32[]) -> string;
+
+pub fn main() {
+    @print(listToBinary([104, 105]));
+}

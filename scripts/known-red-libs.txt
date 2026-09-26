@@ -1,0 +1,20 @@
+# Library cells `zig build test-libs` knows to be red, each owned by the front
+# that turns it green. One cell per line:
+#
+#   <lib> <target> <commit> <owner> <reason…>
+#
+# `<commit>` is the library checkout's HEAD the red was MEASURED at (12 or
+# more hex digits of `git -C <library> rev-parse HEAD`). A line is a claim
+# about one library commit, made in this repository, and the two are never
+# committed together: when the library moves, the line says nothing about what
+# runs now, so it is STALE and fails the gate — red or green — until it is
+# re-measured: deleted when the cell passes, re-pinned when it is still red.
+#
+# A listed cell that fails at its pinned commit is reported by name and
+# counted, but does not fail the gate. A listed cell that PASSES fails the gate
+# until its line is deleted — the owning front deletes it in the commit that
+# fixes the library, which turns the cell into a hard assert. An unlisted cell
+# that fails always fails the gate, and so does a line whose cell does not
+# exist in a full run.
+#
+# Owners are the fronts of specs/1.0.10-beta/fronts.md.

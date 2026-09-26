@@ -1,0 +1,21 @@
+//// Decision 8 §5.3b — a section of an enum-shaped `type` is a type named by its
+//// path, and matching into a section is a refinement of the matched value, never
+//// coverage of the section's own leaves.
+
+type Token {
+    Text { Bold, Italic },
+    Color { Red },
+    Hover(inner: Token[]),
+}
+
+fn kind(t: Token) -> string {
+    return case t {
+        Text(inner)  { "text" }
+        Color(inner) { "color" }
+        Hover(inner) { "hover" }
+    };
+}
+
+test "§5.3b a section arm binds the section type" { assert kind(Token.Text.Bold) == "text"; }
+
+test "§5.3b a sibling section is a different arm" { assert kind(Token.Color.Red) == "color"; }

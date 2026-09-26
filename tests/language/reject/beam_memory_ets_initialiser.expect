@@ -1,0 +1,2 @@
+an `@BeamMemory.Ets` var is re-seeded from its initialiser whenever its table is re-created — `seeded`'s initialiser must be a literal or a `comptime` expression
+12:19

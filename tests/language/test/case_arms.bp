@@ -1,0 +1,88 @@
+//// Decision 8 §5.1 — `Pattern { body }` arms: literal, range and `_` arms,
+//// whole-value binding with `{ n -> … }`, the arm's value is its last expression.
+
+type Order {
+    Lt,
+    Eq,
+    Gt,
+}
+
+fn toInt(o: Order) -> i32 {
+    return case o {
+        .Lt { -1 }
+        .Eq { 0 }
+        .Gt { 1 }
+    };
+}
+
+fn describe(n: i32) -> string {
+    return case n {
+        0 { "zero" }
+        1..9 { "digit" }
+        _ { v -> "big " + v.toString() }
+    };
+}
+
+fn yesNo(b: bool) -> string {
+    return case b {
+        true { "yes" }
+        false { "no" }
+    };
+}
+
+fn code(s: string) -> i32 {
+    return case s {
+        "a" { 1 }
+        "b" { 2 }
+        _ { 0 }
+    };
+}
+
+fn doubledPlusOne(n: i32) -> i32 {
+    return case n {
+        i32 { m ->
+            val d = m * 2;
+            d + 1
+        }
+    };
+}
+
+test "§5.1 P1 P2 an arm is Pattern { body } and takes no ;" {
+    assert toInt(Order.Lt) == -1;
+    assert toInt(Order.Eq) == 0;
+    assert toInt(Order.Gt) == 1;
+}
+
+test "§5.2 a literal arm compares the value" {
+    assert describe(0) == "zero";
+    assert code("b") == 2;
+}
+
+test "§5.2 a range arm matches a value inside the range" {
+    assert describe(1) == "digit";
+    assert describe(5) == "digit";
+}
+
+test "§5.1 P1 _ { v -> } binds the whole matched value" {
+    assert describe(42) == "big 42";
+    assert code("zzz") == 0;
+}
+
+test "§5.2 bool literal arms" {
+    assert yesNo(true) == "yes";
+    assert yesNo(false) == "no";
+}
+
+test "§5.1 P3 a multi-statement body yields its last expression" {
+    assert doubledPlusOne(3) == 7;
+}
+
+test "§5.1 case is an expression bound to a val" {
+    val o = Order.Eq;
+    val label = case o {
+        .Lt { "less" }
+        .Eq { "equal" }
+        .Gt { "greater" }
+    };
+    assert label == "equal";
+}

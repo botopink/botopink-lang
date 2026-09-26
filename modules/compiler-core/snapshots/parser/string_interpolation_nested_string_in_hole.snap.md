@@ -27,7 +27,7 @@
                       "call": {
                         "loc": {
                           "line": 1,
-                          "col": 1
+                          "col": 14
                         },
                         "kind": {
                           "call": {
@@ -43,7 +43,7 @@
                                   "literal": {
                                     "loc": {
                                       "line": 1,
-                                      "col": 6
+                                      "col": 19
                                     },
                                     "kind": {
                                       "stringLit": "a"
@@ -59,7 +59,7 @@
                                   "identifier": {
                                     "loc": {
                                       "line": 1,
-                                      "col": 11
+                                      "col": 24
                                     },
                                     "kind": {
                                       "ident": "key"

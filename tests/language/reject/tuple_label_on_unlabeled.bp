@@ -1,0 +1,9 @@
+//// Decision 8 §6 T4 — a written type without labels gives none: `.pop` is an error (use `.N`).
+
+fn load() -> #(string, i32) {
+    return #("SP", 12);
+}
+
+pub fn main() {
+    @print(load().pop);
+}

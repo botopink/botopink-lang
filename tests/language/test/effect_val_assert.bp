@@ -1,0 +1,19 @@
+//// Decision 8 §9 — `val assert Ok(n) = <@Result>` binds the success value; a
+//// failure is a fatal assert (decision 4). There is no `catch` on this form:
+//// after a `catch` the value is no longer a `@Result`
+//// (`reject/val_assert_after_catch.bp`).
+
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+test "§9 val assert Ok binds the success value" {
+    val assert Ok(n) = parse(7);
+    assert n == 7;
+}
+
+test "§9 val assert Err binds the error" {
+    val assert Err(e) = parse(-1);
+    assert e == "negative";
+}

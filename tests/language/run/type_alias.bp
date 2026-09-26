@@ -1,0 +1,42 @@
+//// Decision 118 rule 1 — a type alias is a transparent name. `Id`, `Pair<A, B>`
+//// and `Ids` stand for the types they name wherever they are written; `Parser<T>`
+//// names `@Result<T, ParseError>` and types `port`, a function that only passes
+//// the value `parsePort` answers along — it uses no capability, so the alias
+//// activates nothing and is legal (`effect-wrapper-behind-alias` is the refusal
+//// for a body that does). Nothing of an alias reaches the emitted program.
+
+type ParseError { Empty }
+
+pub type Parser<T> = @Result<T, ParseError>;
+type Id = i32;
+type Pair<A, B> = #(A, B);
+type Ids = Id[];
+
+fn parsePort(s: string) -> @Result<i32, ParseError> {
+    if (s == "") { throw ParseError.Empty; };
+    return 8080;
+}
+
+fn port(s: string) -> Parser<i32> {
+    return parsePort(s);
+}
+
+fn double(x: Id) -> Id {
+    return x * 2;
+}
+
+fn swap(p: Pair<i32, string>) -> Pair<string, i32> {
+    return #(p.1, p.0);
+}
+
+pub fn main() {
+    val n: Id = double(21);
+    @print(n);
+    val ids: Ids = [1, 2, 3];
+    @print(ids.length);
+    val s = swap(#(1, "a"));
+    @print(s.0);
+    @print(s.1);
+    @print(try port("x") catch 0);
+    @print(try port("") catch 7);
+}

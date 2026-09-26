@@ -1,0 +1,48 @@
+//// Decisions 121 and 122 of 1.0.10-beta (front 24, § Cells "Iterators", second
+//// line; guide.md § 5.2) — the iterator does not fail; each `@Result<U, E>`
+//// ITEM may be an error, and the body gains sugar: `yield v` with `v: U` emits
+//// `Ok(v)`, with `v: @Result<U, E>` emits it as is (and CONTINUES); `throw e`
+//// emits `Error(e)` and ends; a `try x` that fails emits `Error(e)` and ends.
+//// The consumer's `for` stops after the last item — the `Done` that follows the
+//// `Error` — and prints `done`. `test/yield_step_next.bp` reads the `Done` by
+//// hand.
+
+fn check(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative " + n.toString(); };
+    return n;
+}
+
+fn checked(xs: i32[]) -> @Iterator<@Result<i32, string>> {
+    for (xs) { x -> yield try check(x); };
+}
+
+fn upTo(limit: i32) -> @Iterator<@Result<i32, string>> {
+    var i = 0;
+    loop {
+        if (i == limit) { throw "limit " + limit.toString(); };
+        yield i;
+        i = i + 1;
+    };
+}
+
+fn asIs() -> @Iterator<@Result<i32, string>> {
+    yield check(1);
+    yield check(-2);
+    yield 3;
+}
+
+fn walk(name: string, it: @Iterator<@Result<i32, string>>) {
+    for (it) { r ->
+        case r {
+            Ok(v) -> @print(name + " ok " + v.toString());
+            Error(e) -> @print(name + " error " + e);
+        };
+    };
+    @print(name + " done");
+}
+
+pub fn main() {
+    walk("try", checked([1, -2, 3]));
+    walk("throw", upTo(2));
+    walk("as-is", asIs());
+}

@@ -1,0 +1,45 @@
+//// Decisions 118, 120, 121 and 128 of 1.0.10-beta — the return is the effect,
+//// and the effects are a chain: `@Component` ⊃ `@Task`, `@Stream` ⊃ `@Task`.
+//// `throw` / `try` are not a level of it: they are legal wherever a layer of
+//// the return is a `@Result` (decision 121). The two rows here are the ones
+//// every backend runs: `-> @Result`, holding the `try` its value grants, and
+//// `-> @Component<C, @Result<…>>`, the top, holding `use` and the `try` its
+//// `@Result` value grants. `test/effect_chain.bp` carries the `@Task` and
+//// `@Iterator` rows, which need a target that can consume a Task or an
+//// iterator (commonJS and erlang).
+////
+//// `run/effect_context_await.bp` carries `await` inside a `@Component` body.
+//// A `@Component` body is an `async function` on commonJS (decision 104), so
+//// its caller reads a promise there and the value elsewhere: `Widget` prints
+//// its own count from inside the body, after `main`'s two lines.
+
+type Element(count: i32) implement @Context<Element>
+
+fn state(initial: i32) -> @Component<Element, i32> {
+    return initial;
+}
+
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+// `-> @Result` — it answers `try`.
+fn doubled(n: i32) -> @Result<i32, string> {
+    val v = try parse(n);
+    return v * 2;
+}
+
+// `-> @Component<C, @Result<…>>` — `use`, and `try` because its value is a `@Result`.
+fn widget(n: i32) -> @Component<Element, @Result<i32, string>> {
+    val c = use state(1);
+    val v = try parse(n);
+    @print(c + v);
+    return c + v;
+}
+
+pub fn main() {
+    @print(try doubled(21) catch 0);
+    @print(try doubled(0 - 1) catch 7);
+    widget(41);
+}

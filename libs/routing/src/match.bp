@@ -1,0 +1,212 @@
+//// routing/match — the route matcher: precedence, capture, the layout chain.
+////
+//// Moved from the file router (decision 115). Pure; compiled for erlang and
+//// commonJS — the one function the server and the browser must run
+//// identically to agree on which route a URL is.
+
+import {collections.Dict} from "std";
+import {SegmentKind, parseSegment, kindName, trimSlashes} from "segment";
+import {RouteEntry} from "table";
+
+// ── step 4: the matcher ─────────────────────────────────────────────────────
+//
+// One function, both targets, one precedence order — applied segment by
+// segment, highest first: static, then dynamic, then catch-all, then optional
+// catch-all. Groups never reach here (they are not in a pattern) and a slot
+// entry is matched separately against the same URL by front 61, so an entry
+// carrying a slot is not a candidate.
+
+pub fn splitPath(p: string) -> string[] {
+    var out: string[] = [];
+    for (trimSlashes(p).split("/")) { s ->
+        if (s != "") out.push(s);
+    }
+    return out;
+}
+
+// The score of one pattern segment, highest first.
+pub fn segmentWeight(k: SegmentKind) -> i32 {
+    val name = kindName(k);
+    if (name == "Static")
+        return 3
+    else if (name == "Dynamic")
+        return 2
+    else if (name == "CatchAll")
+        return 1
+    else
+        return 0;
+}
+
+// Lexicographic, segment by segment; a longer score wins a shared prefix, which
+// is what makes `/blog/[slug]` beat `/blog/[...slug]` for `/blog/x`.
+pub fn scoreBeats(a: i32[], b: i32[]) -> bool {
+    val n = if (a.length < b.length) a.length else b.length;
+    var verdict = 0;
+    var i = 0;
+    while (i < n) {
+        val av = a.at(i).unwrapOr(0);
+        val bv = b.at(i).unwrapOr(0);
+        if (verdict == 0)
+            if (av > bv) verdict = 1 else if (av < bv) verdict = 0 - 1;
+        i = i + 1;
+    }
+    if (verdict == 0)
+        if (a.length > b.length)
+            verdict = 1
+        else if (a.length < b.length)
+            verdict = 0 - 1;
+    return verdict > 0;
+}
+
+// One attempt at one pattern. `ok` rather than a `?Attempt` so the caller reads
+// the score without unwrapping twice; it is internal to `matchPath`.
+pub type Attempt(
+    ok: bool,
+    names: string[],
+    values: string[],
+    rest: string[],
+    score: i32[],
+)
+
+pub fn attempt(pattern: string, pathname: string) -> Attempt {
+    val pat = splitPath(pattern);
+    val url = splitPath(pathname);
+    var names: string[] = [];
+    var values: string[] = [];
+    var rest: string[] = [];
+    var score: i32[] = [];
+    var ok = true;
+    var i = 0;
+    var p = 0;
+    while (p < pat.length) {
+        val raw = pat.at(p).unwrapOr("");
+        val seg = parseSegment(raw);
+        val kind = kindName(seg.kind);
+        val here = url.at(i).unwrapOr("");
+        if (kind == "Static") {
+            if ((i < url.length && here == raw)) {
+                score.push(3);
+                i = i + 1;
+            } else ok = false;
+        } else if (kind == "Dynamic") {
+            if (i < url.length) {
+                names.push(seg.name);
+                values.push(here);
+                score.push(2);
+                i = i + 1;
+            } else ok = false;
+        } else if (kind == "CatchAll") {
+            if (i < url.length) {
+                rest = url.slice(i, url.length);
+                names.push(seg.name);
+                values.push(rest.join("/"));
+                score.push(1);
+                i = url.length;
+            } else ok = false;
+        } else if (kind == "OptionalCatchAll") {
+            rest = url.slice(i, url.length);
+            names.push(seg.name);
+            values.push(rest.join("/"));
+            score.push(0);
+            i = url.length;
+        } else ok = false;
+        p = p + 1;
+    }
+    if (i != url.length) ok = false;
+    return Attempt(
+        ok: ok,
+        names: names,
+        values: values,
+        rest: rest,
+        score: score,
+    );
+}
+
+// The `L` entries wrapping a pattern, root first. Group segments never appear,
+// because `patternOf` dropped them before the entry was written.
+pub fn ancestorPatterns(pattern: string) -> string[] {
+    var out: string[] = ["/"];
+    val segs = splitPath(pattern);
+    var acc = "";
+    var i = 0;
+    while (i < segs.length) {
+        acc = acc + "/" + segs.at(i).unwrapOr("");
+        out.push(acc);
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn layoutChain(table: RouteEntry[], pattern: string) -> RouteEntry[] {
+    var chain: RouteEntry[] = [];
+    for (ancestorPatterns(pattern)) { p ->
+        for (table) { e ->
+            if (((e.kind == "L" && e.slot == "") && e.pattern == p))
+                chain.push(e);
+        }
+    }
+    return chain;
+}
+
+// A matched route: the entry that claimed the URL, the bound path parameters,
+// the catch-all remainder and the layout chain that wraps it, root first.
+pub type RouteMatch(
+    entry: RouteEntry,
+    params: Dict<string, string>,
+    rest: string[],
+    chain: RouteEntry[],
+)
+
+// A bound path parameter by name, `""` when the route binds none of that name.
+// A `RouteMatch` reached through the optional binder of `if (matchPath(…)) { m
+// -> … }` has lost its type there, so `m.params.at(name)` lowers to a property
+// read and `.unwrapOr` is not a function on it; this reads it through a TYPED
+// parameter instead, and is the form fronts 23 and 26 should use.
+pub fn paramOf(m: RouteMatch, name: string) -> string {
+    return m.params.at(name).unwrapOr("");
+}
+
+pub fn paramsOf(names: string[], values: string[]) -> Dict<string, string> {
+    var d = Dict.empty();
+    var i = 0;
+    while (i < names.length) {
+        d = d.insert(names.at(i).unwrapOr(""), values.at(i).unwrapOr(""));
+        i = i + 1;
+    }
+    return d;
+}
+
+// A route is PUBLIC only when a page or a handler claims it: a pattern carrying
+// nothing but an `L` entry answers `null`, not a match with no body. A slot
+// entry is matched separately, by front 61, against the same URL.
+pub fn matchPath(table: RouteEntry[], pathname: string) -> ?RouteMatch {
+    var best: RouteEntry[] = [];
+    var bestScore: i32[] = [];
+    var bestNames: string[] = [];
+    var bestValues: string[] = [];
+    var bestRest: string[] = [];
+    for (table) { e ->
+        if (((e.kind == "P" || e.kind == "R") && e.slot == "")) {
+            val a = attempt(e.pattern, pathname);
+            if (a.ok)
+                if ((best.length == 0 || scoreBeats(a.score, bestScore))) {
+                    best = [e];
+                    bestScore = a.score;
+                    bestNames = a.names;
+                    bestValues = a.values;
+                    bestRest = a.rest;
+                }
+        }
+    }
+    if (best.length == 0) return null else {
+        val entry = best
+            .at(0)
+            .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: ""));
+        return RouteMatch(
+            entry: entry,
+            params: paramsOf(bestNames, bestValues),
+            rest: bestRest,
+            chain: layoutChain(table, entry.pattern),
+        );
+    }
+}

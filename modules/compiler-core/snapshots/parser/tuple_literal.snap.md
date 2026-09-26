@@ -42,7 +42,8 @@
                   }
                 ],
                 "comments": [],
-                "commentsPerElem": []
+                "commentsPerElem": [],
+                "labels": []
               }
             }
           }

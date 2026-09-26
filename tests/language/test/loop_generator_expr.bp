@@ -1,0 +1,39 @@
+//// Decision 105 — `iter loop { … }` is an expression worth
+//// `@Iterator<T>`: the body is a generator scope, `yield v` emits and
+//// continues, `break v` emits and ends, and the captured `var` is generator
+//// state. A `for` over it binds `T` in any body.
+
+test "§10 an annotated loop is a generator; break v is its last item" {
+    var n = 0;
+    var i = iter loop {
+        n = n + 1;
+        if (n == 4) { break n * 10; };
+        yield n * 10;
+    };
+    var acc = "";
+    for (i) { x -> acc = acc + x.toString() + ","; };
+    assert acc == "10,20,30,40,";
+    assert n == 4;
+}
+
+test "§10 a bare break ends the generator with nothing more" {
+    var k = 0;
+    val g = iter loop {
+        k = k + 1;
+        if (k > 2) { break; };
+        yield k;
+    };
+    var sum = 0;
+    for (g) { x -> sum = sum + x; };
+    assert sum == 3;
+}
+
+test "§10 a for inside the annotated loop feeds it" {
+    val doubled = iter loop {
+        for ([1, 2, 3]) { x -> yield x * 2; };
+        break;
+    };
+    var acc = "";
+    for (doubled) { d -> acc = acc + d.toString(); };
+    assert acc == "246";
+}

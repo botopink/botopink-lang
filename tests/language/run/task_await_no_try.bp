@@ -1,0 +1,24 @@
+//// Decision 120 of 1.0.10-beta (front 24, § Cells "`@Task` and failure", first
+//// line; guide.md § 9, row `@Future<T>` with no error) — `@Task<T>` never fails:
+//// `await` unwraps it and needs no `try`. `delayed` is a `@Task<void>` whose
+//// body only awaits. Printed from inside `run` (see
+//// `run/task_return_layers.bp`). `reject/effect_type_removed_future_no_error.bp`
+//// is the old spelling.
+
+fn answer(n: i32) -> @Task<i32> {
+    return n * 2;
+}
+
+fn delayed(n: i32) -> @Task<void> {
+    val v = await answer(n);
+    @print("delayed " + v.toString());
+}
+
+fn run() -> @Task<void> {
+    val a = await answer(20);
+    @print(a + 2);
+    await delayed(5);
+    @print("end");
+}
+
+pub fn main() { run(); }

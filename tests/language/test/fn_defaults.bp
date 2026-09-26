@@ -1,0 +1,52 @@
+//// Trailing parameter defaults: an omitted trailing argument takes the default
+//// its declaration gives it (C-04, 01 step 7, N1). The three shapes a default
+//// can be declared in — a free `fn`, a record constructor and an instance
+//// method — each accept a call that leaves it out.
+////
+//// N2 is the other half of the rule and cannot be asserted from here: a call
+//// missing a REQUIRED argument does not compile, and a cell that does not
+//// compile asserts nothing. It is `reject/missing_required_argument.bp`.
+
+fn connect(host: string, port: i32 = 80, timeout: i32 = 30) -> string {
+    return host + ":" + port.toString() + "/" + timeout.toString();
+}
+
+test "every default applies" { assert connect("a") == "a:80/30"; }
+
+test "one argument overrides the first default" { assert connect("a", 90) == "a:90/30"; }
+
+test "every argument given" { assert connect("a", 90, 5) == "a:90/5"; }
+
+type Port(number: i32 = 80, host: string) {
+    pub fn show(self: Self, separator: string = ":") -> string {
+        return self.host + separator + self.number.toString();
+    }
+}
+
+test "a record constructor takes the default of the field it was not given" {
+    assert Port(host: "a").number == 80;
+}
+
+test "a field named at the call site does not have to be the last one" {
+    val p = Port(host: "a");
+    assert p.host == "a";
+}
+
+test "a constructor argument still wins over the default" {
+    assert Port(number: 90, host: "a").number == 90;
+}
+
+test "an instance method takes the default of the argument it was not given" {
+    assert Port(host: "a").show() == "a:80";
+}
+
+test "an instance method argument still wins over the default" {
+    assert Port(host: "a").show("/") == "a/80";
+}
+
+test "a behavior default fn takes its own declared default" {
+    // `String.slice(self, start: i32, end: ?i32 = null)` — the open-ended
+    // slice is the declaration's default, not a second spelling.
+    assert "hello".slice(1) == "ello";
+    assert "hello".slice(1, 3) == "el";
+}

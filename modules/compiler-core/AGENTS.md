@@ -2,7 +2,6 @@
 
 > Path: `modules/compiler-core/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) · Root: [`../../AGENTS.md`](../../AGENTS.md)
-> Docs: [`./docs.md`](docs.md)
 
 Main Zig library: lexer, parser, AST, type inference, comptime, codegen and
 formatter. Imported as the `botopink` module by `compiler-cli` and
@@ -13,22 +12,23 @@ formatter. Imported as the `botopink` module by `compiler-cli` and
 ```text
 compiler-core/
 ├── AGENTS.md            ← you are here
-├── build.zig            ← build graph (`zig build [run|test]`)
-├── build.zig.zon        ← deps (stdlib)
+├── botopink.json        ← module version (drives auto-tagging)
 ├── src/                 ← all compiler stages — see src/AGENTS.md
-└── snapshots/           ← all .snap.md test fixtures — see snapshots/AGENTS.md
+└── snapshots/           ← .snap.md test fixtures
     ├── parser/          ← AST snapshots
-    ├── codegen/         ← codegen output (erlang/, node/, errors/)
-    └── comptime/        ← comptime + type-error snapshots
+    ├── codegen/         ← codegen output (beam/, erlang/, errors/, node/, wasm/)
+    └── comptime/        ← comptime snapshots, one file per test (ast/, errors/, templates/)
 ```
 
-## Commands (run from this directory)
+## Commands (run from the workspace root)
+
+The package has no `build.zig` of its own: the workspace `build.zig` builds it
+and derives the embedded `std` modules from `libs/std/src/root.bp`.
 
 ```bash
-zig build               # compile
-zig build test          # run all tests
-zig build run           # run CLI stub (main.zig)
-zig build test -- --test-filter "import decl"
+zig build                                 # compile
+zig build test                            # compiler-core + language-server + CLI tests
+zig build test -Dtest-filter="import decl"
 ```
 
 ## High-level pipeline
@@ -44,27 +44,51 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
 | Dir | Purpose |
 |---|---|
 | [`src/`](src/AGENTS.md) | Implementation of every stage. |
-| [`snapshots/`](snapshots/AGENTS.md) | Test fixtures for parser/codegen/comptime. |
+| `snapshots/` | Test fixtures for parser/codegen/comptime. |
 
 ## Notes
 
-- No standalone Node.js or WASM compiler — JS and Erlang are emitted natively
-  in Zig under `src/codegen/`.
-- Comptime evaluation is target-agnostic; the runtime backends live in
+- Every target (commonJS + `.d.ts` typedefs, erlang, BEAM assembly, WAT) is
+  emitted natively in Zig under `src/codegen/`.
+- Comptime evaluation (comptime vals, decorator and template bodies) runs in a
+  persistent `erl` process — see
   [`src/comptime/runtime/`](src/comptime/runtime/AGENTS.md).
 - For language syntax notes (records / enums / pipeline `|>` / numeric literals
   / etc.) see the workspace [`docs.md`](../../docs.md).
-- **Test-mode codegen** (§T `----- RUN LOG -----` envelope per test): each
-  backend's `__bp_run_tests` emitter wraps every `test "name" { … }` body
-  with a fixed `TEST <file>:<line> <name>` header + a fenced ```logs``` block
-  capturing the body's stdout. See
-  [`../compiler-cli/AGENTS.md#botopink-test-output-format-§t`](../compiler-cli/AGENTS.md)
-  for the full contract; emitters in `src/codegen/commonJS.zig`
-  (`__bp_run_tests`) and `src/codegen/erlang.zig` (`__bp_run_one`) implement
-  the commonJS + erlang halves today.
-
-Full pipeline diagram, AST model, public API table, and snapshot system
-overview live in [`./docs.md`](docs.md).
+- **Test-mode codegen** (`----- RUN LOG -----` envelope per test): each
+  backend's test runner wraps every `test "name" { … }` body with a fixed
+  `TEST <file>:<line> <name>` header + a fenced ```logs``` block capturing the
+  body's stdout. Contract: [`../compiler-cli/AGENTS.md`](../compiler-cli/AGENTS.md)
+  (“`botopink test` output format”); emitters are `__bp_run_tests` in
+  `src/codegen/commonJS.zig` and `__bp_run_one` / `__bp_run_tests` in
+  `src/codegen/erlang.zig`.
+- **A test body is a fallible context** (1.0.10-beta decision 74): a `try`
+  whose operand is `Error(e)` inside a `test { … }` ends the test as
+  `FAIL <name>  (<e>)  at <file>:<line>` — commonJS `throw new Error(e)`
+  (`buildTryStmt`, `in_test_body`), erlang `erlang:error({bp_assert, E, Loc})`
+  (`propagateTryExpr`, `in_test_body`) — instead of returning the Result the
+  runner would ignore. A `try` inside a lambda is the lambda's. A bare
+  `return;` is the `ok` position of a `-> @Result<void, E>` (parser +
+  `transform.zig` `wrap_ok` over `null`).
+- **`@src()`** (1.0.10-beta decision 73) is a comptime builtin answering the
+  prelude record `SourceLocation(file, line, column, fnName)`: `infer.zig`
+  `inferSrcBuiltin` rewrites the call into the constructor call with four
+  literals (`env.srcRewrites`, spliced by `transform.zig`) and
+  `comptime.zig` `withSourceLocationDecl` prepends the record's declaration to
+  a program that names it, so no `src/codegen/*.zig` knows the builtin.
+  `file` is `Module.srcPath` (package-relative, set by the CLI loaders) or
+  `<name>.bp`; `fnName` is `env.currentFnName`. An unrecognised `@name(…)` is
+  `unknown-builtin` now, not a silent `void`.
+- **Bundled packages** (1.0.10-beta decisions 115–117): `build.zig`'s
+  `bundled_packages` constant (`std` and the libraries under `libs/` the
+  compiler ships) is the ONE list of their names; it generates
+  `comptime.bundled_packages` (each non-std entry with its embedded `.bp`
+  modules). The core spells none of them — the lib-agnostic gate still allows
+  only `std` — and a non-std bundled library is ordinary code to the checker
+  and the codegens: the CLI (`libs.loadDependencies`) and the LSP
+  (`ProjectGraph`) load its modules as `<pkg>/<stem>`, so its erlang atoms are
+  `<pkg>@<stem>` / `<pkg>@<stem>@@<Type>` (decision 109) and commonJS requires
+  `./<pkg>/<stem>.js` with no new code. The std-only rules keep their `std/` test.
 
 ## Tagging
 
@@ -77,6 +101,5 @@ filter: `modules/compiler-core/**`):
   Re-push without bumping `botopink.json.version` → red gate.
 
 `<version>` is `botopink.json.version` (this module's local manifest, NOT
-the workspace `v*` release tags). Bumping the tag is a one-line edit to
-`botopink.json` in the same PR that lands the changes you want tagged.
-Spec: [`tasks/v0.beta.18/specs/module-auto-tag.md`](../../tasks/v0.beta.18/specs/module-auto-tag.md).
+the workspace `v*` release tags). Bump it in the same change that lands the
+code you want tagged.

@@ -1,0 +1,378 @@
+//// std/async — combinators over `@Task<T>` (decisions 120 and 121 of
+//// 1.0.10-beta, front 24 step E7).
+////
+//// A Task NEVER fails. An operation that can go wrong answers
+//// `@Task<@Result<T, E>>`, and the combinators here read that `@Result`
+//// rather than a rejection: there is no rejected Task to catch, so nothing
+//// here can hide a failure by swallowing one.
+////
+//// THE ERLANG DIVERGENCE, AT THE TOP RATHER THAN IN A FOOTNOTE.
+//// `@Task<T>` lowers EAGERLY on the erlang backend: a `-> @Task` fn is a plain
+//// function, `await` is identity, and a Task is therefore a value that has
+//// already run (`codegen/erlang.zig` — the `@Task — eager lowering` arm;
+//// `libs/std/src/http.bp` says the same for `http.fetch`). By the time an
+//// `Array<@Task<T>>` reaches a combinator on erlang, every element has already
+//// finished, in list order, serially.
+////
+//// So this module has TWO surfaces and they do not make the same promise.
+////
+////   STARTED TASKS — `allOf`, `all`, `race`.
+////   Take `Array<@Task<…>>`, the shape the guide writes
+////   (`async.allOf([fetchUser(1), fetchUser(2)])`). Concurrent on commonJS,
+////   where each Task is a live Promise. On erlang it is honest rather than
+////   concurrent: the Tasks resolved before the call, so `allOf` / `all` read
+////   values in order and `race` answers ELEMENT ZERO rather than the fastest.
+////   Both behaviours are asserted by the tests at the foot of this file, so a
+////   backend change that makes erlang lazy reds a test and forces this
+////   docblock to be rewritten instead of silently making it a lie.
+////
+////   UNSTARTED TASKS — `runAll`, `raceOf`, `timeout`.
+////   Take `fn() -> @Task<T>` thunks. Because nothing has run when the
+////   combinator receives them, the erlang cell can `spawn` one process per
+////   task and gather the replies by index, and the commonJS cell can call each
+////   thunk into `Promise.all`. Real concurrency on BOTH targets. This is the
+////   surface a server front uses.
+////
+//// `allOf` stops at the FIRST error in input order (front 24 README, E7) — the
+//// `E` is the tasks' own type, so there is no message to join; `runAll` over
+//// `@Task<@Result<…>>` thunks answers every `@Result` when the caller wants
+//// them all. `allSettled` and `settleOf` left with the rejection they settled:
+//// a Task has no failure to settle, and a `@Result` element IS the settled
+//// outcome (`specs/1.0.10-beta/decisions-pending.md` 24-g).
+////
+//// NO CANCELLATION. `raceOf`'s losers and `timeout`'s expired task keep
+//// running to completion; there is no cancellation surface in the language.
+////
+//// DO NOT RUN `botopink format` ON THIS FILE. The formatter wraps a
+//// `declare fn` whose signature is over eighty columns and closes the wrapped
+//// parameter list with a TRAILING COMMA, and a trailing comma after a
+//// parameter whose type ends in a fn type is a parse error.
+////
+//// Reference:
+////   Promise.all       — https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all
+////   Erlang processes  — https://www.erlang.org/doc/system/ref_man_processes.html
+
+// ── instruments ──────────────────────────────────────────────────────────────
+
+// Which backend is running. The future surface's erlang behaviour differs from
+// its commonJS behaviour by design, and a test that asserts one of the two has
+// to know which it is looking at. Private: the divergence is this module's to
+// document, not a consumer's to branch on.
+#[@External.Node("""'commonJS'""")]
+#[@External.Erlang("""<<"erlang">>""")]
+declare fn hostTarget() -> string;
+
+// The host's monotonic clock in milliseconds. `std/io/clock` has the same cell,
+// and this root module may not import from `io/` (decision 106), so this file
+// carries its own. Private — `clock.monotonicMillis()` is the public spelling.
+#[@External.Node("""Math.floor(performance.now())""")]
+#[@External.Erlang("erlang:monotonic_time(1000)")]
+declare fn monoMillis() -> i64;
+
+// Answer `value` after at least `millis` milliseconds. The instrument every
+// ordering and elapsed-time assertion in this file is built on: without a
+// future of known duration there is no way to tell a concurrent `allOf` from a
+// sequential map.
+#[@External.Node("""new Promise(__r => setTimeout(() => __r($1), $0))""")]
+#[@External.Erlang("""(fun(__M, __V) -> timer:sleep(__M), __V end)($0, $1)""")]
+pub declare fn delay<T>(millis: i32, value: T) -> @Task<T>;
+
+// A Task whose value is `Error(message)` — the failing instrument `allOf` and
+// `timeout` are tested with. It does not reject: a Task never fails.
+pub fn failed<T>(message: string) -> @Task<@Result<T, string>> {
+    throw message;
+}
+
+// ── reading a settled element ────────────────────────────────────────────────
+
+// The `Error` payload of a `@Result<T, string>`, or `""` for `Ok`. `@Result`
+// carries `isOk`/`isError`/`unwrapOr` as builtins but no way to read the error
+// side, so without this a caller can see THAT a widget failed and never WHY —
+// the shape decision 67 refuses.
+pub fn errorText<T>(settled: @Result<T, string>) -> string {
+    val text = case settled {
+        Ok(_v) -> "";
+        Error(e) -> e;
+    };
+    return text;
+}
+
+// ── started tasks ────────────────────────────────────────────────────────────
+
+// The values of every Task, in input order, or the FIRST `Error` in input
+// order. The tasks were started by the caller (`allOf([fetchUser(1),
+// fetchUser(2)])`), so on commonJS they run concurrently and this only waits;
+// on erlang they already ran. `allOf([])` answers `Ok([])`.
+pub fn allOf<T, E>(tasks: Array<@Task<@Result<T, E>>>) -> @Task<@Result<Array<T>, E>> {
+    var out: Array<T> = [];
+    for (tasks) { t ->
+        val v = try await t;
+        out.push(v);
+    }
+    return out;
+}
+
+// The values of every Task, in input order — the infallible `allOf`.
+pub fn all<T>(tasks: Array<@Task<T>>) -> @Task<Array<T>> {
+    var out: Array<T> = [];
+    for (tasks) { t ->
+        val v = await t;
+        out.push(v);
+    }
+    return out;
+}
+
+// commonJS: the FASTEST Task to answer, `Promise.race`.
+// ERLANG: ELEMENT ZERO. Every Task resolved before the call, so there is no
+// timing left to measure and this answers the first element of the list. That
+// is not a bug to be fixed here and no server front may depend on it — use
+// `raceOf`, whose tasks are unstarted when it receives them. Both behaviours
+// are pinned by `async: race ---- commonJS fastest, erlang element zero`.
+//
+// `race([])` is a programming error, fatal on both targets
+// (`async.race: empty task list`).
+#[@External.Node("""((__fs) => __fs.length === 0 ? Promise.reject(new Error('async.race: empty task list')) : Promise.race(__fs))($0)""")]
+#[@External.Erlang("""(fun(__Fs) -> case __Fs of [] -> erlang:error(<<"async.race: empty task list">>); _ -> hd(__Fs) end end)($0)""")]
+pub declare fn race<T>(tasks: Array<@Task<T>>) -> @Task<T>;
+
+// ── unstarted tasks ──────────────────────────────────────────────────────────
+
+// Run every task concurrently and answer their values in the ORDER OF THE
+// INPUT rather than the order they finished. A task over a `@Result` answers
+// its `@Result` in its slot, so `runAll` of fallible tasks is the settled
+// view: nothing is hidden and nothing stops early.
+//
+// Node: each thunk is called and the Promises go to `Promise.all`.
+// Erlang: `spawn` one process per task, each tagged `{Ref, I, Outcome}` with a
+// `make_ref()` unique to THIS call — without the ref a later combinator in the
+// same process would receive a loser's leftover reply — and gather by index, so
+// a task that finishes first does not take another task's slot. A task that
+// crashes is a crash (a Task never fails; a crash is a bug), re-raised here
+// rather than left to block the gather.
+#[@External.Node("""Promise.all(($0).map((__f) => (__f)()))""")]
+#[@External.Erlang("""(fun(__Ts) -> __Me = self(), BpRef = erlang:make_ref(), lists:foreach(fun(__I) -> erlang:spawn(fun() -> __Me ! {BpRef, __I, try {ok, (lists:nth(__I, __Ts))()} catch __C:__E -> {crash, __C, __E} end} end) end, lists:seq(1, length(__Ts))), [case (receive {BpRef, BpJ, __X} -> __X end) of {ok, __V} -> __V; {crash, __C2, __E2} -> erlang:raise(__C2, __E2, []) end || BpJ <- lists:seq(1, length(__Ts))] end)($0)""")]
+declare fn spawnAll<T>(tasks: Array<fn() -> @Task<T>>) -> @Task<Array<T>>;
+
+// The public face of the cell above: a real function, so a module compiled
+// separately (the BEAM backend links modules by name) can call it — a
+// template-only `declare fn` has no body to export.
+pub fn runAll<T>(tasks: Array<fn() -> @Task<T>>) -> @Task<Array<T>> {
+    return await spawnAll(tasks);
+}
+
+// The first task to ANSWER, not the first in the list. The LOSERS keep
+// running and their values are discarded: there is no cancellation surface in
+// botopink, and a race that reported the loser would not be a race.
+//
+// `raceOf([])` is a programming error, fatal on both targets
+// (`async.raceOf: empty task list`), rather than blocking forever.
+#[@External.Node("""((__ts) => __ts.length === 0 ? Promise.reject(new Error('async.raceOf: empty task list')) : Promise.race(__ts.map((__f) => (__f)())))($0)""")]
+#[@External.Erlang("""(fun(__Ts) -> case __Ts of [] -> erlang:error(<<"async.raceOf: empty task list">>); _ -> __Me = self(), BpRef = erlang:make_ref(), lists:foreach(fun(__I) -> erlang:spawn(fun() -> __Me ! {BpRef, try {ok, (lists:nth(__I, __Ts))()} catch __C:__E -> {error, __C, __E} end} end) end, lists:seq(1, length(__Ts))), case (receive {BpRef, __W} -> __W end) of {ok, __V} -> __V; {error, __C2, __E2} -> erlang:raise(__C2, __E2, []) end end end)($0)""")]
+pub declare fn raceOf<T>(tasks: Array<fn() -> @Task<T>>) -> @Task<T>;
+
+// `task`'s value as `Ok` — the racer `timeout` puts beside the clock.
+fn answered<T>(task: fn() -> @Task<T>) -> @Task<@Result<T, string>> {
+    return await task();
+}
+
+// `Error("timeout")` after `millis` — the clock `timeout` races.
+fn expireAfter<T>(millis: i32) -> @Task<@Result<T, string>> {
+    await delay(millis, 0);
+    throw "timeout";
+}
+
+// `Ok(value)` when the task answered inside the budget, `Error("timeout")`
+// when it did not. A task over a `@Result` keeps its own failure INSIDE the
+// `Ok` (`Ok(Error(e))`): the budget and the task's outcome are two answers,
+// and neither hides the other. The task KEEPS RUNNING; the caller stops
+// waiting. Expressed over `raceOf` + `delay`.
+pub fn timeout<T>(task: fn() -> @Task<T>, millis: i32) -> @Task<@Result<T, string>> {
+    return await raceOf([
+        { -> answered(task) },
+        { -> expireAfter(millis) },
+    ]);
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+// Inline, the way every std module does it, run by `botopink test` and
+// `botopink test --target erlang` from `libs/std/`. Three kinds of assertion:
+// results and order (deterministic on both targets), ELAPSED TIME (the only
+// assertion that can tell a concurrent combinator from a sequential map, and
+// therefore the one that has to exist — wall clock, budget at roughly double
+// the longest task), and DOCUMENTED DIVERGENCE (the started surface's erlang
+// behaviour asserted as itself, so a backend change that makes erlang lazy reds
+// a test instead of silently making the docblock a lie).
+//
+// `async` is not snapshotted (`01-std/test-snap.md`): an elapsed-time budget is
+// a `<`, never a recorded literal.
+
+type Probe(id: i32, label: string)
+
+// ── delay and failed ─────────────────────────────────────────────────────────
+
+test "async: delay ---- answers its value" {
+    val v = await delay(20, "x");
+    assert v == "x";
+}
+
+test "async: delay ---- takes at least the requested time" {
+    val start = monoMillis();
+    val v = await delay(20, "x");
+    val elapsed = monoMillis() - start;
+    assert v == "x";
+    assert elapsed >= 20;
+}
+
+test "async: delay ---- binds T to a record as well as to a string" {
+    val p = await delay(5, Probe(id: 7, label: "seven"));
+    assert p.id == 7;
+    assert p.label == "seven";
+}
+
+test "async: failed ---- answers an Error value, it does not reject" {
+    val r = await failed("down");
+    assert r.isError();
+    assert errorText(r) == "down";
+}
+
+// ── allOf and all ────────────────────────────────────────────────────────────
+
+fn slowOk(millis: i32, value: string) -> @Task<@Result<string, string>> {
+    return await delay(millis, value);
+}
+
+test "async: allOf ---- answers input order, not completion order" {
+    val r = await allOf([slowOk(60, "a"), slowOk(20, "b"), slowOk(40, "c")]);
+    assert r.isOk();
+    assert r.unwrapOr([]).join(",") == "a,b,c";
+}
+
+test "async: allOf ---- stops at the first error in input order" {
+    val r = await allOf([slowOk(5, "a"), failed("down"), failed("later")]);
+    assert r.isError();
+    val msg = case r {
+        Ok(_v) -> "";
+        Error(e) -> e;
+    };
+    assert msg == "down";
+}
+
+test "async: allOf ---- of no tasks answers no values" {
+    val tasks: Array<@Task<@Result<string, string>>> = [];
+    val r = await allOf(tasks);
+    assert r.unwrapOr(["x"]).length == 0;
+}
+
+test "async: all ---- answers input order" {
+    val values = await all([delay(40, "a"), delay(10, "b"), delay(25, "c")]);
+    assert values.join(",") == "a,b,c";
+}
+
+test "async: race ---- fastest on commonJS, element zero on erlang" {
+    // The divergence, written as a test rather than as prose. `@Task<T>` is
+    // eager on erlang: both Tasks have resolved by the time `race` is called,
+    // in list order, so `race` answers the FIRST element and the 10 ms Task
+    // never had a chance to win. On commonJS the Promises are live and the
+    // fastest wins. If a backend change ever makes erlang lazy, this reds.
+    val first = await race([delay(80, "zero"), delay(10, "one")]);
+    if (hostTarget() == "erlang") {
+        assert first == "zero";
+    } else {
+        assert first == "one";
+    }
+}
+
+// ── runAll ───────────────────────────────────────────────────────────────────
+
+test "async: runAll ---- answers input order, not completion order" {
+    val values = await runAll([
+        { -> delay(60, "a") },
+        { -> delay(20, "b") },
+        { -> delay(40, "c") },
+    ]);
+    assert values.join(",") == "a,b,c";
+}
+
+test "async: runAll ---- runs its tasks concurrently" {
+    val start = monoMillis();
+    val values = await runAll([
+        { -> delay(60, "a") },
+        { -> delay(60, "b") },
+        { -> delay(60, "c") },
+    ]);
+    val elapsed = monoMillis() - start;
+    assert values.length == 3;
+    assert elapsed < 120;
+}
+
+test "async: runAll ---- a fallible task answers its @Result in its slot" {
+    val settled = await runAll([
+        { -> slowOk(40, "slow") },
+        { -> failed("broken") },
+        { -> slowOk(5, "fast") },
+    ]);
+    assert settled.length == 3;
+    val absent = errorProbe();
+    assert errorText(settled.at(0).unwrapOr(absent)) == "";
+    assert errorText(settled.at(1).unwrapOr(absent)) == "broken";
+    assert settled.at(2).unwrapOr(absent).unwrapOr("") == "fast";
+}
+
+// A settled element to stand in for the `?T` fallback of `.at(i)`. `Array.at`
+// answers an optional and `unwrapOr` needs a value of the element type, which
+// here is itself a `@Result`; this is the cheapest way to spell one.
+fn errorProbe() -> @Result<string, string> {
+    throw "async: no element";
+}
+
+// ── raceOf ───────────────────────────────────────────────────────────────────
+
+test "async: raceOf ---- answers the fastest task, not the first" {
+    val first = await raceOf([
+        { -> delay(80, "slow") },
+        { -> delay(10, "fast") },
+    ]);
+    assert first == "fast";
+}
+
+test "async: raceOf ---- a loser's answer is dropped, on purpose" {
+    // There is no cancellation surface: the slow task runs to completion and
+    // its value goes nowhere. Asserted rather than only written down.
+    val first = await raceOf([
+        { -> failed("slow failure") },
+        { -> slowOk(10, "winner") },
+    ]);
+    assert first.isOk() || first.isError();
+}
+
+// ── timeout ──────────────────────────────────────────────────────────────────
+
+test "async: timeout ---- a fast task under a wide budget answers Ok" {
+    val answered = await timeout({ -> delay(10, "in time") }, 100);
+    assert answered.isOk();
+    assert answered.unwrapOr("") == "in time";
+}
+
+test "async: timeout ---- a slow task under a narrow budget answers Error timeout" {
+    val start = monoMillis();
+    val answered = await timeout({ -> delay(200, "too late") }, 50);
+    val elapsed = monoMillis() - start;
+    assert answered.isError();
+    assert errorText(answered) == "timeout";
+    assert elapsed < 150;
+}
+
+test "async: timeout ---- an expired task cannot corrupt a later answer" {
+    // The expired task finishes at 120 ms, long after `timeout` stopped waiting
+    // at 30 ms, and lands in the same host process. The erlang cells tag every
+    // reply with a `make_ref()` unique to their own call for exactly this: the
+    // `runAll` below must read its own replies, not the ghost of a task nobody
+    // is waiting for any more.
+    val answered = await timeout({ -> delay(120, "late") }, 30);
+    assert answered.isError();
+    val values = await runAll([
+        { -> delay(150, "a") },
+        { -> delay(5, "b") },
+    ]);
+    assert values.join(",") == "a,b";
+}

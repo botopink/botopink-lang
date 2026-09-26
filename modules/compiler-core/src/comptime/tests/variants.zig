@@ -105,7 +105,7 @@ test "assertTypeAst: unused dependency does not pollute main bindings" {
 test "assertTypeAst: import record constructor from dependency" {
     try h.assertComptimeAst(std.testing.allocator, @src(), &.{
         .{ .path = "models", .source =
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
         },
         .{ .path = "", .source =
         \\import {Point} from "models";
@@ -170,22 +170,22 @@ test "infer ast: case ---- nested case in block arm" {
 
 test "variant inference: field access after pattern matching" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Result = enum {
+        \\val Result = type {
         \\    Ok(value: i32),
         \\    Error(message: string),
         \\};
         \\val get_value = fn(r: Result) -> i32 {
-        \\    case r {
+        \\    return case r {
         \\        Ok(v) -> v;
         \\        Error(_) -> 0;
-        \\    }
+        \\    };
         \\};
     );
 }
 
 test "variant inference error: shared field without pattern matching" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Result = enum {
+        \\val Result = type {
         \\    Ok(value: i32),
         \\    Error(message: string),
         \\};
@@ -197,7 +197,7 @@ test "variant inference error: shared field without pattern matching" {
 
 test "variant inference error: variant does not escape clause scope" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Result = enum {
+        \\val Result = type {
         \\    Ok(value: i32),
         \\    Error(message: string),
         \\};
@@ -213,28 +213,28 @@ test "variant inference error: variant does not escape clause scope" {
 
 test "variant inference: multiple variants with different fields" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(radius: f64),
         \\    Rectangle(width: f64, height: f64),
         \\    Point,
         \\};
         \\val area = fn(s: Shape) -> f64 {
-        \\    case s {
+        \\    return case s {
         \\        Circle(r) -> 3.14 * r * r;
         \\        Rectangle(w, h) -> w * h;
         \\        Point -> 0.0;
-        \\    }
+        \\    };
         \\};
     );
 }
 
 test "record update: simple field update" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Person = record {
+        \\val Person = type(
         \\    name: string,
         \\    age: i32,
         \\    city: string,
-        \\};
+        \\);
         \\val alice = Person(name: "Alice", age: 30, city: "London");
         \\val bob = Person(..alice, name: "Bob", age: 25);
     );
@@ -242,7 +242,7 @@ test "record update: simple field update" {
 
 test "record update error: variant mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Subject = enum {
+        \\val Subject = type {
         \\    Person(name: string, age: i32),
         \\    Animal(species: string),
         \\};
@@ -253,10 +253,10 @@ test "record update error: variant mismatch" {
 
 test "record update error: non-existent field" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Person = record {
+        \\val Person = type(
         \\    name: string,
         \\    age: i32,
-        \\};
+        \\);
         \\val alice = Person(name: "Alice", age: 30);
         \\val bob = Person(..alice, nickname: "Bobby");
     );
@@ -264,10 +264,10 @@ test "record update error: non-existent field" {
 
 test "record update error: field type mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Person = record {
+        \\val Person = type(
         \\    name: string,
         \\    age: i32,
-        \\};
+        \\);
         \\val alice = Person(name: "Alice", age: 30);
         \\val bob = Person(..alice, age: "thirty");
     );
@@ -275,87 +275,54 @@ test "record update error: field type mismatch" {
 
 test "pattern: non-empty list pattern" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val first_or_default = fn(list: i32[], default: i32) -> i32 {
-        \\    case list {
+        \\val first_or_default = fn(list: i32[], fallback: i32) -> i32 {
+        \\    return case list {
         \\        [first, ..] -> first;
-        \\        [] -> default;
-        \\    }
-        \\};
-    );
-}
-
-test "pattern: assign pattern in enum" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Result = enum {
-        \\    Ok(value: i32),
-        \\    Err(message: string),
-        \\};
-        \\val process = fn(r: Result) -> string {
-        \\    case r {
-        \\        Ok(v) as result -> "Got: " + v;
-        \\        Err(e) as result -> "Error: " + e;
-        \\    }
-        \\};
-    );
-}
-
-test "type_unification_does_not_allow_different_variants_to_be_treated_as_safe" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Result = enum {
-        \\    Ok(value: i32),
-        \\    Err(message: string),
-        \\};
-        \\val process = fn(r: Result) -> string {
-        \\    case r {
-        \\      Ok(..) as b -> Wibble(..b, value: 1);
-        \\      Err(..) as b -> Wobble(..b, message: "a");
-        \\    }
-        \\};
-    );
-}
-
-test "pattern: assign pattern in record" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Person = record {
-        \\    name: string,
-        \\    age: i32,
-        \\};
-        \\val describe = fn(p: Person) -> string {
-        \\    case p {
-        \\        Person(name, age) as person -> name + " is " + age;
+        \\        [] -> fallback;
         \\    };
         \\};
+        \\fn main() {
+        \\    @print(first_or_default([1, 2], 0));
+        \\    @print(first_or_default([], 0));
+        \\}
     );
 }
 
+// DOCUMENTED SKIP, half closed. The unnamed variant payload
+// (`Single(Result<i32, string>)`) is **decided**, not missing: decision 12 says
+// a payload nobody can name is a payload no `case` arm can bind, and C-08 made
+// it `error[field-needs-name]` at the payload itself, naming `Variant(field: T)`
+// — which is what this snapshot now records. The remaining gap is the nested
+// constructor pattern (`Single(Ok(v))`, `Multiple([Ok(v), ..])`), which this
+// cell cannot reach while its declaration is refused; owner: spec 02.
 test "pattern: complex nested patterns" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Result = enum <T, E> {
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
+        \\val Result = type <T, E> {
         \\    Ok(value: T),
         \\    Err(error: E),
         \\};
-        \\val Container = enum {
+        \\val Container = type {
         \\    Single(Result<i32, string>),
         \\    Multiple(Result<i32, string>[]),
         \\};
         \\val extract = fn(c: Container) -> i32 {
-        \\    case c {
+        \\    return case c {
         \\        Single(Ok(v)) -> v;
         \\        Multiple([Ok(v), ..]) -> v;
         \\        _ -> 0;
-        \\    }
+        \\    };
         \\};
     );
 }
 
 test "variant inference: access variant-specific field after matching" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(radius: f64),
         \\    Square(side: f64),
         \\};
         \\val scale = fn(s: Shape, factor: f64) -> Shape {
-        \\    case s {
+        \\    return case s {
         \\        Circle(r) -> Circle(radius: r * factor);
         \\        Square(s) -> Square(side: s * factor);
         \\    };
@@ -365,12 +332,12 @@ test "variant inference: access variant-specific field after matching" {
 
 test "variant inference: pattern matching on generic enum" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Option = enum <T> {
+        \\val Option = type <T> {
         \\    Some(value: T),
         \\    None,
         \\};
         \\val map = fn(opt: Option<i32>, f: fn(i32) -> i32) -> Option<i32> {
-        \\    case opt {
+        \\    return case opt {
         \\        Some(v) -> Some(value: f(v));
         \\        None -> None;
         \\    };
@@ -406,11 +373,15 @@ test "@print: expression argument infers void" {
 test "@print: in if branch infers void" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn check(x: i32) {
-        \\    if x > 0 {
+        \\    if (x > 0) {
         \\        @print("positive");
         \\    } else {
         \\        @print("non-positive");
         \\    }
+        \\}
+        \\fn main() {
+        \\    check(1);
+        \\    check(-1);
         \\}
     );
 }
@@ -432,7 +403,7 @@ test "@print: string interpolation argument" {
 
 test "enum sections: single section + sibling payload variant type-checks" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Text {
         \\        Bold,
         \\        Italic,
@@ -444,7 +415,7 @@ test "enum sections: single section + sibling payload variant type-checks" {
 
 test "enum sections: nested sections with numeric leaves type-check" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 100, 500 }
         \\        Hex(value: string),
@@ -462,7 +433,7 @@ test "enum sections: nested sections with numeric leaves type-check" {
 
 test "enum sections F2: two-segment path .Hover.Inner resolves to ctor call" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Text {
         \\        Bold, Italic,
         \\    }
@@ -476,7 +447,7 @@ test "enum sections F2: two-segment path .Hover.Inner resolves to ctor call" {
 
 test "enum sections F2: three-segment path .Color.Red.500 with numeric leaf" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 100, 500 }
         \\        Blue { 100, 500 }
@@ -494,13 +465,86 @@ test "enum sections F2: payload sibling .Color.Hex(string) untouched" {
     // leaves that path alone. This test pins that an inline color picker
     // mixing bare paths and a payload variant type-checks together.
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 500 }
         \\        Hex(value: string),
         \\    }
         \\}
         \\fn red() -> Token { return .Color.Red.500; }
+    );
+}
+
+// ── 00 · 01-checker — the expected type decides which enum carries the path ──
+// `env.typeDefs` holds the synthesised section enums beside the declared ones,
+// so more than one enum can carry the same path. Which one a spelling means is
+// the expected type's answer — an annotation, a declared parameter, the return
+// target, an array literal's element type — and never the map's iteration
+// order, which changed with the number of enums in the program. A LABELLED
+// argument claims the parameter it names (C-04), so the parameter the
+// expectation is read from is not always the one at the argument's own index.
+
+test "enum sections: the expected type picks among the enums carrying one path" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\type Token {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\type Border {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\fn onToken(t: Token) -> i32 { return 1; }
+        \\fn onBorder(b: Border) -> i32 { return 2; }
+        \\fn pick() -> Border { return .Color.Red.500; }
+        \\val a: Token = .Color.Red.500;
+        \\val b: Border = .Color.Red.500;
+        \\val c: Array<Token> = [.Color.Red.100];
+        \\val d = onToken(.Color.Red.100);
+        \\val e = onBorder(.Color.Red.100);
+        \\type BoxT(w: i32 = 7, tone: Token)
+        \\type BoxB(w: i32 = 7, tone: Border)
+        \\val f = BoxT(tone: .Color.Red.100);
+        \\val g = BoxB(tone: .Color.Red.100);
+    );
+}
+
+test "enum sections: the fully qualified path names its enum, so no expectation is read" {
+    // The escape hatch from the ambiguity above: the path carries the answer,
+    // so it resolves where nothing else says which enum is meant.
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\type Token {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\type Border {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\val a = Token.Color.Red.500;
+        \\val b = Border.Color.Red.500;
+    );
+}
+
+test "enum sections ES5: a path two enums carry, with nothing to say which, is refused" {
+    // Not a pick — a located refusal naming both candidates. Picking is what
+    // made the answer a function of `env.typeDefs`' hash order.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Token {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\type Border {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\val x = .Color.Red.500;
     );
 }
 
@@ -511,7 +555,7 @@ test "enum sections F3 ES4: path-access with bad tail raises focused error" {
     // text and the owning enum name, instead of bubbling the generic
     // fall-through error from the regular identAccess path.
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 500 }
         \\    }

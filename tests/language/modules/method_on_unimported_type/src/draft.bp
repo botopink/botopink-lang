@@ -1,0 +1,5 @@
+//// Another record declaring `isEnabled/2`, imported by `main` by name.
+
+pub type DraftMode(on: bool) {
+    pub fn isEnabled(self: Self, level: i32) -> bool { return self.on; }
+}

@@ -1,0 +1,29 @@
+//// Decision 124 of 1.0.10-beta (front 24, § Cells "`async { }`") — an `async`
+//// block's value becomes `@Result<U, E>` from its own `throw` / `try`, `E`
+//// unified over them; two different error types (`string` and `ParseError`)
+//// do not unify and are `gen-infer-conflicting-errors`, suggesting an
+//// annotated `val`. No line 2: the site (the block or the second `try`) is not
+//// fixed by the decision.
+
+pub type ParseError { Empty }
+
+fn check(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+fn parse(s: string) -> @Result<i32, ParseError> {
+    if (s == "") { throw ParseError.Empty; };
+    return 1;
+}
+
+fn plain(n: i32) -> i32 {
+    val t = async {
+        val a = try check(n);
+        val b = try parse("x");
+        return a + b;
+    };
+    return n;
+}
+
+pub fn main() { @print(plain(1)); }

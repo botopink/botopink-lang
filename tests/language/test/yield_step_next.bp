@@ -1,0 +1,47 @@
+//// Decision 122 of 1.0.10-beta (front 24; guide.md § 5 and § 9, row
+//// `YieldStep<T, E>` with `Error(error: E)`) — both `@Iterator<T>` and
+//// `@Stream<T>` step with `YieldStep<T>` = `{ Yield(value: T), Done }`: no `E`,
+//// no `Error` variant. `next()` called by hand answers each `Yield` and then
+//// `Done`; over a `@Result` item the failure is a `Yield` of an `Error`, then
+//// `Done` (`throw` ends the iterator). `reject/yield_step_error_param.bp` is the
+//// old spelling.
+
+fn two() -> @Iterator<i32> {
+    yield 1;
+    yield 2;
+}
+
+fn failing() -> @Iterator<@Result<i32, string>> {
+    yield 1;
+    throw "boom";
+}
+
+fn stepText(s: YieldStep<i32>) -> string {
+    val t = case s {
+        Yield(v) -> "yield " + v.toString();
+        Done -> "done";
+    };
+    return t;
+}
+
+fn resultStepText(s: YieldStep<@Result<i32, string>>) -> string {
+    val t = case s {
+        Yield(r) -> "yield " + r.unwrapOr(-1).toString();
+        Done -> "done";
+    };
+    return t;
+}
+
+test "decision 122 next answers Yield for each item, then Done" {
+    val it = two();
+    assert stepText(it.next()) == "yield 1";
+    assert stepText(it.next()) == "yield 2";
+    assert stepText(it.next()) == "done";
+}
+
+test "decision 122 a failing item is a Yield of an Error, then Done" {
+    val it = failing();
+    assert resultStepText(it.next()) == "yield 1";
+    assert resultStepText(it.next()) == "yield -1";
+    assert resultStepText(it.next()) == "done";
+}

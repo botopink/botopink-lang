@@ -1,0 +1,5 @@
+import {one} from "lib.db";
+
+test "a test imports a nested module of a package rooted at its manifest" {
+    assert one() == 1;
+}

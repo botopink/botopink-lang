@@ -1,0 +1,51 @@
+----- SOURCE CODE -- main.bp
+```botopink
+type ApiError(msg: string)
+fn fetch() -> @Result<i32, ApiError> {
+    throw ApiError(msg: "not found");
+}
+fn strict() -> @Result<i32, string> {
+    val r = try fetch() catch throw "fetch failed";
+    return r;
+}
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(test@main).
+
+%% type ApiError: msg
+
+fetch() ->
+    {error, {test@main@@ApiError, <<"not found">>}}.
+
+strict() ->
+    try
+        R = case try
+            fetch()
+        catch
+            error:_TryR0 -> {error, _TryR0}
+        end of
+            {ok, TryV0} -> TryV0;
+            {error, _TryE0} ->
+                erlang:throw({'__bp_try', {error, <<"fetch failed">>}})
+        end,
+        {ok, R}
+    catch
+        throw:{'__bp_try', __BpTryR} -> __BpTryR
+    end.
+```
+
+----- ERLANG -- test@main@@ApiError.erl
+```erlang
+-module(test@main@@ApiError).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, msg) -> element(2, V).
+
+'__bp_format'(V) -> {record, "ApiError", [{"msg", element(2, V)}]}.
+```
+
+----- RUN LOG -----
+```logs
+```

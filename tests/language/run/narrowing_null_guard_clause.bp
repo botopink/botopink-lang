@@ -1,0 +1,75 @@
+//// 1.0.10-beta `00 · 01-checker` — the GUARD CLAUSE narrows: `if (x == null) {
+//// return …; }`, and then the rest of the block holds a value.
+////
+//// The sibling of `run/narrowing_null_check.bp`, and the shape a library
+//// actually writes: a `?T` is taken, the absent case leaves, and everything
+//// below reads the value. It is not a branch narrowing — the narrowing has to
+//// OUTLIVE the `if` — so it is applied by the statement walk and restored when
+//// the block ends, and only for a `val`: a `var` can be assigned below the
+//// guard, and a narrowing that outlives the statement would then carry a type
+//// the name no longer has.
+////
+//// The three bodies are the three statement walks a program has, and each was
+//// its own site: a top-level `fn`, a record METHOD, and (in
+//// `test/narrowing_null.bp`) a `test` block. `pair` is the `||` form — `a ||
+//// b` fails only when BOTH fail, so the code below the guard narrows both
+//// names, which is the mirror of `&&` narrowing the then side.
+////
+//// Every line asserts the VALUE, and each function is called twice: once with
+//// the value present and once absent, so a narrowing that fired on the wrong
+//// side would show as a wrong answer rather than as nothing.
+////
+//// TWO targets fail, each for a reason that is not this cell's and each with a
+//// line in `expected-failures.txt`:
+////
+////   wasm  heap addresses (`292`, `328`) where `3` and `5` are owed — wasm's
+////         `?T` is a box and a narrowed NAME is not unboxed (05 step 2 D1),
+////         the same row `run/narrowing_null_check.bp` carries. C-01 half 3
+////         (`a8087490`) moved the numbers and nothing else (`272`/`288` →
+////         `292`/`328`: a box carries its declaration now); re-measured there.
+////   beam  the module does not compile: `UnknownFunction`, no location. It is
+////         not narrowing's — the same program written with `??` instead of a
+////         guard clause fails identically. The minimal shape is an optional
+////         reader in a record METHOD and another in a top-level `fn` in the
+////         same module:
+////
+////           type Row(cells: string[]) {
+////               fn widest(self: Self) -> i32 { return (self.cells.at(0) ?? "").length(); }
+////           }
+////           fn firstOf(ws: string[]) -> i32 { return (ws.at(0) ?? "").length(); }
+////
+////         Either one alone compiles and runs on beam; together they are
+////         `UnknownFunction`.
+
+type Entry(key: string) {}
+
+fn firstKeyLength(es: Entry[]) -> i32 {
+    val first = es.at(0);
+    if (first == null) { return 0; };
+    return first.key.length();
+}
+
+fn pair(es: Entry[], ws: string[]) -> string {
+    val e = es.at(0);
+    val w = ws.at(0);
+    if (e == null || w == null) { return "none"; };
+    return e.key.length().toString() + "/" + w.length().toString();
+}
+
+type Row(cells: string[]) {
+    fn widest(self: Self) -> i32 {
+        val c = self.cells.at(0);
+        if (c == null) { return 0; };
+        return c.length();
+    }
+}
+
+pub fn main() {
+    val none: Entry[] = [];
+    @print(firstKeyLength([Entry(key: "abc")]).toString());
+    @print(firstKeyLength(none).toString());
+    @print(pair([Entry(key: "abc")], ["hi"]));
+    @print(pair(none, ["hi"]));
+    @print(Row(cells: ["hello"]).widest().toString());
+    @print(Row(cells: []).widest().toString());
+}

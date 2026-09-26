@@ -11,13 +11,14 @@ const snap = @import("./snapshot.zig");
 const engine = @import("../engine.zig");
 const proto = @import("../protocol.zig");
 const lsp_types = @import("../lsp_types.zig");
+const comptime_pipeline = @import("botopink").comptime_pipeline;
 
 /// A self-contained sub-language fixture: a template fn that returns
 /// `@ExprCustom`, lighting up `select` as a keyword and `name` as a property
 /// (the latter bound to the `Users` struct via `ref`). No real lib involved —
 /// proves the overlay is generic.
 const FIXTURE =
-    \\pub record Users { name: string }
+    \\pub type Users(name: string)
     \\pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     \\    val code = e.build("[1, 2]");
     \\    val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
@@ -71,7 +72,7 @@ test "sublanguage: semantic tokens light up keyword + property inside the string
 /// A template that aborts via `q.failAt(span, msg)` — the sub-language rejecting
 /// a malformed query. The span (7..11) targets `name` inside `q "select name"`.
 const FIXTURE_FAIL =
-    \\pub record Users { name: string }
+    \\pub type Users(name: string)
     \\pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     \\    e.failAt(Span(7, 11, 1), "unknown column 'name'");
     \\    val code = e.build("[1, 2]");
@@ -131,8 +132,8 @@ test "sublanguage F3: hover on a bound node shows the referenced symbol" {
         return error.NoHover;
     defer gpa.free(hover.contents.value);
 
-    // Hover renders the *bound* symbol (`record Users`), not the word `name`.
-    try std.testing.expect(std.mem.indexOf(u8, hover.contents.value, "record Users") != null);
+    // Hover renders the *bound* symbol (`type Users`), not the word `name`.
+    try std.testing.expect(std.mem.indexOf(u8, hover.contents.value, "type Users") != null);
 }
 
 test "sublanguage F3: go-to-definition on a bound node jumps to its declaration" {
@@ -149,12 +150,57 @@ test "sublanguage F3: go-to-definition on a bound node jumps to its declaration"
     const content = std.mem.indexOf(u8, FIXTURE, lit).?;
     const p = lsp_types.offsetToPosition(FIXTURE, content + 8);
 
-    const loc = (try engine.definitionCustomRef(gpa, h.TEST_URI, FIXTURE, p, tokens, c.customAst())) orelse
+    const loc = (try engine.definitionCustomRef(gpa, h.TEST_URI, FIXTURE, p, tokens, c.customAst(), &.{})) orelse
         return error.NoDefinition;
     defer gpa.free(loc.uri);
 
     // `Users` is declared on the first line.
     try std.testing.expectEqual(@as(u32, 0), loc.range.start.line);
+}
+
+test "decision 112: go-to-definition on a node bound to an aliased import jumps to the declaration" {
+    // `import {area as surface}` — the template's `e.lookup("surface")` answers
+    // `area` (its own name and identity; `local` keeps `surface`), so the jump
+    // lands on `pub fn area` in the module that declares it, not on the alias.
+    const gpa = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const source =
+        \\import shapesdsl, {area as surface} from "shapesdsl";
+        \\val x = shapesdsl "surface(4, 5)";
+    ;
+    const lib =
+        \\fn double(x: i32) -> i32 { return x * 2; }
+        \\pub fn area(w: i32, h: i32) -> i32 { return w * h; }
+    ;
+    const lit_line: usize = 2;
+    const lit_col = std.mem.indexOf(u8, source, "\"surface").? - std.mem.indexOf(u8, source, "val x").? + 1;
+    const entries = [_]comptime_pipeline.CustomAstEntry{.{
+        .loc = .{ .line = lit_line, .col = lit_col },
+        .callee = "shapesdsl",
+        .root = .{
+            .kind = "call",
+            .span = .{ .start = 0, .end = 7, .line = 1 },
+            .label = "keyword",
+            .ref = .{ .name = "area", .kind = "Fn", .identity = "shapesdsl@shapesdsl@@area", .local = "surface" },
+            .children = &.{},
+        },
+        .file = "",
+        .line = lit_line,
+        .col = lit_col,
+    }};
+    const tokens = try h.tokenize(a, source);
+    const content = std.mem.indexOf(u8, source, "surface(4").?;
+    const p = lsp_types.offsetToPosition(source, content + 2);
+    const others = [_]engine.ModuleSource{.{ .uri = "file:///lib/shapesdsl.bp", .source = lib }};
+
+    const loc = (try engine.definitionCustomRef(gpa, h.TEST_URI, source, p, tokens, &entries, &others)) orelse
+        return error.NoDefinition;
+    defer gpa.free(loc.uri);
+    try std.testing.expectEqualStrings("file:///lib/shapesdsl.bp", loc.uri);
+    try std.testing.expectEqual(@as(u32, 1), loc.range.start.line);
 }
 
 test "sublanguage F4: hover snapshot on a bound sub-language node" {
@@ -183,7 +229,7 @@ test "sublanguage F4: hover snapshot on a bound sub-language node" {
 // lights up. The overlay code is unchanged; only the AST now exists.
 
 const X_DEP =
-    \\pub record Cities { name: string }
+    \\pub type Cities(name: string)
     \\pub fn erika<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     \\    val code = e.build("[1, 2]");
     \\    val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
@@ -240,7 +286,7 @@ test "sublanguage R4: cross-module literal paints keyword + property tokens" {
 /// A cross-module template that rejects the query via `failAt` — the malformed
 /// case of R4. The diagnostic must land inside the literal in the CALLER module.
 const X_DEP_FAIL =
-    \\pub record Cities { name: string }
+    \\pub type Cities(name: string)
     \\pub fn erika<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     \\    e.failAt(Span(7, 11, 1), "unknown column 'name'");
     \\    val code = e.build("[1, 2]");

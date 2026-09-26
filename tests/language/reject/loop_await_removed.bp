@@ -1,0 +1,19 @@
+//// Decisions 105 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `loop (xs) { x -> }` · `loop (cond)` · `loop await`) — the
+//// `loop await` half: a stream is walked with `for await`
+//// (`run/stream_pages.bp`). The existing refusal holds — the parser does not
+//// know `await` after `loop` and refuses the token, located at it (measured at
+//// compiler `82e32e36`).
+
+fn ticks(n: i32) -> @Stream<i32> {
+    var i = 0;
+    while (i < n) { yield i; i = i + 1; };
+}
+
+fn total() -> @Task<i32> {
+    var n = 0;
+    loop await (ticks(3)) { x -> n = n + x; };
+    return n;
+}
+
+pub fn main() { total(); }

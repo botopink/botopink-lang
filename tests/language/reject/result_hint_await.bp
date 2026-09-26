@@ -1,0 +1,19 @@
+//// Front 24 E3.9 (decisions 120 and 121 of 1.0.10-beta; README § Step E3,
+//// item 9) — the migration's most common error: `await t` on a
+//// `@Task<@Result<U, E>>` answers the `@Result`, and using it as `U` is a type
+//// mismatch whose hint names the fix for an `await`: `try await t`. The hint of
+//// a `for` item is `reject/result_hint_for_item.bp`; of a value inferred as
+//// `@Result`, `reject/result_hint_inferred_async.bp` and
+//// `reject/result_hint_inferred_iter.bp`.
+
+fn fetchCount(n: i32) -> @Task<@Result<i32, string>> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+fn run() -> @Task<@Result<i32, string>> {
+    val count: i32 = await fetchCount(3);
+    return count;
+}
+
+pub fn main() { run(); }

@@ -1,0 +1,48 @@
+//// Decision 105 — `for (xs) { x -> … }` over an array: the empty collection,
+//// outer vars reassigned inside, nested loops, and a search that leaves its
+//// answer in a `var` and ends the loop with a bare `break`.
+
+test "§10 loop over an array visits every element in order" {
+    var out = "";
+    for (["a", "b", "c"]) { s -> out = out + s; };
+    assert out == "abc";
+}
+
+test "§10 loop over an empty array runs no iteration" {
+    val empty: i32[] = [];
+    var n = 0;
+    for (empty) { x -> n = n + 1; };
+    assert n == 0;
+}
+
+test "§10 an outer var reassigned inside survives the loop" {
+    var total = 0;
+    var last = 0;
+    for ([4, 5, 6]) { x ->
+        total = total + x;
+        last = x;
+    };
+    assert total == 15;
+    assert last == 6;
+}
+
+test "§10 nested loops" {
+    var pairs = 0;
+    for ([1, 2, 3]) { a ->
+        for ([1, 2]) { b ->
+            pairs = pairs + a * b;
+        };
+    };
+    assert pairs == 18;
+}
+
+test "§10 a bare break ends the loop; the answer lives in a var" {
+    // Decision 105 — a loop is a statement with no value: what a search finds
+    // is a `var` it reassigns before the `break`, and the `break` ends the
+    // loop, so the first element is the only one visited.
+    var doubled = 0;
+    var visited = 0;
+    for ([1, 2, 3]) { x -> visited = visited + 1; doubled = x * 2; break; };
+    assert visited == 1;
+    assert doubled == 2;
+}

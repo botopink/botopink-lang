@@ -1,0 +1,14 @@
+----- SOURCE CODE
+fn nums() -> @Iterator<i32> {
+    yield 1;
+    return 2;
+}
+
+----- ERROR
+error: iter-mixed-yield-return: this body yields, so it is an iterator — and `return <value>` answers a ready one, which is a factory (decision 123)
+  ┌─ main.bp:3:5
+  │
+3 │     return 2;
+  │     ^
+
+  hint: Pick one: keep the `yield`s and end with `break <v>` / `break`, or drop them and `return` the iterator (`return iter for (xs) { x -> … };`).

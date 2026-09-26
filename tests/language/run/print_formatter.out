@@ -1,0 +1,9 @@
+hi
+5.0
+true
+[1, 2]
+["a", "b"]
+#(1, "a")
+Point(x: 1, y: 2)
+Shape.Square(side: 4)
+Shape.Nothing

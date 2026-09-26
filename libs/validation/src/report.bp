@@ -1,0 +1,119 @@
+//// validation — the violation and the report.
+////
+//// Moved from rakun front 14's validation member (decision 116 rule 5).
+//// This file is the one every other file in the library stands on, and its
+//// only import is std's `json` writer: no host cell of its own, nothing that
+//// reaches a socket or the filesystem. `constraintsOf<TypeName>` and
+//// `ValidationReport` are what a client bundle obtains, and it obtains them
+//// without importing anything that does I/O.
+////
+//// JSON is written with `json.quote` / `json.object` / `json.array` (std,
+//// decision 116 rule 3), so every control character in a message is escaped
+//// as RFC 8259 requires — the private escaper this file used to carry escaped
+//// five characters only.
+////
+//// A `ValidationReport` is a LIST of violations, never a first failure: the
+//// binding pattern the module is built around is "bind everything, then ask
+//// once", and a report that stopped at the first bad field could not answer
+//// that question. Order is declaration order, and `merge` keeps the receiver's
+//// violations in front of the argument's, so a report built from a record's
+//// fields reads in the order the record declares them.
+
+import {json} from "std";
+
+// One failed constraint. `code` is the constraint's own name (`notBlank`,
+// `sizeBetween`, an application constraint's `code()`); `message` is the
+// resolved, interpolated template; `invalidValue` is what was rejected,
+// rendered as a string so the report is one shape for every field type.
+pub type Violation(
+    field: string,
+    code: string,
+    message: string,
+    invalidValue: string,
+)
+
+pub type ValidationReport(
+    violations: Array<Violation>,
+) {
+    pub fn isValid(self: Self) -> bool {
+        return self.violations.length == 0;
+    }
+
+    // The receiver's violations come first. `Array.append` is `$0 ++ $1` on
+    // erlang and `concat` on node, both of which answer a NEW array — neither
+    // mutates the receiver, so merging twice from the same report is stable.
+    pub fn merge(self: Self, other: ValidationReport) -> ValidationReport {
+        return ValidationReport(
+            violations: self.violations.append(other.violations),
+        );
+    }
+
+    pub fn toJson(self: Self) -> string {
+        val rows = self.violations.map({ v -> violationJson(v) });
+        return json.object([#("errors", json.array(rows))]);
+    }
+
+    // RFC 9457. `type` is `about:blank` because the status code alone carries
+    // the semantics; `errors` is the same array `toJson` writes, so an
+    // application never has two error shapes to read.
+    pub fn toProblemDetail(self: Self) -> string {
+        val rows = self.violations.map({ v -> violationJson(v) });
+        return json.object(
+            [
+                #("type", json.quote("about:blank")),
+                #("title", json.quote("Validation failed")),
+                #("status", "400"),
+                #("errors", json.array(rows)),
+            ],
+        );
+    }
+
+    pub fn empty() -> ValidationReport {
+        val none: Array<Violation> = [];
+        return ValidationReport(violations: none);
+    }
+
+    pub fn of(violations: Array<Violation>) -> ValidationReport {
+        return ValidationReport(violations: violations);
+    }
+}
+
+// One violation as a JSON object. `invalidValue` is NOT written: a report is
+// rendered straight into an HTTP body by `toProblemDetail`, and echoing the
+// rejected value there is how a validation error becomes a reflected-input
+// hole. The value stays on the `Violation` for a log line to read.
+pub fn violationJson(v: Violation) -> string {
+    return json.object(
+        [
+            #("field", json.quote(v.field)),
+            #("code", json.quote(v.code)),
+            #("message", json.quote(v.message)),
+        ],
+    );
+}
+
+// One violation, built where every constraint builds one.
+pub fn violation(
+    field: string,
+    code: string,
+    message: string,
+    invalidValue: string,
+) -> Violation {
+    return Violation(
+        field: field,
+        code: code,
+        message: message,
+        invalidValue: invalidValue,
+    );
+}
+
+// The two answers a constraint gives, as the array the emitted validator
+// appends: no violation, or exactly one.
+pub fn noViolation() -> Array<Violation> {
+    val none: Array<Violation> = [];
+    return none;
+}
+
+pub fn oneViolation(v: Violation) -> Array<Violation> {
+    return [v];
+}

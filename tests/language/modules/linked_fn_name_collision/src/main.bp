@@ -1,0 +1,21 @@
+//// Two modules of one program each declare `parse` — different arities,
+//// different results — and each module's own calls, the importer's plain
+//// import and its aliased one all reach the `parse` they mean.
+////
+//// The wasm gap this pins (`00 · 05-wasm`): wasm links every module into one
+//// function namespace, so the second `parse` was the first one — a call to it
+//// answered the other module's function (exit 0) and then, once that was
+//// caught, trapped. The second declaration is now mangled per module
+//// (`two/parse`) and every call that means it is rewritten to that name.
+
+pub mod one;
+pub mod two;
+import {parse, viaOne} from "one";
+import {parse as parse2, viaTwo} from "two";
+
+pub fn main() {
+    @print(parse("abc"));
+    @print(parse2("x", 1));
+    @print(viaOne("ab"));
+    @print(viaTwo("y"));
+}

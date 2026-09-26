@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "enum": {
+      "type_": {
         "name": "Level",
         "id": 1,
         "isPub": false,
@@ -12,57 +12,63 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "variants": [
-          {
-            "name": "Info",
-            "fields": [
+        "shape": {
+          "enum_": {
+            "variants": [
               {
-                "name": "message",
-                "typeRef": {
-                  "named": "string"
-                },
-                "default": {
-                  "literal": {
-                    "loc": {
-                      "line": 2,
-                      "col": 28
+                "name": "Info",
+                "fields": [
+                  {
+                    "name": "message",
+                    "typeRef": {
+                      "named": "string"
                     },
-                    "kind": {
-                      "stringLit": "info"
-                    }
+                    "default": {
+                      "literal": {
+                        "loc": {
+                          "line": 2,
+                          "col": 28
+                        },
+                        "kind": {
+                          "stringLit": "info"
+                        }
+                      }
+                    },
+                    "annotations": []
                   }
-                }
+                ],
+                "numeric": false
+              },
+              {
+                "name": "Warn",
+                "fields": [
+                  {
+                    "name": "message",
+                    "typeRef": {
+                      "named": "string"
+                    },
+                    "default": {
+                      "literal": {
+                        "loc": {
+                          "line": 3,
+                          "col": 28
+                        },
+                        "kind": {
+                          "stringLit": "warning"
+                        }
+                      }
+                    },
+                    "annotations": []
+                  }
+                ],
+                "numeric": false
               }
             ],
-            "numeric": false
-          },
-          {
-            "name": "Warn",
-            "fields": [
-              {
-                "name": "message",
-                "typeRef": {
-                  "named": "string"
-                },
-                "default": {
-                  "literal": {
-                    "loc": {
-                      "line": 3,
-                      "col": 28
-                    },
-                    "kind": {
-                      "stringLit": "warning"
-                    }
-                  }
-                }
-              }
-            ],
-            "numeric": false
+            "sections": []
           }
-        ],
+        },
         "trailingComma": true,
-        "methods": [],
-        "sections": []
+        "methods": []
       }
     }
   ]

@@ -1,0 +1,4 @@
+value ok 1
+result ok 2
+result error negative
+task ok 3

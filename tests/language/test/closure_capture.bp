@@ -1,0 +1,31 @@
+//// Closures: a lambda passed as an argument, a closure returned from a fn that
+//// keeps its capture, an outer `var` reassigned inside a lambda, and a closure
+//// nested in a `loop` body.
+////
+//// `adder(3)(4)` — calling the result of a call directly — parses since front
+//// 15's R2 but does not check (`unbound variable ''`), which is why the second
+//// test still binds `f`. `test/curried_call.bp` asserts the direct form and
+//// carries the expected-failure lines.
+
+fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
+
+fn apply(f: fn(x: i32) -> i32, v: i32) -> i32 { return f(v); }
+
+test "a lambda passed as an argument runs" { assert apply({ x -> x * 2 }, 5) == 10; }
+
+test "a returned closure keeps its capture" {
+    val f = adder(3);
+    assert f(4) == 7;
+}
+
+test "an outer var reassigned inside a lambda threads out" {
+    var acc = 0;
+    [1, 2, 3].forEach({ x -> acc = acc + x });
+    assert acc == 6;
+}
+
+test "a closure inside a loop body sees the loop variable" {
+    var acc = 0;
+    for ([1, 2, 3]) { x -> acc = acc + apply({ y -> y }, x); };
+    assert acc == 6;
+}

@@ -1,0 +1,16 @@
+//// A test file that imports `std`'s `process`. On commonJS the import
+//// declares a module-level `const process`, which shadowed node's global, and
+//// the generated runner's `process.argv[2]` threw `TypeError` before any test
+//// ran: the file printed no `N passed, M failed` line and every cell in it
+//// dropped out of the count (found by rakun front 74 and std front 01). The
+//// runner now reads `globalThis.process`. Erlang passed either way.
+
+import { io.process } from "std";
+
+test "a file importing std's process still runs its tests" {
+    assert 1 + 1 == 2;
+}
+
+test "and counts every one of them" {
+    assert "a" != "b";
+}

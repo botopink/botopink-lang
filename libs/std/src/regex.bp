@@ -30,56 +30,133 @@
 // Node: `new RegExp($0).test($1)`.
 // Erlang: `re:run/2` returns `{match, _}` or `nomatch`; the template
 // pattern-matches the result against `nomatch`.
-#[@External.Node("""(new RegExp($0).test($1))"""),
-  @External.Erlang("""(re:run($1, $0) =/= nomatch)""")]
+#[@External.Node("""(new RegExp($0).test($1))""")]
+#[@External.Erlang("""(re:run($1, $0) =/= nomatch)""")]
 pub declare fn matches(pattern: string, input: string) -> bool;
 
 // Replace the FIRST occurrence of `pattern` in `input` with `replacement`.
 // Node: `$1.replace(new RegExp($0), $2)` (no `g` flag → first only).
 // Erlang: `re:replace/4` with no `global` option → first match only;
 // `{return, binary}` keeps the output a binary.
-#[@External.Node("""($1.replace(new RegExp($0), $2))"""),
-  @External.Erlang("""re:replace($1, $0, $2, [{return, binary}])""")]
-pub declare fn replace(pattern: string, input: string, replacement: string) -> string;
+#[@External.Node("""($1.replace(new RegExp($0), $2))""")]
+#[@External.Erlang("""re:replace($1, $0, $2, [{return, binary}])""")]
+pub declare fn replace(
+    pattern: string,
+    input: string,
+    replacement: string,
+) -> string;
 
 // Replace EVERY occurrence of `pattern` in `input` with `replacement`.
 // Node: `new RegExp($0, 'g')` for global flag.
 // Erlang: `re:replace/4` with the `global` option.
-#[@External.Node("""($1.replace(new RegExp($0, 'g'), $2))"""),
-  @External.Erlang("""re:replace($1, $0, $2, [global, {return, binary}])""")]
-pub declare fn replaceAll(pattern: string, input: string, replacement: string) -> string;
+#[@External.Node("""($1.replace(new RegExp($0, 'g'), $2))""")]
+#[@External.Erlang("""re:replace($1, $0, $2, [global, {return, binary}])""")]
+pub declare fn replaceAll(
+    pattern: string,
+    input: string,
+    replacement: string,
+) -> string;
 
 // Split `input` on every match of `pattern`. Returns the array of
 // pieces between matches.
 // Node: `$1.split(new RegExp($0))`.
 // Erlang: `re:split/2` returns a list of binaries with the matches
 // removed — `{return, binary}` keeps the output a binary list.
-#[@External.Node("""($1.split(new RegExp($0)))"""),
-  @External.Erlang("""re:split($1, $0, [{return, binary}])""")]
+#[@External.Node("""($1.split(new RegExp($0)))""")]
+#[@External.Erlang("""re:split($1, $0, [{return, binary}])""")]
 pub declare fn splitOn(pattern: string, input: string) -> string[];
 
 // A single match site — the matched text and its 0-based start position
 // in the input.
-pub record Match {
+pub type Match(
     value: string,
     index: i32,
-}
+)
 
 // First non-overlapping match, or null when `pattern` matches nothing.
 // Node materialises `null` from a missing match; Erlang's `re:run`
 // yields `{match, [{Offset, Len}]}` (0-based byte offsets) and the
-// template projects that into a `#{value, index}` map matching the bp
-// `Match` record shape.
-#[@External.Node("""(() => { const __m = $1.match(new RegExp($0)); return __m ? { value: __m[0], index: __m.index } : null })()"""),
-  @External.Erlang("""(fun() -> case re:run($1, $0, [{capture, first, index}]) of {match, [{__O, __L}]} -> #{value => binary:part($1, __O, __L), index => __O}; nomatch -> undefined end end)()""")]
+// template projects that into the `Match` record's run-time shape —
+// the tagged tuple `{'std@regex@@Match', Value, Index}` decision 21
+// gives every record on this backend.
+#[@External.Node("""(() => { const __m = $1.match(new RegExp($0)); return __m ? { value: __m[0], index: __m.index } : null })()""")]
+#[@External.Erlang("""(fun() -> case re:run($1, $0, [{capture, first, index}]) of {match, [{__O, __L}]} -> {'std@regex@@Match', binary:part($1, __O, __L), __O}; nomatch -> undefined end end)()""")]
 pub declare fn match(pattern: string, input: string) -> ?Match;
 
 // Every non-overlapping match. Node uses the `g` flag + `matchAll`;
 // Erlang uses `[global, {capture, first, index}]` and projects each
-// `{Offset, Len}` into the record shape.
-#[@External.Node("""(Array.from($1.matchAll(new RegExp($0, 'g'))).map((__m) => ({ value: __m[0], index: __m.index })))"""),
-  @External.Erlang("""(fun() -> case re:run($1, $0, [global, {capture, first, index}]) of {match, __Ms} -> [#{value => binary:part($1, __O, __L), index => __O} || [{__O, __L}] <- __Ms]; nomatch -> [] end end)()""")]
+// `{Offset, Len}` into the same tagged tuple.
+#[@External.Node("""(Array.from($1.matchAll(new RegExp($0, 'g'))).map((__m) => ({ value: __m[0], index: __m.index })))""")]
+#[@External.Erlang("""(fun() -> case re:run($1, $0, [global, {capture, first, index}]) of {match, __Ms} -> [{'std@regex@@Match', binary:part($1, __O, __L), __O} || [{__O, __L}] <- __Ms]; nomatch -> [] end end)()""")]
 pub declare fn matchAll(pattern: string, input: string) -> Array<Match>;
+
+// ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
+//
+// Capture groups, a compiled-pattern handle, and literal escaping. The six
+// matchers and `Match` above are not edited.
+
+// A compiled pattern: the host's own compiled form (a `RegExp` on Node, the
+// `re:compile/1` result on Erlang) behind an opaque field, so a hot path
+// compiles once and runs many times.
+pub type Regex(handle: any) {
+    // True when the compiled pattern matches anywhere in `input` — the module's
+    // `matches(pattern, input)` without re-compiling.
+    // Node: `RegExp#test` on a pattern without the `g` flag (no `lastIndex`
+    // state carried between calls).
+    // Erlang: `re:run/2` over the compiled form (a record crosses into a cell
+    // as its tagged tuple, so the handle is `element(2, R)`).
+    #[@External.Node("""($0.handle.test($1))""")]
+    #[@External.Erlang("""(re:run($1, element(2, $0)) =/= nomatch)""")]
+    pub declare fn matches(self: Self, input: string) -> bool;
+}
+
+// Compile `pattern` once. A pattern the host cannot compile is an `Error`
+// naming why.
+// Node: `new RegExp(pattern)` throws a `SyntaxError`, caught.
+// Erlang: `re:compile/1` answers `{error, {Reason, Offset}}`.
+#[@External.Node("""(() => { try { return { ok: { handle: new RegExp($0) } } } catch (__e) { return { error: String(__e && __e.message ? __e.message : __e) } } })()""")]
+#[@External.Erlang("""(fun(__P) -> case re:compile(__P) of {ok, __M} -> {ok, #{handle => __M}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn compile(pattern: string) -> @Result<Regex, string>;
+
+// Every group of the first match, group 0 (the whole match) first; a group
+// that did not take part is `""`. `null` when the pattern does not match —
+// "no match" is not "matched with empty groups".
+// Node: `String#match` without `g`.
+// Erlang: `re:run/3` with `{capture, all, binary}`.
+#[@External.Node("""(() => { const __m = $1.match(new RegExp($0)); return __m ? Array.from(__m).map(__g => __g ?? '') : null })()""")]
+#[@External.Erlang("""(fun() -> case re:run($1, $0, [{capture, all, binary}]) of {match, __G} -> __G; nomatch -> undefined end end)()""")]
+pub declare fn captures(pattern: string, input: string) -> ?Array<string>;
+
+// The named groups of the first match as `#(name, value)` pairs, SORTED BY
+// NAME (Erlang's `all_names` order; the Node template sorts to agree). No
+// match, or no named group, is `[]`; a group that did not take part is `""`.
+// Node: `match.groups`.
+// Erlang: `re:inspect(_, namelist)` + `{capture, all_names, binary}` — both
+// in name order, zipped.
+#[@External.Node("""(() => { const __m = $1.match(new RegExp($0)); return __m && __m.groups ? Object.entries(__m.groups).map(([__k, __v]) => [__k, __v ?? '']).sort((__a, __b) => __a[0] < __b[0] ? -1 : (__a[0] > __b[0] ? 1 : 0)) : [] })()""")]
+#[@External.Erlang("""(fun() -> {ok, __M} = re:compile($0), {namelist, __N} = re:inspect(__M, namelist), case __N of [] -> []; _ -> case re:run($1, __M, [{capture, all_names, binary}]) of {match, __V} -> lists:zip(__N, __V); nomatch -> [] end end end)()""")]
+pub declare fn namedCaptures(pattern: string, input: string) -> Array<#(string, string)>;
+
+// `s` as a pattern that matches exactly `s`: every metacharacter of the
+// ECMAScript and PCRE syntaxes (`\ ^ $ . | ? * + ( ) [ ] { }`) gets a
+// backslash. The backslash goes first, or it would re-escape the ones the
+// later rules add. Pure botopink.
+pub fn escapeLiteral(s: string) -> string {
+    val bs = s.replaceAll("\\", "\\\\");
+    val caret = bs.replaceAll("^", "\\^");
+    val dollar = caret.replaceAll("$", "\\$");
+    val dot = dollar.replaceAll(".", "\\.");
+    val bar = dot.replaceAll("|", "\\|");
+    val q = bar.replaceAll("?", "\\?");
+    val star = q.replaceAll("*", "\\*");
+    val plus = star.replaceAll("+", "\\+");
+    val lp = plus.replaceAll("(", "\\(");
+    val rp = lp.replaceAll(")", "\\)");
+    val lb = rp.replaceAll("[", "\\[");
+    val rb = lb.replaceAll("]", "\\]");
+    val lc = rb.replaceAll("{", "\\{");
+    return lc.replaceAll("}", "\\}");
+}
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
@@ -122,4 +199,50 @@ test "regex.matchAll yields every match" {
     assert ms.length == 3;
     assert ms.at(0).map({ x -> x.value }).unwrapOr("") == "1";
     assert ms.at(2).map({ x -> x.value }).unwrapOr("") == "333";
+}
+
+test "regex.captures answers every group, group 0 first" {
+    val gs = captures("^/blog/([^/]+)$", "/blog/hello").unwrapOr([]);
+    assert gs.length == 2;
+    assert gs.at(0).unwrapOr("") == "/blog/hello";
+    assert gs.at(1).unwrapOr("") == "hello";
+}
+
+test "regex.captures of a non-match is null, not an empty array" {
+    val none = captures("^/x$", "/y");
+    assert none.map({ gs -> gs.length }).unwrapOr(-1) == -1;
+}
+
+test "regex.namedCaptures answers name/value pairs sorted by name" {
+    val one = namedCaptures("(?<slug>[^/]+)", "/hello");
+    assert one.length == 1;
+    assert one.at(0).map({ p -> p._0 }).unwrapOr("") == "slug";
+    assert one.at(0).map({ p -> p._1 }).unwrapOr("") == "hello";
+    val two = namedCaptures("^/(?<year>[0-9]+)/(?<month>[0-9]+)$", "/2024/02");
+    assert two.map({ p -> [p._0, p._1].join("=") }).join(",") == "month=02,year=2024";
+    assert namedCaptures("(?<n>[0-9]+)", "abc").length == 0;
+    assert namedCaptures("[0-9]+", "123").length == 0;
+}
+
+test "regex.compile refuses a malformed pattern" {
+    assert compile("(").isError();
+    assert compile("[0-9]+").isOk();
+}
+
+test "regex: a compiled Regex's matches agrees with matches on the same source" {
+    val digits = compile("[0-9]+");
+    assert digits.map({ r -> r.matches("abc123") }).unwrapOr(false);
+    assert digits.map({ r -> r.matches("abc") }).unwrapOr(true).negate();
+    assert matches("[0-9]+", "abc123");
+    // Run twice: no `lastIndex`-style state is carried between calls.
+    assert digits.map({ r -> r.matches("7") && r.matches("7") }).unwrapOr(false);
+}
+
+test "regex.escapeLiteral matches the literal text and nothing else" {
+    val p = escapeLiteral(".*");
+    assert p == "\\.\\*";
+    assert matches(["^", p, "$"].join(""), ".*");
+    assert matches(["^", p, "$"].join(""), "ab").negate();
+    val tricky = "a+b(c)[d]{e}|f?^$\\";
+    assert matches(["^", escapeLiteral(tricky), "$"].join(""), tricky);
 }

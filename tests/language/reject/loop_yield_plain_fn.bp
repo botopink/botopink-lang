@@ -1,0 +1,10 @@
+//// Decision 105 — a `yield` inside a `for` feeds the nearest generator scope,
+//// and a plain fn has none: the loop is a statement and no "loop's array"
+//// exists any more (decision 8 §10's comprehension is gone).
+
+pub fn main() {
+    for ([1, 2, 3]) { x ->
+        yield x * 2;
+    };
+    @print(1);
+}

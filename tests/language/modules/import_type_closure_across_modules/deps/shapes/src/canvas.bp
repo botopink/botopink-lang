@@ -1,0 +1,12 @@
+import {Point} from "point";
+import {Outline} from "outline";
+
+pub type Canvas(outlines: Array<Outline>, origin: Point) {
+    pub fn count(self: Self) -> i32 {
+        return self.outlines.length;
+    }
+}
+
+pub fn canvas() -> Canvas {
+    return Canvas(outlines: [Outline(points: [Point(x: 3, y: 4)])], origin: Point(x: 1, y: 2));
+}

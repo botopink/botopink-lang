@@ -14,7 +14,7 @@ test "format: case ---- wildcard and ident" {
         \\        case status {
         \\            0 -> "zero";
         \\            _ -> "nonzero";
-        \\        };
+        \\        }
         \\    }
         \\};
     );
@@ -27,7 +27,7 @@ test "format: case ---- variant with field bindings" {
         \\        case color {
         \\            Red -> "#FF0000";
         \\            Rgb(r, g, b) -> toHex(r, g, b);
-        \\        };
+        \\        }
         \\    }
         \\};
     );
@@ -41,7 +41,7 @@ test "format: case ---- list patterns with spread" {
         \\            [] -> "empty";
         \\            [x] -> "one item";
         \\            [first, ..rest] -> "starts with " + first;
-        \\        };
+        \\        }
         \\    }
         \\};
     );
@@ -55,7 +55,7 @@ test "format: case ---- OR patterns" {
         \\            0 | 2 | 4 | 6 | 8 -> "even digit";
         \\            1 | 3 | 5 | 7 | 9 -> "odd digit";
         \\            _ -> "not a digit";
-        \\        };
+        \\        }
         \\    }
         \\};
     );
@@ -69,7 +69,7 @@ test "format: case ---- guard clauses" {
         \\            x if x > 0 -> "positive";
         \\            0 -> "zero";
         \\            _ -> "negative";
-        \\        };
+        \\        }
         \\    }
         \\};
     );
@@ -132,7 +132,7 @@ test "format: pattern ---- constructor" {
 
 test "format: pattern ---- constructor with fields" {
     try h.assertFormat(std.testing.allocator,
-        \\val Result = enum { Ok(value: i32), Error(message: String) };
+        \\type Result { Ok(value: i32), Error(message: String) }
         \\
         \\fn main() {
         \\    val result = Result.Ok(42);
@@ -147,7 +147,7 @@ test "format: pattern ---- constructor with fields" {
 
 test "format: pattern ---- constructor with labeled fields" {
     try h.assertFormat(std.testing.allocator,
-        \\val Person = enum { Person(name: String, age: i32), Dog(name: String, age: i32) };
+        \\type Person { Person(name: String, age: i32), Dog(name: String, age: i32) }
         \\
         \\fn main() {
         \\    val thing = Person.Dog("bob", 121);
@@ -166,21 +166,51 @@ test "format: case ---- simple" {
         \\    case 1 {
         \\        1 -> 1;
         \\        _ -> 0;
-        \\    };
+        \\    }
         \\}
     );
 }
 
+// A block arm is decision 8 §5.1's `Pattern { body }` (06 N22): it is the same
+// node the pre-decision-8 `1 -> { … };` parsed to, so the formatter writes both
+// back in decision 8's spelling — no arrow, no `;`.
 test "format: case ---- block body" {
     try h.assertFormat(std.testing.allocator,
         \\fn main() {
         \\    case 1 {
-        \\        1 -> {
+        \\        1 {
         \\            1;
         \\            2;
-        \\        };
+        \\        }
         \\        _ -> 1;
-        \\    };
+        \\    }
+        \\}
+    );
+}
+
+// The decision 8 arm forms round-trip: the whole-value binder `{ n -> … }`, the
+// `when (…)` guard, a dotted and a shorthand variant path, a label, the trailing
+// `..`, a tuple pattern and the inclusive range.
+test "format: case ---- decision 8 arms" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    case x {
+        \\        Shape.Circle(r) {
+        \\            r;
+        \\        }
+        \\        .Rect(width: w, ..) when (w > 1) {
+        \\            w;
+        \\        }
+        \\        #(0, s) {
+        \\            s;
+        \\        }
+        \\        1...9 {
+        \\            1;
+        \\        }
+        \\        _ { n ->
+        \\            n;
+        \\        }
+        \\    }
         \\}
     );
 }
@@ -191,7 +221,7 @@ test "format: case ---- multiple subjects" {
         \\    case 1, 2, 3, 4 {
         \\        1, 2, 3, 4 -> 1;
         \\        _, _, _, _ -> 0;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -201,7 +231,7 @@ test "format: case ---- alternative patterns" {
         \\fn main() {
         \\    case 1 {
         \\        1 | 2 | 3 -> null;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -215,7 +245,7 @@ test "format: case ---- nested case" {
         \\            _ -> 0;
         \\        };
         \\        _ -> 1;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -228,7 +258,7 @@ test "format: case ---- fn body" {
         \\            x;
         \\        };
         \\        _ -> 1;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -242,7 +272,7 @@ test "format: case ---- with empty lines between arms" {
         \\        2 -> 3;
         \\
         \\        _ -> 0;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -252,7 +282,7 @@ test "format: complex ---- case with long message" {
         \\fn main() {
         \\    case x {
         \\        _ -> [123];
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -361,6 +391,22 @@ test "format: assert pattern ---- with list and rest" {
     try h.assertFormat(std.testing.allocator,
         \\fn f() {
         \\    val assert [first, second, ..rest] = items catch [];
+        \\}
+    );
+}
+
+// Step 1 re-measured (2026-09-26): `val assert P = e;` with no `catch` (decision 8
+// § 9) is parsed with the `@panic(…)` handler it desugars to, and the printer
+// wrote that handler back — `val assert Error(e) = r catch @panic("assert
+// pattern did not match");`, a `catch` the author never wrote and the checker
+// refuses ("after `catch` the value is not a @Result"). Found by formatting a
+// copy of the backend library and running `check`: 15 of its packages stopped
+// compiling.
+test "format: val assert ---- the handler-less form keeps no `catch`" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(r: @Result<i32, string>) -> string {
+        \\    val assert Error(e) = r;
+        \\    return e;
         \\}
     );
 }

@@ -1,0 +1,46 @@
+//// Decisions 121 and 128 of 1.0.10-beta (front 24, § Cells "Chain and `use`",
+//// second line; guide.md § 4.4 `tenant`) — `@Component<C, @Result<T, E>>`: a
+//// hook whose `T` is a `@Result` may `try await` (the fallible channel is read
+//// off the return, apart from the level). `tenant` propagates a success and
+//// `tenantFor("")` a failure; the component `Handler` is not a `@Result`, so it
+//// reads both with `case`. Printed from inside `Handler` (commonJS: an
+//// `async function`, decision 120).
+
+pub type RequestBase()
+type RequestScope(id: string) implement @Context<RequestBase>
+
+fn requestId() -> @Component<RequestBase, string> {
+    return "r-7";
+}
+
+fn byRequest(id: string) -> @Task<@Result<string, string>> {
+    if (id == "") { throw "no request"; };
+    return "tenant-of-" + id;
+}
+
+fn tenant() -> @Component<RequestBase, @Result<string, string>> {
+    val id = use requestId();
+    return try await byRequest(id);
+}
+
+fn tenantFor(id: string) -> @Component<RequestBase, @Result<string, string>> {
+    val known = use requestId();
+    return try await byRequest(id);
+}
+
+fn show(r: @Result<string, string>) {
+    case r {
+        Ok(v) -> @print(v);
+        Error(e) -> @print("error " + e);
+    };
+}
+
+fn Handler() -> @Component<RequestBase, RequestScope> {
+    val t = use tenant();
+    show(t);
+    val u = use tenantFor("");
+    show(u);
+    return RequestScope(id: "r-7");
+}
+
+pub fn main() { Handler(); }

@@ -1,0 +1,42 @@
+//// Decisions 104, 118 and 128 — inside a component body a component call
+//// renders as its `T`, and a written `await` of the same call still answers
+//// that `T`: `await`'s own operand keeps the `@Component<C, T>` wrapper, so
+//// `val tree = await view(props)` (jhonstart's layout chain) is not refused as
+//// "`await` expects a `@Task<_>`". A component call nested in the awaited
+//// call's arguments still renders.
+
+pub type ElementBase();
+
+pub type Element(tag: string, kids: Element[]) implement @Context<ElementBase>
+
+fn text(s: string) -> Element {
+    return Element(tag: s, kids: []);
+}
+
+pub fn Title() -> @Component<ElementBase, Element> {
+    return text("title");
+}
+
+pub fn Wrap(child: Element) -> @Component<ElementBase, Element> {
+    return Element(tag: "wrap", kids: [child]);
+}
+
+pub type Slot(view: fn(child: Element) -> @Component<ElementBase, Element>)
+
+pub fn Page(slot: Slot) -> @Component<ElementBase, Element> {
+    val direct = await Title();
+    val view = slot.view;
+    val wrapped = await view(Title());
+    return Element(tag: "page", kids: [direct, wrapped]);
+}
+
+fn render(e: Element) -> string {
+    var out = e.tag;
+    for (e.kids) { k -> out = out + "," + render(k); };
+    return out;
+}
+
+pub fn main() -> @Task<void> {
+    val page = await Page(Slot(view: { c -> Wrap(c) }));
+    @print(render(page));
+}

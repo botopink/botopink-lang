@@ -14,23 +14,30 @@ pub const ComptimeError = struct {
     ident: []const u8,
     /// Source location of the offending node.
     loc: ast.Loc,
+    /// Why the expression cannot be evaluated. A runtime identifier is the
+    /// historical case; the other two are structurally legal folds that
+    /// evaluate to an error (C4b) instead of a silent `null`.
+    reason: Reason = .runtimeIdentifier,
 
-    /// Render the error to an allocated string. Caller owns the result.
-    pub fn renderAlloc(this: ComptimeError, allocator: std.mem.Allocator, src: []const u8) ![]u8 {
+    pub const Reason = enum { runtimeIdentifier, divisionByZero, negatedNonNumber };
+
+    /// Render the error to an allocated string; the location box names
+    /// `file`. Caller owns the result.
+    pub fn renderAlloc(this: ComptimeError, allocator: std.mem.Allocator, src: []const u8, file: []const u8) ![]u8 {
         var aw: std.Io.Writer.Allocating = .init(allocator);
         defer aw.deinit();
-        try this.renderTo(&aw.writer, src);
+        try this.renderTo(&aw.writer, src, file);
         return aw.toOwnedSlice();
     }
 
-    fn renderTo(this: ComptimeError, writer: anytype, src: []const u8) !void {
+    fn renderTo(this: ComptimeError, writer: anytype, src: []const u8, file: []const u8) !void {
         const line_text = render.extractLine(src, this.loc.line);
         const line_w = render.digitWidth(this.loc.line);
         const gutter = line_w + 1;
 
         try writer.writeAll("error comptime: expression cannot be evaluated at compile time\n");
         try render.padSpaces(writer, gutter - 1);
-        try writer.print("┌─ :{d}:{d}\n", .{ this.loc.line, this.loc.col });
+        try writer.print("┌─ {s}:{d}:{d}\n", .{ file, this.loc.line, this.loc.col });
         try render.padSpaces(writer, gutter);
         try writer.writeAll("│\n");
         try writer.print("{d} │ {s}\n", .{ this.loc.line, line_text });
@@ -39,11 +46,36 @@ pub const ComptimeError = struct {
         try render.padSpaces(writer, this.loc.col - 1);
         for (0..this.ident.len) |_| try writer.writeByte('^');
         try writer.writeAll("\n\n");
-        try writer.print("  '{s}' is a runtime identifier\n", .{this.ident});
+        switch (this.reason) {
+            .runtimeIdentifier => try writer.print("  '{s}' is a runtime identifier\n", .{this.ident}),
+            .divisionByZero => try writer.writeAll("  division by zero\n"),
+            .negatedNonNumber => try writer.writeAll("  only a number can be negated\n"),
+        }
     }
 };
 
 // ── TypeError ─────────────────────────────────────────────────────────────────
+
+/// Where a `@Result` value came from — what the E3.9 hint of a `typeMismatch`
+/// needs to say which fix applies (decisions 120–122, 124, 125). Recorded by
+/// inference on a fresh copy of the `@Result` type node (`Env.resultOrigins`),
+/// so the value keeps its origin through the type variables it flows into.
+pub const ResultOrigin = struct {
+    source: Source = .unknown,
+    /// The `throw` / `try` that made an INFERRED value a `@Result`: an
+    /// `async { }` block's, or an `iter` / `stream` loop's item.
+    made_at: ?Loc = null,
+    made_by: MadeBy = .try_,
+
+    pub const Source = enum {
+        unknown,
+        /// `await t` on a `@Task<@Result<U, E>>` — answers the `@Result`.
+        await_,
+        /// a `for` / `for await` item over a sequence of `@Result`s.
+        for_item,
+    };
+    pub const MadeBy = enum { try_, throw_ };
+};
 
 /// The kind of type error that occurred.
 pub const TypeErrorKind = union(enum) {
@@ -51,6 +83,9 @@ pub const TypeErrorKind = union(enum) {
     typeMismatch: struct {
         expected: *T.Type,
         got: *T.Type,
+        /// Where the `@Result` on the `got` side came from (E3.9), filled by
+        /// `unify.zig` from `Env.resultOrigins`; the default when unknown.
+        origin: ResultOrigin = .{},
     },
     /// Identifier not found in scope.
     unboundVariable: []const u8,
@@ -112,6 +147,28 @@ pub const TypeErrorKind = union(enum) {
         fnBase: []const u8,
         useBase: []const u8,
     },
+    /// Decision 96 — two `use`s in ONE body anchored at different bases. The
+    /// anchor is a property of the function, fixed by its first `use`, so this
+    /// reds at the SECOND one and names both bases and the line that fixed it.
+    contextBaseMixed: struct {
+        anchorBase: []const u8,
+        anchorLine: usize,
+        useBase: []const u8,
+    },
+    /// `use` in a body whose fn does not carry `#[@use]` (decisions 88, 104).
+    /// Payload: the fn's name and its rendered return type.
+    useWithoutContextEffect: struct {
+        fnName: []const u8,
+        returnType: []const u8,
+    },
+    /// Front 19 step 3 — `val #(a, b) = use …` whose hook yields a tuple of
+    /// another arity (`tupleLen` set), or no tuple at all (`tupleLen` null).
+    /// Located at the binding; there is no flag (decision 67).
+    useTupleArity: struct {
+        patternLen: usize,
+        tupleLen: ?usize,
+        sourceType: *T.Type,
+    },
     /// `throw` used in a function whose return type is not `@Result<D, E>`.
     throwWithoutResult,
     /// An `implement` block does not provide a method required by an interface.
@@ -149,10 +206,15 @@ pub const TypeErrorKind = union(enum) {
     tryOnNonResult: *T.Type,
     /// A `case` expression does not cover every possibility of its subject.
     /// `missing` lists the uncovered enum variants; it is empty for open
-    /// domains (e.g. `string`), where a wildcard `_` arm is required instead.
+    /// domains (e.g. `string`, `i32`, `unknown`), where a wildcard `_` arm is
+    /// required instead.
     nonExhaustive: struct {
         typeName: []const u8,
         missing: []const []const u8,
+        /// What the entries of `missing` are, for the message. Decision 8 §3.3
+        /// made a union a `case` domain, and its uncovered entries are its
+        /// **members**, not variants.
+        missingLabel: []const u8 = "variant(s)",
     },
     /// A `case` arm can never match because an earlier arm (a wildcard, a
     /// whole-value binding, or the same variant) already covers it.
@@ -246,6 +308,18 @@ pub const TypeError = struct {
         return .{ .kind = .{ .contextMismatch = .{ .fnBase = fnBase, .useBase = useBase } } };
     }
 
+    pub fn contextBaseMixed(anchorBase: []const u8, anchorLine: usize, useBase: []const u8) TypeError {
+        return .{ .kind = .{ .contextBaseMixed = .{ .anchorBase = anchorBase, .anchorLine = anchorLine, .useBase = useBase } } };
+    }
+
+    pub fn useWithoutContextEffect(fnName: []const u8, returnType: []const u8) TypeError {
+        return .{ .kind = .{ .useWithoutContextEffect = .{ .fnName = fnName, .returnType = returnType } } };
+    }
+
+    pub fn useTupleArity(patternLen: usize, tupleLen: ?usize, sourceType: *T.Type) TypeError {
+        return .{ .kind = .{ .useTupleArity = .{ .patternLen = patternLen, .tupleLen = tupleLen, .sourceType = sourceType } } };
+    }
+
     pub fn throwWithoutResult() TypeError {
         return .{ .kind = .throwWithoutResult };
     }
@@ -278,6 +352,16 @@ pub const TypeError = struct {
         return .{ .kind = .{ .nonExhaustive = .{ .typeName = typeName, .missing = missing } } };
     }
 
+    /// `nonExhaustive` naming what the uncovered entries are — `"member(s)"` for
+    /// a union (§3.3), `"variant(s)"` for an enum.
+    pub fn nonExhaustiveOf(typeName: []const u8, missing: []const []const u8, missingLabel: []const u8) TypeError {
+        return .{ .kind = .{ .nonExhaustive = .{
+            .typeName = typeName,
+            .missing = missing,
+            .missingLabel = missingLabel,
+        } } };
+    }
+
     pub fn redundantPattern(typeName: []const u8, description: []const u8) TypeError {
         return .{ .kind = .{ .redundantPattern = .{ .typeName = typeName, .description = description } } };
     }
@@ -286,11 +370,62 @@ pub const TypeError = struct {
         return .{ .kind = .{ .custom = .{ .message = msg, .hint = hint } } };
     }
 
+    /// Decisions 120–122 (front 24 E3.9) — the most common error of the
+    /// migration: a `@Result` used where its value is expected. One hint per
+    /// source (`ResultOrigin`): after `await t` it suggests `try await t`, on a
+    /// `for` item `try r`, and a value inferred as `@Result` (an `async { }`
+    /// block, an `iter` / `stream` item) also points at the `try` / `throw`
+    /// that made it one. Null when the mismatch is not that one. Caller owns
+    /// the returned slice.
+    pub fn resultMismatchHint(gpa: std.mem.Allocator, expected: *T.Type, got: *T.Type, origin: ResultOrigin) !?[]u8 {
+        const e = expected.deref();
+        const g = got.deref();
+        const eIsResult = e.* == .named and std.mem.eql(u8, e.named.name, "Result");
+        const gIsResult = g.* == .named and std.mem.eql(u8, g.named.name, "Result");
+        if (eIsResult == gIsResult) return null;
+        if (e.* == .typeVar or g.* == .typeVar) return null;
+        if (!gIsResult) return try gpa.dupe(u8, generic_result_hint);
+        const fix: []const u8 = switch (origin.source) {
+            .await_ => "`await` answers the `@Result` the Task holds: write `try await t` to propagate its error, or handle it with `case` / `catch`",
+            .for_item => "a `for` over a sequence of `@Result`s hands over each item as the `@Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`",
+            .unknown => if (origin.made_at == null)
+                return try gpa.dupe(u8, generic_result_hint)
+            else
+                "a `@Result` stands where its value is expected: propagate it with `try`, or handle it with `case` / `catch`",
+        };
+        const at = origin.made_at orelse return try gpa.dupe(u8, fix);
+        return try std.fmt.allocPrint(gpa, "{s}; it is a `@Result` because of the `{s}` at {d}:{d} in its own block", .{
+            fix,
+            switch (origin.made_by) {
+                .try_ => "try",
+                .throw_ => "throw",
+            },
+            at.line,
+            at.col,
+        });
+    }
+
+    /// The hint when nothing says where the `@Result` came from.
+    const generic_result_hint = "a `@Result` stands where its value is expected: propagate it with `try` (`try await t` for a Task, `try r` for a `for` item) or handle it with `case` / `catch`; a value inferred as `@Result` became one from a `throw` / `try` in its own block";
+
     /// Render a concise, human-readable message for this error. Caller owns the
     /// returned slice. Used by `botopink check` and the language server.
     pub fn message(this: TypeError, gpa: std.mem.Allocator) ![]u8 {
         return switch (this.kind) {
-            .typeMismatch => |m| std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s}", .{ typeLabel(m.expected), typeLabel(m.got) }),
+            .typeMismatch => |m| blk: {
+                // A union's short label has to spell its members: "expected
+                // union" names nothing the author wrote, and a union is the one
+                // kind whose identity *is* its members (decision 8 §3).
+                const expected = try typeLabelAlloc(gpa, m.expected);
+                defer gpa.free(expected);
+                const got = try typeLabelAlloc(gpa, m.got);
+                defer gpa.free(got);
+                if (try resultMismatchHint(gpa, m.expected, m.got, m.origin)) |hint| {
+                    defer gpa.free(hint);
+                    break :blk std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s} — {s}", .{ expected, got, hint });
+                }
+                break :blk std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s}", .{ expected, got });
+            },
             .unboundVariable => |n| std.fmt.allocPrint(gpa, "unbound variable '{s}'", .{n}),
             .arityMismatch => |a| std.fmt.allocPrint(gpa, "'{s}' expects {d} argument(s), got {d}", .{ a.name, a.expected, a.got }),
             .unknownField => |u| std.fmt.allocPrint(gpa, "unknown field '{s}' on type '{s}'", .{ u.field, u.typeName }),
@@ -298,18 +433,28 @@ pub const TypeError = struct {
             .recursiveType => std.fmt.allocPrint(gpa, "recursive type detected", .{}),
             .unknownTypeName => |n| std.fmt.allocPrint(gpa, "unknown type '{s}'", .{n}),
             .missingField => |m| std.fmt.allocPrint(gpa, "missing required field '{s}' on type '{s}'", .{ m.field, m.typeName }),
-            .useNotAllowed => |r| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` not allowed: function returns '{s}' which does not implement @Context", .{r}),
-            .useNotContext => |e| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` requires @Context: '{s}' does not implement @Context", .{e}),
-            .contextMismatch => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: function returns @Context<{s}, _> but `use` returns @Context<{s}, _>", .{ m.fnBase, m.useBase }),
-            .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-throw-without-fallible-channel: `throw` is only valid inside a fn whose effect declares an error channel: #[@result], #[@future], #[@iterator], or #[@asyncGenerator]", .{}),
+            .useNotAllowed => |r| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` not allowed: function returns '{s}', which is not a `@Component<C, _>`", .{r}),
+            .useNotContext => |e| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` takes a hook: '{s}' is not a hook `@Component<C, _>`", .{e}),
+            .contextMismatch => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: function anchors at `{s}` but `use` returns @Component<{s}, _>", .{ m.fnBase, m.useBase }),
+            .contextBaseMixed => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: every `use` in one function resolves against the same ContextBase: this body's is `{s}`, fixed by the `use` on line {d}, and this one is @Component<{s}, _>", .{ m.anchorBase, m.anchorLine, m.useBase }),
+            .useWithoutContextEffect => |u| std.fmt.allocPrint(gpa, "use-without-context-effect: `use` needs a `-> @Component<C, T>` return on the enclosing fn '{s}' (it returns '{s}'): only a `@Component` body activates a hook", .{ u.fnName, u.returnType }),
+            .useTupleArity => |u| blk: {
+                const source = try typeLabelAlloc(gpa, u.sourceType);
+                defer gpa.free(source);
+                break :blk if (u.tupleLen) |n|
+                    try std.fmt.allocPrint(gpa, "use-tuple-arity: `val #(…)` binds {d} name(s) but the hook yields a tuple of {d}", .{ u.patternLen, n })
+                else
+                    try std.fmt.allocPrint(gpa, "use-tuple-arity: `val #(…)` binds {d} name(s) but the hook yields '{s}', which is not a tuple", .{ u.patternLen, source });
+            },
+            .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return", .{}),
             .methodNotActive => |m| std.fmt.allocPrint(gpa, "'{s}' has no active method '{s}' — activate the extension with `{s}*`", .{ m.typeName, m.method, m.hintSym }),
             .ambiguousExtension => |a| std.fmt.allocPrint(gpa, "'{s}.{s}' is provided by both '{s}' and '{s}' — qualify the call, e.g. `{s}.{s}(obj)`", .{ a.typeName, a.method, a.symA, a.symB, a.symA, a.method }),
             .notAnExtension => |name| std.fmt.allocPrint(gpa, "'{s}' does not name an implement/extend symbol", .{name}),
-            .extendRequiresInterface => |t| std.fmt.allocPrint(gpa, "`extend {s}` adds methods without a contract — use `implement <Interface> for {s}` so the methods satisfy an interface", .{ t, t }),
+            .extendRequiresInterface => |t| std.fmt.allocPrint(gpa, "`extend {s}` adds methods without a contract — use `implement <Behavior> for {s}` so the methods satisfy a behavior", .{ t, t }),
             .redundantActivation => |name| std.fmt.allocPrint(gpa, "`{s}*` is redundant: an extension declared in this module is auto-applied; `*` is only for imports", .{name}),
-            .missingMethod => |m| std.fmt.allocPrint(gpa, "'{s}' does not implement '{s}' required by interface '{s}'", .{ m.typeName, m.method, m.interfaceName }),
-            .unknownMethod => |m| std.fmt.allocPrint(gpa, "'{s}' is not declared in any interface implemented for '{s}'", .{ m.method, m.typeName }),
-            .unknownInterface => |u| std.fmt.allocPrint(gpa, "'{s}' is not an interface implemented here (method '{s}')", .{ u.qualifier, u.method }),
+            .missingMethod => |m| std.fmt.allocPrint(gpa, "'{s}' does not implement '{s}' required by behavior '{s}'", .{ m.typeName, m.method, m.interfaceName }),
+            .unknownMethod => |m| std.fmt.allocPrint(gpa, "'{s}' is not declared in any behavior implemented for '{s}'", .{ m.method, m.typeName }),
+            .unknownInterface => |u| std.fmt.allocPrint(gpa, "'{s}' is not a behavior implemented here (method '{s}')", .{ u.qualifier, u.method }),
             .ambiguousMethod => |a| std.fmt.allocPrint(gpa, "'{s}' is declared by both '{s}' and '{s}' — qualify it", .{ a.method, a.interfaceA, a.interfaceB }),
             .typeparamConstraint => |c| std.fmt.allocPrint(gpa, "'{s}' has type '{s}', which does not satisfy its type constraint", .{ c.paramName, typeLabel(c.got) }),
             .tryOnNonResult => |ty| std.fmt.allocPrint(gpa, "`try` requires a @Result<D, E> value, found '{s}'", .{typeLabel(ty)}),
@@ -322,9 +467,21 @@ pub const TypeError = struct {
 
 /// Build the `nonExhaustive` message: either "requires a wildcard" (open
 /// domain) or "missing variants: A, B" (enum). Caller owns the result.
+///
+/// Both forms open with **`case` … is not exhaustive**, the wording
+/// `1.0.4-beta/MIGRATION.md:300` publishes for this rule (`not exhaustive`,
+/// `use _ {`) and the one decision 8 §5.4's reject fixtures match against. The
+/// text that stood here said "non-exhaustive", which no published sketch and no
+/// fixture asks for; MIGRATION's own note ("the implementing fronts fix the
+/// wording") makes this the front that settles it. `comptime/snapshot.zig` keeps
+/// its own shorter title, so no error snapshot moves with this.
 fn nonExhaustiveMessage(gpa: std.mem.Allocator, n: anytype) ![]u8 {
     if (n.missing.len == 0) {
-        return std.fmt.allocPrint(gpa, "non-exhaustive `case`: '{s}' has no wildcard `_` arm", .{n.typeName});
+        return std.fmt.allocPrint(
+            gpa,
+            "`case` on '{s}' is not exhaustive: nothing covers the remaining values — use `_ {{ … }}`",
+            .{n.typeName},
+        );
     }
     var list: std.ArrayList(u8) = .empty;
     defer list.deinit(gpa);
@@ -332,7 +489,43 @@ fn nonExhaustiveMessage(gpa: std.mem.Allocator, n: anytype) ![]u8 {
         if (i > 0) try list.appendSlice(gpa, ", ");
         try list.appendSlice(gpa, name);
     }
-    return std.fmt.allocPrint(gpa, "non-exhaustive `case` on '{s}': missing variant(s) {s}", .{ n.typeName, list.items });
+    return std.fmt.allocPrint(gpa, "`case` on '{s}' is not exhaustive: missing {s} {s}", .{ n.typeName, n.missingLabel, list.items });
+}
+
+/// `typeLabel`, with a union spelled out as `A | B`. Owned by the caller.
+/// Every other kind is `typeLabel`'s own text, duplicated, so a message that
+/// goes through this renders byte-identically to one that does not.
+pub fn typeLabelAlloc(gpa: std.mem.Allocator, ty: *T.Type) ![]const u8 {
+    const t = ty.deref();
+    if (t.* == .named) {
+        const n = t.named;
+        // The spellings a source writes, not the checker's internal names:
+        // `?T` (decision 2 — "optional" is no spelling), `T[]`, and a
+        // section's path (`Token.Text`, not `__Token__Text`).
+        if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) {
+            const inner = try typeLabelAlloc(gpa, n.args[0]);
+            defer gpa.free(inner);
+            return std.fmt.allocPrint(gpa, "?{s}", .{inner});
+        }
+        if (std.mem.eql(u8, n.name, "array") and n.args.len == 1 and n.args[0].deref().* == .named) {
+            const inner = try typeLabelAlloc(gpa, n.args[0]);
+            defer gpa.free(inner);
+            return std.fmt.allocPrint(gpa, "{s}[]", .{inner});
+        }
+        if (std.mem.startsWith(u8, n.name, "__") and n.name.len > 2) {
+            return std.mem.replaceOwned(u8, gpa, n.name[2..], "__", ".");
+        }
+    }
+    if (t.* != .union_) return gpa.dupe(u8, typeLabel(t));
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(gpa);
+    for (t.union_, 0..) |member, i| {
+        if (i > 0) try buf.appendSlice(gpa, " | ");
+        const label = try typeLabelAlloc(gpa, member);
+        defer gpa.free(label);
+        try buf.appendSlice(gpa, label);
+    }
+    return buf.toOwnedSlice(gpa);
 }
 
 /// Best-effort short label for a type, used in error messages.
@@ -348,8 +541,30 @@ fn typeLabel(ty: *T.Type) []const u8 {
 
 // ── Comptime validation ───────────────────────────────────────────────────────
 
+/// The names a `comptime { … }` block has declared so far, innermost first.
+/// Built on the Zig stack as `validateBody` walks a block, so no allocator is
+/// needed; `eval.zig` mirrors it with real values when the block is folded.
+const CtScope = struct {
+    name: []const u8,
+    parent: ?*const CtScope,
+
+    fn has(scope: ?*const CtScope, name: []const u8) bool {
+        var cur = scope;
+        while (cur) |s| : (cur = s.parent) {
+            if (std.mem.eql(u8, s.name, name)) return true;
+        }
+        return false;
+    }
+};
+
+/// Identifiers that always denote a compile-time value.
+fn isLiteralIdent(name: []const u8) bool {
+    return std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false") or std.mem.eql(u8, name, "null");
+}
+
 /// Validates that every `comptime` / `comptime { }` expression in `program`
-/// contains only compile-time-evaluable nodes (literals and arithmetic).
+/// contains only compile-time-evaluable nodes: literals, arithmetic and
+/// comparisons, and — inside a block — locals declared by the block itself.
 /// Returns the first offending expression, or null if valid.
 pub fn validateComptime(program: ast.Program) ?ComptimeError {
     for (program.decls) |decl| {
@@ -368,64 +583,147 @@ fn validateDecl(decl: ast.DeclKind) ?ComptimeError {
 fn validateIfComptime(expr: ast.Expr) ?ComptimeError {
     switch (expr) {
         .comptime_ => |a| switch (a.kind) {
-            .comptimeExpr => |e| return validateComptimeExpr(e.*),
-            .comptimeBlock => |cb| {
-                for (cb.body) |stmt| {
-                    if (validateComptimeExpr(stmt.expr)) |err| return err;
-                }
-                return null;
-            },
+            .comptimeExpr => |e| return validateComptimeExpr(e.*, null),
+            .comptimeBlock => |cb| return validateBody(cb.body, null),
             else => return null,
         },
         else => return null,
     }
 }
 
-fn validateComptimeExpr(expr: ast.Expr) ?ComptimeError {
+/// Walk a block's statements, threading the names it declares. A `val`/`var`
+/// validates its initialiser in the scope that precedes it and then validates
+/// the rest of the block with the new name in scope (the recursion is what
+/// carries the scope without an allocator).
+fn validateBody(body: []const ast.Stmt, scope: ?*const CtScope) ?ComptimeError {
+    for (body, 0..) |stmt, i| {
+        if (stmt.expr == .binding) {
+            const bind = stmt.expr.binding;
+            switch (bind.kind) {
+                .localBind => |lb| {
+                    if (validateComptimeExpr(lb.value.*, scope)) |err| return err;
+                    const declared = CtScope{ .name = lb.name, .parent = scope };
+                    return validateBody(body[i + 1 ..], &declared);
+                },
+                .assign => |as| switch (as.target) {
+                    .name => |name| {
+                        if (!CtScope.has(scope, name)) return ComptimeError{ .ident = name, .loc = bind.loc };
+                        if (validateComptimeExpr(as.value.*, scope)) |err| return err;
+                        continue;
+                    },
+                    else => return ComptimeError{ .ident = @tagName(bind.kind), .loc = bind.loc },
+                },
+                else => return ComptimeError{ .ident = @tagName(bind.kind), .loc = bind.loc },
+            }
+        }
+        if (validateComptimeExpr(stmt.expr, scope)) |err| return err;
+    }
+    return null;
+}
+
+/// The value of a constant numeric expression (literals and arithmetic over
+/// them), or null when the expression is not a constant number.
+fn constNumber(expr: ast.Expr) ?f64 {
     switch (expr) {
         .literal => |l| switch (l.kind) {
-            .numberLit, .stringLit => return null,
+            .numberLit => |n| return std.fmt.parseFloat(f64, n) catch null,
+            else => return null,
+        },
+        .unaryOp => |u| {
+            if (u.op != .neg) return null;
+            const v = constNumber(u.expr.*) orelse return null;
+            return -v;
+        },
+        .binaryOp => |b| {
+            const l = constNumber(b.lhs.*) orelse return null;
+            const r = constNumber(b.rhs.*) orelse return null;
+            return switch (b.op) {
+                .add => l + r,
+                .sub => l - r,
+                .mul => l * r,
+                else => null,
+            };
+        },
+        else => return null,
+    }
+}
+
+/// A string literal, or a concatenation of them.
+fn isConstString(expr: ast.Expr) bool {
+    return switch (expr) {
+        .literal => |l| l.kind == .stringLit,
+        .binaryOp => |b| b.op == .add and isConstString(b.lhs.*) and isConstString(b.rhs.*),
+        else => false,
+    };
+}
+
+fn validateComptimeExpr(expr: ast.Expr, scope: ?*const CtScope) ?ComptimeError {
+    switch (expr) {
+        .literal => |l| switch (l.kind) {
+            .numberLit, .stringLit, .null_ => return null,
             else => return ComptimeError{ .ident = @tagName(l.kind), .loc = l.loc },
         },
         .binaryOp => |b| switch (b.op) {
-            .add, .sub, .mul, .div, .mod, .lt, .gt, .lte, .gte, .eq, .ne => {
-                if (validateComptimeExpr(b.lhs.*)) |err| return err;
-                return validateComptimeExpr(b.rhs.*);
+            .add, .sub, .mul, .div, .mod, .lt, .gt, .lte, .gte, .eq, .ne, .@"and", .@"or" => {
+                if (validateComptimeExpr(b.lhs.*, scope)) |err| return err;
+                if (validateComptimeExpr(b.rhs.*, scope)) |err| return err;
+                // C4b: a constant zero divisor is an error, not a `null` fold.
+                if (b.op == .div or b.op == .mod) {
+                    if (constNumber(b.rhs.*)) |d| if (d == 0) {
+                        const rloc = b.rhs.*.getLoc();
+                        return ComptimeError{ .ident = "0", .loc = rloc, .reason = .divisionByZero };
+                    };
+                }
+                return null;
             },
-            else => return ComptimeError{ .ident = @tagName(b.op), .loc = b.loc },
+        },
+        .unaryOp => |u| {
+            if (validateComptimeExpr(u.expr.*, scope)) |err| return err;
+            // C4b: negating a string (or anything statically non-numeric).
+            if (u.op == .neg and isConstString(u.expr.*)) {
+                return ComptimeError{ .ident = "-", .loc = u.loc, .reason = .negatedNonNumber };
+            }
+            return null;
         },
         .call => |c| switch (c.kind) {
             .pipeline => |p| {
-                if (validateComptimeExpr(p.lhs.*)) |err| return err;
-                return validateComptimeExpr(p.rhs.*);
+                if (validateComptimeExpr(p.lhs.*, scope)) |err| return err;
+                return validateComptimeExpr(p.rhs.*, scope);
             },
             else => return ComptimeError{ .ident = @tagName(c.kind), .loc = c.loc },
         },
         .collection => |co| switch (co.kind) {
             .arrayLit => |al| {
                 for (al.elems) |elem| {
-                    if (validateComptimeExpr(elem)) |err| return err;
+                    if (validateComptimeExpr(elem, scope)) |err| return err;
                 }
                 return null;
             },
             else => return ComptimeError{ .ident = @tagName(co.kind), .loc = co.loc },
         },
         .jump => |j| switch (j.kind) {
-            .@"break" => |e| if (e.value) |ep| return validateComptimeExpr(ep.*) else return null,
+            .@"break" => |e| if (e.value) |ep| return validateComptimeExpr(ep.*, scope) else return null,
             else => return ComptimeError{ .ident = @tagName(j.kind), .loc = j.loc },
         },
-        .comptime_ => |a| switch (a.kind) {
-            .comptimeExpr => |e| return validateComptimeExpr(e.*),
-            .comptimeBlock => |cb| {
-                for (cb.body) |stmt| {
-                    if (validateComptimeExpr(stmt.expr)) |err| return err;
-                }
+        .branch => |br| switch (br.kind) {
+            .if_ => |i| {
+                if (validateComptimeExpr(i.cond.*, scope)) |err| return err;
+                if (validateBody(i.then_, scope)) |err| return err;
+                if (i.else_) |body| return validateBody(body, scope);
                 return null;
             },
+            else => return ComptimeError{ .ident = @tagName(br.kind), .loc = br.loc },
+        },
+        .comptime_ => |a| switch (a.kind) {
+            .comptimeExpr => |e| return validateComptimeExpr(e.*, scope),
+            .comptimeBlock => |cb| return validateBody(cb.body, scope),
             else => return ComptimeError{ .ident = @tagName(a.kind), .loc = a.loc },
         },
         .identifier => |i| switch (i.kind) {
-            .ident => |name| return ComptimeError{ .ident = name, .loc = i.loc },
+            .ident => |name| {
+                if (isLiteralIdent(name) or CtScope.has(scope, name)) return null;
+                return ComptimeError{ .ident = name, .loc = i.loc };
+            },
             else => return ComptimeError{ .ident = @tagName(i.kind), .loc = i.loc },
         },
         else => return ComptimeError{ .ident = @tagName(expr), .loc = expr.getLoc() },

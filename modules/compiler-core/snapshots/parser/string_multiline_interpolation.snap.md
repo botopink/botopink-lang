@@ -12,7 +12,7 @@
         "value": {
           "literal": {
             "loc": {
-              "line": 3,
+              "line": 1,
               "col": 9
             },
             "kind": {
@@ -26,8 +26,8 @@
                     "expr": {
                       "identifier": {
                         "loc": {
-                          "line": 1,
-                          "col": 1
+                          "line": 2,
+                          "col": 9
                         },
                         "kind": {
                           "ident": "name"

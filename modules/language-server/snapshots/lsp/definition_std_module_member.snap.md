@@ -1,10 +1,11 @@
 ----- SOURCE
 ```botopink
-import {order} from "std";
-val n = order.toInt(order.lt());
-              ↑
+import {collections} from "std";
+val n = collections.toInt(collections.lt());
+                    ↑
 ```
 
------ DEFINITION at (line 1, char 14)
-uri: std/order
-range: (23,7) → (23,12)
+----- DEFINITION at (line 1, char 20)
+uri: std/collections
+range: (512,7) → (512,12)
+in std/collections:

@@ -1,0 +1,7 @@
+//// actions/refresh — the header value that asks the server to re-render the
+//// current route with no action (a POST whose action header carries it and no
+//// id). Imported by both sides instead of being spelled twice.
+
+pub fn refreshValue() -> string {
+    return "refresh";
+}

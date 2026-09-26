@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# pre-merge-commit — botopink-lang's tracked hook for a merge that commits by
+# itself.
+#
+# `git merge` runs `pre-merge-commit`, NOT `pre-commit`, when the merge needs no
+# conflict resolution and records its commit on its own. Without this hook an
+# auto-merge was never gated unless its author happened to amend it — and a
+# hunk git resolved silently is where a merge does its quiet damage. A merge
+# that stops on a conflict is committed with `git commit`, which runs
+# `pre-commit`; between the two hooks every merge commit runs the gate.
+#
+# Enabled with the same `git config core.hooksPath scripts/git-hooks` as
+# `pre-commit`.
+set -euo pipefail
+
+echo "── pre-merge-commit ──"
+# shellcheck source=lib/runner-standalone.sh
+. "$(git rev-parse --show-toplevel)/scripts/git-hooks/lib/runner-standalone.sh"
+runStandaloneGate

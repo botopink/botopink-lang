@@ -8,6 +8,7 @@ const wat = @import("./codegen/wat.zig");
 const comptimeMod = @import("./comptime.zig");
 const moduleMod = @import("./module.zig");
 const runtime = @import("./codegen/runtime.zig");
+const hostRuntime = @import("./comptime/runtime/runtime.zig");
 
 pub const Module = moduleMod.Module;
 pub const ModuleOutput = moduleOutput.ModuleOutput;
@@ -16,14 +17,63 @@ pub const ComptimeOutput = comptimeMod.ComptimeOutput;
 
 pub const Config = configMod.Config;
 pub const TargetSource = configMod.TargetSource;
+/// The module-atom / output-stem rules a driver needs to name an artifact:
+/// `outputStem` (erlang and BEAM take the module ATOM, commonJS and wasm the
+/// module path) and `erlAtom` beside it.
+pub const crossModule = @import("./codegen/crossModule.zig");
 
+/// What `generateWith` does after emitting each module.
+pub const Options = struct {
+    /// Run every emitted module through its target runtime
+    /// (`runtime.execute*`) and keep the program's output on
+    /// `GenerateResult.run_output`. Only the codegen snapshot harness sets it:
+    /// the RUN LOG section is its evidence. `botopink build`, `test` and `run`
+    /// leave it off — compiling a program must not execute it (no `node`,
+    /// `erl` or `wasmtime` spawn, no runtime-cache entry, no side effect at
+    /// build time).
+    execute: bool,
+};
+
+/// The codegen snapshot harness's entry (`codegen/tests/helpers.zig`): emit
+/// **and execute** every module. Drivers call `generateWith` with
+/// `.execute = false`.
+///
+/// Returns only the modules that reached codegen or failed comptime
+/// validation: an entry carrying a lex/parse/type `diagnostic` is dropped,
+/// because the harness derives those diagnostics from its own comptime run
+/// and renders a section for every entry it is given.
 pub fn generate(
     allocator: std.mem.Allocator,
     modules: []const Module,
     io: std.Io,
     config: Config,
 ) !std.ArrayListUnmanaged(ModuleOutput) {
-    // STD-001 — lookup name the `@external(target, …)` parser expects for
+    var outputs = try generateWith(allocator, modules, io, config, .{ .execute = true });
+    var kept: usize = 0;
+    for (outputs.items) |*o| {
+        if (o.result.diagnostic != null) {
+            o.result.deinit(allocator);
+            continue;
+        }
+        outputs.items[kept] = o.*;
+        kept += 1;
+    }
+    outputs.shrinkRetainingCapacity(kept);
+    return outputs;
+}
+
+/// Compile `modules` for `config.targetSource`. Executes the emitted modules
+/// only when `options.execute` is set. Every module comes back: one that did
+/// not lex, parse or type-check carries its `result.diagnostic`, one that
+/// failed comptime validation its `result.comptime_err`.
+pub fn generateWith(
+    allocator: std.mem.Allocator,
+    modules: []const Module,
+    io: std.Io,
+    config: Config,
+    options: Options,
+) !std.ArrayListUnmanaged(ModuleOutput) {
+    // STD-001 — lookup name the `#[@External.<Target>(…)]` parser expects for
     // each codegen target. BEAM consumes the Erlang vocabulary (matches the
     // `externalFor("erlang")` calls in `beam_asm.zig`).
     const target_name: []const u8 = switch (config.targetSource) {
@@ -32,6 +82,13 @@ pub fn generate(
         .wasm => "wasm",
     };
 
+    // Decision 84 is `comptimeMod.compile`'s (it picks the runtime from
+    // `target_name`); a harness that asks for a runtime explicitly
+    // (`Config.comptime_runtime`) pins it for this pass.
+    const prev_pin = if (config.comptime_runtime) |r| hostRuntime.force(r) else null;
+    defer if (config.comptime_runtime != null) {
+        _ = hostRuntime.force(prev_pin);
+    };
     var session = try comptimeMod.compile(allocator, modules, io, config.build_root, target_name);
     defer session.deinit(allocator);
     const outputs = try switch (config.targetSource) {
@@ -41,19 +98,32 @@ pub fn generate(
         .wasm => wat.codegenEmit(allocator, session.outputs.items, config),
     };
 
+    // A host that cannot spawn a process (the browser build, front 18 step 5)
+    // has no executor: the harness's `execute` is refused there rather than
+    // answered with an empty RUN LOG, and `codegen/runtime.zig` is never
+    // analysed for it.
+    if (comptime !hostRuntime.can_spawn) {
+        if (options.execute) return error.NoExecutorOnThisHost;
+        return outputs;
+    }
+    if (!options.execute) return outputs;
+
     // Sibling modules (multi-module compilations, e.g. the "std" package) are
     // written next to each entry so `require`/remote calls resolve at runtime.
     var aux_files: std.ArrayListUnmanaged(runtime.AuxFile) = .empty;
     defer aux_files.deinit(allocator);
     for (outputs.items) |o| {
-        if (o.result.comptime_err == null and o.name.len > 0) {
+        if (!o.result.failed() and o.name.len > 0) {
             try aux_files.append(allocator, .{ .name = o.name, .code = o.result.js });
+            // Policy 3: every `type` of the module is a module of its own on
+            // erlang/beam, compiled and loaded beside the file's.
+            for (o.result.units) |u| try aux_files.append(allocator, .{ .name = u.atom, .code = u.code, .atom = u.atom });
         }
     }
 
     // Execute generated code and capture output
     for (outputs.items) |*output| {
-        if (output.result.comptime_err == null) {
+        if (!output.result.failed()) {
             output.result.run_output = switch (config.targetSource) {
                 .commonJS => runtime.executeJavaScript(allocator, output.result.js, aux_files.items, io) catch |err| blk: {
                     const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
@@ -67,7 +137,7 @@ pub fn generate(
                     const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
                     break :blk err_msg;
                 },
-                .wasm => runtime.executeWat(allocator, output.result.js, output.name, io) catch |err| blk: {
+                .wasm => runtime.executeWat(allocator, output.result.js, output.result.wasm, output.name, io) catch |err| blk: {
                     const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
                     break :blk err_msg;
                 },

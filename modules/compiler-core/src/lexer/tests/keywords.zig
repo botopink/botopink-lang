@@ -20,6 +20,16 @@ test "lexer: const is not a reserved keyword (use val instead)" {
     try std.testing.expectEqual(TokenKind.identifier, tokens[0].kind);
 }
 
+test "lexer: unknown is a keyword, not an identifier" {
+    var l = Lexer.init("unknown");
+    const tokens = try l.scanAll(std.testing.allocator);
+    defer l.deinit(std.testing.allocator);
+    // decision 8 §2 (06 N19): `unknown` names the type and nothing else, so it
+    // is a keyword token and `isReservedWord` refuses it as a name.
+    try std.testing.expectEqual(TokenKind.unknown, tokens[0].kind);
+    try std.testing.expect(lexerFull.isReservedWord(.unknown));
+}
+
 test "lexer: Self (uppercase) is KwSelfType" {
     var l = Lexer.init("Self");
     const tokens = try l.scanAll(std.testing.allocator);
@@ -51,25 +61,13 @@ test "lexer: standalone semicolon is tokenized" {
     try std.testing.expectEqual(TokenKind.semicolon, tokens[0].kind);
 }
 
-test "lexer: 'auto' is recognized as KwAuto (reserved word)" {
-    var l = Lexer.init("auto");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.auto, tokens[0].kind);
-}
-
-test "lexer: 'delegate' is recognized as KwDelegate (reserved word)" {
-    var l = Lexer.init("delegate");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.delegate, tokens[0].kind);
-}
-
-test "lexer: 'echo' is recognized as KwEcho (reserved word)" {
-    var l = Lexer.init("echo");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.echo, tokens[0].kind);
+test "lexer: 'delegate', 'new' and 'const' are identifiers (06 N27)" {
+    for ([_][]const u8{ "delegate", "new", "const" }) |word| {
+        var l = Lexer.init(word);
+        const tokens = try l.scanAll(std.testing.allocator);
+        defer l.deinit(std.testing.allocator);
+        try std.testing.expectEqual(TokenKind.identifier, tokens[0].kind);
+    }
 }
 
 test "lexer: 'implement' is recognized as implement (reserved word)" {
@@ -79,35 +77,15 @@ test "lexer: 'implement' is recognized as implement (reserved word)" {
     try std.testing.expectEqual(TokenKind.implement, tokens[0].kind);
 }
 
-test "lexer: 'macro' is recognized as macro (reserved word)" {
-    var l = Lexer.init("macro");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.macro, tokens[0].kind);
-}
-
-test "lexer: 'derive' is recognized as KwDerive (reserved word)" {
-    var l = Lexer.init("derive");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.derive, tokens[0].kind);
-}
-
 test "lexer: isReservedWord returns true for reserved words" {
-    try std.testing.expect(lexerFull.isReservedWord(.auto));
-    try std.testing.expect(lexerFull.isReservedWord(.delegate));
-    try std.testing.expect(lexerFull.isReservedWord(.echo));
     try std.testing.expect(lexerFull.isReservedWord(.@"else"));
     try std.testing.expect(lexerFull.isReservedWord(.implement));
-    try std.testing.expect(lexerFull.isReservedWord(.macro));
     try std.testing.expect(lexerFull.isReservedWord(.@"test"));
-    try std.testing.expect(lexerFull.isReservedWord(.derive));
 }
 
 test "lexer: isReservedWord returns false for normal identifiers" {
     try std.testing.expect(!lexerFull.isReservedWord(.identifier));
     try std.testing.expect(!lexerFull.isReservedWord(.@"var"));
-    try std.testing.expect(!lexerFull.isReservedWord(.@"const"));
     try std.testing.expect(!lexerFull.isReservedWord(.@"fn"));
     try std.testing.expect(!lexerFull.isReservedWord(.val));
 }

@@ -1,0 +1,41 @@
+//// Decision 104 of 1.0.10-beta (front 21) revokes decisions 89 and 90: a
+//// `#[@future]` body no longer activates a hook on its own
+//// (`reject/use_future_without_owner.bp`). The server component that `await`s
+//// and `use`s is spelled by the chain — `@Component<Element, Element>` extends
+//// `@Future` — so one annotation, `#[@use]`, grants both. A
+//// `test` body runs in a future context, so it awaits the component.
+
+type Element(count: i32) implement @Context<Element>
+type Request(code: i32)
+
+// A hook anchored at `Element`.
+fn request() -> @Component<Element, Request> {
+    return Request(code: 7);
+}
+
+fn load(n: i32) -> @Task<i32> {
+    return n;
+}
+
+// `use` and `await` in one body, under one annotation.
+fn Page() -> @Component<Element, Element> {
+    val r = use request();
+    val extra = await load(1);
+    return Element(count: r.code + extra);
+}
+
+// The component composes with a `#[@future]` caller that awaits it.
+fn rendered() -> @Task<i32> {
+    val e = await Page();
+    return e.count;
+}
+
+test "a component uses and awaits" {
+    val e = await Page();
+    assert e.count == 8;
+}
+
+test "a caller awaits the component" {
+    val n = await rendered();
+    assert n == 8;
+}

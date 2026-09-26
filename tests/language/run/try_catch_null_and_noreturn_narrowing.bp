@@ -1,0 +1,39 @@
+//// Maintainer, 24-box-1 — two gaps the effects guide's page example hit.
+////   * `try await loadPost(id) catch null` is a `?Post`: the success value is a
+////     present `Post`, the handler the absent one. It was refused — "expected
+////     Post, got ?_" — with no location.
+////   * `if (post == null) { notFound(); }` narrows `post` below: a branch that
+////     ends in a call whose declared return is `noreturn` does not reach the
+////     code after it, exactly as one ending in `return` does not.
+//// A handler of another type is refused at the handler.
+
+pub type Post(title: string)
+
+fn loadPost(id: i32) -> @Task<@Result<Post, string>> {
+    return async {
+        if (id == 1) { return Post(title: "hello"); };
+        throw "missing";
+    };
+}
+
+fn notFound() -> noreturn {
+    @panic("404");
+}
+
+fn titleOf(id: i32) -> @Task<string> {
+    val post = try await loadPost(id) catch null;
+    if (post == null) { return "none"; };
+    return post.title;
+}
+
+fn mustTitle(id: i32) -> @Task<string> {
+    val post: ?Post = try await loadPost(id) catch null;
+    if (post == null) { notFound(); };
+    return post.title;
+}
+
+pub fn main() -> @Task<void> {
+    @print(await titleOf(1));
+    @print(await titleOf(2));
+    @print(await mustTitle(1));
+}

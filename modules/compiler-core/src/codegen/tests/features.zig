@@ -16,12 +16,10 @@ const h = @import("helpers.zig");
 
 test "js: star fn ---- async function with await" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@future]
-        \\fn fetch(x: i32) -> @Future<i32> {
+        \\fn fetch(x: i32) -> @Task<i32> {
         \\    return x;
         \\}
-        \\#[@future]
-        \\fn loadTwice(x: i32) -> @Future<i32> {
+        \\fn loadTwice(x: i32) -> @Task<i32> {
         \\    val a = await fetch(x);
         \\    return a + a;
         \\}
@@ -30,7 +28,6 @@ test "js: star fn ---- async function with await" {
 
 test "js: star fn ---- generator with yield" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@iterator]
         \\fn counter() -> @Iterator<i32> {
         \\    yield 1;
         \\    yield 2;
@@ -39,10 +36,9 @@ test "js: star fn ---- generator with yield" {
     );
 }
 
-test "js: star fn ---- async generator" {
+test "js: star fn ---- future generator" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@asyncGenerator]
-        \\fn stream() -> @AsyncIterator<i32, string> {
+        \\fn stream() -> @Stream<@Result<i32, string>> {
         \\    yield 1;
         \\    yield 2;
         \\}
@@ -51,16 +47,13 @@ test "js: star fn ---- async generator" {
 
 test "js: star fn ---- pub typedefs" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@future]
-        \\pub fn loadOne(x: i32) -> @Future<i32> {
+        \\pub fn loadOne(x: i32) -> @Task<i32> {
         \\    return x;
         \\}
-        \\#[@iterator]
         \\pub fn count() -> @Iterator<i32> {
         \\    yield 1;
         \\}
-        \\#[@asyncGenerator]
-        \\pub fn pulses() -> @AsyncIterator<i32, string> {
+        \\pub fn pulses() -> @Stream<@Result<i32, string>> {
         \\    yield 1;
         \\}
     );
@@ -68,22 +61,18 @@ test "js: star fn ---- pub typedefs" {
 
 // ── effect annotations (`#[@<effect>]`) ──────────────────────────────────────
 
-test "js: effect annotation ---- future/iterator/asyncGenerator/result" {
+test "js: effect annotation ---- future/iterator/futureGenerator/result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@future]
-        \\fn fetch(x: i32) -> @Future<i32> {
+        \\fn fetch(x: i32) -> @Task<i32> {
         \\    return x;
         \\}
-        \\#[@iterator]
         \\fn counter() -> @Iterator<i32> {
         \\    yield 1;
         \\    yield 2;
         \\}
-        \\#[@asyncGenerator]
-        \\fn stream() -> @AsyncIterator<i32, string> {
+        \\fn stream() -> @Stream<@Result<i32, string>> {
         \\    yield 1;
         \\}
-        \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, string> {
         \\    if (n < 0) { throw "negative"; };
         \\    return n;
@@ -93,17 +82,69 @@ test "js: effect annotation ---- future/iterator/asyncGenerator/result" {
 
 test "js: effect annotation ---- generator lowers to function*" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@generator]
-        \\fn range(a: i32, b: i32) -> @Generator<i32> {
+        \\fn range(a: i32, b: i32) -> @Iterator<i32> {
         \\    yield a;
         \\    yield b;
         \\}
     );
 }
 
+// Decision 122 — `.next()` by hand answers the prelude `YieldStep<T>`: the
+// module that steps a sequence gets the enum spliced in, commonJS maps the
+// generator's `{ value, done }` onto it and the eager backends pop the list's
+// head and rebind the receiver to the rest.
+test "js: effect annotation ---- next by hand steps an iterator with YieldStep" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn two() -> @Iterator<i32> {
+        \\    yield 1;
+        \\    yield 2;
+        \\}
+        \\fn stepText(s: YieldStep<i32>) -> string {
+        \\    val t = case s {
+        \\        Yield(v) -> "yield " + v.toString();
+        \\        Done -> "done";
+        \\    };
+        \\    return t;
+        \\}
+        \\pub fn main() {
+        \\    val it = two();
+        \\    @print(stepText(it.next()));
+        \\    @print(stepText(it.next()));
+        \\    @print(stepText(it.next()));
+        \\}
+    );
+}
+
+test "js: effect annotation ---- next by hand on a stream answers a Task of YieldStep" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn countdown(n: i32) -> @Stream<i32> {
+        \\    var i = n;
+        \\    while (i > 0) {
+        \\        yield i;
+        \\        i = i - 1;
+        \\    };
+        \\}
+        \\fn stepText(s: YieldStep<i32>) -> string {
+        \\    val t = case s {
+        \\        Yield(v) -> "yield " + v.toString();
+        \\        Done -> "done";
+        \\    };
+        \\    return t;
+        \\}
+        \\fn run() -> @Task<void> {
+        \\    val s = countdown(1);
+        \\    @print(stepText(await s.next()));
+        \\    @print(stepText(await s.next()));
+        \\}
+        \\pub fn main() {
+        \\    run();
+        \\}
+    );
+}
+
 test "js: enum ---- unit variants" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Direction = enum {
+        \\val Direction = type {
         \\    North,
         \\    South,
         \\    East,
@@ -114,7 +155,7 @@ test "js: enum ---- unit variants" {
 
 test "js: enum ---- payload variant" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Rgb(r: i32, g: i32, b: i32),
         \\}
@@ -123,7 +164,7 @@ test "js: enum ---- payload variant" {
 
 test "js: enum ---- payload variants with method using variantFields case" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(radius: f64),
         \\    Square(side: f64),
         \\    Triangle(base: f64, height: f64),
@@ -141,7 +182,7 @@ test "js: enum ---- payload variants with method using variantFields case" {
 
 test "js: enum ---- unit variants with method using ident case" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val HttpMethod = enum {
+        \\val HttpMethod = type {
         \\    Get,
         \\    Post,
         \\    Put,
@@ -161,7 +202,7 @@ test "js: enum ---- unit variants with method using ident case" {
 
 test "js: enum ---- mixed unit and payload with method using mixed case" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Maybe = enum {
+        \\val Maybe = type {
         \\    Nothing,
         \\    Just(value: string),
         \\    fn check(m: Self) -> string {
@@ -176,7 +217,7 @@ test "js: enum ---- mixed unit and payload with method using mixed case" {
 
 test "js: enum ---- method using qualified enum member" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Status = enum {
+        \\val Status = type {
         \\    Active,
         \\    Inactive,
         \\    fn isDefault(s: Self) -> string {
@@ -193,42 +234,54 @@ test "js: import ---- named imports" {
     );
 }
 
-test "codegen ---- use object destructure state to useState" {
+// `use` is a transparent prefix on every backend (decision 88, front 19 of
+// 1.0.10-beta): `val c = use state(0)` is `const c = state(0)`. The React rename
+// (`state` → `useState`) and the inferred dependency arrays these four cells
+// used to record were deleted with the decision — the emitted name was never
+// declared, and the client runtime supplies hook semantics through what `state`
+// does. The component carries `#[@use]`, the effect that lets a body
+// activate a hook.
+test "codegen ---- use object destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = record implement @Context<Element, Element> { }
-        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\val Element = type() implement @Context<Element>
+        \\fn state(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}
-        \\fn Counter() -> Element {
+        \\fn Counter() -> @Component<Element, Element> {
         \\    val {count, setCount} = use state(0);
         \\    Element();
         \\}
     );
 }
 
-test "codegen ---- use tuple destructure state to useState" {
+// Front 19 step 3: the tuple form binds `R`'s elements (`shown : i32`,
+// `push : fn(action: i32) -> i32`), so the hook's `R` is a tuple here — the
+// lowering is the same plain call followed by the destructure.
+test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = record implement @Context<Element, Element> { }
-        \\fn state(initial: i32) -> @Context<Element, i32> {
-        \\    initial;
+        \\val Element = type() implement @Context<Element>
+        \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
+        \\    val push = { action -> f(base, action) };
+        \\    #(base, push);
         \\}
-        \\fn Counter() -> Element {
-        \\    val #(count, setCount) = use state(0);
+        \\fn LikeWidget() -> @Component<Element, Element> {
+        \\    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+        \\    push(shown);
         \\    Element();
         \\}
     );
 }
 
-test "codegen ---- use memo infers dependency array" {
+test "codegen ---- use memo is a plain call with no inferred deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = record implement @Context<Element, Element> { }
-        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\val Element = type() implement @Context<Element>
+        \\fn state(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}
-        \\fn memo() -> @Context<Element, i32> {
+        \\fn memo() -> @Component<Element, i32> {
         \\    0;
         \\}
-        \\fn Counter() -> Element {
+        \\fn Counter() -> @Component<Element, Element> {
         \\    val {count, setCount} = use state(0);
         \\    val doubled = use memo { -> return count * 2; };
         \\    Element();
@@ -236,16 +289,16 @@ test "codegen ---- use memo infers dependency array" {
     );
 }
 
-test "codegen ---- use effect void hook empty deps" {
+test "codegen ---- use effect void hook is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn cleanup() {
         \\    0;
         \\}
-        \\fn effect() -> @Context<Element, i32> {
+        \\fn effect() -> @Component<Element, i32> {
         \\    0;
         \\}
-        \\fn Widget() -> Element {
+        \\fn Widget() -> @Component<Element, Element> {
         \\    use effect { -> cleanup(); };
         \\    Element();
         \\}
@@ -254,16 +307,16 @@ test "codegen ---- use effect void hook empty deps" {
 
 test "codegen ---- inline implement context base erased at runtime" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn render() -> Element {
-        \\    Element();
+        \\    return Element();
         \\}
     );
 }
 
 test "js: destructure ---- record val binding" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
         \\fn describe(p: Point) -> i32 {
         \\    val { x, y } = p;
         \\    @print(x, y);
@@ -277,7 +330,7 @@ test "js: destructure ---- record val binding" {
 
 test "js: destructure ---- record val binding with spread" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Point { x: i32, y: i32, z: i32 }
+        \\type Point(x: i32, y: i32, z: i32)
         \\fn describe(p: Point) -> i32 {
         \\    val { x, .. } = p;
         \\    return x;
@@ -287,7 +340,7 @@ test "js: destructure ---- record val binding with spread" {
 
 test "js: destructure ---- record parameter in fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Person { name: string, age: i32 }
+        \\type Person(name: string, age: i32)
         \\fn greet({ name, .. }: Person) -> string {
         \\    @print(name);
         \\    return name;
@@ -325,7 +378,7 @@ test "js: destructure ---- tuple var binding" {
 
 test "js: destructure ---- tuple with long names" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn get_coordinates() -> #(f32, f32) {
+        \\fn get_coordinates() -> #(f64, f64) {
         \\    return #(0.0, 0.0);
         \\}
         \\fn extract_coordinates() {
@@ -336,8 +389,7 @@ test "js: destructure ---- tuple with long names" {
 
 test "js: destructure ---- tuple with try-catch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Error { msg: string }
-        \\#[@result]
+        \\type Error(msg: string)
         \\fn fetch() -> @Result<#(i32, i32), Error> {
         \\    throw Error(msg: "boom");
         \\}
@@ -349,7 +401,7 @@ test "js: destructure ---- tuple with try-catch" {
 
 test "js: enum ---- shorthand declaration without val Name =" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Direction {
+        \\type Direction {
         \\    North,
         \\    South,
         \\    East,
@@ -368,6 +420,110 @@ test "js: import ---- multi-module pub fn import" {
         .{ .path = "", .source =
         \\import {double} from "math";
         \\val result = double(21);
+        },
+    });
+}
+
+// 13 half 1 — the collision the erlang module atom used to have: two `.bp`
+// files whose paths share a BASENAME both emitted `-module(user)`, so one
+// silently overwrote the other in a shared output directory and silently
+// shadowed it on one code path. Nothing diagnosed it, and no cell could see it
+// because no fixture had two same-named modules. The atom is the whole path
+// joined with `@` now, so this program has `models@user` and `services@user`
+// and both answer. It could not exist before.
+test "js: import ---- two modules whose files share a basename" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "models/user", .source =
+        \\pub fn label() -> string {
+        \\    return "models/user";
+        \\}
+        },
+        .{ .path = "services/user", .source =
+        \\pub fn tag() -> string {
+        \\    return "services/user";
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import {label} from "models/user";
+        \\import {tag} from "services/user";
+        \\
+        \\fn main() {
+        \\    @print(label());
+        \\    @print(tag());
+        \\}
+        },
+    });
+}
+
+// ── decision 107: a dotted path and a braced group are one tree ──────────────
+//
+// The consumer binds LEAVES through paths into a module tree — the dotted
+// spelling (`shapes.circle.name as circleName`) and the grouped spelling
+// (`shapes: {helpers: {seven}}`) — with no `from`: the package's own tree. Only
+// the leaf enters scope, under its alias when one is written, and the four
+// backends resolve the owner through the path, not through the bare name (the
+// two `label`s below live in different modules and both answer on commonJS,
+// erlang and beam). KNOWN (wasm): the wasm backend links every imported
+// module statically into one flat namespace, so the second `label` WAS the
+// first one's function — `shapes/circle` twice at exit 0. Since `00 · 05-wasm`
+// a call to a name two linked modules declare traps instead (the recorded
+// RUNTIME TRAP), until the link mangles per module; the alias itself maps back
+// to `$name` correctly.
+test "js: import ---- a dotted path and a group bind their leaves across a module tree" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "shapes/circle", .source =
+        \\pub fn name() -> string {
+        \\    return "circle";
+        \\}
+        \\
+        \\pub fn label() -> string {
+        \\    return "shapes/circle";
+        \\}
+        },
+        .{ .path = "shapes/helpers", .source =
+        \\pub fn seven() -> i32 {
+        \\    return 7;
+        \\}
+        \\
+        \\pub fn label() -> string {
+        \\    return "shapes/helpers";
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import {shapes.circle.name as circleName, shapes: {helpers: {seven, label}, circle: {label as circleLabel}}};
+        \\
+        \\fn main() {
+        \\    @print(circleName());
+        \\    @print(seven());
+        \\    @print(label());
+        \\    @print(circleLabel());
+        \\}
+        },
+    });
+}
+
+// The same tree, with `*` and a type on the leaves: `pond: {Pato, PatoNada*}`
+// activates the imported extension exactly as `import {Pato, PatoNada*} from
+// "pond"` does (`dispatch_multi_module_extension_activated_via_star_import`).
+test "js: import ---- a group activates an extension on its leaf" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "pond", .source =
+        \\val Swimmer = behavior {
+        \\    fn swim(self: Self);
+        \\}
+        \\pub type Pato(id: i32)
+        \\pub val PatoNada = implement Swimmer for Pato {
+        \\    fn swim(self: Self) {
+        \\        return self.id;
+        \\    }
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import {pond: {Pato, PatoNada*}};
+        \\fn main() {
+        \\    val donald = Pato(2);
+        \\    @print(donald.swim());
+        \\}
         },
     });
 }
@@ -395,17 +551,17 @@ test "js: import ---- cross-module record construct and assoc fn" {
     // atom + build the owner's map. (wasm stays single-module — see wat.zig.)
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "http", .source =
-        \\pub record Response {
-        \\    body: string,
+        \\pub type Response(
+        \\    body: string) {
         \\    fn ok(body: string) -> Response {
         \\        return Response(body: body);
         \\    }
         \\}
         \\
-        \\pub record App {
+        \\pub type App(
         \\    port: i32,
         \\    path: string,
-        \\}
+        \\)
         },
         .{ .path = "", .source =
         \\import {Response, App} from "http";
@@ -488,6 +644,40 @@ test "js: import ---- disk-lib namespace merges across the lib's modules" {
     }, &.{});
 }
 
+test "js: import ---- a sibling module imported with no `from` requires its own path" {
+    // `pub mod leaf; import { Leaf };` — the import names no module, and the
+    // emitter used to write the literal word: `require("./module")` in a
+    // project, `require("../module")` inside a dependency, which is how
+    // a library's examples built and then died (04-js step 5). The path is the
+    // sibling's own, relative to the importing module, in both shapes; the
+    // RUN LOG is `tests/language/modules/sibling_import_in_a_dependency`'s.
+    try h.assertConsumerJs(std.testing.allocator, &.{
+        .{ .path = "leaf", .source = "pub type Leaf(v: i32)\n" },
+        .{ .path = "", .source =
+        \\pub mod leaf;
+        \\import { Leaf };
+        \\fn main() {
+        \\    @print(Leaf(v: 7).v);
+        \\}
+        },
+    }, &.{"const { Leaf } = require(\"./leaf.js\");"}, &.{"./module"});
+    try h.assertModuleJs(std.testing.allocator, &.{
+        .{ .path = "tree/leaf", .source = "pub type Leaf(v: i32)\n" },
+        .{ .path = "tree/api", .source =
+        \\import { Leaf };
+        \\pub fn seven() -> i32 {
+        \\    return Leaf(v: 7).v;
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import { seven } from "tree/api";
+        \\fn main() {
+        \\    @print(seven());
+        \\}
+        },
+    }, "tree/api", &.{"const { Leaf } = require(\"../tree/leaf.js\");"});
+}
+
 test "js: pipeline ---- simple chain" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn double(x: i32) -> i32 { return x * 2; }
@@ -517,9 +707,11 @@ test "js: pipeline ---- with labeled args" {
 test "js: range ---- iterate over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn sumTo(n: i32) -> i32 {
-        \\    return loop (0..n) { i ->
-        \\        yield i;
+        \\    var sum = 0;
+        \\    for (0..n) { i ->
+        \\        sum = sum + i;
         \\    };
+        \\    return sum;
         \\}
     );
 }
@@ -527,7 +719,7 @@ test "js: range ---- iterate over range" {
 test "js: range ---- open-ended range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn countUp(x: i32) {
-        \\    loop (x..) { i ->
+        \\    for (x..) { i ->
         \\        if (i > 100) {
         \\          break;
         \\        };
@@ -560,11 +752,11 @@ test "js: negation ---- in expression" {
 
 test "js: enum ---- method with case on self" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
-        \\    fn name() -> string {
+        \\    fn name(self: Self) -> string {
         \\        case (self) {
         \\            Red -> "red";
         \\            Green -> "green";
@@ -572,6 +764,68 @@ test "js: enum ---- method with case on self" {
         \\        };
         \\    }
         \\};
+    );
+}
+
+// 1.0.4-beta EXAMPLES.md §5: an enum method called on a variant value. Enum
+// values carry no methods on commonJS (a payload variant is a plain object), so
+// the call passes the value to the enum's method: `Shape.area(Shape.Square(4))`.
+// It used to throw `Shape.Square(...).area is not a function`. KNOWN: `16`
+// then `12`; wasm traps (1.0.4-beta 01 wasm).
+// An associated `fn` on an `enum` — no `self`, so it is a constructor-like
+// helper, not an instance method. `memberCallNode`'s qualified-payload-variant
+// branch fired on ANY `EnumName.callee(...)` without checking that `callee`
+// names a variant, so this lowered to the tagged tuple `{unit}` on erlang: erlc
+// clean, and the program died at run time with `{case_clause,{unit}}` inside the
+// method that matched on it. beam had the mirror image — the receiver was
+// lowercased into a module atom and the call was `shape:unit()`,
+// `{undef,[{shape,unit,[],[]}…]}` — because an enum name is not in
+// `record_fields` and nothing else claimed it.
+test "js: enum ---- an associated fn on an enum is a call, not a variant" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "", .source =
+        \\pub type Shape {
+        \\    Circle(radius: i32),
+        \\    Square(side: i32),
+        \\
+        \\    pub fn unit() -> Shape {
+        \\        return Shape.Square(side: 1);
+        \\    }
+        \\
+        \\    pub fn area(self: Self) -> i32 {
+        \\        return case self {
+        \\            Circle(r) -> r * r * 3;
+        \\            Square(s) -> s * s;
+        \\        };
+        \\    }
+        \\}
+        \\
+        \\fn main() {
+        \\    val s: Shape = Shape.unit();
+        \\    @print(s.area());
+        \\}
+        },
+    });
+}
+
+test "js: enum ---- a method is called on a variant value" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub type Shape {
+        \\    Circle(radius: i32),
+        \\    Square(side: i32),
+        \\
+        \\    pub fn area(self: Self) -> i32 {
+        \\        return case self {
+        \\            Circle(r) -> r * r * 3;
+        \\            Square(s) -> s * s;
+        \\        };
+        \\    }
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(Shape.Square(side: 4).area());
+        \\    @print(Shape.Circle(radius: 2).area());
+        \\}
     );
 }
 
@@ -597,7 +851,9 @@ test "js: lambda ---- standalone with params" {
         \\    x + y;
         \\};
         \\val result = add(10, 20);
-        \\@print(result);
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 
@@ -659,7 +915,7 @@ test "js: lambda ---- string-typed annotation infers params" {
 
 test "js: optional chaining ---- member access short-circuits null" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record User { name: string }
+        \\type User(name: string)
         \\
         \\fn main() {
         \\    val u: ?User = User(name: "ana");
@@ -690,22 +946,21 @@ test "js: reserved word identifiers" {
 }
 
 test "js: iterator fromList yields array items" {
-    // An `#[@iterator] fn -> @Iterator<T>` generator: `loop (xs) { yield }` must
-    // lower to a real `for…of` with native `yield` (not `.map()`). Recursive
-    // delegation (the legacy `return <iter>` shortcut) is now forbidden by
-    // RI1 (§1I); spec-compliant delegation patterns get their own coverage in
-    // the F6 `effect_iterator.zig` suite.
+    // A `fn -> @Iterator<T>` generator: `for (xs) { x -> yield x; }`
+    // must lower to a real `for…of` with native `yield` (not `.map()`).
+    // Recursive delegation (the legacy `return <iter>` shortcut) is forbidden
+    // by RI1 (§1I). A `@Iterator<T>` is infallible, so a plain fn iterates it
+    // (decision 103); a fallible one needs a body that grants `try`.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@iterator]
         \\fn fromList<T>(xs: Array<T>) -> @Iterator<T> {
-        \\    loop (xs) { item ->
+        \\    for (xs) { item ->
         \\        yield item;
         \\    };
         \\}
         \\
         \\fn toList<T>(iter: @Iterator<T>) -> Array<T> {
         \\    var out = [];
-        \\    loop (iter) { item ->
+        \\    for (iter) { item ->
         \\        out.push(item);
         \\    };
         \\    return out;
@@ -803,7 +1058,7 @@ test "js: interface associated fn namespace" {
     // An interface's associated functions (`default fn` with no `self`) emit as
     // a namespace object so `Interface.method(...)` resolves at runtime.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\interface Pairish<A, B> {
+        \\behavior Pairish<A, B> {
         \\    default fn of(first: A, second: B) -> #(A, B) {
         \\        return #(first, second);
         \\    }
@@ -820,7 +1075,7 @@ test "js: interface associated fn namespace" {
 }
 
 test "js: stdlib associated fn namespace injected" {
-    // `Pair`/`Function` are primitives in primitives.d.bp (not in the user
+    // `Pair`/`Function` are primitives in primitives.bp (not in the user
     // program). When their associated fns are used, codegen injects the
     // interface decl so the namespace object is emitted at runtime.
     try h.assertJsSingle(std.testing.allocator, @src(),
@@ -860,6 +1115,10 @@ test "js: array zip via @External.Node template" {
     // template-form prim-method dispatch (not just default-fn) — see the
     // `looksLikeTemplate` branch in `findInterfaceDefaultFn` — so a program
     // calling ONLY `xs.zip(ys)` triggers the prototype-patch emission.
+    //
+    // Semantics decision 1a: the array of tuples prints
+    // `[#(1,"a"),#(2,"b"),#(3,"c")]`. KNOWN: beam prints its own `~p` text
+    // (PR3, deferred after 06).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val xs = [1, 2, 3];
@@ -884,7 +1143,7 @@ test "js: bool instance default-fn methods" {
 }
 
 test "js: numeric instance methods (external + default-fn)" {
-    // Numeric `@[external]` methods backed by a JS global (`Math`) lower to
+    // Numeric `#[@External.Node(…)]` methods backed by a JS global (`Math`) lower to
     // `Number.prototype.<m> = function(a){ return Math.<sym>(this.valueOf(), a); }`;
     // `default fn`s like `clamp`/`isEven` materialize and call them.
     try h.assertJsSingle(std.testing.allocator, @src(),
@@ -898,6 +1157,68 @@ test "js: numeric instance methods (external + default-fn)" {
         \\    @print(x.isEven());
         \\}
     );
+}
+
+// `String.at -> ?string` (`charAt` until decision 63's amendment): native JS
+// answers `undefined` out of range, so commonJS calls the
+// `__bp_string_char_at` prelude helper, emitted only into the module that uses
+// it. RUN LOG asserted without a snapshot (commonJS-only behaviour).
+// `at` is the reader of BOTH `Array<T>` (native `at`) and `string` (native
+// `charAt`) since decision 63's amendment. The type-naive `prim_node_renames`
+// map used to take the string rename for every untyped `at` call, so the
+// `Array` default-fn bodies materialised as prototype patches (`first`,
+// `unique`: `self.at(0)`) emitted `this.charAt(0)` on an array and threw on
+// node. A name two behaviors send to different host symbols has no type-naive
+// rename; the typed call sites keep their per-loc one. RUN LOG asserted.
+// The `"abcd".slice(1, 3)` line is the second route, `libs/std`'s own
+// `querystring.bp`: once a String `default fn` is in use the program the
+// emitter scans carries the String behavior alone, `at → charAt` looks
+// unambiguous there, and a TYPED array receiver whose per-loc rename is
+// "none" (`Array.at` is its own host symbol) fell through to the type-naive
+// map — `parts.charAt is not a function`. The disagreement is therefore read
+// off the whole embedded std registry, not the program's behaviors.
+// `unique` itself is not run: its body calls `prev.unwrapOr(x)` on a `?T`
+// that is an unboxed number on JS (`prev.unwrapOr is not a function`), a
+// pre-existing defect of that default fn and not of the rename.
+test "js: `at` on an array default fn and on a string do not share a rename" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val xs = [3, 4];
+        \\    @print(xs.first().unwrapOr(0));
+        \\    @print(xs.at(1).unwrapOr(0));
+        \\    @print("abc".at(1).unwrapOr("?"));
+        \\}
+    , "3\n4\nb\n");
+}
+
+// The second route, on its own: NO Array default fn in the program (the test
+// above calls `first`, which materialises the Array behavior beside String's
+// and lets the program-local disagreement mask this one). Only the registry-
+// wide `ambiguous_prim_renames` keeps `ys.at(1)` from becoming `charAt` here.
+test "js: a typed array `at` beside a String default fn in use keeps its name" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    @print("abcd".slice(1, 3));
+        \\    val ys: i32[] = [7, 8];
+        \\    @print(ys.at(1).unwrapOr(0));
+        \\    val parts = "a=1".split("=");
+        \\    @print(parts.at(0).unwrapOr(""));
+        \\}
+    , "bc\n8\na\n");
+}
+
+// Decision 139: a negative index counts from the end — `s.at(-1)` is the last
+// character, and past either end (`2`, `-3`) is `null`.
+test "js: string at out of range is null, a negative index counts from the end" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val s = "ab";
+        \\    @print(s.at(1));
+        \\    @print(s.at(2));
+        \\    @print(s.at(-1));
+        \\    @print(s.at(-3));
+        \\}
+    , "b\nnull\nb\nnull\n");
 }
 
 test "js: string methods map to native JS names" {
@@ -921,9 +1242,8 @@ test "js: string methods map to native JS names" {
 // `%% prim method not lowered on beam (complex arg)` placeholder. The
 // pre-load convention (`recv → {x, 0}`, `arg → {x, 1}`) is what the
 // `#[@External.Beam("""    {call_ext, 2, {extfunc, string, suffix, 2}}.""")]`
-// annotation on `String.endsWith` in `libs/std/src/primitives.d.bp`
-// expects — same body the wasm3-evaluated template would produce post
-// `delete-persistent-node` front 01.
+// annotation on `String.endsWith` in `libs/std/src/primitives.bp`
+// expects — the same body the comptime-evaluated template produces.
 test "beam template path: endsWith lowers via @External.Beam single-line body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -947,7 +1267,7 @@ test "beam template path: endsWith lowers via @External.Beam single-line body" {
 
 test "js: enum sections ---- section emits as synthesised inner enum decl" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Text {
         \\        Bold, Italic, Underline,
         \\    }
@@ -958,7 +1278,7 @@ test "js: enum sections ---- section emits as synthesised inner enum decl" {
 
 test "js: enum sections ---- nested sections with numeric leaves emit decls" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 100, 500 }
         \\        Hex(value: string),
@@ -973,13 +1293,153 @@ test "js: enum sections ---- path-access lowers to qualified ctor calls" {
     // __Token__Color__Red._500))` so codegen emits proper variant accesses
     // rather than the bare source-text fallback (`Color.Red.500`).
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 100, 500 }
         \\    }
         \\}
         \\fn red500() -> Token {
         \\    return .Color.Red.500;
+        \\}
+    );
+}
+
+// A comptime body has no inferred types, so a primitive method call in it lowers
+// to the runtime-dispatch shim `'__bp_prim_<method>'` (`codegen/erlang.zig`
+// `untypedPrimCallNode`); the `COMPTIME ERLANG` section shows the call sites.
+// The string receivers avoid `indexOf`, whose `string:str/2` host op rejects a
+// binary (a `libs/std/src/primitives.bp` table defect, not a dispatch one).
+// Known-wrong run logs pinned here, owned by the backend fronts: beam prints
+// `s` (an unresolved module-level `val` read as the atom of its name) and wasm
+// prints nothing; the comptime sections and replies are identical everywhere.
+test "js: comptime primitives ---- template body calls string and array methods" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    val t = q.text().trim();
+        \\    val words = t.split(" ").map({ w -> w.toUpper() });
+        \\    val lead = t.slice(0, 5);
+        \\    val rest = t.slice(6, t.length);
+        \\    val all = words.append(["END"]).reverse();
+        \\    val at = if (words.at(1) == "BIG") { "at"; } else { "-"; };
+        \\    val big = if (t.contains("big")) { "contains"; } else { "-"; };
+        \\    val greet = if (lead.startsWith("hel")) { "startsWith"; } else { "-"; };
+        \\    val where = if (words.indexOf("WORLD") == 2) { "indexOf"; } else { "-"; };
+        \\    return q.build("\"" + all.join(",") + "|" + lead + "|" + rest + "|" + at + "|" + big + "|" + greet + "|" + where + "\"");
+        \\}
+        \\
+        \\val s = shout " hello big world ";
+        \\
+        \\fn main() {
+        \\    @print(s);
+        \\}
+    );
+}
+
+// The first decorator `COMPTIME ERLANG` section: the same shims from a decorator
+// body, including `length()`, whose name is an auto-imported Erlang BIF. The
+// wasm run log is empty (a wasm backend gap, not a comptime one).
+test "js: comptime primitives ---- decorator body calls string and array methods" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn describe(comptime decl: @Decl) {
+        \\    val names = decl.fields.map({ f -> f.name });
+        \\    val upper = names.map({ n -> n.toUpper() }).join("_");
+        \\    val hidden = if (names.contains("secret")) { "hidden"; } else { "open"; };
+        \\    val short = decl.name.slice(0, 3);
+        \\    val size = if (decl.name.length() == 4) { "four"; } else { "other"; };
+        \\    @emit("pub fn describe" + decl.name + "() -> string { return \"" + upper + ":" + hidden + ":" + short + ":" + size + "\"; }");
+        \\}
+        \\
+        \\#[describe]
+        \\type User(name: string, secret: string, age: i32)
+        \\
+        \\fn main() {
+        \\    @print(describeUser());
+        \\}
+    );
+}
+
+// `out.push(x)` mutates its receiver. On erlang the statement rebinds the local
+// (`Out@2 = (Out@1 ++ [X])`) and a closure that pushes threads the list out
+// through `lists:foldl` like an assignment does — in straight-line position, in
+// a multi-statement `forEach` closure, and in a decorator body (a dependency-injection
+// constructor shape: an inner mutating `forEach`, then the push).
+// Known-wrong run logs pinned here, owned by the backend fronts: beam and wasm
+// print nothing (and `codegen/beam_asm.zig` has no mutation threading at all).
+test "js: receiver mutation ---- push inside a multi-statement closure threads out" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn component(comptime decl: @Decl) {
+        \\    var args: Array<string> = [];
+        \\    decl.fields.forEach({ f ->
+        \\        var valKey = "";
+        \\        f.annotations.forEach({ a -> if (a.name == "value") { valKey = a.args.join(""); } });
+        \\        val expr = if (valKey != "") {
+        \\            "prop(" + valKey + ")";
+        \\        } else {
+        \\            "make" + f.typeName + "()";
+        \\        };
+        \\        args.push(f.name + ": " + expr);
+        \\    });
+        \\    @emit("pub fn wire" + decl.name + "() -> string { return \"" + decl.name + "(" + args.join(", ") + ")\"; }");
+        \\}
+        \\
+        \\#[component]
+        \\type Service(
+        \\    #[value(port)]
+        \\    port: i32,
+        \\    name: string,
+        \\)
+        \\
+        \\fn collect(xs: Array<i32>) -> Array<string> {
+        \\    var out: Array<string> = [];
+        \\    out.push("start");
+        \\    xs.forEach({ x ->
+        \\        val doubled = x * 2;
+        \\        out.push("v" + doubled.toString());
+        \\    });
+        \\    return out;
+        \\}
+        \\
+        \\fn main() {
+        \\    @print(wireService());
+        \\    @print(collect([1, 2, 3]).join(","));
+        \\}
+    );
+}
+
+// ── the removed 1.0.2 surface (front 12 step 4) ──────────────────────────────
+// `record`, `enum` and `interface` lex as identifiers; each removed form gets
+// its targeted diagnostic, located at the removed word or brace.
+
+test "js: removed surface ---- a record declaration" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\record Point { x: i32, y: i32 }
+    );
+}
+
+test "js: removed surface ---- an enum declaration" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\enum Color { Red, Green }
+    );
+}
+
+test "js: removed surface ---- an interface declaration" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\interface Printable {}
+    );
+}
+
+test "js: removed surface ---- an anonymous record literal" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val p = record { x: 1 };
+        \\}
+    );
+}
+
+test "js: removed surface ---- an anonymous record type" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\fn f(p: { x: i32 }) -> i32 {
+        \\    return 1;
         \\}
     );
 }

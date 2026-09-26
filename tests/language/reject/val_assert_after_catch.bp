@@ -1,0 +1,12 @@
+//// Decision 8 §9 — `catch` already unwrapped the value, so the `val assert`
+//// pattern has no `@Result` left to match.
+
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+pub fn main() {
+    val assert Ok(n) = parse(7) catch 0;
+    @print(n);
+}

@@ -1,0 +1,22 @@
+//// A field of function type of an IMPORTED record, called directly — on a
+//// local and on a parameter. On erlang the call was placed as a method by
+//// its name: `File:write/2` answered `file a` at exit 0 (with no other
+//// `write/2` in the program, the call was `undef`). On wasm (`00 · 05-wasm`)
+//// the lambda stored in the field typed `s` as a number, so `+` added instead
+//// of concatenating, and the call printed its answer as a heap address: the
+//// lambda now takes its parameter types from the field's declaration and the
+//// call its return type (`valueCallTypeRef`).
+
+pub mod sink;
+import {ChunkWriter, File, writer} from "sink";
+
+fn emit(out: ChunkWriter, x: string) -> string {
+    return out.write(x);
+}
+
+pub fn main() {
+    val w = writer("> ");
+    @print(w.write("a"));
+    @print(emit(w, "b"));
+    @print(File(path: "p").write("c"));
+}

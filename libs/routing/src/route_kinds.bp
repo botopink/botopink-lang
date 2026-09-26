@@ -1,0 +1,66 @@
+//// routing/route_kinds — the `k` blob: which routes are static.
+////
+//// One record per line, `pattern|K`, `K` one letter: `S` static, `D`
+//// dynamic. The server's static-generation pass writes it; the browser reads it
+//// with the same code to decide whether a link target is worth prefetching.
+//// Reading is TOLERANT: a line that is not `pattern|S` or `pattern|D` is
+//// skipped, and a pattern the blob does not name is `Dynamic` — the answer that
+//// is never wrong, only slower. Writing is STRICT: a pattern holding the field
+//// or record separator is a caller bug and halts, naming the pattern.
+
+pub type RouteKind {
+    Static,
+    Dynamic,
+}
+
+fn kindLetter(k: RouteKind) -> string {
+    return case k {
+        Static -> "S";
+        Dynamic -> "D";
+    };
+}
+
+pub fn writeKinds(kinds: Array<#(string, RouteKind)>) -> string {
+    var lines: string[] = [];
+    for (kinds) { k ->
+        val pattern = k._0;
+        assert (pattern.contains("|")
+            || pattern.contains(
+                "\n",
+            )).negate(), "routing: route_kinds: the pattern `"
+            + pattern
+            + "` holds a `|` or a newline, which the `k` blob uses as separators";
+        lines.push(pattern + "|" + kindLetter(k._1));
+    }
+    return lines.join("\n");
+}
+
+pub fn parseKinds(wire: string) -> Array<#(string, RouteKind)> {
+    var out: Array<#(string, RouteKind)> = [];
+    for (wire.split("\n")) { line ->
+        val f: string[] = line.split("|");
+        if (f.length == 2) {
+            val pattern = f.at(0).unwrapOr("");
+            val letter = f.at(1).unwrapOr("");
+            if (letter == "S")
+                out.push(#(pattern, RouteKind.Static))
+            else if (letter == "D")
+                out.push(#(pattern, RouteKind.Dynamic));
+        }
+    }
+    return out;
+}
+
+// The recorded kind of `pattern`, `Dynamic` when the blob is absent, does not
+// name it, or cannot be read.
+pub fn routeKindOf(wire: string, pattern: string) -> RouteKind {
+    var kind = RouteKind.Dynamic;
+    var found = false;
+    for (parseKinds(wire)) { k ->
+        if ((found == false && k._0 == pattern)) {
+            kind = k._1;
+            found = true;
+        }
+    }
+    return kind;
+}

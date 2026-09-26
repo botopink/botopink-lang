@@ -1,0 +1,9 @@
+//// Decision 122 of 1.0.10-beta (front 24, § Cells "Migration"; guide.md § 9,
+//// row `YieldStep<T, E>` with `Error(error: E)`) — the step loses its `E` and its
+//// `Error` variant: `YieldStep<T>` = `{ Yield(value: T), Done }`. A second type
+//// argument is the arity refusal the checker already gives; the new form is
+//// `test/yield_step_next.bp`.
+
+fn first(step: YieldStep<i32, string>) -> i32 { return 0; }
+
+pub fn main() { @print(1); }

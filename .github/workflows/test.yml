@@ -1,9 +1,26 @@
-# Push/PR CI for botopink-lang.
+# Push/PR CI for botopink-lang — the same gate as the local one
+# (scripts/gate.sh), minus the staged-file checks.
 #
-# `zig build test` is the hard gate on every supported runner. `zig build
-# test-libs -- --target commonJS` runs as an opt-in fan-out — it depends on
-# `node` being on PATH (linux/macos runners ship it; the windows runner is
-# allowed to fail until newline / escript shim quirks land in a separate spec).
+#   test  `zig build test` from a cold runtime cache, `zig build test-bpmp`,
+#         `scripts/beam_export_audit.sh` (ubuntu + macos), then `zig build
+#         test-cli` (the CLI command contract, test tooling, mutual recursion and
+#         backend execution parity scripts), `scripts/format-check.sh` (decision
+#         66: `botopink format --check` over the compiler's canonical `.bp`
+#         trees), then `zig build test-language`
+#         (tests/language, ubuntu + macos) and `zig build test-docs` (every
+#         `botopink` fence of the user docs). ubuntu + macos hard, windows
+#         allow-fail.
+#   libs  every sibling library checked out next to botopink-lang
+#         (emilia, erika, jhonstart, onze, rakun at `feat`) plus libs/std,
+#         compiled and tested on every runnable target by `zig build test-libs`
+#         (a library without tests is still compiled).
+#         A failing library fails the job by name, with its diagnostic in the
+#         log; the cells listed in scripts/known-red-libs.txt are reported with
+#         their owning front and do not fail it until they pass. A cell a
+#         member's "targets" list excludes is NOT skipped: it runs, and its
+#         failed-test count must equal the one pinned in
+#         scripts/restricted-targets.txt — a restriction is a measured ledger
+#         line, never a silent opt-out.
 name: test
 
 on:
@@ -50,10 +67,13 @@ jobs:
       # via `std.process.run`. Install Erlang/OTP 27+ — the comptime runtime
       # writes JSON via `json:encode/1`, which only landed in OTP 27.
       # `erlef/setup-beam` pins the version cleanly on linux; macos goes
-      # through Homebrew (current bottle is OTP 27 / OTP 28). Windows
-      # skipped — the main test job is allow-fail there anyway.
-      - name: Install Erlang/OTP (linux)
-        if: matrix.runner == 'ubuntu-22.04'
+      # through Homebrew (current bottle is OTP 27 / OTP 28). Windows needs
+      # it too, allow-fail or not: `zig build` itself runs `erlc` (front 18,
+      # decision 83 — the resident comptime modules are compiled at build time
+      # and embedded), so without OTP the windows job stops at `run erlc` and
+      # never reaches the vendored wasm3 (modules/wasm3) it is there to build.
+      - name: Install Erlang/OTP (linux, windows)
+        if: matrix.runner != 'macos-14'
         uses: erlef/setup-beam@v1
         with:
           # OTP 28 (BEAM 16.x) — matches the dev workstation BEAM. OTP 27
@@ -108,30 +128,96 @@ jobs:
           echo "git sha: $GITHUB_SHA"
           echo "runner: ${{ matrix.runner }}"
 
-      - name: zig build test
-        run: zig build test
+      - name: Install Node 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
 
-  test-libs:
-    name: zig build test-libs --target commonJS (${{ matrix.runner }})
+      # The merge-deciding run is cold: a stale runtime-cache entry can hide a
+      # backend that never ran. A fresh checkout has no cache; the delete makes
+      # that explicit should a cache action ever be added.
+      - name: zig build test (cold runtime cache)
+        shell: bash
+        run: |
+          rm -rf modules/compiler-core/.botopinkbuild/runtime-cache
+          zig build test
+
+      # Front 18 step 4: every snapshot is recorded under both comptime
+      # runtimes, and the pairs are equal but for their listing sections.
+      - name: comptime runtime parity
+        shell: bash
+        run: bash scripts/snap_audit.sh --mode=runtime-parity
+
+      - name: zig build test-bpmp
+        shell: bash
+        run: zig build test-bpmp
+
+      # Every beam snapshot module assembled with every function exported: a
+      # rejected module prints `REJECTED <slug> <module>` with the validator's
+      # function, offset and reason. Needs erlc — not installed on windows.
+      - name: beam export audit
+        if: matrix.runner != 'windows-2022'
+        shell: bash
+        run: bash scripts/beam_export_audit.sh
+
+      - name: zig build test-cli
+        shell: bash
+        run: zig build test-cli
+
+      # Decision 66: `botopink format --check` over the compiler's own canonical
+      # `.bp` trees — the list, and the red trees with their causes, are in
+      # scripts/format-check.sh. Needs only the CLI, installed by test-cli.
+      - name: botopink format --check
+        shell: bash
+        run: bash scripts/format-check.sh
+
+      # Decision 8's language tests on commonJS and erlang; the expected
+      # failures in tests/language/expected-failures.txt name their owner.
+      # Needs node and erl — not installed on windows.
+      - name: zig build test-language
+        if: matrix.runner != 'windows-2022'
+        shell: bash
+        run: zig build test-language
+
+      # Every `botopink` fence in docs.md and README.md compiles
+      # (scripts/check-docs.sh). Needs only the CLI.
+      - name: zig build test-docs
+        shell: bash
+        run: zig build test-docs
+
+      # The browser build (front 18 step 5): compiler-core for wasm32-wasi,
+      # then modules/compiler-web/tests/smoke.js under node — one program to
+      # the four targets, a rendered diagnostic, the comptime refusal.
+      - name: zig build test-web
+        shell: bash
+        run: zig build test-web
+
+  libs:
+    name: zig build test-libs (sibling libraries, all runnable targets)
     needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-22.04
-            allow_fail: false
-          - runner: macos-14
-            allow_fail: false
-          # Windows lacks `escript` and has CRLF newline differences in the
-          # lib-test runner's child stdout parsing — pinned-red until a
-          # follow-up spec resolves it. The hard gate above must stay green.
-          - runner: windows-2022
-            allow_fail: true
-    runs-on: ${{ matrix.runner }}
-    continue-on-error: ${{ matrix.allow_fail }}
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout
+      - name: Checkout botopink-lang
         uses: actions/checkout@v5
+
+      # `botopink-lib-test` discovers `<root>/libs` (std) and every project
+      # under `<root>/repository/`, and `botopink` resolves a library's own
+      # dependencies through the same roots.
+      - name: Checkout emilia
+        uses: actions/checkout@v5
+        with: { repository: botopink/emilia, ref: feat, path: repository/emilia }
+      - name: Checkout erika
+        uses: actions/checkout@v5
+        with: { repository: botopink/erika, ref: feat, path: repository/erika }
+      - name: Checkout jhonstart
+        uses: actions/checkout@v5
+        with: { repository: botopink/jhonstart, ref: feat, path: repository/jhonstart }
+      - name: Checkout onze
+        uses: actions/checkout@v5
+        with: { repository: botopink/onze, ref: feat, path: repository/onze }
+      - name: Checkout rakun
+        uses: actions/checkout@v5
+        with: { repository: botopink/rakun, ref: feat, path: repository/rakun }
 
       - name: Install Zig
         uses: mlugg/setup-zig@v2
@@ -143,5 +229,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: zig build test-libs (commonJS only)
-        run: zig build test-libs -- --target commonJS
+      - name: Install Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+
+      - name: Print library identity
+        shell: bash
+        run: |
+          for r in repository/*/; do
+            echo "$(basename "$r"): $(git -C "$r" rev-parse HEAD)"
+          done
+
+      - name: zig build test-libs
+        shell: bash
+        run: zig build test-libs

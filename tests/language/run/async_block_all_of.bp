@@ -1,0 +1,48 @@
+//// Decision 124 of 1.0.10-beta (front 24, § Cells "`async { }`", first line;
+//// guide.md § 3.1) — `async { … }` creates a `@Task` in ANY function: `launch`
+//// is a plain function (it answers a record, not a wrapper), builds two blocks
+//// and passes them to `async.allOf`. Each block's `try await` makes its value
+//// `@Result<string, string>`, so each block is `@Task<@Result<string, string>>`.
+////
+//// `allOf` is taken in the shape front 24 step E7 writes —
+//// `allOf(Array<@Task<@Result<T, E>>>) -> @Task<@Result<Array<T>, E>>`, started
+//// Tasks, stopping at the first error (the README's open point 3 leaves the
+//// thunk shape of `01-std/02` open; the cell follows E7 and the guide).
+//// Printed from inside `run`.
+////
+//// `.targets` is `commonJS erlang`: `std/async` is host-backed on Node and
+//// Erlang only, so wasm refuses the program for want of a host (a gap of the
+//// module, not of the block).
+
+import {async} from "std";
+
+type Batch(task: @Task<@Result<Array<string>, string>>)
+
+fn fetchUser(id: i32) -> @Task<@Result<string, string>> {
+    if (id <= 0) { throw "user " + id.toString() + " does not exist"; };
+    return "user" + id.toString();
+}
+
+fn launch(a: i32, b: i32) -> Batch {
+    val all = async.allOf([
+        async { return try await fetchUser(a); },
+        async { return try await fetchUser(b); },
+    ]);
+    return Batch(task: all);
+}
+
+fn show(r: @Result<Array<string>, string>) {
+    case r {
+        Ok(names) -> @print("ok " + names.join(","));
+        Error(e) -> @print("error " + e);
+    };
+}
+
+fn run() -> @Task<void> {
+    val good = launch(1, 2);
+    show(await good.task);
+    val bad = launch(1, 0);
+    show(await bad.task);
+}
+
+pub fn main() { run(); }

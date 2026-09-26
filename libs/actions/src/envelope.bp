@@ -1,0 +1,212 @@
+//// actions/envelope — the v1 result envelope a server action answers:
+////
+////     {"v":1,"ok":…,"state":"<querystring>","revalidated":[…],"redirect":"…","n":"…","payload":"…"}
+////
+//// `v` first, the keys in that order. `n` is the navigation signal in
+//// routing's `signalToWire` form, and `redirect` is DERIVED from it inside
+//// `writeEnvelope` (the location of a redirect signal, `""` otherwise) — it has
+//// no parameter, so no envelope can carry a `redirect` that disagrees with its
+//// signal. JSON is written with std's `json.quote` / `json.array` /
+//// `json.object` (every control character escaped) and read with std's
+//// `json.decode`, the same botopink on both targets.
+////
+//// Reading is strict (decision 67): text that is not JSON, a document that is
+//// not an object, a `v` other than `1` (a missing `v` included) and a known key
+//// of the wrong JSON kind are each an `Error` naming what was wrong. A missing
+//// key other than `v` reads as its empty value; an unknown key is ignored.
+
+import {json.Json, json.decode, json.quote, json.array, json.object} from "std";
+import {navigation.NavKind, navigation.signalFromWire} from "routing";
+import {ActionState, parseState} from "state";
+
+pub type ActionEnvelope(
+    ok: bool,
+    state: string,
+    revalidated: Array<string>,
+    n: string,
+    payload: string,
+)
+
+// The redirect location a signal wire carries, `""` for anything else.
+fn redirectOf(n: string) -> string {
+    val out = signalFromWire(n);
+    return case out.kind {
+        Redirect -> out.location;
+        _ -> "";
+    };
+}
+
+pub fn writeEnvelope(e: ActionEnvelope) -> string {
+    val ok = if (e.ok) "true" else "false";
+    return object(
+        [
+            #("v", "1"),
+            #("ok", ok),
+            #("state", quote(e.state)),
+            #("revalidated", array(e.revalidated.map({ r -> quote(r) }))),
+            #("redirect", quote(redirectOf(e.n))),
+            #("n", quote(e.n)),
+            #("payload", quote(e.payload)),
+        ],
+    );
+}
+
+// ── reading ─────────────────────────────────────────────────────────────────
+
+fn kindName(v: Json) -> string {
+    return case v {
+        Null -> "null";
+        Bool(value: _) -> "a boolean";
+        Num(value: _) -> "a number";
+        Str(value: _) -> "a string";
+        Arr(items: _) -> "an array";
+        Obj(members: _) -> "an object";
+    };
+}
+
+fn membersOf(v: Json) -> Array<#(string, Json)> {
+    return case v {
+        Obj(members: ms) -> ms;
+        _ -> [];
+    };
+}
+
+fn fieldOf(ms: Array<#(string, Json)>, key: string) -> ?Json {
+    val hit = ms.filter({ m -> m._0 == key });
+    if (hit.length == 0)
+        return null
+    else
+        return hit.at(0).unwrapOr(#("", Json.Null))._1;
+}
+
+fn strOf(v: Json) -> string {
+    return case v {
+        Str(value: s) -> s;
+        _ -> "";
+    };
+}
+
+fn boolOf(v: Json) -> bool {
+    return case v {
+        Bool(value: b) -> b;
+        _ -> false;
+    };
+}
+
+fn isOne(v: Json) -> bool {
+    return case v {
+        Num(value: x) -> x == 1.0;
+        _ -> false;
+    };
+}
+
+fn itemsOf(v: Json) -> Array<Json> {
+    return case v {
+        Arr(items: xs) -> xs;
+        _ -> [];
+    };
+}
+
+fn wrongKind(key: string, want: string, got: Json) -> string {
+    return [
+        "actions.readEnvelope: `",
+        key,
+        "` must be ",
+        want,
+        ", not ",
+        kindName(got),
+    ].join("");
+}
+
+// The string at `key`, `""` when absent; an `Error` when it is not a string.
+fn readStr(ms: Array<#(string, Json)>, key: string) -> @Result<string, string> {
+    val v = fieldOf(ms, key) ?? Json.Str(value: "");
+    if (kindName(v) != "a string") throw wrongKind(key, "a string", v);
+    return strOf(v);
+}
+
+fn readBool(ms: Array<#(string, Json)>, key: string) -> @Result<bool, string> {
+    val v = fieldOf(ms, key) ?? Json.Bool(value: false);
+    if (kindName(v) != "a boolean") throw wrongKind(key, "a boolean", v);
+    return boolOf(v);
+}
+
+fn readStrings(
+    ms: Array<#(string, Json)>,
+    key: string,
+) -> @Result<Array<string>, string> {
+    val v = fieldOf(ms, key) ?? Json.Arr(items: []);
+    if (kindName(v) != "an array")
+        throw wrongKind(key, "an array of strings", v);
+    val xs = itemsOf(v);
+    if (xs.filter({ x -> kindName(x) != "a string" }).length > 0)
+        throw wrongKind(key, "an array of strings", v);
+    return xs.map({ x -> strOf(x) });
+}
+
+pub fn readEnvelope(text: string) -> @Result<ActionEnvelope, string> {
+    val doc = decode(text);
+    if (doc.isError())
+        throw ["actions.readEnvelope: not JSON (", errorOf(doc), ")"].join("");
+    val root = doc.unwrapOr(Json.Null);
+    if (kindName(root) != "an object")
+        throw [
+            "actions.readEnvelope: the envelope must be an object, not ",
+            kindName(root),
+        ].join("");
+    val ms = membersOf(root);
+    val v = fieldOf(ms, "v") ?? Json.Null;
+    if (isOne(v).negate())
+        throw "actions.readEnvelope: `v` must be 1 - this reader knows version 1 only";
+    val ok = try readBool(ms, "ok");
+    val state = try readStr(ms, "state");
+    val revalidated = try readStrings(ms, "revalidated");
+    val redirect = try readStr(ms, "redirect");
+    val n = try readStr(ms, "n");
+    val payload = try readStr(ms, "payload");
+    if (redirect != redirectOf(n))
+        throw "actions.readEnvelope: `redirect` disagrees with the signal in `n`";
+    return ActionEnvelope(
+        ok: ok,
+        state: state,
+        revalidated: revalidated,
+        n: n,
+        payload: payload,
+    );
+}
+
+fn errorOf(r: @Result<Json, string>) -> string {
+    val t = case r {
+        Ok(_) -> "";
+        Error(e) -> e;
+    };
+    return t;
+}
+
+// Decision 78's name: the `ActionState` a form shows, read from the envelope
+// TEXT. `ok` and `redirectTo` come from the envelope's own keys (`ok`, and the
+// location of the signal in `n`), never from `state` — a `state` carrying an
+// `ok` key is ignored like any other unknown key. An envelope that does not
+// read is a failed state whose message is the reader's error.
+pub fn parseActionState(envelope: string) -> ActionState {
+    val st = case readEnvelope(envelope) {
+        Ok(e) -> stateOf(e);
+        Error(msg) -> ActionState(
+            ok: false,
+            message: msg,
+            redirectTo: "",
+            fields: [],
+        );
+    };
+    return st;
+}
+
+fn stateOf(e: ActionEnvelope) -> ActionState {
+    val parsed = parseState(e.state);
+    return ActionState(
+        ok: e.ok,
+        message: parsed._0,
+        redirectTo: redirectOf(e.n),
+        fields: parsed._1,
+    );
+}

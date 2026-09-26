@@ -1,0 +1,29 @@
+//// 1.0.10-beta `00 · 05-wasm` step 9 — a self-call in tail position runs in
+//// one frame on wasm.
+////
+//// wasm has no tail calls unless the tail-call proposal is enabled, and
+//// wasmtime's default does not enable it: `count(10000, 0)` answered and
+//// `count(100000, 0)` trapped `call stack exhausted` (exit 134) where commonJS
+//// and erlang answered `100000` and `1000000`. `wat.zig` now lowers
+//// `return f(args)` inside `fn f` as a re-binding of the parameters and a
+//// `br` to the function's own loop head, so the depth is a loop count.
+////
+//// `sumTo` is the second shape — a guard `return` and then the tail call at
+//// the top of the body — and its accumulator reads the OLD `n`, which pins
+//// that every argument is evaluated before any parameter is re-bound.
+
+fn count(n: i32, acc: i32) -> i32 {
+    if (n == 0) { return acc; } else { return count(n - 1, acc + 1); }
+}
+
+fn sumTo(n: i32, acc: i32) -> i32 {
+    if (n == 0) { return acc; };
+    return sumTo(n - 1, acc + n);
+}
+
+pub fn main() {
+    @print(count(10000, 0));
+    @print(count(100000, 0));
+    @print(count(1000000, 0));
+    @print(sumTo(1000, 0));
+}

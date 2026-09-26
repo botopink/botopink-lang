@@ -1,0 +1,258 @@
+//// validation — the constraint predicates. Moved from rakun front 14's
+//// validation member (decision 116 rule 5).
+////
+//// EVERY FUNCTION HERE IS PLAIN BOTOPINK: string comparisons, length checks,
+//// numeric bounds and `std/regex` matches. No host cell, no `@External`
+//// anything. That is the whole reason this module's target is `both —
+//// boundary`: the emitted `validate<TypeName>` compiles for erlang and for
+//// commonJS from ONE source, so the server and the client run the same
+//// predicate rather than two predicates that are supposed to agree.
+//// `test/parity_test.bp` is what holds that claim up.
+////
+//// Each predicate answers `Array<Violation>` — empty or one — which is what
+//// makes "all of them run; the first failure does not stop the second" the
+//// emitted validator's shape rather than an option it has.
+////
+//// ONE FUNCTION PER NUMERIC WIDTH. `#[minValue]` on an `i32` field and on an
+//// `f64` field are different cells, because the emitter knows the field's type
+//// and a single generic bound would have to unify `i32` with `f64`. See the
+//// language-gap table in the front README for the i64 half: an integer literal
+//// does not widen to `i64` in arithmetic, so `#[minValue]`/`#[maxValue]` are
+//// refused on an `i64` field rather than emitted as something that reds.
+
+import {Violation, violation, noViolation, oneViolation} from "report";
+import {Arg, arg, message, builtInTemplate, noArgs, showI32, showI64, showF64} from "messages";
+import {regex, io.clock} from "std";
+
+fn fail(
+    field: string,
+    code: string,
+    value: string,
+    params: Array<Arg>,
+) -> Array<Violation> {
+    return oneViolation(
+        violation(
+            field,
+            code,
+            message(code, builtInTemplate(code), field, value, params),
+            value,
+        ),
+    );
+}
+
+// ── presence ────────────────────────────────────────────────────────────────
+
+// `present` is the emitted `v.<field> != null`. `#[notNull]` is refused on a
+// field whose type cannot be null at all, so this is never trivially true.
+pub fn vNotNull(field: string, present: bool) -> Array<Violation> {
+    if (present)
+        return noViolation()
+    else
+        return fail(field, "notNull", "", noArgs());
+}
+
+pub fn vNotBlank(field: string, value: string) -> Array<Violation> {
+    if (value.trim().length() > 0)
+        return noViolation()
+    else
+        return fail(field, "notBlank", value, noArgs());
+}
+
+pub fn vNotEmpty(field: string, value: string) -> Array<Violation> {
+    if (value.length() > 0)
+        return noViolation()
+    else
+        return fail(field, "notEmpty", value, noArgs());
+}
+
+pub fn vNotEmptyList<T>(field: string, value: Array<T>) -> Array<Violation> {
+    if (value.length > 0)
+        return noViolation()
+    else
+        return fail(field, "notEmpty", showI32(value.length), noArgs());
+}
+
+// ── size ────────────────────────────────────────────────────────────────────
+//
+// Both bounds are passed because a declared parameter default is never applied
+// at a call site (`docs.md:502-505`); Spring's single `@Size(min = …)` with the
+// other half optional has no botopink spelling, and pretending otherwise would
+// produce a decorator that silently drops an argument.
+
+fn sizeArgs(min: i32, max: i32) -> Array<Arg> {
+    return [arg("min", showI32(min)), arg("max", showI32(max))];
+}
+
+pub fn vSizeBetween(
+    field: string,
+    value: string,
+    min: i32,
+    max: i32,
+) -> Array<Violation> {
+    val n = value.length();
+    if (n >= min && n <= max)
+        return noViolation()
+    else
+        return fail(field, "sizeBetween", value, sizeArgs(min, max));
+}
+
+pub fn vSizeBetweenList<T>(
+    field: string,
+    value: Array<T>,
+    min: i32,
+    max: i32,
+) -> Array<Violation> {
+    val n = value.length;
+    if (n >= min && n <= max)
+        return noViolation()
+    else
+        return fail(field, "sizeBetween", showI32(n), sizeArgs(min, max));
+}
+
+// ── numeric bounds ──────────────────────────────────────────────────────────
+
+pub fn vMinValueI32(field: string, value: i32, min: i32) -> Array<Violation> {
+    if (value >= min)
+        return noViolation()
+    else
+        return fail(
+            field,
+            "minValue",
+            showI32(value),
+            [arg("min", showI32(min))],
+        );
+}
+
+pub fn vMaxValueI32(field: string, value: i32, max: i32) -> Array<Violation> {
+    if (value <= max)
+        return noViolation()
+    else
+        return fail(
+            field,
+            "maxValue",
+            showI32(value),
+            [arg("max", showI32(max))],
+        );
+}
+
+pub fn vMinValueF64(field: string, value: f64, min: f64) -> Array<Violation> {
+    if (value >= min)
+        return noViolation()
+    else
+        return fail(
+            field,
+            "minValue",
+            showF64(value),
+            [arg("min", showF64(min))],
+        );
+}
+
+pub fn vMaxValueF64(field: string, value: f64, max: f64) -> Array<Violation> {
+    if (value <= max)
+        return noViolation()
+    else
+        return fail(
+            field,
+            "maxValue",
+            showF64(value),
+            [arg("max", showF64(max))],
+        );
+}
+
+// ── sign ────────────────────────────────────────────────────────────────────
+//
+// `0` is an `i32` literal that widens against an `i64` or an `f64` in a
+// COMPARISON (it does not widen in arithmetic — see the gap table), so one cell
+// per width is still what keeps the emitted call typed to the field.
+
+pub fn vPositiveI32(field: string, value: i32) -> Array<Violation> {
+    if (value > 0)
+        return noViolation()
+    else
+        return fail(field, "positive", showI32(value), noArgs());
+}
+
+pub fn vPositiveOrZeroI32(field: string, value: i32) -> Array<Violation> {
+    if (value >= 0)
+        return noViolation()
+    else
+        return fail(field, "positiveOrZero", showI32(value), noArgs());
+}
+
+pub fn vPositiveI64(field: string, value: i64) -> Array<Violation> {
+    if (value > 0)
+        return noViolation()
+    else
+        return fail(field, "positive", showI64(value), noArgs());
+}
+
+pub fn vPositiveOrZeroI64(field: string, value: i64) -> Array<Violation> {
+    if (value >= 0)
+        return noViolation()
+    else
+        return fail(field, "positiveOrZero", showI64(value), noArgs());
+}
+
+pub fn vPositiveF64(field: string, value: f64) -> Array<Violation> {
+    if (value > 0.0)
+        return noViolation()
+    else
+        return fail(field, "positive", showF64(value), noArgs());
+}
+
+pub fn vPositiveOrZeroF64(field: string, value: f64) -> Array<Violation> {
+    if (value >= 0.0)
+        return noViolation()
+    else
+        return fail(field, "positiveOrZero", showF64(value), noArgs());
+}
+
+// ── text shapes ─────────────────────────────────────────────────────────────
+
+// The address grammar, written in the intersection of the two regex flavours
+// the two rows use — PCRE on erlang (`re:run/2`), ECMAScript on node
+// (`new RegExp`). No backslash class and no lookaround: a bracket class and a
+// literal `[.]` mean the same thing in both, which is what makes this pattern a
+// predicate and not two predicates.
+pub fn emailPattern() -> string {
+    return "^[^@ ]+@[^@ .]+([.][^@ .]+)+$";
+}
+
+pub fn vEmail(field: string, value: string) -> Array<Violation> {
+    if (regex.matches(emailPattern(), value))
+        return noViolation()
+    else
+        return fail(field, "email", value, noArgs());
+}
+
+pub fn vPattern(
+    field: string,
+    value: string,
+    pattern: string,
+) -> Array<Violation> {
+    if (regex.matches(pattern, value))
+        return noViolation()
+    else
+        return fail(field, "pattern", value, [arg("regex", pattern)]);
+}
+
+// ── time ────────────────────────────────────────────────────────────────────
+//
+// Epoch milliseconds against `std/clock.nowMillis()` — `Date.now()` on node,
+// `erlang:system_time(1000)` on the BEAM. The boundary is strict on both sides:
+// `now` itself is neither past nor future, so a value equal to the clock reads
+// is a violation for both markers rather than acceptable to both.
+
+pub fn vPastDate(field: string, value: i64) -> Array<Violation> {
+    if (value < clock.nowMillis())
+        return noViolation()
+    else
+        return fail(field, "pastDate", showI64(value), noArgs());
+}
+
+pub fn vFutureDate(field: string, value: i64) -> Array<Violation> {
+    if (value > clock.nowMillis())
+        return noViolation()
+    else
+        return fail(field, "futureDate", showI64(value), noArgs());
+}

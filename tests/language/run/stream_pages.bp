@@ -1,0 +1,64 @@
+//// Decisions 120, 121 and 122 of 1.0.10-beta (front 24, § Cells "Streams", first
+//// line; guide.md § 5.3 and § 9, rows `#[@futureGenerator]` +
+//// `@FutureGenerator<T, E>`, `#[@asyncGenerator]` / `@AsyncIterator`, `loop
+//// await`) — `pages` is a `@Stream<@Result<…>>` over a simulated http:
+//// `fetchPage` is a `@Task<@Result<Page, string>>` that answers two pages from
+//// `p1`, fails at `p3`, and answers one page from `q1`. In the stream a failing
+//// `try await` emits `Error(e)` and ENDS; each `yield` of a `U` emits `Ok(…)`.
+////
+//// `countUsers` stops at the first error with `val users = try batch` (its return carries
+//// a `@Result`); `walk` carries on through the items with `case` and sees the
+//// `Error` as the last one. Both iterate with `for await` inside a `@Task`
+//// body — the await channel. Printed from inside `run`.
+
+type Page(users: Array<string>, next: string)
+
+fn fetchPage(url: string) -> @Task<@Result<Page, string>> {
+    if (url == "p1") { return Page(users: ["ana", "bia"], next: "p2"); };
+    if (url == "p2") { return Page(users: ["caio"], next: "p3"); };
+    if (url == "q1") { return Page(users: ["dani"], next: ""); };
+    throw url + ": 503";
+}
+
+fn pages(url: string) -> @Stream<@Result<Array<string>, string>> {
+    var next = url;
+    while (next != "") {
+        val page = try await fetchPage(next);
+        yield page.users;
+        next = page.next;
+    };
+}
+
+fn countUsers(url: string) -> @Task<@Result<i32, string>> {
+    var n = 0;
+    for await (pages(url)) { batch ->
+        val users = try batch;
+        n = n + users.length;
+    };
+    return n;
+}
+
+fn walk(url: string) -> @Task<void> {
+    for await (pages(url)) { r ->
+        case r {
+            Ok(users) -> @print("batch " + users.join(","));
+            Error(e) -> @print("error " + e);
+        };
+    };
+    @print("end of " + url);
+}
+
+fn show(r: @Result<i32, string>) {
+    case r {
+        Ok(n) -> @print("count " + n.toString());
+        Error(e) -> @print("count failed: " + e);
+    };
+}
+
+fn run() -> @Task<void> {
+    show(await countUsers("q1"));
+    show(await countUsers("p1"));
+    await walk("p1");
+}
+
+pub fn main() { run(); }

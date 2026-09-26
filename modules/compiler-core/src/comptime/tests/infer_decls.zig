@@ -8,6 +8,10 @@ const prettyMod = @import("../../utils/pretty.zig");
 const T = @import(".././types.zig");
 const envMod = @import("../env.zig");
 const inferMod = @import("../infer.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 const comptimeMod = @import("../../comptime.zig");
 const errorMod = @import("../error.zig");
 const snapshot = @import("../snapshot.zig");
@@ -20,7 +24,7 @@ const h = @import("helpers.zig");
 
 test "infer: enum constructors" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Rgb(r: i32, g: i32, b: i32),
         \\};
@@ -32,17 +36,19 @@ test "infer: enum constructors" {
 
 test "infer: record constructor" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Point = record { x: i32, y: i32 };
+        \\val Point = type(x: i32, y: i32);
         \\val p = Point(x: 1, y: 2);
-        \\@print(p);
+        \\fn main() {
+        \\    @print(p);
+        \\}
     );
 }
 
 test "infer: record with method" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val GPSCoordinates = record {
+        \\val GPSCoordinates = type(
         \\    lat: f64,
-        \\    lon: f64,
+        \\    lon: f64) {
         \\    fn toString(self: Self) -> string {
         \\        return "Lat: " + self.lat + " Lon: " + self.lon;
         \\    }
@@ -57,7 +63,9 @@ test "infer: pub fn basic ---- greet returns string" {
         \\    return "Hello, " + name;
         \\}
         \\val msg = greet("world");
-        \\@print(msg);
+        \\fn main() {
+        \\    @print(msg);
+        \\}
     );
 }
 
@@ -69,7 +77,9 @@ test "infer: pub fn with local val binding in body" {
         \\    return doubled;
         \\}
         \\val result = compute(21);
-        \\@print(result);
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 
@@ -84,7 +94,7 @@ test "infer: pub fn with comptime params" {
 
 test "infer: pub fn using enum + case in body" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Direction = enum {
+        \\val Direction = type {
         \\    North,
         \\    South,
         \\    East,
@@ -102,7 +112,9 @@ test "infer: pub fn using enum + case in body" {
         \\    return result;
         \\}
         \\val n = label(Direction.North);
-        \\@print(n);
+        \\fn main() {
+        \\    @print(n);
+        \\}
     );
 }
 
@@ -124,7 +136,7 @@ test "infer: val dependency chain" {
 
 test "infer: dotIdent resolved from type annotation" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Blue,
         \\};
@@ -134,10 +146,10 @@ test "infer: dotIdent resolved from type annotation" {
 
 test "infer: implement block is invisible to the binding list" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Drawable = interface {
+        \\val Drawable = behavior {
         \\    fn draw(self: Self);
         \\};
-        \\val Circle = record { radius: f64 };
+        \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
         \\        @todo();
@@ -149,28 +161,28 @@ test "infer: implement block is invisible to the binding list" {
 
 test "infer: interface with field and abstract method" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Drawable = interface {
-        \\    val color: string,
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    val color: string;
+        \\    fn draw(self: Self);
         \\}
     );
 }
 
 test "infer: interface with multiple abstract methods" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Canvas = interface {
-        \\    fn clear(self: Self),
-        \\    fn drawLine(self: Self, x1: i32, y1: i32),
-        \\    fn drawRect(self: Self, x: i32, y: i32, color: string),
+        \\val Canvas = behavior {
+        \\    fn clear(self: Self);
+        \\    fn drawLine(self: Self, x1: i32, y1: i32);
+        \\    fn drawRect(self: Self, x: i32, y: i32, color: string);
         \\}
     );
 }
 
 test "infer: record with fields and toString method" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val GPSCoordinates = record {
-        \\    lat: number,
-        \\    lon: number,
+        \\val GPSCoordinates = type(
+        \\    lat: f64,
+        \\    lon: f64) {
         \\    fn toString(self: Self) -> string {
         \\        return "Lat: " + self.lat + " Lon: " + self.lon;
         \\    }
@@ -180,10 +192,10 @@ test "infer: record with fields and toString method" {
 
 test "infer: implement single interface for record" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Drawable = interface {
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    fn draw(self: Self);
         \\};
-        \\val Circle = record { radius: f64 };
+        \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
         \\        @print("Drawing circle");
@@ -194,13 +206,13 @@ test "infer: implement single interface for record" {
 
 test "infer: implement two interfaces with qualified methods" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val UsbCharger = interface {
-        \\    fn Connect(self: Self),
+        \\val UsbCharger = behavior {
+        \\    fn Connect(self: Self);
         \\};
-        \\val SolarCharger = interface {
-        \\    fn Connect(self: Self),
+        \\val SolarCharger = behavior {
+        \\    fn Connect(self: Self);
         \\};
-        \\val SmartCamera = record { batteryLevel: i32 };
+        \\val SmartCamera = type(batteryLevel: i32);
         \\val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
         \\    fn UsbCharger.Connect(self: Self) {
         \\        @print("Connected via USB");
@@ -225,16 +237,16 @@ test "infer: doc comment on function" {
 test "infer: doc comment on record" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\//// A point in 2D space
-        \\val Point = record { x: i32, y: i32 };
+        \\val Point = type(x: i32, y: i32);
     );
 }
 
 test "infer: local extension method resolves without activation" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -251,7 +263,7 @@ test "infer: local extension method resolves without activation" {
 // a literal receiver resolves the extension method.
 test "infer: net-new ---- implement an interface for a primitive and dispatch" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Doubler = interface {
+        \\val Doubler = behavior {
         \\    fn double(self: Self) -> i32;
         \\}
         \\val IntDoubler = implement Doubler for i32 {
@@ -271,8 +283,8 @@ test "infer: net-new ---- two imported libs activating the same method are ambig
     const io = std.testing.io;
     const modules = [_]Module{
         .{ .path = "swimlib", .source =
-        \\pub record Pato { id: i32 }
-        \\pub val Swimmer = interface {
+        \\pub type Pato(id: i32)
+        \\pub val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
         \\pub val PatoNada = implement Swimmer for Pato {
@@ -283,7 +295,7 @@ test "infer: net-new ---- two imported libs activating the same method are ambig
         },
         .{ .path = "divelib", .source =
         \\import {Pato} from "swimlib";
-        \\pub val Diver = interface {
+        \\pub val Diver = behavior {
         \\    fn swim(self: Self);
         \\}
         \\pub val PatoFundo = implement Diver for Pato {
@@ -304,7 +316,7 @@ test "infer: net-new ---- two imported libs activating the same method are ambig
         std.testing.allocator,
         &modules,
         io,
-        ".botopinkbuild/comptime/cross_module_extension_ambiguity",
+        test_scratch.path(io, "comptime/cross_module_extension_ambiguity"),
         null,
     );
     defer session.deinit(std.testing.allocator);
@@ -327,13 +339,13 @@ test "infer: net-new ---- two imported libs activating the same method are ambig
 // always available, so `t.label()` resolves without ambiguity).
 test "infer: net-new ---- inherent method wins over a same-name implemented one" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Tag {
-        \\    name: string,
+        \\type Tag(
+        \\    name: string) {
         \\    fn label(self: Self) -> string {
         \\        return self.name;
         \\    }
         \\}
-        \\val Named = interface {
+        \\val Named = behavior {
         \\    fn label(self: Self) -> string;
         \\}
         \\val TagNamed = implement Named for Tag {
@@ -350,7 +362,7 @@ test "infer: net-new ---- inherent method wins over a same-name implemented one"
 // link in the chain (the result of the first call is the receiver of the second).
 test "infer: net-new ---- chained extension calls resolve each link" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Stepper = interface {
+        \\val Stepper = behavior {
         \\    fn inc(self: Self) -> i32;
         \\    fn dec(self: Self) -> i32;
         \\}
@@ -365,10 +377,10 @@ test "infer: net-new ---- chained extension calls resolve each link" {
 
 test "infer: qualified extension call needs no activation" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -384,11 +396,11 @@ test "infer: multi-module local extension resolves on an imported record" {
     // consumer module and auto-applied, so `donald.swim()` resolves without activation.
     try h.assertComptimeAst(std.testing.allocator, @src(), &.{
         .{ .path = "pond", .source =
-        \\pub record Pato { id: i32 }
+        \\pub type Pato(id: i32)
         },
         .{ .path = "", .source =
         \\import {Pato} from "pond";
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
         \\val PatoNada = implement Swimmer for Pato {
@@ -408,10 +420,10 @@ test "infer: multi-module extension activated via star import" {
     // `donald.swim()` dispatches across the module boundary.
     try h.assertComptimeAst(std.testing.allocator, @src(), &.{
         .{ .path = "pond", .source =
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\pub record Pato { id: i32 }
+        \\pub type Pato(id: i32)
         \\pub val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -428,14 +440,36 @@ test "infer: multi-module extension activated via star import" {
 
 test "infer: inherent record method is always available" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record Pato {
-        \\    id: i32,
+        \\type Pato(
+        \\    id: i32) {
         \\    fn quack(self: Self) {
         \\        return self.id;
         \\    }
         \\}
         \\val donald = Pato(1);
         \\val noise = donald.quack();
+    );
+}
+
+// Decision 2 — a block is not a value, so two branches that end in a STATEMENT
+// need not agree. `if (p) { out = …; } else { taking = false; }` used to red
+// "expected array, got bool" — a shape a library in this repository writes in
+// a `takeWhile` / `skipWhile`, and the same shape in a plain fn.
+test "infer: an if whose branches end in assignments of different types" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\fn takeWhile(items: i32[], pred: fn(item: i32) -> bool) -> i32[] {
+        \\    var out: Array<i32> = [];
+        \\    var taking = true;
+        \\    items.forEach({ x ->
+        \\        if (taking) {
+        \\            if (pred(x)) { out = out.append([x]); } else { taking = false; };
+        \\        };
+        \\    });
+        \\    return out;
+        \\}
+        \\fn main() {
+        \\    @print(takeWhile([1, 2, 3], { n -> return n < 3; }).length());
+        \\}
     );
 }
 
@@ -468,16 +502,14 @@ test "infer: pub val ---- infers same as private val" {
 
 test "infer: star fn ---- async returns @Future is valid" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@future]
-        \\fn fetch(x: i32) -> @Future<i32> {
+        \\fn fetch(x: i32) -> @Task<i32> {
         \\    return x;
         \\}
     );
 }
 
-test "infer: star fn ---- generator returns @Iterator is valid" {
+test "infer: star fn ---- generator returns @ResultGenerator is valid" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\#[@iterator]
         \\fn gen() -> @Iterator<i32> {
         \\    yield 1;
         \\}
@@ -504,10 +536,15 @@ test "infer: anonymous test body typechecks" {
     );
 }
 
+// R3 (decision 8 §8, decision 15) — the second annotation was written
+// `@external(node, …)` in lower case. That form binds no host and is now a
+// located error, so the cell writes the capitalised path; what it asserts —
+// a bodyless `declare fn` carrying MORE THAN ONE external annotation
+// typechecks — is unchanged.
 test "infer: external ---- fn no body typechecks" {
     try h.assertInfersOk(std.testing.allocator,
         \\#[@External.Erlang( "string", "length"),
-        \\  @external(node, "./gleam_stdlib.mjs", "string_length")]
+        \\  @External.Node("./gleam_stdlib.mjs", "string_length")]
         \\pub declare fn str_length(s: string) -> i32;
         \\
         \\fn main() {
@@ -516,20 +553,168 @@ test "infer: external ---- fn no body typechecks" {
     );
 }
 
-test "infer: std package ---- import binds namespace" {
+// Front 20 F9 — `inline` on the two variants that declare it is accepted, in
+// both spellings the parser reads (`inline = true` and the bare trailing bool).
+test "infer: external ---- inline on erlang and beam typechecks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\import {order} from "std";
+        \\#[@External.Erlang("max($args)", inline = true),
+        \\  @External.Beam("""
+        \\  {call_ext, 2, {extfunc, erlang, max, 2}}.
+        \\  """, true)]
+        \\pub declare fn biggest(a: i32, b: i32) -> i32;
         \\
         \\fn main() {
-        \\    val a: i32 = order.toInt(order.lt());
-        \\    val b: i32 = order.toInt(order.reverse(order.gt()));
+        \\    val n = biggest(1, 2);
+        \\}
+    );
+}
+
+// `infer.zig`'s `external_variants` restates `pub type External implement
+// Annotation { … }` from `builtins.d.bp`, which the compiler does not parse
+// (the same reason `effect_chain.zig` restates the `extends` clauses). The
+// test reads the file and fails in both directions: a variant declared there
+// that the table does not carry, or whose `inline` the table gets wrong, and a
+// table row the file does not declare.
+test "infer: external ---- the variant table agrees with builtins.d.bp" {
+    const source: []const u8 = @import("std_prelude").builtins;
+    const head = "pub type External implement Annotation {";
+    const at = std.mem.indexOf(u8, source, head) orelse return error.ExternalNotDeclared;
+    const close = std.mem.indexOfScalarPos(u8, source, at + head.len, '}') orelse return error.ExternalNotClosed;
+    var declared: usize = 0;
+    var lines = std.mem.splitScalar(u8, source[at + head.len .. close], '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r,");
+        if (line.len == 0) continue;
+        const paren = std.mem.indexOfScalar(u8, line, '(') orelse return error.VariantWithoutPayload;
+        const name = line[0..paren];
+        const declares_inline = std.mem.indexOf(u8, line, "inline: bool = false") != null;
+        declared += 1;
+        const row = for (inferMod.external_variants) |v| {
+            if (std.mem.eql(u8, v.name, name)) break v;
+        } else {
+            std.debug.print("builtins.d.bp declares `External.{s}` and `external_variants` does not carry it\n", .{name});
+            return error.VariantNotCarried;
+        };
+        if (row.declares_inline != declares_inline) {
+            std.debug.print(
+                "`External.{s}`: builtins.d.bp {s} `inline`, `external_variants` says {s}\n",
+                .{ name, if (declares_inline) "declares" else "does not declare", if (row.declares_inline) "it does" else "it does not" },
+            );
+            return error.InlineDrifted;
+        }
+    }
+    try std.testing.expectEqual(inferMod.external_variants.len, declared);
+}
+
+test "infer: std package ---- import binds namespace" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {collections} from "std";
+        \\
+        \\fn main() {
+        \\    val a: i32 = collections.toInt(collections.lt());
+        \\    val b: i32 = collections.toInt(collections.reverse(collections.gt()));
+        \\}
+    );
+}
+
+// ── decision 107: only the leaf enters scope ─────────────────────────────────
+
+test "infer: std package ---- a dotted path binds its leaf, a group binds several" {
+    // `Dict` (a type, whose type-scoped `empty` builds it — decision 111),
+    // `gt`/`reverse` and `rank` (fns, the last aliased) — and `collections`
+    // is not bound: only the leaf enters scope, so the namespace has to be
+    // imported on its own to be spelled.
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {collections.Dict, collections: {gt, reverse, toInt as rank}} from "std";
+        \\
+        \\fn main() {
+        \\    val d: Dict<string, i32> = Dict.empty();
+        \\    val n: i32 = d.insert("a", 1).size();
+        \\    val o: i32 = rank(reverse(gt()));
+        \\}
+    );
+}
+
+test "infer: std package ---- an intermediate node may be a leaf" {
+    // `io: {clock}` binds the module `clock` as a namespace, and inside the
+    // same group the prefix is a leaf too: `clock: {monotonicMillis}` beside
+    // `clock` itself.
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {io: {clock, clock: {monotonicMillis}}} from "std";
+        \\
+        \\fn main() {
+        \\    val a = clock.monotonicMillis();
+        \\    val b = monotonicMillis();
+        \\    val n = b - a;
+        \\}
+    );
+}
+
+test "infer: std package ---- the namespace is not bound by a path through it" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {collections.lt} from "std";
+        \\
+        \\fn main() {
+        \\    val a = collections.toInt(lt());
+        \\}
+    );
+}
+
+test "infer: std package ---- two leaves binding one name collide at the second" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {url.parse, json.parse} from "std";
+        \\
+        \\fn main() {
+        \\    val u = parse("http://a");
+        \\}
+    );
+}
+
+test "infer: std package ---- an alias on either side clears the collision" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {url.parse as parseUrl, json: {parse as parseJson}} from "std";
+        \\
+        \\fn main() {
+        \\    val u = parseUrl("http://a/b");
+        \\    val j = parseJson("{}");
+        \\}
+    );
+}
+
+// Decision 110 — `as` binds a type leaf: `D` is a checker-local name of
+// `Dict` (it used to be refused as `import-alias-on-type`).
+test "infer: std package ---- a type keeps its declared name" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\import {collections.Dict as D} from "std";
+        \\
+        \\fn main() {
+        \\    val d: D<string, i32> = D(pairs: []);
+        \\}
+    );
+}
+
+test "infer: std package ---- a path whose prefix is no module is refused at the item" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {dict.Dict} from "std";
+        \\
+        \\fn main() {
+        \\    val n = 1;
+        \\}
+    );
+}
+
+test "infer: std package ---- a leaf the module does not declare is refused at the item" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\import {collections: {Dict, emptyish}} from "std";
+        \\
+        \\fn main() {
+        \\    val n = 1;
         \\}
     );
 }
 
 test "infer: builtin result namespace ---- qualified calls typecheck" {
     try h.assertInfersOk(std.testing.allocator,
-        \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, string> {
         \\    if (n < 0) { throw "negative"; };
         \\    return n;
@@ -543,11 +728,17 @@ test "infer: builtin result namespace ---- qualified calls typecheck" {
     );
 }
 
-test "infer: ?T.expect ---- proven-in-bounds unwrap returns inner type" {
+// Front 20 F11 — `?T` has no `expect`. It was `unwrapOr` under a name that
+// says the absent branch is unreachable; one spelling survives, and the
+// removed one is refused rather than typed permissively (which is what an
+// unknown method on a `?T` gets, and would have turned the alias into a
+// run-time failure). `tests/language/reject/option_expect_removed.bp` carries
+// the diagnostic.
+test "infer: ?T.unwrapOr ---- the one unwrap returns the inner type" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn firstChar(s: string) -> ?string { @todo(); }
         \\fn main() {
-        \\    val s = firstChar("abc").expect("");
+        \\    val s = firstChar("abc").unwrapOr("");
         \\    @print(s);
         \\}
     );
@@ -584,11 +775,11 @@ test "infer: forward_reference_top_level ---- a() calls b() declared after" {
 
 test "infer: mutual_recursion ---- renderToString and renderChildren call each other" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Element { tag: string, value: string, children: Element[] }
+        \\type Element(tag: string, value: string, children: Element[])
         \\
         \\fn renderChildren(items: Element[]) -> string {
         \\    var out = "";
-        \\    loop (items) { c -> out = out + renderToString(c); };
+        \\    for (items) { c -> out = out + renderToString(c); };
         \\    return out;
         \\}
         \\

@@ -1,0 +1,9 @@
+//// Decision 8 §5.1 P6 — a label in a tuple pattern is an error (tuple patterns are positional).
+
+pub fn main() {
+    val row: #(name: string, pop: i32) = #("SP", 12);
+    val y = case row {
+        #(name: n, ..) { n }
+    };
+    @print(y);
+}

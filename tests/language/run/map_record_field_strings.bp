@@ -1,0 +1,33 @@
+//// 1.0.10-beta `00 · 05-wasm` step 9 — `es.map({ e -> e.key })` over a
+//// record array is a STRING array.
+////
+//// wasm decides an array's element shape before it lowers the lambda, by
+//// asking whether the lambda's tail is a string; the element parameter's
+//// record type used to be bound only while the body was lowered, so `e.key`
+//// was an unknown field of an unknown name, the result an `i32` array, and
+//// `ks.at(0)?.length()` read the string pointer as a boxed `?i32` — a heap
+//// address at exit 0. The parameter is now bound for the question too.
+////
+//// The `??` lines pin a second reader: `a ?? b` is an optional-binding `if`
+//// whose payload arm reads a binder nothing typed, so the default arm has to
+//// be enough to prove the result is a string — `["x", "yz"].at(1) ?? "none"`
+//// printed the string's address before.
+////
+//// `run/map_record_field_length.bp` is the row's bare shape, where commonJS
+//// fails; here `ks.at(1) ?? "none"` comes first and resolves the element type
+//// for the checker, which is what lets commonJS answer the last line too.
+
+type Entry(key: string) {}
+
+pub fn main() {
+    val es = [Entry(key: "abc"), Entry(key: "de")];
+    val ks = es.map({ e -> e.key });
+    @print(ks);
+    @print(ks.join("-"));
+    @print(ks.at(1) ?? "none");
+    @print(es.map({ e -> e.key + "!" }).at(0) ?? "none");
+    val ws = ["x", "yz"];
+    @print(ws.at(1) ?? "none");
+    @print(ws.at(5) ?? "none");
+    @print(ks.at(0)?.length());
+}

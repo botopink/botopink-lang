@@ -1,0 +1,17 @@
+//// Decision 125 of 1.0.10-beta (front 24, § Cells "Prefixed loops") — an `iter`
+//// loop is closed like a closure: `break :outer` naming a loop outside it is
+//// refused as crossing the border, not as unbound. The guide gives the refusal
+//// no code (README open point 2); line 1 is the code decision 105's annotated
+//// loop gets today (`reject/generator_loop_break_outer.bp`).
+
+pub fn main() {
+    var n = 0;
+    for :outer ([1, 2, 3]) { x ->
+        val g = iter loop {
+            n = n + 1;
+            if (n > 2) { break :outer; };
+            yield n;
+        };
+    };
+    @print(n);
+}

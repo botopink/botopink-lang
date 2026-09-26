@@ -33,9 +33,52 @@ pub const Doc = union(enum) {
     /// Increase the current indentation for the inner document.
     nest: struct { amount: usize, doc: *const Doc },
     /// Try to fit the inner document on one line (flat); fall back if it overflows.
-    group: *const Doc,
+    ///
+    /// `measured` says **which predicate decides**, and it exists because the two
+    /// answers differ. With `measured` the group asks `fits`, which walks the
+    /// document and charges every character of the flat spelling plus whatever
+    /// the render still owes the same line: that is the Wadler-Lindig group, and
+    /// a construct is enabled by building its group with `groupMeasured`. Without
+    /// it the group asks `fitsPinned`, which is the scan this formatter has always
+    /// had — it stops at the first `concat` and answers "fits" — so the group
+    /// renders flat exactly as it always has.
+    ///
+    /// Every group is pinned until its construct's canonical broken form has been
+    /// written down and turned on, one at a time
+    /// ([decision 65](../../../specs/1.0.5-beta/decisions-taken.md) part 4).
+    /// Pinning is a phase, not a setting: there is no way to reach it from a
+    /// source file, a flag or an environment variable, and the last construct to
+    /// be enabled takes `fitsPinned` and this field away with it.
+    group: struct { doc: *const Doc, measured: bool },
     /// Force break mode for the inner document regardless of enclosing group.
     forceBreak: *const Doc,
+    /// Two spellings of one construct, chosen by the column the render has
+    /// actually reached: `flat` when `flatWidth` more columns are still
+    /// available, `broken` otherwise.
+    ///
+    /// It exists because `fits` cannot answer this question. `fits` stops at the
+    /// first `concat` and then says yes to anything with a non-negative budget
+    /// (its own comment calls that "suboptimal but safe"), so a `group` whose
+    /// inner document is a `concat` — which is every non-trivial one — always
+    /// goes flat. `flatWidth` is measured when the node is built, by rendering
+    /// the flat spelling at an unbounded width, and it counts what follows on the
+    /// line as well, which is the other half `fits` cannot see.
+    widthChoice: struct { flat: *const Doc, broken: *const Doc, flatWidth: usize },
+    /// Text that exists only in the broken spelling of the enclosing group —
+    /// nothing at all when the group renders flat. It is what puts the trailing
+    /// comma on the last argument of a broken call and on nothing else, so that
+    /// `f(a, b)` and the open form share one document.
+    ifBreak: []const u8,
+    /// Records the column the render has reached. It prints nothing; the next
+    /// `alignToMark` pads to it. It exists for one layout: a comment written on
+    /// a statement's line and continued on the lines below, each continuation
+    /// indented to sit under the first (`f(); // one` / `      // two`). The
+    /// first comment's column is wherever the statement it trails ends, which
+    /// only the render knows.
+    markColumn,
+    /// Spaces from the current column up to the last `markColumn` — nothing when
+    /// the render is already there or past it.
+    alignToMark,
 };
 
 // ── global singletons (zero-cost leaves) ──────────────────────────────────────
@@ -44,6 +87,8 @@ const DOC_NIL: Doc = .nil;
 const DOC_LINE: Doc = .line;
 const DOC_SOFTLINE: Doc = .softline;
 const DOC_HARDLINE: Doc = .hardline;
+const DOC_MARK_COLUMN: Doc = .markColumn;
+const DOC_ALIGN_TO_MARK: Doc = .alignToMark;
 
 // ── Formatter ─────────────────────────────────────────────────────────────────
 
@@ -92,12 +137,43 @@ pub const Formatter = struct {
         return this.alloc(.{ .nest = .{ .amount = amount, .doc = doc } });
     }
 
+    /// A group whose construct is not enabled yet: it keeps the answer the old
+    /// scan gave, which is flat for every non-trivial document. See `Doc.group`.
     pub fn group(this: *Formatter, doc: *const Doc) !*const Doc {
-        return this.alloc(.{ .group = doc });
+        return this.alloc(.{ .group = .{ .doc = doc, .measured = false } });
+    }
+
+    /// A group that breaks **by width**: `fits` measures its flat spelling and
+    /// what follows it on the line, and every `line`/`softline` inside it becomes
+    /// a newline together when it does not fit. All-or-nothing is the node, not
+    /// the caller — a construct that wants two of its elements to share a line
+    /// cannot express that through this.
+    pub fn groupMeasured(this: *Formatter, doc: *const Doc) !*const Doc {
+        return this.alloc(.{ .group = .{ .doc = doc, .measured = true } });
     }
 
     pub fn forceBreak(this: *Formatter, doc: *const Doc) !*const Doc {
         return this.alloc(.{ .forceBreak = doc });
+    }
+
+    /// `flat` if it still fits in `flatWidth` columns at the point the render has
+    /// reached, `broken` otherwise. See `Doc.widthChoice` for why this is not a
+    /// `group`.
+    pub fn widthChoice(this: *Formatter, flat: *const Doc, broken: *const Doc, flatWidth: usize) !*const Doc {
+        return this.alloc(.{ .widthChoice = .{ .flat = flat, .broken = broken, .flatWidth = flatWidth } });
+    }
+
+    /// `s` in the enclosing group's broken spelling, nothing in its flat one.
+    pub fn ifBreak(this: *Formatter, s: []const u8) !*const Doc {
+        return this.alloc(.{ .ifBreak = s });
+    }
+
+    pub fn markColumn(_: *Formatter) *const Doc {
+        return &DOC_MARK_COLUMN;
+    }
+
+    pub fn alignToMark(_: *Formatter) *const Doc {
+        return &DOC_ALIGN_TO_MARK;
     }
 
     // ── higher-level combinators ───────────────────────────────────────────────
@@ -280,17 +356,23 @@ pub const Formatter = struct {
             if (p.fnType) |ft| break :blk try this.fmtFnType(ft);
             break :blk try this.fmtTypeRef(p.typeRef);
         } else try this.fmtTypeRef(p.typeRef);
+        const defaultDoc: *const Doc = if (p.default) |d|
+            try this.concat(try this.text(" = "), try this.fmtExpr(d))
+        else
+            this.nil();
         return switch (p.modifier) {
             .none => this.concatAll(&.{
                 try this.text(p.name),
                 try this.text(": "),
                 typeDoc,
+                defaultDoc,
             }),
             .@"comptime" => this.concatAll(&.{
                 try this.text("comptime "),
                 try this.text(p.name),
                 try this.text(": "),
                 typeDoc,
+                defaultDoc,
             }),
             .syntax => this.concatAll(&.{
                 try this.text(p.name),
@@ -306,9 +388,76 @@ pub const Formatter = struct {
         return this.commaList("(", items, ")");
     }
 
-    fn fmtReturnType(this: *Formatter, ret: ?[]const u8) !*const Doc {
-        if (ret) |r| return this.text(try std.fmt.allocPrint(this.arena, " -> {s}", .{r}));
-        return this.nil();
+    /// What a body puts on the signature's own line: ` {` when it opens, ` {}`
+    /// when it is empty (`fmtBody`'s answer for no statements).
+    fn bodyCols(stmts: usize) usize {
+        return if (stmts == 0) 3 else 2;
+    }
+
+    /// A declaration's parameter list, and whatever follows the closing paren on
+    /// the same line. A signature that does not fit breaks **one parameter per
+    /// line, with a trailing comma**, closing on its own line
+    /// ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 4):
+    ///
+    /// ```botopink
+    /// fn aVeryLongFunctionName(
+    ///     firstParameter: i32,
+    ///     secondParameter: string,
+    ///     thirdParameter: bool,
+    /// ) -> string {
+    /// ```
+    ///
+    /// `fmtParams`' `commaList` is a `group` that was meant to do exactly this and
+    /// never did once: `fits` stops at the first `concat`, so the group always went
+    /// flat and the signature above joined to **104 columns** against a
+    /// `LINE_WIDTH` of 80. The decision is taken here instead, from a flat width
+    /// measured at build time against the column the render has really reached —
+    /// see `Doc.widthChoice`.
+    ///
+    /// `tail` is printed after the closing paren and is part of the measurement.
+    /// `tailCols` is what follows *that* and is **not** part of this document —
+    /// the `;` of a bodyless declaration, or the ` {` a body opens with — which
+    /// the fit decision still has to pay for, or a signature would be broken one
+    /// column too late.
+    fn fmtSignature(this: *Formatter, params: []const ast.Param, tail: *const Doc, tailCols: usize) !*const Doc {
+        if (params.len == 0) return this.concat(try this.text("()"), tail);
+
+        var items = try this.arena.alloc(*const Doc, params.len);
+        for (params, 0..) |p, i| items[i] = try this.fmtParam(p);
+
+        const flat = try this.concat(
+            try this.concatAll(&.{
+                try this.text("("),
+                try this.join(items, try this.text(", ")),
+                try this.text(")"),
+            }),
+            tail,
+        );
+        const flatText = try render(this.arena, flat, std.math.maxInt(u32));
+        // A parameter default that needs a line of its own (a lambda) has no flat
+        // width to compare, so such a signature keeps whatever it printed before
+        // rather than being broken on a number that does not mean anything.
+        if (std.mem.indexOfScalar(u8, flatText, '\n') != null) return flat;
+
+        var brokenParts: std.ArrayList(*const Doc) = .empty;
+        defer brokenParts.deinit(this.arena);
+        for (items, 0..) |it, i| {
+            if (i > 0) try brokenParts.append(this.arena, this.hardline());
+            // The trailing comma is on every parameter, the last one included —
+            // measured to parse, and it is what makes adding a parameter a
+            // one-line diff.
+            try brokenParts.append(this.arena, try this.concat(it, try this.text(",")));
+        }
+        const broken = try this.concat(
+            try this.forceBreak(try this.concatAll(&.{
+                try this.text("("),
+                try this.nest(INDENT, try this.concat(this.hardline(), try this.concatAll(brokenParts.items))),
+                this.hardline(),
+                try this.text(")"),
+            })),
+            tail,
+        );
+        return this.widthChoice(flat, broken, flatText.len + tailCols);
     }
 
     fn fmtReturnTypeRef(this: *Formatter, ret: ?ast.TypeRef, typeGuardParam: ?[]const u8) !*const Doc {
@@ -328,12 +477,77 @@ pub const Formatter = struct {
 
     // ── body / statements ──────────────────────────────────────────────────────
 
+    /// A comment written on a line's end and continued on the lines below, each
+    /// continuation starting in the **source** column the first one started in.
+    /// The printer puts the continuation under the first comment's **printed**
+    /// column (`markColumn` / `alignToMark`), since the code before it may have
+    /// moved. A comment line that does not start in that column, or is not on
+    /// the very next line, is an ordinary comment and prints at the indentation.
+    const CommentChain = struct {
+        line: ?usize = null,
+        col: usize = 0,
+
+        fn start(this: *CommentChain, loc: ast.Loc) void {
+            this.* = .{ .line = loc.line, .col = loc.col };
+        }
+
+        fn continues(this: CommentChain, loc: ast.Loc) bool {
+            const last = this.line orelse return false;
+            return loc.line == last + 1 and loc.col == this.col;
+        }
+
+        fn advance(this: *CommentChain, loc: ast.Loc) void {
+            this.line = loc.line;
+        }
+    };
+
     fn fmtBody(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
         if (stmts.len == 0) return this.text("{}");
+        return this.surroundBreak("{", try this.fmtStmtSeq(stmts), "}");
+    }
+
+    /// The statements of a block body — a `fn`, a lambda, a `loop`, and an `if`
+    /// branch — one per line, each ended by `;` (a comment takes none); a blank
+    /// source line is kept, and a comment written on the previous statement's
+    /// line stays there.
+    ///
+    /// The `if` branches had a second printer of their own (`fmtBranchStmts`)
+    /// which joined with `hardline()` and read neither `emptyLinesBefore` nor
+    /// the trailing-comment flag, so an else-branch's blank line was recorded by
+    /// the parser and then dropped, and a trailing comment was moved onto a line
+    /// of its own. The two were otherwise identical, so the second one is gone
+    /// rather than given the same two arms.
+    ///
+    /// An `if` **then**-branch and a lambda body are parsed by their own inlined
+    /// loops (`parser/exprs.zig`), which record no `emptyLinesBefore` at all —
+    /// this printer keeps whatever they record, so those two start round-tripping
+    /// the moment the loops call `parseStmtListInBraces` (front 15's G5).
+    fn fmtStmtSeq(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
         var items: std.ArrayList(*const Doc) = .empty;
         defer items.deinit(this.arena);
+        // The source position of the trailing comment the statement before
+        // ended with, or of its last continuation line (`CommentChain`).
+        var chain: CommentChain = .{};
 
         for (stmts, 0..) |s, i| {
+            const isComment = s.expr == .literal and s.expr.literal.kind == .comment;
+            if (i > 0 and isComment and s.expr.literal.kind.comment.trailing) {
+                // A trailing comment stays at the end of the previous line.
+                try items.append(this.arena, try this.text(" "));
+                try items.append(this.arena, this.markColumn());
+                try items.append(this.arena, try this.fmtExpr(s.expr));
+                chain.start(s.expr.literal.loc);
+                continue;
+            }
+            if (isComment and s.emptyLinesBefore == 0 and chain.continues(s.expr.literal.loc)) {
+                // Its continuation: aligned under it, wherever it now starts.
+                try items.append(this.arena, this.hardline());
+                try items.append(this.arena, this.alignToMark());
+                try items.append(this.arena, try this.fmtExpr(s.expr));
+                chain.advance(s.expr.literal.loc);
+                continue;
+            }
+            chain = .{};
             if (i > 0 and s.emptyLinesBefore > 0) {
                 // Emit plain "\n" (no indent) to create blank lines without trailing spaces
                 for (0..s.emptyLinesBefore) |_| {
@@ -345,14 +559,53 @@ pub const Formatter = struct {
                 try items.append(this.arena, this.hardline());
             }
             const exprDoc = try this.fmtExpr(s.expr);
-            const stmtDoc = switch (s.expr) {
-                .literal => |lit| if (lit.kind == .comment) exprDoc else try this.concat(exprDoc, try this.text(";")),
-                else => try this.concat(exprDoc, try this.text(";")),
-            };
-            try items.append(this.arena, stmtDoc);
+            try items.append(this.arena, try this.terminated(s.expr, exprDoc));
         }
-        const inner = try this.concatAll(items.items);
-        return this.surroundBreak("{", inner, "}");
+        return this.concatAll(items.items);
+    }
+
+    /// A statement and what ends it: nothing for a comment and for a **braced
+    /// block statement** — an `if` (not `a ?? b`), a loop or a `case` whose
+    /// printed text ends in `}` (decision 29 (c), C-13) — and `;` for every
+    /// other statement. The test is the printed closing brace, exactly as the
+    /// parser's `isBracedBlockStmt` tests the last token: `if (c) return x;`
+    /// keeps its `;`, and so does an `if` whose last branch came out bare.
+    fn terminated(this: *Formatter, expr: ast.Expr, doc: *const Doc) !*const Doc {
+        const bare = switch (expr) {
+            .literal => |lit| lit.kind == .comment,
+            .branch => |b| b.kind == .if_ and nullishDefaultFallback(b.kind.if_) == null and lastChar(doc) == .closeBrace,
+            .loop => lastChar(doc) == .closeBrace,
+            .collection => |c| c.kind == .case and lastChar(doc) == .closeBrace,
+            else => false,
+        };
+        return if (bare) doc else this.concat(doc, try this.text(";"));
+    }
+
+    const LastChar = enum { empty, closeBrace, other, unknown };
+
+    /// The last character a document prints, as far as it can be known
+    /// without rendering: a `widthChoice` whose two spellings end alike, text
+    /// through any `concat` / `nest` / `group`. A line break or an `ifBreak`
+    /// at the end is `unknown`, and an unknown end keeps its `;` — which always
+    /// parses.
+    fn lastChar(doc: *const Doc) LastChar {
+        return switch (doc.*) {
+            .nil, .markColumn, .alignToMark => .empty,
+            .text => |t| if (t.len == 0) .empty else if (t[t.len - 1] == '}') .closeBrace else .other,
+            .line, .softline, .hardline => .unknown,
+            .ifBreak => |t| if (t.len == 0) .empty else .unknown,
+            .concat => |c| switch (lastChar(c.right)) {
+                .empty => lastChar(c.left),
+                else => |r| r,
+            },
+            .nest => |n| lastChar(n.doc),
+            .group => |g| lastChar(g.doc),
+            .forceBreak => |d| lastChar(d),
+            .widthChoice => |w| blk: {
+                const a = lastChar(w.flat);
+                break :blk if (a == lastChar(w.broken)) a else .unknown;
+            },
+        };
     }
 
     fn fmtOptionalBody(this: *Formatter, body: ?[]ast.Stmt) !*const Doc {
@@ -362,12 +615,34 @@ pub const Formatter = struct {
 
     // ── expressions ───────────────────────────────────────────────────────────
 
+    /// The fallback of `a ?? b` when this `if` **is** that form's desugaring, and
+    /// null when it is an `if` somebody wrote.
+    ///
+    /// `parseNullishExpr` builds one shape and only one:
+    /// `if (a) { <n> -> <n> } else { b }` with `n = ast.nullish_binding_name` —
+    /// the optional binding form the language already has, which evaluates `a`
+    /// once and narrows it inside the branch. All four parts are tested here, so
+    /// an `if` that binds, or one whose branch is a single identifier, is not
+    /// mistaken for it. The binding name is the codebase's reserved `__bp`
+    /// prefix, so no source spells it.
+    fn nullishDefaultFallback(i: anytype) ?ast.Expr {
+        const binding = i.binding orelse return null;
+        if (!std.mem.eql(u8, binding, ast.nullish_binding_name)) return null;
+        if (i.then_.len != 1) return null;
+        const then_expr = i.then_[0].expr;
+        if (then_expr != .identifier or then_expr.identifier.kind != .ident) return null;
+        if (!std.mem.eql(u8, then_expr.identifier.kind.ident, ast.nullish_binding_name)) return null;
+        const els = i.else_ orelse return null;
+        if (els.len != 1) return null;
+        return els[0].expr;
+    }
+
     pub fn fmtExpr(this: *Formatter, expr: ast.Expr) anyerror!*const Doc {
         return switch (expr) {
             .literal => |lit| switch (lit.kind) {
                 .stringLit => |s| blk: {
                     // Check if string should be formatted as multiline (contains newlines)
-                    if (std.mem.indexOfScalar(u8, s, '\n') != null) {
+                    if (needsTripleQuotes(s)) {
                         // Format as multiline string with triple quotes
                         // The content already includes the newlines from the source
                         break :blk this.text(try std.fmt.allocPrint(this.arena, "\"\"\"{s}\"\"\"", .{s}));
@@ -412,25 +687,7 @@ pub const Formatter = struct {
                     try this.text(ia.member),
                 }),
             },
-            .binaryOp => |bin| this.fmtBinop(
-                bin.lhs.*,
-                switch (bin.op) {
-                    .add => " + ",
-                    .sub => " - ",
-                    .mul => " * ",
-                    .div => " / ",
-                    .mod => " % ",
-                    .lt => " < ",
-                    .gt => " > ",
-                    .lte => " <= ",
-                    .gte => " >= ",
-                    .eq => " == ",
-                    .ne => " != ",
-                    .@"and" => " && ",
-                    .@"or" => " || ",
-                },
-                bin.rhs.*,
-            ),
+            .binaryOp => this.fmtBinaryChain(expr),
             .unaryOp => |un| switch (un.op) {
                 .not => this.concat(try this.text("!"), try this.fmtExpr(un.expr.*)),
                 .neg => this.concat(try this.text("-"), try this.fmtExpr(un.expr.*)),
@@ -471,97 +728,51 @@ pub const Formatter = struct {
                     try this.text(" catch "),
                     try this.fmtExpr(tc.handler.*),
                 }),
-                .if_ => |i| blk: {
-                    const condDoc = try this.fmtExpr(i.cond.*);
-                    // Build then block: with or without binding
-                    const thenDoc = if (i.binding) |b| blk2: {
-                        var items = try this.arena.alloc(*const Doc, i.then_.len);
-                        for (i.then_, 0..) |s, idx| {
-                            items[idx] = try this.concatAll(&.{
-                                try this.text("break "),
-                                try this.fmtExpr(s.expr),
-                            });
-                        }
-                        const body = try this.join(items, this.hardline());
-                        const inner = try this.concatAll(&.{
-                            try this.text(b),
-                            try this.text(" ->"),
-                            this.hardline(),
-                            body,
-                        });
-                        break :blk2 try this.surroundBreak("{", inner, "}");
-                    } else blk2: {
-                        // Single expression body — format without braces
-                        if (i.then_.len == 1) {
-                            break :blk2 try this.fmtExpr(i.then_[0].expr);
-                        }
-                        // Multi-statement block — add break before each
-                        var items = try this.arena.alloc(*const Doc, i.then_.len);
-                        for (i.then_, 0..) |s, idx| {
-                            items[idx] = try this.concatAll(&.{
-                                try this.text("break "),
-                                try this.fmtExpr(s.expr),
-                            });
-                        }
-                        const inner = try this.join(items, this.hardline());
-                        break :blk2 try this.surroundBreak("{", inner, "}");
-                    };
-                    if (i.else_) |els| {
-                        const elseDoc = if (els.len == 1)
-                            try this.fmtExpr(els[0].expr)
-                        else blk2: {
-                            var items = try this.arena.alloc(*const Doc, els.len);
-                            for (els, 0..) |s, idx| {
-                                items[idx] = try this.concatAll(&.{
-                                    try this.text("break "),
-                                    try this.fmtExpr(s.expr),
-                                });
-                            }
-                            const inner = try this.join(items, this.hardline());
-                            break :blk2 try this.surroundBreak("{", inner, "}");
-                        };
-                        break :blk this.concatAll(&.{
-                            try this.text("if ("),
-                            condDoc,
-                            try this.text(") "),
-                            thenDoc,
-                            try this.text(" else "),
-                            elseDoc,
-                        });
-                    }
-                    break :blk this.concatAll(&.{
-                        try this.text("if ("),
-                        condDoc,
-                        try this.text(") "),
-                        thenDoc,
-                    });
-                },
+                .if_ => |i| try this.fmtIf(i),
             },
             .loop => |lp| blk: {
-                // `loop [await] [:label] (...)`
-                var head: []const u8 = "loop ";
-                if (lp.awaitLoop) head = "loop await ";
-                var doc: *const Doc = try this.text(head);
+                // Decision 105's three keywords, printed back as written:
+                //   `[iter |stream ]loop [:label] {`
+                //   `[iter |stream ]while [:label] (cond) {`
+                //   `[iter |stream ]for [await] [:label] (iter) { x ->`
+                // A prefixed `while` / `for` is held as the prefixed
+                // `loop { <written loop>; break; }` (decision 125): print the
+                // prefix and the written loop.
+                const prefix: []const u8 = if (lp.generator) |g| (if (g == .stream) "stream " else "iter ") else "";
+                if (lp.prefixedKeyword) |pk| if (pk != .loop and lp.body.len >= 1 and lp.body[0].expr == .loop) {
+                    break :blk this.concat(try this.text(prefix), try this.fmtExpr(lp.body[0].expr));
+                };
+                var doc: *const Doc = try this.text(prefix);
+                doc = try this.concat(doc, try this.text(lp.keyword.spelling()));
+                if (lp.keyword == .for_ and lp.awaitLoop) doc = try this.concat(doc, try this.text(" await"));
                 if (lp.label) |lbl| {
-                    doc = try this.concat(doc, try this.text(try std.fmt.allocPrint(this.arena, ":{s} ", .{lbl})));
+                    doc = try this.concat(doc, try this.text(try std.fmt.allocPrint(this.arena, " :{s}", .{lbl})));
                 }
-                doc = try this.concat(doc, try this.text("("));
-                doc = try this.concat(doc, try this.fmtExpr(lp.iter.*));
-                if (lp.indexRange) |ir| {
-                    doc = try this.concat(doc, try this.text(", "));
-                    doc = try this.concat(doc, try this.fmtExpr(ir.*));
+                if (lp.keyword == .loop) {
+                    doc = try this.concat(doc, try this.text(" {"));
+                } else {
+                    doc = try this.concat(doc, try this.text(" ("));
+                    doc = try this.concat(doc, try this.fmtExpr(lp.iter.*));
+                    doc = try this.concat(doc, try this.text(") {"));
                 }
-                doc = try this.concat(doc, try this.text(") {"));
                 for (lp.params, 0..) |p, i| {
                     doc = try this.concat(doc, if (i == 0) try this.text(" ") else try this.text(", "));
                     doc = try this.concat(doc, try this.text(p));
                 }
-                doc = try this.concat(doc, try this.text(" ->"));
-                for (lp.body) |stmt| {
-                    doc = try this.concat(doc, try this.surroundBreak("", try this.fmtExpr(stmt.expr), ""));
+                // A `while` and a `loop` bind nothing: no `->`.
+                if (lp.params.len > 0) doc = try this.concat(doc, try this.text(" ->"));
+                // Each body statement keeps its `;` — printing them bare made a
+                // loop of two statements unparseable.
+                if (lp.body.len == 0) {
+                    doc = try this.concat(doc, try this.text(" }"));
+                    break :blk doc;
                 }
-                doc = try this.concat(doc, try this.text("}"));
-                break :blk doc;
+                break :blk this.forceBreak(try this.concatAll(&.{
+                    doc,
+                    try this.nest(INDENT, try this.concat(this.hardline(), try this.fmtStmtSeq(lp.body))),
+                    this.hardline(),
+                    try this.text("}"),
+                }));
             },
             .binding => |b| switch (b.kind) {
                 .localBind => |lb| if (lb.typeAnnotation) |ann| this.concatAll(&.{
@@ -602,8 +813,14 @@ pub const Formatter = struct {
             },
             .useHook => |uh| this.concat(try this.text("use "), try this.fmtExpr(uh.kind.inner.*)),
             .function => |func| switch (func.kind.syntax) {
-                .lambda => try this.fmtLambda(func.kind.params, func.kind.body),
+                .lambda => try this.fmtLambdaAt(func.loc.line, func.kind.params, func.kind.body, true),
                 .fnExpr => try this.fmtFnExpr(func.kind.params, func.kind.body),
+                // `async { … }` (decision 124): the block's statements, one per
+                // line, like any body.
+                .asyncBlock => if (func.kind.body.len == 0)
+                    try this.text("async {}")
+                else
+                    try this.surroundBreak("async {", try this.fmtStmtSeq(func.kind.body), "}"),
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| try this.fmtCall(cc),
@@ -669,15 +886,27 @@ pub const Formatter = struct {
                     try this.text(")"),
                 }),
                 // `record { name: value, … }` — anonymous record literal.
-                .recordLit => |rl| blk: {
-                    var doc: *const Doc = try this.text("record { ");
-                    for (rl.fields, 0..) |f, i| {
-                        if (i > 0) doc = try this.concat(doc, try this.text(", "));
-                        doc = try this.concat(doc, try this.text(f.name));
-                        doc = try this.concat(doc, try this.text(": "));
-                        doc = try this.concat(doc, try this.fmtExpr(f.value.*));
-                    }
-                    break :blk try this.concat(doc, try this.text(" }"));
+                // The argument list's shape: one measured group, a field per
+                // line with the trailing comma when it does not fit.
+                .behaviorLit => |il| blk: {
+                    const head = try this.text(try std.fmt.allocPrint(this.arena, "@{s}", .{il.name}));
+                    if (il.fields.len == 0) break :blk try this.concat(head, try this.text("()"));
+                    const fields = try this.arena.alloc(*const Doc, il.fields.len);
+                    for (il.fields, 0..) |f, i| fields[i] = try this.concatAll(&.{
+                        try this.text(f.name),
+                        try this.text(": "),
+                        try this.fmtExpr(f.value.*),
+                    });
+                    break :blk try this.concat(head, try this.groupMeasured(try this.concatAll(&.{
+                        try this.text("("),
+                        try this.nest(INDENT, try this.concatAll(&.{
+                            this.softline(),
+                            try this.join(fields, try this.concat(try this.text(","), this.line())),
+                            try this.ifBreak(","),
+                        })),
+                        this.softline(),
+                        try this.text(")"),
+                    })));
                 },
                 .case => |c| try this.fmtCase(c.subjects, c.arms, c.trailingComments),
                 .arrayLit => |al| blk: {
@@ -688,7 +917,9 @@ pub const Formatter = struct {
                     defer docs.deinit(this.arena);
 
                     var commentIdx: usize = 0;
-                    const hasComments = al.comments.len > 0;
+                    // A trailing element comment (G7) forces the open form like
+                    // any other comment: a flat list has nowhere to end a line.
+                    const hasComments = al.comments.len > 0 or al.trailingPerElem.len > 0;
                     const hasCounts = al.commentsPerElem.len > 0;
 
                     for (al.elems, 0..) |e, i| {
@@ -710,20 +941,18 @@ pub const Formatter = struct {
                         // In multi-line mode (trailingComma/comments), always add comma
                         const hasMore = (i < al.elems.len - 1) or (al.spread != null) or (al.spreadExpr != null);
                         const shouldAddComma = hasMore or al.trailingComma or hasComments;
-                        const elemWithComma = if (shouldAddComma)
+                        const elemWithComma = try this.withElemTrailingComment(if (shouldAddComma)
                             try this.concat(elemDoc, try this.text(","))
                         else
-                            elemDoc;
-                        // Group this element with the previous one if they share the same source line
-                        // and this element has no preceding comments.
-                        const sameLineAsPrev = i > 0 and numCommentsBefore == 0 and
-                            e.getLoc().line == al.elems[i - 1].getLoc().line;
-                        if (sameLineAsPrev and docs.items.len > 0) {
-                            const prev = docs.items[docs.items.len - 1];
-                            docs.items[docs.items.len - 1] = try this.concat(prev, try this.concat(try this.text(" "), elemWithComma));
-                        } else {
-                            try docs.append(this.arena, elemWithComma);
-                        }
+                            elemDoc, al.trailingPerElem, i);
+                        // One element per line in the open form. Elements written
+                        // on one source line used to be kept on one output line,
+                        // which made the layout a function of the source's layout
+                        // (decision 65 part 2 rules that out) and, once the list
+                        // measures width, was not idempotent: the joined line ran
+                        // past the width, a call inside it broke, and the next
+                        // pass read a different layout.
+                        try docs.append(this.arena, elemWithComma);
                     }
                     // Emit spread comments (commentsPerElem[elems.len])
                     const spreadCommentCount: usize = if (hasCounts and al.commentsPerElem.len > al.elems.len)
@@ -787,12 +1016,18 @@ pub const Formatter = struct {
                         }));
                     }
 
-                    // Otherwise, use group for flexible inline/multi-line
-                    const inner = try this.join(docs.items, this.line());
-                    break :blk this.group(try this.concatAll(&.{
+                    // Otherwise one measured group (decision 65): the list on one
+                    // line when it fits, what follows it counted; otherwise one
+                    // element per line, `+4`, with the trailing comma of the open
+                    // form, the spread included, `]` on its own line.
+                    var inner = try this.join(docs.items, this.line());
+                    if (hasSpread) inner = if (docs.items.len > 0)
+                        try this.concatAll(&.{ inner, this.line(), spreadDoc })
+                    else
+                        spreadDoc;
+                    break :blk this.groupMeasured(try this.concatAll(&.{
                         try this.text("["),
-                        try this.nest(INDENT, try this.concat(this.softline(), inner)),
-                        if (spreadDoc != this.nil()) try this.concatAll(&.{ this.line(), spreadDoc }) else this.nil(),
+                        try this.nest(INDENT, try this.concatAll(&.{ this.softline(), inner, try this.ifBreak(",") })),
                         this.softline(),
                         try this.text("]"),
                     }));
@@ -805,7 +1040,7 @@ pub const Formatter = struct {
                     var isComment: std.ArrayList(bool) = .empty;
                     defer isComment.deinit(this.arena);
 
-                    const tlHasComments = tl.comments.len > 0;
+                    const tlHasComments = tl.comments.len > 0 or tl.trailingPerElem.len > 0;
                     const tlHasCounts = tl.commentsPerElem.len > 0;
 
                     var commentIdx: usize = 0;
@@ -830,7 +1065,7 @@ pub const Formatter = struct {
                         // In comment mode: attach comma to element doc (all args get trailing comma)
                         // In non-comment mode: no comma attached (separator handles it)
                         try items.append(this.arena, if (tlHasComments)
-                            try this.concat(elemDoc, try this.text(","))
+                            try this.withElemTrailingComment(try this.concat(elemDoc, try this.text(",")), tl.trailingPerElem, i)
                         else
                             elemDoc);
                         _ = isLast;
@@ -883,16 +1118,17 @@ pub const Formatter = struct {
                         try parts.append(this.arena, item);
                     }
                     const inner = try this.concatAll(parts.items);
-                    break :blk this.group(try this.concatAll(&.{
+                    // One measured group, as the array literal's.
+                    break :blk this.groupMeasured(try this.concatAll(&.{
                         try this.text("#("),
-                        try this.nest(INDENT, try this.concat(this.softline(), inner)),
+                        try this.nest(INDENT, try this.concatAll(&.{ this.softline(), inner, try this.ifBreak(",") })),
                         this.softline(),
                         try this.text(")"),
                     }));
                 },
 
                 .range => |r| if (r.end) |end|
-                    this.concat(try this.fmtExpr(r.start.*), try this.concat(try this.text(".."), try this.fmtExpr(end.*)))
+                    this.concat(try this.fmtExpr(r.start.*), try this.concat(try this.text(if (r.inclusive) "..." else ".."), try this.fmtExpr(end.*)))
                 else
                     this.concat(try this.fmtExpr(r.start.*), try this.text("..")),
             },
@@ -902,8 +1138,7 @@ pub const Formatter = struct {
                 .comptimeBlock => |cb| blk: {
                     var items = try this.arena.alloc(*const Doc, cb.body.len);
                     for (cb.body, 0..) |s, i| {
-                        const exprDoc = try this.fmtExpr(s.expr);
-                        items[i] = try this.concat(exprDoc, try this.text(";"));
+                        items[i] = try this.terminated(s.expr, try this.fmtExpr(s.expr));
                     }
                     const inner = try this.join(items, this.hardline());
                     break :blk this.concat(
@@ -927,29 +1162,330 @@ pub const Formatter = struct {
                     doc = try this.concat(doc, try this.fmtPattern(ap.pattern));
                     doc = try this.concat(doc, try this.text(" = "));
                     doc = try this.concat(doc, try this.fmtExpr(ap.expr.*));
-                    doc = try this.concat(doc, try this.text(" catch "));
-                    doc = try this.concat(doc, try this.fmtExpr(ap.handler.*));
+                    // The handler-less `val assert P = e;` (decision 8 § 9)
+                    // carries the `@panic(…)` the parser desugared it to;
+                    // printing that handler wrote a `catch` the author never
+                    // did, and the checker refuses it ("after `catch` the value
+                    // is not a @Result") — `format` broke the file it formatted.
+                    if (!ap.fatal) {
+                        doc = try this.concat(doc, try this.text(" catch "));
+                        doc = try this.concat(doc, try this.fmtExpr(ap.handler.*));
+                    }
                     break :blk doc;
                 },
             },
         };
     }
 
-    fn fmtBinop(this: *Formatter, lhs: ast.Expr, op: []const u8, rhs: ast.Expr) !*const Doc {
-        return this.concatAll(&.{
-            try this.fmtExpr(lhs),
-            try this.text(op),
-            try this.fmtExpr(rhs),
-        });
+    /// An `if` expression or statement.
+    fn fmtIf(this: *Formatter, i: anytype) anyerror!*const Doc {
+        const parts = try this.fmtIfParts(i);
+        return parts.whole(this);
+    }
+
+    /// An `if` in two halves: `head`, which holds every break a bare branch
+    /// adds, and `tail`, a braced `else` body that follows it. `tail` stays
+    /// outside the measured group: its `{` block always breaks, and inside the
+    /// group that would break every bare branch before it too.
+    const IfParts = struct {
+        head: *const Doc,
+        tail: *const Doc,
+        measured: bool,
+
+        fn whole(p: IfParts, f: *Formatter) !*const Doc {
+            const h = if (p.measured) try f.groupMeasured(p.head) else p.head;
+            return f.concat(h, p.tail);
+        }
+    };
+
+    fn fmtIfParts(this: *Formatter, i: anytype) anyerror!IfParts {
+        // `a ?? b` — decision 28's nullish default, which the parser
+        // desugars into exactly this `if` (`ast.nullish_binding_name`
+        // says why: no `BinOp` variant, no new node). Printing the
+        // desugaring gave back a program nobody wrote and lost the
+        // `??` token with it.
+        if (nullishDefaultFallback(i)) |fallback| {
+            return .{ .head = try this.concatAll(&.{
+                try this.fmtExpr(i.cond.*),
+                try this.text(" ?? "),
+                try this.fmtExpr(fallback),
+            }), .tail = this.nil(), .measured = false };
+        }
+        const condDoc = try this.fmtExpr(i.cond.*);
+        // Build then block: with or without binding
+        const thenDoc = if (i.binding) |b| blk2: {
+            const body = try this.fmtStmtSeq(i.then_);
+            const inner = try this.concatAll(&.{
+                try this.text(b),
+                try this.text(" ->"),
+                this.hardline(),
+                body,
+            });
+            break :blk2 try this.surroundBreak("{", inner, "}");
+        } else blk2: {
+            // Single expression body — format without braces, unless it
+            // is itself an `if` and an `else` follows (the `else` would
+            // bind to the inner `if`).
+            const nestedIf = i.then_.len == 1 and i.then_[0].expr == .branch and i.then_[0].expr.branch.kind == .if_;
+            if (i.then_.len == 1 and !(nestedIf and i.else_ != null)) {
+                break :blk2 try this.fmtExpr(i.then_[0].expr);
+            }
+            // Multi-statement block: one statement per line, as written.
+            const inner = try this.fmtStmtSeq(i.then_);
+            break :blk2 try this.surroundBreak("{", inner, "}");
+        };
+        // A bare (brace-less) then-branch has a break before it: an
+        // `if` whose one line does not fit puts the branch on the
+        // next line, `+4`, and a bare `else` branch on the line
+        // after that — one measured group, all-or-nothing
+        // (decision 65). Without it the condition's own groups were
+        // the only place to break, and they broke for the branch
+        // that FOLLOWED them (`if (absDiff` / `    > tolerance) throw
+        // "…"`), the wrong middle. A braced branch keeps `) {` and
+        // `} else {` exactly as before; an `else if` keeps its `if`
+        // on the `else` line.
+        const thenBare = !(i.binding != null or i.then_.len != 1 or
+            (i.then_[0].expr == .branch and i.then_[0].expr.branch.kind == .if_ and i.else_ != null));
+        const thenPart: *const Doc = if (thenBare)
+            try this.concat(try this.text(")"), try this.nest(INDENT, try this.concat(this.line(), thenDoc)))
+        else
+            try this.concat(try this.text(") "), thenDoc);
+        if (i.else_) |els| {
+            const elseIsIf = els.len == 1 and els[0].expr == .branch and els[0].expr.branch.kind == .if_ and
+                nullishDefaultFallback(els[0].expr.branch.kind.if_) == null;
+            if (!thenBare) {
+                const elseDoc = if (els.len == 1)
+                    try this.fmtExpr(els[0].expr)
+                else
+                    try this.surroundBreak("{", try this.fmtStmtSeq(els), "}");
+                return .{
+                    .head = try this.concatAll(&.{ try this.text("if ("), condDoc, thenPart, try this.text(" else "), elseDoc }),
+                    .tail = this.nil(),
+                    .measured = false,
+                };
+            }
+            const head = try this.concatAll(&.{ try this.text("if ("), condDoc, thenPart, this.line(), try this.text("else") });
+            if (els.len != 1) {
+                // `else {` — the braced body is the tail.
+                return .{
+                    .head = head,
+                    .tail = try this.concat(try this.text(" "), try this.surroundBreak("{", try this.fmtStmtSeq(els), "}")),
+                    .measured = true,
+                };
+            }
+            if (elseIsIf) {
+                // An `else if` under a bare then-branch is the same chain: its
+                // breaks join this group, so the chain breaks at every `else`
+                // or at none (a last `else if (…) a else b` left flat was the
+                // middle). Its own braced `else`, if any, is the tail of all.
+                const child = try this.fmtIfParts(els[0].expr.branch.kind.if_);
+                if (child.measured) return .{
+                    .head = try this.concatAll(&.{ head, try this.text(" "), child.head }),
+                    .tail = child.tail,
+                    .measured = true,
+                };
+                return .{ .head = head, .tail = try this.concat(try this.text(" "), try child.whole(this)), .measured = true };
+            }
+            return .{
+                .head = try this.concat(head, try this.nest(INDENT, try this.concat(this.line(), try this.fmtExpr(els[0].expr)))),
+                .tail = this.nil(),
+                .measured = true,
+            };
+        }
+        return .{ .head = try this.concatAll(&.{ try this.text("if ("), condDoc, thenPart }), .tail = this.nil(), .measured = thenBare };
+    }
+
+    fn binOpText(op: anytype) []const u8 {
+        return switch (op) {
+            .add => "+",
+            .sub => "-",
+            .mul => "*",
+            .div => "/",
+            .mod => "%",
+            .lt => "<",
+            .gt => ">",
+            .lte => "<=",
+            .gte => ">=",
+            .eq => "==",
+            .ne => "!=",
+            .@"and" => "&&",
+            .@"or" => "||",
+        };
+    }
+
+    /// The parser's precedence level of `op` (`parser/exprs.zig`'s
+    /// `precedence_table`, lowest first). Operands of one level form one chain.
+    fn binOpLevel(op: anytype) u8 {
+        return switch (op) {
+            .@"or" => 0,
+            .@"and" => 1,
+            .eq, .ne => 2,
+            .lt, .gt, .lte, .gte => 3,
+            .add, .sub => 4,
+            .mul, .div, .mod => 5,
+        };
+    }
+
+    /// A binary expression — **one** `groupMeasured` over the run of operands
+    /// that share a precedence level (`a + b - c` is one run; `a + b * c` is a
+    /// run of two whose second operand is a run of its own). All-or-nothing
+    /// (decision 65): one line when the flat spelling fits, what follows on the
+    /// line counted; otherwise the first operand stays on the line and every
+    /// other one starts a line of its own, **operator first**, `+4` from the
+    /// statement — the method chain's shape, the operator where the chain puts
+    /// its `.`. The parser is left-associative, so the run is the left spine.
+    fn fmtBinaryChain(this: *Formatter, expr: ast.Expr) !*const Doc {
+        const top = expr.binaryOp;
+        const level = binOpLevel(top.op);
+        var rest: std.ArrayList(ast.BinOpExpr) = .empty;
+        var head: ast.Expr = expr;
+        while (head == .binaryOp and binOpLevel(head.binaryOp.op) == level) {
+            try rest.append(this.arena, head.binaryOp);
+            head = head.binaryOp.lhs.*;
+        }
+        var links: std.ArrayList(*const Doc) = .empty;
+        var i = rest.items.len;
+        while (i > 0) {
+            i -= 1;
+            const b = rest.items[i];
+            try links.append(this.arena, try this.concatAll(&.{
+                this.line(),
+                try this.text(binOpText(b.op)),
+                try this.text(" "),
+                try this.fmtExpr(b.rhs.*),
+            }));
+        }
+        return this.groupMeasured(try this.concat(
+            try this.fmtExpr(head),
+            try this.nest(INDENT, try this.concatAll(links.items)),
+        ));
+    }
+
+    /// A builtin call the **parser** synthesised for a form that has its own
+    /// spelling, printed back in that spelling.
+    ///
+    /// `ast.zig` states why both forms desugar into a call rather than into a
+    /// node of their own: no AST union there may gain a variant, or every
+    /// consumer would have to grow an arm before the form could parse at all.
+    /// The reserved callees cannot be written by hand (`is` is a keyword, `@[]`
+    /// does not lex), so a call carrying one is always the desugaring — and the
+    /// printer is the one place that has to undo it, because the desugared text
+    /// is not the program that was written.
+    fn fmtDesugaredBuiltin(this: *Formatter, c: anytype) anyerror!?*const Doc {
+        const is_builtin = if (@hasField(@TypeOf(c), "is_builtin")) c.is_builtin else false;
+        if (!is_builtin or c.receiver != null or c.trailing.len != 0) return null;
+
+        // `xs[0]` — decision 30's index expression, as `@[](receiver, index)`.
+        // One node serves indexing, slicing and a dict read, so `d["k"]` and
+        // `xs[0..2]` come back in their own spellings too: the index is an
+        // ordinary expression and prints as one.
+        if (std.mem.eql(u8, c.callee, ast.index_builtin_name) and c.args.len == 2 and
+            c.args[0].label == null and c.args[1].label == null)
+        {
+            return try this.concatAll(&.{
+                try this.fmtExpr(c.args[0].value.*),
+                try this.text("["),
+                try this.fmtExpr(c.args[1].value.*),
+                try this.text("]"),
+            });
+        }
+
+        // `x is T` — decision 8 §4, as `@is(x)` with the tested type on the
+        // node. Printing the call dropped the type outright: `o is i32` and
+        // `o is string` both came back as `@is(o)`.
+        if (std.mem.eql(u8, c.callee, ast.is_builtin_name) and c.args.len == 1 and c.args[0].label == null) {
+            const isType = if (@hasField(@TypeOf(c), "isType")) c.isType else null;
+            if (isType) |ty| {
+                return try this.concatAll(&.{
+                    try this.fmtExpr(c.args[0].value.*),
+                    try this.text(" is "),
+                    try this.fmtTypeRef(ty),
+                });
+            }
+        }
+        return null;
     }
 
     fn fmtCall(this: *Formatter, c: anytype) anyerror!*const Doc {
+        if (try this.fmtMethodChain(c)) |doc| return doc;
+        return this.fmtCallWithReceiverDoc(c, null);
+    }
+
+    /// A **link** of a method chain: a method call written `recv.name(…)` /
+    /// `recv?.name(…)`. Not a link: a plain call (`of(people)`), a builtin
+    /// (`@print(x)`), a tagged call (`recv.callee "…"`) and `adder(3)(4)`,
+    /// whose callee is an expression and whose receiver is null by design.
+    fn callIsLink(c: anytype) bool {
+        if (c.receiver == null) return false;
+        if (c.is_builtin) return false;
+        if (@hasField(@TypeOf(c), "is_tagged") and c.is_tagged) return false;
+        if (@hasField(@TypeOf(c), "calleeExpr") and c.calleeExpr != null) return false;
+        return true;
+    }
+
+    /// The method chain ([decision 65](../../../specs/1.0.5-beta/decisions-taken.md)):
+    /// two or more links in a row are **one** group, all-or-nothing —
+    ///
+    ///     of(people).where({ p -> p.age >= 18 }).select({ p -> p.name });
+    ///
+    ///     of(people)
+    ///         .where({ p -> p.age >= 18 })
+    ///         .orderBy({ p -> p.name })
+    ///         .select({ p -> p.name })
+    ///         .toArray()
+    ///         .join(", ");
+    ///
+    /// — one line when its flat spelling fits (what follows it on the line, the
+    /// `;` or the `)`, counted), otherwise the root on the statement's line and
+    /// **every** call on a line of its own, `+4` from the statement and never
+    /// aligned under the receiver (rule 3: a rename must not re-indent a chain).
+    /// There is no middle: no two calls share a line in the broken form (rule
+    /// 1). The group is `groupMeasured`, so a link holding a lambda that
+    /// breaks — `.forEach({ x ->` with a statement body — breaks the whole
+    /// chain too, because its flat spelling does not exist.
+    ///
+    /// The output is a pure function of the content (rule 2): a chain the
+    /// author broke by hand and that fits is joined back, and one they wrote
+    /// on one line that does not fit is opened. `null` when `c` closes no
+    /// chain — fewer than two links — and `fmtCall` prints it as it always has.
+    fn fmtMethodChain(this: *Formatter, c: anytype) anyerror!?*const Doc {
+        if (!callIsLink(c)) return null;
+        // The links, outermost first; `root` is the first receiver that is
+        // not one — `of(people)`, `self.items`, `xs`.
+        var links: std.ArrayList(@TypeOf(c)) = .empty;
+        defer links.deinit(this.arena);
+        try links.append(this.arena, c);
+        var root = c.receiver.?;
+        while (root.* == .call and root.call.kind == .call and callIsLink(root.call.kind.call)) {
+            try links.append(this.arena, root.call.kind.call);
+            root = root.call.kind.call.receiver.?;
+        }
+        if (links.items.len < 2) return null;
+        var body: std.ArrayList(*const Doc) = .empty;
+        defer body.deinit(this.arena);
+        var i = links.items.len;
+        while (i > 0) {
+            i -= 1;
+            try body.append(this.arena, this.softline());
+            try body.append(this.arena, try this.fmtCallWithReceiverDoc(links.items[i], this.nil()));
+        }
+        return try this.groupMeasured(try this.concat(
+            try this.fmtExpr(root.*),
+            try this.nest(INDENT, try this.concatAll(body.items)),
+        ));
+    }
+
+    /// One call. `recvDoc` stands in for the receiver's own printing when the
+    /// caller has already placed it — a chain link prints `.name(…)` after a
+    /// `nil` receiver, the receiver having gone to the chain's root.
+    fn fmtCallWithReceiverDoc(this: *Formatter, c: anytype, recvDoc: ?*const Doc) anyerror!*const Doc {
+        if (try this.fmtDesugaredBuiltin(c)) |doc| return doc;
         // Tagged-call sugar round-trip: `callee "..."` (single string arg, no parens)
         const is_tagged = if (@hasField(@TypeOf(c), "is_tagged")) c.is_tagged else false;
         if (is_tagged and c.args.len == 1 and c.args[0].label == null) {
             const head: *const Doc = if (c.receiver) |recv|
                 try this.concatAll(&.{
-                    try this.fmtExpr(recv.*),
+                    recvDoc orelse try this.fmtExpr(recv.*),
                     try this.text("."),
                     try this.text(c.callee),
                 })
@@ -990,14 +1526,36 @@ pub const Formatter = struct {
 
         const is_builtin = if (@hasField(@TypeOf(c), "is_builtin")) c.is_builtin else false;
         const is_optional = if (@hasField(@TypeOf(c), "optional")) c.optional else false;
-        const callee: *const Doc = if (c.receiver) |recv|
+        // `adder(3)(4)` — what is called is the previous call's result, so there
+        // is no name to print and the callee travels as an expression
+        // (`ast.CallExpr.call.calleeExpr`, `c.callee` is then `""`). Reading only
+        // `receiver` and `callee` printed the empty name and dropped the
+        // receiver: `adder(3)(4)` came back as `(4)`.
+        const calleeExpr = if (@hasField(@TypeOf(c), "calleeExpr")) c.calleeExpr else null;
+        const callee: *const Doc = if (calleeExpr) |ce|
+            try this.fmtExpr(ce.*)
+        else if (c.receiver) |recv|
             try this.concatAll(&.{
-                try this.fmtExpr(recv.*),
+                recvDoc orelse try this.fmtExpr(recv.*),
                 try this.text(if (is_optional) "?." else "."),
                 try this.text(c.callee),
             })
-        else
-            try this.text(if (is_builtin) try std.fmt.allocPrint(this.arena, "@{s}", .{c.callee}) else c.callee);
+        else blk: {
+            const name = try this.text(if (is_builtin) try std.fmt.allocPrint(this.arena, "@{s}", .{c.callee}) else c.callee);
+            // Decision 8 §1.3 (01-checker) — explicit type arguments at a use,
+            // `Box<i32>(value: 1)`, printed back adjacent to the name.
+            const typeArgs = if (@hasField(@TypeOf(c), "typeArgs")) c.typeArgs else null;
+            const tas = typeArgs orelse break :blk name;
+            var parts: std.ArrayListUnmanaged(*const Doc) = .empty;
+            try parts.append(this.arena, name);
+            try parts.append(this.arena, try this.text("<"));
+            for (tas, 0..) |ta, i| {
+                if (i > 0) try parts.append(this.arena, try this.text(", "));
+                try parts.append(this.arena, try this.fmtTypeRef(ta));
+            }
+            try parts.append(this.arena, try this.text(">"));
+            break :blk try this.concatAll(parts.items);
+        };
 
         // Check if there are any comments to force multiline formatting
         const hasComments = hasCommentsLoop: {
@@ -1018,6 +1576,37 @@ pub const Formatter = struct {
                 }
             }
             break :hasMultilineLoop false;
+        };
+
+        // An argument that is a lambda **hugs** the call
+        // ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 1):
+        //
+        //     xs.forEach({ x ->
+        //         @print(x);
+        //     });
+        //
+        // The arg list is a `group` whose inner document is `nest(INDENT, …)`, and
+        // `fits` stops at the first `concat` (see its comment) so the group goes
+        // flat: `(` prints, the softline vanishes, and then the lambda's own
+        // `forceBreak` opens **inside** that nest. Two nests for one line break
+        // put the body at +8 from the call line and the closing `});` at +4,
+        // which is the largest single source of churn in the libraries' diffs.
+        //
+        // The hug drops the nest and the softlines, so the lambda's forceBreak
+        // opens at the call's own indentation: body +4, `}` level with the call.
+        // It is deliberately not restricted to the last argument — `throws({ ->
+        // … }, "expected")` puts the lambda first, and the rule is about the
+        // lambda's body, not its position.
+        const hugsLambdaArg = !hasComments and !hasMultilineStringArg and hugLoop: {
+            for (c.args, 0..) |a, i| {
+                if (a.value.* != .function) continue;
+                // A lambda that prints on one line needs no hug; one that breaks
+                // does. `render` at an unbounded width answers exactly that,
+                // because only a hardline survives it.
+                const flat = try render(this.arena, items.items[i], std.math.maxInt(u32));
+                if (std.mem.indexOfScalar(u8, flat, '\n') != null) break :hugLoop true;
+            }
+            break :hugLoop false;
         };
 
         // Build comma-separated arg list with proper grouping
@@ -1044,6 +1633,15 @@ pub const Formatter = struct {
 
         const argsDoc = if (argParts.items.len == 0)
             try this.text("()")
+        else if (hugsLambdaArg)
+            // No nest, no softlines, and `", "` as the separator rather than
+            // `line()` — outside a group the mode is the enclosing break mode, in
+            // which a `line()` would become a newline of its own.
+            try this.concatAll(&.{
+                try this.text("("),
+                try this.join(items.items, try this.text(", ")),
+                try this.text(")"),
+            })
         else blk: {
             const inner = try this.concatAll(argParts.items);
 
@@ -1055,9 +1653,17 @@ pub const Formatter = struct {
                     try this.text(")"),
                 }));
             } else {
-                break :blk try this.group(try this.concatAll(&.{
+                // Still pinned. Enabled as the signature's shape (decision 61
+                // rule 4) it opens about half its lists for what *follows* them
+                // — `assert doc.indexOf(` / `"…",` / `) != -1;` — because the
+                // binary expression, `assert` and `case` arm around it are
+                // pinned and cannot break first: the middle decision 65 calls
+                // wrong. Measured and parked (`format/AGENTS.md`); the enabling
+                // is `groupMeasured` plus `ifBreak(",")` before the softline.
+                break :blk try this.groupMeasured(try this.concatAll(&.{
                     try this.text("("),
                     try this.nest(INDENT, try this.concat(this.softline(), inner)),
+                    try this.ifBreak(","),
                     this.softline(),
                     try this.text(")"),
                 }));
@@ -1093,33 +1699,103 @@ pub const Formatter = struct {
                 try parts.append(this.arena, try this.text(lbl));
                 try parts.append(this.arena, try this.text(": "));
             }
-            try parts.append(this.arena, try this.fmtLambda(tl.params, tl.body));
+            try parts.append(this.arena, try this.fmtLambda(tl.params, tl.body, false));
         }
 
         return this.concatAll(parts.items);
     }
 
-    fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt) !*const Doc {
-        var items: std.ArrayList(*const Doc) = .empty;
-        defer items.deinit(this.arena);
-        for (body, 0..) |s, i| {
-            if (i > 0 and s.emptyLinesBefore > 0) {
-                for (0..s.emptyLinesBefore) |_| {
-                    try items.append(this.arena, try this.text("\n"));
+    /// `arrow_when_empty`: a parameterless lambda in expression position keeps
+    /// its `{ -> … }` arrow — without it the braces re-parse as a block. A
+    /// trailing lambda (`f { … }`) needs none.
+    /// A lambda written on one line with a single value expression
+    /// (`{ n -> n * 2 }`, `{ -> 3 + 4 }`) stays on one line; everything else is
+    /// `fmtLambda`.
+    ///
+    /// The no-parameter case is part of the rule on purpose
+    /// ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 3): the
+    /// first draft tested `params.len > 0`, so `{ n -> n * 2 }` stayed inline
+    /// while `{ -> 3 + 4 }` — the same lambda with nothing to bind — exploded
+    /// into three lines. Two spellings of one form printed two ways is the
+    /// formatter contradicting itself, not a layout choice.
+    ///
+    /// The one-line form is only printed where an arrow is printed with it.
+    /// Measured: a **trailing** lambda's body is a statement block, so its
+    /// statements keep their `;` and the one-line spelling is a parse error —
+    /// `executar { ok }` answers *unexpected `}`*, and so does
+    /// `calcular(fator: 2) { a, b -> a + b }`, while `{ -> 42 }` and
+    /// `{ n -> n * 2 }` in argument position both parse. Printing the one-line
+    /// form there would emit text this compiler refuses.
+    fn fmtLambdaAt(this: *Formatter, lambdaLine: usize, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
+        if (arrow_when_empty and body.len == 1 and body[0].expr.getLoc().line == lambdaLine) {
+            const inlineValue = switch (body[0].expr) {
+                .binding, .jump => false,
+                .literal => |lit| lit.kind != .comment,
+                else => true,
+            };
+            if (inlineValue) {
+                // The value is rendered flat, as one text: letting its groups
+                // break by width split it over lines, and the next pass (the
+                // value no longer on the lambda's line) printed the lambda
+                // open — `format` was not idempotent. A value that needs a
+                // line break of its own prints the open form.
+                const flat = try render(this.arena, try this.fmtExpr(body[0].expr), std.math.maxInt(u32));
+                if (std.mem.indexOfScalar(u8, flat, '\n') == null) {
+                    // `{ ` + params + ` -> ` — a parameterless lambda keeps the
+                    // bare arrow, without which the braces re-parse as a block.
+                    const head: *const Doc = if (params.len > 0) blk: {
+                        var paramDocs = try this.arena.alloc(*const Doc, params.len);
+                        for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+                        break :blk try this.concatAll(&.{
+                            try this.text("{ "),
+                            try this.join(paramDocs, try this.text(", ")),
+                            try this.text(" -> "),
+                        });
+                    } else try this.text("{ -> ");
+                    return this.concatAll(&.{
+                        head,
+                        try this.text(flat),
+                        try this.text(" }"),
+                    });
                 }
             }
-            if (i > 0) try items.append(this.arena, this.hardline());
-            const exprDoc = try this.fmtExpr(s.expr);
-            const stmtDoc = switch (s.expr) {
-                .literal => |lit| if (lit.kind == .comment) exprDoc else try this.concat(exprDoc, try this.text(";")),
-                else => try this.concat(exprDoc, try this.text(";")),
-            };
-            try items.append(this.arena, stmtDoc);
         }
-        const inner = try this.concatAll(items.items);
+        return this.fmtLambda(params, body, arrow_when_empty);
+    }
 
-        if (params.len == 0) {
+    fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
+        // An empty body stays inline — `{ next -> }`, `{ -> }`, `{}`
+        // ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 2).
+        // The open form had nothing to put between the two hardlines, so it
+        // printed the body's indentation and then a newline: a line carrying
+        // **eight spaces and nothing else**, in a printer that goes out of its
+        // way to avoid trailing whitespace (`fmtStmtSeq` emits a bare `"\n"`
+        // for a blank line rather than a `hardline`, for exactly that reason).
+        // `fmtBody` already answers `{}` for an empty `fn` body; this is the
+        // same answer for the same question.
+        if (body.len == 0) {
+            if (params.len == 0) return this.text(if (arrow_when_empty) "{ -> }" else "{}");
+            var paramDocs = try this.arena.alloc(*const Doc, params.len);
+            for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+            return this.concatAll(&.{
+                try this.text("{ "),
+                try this.join(paramDocs, try this.text(", ")),
+                try this.text(" -> }"),
+            });
+        }
+
+        const inner = try this.fmtStmtSeq(body);
+
+        if (params.len == 0 and !arrow_when_empty) {
             return this.surroundBreak("{", inner, "}");
+        }
+        if (params.len == 0) {
+            return this.forceBreak(try this.concatAll(&.{
+                try this.text("{ ->"),
+                try this.nest(INDENT, try this.concat(this.hardline(), inner)),
+                this.hardline(),
+                try this.text("}"),
+            }));
         }
 
         // `{ a, b -> ... }`
@@ -1139,23 +1815,9 @@ pub const Formatter = struct {
     }
 
     fn fmtFnExpr(this: *Formatter, params: []const []const u8, body: []ast.Stmt) !*const Doc {
-        var items: std.ArrayList(*const Doc) = .empty;
-        defer items.deinit(this.arena);
-        for (body, 0..) |s, i| {
-            if (i > 0 and s.emptyLinesBefore > 0) {
-                for (0..s.emptyLinesBefore) |_| {
-                    try items.append(this.arena, try this.text("\n"));
-                }
-            }
-            if (i > 0) try items.append(this.arena, this.hardline());
-            const exprDoc = try this.fmtExpr(s.expr);
-            const stmtDoc = switch (s.expr) {
-                .literal => |lit| if (lit.kind == .comment) exprDoc else try this.concat(exprDoc, try this.text(";")),
-                else => try this.concat(exprDoc, try this.text(";")),
-            };
-            try items.append(this.arena, stmtDoc);
-        }
-        const inner = try this.concatAll(items.items);
+        // The one statement-sequence printer — this body had a copy of its
+        // loop that kept no trailing comment on its statement's line.
+        const inner = try this.fmtStmtSeq(body);
 
         if (params.len == 0) {
             return this.concatAll(&.{
@@ -1191,16 +1853,25 @@ pub const Formatter = struct {
                 // Regular separator
                 try armParts.append(this.arena, this.hardline());
             }
+            // An arm whose body is a lambda is decision 8 §5.1's
+            // `Pattern [when (…)] { body }`: no arrow, no `;`, and the body's
+            // parameter (`{ n -> … }`) binds the whole matched value. Any other
+            // body is the pre-decision-8 `pattern [if …] -> value;`.
+            const isBlockArm = arm.body == .function and arm.body.function.kind.syntax == .lambda;
             const guardDoc: *const Doc = if (arm.guard) |g| try this.concatAll(&.{
-                try this.text(" if "),
+                try this.text(if (isBlockArm) " when (" else " if "),
                 try this.fmtExpr(g),
+                try this.text(if (isBlockArm) ")" else ""),
             }) else this.nil();
             try armParts.append(this.arena, try this.concatAll(&.{
                 try this.fmtPattern(arm.pattern),
                 guardDoc,
-                try this.text(" -> "),
-                try this.fmtExpr(arm.body),
-                try this.text(";"),
+                if (isBlockArm) try this.text(" ") else try this.text(" -> "),
+                if (isBlockArm)
+                    try this.fmtLambda(arm.body.function.kind.params, arm.body.function.kind.body, false)
+                else
+                    try this.fmtExpr(arm.body),
+                if (isBlockArm) this.nil() else try this.text(";"),
             }));
         }
         // Add trailing comments after the last arm
@@ -1257,6 +1928,16 @@ pub const Formatter = struct {
         };
     }
 
+    /// The `label: ` a payload element was written with (decision 8 §5.1 P4),
+    /// or the element alone when it carried none.
+    fn withPatternLabel(this: *Formatter, labels: []const []const u8, i: usize, doc: *const Doc) !*const Doc {
+        if (i >= labels.len or labels[i].len == 0) return doc;
+        return this.concat(
+            try this.text(try std.fmt.allocPrint(this.arena, "{s}: ", .{labels[i]})),
+            doc,
+        );
+    }
+
     fn fmtPattern(this: *Formatter, pat: ast.Pattern) !*const Doc {
         return switch (pat) {
             .wildcard => this.text("_"),
@@ -1264,7 +1945,7 @@ pub const Formatter = struct {
             .numberLit => |n| this.text(n),
             .stringLit => |s| blk: {
                 // Check if string should be formatted as multiline (contains newlines)
-                if (std.mem.indexOfScalar(u8, s, '\n') != null) {
+                if (needsTripleQuotes(s)) {
                     // Format as multiline string with triple quotes
                     // The content already includes the newlines from the source
                     break :blk this.text(try std.fmt.allocPrint(this.arena, "\"\"\"{s}\"\"\"", .{s}));
@@ -1273,29 +1954,41 @@ pub const Formatter = struct {
                 }
             },
 
-            .variant => |v| switch (v.payload) {
-                .binding => |binding| {
+            // `Ok ok`, `Rgb(r, g, b)`, `Rect(width: w, ..)`, `#(0, s)` and the
+            // inclusive range `1...9` — decision 8 §5's shapes ride on this node
+            // (see `ast.PatternShape`), so the label, the trailing `..` and the
+            // tuple's `#` are written back from `labels`, `rest` and `shape`.
+            .variant => |v| {
+                if (v.shape == .range) {
+                    const bounds = v.payload.literals;
+                    return this.concatAll(&.{
+                        try this.fmtPattern(bounds[0]),
+                        try this.text("..."),
+                        try this.fmtPattern(bounds[1]),
+                    });
+                }
+                if (v.payload == .binding) {
                     return this.concat(
                         try this.text(v.name),
-                        try this.concat(try this.text(" "), try this.text(binding)),
+                        try this.concat(try this.text(" "), try this.text(v.payload.binding)),
                     );
-                },
-                .fields => |fields| {
-                    var items = try this.arena.alloc(*const Doc, fields.len);
-                    for (fields, 0..) |b, i| items[i] = try this.text(b);
-                    return this.concat(
-                        try this.text(v.name),
-                        try this.commaList("(", items, ")"),
-                    );
-                },
-                .literals => |args| {
-                    var items = try this.arena.alloc(*const Doc, args.len);
-                    for (args, 0..) |arg, i| items[i] = try this.fmtPattern(arg);
-                    return this.concat(
-                        try this.text(v.name),
-                        try this.commaList("(", items, ")"),
-                    );
-                },
+                }
+                var items: std.ArrayList(*const Doc) = .empty;
+                defer items.deinit(this.arena);
+                switch (v.payload) {
+                    .fields => |fields| for (fields, 0..) |b, i| {
+                        try items.append(this.arena, try this.withPatternLabel(v.labels, i, try this.text(b)));
+                    },
+                    .literals => |args| for (args, 0..) |arg, i| {
+                        try items.append(this.arena, try this.withPatternLabel(v.labels, i, try this.fmtPattern(arg)));
+                    },
+                    .binding => unreachable,
+                }
+                if (v.rest) try items.append(this.arena, try this.text(".."));
+                return this.concat(
+                    try this.text(v.name),
+                    try this.commaList(if (v.shape == .tuple) "#(" else "(", items.items, ")"),
+                );
             },
 
             .list => |l| {
@@ -1359,10 +2052,10 @@ pub const Formatter = struct {
             // Extract docComment from each declaration type
             const docComment: ?[]const u8 = switch (d) {
                 .use => |v| v.docComment,
-                .interface => |v| v.docComment,
+                .behavior => |v| v.docComment,
                 .delegate => |v| v.docComment,
-                .record => |v| v.docComment,
-                .@"enum" => |v| v.docComment,
+                .type_ => |v| v.docComment,
+                .typeAlias => |v| v.docComment,
                 .implement => |v| v.docComment,
                 .extend => |v| v.docComment,
                 .@"fn" => |v| v.docComment,
@@ -1377,9 +2070,11 @@ pub const Formatter = struct {
                 .@"fn" => false,
                 .@"test" => false,
                 .val => true,
-                .record => true,
-                .@"enum" => true,
-                .interface => true,
+                // 1.0.3 declarations end with `)` or `}` and take no `;`.
+                .type_ => false,
+                // An alias ends with its target type, which has no closing token.
+                .typeAlias => true,
+                .behavior => false,
                 .use, .delegate, .implement, .extend => true,
                 .mod => true,
                 .comment => false,
@@ -1399,9 +2094,28 @@ pub const Formatter = struct {
         var parts: std.ArrayList(*const Doc) = .empty;
         defer parts.deinit(this.arena);
         try parts.append(this.arena, docs[0]);
+        var chain: CommentChain = .{};
         for (1..docs.len) |i| {
             const prev = program.decls[i - 1];
             const curr = program.decls[i];
+            const sourceBlankHere = program.blankLineBefore.len == program.decls.len and program.blankLineBefore[i];
+            if (curr == .comment and curr.comment.trailing) {
+                // A trailing comment: its column is recorded for a continuation.
+                try parts.append(this.arena, try this.text(" "));
+                try parts.append(this.arena, this.markColumn());
+                try parts.append(this.arena, docs[i]);
+                chain.start(curr.comment.loc);
+                continue;
+            }
+            if (curr == .comment and !sourceBlankHere and chain.continues(curr.comment.loc)) {
+                // Its continuation, aligned under it.
+                try parts.append(this.arena, this.hardline());
+                try parts.append(this.arena, this.alignToMark());
+                try parts.append(this.arena, docs[i]);
+                chain.advance(curr.comment.loc);
+                continue;
+            }
+            chain = .{};
             // `mod` declarations group with imports — both are tight module-graph
             // statements, so adjacent ones get a single newline, not a blank line.
             const prevIsUse = prev == .use or prev == .mod;
@@ -1410,7 +2124,13 @@ pub const Formatter = struct {
             const prevIsModuleComment = prevIsComment and prev.comment.is_module;
             const currIsComment = curr == .comment;
             // Single newline when adjacent to a non-module comment or use declarations.
-            const sep: *const Doc = if (prevIsUse and currIsUse)
+            // A blank source line between two declarations is kept.
+            const sourceBlank = program.blankLineBefore.len == program.decls.len and program.blankLineBefore[i];
+            const sep: *const Doc = if (curr == .comment and curr.comment.trailing)
+                try this.text(" ")
+            else if (sourceBlank)
+                try this.concat(this.hardline(), this.hardline())
+            else if (prevIsUse and currIsUse)
                 this.hardline()
             else if ((prevIsComment and !prevIsModuleComment) or currIsComment)
                 this.hardline()
@@ -1425,22 +2145,32 @@ pub const Formatter = struct {
     fn fmtDecl(this: *Formatter, decl: ast.DeclKind) !*const Doc {
         return switch (decl) {
             .use => |u| this.fmtUse(u),
-            .interface => |iface| this.fmtInterface(iface),
+            .behavior => |iface| this.fmtBehavior(iface),
             .delegate => |d| this.fmtDelegate(d),
-            .record => |r| this.fmtRecord(r),
-            .@"enum" => |e| this.fmtEnum(e),
+            .type_ => |t| this.fmtType(t),
+            .typeAlias => |a| this.fmtTypeAlias(a),
             .implement => |impl| this.fmtImplement(impl),
             .extend => |ext| this.fmtExtend(ext),
             .@"fn" => |f| this.fmtFnDecl(f),
             .val => |v| this.fmtValDecl(v),
             .@"test" => |t| this.fmtTestDecl(t),
+            // `[pub] [default] mod Name;`. `default` names the package handle
+            // that `import <pkg>` resolves to (`comptime.zig`'s package-default
+            // DSL); dropping it silently unbinds every consumer of a package
+            // whose handle and handler have different names, and the result is
+            // idempotent, so `format --check` then calls the broken file clean.
             .mod => |m| this.text(try std.fmt.allocPrint(
                 this.arena,
-                "{s}mod {s}",
-                .{ if (m.isPub) "pub " else "", m.name },
+                "{s}{s}mod {s}",
+                .{
+                    if (m.isPub) "pub " else "",
+                    if (m.isDefault) "default " else "",
+                    m.name,
+                },
             )),
             .comment => |c| blk: {
                 const prefix = if (c.is_module) "////" else if (c.is_doc) "///" else "//";
+                if (c.text.len == 0) break :blk this.text(prefix);
                 break :blk this.text(try std.fmt.allocPrint(this.arena, "{s} {s}", .{ prefix, c.text }));
             },
         };
@@ -1469,8 +2199,14 @@ pub const Formatter = struct {
         for (u.imports, 0..) |imp, i| {
             items[i] = try this.fmtImportItem(imp);
         }
-        const importsDoc = try this.commaList("{", items, "}");
-        const head = try this.concatAll(&.{ try this.text("import "), importsDoc });
+        // Package-namespace form: `import pkg [, { … }]` binds `pkg`.
+        const head = if (u.package) |pkg| blk: {
+            if (u.imports.len == 0) break :blk try this.text(try std.fmt.allocPrint(this.arena, "import {s}", .{pkg}));
+            break :blk try this.concatAll(&.{
+                try this.text(try std.fmt.allocPrint(this.arena, "import {s}, ", .{pkg})),
+                try this.commaList("{", items, "}"),
+            });
+        } else try this.concatAll(&.{ try this.text("import "), try this.commaList("{", items, "}") });
         return switch (u.source) {
             .root => head,
             .module => |name| this.concatAll(&.{
@@ -1488,8 +2224,8 @@ pub const Formatter = struct {
         return this.concatAll(&.{
             prefix,
             try this.text(d.name),
-            try this.fmtParams(d.params),
-            try this.fmtReturnType(d.returnType),
+            try this.fmtGenericParams(d.genericParams),
+            try this.fmtSignature(d.params, try this.fmtReturnTypeRef(d.returnType, null), 1),
         });
     }
 
@@ -1499,12 +2235,24 @@ pub const Formatter = struct {
         defer docs.deinit(this.arena);
         for (annotations) |ann| {
             const prefix: []const u8 = if (ann.is_builtin) "@" else "";
-            if (ann.args.len == 0) {
+            if (ann.writtenArgs().len == 0) {
                 try docs.append(this.arena, try this.text(
                     try std.fmt.allocPrint(this.arena, "#[{s}{s}]", .{ prefix, ann.name }),
                 ));
             } else {
-                const argsStr = try std.mem.join(this.arena, ", ", ann.args);
+                // A labelled argument prints `label = value` — the fn-style
+                // spelling `#[@BeamMemory.Ets(keyed = true)]` is written with;
+                // the parser also reads `label: value`, and this is its one
+                // canonical form.
+                var written: std.ArrayList([]const u8) = .empty;
+                defer written.deinit(this.arena);
+                for (ann.writtenArgs(), 0..) |arg, i| {
+                    try written.append(this.arena, if (ann.labelOf(i)) |label|
+                        try std.fmt.allocPrint(this.arena, "{s} = {s}", .{ label, arg })
+                    else
+                        arg);
+                }
+                const argsStr = try std.mem.join(this.arena, ", ", written.items);
                 try docs.append(this.arena, try this.text(
                     try std.fmt.allocPrint(this.arena, "#[{s}{s}({s})]", .{ prefix, ann.name, argsStr }),
                 ));
@@ -1515,52 +2263,132 @@ pub const Formatter = struct {
         return this.concat(annsDoc, this.hardline());
     }
 
-    fn fmtInterface(this: *Formatter, iface: ast.InterfaceDecl) !*const Doc {
+    /// `#[…] [pub] behavior Name<G> extends A, B { members }` — the 1.0.3
+    /// surface. Bodyless members end with `;`, members with a body with `}`;
+    /// a blank line separates `val` fields, signatures and default methods.
+    fn fmtBehavior(this: *Formatter, iface: ast.BehaviorDecl) !*const Doc {
         var members: std.ArrayList(*const Doc) = .empty;
-
+        var groups: std.ArrayList(u8) = .empty;
+        var blanks: std.ArrayList(bool) = .empty;
         for (iface.fields) |f| {
-            try members.append(this.arena, try this.text(
-                try std.fmt.allocPrint(this.arena, "val {s}: {s},", .{ f.name, f.typeName }),
-            ));
+            const c = try this.withMemberComments(f.comments, try this.concatAll(&.{
+                try this.text(try std.fmt.allocPrint(this.arena, "val {s}: ", .{f.name})),
+                try this.fmtTypeRef(f.typeRef),
+                try this.text(";"),
+            }));
+            try members.append(this.arena, c.doc);
+            try blanks.append(this.arena, c.blank);
+            try groups.append(this.arena, 0);
         }
         for (iface.methods) |m| {
-            const methodDoc = try this.fmtInterfaceMethod(m);
-            try members.append(this.arena, methodDoc);
+            const c = try this.withMemberComments(m.comments, try this.withTrailingComment(try this.concat(
+                try this.fmtAnnotations(m.annotations),
+                try this.fmtInterfaceMethod(m),
+            ), m.trailingComment));
+            try members.append(this.arena, c.doc);
+            try blanks.append(this.arena, c.blank);
+            try groups.append(this.arena, if (m.body == null) 1 else 2);
         }
+        const body = try this.fmtMemberBlock(members.items, groups.items, blanks.items, iface.bodyComments);
 
-        const body = if (members.items.len == 0)
-            try this.text("{}")
-        else blk: {
-            const inner = try this.join(members.items, this.hardline());
-            break :blk try this.surroundBreak("{", inner, "}");
-        };
-
-        const extendsDoc = if (iface.extends.len == 0)
-            try this.text("")
-        else blk: {
-            var parts: std.ArrayList(*const Doc) = .empty;
-            defer parts.deinit(this.arena);
+        var parts: std.ArrayList(*const Doc) = .empty;
+        try parts.append(this.arena, try this.fmtAnnotations(iface.annotations));
+        if (iface.isPub) try parts.append(this.arena, try this.text("pub "));
+        try parts.append(this.arena, try this.text("behavior "));
+        try parts.append(this.arena, try this.text(iface.name));
+        try parts.append(this.arena, try this.fmtGenericParams(iface.genericParams));
+        if (iface.extends.len > 0) {
             try parts.append(this.arena, try this.text(" extends "));
-            for (iface.extends, 0..) |sup, i| {
-                if (i > 0) try parts.append(this.arena, try this.text(", "));
-                try parts.append(this.arena, try this.text(sup));
-            }
-            break :blk try this.concatAll(parts.items);
-        };
-
-        return this.concatAll(&.{
-            try this.fmtAnnotations(iface.annotations),
-            try this.text("val "),
-            try this.text(iface.name),
-            try this.fmtGenericParams(iface.genericParams),
-            try this.text(" = interface"),
-            extendsDoc,
-            try this.text(" "),
-            body,
-        });
+            try parts.append(this.arena, try this.text(try std.mem.join(this.arena, ", ", iface.extends)));
+        }
+        try parts.append(this.arena, try this.text(" "));
+        try parts.append(this.arena, body);
+        return this.concatAll(parts.items);
     }
 
-    fn fmtInterfaceMethod(this: *Formatter, m: ast.InterfaceMethod) !*const Doc {
+    /// `{ member … }` — one member per line, a blank line wherever the group
+    /// changes or the source had one; the body's trailing comments last; `{}`
+    /// when empty.
+    fn fmtMemberBlock(this: *Formatter, members: []const *const Doc, groups: []const u8, blanks: []const bool, bodyComments: []const []const u8) !*const Doc {
+        const trailing = try this.commentLines(bodyComments);
+        if (members.len == 0 and trailing.items.len == 0) return this.text("{}");
+        var parts: std.ArrayList(*const Doc) = .empty;
+        for (members, 0..) |m, i| {
+            if (i > 0) {
+                // A plain "\n" (no indent) makes the blank line between groups.
+                if (groups[i] != groups[i - 1] or blanks[i]) try parts.append(this.arena, try this.text("\n"));
+                try parts.append(this.arena, this.hardline());
+            }
+            try parts.append(this.arena, m);
+        }
+        try this.appendCommentLines(&parts, trailing, parts.items.len > 0);
+        return this.surroundBreak("{", try this.concatAll(parts.items), "}");
+    }
+
+    const CommentLines = struct { items: []const *const Doc, blanks: []const bool };
+
+    /// Comment lexemes as docs, with a blank-before flag per line ("" entries
+    /// fold into the next line's flag; a trailing "" is dropped).
+    fn commentLines(this: *Formatter, comments: []const []const u8) !CommentLines {
+        var items: std.ArrayList(*const Doc) = .empty;
+        var blanks: std.ArrayList(bool) = .empty;
+        var pending = false;
+        for (comments) |c| {
+            if (c.len == 0) {
+                pending = true;
+                continue;
+            }
+            try items.append(this.arena, try this.text(std.mem.trimEnd(u8, c, " \t\r")));
+            try blanks.append(this.arena, pending);
+            pending = false;
+        }
+        return .{ .items = items.items, .blanks = blanks.items };
+    }
+
+    fn appendCommentLines(this: *Formatter, parts: *std.ArrayList(*const Doc), lines: CommentLines, afterContent: bool) !void {
+        for (lines.items, lines.blanks, 0..) |lineDoc, blank, i| {
+            if (afterContent or i > 0) {
+                if (blank) try parts.append(this.arena, try this.text("\n"));
+                try parts.append(this.arena, this.hardline());
+            }
+            try parts.append(this.arena, lineDoc);
+        }
+    }
+
+    /// A body member preceded by its comment lines. `blank` is whether a blank
+    /// source line comes before the member (or before its first comment).
+    /// A `//` written on the member's own line, printed back where it was.
+    /// Without it the comment is emitted as a line of its own below the member,
+    /// where it reads as a leading comment of whatever comes next.
+    fn withTrailingComment(this: *Formatter, member: *const Doc, comment: ?[]const u8) !*const Doc {
+        const c = comment orelse return member;
+        return this.concat(member, try this.text(
+            try std.fmt.allocPrint(this.arena, " {s}", .{std.mem.trimEnd(u8, c, " \t\r")}),
+        ));
+    }
+
+    /// An array or tuple element followed by the comment written on its own
+    /// line (`1, // one`) — `trailingPerElem[i]`, front 16's G7.
+    fn withElemTrailingComment(this: *Formatter, elem: *const Doc, slots: []const ?[]const u8, i: usize) !*const Doc {
+        if (i >= slots.len) return elem;
+        const c = slots[i] orelse return elem;
+        return this.concat(elem, try this.text(try std.fmt.allocPrint(this.arena, " // {s}", .{c})));
+    }
+
+    fn withMemberComments(this: *Formatter, comments: []const []const u8, member: *const Doc) !struct { doc: *const Doc, blank: bool } {
+        const lines = try this.commentLines(comments);
+        const leadingBlank = comments.len > 0 and comments[0].len == 0;
+        if (lines.items.len == 0) return .{ .doc = member, .blank = leadingBlank or (comments.len > 0) };
+        var parts: std.ArrayList(*const Doc) = .empty;
+        try this.appendCommentLines(&parts, lines, false);
+        // A blank between the last comment and the member.
+        if (comments[comments.len - 1].len == 0) try parts.append(this.arena, try this.text("\n"));
+        try parts.append(this.arena, this.hardline());
+        try parts.append(this.arena, member);
+        return .{ .doc = try this.concatAll(parts.items), .blank = lines.blanks[0] };
+    }
+
+    fn fmtInterfaceMethod(this: *Formatter, m: ast.BehaviorMethod) !*const Doc {
         const pub_prefix: *const Doc = if (m.isPub) try this.text("pub ") else try this.text("");
         const fn_kw = if (m.is_default)
             try this.text("default fn ")
@@ -1573,8 +2401,11 @@ pub const Formatter = struct {
             fn_kw,
             try this.text(m.name),
             try this.fmtGenericParams(m.genericParams),
-            try this.fmtParams(m.params),
-            try this.fmtReturnTypeRef(m.returnType, null),
+            try this.fmtSignature(
+                m.params,
+                try this.fmtReturnTypeRef(m.returnType, null),
+                if (m.body) |stmts| bodyCols(stmts.len) else 1,
+            ),
         });
         if (m.body) |stmts| {
             return this.concatAll(&.{
@@ -1587,158 +2418,258 @@ pub const Formatter = struct {
         return this.concat(sig, try this.text(";"));
     }
 
-    fn fmtRecord(this: *Formatter, r: ast.RecordDecl) !*const Doc {
-        // Check if there are any methods
-        var hasMethods = false;
-        for (r.methods) |_| {
-            hasMethods = true;
-            break;
+    /// One field of a field list: `#[ann] name: Type = default`, preceded by
+    /// its `//` comments (each on its own line).
+    fn fmtField(this: *Formatter, f: ast.Field) !*const Doc {
+        var parts: std.ArrayList(*const Doc) = .empty;
+        for (f.comments) |c| {
+            try parts.append(this.arena, try this.text(try std.fmt.allocPrint(this.arena, "// {s}", .{c})));
+            try parts.append(this.arena, this.hardline());
         }
-
-        var fieldDocs = try this.arena.alloc(*const Doc, r.fields.len);
-        for (r.fields, 0..) |f, i| {
-            const typeDoc = try this.fmtTypeRef(f.typeRef);
-            fieldDocs[i] = try this.concatAll(&.{
-                try this.text(f.name),
-                try this.text(": "),
-                typeDoc,
-            });
-            if (f.default) |d| {
-                fieldDocs[i] = try this.concatAll(&.{
-                    fieldDocs[i],
-                    try this.text(" = "),
-                    try this.fmtExpr(d),
-                });
-            }
+        for (f.annotations) |ann| {
+            const prefix: []const u8 = if (ann.is_builtin) "@" else "";
+            const annText = if (ann.writtenArgs().len == 0)
+                try std.fmt.allocPrint(this.arena, "#[{s}{s}] ", .{ prefix, ann.name })
+            else
+                try std.fmt.allocPrint(this.arena, "#[{s}{s}({s})] ", .{ prefix, ann.name, try std.mem.join(this.arena, ", ", ann.writtenArgs()) });
+            try parts.append(this.arena, try this.text(annText));
         }
-
-        var methodDocs = try this.arena.alloc(*const Doc, r.methods.len);
-        for (r.methods, 0..) |m, i| methodDocs[i] = try this.fmtInterfaceMethod(m);
-
-        const allItems = try this.arena.alloc(*const Doc, fieldDocs.len + methodDocs.len);
-        @memcpy(allItems[0..fieldDocs.len], fieldDocs);
-        @memcpy(allItems[fieldDocs.len..], methodDocs);
-
-        const useMultiline = hasMethods or r.trailingComma;
-        const body = if (allItems.len == 0)
-            try this.text("{}")
-        else if (!useMultiline) blk: {
-            // Single line: record { field: Type, field2: Type }
-            const withCommas = try this.arena.alloc(*const Doc, allItems.len);
-            for (allItems, 0..) |item, i| {
-                const isLast = i == allItems.len - 1;
-                withCommas[i] = if (!isLast)
-                    try this.concat(item, try this.text(","))
-                else
-                    item;
-            }
-            const inner = try this.joinWith(withCommas, try this.text(" "));
-            break :blk try this.surroundFlat("{", inner, "}");
-        } else blk: {
-            const addTrailingComma = r.trailingComma and !hasMethods;
-            const withCommas = try this.arena.alloc(*const Doc, allItems.len);
-            for (allItems, 0..) |item, i| {
-                const isLast = i == allItems.len - 1;
-                withCommas[i] = if (!isLast or (isLast and addTrailingComma))
-                    try this.concat(item, try this.text(","))
-                else
-                    item;
-            }
-            const inner = try this.join(withCommas, this.hardline());
-            break :blk try this.surroundBreak("{", inner, "}");
-        };
-
-        const pubPrefix = if (r.isPub) try this.text("pub ") else try this.text("");
-        return this.concatAll(&.{
-            try this.fmtAnnotations(r.annotations),
-            pubPrefix,
-            try this.text("val "),
-            try this.text(r.name),
-            try this.fmtGenericParams(r.genericParams),
-            try this.text(" = record "),
-            try this.fmtImplementClause(r.implement),
-            body,
-        });
+        try parts.append(this.arena, try this.text(f.name));
+        try parts.append(this.arena, try this.text(": "));
+        try parts.append(this.arena, try this.fmtTypeRef(f.typeRef));
+        if (f.default) |d| {
+            try parts.append(this.arena, try this.text(" = "));
+            try parts.append(this.arena, try this.fmtExpr(d));
+        }
+        return this.concatAll(parts.items);
     }
 
-    fn fmtEnum(this: *Formatter, e: ast.EnumDecl) !*const Doc {
-        // Check if there are any methods
-        var hasMethods = false;
-        for (e.methods) |_| {
-            hasMethods = true;
-            break;
+    /// `(a: T, b: U)` — the field list of a record or a variant payload.
+    /// Compact on one line without a trailing comma (whatever the width);
+    /// open, one field per line with the trailing comma, when the source had
+    /// one or a field carries a comment.
+    fn fmtFieldList(this: *Formatter, fields: []const ast.Field, trailingComma: bool) !*const Doc {
+        var open = trailingComma;
+        for (fields) |f| {
+            // A comment on either side of the field forces the open form: the
+            // compact `(x: i32, y: i32)` has nowhere to put a `//`.
+            if (f.comments.len > 0 or f.trailingComment != null) open = true;
+        }
+        const items = try this.arena.alloc(*const Doc, fields.len);
+        for (fields, 0..) |f, i| items[i] = try this.fmtField(f);
+        if (!open) {
+            return this.concatAll(&.{
+                try this.text("("),
+                try this.join(items, try this.text(", ")),
+                try this.text(")"),
+            });
+        }
+        // The trailing comment goes after the comma, not before it — it was
+        // written at the end of the line, and `x: i32 // horizontal,` is not
+        // what the source said.
+        const withCommas = try this.arena.alloc(*const Doc, items.len);
+        for (items, 0..) |item, i| {
+            var doc = try this.concat(item, try this.text(","));
+            if (fields[i].trailingComment) |c| {
+                doc = try this.concat(doc, try this.text(
+                    try std.fmt.allocPrint(this.arena, " // {s}", .{c}),
+                ));
+            }
+            withCommas[i] = doc;
+        }
+        return this.surroundBreak("(", try this.join(withCommas, this.hardline()), ")");
+    }
+
+    /// `#[…] [pub] type Name<G>(fields) implement A { methods }` (record shape)
+    /// or `#[…] [pub] type Name<G> implement A { Variant, …, methods }` (enum
+    /// shape) — the 1.0.3 surface. A record always prints its field list (`()` when
+    /// empty, decision 138); a record with no methods prints no body;
+    /// variants stay compact on one line unless the source had a trailing
+    /// comma, the body holds a section or a method.
+    fn fmtType(this: *Formatter, t: ast.TypeDecl) !*const Doc {
+        var parts: std.ArrayList(*const Doc) = .empty;
+        try parts.append(this.arena, try this.fmtAnnotations(t.annotations));
+        if (t.isPub) try parts.append(this.arena, try this.text("pub "));
+        try parts.append(this.arena, try this.text("type "));
+        try parts.append(this.arena, try this.text(t.name));
+        try parts.append(this.arena, try this.fmtGenericParams(t.genericParams));
+
+        const methodDocs = try this.arena.alloc(*const Doc, t.methods.len);
+        const methodBlanks = try this.arena.alloc(bool, t.methods.len);
+        const noGroups = try this.arena.alloc(u8, t.methods.len);
+        for (t.methods, 0..) |m, i| {
+            const c = try this.withMemberComments(m.comments, try this.withTrailingComment(try this.concat(
+                try this.fmtAnnotations(m.annotations),
+                try this.fmtInterfaceMethod(m),
+            ), m.trailingComment));
+            methodDocs[i] = c.doc;
+            methodBlanks[i] = c.blank;
+            noGroups[i] = 0;
         }
 
-        var variantDocs = try this.arena.alloc(*const Doc, e.variants.len);
-        for (e.variants, 0..) |v, i| {
-            if (v.fields.len == 0) {
-                variantDocs[i] = try this.text(v.name);
-            } else {
-                var fieldDocs = try this.arena.alloc(*const Doc, v.fields.len);
-                for (v.fields, 0..) |f, fi| {
-                    fieldDocs[fi] = try this.concatAll(&.{
-                        try this.text(f.name),
-                        try this.text(": "),
-                        try this.fmtTypeRef(f.typeRef),
-                    });
+        if (t.isRecord()) {
+            // Decision 138: the field list is always written, `()` when empty.
+            if (t.recordFields().len > 0)
+                try parts.append(this.arena, try this.fmtFieldList(t.recordFields(), t.trailingComma))
+            else
+                try parts.append(this.arena, try this.text("()"));
+            try this.appendImplement(&parts, t.implement);
+            if (methodDocs.len > 0 or t.bodyComments.len > 0) {
+                try parts.append(this.arena, try this.text(" "));
+                try parts.append(this.arena, try this.fmtMemberBlock(methodDocs, noGroups, methodBlanks, t.bodyComments));
+            }
+            return this.concatAll(parts.items);
+        }
+
+        try this.appendImplement(&parts, t.implement);
+        try parts.append(this.arena, try this.text(" "));
+        const variants = t.variants();
+        const sections = t.sections();
+        const itemCount = variants.len + sections.len;
+        // The comments before the body's `}` (`TypeDecl.bodyComments`) — the
+        // record path printed them and this one did not, so a `//` closing an
+        // enum body was deleted.
+        const closing = try this.commentLines(t.bodyComments);
+        if (itemCount + methodDocs.len == 0 and closing.items.len == 0) {
+            try parts.append(this.arena, try this.text("{}"));
+            return this.concatAll(parts.items);
+        }
+        var hasMemberComment = false;
+        for (variants) |v| {
+            if (v.comments.len > 0 or v.trailingComment != null) hasMemberComment = true;
+        }
+        for (sections) |sec| {
+            if (sec.comments.len > 0) hasMemberComment = true;
+        }
+        const open = t.trailingComma or sections.len > 0 or methodDocs.len > 0 or hasMemberComment or closing.items.len > 0;
+        if (!open) {
+            const vdocs = try this.arena.alloc(*const Doc, variants.len);
+            for (variants, 0..) |v, i| vdocs[i] = try this.fmtEnumVariant(v);
+            try parts.append(this.arena, try this.surroundFlat("{", try this.join(vdocs, try this.text(", ")), "}"));
+            return this.concatAll(parts.items);
+        }
+        var inner = try this.fmtEnumMembers(variants, sections);
+        if (methodDocs.len > 0) {
+            var mparts: std.ArrayList(*const Doc) = .empty;
+            for (methodDocs, 0..) |m, i| {
+                if (i > 0) {
+                    if (methodBlanks[i]) try mparts.append(this.arena, try this.text("\n"));
+                    try mparts.append(this.arena, this.hardline());
                 }
-                variantDocs[i] = try this.concat(
-                    try this.text(v.name),
-                    try this.commaList("(", fieldDocs, ")"),
-                );
+                try mparts.append(this.arena, m);
             }
+            const methods = try this.concatAll(mparts.items);
+            inner = if (itemCount > 0)
+                try this.concatAll(&.{ inner, try this.text("\n"), this.hardline(), methods })
+            else
+                methods;
         }
+        if (closing.items.len > 0) {
+            var cparts: std.ArrayList(*const Doc) = .empty;
+            try cparts.append(this.arena, inner);
+            try this.appendCommentLines(&cparts, closing, itemCount + methodDocs.len > 0);
+            inner = try this.concatAll(cparts.items);
+        }
+        try parts.append(this.arena, try this.surroundBreak("{", inner, "}"));
+        return this.concatAll(parts.items);
+    }
 
-        var methodDocs = try this.arena.alloc(*const Doc, e.methods.len);
-        for (e.methods, 0..) |m, i| methodDocs[i] = try this.fmtInterfaceMethod(m);
+    fn appendImplement(this: *Formatter, parts: *std.ArrayList(*const Doc), impls: []const ast.TypeRef) !void {
+        if (impls.len == 0) return;
+        const docs = try this.arena.alloc(*const Doc, impls.len);
+        for (impls, 0..) |im, i| docs[i] = try this.fmtTypeRef(im);
+        try parts.append(this.arena, try this.text(" implement "));
+        try parts.append(this.arena, try this.join(docs, try this.text(", ")));
+    }
 
-        const allItems = try this.arena.alloc(*const Doc, variantDocs.len + methodDocs.len);
-        @memcpy(allItems[0..variantDocs.len], variantDocs);
-        @memcpy(allItems[variantDocs.len..], methodDocs);
+    /// One enum variant: a unit name (`Red`), a numeric section leaf (`500`,
+    /// whose name is the digit string verbatim) or a payload variant
+    /// (`Rgb(r: i32, g: i32)`).
+    fn fmtEnumVariant(this: *Formatter, v: ast.EnumVariant) !*const Doc {
+        if (v.fields.len == 0) return this.text(v.name);
+        return this.concat(try this.text(v.name), try this.fmtFieldList(v.fields, false));
+    }
 
-        // Always use shorthand form: val Name = enum { ... }
-        // Use multiline if has trailing comma in source or has methods (methods require trailing comma on last variant)
-        const useMultiline = hasMethods or e.trailingComma;
-        const body = if (allItems.len == 0)
+    /// An enum section: `Color { Red, Blue }`, holding bare variants and
+    /// nested sections (arbitrarily deep). Always rendered broken, and never
+    /// followed by a comma — the closing brace ends the item.
+    fn fmtEnumSection(this: *Formatter, s: ast.EnumSection) anyerror!*const Doc {
+        const closing = try this.commentLines(s.bodyComments);
+        const hasMembers = s.variants.len + s.sections.len > 0;
+        const body = if (!hasMembers and closing.items.len == 0)
             try this.text("{}")
-        else if (!useMultiline) blk: {
-            // Single line: enum { Variant1, Variant2 }
-            const withCommas = try this.arena.alloc(*const Doc, allItems.len);
-            for (allItems, 0..) |item, i| {
-                const isLast = i == allItems.len - 1;
-                withCommas[i] = if (!isLast)
-                    try this.concat(item, try this.text(","))
-                else
-                    item;
-            }
-            const inner = try this.joinWith(withCommas, try this.text(" "));
-            break :blk try this.surroundFlat("{", inner, "}");
-        } else blk: {
-            // Multiline: all non-last items get commas; last item gets comma only if trailingComma and no methods
-            const addTrailingComma = e.trailingComma and !hasMethods;
-            const withCommas = try this.arena.alloc(*const Doc, allItems.len);
-            for (allItems, 0..) |item, i| {
-                const isLast = i == allItems.len - 1;
-                withCommas[i] = if (!isLast or (isLast and addTrailingComma))
-                    try this.concat(item, try this.text(","))
-                else
-                    item;
-            }
-            const inner = try this.join(withCommas, this.hardline());
-            break :blk try this.surroundBreak("{", inner, "}");
+        else blk: {
+            var parts: std.ArrayList(*const Doc) = .empty;
+            if (hasMembers) try parts.append(this.arena, try this.fmtEnumMembers(s.variants, s.sections));
+            // The comments before the section's `}` (`EnumSection.bodyComments`).
+            try this.appendCommentLines(&parts, closing, hasMembers);
+            break :blk try this.surroundBreak("{", try this.concatAll(parts.items), "}");
         };
+        return this.concatAll(&.{ try this.text(s.name), try this.text(" "), body });
+    }
 
-        const pubPrefix = if (e.isPub) try this.text("pub ") else try this.text("");
-        return this.concatAll(&.{
-            try this.fmtAnnotations(e.annotations),
-            pubPrefix,
-            try this.text("val "),
-            try this.text(e.name),
-            try this.fmtGenericParams(e.genericParams),
-            try this.text(" = enum "),
-            try this.fmtImplementClause(e.implement),
-            body,
-        });
+    /// The members of one enum body, in the order the source wrote them.
+    ///
+    /// `variants` and `sections` are two parallel slices and a body may
+    /// interleave them, so printing all of one and then all of the other hoists
+    /// every variant written after a section above it — 13 of them at 4 sites in
+    /// emilia's `tokens.bp` alone. Each member carries its position in
+    /// `order` (front 16's G1), and both slices are already in source order
+    /// among themselves, so recovering the body is a merge of two sorted lists.
+    ///
+    /// A variant ends in `,`; a section does not — its closing brace ends the
+    /// item. Leading comments print above the member, a `""` among them printing
+    /// as the blank line it stands for, and a variant's trailing comment goes
+    /// after the comma, where it was written.
+    fn fmtEnumMembers(
+        this: *Formatter,
+        variants: []const ast.EnumVariant,
+        sections: []const ast.EnumSection,
+    ) anyerror!*const Doc {
+        var out: std.ArrayList(*const Doc) = .empty;
+        var vi: usize = 0;
+        var si: usize = 0;
+        var first = true;
+        while (vi < variants.len or si < sections.len) {
+            const takeVariant = si >= sections.len or
+                (vi < variants.len and variants[vi].order <= sections[si].order);
+
+            const comments = if (takeVariant) variants[vi].comments else sections[si].comments;
+            const member: *const Doc = if (takeVariant) blk: {
+                var doc = try this.concat(try this.fmtEnumVariant(variants[vi]), try this.text(","));
+                if (variants[vi].trailingComment) |c| {
+                    doc = try this.concat(doc, try this.text(
+                        try std.fmt.allocPrint(this.arena, " {s}", .{std.mem.trimEnd(u8, c, " \t\r")}),
+                    ));
+                }
+                break :blk doc;
+            } else try this.fmtEnumSection(sections[si]);
+
+            const lines = try this.commentLines(comments);
+            if (!first) {
+                // A blank source line before the member, or before its first
+                // comment line, is the `""` the parser recorded.
+                const blank = if (lines.items.len > 0) lines.blanks[0] else (comments.len > 0 and comments[0].len == 0);
+                if (blank) try out.append(this.arena, try this.text("\n"));
+                try out.append(this.arena, this.hardline());
+            }
+            for (lines.items, lines.blanks, 0..) |lineDoc, blank, i| {
+                if (i > 0) {
+                    if (blank) try out.append(this.arena, try this.text("\n"));
+                    try out.append(this.arena, this.hardline());
+                }
+                try out.append(this.arena, lineDoc);
+            }
+            if (lines.items.len > 0) {
+                if (comments[comments.len - 1].len == 0) try out.append(this.arena, try this.text("\n"));
+                try out.append(this.arena, this.hardline());
+            }
+            try out.append(this.arena, member);
+
+            first = false;
+            if (takeVariant) vi += 1 else si += 1;
+        }
+        return this.concatAll(out.items);
     }
 
     fn fmtImplement(this: *Formatter, impl: ast.ImplementDecl) !*const Doc {
@@ -1821,7 +2752,7 @@ pub const Formatter = struct {
         return this.concatAll(&.{
             try this.text("fn "),
             nameDoc,
-            try this.fmtParams(m.params),
+            try this.fmtSignature(m.params, this.nil(), bodyCols(m.body.len)),
             try this.text(" "),
             try this.fmtBody(m.body),
         });
@@ -1831,8 +2762,30 @@ pub const Formatter = struct {
         // `[pub] fn ` — the effect is carried by a `#[@<effect>]` annotation
         // (emitted by `fmtAnnotations`). The deprecated `*fn` prefix was removed
         // in v0.beta.19, so there is no longer a star-derived effect to print.
+        // An FFI declaration (`#[@External.…] pub declare fn f(…) -> T;`) is a
+        // `declare fn` with NO body: it must keep the `declare` keyword and
+        // end in `;`. Printing it as `pub fn f(…) -> T {}` (what this did
+        // before) silently turned every host-backed declaration into an empty
+        // implementation.
+        // `default` names the package's DSL handler, the fn aliased under the
+        // `pub default mod` handle. Same loss as the mod arm above: drop it and
+        // `<pkg> "…"` stops binding, with nothing in the repository noticing.
+        // The keyword order is the parser's (`parseFnDecl`): pub, default,
+        // declare.
         const pubKw: []const u8 = if (f.isPub) "pub " else "";
-        const prefix = try this.text(try std.fmt.allocPrint(this.arena, "{s}fn ", .{pubKw}));
+        const defaultKw: []const u8 = if (f.isDefault) "default " else "";
+        const declareKw: []const u8 = if (f.isDeclare) "declare " else "";
+        const prefix = try this.text(try std.fmt.allocPrint(this.arena, "{s}{s}{s}fn ", .{ pubKw, defaultKw, declareKw }));
+        if (f.isDeclare and f.body.len == 0) {
+            return this.concatAll(&.{
+                try this.fmtAnnotations(f.annotations),
+                prefix,
+                try this.text(f.name),
+                try this.fmtGenericParams(f.genericParams),
+                try this.fmtSignature(f.params, try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam), 1),
+                try this.text(";"),
+            });
+        }
 
         // Optional generator label after the return type: ` :gen`.
         const labelDoc: *const Doc = if (f.label) |lbl|
@@ -1845,9 +2798,11 @@ pub const Formatter = struct {
             prefix,
             try this.text(f.name),
             try this.fmtGenericParams(f.genericParams),
-            try this.fmtParams(f.params),
-            try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam),
-            labelDoc,
+            try this.fmtSignature(
+                f.params,
+                try this.concat(try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam), labelDoc),
+                bodyCols(f.body.len),
+            ),
             try this.text(" "),
             try this.fmtBody(f.body),
         });
@@ -1865,11 +2820,54 @@ pub const Formatter = struct {
         });
     }
 
+    /// Where a type is being printed, for the one question the printer has to
+    /// ask there: would re-reading the text give back the same type?
+    ///
+    /// The three positions are the three places `parser/types.zig` binds a type
+    /// operator to a **base** type rather than to a whole one, so a member that
+    /// does not close itself absorbs what follows.
+    const TypePosition = enum {
+        /// `X[]` — `parseBaseTypeRef` applies the `[]` suffix at the single exit
+        /// of a base type, so `?i32[]` reads as `?(i32[])` and `i32 | string[]`
+        /// as `i32 | (string[])`.
+        arrayElement,
+        /// `?X` — `?` takes a base type, so a `|` after it opens a union whose
+        /// *first member* is the optional.
+        optionalInner,
+        /// `X | …` — a member's own grammar must not swallow the bar: a function
+        /// type's return type is parsed with the full `parseTypeRef`.
+        unionMember,
+    };
+
+    /// True when printing `ref` in `position` needs parentheses to read back as
+    /// the same type. `(T)` is not kept in the AST — `parseBaseTypeRefArm` says
+    /// `(T)` *is* `T` — so the printer decides this from the shape, not from a
+    /// recorded grouping.
+    fn typeNeedsParens(ref: ast.TypeRef, position: TypePosition) bool {
+        const isUnion = ref.unionMembers() != null;
+        const isConstrainedTypeparam = ref == .typeparam and ref.typeparam.len > 0;
+        return switch (position) {
+            .arrayElement => isUnion or ref == .optional or ref == .function or isConstrainedTypeparam,
+            .optionalInner => isUnion or isConstrainedTypeparam,
+            .unionMember => ref == .function or isConstrainedTypeparam,
+        };
+    }
+
+    /// `fmtTypeRef`, parenthesised when `position` would otherwise re-read the
+    /// text as a different type. `(i32 | string)[]` is the case that found this:
+    /// the parentheses are the array's element boundary, and printing them away
+    /// gave an array of `string`, unioned with `i32`.
+    fn fmtTypeRefIn(this: *Formatter, ref: ast.TypeRef, position: TypePosition) anyerror!*const Doc {
+        const inner = try this.fmtTypeRef(ref);
+        if (!typeNeedsParens(ref, position)) return inner;
+        return this.concatAll(&.{ try this.text("("), inner, try this.text(")") });
+    }
+
     fn fmtTypeRef(this: *Formatter, ref: ast.TypeRef) anyerror!*const Doc {
         return switch (ref) {
             .named => |n| this.text(n),
-            .array => |elem| this.concat(try this.fmtTypeRef(elem.*), try this.text("[]")),
-            .optional => |inner| this.concat(try this.text("?"), try this.fmtTypeRef(inner.*)),
+            .array => |elem| this.concat(try this.fmtTypeRefIn(elem.*, .arrayElement), try this.text("[]")),
+            .optional => |inner| this.concat(try this.text("?"), try this.fmtTypeRefIn(inner.*, .optionalInner)),
             .tuple_ => |elems| blk: {
                 var docs = try this.arena.alloc(*const Doc, elems.len);
                 for (elems, 0..) |e, i| docs[i] = try this.fmtTypeRef(e);
@@ -1883,21 +2881,49 @@ pub const Formatter = struct {
                     try this.text(")"),
                 });
             },
+            .labeledTuple => |lt| blk: {
+                var docs = try this.arena.alloc(*const Doc, lt.elems.len);
+                for (lt.elems, 0..) |e, i| docs[i] = try this.concatAll(&.{
+                    try this.text(lt.labels[i]),
+                    try this.text(": "),
+                    try this.fmtTypeRef(e),
+                });
+                break :blk this.concatAll(&.{
+                    try this.text("#("),
+                    try this.join(docs, try this.text(", ")),
+                    try this.text(")"),
+                });
+            },
             .function => |f| blk: {
                 var paramDocs = try this.arena.alloc(*const Doc, f.params.len);
-                for (f.params, 0..) |p, i| paramDocs[i] = try this.fmtTypeRef(p);
+                for (f.params, 0..) |p, i| {
+                    const name = if (f.paramNames.len == f.params.len) f.paramNames[i] else "";
+                    paramDocs[i] = if (name.len > 0)
+                        try this.concat(try this.text(try std.fmt.allocPrint(this.arena, "{s}: ", .{name})), try this.fmtTypeRef(p))
+                    else
+                        try this.fmtTypeRef(p);
+                }
                 const inner = if (f.params.len == 0)
                     this.nil()
                 else
                     try this.join(paramDocs, try this.text(", "));
+                // `fn(T)` with no arrow returns void.
+                const isVoid = f.returnType.* == .named and std.mem.eql(u8, f.returnType.named, "void");
                 break :blk this.concatAll(&.{
                     try this.text("fn("),
                     inner,
-                    try this.text(") -> "),
-                    try this.fmtTypeRef(f.returnType.*),
+                    try this.text(")"),
+                    if (isVoid) this.nil() else try this.concat(try this.text(" -> "), try this.fmtTypeRef(f.returnType.*)),
                 });
             },
             .generic => |b| blk: {
+                // A union type `A | B` (decision 8 §3) travels as a `generic`
+                // under `ast.union_type_name`; it is written as its members.
+                if (ref.unionMembers()) |members| {
+                    var memberDocs = try this.arena.alloc(*const Doc, members.len);
+                    for (members, 0..) |m, i| memberDocs[i] = try this.fmtTypeRefIn(m, .unionMember);
+                    break :blk this.join(memberDocs, try this.text(" | "));
+                }
                 var argDocs = try this.arena.alloc(*const Doc, b.args.len);
                 for (b.args, 0..) |a, i| argDocs[i] = try this.fmtTypeRef(a);
                 const inner = if (b.args.len == 0)
@@ -1927,65 +2953,56 @@ pub const Formatter = struct {
             .typeparam => |constraints| blk: {
                 if (constraints.len == 0) break :blk this.text("type");
                 var docs = try this.arena.alloc(*const Doc, constraints.len);
-                for (constraints, 0..) |c, i| docs[i] = try this.fmtTypeRef(c);
+                // The constraint list is `|`-separated like a union's members,
+                // and `parseTypeRefMember` parses it the same way.
+                for (constraints, 0..) |c, i| docs[i] = try this.fmtTypeRefIn(c, .unionMember);
                 break :blk this.concat(
                     try this.text("type "),
                     try this.join(docs, try this.text(" | ")),
                 );
             },
-            .record_type => |flds| blk: {
-                if (flds.len == 0) break :blk this.text("{}");
-                var docs = try this.arena.alloc(*const Doc, flds.len);
-                for (flds, 0..) |f, i| docs[i] = try this.concatAll(&.{
-                    try this.text(f.name),
-                    try this.text(": "),
-                    try this.fmtTypeRef(f.typeRef),
-                });
-                break :blk this.concatAll(&.{
-                    try this.text("{ "),
-                    try this.join(docs, try this.text(", ")),
-                    try this.text(" }"),
-                });
-            },
         };
     }
 
+    /// A module-level binding: `[pub] val [name]: [T] = value`.
+    ///
+    /// One path, assembled from the parts the declaration has, rather than one
+    /// arm per combination: the four arms this replaces were the 2×2 of
+    /// `typeAnnotation` × `isPub`, each spelling `"val "` again, so **any** new
+    /// modifier had to be written into four places or double them to eight. The
+    /// next one is known — `17-beam-memory` lands module-level `var`, and
+    /// [decision 48] grants it this function's keyword arm, in the same commit
+    /// that makes the form parse. With the parts separated that arm is the one
+    /// `text()` below: `if (v.mutable) "var " else "val "`.
+    ///
+    /// [decision 48]: the named carve-out of this front, `specs/1.0.5-beta`.
     fn fmtValDecl(this: *Formatter, v: ast.ValDecl) !*const Doc {
+        var parts: std.ArrayList(*const Doc) = .empty;
+        defer parts.deinit(this.arena);
+        // `#[@BeamMemory.Ets]` above the binding, as a `fn`'s annotations print.
+        try parts.append(this.arena, try this.fmtAnnotations(v.annotations));
+        if (v.isPub) try parts.append(this.arena, try this.text("pub "));
+        // The keyword — decision 48's arm: `var` when the binding is mutable.
+        try parts.append(this.arena, try this.text(if (v.mutable) "var " else "val "));
+        try parts.append(this.arena, try this.text(v.name));
         if (v.typeAnnotation) |ann| {
-            if (v.isPub) {
-                return this.concatAll(&.{
-                    try this.text("pub "),
-                    try this.text("val "),
-                    try this.text(v.name),
-                    try this.text(": "),
-                    try this.fmtTypeRef(ann),
-                    try this.text(" = "),
-                    try this.fmtExpr(v.value.*),
-                });
-            }
-            return this.concatAll(&.{
-                try this.text("val "),
-                try this.text(v.name),
-                try this.text(": "),
-                try this.fmtTypeRef(ann),
-                try this.text(" = "),
-                try this.fmtExpr(v.value.*),
-            });
+            try parts.append(this.arena, try this.text(": "));
+            try parts.append(this.arena, try this.fmtTypeRef(ann));
         }
-        if (v.isPub) {
-            return this.concatAll(&.{
-                try this.text("pub "),
-                try this.text("val "),
-                try this.text(v.name),
-                try this.text(" = "),
-                try this.fmtExpr(v.value.*),
-            });
-        }
+        try parts.append(this.arena, try this.text(" = "));
+        try parts.append(this.arena, try this.fmtExpr(v.value.*));
+        return this.concatAll(parts.items);
+    }
+
+    /// `[pub] type Name<A, B> = Target` — the `;` is added by the program
+    /// loop (`needsSemi`), as for `val`.
+    fn fmtTypeAlias(this: *Formatter, a: ast.TypeAliasDecl) !*const Doc {
         return this.concatAll(&.{
-            try this.text("val "),
-            try this.text(v.name),
+            try this.text(if (a.isPub) "pub type " else "type "),
+            try this.text(a.name),
+            try this.fmtGenericParams(a.genericParams),
             try this.text(" = "),
-            try this.fmtExpr(v.value.*),
+            try this.fmtTypeRef(a.target),
         });
     }
 };
@@ -2000,9 +3017,17 @@ const Item = struct {
     doc: *const Doc,
 };
 
-/// Check whether the document fragment fits within `budget` remaining columns.
-/// Scans in flat mode, stopping at hardlines (which always break).
-fn fits(budget: isize, work: *std.ArrayList(Item)) bool {
+/// **The predicate a pinned group uses** — the scan this formatter has always
+/// had, kept verbatim so that a group which has not been enabled renders exactly
+/// the text it rendered before.
+///
+/// It stops at the first `concat` and then answers "fits" for any non-negative
+/// budget. Since every non-trivial document *is* a `concat`, that is the same as
+/// "always flat unless the column is already past the width", which is why no
+/// construct in the language has ever broken by width. `fits` below is the repair;
+/// this one exists only for as long as some construct is still waiting for its
+/// canonical broken form to be decided, and the last one to be enabled deletes it.
+fn fitsPinned(budget: isize, work: *std.ArrayList(Item)) bool {
     var remaining = budget;
     // Scan the current work stack backwards (top = last element) without modifying it.
     var i = work.items.len;
@@ -2030,9 +3055,116 @@ fn fits(budget: isize, work: *std.ArrayList(Item)) bool {
                 return remaining >= 0;
             },
             .nest => |n| _ = n,
-            .group => |d| _ = d,
+            .group => |g| _ = g,
             .forceBreak => return false,
+            // Its flat spelling has a width that was measured, so — unlike every
+            // other node here — this one can be charged for exactly.
+            .widthChoice => |w| remaining -= @intCast(w.flatWidth),
+            .ifBreak => |s| if (item.mode == .break_) {
+                remaining -= @intCast(s.len);
+            },
+            // Zero-width, and a pad only ever follows a line break.
+            .markColumn, .alignToMark => {},
         }
+    }
+    return remaining >= 0;
+}
+
+/// **Does `candidate`'s flat spelling fit on the line it starts?**
+///
+/// `budget` is the columns left at the current column, `trailing` is the render's
+/// work stack below the candidate — what still has to be printed, in reverse order,
+/// the top of the stack being what comes next. Both halves are needed: a group is
+/// too wide either because of its own text or because of the `;`, the `)` or the
+/// ` {` that follows it, and `fitsPinned` could see neither.
+///
+/// Two phases, because a break means opposite things on the two sides of the
+/// candidate:
+///
+///   - **inside** the candidate a `hardline` or a `forceBreak` says the flat
+///     spelling does not exist, so the answer is no. This is what makes a group
+///     holding a lambda that breaks — `xs.map({ x -> … })` with a multi-statement
+///     body — break too, rather than print its head flat and then a newline;
+///   - **after** the candidate a break says the line ends there, so everything
+///     beyond it is on another line and the answer is yes. Getting this one wrong
+///     is not academic: statements are joined with hardlines, so the very next
+///     item on the stack is usually a break, and charging for the rest of the
+///     file would make every group break.
+///
+/// `scratch` is the caller's work list, reused across calls so the scan allocates
+/// nothing per group; its contents on entry are discarded.
+fn fits(
+    wa: std.mem.Allocator,
+    scratch: *std.ArrayList(Item),
+    budget: isize,
+    candidate: Item,
+    trailing: []const Item,
+) !bool {
+    var remaining = budget;
+
+    // Phase 1 — the candidate, flat.
+    scratch.clearRetainingCapacity();
+    try scratch.append(wa, .{ .indent = candidate.indent, .mode = .flat, .doc = candidate.doc });
+    while (scratch.pop()) |item| {
+        switch (item.doc.*) {
+            .nil, .softline => {},
+            .text => |s| remaining -= @intCast(s.len),
+            .line => remaining -= 1, // flat: one space
+            .hardline, .forceBreak => return false,
+            .concat => |c| {
+                try scratch.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = c.right });
+                try scratch.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = c.left });
+            },
+            .nest => |n| try scratch.append(
+                wa,
+                .{ .indent = item.indent + n.amount, .mode = .flat, .doc = n.doc },
+            ),
+            // A group inside a flat scan is flat — its own choice is made later,
+            // at the column it really starts, and cannot be narrower than this.
+            .group => |g| try scratch.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = g.doc }),
+            // Measured when the node was built, so it is charged exactly.
+            .widthChoice => |w| remaining -= @intCast(w.flatWidth),
+            // Absent from the flat spelling by definition.
+            .ifBreak => {},
+            // Zero-width; a pad only ever follows a line break, which ended the
+            // flat spelling already.
+            .markColumn, .alignToMark => {},
+        }
+        if (remaining < 0) return false;
+    }
+
+    // Phase 2 — what the render still owes this line, in the mode each item carries.
+    scratch.clearRetainingCapacity();
+    try scratch.appendSlice(wa, trailing);
+    while (scratch.pop()) |item| {
+        switch (item.doc.*) {
+            .nil => {},
+            .text => |s| remaining -= @intCast(s.len),
+            .line => if (item.mode == .flat) {
+                remaining -= 1;
+            } else return true,
+            .softline => if (item.mode == .break_) return true,
+            .hardline => return true,
+            .concat => |c| {
+                try scratch.append(wa, .{ .indent = item.indent, .mode = item.mode, .doc = c.right });
+                try scratch.append(wa, .{ .indent = item.indent, .mode = item.mode, .doc = c.left });
+            },
+            .nest => |n| try scratch.append(
+                wa,
+                .{ .indent = item.indent + n.amount, .mode = item.mode, .doc = n.doc },
+            ),
+            .group => |g| try scratch.append(wa, .{ .indent = item.indent, .mode = item.mode, .doc = g.doc }),
+            // Its content begins with a break of its own, so the line ends inside
+            // it — but the text before that break is still on this line, which is
+            // what descending in break mode charges for.
+            .forceBreak => |d| try scratch.append(wa, .{ .indent = item.indent, .mode = .break_, .doc = d }),
+            .widthChoice => |w| remaining -= @intCast(w.flatWidth),
+            .ifBreak => |s| if (item.mode == .break_) {
+                remaining -= @intCast(s.len);
+            },
+            .markColumn, .alignToMark => {},
+        }
+        if (remaining < 0) return false;
     }
     return remaining >= 0;
 }
@@ -2051,7 +3183,12 @@ pub fn render(allocator: std.mem.Allocator, doc: *const Doc, width: usize) ![]u8
     var work: std.ArrayList(Item) = .empty;
     try work.append(wa, .{ .indent = 0, .mode = .break_, .doc = doc });
 
+    // `fits`' own stack, reused across every measured group in the document.
+    var scratch: std.ArrayList(Item) = .empty;
+
     var col: usize = 0;
+    // The column `markColumn` last recorded (`alignToMark` pads to it).
+    var mark: usize = 0;
 
     while (work.items.len > 0) {
         const item = work.pop().?;
@@ -2103,22 +3240,57 @@ pub fn render(allocator: std.mem.Allocator, doc: *const Doc, width: usize) ![]u8
                 });
             },
 
-            .group => |d| {
-                // Try flat mode: scan remaining work to see if it fits.
+            .group => |g| {
                 const budget: isize = @as(isize, @intCast(width)) - @as(isize, @intCast(col));
-                // Push candidate in flat mode temporarily to check fits.
-                try work.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = d });
-                const ok = fits(budget, &work);
-                _ = work.pop().?; // remove the candidate we just pushed
-                if (ok) {
-                    try work.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = d });
-                } else {
-                    try work.append(wa, .{ .indent = item.indent, .mode = .break_, .doc = d });
-                }
+                const ok = if (g.measured)
+                    // `work.items` is the trailing half of the question; `fits`
+                    // copies it and never writes through it.
+                    try fits(wa, &scratch, budget, .{
+                        .indent = item.indent,
+                        .mode = .flat,
+                        .doc = g.doc,
+                    }, work.items)
+                else pinned: {
+                    // The old scan reads the candidate off the top of the stack.
+                    try work.append(wa, .{ .indent = item.indent, .mode = .flat, .doc = g.doc });
+                    const answer = fitsPinned(budget, &work);
+                    _ = work.pop().?;
+                    break :pinned answer;
+                };
+                try work.append(wa, .{
+                    .indent = item.indent,
+                    .mode = if (ok) .flat else .break_,
+                    .doc = g.doc,
+                });
             },
 
             .forceBreak => |d| {
                 try work.append(wa, .{ .indent = item.indent, .mode = .break_, .doc = d });
+            },
+
+            .widthChoice => |w| {
+                // The enclosing mode is carried through rather than forced flat:
+                // the flat spelling holds no `line` or `softline` of its own, and
+                // whatever trails it (a return type, a `:label`) must keep
+                // deciding the way it did before this node existed.
+                const fitsFlat = col + w.flatWidth <= width;
+                try work.append(wa, .{
+                    .indent = item.indent,
+                    .mode = item.mode,
+                    .doc = if (fitsFlat) w.flat else w.broken,
+                });
+            },
+
+            .ifBreak => |s| if (item.mode == .break_) {
+                try out.appendSlice(allocator, s);
+                col += s.len;
+            },
+
+            .markColumn => mark = col,
+
+            .alignToMark => if (mark > col) {
+                try out.appendNTimes(allocator, ' ', mark - col);
+                col = mark;
             },
         }
     }
@@ -2137,4 +3309,20 @@ pub fn format(allocator: std.mem.Allocator, program: ast.Program) ![]u8 {
     var fmt = Formatter.init(arena.allocator());
     const doc = try fmt.fmtProgram(program);
     return render(allocator, doc, LINE_WIDTH);
+}
+
+/// A string literal's content (its raw lexeme between the quotes) needs the
+/// `"""` fences when it spans lines or holds an unescaped `"` — a `"…"`
+/// literal cannot carry either.
+fn needsTripleQuotes(s: []const u8) bool {
+    if (std.mem.indexOfScalar(u8, s, '\n') != null) return true;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        if (s[i] == '\\') {
+            i += 1;
+            continue;
+        }
+        if (s[i] == '"') return true;
+    }
+    return false;
 }

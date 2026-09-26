@@ -1,0 +1,36 @@
+//// 1.0.10-beta `00 · 04-js` D7 — `.length()` on an OPTIONAL string or array.
+//// Measured by rakun's front 05 while writing a configuration reader.
+////
+//// commonJS turns `.length()` into JavaScript's `length` PROPERTY only for a
+//// receiver inference resolved as a named `string` or `array`. A `?string` is
+//// neither, so `xs.at(0)?.length()` and `es.at(0)?.key.length()` kept their
+//// call parens and the emitted module called a number — `TypeError:
+//// es.at(0)?.key.length is not a function`, at exit 1 — while erlang, which
+//// needs no receiver type to lower a primitive method, printed it. A silent
+//// backend divergence, so the cell asserts the VALUE.
+////
+//// It carried `.targets commonJS erlang` until `00 · 05-wasm` fixed the
+//// carrier: `es.at(0)?.key.length()` answered **276** on wasm — the
+//// optional-chained field of a record taken out of `.at()` read the wrong
+//// word, because a record element was WRITTEN into a box and READ as a bare
+//// pointer. The other two lines were right there all along (`5`, `2`). The
+//// sidecar is gone and the cell runs on all four targets;
+//// `run/optional_record_carrier.bp` is where that carrier is pinned in full.
+////
+//// NOT here, and deliberately: a field read off a `?Record` receiver. `val
+//// first = es.at(0); if (first != null) { first.key.length(); }` is narrowing's
+//// row, not this rename's — it was a call on commonJS until `!= null` learned
+//// to rebind `first`, and `run/narrowing_null_check.bp` is where it is pinned
+//// (`comptime/AGENTS.md` § The null test narrows). This cell stays the receiver
+//// that was never tested at all.
+
+type Entry(key: string) {}
+
+pub fn main() {
+    val words = ["alpha", "be"];
+    @print(words.at(0)?.length());
+    val es = [Entry(key: "abc")];
+    @print(es.at(0)?.key.length());
+    val maybe = words.at(1);
+    if (maybe != null) { @print(maybe.length()); };
+}

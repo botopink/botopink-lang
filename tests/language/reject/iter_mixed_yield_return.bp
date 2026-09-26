@@ -1,0 +1,14 @@
+//// Decision 123 of 1.0.10-beta (front 24, § Cells "Iterators"; guide.md § 5.6
+//// `k`) — a body that yields is an iterator; one that returns an iterator is a
+//// factory; both in one body is `iter-mixed-yield-return`, at the `return`.
+
+fn evens(xs: i32[]) -> @Iterator<i32> {
+    for (xs) { x -> if (x % 2 == 0) { yield x; }; };
+}
+
+fn k(xs: i32[]) -> @Iterator<i32> {
+    yield 0;
+    return evens(xs);
+}
+
+pub fn main() { for (k([1, 2])) { x -> @print(x); }; }

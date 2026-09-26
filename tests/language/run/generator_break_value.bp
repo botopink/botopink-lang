@@ -1,0 +1,44 @@
+//// Decision 103 of 1.0.10-beta — a generator delivers a value in two ways:
+//// `yield v` emits and continues, `break v` emits `v` and ENDS (≡ `yield v;
+//// break;`). The last value is an item like the others; there is no
+//// completion channel (the old step enum's `Done(completion: C)` left with `C`).
+////
+//// `upto(3)` yields 0, 1, 2 from its loop and then `break 7` at the level of
+//// the body — top-level position, so it is the generator's, not a loop's —
+//// emits 7 and ends: the consumer reads `0127`. `ends()` pins the other half:
+//// a bare `break` at that position ends the generator, so nothing after it is
+//// emitted.
+////
+//// The checker types `break v` against the item type `T`; the generator scope
+//// of decision 105 lowers it (emit and end) — green on all four targets.
+
+fn upto(n: i32) -> @Iterator<i32> {
+    var i = 0;
+    while (i < n) { yield i; i = i + 1; };
+    break 7;
+}
+
+fn ends() -> @Iterator<i32> {
+    yield 1;
+    break;
+    yield 2;
+}
+
+// The same rule on another iterator.
+fn last() -> @Iterator<i32> {
+    yield 5;
+    break 6;
+}
+
+// A plain `fn` iterates a `@Iterator<T>`.
+fn plainDigits(g: @Iterator<i32>) -> string {
+    var acc = "";
+    for (g) { x -> acc = acc + x.toString(); };
+    return acc;
+}
+
+pub fn main() {
+    @print(plainDigits(upto(3)));
+    @print(plainDigits(ends()));
+    @print(plainDigits(last()));
+}

@@ -26,8 +26,8 @@
                     "expr": {
                       "identifier": {
                         "loc": {
-                          "line": 1,
-                          "col": 1
+                          "line": 2,
+                          "col": 12
                         },
                         "kind": {
                           "ident": "name"

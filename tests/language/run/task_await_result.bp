@@ -1,0 +1,42 @@
+//// Decisions 119, 120 and 121 of 1.0.10-beta (front 24, § Cells "`@Task` and
+//// failure", third line; guide.md § 3 and § 9, row `#[@future] fn f() ->
+//// @Future<T, E>`) — with `t: @Task<@Result<U, E>>`, `await t` answers the
+//// `@Result` and propagates nothing (legal in `run`, whose return has no
+//// `@Result`); `try await t` parses as `try (await t)` and propagates (legal in
+//// `greeting`, whose return carries one); `try await t catch x` answers `U` or
+//// `x` with an await channel alone (`nameOr`). A `throw` in `fetchUser` lands
+//// in the value (decision 121). Printed from inside `run`.
+
+fn fetchUser(id: i32) -> @Task<@Result<string, string>> {
+    if (id <= 0) { throw "user " + id.toString() + " does not exist"; };
+    return "user" + id.toString();
+}
+
+fn greeting(id: i32) -> @Task<@Result<string, string>> {
+    val u = try await fetchUser(id);
+    return "Hello, " + u;
+}
+
+fn nameOr(id: i32) -> @Task<string> {
+    return try await fetchUser(id) catch "guest";
+}
+
+fn show(r: @Result<string, string>) {
+    case r {
+        Ok(v) -> @print("ok " + v);
+        Error(e) -> @print("error " + e);
+    };
+}
+
+fn run() -> @Task<void> {
+    val found = await fetchUser(1);
+    show(found);
+    val missing = await fetchUser(0);
+    show(missing);
+    show(await greeting(2));
+    show(await greeting(-1));
+    @print(await nameOr(3));
+    @print(await nameOr(0));
+}
+
+pub fn main() { run(); }

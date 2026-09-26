@@ -1,0 +1,14 @@
+//// Decision 127 of 1.0.10-beta (front 24, § Cells "Migration"; guide.md § 9,
+//// row `#[@context]` / `@Context<B, R>` as an effect) — `@Context<Base>` is the
+//// owner marker only (decision 102, kept by 128); as an effect wrapper with a
+//// return argument it stays gone. The existing refusal holds: `@Context` takes
+//// one type argument. The new form is `-> @Component<C, T>`
+//// (`run/component_hook_and_component.bp`).
+
+pub type ElementBase()
+
+fn state(initial: i32) -> @Context<ElementBase, i32> {
+    return initial;
+}
+
+pub fn main() { state(1); }

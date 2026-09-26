@@ -1,0 +1,7 @@
+pub fn parse(s: string, n: i32) -> string {
+    return s + n.toString();
+}
+
+pub fn viaTwo(s: string) -> string {
+    return parse(s, 2);
+}

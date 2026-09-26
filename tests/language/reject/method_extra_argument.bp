@@ -1,0 +1,8 @@
+//// A METHOD call with one argument too many is refused at the call, as a
+//// function call is.
+
+type Jar(n: i32) {
+    pub fn get(self: Self, name: string) -> string { return name; }
+}
+
+pub fn main() { @print(Jar(n: 1).get("a", "b")); }

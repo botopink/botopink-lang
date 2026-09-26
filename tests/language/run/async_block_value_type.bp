@@ -1,0 +1,47 @@
+//// Decision 124 of 1.0.10-beta (front 24, § Cells "`async { }`", second line) —
+//// a block's `T` comes from its `return`s: without `throw` / `try` it is
+//// `@Task<T>`; with them the value becomes `@Result<U, E>` on its own, `E` from
+//// those `throw` / `try`. `t` is annotated `@Task<i32>`; `r` is annotated
+//// `@Task<@Result<i32, string>>` over a `try`; `s` is NOT annotated and is
+//// stored in a field of that type, so its inferred type is what is checked.
+//// `make` is a plain function. Printed from inside `run`.
+
+type Holder(t: @Task<i32>, r: @Task<@Result<i32, string>>, s: @Task<@Result<i32, string>>)
+
+fn check(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+fn make(n: i32) -> Holder {
+    val t: @Task<i32> = async { return n + 1; };
+    val r: @Task<@Result<i32, string>> = async {
+        val v = try check(n);
+        return v * 10;
+    };
+    val s = async {
+        if (n < 0) { throw "below zero"; };
+        return n;
+    };
+    return Holder(t: t, r: r, s: s);
+}
+
+fn show(r: @Result<i32, string>) {
+    case r {
+        Ok(v) -> @print("ok " + v.toString());
+        Error(e) -> @print("error " + e);
+    };
+}
+
+fn run() -> @Task<void> {
+    val h = make(3);
+    @print(await h.t);
+    show(await h.r);
+    show(await h.s);
+    val k = make(-2);
+    @print(await k.t);
+    show(await k.r);
+    show(await k.s);
+}
+
+pub fn main() { run(); }

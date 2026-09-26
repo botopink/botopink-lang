@@ -32,7 +32,7 @@
         "genericParams": [],
         "params": [
           {
-            "name": "self",
+            "name": "xs",
             "typeRef": {
               "generic": {
                 "name": "Array",

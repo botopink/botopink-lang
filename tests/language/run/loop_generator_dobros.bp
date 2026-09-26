@@ -1,0 +1,14 @@
+//// Decision 105's own example — an annotated loop capturing a `var`: `yield`
+//// emits and continues, `break v` emits and ends. Prints `2 4 … 18 20`,
+//// the last item the `break`'s, and the counter is the generator's state.
+
+pub fn main() {
+    var contador = 0;
+    val dobros = iter loop {
+        contador = contador + 1;
+        if (contador == 10) { break contador * 2; };
+        yield contador * 2;
+    };
+    for (dobros) { d -> @print(d); };
+    @print(contador);
+}

@@ -2,21 +2,26 @@
 //// Host-backed I/O primitives — declaration-only, no pure implementation.
 //// Each target backend supplies the concrete symbol via `#[External.<Target>(...)]`.
 
-#[External.Node("console.log($args)"),
-  External.Erlang("io:format(\"~p~n\", [$args])")]
+// On erlang and beam, `@print`, `@println` and `@debug` lower to the
+// `'__bp_print'/1` helper the backend emits once per module (it prints a
+// binary with `~ts` and any other value with `~p`); the codegen intercepts the
+// call before any `@External.Erlang` template, so the templates below only
+// name that helper.
+#[External.Node("console.log($args)")]
+#[External.Erlang("'__bp_print'([$args])")]
 pub declare fn print(message: string);
 
-#[External.Node("console.log($args)"),
-  External.Erlang("io:format(\"~p~n\", [$args])")]
+#[External.Node("console.log($args)")]
+#[External.Erlang("'__bp_print'([$args])")]
 pub declare fn println(message: string);
 
-#[External.Node("console.debug($args)"),
-  External.Erlang("io:format(\"~p~n\", [$args])")]
+#[External.Node("console.debug($args)")]
+#[External.Erlang("'__bp_print'([$args])")]
 pub declare fn debug(value: string);
 
 // ── result type ──────────────────────────────────────────────────────────────
 
-pub enum Result<R, E> {
+pub type Result<R, E> {
     Ok(result: R),
     Error(error: E),
 }
@@ -44,8 +49,8 @@ pub enum Result<R, E> {
 //   result.isOk(r)                  ≡ r.isOk()
 //   result.isError(r)               ≡ r.isError()
 //
-// A `Result` value is only constructed by `return`/`throw` inside an
-// `#[result] fn -> Result<R, E>`; the runtime shape is `{ ok: V } | { error: E }`
+// A `Result` value is constructed by `return`/`throw` inside a body whose
+// return carries `@Result<R, E>` (decision 118); the runtime shape is `{ ok: V } | { error: E }`
 // (JS) / `{ok, V} | {error, E}` (erlang/beam).
 
 // ── option type ──────────────────────────────────────────────────────────────
@@ -60,72 +65,175 @@ pub enum Result<R, E> {
 //   fn flatMap(self, transform: fn(value: T) -> ?T2) -> ?T2
 //   fn unwrapOr(self, default: T) -> T
 //       The present value, or `default` when absent.
-//   fn expect(self, default: T) -> T
-//       Identical runtime behaviour to `unwrapOr`; the name signals to the
-//       reader that the absent branch is unreachable (a bounds-checked
-//       `xs.at(i)`, a guarded null, …) and the default is a sentinel —
-//       not a meaningful fallback.
+//
+// F11 — there is NO `expect`. It existed, declared `expect(self, default: T)
+// -> T` and lowered to `unwrapOr` on every backend, with the prose saying the
+// two were identical and the name signalling that the absent branch was
+// unreachable. A name that reads as an assertion over a signature that is a
+// fallback is the loosest reading of the stricter word, which is the shape
+// decision 67 refuses: the reader who trusts the name writes a sentinel where
+// the value may genuinely be absent, and nothing says so. The strict reading
+// — `expect(self, message: string) -> T`, failing when absent — has to invent
+// a failure the option surface does not have and lower it on four backends,
+// so it is not this front's to add. What is left is one spelling for one
+// behaviour: `unwrapOr`. `.expect(…)` on a `?T` is now an unknown method.
 //
 // There is deliberately NO `option` namespace — the ergonomic surface for
 // optionals is JS-style optional chaining (planned):
 //
 //   obj.val?.prop      obj.val?.[expr]      obj.arr?.[index]      obj.func?.(args)
 
-// ── iterator ─────────────────────────────────────────────────────────────────
+// ── the effect wrappers (decisions 118–128) ─────────────────────────────────
+//
+// The return type IS the annotation (decision 118): a function gains a
+// capability by writing one of these wrappers, literally, as its return type,
+// and by nothing else. An alias to a wrapper (`type Job<T> = @Task<T>`) types
+// the function but activates nothing.
+//
+//   -> @Result<T, E>       throw · try            (the one fallible wrapper)
+//   -> @Task<T>            await
+//   -> @Component<C, T>    use · await            Component ⊃ Task
+//   -> @Iterator<T>        yield · break v
+//   -> @Stream<T>          yield · break v · await   Stream ⊃ Task
+//
+// Only `@Result` fails (decision 121). `@Task`, `@Component`, `@Iterator` and
+// `@Stream` never fail; when something can, the failure goes INSIDE the value
+// — `@Task<@Result<T, E>>`, `@Iterator<@Result<T, E>>` — and `throw` / `try`
+// are legal wherever a layer of the return is a `@Result`.
+//
+// The chain is on the declarations below, as `extends` clauses (a `behavior`
+// carries `extends`, not the `implement` a `type` writes, and `extends` cannot
+// carry type arguments), so the full clauses are:
+//
+//   Component<C, T>   extends Task<T>
+//   Stream<T>         extends Task<YieldStep<T>>
+//   Iterator<T>       — NO clause: it neither awaits nor fails.
+//
+// The compiler reads this order from `comptime/effect_chain.zig`, which
+// restates it and carries tests that read THIS FILE and fail if the two
+// drift: the file is not parsed into the type env (the whole `.d.bp` is
+// documentation, and `comptime.zig`'s embedded mirrors exist for the same
+// reason), so the drift gate is what keeps one declaration.
+//
+// `return` in an effect body (decision 119) wraps through every layer:
+// `return v` with `v: U` in `-> @Task<@Result<U, E>>` is a Task holding
+// `Ok(v)`; a value already of a layer's type passes through. `throw e` in a
+// body whose return carries `@Result<U, E>` is that layer's `Error(e)` — it
+// never rejects a Task (decision 120).
 
-// §1I — Iterator carries three channels: the YIELD type T (mandatory), an
-// ERROR type E (defaulted to `any`; surfaces via `throw <e>;` inside a
-// `#[@iterator]` body), and a COMPLETION type C (defaulted to `void`; the
-// payload of a `break <c>` clean exit). `next(self) -> @IteratorStep<T, E, C>`
-// is the lazy pull-based protocol — each call returns one of the three
-// variants below. F4I-tail's `transform.zig → @IteratorStep` rewrite
-// targets this same enum.
-pub interface Iterator<T, E = any, C = void> {
-    fn next(self: Self) -> IteratorStep<T, E, C>
+// `Task<T>` — a value that has not arrived yet; `await` unwraps it. A Task
+// never fails: `await t` on a `@Task<@Result<U, E>>` answers the `@Result`,
+// and `try await t` propagates its error. A function with no await channel
+// consumes a Task through its own functions.
+pub behavior Task<T> {
+    fn map<R>(self: Self<T>, transform: fn(value: T) -> R) -> Task<R>;
+    fn then<R>(self: Self<T>, next: fn(value: T) -> Task<R>) -> Task<R>;
 }
 
-pub enum IteratorStep<T, E, C> {
+// ── sequences (decisions 122, 123, 125) ──────────────────────────────────────
+//
+// One step for both sequences: `Yield(value)` emits, `Done` ends. There is no
+// error step — an item that can fail is a `@Result` — and no completion
+// channel: `break v` in a sequence body emits `v` as the last item and ends
+// (≡ `yield v; break;`), and a bare `break` outside any loop ends it.
+//
+// A function returning `@Iterator` / `@Stream` IS an iterator when its body
+// yields (`yield` or `break v`, in its own scope); without one it is an
+// ordinary function returning a ready iterator (a factory, decision 123). A
+// loop prefixed `iter` / `stream` is an iterator in the middle of a function
+// (decision 125). A type that wants to be iterated exposes an ordinary method
+// answering an iterator and the consumer calls it — `for (grid.iter())`;
+// there is no iterable behavior.
+//
+// A `for` over an `@Iterator<X>` hands over each `X` — a `@Result` when `X` is
+// one; there is no implicit `try` (decision 122).
+
+pub type YieldStep<T> {
     Yield(value: T),
-    Done(completion: C),
-    Error(error: E),
+    Done,
 }
 
-pub interface Iterable<T, E = any, C = void> {
-    fn iter(self: Self) -> Iterator<T, E, C>
+// `Iterator<T>` — a synchronous sequence; iterated by `for` in any function.
+pub behavior Iterator<T> {
+    fn next(self: Self<T>) -> YieldStep<T>;
 }
 
-// ── generator ────────────────────────────────────────────────────────────────
-
-pub enum Yield<T, R> {
-    Yielded(value: T),
-    Done(result: R),
+// `Stream<T>` — an asynchronous sequence: finding the next item may need to
+// wait. Iterated by `for await`, which needs an await channel.
+pub behavior Stream<T> extends Task {
+    fn next(self: Self<T>) -> Task<YieldStep<T>>;
 }
 
-pub interface Generator<T, R> {
-    fn next(self: Self) -> Yield<T, R>
+// ── display (decision 8 §7, decision 27) ─────────────────────────────────────
+//
+// `@print` consults a value's own `Display` implementation before it falls back
+// to the per-type formatter: a type that says how it reads says it here, once,
+// and every backend's §7 formatter reads the same declaration. It is ambient —
+// a type writes `implement Display` with no import, exactly as any other
+// builtin behavior — because `@print` has to find it without the author having
+// asked for it.
+
+pub behavior Display {
+    fn display(self: Self) -> string;
 }
 
-// ── async ────────────────────────────────────────────────────────────────────
+// ── index / slice (decision 63, amended) ─────────────────────────────────────
+//
+// An index expression has NO typing rule of its own: `xs[0]` IS `xs.at(0)`,
+// `d["k"]` IS `d.at("k")`, `xs[0..2]` IS `xs.slice(0, 2)` and `xs[1..]` IS
+// `xs.slice(1, null)`. The type of the expression is whatever the method
+// answers, so indexing stops being a privilege of the three built-in
+// collections: a library's own `Matrix`, `Row` or `Buffer` becomes indexable by
+// answering `at` / `slice`, with no compiler change.
+//
+// Both are ambient — a type says it indexes with no import, exactly as it says
+// how it reads with `Display` above — because the syntax has to find the method
+// without the author having asked for it.
+//
+// `slice` takes two arguments rather than one range because there is no `Range`
+// type in the language: `start..end` is an AST node, not a value, so an open end
+// travels as `null` in the second argument.
+//
+// A TUPLE is deliberately not covered. `t[0]` needs a *constant* index and
+// answers a type *per position*, which `at(key: K) -> ?V` cannot express with a
+// single `V`; the tuple stays a checker special case.
+//
+// `libs/std` answers both: `Dict<K, V>` carries `Index<K, V>` on its
+// declaration; `Array<T>` (`Index<i32, T>`, `Slice<T[]>`) and `string`
+// (`Index<i32, string>`, `Slice<string>`) answer them from the primitive
+// registry in `primitives.bp`, which is a `behavior` and cannot spell an
+// `implement` clause today — the conformance is named in a comment there.
 
-pub interface Future<T, E = any> {
-    fn await(self: Self) -> Result<T, E>
-    fn map<R>(self: Self, transform: fn(value: T) -> R) -> Future<R, E>
-    fn flatMap<R>(self: Self, transform: fn(value: T) -> Future<R, E>) -> Future<R, E>
+pub behavior Index<K, V> {
+    fn at(self: Self<K, V>, key: K) -> ?V;
 }
 
-// ── async iterator ───────────────────────────────────────────────────────────
-
-pub interface AsyncIterator<T, E = any, C = void> {
-    fn next(self: Self) -> Future<IteratorStep<T, E, C>, E>
+pub behavior Slice<V> {
+    fn slice(self: Self<V>, start: i32, end: ?i32) -> V;
 }
 
-// ── context (hooks) ──────────────────────────────────────────────────────────
+// ── context (hooks) — decisions 102, 104 and 128 ────────────────────────────
+//
+// `Context<Base>` is the owner MARKER, not a wrapper: the type that carries a
+// context tree implements it, naming the base its hooks anchor at
+// (`type Element(…) implement @Context<ElementBase>`; the name is the
+// library's). It grants no capability and has no methods.
+//
+// The wrapper of `use` is one (decision 128):
+//   `Component<C, T>` — anchored at base `C`, returning `T`. `C` is always
+//                       written. A hook returns any `T`; a component returns
+//                       the owner itself, `T: @Context<C>`.
+// A component is called (`Card()`), never `use`d; `use f()` takes a hook
+// `@Component<C, _>` at the body's base, so hooks compose. `throw` / `try` in
+// a `@Component` body follow decision 121: legal only when `T` is a `@Result`.
 
-pub interface Context<ContextBase, Return> { }
+pub behavior Context<Base> {}
+
+pub behavior Component<C, T> extends Task {}
 
 // ── annotation marker ────────────────────────────────────────────────────────
 //
-// Any `record`/`struct`/`enum` whose `implement` clause lists `Annotation` may
+// Any `type` whose `implement` clause lists `Annotation` may
 // be used as a builtin-style annotation: `#[MyMarker(field: value, …)]` on a
 // declaration is checked as a constructor call to the type — the same arity,
 // named-arg, default-value rules that govern any fn parameter list. For an
@@ -139,31 +247,55 @@ pub interface Context<ContextBase, Return> { }
 // annotation, and its codegen-side meaning is what readers (lib/framework
 // code) make of it.
 
-pub interface Annotation {
-    default fn checkAnnotation(self: Self, comptime decl: Decl) { }
+pub behavior Annotation {
+    default fn checkAnnotation(self: Self, comptime decl: Decl) {}
 }
 
 // ── External — host-backed lowering ──────────────────────────────────────────
 //
 // One variant per target. The single `template` string is interpreted by the
 // codegen renderer (`comptime/primOpTemplate.zig`): if it contains `$`, it's a
-// template with substitution markers (`$self`/`$0`/`$1`/`$stringify(...)`);
+// template with positional markers over the declared parameters (`$0` is `self`
+// on a method, then `$1`, … — decision 5) and `$stringify(...)`;
 // otherwise it's a bare host symbol (`"mod:sym"`/`"propertyName"`) the backend
 // wraps as `mod:sym(args, self)` or `recv.propertyName(args)`.
 //
 // Usage:
 //
-//   #[External.Erlang("lists:member($0, $self)"),
-//     External.Node("$self.includes($0)")]
+//   #[External.Erlang("lists:member($1, $0)"),
+//     External.Node("$0.includes($1)")]
 //   fn contains(self: Array<T>, x: T) -> bool
 //
 // The `inline` flag opts a `(target, method)` pair out of the dispatch table
 // so the backend's hand-coded shape keeps emitting (used only for arms whose
 // lowering escapes the template grammar — list-cons / BIF aliases / etc.).
+//
+// F9 — it is declared on `Erlang` and `Beam` and NOWHERE ELSE, because those
+// are the two emitters that read it: each has a `hasExternalInline` that skips
+// the dispatch entry when the flag is set, reading the annotation's LAST
+// argument. `Node` declared it too and no JS path ever consulted it, so
+// `#[@External.Node("charAt", inline = true)]` was a switch that silently did
+// nothing — a configuration that looks like it bypasses the dispatch table and
+// does not, which decision 67 refuses in exactly those words. `Wasm` and
+// `Typescript` do not gain it for the same reason. The checker holds this
+// block to its word (`comptime/infer.zig` `external_variants`, kept in step
+// with the declaration below by a drift test): `inline` written on `Node`,
+// `Wasm` or `Typescript`, written anywhere but last, or given a value that is
+// not a bool is refused at the annotation
+// (`tests/language/reject/external_inline_unread`). A backend that grows a
+// hand-coded shape worth opting out of adds the parameter here, the table row
+// and the `hasExternalInline` that honours it, in one change.
+//
+// F9, the other half — `External` is not `Target`, because `Target` is a value
+// a program holds and compares (`Target.Node`) while `External.<T>` is an
+// annotation whose every variant carries a payload the compiler reads (the
+// template, and on two of them the flag), and one enum cannot be both a value
+// and an annotation with per-variant parameters. The names coincide because
+// there are five backends; that is the only thing they share.
 
-pub enum External implement Annotation {
+pub type External implement Annotation {
     Erlang(template: string, inline: bool = false),
-    Node(template: string, inline: bool = false),
+    Node(template: string),
     Beam(template: string, inline: bool = false),
     Wasm(template: string),
     Typescript(template: string),
@@ -171,7 +303,13 @@ pub enum External implement Annotation {
 
 // ── type reflection ──────────────────────────────────────────────────────────
 
-fn field<T, F>(obj: T, comptime name: string) F
+// F10 — the five intrinsics below are written in the file's own dialect:
+// `pub declare fn`, `->` before the return type, a closing `;`. They are
+// bodyless because the compiler IS the body — each is reached as a builtin
+// call (`@field`, `@trap`, `@emit`, `@module`, `@getContext`), never as a
+// plain name — and `declare fn` is the language's bodyless form. They carry
+// no `#[@External.<Target>]` because no host supplies them.
+pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
 
 // ── runtime ──────────────────────────────────────────────────────────────────
 //
@@ -180,7 +318,7 @@ fn field<T, F>(obj: T, comptime name: string) F
 // literal default that `expandTrailingDefaults` injects at the call site).
 // `trap` carries no default, so its decl stays here doc-only.
 
-fn trap() noreturn
+pub declare fn trap() -> noreturn;
 
 // Contribute generated top-level declarations to the program from a decorator
 // body. `@emit("pub val userServiceSingleton = …")` parses `source` as botopink
@@ -188,73 +326,33 @@ fn trap() noreturn
 // decorator can build wiring (singletons, a DI graph, a router table) as
 // ordinary code. May be called any number of times; each call appends.
 // Comptime-only.
-fn emit(source: string)
-
+pub declare fn emit(source: string);
 
 // ── module imports ───────────────────────────────────────────────────────────
 
-fn module() module
+pub declare fn module() -> module;
 
 // ── target enum ──────────────────────────────────────────────────────────────
 
-pub enum Target { Node, Typescript, Erlang, Beam, Wasm }
+pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 
-// ── effect annotations ─────────────────────────────────────────────────────
+// ── effect return rules (the checker's side of the wrappers above) ─────────
 //
-// Spec: `tasks/v0.beta.19/specs/frente-b-rules-tooling.md` §0–§4 + §1G.
+// §1 — auto-wrap. The compiler intercepts `return v;` in a body whose return
+// carries `@Result<U, E>` and lowers it to `Ok(v)` (a value already a
+// `@Result` passes through); `throw e;` lowers to `Error(e)` — returned from a
+// `@Result` / `@Task` / `@Component` body, and emitted as the last item of an
+// `@Iterator` / `@Stream` body (`throw e` ≡ `break Error(e)`). Manual
+// `Result.Ok(…)` / `Result.Error(…)` construction as a `return` / `throw`
+// operand is rejected (R11/R12) — the variants are built by the sigils.
 //
-// An effect annotation names a function's effect — the implementation marker
-// (the `*fn` prefix it replaced was deprecated in v0.beta.12 and removed in
-// v0.beta.19). Each takes no arguments and pairs with the matching return
-// wrapper, which carries the effect's type parameters. The canonical
-// signatures (§4):
-//
-//   #[result]         fn parse(n: i32) -> Result<i32, string>
-//   #[future]         fn fetchUser(id: u64) -> Future<User, NetworkError>
-//   #[generator]      fn range(a: i32, b: i32) -> Generator<i32, void>
-//   #[iterator]       fn lazyMap<T, U>(it: Iterator<T>, f: fn(T) -> U) -> Iterator<U, string, i32> :a
-//   #[asyncGenerator] fn stream() -> AsyncIterator<T, NetworkError, i32>
-//   #[context]        fn processarPagamento() -> Context<BasePagamento, bool>
-//
-// The annotation marks an IMPLEMENTATION (a `fn` with a body): it gates the
-// body operations (`await` under future/asyncGenerator; `yield` under
-// generator/iterator/asyncGenerator; `throw`/`try` under result, future,
-// iterator, asyncGenerator — the fallible-channel effects) and drives codegen
-// (future → `async function`, generator/iterator → `function*`,
-// asyncGenerator → `async function*`, result/context → plain `function`).
-// Interface methods and `declare fn` declarations are declarative — they
-// express the effect through the return wrapper alone, with NO annotation
-// (using one there is the R1/R2 error).
-//
-// §1 — `#[result]` auto-wrap. The compiler intercepts `return r;` (where
-// `r: R`) inside a `#[result]` body and lowers it to `return Result::Ok(r)`;
-// `throw e;` (where `e: E`) lowers to `return Result::Err(e)`. Manual
-// `Result::Ok(…)` / `Result::Err(…)` construction inside the body is
-// rejected (R11/R12) — the wrapper variants are only constructed via the
-// `return`/`throw` sigils. Callers see `Result<R, E>` at the type level;
-// inline methods (`map`/`flatMap`/`unwrapOr`/`isOk`/`isError`) read it.
-//
-// §1F — `#[future]` dual contract. The wrapper is `Future<T, E = any>`;
-// `return t;` auto-wraps to `Future.resolved(t)`, `throw e;` to
-// `Future.rejected(e)`. `await <future>` suspends and unpacks the awaited
-// future's `T`. Manual `Future::resolved(…)` / `Future::rejected(…)`
-// constructors inside the body are rejected (RF1/RF2/RF5).
-//
-// §1I — `#[iterator]` three-channel contract. The wrapper is
-// `Iterator<T, E = any, C = void>`; `yield <t>` emits, `yield :label <t>`
-// targets a named scope, `throw <e>` lands in the iterator-error channel,
-// `break` ends cleanly, `break <c>` delivers a completion value of type C.
-// `return <expr>` is forbidden (RI1); use `break <c>`. The legacy
-// `yield break` form is removed (RI6). Labels (`-> Iterator<…> :label`)
-// disambiguate nested iterator scopes.
-//
-// §1C — `#[context]` Anchor + `getContex`. The wrapper is
-// `Context<Base, T>`; `Base` is the Anchor that gates every `use` inside
-// the body. `use <hook>()` requires the hook's wrapper to be anchored at a
-// subtype of `Base` (RC2); `use getContex(T)` requires `T` to be in the
-// Anchor's inheritance tree (RC3) and finds the active provider by
-// inside-out walk of the activation stack (RC1 when missing). `yield`,
-// `await`, `throw` are all forbidden inside a `#[context]` body.
+// §1C — `use` + `getContext`. The body of a `-> @Component<C, T>` fn anchors
+// every `use` at `C`: EVERY `use` in one body resolves against the SAME base
+// (decision 96), and a second anchored elsewhere is refused at its own site
+// with both bases named (RC2). `use getContext(T)` requires `T` to be in the
+// base's inheritance tree (RC3) and finds the active provider by inside-out
+// walk of the activation stack (RC1 when missing). `await` is legal here —
+// `Component` extends `Task`; `yield` is not.
 //
 // §1G — default generic parameters. A generic parameter may carry a
 // default type (`<T, U = string>`). Defaults must occupy the trailing
@@ -266,58 +364,56 @@ pub enum Target { Node, Typescript, Erlang, Beam, Wasm }
 //
 // ── Host — raw-infra backed functions ────────────────────────────────────
 //
-// Marks a function whose real body lives in the compiler's raw-infra WAT
-// block (unreachable, fd_write, bump allocator — operations bp can't
-// express). The wat backend skips `#[@Host]` fns during codegen; the
-// raw-infra WAT in `wat_runtime.zig` provides the actual implementation.
+// Marks a function whose real body lives in the wat backend's raw-infra
+// prelude (unreachable, fd_write, bump allocator — operations bp can't
+// express). The wat backend skips `#[@Host]` fns during codegen; the prelude
+// in `codegen/wat/wat_prelude.zig` is what supplies such bodies. Nothing in
+// the tree carries `#[@Host]` today: a `#[@Host]` fn with no matching prelude
+// entry emits nothing and is not diagnosed.
 //
 // Usage:
 //   #[@Host] pub fn failRaw(message: i32, param: i32, span: i32) {}
-pub enum Host implement Annotation {
+pub type Host implement Annotation {
     /// The function body is provided by the host's raw-infra WAT block.
     host,
 }
 
-// The markers (`result`, `future`, `generator`, `iterator`, `asyncGenerator`,
-// `context`) are recognized as core builtins by the compiler — they are
-// lib-agnostic and take no arguments, so they need no signature here.
+// `getContext(T)` is the context-retrieval intrinsic. It retrieves the
+// active provider of context type `T` from the enclosing `@Component` fn's
+// scope stack. `T` must be the enclosing fn's base (or a subtype thereof);
+// the call returns `Component<T, V>` where `V` is the provider's authored
+// value slot. Errors: [E1] context-unbound when no `T` provider is on the
+// stack; [E2] context-anchor-violation when `T` is outside the base's tree.
+// Only legal inside a `-> @Component<…>` fn body, behind `use`:
 //
-// `getContex(T)` is the context-retrieval intrinsic. It retrieves the
-// active provider of context type `T` from the enclosing `#[context]`
-// fn's scope stack. `T` must be the enclosing fn's Anchor (or a subtype
-// thereof); the call returns `Context<T, V>` where `V` is the provider's
-// authored value slot. Errors: [E1] context-unbound when no `T` provider
-// is on the stack; [E2] context-anchor-violation when `T` is outside the
-// Anchor's tree. Only legal inside a `#[context]` fn body, behind `use`:
+//   val ctx = use getContext(BasePagamento)
 //
-//   val ctx = use getContex(BasePagamento)
-//
-// Declared `comptime` in its sole type argument because the Anchor check
-// runs at compile time; the runtime side is the inside-out walk inserted
-// by the lowering.
-fn getContex<T>(comptime _: type) Context<T, any>
+// Declared `comptime` in its sole type argument because the base check runs
+// at compile time; the runtime side is the inside-out walk inserted by the
+// lowering.
+pub declare fn getContext<T>(comptime _: type) -> Component<T, any>;
 
 // ── Expr template model (std.syntax) ─────────────────────────────────────────
 // Data model for `Expr` templates. Interfaces are pure behaviour contracts, so
 // the companion types are top-level declarations (siblings of `Expr<E>`), not
 // nested members.
 
-pub record Span {
+pub type Span(
     start: i32,
     end: i32,
     line: i32,
-}
+)
 
 // One segment of a template: raw text, or a `${…}` interpolation hole whose
 // expression was already type-checked in the caller's scope (string holes —
 // interpolation follows the language's `+` coercion).
-pub enum Part {
+pub type Part {
     Text(text: string, span: Span),
     Interp(hole: Expr<string>, span: Span),
 }
 
 // What kind of top-level declaration a scope lookup resolved to.
-pub enum BindingKind {
+pub type BindingKind {
     Fn,
     Val,
     Record_,
@@ -327,29 +423,35 @@ pub enum BindingKind {
 
 // A name resolved in an expression's origin scope (V1: the caller module's
 // top-level declarations + imports — function locals are not visible).
-pub record Binding {
+pub type Binding(
     name: string,
     kind: BindingKind,
-}
+)
 
 // Where an expression was written: the declaration position in the origin file.
 // `file` is the module path ("" for main); `line`/`col` point at the template
 // literal's opening quote (1-based).
-pub record Source {
+pub type Source(
     file: string,
     line: i32,
     col: i32,
-}
+)
 
 // Everything a second-layer language (a DSL compiler running inside a template
 // function) needs about its input in one object: where the template was
 // declared, its raw text, and its shape. The origin scope is reached via
 // `lookup`/`bindings`; the segmented view via `parts`.
-pub record Context {
+//
+// F1 — this record is `ExprContext`, not `Context`: `@Context<Base>` above is
+// the context-owner marker, and one module may not declare one name twice. The
+// template model is the narrower audience of the two, so it is the half that
+// moved; `q.context()` still reads `context`, because a method names the
+// receiver's own input rather than a type.
+pub type ExprContext(
     source: Source,
     text: string,
     multiline: bool,
-}
+)
 
 // ── ExprCustom carrier (expr-custom) ─────────────────────────────────────────
 // A node of ANY embedded sub-language, in one canonical shape the core and the
@@ -359,37 +461,71 @@ pub record Context {
 // `kind`/`label` are opaque tags the lib picks; `span` indexes the
 // `Expr<string>` source text; `ref` optionally ties a node (a queried
 // collection, a column, …) to a caller-scope symbol via a `lookup` result.
-pub record CustomNode {
-    kind: string,             // lib-chosen tag: "select" / "field" / "predicate" / "literal" …
-    span: Span,               // offsets into the template's source text
-    label: string,            // tooling token category: "keyword"/"property"/"string"/"number"/"operator"
-    ref: ?Binding,            // optional association to an origin-scope symbol
+pub type CustomNode(
+    kind: string, // lib-chosen tag: "select" / "field" / "predicate" / "literal" …
+    span: Span, // offsets into the template's source text
+    label: string, // tooling token category: "keyword"/"property"/"string"/"number"/"operator"
+    ref: ?Binding, // optional association to an origin-scope symbol
     children: CustomNode[],
-}
+)
 
 // What `ExprCustom<T>` carries: the executable expression plus the reference
 // tree. The `code` half travels the ordinary `Expr<T>` expansion path (spliced,
 // lowered to every backend — runtime behaviour is unchanged); the `ast` half is
 // stored by call-location and is reference-only (the language server reads it).
-pub record CustomExpr<T> {
-    code: Expr<T>,            // the botopink expression that actually runs
-    ast: CustomNode,          // the sub-language tree, reference only
-}
+pub type CustomExpr<T>(
+    code: Expr<T>, // the botopink expression that actually runs
+    ast: CustomNode, // the sub-language tree, reference only
+)
 
-pub interface Expr<E> {
-    fn text(self: Self) -> string
-    fn parts(self: Self) -> Part[]
-    fn source(self: Self) -> Source
-    fn context(self: Self) -> Context
-    fn lookup(self: Self, name: string) -> ?Binding
-    fn bindings(self: Self) -> Binding[]
-    fn build<R>(self: Self, source: string) -> Expr<R>
+pub behavior Expr<E> {
+    fn text(self: Self<E>) -> string;
+    fn parts(self: Self<E>) -> Part[];
+    fn source(self: Self<E>) -> Source;
+    fn context(self: Self<E>) -> ExprContext;
+    fn lookup(self: Self<E>, name: string) -> ?Binding;
+    fn bindings(self: Self<E>) -> Binding[];
+    fn build<R>(self: Self<E>, source: string) -> Expr<R>;
     // Pack a reference tree + the executable code into the custom return — a
     // template fn opts into tooling visibility by returning `ExprCustom<T>`.
-    fn custom<R>(self: Self, ast: CustomNode, code: Expr<R>) -> CustomExpr<R>
-    fn fail(self: Self, message: string)
-    fn failAt(self: Self, span: Span, message: string)
+    fn custom<R>(
+        self: Self<E>,
+        ast: CustomNode,
+        code: Expr<R>,
+    ) -> CustomExpr<R>;
+    fn fail(self: Self<E>, message: string);
+    fn failAt(self: Self<E>, span: Span, message: string);
 }
+
+// ── Source location (`@src()`) ───────────────────────────────────────────────
+// The place a `@src()` is written, as a value (1.0.10-beta decision 73). The
+// builtin is evaluated at compile time: the checker rewrites `@src()` into the
+// ordinary constructor call `SourceLocation(file: "…", line: N, column: C,
+// fnName: "…")` with four literals, so every backend lowers it through its
+// record-constructor path and nothing runs at run time.
+//
+//   file    — the source file relative to the root of the package it belongs
+//             to, forward slashes, extension included (`src/emilia.bp`,
+//             `test/color_test.bp`); `main.bp` in the compiler's own harness.
+//   line    — 1-based line of the `@` character.
+//   column  — 1-based column of the `@` character (what a diagnostic prints).
+//   fnName  — the enclosing fn's name; `Type.method` inside a method; the test
+//             name inside `test "…" { }` (`test_<idx>` for an anonymous
+//             block); `""` at module level. A lambda does not change it.
+//
+// `@src()` takes no arguments and no trailing lambda — `@src(x)` is
+// `error[src-takes-no-arguments]`. It is a value like any other, so
+// `@src().line` reads a field in place. `std/asserts` and `std/snapshots`
+// are written against the caller's `@src()`: a helper never takes its own.
+//
+// The declaration the checker registers is the one in `comptime.zig`'s
+// `decl_reflection_src`; keep the two in sync.
+pub type SourceLocation(
+    file: string,
+    line: i32,
+    column: i32,
+    fnName: string,
+)
 
 // ── Decl reflection model (annotation processors) ────────────────────────────
 // Read-only reflection of the declaration a decorator is attached to. A decorator
@@ -401,11 +537,9 @@ pub interface Expr<E> {
 // wiring. The core only provides the protocol (recognize → reflect → invoke).
 
 // Which kind of top-level declaration the annotation sits on.
-pub enum DeclKind {
-    Record,
-    Struct,
-    Enum,
-    Interface,
+pub type DeclKind {
+    Type,
+    Behavior,
     Fn,
     Method,
     Field,
@@ -413,46 +547,53 @@ pub enum DeclKind {
 
 // One annotation entry on a reflected declaration (`#[name(args…)]`). `args`
 // holds the raw argument lexemes in source order.
-pub record DeclAnnotation {
+pub type DeclAnnotation(
     name: string,
     args: string[],
-}
+)
+
+// Every type name below (`Param.typeName`, `Field.typeName`,
+// `Method.returnType`, `Decl.returnType`) is the type as the source spells it:
+// `string`, `Array<string>`, `string[]`, `?i32`, `fn(i32) -> i32`,
+// `#(string, string)`, `@Task<Element>` — never a bare head, never empty for a
+// written type (a missing return type is `""`).
 
 // One parameter of a reflected method/fn.
-pub record Param {
+pub type Param(
     name: string,
     typeName: string,
-}
+)
 
 // One field of a reflected record/struct, with its own annotations.
-pub record Field {
+pub type Field(
     name: string,
     typeName: string,
     annotations: DeclAnnotation[],
-}
+)
 
 // One method of a reflected record/struct/enum, with its own annotations.
-pub record Method {
+pub type Method(
     name: string,
     params: Param[],
     returnType: string,
     annotations: DeclAnnotation[],
-}
+)
 
-// The reflection handle. `kind`/`name`/`fields`/`methods`/`returnType`/
+// The reflection handle. `kind`/`name`/`fields`/`variants`/`methods`/`returnType`/
 // `annotations` are read-only data (serialized like a template's capture);
+// `variants` lists an enum-shaped `type`'s variant and section names and is
+// empty otherwise — `kind == DeclKind.Type && variants.length == 0` is a record;
 // `fail`/`failAt` emit a scoped diagnostic at the annotated declaration, reusing
 // the template diagnostic surface.
-pub interface Decl {
-    val kind: DeclKind
-    val name: string
-    val fields: Field[]
-    val methods: Method[]
-    val returnType: string
-    val annotations: DeclAnnotation[]
+pub behavior Decl {
+    val kind: DeclKind;
+    val name: string;
+    val fields: Field[];
+    val variants: string[];
+    val methods: Method[];
+    val returnType: string;
+    val annotations: DeclAnnotation[];
 
-    fn fail(self: Self, message: string)
-    fn failAt(self: Self, span: Span, message: string)
+    fn fail(self: Self, message: string);
+    fn failAt(self: Self, span: Span, message: string);
 }
-
-

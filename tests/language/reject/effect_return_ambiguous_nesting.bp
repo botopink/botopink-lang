@@ -1,0 +1,19 @@
+//// Decision 119 of 1.0.10-beta (front 24, § Cells "Return and effect mode") —
+//// `return` wraps through every layer and passes a value of a layer's type
+//// through; when the wrapper is nested and the value fits two layers it is
+//// refused and asks for an explicit `Ok(…)`. Here `r: @Result<i32, string>` is
+//// both the outer layer's `T` (wrap it: `Ok(r)`) and the inner layer's own type
+//// (its `Error` would be the outer failure) — `effect-return-ambiguous-nesting`,
+//// at the `return`.
+
+fn check(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+fn nested(n: i32) -> @Result<@Result<i32, string>, string> {
+    val r = check(n);
+    return r;
+}
+
+pub fn main() { nested(1); }

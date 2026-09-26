@@ -1,0 +1,9 @@
+//// Decision 15 gives the annotation grammar to the checker: a `#[@…]`
+//// annotation names a family the compiler reads (`External`, `BeamMemory`,
+//// `Host`). An unknown one used to parse, check and be dropped — front 17
+//// step 3's recorded row, measured on a `var` and on a `fn`.
+
+#[@TotallyMadeUp.Nonsense(whatever = 42)]
+var hits: i32 = 0;
+
+pub fn main() { @print(hits); }

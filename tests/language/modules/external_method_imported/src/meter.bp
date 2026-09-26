@@ -1,0 +1,15 @@
+//// A type whose methods are host-backed, declared in the module that owns it.
+
+pub type Meter(base: i32) {
+    #[@External.Node("""($0.base + $1)"""),
+      @External.Erlang("""(element(2, $0) + $1)""")]
+    pub declare fn plus(self: Self, n: i32) -> i32;
+
+    #[@External.Node("""`${$1}:${$0.base}`"""),
+      @External.Erlang("""iolist_to_binary([$1, <<":">>, integer_to_binary(element(2, $0))])""")]
+    pub declare fn tag(self: Self, prefix: string) -> string;
+}
+
+pub fn meter(base: i32) -> Meter {
+    return Meter(base: base);
+}

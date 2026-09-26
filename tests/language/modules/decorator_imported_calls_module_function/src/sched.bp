@@ -1,0 +1,14 @@
+//// A decorator and the two functions of its module its body reaches; only
+//// the decorator is `pub`.
+
+fn fieldCount(expr: string) -> i32 {
+    return expr.split(" ").length;
+}
+
+fn describe(expr: string) -> string {
+    return if (fieldCount(expr) == 5) { "every minute" } else { "custom" };
+}
+
+pub fn scheduled(comptime decl: @Decl, cron: string) {
+    @emit("pub fn schedule() -> string { return \"" + decl.name + " runs " + describe(cron) + "\"; }");
+}

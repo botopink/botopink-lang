@@ -1,0 +1,18 @@
+//// Front 17 step 4 — `#[@BeamMemory.PersistentTerm]` is put once, when the
+//// module loads (`-on_load`), and read from anywhere on the node: a process
+//// spawned afterwards reads `101`.
+
+import { async } from "std";
+
+#[@BeamMemory.PersistentTerm]
+var version: i32 = 101;
+
+fn read() -> @Task<i32> {
+    return version;
+}
+
+pub fn main() -> @Task<void> {
+    val seen = await async.runAll([{ -> read() }]);
+    @print(seen);
+    @print(version);
+}

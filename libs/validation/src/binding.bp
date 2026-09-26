@@ -1,0 +1,187 @@
+//// validation — typed coercion of path, query and form values. Moved from
+//// rakun front 14's validation member (decision 116 rule 5).
+////
+//// A server framework's request readers (path parameter, query, header, form
+//// body) answer a plain `string`, and `""` rather than an optional when the
+//// value is absent, so handlers do not deal in optionals at the boundary. A handler that wants an `i32`, a `bool` or an
+//// epoch parses by hand today, and a handler that wants to know whether a field
+//// was MISSING cannot tell it from empty at all.
+////
+//// COERCION THAT FAILS PRODUCES A VIOLATION, NOT A ZERO. That is the whole
+//// point: `bindInt("age", "12x")` answers `0` AND records a `typeMismatch`, so
+//// the zero can never be mistaken for a value the caller meant.
+////
+//// THE ACCUMULATOR IS IN THE HOST. Records are immutable — there is no
+//// assignment to a `self` field anywhere in the real libraries — so a binder
+//// record cannot accumulate violations as it goes. It lives where every other
+//// accumulator lives: the host, keyed on the request process (the erlang
+//// template hangs it off the serving process's dictionary; the node template
+//// keeps it on a `globalThis` cell, which is the same thing on a row whose
+//// dispatcher runs one request to completion before it reads the next).
+////
+//// THE PATTERN IS: BIND EVERYTHING, THEN ASK ONCE. A handler never branches per
+//// field, which is what makes "all violations, not fail-fast" the default
+//// rather than an option.
+
+import {Violation, ValidationReport, violation} from "report";
+import {Arg, message, builtInTemplate, arg, noArgs} from "messages";
+
+// ── the host accumulator ────────────────────────────────────────────────────
+//
+// Inline templates only (decision 117 rule 8). Erlang: the serving process's
+// dictionary under `{validation, acc}`, so two concurrent requests cannot see
+// each other's violations. Node: the `acc` array of the one
+// `globalThis.__bp_validation` cell (see `spi.bp`).
+
+#[@External.Node("""(function(__X){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); __V.acc.push(__X); return __V.acc.length; })($0)""")]
+#[@External.Erlang("""(fun(VaV__) -> VaL__ = case get({validation, acc}) of undefined -> []; VaX__ -> VaX__ end, put({validation, acc}, VaL__ ++ [VaV__]), length(VaL__) + 1 end)($0)""")]
+declare fn rkvPush(v: Violation) -> i32;
+
+#[@External.Node("""(function(){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); return __V.acc.length; })()""")]
+#[@External.Erlang("""(fun() -> length(case get({validation, acc}) of undefined -> []; VaX__ -> VaX__ end) end)()""")]
+declare fn rkvCount() -> i32;
+
+#[@External.Node("""(function(){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); var __O = __V.acc; __V.acc = []; return __O; })()""")]
+#[@External.Erlang("""(fun() -> case erase({validation, acc}) of undefined -> []; VaX__ -> VaX__ end end)()""")]
+declare fn rkvDrain() -> Array<Violation>;
+
+#[@External.Node("""(function(){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); __V.acc = []; return 0; })()""")]
+#[@External.Erlang("""(fun() -> erase({validation, acc}), 0 end)()""")]
+declare fn rkvBindReset() -> i32;
+
+#[@External.Node("""(function(){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); return true; })()""")]
+#[@External.Erlang("""(fun() -> VaCount__ = fun() -> length(case get({validation, acc}) of undefined -> []; VaX__ -> VaX__ end) end, VaBefore__ = VaCount__(), VaParent__ = self(), VaRef__ = make_ref(), VaPid__ = spawn(fun() -> VaPush__ = fun(VaV__) -> put({validation, acc}, case get({validation, acc}) of undefined -> []; VaY__ -> VaY__ end ++ [VaV__]) end, VaPush__(child_one), VaPush__(child_two), VaParent__ ! {VaRef__, VaCount__()} end), VaMon__ = erlang:monitor(process, VaPid__), VaChild__ = receive {VaRef__, VaN__} -> erlang:demonitor(VaMon__, [flush]), VaN__; {'DOWN', VaMon__, process, VaPid__, _} -> -1 after 5000 -> erlang:demonitor(VaMon__, [flush]), -1 end, (VaChild__ =:= 2) andalso (VaCount__() =:= VaBefore__) end)()""")]
+declare fn rkvIsolated() -> bool;
+
+// ── the surface ─────────────────────────────────────────────────────────────
+
+// Every violation accumulated since the last ask, and the accumulator left
+// EMPTY, so the next request on the same process starts clean.
+pub fn bindingReport() -> ValidationReport {
+    return ValidationReport(violations: rkvDrain());
+}
+
+// How many violations are waiting. A handler never needs it; a test does.
+pub fn bindingCount() -> i32 {
+    return rkvCount();
+}
+
+pub fn bindingReset() -> i32 {
+    return rkvBindReset();
+}
+
+// True when a second scope cannot see this scope's violations. On the BEAM the
+// answer is MEASURED — the template spawns a process, pushes there, and compares
+// this process's count. On node it is a claim about the row: the accumulator is
+// a module global and the dispatcher runs one request to completion before it
+// reads the next, so there is no concurrent second scope to leak into. Both
+// rows answer `true`; only one of them proves it.
+pub fn bindingIsolated() -> bool {
+    return rkvIsolated();
+}
+
+fn record(field: string, code: string, raw: string, params: Array<Arg>) -> i32 {
+    return rkvPush(
+        violation(
+            field,
+            code,
+            message(code, builtInTemplate(code), field, raw, params),
+            raw,
+        ),
+    );
+}
+
+// ── the text predicates: one predicate, both rows ───────────────────────────
+//
+// Every decision about whether a string is a number is made HERE, in botopink,
+// on both rows. The only host cell in the coercion path is the `i64`
+// conversion, and it is only ever reached for a string this predicate has
+// already accepted — see `rawToI64`.
+
+pub fn digits() -> string {
+    return "0123456789";
+}
+
+pub fn isIntegerText(raw: string) -> bool {
+    val t = raw.trim();
+    if (t == "") return false;
+    val head = t.at(0).unwrapOr("");
+    val signed = head == "-" || head == "+";
+    val start = if (signed) 1 else 0;
+    if (t.length() <= start) return false;
+    var i = start;
+    var ok = true;
+    while (i < t.length()) {
+        if (digits().indexOf(t.at(i).unwrapOr("")) < 0) ok = false;
+        i = i + 1;
+    }
+    return ok;
+}
+
+// An i32 from a string `isIntegerText` accepted. Pure botopink: `acc * 10 +
+// digit` over `String.at`, the shape `config.bp` uses, and not `String.slice`
+// or `String.charCodeAt` — both of which make the commonJS backend emit a
+// self-recursive `String.prototype.charCodeAt` patch that kills the module.
+pub fn parseI32(raw: string) -> i32 {
+    val t = raw.trim();
+    val head = t.at(0).unwrapOr("");
+    val negative = head == "-";
+    var i = if (negative || head == "+") 1 else 0;
+    var n = 0;
+    while (i < t.length()) {
+        n = n * 10 + digits().indexOf(t.at(i).unwrapOr(""));
+        i = i + 1;
+    }
+    if (negative) return 0 - n else return n;
+}
+
+// The one host cell in the coercion path. An integer literal does not widen to
+// `i64` in botopink arithmetic (see the front's language-gap table), so
+// `acc * 10 + digit` cannot be written at `i64` at all — and an `i64` cannot be
+// spelled as a literal either. Both rows are reached ONLY with a string
+// `isIntegerText` has accepted, so the two hosts are never asked to disagree
+// about what a number is; they are asked to convert digits.
+#[@External.Node("(Number.parseInt($0, 10) || 0)")]
+#[@External.Erlang("(fun(__S) -> try binary_to_integer(__S) catch _:_ -> 0 end end)($0)")]
+declare fn rawToI64(raw: string) -> i64;
+
+pub fn parseI64(raw: string) -> i64 {
+    return rawToI64(raw.trim());
+}
+
+// ── the binders ─────────────────────────────────────────────────────────────
+
+pub fn bindInt(field: string, raw: string) -> i32 {
+    if (isIntegerText(raw)) return parseI32(raw);
+    val _v = record(field, "typeMismatch", raw, [arg("type", "whole number")]);
+    return 0;
+}
+
+pub fn bindBool(field: string, raw: string) -> bool {
+    val t = raw.trim();
+    if (t == "true" || t == "1") return true;
+    if (t == "false" || t == "0") return false;
+    val _v = record(field, "typeMismatch", raw, [arg("type", "boolean")]);
+    return false;
+}
+
+// The distinction `Request` cannot make: `""` is ABSENT, and absent is a
+// violation coded `required` rather than a zero-length value the handler has to
+// notice on its own.
+pub fn bindRequired(field: string, raw: string) -> string {
+    if (raw.trim() == "") {
+        val _v = record(field, "required", raw, noArgs());
+        return "";
+    } else return raw;
+}
+
+pub fn bindEpochMillis(field: string, raw: string) -> i64 {
+    if (isIntegerText(raw)) return parseI64(raw);
+    val _v = record(
+        field,
+        "typeMismatch",
+        raw,
+        [arg("type", "epoch in milliseconds")],
+    );
+    return parseI64("0");
+}

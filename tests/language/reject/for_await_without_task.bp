@@ -1,0 +1,18 @@
+//// Decisions 120 and 122 of 1.0.10-beta (front 24 step E4, § Cells "Streams")
+//// — `for await` needs an await channel: a `@Task` / `@Component` return, an
+//// `async { }` block or a `stream` loop. A plain function has none:
+//// `effect-await-without-task`, at the `for` (where the `for-over-*` refusals
+//// of decision 103 are located).
+
+fn numbers() -> @Stream<i32> {
+    yield 1;
+    yield 2;
+}
+
+fn total() -> i32 {
+    var n = 0;
+    for await (numbers()) { x -> n = n + x; };
+    return n;
+}
+
+pub fn main() { @print(total()); }

@@ -1,0 +1,196 @@
+//// validation — step 5: the SPI and message interpolation.
+////
+//// An application adds its own constraint without touching this module. The
+//// registration below is exactly what an application writes, in an application
+//// module, with no edit here — which is the acceptance.
+////
+//// THE SHAPE THE LANGUAGE ADMITS. The front's spec writes
+//// `registerConstraint(name: string, c: Constraint)`. A record that
+//// `implement`s a behavior does not coerce to the behavior type anywhere — not
+//// as a call argument, not under a `val` type annotation, not as a return type
+//// (measured on both rows; the front README's gap table carries the repro). So
+//// the registration passes the behavior's two methods instead: the type still
+//// `implement`s `Constraint`, so the compiler still checks the shape, and the
+//// closure is what crosses. The gap is recorded, not worked around silently.
+
+import {Constraint, registerConstraint, constraintRegistered, registeredConstraints, clearConstraints, vConstraint, unknownConstraintMessage} from "spi";
+import {ValidationReport, Violation} from "report";
+import {templateFor, interpolate, message, arg, noArgs, builtInTemplate, currentLocale, MessageSource, setMessageSource, builtInOnly} from "messages";
+
+// An application constraint. It `implement`s the SPI behavior, so `code` and
+// `check` are checked against it; `check` answers "" when the value is
+// acceptable and a message TEMPLATE otherwise.
+pub type CpfConstraint() {
+    pub fn code(self: Self) -> string {
+        return "cpf";
+    }
+
+    pub fn check(self: Self, field: string, value: string) -> string {
+        val digits = value.replaceAll(".", "").replaceAll("-", "");
+        if (digits.length() != 11)
+            return "{field} must be a CPF with 11 digits, got \"{value}\""
+        else
+            return "";
+    }
+}
+
+// A message source over a fixed table: the test stand-in for a framework's
+// property reader. `""` for a key the table does not hold.
+fn lookup(entries: Array<#(string, string)>, key: string) -> string {
+    return entries
+        .filter({ e -> e._0 == key })
+        .at(0)
+        .map({ e -> e._1 })
+        .unwrapOr("");
+}
+
+fn tableSource(
+    locale: string,
+    entries: Array<#(string, string)>,
+) -> MessageSource {
+    return MessageSource(
+        locale: { -> locale },
+        template: { key -> lookup(entries, key) },
+    );
+}
+
+fn cpf() -> CpfConstraint {
+    return CpfConstraint();
+}
+
+fn codesOf(vs: Array<Violation>) -> string {
+    return vs.map({ v -> v.code }).join(",");
+}
+
+fn messagesOf(vs: Array<Violation>) -> string {
+    return vs.map({ v -> v.message }).join(",");
+}
+
+test "validation: an unregistered name is a violation, never a pass" {
+    val _c = clearConstraints();
+    assert constraintRegistered("cpf") == false;
+    val v = vConstraint("document", "cpf", "anything at all");
+    assert v.length == 1;
+    assert codesOf(v) == "unknownConstraint";
+    assert messagesOf(v)
+        == "names the constraint \"cpf\", which is not registered - registered: []";
+    assert unknownConstraintMessage("cpf").contains("cpf");
+}
+
+test "validation: a registered constraint is reached by name" {
+    val _c = clearConstraints();
+    val c = cpf();
+    val _r = registerConstraint(
+        "cpf",
+        c.code(),
+        { field, value -> c.check(field, value) },
+    );
+    assert constraintRegistered("cpf");
+    assert registeredConstraints() == "cpf";
+    assert vConstraint("document", "cpf", "12345678901").length == 0;
+    val bad = vConstraint("document", "cpf", "123");
+    assert codesOf(bad) == "cpf";
+    assert messagesOf(bad)
+        == "document must be a CPF with 11 digits, got \"123\"";
+}
+
+test "validation: the refusal names what IS registered, so a typo is visible" {
+    val _c = clearConstraints();
+    val c = cpf();
+    val _r = registerConstraint(
+        "cpf",
+        c.code(),
+        { field, value -> c.check(field, value) },
+    );
+    val v = vConstraint("document", "cpv", "x");
+    assert codesOf(v) == "unknownConstraint";
+    assert messagesOf(v)
+        == "names the constraint \"cpv\", which is not registered - registered: [cpf]";
+}
+
+test "validation: registering twice replaces rather than doubles" {
+    val _c = clearConstraints();
+    val c = cpf();
+    val _a = registerConstraint(
+        "cpf",
+        c.code(),
+        { field, value -> c.check(field, value) },
+    );
+    val _b = registerConstraint(
+        "cpf",
+        c.code(),
+        { field, value -> c.check(field, value) },
+    );
+    assert registeredConstraints() == "cpf";
+}
+
+// ── message resolution order ────────────────────────────────────────────────
+
+test "validation: a global override replaces the built-in for every field" {
+    val _e = setMessageSource(tableSource("", []));
+    assert templateFor("sizeBetween", builtInTemplate("sizeBetween"))
+        == "size must be between {min} and {max}";
+    val _s = setMessageSource(
+        tableSource("", [#("sizeBetween", "tamanho entre {min} e {max}")]),
+    );
+    assert templateFor("sizeBetween", builtInTemplate("sizeBetween"))
+        == "tamanho entre {min} e {max}";
+    assert message(
+        "sizeBetween",
+        builtInTemplate("sizeBetween"),
+        "nome",
+        "a",
+        [arg("min", "2"), arg("max", "50")],
+    )
+        == "tamanho entre 2 e 50";
+    val _z = setMessageSource(builtInOnly());
+}
+
+test "validation: the locale key wins over the global one" {
+    val table = [
+        #("email", "global address"),
+        #("pt-BR.email", "endereco invalido"),
+    ];
+    val _n = setMessageSource(tableSource("", table));
+    assert currentLocale() == "";
+    assert templateFor("email", builtInTemplate("email")) == "global address";
+    val _l = setMessageSource(tableSource("pt-BR", table));
+    assert currentLocale() == "pt-BR";
+    assert templateFor("email", builtInTemplate("email"))
+        == "endereco invalido";
+    val _o = setMessageSource(tableSource("es-ES", table));
+    assert templateFor("email", builtInTemplate("email")) == "global address";
+    val _z = setMessageSource(builtInOnly());
+}
+
+test "validation: an unknown placeholder survives verbatim" {
+    assert interpolate(
+        "{min} to {max}, limit {limit}",
+        [arg("min", "2"), arg("max", "5")],
+    )
+        == "2 to 5, limit {limit}";
+    assert interpolate("{field} is {value}", noArgs()) == "{field} is {value}";
+    assert message(
+        "pattern",
+        "{field} must match {regex}",
+        "pin",
+        "x",
+        [arg("regex", "^a$")],
+    )
+        == "pin must match ^a$";
+}
+
+test "validation: every built-in code has a template of its own" {
+    assert builtInTemplate("notNull") == "must not be null";
+    assert builtInTemplate("notEmpty") == "must not be empty";
+    assert builtInTemplate("minValue") == "must be at least {min}";
+    assert builtInTemplate("maxValue") == "must be at most {max}";
+    assert builtInTemplate("positive") == "must be greater than 0";
+    assert builtInTemplate("positiveOrZero")
+        == "must be greater than or equal to 0";
+    assert builtInTemplate("pastDate") == "must be in the past";
+    assert builtInTemplate("futureDate") == "must be in the future";
+    assert builtInTemplate("required") == "must be present";
+    assert builtInTemplate("typeMismatch") == "must be a {type}";
+    assert builtInTemplate("nothing anyone registered") == "is not valid";
+}

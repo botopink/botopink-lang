@@ -1,0 +1,23 @@
+//// Decision 96 of 1.0.10-beta — every `use` in one function resolves against
+//// the SAME `ContextBase`. The anchor is a property of the body, not of each
+//// activation: the first `use` fixes it, and a second anchored elsewhere is
+//// refused at its own site with both bases named and the line that fixed the
+//// first (decision 67 — located, no flag).
+////
+//// Its sibling `reject/use_owner_mismatch.bp` is the other half: ONE `use`,
+//// anchored at a base the return type never declared, which the older RC2
+//// check catches before any anchor exists.
+
+type Element(count: i32) implement @Context<Element>
+type Http(port: i32) implement @Context<Http>
+
+fn state(initial: i32) -> @Component<Element, i32> { return initial; }
+fn connection() -> @Component<Http, i32> { return 8080; }
+
+fn Mixed() -> @Component<Element, Element> {
+    val a = use state(1);
+    val b = use connection();
+    return Element(count: a + b);
+}
+
+pub fn main() { @print(Mixed().count); }

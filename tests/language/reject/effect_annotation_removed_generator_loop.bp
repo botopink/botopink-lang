@@ -1,0 +1,15 @@
+//// Decisions 125 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `#[@generator] loop { … }`) — the annotated loop of
+//// decision 105 leaves: `#[@generator]` on a loop is refused at the annotation,
+//// and the fix-it on a loop is the prefix `iter`. The new form is
+//// `run/prefixed_loop_forms.bp`.
+
+pub fn main() {
+    var n = 0;
+    val g = #[@generator] loop {
+        n = n + 1;
+        if (n > 3) { break; };
+        yield n;
+    };
+    for (g) { x -> @print(x); };
+}

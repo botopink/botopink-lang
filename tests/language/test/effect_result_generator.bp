@@ -1,0 +1,19 @@
+//// Decision 8 §9 — `#[@resultGenerator]` plus `-> @Iterator<T>`: `yield` produces the
+//// elements and `for (gen)` consumes them.
+
+fn upto(n: i32) -> @Iterator<i32> {
+    var i = 0;
+    while (i < n) { yield i; i = i + 1; };
+}
+
+test "§9 a result generator yields its elements in order" {
+    var acc = "";
+    for (upto(4)) { x -> acc = acc + x.toString(); };
+    assert acc == "0123";
+}
+
+test "§9 an empty result generator runs no iteration" {
+    var runs = 0;
+    for (upto(0)) { x -> runs = runs + 1; };
+    assert runs == 0;
+}

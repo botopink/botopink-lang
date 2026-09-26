@@ -1,0 +1,162 @@
+//// actions: the v1 envelope — its literal and key order, `redirect` derived
+//// from `n`, the control-character case, the round trip and the refusals, on
+//// both targets. Every expected text is a literal.
+
+import {testing.asserts, json.decode} from "std";
+import {ActionState} from "state";
+import {ActionEnvelope, writeEnvelope, readEnvelope, parseActionState} from "envelope";
+
+fn env(
+    ok: bool,
+    state: string,
+    revalidated: Array<string>,
+    n: string,
+    payload: string,
+) -> ActionEnvelope {
+    return ActionEnvelope(
+        ok: ok,
+        state: state,
+        revalidated: revalidated,
+        n: n,
+        payload: payload,
+    );
+}
+
+fn same(a: ActionEnvelope, b: ActionEnvelope) -> bool {
+    return (((a.ok == b.ok && a.state == b.state)
+        && a.revalidated.join("\n") == b.revalidated.join("\n"))
+        && a.revalidated.length == b.revalidated.length)
+        && (a.n == b.n && a.payload == b.payload);
+}
+
+fn envErr(r: @Result<ActionEnvelope, string>) -> string {
+    val t = case r {
+        Ok(_) -> "";
+        Error(e) -> e;
+    };
+    return t;
+}
+
+fn roundTrips(e: ActionEnvelope) -> bool {
+    val back = case readEnvelope(writeEnvelope(e)) {
+        Ok(r) -> same(r, e);
+        Error(_) -> false;
+    };
+    return back;
+}
+
+test "actions: writeEnvelope answers the v1 literal, v first, keys in order" {
+    val e = env(true, "message=", ["/blog"], "", "");
+    try asserts.equals(
+        writeEnvelope(e),
+        "{\"v\":1,\"ok\":true,\"state\":\"message=\",\"revalidated\":[\"/blog\"],\"redirect\":\"\",\"n\":\"\",\"payload\":\"\"}",
+    );
+}
+
+test "actions: redirect is derived from n" {
+    try asserts.equals(
+        writeEnvelope(env(false, "", [], "R|307|/login", "")),
+        "{\"v\":1,\"ok\":false,\"state\":\"\",\"revalidated\":[],\"redirect\":\"/login\",\"n\":\"R|307|/login\",\"payload\":\"\"}",
+    );
+    try asserts.equals(
+        writeEnvelope(env(true, "", [], "N", "")),
+        "{\"v\":1,\"ok\":true,\"state\":\"\",\"revalidated\":[],\"redirect\":\"\",\"n\":\"N\",\"payload\":\"\"}",
+    );
+}
+
+test "actions: a state and payload holding a quote, a backslash, a newline and U+0001 stay valid JSON" {
+    val odd = "a\"b\\c\nd\u{1}e";
+    val text = writeEnvelope(env(true, odd, [], "", odd));
+    try asserts.equals(
+        text,
+        "{\"v\":1,\"ok\":true,\"state\":\"a\\\"b\\\\c\\nd\\u0001e\",\"revalidated\":[],\"redirect\":\"\",\"n\":\"\",\"payload\":\"a\\\"b\\\\c\\nd\\u0001e\"}",
+    );
+    try asserts.isOk(decode(text));
+}
+
+test "actions: readEnvelope inverts writeEnvelope field by field" {
+    val all = [
+        env(false, "message=bad&f.title=Too%20short", [], "", ""),
+        env(true, "message=", ["/a"], "", "p"),
+        env(true, "message=", [], "N", ""),
+        env(true, "message=", [], "R|307|/login", ""),
+        env(true, "message=", [], "R|308|/new", ""),
+        env(true, "message=", [], "R|303|/done", ""),
+        env(
+            true,
+            "message=",
+            ["/blog", "/blog/x", "/"],
+            "R|307|/a|b",
+            "{\"k\":1}",
+        ),
+    ];
+    try asserts.equals(all.filter({ e -> roundTrips(e) }).length, 7);
+}
+
+test "actions: readEnvelope refuses another version, text that is not JSON and a key of the wrong kind" {
+    try asserts.equals(
+        envErr(readEnvelope("{\"v\":2,\"ok\":true}")),
+        "actions.readEnvelope: `v` must be 1 - this reader knows version 1 only",
+    );
+    try asserts.equals(
+        envErr(readEnvelope("{\"ok\":true}")),
+        "actions.readEnvelope: `v` must be 1 - this reader knows version 1 only",
+    );
+    try asserts.equals(
+        envErr(readEnvelope("{\"v\":1,\"ok\":\"yes\"}")),
+        "actions.readEnvelope: `ok` must be a boolean, not a string",
+    );
+    try asserts.equals(
+        envErr(readEnvelope("{\"v\":1,\"revalidated\":[1]}")),
+        "actions.readEnvelope: `revalidated` must be an array of strings, not an array",
+    );
+    try asserts.equals(
+        envErr(readEnvelope("[1]")),
+        "actions.readEnvelope: the envelope must be an object, not an array",
+    );
+    try asserts.equals(
+        envErr(readEnvelope("not json")),
+        "actions.readEnvelope: not JSON (json.decode: not a JSON value (expected `null`) at byte 0)",
+    );
+    try asserts.equals(
+        envErr(readEnvelope("{\"v\":1,\"redirect\":\"/x\",\"n\":\"\"}")),
+        "actions.readEnvelope: `redirect` disagrees with the signal in `n`",
+    );
+}
+
+test "actions: a missing key reads empty and an unknown key is ignored" {
+    val e = try readEnvelope("{\"v\":1,\"extra\":{\"x\":[1,2]}}");
+    try asserts.isFalse(e.ok);
+    try asserts.equals(e.state, "");
+    try asserts.equals(e.revalidated.length, 0);
+    try asserts.equals(e.n, "");
+    try asserts.equals(e.payload, "");
+}
+
+test "actions: parseActionState takes ok and redirectTo from the envelope, never from state" {
+    val text = writeEnvelope(
+        env(
+            false,
+            "ok=true&message=Nope&f.title=Too%20short",
+            [],
+            "R|303|/done",
+            "",
+        ),
+    );
+    val st = parseActionState(text);
+    try asserts.isFalse(st.ok);
+    try asserts.equals(st.redirectTo, "/done");
+    try asserts.equals(st.message, "Nope");
+    try asserts.equals(st.fieldError("title"), "Too short");
+    val good = parseActionState(
+        writeEnvelope(env(true, "message=", [], "", "")),
+    );
+    try asserts.isTrue(good.ok);
+    try asserts.equals(good.redirectTo, "");
+    val broken = parseActionState("{\"v\":2}");
+    try asserts.isFalse(broken.ok);
+    try asserts.equals(
+        broken.message,
+        "actions.readEnvelope: `v` must be 1 - this reader knows version 1 only",
+    );
+}

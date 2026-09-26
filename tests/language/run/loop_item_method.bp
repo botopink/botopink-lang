@@ -1,0 +1,28 @@
+//// 1.0.10-beta `00 · 04-js` D7/D8 — a primitive method on what a `loop` binds.
+//// Measured by rakun's front 05 while writing a configuration reader.
+////
+//// The loop parameter used to bind a fresh type variable with no link to the
+//// collection, so nothing inside the body had a type. commonJS renames
+//// `.length()` to JavaScript's `length` PROPERTY only for a receiver inference
+//// resolved as a string or an array, so every one of these emitted a CALL —
+//// `TypeError: e.key.length is not a function`, at exit 1 — while erlang, which
+//// needs no receiver type to lower a primitive method, printed the right
+//// answer. A silent backend divergence, so the cell asserts the VALUE.
+////
+//// Three receivers, one rule: the item itself, a field of the item, and a
+//// `val` bound from the item inside the body.
+
+type Entry(key: string, value: string) {}
+
+pub fn main() {
+    val es = [Entry(key: "aa", value: "x"), Entry(key: "b", value: "yy")];
+    for (es) { e ->
+        @print(e.key.length());
+    };
+    val words = ["alpha", "be"];
+    for (words) { w ->
+        val t = w.trim();
+        @print(w.length());
+        @print(t.length());
+    };
+}

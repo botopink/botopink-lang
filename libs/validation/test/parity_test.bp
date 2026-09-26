@@ -1,0 +1,155 @@
+//// validation — the boundary test, and the reason this front has the
+//// shape it has.
+////
+//// ONE test, not two. The twenty inputs below run through the SAME function on
+//// erlang and on commonJS and are compared against ONE expected digest, so a
+//// row that answered differently reds here rather than passing its own half of
+//// a two-test pair. "The reports it compares are equal, not merely both
+//// non-empty" is the acceptance, and a byte-for-byte digest is the only form of
+//// that claim that cannot be satisfied by accident.
+////
+//// The digest carries, per input: the field, the code and the RESOLVED MESSAGE
+//// of every violation, in order. So it covers the predicates, the ordering, the
+//// built-in templates and the interpolation in one string. The template
+//// overrides are cleared first: the digest is about the two rows agreeing, not
+//// about whichever property table a sibling test left behind.
+////
+//// A commonJS-only regression here is a release blocker, not a known red — the
+//// two halves agreeing IS the deliverable.
+
+import {validated, notBlank, notEmpty, sizeBetween, email, minValue, maxValue, pattern, positive} from "decorators";
+import {ValidationReport, Violation} from "report";
+import {constraintTableJson} from "table";
+import {vNotBlank, vNotEmpty, vSizeBetween, vEmail, vMinValueI32, vMaxValueI32, vPattern, vPositiveI32} from "constraints";
+import {vConstraint} from "spi";
+import {setMessageSource, builtInOnly} from "messages";
+
+#[validated]
+pub type CreateUserRequest(
+    #[notBlank] #[sizeBetween(2, 50)] name: string,
+    #[notBlank] #[email] email: string,
+    #[minValue(18)] #[maxValue(120)] age: i32,
+    #[pattern("^[0-9]{5}-[0-9]{3}$")] postalCode: string,
+)
+
+fn input(
+    name: string,
+    mail: string,
+    age: i32,
+    postal: string,
+) -> CreateUserRequest {
+    return CreateUserRequest(
+        name: name,
+        email: mail,
+        age: age,
+        postalCode: postal,
+    );
+}
+
+// The twenty inputs. Ten are valid in at least one field that another input
+// breaks, so every predicate is exercised on both sides of its boundary.
+fn inputs() -> Array<CreateUserRequest> {
+    return [
+        input("Ana", "ana@example.com", 30, "01310-100"),
+        input("", "ana@example.com", 30, "01310-100"),
+        input("   ", "ana@example.com", 30, "01310-100"),
+        input("A", "ana@example.com", 30, "01310-100"),
+        input("Ab", "ana@example.com", 30, "01310-100"),
+        input("Ana", "", 30, "01310-100"),
+        input("Ana", "ana@example", 30, "01310-100"),
+        input("Ana", "@example.com", 30, "01310-100"),
+        input("Ana", "an a@example.com", 30, "01310-100"),
+        input("Ana", "a@b.c.dd", 30, "01310-100"),
+        input("Ana", "ana@example.com", 17, "01310-100"),
+        input("Ana", "ana@example.com", 18, "01310-100"),
+        input("Ana", "ana@example.com", 120, "01310-100"),
+        input("Ana", "ana@example.com", 121, "01310-100"),
+        input("Ana", "ana@example.com", 0 - 1, "01310-100"),
+        input("Ana", "ana@example.com", 30, ""),
+        input("Ana", "ana@example.com", 30, "01310100"),
+        input(
+            "Abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "ana@example.com",
+            30,
+            "01310-100",
+        ),
+        input("", "nope", 7, "x"),
+        input("   ", "", 999, "01310-1000"),
+    ];
+}
+
+fn digestOne(index: i32, r: ValidationReport) -> string {
+    val rows = r.violations.map(
+        { v -> v.field + ":" + v.code + ":" + v.message },
+    );
+    return [index].join("") + "=" + rows.join("+");
+}
+
+// #[17] is a name of exactly 50 characters: the upper bound `#[sizeBetween(2,
+// 50)]` admits. Together with #[4] ("Ab", exactly the lower bound) it is what
+// makes the digest sensitive to a predicate whose boundary moved by one, which
+// a set of inputs chosen only for variety would not be.
+fn digest() -> string {
+    var out: Array<string> = [];
+    var i = 0;
+    val all = inputs();
+    while (i < all.length) {
+        val one = all.at(i);
+        val rep = one
+            .map({ v -> validateCreateUserRequest(v) })
+            .unwrapOr(ValidationReport.empty());
+        out.push(digestOne(i, rep));
+        i = i + 1;
+    }
+    return out.join(";");
+}
+
+fn cleanTemplates() -> i32 {
+    return setMessageSource(builtInOnly());
+}
+
+pub fn expectedDigest() -> string {
+    return "0=;"
+        + "1=name:notBlank:must not be blank+name:sizeBetween:size must be between 2 and 50;"
+        + "2=name:notBlank:must not be blank;"
+        + "3=name:sizeBetween:size must be between 2 and 50;"
+        + "4=;"
+        + "5=email:notBlank:must not be blank+email:email:must be a well-formed email address;"
+        + "6=email:email:must be a well-formed email address;"
+        + "7=email:email:must be a well-formed email address;"
+        + "8=email:email:must be a well-formed email address;"
+        + "9=;"
+        + "10=age:minValue:must be at least 18;"
+        + "11=;"
+        + "12=;"
+        + "13=age:maxValue:must be at most 120;"
+        + "14=age:minValue:must be at least 18;"
+        + "15=postalCode:pattern:must match ^[0-9]{5}-[0-9]{3}$;"
+        + "16=postalCode:pattern:must match ^[0-9]{5}-[0-9]{3}$;"
+        + "17=;"
+        + "18=name:notBlank:must not be blank+name:sizeBetween:size must be between 2 and 50+email:email:must be a well-formed email address+age:minValue:must be at least 18+postalCode:pattern:must match ^[0-9]{5}-[0-9]{3}$;"
+        + "19=name:notBlank:must not be blank+email:notBlank:must not be blank+email:email:must be a well-formed email address+age:maxValue:must be at most 120+postalCode:pattern:must match ^[0-9]{5}-[0-9]{3}$";
+}
+
+test "validation: twenty inputs, one function, one answer on both rows" {
+    val _c = cleanTemplates();
+    assert digest() == expectedDigest();
+}
+
+test "validation: the table crosses byte-identically too" {
+    assert constraintsOfCreateUserRequest()
+        == "{\"type\":\"CreateUserRequest\",\"fields\":[{\"name\":\"name\",\"constraints\":[{\"code\":\"notBlank\"},{\"code\":\"sizeBetween\",\"min\":2,\"max\":50}]},{\"name\":\"email\",\"constraints\":[{\"code\":\"notBlank\"},{\"code\":\"email\"}]},{\"name\":\"age\",\"constraints\":[{\"code\":\"minValue\",\"min\":18},{\"code\":\"maxValue\",\"max\":120}]},{\"name\":\"postalCode\",\"constraints\":[{\"code\":\"pattern\",\"regex\":\"^[0-9]{5}-[0-9]{3}$\"}]}]}";
+}
+
+test "validation: the digest is not vacuous" {
+    val _c = cleanTemplates();
+    assert inputs().length == 20;
+    assert digest().contains("notBlank");
+    assert digest().contains("sizeBetween");
+    assert digest().contains("email");
+    assert digest().contains("minValue");
+    assert digest().contains("maxValue");
+    assert digest().contains("pattern");
+    assert digest().contains("0=");
+    assert digest().contains(";19=");
+}

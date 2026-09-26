@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "enum": {
+      "type_": {
         "name": "Token",
         "id": 1,
         "isPub": false,
@@ -12,46 +12,51 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "variants": [
-          {
-            "name": "Hover",
-            "fields": [
-              {
-                "name": "inner",
-                "typeRef": {
-                  "named": "Token"
-                },
-                "default": null
-              }
-            ],
-            "numeric": false
-          }
-        ],
-        "trailingComma": true,
-        "methods": [],
-        "sections": [
-          {
-            "name": "Text",
+        "shape": {
+          "enum_": {
             "variants": [
               {
-                "name": "Bold",
-                "fields": [],
-                "numeric": false
-              },
-              {
-                "name": "Italic",
-                "fields": [],
-                "numeric": false
-              },
-              {
-                "name": "Underline",
-                "fields": [],
+                "name": "Hover",
+                "fields": [
+                  {
+                    "name": "inner",
+                    "typeRef": {
+                      "named": "Token"
+                    },
+                    "default": null,
+                    "annotations": []
+                  }
+                ],
                 "numeric": false
               }
             ],
-            "sections": []
+            "sections": [
+              {
+                "name": "Text",
+                "variants": [
+                  {
+                    "name": "Bold",
+                    "fields": [],
+                    "numeric": false
+                  },
+                  {
+                    "name": "Italic",
+                    "fields": [],
+                    "numeric": false
+                  },
+                  {
+                    "name": "Underline",
+                    "fields": [],
+                    "numeric": false
+                  }
+                ],
+                "sections": []
+              }
+            ]
           }
-        ]
+        },
+        "trailingComma": true,
+        "methods": []
       }
     }
   ]

@@ -1,0 +1,91 @@
+//// Front 19 of 1.0.10-beta (C-27), decision 88 — `use f(x)` activates the hook
+//// `f(x)`; decisions 102/104 (front 21) — and decision 128 — a hook
+//// is `fn … -> @Component<C, T>` with any `T`, a component the same wrapper
+//// with `T: @Context<C>`, and every caller `await`s a
+//// component (commonJS emits every `#[@use]` body as an `async function`; erlang,
+//// wasm and beam are eager and `await` is the identity). So `run` awaits each
+//// component in turn and the values print in the same order on every target.
+//// A `use` inside a nested closure is refused (`reject/use_in_closure.bp`). The
+//// owner type is declared here (no library).
+
+type Element(count: i32) implement @Context<Element>
+type State(value: i32)
+
+fn state(initial: i32) -> @Component<Element, State> {
+    return State(value: initial);
+}
+
+fn pair(a: i32, b: i32) -> @Component<Element, #(i32, i32)> {
+    return #(a, b);
+}
+
+fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
+    val push = { action -> f(base, action) };
+    return #(base, push);
+}
+
+fn effect(cb: fn() -> i32) -> @Component<Element, i32> {
+    return cb();
+}
+
+fn counter(start: i32) -> @Component<Element, State> {
+    val s = use state(start * 2);
+    return s;
+}
+
+fn Widget(n: i32) -> @Component<Element, Element> {
+    val c = use state(n);
+    return Element(count: c.value + 1);
+}
+
+fn Fields() -> @Component<Element, Element> {
+    val {value} = use state(5);
+    return Element(count: value);
+}
+
+fn Composed() -> @Component<Element, Element> {
+    val k = use counter(10);
+    return Element(count: k.value);
+}
+
+fn Positional() -> @Component<Element, Element> {
+    val #(x, y) = use pair(3, 4);
+    return Element(count: x + y);
+}
+
+fn Effectful() -> @Component<Element, Element> {
+    use effect({ -> return 9; });
+    val c = use state(1);
+    return Element(count: c.value);
+}
+
+fn Liked() -> @Component<Element, Element> {
+    val #(shown, push) = use optimistic(12, { c, a -> c + a });
+    return Element(count: push(shown));
+}
+
+// No annotation: an ordinary function (question 92 (b)).
+fn Loading() -> Element {
+    return Element(count: 7);
+}
+
+fn run() -> @Task<i32> {
+    val e0 = await Widget(41);
+    @print(e0.count);
+    val e1 = await Fields();
+    @print(e1.count);
+    val e2 = await Composed();
+    @print(e2.count);
+    val e3 = await Positional();
+    @print(e3.count);
+    val e4 = await Effectful();
+    @print(e4.count);
+    @print(Loading().count);
+    val e5 = await Liked();
+    @print(e5.count);
+    return 0;
+}
+
+pub fn main() {
+    run();
+}

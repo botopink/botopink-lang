@@ -1,0 +1,40 @@
+//// 00 · 01-checker — the fully qualified spelling names its enum outright.
+//// `Token.Color.Red.500` says which enum carries the path in the path itself,
+//// so it resolves with no expectation to read: it is the spelling to reach for
+//// where the position cannot say what it wants, and the checker used to reject
+//// it with "unknown field 'Red' on type 'Token'".
+
+type Token {
+    Color {
+        Red { 100, 500 }
+    }
+}
+
+type Border {
+    Color {
+        Red { 100, 500 }
+    }
+}
+
+fn tokenName(t: Token) -> string {
+    val s = case t {
+        Color(_inner) -> "token";
+    };
+    return s;
+}
+
+fn borderName(b: Border) -> string {
+    val s = case b {
+        Color(_inner) -> "border";
+    };
+    return s;
+}
+
+pub fn main() {
+    val t = Token.Color.Red.500;
+    val b = Border.Color.Red.100;
+
+    @print(tokenName(t));
+    @print(borderName(b));
+    @print(tokenName(Token.Color.Red.100));
+}

@@ -1,0 +1,30 @@
+//// Decision 126 of 1.0.10-beta (front 24 step E5, § Cells "Host", second line;
+//// guide.md § 8) — a `#[@External.Erlang(…)]` function declared
+//// `-> @Task<@Result<T, string>>` turns an `{error, R}` answer into `Error(R)`.
+//// The host answers the conventional `{ok, V} | {error, R}` pair, which is also
+//// today's erlang shape of `@Result` (the decision fixes the `{error, R}` half;
+//// the `{ok, V}` half is the reading this cell takes). The Task is eager on
+//// erlang and `await` is the identity. Printed from inside `run`.
+//// `.targets` is `erlang`: the claim is the Erlang host's;
+//// `run/host_node_task_result.bp` is Node's.
+
+#[@External.Erlang("""(case $0 > 0 of true -> {ok, $0 * 2}; false -> {error, <<"refused">>} end)""")]
+declare fn hostDouble(n: i32) -> @Task<@Result<i32, string>>;
+
+fn show(r: @Result<i32, string>) {
+    case r {
+        Ok(v) -> @print("ok " + v.toString());
+        Error(e) -> @print("error " + e);
+    };
+}
+
+fn run() -> @Task<void> {
+    show(await hostDouble(21));
+    show(await hostDouble(0));
+    val a = try await hostDouble(1) catch 0;
+    val b = try await hostDouble(-1) catch 100;
+    val sum = a + b;
+    @print(sum);
+}
+
+pub fn main() { run(); }

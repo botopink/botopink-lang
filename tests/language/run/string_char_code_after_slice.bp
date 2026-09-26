@@ -1,0 +1,30 @@
+//// `String.charCodeAt` after a `String.slice` in the same module — front
+//// 00 · 04-js round 2, D4.
+////
+//// The two calls have to be in ONE program: a template on a behavior method
+//// becomes a prototype patch on commonJS, and the whole `String` prelude is
+//// installed into any module that uses a member needing one. `slice` needs
+//// one; `split`/`indexOf`/`startsWith` do not. The patch for `charCodeAt`
+//// read `String.prototype.charCodeAt = function(index) { return
+//// ((this.valueOf().charCodeAt(index) ?? -1) | 0); }` — it called the patch
+//// it had just installed, so one `s.slice(…)` anywhere made every
+//// `.charCodeAt(…)` in the PROGRAM blow the stack. A library adopted "never
+//// call String.slice" as a house rule because of it.
+////
+//// The out-of-range lines are the second half of the same defect: the `??`
+//// was written for a method that answers `undefined` out of range, and
+//// native `charCodeAt` answers `NaN`, which `??` does not catch and `| 0`
+//// turned into `0`. erlang answers `-1`, and so does commonJS now.
+////
+//// wasm and beam are out: `charCodeAt` has no lowering on either — on wasm
+//// `@print("A".charCodeAt(0))` traps (`unreachable`), which is a backend gap
+//// of its own and not this cell's claim. `slice` itself runs on wasm.
+
+pub fn main() {
+    val s = "hello";
+    @print(s.slice(1, 4));
+    @print(s.charCodeAt(0));
+    @print(s.charCodeAt(4));
+    @print(s.charCodeAt(9));
+    @print(s.charCodeAt(0 - 1));
+}

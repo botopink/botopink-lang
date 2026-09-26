@@ -1,0 +1,28 @@
+//// Decision 21's T2 — a field read whose receiver carries no type inference
+//// could place. A record is `{TypeAtom, F1, …, Fn}` on erlang, so the read is a
+//// POSITION, and the position comes from the field's name alone when nothing
+//// else names the record. The name only identifies a record when nothing else
+//// declares it — and "nothing else" is every record the PROGRAM declares, not
+//// the ones this file happens to import.
+////
+//// Here `main` imports `Ctx` (whose `rest` is field 1) and never imports `Hit`
+//// (whose `rest` is field 0), and the value in hand is a `Hit` reached through
+//// the optional binder, which has lost its type. Counting only what this file
+//// imports makes `rest` look unique, and the read lands one slot over: erlang
+//// printed `1` — the length of `entry`, a neighbouring field — where commonJS
+//// printed `2`, with nothing said about it. When the two declarations sit one
+//// slot further apart the same guess reads past the tuple and the program dies
+//// with `{error, badarg}` instead of answering wrongly; both are the one defect.
+////
+//// wasm is not in `targets`: the wasm backend resolves a field to an offset the
+//// same way, and closing that row is its own front's.
+
+pub mod shapes;
+import {Ctx, hitOf} from "shapes";
+
+pub fn main() {
+    var n = 0 - 1;
+    if (hitOf()) { h -> n = h.rest.length; };
+    @print(n);
+    @print(Ctx(a: "1", rest: []).rest.length);
+}

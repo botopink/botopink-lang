@@ -1,0 +1,37 @@
+//// Decision 8 §6 — construction without labels, positional access `.N`,
+//// tuples as parameters, returns and array elements.
+
+fn swap(p: #(i32, string)) -> #(string, i32) {
+    return #(p.1, p.0);
+}
+
+test "§6 T1 a tuple is constructed without labels and read by position" {
+    val t = #("SP", 12);
+    assert t.0 == "SP";
+    assert t.1 == 12;
+}
+
+test "§6 a tuple crosses a function as parameter and return" {
+    val s = swap(#(1, "a"));
+    assert s.0 == "a";
+    assert s.1 == 1;
+}
+
+test "§6 tuples as array elements" {
+    val pairs = [#(1, "a"), #(2, "b"), #(3, "c")];
+    var total = 0;
+    var text = "";
+    for (pairs) { p ->
+        total = total + p.0;
+        text = text + p.1;
+    };
+    assert pairs.length == 3;
+    assert total == 6;
+    assert text == "abc";
+}
+
+test "§6 a three-element tuple" {
+    val t = #(true, 2.5, "x");
+    assert t.0 == true;
+    assert t.2 == "x";
+}

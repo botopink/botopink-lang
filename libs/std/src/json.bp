@@ -15,7 +15,7 @@
 //// via the round-trip, or use the host BIF directly through their
 //// own `#[@External.<targert>(...)]`.
 ////
-//// `parse(s)` uses the §A3 `#[@result] declare fn` template-owned
+//// `parse(s)` uses the §A3 `declare fn` template-owned
 //// wrapper: the host body wraps `JSON.parse` / `json:decode` in
 //// try/catch and returns `{ok: <raw>}` / `{error: <reason>}`. The raw
 //// JSON string is returned (re-stringified on the host side) so
@@ -30,19 +30,786 @@
 // Validate a JSON string and return its canonical re-encoded form. Reds
 // with `{error, "<reason>"}` on syntax errors; the §A3 template owns
 // the wrapper shape.
-#[@result]
-#[@External.Node("""(() => { try { return { ok: JSON.stringify(JSON.parse($0)) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
-  @External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
+#[@External.Node("""(() => { try { return { ok: JSON.stringify(JSON.parse($0)) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
 pub declare fn parse(s: string) -> @Result<string, string>;
 
 // Re-encode an already-valid JSON string. Identical to `parse` for V1
 // (both round-trip through the host parser); kept as a distinct fn so
 // the surface matches the spec's eventual `parse -> JsonValue` +
 // `stringify(JsonValue) -> string` split.
-#[@result]
-#[@External.Node("""(() => { try { return { ok: JSON.stringify(JSON.parse($0)) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
-  @External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
+#[@External.Node("""(() => { try { return { ok: JSON.stringify(JSON.parse($0)) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
 pub declare fn stringify(s: string) -> @Result<string, string>;
+
+// ── 1.0.10-beta front 01 (decisions 116, 117): writing JSON ────────────────
+//
+// `quote`/`unquote` are one JSON string literal and its inverse; `array` and
+// `object` assemble already-encoded values. Every library that answers JSON
+// writes it with these instead of a private escaper (decision 116 rule 3).
+
+// A JSON string literal for `s`, quotes included (RFC 8259 §7): `"` → `\"`,
+// `\` → `\\`, U+0008/U+000C/U+000A/U+000D/U+0009 → `\b` `\f` `\n` `\r` `\t`,
+// every other code point below U+0020 → `\u00xx` (lowercase hex), and nothing
+// else — non-ASCII text, `/`, U+2028 and U+2029 pass through as UTF-8 (a JSON
+// value bound for `<script>` goes through `escape.scriptJson`).
+// Node: `JSON.stringify` of a string is exactly that.
+// Erlang: a byte walk — `json:encode/1` writes `\u001F` in UPPERCASE hex, so
+// the two targets would disagree; bytes of U+0080 and above pass through.
+#[@External.Node("""JSON.stringify(String($0))""")]
+#[@External.Erlang("""(fun(__S) -> iolist_to_binary([34, [case __C of 34 -> [92, 34]; 92 -> [92, 92]; 8 -> [92, 98]; 12 -> [92, 102]; 10 -> [92, 110]; 13 -> [92, 114]; 9 -> [92, 116]; _ when __C < 32 -> io_lib:format("~cu~4.16.0b", [92, __C]); _ -> __C end || <<__C>> <= __S], 34]) end)($0)""")]
+pub declare fn quote(s: string) -> string;
+
+// The inverse of `quote`: read ONE JSON string literal (surrounding
+// whitespace allowed) and answer its text. Anything else — a bare word, a
+// number, a missing quote, trailing text — is an `Error`.
+#[@External.Node("""(() => { try { const __v = JSON.parse(String($0)); return typeof __v === 'string' ? { ok: __v } : { error: 'json.unquote: not a JSON string literal' } } catch (__e) { return { error: 'json.unquote: not a JSON string literal' } } })()""")]
+#[@External.Erlang("""(fun(__S) -> try json:decode(__S) of __V when is_binary(__V) -> {ok, __V}; _ -> {error, <<"json.unquote: not a JSON string literal">>} catch _:_ -> {error, <<"json.unquote: not a JSON string literal">>} end end)($0)""")]
+pub declare fn unquote(literal: string) -> @Result<string, string>;
+
+// A JSON array of `items`, each ALREADY encoded (the output of `quote`, a
+// number's text, `true`/`false`/`null`, or another writer's output). No
+// escaping happens here.
+pub fn array(items: Array<string>) -> string {
+    return ["[", items.join(","), "]"].join("");
+}
+
+// A JSON object of `fields` in the given order: each key goes through
+// `quote`, each value is ALREADY encoded (as for `array`).
+pub fn object(fields: Array<#(string, string)>) -> string {
+    val members = fields.map({ f -> [quote(f._0), ":", f._1].join("") });
+    return ["{", members.join(","), "}"].join("");
+}
+
+// Internal: the UTF-8 text of one code point. The tests build every
+// non-ASCII string with it (see `cp`), and `decode` writes `\u` escapes.
+#[@External.Node("""String.fromCodePoint($0)""")]
+#[@External.Erlang("""unicode:characters_to_binary([$0])""")]
+declare fn codepointText(cp: i32) -> string;
+
+// ── 1.0.10-beta front 01 step 13 (decision 117 rule 7): reading JSON ─────────
+//
+// `decode` reads ONE RFC 8259 document into a `Json`. It is written in
+// botopink, not as a per-target template: `JSON.parse` reorders integer-like
+// keys and keeps the last of two duplicates, and OTP's `json:decode` answers
+// a map, so neither keeps member order or refuses a duplicate, and the two
+// targets would disagree. The reader is the strictest RFC 8259 admits
+// (decision 67): `Obj` keeps members in document order; a duplicate member
+// name is an `Error`; text after the value other than whitespace is an
+// `Error`; a number follows the RFC grammar exactly (`01`, `+1`, `.5`, `1.`,
+// `NaN`, `Infinity` are refused), is an `f64`, and one that overflows `f64` is
+// an `Error`; `\u` escapes are decoded, a surrogate pair into its code point,
+// and an unpaired surrogate is an `Error`; a raw control character below
+// U+0020 inside a string is an `Error`. Every `Error` names the BYTE offset
+// (UTF-8) of the offending character.
+//
+// The reader walks the document's code points (one conversion up front) and
+// checks the whole grammar in botopink. Its private host cells are
+// conversions, none a parser: `codePointsOf` / `textsOf` (the document's code
+// points and their texts) and `codepointText` (a `\u` escape's code point → its
+// text). A numeral becomes its correctly rounded `f64` in botopink
+// (`numeralValue`, decision 142).
+
+pub type Json {
+    Null,
+    Bool(value: bool),
+    Num(value: f64),
+    Str(value: string),
+    Arr(items: Array<Json>),
+    Obj(members: Array<#(string, Json)>),
+}
+
+// One parsed value and the index of the code point after it.
+type Parsed(value: Json, next: i32)
+
+// A parsed string literal (its text) and the index after the closing quote.
+type ParsedText(text: string, next: i32)
+
+// The document's code points and their texts, index for index.
+type Doc(cps: Array<i32>, chs: Array<string>)
+
+pub fn decode(s: string) -> @Result<Json, string> {
+    val doc = Doc(cps: codePointsOf(s), chs: textsOf(s));
+    val start = skipWs(doc, 0);
+    if (start >= doc.cps.length) {
+        throw problemAt(doc, start, "no JSON value");
+    }
+    val v = try readValue(doc, start);
+    val end = skipWs(doc, v.next);
+    if (end < doc.cps.length) {
+        throw problemAt(doc, end, "unexpected text after the value");
+    }
+    return v.value;
+}
+
+// Internal: the code points of `s`, and their texts index for index. Host
+// cells rather than `String.chars` / `charCodeAt`: on commonJS those two are
+// `String.prototype` patches the std prelude installs, and a consumer that
+// imports `json` from "std" does not load that prelude — `s.chars is not a
+// function` (measured by `validation`'s tests under `zig build test-libs`).
+#[@External.Node("""Array.from($0, (__c) => __c.codePointAt(0))""")]
+#[@External.Erlang("""unicode:characters_to_list($0, utf8)""")]
+declare fn codePointsOf(s: string) -> Array<i32>;
+
+#[@External.Node("""Array.from($0)""")]
+#[@External.Erlang("""[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]""")]
+declare fn textsOf(s: string) -> Array<string>;
+
+// The code point at `i`, `-1` past the end.
+fn cpAt(doc: Doc, i: i32) -> i32 {
+    return doc.cps.at(i).unwrapOr(0 - 1);
+}
+
+// Space, tab, line feed and carriage return — the four RFC 8259 §2 admits.
+fn isWs(c: i32) -> bool {
+    return c == 32 || c == 9 || c == 10 || c == 13;
+}
+
+fn skipWs(doc: Doc, start: i32) -> i32 {
+    var i = start;
+    while (isWs(cpAt(doc, i))) {
+        i = i + 1;
+    }
+    return i;
+}
+
+// The UTF-8 length of one code point.
+fn utf8Len(c: i32) -> i32 {
+    if (c < 128) return 1 else if (c < 2048) return 2 else if (c < 65536) return 3 else return 4;
+}
+
+// `json.decode: <what> at byte <n>` — `n` counts UTF-8 bytes before index `i`.
+fn problemAt(doc: Doc, i: i32, what: string) -> string {
+    var bytes = 0;
+    var k = 0;
+    while (k < i && k < doc.cps.length) {
+        bytes = bytes + utf8Len(cpAt(doc, k));
+        k = k + 1;
+    }
+    return ["json.decode: ", what, " at byte ", bytes.toString()].join("");
+}
+
+fn readValue(doc: Doc, i: i32) -> @Result<Parsed, string> {
+    val c = cpAt(doc, i);
+    if (c == 123) {
+        return try readObject(doc, i);
+    }
+    if (c == 91) {
+        return try readArray(doc, i);
+    }
+    if (c == 34) {
+        val t = try readString(doc, i);
+        return Parsed(value: Json.Str(value: t.text), next: t.next);
+    }
+    if (c == 116) {
+        val n = try readWord(doc, i, "true");
+        return Parsed(value: Json.Bool(value: true), next: n);
+    }
+    if (c == 102) {
+        val n = try readWord(doc, i, "false");
+        return Parsed(value: Json.Bool(value: false), next: n);
+    }
+    if (c == 110) {
+        val n = try readWord(doc, i, "null");
+        return Parsed(value: Json.Null, next: n);
+    }
+    if (c == 45 || isDigit(c)) {
+        return try readNumber(doc, i);
+    }
+    if (c < 0) {
+        throw problemAt(doc, i, "unexpected end of input");
+    }
+    throw problemAt(doc, i, "unexpected character");
+}
+
+// `true`, `false` or `null`, spelled out in full.
+fn readWord(doc: Doc, i: i32, word: string) -> @Result<i32, string> {
+    val want = textsOf(word);
+    var k = 0;
+    var ok = true;
+    while (k < want.length) {
+        if (doc.chs.at(i + k).unwrapOr("") != want.at(k).unwrapOr("")) {
+            ok = false;
+        }
+        k = k + 1;
+    }
+    if (!ok) {
+        throw problemAt(doc, i, ["not a JSON value (expected `", word, "`)"].join(""));
+    }
+    return i + want.length;
+}
+
+// The loops below never `throw` from inside their body: on erlang a `throw`
+// in one branch of an `if` inside a `while`, beside branches that assign a
+// `var`, compiles to an "unsafe variable" `case` that `erlc` refuses. Each
+// loop records its problem and stops; the `throw` follows the loop.
+
+fn readArray(doc: Doc, open: i32) -> @Result<Parsed, string> {
+    var items: Json[] = [];
+    var i = skipWs(doc, open + 1);
+    if (cpAt(doc, i) == 93) {
+        return Parsed(value: Json.Arr(items: items), next: i + 1);
+    }
+    var more = true;
+    var problem = "";
+    while (more) {
+        val v = try readValue(doc, i);
+        items.push(v.value);
+        val after = skipWs(doc, v.next);
+        val c = cpAt(doc, after);
+        if (c == 44) {
+            i = skipWs(doc, after + 1);
+        } else if (c == 93) {
+            i = after + 1;
+            more = false;
+        } else {
+            problem = problemAt(doc, after, "expected `,` or `]` in an array");
+            more = false;
+        }
+    }
+    if (problem != "") {
+        throw problem;
+    }
+    return Parsed(value: Json.Arr(items: items), next: i);
+}
+
+fn readObject(doc: Doc, open: i32) -> @Result<Parsed, string> {
+    var members: Array<#(string, Json)> = [];
+    var i = skipWs(doc, open + 1);
+    if (cpAt(doc, i) == 125) {
+        return Parsed(value: Json.Obj(members: members), next: i + 1);
+    }
+    var more = true;
+    var problem = "";
+    while (more) {
+        val member = try readMember(doc, i, members);
+        members.push(#(member.key, member.value));
+        val after = skipWs(doc, member.next);
+        val c = cpAt(doc, after);
+        if (c == 44) {
+            i = skipWs(doc, after + 1);
+        } else if (c == 125) {
+            i = after + 1;
+            more = false;
+        } else {
+            problem = problemAt(doc, after, "expected `,` or `}` in an object");
+            more = false;
+        }
+    }
+    if (problem != "") {
+        throw problem;
+    }
+    return Parsed(value: Json.Obj(members: members), next: i);
+}
+
+// One parsed member and the index after its value.
+type ParsedMember(key: string, value: Json, next: i32)
+
+// `"name" : value` at `i`, refused when `name` is already among `seen`.
+fn readMember(doc: Doc, i: i32, seen: Array<#(string, Json)>) -> @Result<ParsedMember, string> {
+    if (cpAt(doc, i) != 34) {
+        throw problemAt(doc, i, "expected a member name (a string)");
+    }
+    val key = try readString(doc, i);
+    if (seen.filter({ m -> m._0 == key.text }).length > 0) {
+        throw problemAt(doc, i, ["duplicate member name `", key.text, "`"].join(""));
+    }
+    val colon = skipWs(doc, key.next);
+    if (cpAt(doc, colon) != 58) {
+        throw problemAt(doc, colon, "expected `:` after a member name");
+    }
+    val v = try readValue(doc, skipWs(doc, colon + 1));
+    return ParsedMember(key: key.text, value: v.value, next: v.next);
+}
+
+// The value of one hex digit, `-1` for anything else.
+fn hexValue(c: i32) -> i32 {
+    if (c >= 48 && c <= 57) return c - 48 else if (c >= 97 && c <= 102) return c - 87 else if (c >= 65 && c <= 70) return c - 55 else return 0 - 1;
+}
+
+// The four hex digits after `\u` at index `i` (the `u`), `-1` when malformed.
+fn hex4(doc: Doc, i: i32) -> i32 {
+    var acc = 0;
+    var k = 1;
+    while (k <= 4) {
+        val h = hexValue(cpAt(doc, i + k));
+        if (h < 0 || acc < 0) {
+            acc = 0 - 1;
+        } else {
+            acc = acc * 16 + h;
+        }
+        k = k + 1;
+    }
+    return acc;
+}
+
+// A string literal starting at the quote `open`.
+fn readString(doc: Doc, open: i32) -> @Result<ParsedText, string> {
+    var parts: string[] = [];
+    var i = open + 1;
+    var done = false;
+    var problem = "";
+    while (!done) {
+        val c = cpAt(doc, i);
+        if (c < 0) {
+            problem = problemAt(doc, open, "unterminated string");
+            done = true;
+        } else if (c == 34) {
+            done = true;
+            i = i + 1;
+        } else if (c < 32) {
+            problem = problemAt(doc, i, "raw control character in a string");
+            done = true;
+        } else if (c == 92) {
+            val esc = readEscape(doc, i);
+            if (esc.next < 0) {
+                problem = esc.text;
+                done = true;
+            } else {
+                parts.push(esc.text);
+                i = esc.next;
+            }
+        } else {
+            parts.push(doc.chs.at(i).unwrapOr(""));
+            i = i + 1;
+        }
+    }
+    if (problem != "") {
+        throw problem;
+    }
+    return ParsedText(text: parts.join(""), next: i);
+}
+
+// The escape whose `\` is at `i`: its text and the index after it, or — with
+// `next == -1` — the problem as `text`.
+fn readEscape(doc: Doc, i: i32) -> ParsedText {
+    val e = cpAt(doc, i + 1);
+    if (e == 34) return ParsedText(text: "\"", next: i + 2)
+    else if (e == 92) return ParsedText(text: "\\", next: i + 2)
+    else if (e == 47) return ParsedText(text: "/", next: i + 2)
+    else if (e == 98) return ParsedText(text: "\u{8}", next: i + 2)
+    else if (e == 102) return ParsedText(text: "\u{c}", next: i + 2)
+    else if (e == 110) return ParsedText(text: "\n", next: i + 2)
+    else if (e == 114) return ParsedText(text: "\r", next: i + 2)
+    else if (e == 116) return ParsedText(text: "\t", next: i + 2)
+    else if (e == 117) return readUnicodeEscape(doc, i)
+    else return ParsedText(text: problemAt(doc, i, "invalid escape"), next: 0 - 1);
+}
+
+// `\uXXXX`, or a surrogate pair `\uD8xx\uDCxx`, at `i`.
+fn readUnicodeEscape(doc: Doc, i: i32) -> ParsedText {
+    val hi = hex4(doc, i + 1);
+    if (hi < 0) return ParsedText(text: problemAt(doc, i, "malformed \\u escape"), next: 0 - 1)
+    else if (hi >= 56320 && hi <= 57343) return ParsedText(text: problemAt(doc, i, "unpaired surrogate"), next: 0 - 1)
+    else if (hi >= 55296 && hi <= 56319) {
+        val lo = if (cpAt(doc, i + 6) == 92 && cpAt(doc, i + 7) == 117) hex4(doc, i + 7) else 0 - 1;
+        if (lo < 56320 || lo > 57343) return ParsedText(text: problemAt(doc, i, "unpaired surrogate"), next: 0 - 1)
+        else return ParsedText(text: codepointText(65536 + (hi - 55296) * 1024 + (lo - 56320)), next: i + 12);
+    } else return ParsedText(text: codepointText(hi), next: i + 6);
+}
+
+fn isDigit(c: i32) -> bool {
+    return c >= 48 && c <= 57;
+}
+
+// The digits from `i` on, and the index after them.
+fn digitsFrom(doc: Doc, i: i32) -> ParsedText {
+    var parts: string[] = [];
+    var k = i;
+    while (isDigit(cpAt(doc, k))) {
+        parts.push(doc.chs.at(k).unwrapOr(""));
+        k = k + 1;
+    }
+    return ParsedText(text: parts.join(""), next: k);
+}
+
+// `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?` — RFC 8259 §6. The
+// grammar is checked here, and the validated numeral converted by
+// `numeralValue`, both in botopink.
+fn readNumber(doc: Doc, start: i32) -> @Result<Parsed, string> {
+    var i = start;
+    var sign = "";
+    if (cpAt(doc, i) == 45) {
+        sign = "-";
+        i = i + 1;
+    }
+    if (!isDigit(cpAt(doc, i))) {
+        throw problemAt(doc, i, "a number needs a digit");
+    }
+    if (cpAt(doc, i) == 48 && isDigit(cpAt(doc, i + 1))) {
+        throw problemAt(doc, i, "a number may not have a leading zero");
+    }
+    val whole = digitsFrom(doc, i);
+    val frac = fractionFrom(doc, whole.next);
+    if (frac.next < 0) {
+        throw frac.text;
+    }
+    val exp = exponentFrom(doc, frac.next);
+    if (exp.next < 0) {
+        throw exp.text;
+    }
+    val conv = numeralValue(doc, sign == "-", i, whole.next, frac.next, exp.next);
+    if (!conv.ok) {
+        throw problemAt(doc, start, "number overflows f64");
+    }
+    return Parsed(value: Json.Num(value: conv.value), next: exp.next);
+}
+
+// The digits after `.` at `i` (`"0"` when there is no `.`), or — with
+// `next == -1` — the problem as `text`.
+fn fractionFrom(doc: Doc, i: i32) -> ParsedText {
+    if (cpAt(doc, i) != 46) return ParsedText(text: "0", next: i)
+    else if (!isDigit(cpAt(doc, i + 1))) return ParsedText(text: problemAt(doc, i + 1, "a fraction needs a digit after `.`"), next: 0 - 1)
+    else return digitsFrom(doc, i + 1);
+}
+
+// The signed exponent after `e`/`E` at `i` (`"0"` when there is none), or —
+// with `next == -1` — the problem as `text`.
+fn exponentFrom(doc: Doc, i: i32) -> ParsedText {
+    val e = cpAt(doc, i);
+    if (e != 101 && e != 69) return ParsedText(text: "0", next: i) else {
+        val s = cpAt(doc, i + 1);
+        val sign = if (s == 45) "-" else "";
+        val at = if (s == 43 || s == 45) i + 2 else i + 1;
+        if (!isDigit(cpAt(doc, at))) return ParsedText(text: problemAt(doc, at, "an exponent needs a digit"), next: 0 - 1) else {
+            val d = digitsFrom(doc, at);
+            return ParsedText(text: [sign, d.text].join(""), next: d.next);
+        }
+    }
+}
+
+// ── the numeral → f64 conversion (decision 142) ─────────────────────────────
+//
+// A validated numeral becomes the `f64` nearest to its exact decimal value,
+// ties to even — what a correctly rounded `strtod` answers, written in
+// botopink so every target computes the same bits from the same code.
+//
+//   * the fast path (Clinger): at most 15 significant digits and a decimal
+//     exponent in -22…22 — the digits and the power of ten are both exact
+//     `f64`s, so one multiplication or division rounds once, correctly;
+//   * otherwise the value is the exact fraction `num / den` of big integers
+//     (`num` the digits, times `10^e` when `e ≥ 0`; `den` = `10^-e`
+//     otherwise), its binary exponent `e2` is chosen so the quotient
+//     `q = num / (den · 2^e2)` has 53 bits (fewer for a subnormal, never
+//     below `2^-1074`), `q` is found bit by bit by shift-and-subtract, and
+//     the remainder decides the rounding: above half up, at half to even.
+//
+// The result is assembled without an integer → float conversion: `q`'s bits
+// accumulate into an `f64` (exact below 2^53) and `q · 2^e2` is reached by
+// multiplying by powers of two, each step exact because every intermediate
+// value is representable. An exponent past `f64`'s range is an overflow
+// (`ok == false`); a value below half the least subnormal is `0.0`.
+//
+// Big integers are `Array<i32>` of 15-bit limbs, least significant first, so
+// every product and carry stays below 2^31 on every target, and an integer
+// quotient is spelled `(a - a % b) / b` (exact on commonJS, where `/` is a
+// float division).
+
+// A numeral's `f64`, and whether it was in range.
+type Conv(value: f64, ok: bool)
+
+// The conversion of the numeral `readNumber` validated: the digits of the
+// integer part are `cps[w0..w1)`, a fraction's `cps[w1 + 1..f1)` (none when
+// `f1 == w1`), an exponent's between `f1 + 1` and `e1` (none when `e1 == f1`).
+fn numeralValue(doc: Doc, negative: bool, w0: i32, w1: i32, f1: i32, e1: i32) -> Conv {
+    // The significant digits, leading zeros dropped, and the decimal exponent.
+    var digits: Array<i32> = [];
+    var e10 = 0;
+    var k = w0;
+    while (k < f1) {
+        if (k != w1) {
+            val d = cpAt(doc, k) - 48;
+            if (digits.length > 0 || d != 0) {
+                digits.push(d);
+            }
+            if (k > w1) {
+                e10 = e10 - 1;
+            }
+        }
+        k = k + 1;
+    }
+    e10 = e10 + exponentValue(doc, f1, e1);
+    // Trailing zeros only lengthen the arithmetic.
+    var nd = digits.length;
+    while (nd > 0 && digits.at(nd - 1).unwrapOr(0) == 0) {
+        nd = nd - 1;
+        e10 = e10 + 1;
+    }
+    val sign = if (negative) -1.0 else 1.0;
+    if (nd == 0) return Conv(value: 0.0 * sign, ok: true)
+    else if (nd + e10 > 309) return Conv(value: 0.0, ok: false)
+    else if (nd + e10 < -323) return Conv(value: 0.0 * sign, ok: true)
+    else if (nd <= 15 && e10 >= -22 && e10 <= 22) return Conv(value: fastPath(digits, nd, e10) * sign, ok: true)
+    else {
+        val c = slowPath(digits, nd, e10);
+        return Conv(value: c.value * sign, ok: c.ok);
+    }
+}
+
+// The exponent after `e`/`E` at `f1` (0 when there is none), clamped so a
+// thousand-digit exponent cannot overflow: past ±100000 every numeral is
+// already out of range or zero.
+fn exponentValue(doc: Doc, f1: i32, e1: i32) -> i32 {
+    if (e1 == f1) return 0
+    else {
+        var at = f1 + 1;
+        val s = cpAt(doc, at);
+        val neg = s == 45;
+        if (s == 43 || s == 45) {
+            at = at + 1;
+        }
+        var v = 0;
+        while (at < e1) {
+            if (v < 100000) {
+                v = v * 10 + (cpAt(doc, at) - 48);
+            }
+            at = at + 1;
+        }
+        return if (neg) 0 - v else v;
+    }
+}
+
+// At most 15 digits and |e10| ≤ 22: both operands exact, one rounding.
+fn fastPath(digits: Array<i32>, nd: i32, e10: i32) -> f64 {
+    var m = 0.0;
+    var i = 0;
+    while (i < nd) {
+        m = m * 10.0 + digitFloat(digits.at(i).unwrapOr(0));
+        i = i + 1;
+    }
+    var p = 1.0;
+    var j = 0;
+    val n = if (e10 < 0) 0 - e10 else e10;
+    while (j < n) {
+        p = p * 10.0;
+        j = j + 1;
+    }
+    return if (e10 < 0) m / p else m * p;
+}
+
+// A decimal digit as an `f64` (the language has no integer → float
+// conversion; ten literals are one).
+fn digitFloat(d: i32) -> f64 {
+    return if (d == 0) 0.0 else if (d == 1) 1.0 else if (d == 2) 2.0 else if (d == 3) 3.0 else if (d == 4) 4.0
+        else if (d == 5) 5.0 else if (d == 6) 6.0 else if (d == 7) 7.0 else if (d == 8) 8.0 else 9.0;
+}
+
+// The exact path: `num / den`, rounded to 53 bits (or to the subnormal grid).
+fn slowPath(digits: Array<i32>, nd: i32, e10: i32) -> Conv {
+    var num: Array<i32> = [];
+    var i = 0;
+    while (i < nd) {
+        num = bnMulAdd(num, 10, digits.at(i).unwrapOr(0));
+        i = i + 1;
+    }
+    var den: Array<i32> = [1];
+    if (e10 >= 0) {
+        num = bnMulPow10(num, e10);
+    } else {
+        den = bnMulPow10(den, 0 - e10);
+    }
+    // floor(log2(num / den)): the bit-length difference, or one less.
+    val guess = bnBitLen(num) - bnBitLen(den);
+    val above = if (guess >= 0) bnCmp(num, bnShl(den, guess)) >= 0 else bnCmp(bnShl(num, 0 - guess), den) >= 0;
+    val fl = if (above) guess else guess - 1;
+    var e2 = fl - 52;
+    if (e2 < -1074) {
+        e2 = -1074;
+    }
+    var a = if (e2 < 0) bnShl(num, 0 - e2) else num;
+    val b = if (e2 > 0) bnShl(den, e2) else den;
+    // q = floor(a / b) < 2^53, one bit at a time, from 2^53 down.
+    var q = 0.0;
+    var odd = false;
+    var bi = bnShl(b, 53);
+    var bit = 53;
+    while (bit >= 0) {
+        q = q * 2.0;
+        odd = false;
+        if (bnCmp(a, bi) >= 0) {
+            a = bnSub(a, bi);
+            q = q + 1.0;
+            odd = true;
+        }
+        bi = bnShr1(bi);
+        bit = bit - 1;
+    }
+    // Round: the remainder against half the divisor, ties to even.
+    val half = bnCmp(bnShl(a, 1), b);
+    if (half > 0 || (half == 0 && odd)) {
+        q = q + 1.0;
+    }
+    if (q == 9007199254740992.0) {
+        q = 4503599627370496.0;
+        e2 = e2 + 1;
+    }
+    if (e2 > 971) return Conv(value: 0.0, ok: false)
+    else return Conv(value: scaleBy2(q, e2), ok: true);
+}
+
+// `q · 2^e`, by exact multiplications: every intermediate value lies between
+// `q` and the (representable) result.
+fn scaleBy2(q: f64, e: i32) -> f64 {
+    var v = q;
+    var k = e;
+    while (k >= 64) {
+        v = v * 18446744073709551616.0;
+        k = k - 64;
+    }
+    while (k > 0) {
+        v = v * 2.0;
+        k = k - 1;
+    }
+    while (k <= -64) {
+        v = v * 5.421010862427522e-20;
+        k = k + 64;
+    }
+    while (k < 0) {
+        v = v * 0.5;
+        k = k + 1;
+    }
+    return v;
+}
+
+// ── big integers: 15-bit limbs, least significant first, no leading zero ──
+
+// `a · m + add`, with `m` and `add` below 2^15.
+fn bnMulAdd(a: Array<i32>, m: i32, add: i32) -> Array<i32> {
+    var out: Array<i32> = [];
+    var carry = add;
+    for (a) { limb ->
+        val t = limb * m + carry;
+        val lo = t % 32768;
+        out.push(lo);
+        carry = (t - lo) / 32768;
+    }
+    while (carry > 0) {
+        val lo = carry % 32768;
+        out.push(lo);
+        carry = (carry - lo) / 32768;
+    }
+    return bnNorm(out);
+}
+
+// `a · 10^n`, four decimal digits a step.
+fn bnMulPow10(a: Array<i32>, n: i32) -> Array<i32> {
+    var out = a;
+    var k = n;
+    while (k >= 4) {
+        out = bnMulAdd(out, 10000, 0);
+        k = k - 4;
+    }
+    while (k > 0) {
+        out = bnMulAdd(out, 10, 0);
+        k = k - 1;
+    }
+    return out;
+}
+
+// Without its most significant zero limbs.
+fn bnNorm(a: Array<i32>) -> Array<i32> {
+    var n = a.length;
+    while (n > 0 && a.at(n - 1).unwrapOr(0) == 0) {
+        n = n - 1;
+    }
+    return if (n == a.length) a else a.slice(0, n);
+}
+
+// The number of bits of `a` (0 for zero).
+fn bnBitLen(a: Array<i32>) -> i32 {
+    val n = a.length;
+    if (n == 0) return 0
+    else {
+        var top = a.at(n - 1).unwrapOr(0);
+        var bits = 0;
+        while (top > 0) {
+            top = (top - top % 2) / 2;
+            bits = bits + 1;
+        }
+        return (n - 1) * 15 + bits;
+    }
+}
+
+// -1, 0 or 1 as `a` is below, equal to or above `b`.
+fn bnCmp(a: Array<i32>, b: Array<i32>) -> i32 {
+    if (a.length != b.length) return if (a.length < b.length) -1 else 1
+    else {
+        var i = a.length - 1;
+        var r = 0;
+        while (i >= 0 && r == 0) {
+            val x = a.at(i).unwrapOr(0);
+            val y = b.at(i).unwrapOr(0);
+            if (x != y) {
+                r = if (x < y) -1 else 1;
+            }
+            i = i - 1;
+        }
+        return r;
+    }
+}
+
+// `a - b`, `a ≥ b`.
+fn bnSub(a: Array<i32>, b: Array<i32>) -> Array<i32> {
+    var out: Array<i32> = [];
+    var borrow = 0;
+    var i = 0;
+    while (i < a.length) {
+        var t = a.at(i).unwrapOr(0) - b.at(i).unwrapOr(0) - borrow;
+        borrow = 0;
+        if (t < 0) {
+            t = t + 32768;
+            borrow = 1;
+        }
+        out.push(t);
+        i = i + 1;
+    }
+    return bnNorm(out);
+}
+
+// `a · 2^s`, `s ≥ 0`.
+fn bnShl(a: Array<i32>, s: i32) -> Array<i32> {
+    if (a.length == 0 || s == 0) return a
+    else {
+        val r = s % 15;
+        val limbs = (s - r) / 15;
+        var mul = 1;
+        var j = 0;
+        while (j < r) {
+            mul = mul * 2;
+            j = j + 1;
+        }
+        var out: Array<i32> = [];
+        var z = 0;
+        while (z < limbs) {
+            out.push(0);
+            z = z + 1;
+        }
+        var carry = 0;
+        for (a) { limb ->
+            val t = limb * mul + carry;
+            val lo = t % 32768;
+            out.push(lo);
+            carry = (t - lo) / 32768;
+        }
+        if (carry > 0) {
+            out.push(carry);
+        }
+        return out;
+    }
+}
+
+// `floor(a / 2)`.
+fn bnShr1(a: Array<i32>) -> Array<i32> {
+    var out: Array<i32> = [];
+    var i = 0;
+    while (i < a.length) {
+        val limb = a.at(i).unwrapOr(0);
+        val next = a.at(i + 1).unwrapOr(0);
+        out.push((limb - limb % 2) / 2 + (next % 2) * 16384);
+        i = i + 1;
+    }
+    return bnNorm(out);
+}
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
@@ -59,4 +826,292 @@ test "json.parse reds with an error on invalid JSON" {
 test "json.parse normalises a value" {
     val r = parse("[1,2,3]").unwrapOr("");
     assert r == "[1,2,3]";
+}
+
+test "json.quote escapes a quote and a backslash" {
+    assert quote("a\"b\\c") == "\"a\\\"b\\\\c\"";
+    assert quote("") == "\"\"";
+}
+
+test "json.quote escapes every control character, lowercase hex" {
+    assert quote("\u{1}\u{8}\u{c}\u{1f}\n\t") == "\"\\u0001\\b\\f\\u001f\\n\\t\"";
+    assert quote("\r\u{0}") == "\"\\r\\u0000\"";
+}
+
+// Non-ASCII text enters the tests through `codepointText`, never a literal:
+// the erlang backend lowers a `\u{…}` escape above U+007F to ONE latin1 byte
+// (U+2028 becomes `<<40>>`), so a literal would compare truncated bytes on
+// both sides and pass for the wrong reason.
+fn cp(n: i32) -> string {
+    return codepointText(n);
+}
+
+test "json.quote leaves non-ASCII, the slash and U+2028 alone" {
+    val acao = ["a", cp(231), cp(227), "o"].join("");
+    assert quote(acao) == ["\"", acao, "\""].join("");
+    val odd = ["/", cp(8232), cp(128512)].join("");
+    assert quote(odd) == ["\"", odd, "\""].join("");
+}
+
+// Internal: `quote(s)` parses, and `unquote` reads `s` back.
+fn roundTrips(s: string) -> bool {
+    val parsed = parse(quote(s));
+    val back = unquote(quote(s));
+    return parsed.isOk() && back.unwrapOr("<err>") == s;
+}
+
+test "json.quote round-trips through parse and unquote" {
+    val table = ["", "\u{0}\u{1}\u{2}\u{3}\u{4}\u{5}\u{6}\u{7}\u{8}\t\n\u{b}\u{c}\r\u{e}\u{f}", "\u{10}\u{11}\u{12}\u{13}\u{14}\u{15}\u{16}\u{17}\u{18}\u{19}\u{1a}\u{1b}\u{1c}\u{1d}\u{1e}\u{1f}", "\"", "\\", "/", [cp(8232), cp(8233)].join(""), cp(128512), "plain text"];
+    assert table.filter({ s -> roundTrips(s) }).length == table.length;
+}
+
+test "json.unquote refuses what is not one string literal" {
+    assert unquote("abc").isError();
+    assert unquote("\"abc").isError();
+    assert unquote("1").isError();
+    assert unquote("\"a\" \"b\"").isError();
+    assert unquote(" \"ok\" ").unwrapOr("?") == "ok";
+}
+
+test "json.array joins already-encoded items" {
+    assert array([quote("a"), "1", "true"]) == "[\"a\",1,true]";
+    assert array([]) == "[]";
+}
+
+test "json.object keeps the order and quotes the keys" {
+    assert object([#("v", "1"), #("ok", "true"), #("s", quote("x"))]) == "{\"v\":1,\"ok\":true,\"s\":\"x\"}";
+    assert object([]) == "{}";
+    assert parse(object([#("a\"b", "1")])).isOk();
+}
+
+
+// ── step 13: `Json` and `decode` ────────────────────────────────────────────
+
+// Structural equality of two `Json` values, member order significant — what
+// every `decode` test compares with (`==` on an array is identity).
+fn jsonEq(a: Json, b: Json) -> bool {
+    return case a {
+        Null -> case b {
+            Null -> true;
+            _ -> false;
+        };
+        Bool(value: x) -> case b {
+            Bool(value: y) -> x == y;
+            _ -> false;
+        };
+        Num(value: x) -> case b {
+            Num(value: y) -> x == y;
+            _ -> false;
+        };
+        Str(value: x) -> case b {
+            Str(value: y) -> x == y;
+            _ -> false;
+        };
+        Arr(items: xs) -> case b {
+            Arr(items: ys) -> itemsEq(xs, ys);
+            _ -> false;
+        };
+        Obj(members: xs) -> case b {
+            Obj(members: ys) -> membersEq(xs, ys);
+            _ -> false;
+        };
+    };
+}
+
+fn itemsEq(xs: Array<Json>, ys: Array<Json>) -> bool {
+    if (xs.length != ys.length) return false else {
+        var same = true;
+        var i = 0;
+        while (i < xs.length) {
+            if (jsonEq(xs.at(i).unwrapOr(Json.Null), ys.at(i).unwrapOr(Json.Null)).negate()) {
+                same = false;
+            }
+            i = i + 1;
+        }
+        return same;
+    }
+}
+
+fn membersEq(xs: Array<#(string, Json)>, ys: Array<#(string, Json)>) -> bool {
+    if (xs.length != ys.length) return false else {
+        var same = true;
+        var i = 0;
+        while (i < xs.length) {
+            val x = xs.at(i).unwrapOr(#("", Json.Null));
+            val y = ys.at(i).unwrapOr(#("", Json.Null));
+            if ((x._0 != y._0) || jsonEq(x._1, y._1).negate()) {
+                same = false;
+            }
+            i = i + 1;
+        }
+        return same;
+    }
+}
+
+// `decode(s)` answers exactly `want`.
+fn decodesTo(s: string, want: Json) -> bool {
+    return case decode(s) {
+        Ok(v) -> jsonEq(v, want);
+        Error(_) -> false;
+    };
+}
+
+// The text of `decode(s)`'s error, `""` when it decoded.
+fn decodeError(s: string) -> string {
+    return case decode(s) {
+        Ok(_) -> "";
+        Error(e) -> e;
+    };
+}
+
+test "json.decode keeps members in document order" {
+    val doc = "{\"rakun\":{\"actions\":{\"bodyLimit\":5242880},\"appDir\":\"app\"}}";
+    val want = Json.Obj(members: [#("rakun", Json.Obj(members: [#("actions", Json.Obj(members: [#("bodyLimit", Json.Num(value: 5242880.0))])), #("appDir", Json.Str(value: "app"))]))]);
+    assert decodesTo(doc, want);
+}
+
+test "json.decode does not reorder integer-like keys" {
+    val want = Json.Obj(members: [#("b", Json.Num(value: 1.0)), #("a", Json.Num(value: 2.0)), #("1", Json.Num(value: 3.0))]);
+    assert decodesTo("{\"b\":1,\"a\":2,\"1\":3}", want);
+    assert decodesTo("{\"a\":2,\"b\":1,\"1\":3}", want).negate();
+}
+
+test "json.decode refuses a duplicate member name, naming it" {
+    val e = decodeError("{\"a\":1,\"a\":2}");
+    assert e == "json.decode: duplicate member name `a` at byte 7";
+    assert decodeError("{\"a\":{\"b\":1},\"c\":{\"b\":2}}") == "";
+}
+
+test "json.decode refuses anything that is not exactly one value" {
+    assert decodeError("[1,2] x") == "json.decode: unexpected text after the value at byte 6";
+    assert decodeError("") == "json.decode: no JSON value at byte 0";
+    assert decodeError("   ") == "json.decode: no JSON value at byte 3";
+    assert decodeError("1 2") == "json.decode: unexpected text after the value at byte 2";
+    assert decodeError("[1,]") != "";
+    assert decodeError("{\"a\":1,}") != "";
+    assert decodeError("[1 2]") != "";
+    assert decodeError("{\"a\" 1}") != "";
+    assert decodeError("{a:1}") != "";
+    assert decodeError("[") == "json.decode: unexpected end of input at byte 1";
+    assert decodeError("tru") != "";
+    assert decodeError("nul") != "";
+}
+
+test "json.decode reads every escape and a surrogate pair" {
+    val s = "\"\\u0041\\u00e7\\ud83d\\ude00\\b\\f\\/\"";
+    val want = ["A", cp(231), cp(128512), "\u{8}", "\u{c}", "/"].join("");
+    assert decodesTo(s, Json.Str(value: want));
+    assert decodesTo("\"\\\"\\\\\\n\\r\\t\"", Json.Str(value: "\"\\\n\r\t"));
+    assert decodeError("\"\\ud83d\"") == "json.decode: unpaired surrogate at byte 1";
+    assert decodeError("\"\\ude00\"") == "json.decode: unpaired surrogate at byte 1";
+    assert decodeError("\"\\ud83d\\u0041\"") != "";
+    assert decodeError("\"\\x\"") == "json.decode: invalid escape at byte 1";
+    assert decodeError("\"\\u12\"") == "json.decode: malformed \\u escape at byte 1";
+    assert decodeError("\"abc") == "json.decode: unterminated string at byte 0";
+}
+
+test "json.decode refuses a raw control character inside a string" {
+    assert decodeError("\"a\u{1}b\"") == "json.decode: raw control character in a string at byte 2";
+    assert decodeError("\"a\nb\"") != "";
+    assert decodesTo("\"\\u0001\"", Json.Str(value: "\u{1}"));
+}
+
+test "json.decode names the byte offset, not the character index" {
+    val doc = ["[\"", cp(231), cp(128512), "\",x]"].join("");
+    assert decodeError(doc) == "json.decode: unexpected character at byte 10";
+}
+
+test "json.decode follows the RFC number grammar exactly" {
+    assert decodeError("01") == "json.decode: a number may not have a leading zero at byte 0";
+    assert decodeError("+1") == "json.decode: unexpected character at byte 0";
+    assert decodeError(".5") == "json.decode: unexpected character at byte 0";
+    assert decodeError("1.") == "json.decode: a fraction needs a digit after `.` at byte 2";
+    assert decodeError("NaN") == "json.decode: unexpected character at byte 0";
+    assert decodeError("Infinity") == "json.decode: unexpected character at byte 0";
+    assert decodeError("-") == "json.decode: a number needs a digit at byte 1";
+    assert decodeError("1e") == "json.decode: an exponent needs a digit at byte 2";
+    assert decodeError("1e400") == "json.decode: number overflows f64 at byte 0";
+    assert decodeError("-1e400") == "json.decode: number overflows f64 at byte 0";
+    assert decodesTo("-0.5e2", Json.Num(value: 0.0 - 50.0));
+    assert decodesTo("0", Json.Num(value: 0.0));
+    assert decodesTo("1.5E+3", Json.Num(value: 1500.0));
+    assert decodesTo("25e-1", Json.Num(value: 2.5));
+    assert decodesTo("0.1", Json.Num(value: 0.1));
+    assert decodesTo("1.7976931348623157e308", Json.Num(value: 1.7976931348623157e308));
+    assert decodesTo("1e-400", Json.Num(value: 0.0));
+    assert decodesTo("123456789012345678901234567890", Json.Num(value: 1.2345678901234568e29));
+}
+
+// Decision 142: the conversion is botopink's own, so each expectation is the
+// `f64` a correctly rounded `strtod` answers (the literal on the right, which
+// the host reads). Boundaries: the largest finite value and the halfway point
+// above it, the least subnormal and the halfway point below it, the largest
+// subnormal and the least normal, a tie broken to even above 2^53, `1e23`
+// (whose nearest `f64` is below it), and the fast path's two edges.
+test "json.decode rounds a numeral to the nearest f64, ties to even" {
+    assert decodesTo("1.7976931348623157e308", Json.Num(value: 1.7976931348623157e308));
+    assert decodesTo("1.7976931348623158e308", Json.Num(value: 1.7976931348623157e308));
+    assert decodeError("1.7976931348623159e308") == "json.decode: number overflows f64 at byte 0";
+    assert decodesTo("5e-324", Json.Num(value: 5.0e-324));
+    assert decodesTo("4.9406564584124654e-324", Json.Num(value: 5.0e-324));
+    assert decodesTo("2.4703282292062328e-324", Json.Num(value: 5.0e-324));
+    assert decodesTo("2.4703282292062327e-324", Json.Num(value: 0.0));
+    assert decodesTo("2.2250738585072014e-308", Json.Num(value: 2.2250738585072014e-308));
+    assert decodesTo("2.2250738585072011e-308", Json.Num(value: 2.225073858507201e-308));
+    assert decodesTo("2.2250738585072012e-308", Json.Num(value: 2.2250738585072014e-308));
+    assert decodesTo("0.1", Json.Num(value: 0.1));
+    assert decodesTo("0.3", Json.Num(value: 0.3));
+    assert decodesTo("1e23", Json.Num(value: 1.0e23));
+    assert decodesTo("1e22", Json.Num(value: 1.0e22));
+    assert decodesTo("1e-22", Json.Num(value: 1.0e-22));
+    assert decodesTo("9007199254740993", Json.Num(value: 9007199254740992.0));
+    assert decodesTo("9007199254740995", Json.Num(value: 9007199254740996.0));
+    assert decodesTo("123456789012345.6789e-3", Json.Num(value: 123456789012.3456789));
+    assert decodesTo("3.14159265358979323846264338327950288", Json.Num(value: 3.141592653589793));
+    assert decodesTo("0.000001e-300", Json.Num(value: 1.0e-306));
+    assert decodesTo("100000000000000000000000000000000000000000000000000e-50", Json.Num(value: 1.0));
+    assert decodesTo("-2.5e-3", Json.Num(value: 0.0 - 0.0025));
+    assert decodeError("1e99999999999999999999") == "json.decode: number overflows f64 at byte 0";
+    assert decodesTo("1e-99999999999999999999", Json.Num(value: 0.0));
+}
+
+test "json.decode reads the three literals" {
+    assert decodesTo("true", Json.Bool(value: true));
+    assert decodesTo("false", Json.Bool(value: false));
+    assert decodesTo("null", Json.Null);
+    assert decodesTo(" [ true , false , null ] ", Json.Arr(items: [Json.Bool(value: true), Json.Bool(value: false), Json.Null]));
+    assert decodesTo("{}", Json.Obj(members: []));
+    assert decodesTo("[]", Json.Arr(items: []));
+}
+
+test "json.decode reads back every string quote writes" {
+    val table = ["", "\u{0}\u{1}\u{2}\u{3}\u{4}\u{5}\u{6}\u{7}\u{8}\t\n\u{b}\u{c}\r\u{e}\u{f}", "\u{10}\u{11}\u{12}\u{13}\u{14}\u{15}\u{16}\u{17}\u{18}\u{19}\u{1a}\u{1b}\u{1c}\u{1d}\u{1e}\u{1f}", "\"", "\\", "/", [cp(8232), cp(8233)].join(""), cp(128512), "plain text"];
+    assert table.filter({ s -> decodesTo(quote(s), Json.Str(value: s)) }).length == table.length;
+}
+
+test "json.decode reads the action envelope and the RPC body of contract 3" {
+    val envelope = "{\"v\":1,\"ok\":true,\"state\":\"message=\",\"revalidated\":[\"/blog\"],\"redirect\":\"\",\"n\":\"\",\"payload\":\"\"}";
+    val wantEnvelope = Json.Obj(members: [#("v", Json.Num(value: 1.0)), #("ok", Json.Bool(value: true)), #("state", Json.Str(value: "message=")), #("revalidated", Json.Arr(items: [Json.Str(value: "/blog")])), #("redirect", Json.Str(value: "")), #("n", Json.Str(value: "")), #("payload", Json.Str(value: ""))]);
+    assert decodesTo(envelope, wantEnvelope);
+    val body = "{\"v\":1,\"id\":\"a_9f2c1b7e\",\"args\":[\"x\",\"y\"]}";
+    val wantBody = Json.Obj(members: [#("v", Json.Num(value: 1.0)), #("id", Json.Str(value: "a_9f2c1b7e")), #("args", Json.Arr(items: [Json.Str(value: "x"), Json.Str(value: "y")]))]);
+    assert decodesTo(body, wantBody);
+}
+
+test "json.decode reads the payload envelope of contract 2" {
+    val payload = "{\"v\":1,\"b\":\"b1\",\"p\":\"/blog/x\",\"r\":\"/blog/[slug]\",\"m\":\"slug=x\",\"q\":\"\",\"t\":\"P|/blog/[slug]\",\"i\":[[\"i0\",\"Counter\",\"{}\"]],\"a\":[[\"save\",\"a_1\"]],\"s\":[],\"h\":[],\"d\":false}";
+    val want = Json.Obj(members: [#("v", Json.Num(value: 1.0)), #("b", Json.Str(value: "b1")), #("p", Json.Str(value: "/blog/x")), #("r", Json.Str(value: "/blog/[slug]")), #("m", Json.Str(value: "slug=x")), #("q", Json.Str(value: "")), #("t", Json.Str(value: "P|/blog/[slug]")), #("i", Json.Arr(items: [Json.Arr(items: [Json.Str(value: "i0"), Json.Str(value: "Counter"), Json.Str(value: "{}")])])), #("a", Json.Arr(items: [Json.Arr(items: [Json.Str(value: "save"), Json.Str(value: "a_1")])])), #("s", Json.Arr(items: [])), #("h", Json.Arr(items: [])), #("d", Json.Bool(value: false))]);
+    assert decodesTo(payload, want);
+}
+
+// Step 12's first box, from this side: the literal `escape.scriptJson` answers
+// for `object([#("h", quote("</script><!--&"))])` (asserted in `escape.bp`)
+// decodes to the same value as its input. A std module imports no other, so
+// the two halves meet in literals.
+test "json.decode reads escape.scriptJson's output as the same value" {
+    val raw = object([#("h", quote("</script><!--&"))]);
+    val safe = "{\"h\":\"\\u003c/script\\u003e\\u003c!--\\u0026\"}";
+    val want = Json.Obj(members: [#("h", Json.Str(value: "</script><!--&"))]);
+    assert decodesTo(raw, want);
+    assert decodesTo(safe, want);
 }

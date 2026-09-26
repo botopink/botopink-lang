@@ -1,0 +1,81 @@
+//// validation — step 3: the constraint table, and what crosses.
+////
+//// The table is the ONE thing serialized for a consumer that is not botopink.
+//// A botopink client does not need it: it imports `validate<TypeName>` and runs
+//// the identical predicate, which is the whole reason this front is a boundary
+//// front rather than a code generator.
+////
+//// The import list below is the acceptance "a client bundle can obtain the
+//// table without importing anything that reaches a socket or the filesystem",
+//// written as a fact about the source rather than as a claim: the table needs
+//// `table` and `report`, `table` imports only `report`, and `report` imports
+//// nothing at all. The `#[validated]` record here reaches `constraints` and
+//// `spi` because its VALIDATOR does; a bundle that ships only the table does
+//// not compile those in.
+
+import {constraintTableJson, splitBlob, paramNames, paramIsNumber, renderParam, fieldJson, constraintJson} from "table";
+import {validated, notBlank, sizeBetween, email, minValue, maxValue, pattern, constraint} from "decorators";
+import {ValidationReport, Violation} from "report";
+import {vNotBlank, vSizeBetween, vEmail, vMinValueI32, vMaxValueI32, vPattern} from "constraints";
+import {vConstraint} from "spi";
+
+#[validated]
+pub type TableUserRequest(
+    #[notBlank] #[sizeBetween(2, 50)] name: string,
+    #[notBlank] #[email] email: string,
+    #[minValue(18)] #[maxValue(120)] age: i32,
+    #[pattern("^[0-9]{5}-[0-9]{3}$")] postalCode: string,
+    #[constraint("cpfShape")] document: string,
+    untouched: string,
+)
+
+pub fn expectedTable() -> string {
+    return "{\"type\":\"TableUserRequest\",\"fields\":["
+        + "{\"name\":\"name\",\"constraints\":[{\"code\":\"notBlank\"},{\"code\":\"sizeBetween\",\"min\":2,\"max\":50}]},"
+        + "{\"name\":\"email\",\"constraints\":[{\"code\":\"notBlank\"},{\"code\":\"email\"}]},"
+        + "{\"name\":\"age\",\"constraints\":[{\"code\":\"minValue\",\"min\":18},{\"code\":\"maxValue\",\"max\":120}]},"
+        + "{\"name\":\"postalCode\",\"constraints\":[{\"code\":\"pattern\",\"regex\":\"^[0-9]{5}-[0-9]{3}$\"}]},"
+        + "{\"name\":\"document\",\"constraints\":[{\"code\":\"constraint\",\"name\":\"cpfShape\"}]}"
+        + "]}";
+}
+
+test "validation: the table names every constrained field, code and parameter" {
+    assert constraintsOfTableUserRequest() == expectedTable();
+}
+
+test "validation: the table names nothing else" {
+    assert constraintsOfTableUserRequest().contains("untouched") == false;
+    assert constraintsOfTableUserRequest().contains("value") == false;
+    assert constraintsOfTableUserRequest().contains("message") == false;
+}
+
+test "validation: the table is byte-stable across calls" {
+    assert constraintsOfTableUserRequest() == constraintsOfTableUserRequest();
+    assert constraintTableJson("X", "a|notBlank")
+        == constraintTableJson("X", "a|notBlank");
+}
+
+test "validation: a record with no constrained field answers an empty table" {
+    assert constraintTableJson("Empty", "")
+        == "{\"type\":\"Empty\",\"fields\":[]}";
+    assert splitBlob("").length == 0;
+}
+
+test "validation: numeric parameters are numbers and text parameters are strings" {
+    assert paramNames("sizeBetween").join(",") == "min,max";
+    assert paramNames("minValue").join(",") == "min";
+    assert paramNames("pattern").join(",") == "regex";
+    assert paramNames("constraint").join(",") == "name";
+    assert paramNames("notBlank").length == 0;
+    assert paramIsNumber("min");
+    assert paramIsNumber("regex") == false;
+    assert renderParam("max", "50") == "50";
+    assert renderParam("name", "cpf") == "\"cpf\"";
+}
+
+test "validation: the table's JSON escapes a parameter that needs it" {
+    assert renderParam("regex", "a\"b") == "\"a\\\"b\"";
+    assert fieldJson("f", "") == "{\"name\":\"f\",\"constraints\":[]}";
+    assert constraintJson(["f", "minValue", "3"])
+        == "{\"code\":\"minValue\",\"min\":3}";
+}

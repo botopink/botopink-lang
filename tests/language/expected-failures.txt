@@ -1,0 +1,252 @@
+# Expected failures of the language tests.
+#
+#   <target: commonJS | erlang | wasm | beam | *> | <key> | <owner row> | <reason>
+#
+# Every line names the row that makes it pass. `*` is for reject/ files
+# (target-independent). Two row spellings are live: a 1.0.5-beta front's step
+# (`01 step 4`, `02 (no step; …)`, `03 handover 15` — `specs/1.0.5-beta/`) and a
+# 1.0.10-beta carry-over item (`C-02`, `C-06 (erlang half not landed)` —
+# `specs/1.0.10-beta/00-compiler-carry-over/README.md`). The 1.0.5 lines have not
+# been repointed wholesale; C-16 repointed only the lines it re-measured
+# (decisions 52/53/55 → C-06) and wrote the new ones against C-02, C-03 and C-18.
+#
+# **`<key>` has three shapes, and which shape it is *is* part of the claim.** One
+# example of each, and all three are live in this file:
+#
+#   1. a path — the cell does not compile:
+#        erlang | test/case_arms.bp | 01 step 4 | …
+#   2. a path and one test name — the cell compiles and that test fails:
+#        erlang | test/case_guards.bp::§5.3 a guard reads the variables its pattern bound | 02 step 3 | …
+#   3. a path and several — the cell compiles and each of them fails:
+#        erlang | test/case_tuples.bp::§5.1 P6 arms are tried in order ;; §5.1 P7 #(a, ..) binds the first element only | 02 step 3 | …
+#
+# `::` splits the path from the first name; ` ;; ` — one space either side —
+# separates the names. Shape 1 is strict in **both** directions: a path-only entry
+# on a cell that compiles fails the run with "compiles: list its failing tests by
+# name", which is the reading five fronts depend on, and nothing below widens it.
+# Shapes 2 and 3 are strict the other way: a named test that now passes fails the
+# run with "drop it from the line, and delete the line when it names no other".
+#
+# A named-test entry whose cell does **not** compile is still honoured — a cell
+# that does not compile passes nothing — and the run prints, on that line, "the
+# cell does not compile, so its N listed tests did not run". That is the state a
+# line is in while the front that makes its cell compile is in flight: the six
+# lines front 12 converted at `b09bf9c6` read that way here and read per-test in
+# front 01's step-4/5 tree, which is the whole point of the shape. Seven fronts
+# share this file and their trees differ by hours.
+#
+# **`\|` is a literal `|`, anywhere on the line.** The line is split on `|` only
+# where the `|` is not preceded by a backslash, so a test name that carries the
+# file's own separator is written with the escape — `test/case_exhaustive.bp`'s
+# `Maybe<i32 \| string>` below is the one that needs it. Nothing else is escaped.
+# Grep every use: `grep -nF '\|' tests/language/expected-failures.txt`.
+#
+# A malformed line is a `FAIL` that names what is wrong with it — a missing or
+# empty field, a target that is not one of the five, an empty name either side of
+# ` ;; `, the same name twice, or `::` on a path that is not a `test/` cell —
+# never a line quietly read as a different shape.
+#
+# Owner rows are 1.0.5-beta fronts (`specs/1.0.5-beta/fronts.md`), written as
+# `<front number> step <n>`. The 1.0.4-beta rows (`06 N…`, `01 step 6`) were
+# repointed by front 12 step 1 at `7ab6a55`; every owner cell below was
+# re-checked against `specs/1.0.5-beta/` on 2026-09-18, and the six re-attributed
+# on 2026-09-19 against `02-erlang`'s step 3 ("`case` arms at run time (§5)", whose
+# acceptance names these very cells) and `13-module-identity`'s step 17 ("`is` and
+# `case` over a named type"). Each names a section that exists.
+#
+# Two other shapes appear, both deliberate: `<front> handover 15`
+# names a front's "Handed over by `15-language-surface`" section, which is prose
+# with no step number, and `<front> (no step; …)` says outright that the front is
+# certain and the row is missing: `02 (no step; decision 55, reported 2026-09-18)`,
+# on the four collection-loop `break` rows decision 55 says are owed and front 02
+# has no step for. Neither shape invents a step. `04 (no step; reported
+# 2026-09-18)` was a fifth such cell and is **no longer on any line** — front 04
+# fixed the `?.`-into-`??` defect on `test/nullish_default.bp` and deleted it.
+# Checked at `b09bf9c6`: the spelling survives in this comment and in no owner
+# cell, and 04's five lines are `04 step 2` (1) and `04 step 3` (4).
+#
+# **The tally is not kept here.** `run.sh` recounts this file on every run and
+# prints one line before the results:
+#
+#   expected-failures.txt: N lines, M exercised by --target … — by target: …;
+#   by first owner row: …; K name tests rather than a path; S name a second row
+#
+# That is decision 59 (b) of `specs/1.0.5-beta/decisions-taken.md` (2026-09-18,
+# landed by C-16 on 2026-09-20): a number seven fronts keep by hand in one file
+# drifts — the paragraph that used to sit here read 58 lines while the file held
+# 55, two landings after it was written. The runner's split is the file's: `|`
+# only where not escaped (`\|`), and the owner field on `,` outside parentheses,
+# so `02 (no step; decision 55, reported 2026-09-18)` is **one** row. The same
+# count by hand, when a reader wants to check the runner:
+#
+#   $ python3 - <<'EOF'
+#   import re
+#   from collections import Counter
+#   d=[l for l in open('tests/language/expected-failures.txt')
+#      if l.strip() and not l.lstrip().startswith('#')]
+#   t=Counter(); f=Counter(); second=0
+#   for l in d:
+#       p=[x.strip() for x in re.split(r'(?<!\\)\|', l)]; t[p[0]]+=1
+#       o=[x.strip() for x in re.split(r',(?![^(]*\))', p[2])]
+#       f[o[0].split()[0]]+=1
+#       second += len(o) > 1
+#   print(len(d), dict(t), sorted(f.items()), second)
+#   EOF
+#
+# The measurement that goes with a commit — the runner's tally line and its
+# `language tests: … passed, … expected failures, 0 failed` on `--target all`
+# and on `--target beam` — is quoted in AGENTS.md § Status and the gate, with the
+# commit it was run at. Whoever deletes a line runs the suite and re-quotes it
+# there; nobody edits a number.
+
+# ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is closing ──
+# `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
+# so no line below names a parse error. The exception is `test/case_arms.bp`, which
+# decision 20 turned back into a parser row.
+#
+# The section is no longer one front's. Front 01's step 4 unwraps a lambda arm body
+# and resolves a `.Variant` arm against the matched value's type, which is why the
+# four `erlang | test/case_*.bp` lines that name tests read `02 step 3` — erlang's
+# pattern emission — and not `01 step 4`. The path-only lines here are still 01's:
+# they are cells that do not compile in this tree.
+commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
+erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
+
+# ── §6 tuples ─────────────────────────────────────────────────────────────────
+
+# ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
+# Both rows deleted by `00 · 01-checker`: `test/case_sections.bp` matches on
+# `Token.Text.Bold` and `Token.Color.Red`, and the checker refused the fully
+# qualified section path outright ("unknown field 'Bold' on type 'Token'"). It
+# resolves now — the root identifier names the enum the path is read in — and
+# the cell is green on commonJS and erlang.
+
+# ── §7 the formatter ──────────────────────────────────────────────────────────
+# The record and variant rows of §7's table need a value that knows its own type,
+# which is 13 step 18; each backend's step 1 closes the separator half only.
+
+# ── §9 effects ────────────────────────────────────────────────────────────────
+# The three R9 rows were deleted by `00 · 01-checker` step 8; front 24 (decision 118) deleted
+# `reject/wrapper_without_annotation.bp` and `reject/two_effect_markers.bp` with the annotations.
+
+# ── §10 loop ──────────────────────────────────────────────────────────────────
+
+# ── §1 generics ───────────────────────────────────────────────────────────────
+
+# ── §8 host externals ─────────────────────────────────────────────────────────
+
+# ── wasm, the third executable target ─────────────────────────────────────────
+# `botopink run --target wasm` executes; `botopink test` refuses it, so only
+# run/ and modules/ cells reach wasm. The rows below are the same defects the
+# commonJS and erlang lines above name, seen from the third backend.
+
+# ── the forms front 15 landed, that nothing lowers or types yet ─────────────
+# `109f6c9` made five forms parse. Three of them run everywhere and are pinned by
+# passing cells (`test/nullish_default.bp`, `test/paren_receiver.bp`,
+# `test/type_suffix.bp`, `test/bodyless_fn.bp`). One arrives with no lowering and no
+# typing, and its owner is a **handover section** of a front's README — "Handed
+# over by `15-language-surface`" — not a numbered step, which is what
+# `<front> handover 15` means below. That those sections carry no step number is
+# reported to the maintainer, not papered over with an invented one.
+#
+# The index expression was the other one, and it is no longer here: C-02 made
+# `xs[0]` the method call it is, and `run/index_expression.bp` passes on commonJS,
+# erlang and **beam** — the `03 handover 15` line that read "the only target that
+# fails silently" is gone, because nothing is dropped any more. wasm keeps one
+# line below, and it is a different defect: not the index, but `Array.at` on an
+# array OF arrays.
+
+# ── run-time type identity (front 12 step 4.1) ────────────────────────────────
+# The botopink-level statement of `13-module-identity`: a value knows its own
+# type. Four `test/` cells and one `run/` cell, split so that a checker row does
+# not hide an identity row — each line below names what actually fails today,
+# and the second row is where it lands once the first is fixed. Two of them have
+# no second row any more: with front 01's step 4 written and measured (in its own
+# tree, not on `feat` yet) `test/type_identity_case.bp` compiles, and the two lines
+# it carries are `13 step 17` outright.
+
+# ── beam, the fourth executable target (decision 8) ───────────────────────────
+# `botopink run --target beam` writes `out/*.S`; `erlc +from_asm` then `erl` run
+# it (run.sh § beam). beam is not in `--target all` yet — front 13's policy 3
+# moves the `.S` layout — so these lines are exercised by
+# `tests/language/run.sh --target beam`, which is green with them. `botopink
+# test` refuses beam, so only run/ and modules/ cells reach it: re-counted at
+# `b09bf9c6`, **18 results, 7 passing** — `run/smoke.bp`, `run/tuple_print.bp`,
+# `run/print_nested.bp` and all three `modules/`
+# cells, the last two of those thanks to front 13's half 1. The "9 results,
+# 2 passing" this comment carried was measured at `c2dd780` and is two milestone
+# merges out of date.
+
+# ── §5 range patterns (decision 53) ───────────────────────────────────────────
+# Decision 53 amended decisions 20 and 36 to Zig's split: `...` is inclusive in a
+# pattern, `..` exclusive in a slice and a range, and no emitter moves. The
+# defect that survives the amendment is that `1...9` answers three different
+# things. `run/case_range_value.bp` probes the endpoints, which is what separates
+# them: erlang never takes the arm and beam always takes it, so the
+# single-value probe decision 53 quotes reads beam's `1` as correct when it is a
+# false positive. commonJS passes, and **wasm passes since `8594e4ba`** (C-06's
+# wasm half: the `A...B` arm in `wat.zig`, verified by running at `361d255d`:
+# `1 1 1 0 0`), and **beam passes since C-06's beam half** (`emitRangeArm` in
+# `beam_asm.zig`: two `is_ge` tests; run by hand: `1 1 1 0 0`), and **erlang
+# passes since C-06's erlang half** (`rangePatternNode` in `erlang.zig`: a fresh
+# variable guarded by both bounds). No line is left.
+
+# ── an index is a method call (decision 63, amended 2026-09-19) ──────────────
+# `xs[i]` IS `xs.at(i)` and `d["k"]` IS `d.at("k")` through the ambient
+# `Index<K, V>` behavior, and the expression's type is whatever the method
+# answers — `?V`, with absent spelled `null` (decision 47). Both halves have
+# landed: `libs/std` at `e065b564`, the checker's rewrite here (C-02), so the
+# route itself is no longer in question. `d["a"]` answers `1` on ALL FOUR
+# backends, and `run/index_dict.bp`'s first probe passes everywhere.
+#
+# Decision 47's spelling of ABSENCE holds on every backend: `Array.at` past the
+# end answers `null` on commonJS (`__bp_array_at`) and on wasm (`$__print_null`)
+# since `00 · 04-js` / `05-wasm`, erlang and beam print `null` since
+# `00 · 02-erlang` / `03-beam` (their print preludes write the atom `undefined` as
+# `null`), and wasm boxes a `?V` over a type parameter since C-18's wasm half
+# (`optInfoOfTypeRef`), so `Dict.at`'s absent key is `null` there too. Every line
+# names what it measured.
+commonJS | run/map_record_field_length.bp | 04-js (the commonJS half of 05-wasm step 9's `map` row) | `ks.at(...)?.length is not a function`, exit 1: with nothing between `es.map({ e -> e.key })` and `ks.at(0)?.length()` the element type is unresolved at the read, and `length` is emitted as a property-then-call. wasm, erlang and beam answer `3`; `run/map_record_field_strings.bp` shows the same read answering once `ks.at(1) ?? "none"` has resolved the type (measured 2026-09-25)
+
+
+# ── the module body on wasm and on the BEAM ──────────────────────────────────
+# A module-level `val` is the module body: evaluated once, in declaration order,
+# at module load — before `main`. commonJS has always done that and erlang does
+# since `fix/erlang-module-load` (front 00 · 02-erlang), which is what
+# `run/module_init_order.bp` pins. beam runs it since front 03 (the module body
+# in `'_botopink_main'/0`, an effectful `val` cached in `persistent_term`) and
+# wasm since `00 · 05-wasm` (a `_`-named statement runs in `$__init_globals`,
+# in order with the named `val`s). No line is left.
+
+
+# ── front 24 (effects by return) — the cells of the steps deferred behind the ─
+# ── "Old names that left" table (the maintainer's priority order) ────────────
+# `async { … }` (decision 124, E2/E3.6–E3.7/E5) is deferred: `async` is still an
+# identifier, so every cell that writes a block reads `async` as an unbound name.
+# The host rows of decision 126 are deferred: a `@External.Node` declared
+# `-> @Task<@Result<T, E>>` is still called as a bare Promise, so a rejection is
+# not turned into `Error(e)` and the resolved raw value reaches a `case` as is.
+
+# ── a method on the rest of a `?.` chain (05-wasm step 9's `?.` row) ─────────
+# `?.` short-circuits the whole chain. wasm lowers each further link under the
+# guard since `00 · 05-wasm` (the cell passes there and on commonJS); erlang
+# and beam guard only the link written with `?.`, so the next method runs on
+# the absent value.
+erlang   | run/optional_chain_method.bp | 02-erlang | `es.at(9)?.key.length() ?? 42` raises `{bp_unsupported_method, <<"length">>, 0, undefined}` in `'__bp_prim_length'/1` after printing `2` and `3`: the method after the `?.` link is called on `undefined` instead of short-circuiting (measured 2026-09-26)
+beam     | run/optional_chain_method.bp | 03-beam | the erlang shape through `erlc +from_asm` — `2`, `3`, then the run fails at the absent probe (measured 2026-09-26)
+
+# ── wasm, the remaining rows of `00 · 05-wasm` ───────────────────────────────
+wasm     | modules/behavior_across_modules | 05-wasm | the checker half this cell pins passes (the program compiles on every target); wasm then traps (`unreachable`) at the first method called through a behavior-typed value — the limit `docs.md` states for every behavior dispatch there (measured 2026-09-26)
+wasm     | modules/method_on_unimported_type | C-18 | `queryDict(q).at("y") ?? "none"` prints `none` for a present key: `Dict.at` compares `p._0 == key` with `K` a type parameter, and nothing here monomorphises, so the `==` compares the two WORDS — a key built at run time by `split` is a different pointer from the literal `"y"`, and no string key equals it (`Dict.empty().insert("y", "2").at("y")` answers `2`: both are the one interned literal). The `?V` itself is boxed and reads right; the other four lines agree with commonJS, erlang and beam (measured 2026-09-26)
+
+# ── an erlang host module on beam ────────────────────────────────────────────
+beam     | modules/erlang_host_sidecar_shipped | 03-beam | the project's `src/sidecars/lt_greeter.erl` is shipped by the erlang build (and `botopink test`), but the beam build ships no host module: the `.S` output calls `lt_greeter:hello/1` and the run dies with `undef` (`Failed to eval`); commonJS and wasm refuse the program by `.expect`, erlang prints `hello, sidecar`
+beam     | modules/erlang_sidecar_named_like_a_module | 03-beam | the same as `modules/erlang_host_sidecar_shipped`: the beam build ships no host module, so `text:shout/1` is `undef` (`Failed to eval`); erlang prints `HELLO, SIDECAR`
+
+# ── `val assert` over a record's constructor pattern ─────────────────────────
+wasm     | run/val_assert_record_pattern.bp | 05-wasm | `val assert Person(n, a) = p catch …` binds nothing: the assert lowers the subject into `$__assert_0` and neither tests the record nor reads its fields, so `n` is an unbound identifier (`i32.const 0 ;; unbound identifier n`) and `a.toString()` traps (`unresolved call: toString/0`, exit 134); commonJS and erlang print both lines
+beam     | run/val_assert_record_pattern.bp | 03-beam | `erlc +from_asm` refuses the module: `{unassigned,{y,2}}` — the assert's binders are read from a y-register one path left unwritten; commonJS and erlang print both lines
+
+
+# ── a host wrapper on wasm: two rules meet (decisions-pending ck-host) ──────
+wasm     | run/external_wrapper_keeps_refusal.bp | 05-wasm | the strict rule (a wrapper around a host call with no wasm binding is refused even if nothing calls it; docs.md § host bindings) meets wasm's `collectHostBound`, which drops such a function and refuses only a call to it (what lets `testing.asserts` build on wasm): wasm now accepts the cell and prints `up`. Which rule holds is decisions-pending ck-host

@@ -21,7 +21,9 @@
             "default": null
           }
         ],
-        "returnType": "string"
+        "returnType": {
+          "named": "string"
+        }
       }
     }
   ]

@@ -1,0 +1,51 @@
+//// A method a `behavior` declares, called on a value typed by that behavior,
+//// is the VALUE's method — whichever type implements the behavior — and not
+//// another type's that happens to share the name. The program declares three
+//// `query/2`: two implementers of `Source` and an unrelated `Table`.
+////
+//// The erlang gap this pins: the call was placed by NAME. One other owner of
+//// `query/2` and it went there (`Table:query(S, …)`, a `badarg` or another
+//// type's answer); two and it became a bare local call no module defines
+//// (`function query/2 undefined`, the module did not compile). A local bound
+//// from a call answering `Source`, with no annotation, took the same bare
+//// local call — and so did beam, which asked `element(1, V)` of a value it
+//// never placed. The receiver's static type now decides.
+//// Not scheduled on wasm: a method called through a behavior-typed value traps
+//// there (`docs.md` § the limits, 05-wasm's row).
+
+pub behavior Source {
+    fn query(self: Self, name: string) -> string;
+}
+
+pub type Memory(prefix: string) implement Source {
+    fn query(self: Self, name: string) -> string { return self.prefix + ":" + name; }
+}
+
+pub type Disk(root: string) implement Source {
+    fn query(self: Self, name: string) -> string { return self.root + "/" + name; }
+}
+
+pub type Table(rows: string) {
+    pub fn query(self: Self, name: string) -> string { return "table " + self.rows + name; }
+}
+
+fn read(s: Source) -> string {
+    return s.query("k");
+}
+
+fn open(disk: bool) -> Source {
+    if (disk) {
+        return Disk(root: "/var");
+    }
+    return Memory(prefix: "mem");
+}
+
+pub fn main() {
+    @print(read(Memory(prefix: "m")));
+    @print(read(Disk(root: "/d")));
+    val s = open(true);
+    @print(s.query("x"));
+    val t = open(false);
+    @print(t.query("y"));
+    @print(Table(rows: "r").query("z"));
+}

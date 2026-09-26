@@ -1,0 +1,29 @@
+//// Two records declaring a method of the SAME name at the same arity, whose
+//// bodies read a DIFFERENT field position, and two fns answering one each
+//// through a generic return — which is where the value loses the type
+//// inference could have placed it.
+
+pub type Query<T>(
+    items: Array<T>,
+) {
+    pub fn toArray(self: Self<T>) -> Array<T> {
+        return self.items;
+    }
+}
+
+pub type Grouping<K, V>(
+    key: K,
+    items: Array<V>,
+) {
+    pub fn toArray(self: Self<K, V>) -> Array<V> {
+        return self.items;
+    }
+}
+
+pub fn queryOf<T>(xs: Array<T>) -> Query<T> {
+    return Query(items: xs);
+}
+
+pub fn groupOf<K, V>(k: K, xs: Array<V>) -> Grouping<K, V> {
+    return Grouping(key: k, items: xs);
+}

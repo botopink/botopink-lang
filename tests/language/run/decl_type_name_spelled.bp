@@ -1,0 +1,33 @@
+//// `@Decl`'s type names are the type as the source spells it. A field's
+//// `typeName` erased the element type (`Array<string>` and
+//// `Array<#(string, string)>` both answered `Array`) and was the EMPTY string
+//// for `string[]`, a function type, a tuple type and `?T` (jhonstart front 29's
+//// measurement), so a decorator whitelisting `Array<string>` had to admit
+//// `Array<Element>` with it. A method parameter's `typeName` and a
+//// `returnType` erased the same way. Each name is printed through a function
+//// the decorator emits.
+
+fn shape(comptime decl: @Decl) {
+    val fields = decl.fields.map({ f -> f.name + ": " + f.typeName }).join("\n");
+    val methods = decl.methods.map({ m -> m.name + "(" + m.params.map({ p -> p.typeName }).join(", ") + ") -> " + m.returnType }).join("\n");
+    @emit("pub fn shapeOf" + decl.name + "() -> string { return \"" + fields + "\n" + methods + "\"; }");
+}
+
+#[shape]
+type Info(
+    a: Array<string>,
+    b: Array<#(string, string)>,
+    c: string[],
+    d: fn(x: i32) -> i32,
+    e: #(string, string),
+    f: ?i32,
+    g: string
+) {
+    fn pick(self: Self, xs: i32[], k: ?string) -> Array<i32> {
+        return xs;
+    }
+}
+
+pub fn main() {
+    @print(shapeOfInfo());
+}

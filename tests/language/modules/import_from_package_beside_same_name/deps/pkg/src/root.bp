@@ -1,0 +1,3 @@
+//// The package root: one module, `match`, exporting `attempt`.
+
+pub mod match;

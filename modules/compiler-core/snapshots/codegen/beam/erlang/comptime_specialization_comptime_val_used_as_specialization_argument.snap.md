@@ -1,0 +1,51 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val base = comptime 10 + 5;
+
+fn scale(comptime factor: i32, value: i32) -> i32 {
+    return value * factor;
+}
+
+fn main() {
+    val doubled = scale(2, base);
+    val tripled = scale(3, base);
+    val doubledAgain = scale(2, 100);
+}
+```
+
+----- COMPTIME VALUES -- main
+```text
+ct_0: val base = comptime 10 + 5 → 15
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(test@main).
+-export(['_botopink_main'/0, main/1]).
+
+base() ->
+    15.
+
+main() ->
+    Doubled = 'scale_$0'(base()),
+    Tripled = 'scale_$1'(base()),
+    DoubledAgain = 'scale_$0'(100).
+
+'scale_$0'(Value) ->
+    Factor = 2,
+    (Value * Factor).
+
+'scale_$1'(Value) ->
+    Factor = 3,
+    (Value * Factor).
+
+'_botopink_main'() ->
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
+```
+
+----- RUN LOG -----
+```logs
+```

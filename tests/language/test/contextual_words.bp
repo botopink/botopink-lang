@@ -1,0 +1,55 @@
+//// Decisions 124 and 125 of 1.0.10-beta (front 24 step E2, § Cells "Prefixed
+//// loops", last line; guide.md § 5.5 and § 6.1) — `async`, `iter` and `stream`
+//// are CONTEXTUAL: `async` is a keyword only immediately before `{`, `iter` and
+//// `stream` only immediately before `loop` / `while` / `for`. Everywhere else
+//// they stay identifiers: a method named `iter` (the "iterable" type of
+//// decision 122, which replaces `Iterable`), a `val` named `stream` or `iter`, a
+//// method call `http.stream(…)`, a record field named `stream`, and the std
+//// module `async` imported and called as `async.all(…)` — next to a real
+//// `async { }` block.
+
+import {async} from "std";
+
+type Grid(cells: i32[]) {
+    fn iter(self: Self) -> @Iterator<i32> {
+        for (self.cells) { c -> yield c; };
+    }
+}
+
+type Http(base: string) {
+    fn stream(self: Self, path: string) -> string {
+        return self.base + path;
+    }
+}
+
+type Feed(stream: string, iter: i32)
+
+test "decision 125 iter is a method name and for walks what it answers" {
+    val g = Grid(cells: [1, 2, 3]);
+    var total = 0;
+    for (g.iter()) { c -> total = total + c; };
+    assert total == 6;
+}
+
+test "decision 125 stream and iter are value names" {
+    val stream = 1;
+    val iter = 2;
+    assert stream + iter == 3;
+}
+
+test "decision 125 http.stream is a method call" {
+    val http = Http(base: "h:");
+    assert http.stream("/x") == "h:/x";
+}
+
+test "decision 125 stream and iter are field names" {
+    val f = Feed(stream: "s", iter: 4);
+    assert f.stream == "s";
+    assert f.iter == 4;
+}
+
+test "decision 124 async names the std module beside an async block" {
+    val all = async.all([async { return 1; }, async { return 2; }]);
+    val tasks = [all];
+    assert tasks.length == 1;
+}

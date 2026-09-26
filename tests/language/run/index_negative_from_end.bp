@@ -1,0 +1,25 @@
+//// 1.0.10-beta decision 139 — a negative index counts from the end, on every
+//// backend: `xs.at(-1)` is the last element, `xs.at(-xs.length)` the first,
+//// and past either end (`-4`, `3` on three elements) is the absent `?T`.
+//// `xs[i]` is `xs.at(i)`, so it reads the same; `String.at` / `s[i]` too.
+//// `Dict.at` is by key and has no position to count from.
+
+pub fn main() {
+    val xs = [1, 2, 3];
+    @print(xs.at(-1));
+    @print(xs.at(-3));
+    @print(xs.at(-4));
+    @print(xs.at(3));
+    @print(xs[-2]);
+    val i = -1;
+    @print(xs.at(i));
+    val s = "abc";
+    @print(s.at(-1));
+    @print(s.at(-3));
+    @print(s.at(-4));
+    @print(s.at(3));
+    @print(s[-2]);
+    val names = ["ana", "bia"];
+    @print(names.at(-1));
+    @print(names[-3]);
+}

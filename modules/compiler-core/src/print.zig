@@ -27,6 +27,11 @@ pub const ErrorMessages = struct {
     /// Optional alternate caption rendered after the `^^^` carets. When null,
     /// the carets caption duplicates `message`.
     caretCaption: ?[]const u8 = null,
+    /// When set, the offending token's lexeme is appended to the caret caption
+    /// in backticks. For the catch-all, which has no rule to name and so has
+    /// only the token itself to say something about. Skipped when the lexeme
+    /// is empty (end of file).
+    lexemeInCaption: bool = false,
     /// Optional `= note: ...` line emitted before `= hint: ...`.
     note: ?[]const u8 = null,
 };
@@ -42,9 +47,70 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "This is a reserved word and cannot be used as a name",
             .hint = "Choose a different identifier.",
         },
+        // The catch-all — the only one of the 48 kinds with no rule to name.
+        // Every form the language does not have reaches it, so its text is
+        // what a reader gets when a spelling is missing, and "Check the syntax
+        // around this position." told them nothing they could not see. It now
+        // names the token it stopped on, names the two things that are usually
+        // wrong, and says that a DELIBERATE refusal looks different — which is
+        // the distinction whose absence let seven missing forms be routed
+        // around instead of filed (front 15).
+        .tryAwaitOperand => .{
+            .code = "try-await-operand",
+            .message = "`try` and `await` begin an expression; they are not an operand",
+            .caretCaption = "bind it first: `val x = try …;`",
+            .hint = "`try` / `await` stand where an expression begins — a statement, a `val` / `var` initializer, the right side of `=`, a `return` / `yield` / `break` / `throw` operand, a call argument, an element of an array, tuple or record literal, an `if` / `while` condition, a `case` subject or a `for` iterable — and take the whole expression after them. Under an operator, a unary `-` / `!`, parentheses or a `.` chain, bind the value first: `val x = try r; total + x`.",
+        },
+        .ternaryAbsent => .{
+            .code = "ternary-absent",
+            .message = "there is no `c ? a : b`",
+            .caretCaption = "write `if (c) { a } else { b }`",
+            .hint = "`if` is an expression: `val x = if (c) { a } else { b };` — and `a ?? b` is the default of an optional.",
+        },
+        .bitwiseOperatorAbsent => .{
+            .code = "bitwise-operator-absent",
+            .message = "the language has no bitwise operators",
+            .caretCaption = "not an operator",
+            .lexemeInCaption = true,
+            .hint = "There is no `<<`, `>>`, `&`, `^` or replacement for them; `&&` and `||` are the boolean operators. A host function behind `#[@External.<Target>(…)]` is the way to a bit operation.",
+        },
+        .charLiteralAbsent => .{
+            .code = "char-literal-absent",
+            .message = "there is no character literal",
+            .caretCaption = "write a one-character string, `\"a\"`",
+            .hint = "A character is a string of length one: `\"a\"`, and `s[0]` reads one from a string.",
+        },
+        .nestedFnDecl => .{
+            .code = "nested-fn-decl",
+            .message = "a `fn` is declared at module level, not inside a body",
+            .caretCaption = "bind a lambda instead",
+            .hint = "Inside a body a function is a value: `val inner = { x -> x + 1 };` — or move the declaration to module level.",
+        },
+        .listSpreadDotDotDot => .{
+            .code = "list-spread-dot-dot-dot",
+            .message = "`...` is a pattern's inclusive range, not a spread",
+            .caretCaption = "write `..`",
+            .hint = "An array literal spreads with two dots, and the spread comes last: `[1, 2, ..rest]`.",
+        },
+        .implementClauseFor => .{
+            .code = "implement-clause-for",
+            .message = "`for` in a type's `implement` clause",
+            .caretCaption = "the type is the receiver already",
+            .note = "the `implement` after a bodyless `type P(…)` is the TYPE's clause, `type P(…) implement A { … }`",
+            .hint = "Either write the clause, `type P(x: i32) implement A { … }`, or name a standalone block: `Impl implement A for P { … }`.",
+        },
+        .tupleLiteralLabel => .{
+            .code = "tuple-literal-label",
+            .message = "a tuple literal is positional",
+            .caretCaption = "no label here",
+            .note = "labels belong to the tuple TYPE, `#(x: i32, y: i32)`; the labeled construction `#(x: 1, y: 2)` is not parsed",
+            .hint = "Write `#(1, 2)` and read `.0` / `.1`, or read the labeled type's members by their labels.",
+        },
         .unexpectedToken => .{
-            .message = "Unexpected token",
-            .hint = "Check the syntax around this position.",
+            .message = "this token cannot appear here",
+            .caretCaption = "unexpected",
+            .lexemeInCaption = true,
+            .hint = "The statement before it may be missing its `;`, or an earlier `(`, `[` or `{` may not be closed. A form the language deliberately refuses reports a NAMED error instead of this one, so if you believe this spelling should work, it is a gap worth filing rather than working around.",
         },
         .opNakedRight => .{
             .message = "This operator has no value on its right-hand side",
@@ -55,8 +121,10 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .hint = "Provide a tail, e.g. [1, 2, ..rest]",
         },
         .listSpreadNotLast => .{
-            .message = "Elements cannot appear after a spread",
-            .hint = "Lists are singly-linked. Prepend items and reverse when done.",
+            .code = "list-spread-not-last",
+            .message = "the spread of an array literal comes last",
+            .caretCaption = "nothing after `..rest`",
+            .hint = "`[1, 2, ..rest]` — write the fixed elements first and the spread last.",
         },
         .uselessSpread => .{
             .message = "This spread does nothing",
@@ -82,6 +150,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "Malformed `${…}` interpolation in string",
             .hint = "Each `${…}` must contain one complete expression, e.g. \"hi ${name}\"; escape a literal dollar with `\\${`",
         },
+        .importGroupModifier => .{
+            .code = "import-group-modifier",
+            .message = "`*` and `as` belong to an import leaf, not to a group",
+            .caretCaption = "this node opens braces",
+            .hint = "write the modifier on the leaf: `io: {fs: {readText as read}}`, `collections: {ArraySets*}`",
+        },
         .anonymousImplExtend => .{
             .message = "An `implement`/`extend` block must be named",
             .hint = "Give it a name, e.g. `Name implement Trait for Type { … }` or `Name extend Type { … }`",
@@ -89,21 +163,66 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         .deprecatedStarFn => .{
             .code = "deprecated-star-fn",
             .message = "the `*fn` prefix was removed in v0.beta.19",
-            .caretCaption = "use a `#[@<effect>]` annotation instead",
-            .note = "the `*fn` form was deprecated in v0.beta.12; a `*fn -> @Result<…>` was equivalent to `#[@result]`, `@Future<…>` to `#[@future]`, `@Iterator<…>` to `#[@iterator]`, `@AsyncIterator<…>` to `#[@asyncGenerator]`, `@Generator<…>` to `#[@generator]`, and `@Context<…>` to `#[@context]`",
-            .hint = "rewrite as `#[@<effect>] fn <name>(...) -> @<Wrapper><...> { ... }`",
+            .caretCaption = "write a plain `fn` whose return type is the effect wrapper",
+            .note = "the `*fn` form was deprecated in v0.beta.12; since decision 118 there is no effect marker at all — the return type is the effect",
+            .hint = "rewrite as `fn <name>(...) -> @<Wrapper><...> { ... }` — `@Result`, `@Task`, `@Component`, `@Iterator` or `@Stream`",
         },
-        .effectOnDeclareForbidden => .{
-            .message = "effect-on-declare-forbidden: a #[@<effect>] annotation marks an IMPLEMENTATION (a fn with a body); `declare fn` declarations express the effect through the return wrapper alone.",
-            .hint = "Drop the #[@<effect>] annotation — the return-type wrapper (@Result/@Future/…) already carries the effect on a `declare fn`.",
+        .effectAnnotationRemoved => .{
+            .code = "effect-annotation-removed",
+            .message = "effect annotations were removed — the return type is the effect (decision 118)",
+            .caretCaption = "remove the annotation; write the wrapper in the return",
+            .note = "`#[@result]` → `-> @Result<T, E>`; `#[@future]` → `-> @Task<T>` (or `-> @Task<@Result<T, E>>` when it can fail); `#[@use]` → `-> @Component<C, T>`; `#[@generator]` → `-> @Iterator<T>`; `#[@resultGenerator]` → `-> @Iterator<@Result<T, E>>`; `#[@futureGenerator]` → `-> @Stream<@Result<T, E>>`",
+            .hint = "Delete the annotation: `fn f() -> @Task<User> { … }` — writing the wrapper in the return type is what activates `await` / `use` / `yield`, and a `@Result` in some layer of it is what activates `throw` / `try`.",
         },
-        .effectOnInterfaceMethodForbidden => .{
-            .message = "effect-on-interface-method-forbidden: interface methods are declarative — they express the effect through the return wrapper alone, never via #[@<effect>].",
-            .hint = "Drop the #[@<effect>] annotation; the implementing fn carries it.",
+        .effectAnnotationRemovedLoop => .{
+            .code = "effect-annotation-removed",
+            .message = "effect annotations were removed — a loop takes the `iter` / `stream` prefix (decision 125)",
+            .caretCaption = "remove the annotation; write `iter loop` (or `stream loop`)",
+            .note = "`#[@generator] loop` and `#[@resultGenerator] loop` are `iter loop`; `#[@futureGenerator] loop` is `stream loop`; `iter` / `stream` also prefix `while` and `for`",
+            .hint = "`val xs = iter loop { … yield x; … };` is worth `@Iterator<T>`; the item becomes `@Result<T, E>` on its own when the body has `throw` / `try`.",
         },
-        .effectDuplicateAnnotation => .{
-            .message = "effect-duplicate-annotation: at most one #[@<effect>] annotation per fn.",
-            .hint = "Keep the single annotation that matches the return-type wrapper (e.g. `#[@result]` for `-> @Result<…>`).",
+        .effectTypeRemovedFuture => .{
+            .code = "effect-type-removed",
+            .message = "`@Future` was removed — the wrapper is `@Task<T>`, which never fails (decision 120)",
+            .caretCaption = "write `@Task<@Result<T, E>>` (or `@Task<T>` when it cannot fail)",
+            .hint = "`@Future<T, E>` is `@Task<@Result<T, E>>`: `await t` then answers the `@Result`, and `try await t` propagates its error. `@Future<T>` is `@Task<T>`.",
+        },
+        .effectTypeRemovedGenerator => .{
+            .code = "effect-type-removed",
+            .message = "`@Generator` was renamed `@Iterator` (decision 122)",
+            .caretCaption = "write `@Iterator<T>`",
+            .hint = "`fn g() -> @Iterator<T> { yield …; }` — a body that yields is an iterator; `for (g()) { x -> … }` iterates it in any function.",
+        },
+        .effectTypeRemovedResultGenerator => .{
+            .code = "effect-type-removed",
+            .message = "`@ResultGenerator` was removed — the item carries the failure (decision 122)",
+            .caretCaption = "write `@Iterator<@Result<T, E>>`",
+            .hint = "`@ResultGenerator<T, E>` is `@Iterator<@Result<T, E>>`; a `for` over it hands over each `@Result` — write `try r` to propagate, or `case` to carry on.",
+        },
+        .effectTypeRemovedFutureGenerator => .{
+            .code = "effect-type-removed",
+            .message = "`@FutureGenerator` was removed — the asynchronous sequence is `@Stream` (decision 122)",
+            .caretCaption = "write `@Stream<@Result<T, E>>` (or `@Stream<T>`)",
+            .hint = "`@FutureGenerator<T, E>` is `@Stream<@Result<T, E>>`; iterate it with `for await` where there is an await channel.",
+        },
+        .effectTypeRemovedUse => .{
+            .code = "effect-type-removed",
+            .message = "`@Use` was removed — one context wrapper, `@Component<C, T>` (decision 128)",
+            .caretCaption = "write `@Component<C, T>`",
+            .hint = "`@Use<C, T>` is `@Component<C, T>`: `C` is the base the body's `use`s anchor at, `T` what the function returns — a hook returns any `T`, a component the context owner.",
+        },
+        .effectTypeRemovedLegacy => .{
+            .code = "effect-type-removed",
+            .message = "this sequence type left the language (decisions 103, 122)",
+            .caretCaption = "write `@Stream<T>`, `@Iterator<T>` or `YieldStep<T>`",
+            .note = "`@AsyncIterator<T>` is `@Stream<T>`; `@IteratorStep` and `@Yield<T, R>` are `YieldStep<T>`; there is no `@Iterable` — a type exposes a method answering `@Iterator<T>`",
+            .hint = "`fn iter(self: Self) -> @Iterator<T>` makes a type iterable: `for (g.iter()) { x -> … }`.",
+        },
+        .iteratorErrorParamRemoved => .{
+            .code = "iterator-error-param-removed",
+            .message = "`@Iterator` has no error parameter — the item carries the failure (decision 122)",
+            .caretCaption = "write `@Iterator<@Result<T, E>>`",
+            .hint = "`@Iterator<T, E>` is `@Iterator<@Result<T, E>>`: `yield v` emits `Ok(v)`, and `throw e` or a failing `try` emits `Error(e)` and ends.",
         },
         .genericDefaultBeforeRequired => .{
             .message = "generic-default-before-required: default-typed generic parameters must be the trailing parameters of the list.",
@@ -111,15 +230,234 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         },
         .yieldBreakRemoved => .{
             .message = "yield-break-removed: use `break <C>` to end an iterator with a completion value. The `yield break` form was removed in v0.beta.19.",
-            .hint = "Inside a #[@iterator] / #[@asyncGenerator] body, write `break <C>` to deliver a completion value, or bare `break` for a clean end.",
+            .hint = "Inside an `@Iterator` / `@Stream` body or an `iter` / `stream` loop, write `break <v>` to emit a last item and end, or bare `break` for a clean end.",
         },
         .genericArgSkipForbidden => .{
             .message = "generic-arg-skip-forbidden: cannot skip a defaulted argument while providing a later one.",
             .hint = "Either pass the middle argument explicitly, or rely on defaults for the contiguous trailing range.",
         },
+        .discardParamWithBody => .{
+            .code = "discard-param-with-body",
+            .message = "a `_` parameter needs a declaration without a body",
+            .caretCaption = "`_` names no parameter",
+            .hint = "`_` is a declaration's placeholder, e.g. `declare fn getContext<T>(comptime _: type) -> T;`. A function with a body names what it takes: write a name, e.g. `unused: i32`.",
+        },
+        .selfParamOutsideType => .{
+            .code = "self-param-outside-type",
+            .message = "`self` names a method's receiver, and a free function has none",
+            .caretCaption = "`self` outside a `type` or `behavior` body",
+            .hint = "Declare the function inside the type's body (`type Box(n: i32) { fn twice(self: Self, k: i32) -> i32 { … } }`), or give the parameter another name.",
+        },
+        .reservedWordAsName => .{
+            .code = "reserved-word-as-name",
+            .message = "a reserved word cannot be a name",
+            .caretCaption = "reserved word",
+            .lexemeInCaption = true,
+            .hint = "Every keyword is reserved in every position — a field, a parameter and a binding alike (`from` is the import keyword). Choose another name: `source` / `target`, `start`, `origin`.",
+        },
         .fnParamDefaultTrailingOnly => .{
             .message = "fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.",
             .hint = "Move the defaulted parameter to the end of the list, or give the following parameter a default too.",
+        },
+        .retiredAnnotationBlock => .{
+            .message = "the `@[…]` annotation block was retired",
+            .caretCaption = "write `#[…]` instead",
+            .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@External.Node(\"./m.mjs\", \"f\")]`.",
+        },
+        .removedKeywordRecord => .{
+            .code = "removed-keyword-record",
+            .message = "`record` was replaced by `type` in 1.0.3",
+            .caretCaption = "write `type Name(fields) { methods }`",
+            .hint = "A record is `type Point(x: i32, y: i32) { fn … }`; a record with no fields is `type Name()` (`type Name() { methods }`).",
+        },
+        .removedKeywordEnum => .{
+            .code = "removed-keyword-enum",
+            .message = "`enum` was replaced by `type` in 1.0.3",
+            .caretCaption = "write `type Name { variants }`",
+            .hint = "An enum is `type Color { Red, Green, Rgb(r: i32, g: i32, b: i32) }`.",
+        },
+        .removedKeywordInterface => .{
+            .code = "removed-keyword-interface",
+            .message = "`interface` was renamed to `behavior` in 1.0.3",
+            .caretCaption = "write `behavior`",
+            .hint = "`behavior Printable { fn print(self: Self) -> string; }`; a delegate is `declare fn`.",
+        },
+        .removedRecordLiteral => .{
+            .code = "removed-record-literal",
+            .message = "anonymous records are tuples in 1.0.3",
+            .caretCaption = "write a tuple `#(…)`",
+            .hint = "Build `#(x, y)` from variables (their names become the labels), or `#(1, 2)` and give the destination a labeled type `#(x: i32, y: i32)`.",
+        },
+        .removedLoopParenthesised => .{
+            .code = "removed-loop-parenthesised",
+            .message = "`loop (…)` does not exist — `for` iterates, `while` repeats",
+            .caretCaption = "write `for (xs) { x -> … }` or `while (cond) { … }`",
+            .hint = "Decision 105: `for (xs) { x -> … }` iterates a collection, a range or a generator; `while (cond) { … }` repeats while the condition holds; `loop { … break; }` repeats until a break. `loop await (g)` is `for await (g) { x -> … }`.",
+        },
+        .loopBindsNothing => .{
+            .code = "loop-binds-nothing",
+            .message = "`while` and `loop` bind nothing — only `for` takes `{ x -> … }`",
+            .caretCaption = "remove the binder",
+            .hint = "`while (cond) { … }` repeats while the condition holds and `loop { … }` until a break; to bind each item write `for (xs) { x -> … }`.",
+        },
+        .forWithoutBinder => .{
+            .code = "for-without-binder",
+            .message = "a `for` binds the item it iterates: `for (xs) { x -> … }`",
+            .caretCaption = "open the body with `x ->`",
+            .hint = "To repeat without a value write `while (cond) { … }` or `loop { … break; }`.",
+        },
+        .forBindsOneName => .{
+            .code = "for-binds-one-name",
+            .message = "a `for` binds one name — there is no index binder",
+            .caretCaption = "one name before `->`",
+            .hint = "Iterate the positions to read an index: `for (0..xs.length) { i -> val x = xs[i]; … }`.",
+        },
+        .loopAnnotationNotGenerator => .{
+            .code = "loop-annotation-not-generator",
+            .message = "a loop takes no annotation — it takes the `iter` / `stream` prefix",
+            .caretCaption = "not a loop annotation",
+            .hint = "`iter loop { … }` is worth `@Iterator<T>` and `stream loop { … }` `@Stream<T>` (decision 125); `iter` / `stream` also prefix `while` and `for`: `iter for (xs) { x -> yield f(x); }`.",
+        },
+        .removedKeywordNew => .{
+            .code = "removed-keyword-new",
+            .message = "`new` is not a keyword — call the constructor by name",
+            .caretCaption = "remove `new`",
+            .hint = "A constructor is called by name: `Person(name: \"ann\")`. There is no builtin `Error`: `throw` carries the error channel's own value, `throw \"message\"`.",
+        },
+        .removedRecordType => .{
+            .code = "removed-record-type",
+            .message = "anonymous record types are tuples in 1.0.3",
+            .caretCaption = "write a tuple type `#(…)`",
+            .hint = "A labeled tuple type: `#(x: i32, y: i32)`.",
+        },
+        .unknownTakesNoArguments => .{
+            .code = "unknown-takes-no-arguments",
+            .message = "`unknown` takes no type arguments",
+            .caretCaption = "write `unknown` alone",
+            .hint = "`unknown` is one type — anything, checked before it is used (`x is i32`). A container of it is written `unknown[]` or `Box<unknown>`.",
+        },
+        .unionMemberMissing => .{
+            .code = "union-member-missing",
+            .message = "a union type needs another type after `|`",
+            .caretCaption = "add the next member here",
+            .hint = "A union is written `i32 | string`, each member a complete type; `(i32 | string)[]` is an array of the union, `i32 | string[]` an `i32` or an array of `string`.",
+        },
+        .isMissingType => .{
+            .code = "is-missing-type",
+            .message = "`is` needs a type to test the value against",
+            .caretCaption = "add the type here",
+            .hint = "`x is i32` answers whether the value is an `i32` right now; inside the block that it guards, `x` is that type.",
+        },
+        .isVariantBinding => .{
+            .code = "is-variant-binding",
+            .message = "`is` tests a type; it does not bind a variant's payload",
+            .caretCaption = "remove the payload pattern",
+            .hint = "Test the variant with `x is Shape` and read the payload in a `case` arm: `case x { Shape.Circle(radius: r) { … } }`. An optional is not a variant — a `?T` is read with `case x { null { … } v { … } }` (decision 54).",
+        },
+        .patternRangeExclusive => .{
+            .code = "pattern-range-exclusive",
+            .message = "`..` is iteration, not a pattern's range",
+            .caretCaption = "write `...` — an inclusive range, both ends matched",
+            .hint = "`1...9` matches every value from 1 to 9; `..` belongs to `for (0..n)` and slicing. An open end is a guard: `_ when (x < 0) { … }`.",
+        },
+        .patternRangeMissingEnd => .{
+            .code = "pattern-range-missing-end",
+            .message = "a range pattern needs its upper bound",
+            .caretCaption = "add the end of the range",
+            .hint = "`1...9` matches 1 to 9, both included. For an open end write a guard: `_ when (x > 9) { … }`.",
+        },
+        .patternRestNotLast => .{
+            .code = "pattern-rest-not-last",
+            .message = "`..` stands for what the pattern does not name, so it comes last",
+            .caretCaption = "move `..` to the end",
+            .hint = "Write `.Rect(width: w, ..)`: the fields you name first, then `..` once, at the end.",
+        },
+        .patternTupleLabel => .{
+            .code = "pattern-tuple-label",
+            .message = "a tuple pattern is positional — it takes no label",
+            .caretCaption = "drop the label and match by position",
+            .hint = "Labels are names for the compiler; a tuple is positional at run time. Write `#(n, ..)`, whatever the labels of its type.",
+        },
+        .caseBareNameArm => .{
+            .code = "case-bare-name-arm",
+            .message = "a name alone is not a pattern",
+            .caretCaption = "use _ { n -> … } to bind the matched value",
+            .hint = "An arm names a type (`i32`), a variant (`.Some(v)`), a literal (`0`), a range (`1...9`) or `_`. To give the matched value a name, bind it in the body: `_ { n -> … }`.",
+        },
+        .caseConstantPattern => .{
+            .code = "case-constant-pattern",
+            .message = "a constant is not a pattern",
+            .caretCaption = "use _ when (x == MAX) { … } to compare with it",
+            .hint = "A pattern matches a shape; comparing with a constant is a guard. Write `_ when (x == MAX) { … }`.",
+        },
+        .typeRecordWithVariants => .{
+            .code = "type-record-with-variants",
+            .message = "a `type` with a field list cannot also declare variants",
+            .hint = "A record is `type Name(fields) { methods }`; an enum is `type Name { Variant, … }`. Split the declaration in two.",
+        },
+        .typeWithoutFieldList => .{
+            .code = "type-without-field-list",
+            .message = "a record type writes its field list, even when it is empty",
+            .caretCaption = "write `type Name()` here",
+            .hint = "An empty record is `type Name();`, and one with members `type Name() { fn … }`. Braces alone declare an enum: `type Name { A, B }`.",
+        },
+        .typeAliasAnnotated => .{
+            .code = "type-alias-annotated",
+            .message = "a type alias takes no annotation",
+            .hint = "An alias is only a name for a type (`type Parser<T> = @Result<T, ParseError>;`); put the annotation on a declaration that carries it.",
+        },
+        .typeAliasGenericDefault => .{
+            .code = "type-alias-generic-default",
+            .message = "a type alias parameter takes no default",
+            .hint = "Write the alias with every argument at each use (`Name<i32>`), or declare a second alias for the defaulted form.",
+        },
+        .typeVariantAfterMethod => .{
+            .code = "type-variant-after-method",
+            .message = "a variant after a method",
+            .hint = "Declare every variant (and section) before the first method.",
+        },
+        .typeFieldValPrefix => .{
+            .code = "type-field-val-prefix",
+            .message = "a field list takes no `val` prefix",
+            .caretCaption = "remove `val`",
+            .hint = "Fields are immutable already: `type Point(x: i32, y: i32)`.",
+        },
+        .fieldNeedsName => .{
+            .code = "field-needs-name",
+            .message = "a field with no name",
+            .caretCaption = "write `name: Type` here",
+            .hint = "Every field and every variant payload is named: `type Point(x: i32, y: i32)`, `Variant(field: T)`. A payload nobody can name is a payload no `case` arm can bind.",
+        },
+        .memberCommaSeparator => .{
+            .code = "member-comma-separator",
+            .message = "members end with `;`, not `,`",
+            .caretCaption = "replace `,` with `;` (or nothing after a `}`)",
+            .hint = "A bodyless member (`fn f(self: Self) -> i32;`, `val x: T;`) ends with `;`; a member with a body ends with `}`.",
+        },
+        .memberMissingSemicolon => .{
+            .code = "member-missing-semicolon",
+            .message = "a bodyless member must end with `;`",
+            .caretCaption = "add `;`",
+            .hint = "Write `fn name(self: Self) -> T;` or `val name: T;`.",
+        },
+        .templateSelfMarker => .{
+            .code = "template-self-marker",
+            .message = "`$self` is not a template marker",
+            .caretCaption = "use `$0`",
+            .hint = "Markers are positional over the declared parameters: on a method `$0` is `self`, `$1` the next parameter.",
+        },
+        .templateMarkerOutOfRange => .{
+            .code = "template-marker-out-of-range",
+            .message = "a template marker names a parameter the declaration does not have",
+            .caretCaption = "past the last parameter",
+            .hint = "`$0` is the first declared parameter; the highest marker is one less than the parameter count.",
+        },
+        .bodylessFnNeedsReturnType => .{
+            .code = "bodyless-fn-needs-return-type",
+            .message = "a declaration with no body must say what it answers",
+            .caretCaption = "add `-> void`, or give the fn a body",
+            .note = "`fn f(x: string) -> void`, `fn f(x: string) void` and `declare fn f(x: string);` are all declarations; `fn f(x: string)` alone says nothing about the result",
+            .hint = "Write `-> void` when the fn answers nothing, `-> T` when it answers a `T`, or add a `{ … }` body.",
         },
         .fnParamPositionalAfterNamed => .{
             .message = "fn-param-positional-after-named: positional argument supplied after a named one.",
@@ -187,7 +525,11 @@ pub fn render(
     const spanLen = if (info.end > info.start) info.end - info.start else 1;
     try writePadN(writer, loc.col - 1, ' ');
     try writePadN(writer, spanLen, '^');
-    try writer.print(" {s}\n", .{caption});
+    if (msgs.lexemeInCaption and info.lexeme.len > 0) {
+        try writer.print(" {s} `{s}`\n", .{ caption, info.lexeme });
+    } else {
+        try writer.print(" {s}\n", .{caption});
+    }
 
     // "<gutter>|"  ---- blank line below carets
     try writePad(writer, gutter);

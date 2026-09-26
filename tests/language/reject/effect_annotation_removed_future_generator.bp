@@ -1,0 +1,13 @@
+//// Decisions 118, 122 and 127 of 1.0.10-beta (front 24, § Cells "Migration";
+//// guide.md § 9, row `#[@futureGenerator]` + `@FutureGenerator<T, E>`) —
+//// `#[@futureGenerator]` is refused at the annotation over the new
+//// `@Stream<@Result<T, E>>` return. The new form is `run/stream_pages.bp`.
+
+#[@futureGenerator]
+fn ticks(n: i32) -> @Stream<@Result<i32, string>> {
+    if (n < 0) { throw "negative"; };
+    var i = 0;
+    while (i < n) { yield i; i = i + 1; };
+}
+
+pub fn main() { ticks(2); }

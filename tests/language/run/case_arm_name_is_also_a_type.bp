@@ -1,0 +1,81 @@
+//// Decision 8 §5.3b — a `case` arm over an enum SECTION is chosen by the
+//// subject's type, so a bare arm name is that section's variant even where a
+//// `type` of the same name is in scope. One spelling, two meanings: `Block` is
+//// a record here AND a leaf of `Token.Layout`, and which one the arm means is
+//// settled by what is being cased, never by what else the module declares.
+//// §5.3b names the collision outright — a section must not be given a
+//// compiler-invented flat name, "one that collides with a user type of that
+//// name".
+////
+//// Measured against emilia, whose `output` module exports a record `Block` and
+//// whose `Token.Layout` section carries a `Block` leaf. commonJS tested the
+//// arm with `_s instanceof Block`, which is false for every variant singleton:
+//// the arm did not fire, the `case` fell through to `undefined` at exit 0, and
+//// `tokenDeclarations(.Layout.Block)` answered the empty string where erlang
+//// and wasm answered `display:block` — 223 passed / 2 failed on commonJS
+//// against 225 / 0 on erlang, from the same source.
+////
+//// The last two lines keep the other half honest: §3.3's arm over a union of
+//// named types is still the type test, so a fix that simply deleted the class
+//// test would fail here too.
+////
+//// The neighbouring collision is here too: a SECTION whose name also names a
+//// record (`Size { Small, Large }` beside `type Size(px: i32)`). wasm built the
+//// RECORD for `.Layout.Size.Large`, so the value answered the first arm of the
+//// section's parent — `display:block` — where commonJS and erlang answer
+//// `font-size:large`; it takes the enum's variant since 1.0.10-beta
+//// `00 · 05-wasm` (a variant reached through its enum is the enum's).
+
+type Block(size: i32)
+type Vec(x: i32)
+type Size(px: i32)
+
+type Token {
+    Layout {
+        Block, Inline
+        Size { Small, Large }
+    }
+    Text { Bold }
+}
+
+fn layoutSizeCss(s: Token.Layout.Size) -> string {
+    val out = case s {
+        Small -> "font-size:small";
+        Large -> "font-size:large";
+    };
+    return out;
+}
+
+fn layoutCss(t: Token.Layout) -> string {
+    val out = case t {
+        Block -> "display:block";
+        Inline -> "display:inline";
+        Size(_inner) -> layoutSizeCss(_inner);
+    };
+    return out;
+}
+
+fn tokenCss(t: Token) -> string {
+    val out = case t {
+        Layout(_inner) -> layoutCss(_inner);
+        Text(_inner) -> "font-weight:bold";
+    };
+    return out;
+}
+
+fn shapeName(v: Block | Vec) -> string {
+    val out = case v {
+        Vec -> "vec";
+        _ -> "other";
+    };
+    return out;
+}
+
+pub fn main() {
+    @print(tokenCss(.Layout.Block));
+    @print(tokenCss(.Layout.Inline));
+    @print(tokenCss(.Layout.Size.Large));
+    @print(tokenCss(.Text.Bold));
+    @print(shapeName(Vec(x: 1)));
+    @print(shapeName(Block(size: 2)));
+}

@@ -1,0 +1,46 @@
+//// An `if` block that `await`s and does not return, inside a `@Task` body — as
+//// a statement, nested in another `if`, and in the `else` branch. The block's
+//// value is discarded; the function runs on after it.
+////
+//// The commonJS gap this pins: the `if` lowered to a plain arrow called in
+//// place, `(() => { if (flag) { const got = await one(); … } })()`, and the
+//// module did not load (`SyntaxError: await is only valid in async
+//// functions`). The test runner then printed no summary for that module.
+
+fn one() -> @Task<i32> {
+    return 1;
+}
+
+fn maybe(flag: bool) -> @Task<i32> {
+    var total = 0;
+    if (flag) {
+        val got = await one();
+        total = got;
+    };
+    return total;
+}
+
+fn nested(a: bool, b: bool) -> @Task<i32> {
+    var total = 10;
+    if (a) {
+        if (b) {
+            val got = await one();
+            total = total + got;
+        };
+        total = total + 100;
+    } else {
+        val got = await one();
+        total = total - got;
+    };
+    return total;
+}
+
+fn run() -> @Task<void> {
+    @print(await maybe(true));
+    @print(await maybe(false));
+    @print(await nested(true, true));
+    @print(await nested(true, false));
+    @print(await nested(false, true));
+}
+
+pub fn main() { run(); }

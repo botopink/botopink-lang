@@ -1,0 +1,9 @@
+//// A record with an `isEnabled/2` method, reached through `logger`.
+
+pub type Logger(name: string, threshold: i32) {
+    pub fn isEnabled(self: Self, level: i32) -> bool { return level >= self.threshold; }
+}
+
+pub fn logger(name: string) -> Logger {
+    return Logger(name: name, threshold: 2);
+}

@@ -1,0 +1,31 @@
+//// Decision 125 of 1.0.10-beta (front 24, § Cells "Prefixed loops", second
+//// line) — the prefixed loop IS the iterator: `break v` in it emits `v` and ends
+//// the sequence, a bare `break` ends it without emitting. `tens` emits 10, 20,
+//// 30 with `yield` and 40 with `break n * 10`, and leaves its captured counter
+//// at 4; `untilNegative` is an `iter for` whose `break x` emits the negative
+//// and stops before `7`.
+
+fn line(it: @Iterator<i32>) -> string {
+    var acc = "";
+    for (it) { x ->
+        if (acc == "") { acc = x.toString(); } else { acc = acc + " " + x.toString(); };
+    };
+    return acc;
+}
+
+pub fn main() {
+    var n = 0;
+    val tens = iter loop {
+        n = n + 1;
+        if (n == 4) { break n * 10; };
+        yield n * 10;
+    };
+    @print(line(tens));
+    @print(n);
+
+    val untilNegative = iter for ([5, -1, 7]) { x ->
+        if (x < 0) { break x; };
+        yield x;
+    };
+    @print(line(untilNegative));
+}

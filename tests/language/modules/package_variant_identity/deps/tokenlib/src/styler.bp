@@ -1,0 +1,28 @@
+//// The dispatcher: the `case` lives HERE, in the library, over a value the
+//// consumer builds. That separation is what one package cannot express.
+
+import {Token} from "tokens";
+
+fn sizeCss(s: Token.Text.Size) -> string {
+    val out = case s {
+        Lg -> "font-size:1.125rem";
+        X3xl -> "font-size:1.875rem";
+    };
+    return out;
+}
+
+fn textCss(t: Token.Text) -> string {
+    val out = case t {
+        Bold -> "font-weight:bold";
+        Size(_inner) -> sizeCss(_inner);
+    };
+    return out;
+}
+
+pub fn styleOf(t: Token) -> string {
+    val out = case t {
+        Text(_inner) -> textCss(_inner);
+        Bg(_inner) -> "display:block";
+    };
+    return out;
+}

@@ -1,0 +1,9 @@
+//// An alias whose body names `Request` and `Out`, which THIS module imports.
+
+import {Request, Out} from "web";
+
+pub type PageRenderer = fn(req: Request, out: Out) -> string;
+
+pub fn render(renderer: PageRenderer, req: Request) -> string {
+    return renderer(req, Out(tag: "out"));
+}

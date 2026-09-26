@@ -1,0 +1,36 @@
+//// Decision 123 of 1.0.10-beta (front 24, § Cells "Iterators", fourth line;
+//// guide.md § 5.4) — a function with an `@Iterator` return is an iterator if
+//// its own body has `yield` / `break v` (`evens`), and otherwise an ordinary
+//// function that RETURNS a ready iterator — a factory (`evensOf` returns an
+//// `iter for`; `pick` returns one of two, by a plain `if`). The scan does not
+//// enter the inner `iter for`, so its `yield` does not make `evensOf` an
+//// iterator. Only the sequences are printed: whether a body runs at the call or
+//// on the first `next` differs by backend (the eager erlang / wasm lowerings).
+
+fn evens(xs: i32[]) -> @Iterator<i32> {
+    for (xs) { x -> if (x % 2 == 0) { yield x; }; };
+}
+
+fn evensOf(xs: i32[]) -> @Iterator<i32> {
+    return iter for (xs) { x -> if (x % 2 == 0) { yield x; }; };
+}
+
+fn pick(up: bool, xs: i32[]) -> @Iterator<i32> {
+    if (up) { return evens(xs); };
+    return iter for (xs) { x -> yield x * 10; };
+}
+
+fn line(it: @Iterator<i32>) -> string {
+    var acc = "";
+    for (it) { x ->
+        if (acc == "") { acc = x.toString(); } else { acc = acc + " " + x.toString(); };
+    };
+    return acc;
+}
+
+pub fn main() {
+    @print(line(evens([1, 2, 3, 4, 5, 6])));
+    @print(line(evensOf([1, 2, 3, 4, 5, 6])));
+    @print(line(pick(true, [1, 2, 3, 4])));
+    @print(line(pick(false, [1, 2])));
+}

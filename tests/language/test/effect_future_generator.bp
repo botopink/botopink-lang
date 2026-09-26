@@ -1,0 +1,32 @@
+//// Decisions 120 and 122 of 1.0.10-beta — `@Stream<@Result<T, E>>` extends
+//// `@Task`: its body answers `yield` and `await`, and `try` because its item
+//// is a `@Result`. A `for await` over it needs an await channel and hands over
+//// each `@Result` (`reject/for_await_future_generator_in_result.bp` is the
+//// refusal where there is no channel). The consumer propagates with an
+//// explicit `try x`, so it returns `@Task<@Result<…>>`.
+
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+fn fetch(n: i32) -> @Task<@Result<i32, string>> {
+    return n;
+}
+
+fn stream(n: i32) -> @Stream<@Result<i32, string>> {
+    val limit = try parse(n);
+    var i = try await fetch(0);
+    while (i < limit) { yield i; i = i + 1; };
+}
+
+fn collect(n: i32) -> @Task<@Result<string, string>> {
+    var acc = "";
+    for await (stream(n)) { x -> val v = try x; acc = acc + v.toString(); };
+    return acc;
+}
+
+test "decision 122 a stream and its consumer compile" {
+    val v = try parse(3) catch 0;
+    assert v == 3;
+}

@@ -43,7 +43,10 @@
                               }
                             }
                           ]
-                        }
+                        },
+                        "shape": "variant",
+                        "labels": [],
+                        "rest": false
                       }
                     },
                     "expr": {
@@ -102,7 +105,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "fatal": false
                   }
                 }
               }

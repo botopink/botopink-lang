@@ -1,0 +1,23 @@
+//// Decision 33 — a declaration with no body says what it answers, even when the
+//// answer is nothing. `fn f(x: string)` with neither a body nor a `-> …` is a
+//// parse error that names itself (`bodyless-fn-needs-return-type`,
+//// `reject/bodyless_fn_no_return_type.bp`); `-> void` is how it is written.
+////
+//// `declare fn …;` is a different grammar and is NOT covered here: it has never
+//// required a return type, and whether it should for the same reason is the open
+//// question decision 33 records rather than answers.
+
+#[@External.Node("Math.min($0, $1)")]
+#[@External.Erlang("erlang", "min")]
+fn hostMin(a: i32, b: i32) -> i32;
+
+#[@External.Node("console.log($0)")]
+#[@External.Erlang("io", "put_chars")]
+fn hostWrite(s: string) -> void;
+
+test "a bodyless fn with a value return type binds its host" { assert hostMin(7, 2) == 2; }
+
+test "a bodyless fn with -> void compiles and is callable" {
+    hostWrite("");
+    assert true;
+}

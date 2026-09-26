@@ -1,0 +1,37 @@
+//// Two types of one module carry the same decorator, and the decorator
+//// `@emit`s a proxy for each (`LedgerSec`, `RunbookSec`) whose methods call
+//// `self.inner.<method>()`. Each proxy calls ITS type's method.
+////
+//// The gap this pins (rakun's `#[methodSecurity]` and `#[transactional]`):
+//// every `@emit` was parsed from line 1, so the two proxies' calls shared a
+//// location, and what inference recorded for the second overwrote the
+//// first — erlang compiled `LedgerSec.status` as `Runbook:status/1` (`undef`,
+//// or the other type's answer). A security proxy could call the wrong type's
+//// code. The same two proxies written by hand were always right.
+
+fn guard(label: string) -> i32 {
+    return label.length();
+}
+
+fn proxied(comptime decl: @Decl) {
+    var methods: string[] = [];
+    decl.methods.forEach({ m ->
+        methods.push("pub fn " + m.name + "(self: Self) -> string {\n        val _g = guard(\"" + decl.name + "\");\n        return \"sec \" + self.inner." + m.name + "();\n    }");
+    });
+    @emit("pub type " + decl.name + "Sec(inner: " + decl.name + ") {\n    " + methods.join("\n    ") + "\n}");
+}
+
+#[proxied]
+type Ledger(id: i32) {
+    pub fn status(self: Self) -> string { return "ledger status"; }
+}
+
+#[proxied]
+type Runbook(id: i32) {
+    pub fn read(self: Self) -> string { return "runbook steps"; }
+}
+
+pub fn main() {
+    @print(LedgerSec(inner: Ledger(id: 1)).status());
+    @print(RunbookSec(inner: Runbook(id: 2)).read());
+}

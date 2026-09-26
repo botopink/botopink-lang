@@ -1,0 +1,13 @@
+//// A METHOD call is arity-checked like a function call. `set` declares three
+//// parameters after `self` and none has a default, so a call with two is
+//// refused at the call. It used to check: erlang then called `set/3` that no
+//// module defines (`undef`), and commonJS read the missing argument as
+//// `undefined`. `run/method_default_argument.bp` is the call a default fills.
+
+type Jar(n: i32) {
+    pub fn set(self: Self, name: string, value: string, attrs: string) -> string { return name + value + attrs; }
+}
+
+fn cookies() -> Jar { return Jar(n: 1); }
+
+pub fn main() { @print(cookies().set("s", "1")); }

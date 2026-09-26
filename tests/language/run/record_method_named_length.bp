@@ -1,0 +1,22 @@
+//// A record whose method is named `length` still reads an array's and a
+//// string's `length` as the primitive one — inside its own methods too.
+////
+//// The erlang gap this pins: the type's module defines `length/1` (the
+//// method, under `no_auto_import`), and the array read was the bare call
+//// `length(Items)`, so it called the METHOD on a list — `badarg` at
+//// `element/2`.
+
+type Rows(items: string[], title: string) {
+    pub fn length(self: Self) -> i32 { return self.items.length; }
+    pub fn rowCount(self: Self) -> i32 { return self.items.length(); }
+    pub fn titleLength(self: Self) -> i32 { return self.title.length(); }
+}
+
+pub fn main() {
+    val xs: i32[] = [1, 2, 3];
+    @print(xs.length);
+    val r = Rows(items: ["a", "b"], title: "four");
+    @print(r.length());
+    @print(r.rowCount());
+    @print(r.titleLength());
+}

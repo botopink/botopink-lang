@@ -2,18 +2,24 @@
 ///
 /// Compiles the project with `test_mode = true` (test blocks emit as
 /// functions + a registry + runner entry; `fn main/0` is not auto-invoked),
-/// writes artifacts under `.botopinkbuild/test-out/`, then executes each
+/// writes artifacts under `.botopinkbuild/test-out/<target>/<id>/` (one
+/// directory per run, removed when the run ends), then executes each
 /// module that contains tests and aggregates the exit codes.
 ///
 /// Currently only the `commonJS` target runs tests (node); other targets
 /// are pending phases of the `test-blocks` spec.
 const std = @import("std");
+const source_stamp = @import("source_stamp");
+const build_stamp = @import("build_stamp");
 const bp = @import("botopink");
 const reporter = @import("./reporter.zig");
 const config = @import("./config.zig");
+const manifest = @import("manifest");
 const scanner = @import("./scanner.zig");
 const sources = @import("./sources.zig");
 const libs = @import("./libs.zig");
+const build_cmd = @import("./build.zig");
+const diagnostics = @import("./diagnostics.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -31,7 +37,300 @@ pub const Options = struct {
     json: bool = false,
 };
 
-const TEST_OUT_DIR = ".botopinkbuild/test-out";
+/// Root of the test output tree. One run NEVER writes here directly: it writes
+/// to `<TEST_OUT_ROOT>/<target>/<id>/` (see `makeTestOutDir`), removed again
+/// when the run ends.
+///
+/// Two runs used to share this one directory, and each emptied it on the way
+/// in. `botopink-lib-test` gives every cell `cwd = <lib dir>`, so two gates
+/// over one library checkout — two worktrees, or one gate and a hand-run
+/// `botopink test` — wiped each other's artifacts mid-run. The loser reported
+/// a library red nobody owned: modules missing under `node` (`Cannot find
+/// module …/x_test.js`), or an `{error,undef}` storm under `escript` when the
+/// sibling `.erl` files it loads had been replaced by another target's `.js`.
+const TEST_OUT_ROOT = ".botopinkbuild/test-out";
+
+/// The output directory of THIS run: `<root>/<target>/<id>`, where `id` is 64
+/// random bits — the same shape the comptime runtime uses for its scratch dirs
+/// (`codegen/runtime.zig`, `makeScratchDir`), and the same per-target scoping
+/// `lib-test-build/<target>` already has in `lib-test-runner`.
+///
+/// Both halves earn their place. Per target, because the two targets of one
+/// library emit DIFFERENT file sets (`.js` vs `.erl`) into the same names — the
+/// clobber that made the artifacts of the loser vanish for good instead of for
+/// a millisecond. Per run, because two gates reach the same `(lib, target)`
+/// cell as often as they reach two.
+///
+/// It stays under `.botopinkbuild/` so `botopink clean` (which removes `out/`
+/// and `.botopinkbuild/`) and the `.gitignore` entry both keep covering it with
+/// no new rule. The caller removes it when the run ends: a run's artifacts
+/// belong to the run, and the next one's id differs, so nothing readable would
+/// survive anyway.
+fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) ![]const u8 {
+    var rand_bytes: [8]u8 = undefined;
+    io.random(&rand_bytes);
+    const id = std.mem.readInt(u64, &rand_bytes, .little);
+    return std.fmt.allocPrint(arena, TEST_OUT_ROOT ++ "/{s}/{x}", .{ target.toString(), id });
+}
+
+/// The environment variable that names THIS run's scratch directory to the
+/// tests it runs: `<cwd>/<test_out>/tmp`, absolute, empty when the first test
+/// starts, and removed with the rest of the run's directory when the run ends.
+///
+/// A test that writes files — a fixture project it then compiles, a pid file,
+/// a certificate — needs a place no other process writes to. The library's own
+/// directory is not one: `botopink-lib-test` runs the commonJS and the erlang
+/// cell of one library side by side with the same `cwd`, and two gates share a
+/// checkout. rakun's build tests wrote their fixture projects to
+/// `.botopinkbuild/tmp/<member>-fixtures/<name>` and `rm -rf`'d each one before
+/// writing it, so the erlang cell deleted the commonJS cell's fixture between
+/// its write and its compile: one full `zig build test-libs` measured
+/// `rakun-data·commonJS` at 6 failed, the next at 0, the next at 1. This run's
+/// directory is already unique per run and per target (`makeTestOutDir`), so
+/// its `tmp/` is too, with nothing to reap.
+pub const TEST_TMPDIR_ENV = "BOTOPINK_TEST_TMPDIR";
+
+/// The runners' environment: this process's own plus `TEST_TMPDIR_ENV`, whose
+/// directory is created here. The absolute path is spelled from the process's
+/// cwd because a test may `cd` (a fixture build does) before it uses it.
+fn testTmpEnv(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    test_out: []const u8,
+    env_map: libs.EnvMap,
+) !*const std.process.Environ.Map {
+    const rel = try std.fs.path.join(arena, &.{ test_out, "tmp" });
+    try std.Io.Dir.cwd().createDirPath(io, rel);
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try std.process.currentPath(io, &cwd_buf);
+    const abs = try std.fs.path.join(arena, &.{ cwd_buf[0..n], rel });
+
+    const map = try arena.create(std.process.Environ.Map);
+    map.* = std.process.Environ.Map.init(arena);
+    if (env_map) |m| {
+        for (m.keys(), m.values()) |k, v| try map.put(k, v);
+    }
+    try map.put(TEST_TMPDIR_ENV, abs);
+    return map;
+}
+
+/// Compile every `.erl` under `dir` ONCE, in one `erl` (a process per file),
+/// writing `<name>.beam` beside each source that compiled.
+///
+/// Each erlang test module's runner loads every sibling `.erl` before its
+/// tests run (`codegen/erlang.zig`, `__bp_load_siblings`). It used to call
+/// `compile:file/2` on each of them, so a package with T test modules and M
+/// modules compiled T × M times — `libs/std` spent ~24 s of its erlang cell
+/// there, against ~2 s for commonJS. The runner now loads the `.beam` written
+/// here (`__bp_prebuilt`) and compiles from source only when there is none.
+///
+/// Nothing is decided here. The compile uses the loader's own options
+/// (`binary`, `return_errors`, the include dir), a module that does not compile
+/// gets no `.beam` and so reaches the loader's `compile:file/2` arm, whose
+/// refusal names it exactly as before, and a source that says `-include` is
+/// left to the loader (its include dir is the script's, which this step does
+/// not know). The directory is this run's own, written above from this run's
+/// outputs. A failure of the step itself — `erl` missing, a crash — leaves some
+/// or no `.beam` behind, which is the old path for the rest; its output is
+/// discarded.
+///
+/// **The `.beam` cache** (`cache_dir`, see `beamCacheDir`; null = none). Every
+/// member of a workspace compiles the same dependency `.erl` text again — the
+/// fifteen `emilia-*` examples each compile `emilia` and `std`, every gate. A
+/// compiled `.beam` is therefore also kept at `<cache_dir>/<k[0..2]>/<k>.beam`,
+/// `k` the SHA-256 of the source bytes and of everything else the compile
+/// reads: the options, the OTP release, the erts / `compiler` / `stdlib`
+/// versions and `ERL_COMPILER_OPTIONS` (which `compile:file/2` appends). A
+/// source whose key is there is not compiled: the stored `.beam` is written
+/// beside it.
+///
+/// A `.beam` also records WHERE it was compiled — the `Line` table names the
+/// source path (every stack trace prints it), `CInf` the include dir and the
+/// absolute source, `Dbgi` the options — and each run's directory is new. An
+/// entry therefore stores the path and include dir it was compiled with, and a
+/// hit is **relocated**: those three chunks are rewritten to this run's source
+/// and include dir (`Relocate`), which gives byte for byte the `.beam` the
+/// compile would have written here — measured on the 4 093 modules of an
+/// `emilia-*` cell. An entry is stored only when relocating the fresh `.beam`
+/// to its own path answers the same bytes, so a layout `Relocate` does not
+/// understand is compiled every time instead of guessed at. Not cached
+/// either: a source that does not compile (nothing is written, so its refusal
+/// is the loader's, every time), and a source that names `parse_transform`
+/// (its output depends on the transform's code, which the key does not see),
+/// `?FILE` (the path is a literal in the code) or `-file` (more names in the
+/// `Line` table). Entries are written by staging under a unique name and
+/// renaming, so a reader sees a whole entry or none — two cells, or two gates,
+/// over one cache race to write the same bytes; an entry that does not decode
+/// or relocate is a miss. A hit refreshes the entry's mtime, and every run
+/// reaps one of the 256 shards at random: entries unused for 7 days, staging
+/// files older than a day (a writer that died between write and rename).
+fn precompileErlang(arena: std.mem.Allocator, io: std.Io, dir: []const u8, cache_dir: ?[]const u8) void {
+    const eval =
+        \\[Dir | CacheArg] = init:get_plain_arguments(),
+        \\Opts = [binary, return_errors, {i, Dir}],
+        \\Tag = case CacheArg of
+        \\    [_] ->
+        \\        try
+        \\            _ = crypto:hash(sha256, <<>>),
+        \\            term_to_binary({<<"botopink-beam-cache-2">>, [binary, return_errors],
+        \\                            erlang:system_info(otp_release), erlang:system_info(version),
+        \\                            filename:basename(code:lib_dir(compiler)),
+        \\                            filename:basename(code:lib_dir(stdlib)),
+        \\                            os:getenv("ERL_COMPILER_OPTIONS")})
+        \\        catch _:_ -> none
+        \\        end;
+        \\    _ -> none
+        \\end,
+        \\Publish = fun(Path, Bin) ->
+        \\    Tmp = iolist_to_binary([Path, ".", integer_to_list(erlang:unique_integer([positive])),
+        \\                            "-", os:getpid(), ".tmp"]),
+        \\    case file:write_file(Tmp, Bin) of
+        \\        ok ->
+        \\            case file:rename(Tmp, Path) of
+        \\                ok -> ok;
+        \\                _ -> file:delete(Tmp)
+        \\            end;
+        \\        _ -> file:delete(Tmp)
+        \\    end
+        \\end,
+        \\Relocate = fun(Bin, {Src0, Dir0}, {Src, Dir1}) ->
+        \\    S0 = unicode:characters_to_binary(Src0),
+        \\    S1 = unicode:characters_to_binary(Src),
+        \\    N0 = byte_size(S0),
+        \\    Swap = fun(O) -> [case X of {i, Dir0} -> {i, Dir1}; _ -> X end || X <- O] end,
+        \\    {ok, _, Chunks} = beam_lib:all_chunks(Bin),
+        \\    Fix = fun
+        \\        ("Line", <<H:16/binary, 1:32, Rest/binary>>) ->
+        \\            Items = binary:part(Rest, 0, byte_size(Rest) - 2 - N0),
+        \\            <<N0:16, S0:N0/binary>> = binary:part(Rest, byte_size(Rest) - 2 - N0, 2 + N0),
+        \\            <<H/binary, 1:32, Items/binary, (byte_size(S1)):16, S1/binary>>;
+        \\        ("CInf", D) ->
+        \\            term_to_binary([case X of
+        \\                                {options, O} -> {options, Swap(O)};
+        \\                                {source, _} -> {source, filename:absname(Src)};
+        \\                                _ -> X
+        \\                            end || X <- binary_to_term(D)]);
+        \\        ("Dbgi", D) ->
+        \\            {debug_info_v1, erl_abstract_code, {none, O}} = binary_to_term(D),
+        \\            term_to_binary({debug_info_v1, erl_abstract_code, {none, Swap(O)}});
+        \\        (_, D) -> D
+        \\    end,
+        \\    {ok, Out} = beam_lib:build_module([{Id, Fix(Id, D)} || {Id, D} <- Chunks]),
+        \\    Out
+        \\end,
+        \\EntryOf = fun(Text) ->
+        \\    Key = binary:encode_hex(crypto:hash(sha256, [Tag, Text]), lowercase),
+        \\    <<Shard:2/binary, _/binary>> = Key,
+        \\    [Cache] = CacheArg,
+        \\    filename:join([Cache, Shard, <<Key/binary, ".beam">>])
+        \\end,
+        \\Cacheable = fun(Text) ->
+        \\    Tag =/= none andalso
+        \\        lists:all(fun(W) -> binary:match(Text, W) =:= nomatch end,
+        \\                  [<<"parse_transform">>, <<"?FILE">>, <<"-file">>])
+        \\end,
+        \\Compile = fun(Src) ->
+        \\    {ok, Text} = file:read_file(Src),
+        \\    case binary:match(Text, <<"-include">>) of
+        \\        nomatch ->
+        \\            Beam = filename:rootname(Src) ++ ".beam",
+        \\            Entry = case Cacheable(Text) of
+        \\                true -> EntryOf(Text);
+        \\                false -> none
+        \\            end,
+        \\            Cached = case Entry of
+        \\                none -> none;
+        \\                _ ->
+        \\                    try
+        \\                        {ok, Stored} = file:read_file(Entry),
+        \\                        {From, CBin} = binary_to_term(Stored),
+        \\                        Relocate(CBin, From, {Src, Dir})
+        \\                    catch _:_ -> none
+        \\                    end
+        \\            end,
+        \\            case Cached of
+        \\                none ->
+        \\                    case compile:file(Src, Opts) of
+        \\                        {ok, _Mod, Bin} ->
+        \\                            Publish(Beam, Bin),
+        \\                            case Entry of
+        \\                                none -> ok;
+        \\                                _ ->
+        \\                                    Here = {Src, Dir},
+        \\                                    case catch Relocate(Bin, Here, Here) of
+        \\                                        Bin ->
+        \\                                            filelib:ensure_dir(Entry),
+        \\                                            Publish(Entry, term_to_binary({Here, Bin}));
+        \\                                        _ -> ok
+        \\                                    end
+        \\                            end;
+        \\                        _ -> ok
+        \\                    end;
+        \\                _ ->
+        \\                    Publish(Beam, Cached),
+        \\                    file:change_time(Entry, erlang:localtime())
+        \\            end;
+        \\        _ -> ok
+        \\    end
+        \\end,
+        \\Parent = self(),
+        \\Refs = [begin
+        \\            Ref = make_ref(),
+        \\            spawn(fun() -> catch Compile(S), Parent ! Ref end),
+        \\            Ref
+        \\        end || S <- filelib:wildcard(filename:join([Dir, "**", "*.erl"]))],
+        \\[receive R -> ok end || R <- Refs],
+        \\case Tag of
+        \\    none -> ok;
+        \\    _ ->
+        \\        catch begin
+        \\            [Root] = CacheArg,
+        \\            Pick = binary_to_list(binary:encode_hex(<<(rand:uniform(256) - 1)>>, lowercase)),
+        \\            Now = calendar:datetime_to_gregorian_seconds(calendar:local_time()),
+        \\            Reap = fun(Pattern, MaxAge) ->
+        \\                [case filelib:last_modified(F) of
+        \\                     0 -> ok;
+        \\                     T ->
+        \\                         case Now - calendar:datetime_to_gregorian_seconds(T) > MaxAge of
+        \\                             true -> file:delete(F);
+        \\                             false -> ok
+        \\                         end
+        \\                 end || F <- filelib:wildcard(filename:join([Root, Pick, Pattern]))]
+        \\            end,
+        \\            Reap("*.beam", 7 * 86400),
+        \\            Reap("*.tmp", 86400)
+        \\        end
+        \\end,
+        \\halt(0).
+    ;
+    const argv: []const []const u8 = if (cache_dir) |c|
+        &.{ "erl", "-noshell", "-eval", eval, "-extra", dir, c }
+    else
+        &.{ "erl", "-noshell", "-eval", eval, "-extra", dir };
+    const result = std.process.run(arena, io, .{
+        .argv = argv,
+        .stdout_limit = .limited(1024 * 1024),
+        .stderr_limit = .limited(1024 * 1024),
+    }) catch return;
+    _ = result;
+}
+
+/// Where `precompileErlang` keeps its `.beam` cache: `$XDG_CACHE_HOME/botopink/beam`,
+/// else `$HOME/.cache/botopink/beam` — the per-user cache every checkout, worktree
+/// and gate of this machine shares, beside `bpmp`'s store (`$XDG_CACHE_HOME/bpmp`),
+/// because the cells that compile the same dependency `.erl` run from different
+/// project directories. Null (no cache — every source compiles, as before) when
+/// neither variable is set to an absolute path. `botopink clean` does not reach
+/// it; entries are content-keyed, so a stale one is never read — only kept until
+/// a run draws its shard (see `precompileErlang`).
+fn beamCacheDir(arena: std.mem.Allocator, env_map: libs.EnvMap) ?[]const u8 {
+    const m = env_map orelse return null;
+    if (m.get("XDG_CACHE_HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
+        return std.fs.path.join(arena, &.{ v, "botopink", "beam" }) catch null;
+    if (m.get("HOME")) |v| if (v.len > 0 and std.fs.path.isAbsolute(v))
+        return std.fs.path.join(arena, &.{ v, ".cache", "botopink", "beam" }) catch null;
+    return null;
+}
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -45,17 +344,39 @@ pub fn run(
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
 
+    // A test run against a stale build measures the previous compiler: when
+    // this binary's checkout still exists and its sources have changed since
+    // the binary was built, refuse to start (`source_stamp`). An installed
+    // binary, built elsewhere, has no checkout here and is never refused.
+    if (try source_stamp.checkFresh(gpa, io, build_stamp.source_root, build_stamp.source_hash)) |stale| {
+        var msg_buf: [1024]u8 = undefined;
+        reporter.errMsg(std.mem.trimEnd(u8, source_stamp.render(&msg_buf, stale, "this botopink"), "\n"));
+        return 1;
+    }
+
     // Load project config.
     const proj = config.load(arena, io) catch |err| {
         switch (err) {
             error.ConfigNotFound => reporter.errMsg("botopink.json not found — are you in a botopink project?"),
-            error.ConfigInvalid => reporter.errMsg("botopink.json is invalid JSON"),
+            error.ConfigInvalid => {}, // refused — the located diagnostic is already printed
             else => reporter.errMsg("failed to load botopink.json"),
         }
         return 1;
     };
 
-    const target = opts.target orelse proj.parsedTarget();
+    // A workspace member that is a library and lists no `files` ships nothing
+    // to a consumer (decision 75): its own tests fail, they do not skip.
+    if (proj.workspace != null) {
+        if (manifest.shipsNothing(io, proj.manifest)) |refusal| {
+            refusal.print();
+            return 1;
+        }
+    }
+
+    const target = opts.target orelse proj.parsedTarget() orelse {
+        build_cmd.reportUnsupportedTarget(proj.target);
+        return 1;
+    };
     if (target != .commonJS and target != .erlang) {
         reporter.errMsg("`botopink test` currently supports only the commonJS and erlang targets");
         reporter.hintMsg("run with `--target commonJS` or set \"target\": \"commonJS\" in botopink.json");
@@ -67,11 +388,16 @@ pub fn run(
     // already registered when they compile.
     // `src/` resolves through the explicit module tree; the flat `test/` suite
     // dir is not a package, so it keeps the plain directory scan.
-    var src_loaded = sources.load(gpa, io, proj, "src") catch return 1;
+    var src_loaded = sources.load(gpa, io, proj, proj.srcDir()) catch return 1;
     defer src_loaded.free(gpa);
     const src_modules = src_loaded.modules;
-    const test_modules = try scanner.scanSources(gpa, io, "test");
-    defer scanner.freeModules(gpa, test_modules);
+    var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
+    defer test_scan.free(gpa);
+    const test_modules = test_scan.modules;
+
+    // The flat `test/` directory is not a package, so it never reached the
+    // resolver: check its imports here, against the same rule `src/` answers to.
+    sources.checkFlatImports(gpa, proj, src_modules, test_scan) catch return 1;
 
     if (src_modules.len == 0 and test_modules.len == 0) {
         reporter.errMsg("no source files found in src/ or test/");
@@ -83,16 +409,8 @@ pub fn run(
     // so a consumer's tests can `import … from "<lib>"`. Dependency modules are
     // compiled first (their types/exports must resolve before the project), but
     // their OWN `test {}` blocks are not run — only the project's are.
-    const dep_modules = libs.loadDependencies(gpa, io, proj.dependencies, env_map) catch |err| {
-        switch (err) {
-            error.LibsRootNotFound => {
-                reporter.errMsg("project declares dependencies but no libs/ directory was found in this or any parent directory");
-                reporter.hintMsg("if your botopink.json uses the new object form ({\"<name>\": {\"git\": ...}}), run `bpmp install` to fetch deps into $BPMP_HOME first");
-            },
-            error.LibNotFound => reporter.errMsg("a declared dependency was not found under the libs root"),
-            error.LibManifestInvalid => reporter.errMsg("a dependency's botopink.json is invalid"),
-            else => reporter.errMsg("failed to load project dependencies"),
-        }
+    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map, &.{ src_modules, test_modules }) catch |err| {
+        build_cmd.reportDependencyError(err);
         return 1;
     };
     defer libs.freeModules(gpa, dep_modules);
@@ -107,9 +425,13 @@ pub fn run(
         if (!d.declaration) try real_deps.append(arena, d);
     }
 
-    const modules = try std.mem.concat(arena, bp.Module, &.{ real_deps.items, src_modules, test_modules });
+    const all_modules = try std.mem.concat(arena, bp.Module, &.{ real_deps.items, src_modules, test_modules });
 
-    reporter.compiling(modules.len);
+    reporter.compiling(all_modules.len);
+
+    // A module that does not lex, parse or type-check is reported with its
+    // location (below); every module that does compile still has its tests run.
+    const modules = all_modules;
 
     // Build codegen config in test mode.
     const cfg = bp.codegen.Config{
@@ -120,9 +442,11 @@ pub fn run(
         },
         .build_root = ".botopinkbuild",
         .test_mode = true,
+        .packages = try libs.packagesOf(arena, proj, real_deps.items),
     };
 
-    var outputs = bp.codegen.generate(gpa, modules, io, cfg) catch |err| {
+    // Emit only: each test module is run once, below, by its runner.
+    var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false }) catch |err| {
         reporter.errMsg("compilation failed");
         std.debug.print("  {s}\n", .{@errorName(err)});
         return 1;
@@ -132,36 +456,29 @@ pub fn run(
         outputs.deinit(gpa);
     }
 
-    // Check for comptime errors in outputs.
-    var had_error = false;
-    for (outputs.items) |o| {
-        if (o.result.comptime_err) |ce| {
-            had_error = true;
-            const rendered = ce.renderAlloc(gpa, o.src) catch continue;
-            defer gpa.free(rendered);
-            std.debug.print("{s}", .{rendered});
-        }
-    }
-    if (had_error) return 1;
+    // Every module comes back from the compiler; one that failed carries its
+    // diagnostic, rendered here (file, line, excerpt). It does not stop the
+    // modules that compiled from running their tests.
+    const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
 
-    // Modules with parse/type errors produce no output at all — surface that
-    // instead of silently skipping their tests.
-    if (outputs.items.len < modules.len) {
-        const msg = try std.fmt.allocPrint(
-            arena,
-            "{d} module(s) failed to compile — run `botopink check` for diagnostics",
-            .{modules.len - outputs.items.len},
-        );
-        reporter.errMsg(msg);
-        return 1;
-    }
+    // This run's own artifact tree, empty by construction: a previous run's
+    // artifact of a module that no longer compiles cannot be found (or run) by
+    // this one, and no concurrent run can reach in and empty it. Removed when
+    // the run ends, whichever way it ends.
+    const test_out = try makeTestOutDir(arena, io, target);
+    std.Io.Dir.cwd().deleteTree(io, test_out) catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, test_out) catch {};
 
     // Write every module's test-mode artifact (test modules `require` their
     // sibling modules on commonJS), then run each module that contains tests.
-    std.Io.Dir.cwd().createDirPath(io, TEST_OUT_DIR) catch |err| switch (err) {
+    std.Io.Dir.cwd().createDirPath(io, test_out) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
     };
+
+    // The run's scratch directory, handed to every test runner as
+    // `BOTOPINK_TEST_TMPDIR` (see `TEST_TMPDIR_ENV`).
+    const child_env = try testTmpEnv(arena, io, test_out, env_map);
 
     const ext: []const u8 = switch (target) {
         .commonJS => ".js",
@@ -175,7 +492,8 @@ pub fn run(
     };
 
     for (outputs.items) |o| {
-        const sub_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}{s}", .{ o.name, ext });
+        if (o.result.failed()) continue;
+        const sub_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, o.name, ext });
         if (std.fs.path.dirname(sub_path)) |parent| {
             std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
                 error.PathAlreadyExists => {},
@@ -183,13 +501,49 @@ pub fn run(
             };
         }
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = sub_path, .data = o.result.js });
+
+        // Policy 3 (`13-module-identity`): a `type` of the module is an erlang
+        // module of its own, and the emitted test runner loads every `.erl` it
+        // finds beside itself and below — so the units have to be there. Named
+        // by their atom, in the directory of the module that declares them: a
+        // runner at the root loads the whole tree, and the runner of a module
+        // in a folder (`io/net` under `libs/std`) loads only its own folder, so
+        // a unit written at the root was `{error,undef}` there.
+        const unit_dir = if (std.fs.path.dirname(o.name)) |d| try std.fmt.allocPrint(arena, "{s}/{s}", .{ test_out, d }) else test_out;
+        for (o.result.units) |u| {
+            const unit_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ unit_dir, u.atom, ext });
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
+        }
     }
 
     // Ship runtime `.mjs` sidecars (G2): a dependency's `#[@External.<targert>(...)]` modules
     // sit a directory deeper here than in their own build, so their relative
     // `require("../../src/x.mjs")` would miss the source — copy each into place.
     if (target == .commonJS) {
-        libs.shipMjsSidecars(gpa, io, outputs.items, TEST_OUT_DIR, ext, env_map) catch {};
+        libs.shipMjsSidecars(gpa, io, outputs.items, test_out, ext, env_map) catch |err| switch (err) {
+            // A sidecar the run cannot ship: the located refusal is already
+            // printed, and a suite that cannot load its modules has no verdict.
+            error.SidecarRefused => return 1,
+            else => return err,
+        };
+    }
+
+    // erlang: the same for host `.erl` modules — a `#[@External.Erlang("host",
+    // "fn")]` lowers to `host:fn(…)`, and `host` is a module the library keeps
+    // beside its `.bp` sources. Copying it into the test output is enough: the
+    // emitted runner's `__bp_load_siblings/0` compiles and loads every `.erl`
+    // beside the script before running the tests.
+    if (target == .erlang) {
+        _ = libs.shipErlSidecars(gpa, io, outputs.items, test_out, env_map) catch |err| switch (err) {
+            // A host module that is neither shipped nor in the Erlang code
+            // path: the located refusal is already printed, and every call
+            // into it would be `{error,undef}`.
+            error.SidecarRefused => return 1,
+            else => return err,
+        };
+        // Every `.erl` of the run is now in place: compile each once, here,
+        // instead of once per test module that loads it.
+        precompileErlang(arena, io, test_out, beamCacheDir(arena, env_map));
     }
 
     // commonJS: root-source imports (`import {x};`) emit `require("./module")`
@@ -211,12 +565,14 @@ pub fn run(
             // mid-aggregator-build — the circular `require("./module")` would then
             // see an empty object and its side effects would crash. Exclude them.
             if (isTestModule(o.name, test_modules)) continue;
+            if (o.result.failed()) continue;
             try agg.appendSlice(arena, ", require(\"./");
             try agg.appendSlice(arena, o.name);
             try agg.appendSlice(arena, ".js\")");
         }
         try agg.appendSlice(arena, ");\n");
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = TEST_OUT_DIR ++ "/module.js", .data = agg.items });
+        const agg_path = try std.fmt.allocPrint(arena, "{s}/module.js", .{test_out});
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = agg_path, .data = agg.items });
 
         // Nested modules (a dependency's `jhonstart/hooks.js`) emit a flat
         // `require("./module")` for their bare sibling imports, which would
@@ -226,6 +582,8 @@ pub fn run(
         var seen_dirs = std.StringHashMap(void).init(arena);
         for (outputs.items) |o| {
             if (std.mem.startsWith(u8, o.name, "std/")) continue;
+            // A module that did not lex, parse or type-check is written nowhere.
+            if (o.result.diagnostic != null) continue;
             const dir = std.fs.path.dirname(o.name) orelse continue; // null → top level
             if (seen_dirs.contains(dir)) continue;
             try seen_dirs.put(dir, {});
@@ -238,13 +596,33 @@ pub fn run(
             for (0..depth) |_| try shim.appendSlice(arena, "../");
             try shim.appendSlice(arena, "module\");\n");
 
-            const shim_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}/module.js", .{dir});
+            const shim_path = try std.fmt.allocPrint(arena, "{s}/{s}/module.js", .{ test_out, dir });
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = shim_path, .data = shim.items });
         }
     }
 
     var any_tests = false;
     var exit_code: u8 = 0;
+    // Text mode: how many module runners actually ran. Each prints its OWN
+    // `<P> passed, <F> failed` line, so the last line of a multi-module run is
+    // the last MODULE's count and not the run's — a reading two fronts of
+    // 1.0.10-beta nearly took as a suite baseline. The banner below labels
+    // every summary with the module it belongs to and the footer says how many
+    // there were; `--json` already aggregates one `{"event":"summary",…}` and
+    // gets neither (its stdout channel stays pure JSONL).
+    var modules_ran: usize = 0;
+    // Text mode: how many of those runners exited non-zero — a failing test
+    // or a module that did not load; the footer names the count.
+    var modules_nonzero: usize = 0;
+    // Text mode: the run's total, summed from each module's own summary line,
+    // printed LAST as `total: <P> passed, <F> failed in <N> module(s)` — the
+    // one line of the run a reader (or `botopink-lib-test`) may take as its
+    // count. A module whose runner printed no summary line (it crashed before
+    // its tests finished) is named and fails the run: its tests are in no
+    // total, so a green-looking sum must not survive it.
+    var text_passed_total: usize = 0;
+    var text_failed_total: usize = 0;
+    var no_summary = std.ArrayListUnmanaged([]const u8).empty;
     // JSON mode accumulates `passed`/`failed` across modules so the final
     // `summary` JSON object reflects the whole run, not the last module only.
     var json_passed_total: usize = 0;
@@ -253,11 +631,12 @@ pub fn run(
         // Dependency modules are compiled for their exports, not tested here —
         // run only the project's own `test {}` blocks.
         if (isDepModule(o.name, real_deps.items)) continue;
+        if (o.result.failed()) continue;
         // Modules without test blocks have no runner — skip them.
         if (std.mem.indexOf(u8, o.result.js, "__bp_run_tests") == null) continue;
         any_tests = true;
 
-        const sub_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}{s}", .{ o.name, ext });
+        const sub_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, o.name, ext });
 
         var argv = std.ArrayListUnmanaged([]const u8).empty;
         defer argv.deinit(arena);
@@ -272,6 +651,7 @@ pub fn run(
             // inherit-stdio so live streaming is unchanged when --json is off.
             const result = std.process.run(arena, io, .{
                 .argv = argv.items,
+                .environ_map = child_env,
                 .stdout_limit = .limited(16 * 1024 * 1024),
                 .stderr_limit = .limited(16 * 1024 * 1024),
             }) catch |err| {
@@ -289,29 +669,66 @@ pub fn run(
             };
             json_passed_total += counts.passed;
             json_failed_total += counts.failed;
+            if (parseModuleSummary(result.stdout) == null) try no_summary.append(arena, o.name);
 
             const code: u8 = switch (result.term) {
                 .exited => |c| c,
                 .signal, .stopped, .unknown => 1,
             };
             if (code != 0) exit_code = code;
+            // A runner that ends without its own `<P> passed, <F> failed` line
+            // did not finish — the module did not load (a `SyntaxError`, an
+            // `erlc` refusal) or died mid-run. It is one failure of its own,
+            // never a module that passed nothing and failed nothing.
+            if (!hasRunnerSummary(result.stdout)) {
+                json_failed_total += 1;
+                var rec = std.ArrayListUnmanaged(u8).empty;
+                try rec.appendSlice(arena, "{\"event\":\"module_crashed\",\"module\":");
+                try writeJsonString(arena, &rec, o.name);
+                try rec.appendSlice(arena, ",\"exit\":");
+                try appendDecimal(arena, &rec, if (code == 0) 1 else code);
+                try rec.appendSlice(arena, "}\n");
+                std.Io.File.stdout().writeStreamingAll(io, rec.items) catch {};
+                if (code == 0) exit_code = 1;
+            }
             continue;
         }
 
-        // Spawn and wait — stdio is inherited so the runner reports directly.
-        var child = std.process.spawn(io, .{ .argv = argv.items }) catch |err| {
+        modules_ran += 1;
+        const banner = try std.fmt.allocPrint(arena, "----- TESTS OF {s} -----\n", .{o.name});
+        reporter.stdout(io, banner);
+
+        // Spawn and wait — stderr is inherited; stdout is streamed through
+        // as it arrives (the report stays live) and scanned for the module's
+        // summary line, which the run's total is summed from.
+        var child = std.process.spawn(io, .{ .argv = argv.items, .environ_map = child_env, .stdout = .pipe }) catch |err| {
             const msg = try std.fmt.allocPrint(arena, "failed to spawn '{s}': {s}", .{ runner, @errorName(err) });
             reporter.errMsg(msg);
             return 1;
         };
         defer child.kill(io);
 
+        const summary = try teeModuleStdout(arena, io, child.stdout.?);
+        if (summary) |c| {
+            text_passed_total += c.passed;
+            text_failed_total += c.failed;
+        } else try no_summary.append(arena, o.name);
+
         const term = try child.wait(io);
         const code: u8 = switch (term) {
             .exited => |c| c,
             .signal, .stopped, .unknown => 1,
         };
-        if (code != 0) exit_code = code;
+        if (code != 0) {
+            exit_code = code;
+            modules_nonzero += 1;
+            // The runner's stdout streams straight through, so a module that
+            // did not load (a `SyntaxError`, an `erlc` refusal) prints no
+            // `N passed, M failed` line of its own. Say so under its banner,
+            // so the module never reads as one that ran clean.
+            const tail = try std.fmt.allocPrint(arena, "----- {s} EXITED WITH STATUS {d} -----\n", .{ o.name, code });
+            reporter.stdout(io, tail);
+        }
     }
 
     if (opts.json and any_tests) {
@@ -327,15 +744,182 @@ pub fn run(
         std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
     }
 
-    if (!any_tests) {
-        reporter.stdout(io, "no test blocks found\n");
-        return 0;
+    // `testing.snapshots` writes `<path>.new` on a mismatch or a missing
+    // snapshot, and nothing else says so: name every candidate the project
+    // holds, after the results (stderr under `--json`, which keeps stdout
+    // JSONL).
+    if (any_tests) {
+        const candidates = snapshotCandidates(arena, io) catch &.{};
+        if (candidates.len > 0) {
+            var text: std.ArrayListUnmanaged(u8) = .empty;
+            try text.appendSlice(arena, "----- SNAPSHOT CANDIDATES — a mismatch or a missing snapshot; record one by renaming it without `.new`, never commit it -----\n");
+            for (candidates) |c| {
+                try text.appendSlice(arena, "  ");
+                try text.appendSlice(arena, c);
+                try text.append(arena, '\n');
+            }
+            if (opts.json)
+                std.Io.File.stderr().writeStreamingAll(io, text.items) catch {}
+            else
+                reporter.stdout(io, text.items);
+        }
+    }
+
+    for (no_summary.items) |name| {
+        const msg = try std.fmt.allocPrint(arena, "the tests of '{s}' printed no summary — the module's runner stopped before its tests finished, so they are in no count", .{name});
+        reporter.errMsg(msg);
+        exit_code = 1;
+    }
+
+    if (!opts.json and modules_ran > 0) {
+        // The run's total is the LAST line of the report, so the last line
+        // is never a module's own count again.
+        const footer = try std.fmt.allocPrint(
+            arena,
+            "----- {d} MODULE(S) RAN, {d} EXITED NON-ZERO — each \"N passed, M failed\" above is that module's own -----\n" ++ TOTAL_PREFIX ++ "{d} passed, {d} failed in {d} module(s)\n",
+            .{ modules_ran, modules_nonzero, text_passed_total, text_failed_total, modules_ran },
+        );
+        reporter.stdout(io, footer);
+    }
+
+
+    diagnostics.reportOrphans(arena, src_loaded.orphans.len);
+
+    if (!any_tests) reporter.stdout(io, "no test blocks found\n");
+
+    // A module that failed to compile fails the run, whatever the tests did.
+    if (failed.len > 0) {
+        diagnostics.reportFailedModules(arena, failed);
+        return 1;
     }
 
     return exit_code;
 }
 
+/// Whether a runner's stdout carries its closing `<P> passed, <F> failed`
+/// line — the one line every commonJS / erlang runner prints once all of
+/// its tests have run. Absent, the module did not finish.
+fn hasRunnerSummary(stdout_buf: []const u8) bool {
+    var it = std.mem.splitScalar(u8, stdout_buf, '\n');
+    while (it.next()) |raw| {
+        const line = std.mem.trimEnd(u8, raw, "\r");
+        const sp = std.mem.indexOf(u8, line, " passed, ") orelse continue;
+        if (sp == 0 or !std.mem.endsWith(u8, line, " failed")) continue;
+        const failed = line[sp + " passed, ".len .. line.len - " failed".len];
+        if (failed.len == 0) continue;
+        const digits = struct {
+            fn all(x: []const u8) bool {
+                for (x) |c| if (c < '0' or c > '9') return false;
+                return true;
+            }
+        };
+        if (digits.all(line[0..sp]) and digits.all(failed)) return true;
+    }
+    return false;
+}
+
+test "hasRunnerSummary: a finished runner's line, and a crash without one" {
+    try std.testing.expect(hasRunnerSummary("TEST a:1 x\n  ok   x\n1 passed, 0 failed\n"));
+    try std.testing.expect(hasRunnerSummary("0 passed, 12 failed"));
+    try std.testing.expect(!hasRunnerSummary("SyntaxError: await is only valid in async functions\n"));
+    try std.testing.expect(!hasRunnerSummary("x passed, 0 failed\n"));
+    try std.testing.expect(!hasRunnerSummary(""));
+}
+
+/// Every `*.snap.new` under the project (the cwd), package-relative with `/`
+/// separators, sorted — the candidates `testing.snapshots` wrote. Dot
+/// directories (`.botopinkbuild`, `.git`) and `node_modules` are not entered.
+fn snapshotCandidates(arena: std.mem.Allocator, io: std.Io) ![]const []const u8 {
+    var root = try std.Io.Dir.cwd().openDir(io, ".", .{ .iterate = true });
+    defer root.close(io);
+    var walker = try root.walkSelectively(arena);
+    defer walker.deinit();
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    while (try walker.next(io)) |entry| switch (entry.kind) {
+        .directory => {
+            if (entry.basename.len > 0 and entry.basename[0] == '.') continue;
+            if (std.mem.eql(u8, entry.basename, "node_modules")) continue;
+            try walker.enter(io, entry);
+        },
+        .file => if (std.mem.endsWith(u8, entry.basename, ".snap.new")) {
+            const p = try arena.dupe(u8, entry.path);
+            std.mem.replaceScalar(u8, p, '\\', '/');
+            try out.append(arena, p);
+        },
+        else => {},
+    };
+    std.mem.sort([]const u8, out.items, {}, struct {
+        fn lt(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lt);
+    return out.items;
+}
+
 const JsonCounts = struct { passed: usize, failed: usize };
+
+/// The first bytes of the run's total — the last line `botopink test` prints
+/// in text mode (`total: <P> passed, <F> failed in <N> module(s)`).
+/// `botopink-lib-test` reads a text-mode cell's count from this line.
+pub const TOTAL_PREFIX = "total: ";
+
+/// A module runner's own summary line, `<P> passed, <F> failed` (the commonJS
+/// and erlang runners both print it last); the last such line of `text`, or
+/// null when there is none.
+fn parseModuleSummary(text: []const u8) ?JsonCounts {
+    var found: ?JsonCounts = null;
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |raw| {
+        const line = std.mem.trimEnd(u8, raw, "\r");
+        if (parseSummaryLine(line)) |c| found = c;
+    }
+    return found;
+}
+
+/// `<P> passed, <F> failed`, exactly.
+fn parseSummaryLine(line: []const u8) ?JsonCounts {
+    const mid = " passed, ";
+    const end = " failed";
+    if (!std.mem.endsWith(u8, line, end)) return null;
+    const at = std.mem.indexOf(u8, line, mid) orelse return null;
+    const passed = std.fmt.parseUnsigned(usize, line[0..at], 10) catch return null;
+    const failed = std.fmt.parseUnsigned(usize, line[at + mid.len .. line.len - end.len], 10) catch return null;
+    return .{ .passed = passed, .failed = failed };
+}
+
+/// Copy a module runner's stdout to ours as it arrives and return the
+/// module's summary (its last `<P> passed, <F> failed` line), or null when it
+/// printed none.
+fn teeModuleStdout(arena: std.mem.Allocator, io: std.Io, src: std.Io.File) !?JsonCounts {
+    var found: ?JsonCounts = null;
+    var line: std.ArrayListUnmanaged(u8) = .empty;
+    var buf: [4096]u8 = undefined;
+    while (true) {
+        const n = src.readStreaming(io, &.{&buf}) catch |err| switch (err) {
+            error.EndOfStream => break,
+            else => return err,
+        };
+        if (n == 0) continue;
+        std.Io.File.stdout().writeStreamingAll(io, buf[0..n]) catch {};
+        for (buf[0..n]) |c| {
+            if (c == '\n') {
+                if (parseSummaryLine(std.mem.trimEnd(u8, line.items, "\r"))) |got| found = got;
+                line.clearRetainingCapacity();
+            } else try line.append(arena, c);
+        }
+    }
+    if (parseSummaryLine(std.mem.trimEnd(u8, line.items, "\r"))) |got| found = got;
+    return found;
+}
+
+test "a module summary line is `<P> passed, <F> failed`, and the last one counts" {
+    try std.testing.expectEqual(@as(?JsonCounts, null), parseModuleSummary("TEST a.bp:1 x\n  ok   x\n"));
+    const c = parseModuleSummary("3 passed, 1 failed\nnoise\n12 passed, 0 failed\n").?;
+    try std.testing.expectEqual(@as(usize, 12), c.passed);
+    try std.testing.expectEqual(@as(usize, 0), c.failed);
+    try std.testing.expectEqual(@as(?JsonCounts, null), parseSummaryLine("x passed, 0 failed"));
+    try std.testing.expectEqual(@as(?JsonCounts, null), parseSummaryLine("1 passed, 0 failed!"));
+}
 
 /// Parse the §T text envelope emitted by the commonJS / erlang runners and
 /// re-emit each test result as a single-line JSON object on stdout. Returns

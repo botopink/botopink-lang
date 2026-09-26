@@ -5,9 +5,8 @@
   "src": "src/",
   "entry": "root.bp",
   "files": [
-    "primitives.d.bp",
-    "array.d.bp",
-    "string.d.bp",
-    "builtins.d.bp"
+    "primitives.bp",
+    "builtins.d.bp",
+    "builtins_fns.d.bp"
   ]
 }

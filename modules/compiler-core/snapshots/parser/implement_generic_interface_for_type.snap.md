@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "E",
         "id": 1,
         "isPub": false,
@@ -12,16 +12,18 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "tag",
-            "typeRef": {
-              "named": "string"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+        "shape": {
+          "record": [
+            {
+              "name": "tag",
+              "typeRef": {
+                "named": "string"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": []
       }
@@ -40,9 +42,6 @@
             "generic": {
               "name": "Context",
               "args": [
-                {
-                  "named": "E"
-                },
                 {
                   "named": "E"
                 }

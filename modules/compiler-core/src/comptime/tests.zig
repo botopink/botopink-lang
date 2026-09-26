@@ -14,6 +14,7 @@ test {
     _ = @import("tests/templates.zig");
     _ = @import("tests/decorators.zig");
     _ = @import("tests/decorator_invocation.zig");
+    _ = @import("tests/decorator_regression.zig");
     _ = @import("tests/generic_defaults.zig");
     _ = @import("tests/std_target_gating.zig");
     _ = @import("tests/narrowing.zig");
@@ -22,8 +23,26 @@ test {
     _ = @import("tests/effect_generator.zig");
     _ = @import("tests/builtins_typeinfo.zig");
     _ = @import("tests/eval_pipeline.zig");
+    _ = @import("tests/type_alias.zig");
+    _ = @import("./alias_erase.zig");
+    _ = @import("./std_namespace.zig");
     _ = @import("primOpTemplate.zig");
+    _ = @import("./snapshot.zig");
     _ = @import("./diagnostics.zig");
+    _ = @import("./eval.zig");
+    _ = @import("./trace.zig");
     _ = @import("./template_eval.zig");
     _ = @import("./decorator_eval.zig");
+    _ = @import("./runtime/persistent_beam.zig");
+    _ = @import("./runtime/runtime.zig");
+    _ = @import("./runtime/prelude.zig");
+    _ = @import("./runtime/etf.zig");
+    _ = @import("./runtime/persistent_wat.zig");
+    _ = @import("./runtime/parity.zig");
+    _ = @import("./runtime/reply_order.zig");
+    _ = @import("./runtime/wat/erl_parse.zig");
+    _ = @import("./runtime/wat/program.zig");
+    _ = @import("./runtime/beam/lower.zig");
+    _ = @import("./runtime/beam/program.zig");
+    _ = @import("./runtime/wat/rt.zig");
 }

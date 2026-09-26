@@ -1,0 +1,2 @@
+`moduleNamed`'s `#[@External.Erlang(…)]` template does not compile for the beam backend: macros (`?NAME`)
+13:12

@@ -6,9 +6,14 @@
 # Covers, with skips when a runtime is absent:
 #   • numeric  — pure arithmetic, runs on commonJS/erlang/beam/wasm → 55 (incl.
 #     the wasm `--invoke main` numeric smoke)
-#   • records  — records+enum+case+lambda, runs on commonJS/erlang/beam → 10
+#   • records  — records+enum+case+lambda, runs on commonJS/erlang, and on beam
+#     (`main:main()` → 3)
 #   • modules  — a multi-folder `mod`/`pub mod` package (examples/modules) builds
-#     + runs end-to-end on commonJS/erlang
+#     + runs end-to-end on commonJS
+#
+# Every cell is a hard assert; there are no pinned reds. A cell whose backend is
+# red today is not run at all and is listed in ../AGENTS.md ("Cells not run")
+# with the front that restores it.
 #
 # Exit 0 = every reachable (backend, fixture) cell ran and matched.
 
@@ -38,21 +43,26 @@ run_test_target() {
   ( cd "$dir" && "$BP_BIN" test --target "$target" )
 }
 
-# Pin a KNOWN BEAM red: the build (erlc) MUST succeed, but the run is only
-# informational — BEAM mis-codegens this shape (case dispatch / lambda /
-# call-result arithmetic), a Front-A gap. Never fails the harness; if the result
-# ever becomes correct, it says so loudly so the pin can be promoted to a hard
-# assert. See front-c-runtime.md C2.
-pin_beam_red() {
-  local dir="$1" want="$2" what="$3"
-  echo "==> [$(basename "$dir")] beam (KNOWN RED — $what): build must pass; run informational"
-  ( cd "$dir" && "$BP_BIN" build --target beam && erlc +from_asm -o out out/main.S )
+# Build the BEAM assembly, assemble it with `erlc +from_asm` and assert that
+# `main:main()` prints as $want.
+run_beam() {
+  local dir="$1" want="$2"
+  echo "==> [$(basename "$dir")] beam: build + erlc +from_asm + main:main()"
+  # 13 half 1: an erlang/BEAM artifact is named by its module atom under
+  # `out/<target>/`, because `erlc` refuses a `-module` atom that differs from
+  # its file's basename. `-o out` still puts the `.beam` where `-pa out` looks.
+  # Decision 109: the atom starts with the package — the fixture's directory
+  # name is its `botopink.json` `name`.
+  local entry
+  entry="$(basename "$dir")@main"
+  ( cd "$dir" && "$BP_BIN" build --target beam && erlc +from_asm -o out "out/beam/$entry.S" )
   local got
-  got="$( cd "$dir" && erl -noshell -pa out -eval 'io:format("~p", [main:main()]), halt(0)' 2>/dev/null || true )"
+  got="$( cd "$dir" && erl -noshell -pa out -eval "io:format(\"~p\", [$entry:main()]), halt(0)" 2>/dev/null || true )"
   if [[ "$got" == "$want" ]]; then
-    echo "  beam: main:main() => $got  ✓ ($what looks FIXED — promote to a hard assert)"
+    echo "  beam: main:main() => $got"
   else
-    echo "  beam: main:main() => ${got:-<crash>} (want $want; $what is a pinned Front-A red)"
+    echo "  beam: WRONG '${got:-<crash>}' (expected $want)" >&2
+    exit 1
   fi
 }
 
@@ -71,25 +81,15 @@ run_wasm() {
   fi
 }
 
-# Pin a KNOWN run-time red on a whole backend: the run is expected to fail
-# (Front-A codegen gap); informational, never aborts. Flags loudly if it starts
-# passing so the pin can be promoted. See front-c-runtime.md C2.
-pin_run_red() {
-  local dir="$1" target="$2" what="$3"
-  echo "==> [$(basename "$dir")] run --target $target (KNOWN RED — $what): informational"
-  if ( cd "$dir" && "$BP_BIN" run --target "$target" ) >/dev/null 2>&1; then
-    echo "  run: SUCCEEDED — $what looks FIXED (promote to a hard assert)"
-  else
-    echo "  run: failed as expected ($what is a pinned Front-A red)"
-  fi
-}
-
-# `botopink run` a package and assert each expected line is in its output.
+# `botopink run` a package and assert each expected line is in its output. The
+# artifacts go to a temporary `--out`, so a tracked example tree stays clean.
 run_package() {
   local dir="$1" target="$2"; shift 2
   echo "==> [$(basename "$dir")] run --target $target"
-  local out
-  out="$( cd "$dir" && "$BP_BIN" run --target "$target" )"
+  local out out_dir
+  out_dir="$(mktemp -d "${TMPDIR:-/tmp}/botopink-backend-exec.XXXXXX")"
+  out="$( cd "$dir" && "$BP_BIN" run --target "$target" --out "$out_dir" )"
+  rm -rf "$out_dir"
   echo "$out"
   for needle in "$@"; do
     if ! grep -qx "$needle" <<<"$out"; then
@@ -117,14 +117,21 @@ if have wasmtime; then run_wasm "$NUMERIC" 55; else echo "==> numeric wasm: SKIP
 # ── records (commonJS / erlang / beam) ───────────────────────────────────────
 if have node; then run_test_target "$RECORDS" commonJS; else echo "==> records commonJS: SKIPPED (no node)"; fi
 if have escript; then run_test_target "$RECORDS" erlang; else echo "==> records erlang: SKIPPED (no escript)"; fi
-if have erlc && have erl; then pin_beam_red "$RECORDS" 3 "case-dispatch/lambda codegen"; else echo "==> records beam: SKIPPED (no erlc/erl)"; fi
+if have erlc && have erl; then run_beam "$RECORDS" 3; else echo "==> records beam: SKIPPED (no erlc/erl)"; fi
 
-# ── multi-folder mod package (commonJS green; erlang a pinned red) ────────────
-# commonJS runs the `mod`/`pub mod` tree end-to-end. The erlang backend currently
-# emits cross-module calls (`area`, `describe`, `lucky`) as bare local calls
-# rather than qualified `geometry:area` / `shapes:describe`, so escript rejects
-# the module — a Front-A erlang module-system codegen gap, pinned here.
+# ── multi-folder mod package (commonJS / erlang) ─────────────────────────────
+# commonJS and erlang both run the `mod`/`pub mod` tree end-to-end. The erlang
+# cell used to be skipped, and **not** because of the backend: the emitted calls
+# were already properly qualified (`geometry:area/2`, `shapes:describe/0`,
+# `shapes:lucky/0`). `botopink run --target erlang` spawned `escript
+# out/main.erl`, and escript compiles only the file it is handed, so the sibling
+# module was `undef` (`undefined function geometry:area/2`). Front
+# `13-module-identity` half 1 fixed `cli/run.zig` at the shape front 10
+# measured — `erlc -o <out>/erl` over every emitted `.erl`, then
+# `erl -noshell -pa <out>/erl`, which is what the beam arm of
+# `tests/language/run.sh` already uses — so the cell is restored here exactly as
+# that analysis asked.
 if have node; then run_package "$MODULES" commonJS 12 circle 7; else echo "==> modules commonJS: SKIPPED (no node)"; fi
-if have escript; then pin_run_red "$MODULES" erlang "erlang cross-module call qualification"; else echo "==> modules erlang: SKIPPED (no escript)"; fi
+if have erlc && have erl; then run_package "$MODULES" erlang 12 circle 7; else echo "==> modules erlang: SKIPPED (no erlc/erl)"; fi
 
 echo "==> backend-execution parity: OK"

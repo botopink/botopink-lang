@@ -1,0 +1,42 @@
+//// A `return` in the arm of a `case` used as a STATEMENT ends the function,
+//// as it does in an `if` block — a valued one, one nested in an `if` inside
+//// the arm, and a bare one in a function returning nothing. On erlang the
+//// `case` lowered as a statement whose value was discarded; on commonJS it is
+//// an arrow function called in place, and the arm's `return` returned from
+//// that arrow. Both printed `many` for `byCase(1)` at exit 0.
+
+fn byCase(n: i32) -> string {
+    case n {
+        1 { return "one"; }
+        _ { @print("other"); }
+    };
+    return "many";
+}
+
+fn nested(n: i32) -> string {
+    case n {
+        0 { @print("zero"); }
+        _ {
+            if (n > 10) { return "big"; };
+            @print("small");
+        }
+    };
+    return "done";
+}
+
+fn announce(n: i32) {
+    case n {
+        0 { return; }
+        _ { @print("announce"); }
+    };
+    @print(n);
+}
+
+pub fn main() {
+    @print(byCase(1));
+    @print(byCase(2));
+    @print(nested(20));
+    @print(nested(5));
+    announce(0);
+    announce(3);
+}

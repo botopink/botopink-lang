@@ -1,0 +1,34 @@
+//// Decisions 122 and 125 of 1.0.10-beta (front 24, § Cells "Prefixed loops";
+//// guide.md § 6.1 and § 9, row `#[@resultGenerator] loop { … }`) — the item of an
+//// `iter` loop becomes `@Result<U, E>` on its own when the body has `throw` /
+//// `try`: `checked` (a `try` per item) and `limited` (a `throw`) are
+//// unannotated and passed where `@Iterator<@Result<i32, string>>` is expected.
+//// A failing `try` or a `throw` emits `Error(e)` and ends the sequence.
+
+fn check(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative " + n.toString(); };
+    return n;
+}
+
+fn walk(name: string, it: @Iterator<@Result<i32, string>>) {
+    for (it) { r ->
+        case r {
+            Ok(v) -> @print(name + " ok " + v.toString());
+            Error(e) -> @print(name + " error " + e);
+        };
+    };
+    @print(name + " done");
+}
+
+pub fn main() {
+    val checked = iter for ([1, -2, 3]) { x -> yield try check(x); };
+    walk("try", checked);
+
+    var k = 0;
+    val limited = iter loop {
+        k = k + 1;
+        if (k > 2) { throw "stop at " + k.toString(); };
+        yield k;
+    };
+    walk("throw", limited);
+}

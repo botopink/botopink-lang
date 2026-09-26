@@ -1,0 +1,109 @@
+//// actions/rpc — the JSON-RPC body a scripted action call sends:
+////
+////     {"v":1,"id":"<action id>","args":["…", …]}
+////
+//// Written by the browser, read by the server with std's `json.decode`.
+//// Reading is strict (decision 67): not JSON, not an object, `v` other than
+//// `1`, a missing or empty `id`, an `id` that is not a string, and `args` that
+//// is not an array of strings are each an `Error` naming what was wrong — the
+//// server answers it as a 400. A missing `args` is the empty list; an unknown
+//// key is ignored.
+
+import {json.Json, json.decode, json.quote, json.array, json.object} from "std";
+
+pub type RpcCall(id: string, args: Array<string>)
+
+pub fn writeRpcBody(call: RpcCall) -> string {
+    return object(
+        [
+            #("v", "1"),
+            #("id", quote(call.id)),
+            #("args", array(call.args.map({ a -> quote(a) }))),
+        ],
+    );
+}
+
+fn kindName(v: Json) -> string {
+    return case v {
+        Null -> "null";
+        Bool(value: _) -> "a boolean";
+        Num(value: _) -> "a number";
+        Str(value: _) -> "a string";
+        Arr(items: _) -> "an array";
+        Obj(members: _) -> "an object";
+    };
+}
+
+fn membersOf(v: Json) -> Array<#(string, Json)> {
+    return case v {
+        Obj(members: ms) -> ms;
+        _ -> [];
+    };
+}
+
+fn fieldOf(ms: Array<#(string, Json)>, key: string) -> ?Json {
+    val hit = ms.filter({ m -> m._0 == key });
+    if (hit.length == 0)
+        return null
+    else
+        return hit.at(0).unwrapOr(#("", Json.Null))._1;
+}
+
+fn strOf(v: Json) -> string {
+    return case v {
+        Str(value: s) -> s;
+        _ -> "";
+    };
+}
+
+fn isOne(v: Json) -> bool {
+    return case v {
+        Num(value: x) -> x == 1.0;
+        _ -> false;
+    };
+}
+
+fn itemsOf(v: Json) -> Array<Json> {
+    return case v {
+        Arr(items: xs) -> xs;
+        _ -> [];
+    };
+}
+
+fn errorOf(r: @Result<Json, string>) -> string {
+    val t = case r {
+        Ok(_) -> "";
+        Error(e) -> e;
+    };
+    return t;
+}
+
+pub fn parseRpcBody(body: string) -> @Result<RpcCall, string> {
+    // An empty or whitespace-only body is named as such, not as "not JSON".
+    if (body.trim() == "") throw "actions.parseRpcBody: the body is empty";
+    val doc = decode(body);
+    if (doc.isError())
+        throw ["actions.parseRpcBody: not JSON (", errorOf(doc), ")"].join("");
+    val root = doc.unwrapOr(Json.Null);
+    if (kindName(root) != "an object")
+        throw [
+            "actions.parseRpcBody: the body must be an object, not ",
+            kindName(root),
+        ].join("");
+    val ms = membersOf(root);
+    if (isOne(fieldOf(ms, "v") ?? Json.Null).negate())
+        throw "actions.parseRpcBody: `v` must be 1 - this reader knows version 1 only";
+    val id = fieldOf(ms, "id") ?? Json.Null;
+    if (kindName(id) != "a string")
+        throw [
+            "actions.parseRpcBody: `id` must be a string, not ",
+            kindName(id),
+        ].join("");
+    if (strOf(id) == "") throw "actions.parseRpcBody: `id` is empty";
+    val args = fieldOf(ms, "args") ?? Json.Arr(items: []);
+    val items = itemsOf(args);
+    if (kindName(args) != "an array"
+        || items.filter({ x -> kindName(x) != "a string" }).length > 0)
+        throw "actions.parseRpcBody: `args` must be an array of strings";
+    return RpcCall(id: strOf(id), args: items.map({ x -> strOf(x) }));
+}

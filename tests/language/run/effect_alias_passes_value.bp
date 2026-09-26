@@ -1,0 +1,23 @@
+//// Decision 118 rule 1 of 1.0.10-beta (front 24, § Cells "Return and effect
+//// mode", last line) — an alias of a wrapper types a function and never
+//// activates the effect; a function that uses no capability (it only passes a
+//// value along) may be written against the alias. `pass` has no `throw`, `try`
+//// or `await`, so its aliased return is legal; `reject/effect_wrapper_behind_alias.bp`
+//// is the refused half. The alias declaration is the guide's spelling
+//// (`type Name<T> = …;`), which does not parse at compiler `82e32e36`.
+
+pub type Checked<T> = @Result<T, string>;
+
+fn check(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+fn pass(r: Checked<i32>) -> Checked<i32> {
+    return r;
+}
+
+pub fn main() {
+    @print(pass(check(4)).unwrapOr(0));
+    @print(pass(check(-4)).unwrapOr(0));
+}

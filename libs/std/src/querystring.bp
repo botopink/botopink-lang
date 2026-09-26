@@ -1,90 +1,249 @@
-//// std/querystring — application/x-www-form-urlencoded primitives.
+//// std/querystring — the query-string codec: RFC 3986 query components and
+//// the `application/x-www-form-urlencoded` flavour.
 ////
 //// Reference:
+////   RFC 3986 §2.1 (percent-encoding), §3.4 (query)
+////   WHATWG URL — application/x-www-form-urlencoded (`+` is a space)
 ////   Node.js  — https://nodejs.org/api/querystring.html
 ////   Erlang   — https://www.erlang.org/doc/apps/stdlib/uri_string.html
-////              (`uri_string:compose_query/1` and `dissect_query/1`)
 ////
-//// Pure-botopink — works on every backend including wat. The surface is
-//// `parse(query) -> Array<#(string, string)>` and `stringify(pairs) ->
-//// string`. URI percent-encoding for component values is deferred (the
-//// host bindings `encodeURIComponent` / `uri_string:quote` need a richer
-//// `#[@External.<targert>(...)]` template grammar than the bare-symbol form lands today
-//// — tracked under the prim-op-annotation spec). Inputs/outputs containing
-//// `&` or `=` round-trip incorrectly until that lands; the call site should
-//// pre-escape. Empty values are preserved; leading `?` is stripped from
-//// `parse`.
+//// A codec, not a splitter. `parse` / `parseForm` split on `&`, each field
+//// on its FIRST `=` (a field with no `=` is a name with an empty value; an
+//// empty field is dropped), and percent-decode both sides; `parseForm`
+//// also reads `+` as a space, `parse` keeps it as a `+`. `stringify`
+//// percent-encodes every byte outside the RFC 3986 unreserved set, so its
+//// output reads back through either parser.
+////
+//// Refused, never kept as written (rakun's 03r-e rule, as a refusal): a `%`
+//// not followed by two hex digits, an escape sequence that is not UTF-8, and
+//// a control character (U+0000–U+001F, U+007F) — raw, or as the escape that
+//// would decode to one. A parser that can produce a newline is how a newline
+//// reaches a header. `stringify` refuses a control character too, so every
+//// text it writes is one `parse` reads back.
+////
+//// The two host cells below are `encoding.percentEncode` / `percentDecode`'s
+//// templates, private here because a std module cannot import a sibling
+//// (`01-std-lib-enablement` § Mechanism): the same bytes on commonJS and
+//// erlang, and the refusals above are decided in botopink before either
+//// cell runs.
+
+// `encoding.percentEncode`'s cell: RFC 3986 unreserved set, `%XX` uppercase;
+// the Node template also encodes the `!'()*` `encodeURIComponent` leaves.
+#[@External.Node("""encodeURIComponent($0).replace(/[!'()*]/g, __c => '%' + __c.charCodeAt(0).toString(16).toUpperCase())""")]
+#[@External.Erlang("uri_string:quote($0)")]
+declare fn percentEncode(s: string) -> string;
+
+// `encoding.percentDecode`'s cell: a sequence that is not UTF-8 is an `Error`.
+#[@External.Node("""(() => { try { return { ok: decodeURIComponent($0) } } catch (__e) { return { error: 'not percent-encoded' } } })()""")]
+#[@External.Erlang("""(fun(__S) -> try uri_string:unquote(__S) of __U when is_binary(__U) -> case unicode:characters_to_binary(__U) of __V when is_binary(__V) -> {ok, __V}; _ -> {error, <<"not percent-encoded">>} end; _ -> {error, <<"not percent-encoded">>} catch _:_ -> {error, <<"not percent-encoded">>} end end)($0)""")]
+declare fn percentDecode(s: string) -> @Result<string, string>;
+
+// `encoding.hexDecode`'s cell, for the tests only: non-ASCII text enters a
+// test through its UTF-8 hex, never a literal (the erlang backend lowers a
+// non-ASCII literal to latin1).
+#[@External.Node("""Buffer.from($0, 'hex').toString('utf8')""")]
+#[@External.Erlang("""binary:decode_hex($0)""")]
+declare fn utf8OfHex(h: string) -> string;
 
 // Strip an optional leading `?` from a URL's query portion. Idempotent.
 fn stripPrefix(query: string) -> string {
-    if (query.startsWith("?")) {
-        return query.slice(1, query.length);
-    };
+    if (query.startsWith("?")) return query.slice(1, query.length);
     return query;
 }
 
-fn parsePair(chunk: string) -> #(string, string) {
-    val parts = chunk.split("=");
-    val key = parts.at(0).unwrapOr("");
-    val value = if (parts.length >= 2) {
-        parts.at(1).unwrapOr("");
-    } else {
-        "";
+fn isHexDigit(c: string) -> bool {
+    return c != "" && "0123456789abcdefABCDEF".contains(c);
+}
+
+fn isControl(c: string) -> bool {
+    val code = c.charCodeAt(0);
+    return code >= 0 && (code < 32 || code == 127);
+}
+
+// Whether `%<h1><h2>` decodes to a control character: `%00`–`%1F` or `%7F`.
+// A byte below 0x80 is never part of a multi-byte UTF-8 sequence, so the
+// escape alone decides it.
+fn isControlEscape(h1: string, h2: string) -> bool {
+    return h1 == "0" || h1 == "1" || (h1 == "7" && (h2 == "f" || h2 == "F"));
+}
+
+// The first problem in one raw component from index `i`, or `""` when it may
+// be decoded. Walks the string by `at`: a `%` reads its two digits by index,
+// which a `split("")` piece list would only re-index.
+fn scan(s: string, i: i32) -> string {
+    if (i >= s.length) return "";
+    val c = s.at(i).unwrapOr("");
+    if (c == "%") {
+        val h1 = s.at(i + 1).unwrapOr("");
+        val h2 = s.at(i + 2).unwrapOr("");
+        if ((isHexDigit(h1) && isHexDigit(h2)) == false) return "a `%` not followed by two hex digits";
+        if (isControlEscape(h1, h2)) return "an escape that decodes to a control character";
+        return scan(s, i + 3);
     };
-    return #(key, value);
+    if (isControl(c)) return "a control character";
+    return scan(s, i + 1);
 }
 
-// Parse a form-urlencoded query into an ordered list of `#(key, value)`
-// pairs. Duplicate keys are preserved (Node's `querystring.parse` collapses
-// them into arrays; the simpler pair-list shape leaves that policy to the
-// caller and reads with `Dict<string, string>.fromList`).
-pub fn parse(query: string) -> Array<#(string, string)> {
-    val body = stripPrefix(query);
-    if (body == "") {
-        return [];
-    };
-    return body.split("&")
-        .filter({ chunk -> chunk != "" })
-        .map({ chunk -> parsePair(chunk) });
+// One raw component decoded, `+` first read as a space when `form`.
+fn decodeComponent(raw: string, form: bool) -> @Result<string, string> {
+    val text = if (form) raw.replaceAll("+", " ") else raw;
+    val problem = scan(text, 0);
+    if (problem != "") throw "querystring.parse: " + problem;
+    val decoded = percentDecode(text);
+    if (decoded.isError()) throw "querystring.parse: an escape sequence that is not UTF-8";
+    return decoded.unwrapOr("");
 }
 
-fn joinPair(p: #(string, string)) -> string {
-    return [p._0, "=", p._1].join("");
+// One `name=value` field, split on its FIRST `=`.
+fn decodeField(field: string, form: bool) -> @Result<#(string, string), string> {
+    val eq = field.indexOf("=");
+    val rawName = if (eq < 0) field else field.slice(0, eq);
+    val rawValue = if (eq < 0) "" else field.slice(eq + 1, field.length);
+    val name = try decodeComponent(rawName, form);
+    val value = try decodeComponent(rawValue, form);
+    return #(name, value);
 }
 
-// Serialize an ordered list of `#(key, value)` pairs into a form-
-// urlencoded string. Empty input yields `""`; the result has no leading
-// `?` (the caller adds it when composing a URL).
-pub fn stringify(pairs: Array<#(string, string)>) -> string {
-    return pairs
-        .map({ p -> joinPair(p) })
-        .join("&");
+fn decodeFields(fields: string[], i: i32, form: bool, acc: Array<#(string, string)>) -> @Result<Array<#(string, string)>, string> {
+    if (i >= fields.length) return acc;
+    val pair = try decodeField(fields.at(i).unwrapOr(""), form);
+    return try decodeFields(fields, i + 1, form, acc.append([pair]));
+}
+
+fn decodeBody(body: string, form: bool) -> @Result<Array<#(string, string)>, string> {
+    val fields = body.split("&").filter({ chunk -> chunk != "" });
+    val none: Array<#(string, string)> = [];
+    return try decodeFields(fields, 0, form, none);
+}
+
+// Parse a URL query (RFC 3986) into its ordered `#(name, value)` pairs, a
+// leading `?` stripped. Duplicate names are kept in order (Node's
+// `querystring.parse` folds them into arrays; the pair list leaves that to
+// the caller). `+` is a `+` here — `parseForm` is the flavour that reads it
+// as a space. A malformed escape, a non-UTF-8 escape sequence or a control
+// character is an `Error`.
+pub fn parse(query: string) -> @Result<Array<#(string, string)>, string> {
+    return try decodeBody(stripPrefix(query), false);
+}
+
+// Parse an `application/x-www-form-urlencoded` body: `parse`'s rules with
+// `+` read as a space before decoding. A form body is not a URL, so a
+// leading `?` is data, not stripped.
+pub fn parseForm(body: string) -> @Result<Array<#(string, string)>, string> {
+    return try decodeBody(body, true);
+}
+
+fn hasControlFrom(s: string, i: i32) -> bool {
+    if (i >= s.length) return false;
+    if (isControl(s.at(i).unwrapOr(""))) return true;
+    return hasControlFrom(s, i + 1);
+}
+
+fn hasControl(s: string) -> bool {
+    return hasControlFrom(s, 0);
+}
+
+// Serialize ordered `#(name, value)` pairs: each side percent-encoded over
+// the RFC 3986 unreserved set (a space is `%20`, a `+` is `%2B`, so the text
+// reads back through `parse` and `parseForm` alike), joined with `&`. Empty
+// input is `""`; there is no leading `?`. A control character in a name or a
+// value is an `Error` — `parse` would refuse the text it became.
+pub fn stringify(pairs: Array<#(string, string)>) -> @Result<string, string> {
+    val bad = pairs.filter({ p -> hasControl(p._0) || hasControl(p._1) });
+    if (bad.length > 0) throw "querystring.stringify: a control character";
+    return pairs.map({ p -> [percentEncode(p._0), "=", percentEncode(p._1)].join("") }).join("&");
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
+fn pairsOf(r: @Result<Array<#(string, string)>, string>) -> string {
+    val none: Array<#(string, string)> = [];
+    return r.unwrapOr(none).map({ p -> [p._0, "=>", p._1].join("") }).join("|");
+}
+
+fn problemOf<T>(r: @Result<T, string>) -> string {
+    val text = case r {
+        Ok(_v) -> "";
+        Error(e) -> e;
+    };
+    return text;
+}
+
 test "querystring.parse splits ampersand-separated pairs" {
-    val out = parse("a=1&b=2&c=3");
-    assert out.length == 3;
-    val first = out.at(0).unwrapOr(#("", ""));
-    assert first._0 == "a";
-    assert first._1 == "1";
+    assert pairsOf(parse("a=1&b=2&c=3")) == "a=>1|b=>2|c=>3";
 }
 
 test "querystring.parse strips the leading question mark" {
-    val out = parse("?x=42");
-    assert out.length == 1;
-    val first = out.at(0).unwrapOr(#("", ""));
-    assert first._0 == "x";
-    assert first._1 == "42";
+    assert pairsOf(parse("?x=42")) == "x=>42";
 }
 
 test "querystring.parse on empty input yields the empty list" {
-    val out = parse("");
-    assert out.length == 0;
+    assert parse("").unwrapOr([#("?", "?")]).length == 0;
+    assert parse("?").unwrapOr([#("?", "?")]).length == 0;
 }
 
-test "querystring.stringify reverses parse" {
-    val pairs = [#("a", "1"), #("b", "2")];
-    assert stringify(pairs) == "a=1&b=2";
+test "querystring.parse splits a field on its first equals sign" {
+    assert pairsOf(parse("c=d=e&flag&=v")) == "c=>d=e|flag=>|=>v";
+}
+
+test "querystring.parse drops empty fields and keeps duplicates in order" {
+    assert pairsOf(parse("a=1&&a=2&")) == "a=>1|a=>2";
+}
+
+test "querystring.parse percent-decodes names and values" {
+    assert pairsOf(parse("?a=%20b&k%3Dx=%26%3D%25")) == "a=> b|k=x=>&=%";
+    // Two escapes that are one UTF-8 character: U+00E9.
+    assert pairsOf(parse("n=caf%C3%A9")) == pairsOf(parse("n=caf%c3%a9"));
+    assert parse("n=caf%C3%A9").unwrapOr([]).at(0).unwrapOr(#("", ""))._1 == ["caf", utf8OfHex("c3a9")].join("");
+}
+
+test "querystring.parse keeps a plus sign, parseForm reads it as a space" {
+    assert pairsOf(parse("q=a+b%2Bc")) == "q=>a+b+c";
+    assert pairsOf(parseForm("q=a+b%2Bc")) == "q=>a b+c";
+    assert pairsOf(parseForm("?x=1")) == "?x=>1";
+}
+
+test "querystring.parse refuses a malformed escape" {
+    assert problemOf(parse("a=%zz")) == "querystring.parse: a `%` not followed by two hex digits";
+    assert problemOf(parse("a=100%")) == "querystring.parse: a `%` not followed by two hex digits";
+    assert problemOf(parse("a%2=1")) == "querystring.parse: a `%` not followed by two hex digits";
+    assert problemOf(parseForm("a=%g0")) == "querystring.parse: a `%` not followed by two hex digits";
+}
+
+test "querystring.parse refuses an escape that decodes to a control character" {
+    assert problemOf(parse("a=%0A")) == "querystring.parse: an escape that decodes to a control character";
+    assert problemOf(parse("a=x%0dy")) == "querystring.parse: an escape that decodes to a control character";
+    assert problemOf(parse("%00=a")) == "querystring.parse: an escape that decodes to a control character";
+    assert problemOf(parseForm("a=%7f")) == "querystring.parse: an escape that decodes to a control character";
+    assert parse("a=%7E%20%21").isOk();
+}
+
+test "querystring.parse refuses a raw control character" {
+    assert problemOf(parse("a=x\ny")) == "querystring.parse: a control character";
+    assert problemOf(parse("a\t=1")) == "querystring.parse: a control character";
+}
+
+test "querystring.parse refuses an escape sequence that is not UTF-8" {
+    assert problemOf(parse("a=%C3")) == "querystring.parse: an escape sequence that is not UTF-8";
+    assert problemOf(parse("a=%FF%FE")) == "querystring.parse: an escape sequence that is not UTF-8";
+}
+
+test "querystring.stringify percent-encodes names and values" {
+    assert stringify([#("a", "1"), #("b", "2")]).unwrapOr("?") == "a=1&b=2";
+    assert stringify([#("a b", "c;d"), #("k=x", "&+%")]).unwrapOr("?") == "a%20b=c%3Bd&k%3Dx=%26%2B%25";
+    assert stringify([#("-._~", "")]).unwrapOr("?") == "-._~=";
+    val none: Array<#(string, string)> = [];
+    assert stringify(none).unwrapOr("?") == "";
+}
+
+test "querystring.stringify refuses a control character" {
+    assert problemOf(stringify([#("a", "x\ny")])) == "querystring.stringify: a control character";
+    assert problemOf(stringify([#("a\u{7f}", "1")])) == "querystring.stringify: a control character";
+}
+
+test "querystring.stringify reads back through parse and parseForm" {
+    val pairs = [#("a b", "c=d&e"), #("plus+", "100%"), #("", "x")];
+    val text = stringify(pairs).unwrapOr("?");
+    assert pairsOf(parse(text)) == "a b=>c=d&e|plus+=>100%|=>x";
+    assert pairsOf(parseForm(text)) == pairsOf(parse(text));
 }

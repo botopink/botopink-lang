@@ -11,7 +11,7 @@ pub const Status = enum {
     pass,
     /// A red `.bp` test — the only status that fails the whole run.
     fail,
-    /// The lib has no test blocks; nothing was run.
+    /// The lib has no test blocks; `botopink build` compiled it, nothing ran.
     no_tests,
     /// The target is not yet runnable (beam/wasm today) and `--strict` is off.
     skipped_unsupported,

@@ -1,0 +1,21 @@
+//// String interpolation and the pipe operator — both documented in `docs.md`
+//// and used nowhere in `libs/std` or `examples/`, so nothing else would notice
+//// them breaking.
+
+fn double(x: i32) -> i32 { return x * 2; }
+
+fn inc(x: i32) -> i32 { return x + 1; }
+
+test "interpolation splices a value into a string" {
+    val name = "bp";
+    assert "hi ${name}!" == "hi bp!";
+}
+
+test "interpolation splices an expression" {
+    val n = 20;
+    assert "n=${n + 1}" == "n=21";
+}
+
+test "the pipe feeds the left operand into the right" { assert (3 |> double) == 6; }
+
+test "pipes chain left to right" { assert (3 |> double |> inc) == 7; }

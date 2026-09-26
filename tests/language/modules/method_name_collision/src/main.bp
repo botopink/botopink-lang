@@ -1,0 +1,54 @@
+//// Decision 21's T2 on the METHOD axis — a method call whose receiver carries
+//// no type inference could place. Policy 3 puts a method in its TYPE's module
+//// on erlang, so the call needs an owner module, and the owner came from the
+//// method's name alone when nothing else declared it. The name only identifies
+//// a type when nothing else declares it — and "nothing else" is every type the
+//// PROGRAM declares, not the ones this file happens to import.
+////
+//// Here `main` imports both `toArray`s and the receiver of each call is a
+//// generic return from another module, which inference leaves untyped. The
+//// imported index was keyed by the method NAME alone, first writer wins, with
+//// no dissent check, so the export index's hash iteration order picked one of
+//// the two owners for BOTH calls, and both defect shapes are on the page:
+//// `Grouping`'s body over a `Query` reads past the tuple and the program dies
+//// with `{error, badarg}` (which is how it was measured on this branch, on the
+//// first line), while `Query`'s body over a `Grouping` reads the neighbouring
+//// `key` and answers `1` where commonJS answers `2`, with nothing said about
+//// it. Both are the one defect, and which one runs is not a choice this
+//// program makes.
+////
+//// The local collision below is the control: `putMethodOwner` has always keyed
+//// `method_owners` by `name/arity` and cleared the entry when a second type
+//// claimed it, so the name never decided on its own inside one module.
+////
+//// wasm is not in `targets`: the wasm backend stays single-module.
+
+pub mod shapes;
+import {queryOf, groupOf} from "shapes";
+
+pub type Bag<T>(
+    items: Array<T>,
+) {
+    pub fn unwrap(self: Self<T>) -> Array<T> {
+        return self.items;
+    }
+}
+
+pub type Bucket<K, V>(
+    key: K,
+    items: Array<V>,
+) {
+    pub fn unwrap(self: Self<K, V>) -> Array<V> {
+        return self.items;
+    }
+}
+
+pub fn bagOf<T>(xs: Array<T>) -> Bag<T> {
+    return Bag(items: xs);
+}
+
+pub fn main() {
+    @print(queryOf([1, 2, 3]).toArray().length);
+    @print(groupOf("k", [1, 2]).toArray().length);
+    @print(bagOf([1, 2, 3, 4]).unwrap().length);
+}

@@ -1,0 +1,12 @@
+//// onze finding F8 — a lexer error inside an imported module is the error
+//// reported. The import check read `pattern.bp` as exporting nothing when
+//// it did not lex, and refused `main` with "imported symbol is not exported
+//// by the named module", which hid the module's own located error. Every
+//// target refuses the project naming `\.` in `pattern.bp`.
+
+pub mod pattern;
+import {dotted} from "pattern";
+
+pub fn main() {
+    @print(dotted());
+}

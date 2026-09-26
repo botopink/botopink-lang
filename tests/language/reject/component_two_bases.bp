@@ -1,0 +1,20 @@
+//// Decisions 96 and 128 of 1.0.10-beta (front 24, § Cells "Chain and `use`";
+//// guide.md § 4.5 `Misturado`) — one base per function, read off the
+//// `@Component<C, T>` return: the second `use`, anchored at another base, is
+//// refused at its own site naming both. Line 1 is the stem of today's message
+//// (`reject/use_two_bases.bp`), without the word the base is called by.
+
+pub type ElementBase()
+pub type RequestBase()
+type Element(count: i32) implement @Context<ElementBase>
+
+fn state(initial: i32) -> @Component<ElementBase, i32> { return initial; }
+fn tenant() -> @Component<RequestBase, i32> { return 7; }
+
+fn Misturado() -> @Component<ElementBase, Element> {
+    val a = use state(0);
+    val t = use tenant();
+    return Element(count: a + t);
+}
+
+pub fn main() { Misturado(); }

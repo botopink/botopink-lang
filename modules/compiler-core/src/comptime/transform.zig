@@ -25,17 +25,32 @@ pub const TemplateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr);
 /// to their value-construction lowering, produced by inference.
 pub const ResultJumpLowerings = std.AutoHashMap(ast.Loc, envMod.ResultJumpLowering);
 
-/// Map of `return`/`throw` sites inside `#[@future]` fns (by source loc) to
-/// their value-construction lowering, produced by inference. Mirrors the
-/// shape of `ResultJumpLowerings` — only the wrap callee names differ.
-pub const FutureJumpLowerings = std.AutoHashMap(ast.Loc, envMod.FutureJumpLowering);
-
 /// Map of stdlib-module method calls on builtin-array receivers (by source loc).
 pub const StdArrayLowerings = std.AutoHashMap(ast.Loc, envMod.StdArrayLowering);
 
 /// §enum-sections F2 — map of path-access (`.Color.Red.500`) outer-identAccess
 /// locs → the qualified-ctor rewrite expression assembled at inference time.
 pub const EnumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
+
+/// C-02 (decision 63, amended 2026-09-19) — map of index-expression locs to
+/// the method call each one IS: `xs[k]` → `xs.at(k)`, `xs[a..b]` →
+/// `xs.slice(a, b)`, `xs[1..]` → `xs.slice(1, null)`, and a tuple's `t[0]` →
+/// the positional `t._0`. Written by inference, which typed the rewrite and
+/// not the index; applied here, so the backends see a method call they already
+/// emit and **none of them learns a new rule**.
+pub const IndexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
+/// Decision 8 §10 — locs of loops inference typed as condition loops.
+/// C-04 (01 step 7, N1) — map of call sites (by source loc) to the argument
+/// fill inference planned for them. Written whenever a call omitted an argument
+/// whose parameter declares a default; the transform materialises the plan so
+/// every backend sees a complete call and none of them learns a new rule.
+pub const DefaultInjections = std.AutoHashMap(ast.Loc, envMod.DefaultFill);
+
+/// Decision 54 — locs of the `case`s that are the optional's pattern form,
+/// mapped to the binder's name (`""` for `_`). Produced by inference, which
+/// validated the shape and narrowed the binder; `rewriteExpr` replaces each
+/// with the `if (x) { v -> … } else { … }` the backends already lower.
+pub const OptionalNullCases = std.AutoHashMap(ast.Loc, []const u8);
 
 /// Aggregator: collects specialization info during scan/rewrite phases.
 const Aggregator = struct {
@@ -44,16 +59,46 @@ const Aggregator = struct {
     method_lowerings: *const MethodLowerings,
     /// Template-call expansions keyed by call loc (expr-templates F6).
     template_expansions: *const TemplateExpansions,
+    /// `@src()` → `SourceLocation(…)` constructor calls keyed by call loc
+    /// (1.0.10-beta decision 73). Same shape as `template_expansions`, spliced
+    /// at the same two points; kept apart so a source location is not counted
+    /// as a template expansion by the comptime snapshot.
+    src_rewrites: *const TemplateExpansions,
     /// `return`/`throw` → `__bp_ok`/`__bp_error` wrappings keyed by jump loc.
     result_jump_lowerings: *const ResultJumpLowerings,
-    /// `return`/`throw` → `__bp_future_resolved`/`__bp_future_rejected`
-    /// wrappings keyed by jump loc (#[@future] F4F-T1).
-    future_jump_lowerings: *const FutureJumpLowerings,
     /// Stdlib array method dispatch lowerings keyed by call loc.
     std_array_lowerings: *const StdArrayLowerings,
     /// §enum-sections F2 — untyped AST rewrites for dot-shorthand chains
     /// that the F2 path-resolver matched against an enum section path.
     enum_section_rewrites: *const EnumSectionRewrites,
+    /// C-02 — the index expressions inference rewrote to method calls. Applied
+    /// by BOTH aggregators, the `src_only` one included: an index in a method
+    /// body is the same expression it is in a fn body, and a `[]` left in the
+    /// tree reaches each backend's own decision-30 lowering instead of the
+    /// method the language says it is.
+    index_rewrites: *const IndexRewrites,
+    /// Decision 8 §10 — loops to mark `condition` (their `iter` is a `bool`).
+    optional_null_cases: *const OptionalNullCases,
+    /// True for the aggregator that walks method bodies: every map but
+    /// `src_rewrites`, `method_lowerings` (onze F4 — `xs.at(i).unwrapOr(d)` in
+    /// a method), `result_jump_lowerings` (a method returning `@Result`
+    /// wraps its `return` / `throw` like a fn — it was compiled as a plain
+    /// function: a `throw` escaped as a host exception and a `return` was not
+    /// an `Ok`), `index_rewrites` and `default_injections` is empty and the
+    /// one unconditional rewrite (the `${}` template desugar) is skipped, so a
+    /// method body lowers byte-for-byte as before 1.0.10-beta except for those
+    /// rewrites. Lowering method
+    /// bodies through the full walk is a separate change: it moves
+    /// `record_method_with_todo_placeholder` on erlang (`@todo()` gets its
+    /// default injected there as it does in a fn body).
+    src_only: bool = false,
+    /// `Env.resultPatternLocs`: the `Ok` / `Error` patterns over a `@Result`
+    /// subject, written `Result.Ok` / `Result.Error` by `qualifyResultPattern`.
+    /// Applied by both aggregators.
+    result_patterns: ?*const std.AutoHashMapUnmanaged(ast.Loc, void) = null,
+    /// `Env.namespaces`: `jwt.sign(x)` through a namespace import is written
+    /// as the call of an aliased import (`namespaceCall`). Both aggregators.
+    namespaces: ?*const envMod.NamespaceImports = null,
     /// fn_name → total calls with comptime params found during rewrite.
     total_calls: std.StringHashMap(usize),
     /// fn_name → calls that were actually rewritten to specialized names.
@@ -67,21 +112,28 @@ const Aggregator = struct {
     /// reads them when the callee misses `fn_decls` so `Config(host: "x")`
     /// / `Level.Error("boom")` get their trailing-default fields injected.
     ctor_params: std.StringHashMap([]const ast.Param),
+    /// C-04 — the argument fills inference planned, keyed by call loc. Applied
+    /// by BOTH aggregators, the `src_only` one included: a method body's call
+    /// sites need their defaults as much as a fn body's do.
+    default_injections: *const DefaultInjections,
 
-    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, ctor_params: std.StringHashMap([]const ast.Param)) Aggregator {
+    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, index_rewrites: *const IndexRewrites, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
         return .{
             .spec_cache = specialize.SpecCache.init(allocator),
             .method_lowerings = method_lowerings,
             .template_expansions = template_expansions,
+            .src_rewrites = src_rewrites,
             .result_jump_lowerings = result_jump_lowerings,
-            .future_jump_lowerings = future_jump_lowerings,
             .std_array_lowerings = std_array_lowerings,
             .enum_section_rewrites = enum_section_rewrites,
+            .index_rewrites = index_rewrites,
+            .optional_null_cases = optional_null_cases,
             .total_calls = std.StringHashMap(usize).init(allocator),
             .specialized_calls = std.StringHashMap(usize).init(allocator),
             .comptime_vals = comptime_vals,
             .val_ct_map = std.StringHashMap([]const u8).init(allocator),
             .ctor_params = ctor_params,
+            .default_injections = default_injections,
         };
     }
 
@@ -132,14 +184,42 @@ pub fn transform(
     comptime_vals: std.StringHashMap([]const u8),
     method_lowerings: *const MethodLowerings,
     template_expansions: *const TemplateExpansions,
+    src_rewrites: *const TemplateExpansions,
     result_jump_lowerings: *const ResultJumpLowerings,
-    future_jump_lowerings: *const FutureJumpLowerings,
     std_array_lowerings: *const StdArrayLowerings,
     enum_section_rewrites: *const EnumSectionRewrites,
+    index_rewrites: *const IndexRewrites,
+    optional_null_cases: *const OptionalNullCases,
     ctor_params: std.StringHashMap([]const ast.Param),
+    default_injections: *const DefaultInjections,
+    result_patterns: *const std.AutoHashMapUnmanaged(ast.Loc, void),
+    namespaces: *const envMod.NamespaceImports,
 ) !ast.Program {
-    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, ctor_params);
+    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
+
+    // The method-body aggregator (`src_only`): the `@src()` splice, the
+    // `@Result`/`@Option` method lowerings, the `@Result` jump wrappings,
+    // index rewrites and default fills.
+    var empty_te = TemplateExpansions.init(allocator);
+    defer empty_te.deinit();
+    var empty_sa = StdArrayLowerings.init(allocator);
+    defer empty_sa.deinit();
+    var empty_es = EnumSectionRewrites.init(allocator);
+    defer empty_es.deinit();
+    var empty_onc = OptionalNullCases.init(allocator);
+    defer empty_onc.deinit();
+    const empty_vals = std.StringHashMap([]const u8).init(allocator);
+    const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
+    const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
+    const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
+    var src_agg = Aggregator.init(allocator, empty_vals, method_lowerings, &empty_te, src_rewrites, result_jump_lowerings, &empty_sa, &empty_es, index_rewrites, &empty_onc, empty_ctor, default_injections);
+    src_agg.src_only = true;
+    agg.result_patterns = result_patterns;
+    src_agg.result_patterns = result_patterns;
+    agg.namespaces = namespaces;
+    src_agg.namespaces = namespaces;
+    defer src_agg.deinit(allocator);
 
     // Phase 1: Scan and specialize.
     var out_decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
@@ -201,6 +281,25 @@ pub fn transform(
                 rewriteStmt(&agg, fn_decls, comptime_arrays, stmt) catch return error.OutOfMemory;
             }
         }
+        // Method bodies (`type X { fn m(self) { … } }`, `implement B for X { … }`)
+        // never went through this walk — the backends lower them from the
+        // parsed AST. 1.0.10-beta's `@src()` (decision 73) is the first
+        // inference-recorded rewrite a method body must receive, so they ride
+        // the `src_only` aggregator: the splice and nothing else (see the
+        // field's doc for what the full walk would move).
+        if (src_rewrites.count() > 0 or method_lowerings.count() > 0 or result_jump_lowerings.count() > 0) {
+            if (decl.* == .type_) {
+                for (decl.type_.methods) |*m| {
+                    const body = m.body orelse continue;
+                    for (body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
+                }
+            }
+            if (decl.* == .implement) {
+                for (decl.implement.methods) |*m| {
+                    for (m.body) |*stmt| rewriteStmt(&src_agg, empty_fn_decls, empty_ct_arrays, stmt) catch return error.OutOfMemory;
+                }
+            }
+        }
         if (decl.* == .val) {
             const val_decl = &decl.val;
             const is_comptime = switch (val_decl.value.*) {
@@ -250,6 +349,10 @@ pub fn transform(
                 const p0 = fn_decl.params[0];
                 if (p0.modifier == .@"comptime" and p0.typeRef.isDeclType()) continue;
             }
+        }
+        if (decl == .use and namespaces.modules.count() > 0) {
+            try filtered.append(allocator, .{ .use = try rewriteNamespaceImports(agg.spec_cache.arena, decl.use, namespaces) });
+            continue;
         }
         try filtered.append(allocator, decl);
     }
@@ -549,7 +652,13 @@ fn tryLowerResultJump(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!bool {
     switch (lowering) {
         .wrap_ok => {
             if (expr_ptr.jump.kind != .@"return") return false;
-            const rp = expr_ptr.jump.kind.@"return" orelse return false;
+            // A bare `return;` in a `-> @Result<void, E>` fn (decision 74)
+            // wraps the unit value: `__bp_ok(null)`.
+            const rp = expr_ptr.jump.kind.@"return" orelse blk: {
+                const unit = arena.create(ast.Expr) catch return ScanError.OutOfMemory;
+                unit.* = .{ .literal = .{ .loc = loc, .kind = .null_ } };
+                break :blk unit;
+            };
             expr_ptr.jump.kind = .{ .@"return" = try wrapCall(arena, "__bp_ok", rp, loc) };
         },
         .wrap_error => {
@@ -565,48 +674,26 @@ fn tryLowerResultJump(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!bool {
             const inner = rp.jump.kind.try_ orelse return false;
             expr_ptr.jump.kind = .{ .@"return" = inner };
         },
-    }
-    return true;
-}
-
-/// §1F F4F-T1 — if `expr_ptr` is a `return`/`throw` jump inside a `#[@future]`
-/// body, rewrite the jump into `return __bp_future_resolved(<t>);` or
-/// `return __bp_future_rejected(<e>);`. The codegens consume the uniform
-/// post-transform shape (commonJS strips the marker back to bare
-/// `return <t>;` / `throw <e>;`, relying on the `async function` machinery
-/// to materialise the promise).
-fn tryLowerFutureJump(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!bool {
-    if (expr_ptr.* != .jump) return false;
-    const loc = expr_ptr.jump.loc;
-    const lowering = agg.future_jump_lowerings.get(loc) orelse return false;
-    const arena = agg.spec_cache.arena;
-
-    const wrapCall = struct {
-        fn make(a: std.mem.Allocator, callee: []const u8, value: *ast.Expr, l: ast.Loc) ScanError!*ast.Expr {
-            const args = a.alloc(ast.CallArg, 1) catch return ScanError.OutOfMemory;
-            args[0] = .{ .label = null, .value = value, .comments = &.{} };
-            const call_expr = a.create(ast.Expr) catch return ScanError.OutOfMemory;
-            call_expr.* = ast.Expr{ .call = .{ .loc = l, .kind = .{ .call = .{
-                .receiver = null,
-                .callee = callee,
-                .is_builtin = true,
-                .args = args,
-                .trailing = &.{},
-            } } } };
-            return call_expr;
-        }
-    }.make;
-
-    switch (lowering) {
-        .wrap_resolved => {
-            if (expr_ptr.jump.kind != .@"return") return false;
-            const rp = expr_ptr.jump.kind.@"return" orelse return false;
-            expr_ptr.jump.kind = .{ .@"return" = try wrapCall(arena, "__bp_future_resolved", rp, loc) };
+        // Decision 122 — an item `U` of a sequence of `@Result<U, E>` is
+        // emitted as `Ok(v)`: `yield v` → `yield __bp_ok(v)`, `break v` →
+        // `break __bp_ok(v)`.
+        .yield_ok => switch (expr_ptr.jump.kind) {
+            .yield => |*y| {
+                const vp = y.value orelse return false;
+                y.value = try wrapCall(arena, "__bp_ok", vp, loc);
+            },
+            .@"break" => |*b| {
+                const vp = b.value orelse return false;
+                b.value = try wrapCall(arena, "__bp_ok", vp, loc);
+            },
+            else => return false,
         },
-        .wrap_rejected => {
+        // Decision 122 — `throw e` in such a sequence emits `Error(e)` as the
+        // last item and ends: `break __bp_error(e)`.
+        .break_error => {
             if (expr_ptr.jump.kind != .throw_) return false;
             const tp = expr_ptr.jump.kind.throw_ orelse return false;
-            expr_ptr.jump.kind = .{ .@"return" = try wrapCall(arena, "__bp_future_rejected", tp, loc) };
+            expr_ptr.jump.kind = .{ .@"break" = .{ .label = null, .value = try wrapCall(arena, "__bp_error", tp, loc) } };
         },
     }
     return true;
@@ -620,6 +707,20 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             stmt.expr = expansion.*;
             rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr) catch return ScanError.OutOfMemory;
             return;
+        }
+        // `@src()` at statement position (decision 73) — the same splice.
+        if (agg.src_rewrites.get(stmt.expr.call.loc)) |rewrite| {
+            if (stmt.expr.call.kind.call.is_builtin) {
+                stmt.expr = rewrite.*;
+                rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr) catch return ScanError.OutOfMemory;
+                return;
+            }
+        }
+    }
+    // C-04 — the same fill at statement position (`b.bump();`).
+    if (stmt.expr == .call and stmt.expr.call.kind == .call) {
+        if (agg.default_injections.get(stmt.expr.call.loc)) |fill| {
+            applyDefaultFill(agg, fill, &stmt.expr.call.kind.call) catch return ScanError.OutOfMemory;
         }
     }
     switch (stmt.expr) {
@@ -643,7 +744,6 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         },
         .jump => {
             _ = try tryLowerResultJump(agg, &stmt.expr);
-            _ = try tryLowerFutureJump(agg, &stmt.expr);
             switch (stmt.expr.jump.kind) {
                 .@"return" => |r| if (r) |rp| rewriteExpr(agg, fn_decls, comptime_arrays, rp) catch return ScanError.OutOfMemory,
                 .throw_ => |t| if (t) |tp| rewriteExpr(agg, fn_decls, comptime_arrays, tp) catch return ScanError.OutOfMemory,
@@ -673,11 +773,145 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             for (lp.body) |*s| rewriteStmt(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
         },
         .comptime_ => rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr) catch return ScanError.OutOfMemory,
-        else => {},
+        // Decision 54's `?T` pattern form at statement position. Only that one
+        // swap: `rewriteStmt` has never walked into a `case`'s arms, and giving
+        // it a general `.collection` arm would start lowering things inside
+        // them that no snapshot has ever recorded. The `if` it becomes is
+        // re-dispatched through this same function, so its branches are walked
+        // exactly as a written `if`'s are.
+        .collection => |*col| if (col.kind == .case) {
+            // Only the arms' patterns: this walk never lowers inside them.
+            for (col.kind.case.arms) |*arm| try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
+            if (agg.optional_null_cases.get(col.loc)) |binder| {
+                try rewriteOptionalNullCase(agg, &stmt.expr, binder);
+                rewriteStmt(agg, fn_decls, comptime_arrays, stmt) catch return ScanError.OutOfMemory;
+            }
+        },
+        // Any other expression statement — the value of an `if` branch
+        // (`else s.slice(1) + "/x"`), a field read, a string template — is
+        // walked like the same expression anywhere else. It was skipped, so
+        // the call inside never received its default fill: erlang emitted
+        // `string_slice(S, 1)` against the `string_slice/3` it defines
+        // (onze F6).
+        else => rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr) catch return ScanError.OutOfMemory,
     }
 }
 
+/// The statements an arm's body contributes to an `if` branch. Decision 8's
+/// `Pattern { body }` arm is a parameterless lambda, so its statements are the
+/// branch's; the older `pattern -> value` arm is one expression.
+fn armBodyStmts(allocator: std.mem.Allocator, body: ast.Expr) ScanError![]ast.Stmt {
+    if (body == .function) return body.function.kind.body;
+    const stmts = allocator.alloc(ast.Stmt, 1) catch return ScanError.OutOfMemory;
+    stmts[0] = .{ .expr = body };
+    return stmts;
+}
+
+/// Decision 54 — `case x { null { A } v { B } }` becomes
+/// `if (x) { v -> B } else { A }`. Inference validated the shape (exactly two
+/// arms, `null` first, a binder second, the subject a `?T`) and narrowed `v` to
+/// the payload; all that is left is the node swap, and it is done here rather
+/// than in the backends because the `if`-binder lowering is one every backend
+/// already has. Nothing below inference learns a new pattern.
+fn rewriteOptionalNullCase(
+    agg: *Aggregator,
+    expr_ptr: *ast.Expr,
+    binder: []const u8,
+) ScanError!void {
+    const c = expr_ptr.collection.kind.case;
+    if (c.subjects.len != 1 or c.arms.len != 2) return;
+    const arena = agg.spec_cache.arena;
+    const loc = expr_ptr.collection.loc;
+    const cond = arena.create(ast.Expr) catch return ScanError.OutOfMemory;
+    cond.* = c.subjects[0];
+    expr_ptr.* = .{
+        .branch = .{
+            .loc = loc,
+            .kind = .{
+                .if_ = .{
+                    .cond = cond,
+                    // `_` binds the name `_`, never a null binding: a null `binding` is
+                    // "this `if` has no binder at all", which makes the condition a `bool`
+                    // and the optional's absence a truthiness test. The discard is the one
+                    // `val _ = …` and `if (x) { _ -> … }` already record.
+                    .binding = if (binder.len > 0) binder else "_",
+                    .then_ = try armBodyStmts(arena, c.arms[1].body),
+                    .else_ = try armBodyStmts(arena, c.arms[0].body),
+                },
+            },
+        },
+    };
+}
+
+/// `Ok(…)` / `Error(…)` over a `@Result` subject (`Env.resultPatternLocs`) is
+/// written `Result.Ok(…)` / `Result.Error(…)`: every backend reads that path
+/// as the `@Result` variant, and none reads it as a user enum's `Error`.
+fn qualifyResultPattern(agg: *Aggregator, pattern: *ast.Pattern, at: ast.Loc) ScanError!void {
+    const set = agg.result_patterns orelse return;
+    if (!set.contains(at)) return;
+    if (pattern.* != .variant) return;
+    const name = pattern.variant.name;
+    if (std.mem.indexOfScalar(u8, name, '.') != null) return;
+    pattern.variant.name = std.mem.concat(agg.spec_cache.arena, u8, &.{ "Result.", name }) catch return ScanError.OutOfMemory;
+}
+
+/// Decision 107's namespace form (`Env.namespaces`): an import item that
+/// binds a module of the program as a namespace becomes one aliased leaf per
+/// function called through it — `import {jwt} from "sec"` with `jwt.sign(x)`
+/// is `import {jwt.sign as __bp_ns_jwt__sign} from "sec"`, the form every
+/// backend already lowers — and the namespace item itself is dropped.
+fn rewriteNamespaceImports(arena: std.mem.Allocator, u: ast.ImportDecl, namespaces: *const envMod.NamespaceImports) !ast.ImportDecl {
+    var items: std.ArrayListUnmanaged(ast.ImportPath) = .empty;
+    var changed = false;
+    for (u.imports) |imp| {
+        const local = imp.name();
+        if (imp.activate or !namespaces.modules.contains(local)) {
+            try items.append(arena, imp);
+            continue;
+        }
+        changed = true;
+        var seen = std.StringHashMap(void).init(arena);
+        var it = namespaces.calls.valueIterator();
+        while (it.next()) |c| {
+            if (!std.mem.eql(u8, c.namespace, local) or seen.contains(c.callee)) continue;
+            try seen.put(c.callee, {});
+            const segments = try arena.alloc([]const u8, imp.segments.len + 1);
+            @memcpy(segments[0..imp.segments.len], imp.segments);
+            segments[imp.segments.len] = c.callee;
+            try items.append(arena, .{
+                .segments = segments,
+                .alias = try envMod.NamespaceImports.aliasFor(arena, local, c.callee),
+                .loc = imp.loc,
+            });
+        }
+    }
+    if (!changed) return u;
+    var out = u;
+    out.imports = items.items;
+    return out;
+}
+
+/// `jwt.sign(x)` recorded by inference as a namespace call → `__bp_ns_jwt__sign(x)`,
+/// the alias `rewriteNamespaceImports` binds.
+fn namespaceCall(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!void {
+    const ns = agg.namespaces orelse return;
+    if (expr_ptr.* != .call or expr_ptr.call.kind != .call) return;
+    const c = ns.calls.get(expr_ptr.call.loc) orelse return;
+    const cc = &expr_ptr.call.kind.call;
+    if (cc.receiver == null) return;
+    cc.receiver = null;
+    cc.callee = envMod.NamespaceImports.aliasFor(agg.spec_cache.arena, c.namespace, c.callee) catch return ScanError.OutOfMemory;
+}
+
 fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), expr_ptr: *ast.Expr) ScanError!void {
+    try namespaceCall(agg, expr_ptr);
+    // Decision 54's `?T` pattern form — swapped before the other dispatches so
+    // the `if` it becomes rides through the same recursive walker.
+    if (expr_ptr.* == .collection and expr_ptr.collection.kind == .case) {
+        if (agg.optional_null_cases.get(expr_ptr.collection.loc)) |binder| {
+            try rewriteOptionalNullCase(agg, expr_ptr, binder);
+        }
+    }
     // §enum-sections F2 — swap dot-shorthand path-access chains
     // (`.Color.Red.500`) with the qualified-ctor rewrite that F2 stashed
     // under the outer-identAccess loc. Runs before the other dispatches so
@@ -687,12 +921,100 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             expr_ptr.* = rewrite.*;
         }
     }
+    // 01 step 12 — a leading-dot unit variant (`.Red`) whose enum the
+    // position's expected type named: inference recorded the qualified
+    // `Warm.Red` under the node's loc, so every backend sees the qualified
+    // form. Only an identifier replaces an identifier; a call at the same loc
+    // is the index/leading-dot call rewrite below.
+    if (expr_ptr.* == .identifier and expr_ptr.identifier.kind == .dotIdent) {
+        if (agg.index_rewrites.get(expr_ptr.identifier.loc)) |rewrite| {
+            if (rewrite.* == .identifier) expr_ptr.* = rewrite.*;
+        }
+    }
+    // Decision 110 rule 1 — an imported type's `as` alias in expression
+    // position (`D` in `D.empty()`, a bare `P`): inference recorded the
+    // declared name under the alias's loc. Only a plain name replaces a plain
+    // name.
+    if (expr_ptr.* == .identifier and expr_ptr.identifier.kind == .ident) {
+        if (agg.index_rewrites.get(expr_ptr.identifier.loc)) |rewrite| {
+            if (rewrite.* == .identifier and rewrite.identifier.kind == .ident) expr_ptr.* = rewrite.*;
+        }
+    }
+    // 06 N24 — a tuple element of function type called by its LABEL
+    // (`c.set(9)` on `#(value: i32, set: fn(…))`). Inference stashed the
+    // positional callee under the call's loc; only the name moves, the
+    // arguments stay where they are.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
+        if (agg.enum_section_rewrites.get(expr_ptr.call.loc)) |rewrite| {
+            if (rewrite.* == .call and rewrite.call.kind == .call) {
+                expr_ptr.call.kind.call.callee = rewrite.call.kind.call.callee;
+            }
+        }
+    }
     // Template-call expansion (F6): substitute the expansion recorded by
     // inference, then fall through so the spliced code is rewritten like
     // ordinary AST (string templates desugar, inner calls lower, …).
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
         if (agg.template_expansions.get(expr_ptr.call.loc)) |expansion| {
             expr_ptr.* = expansion.*;
+        }
+    }
+    // `@src()` → `SourceLocation(file: …, line: …, column: …, fnName: …)`
+    // (decision 73). Only the builtin call at that loc is replaced — the
+    // spliced constructor call carries the same loc and must not loop.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call and expr_ptr.call.kind.call.is_builtin) {
+        if (agg.src_rewrites.get(expr_ptr.call.loc)) |rewrite| {
+            expr_ptr.* = rewrite.*;
+        }
+    }
+    // C-02 (decision 63, amended 2026-09-19) — the index IS a method call.
+    // `xs[k]` was typed as `xs.at(k)`, `xs[a..b]` as `xs.slice(a, b)` and a
+    // tuple's `t[0]` as `t._0`; the rewrite inference recorded under this loc
+    // takes the `[]` node's place here, and the walk carries on over the
+    // spliced node — so its own method lowering, its C-04 fill and a nested
+    // index inside its receiver or its arguments are all reached below,
+    // exactly as they would be had the author written the method call.
+    //
+    // It sits after `@src()` and before C-04 for that reason: the fill and
+    // the method lowering reshape an argument list, and there has to BE one.
+    //
+    // The same channel carries front 15's leading-dot call: `.Circle(r: 1)`
+    // arrives with its callee in `calleeExpr` and is replaced by the named
+    // constructor call inference resolved (`Shape.Circle(r: 1)`).
+    //
+    // And 01 step 12's payload section path (`.Color.Hex("#abc")`,
+    // `Token.Color.Hex("#abc")`): a call whose receiver is a path, replaced by
+    // the qualified constructor chain inference resolved.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call and
+        (expr_ptr.call.kind.call.is_builtin or expr_ptr.call.kind.call.calleeExpr != null or
+            isPathReceiver(expr_ptr.call.kind.call.receiver)))
+    {
+        if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
+            if (rewrite.* != .jump) expr_ptr.* = rewrite.*;
+        }
+    }
+    // 01 — a component called inside a component body renders there: the
+    // `await` inference spliced around it. Its operand is the rewrite's own
+    // copy of the call, which is not wrapped a second time.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
+        if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
+            if (rewrite.* == .jump and rewrite.jump.kind == .await_ and rewrite.jump.kind.await_ != expr_ptr) {
+                expr_ptr.* = rewrite.*;
+            }
+        }
+    }
+    // C-04 / 01 step 7 N1 — a call that omitted an argument whose parameter
+    // declares a default. Inference accepted it and planned the fill under this
+    // loc; materialise it HERE, before the method and std-array lowerings, which
+    // reshape the argument list they are handed.
+    //
+    // It and decision 54's `optional_null_cases` swap above are both loc-keyed
+    // and neither can skip the other: they act on disjoint node kinds (a `.call`
+    // and a `case` `.collection`), and the `if` the swap produces is walked by
+    // this same function, so a call inside a swapped arm still reaches its fill.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
+        if (agg.default_injections.get(expr_ptr.call.loc)) |fill| {
+            applyDefaultFill(agg, fill, &expr_ptr.call.kind.call) catch return ScanError.OutOfMemory;
         }
     }
     switch (expr_ptr.*) {
@@ -718,7 +1040,6 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         },
         .jump => {
             _ = try tryLowerResultJump(agg, expr_ptr);
-            _ = try tryLowerFutureJump(agg, expr_ptr);
             switch (expr_ptr.jump.kind) {
                 .@"return" => |r| if (r) |rp| rewriteExpr(agg, fn_decls, comptime_arrays, rp) catch return ScanError.OutOfMemory,
                 .@"break" => |b| if (b.value) |bp| rewriteExpr(agg, fn_decls, comptime_arrays, bp) catch return ScanError.OutOfMemory,
@@ -751,6 +1072,9 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             rewriteExpr(agg, fn_decls, comptime_arrays, b.lhs) catch return ScanError.OutOfMemory;
             rewriteExpr(agg, fn_decls, comptime_arrays, b.rhs) catch return ScanError.OutOfMemory;
         },
+        // `-xs.at(0).unwrapOr(1)`, `!flags.at(0).unwrapOr(false)` — the
+        // operand was never walked (onze F9's family).
+        .unaryOp => |*u| rewriteExpr(agg, fn_decls, comptime_arrays, u.expr) catch return ScanError.OutOfMemory,
         .collection => |*col| switch (col.kind) {
             .arrayLit => |al| {
                 for (al.elems) |*e| rewriteExpr(agg, fn_decls, comptime_arrays, e) catch return ScanError.OutOfMemory;
@@ -758,15 +1082,25 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             .tupleLit => |tl| {
                 for (tl.elems) |*e| rewriteExpr(agg, fn_decls, comptime_arrays, e) catch return ScanError.OutOfMemory;
             },
+            // A labeled access (`kinds.kind`) inside a literal's field values
+            // is rewritten like anywhere else (decision 8 §6 T4).
+            .behaviorLit => |bl| {
+                for (bl.fields) |f| rewriteExpr(agg, fn_decls, comptime_arrays, f.value) catch return ScanError.OutOfMemory;
+            },
             .case => |case_node| {
                 for (case_node.subjects) |*s| rewriteExpr(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
-                for (case_node.arms) |*arm| rewriteExpr(agg, fn_decls, comptime_arrays, &arm.body) catch return ScanError.OutOfMemory;
+                for (case_node.arms) |*arm| {
+                    try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
+                    rewriteExpr(agg, fn_decls, comptime_arrays, &arm.body) catch return ScanError.OutOfMemory;
+                }
             },
             .range => |r| {
                 rewriteExpr(agg, fn_decls, comptime_arrays, r.start) catch return ScanError.OutOfMemory;
                 if (r.end) |e| rewriteExpr(agg, fn_decls, comptime_arrays, e) catch return ScanError.OutOfMemory;
             },
-            else => {},
+            // `(if (c) xs.at(0).unwrapOr(d) else e).v` — a parenthesised
+            // expression is walked like the one it holds (onze F9).
+            .grouped => |g| rewriteExpr(agg, fn_decls, comptime_arrays, g) catch return ScanError.OutOfMemory,
         },
         .function => |*func| {
             for (func.kind.body) |*s| rewriteStmt(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
@@ -784,13 +1118,23 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                 rewriteExpr(agg, fn_decls, comptime_arrays, a.condition) catch return ScanError.OutOfMemory;
                 if (a.message) |msg| rewriteExpr(agg, fn_decls, comptime_arrays, msg) catch return ScanError.OutOfMemory;
             },
-            .assertPattern => |ap| {
+            .assertPattern => |*ap| {
+                try qualifyResultPattern(agg, &ap.pattern, ct.loc);
                 rewriteExpr(agg, fn_decls, comptime_arrays, ap.expr) catch return ScanError.OutOfMemory;
                 rewriteExpr(agg, fn_decls, comptime_arrays, ap.handler) catch return ScanError.OutOfMemory;
             },
         },
         .literal => |*lit| switch (lit.kind) {
             .stringTemplate => |t| {
+                // The method-body walk only splices `@src()` — recurse into the
+                // holes and leave the template as written.
+                if (agg.src_only) {
+                    for (t.parts) |p| switch (p) {
+                        .expr => |e| rewriteExpr(agg, fn_decls, comptime_arrays, e) catch return ScanError.OutOfMemory,
+                        .text => {},
+                    };
+                    return;
+                }
                 // Desugar `"a ${x} b"` into the `+` chain `"a " + x + " b"` so
                 // every backend emits it exactly like written-out string
                 // concatenation (the typed/eval path desugars in infer).
@@ -867,6 +1211,48 @@ fn expandTrailingDefaultsWithParams(agg: *Aggregator, params: []const ast.Param,
 
 fn expandTrailingDefaults(agg: *Aggregator, fn_decl: ast.FnDecl, c: anytype) !void {
     return expandTrailingDefaultsWithParams(agg, fn_decl.params, c);
+}
+
+/// C-04 (01 step 7, N1) — materialise the fill inference planned for this call.
+///
+/// The plan has one slot per parameter, in declaration order: the index of the
+/// argument the call wrote, or `null` for a parameter that takes its own
+/// declared default. The rebuilt list is therefore complete and in declaration
+/// order, which is what makes `P(y: 2)` answer `x == 0` on a backend that zips
+/// positionally as well as on one that reads the labels. Injected arguments
+/// carry `is_default_inj`, so teardown skips the `Expr` they point at — it is
+/// the parameter's own, not a copy.
+///
+/// Nothing is trusted: the plan is applied only when it still describes the
+/// call in front of us. Inference wrote it against this very AST, so a mismatch
+/// means something else rewrote the call first, and then the call is left alone.
+fn applyDefaultFill(agg: *Aggregator, fill: envMod.DefaultFill, c: anytype) !void {
+    // A complete call is planned only to reorder labelled arguments (01).
+    if (c.args.len > fill.params.len) return;
+    var written: usize = 0;
+    for (fill.slots) |slot| {
+        const ai = slot orelse continue;
+        if (ai >= c.args.len) return;
+        written += 1;
+    }
+    if (written != c.args.len) return;
+
+    const arena = agg.spec_cache.arena;
+    const ArgT = @TypeOf(c.args[0]);
+    var new_args = try arena.alloc(ArgT, fill.params.len);
+    for (fill.slots, 0..) |slot, pi| {
+        if (slot) |ai| {
+            new_args[pi] = c.args[ai];
+        } else {
+            new_args[pi] = .{
+                .label = null,
+                .value = @constCast(&fill.params[pi].default.?),
+                .comments = &.{},
+                .is_default_inj = true,
+            };
+        }
+    }
+    c.args = new_args;
 }
 
 fn rewriteCall(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), c: anytype) ScanError!void {
@@ -1080,5 +1466,16 @@ fn extractComptimeLiteral(e: anytype) ?[]const u8 {
             else => null,
         },
         else => null,
+    };
+}
+
+/// 01 step 12 — a call receiver written as a path (`.Color`, `Token.Color`):
+/// the only receivers a payload section path is recorded under.
+fn isPathReceiver(receiver: ?*ast.Expr) bool {
+    const r = receiver orelse return false;
+    if (r.* != .identifier) return false;
+    return switch (r.identifier.kind) {
+        .dotIdent, .identAccess => true,
+        else => false,
     };
 }

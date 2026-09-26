@@ -1,0 +1,40 @@
+//// Transition guard, not a decision-8 rule. `case` with arrow arms and `;`
+//// separators is the form `libs/std/src/{order,unicode}.bp` and every library is
+//// written in, and it is the form 06 N22 replaces with §5.1's `Pattern { body }`.
+//// Every other `case` cell in this suite is written in the §5.1 form and is an
+//// expected failure, so nothing here would notice 06 N22 breaking the old form
+//// before front 13 has migrated the ecosystem.
+////
+//// This file is deleted by the change that makes the §5.1 arms land — it pins a
+//// surface on its way out, and its own red is the signal that the migration has
+//// to happen in the same wave.
+
+type Order { Lt, Eq, Gt }
+
+type Shape { Circle(r: i32), Square(side: i32) }
+
+fn sign(o: Order) -> i32 {
+    return case o { Lt -> -1; Eq -> 0; _ -> 1; };
+}
+
+fn area(s: Shape) -> i32 {
+    return case s { Circle(r) -> 3 * r * r; Square(side) -> side * side; };
+}
+
+test "an arrow arm answers per variant" {
+    assert sign(Order.Lt) == -1;
+    assert sign(Order.Eq) == 0;
+}
+
+test "a wildcard arm covers the rest" { assert sign(Order.Gt) == 1; }
+
+test "an arrow arm binds a payload" {
+    assert area(Shape.Circle(r: 2)) == 12;
+    assert area(Shape.Square(side: 3)) == 9;
+}
+
+test "case over a literal answers per value" {
+    val n = 2;
+    val name = case n { 1 -> "one"; 2 -> "two"; _ -> "many"; };
+    assert name == "two";
+}

@@ -1,0 +1,41 @@
+//// Decision 8 §5.1 P6, P7 — tuple patterns are positional; literals inside a
+//// tuple pattern; `..` for the rest.
+
+fn classify(p: #(i32, string)) -> string {
+    return case p {
+        #(0, s) { "zero " + s }
+        #(n, "x") { "x " + n.toString() }
+        #(_, s) { s }
+    };
+}
+
+fn first(t: #(i32, i32, i32)) -> i32 {
+    return case t {
+        #(a, ..) { a }
+    };
+}
+
+fn describeLabeled(r: #(name: string, pop: i32)) -> string {
+    return case r {
+        #("SP", p) { "capital " + p.toString() }
+        #(n, _) { n }
+    };
+}
+
+test "§5.1 P6 a literal inside a tuple pattern" {
+    assert classify(#(0, "a")) == "zero a";
+}
+
+test "§5.1 P6 arms are tried in order" {
+    assert classify(#(7, "x")) == "x 7";
+    assert classify(#(7, "y")) == "y";
+}
+
+test "§5.1 P7 #(a, ..) binds the first element only" {
+    assert first(#(4, 5, 6)) == 4;
+}
+
+test "§5.1 P6 a labeled tuple type is still matched by position" {
+    assert describeLabeled(#("SP", 12)) == "capital 12";
+    assert describeLabeled(#("Rio", 6)) == "Rio";
+}

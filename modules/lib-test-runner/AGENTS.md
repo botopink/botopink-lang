@@ -6,52 +6,62 @@
 Package that builds the `botopink-lib-test` executable: the CI gate that runs
 every discovered project's test suite on each requested backend and aggregates
 the results into a lib×target matrix. Projects are discovered across the resolved
-**root list** (`discovery.resolveRoots`: `BOTOPINK_LIB_ROOTS` env entries →
-bundled `repository/botopink-lang/libs` → sibling `repository/` → legacy flat
-`libs/` → any `--lib-root` flag entries, de-duped first-occurrence-wins;
-first-root-wins by name). It **shells out to the installed `botopink` binary** (`botopink test
---target <t>` with `cwd` set to each lib's own directory) and touches no compiler
-internals — so it carries **no `compiler-core` dependency**. Its job is discovery
-+ fan-out + aggregation + exit code, nothing the compiler already does.
+**root list** (`discovery.resolveRoots`: `BOTOPINK_LIB_ROOTS` env entries → for
+each ancestor `D` of cwd, `D` itself when it holds a workspace manifest,
+`D/repository/botopink-lang/libs`, `D/repository`, `D/libs`, stopping after the
+first `D` that holds `repository/` — the enclosing checkout, so a meta worktree
+under `.tasks/<name>` runs in place and sees only its own libraries
+(`manifest.isCheckoutRoot`, decision 143) → any `--lib-root`
+flag entries; de-duped first-occurrence-wins) by the shared
+`manifest.scanRoots` (`modules/manifest`): a root's child holding a
+`botopink.json` is a lib, and a child (or root) whose manifest declares
+`"workspaces"` contributes every **member** it expands to — `modules/*`,
+`examples/*` — as a lib named by its manifest, one row each; the umbrella is not
+a row (decision 75). Two plain packages with one name keep first-root-wins; two
+members with one name are both `✗` with a located error. It **shells out to the
+installed `botopink` binary** (`botopink test --target <t>` with `cwd` set to
+each lib's own directory) and touches no compiler internals — so it carries
+**no `compiler-core` dependency** (only the std-only `manifest` module). Its
+job is discovery + fan-out + aggregation + exit code, nothing the compiler
+already does.
 
 ## Tree
 
 ```text
 lib-test-runner/
 ├── AGENTS.md            ← you are here
-├── build.zig            ← package build graph + `run` + `test` steps
-├── build.zig.zon        ← manifest (no dependencies — self-contained)
-└── src/
-    ├── main.zig         ← entry: resolve roots/binary → discover → run cells → matrix → exit
+└── src/                 ← built and tested by the workspace build.zig (no build.zig of its own)
+    ├── main.zig         ← entry: resolve roots/binary → discover → plan cells → worker pool → emit in order → matrix → exit
     ├── args.zig         ← CLI parsing (Target enum, node alias, =-form, all)  + unit tests
-    ├── discovery.zig    ← enumerate <root>/*/ with botopink.json across roots, "has tests" probe + unit tests
-    ├── runner.zig       ← per-(lib,target) `botopink test` spawn + status classification
+    ├── discovery.zig    ← `manifest.scanRoots` over the roots (packages + workspace members), "has tests" probe, `libSupportsTarget`/`libRunsTarget`, problems + unit tests (fixtures: ../manifest/tests/fixtures)
+    ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib), split into `capture*` (spawn, capture, classify — thread-safe, writes nothing) and `emit*` (the cell's output, exactly as a serial run wrote it) + the cell's failed-test tally, read from the child's run total
+    ├── doc_quotes.zig   ← a workspace document quoting the tool's member list is checked against the tool + unit tests
     └── matrix.zig       ← Status enum, lib×target matrix render, summary + unit tests
 ```
 
 ## Commands
 
 ```bash
-# from the workspace root:
+# from the workspace root (runs scripts/test-libs.sh, which pre-flights
+# node/escript/erlc/wasmtime and then execs zig-out/bin/botopink-lib-test):
 zig build test-libs                                   # every lib, commonJS+erlang
 zig build test-libs -- --target erlang --lib rakun    # one target, one lib
 zig build test-libs -- --target all --strict          # supported targets, strict
-
-# from this package:
-zig build               # produce ./zig-out/bin/botopink-lib-test
-zig build test          # arg-parsing + discovery + matrix unit tests
+zig build test-libs -- --lib rakun --target erlang    # measure one restricted cell
+zig build               # produces zig-out/bin/botopink-lib-test among the workspace executables
+zig build test          # includes the args + discovery + matrix + runner unit tests (48)
 ```
 
 ## CLI surface
 
 ```
 botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
-                  [--filter <s>] [--strict] [--bin <path>] [--lib-root <dir>]
-                  [--json]
+                  [--filter <s>] [--strict] [--include-unsupported]
+                  [--bin <path>] [--lib-root <dir>] [--json] [--jobs <n>]
 ```
 
 `--json` switches output from the text matrix to JSONL — see
-"Test output passthrough (§T)" below for the schema.
+"Test output passthrough" below for the schema.
 
 - `--target` — repeatable / comma-separated. Accepts `commonJS|erlang|beam|wasm`
   plus the alias `node`→`commonJS`, and both `--target <t>` and `--target=<t>`.
@@ -61,8 +71,20 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
 - `--filter <s>` — forwarded to `botopink test --filter`.
 - `--strict` — treat an unsupported target (beam/wasm) as a **failure** instead of
   a skip (default: skip with `~`, keeping the gate green until those backends run).
+- `--include-unsupported` — run a cell the lib's `"targets"` whitelist excludes,
+  instead of skipping it, and flag it `"restricted":true` in `--json`. The
+  restriction is **measured**, not lifted: the lib's manifest is untouched and
+  the cell's verdict is read against `scripts/restricted-targets.txt` by
+  `scripts/test-libs.sh`, which always passes this flag. Orthogonal to
+  `--strict`, which governs the *CLI-side* unsupported mark (beam/wasm) and is
+  unaffected.
 - `--bin <path>` — `botopink` binary path. Also read from `BOTOPINK_BIN`; defaults
   to `./zig-out/bin/botopink`, else the bare name `botopink` on `PATH`.
+- `--jobs <n>` — how many cells run at once (a positive count; `0` or a
+  non-number is refused). Default: one per CPU, bounded by memory
+  (`MemAvailable / 768 MiB` from `/proc/meminfo` where it exists — a `botopink
+  test` child peaks around 400 MB plus its `erl`/`node`, and several gates share
+  one machine). Scheduling only — see "Parallel cells" below.
 - `--lib-root <dir>` — extra root to scan; repeatable. Appended **after**
   `BOTOPINK_LIB_ROOTS` env entries and the walk-up roots. Useful for ad-hoc CI
   without mutating env (`botopink-lib-test --lib-root /tmp/store --lib foo`).
@@ -72,9 +94,9 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
 | Symbol | Meaning |
 |---|---|
 | `✓` | `botopink test` passed |
-| `✗` | a red `.bp` test — the **only** status that fails the run |
-| `–` | lib has no test blocks (green skip, never a failure) |
-| `~` | target skipped: either not-yet-runnable (beam/wasm), or excluded by the lib's `"targets"` whitelist (see below). `--strict` flips the not-yet-runnable case to fail; the per-lib whitelist always skips. |
+| `✗` | a red `.bp` test — the **only** status that fails the run. Also every cell of a lib with a **problem**, printed once per cell without a spawn: a refused manifest (`docs/botopink-json.md`), a workspace that does not expand, a name declared by two libraries, or a library member of a workspace that lists no `files` (`error: ships nothing: manifest has no "files" — …`, located on its manifest) |
+| `–` | lib has no test blocks and **compiled** (`botopink build --target <t>`); nothing ran |
+| `~` | target skipped: either not-yet-runnable (beam/wasm), or excluded by the lib's `"targets"` whitelist (see below). `--strict` flips the not-yet-runnable case to fail; the per-lib whitelist skips unless `--include-unsupported` is given, which runs the cell and marks it `restricted` instead. |
 
 ### Per-lib `"targets"` whitelist (`botopink.json`)
 
@@ -88,25 +110,46 @@ array in its `botopink.json`:
 }
 ```
 
-The runner reads this during discovery (`discovery.readManifestTargets`)
-and reports `~` for any requested target not in the list — without
-spawning `botopink test`. Used by commonJS-only libs whose erlang port
-is not in scope (`onze`, `emilia`). The single-string `"target"` field
-(canonical build target) is left unchanged; the new array field is the
-runner-side filter.
+The runner reads this during discovery (the shared `manifest` parser) and
+reports `~` for any requested target not in the list — without spawning
+`botopink test`. Used by commonJS-only libs. The single-string `"target"`
+field (canonical build target) is separate; the array field is only the
+runner-side filter. A workspace member without `"targets"` inherits its
+workspace's list and may only restrict it (a wider list is a located error
+and a `✗` row).
 
-Absent `"targets"` → the historic behaviour (every requested target is
-attempted). A malformed list (non-array, mixed types) is silently
-dropped to absent — a typo must not narrow the matrix without warning.
+Absent `"targets"` → every requested target is attempted. A malformed list
+(non-array, a non-string entry) is a refused manifest — `✗` with the located
+error, never silently widened.
 
-**Exit non-zero iff at least one cell is `✗`.** A no-tests lib (`–`) and a
-skipped-unsupported target (`~`) never redden the gate.
+**A restriction is never silent.** `--include-unsupported` takes the skip away:
+the cell is spawned like any other, and its `cell_summary` carries
+`"restricted":true` plus the child's own `"failed"`/`"ran"` tally.
+`scripts/test-libs.sh` passes the flag on every run and checks that tally
+against [`../../scripts/restricted-targets.txt`](../../scripts/restricted-targets.txt)
+— the ledger that pins each hidden cell's **failed** count (never its passed
+count), refusing an unlisted restriction, a stale line, and a count that moved
+in either direction. The runner itself knows nothing of the ledger: with the
+flag, a restricted cell that fails is an ordinary `✗` and the process exits
+non-zero. Only the wrapper reads the pin.
 
-## Test output passthrough (§T)
+**Exit non-zero iff at least one cell is `✗`.** A skipped target (`~`) never
+reddens the gate. A lib with no `test` block is still **compiled** on each
+target it does not opt out of (`runner.compileCell` spawns `botopink build
+--target <t> --out .botopinkbuild/lib-test-build/<t>/<id>` in the lib's
+directory — `<id>` is 64 random bits per cell run, and the directory is removed
+when the cell ends):
+`–` when it compiles, `✗` when it does not — a library that never wrote a test
+cannot break silently. A project whose `src/` holds no `.bp` file at all (a
+tooling repository carrying a `botopink.json`, e.g. `vscode-extension`) has
+nothing to compile and stays `–`. The build's output goes to stderr, so `--json` stdout
+stays pure JSONL.
+
+## Test output passthrough
 
 Each child `botopink test` invocation produces the per-test envelope
 documented in
-[`../compiler-cli/AGENTS.md#botopink-test-output-format-§t`](../compiler-cli/AGENTS.md):
+[`../compiler-cli/AGENTS.md`](../compiler-cli/AGENTS.md#botopink-test-output-format):
 
 ```
 TEST <file>:<line> <name>
@@ -114,17 +157,26 @@ TEST <file>:<line> <name>
 \`\`\`logs
 <captured stdout>
 \`\`\`
+  duration <ms>ms
   ok | FAIL <name>  …
 ```
 
+**The cell's count is the child's run total**, never a module's own
+summary: `botopink test` prints one `<P> passed, <F> failed` per module
+and ends with `total: <P> passed, <F> failed in <N> module(s)` in text
+mode, or one aggregated `{"event":"summary",…}` under `--json`
+(`runner.parseChildSummary`, `parseTextTotal`). A test cell whose child
+exited 0 with **no** run total is a `✗` with the line `botopink test
+exited 0 but printed no run total` — nothing says how many tests ran.
+
 In text mode (no flag) the runner **re-emits the child's stdout
-untouched**: a downstream tool that needs to attribute the §T envelope
+untouched**: a downstream tool that needs to attribute the envelope
 to a lib uses the cyan section header written to **stderr**
 (`── <lib> · <target> ──`) immediately before the cell's stdout — a
 deliberate choice over per-line text prefixing, which would corrupt
 the fenced ```` ```logs ```` blocks.
 
-### `--json` mode (T3)
+### `--json` mode
 
 `botopink-lib-test --json` passes `--json` to each spawned
 `botopink test`, parses each JSONL record on the child's stdout, and
@@ -141,8 +193,33 @@ can match every spawned cell to its outcome without re-parsing the
 text matrix):
 
 ```
-{"event":"cell_summary","lib":"<name>","target":"<t>","status":"pass|fail|skipped_unsupported|no_tests"}
+{"event":"cell_summary","lib":"<name>","target":"<t>",
+ "status":"pass|fail|skipped_unsupported|no_tests",
+ "restricted":<bool>,"failed":<n>,"ran":<bool>}
 ```
+
+- `restricted` — the lib's `"targets"` list excludes this target. `true` both on
+  the skipped cell (without `--include-unsupported`) and on the cell that ran
+  because of it, so a consumer can tell a restricted cell from an ordinary one
+  in either mode.
+- `failed` — the `"failed"` of the child's own terminating
+  `{"event":"summary",…}` record: the number of red tests in this cell.
+- `ran` — whether such a record existed at all. `false` for a cell that did not
+  compile, one that ran `botopink build` (no `test` block), and one that was
+  never spawned. `"ran":false` is **not** "zero failures": a cell that does not
+  build has no test count, and conflating the two is what let a restricted
+  erlang row read as green.
+
+Before any cell, one record per discovered library names the directory
+its cells run in — `scripts/test-libs.sh` asks git for that checkout's
+commit to hold a known-red line to the commit it pins:
+
+```
+{"event":"lib","lib":"<name>","dir":"<dir>"}
+```
+
+and, when a workspace document disagrees with the tool (§ Documents
+that quote the tool), one `{"event":"doc_quote_mismatch"}`.
 
 The run terminates with a single aggregated record:
 
@@ -159,20 +236,94 @@ Schema for the inner `event:"test"` and `event:"summary"` records is
 the upstream contract from
 [`../compiler-cli/AGENTS.md`](../compiler-cli/AGENTS.md) (`--json`
 section). Forward-compatible: a JSON consumer that does not recognise
-a key (e.g. a future `duration_ms`) should ignore it.
+a key should ignore it.
+
+## Documents that quote the tool
+
+A workspace root's documents (`*.md` directly in the workspace
+directory) quote the refusal `botopink build` prints there, and that
+refusal enumerates every member. A list kept as prose is merged as
+prose: emilia front 39's merge took one side's copy of it whole and
+dropped the member the other side had added, in a hunk git resolved
+without a conflict. So `doc_quotes.check` reads every quote of `…run
+this command inside one of its members: <list>` (up to the closing
+backtick, whitespace collapsed — a quote may wrap) and compares it with
+`manifest.Workspace.memberList`, the list the tool renders. An elided
+quote (`…`) enumerates nothing and is not checked. A mismatch prints
+`<file>:<line>: the workspace refusal is quoted with the members …, but
+the tool prints …` and fails the run (exit 1, both modes); no flag turns
+it off.
+
+## Stale binary
+
+`botopink-lib-test` refuses to start when the checkout it (and the
+`botopink` beside it) was built from has changed since the build
+(`source_stamp.checkFresh` over `build_stamp`, embedded by `build.zig` —
+[`../source-stamp/AGENTS.md`](../source-stamp/AGENTS.md)): a library run
+against a stale compiler measures the previous compiler. `botopink
+test` makes the same check of its own binary, so a hand-run cell is
+covered too. Exit 1, naming the checkout and `run zig build there`.
+
+## Parallel cells
+
+`main.zig` plans every (lib, target) cell in discovery order first — problem,
+skipped and nothing-to-compile cells are decided from discovery alone and spawn
+nothing — then runs the spawning cells (`compile`, `test_run`) on `--jobs`
+workers (`std.Io.concurrent`; each worker claims the next cell in plan order,
+captures it into its slot with a page-backed arena of its own, and sets the
+slot's `std.Io.Event`). The main thread walks the plan in order, waits for each
+slot, and is the **only** writer of stdout/stderr: each cell's header, captured
+child stdout (JSONL spliced under `--json`), captured child stderr and
+`cell_summary` are written exactly as the serial runner wrote them, one cell at
+a time. The child's output was always captured whole before being re-emitted,
+so the stream — and the exit code, the matrix, `run_summary`, and everything
+`scripts/test-libs.sh` reads from it — is byte for byte what `--jobs 1` prints;
+only the timing values the children print (`duration_ms`, `Compiled in …`)
+differ between any two runs. When no worker can be started the main thread runs
+each cell as it reaches it (the serial runner).
+
+Before a worker starts a cell it waits for a free CPU (`Pool.admit`): while this
+run already has a cell in flight, it polls `procs_running` — the runnable
+threads right now, 4th field of `/proc/loadavg` — every 200 ms until it is at
+most the CPU count. Up to five gates share the maintainer's machine; sized to
+CPUs alone the pools put the load at ~140 on 16 CPUs, and `std/async`'s
+"settleOf runs its tasks concurrently" (three 60 ms tasks under 120 ms) went
+red. A run with nothing in flight is always admitted, so it cannot wait on
+other gates forever; without `/proc/loadavg` nothing waits.
+
+Concurrency inside one library directory was already the contract: two gates
+over one checkout run the same cells side by side, so `botopink test` writes to
+`.botopinkbuild/test-out/<target>/<id>/`, the comptime module cache is written
+by rename, and `compileCell` writes `.botopinkbuild/lib-test-build/<target>/<id>/`,
+per target and per run: a per-target directory alone was shared by two gates
+reaching the same (lib, target) cell.
+
+The two cells of one library DO run side by side with one cwd, so a library's
+tests must not write under it: `botopink test` hands every test runner its own
+scratch directory in `BOTOPINK_TEST_TMPDIR` (`<run dir>/tmp`, removed with the
+run). rakun's build tests used to write their fixture projects to the member's
+`.botopinkbuild/tmp/`, and each cell's `rm -rf` of a fixture landed between
+the other cell's write and compile: `rakun-data·commonJS` measured 6, `build`,
+1 failed on three consecutive gates, and the erlang cells of `rakun-data` and
+`rakun-security` went red now and then.
 
 ## Design contract
 
 - **Orchestrate, don't reimplement.** Per-lib isolation falls out of spawning a
   child with `cwd = <lib_dir>` (the lib's own directory, under any resolved root):
-  `botopink test` reads that lib's `botopink.json` and writes its own
-  `.botopinkbuild/test-out/`. No global-cwd juggling.
+  `botopink test` reads that lib's `botopink.json` and writes under that lib's
+  own `.botopinkbuild/test-out/`. No global-cwd juggling. Per-lib is NOT
+  per-run, though: that directory belongs to the checkout, which two gates
+  share, so the child scopes its output one level further — per target and per
+  run, `.botopinkbuild/test-out/<target>/<id>/`, and `compileCell` writes
+  `.botopinkbuild/lib-test-build/<target>/<id>/` the same way.
 - **Unsupported-target detection is child-driven**, not a hard-coded list: the
   runner scans the child's output for `"currently supports only"`. The moment
   `botopink test` learns `beam`/`wasm`, that target stops being skipped here with
   no change — only the default/`all` set widens (`args.Target.supported`).
 - **No lib coupling, no core code.** The runner names no specific lib and imports
-  nothing from `compiler-core`.
+  nothing from `compiler-core`; its only import is the std-only `manifest`
+  module, so its reading of `botopink.json` is the compiler's.
 
 ## Env
 
@@ -192,10 +343,19 @@ a key (e.g. a future `duration_ms`) should ignore it.
   not need the missing root).
 - Empty entries and a trailing delimiter dropped.
 - Relative entries resolved against cwd.
-- Unset / empty → byte-identical to the legacy walk-up.
+- Unset / empty → walk-up roots (plus `--lib-root`) only.
 - `init.environ_map` is threaded into `discovery.resolveRoots`; tests pass `null`.
-
-Schema: see [`docs/botopink-json.md`](../../docs/botopink-json.md).
 
 See the root [`AGENTS.md`](../../AGENTS.md) for workspace commands and the
 [`modules/AGENTS.md`](../AGENTS.md) package table.
+
+## Scratch paths in tests
+
+A unit test in this package that writes to disk takes its path from the
+`test_scratch` module — `test_scratch.path(io, "<case>/…")`,
+`test_scratch.remove(io, "<case>")` — never a hand-spelled
+`.botopinkbuild/<case>` (`scripts/check-test-scratch.sh` refuses that, decision 67, no flag).
+The test cwd is this package's directory, shared by every process running the
+suite; a per-case-but-not-per-run path let a second `zig build test` empty the
+first one's fixtures mid-test. See
+[../test-scratch/AGENTS.md](../test-scratch/AGENTS.md).

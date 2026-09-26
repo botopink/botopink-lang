@@ -1,0 +1,585 @@
+----- SOURCE CODE -- main.bp
+```botopink
+fn lookup(pairs: Array<#(string, i32)>, key: string) -> ?i32 {
+    return pairs.find({ pair -> pair.0 == key }).map({ pair -> pair.1 });
+}
+
+fn main() {
+    val pairs = [#("a", 1), #("b", 2)];
+    @print(lookup(pairs, "b"));
+    @print(lookup(pairs, "z") == null);
+}
+```
+
+----- WASM TEXT -- main.wat
+```wasm
+(module
+  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 256) "\01\00\00\00a")
+  (data (i32.const 264) "\01\00\00\00b")
+  (data (i32.const 272) "\01\00\00\00z")
+  (global $__heap_ptr (mut i32) (i32.const 280))
+  (func $lookup (param $pairs i32) (param $key i32) (result i32)
+    (local $_res0 i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $__out0 i32)
+    (local $pair i32)
+    local.get $pairs
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    local.get $__len0
+    call $__arr_new
+    local.set $__out0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $pair
+    local.get $pair
+    i32.load
+    local.get $key
+    call $__str_eq
+    (if
+      (then
+    local.get $__out0
+    local.get $__acc0
+    i32.const 4
+    i32.mul
+    i32.add
+    local.get $__iter0
+    local.get $__idx0
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load offset=4
+    i32.store offset=4
+    local.get $__acc0
+    i32.const 1
+    i32.add
+    local.set $__acc0
+      )
+    )
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $__out0
+    local.get $__acc0
+    i32.store ;; kept count
+    local.get $__out0
+    i32.const 0
+    call $__arr_at
+    local.set $_res0
+    local.get $_res0 ;; Option (0 = None, else Some payload)
+    (if (result i32)
+      (then
+    local.get $_res0
+    local.set $pair
+    local.get $pair
+    i32.load offset=4
+    call $__box_i32
+      )
+      (else
+    i32.const 0 ;; None — propagate absence
+      )
+    )
+    return
+  )
+  (func $main
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $__mem2 i32)
+    (local $pairs i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 12
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 2
+    i32.store
+    local.get $__mem0
+    global.get $__heap_ptr
+    local.set $__mem1
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 256
+    i32.store
+    local.get $__mem1
+    i32.const 1
+    i32.store offset=4
+    local.get $__mem1
+    i32.store offset=4
+    local.get $__mem0
+    global.get $__heap_ptr
+    local.set $__mem2
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem2
+    i32.const 264
+    i32.store
+    local.get $__mem2
+    i32.const 2
+    i32.store offset=4
+    local.get $__mem2
+    i32.store offset=8
+    local.get $__mem0
+    local.set $pairs
+    local.get $pairs
+    i32.const 264
+    call $lookup
+    call $__print_opt_i32
+    local.get $pairs
+    i32.const 272
+    call $lookup
+    i32.const 0
+    i32.eq
+    call $__print_bool
+  )
+  (func $_botopink_main (export "_botopink_main") (export "_start")
+    (call $main)
+  )
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   32..64 float fraction   64..128 i32 digits
+  (func $__write_bytes (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 1
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__print_nl
+    i32.const 8
+    i32.const 10
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  ;; separator between the arguments of a multi-argument `@print`
+  (func $__print_sp
+    i32.const 8
+    i32.const 32
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_i32 (param $n i32)
+    local.get $n
+    call $__print_i32_raw
+    call $__print_nl
+  )
+  (func $__print_i32_raw (param $n i32)
+    (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
+    (local $i i32) (local $j i32) (local $tmp i32)
+    i32.const 64
+    local.set $buf
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 1
+        local.set $neg
+        i32.const 0
+        local.get $n
+        i32.sub
+        local.set $n
+      )
+    )
+    (block $done
+      (loop $digits
+        local.get $n
+        i32.const 10
+        i32.rem_u
+        i32.const 48
+        i32.add
+        local.set $d
+        local.get $buf
+        local.get $len
+        i32.add
+        local.get $d
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+        local.get $n
+        i32.const 10
+        i32.div_u
+        local.set $n
+        local.get $n
+        i32.const 0
+        i32.gt_u
+        br_if $digits
+      )
+    )
+    ;; reverse
+    i32.const 0
+    local.set $i
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $j
+    (block $rdone
+      (loop $rev
+        local.get $i
+        local.get $j
+        i32.ge_u
+        br_if $rdone
+        local.get $buf
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.set $tmp
+        local.get $buf
+        local.get $i
+        i32.add
+        local.get $buf
+        local.get $j
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $buf
+        local.get $j
+        i32.add
+        local.get $tmp
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        local.get $j
+        i32.const 1
+        i32.sub
+        local.set $j
+        br $rev
+      )
+    )
+    ;; add neg sign + newline
+    ;; shift the digits one byte right to make room for '-'
+    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
+    ;;  bytes and printed -12 as -21)
+    local.get $neg
+    (if
+      (then
+        local.get $buf
+        i32.const 1
+        i32.add
+        local.get $buf
+        local.get $len
+        call $__memmove
+        local.get $buf
+        i32.const 45
+        i32.store8
+        local.get $len
+        i32.const 1
+        i32.add
+        local.set $len
+      )
+    )
+    local.get $buf
+    local.get $len
+    call $__write_bytes
+  )
+  (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
+    (local $i i32)
+    local.get $len
+    i32.const 1
+    i32.sub
+    local.set $i
+    (block $done
+      (loop $loop
+        local.get $i
+        i32.const 0
+        i32.lt_s
+        br_if $done
+        local.get $dst
+        local.get $i
+        i32.add
+        local.get $src
+        local.get $i
+        i32.add
+        i32.load8_u
+        i32.store8
+        local.get $i
+        i32.const 1
+        i32.sub
+        local.set $i
+        br $loop
+      )
+    )
+  )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 256
+    i32.lt_u
+    (if
+      (then
+        ;; a pointer below the data floor is not a string
+        unreachable
+      )
+    )
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        local.get $i
+        local.get $xs
+        i32.load
+        i32.add
+        local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    i32.load
+    i32.ge_s
+    i32.or
+    (if (result i32)
+      (then i32.const 0)
+      (else
+        local.get $xs
+        local.get $i
+        i32.const 1
+        i32.add
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+      )
+    )
+  )
+  (func $__str_eq (param $a i32) (param $b i32) (result i32)
+    (local $i i32) (local $alen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $alen
+    local.get $b
+    i32.load
+    i32.ne
+    (if
+      (then i32.const 0 return)
+    )
+    (block $done
+      (loop $cmp
+        local.get $i
+        local.get $alen
+        i32.ge_u
+        br_if $done
+        local.get $a
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        local.get $b
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        i32.ne
+        (if
+          (then i32.const 0 return)
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cmp
+      )
+    )
+    i32.const 1
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__arr_new (param $n i32) (result i32)
+    (local $p i32)
+    local.get $n
+    i32.const 1
+    i32.add
+    i32.const 4
+    i32.mul
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.store
+    local.get $p
+  )
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
+    local.get $p
+  )
+  (func $__print_null
+    i32.const 176
+    i32.const 1819047278
+    i32.store
+    i32.const 176
+    i32.const 4
+    call $__write_bytes
+  )
+  (func $__print_opt_i32_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_null
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_i32_raw
+      )
+    )
+  )
+  (func $__print_opt_i32 (param $p i32)
+    local.get $p
+    call $__print_opt_i32_raw
+    call $__print_nl
+  )
+  (func $__print_opt_bool_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_null
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_bool_raw
+      )
+    )
+  )
+  (func $__print_opt_bool (param $p i32)
+    local.get $p
+    call $__print_opt_bool_raw
+    call $__print_nl
+  )
+  (func $__print_opt_str_raw (param $s i32)
+    local.get $s
+    i32.eqz
+    (if
+      (then
+        call $__print_null
+      )
+      (else
+        local.get $s
+        call $__print_str_raw
+      )
+    )
+  )
+  (func $__print_opt_str (param $s i32)
+    local.get $s
+    call $__print_opt_str_raw
+    call $__print_nl
+  )
+)
+```
+
+----- RUN LOG -----
+```logs
+2
+true
+```

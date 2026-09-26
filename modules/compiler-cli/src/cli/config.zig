@@ -1,5 +1,20 @@
-/// Project configuration — loaded from `botopink.json` in the project root.
+/// Project configuration — the `botopink.json` of the project being built.
+///
+/// The manifest model itself lives in the shared `manifest` module
+/// (`modules/manifest/src/root.zig`): fields, the workspace form, the
+/// dependency object and every located refusal. This file is the CLI's view of
+/// it — `load` reads the manifest in cwd, refuses a workspace (a command runs
+/// inside a member, never on the umbrella), finds the enclosing workspace when
+/// there is one, and hands the commands a `ProjectConfig` with the defaults
+/// they expect (`target` is `commonJS` when unset). Every refusal is printed
+/// here, located, before `error.ConfigInvalid` is returned, so a caller prints
+/// nothing more.
 const std = @import("std");
+const manifest = @import("manifest");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,34 +42,12 @@ pub const Target = enum {
     }
 };
 
-/// Pinned ref carried by a `DepSpec` (`branch` / `rev` / `tag` are mutually
-/// exclusive at the *resolved* layer — DEP-003 warns when more than one is
-/// present in the source JSON and picks the strongest pin).
-pub const DepRef = union(enum) {
-    branch: []const u8,
-    rev: []const u8,
-    tag: []const u8,
-    none,
-};
+/// The dependency shapes, shared with every other reader of the manifest.
+pub const DepRef = manifest.DepRef;
+pub const DepSpec = manifest.DepSpec;
+pub const DepEntry = manifest.DepEntry;
 
-/// Source coordinates for an object-form dependency. Carried directly by
-/// `DepEntry.spec`. Mirrored by `modules/bpmp/src/dep/spec.zig` so bpmp can
-/// consume the same shape without taking a compiler-cli build dependency.
-pub const DepSpec = struct {
-    git: ?[]const u8 = null,
-    path: ?[]const u8 = null,
-    ref: DepRef = .none,
-};
-
-/// Normalised representation of one entry in the project's `dependencies`
-/// field. `spec == null` is the legacy bare-name form (resolver-only, no
-/// install). `spec != null` carries the new object-form source coordinates.
-pub const DepEntry = struct {
-    name: []const u8,
-    spec: ?DepSpec = null,
-};
-
-/// Parsed representation of `botopink.json`.
+/// Parsed representation of `botopink.json`, with the CLI's defaults applied.
 pub const ProjectConfig = struct {
     name: []const u8,
     version: []const u8 = "0.1.0",
@@ -64,25 +57,46 @@ pub const ProjectConfig = struct {
     /// `main.bp` if present (binary), else `root.bp` (library). The resolver
     /// follows `mod` declarations from this file to build the package's modules.
     entry: ?[]const u8 = null,
-    /// Normalised dependencies. The on-disk form may be either the legacy
-    /// `["foo", "bar"]` array of bare names OR the new object form
-    /// `{ "foo": { "git": ..., "branch": ... } }`. Both shapes are
-    /// normalised here into `[]DepEntry` — `spec == null` for the legacy
-    /// form, `spec != null` for the object form.
+    /// The object-form dependencies (decision 76) — `{ "<name>": { "path" } |
+    /// { "git", pin } | { "workspace": true } }`, each already validated.
     dependencies: []const DepEntry = &.{},
-    /// Diagnostic codes raised by the dependencies parser. `null` when the
-    /// loader path is bypassed (e.g. a hand-rolled `ProjectConfig` in tests).
-    /// Owned by the same arena as the rest of the config.
-    dep_diagnostics: []const DepDiagnostic = &.{},
+    /// The manifest's `files` — modules this package ships to something outside
+    /// its own `mod` tree, each a path relative to `src`. A consumer of a
+    /// dependency loads them (`libs.loadDependencies`); `libs/std` uses them for
+    /// the ambient modules the compiler build embeds into the global type env.
+    /// Either way the module is reached, which is why a `files` entry is not an
+    /// orphan.
+    files: []const []const u8 = &.{},
+    /// The full manifest (raw text included, so a later refusal can be located).
+    /// The default is an empty package, for a hand-rolled config in a test.
+    manifest: manifest.Manifest = .{ .path = manifest.FILENAME, .text = "", .kind = .package, .name = "" },
+    /// The project's directory, absolute — the base every `path` dependency
+    /// resolves against.
+    dir: []const u8 = ".",
+    /// The workspace this project is a member of, when it is one (decision 75):
+    /// `{ "workspace": true }` dependencies resolve to its members.
+    workspace: ?manifest.Workspace = null,
 
-    pub fn parsedTarget(self: ProjectConfig) Target {
-        return Target.fromString(self.target) orelse .commonJS;
+    /// The manifest's `src` as a directory relative to the project (onze
+    /// F5): `"src/"` → `"src"`, `"."` or `"./"` → `"."`. Every command loads
+    /// the project's own modules from here; a hand-rolled config answers
+    /// the manifest default, `src`.
+    pub fn srcDir(self: ProjectConfig) []const u8 {
+        var s = std.mem.trimEnd(u8, self.manifest.src, "/");
+        if (std.mem.startsWith(u8, s, "./") and s.len > 2) s = s[2..];
+        return if (s.len == 0) "." else s;
+    }
+
+    /// The manifest's `target`, or null when it names a target the compiler
+    /// does not support. Never degrades an unknown target to commonJS — the
+    /// caller reports it (`reportUnsupportedTarget`) and fails.
+    pub fn parsedTarget(self: ProjectConfig) ?Target {
+        return Target.fromString(self.target);
     }
 
     /// Convenience: flatten `dependencies` to just the names — the shape the
-    /// existing `libs.loadDependencies` resolver consumes. Caller owns the
-    /// slice (free with `gpa.free`); element strings remain owned by the
-    /// config arena.
+    /// resolver's import-source rule consumes. Caller owns the slice (free with
+    /// `gpa.free`); element strings remain owned by the config arena.
     pub fn dependencyNames(self: ProjectConfig, gpa: std.mem.Allocator) ![]const []const u8 {
         var names = try gpa.alloc([]const u8, self.dependencies.len);
         for (self.dependencies, 0..) |d, i| names[i] = d.name;
@@ -90,29 +104,12 @@ pub const ProjectConfig = struct {
     }
 };
 
-/// One parser diagnostic surfaced while normalising `dependencies`.
-pub const DepDiagnostic = struct {
-    code: DepDiagCode,
-    /// Dep name the diagnostic is about. Empty (`""`) for shape-level codes
-    /// (DEP-001) where no individual entry is at fault.
-    name: []const u8 = "",
-};
-
-pub const DepDiagCode = enum {
-    /// Whole `dependencies` field is neither array-of-strings nor object-of-DepSpec.
-    DEP_001_invalid_shape,
-    /// A `DepSpec` declared neither `git` nor `path`.
-    DEP_002_missing_source,
-    /// A `DepSpec` declared more than one of `branch`/`rev`/`tag` — the parser
-    /// keeps the strongest pin (`rev` > `tag` > `branch`) and surfaces this
-    /// warning.
-    DEP_003_ambiguous_ref,
-};
-
 // ── Loader ────────────────────────────────────────────────────────────────────
 
 pub const LoadError = error{
     ConfigNotFound,
+    /// The manifest was refused (not valid JSON, a retired shape, a workspace
+    /// where a package is needed, …). The located diagnostic has been printed.
     ConfigInvalid,
 } || std.mem.Allocator.Error;
 
@@ -121,174 +118,110 @@ pub const LoadError = error{
 pub fn load(arena: std.mem.Allocator, io: std.Io) LoadError!ProjectConfig {
     const data = std.Io.Dir.cwd().readFileAlloc(
         io,
-        "botopink.json",
+        manifest.FILENAME,
         arena,
         .limited(64 * 1024),
     ) catch return error.ConfigNotFound;
 
-    return parse(arena, data);
-}
-
-/// Parse a botopink.json blob from memory. Splits out the on-disk read so
-/// tests can drive synthetic JSON without touching the filesystem.
-pub fn parse(arena: std.mem.Allocator, data: []const u8) LoadError!ProjectConfig {
-    var parsed = std.json.parseFromSlice(
-        std.json.Value,
-        arena,
-        data,
-        .{},
-    ) catch return error.ConfigInvalid;
-    defer parsed.deinit();
-
-    const root = parsed.value;
-    if (root != .object) return error.ConfigInvalid;
-
-    var cfg: ProjectConfig = .{ .name = "" };
-
-    if (root.object.get("name")) |v| {
-        if (v != .string) return error.ConfigInvalid;
-        cfg.name = try arena.dupe(u8, v.string);
-    } else return error.ConfigInvalid;
-
-    if (root.object.get("version")) |v| {
-        if (v != .string) return error.ConfigInvalid;
-        cfg.version = try arena.dupe(u8, v.string);
+    var err: ?manifest.Located = null;
+    const m = manifest.parse(arena, data, manifest.FILENAME, &err) catch |e| switch (e) {
+        error.Invalid => {
+            err.?.print();
+            return error.ConfigInvalid;
+        },
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    if (m.isWorkspace()) {
+        // A workspace declares members; the commands compile a member.
+        (try workspaceRefusal(arena, io, m)).print();
+        return error.ConfigInvalid;
     }
+    var cfg = fromManifest(m);
 
-    if (root.object.get("target")) |v| {
-        if (v != .string) return error.ConfigInvalid;
-        cfg.target = try arena.dupe(u8, v.string);
-    }
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = std.process.currentPath(io, &cwd_buf) catch return cfg;
+    cfg.dir = try arena.dupe(u8, cwd_buf[0..n]);
 
-    if (root.object.get("entry")) |v| {
-        switch (v) {
-            .null => {},
-            .string => |s| cfg.entry = try arena.dupe(u8, s),
-            else => return error.ConfigInvalid,
-        }
-    }
-
-    if (root.object.get("dependencies")) |v| {
-        var diags: std.ArrayListUnmanaged(DepDiagnostic) = .empty;
-        cfg.dependencies = try parseDependencies(arena, v, &diags);
-        cfg.dep_diagnostics = try diags.toOwnedSlice(arena);
-    }
-
+    cfg.workspace = manifest.enclosingWorkspace(arena, io, cfg.dir, &err) catch |e| switch (e) {
+        error.Invalid => {
+            err.?.print();
+            return error.ConfigInvalid;
+        },
+        error.OutOfMemory => return error.OutOfMemory,
+    };
     return cfg;
 }
 
-/// Normalise either the legacy array form or the new object form into
-/// `[]DepEntry`. Pushes diagnostics into `diags` along the way (caller owns).
-pub fn parseDependencies(
-    arena: std.mem.Allocator,
-    node: std.json.Value,
-    diags: *std.ArrayListUnmanaged(DepDiagnostic),
-) ![]const DepEntry {
-    return switch (node) {
-        .array => |arr| try parseArrayForm(arena, arr, diags),
-        .object => |obj| try parseObjectForm(arena, obj, diags),
-        else => blk: {
-            try diags.append(arena, .{ .code = .DEP_001_invalid_shape });
-            break :blk &.{};
+/// Parse a botopink.json blob from memory, printing a refusal. Splits out the
+/// on-disk read so tests can drive synthetic JSON without touching the
+/// filesystem. `dir` stays `.` and no enclosing workspace is looked up.
+pub fn parse(arena: std.mem.Allocator, data: []const u8) LoadError!ProjectConfig {
+    var err: ?manifest.Located = null;
+    return parseLocated(arena, data, manifest.FILENAME, &err) catch |e| switch (e) {
+        error.ConfigInvalid => {
+            err.?.print();
+            return error.ConfigInvalid;
         },
+        else => |other| return other,
     };
 }
 
-fn parseArrayForm(
-    arena: std.mem.Allocator,
-    arr: std.json.Array,
-    diags: *std.ArrayListUnmanaged(DepDiagnostic),
-) ![]const DepEntry {
-    var out = try arena.alloc(DepEntry, arr.items.len);
-    var i: usize = 0;
-    for (arr.items) |item| {
-        if (item != .string) {
-            try diags.append(arena, .{ .code = .DEP_001_invalid_shape });
-            return &.{};
-        }
-        out[i] = .{ .name = try arena.dupe(u8, item.string), .spec = null };
-        i += 1;
+/// `parse` without the printing: the refusal is handed back in `out_err`.
+pub fn parseLocated(arena: std.mem.Allocator, data: []const u8, path: []const u8, out_err: *?manifest.Located) LoadError!ProjectConfig {
+    const m = manifest.parse(arena, data, path, out_err) catch |e| switch (e) {
+        error.Invalid => return error.ConfigInvalid,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    if (m.isWorkspace()) {
+        // Without `io` the members cannot be listed; `load` does that.
+        out_err.* = locatedAtWorkspaces(m, WORKSPACE_NOT_A_PACKAGE);
+        return error.ConfigInvalid;
     }
-    return out[0..i];
+    return fromManifest(m);
 }
 
-fn parseObjectForm(
-    arena: std.mem.Allocator,
-    obj: std.json.ObjectMap,
-    diags: *std.ArrayListUnmanaged(DepDiagnostic),
-) ![]const DepEntry {
-    var out = try arena.alloc(DepEntry, obj.count());
-    var i: usize = 0;
-    var it = obj.iterator();
-    while (it.next()) |kv| {
-        const name = kv.key_ptr.*;
-        const spec_node = kv.value_ptr.*;
-        if (spec_node != .object) {
-            try diags.append(arena, .{ .code = .DEP_001_invalid_shape, .name = try arena.dupe(u8, name) });
-            return &.{};
-        }
-        var spec: DepSpec = .{};
-        var have_branch = false;
-        var have_rev = false;
-        var have_tag = false;
+const WORKSPACE_NOT_A_PACKAGE = "botopink.json is a workspace, not a package — run this command inside one of its members";
 
-        if (spec_node.object.get("git")) |v| switch (v) {
-            .string => |s| spec.git = try arena.dupe(u8, s),
-            .null => {},
-            else => return &.{}, // malformed; surface as DEP-001 path collapses upstream
-        };
-        if (spec_node.object.get("path")) |v| switch (v) {
-            .string => |s| spec.path = try arena.dupe(u8, s),
-            .null => {},
-            else => return &.{},
-        };
-        if (spec_node.object.get("branch")) |v| switch (v) {
-            .string => |s| {
-                spec.ref = .{ .branch = try arena.dupe(u8, s) };
-                have_branch = true;
-            },
-            .null => {},
-            else => return &.{},
-        };
-        if (spec_node.object.get("tag")) |v| switch (v) {
-            .string => |s| {
-                spec.ref = .{ .tag = try arena.dupe(u8, s) };
-                have_tag = true;
-            },
-            .null => {},
-            else => return &.{},
-        };
-        if (spec_node.object.get("rev")) |v| switch (v) {
-            .string => |s| {
-                spec.ref = .{ .rev = try arena.dupe(u8, s) };
-                have_rev = true;
-            },
-            .null => {},
-            else => return &.{},
-        };
+fn fromManifest(m: manifest.Manifest) ProjectConfig {
+    return .{
+        .name = m.name,
+        .version = m.version,
+        .target = m.target orelse "commonJS",
+        .entry = m.entry,
+        .dependencies = m.dependencies,
+        .files = m.files,
+        .manifest = m,
+    };
+}
 
-        // DEP-002 — must declare at least one of git/path.
-        if (spec.git == null and spec.path == null) {
-            try diags.append(arena, .{
-                .code = .DEP_002_missing_source,
-                .name = try arena.dupe(u8, name),
-            });
-        }
-        // DEP-003 — pick strongest pin; rev > tag > branch.
-        const ref_count = @as(u2, @intFromBool(have_branch)) +
-            @as(u2, @intFromBool(have_rev)) +
-            @as(u2, @intFromBool(have_tag));
-        if (ref_count > 1) {
-            try diags.append(arena, .{
-                .code = .DEP_003_ambiguous_ref,
-                .name = try arena.dupe(u8, name),
-            });
-        }
+/// The located refusal for running a package command on a workspace manifest,
+/// listing the members when the workspace expands.
+pub fn workspaceRefusal(arena: std.mem.Allocator, io: std.Io, m: manifest.Manifest) std.mem.Allocator.Error!manifest.Located {
+    var err: ?manifest.Located = null;
+    const ws = manifest.expand(arena, io, m, &err) catch |e| switch (e) {
+        error.Invalid => return err.?,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    return locatedAtWorkspaces(m, try std.fmt.allocPrint(
+        arena,
+        "{s} is a workspace, not a package — run this command inside one of its members: {s}",
+        .{ m.path, try ws.memberList(arena) },
+    ));
+}
 
-        out[i] = .{ .name = try arena.dupe(u8, name), .spec = spec };
-        i += 1;
+fn locatedAtWorkspaces(m: manifest.Manifest, message: []const u8) manifest.Located {
+    // Find the `"workspaces"` key for the caret; line 1 when it is not there.
+    const key = "\"workspaces\"";
+    const offset = std.mem.indexOf(u8, m.text, key) orelse 0;
+    var line: usize = 1;
+    var line_start: usize = 0;
+    for (m.text[0..offset], 0..) |c, i| {
+        if (c == '\n') {
+            line += 1;
+            line_start = i + 1;
+        }
     }
-    return out[0..i];
+    return .{ .message = message, .file = m.path, .source = m.text, .line = line, .col = offset - line_start + 1, .span = key.len };
 }
 
 /// Walk parent directories until `botopink.json` is found or the fs root is
@@ -300,7 +233,7 @@ pub fn findProjectRoot(gpa: std.mem.Allocator, io: std.Io) !?[]u8 {
     var dir = buf[0..n];
 
     while (true) {
-        const candidate = try std.fs.path.join(gpa, &.{ dir, "botopink.json" });
+        const candidate = try std.fs.path.join(gpa, &.{ dir, manifest.FILENAME });
         defer gpa.free(candidate);
 
         std.Io.Dir.cwd().access(io, candidate, .{}) catch {
@@ -319,21 +252,6 @@ pub fn findProjectRoot(gpa: std.mem.Allocator, io: std.Io) !?[]u8 {
 
 const testing = std.testing;
 
-test "parse: legacy array dependencies → DepEntry with spec=null" {
-    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena_inst.deinit();
-    const arena = arena_inst.allocator();
-    const json =
-        \\{ "name": "p", "dependencies": ["foo", "bar"] }
-    ;
-    const cfg = try parse(arena, json);
-    try testing.expectEqual(@as(usize, 2), cfg.dependencies.len);
-    try testing.expectEqualStrings("foo", cfg.dependencies[0].name);
-    try testing.expectEqual(@as(?DepSpec, null), cfg.dependencies[0].spec);
-    try testing.expectEqualStrings("bar", cfg.dependencies[1].name);
-    try testing.expectEqual(@as(usize, 0), cfg.dep_diagnostics.len);
-}
-
 test "parse: object form with git+branch" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
@@ -349,101 +267,134 @@ test "parse: object form with git+branch" {
     const cfg = try parse(arena, json);
     try testing.expectEqual(@as(usize, 1), cfg.dependencies.len);
     try testing.expectEqualStrings("jhonstart", cfg.dependencies[0].name);
-    const spec = cfg.dependencies[0].spec.?;
+    const spec = cfg.dependencies[0].spec;
     try testing.expectEqualStrings("https://github.com/botopink/jhonstart.git", spec.git.?);
     try testing.expectEqualStrings("feat", spec.ref.branch);
-    try testing.expectEqual(@as(usize, 0), cfg.dep_diagnostics.len);
+    try testing.expectEqualStrings("commonJS", cfg.target);
 }
 
-test "parse: object form with path-only" {
+test "parse: object form with path-only, and workspace: true" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
-    const json =
+    const cfg = try parse(arena,
         \\{
         \\  "name": "p",
         \\  "dependencies": {
-        \\    "local": { "path": "../local-lib" }
+        \\    "local": { "path": "../local-lib" },
+        \\    "sibling": { "workspace": true }
         \\  }
         \\}
-    ;
-    const cfg = try parse(arena, json);
-    try testing.expectEqual(@as(usize, 1), cfg.dependencies.len);
-    const spec = cfg.dependencies[0].spec.?;
+    );
+    try testing.expectEqual(@as(usize, 2), cfg.dependencies.len);
+    const spec = cfg.dependencies[0].spec;
     try testing.expectEqual(@as(?[]const u8, null), spec.git);
     try testing.expectEqualStrings("../local-lib", spec.path.?);
     try testing.expect(spec.ref == .none);
-    try testing.expectEqual(@as(usize, 0), cfg.dep_diagnostics.len);
+    try testing.expect(cfg.dependencies[1].spec.workspace);
 }
 
-test "parse: DEP-001 fires on non-object/non-array dependencies" {
+test "parseLocated: the string-array dependencies form is ConfigInvalid, located (76)" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
-    const json =
-        \\{ "name": "p", "dependencies": "nope" }
-    ;
-    const cfg = try parse(arena, json);
-    try testing.expectEqual(@as(usize, 0), cfg.dependencies.len);
-    try testing.expectEqual(@as(usize, 1), cfg.dep_diagnostics.len);
-    try testing.expectEqual(DepDiagCode.DEP_001_invalid_shape, cfg.dep_diagnostics[0].code);
+    var err: ?manifest.Located = null;
+    try testing.expectError(error.ConfigInvalid, parseLocated(arena,
+        \\{ "name": "p", "dependencies": ["foo", "bar"] }
+    , "botopink.json", &err));
+    try testing.expect(std.mem.startsWith(u8, err.?.message, "\"dependencies\" must be an object, not an array"));
+    try testing.expectEqualStrings("botopink.json", err.?.file);
+    try testing.expectEqual(@as(usize, 1), err.?.line);
+    try testing.expectEqual(@as(usize, 16), err.?.col);
 }
 
-test "parse: DEP-002 fires on spec missing git AND path" {
+test "parseLocated: a dependency without a source, and a non-object dependencies field, are ConfigInvalid" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
-    const json =
+    var err: ?manifest.Located = null;
+    try testing.expectError(error.ConfigInvalid, parseLocated(arena,
         \\{ "name": "p", "dependencies": { "x": { "branch": "feat" } } }
-    ;
-    const cfg = try parse(arena, json);
-    try testing.expectEqual(@as(usize, 1), cfg.dependencies.len);
-    try testing.expectEqual(@as(usize, 1), cfg.dep_diagnostics.len);
-    try testing.expectEqual(DepDiagCode.DEP_002_missing_source, cfg.dep_diagnostics[0].code);
-    try testing.expectEqualStrings("x", cfg.dep_diagnostics[0].name);
+    , "botopink.json", &err));
+    try testing.expectEqualStrings("dependency \"x\" declares no source — one of \"git\", \"path\" or \"workspace\": true is required", err.?.message);
+    err = null;
+    try testing.expectError(error.ConfigInvalid, parseLocated(arena,
+        \\{ "name": "p", "dependencies": "nope" }
+    , "botopink.json", &err));
+    try testing.expect(std.mem.startsWith(u8, err.?.message, "\"dependencies\" must be an object"));
 }
 
-test "parse: DEP-003 fires on branch+rev; rev wins" {
+test "parseLocated: a workspace manifest is not a project" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
-    const json =
-        \\{ "name": "p", "dependencies": {
-        \\  "x": { "git": "https://e/x.git", "branch": "feat", "rev": "deadbeef" }
-        \\}}
-    ;
-    const cfg = try parse(arena, json);
-    try testing.expectEqual(@as(usize, 1), cfg.dependencies.len);
-    const spec = cfg.dependencies[0].spec.?;
-    // rev set last in the parse order → rev wins.
-    try testing.expectEqualStrings("deadbeef", spec.ref.rev);
-    try testing.expectEqual(@as(usize, 1), cfg.dep_diagnostics.len);
-    try testing.expectEqual(DepDiagCode.DEP_003_ambiguous_ref, cfg.dep_diagnostics[0].code);
+    var err: ?manifest.Located = null;
+    try testing.expectError(error.ConfigInvalid, parseLocated(arena,
+        \\{ "name": "acme", "workspaces": ["modules/*"] }
+    , "botopink.json", &err));
+    try testing.expectEqualStrings(WORKSPACE_NOT_A_PACKAGE, err.?.message);
+    try testing.expectEqual(@as(usize, 19), err.?.col);
 }
 
-test "parse: missing dependencies field → empty slice, no diagnostics" {
+test "parse: missing dependencies field → empty slice" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
-    const json =
+    const cfg = try parse(arena,
         \\{ "name": "p" }
-    ;
-    const cfg = try parse(arena, json);
+    );
     try testing.expectEqual(@as(usize, 0), cfg.dependencies.len);
-    try testing.expectEqual(@as(usize, 0), cfg.dep_diagnostics.len);
+    try testing.expect(cfg.workspace == null);
 }
 
 test "dependencyNames: flattens to bare names" {
     var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
-    const json =
-        \\{ "name": "p", "dependencies": ["a", "b"] }
-    ;
-    const cfg = try parse(arena, json);
+    const cfg = try parse(arena,
+        \\{ "name": "p", "dependencies": { "a": { "path": "../a" }, "b": { "workspace": true } } }
+    );
     const names = try cfg.dependencyNames(testing.allocator);
     defer testing.allocator.free(names);
     try testing.expectEqual(@as(usize, 2), names.len);
     try testing.expectEqualStrings("a", names[0]);
     try testing.expectEqualStrings("b", names[1]);
+}
+
+test "files: the manifest's declared surface is read; absent is empty" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const cfg = try parse(arena,
+        \\{ "name": "std", "files": ["primitives.bp", "builtins.d.bp"] }
+    );
+    try testing.expectEqual(@as(usize, 2), cfg.files.len);
+    try testing.expectEqualStrings("primitives.bp", cfg.files[0]);
+    try testing.expectEqualStrings("builtins.d.bp", cfg.files[1]);
+
+    const none = try parse(arena,
+        \\{ "name": "p" }
+    );
+    try testing.expectEqual(@as(usize, 0), none.files.len);
+}
+
+test "workspaceRefusal lists the members of an expandable workspace" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = testing.io;
+    const ws = test_scratch.path(io, "config-ws/acme");
+    test_scratch.remove(io, "config-ws");
+    defer test_scratch.remove(io, "config-ws");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "config-ws/acme/modules/acme-core"));
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "config-ws/acme/botopink.json"), .data = "{ \"name\": \"acme\",\n  \"workspaces\": [\"modules/*\"] }\n" });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "config-ws/acme/modules/acme-core/botopink.json"), .data = "{ \"name\": \"acme-core\", \"files\": [\"root.bp\"] }" });
+    var err: ?manifest.Located = null;
+    const m = try manifest.read(arena, io, ws, &err);
+    const l = try workspaceRefusal(arena, io, m);
+    const want = try std.fmt.allocPrint(arena, "{s}/botopink.json is a workspace, not a package — run this command inside one of its members: acme-core", .{ws});
+    try testing.expectEqualStrings(want, l.message);
+    try testing.expectEqual(@as(usize, 2), l.line);
+    try testing.expectEqual(@as(usize, 3), l.col);
 }

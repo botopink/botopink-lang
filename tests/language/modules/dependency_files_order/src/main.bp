@@ -1,0 +1,17 @@
+//// A dependency's modules compile in import order, not in the order its
+//// `botopink.json` lists them in `files`: `deps/dep` lists `b.bp` (which
+//// imports `a`) before `a.bp`, and `c.bp` (which imports `Leaf` with no
+//// `from`) before `leaf.bp`. `files` says what the package ships; the order
+//// is its imports'.
+////
+//// The gap this pins (`00 · 10-cli-residuals`): the consumer failed with
+//// `unbound variable 'base'` on every target, while the dependency's own
+//// build resolved the same modules.
+
+import {derived} from "dep/b";
+import {seven} from "dep/c";
+
+pub fn main() {
+    @print(derived());
+    @print(seven());
+}

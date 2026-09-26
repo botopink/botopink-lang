@@ -1,0 +1,51 @@
+//// Decision 43 — off the BEAM, `#[@BeamMemory.<member>]` is a silent no-op: a
+//// target whose execution context is already the whole program has nowhere
+//// else to put the state, so an annotated `var` is the binding a bare `var` is.
+//// `ProcessDict` is the default said out loud. Each test writes and reads back
+//// through the module binding, because a read alone would pass on a backend
+//// that dropped the write.
+////
+//// On erlang the same tests run one process each, where the three modes read
+//// alike; what tells them apart across processes is the `run/beam_memory_*`
+//// cells'. What the annotation refuses it refuses on every target (front 17
+//// step 4): a `PersistentTerm` var is only read here, because writing one after
+//// load is `reject/beam_memory_pt_write`.
+
+var bare: i32 = 0;
+
+#[@BeamMemory.ProcessDict]
+var explicit: i32 = 0;
+
+#[@BeamMemory.Ets]
+var hits: i32 = 0;
+
+#[@BeamMemory.PersistentTerm]
+var version: i32 = 101;
+
+fn bump() { hits = hits + 1; }
+
+test "a bare var is one value for the program" {
+    bare = bare + 1;
+    bare = bare + 1;
+    assert bare == 2;
+}
+
+test "ProcessDict written out loud is the same binding a bare var is" {
+    explicit = 5;
+    assert explicit == 5;
+}
+
+test "Ets: a write through a fn is what the next reader sees" {
+    bump();
+    bump();
+    assert hits == 2;
+}
+
+test "Ets: a whole-value write replaces the value" {
+    hits = 40;
+    assert hits == 40;
+}
+
+test "PersistentTerm: the declaration's value" {
+    assert version == 101;
+}

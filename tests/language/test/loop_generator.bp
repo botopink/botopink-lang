@@ -1,0 +1,13 @@
+//// Decision 8 §10 — `for (gen) { x -> … }` over an `#[@resultGenerator]` generator.
+
+fn upToThree() -> @Iterator<i32> {
+    yield 1;
+    yield 2;
+    yield 3;
+}
+
+test "§10 loop over a generator receives each yielded value" {
+    var sum = 0;
+    for (upToThree()) { x -> sum = sum + x; };
+    assert sum == 6;
+}

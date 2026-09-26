@@ -1,0 +1,59 @@
+//// A `return` at any depth of a statement ends the function — here an `if`
+//// nested in an `if` block, a `return` two blocks down, the same in a record
+//// METHOD, and a `throw` (a returned `Error`) nested the same way in a
+//// `@Result` function. A `return` in the arm of a `case` used as a statement
+//// is `run/return_in_case_arm_statement.bp`.
+////
+//// The erlang gap this pins: only an `if` whose block ENDS in `return` nested
+//// the rest of the function; anything deeper lowered to a `case` whose value
+//// was discarded, and the function ran on past the `return` — `pick(5)`
+//// printed `small` at exit 0.
+
+fn pick(n: i32) -> string {
+    if (n > 0) {
+        val m: i32 = n * 2;
+        if (m > 2) return "big";
+    };
+    return "small";
+}
+
+fn deep(n: i32) -> string {
+    if (n > 0) {
+        if (n > 1) {
+            if (n > 2) {
+                return "three";
+            };
+            @print("not three");
+        };
+        @print("not two");
+    };
+    return "low";
+}
+
+type Scale(limit: i32) {
+    pub fn grade(self: Self, n: i32) -> string {
+        if (n > 0) {
+            val doubled: i32 = n * 2;
+            if (doubled > self.limit) return "over";
+        };
+        return "under";
+    }
+}
+
+fn check(n: i32) -> @Result<i32, string> {
+    if (n > 0) {
+        if (n > 10) throw "too big";
+    };
+    return n;
+}
+
+pub fn main() {
+    @print(pick(5));
+    @print(pick(1));
+    @print(deep(3));
+    @print(deep(2));
+    @print(Scale(limit: 4).grade(3));
+    @print(Scale(limit: 4).grade(1));
+    @print(check(20).isError());
+    @print(check(5).isError());
+}

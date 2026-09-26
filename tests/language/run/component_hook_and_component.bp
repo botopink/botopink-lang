@@ -1,0 +1,43 @@
+//// Decisions 118, 120 and 128 of 1.0.10-beta (front 24, § Cells "Chain and
+//// `use`", first line; guide.md § 4 and § 9, rows `#[@use] fn f() -> @Use<C, T>`,
+//// `#[@use] fn f() -> @Component<T>`, `#[@context]` and `-> Element` on a
+//// component that uses a hook) — one wrapper, `@Component<C, T>`, with the base
+//// always written. A HOOK returns any `T` (`state`: `i32`, `label`: `string`);
+//// `counter` is a hook that composes a hook with `use` and awaits a Task
+//// (`@Component ⊃ @Task`); `Widget` is a COMPONENT (its `T` implements
+//// `@Context<ElementBase>`) holding `use` and `await` in one body, and `main`
+//// CALLS it.
+////
+//// Printed from inside `Widget`: commonJS lowers every `@Component` return to an
+//// `async function` (decision 120) and hands `main` a Promise.
+
+pub type ElementBase()
+type Element(count: i32) implement @Context<ElementBase>
+
+fn state(initial: i32) -> @Component<ElementBase, i32> {
+    return initial;
+}
+
+fn label() -> @Component<ElementBase, string> {
+    return "clicks";
+}
+
+fn answer(n: i32) -> @Task<i32> {
+    return n;
+}
+
+fn counter(start: i32) -> @Component<ElementBase, i32> {
+    val s = use state(start);
+    val v = await answer(1);
+    return s + v;
+}
+
+fn Widget(n: i32) -> @Component<ElementBase, Element> {
+    val name = use label();
+    val c = use counter(n);
+    val v = await answer(10);
+    @print(name + ": " + (c + v).toString());
+    return Element(count: c + v);
+}
+
+pub fn main() { Widget(1); }

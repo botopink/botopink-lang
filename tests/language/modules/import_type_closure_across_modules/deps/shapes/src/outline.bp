@@ -1,0 +1,7 @@
+import {Point} from "point";
+
+pub type Outline(points: Array<Point>) {
+    pub fn first(self: Self) -> Point {
+        return self.points.at(0).unwrapOr(Point(x: 0, y: 0));
+    }
+}
