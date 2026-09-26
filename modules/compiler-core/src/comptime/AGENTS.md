@@ -590,10 +590,26 @@ would otherwise accept silently:
 `@print(x)`, `x == y`, `x != y`, assigning to another `unknown` and passing to a generic parameter
 stay allowed, and each reaches inference by a path this is not on.
 
-**Not implemented, and why.** §2.4 (a `pub` declaration whose *inferred* type contains `unknown` is
-an error) and §1.4 (a non-`pub` binding falling to `unknown` **warns**) both need a channel
-`comptime/**` does not have: there is no warning path here at all, only `TypeError`. Indexing —
-§2.2's fourth refusal — has no syntax to refuse: `a[0]` is a parse error in this grammar.
+§2.4 — a `pub val` with no written type whose inferred type contains `unknown` is refused at the
+value (`refusePublicUnknown`, both the typed and the untyped `.val` arm); a written `unknown`
+(`pub val v: unknown = …`, `pub fn parse(s: string) -> unknown`) checks. A `fn`'s return type is
+written, never inferred (§1.1), so the rule has no `fn` half: an unannotated `fn` is `void`.
+
+§1.4 — a binding born as an unannotated `[]` (`var out = [];`, local or module-level) is recorded in
+`Env.birthWarnings` and, once the module is inferred, becomes a **warning** naming the annotation to
+write with the element type the program settled on — `var out: i32[] = [];`, or `unknown[]` when
+nothing did (`flushBirthWarnings`). The rest of §1.4 — a type argument decided only where the value
+is born, later uses never changing it (`val z = Option.None;` → `Option<unknown>`) — is not built:
+it would turn a use that pins a variable today into an error, across the libraries.
+
+## The warning channel (decision 57)
+
+`Env.warnings` is a list of located `TypeError`s that do not stop the compilation; `Env.warn` adds
+one (a warning already recorded at the same location with the same text is not repeated — the
+untyped and the typed pass may walk one expression twice). `comptime.zig` surfaces the list as
+`OkData.warnings`, and `botopink check` renders each like an error under `warning:`
+(`compiler-cli/src/cli/diagnostics.zig` `renderOutcome`); `build`, `test` and the language server
+do not print them yet. Writers: §1.4's `flushBirthWarnings` and §4.3's `warnAlwaysFalseIs`.
 
 ## union types (decision 8 §3, 1.0.4's 06 N20)
 
@@ -653,6 +669,12 @@ arm for the name, so the call was typed `void` ("expected bool, got void"). It i
 **before** that function now, because the slot it needs is on the AST node and not among the typed
 arguments, and the typed node it builds **carries `isType` forward** — the four backends lower their
 run-time test from it.
+
+§4.3 is `warnAlwaysFalseIs`: `a is string` on a value whose type is one concrete head — a
+primitive or a declared `type` — that the tested type cannot be is a **warning** (the program still
+checks). `unknown`, a union, an optional and a behavior are what `is` exists to test and never warn;
+numbers are tested by range (§4.1), so a number tested against another number type never warns
+either. A dotted tested name (`Token.Text`) and a name the module does not know are left alone.
 
 §4.2 is `checkIsTestableType`: a primitive, a named type's constructor and a tuple are testable as
 they are; a generic type is testable only applied to `unknown`. `Box<i32>` is the section's own
@@ -1197,8 +1219,8 @@ Tuple labels (decision 8 §6) ride the same map: a `tuple` type carries
 compares them). `row.label` on a labeled tuple resolves the element type and puts
 `row._N` into `env.enumSectionRewrites` under the access loc, so every backend
 sees a positional access; an unknown or ambiguous label is a located error naming
-the positional form. The name-mismatch warning (T7) is not implemented — the
-checker has no warning channel (06).
+the positional form. The name-mismatch warning (T7) is not implemented; the
+warning channel it waited for exists now (decision 57, above).
 
 `comptime.zig withSynthesisedEnumDecls` (after `transform` /
 `withUsedAssocInterfaces`) prepends every `env.synthesisedEnumDecls` entry as a

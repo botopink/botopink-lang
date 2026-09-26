@@ -216,7 +216,7 @@ pub type Dict<K, V>(
     }
 
     pub fn mapValues<W>(self: Self, f: fn(value: V) -> W) -> Dict<K, W> {
-        var out = [];
+        var out: #(K, W)[] = [];
         self.pairs.forEach({ p -> out.push(#(p._0, f(p._1))) });
         return Dict(pairs: out);
     }

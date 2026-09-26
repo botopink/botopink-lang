@@ -537,7 +537,7 @@ behavior Array<T> {
     // NOTE: nested trailing lambdas don't parse yet (catalogued gap) — the inner
     // copy goes through `append` rather than a nested `forEach`.
     default fn flatten<E>(self: Self) -> Array<E> {
-        var out = [];
+        var out: E[] = [];
         self.forEach({ inner ->
             out = out.append(inner);
         });
@@ -594,7 +594,7 @@ behavior Array<T> {
     // chunk may be shorter when `self.length` is not divisible by `n`.
     // Negative or zero `n` returns an empty array (no infinite loop).
     default fn chunked(self: Self, n: i32) -> Array<Self> {
-        var out = [];
+        var out: Array<Self> = [];
         if (n <= 0) return out;
         val len = self.length;
         for (0..len) { k ->
@@ -607,7 +607,7 @@ behavior Array<T> {
     // valid start offset (`self.length - n + 1` windows). Negative or zero
     // `n`, or `n > self.length`, returns an empty array.
     default fn sliding(self: Self, n: i32) -> Array<Self> {
-        var out = [];
+        var out: Array<Self> = [];
         if (n <= 0) return out;
         val windows = self.length - n + 1;
         if (windows <= 0) return out;
@@ -621,7 +621,7 @@ behavior Array<T> {
     // non-consecutive de-dup is `xs.fold([], …)` (left to callers since it
     // needs an equality predicate that interacts with generic `T`).
     default fn unique(self: Self) -> Self {
-        var out = [];
+        var out: T[] = [];
         var seenLast = false;
         var prev = self.at(0);
         self.forEach({ x ->

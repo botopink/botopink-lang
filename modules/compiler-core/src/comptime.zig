@@ -159,6 +159,9 @@ pub const ComptimeOutput = struct {
         /// `comptime_traces` entry; snapshots use this count to decide that the
         /// spliced program is worth recording.
         template_expansions: usize = 0,
+        /// Decision 57 — the warnings inference recorded for this module
+        /// (`Env.warnings`), each located, none of them failing the module.
+        warnings: []const TypeError = &.{},
     };
 };
 
@@ -1657,6 +1660,7 @@ pub fn compileTypesOnly(
                         .custom_ast = try collectCustomAst(arena_alloc, &succ.env),
                         .comptime_traces = succ.env.comptimeTraces.items,
                         .template_expansions = succ.env.templateExpansions.count(),
+                        .warnings = succ.env.warnings.items,
                     } },
                 });
             },
@@ -1842,6 +1846,7 @@ pub fn compile(
                         .custom_ast = try collectCustomAst(arena_alloc, &succ.env),
                         .comptime_traces = succ.env.comptimeTraces.items,
                         .template_expansions = succ.env.templateExpansions.count(),
+                        .warnings = succ.env.warnings.items,
                     } },
                 });
             },

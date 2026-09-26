@@ -725,6 +725,15 @@ pub const Env = struct {
     /// decorator / template evaluation in this module, in order (snapshots).
     /// Allocated in `arena`.
     comptimeTraces: std.ArrayListUnmanaged(trace.Entry) = .empty,
+    /// Decision 57 (1.0.5-beta) — the checker's warning channel: diagnostics
+    /// that do not stop the compilation, each a located `TypeError` rendered
+    /// like an error. Filled through `warn`; surfaced as `OkData.warnings`.
+    /// Decision 8 §1.4 (a binding that falls to `unknown`) and §4.3 (an `is`
+    /// test that is always false) write here. Allocated in `arena`.
+    warnings: std.ArrayListUnmanaged(@import("error.zig").TypeError) = .empty,
+    /// Decision 8 §1.4 — bindings born as `[]` with no annotation, turned into
+    /// warnings once the module is inferred (`infer.zig` `flushBirthWarnings`).
+    birthWarnings: std.ArrayListUnmanaged(@import("infer.zig").BirthWarning) = .empty,
     /// Set on the second analysis pass (after splicing contributions) so
     /// decorators are not re-invoked — no re-contribution, no infinite loop.
     skipDecoratorInvoke: bool = false,
@@ -1136,6 +1145,18 @@ pub const Env = struct {
     /// Look up the typeparam constraints for a function, or null if it has none.
     pub fn lookupTypeparams(self: *Env, name: []const u8) ?[]const TypeparamConstraint {
         return self.fnTypeparams.get(name);
+    }
+
+    /// Record a warning (decision 57). Inference may walk one expression more
+    /// than once (the untyped and the typed pass), so a warning already
+    /// recorded at the same location with the same text is not repeated.
+    pub fn warn(self: *Env, w: @import("error.zig").TypeError) !void {
+        for (self.warnings.items) |seen| {
+            const same_loc = if (seen.loc) |a| (if (w.loc) |b| a.line == b.line and a.col == b.col else false) else w.loc == null;
+            if (!same_loc) continue;
+            if (seen.kind == .custom and w.kind == .custom and std.mem.eql(u8, seen.kind.custom.message, w.kind.custom.message)) return;
+        }
+        try self.warnings.append(self.arena, w);
     }
 
     /// C-01 — record the module path `decl` was declared in (see

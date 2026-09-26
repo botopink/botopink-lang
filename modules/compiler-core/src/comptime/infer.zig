@@ -284,6 +284,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // C10 second pass — every declaration is registered by now, so an annotation
     // that still names nothing is an unknown type, reported at the annotation.
     try env.checkPendingTypeNames();
+    try flushBirthWarnings(env);
 
     // Pass 3: semantic validation of `implement` blocks and struct accessors.
     // (Decorators already ran above, before body inference.)
@@ -400,6 +401,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // C10 second pass — every declaration is registered by now, so an annotation
     // that still names nothing is an unknown type, reported at the annotation.
     try env.checkPendingTypeNames();
+    try flushBirthWarnings(env);
 
     // Semantic validation of `implement` blocks and struct accessors. (Decorators
     // already ran above, before body inference.)
@@ -683,6 +685,9 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             // (`val head: ?i32 = 5;` must bind `?i32`, or a later
             // `option.map(head, f)` sees a bare `i32`).
             const bindTy = annType orelse ty;
+            if (v.isPub and annType == null) try refusePublicUnknown(env, bindTy, v.name, "val", v.value.getLoc());
+            if (annType == null and isEmptyArrayLiteral(v.value.*))
+                try env.birthWarnings.append(env.arena, .{ .name = v.name, .mutable = v.mutable, .type_ = bindTy, .loc = v.value.getLoc() });
             try validateMemoryAnnotations(env, v, bindTy);
             try noteTypeValue(env, v.name, v.value.*, annType == null and !v.mutable);
             if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
@@ -690,6 +695,10 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
         },
         .@"fn" => |f| {
             const ty = try inferFnDecl(env, f);
+            if (f.isPub and f.returnType == null and f.body.len > 0) {
+                const d = ty.deref();
+                if (d.* == .func) try refusePublicUnknown(env, d.func.ret, f.name, "fn", f.body[0].expr.getLoc());
+            }
             try env.bind(f.name, ty);
             return .{ .name = f.name, .type_ = ty, .typedExpr = null, .decl = decl };
         },
@@ -739,6 +748,91 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
         },
         else => return null,
     }
+}
+
+/// Whether `ty` mentions `unknown` anywhere — at its head, in a type argument,
+/// a union member, a function's parameters or return, or a record field.
+fn typeContainsUnknown(ty: *T.Type) bool {
+    const t = ty.deref();
+    return switch (t.*) {
+        .named => |n| blk: {
+            if (std.mem.eql(u8, n.name, ast.unknown_type_name)) break :blk true;
+            for (n.args) |a| if (typeContainsUnknown(a)) break :blk true;
+            break :blk false;
+        },
+        .func => |f| blk: {
+            for (f.params) |p| if (typeContainsUnknown(p)) break :blk true;
+            break :blk typeContainsUnknown(f.ret);
+        },
+        .union_ => |ms| blk: {
+            for (ms) |m| if (typeContainsUnknown(m)) break :blk true;
+            break :blk false;
+        },
+        .record => |fs| blk: {
+            for (fs) |f| if (typeContainsUnknown(f.type_)) break :blk true;
+            break :blk false;
+        },
+        .typeVar => false,
+    };
+}
+
+/// Decision 8 §2.4 — a `pub` declaration whose **inferred** type contains
+/// `unknown` is an error: a public API says what it answers, and `unknown`
+/// reached by inference is a type nobody chose. Writing `unknown` on purpose
+/// (`pub fn parse(s: string) -> unknown`) is fine, so only a declaration with
+/// no written type reaches here.
+fn refusePublicUnknown(env: *Env, ty: *T.Type, name: []const u8, kw: []const u8, loc: ast.Loc) InferError!void {
+    if (!typeContainsUnknown(ty)) return;
+    const rendered = try snapshotMod.typeNameOf(env.arena, ty.deref());
+    const msg = if (unifyMod.isUnknown(ty))
+        try std.fmt.allocPrint(env.arena, "`pub {s} {s}` is inferred as `unknown`; a public declaration writes that type", .{ kw, name })
+    else
+        try std.fmt.allocPrint(env.arena, "`pub {s} {s}` is inferred as `{s}`, which contains `unknown`; a public declaration writes that type", .{ kw, name, rendered });
+    const hint = if (std.mem.eql(u8, kw, "fn"))
+        try std.fmt.allocPrint(env.arena, "A public fn states what it answers: write the return type (`-> unknown` when that is what `{s}` means to answer).", .{name})
+    else
+        try std.fmt.allocPrint(env.arena, "A public binding states its type: annotate it (`pub val {s}: unknown = …` when that is what it means).", .{name});
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
+/// Decision 8 §1.4 — a binding born with nothing that decides its element type
+/// (`var out = [];`). Recorded when the binding is inferred and turned into a
+/// warning once the module is inferred (`flushBirthWarnings`), so the warning
+/// can name the annotation to write with the element type the program settled
+/// on — `var out: i32[] = [];` — or `unknown[]` when nothing settled it.
+pub const BirthWarning = struct {
+    name: []const u8,
+    mutable: bool,
+    type_: *T.Type,
+    loc: ast.Loc,
+};
+
+fn isEmptyArrayLiteral(e: ast.Expr) bool {
+    if (e != .collection) return false;
+    const k = e.collection.kind;
+    if (k != .arrayLit) return false;
+    return k.arrayLit.elems.len == 0 and k.arrayLit.spreadExpr == null and k.arrayLit.spread == null;
+}
+
+fn flushBirthWarnings(env: *Env) InferError!void {
+    for (env.birthWarnings.items) |bw| {
+        const t = bw.type_.deref();
+        const elem_text: []const u8 = blk: {
+            if (t.* == .named and std.mem.eql(u8, t.named.name, "array") and t.named.args.len == 1) {
+                const e = t.named.args[0].deref();
+                if (e.* == .typeVar) break :blk ast.unknown_type_name;
+                if (e.* == .named and e.named.args.len == 0) break :blk e.named.name;
+                break :blk try snapshotMod.typeNameOf(env.arena, e);
+            }
+            break :blk ast.unknown_type_name;
+        };
+        const kw: []const u8 = if (bw.mutable) "var" else "val";
+        const msg = try std.fmt.allocPrint(env.arena, "`{s}` is born with no element type — annotate it: `{s} {s}: {s}[] = [];`", .{ bw.name, kw, bw.name, elem_text });
+        const hint = "An empty array literal decides no element type, and a type argument is decided where the value is born (decision 8 §1.4): what later uses make of it is not the declaration.";
+        try env.warn(TypeError.custom(msg, hint).withLoc(bw.loc));
+    }
+    env.birthWarnings.clearRetainingCapacity();
 }
 
 // ── pass 1: type definition registration ─────────────────────────────────────
@@ -2472,6 +2566,9 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
                 try unifyAt(env, at, ty, v.value.getLoc());
                 bindTy = at;
             }
+            if (v.isPub and annType == null) try refusePublicUnknown(env, bindTy, v.name, "val", v.value.getLoc());
+            if (annType == null and isEmptyArrayLiteral(v.value.*))
+                try env.birthWarnings.append(env.arena, .{ .name = v.name, .mutable = v.mutable, .type_ = bindTy, .loc = v.value.getLoc() });
             try validateMemoryAnnotations(env, v, bindTy);
             try noteTypeValue(env, v.name, v.value.*, annType == null and !v.mutable);
             if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
@@ -6781,6 +6878,58 @@ fn checkIsTestableType(env: *Env, ref: ast.TypeRef, loc: ast.Loc) InferError!voi
     }
 }
 
+/// Decision 8 §4.3 — `a is string` on a value statically known to be an `i32`
+/// is always false: a **warning** (decision 57's channel), and the program
+/// still checks. "Statically known" is a value whose type is one concrete
+/// head — a primitive, or a `type` the module declares — with no possibility
+/// set behind it: `unknown`, a union, an optional, a behavior and an
+/// unresolved variable are exactly the values `is` exists to test, and are
+/// left alone. Numbers are tested by range, not by origin (§4.1): `2.0 is i32`
+/// can be true, so a number tested against another number type never warns.
+fn warnAlwaysFalseIs(env: *Env, valueType: *T.Type, tested: ast.TypeRef, loc: ast.Loc) InferError!void {
+    const v = valueType.deref();
+    if (v.* != .named) return;
+    const vname = v.named.name;
+    const eq = std.mem.eql;
+    if (eq(u8, vname, ast.unknown_type_name) or eq(u8, vname, "optional") or eq(u8, vname, "any")) return;
+    const v_scalar = for (scalar_type_names) |n| {
+        if (eq(u8, n, vname)) break true;
+    } else false;
+    if (!v_scalar) {
+        const td = env.lookupTypeDef(vname) orelse return;
+        _ = td;
+    }
+    const tname: []const u8 = switch (tested) {
+        .named => |n| n,
+        .generic => |g| if (tested.unionMembers() != null) return else g.name,
+        .array => "array",
+        .optional => return,
+        else => return,
+    };
+    // A dotted name (`Token.Text`, a variant or a section) tests inside the
+    // value's own type; `unknown` is always true.
+    if (std.mem.indexOfScalar(u8, tname, '.') != null) return;
+    if (eq(u8, tname, ast.unknown_type_name)) return;
+    const tested_head = if (eq(u8, tname, "Array")) "array" else tname;
+    if (eq(u8, tested_head, vname)) return;
+    const numeric = struct {
+        fn of(n: []const u8) bool {
+            const nums = [_][]const u8{ "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize", "f32", "f64" };
+            for (nums) |x| if (std.mem.eql(u8, x, n)) return true;
+            return false;
+        }
+    }.of;
+    if (numeric(vname) and numeric(tested_head)) return;
+    // A tested name the module knows nothing about is the unknown-name
+    // diagnostic's business, not this one's.
+    const t_known = numeric(tested_head) or env.lookupTypeDef(tested_head) != null or
+        eq(u8, tested_head, "string") or eq(u8, tested_head, "bool") or eq(u8, tested_head, "array");
+    if (!t_known) return;
+    const rendered = try snapshotMod.typeNameOf(env.arena, v);
+    const msg = try std.fmt.allocPrint(env.arena, "this `is {s}` test is always false: the value's type is `{s}`", .{ tname, rendered });
+    try env.warn(TypeError.custom(msg, "The value's type is known here, so the test can never succeed. Test a value whose type is `unknown` or a union, or delete the test.").withLoc(loc));
+}
+
 /// Decision 8 §4 — the narrowing an `if` condition records: the name it tested
 /// and the type it tested it for. Null when the condition is not one of the
 /// forms that narrow.
@@ -7171,6 +7320,28 @@ fn refuseVariantPatternOverOptional(
         env.lastError = TypeError.custom(
             "an optional is matched by `null`, not by a variant",
             "Decision 54: write `case x { null { … } v { … } }` — the shape `??` and `?.` already use. `Some` and `None` are not spellings this language has.",
+        ).withLoc(arm.patternLoc);
+        return error.TypeError;
+    }
+}
+
+/// Decision 8 §5.1 P8 / §5.2 — a leading-dot variant (`.Some(v)`, `.None`)
+/// takes its enum from the matched value's type. An `unknown` value has none,
+/// so the shorthand names nothing and the arm must write the full name
+/// (`Maybe.Some(v)`). Without this refusal the arm was accepted and tested
+/// against whatever the flat variant table held under that name.
+fn refuseShorthandOverUnknown(env: *Env, subjectType: *T.Type, arms: []const ast.CaseArm) InferError!void {
+    if (!unifyMod.isUnknown(subjectType)) return;
+    for (arms) |arm| {
+        const written: []const u8 = switch (arm.pattern) {
+            .ident => |n| n,
+            .variant => |v| if (v.shape == .variant) v.name else continue,
+            else => continue,
+        };
+        if (written.len < 2 or written[0] != '.') continue;
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "`{s}` on an `unknown` value names no enum — write the variant's full name", .{written}),
+            "The leading-dot shorthand takes the enum from the matched value's type, and `unknown` has none: write `Type.Variant(…)` (decision 8 §5.2).",
         ).withLoc(arm.patternLoc);
         return error.TypeError;
     }
@@ -9008,6 +9179,8 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             // The annotation is the DECLARED type — bind it, not the RHS type
             // (`val head: ?i32 = 5;` must bind `?i32`).
             const bindTy = annType orelse valTyped.getType();
+            if (annType == null and isEmptyArrayLiteral(lb.value.*))
+                try env.birthWarnings.append(env.arena, .{ .name = lb.name, .mutable = lb.mutable, .type_ = bindTy, .loc = loc });
             try noteTypeValue(env, lb.name, lb.value.*, annType == null and !lb.mutable);
             if (lb.mutable) try env.bind(lb.name, bindTy) else try env.bindVal(lb.name, bindTy);
             return TypedExpr{ .binding = .{ .loc = loc, .type_ = bindTy, .kind = .{ .localBind = .{
@@ -10740,7 +10913,10 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 // nothing typed it, so `inferBuiltinCallReturnType` had no arm
                 // for the name and the call came out `void`.
                 if (std.mem.eql(u8, call.callee, ast.is_builtin_name)) {
-                    if (call.isType) |tested| try checkIsTestableType(env, tested, loc);
+                    if (call.isType) |tested| {
+                        try checkIsTestableType(env, tested, loc);
+                        if (typedArgs.len == 1) try warnAlwaysFalseIs(env, typedArgs[0].value.getType(), tested, loc);
+                    }
                     return TypedExpr{
                         .call = .{
                             .loc = loc,
@@ -11930,6 +12106,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             if (subjectTy) |st| {
                 optionalBinder = try optionalNullCaseBinder(env, st, c.arms, loc);
                 if (optionalBinder == null) try refuseVariantPatternOverOptional(env, st, c.arms);
+                try refuseShorthandOverUnknown(env, st, c.arms);
             } else for (c.arms) |arm| {
                 if (isNullPattern(arm.pattern)) {
                     env.lastError = TypeError.custom(

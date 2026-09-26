@@ -1360,3 +1360,87 @@ test "associated fn: `Array.range` answers an array, so a method on it resolves"
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected bool, got array") != null);
 }
+
+// ── decision 57: the warning channel — decision 8 §1.4 and §4.3 ──────────────
+
+/// Every warning inference recorded for `src`, message and hint joined, one
+/// per line pair. The program must check.
+fn warningMessages(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, allocator);
+    defer env.deinit();
+    _ = try inferMod.inferProgramTyped(&env, program);
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(allocator);
+    for (env.warnings.items) |w| {
+        try std.testing.expect(w.loc != null);
+        const msg = try w.message(allocator);
+        defer allocator.free(msg);
+        try out.print(allocator, "{s}\n", .{msg});
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+test "warning: `is` on a value whose type is known is always false (§4.3)" {
+    const msg = try warningMessages(std.testing.allocator,
+        \\pub fn main() { val a: i32 = 1; @print(a is string); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "this `is string` test is always false: the value's type is `i32`") != null);
+}
+
+test "warning: `is` warns on nothing it can answer — numbers by range, unknown, a union, the same type" {
+    const msg = try warningMessages(std.testing.allocator,
+        \\type P(x: i32)
+        \\pub fn main() {
+        \\    val a: i32 = 1;
+        \\    val f: f64 = 2.0;
+        \\    val u: unknown = 1;
+        \\    val v: i32 | string = 1;
+        \\    val p = P(x: 1);
+        \\    @print(a is f64);
+        \\    @print(f is i32);
+        \\    @print(u is string);
+        \\    @print(v is string);
+        \\    @print(p is P);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expectEqualStrings("", msg);
+}
+
+test "warning: an unannotated `[]` names the annotation to write (§1.4)" {
+    const msg = try warningMessages(std.testing.allocator,
+        \\fn f() -> i32 { var out = []; out = [1]; return out.length; }
+        \\fn g() -> i32 { val none = []; return 0; }
+        \\pub fn main() { val ok: i32[] = []; @print(f() + g() + ok.length); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "annotate it: `var out: i32[] = [];`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "annotate it: `val none: unknown[] = [];`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`ok`") == null);
+}
+
+// ── decision 8 §2.4: a public declaration writes an `unknown` it means ───────
+
+test "public unknown: a `pub val` inferred as `unknown` is refused; a written one checks" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn mk(s: string) -> unknown { return s; }
+        \\pub val v = mk("a");
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`pub val v` is inferred as `unknown`") != null);
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn mk(s: string) -> unknown { return s; }
+        \\pub val v: unknown = mk("a");
+        \\val w = mk("b");
+        \\pub fn parse(s: string) -> unknown { return s; }
+    );
+}
