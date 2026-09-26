@@ -1996,10 +1996,7 @@ const Emitter = struct {
         if (!self.expr_try_used) return body;
         const e: js.Expr = .{ .name = "__e" };
         const payload = try self.b.member(e, "__bp_try");
-        const is_try = try self.b.binaryBare("&&", try self.b.binaryBare("&&",
-            try self.b.binaryBare("!==", e, .null_),
-            try self.b.binaryBare("===", try self.b.unary("typeof ", e, false), .{ .quoted = "object" })),
-            try self.b.binaryBare("in", .{ .quoted = "__bp_try" }, e));
+        const is_try = try self.b.binaryBare("&&", try self.b.binaryBare("&&", try self.b.binaryBare("!==", e, .null_), try self.b.binaryBare("===", try self.b.unary("typeof ", e, false), .{ .quoted = "object" })), try self.b.binaryBare("in", .{ .quoted = "__bp_try" }, e));
         const on_error: []const js.Stmt = if (self.in_test_body) blk: {
             const err_val = try self.b.member(payload, "error");
             const is_string = try self.b.binaryBare("===", try self.b.unary("typeof ", err_val, false), .{ .quoted = "string" });
@@ -2812,27 +2809,64 @@ const Emitter = struct {
         return .{ .array = .{ .elems = elems, .spaced = true } };
     }
 
+    /// A botopink pattern in BINDING position — `val Circle(r) = s;`,
+    /// `val [a, ..rest] = xs;` — as a plain JavaScript destructuring target
+    /// (JS-4). The checker (01 R5) accepts the bare form only where the
+    /// pattern cannot fail — the one variant of a one-variant `type`, a
+    /// record's own constructor, a spread-only list — and refuses every
+    /// refutable one as `refutable-val-pattern`, so no test is emitted: a
+    /// constructor reads each binding off the declared field at its position
+    /// (`const { radius: r } = s;`), a list off its index. The arms a
+    /// refutable pattern would need (a literal, an alternation) are never
+    /// reached; they bind nothing (`_`).
     fn buildPattern(self: *Emitter, pat: ast.Pattern) anyerror!js.Pattern {
         switch (pat) {
-            .wildcard => return .{ .name = "_" },
+            .wildcard, .numberLit, .stringLit, .@"or", .multi => return .{ .name = "_" },
             .ident => |name| return .{ .ident = name },
-            .variant => |v| return switch (v.payload) {
-                .binding => |binding| js.Pattern{ .match = .{ .variant_binding = .{ .name = v.name, .binding = binding } } },
-                .fields => |fields| js.Pattern{ .match = .{ .variant_fields = .{ .name = v.name, .fields = fields } } },
-                .literals => |args| blk: {
-                    const out = try self.arena().alloc(js.Pattern, args.len);
-                    for (args, 0..) |arg, i| out[i] = try self.buildPattern(arg);
-                    break :blk js.Pattern{ .match = .{ .variant_patterns = .{ .name = v.name, .args = out } } };
-                },
+            .variant => |v| {
+                if (v.shape == .tuple) {
+                    const lits = if (v.payload == .literals) v.payload.literals else &.{};
+                    const elems = try self.arena().alloc(js.Pattern, lits.len);
+                    for (lits, 0..) |p, i| elems[i] = try self.buildPattern(p);
+                    return .{ .array = .{ .elems = elems } };
+                }
+                const bare = bareVariantName(v.name);
+                const declared = self.variant_fields.get(bare) orelse self.record_fields.get(bare);
+                switch (v.payload) {
+                    .binding => |binding| return .{ .ident = binding },
+                    .fields => |fields| {
+                        const props = try self.arena().alloc(js.ObjectPattern.Prop, fields.len);
+                        for (fields, 0..) |bb, bi| {
+                            const key = variantFieldKey(v, declared, bi) orelse bb;
+                            props[bi] = .{ .key = key, .bind = if (std.mem.eql(u8, key, bb)) null else jsIdent(bb) };
+                        }
+                        return .{ .object = .{ .props = props } };
+                    },
+                    .literals => |lits| {
+                        var props: std.ArrayListUnmanaged(js.ObjectPattern.Prop) = .empty;
+                        for (lits, 0..) |p, li| {
+                            // `_` binds nothing: the property is left out, so
+                            // two wildcards never declare `_` twice.
+                            if (p == .wildcard) continue;
+                            const key = variantFieldKey(v, declared, li) orelse continue;
+                            if (p == .ident) {
+                                const bb = p.ident;
+                                try props.append(self.arena(), .{ .key = key, .bind = if (std.mem.eql(u8, key, bb)) null else jsIdent(bb) });
+                                continue;
+                            }
+                            const nested = try self.arena().create(js.Pattern);
+                            nested.* = try self.buildPattern(p);
+                            try props.append(self.arena(), .{ .key = key, .nested = nested });
+                        }
+                        return .{ .object = .{ .props = try props.toOwnedSlice(self.arena()) } };
+                    },
+                }
             },
-            .numberLit => |n| return .{ .match = .{ .number = n } },
-            .stringLit => |s| return .{ .match = .{ .string = s } },
             .list => |l| {
                 const elems = try self.arena().alloc(js.Pattern, l.elems.len);
                 for (l.elems, 0..) |e, i| elems[i] = switch (e) {
-                    .wildcard => js.Pattern{ .name = "_" },
+                    .wildcard, .numberLit => js.Pattern{ .name = "_" },
                     .bind => |name| js.Pattern{ .ident = name },
-                    .numberLit => |n| js.Pattern{ .match = .{ .number = n } },
                 };
                 return .{
                     .array = .{
@@ -2842,16 +2876,6 @@ const Emitter = struct {
                         .rest = if (l.spread) |sp| (if (sp.len > 0) js.Rest{ .binding = sp } else null) else null,
                     },
                 };
-            },
-            .@"or" => |pats| {
-                const out = try self.arena().alloc(js.Pattern, pats.len);
-                for (pats, 0..) |p, i| out[i] = try self.buildPattern(p);
-                return .{ .match = .{ .alt = out } };
-            },
-            .multi => |pats| {
-                const out = try self.arena().alloc(js.Pattern, pats.len);
-                for (pats, 0..) |p, i| out[i] = try self.buildPattern(p);
-                return .{ .match = .{ .multi = out } };
             },
         }
     }
@@ -4297,7 +4321,13 @@ const Emitter = struct {
         // names would then no longer line up with the argument list.
         var slots: ?[]const []const u8 = null;
 
-        if (cc.receiver) |recv| {
+        if (cc.calleeExpr) |ce| {
+            // `adder(3)(4)` — what is called is the VALUE of an expression
+            // (01 handover 15): the callee travels in `calleeExpr` with
+            // `callee == ""`, and writing `callee` dropped it (`(4)`).
+            const target = try self.buildExpr(ce.*);
+            callee = if (target == .arrow or target == .function) try self.b.paren(target) else target;
+        } else if (cc.receiver) |recv| {
             // Decision 122 — `seq.next()` by hand: the generator's own
             // `{ value, done }` becomes the prelude `YieldStep` —
             // `__bp_yield_step(it.next())` on an `@Iterator`, and

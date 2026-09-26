@@ -478,11 +478,18 @@ codegen/
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
 - **None is loose**: botopink has one none value and JavaScript spells it two
-  ways (`?.` answers `undefined`, so does `Array.at` past the end), so `==` and
+  ways (`?.` answers `undefined`; `Array.at` past the end answers `null` through
+  `__bp_array_at` since 1.0.10-beta `00 · 04-js`, decision 47), so `==` and
   `!=` against a `null` literal lower to the loose `==`/`!=` — and so does the
   **optional-binding** guard (`if (val e = …)`, and the `a ?? b` that desugars
   into it): `if (n != null)`. Under a strict `!==`, `o.inner?.v ?? 9` answered
   `undefined` where erlang and wasm answered `9`. Every other `==` is `===`.
+- **Calling the result of a call** (`adder(3)(4)`, 01 handover 15): the callee
+  arrives as an expression in `calleeExpr` with `callee == ""`; `buildCallRaw`
+  builds that expression as the callee (parenthesised when it is an arrow), where
+  it used to write the empty name and emit `(4)`.
+- **A pattern in binding position** (`val Circle(r) = s;`, JS-4): a plain
+  destructure — `buildPattern`, `js/AGENTS.md` § Bridges.
 - **Index** (`buildIndexCall`, decision 30): `receiver[index]` reaches the
   backend as the builtin call `ast.index_builtin_name` (`"[]"`) over
   `(receiver, index)`, so one node carries the element read and the slice. A

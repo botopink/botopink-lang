@@ -369,6 +369,8 @@ test "dict empty boundary: size 0, at misses" {
 
 ----- JAVASCRIPT -- std/dict.js
 ```javascript
+function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }
+
 //// Gleam-inspired `dict` module — a `type Dict<K, V>` wrapping an
 
 //// association list `pairs: Array<#(K, V)>` for full backend portability
@@ -421,9 +423,9 @@ class Dict {
     }
 
     hasKey(key) {
-        return (this.pairs.filter((p) => {
+        return (__bp_array_at(this.pairs.filter((p) => {
     return (p[0] === key);
-}).at(0) != null);
+}), 0) != null);
     }
 
     size() {

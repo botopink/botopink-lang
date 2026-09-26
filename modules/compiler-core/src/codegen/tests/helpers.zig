@@ -975,6 +975,33 @@ pub fn assertDtsContains(
     }
 }
 
+/// The multi-module needle check for ONE named module (`o.name`, the module's
+/// path — `"tree/api"`), when the line under test is not in the consumer.
+pub fn assertModuleJs(
+    allocator: Allocator,
+    modules: []const Module,
+    module_name: []const u8,
+    present: []const []const u8,
+) !void {
+    const io = std.testing.io;
+    var outputs = try generate(allocator, modules, io, configs[0]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, module_name)) continue;
+        for (present) |needle| {
+            if (std.mem.indexOf(u8, o.result.js, needle) == null) {
+                std.debug.print("\n=== {s} JS ===\n{s}\n=== missing: {s} ===\n", .{ module_name, o.result.js, needle });
+                return error.NeedleNotFound;
+            }
+        }
+        return;
+    }
+    return error.ModuleDidNotCompile;
+}
+
 /// Multi-module variant of `assertJsContains`/`assertJsNotContains`: generates
 /// every module (last one is the consumer `main`) and asserts the consumer's JS
 /// both contains every `present` needle and contains none of the `absent` ones.

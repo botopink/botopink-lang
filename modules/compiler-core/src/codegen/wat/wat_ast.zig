@@ -414,7 +414,7 @@ pub const HelperGroup = enum {
     print_arr_f32,
     box_i32,
     arr_at_box,
-    /// `$__print_undefined`, and `$__print_opt_{i32,bool,str}` (+`_raw`).
+    /// `$__print_null`, and `$__print_opt_{i32,bool,str}` (+`_raw`).
     print_opt,
     /// `$__print_opt_f32` (+`_raw`) — a `?T` box holding an `f32` slot. Its own
     /// group and not part of `print_opt`, so a module that prints a plain
@@ -517,7 +517,7 @@ pub const Helper = enum {
     print_arr_f32_raw,
     box_i32,
     arr_at_box,
-    print_undefined,
+    print_null,
     print_opt_i32,
     print_opt_i32_raw,
     print_opt_bool,
@@ -552,7 +552,7 @@ pub const Helper = enum {
             .print_arr_f32, .print_arr_f32_raw => .print_arr_f32,
             .write_err, .assert_fail => .assert_fail,
             .print_quoted_raw, .print_shaped_raw => .print_shaped,
-            .print_undefined, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
+            .print_null, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
             .print_opt_f32, .print_opt_f32_raw => .print_opt_f32,
             .print_tagged_raw, .print_tagged => .print_shaped,
             .print_opt_tagged, .print_opt_tagged_raw => .print_opt_tagged,

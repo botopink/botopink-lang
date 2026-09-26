@@ -277,6 +277,12 @@ module exports, so its classes are re-emitted per module and the consumer's valu
 exit 0. The cell prints four values through one dispatcher: a uniquely-named variant, a repeated one
 (`Lg` is declared twice, which is why it always worked), and one of each section head.
 
+`modules/sibling_import_in_a_dependency` is a local-dependency cell for 1.0.10-beta `00 · 04-js`
+step 5: a `mod` sibling imported with no `from` (`pub mod leaf; import {Twig};`), once in the
+project and once inside `deps/tree/` (`api.bp`'s `import {Leaf};`). commonJS used to write the
+literal word `module` as the path — `require("./module")` / `require("../module")` — so such a
+program built and then died with `Cannot find module`. Green on all four targets.
+
 `modules/field_name_collision` is the third cell that needs two modules to say anything, and the
 defect it pins is **invisible in one file**. A record is a tagged tuple on erlang, so a field read is
 a POSITION, and the position comes from the field's NAME alone when the receiver's type was lost —

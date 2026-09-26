@@ -1,0 +1,4 @@
+//// The package root: two sibling modules, and nothing else.
+
+pub mod leaf;
+pub mod api;

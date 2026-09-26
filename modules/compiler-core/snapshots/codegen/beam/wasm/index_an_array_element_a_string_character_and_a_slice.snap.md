@@ -618,15 +618,12 @@ fn main() {
     i32.load
     call $__box_i32
   )
-  (func $__print_undefined
+  (func $__print_null
     i32.const 176
-    i64.const 7308895133777555061
-    i64.store
-    i32.const 184
-    i32.const 100
-    i32.store8
+    i32.const 1819047278
+    i32.store
     i32.const 176
-    i32.const 9
+    i32.const 4
     call $__write_bytes
   )
   (func $__print_opt_i32_raw (param $p i32)
@@ -634,7 +631,7 @@ fn main() {
     i32.eqz
     (if
       (then
-        call $__print_undefined
+        call $__print_null
       )
       (else
         local.get $p
@@ -653,7 +650,7 @@ fn main() {
     i32.eqz
     (if
       (then
-        call $__print_undefined
+        call $__print_null
       )
       (else
         local.get $p
@@ -672,7 +669,7 @@ fn main() {
     i32.eqz
     (if
       (then
-        call $__print_undefined
+        call $__print_null
       )
       (else
         local.get $s

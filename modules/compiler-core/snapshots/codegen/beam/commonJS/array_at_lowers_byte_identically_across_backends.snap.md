@@ -8,6 +8,8 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }
+
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
@@ -40,8 +42,8 @@ function __bp_print() {
 }
 
 function main() {
-    __bp_print([10, 20].at(0));
-    __bp_print([10].at(5));
+    __bp_print(__bp_array_at([10, 20], 0));
+    __bp_print(__bp_array_at([10], 5));
 }
 
 function _botopink_main() {
@@ -58,5 +60,5 @@ _botopink_main();
 ----- RUN LOG -----
 ```logs
 10
-undefined
+null
 ```

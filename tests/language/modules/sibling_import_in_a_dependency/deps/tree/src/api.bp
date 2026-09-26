@@ -1,0 +1,7 @@
+//// A sibling imported with no `from`: the module is the one `root.bp` declares.
+
+import {Leaf};
+
+pub fn seven() -> i32 {
+    return Leaf(v: 7).v;
+}

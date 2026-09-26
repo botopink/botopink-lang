@@ -649,10 +649,9 @@ test "wat: index ---- an array element, a string character and a slice" {
 }
 
 // An index past the end is `xs.at(9)`, whose type is `?i32`, and decision 47
-// spells absent `null`. Three backends print the empty optional as `undefined`
-// and wasm prints it as `0` — C-18's row, one row for four targets instead of
-// the two different wrong answers this fixture used to hold (wasm answered `0`
-// from its own `$__arr_at` while the other three answered `undefined`).
+// spells absent `null`. commonJS (`__bp_array_at`) and wasm (`$__print_null`)
+// print it so since 1.0.10-beta `00 · 04-js` / `05-wasm`; erlang and beam still
+// print the atom `undefined` — C-18's row, theirs.
 test "wat: index ---- an index past the end answers zero" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -926,9 +925,10 @@ test "wat: print ---- a record and a variant have no printed form yet, so they t
 // wasm's log is now **byte-identical to erlang's**, and to beam's but for §7's
 // separator (`[6,8]` on wasm and erlang, `[6, 8]` on commonJS and beam, which is
 // the text §7 wants — this front's step 1 F1 and 02's). The one text where wasm
-// is with the majority and commonJS is the outlier: `undefined` for absence on
-// three backends against commonJS's `null`, which decision 8 §7 names neither of.
-// Reported, not changed here: it is one text on four backends, not this front's.
+// was with the majority and commonJS the outlier: `undefined` for absence on
+// three backends against commonJS's `null`. Decision 47 settles it — absent is
+// spelled `null` — and wasm prints `null` since 1.0.10-beta `00 · 05-wasm`
+// (`$__print_null`); erlang and beam are C-18's.
 //
 // The `Dict` cells this row was found through live in `std_package.zig`, where
 // erlang's and beam's own cross-module rows are pinned.
@@ -1036,7 +1036,7 @@ test "wat: prim method ---- String.at answers a one-character string, and null o
         \\    @print(s.at(0 - 1));
         \\    @print("hello world".at(6));
         \\}
-    , "a\nc\nundefined\nundefined\nw\n");
+    , "a\nc\nnull\nnull\nw\n");
 }
 
 // A self-call in `return` position is a branch to the function's own loop head

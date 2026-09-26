@@ -164,7 +164,6 @@ wasm     | run/display_print.bp       | 05-wasm | re-measured 2026-09-21 by runn
 # fails silently" is gone, because nothing is dropped any more. wasm keeps one
 # line below, and it is a different defect: not the index, but `Array.at` on an
 # array OF arrays.
-commonJS | test/curried_call.bp::calling the result of a call ;; calling the result of a call whose result is chosen at run time | C-09 (backend half) | 01 types `adder(3)(4)` now (the callee in `calleeExpr` is inferred and applied); commonJS does not read `calleeExpr` and emits `(4)`, dropping the callee
 erlang   | test/curried_call.bp       | C-09 (backend half) | 01 types it; erlang does not read `calleeExpr` and emits `''(4)`, which `erlc` refuses — the cell does not compile
 
 # ── run-time type identity (front 12 step 4.1) ────────────────────────────────
@@ -212,21 +211,20 @@ erlang   | test/curried_call.bp       | C-09 (backend half) | 01 types it; erlan
 #
 # What is left below is decision 47's spelling of ABSENCE, which is C-18's row
 # and not this one: on erlang and beam an absent optional prints the atom
-# `undefined`, on wasm it prints `0`, and `Array.at` past the end answers
-# `undefined` on commonJS too. Every line names what it measured.
-commonJS | run/index_past_the_end_is_null.bp | C-18 | decision 47: `xs[9]` is `xs.at(9)` and reaches `Array.at`, which answers `undefined` where `null` is owed — `10` / `undefined` / `after`. The route is right and the spelling of absent is not (measured 2026-09-21)
+# `undefined`, on wasm a `Dict`'s absent `?V` prints `0`. `Array.at` past the
+# end answers `null` on commonJS (`__bp_array_at`) and on wasm (`$__print_null`)
+# since `00 · 04-js` / `05-wasm`. Every line names what it measured.
 commonJS | run/map_record_field_length.bp | 04-js (the commonJS half of 05-wasm step 9's `map` row) | `ks.at(...)?.length is not a function`, exit 1: with nothing between `es.map({ e -> e.key })` and `ks.at(0)?.length()` the element type is unresolved at the read, and `length` is emitted as a property-then-call. wasm, erlang and beam answer `3`; `run/map_record_field_strings.bp` shows the same read answering once `ks.at(1) ?? "none"` has resolved the type (measured 2026-09-25)
-erlang   | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`, the atom
-wasm     | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`. It used to print `0` here, from wasm's own `$__arr_at`; through `Array.at` the four backends now disagree with the language in ONE way instead of two
+erlang   | run/index_past_the_end_is_null.bp | C-18 | decision 47: `xs[9]` is `xs.at(9)` and reaches `Array.at`, which answers the atom `undefined` where `null` is owed (commonJS and wasm print `null` since `00 · 04-js` / `05-wasm`)
 beam     | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`, the erlang shape through `erlc +from_asm`
 erlang   | run/index_dict.bp | C-18 | decision 47: the PRESENT key is right (`1`); the two absent probes print the atom `undefined` where `null` is owed. `Dict.at` itself answers correctly — the atom is how an empty optional prints (measured 2026-09-21)
-wasm     | run/index_dict.bp | C-18 | decision 47: the present key is right (`1`); the two absent probes print `0`
+wasm     | run/index_dict.bp | C-18 | decision 47: the present key is right (`1`); the two absent probes print `0` — `Dict.at`'s `?V` over a type parameter is carried unboxed on wasm (the generic-parameter limit, `src/codegen/wat/AGENTS.md`), so the empty optional is never seen as one
 beam     | run/index_dict.bp | C-18 | decision 47: the erlang shape — `1`, then `undefined` twice
 erlang   | run/index_user_type.bp | C-18 | decision 47: the user type is reached — `m[1]` runs `Matrix.at` and `r["bo"]` runs `Registry.at`, with no compiler change — and ONE thing is left: an absent `?i32` prints the atom `undefined` where `null` is owed. Re-measured 2026-09-21 after C-01 half 3: the array now prints `[3, 4]` WITH decision 8 §7's separator space, so the half of this line that named §7 is gone
 wasm     | run/index_user_type.bp | C-18 (decision 47 on wasm) | the user type is reached and the SHAPE is right — four lines, the slice's length is `2` — but a `?T` whose `T` is not a scalar is carried as a raw value: `m[1]` prints a heap address (`384` at this tip; the number drifts with the layout, the wrongness does not) and `r["bo"]` prints `16777216` for `1`. Spelling the two methods by name (`m.at(1)`, `r.at("bo")`) prints the same four lines byte for byte, which is what says the index is not the defect. Re-measured 2026-09-21 after C-01 half 3
 beam     | run/index_user_type.bp | C-18 | decision 47: the user type is reached, the array prints WITH the separator's space, and the one difference left is the absent `?i32` — the atom `undefined` where `null` is owed. Measured 2026-09-21
 erlang   | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` prints the atom `undefined`, not `null` — `1` / `undefined` / `b` / `undefined`; `Dict.at` and `String.at` themselves answer correctly
-wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent optional prints as `0` for `d.at("zz")` and as `undefined` for `s.at(7)`, where `null` is owed — re-measured at `fix/wasm-refusals`: `1` / `0` / `b` / `undefined`, exit 0. The second half this line used to carry is gone: `String.at` has a wasm lowering now (`$__str_at`), `s.at(1)` answers `b` instead of trapping, and `run/string_at.bp` pins that on all four targets
+wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` out of `Dict.at` prints as `0` — `1` / `0` / `b` / `null`, exit 0. `s.at(7)` prints `null` since `00 · 05-wasm` spelled the empty `?T` `null` (`$__print_null`); what is left is that `Dict<K, V>.at` answers a `?V` whose `V` is a type parameter, which this backend carries unboxed (no monomorphisation — `src/codegen/wat/AGENTS.md` § the generic-parameter limit), so absence and a present `0` are the same word
 beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `undefined` twice for the two absent probes
 
 

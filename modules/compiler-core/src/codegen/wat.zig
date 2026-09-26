@@ -582,6 +582,11 @@ const Emitter = struct {
     record_field_typerefs: std.StringHashMap([]const ast.TypeRef),
     /// The declared return type of the fn being emitted.
     cur_ret_typeref: ?ast.TypeRef = null,
+    /// The declared function type a lambda about to be lifted is written
+    /// against — the enclosing fn's `-> fn(x: string) -> string` at a
+    /// `return { x -> … }`, or a `val f: fn(…) -> … = { … }` annotation. Read
+    /// (and cleared) by `lowerLambdaValue`, which types the parameters from it.
+    expected_fn: ?ast.TypeRef = null,
     /// Top-level `val` → the text the comptime pass folded its initialiser to.
     folded_globals: std.StringHashMap([]const u8),
     /// Top-level `val` → record type name, when recovered (`val cfg = record
@@ -2764,6 +2769,8 @@ const Emitter = struct {
                         // Coerce to the *declared* result: `fn area(…) -> f64`
                         // whose body multiplies f32 literals produced an f32
                         // and the `(result f64)` rejected the whole module.
+                        if (val.* == .function) self.expected_fn = self.cur_ret_typeref;
+                        defer self.expected_fn = null;
                         if (self.fn_has_result and self.boxesInto(self.cur_ret_typeref, val.*))
                             try self.lowerBoxed(val.*)
                         else if (self.fn_has_result)
@@ -2843,6 +2850,8 @@ const Emitter = struct {
                     // `emitLocalDecls` runs before the body, so its guess can
                     // differ from what lowering ends up pushing.
                     const lambda_idx: u32 = @intCast(self.lambdas.items.len);
+                    if (lb.value.* == .function) self.expected_fn = lb.typeAnnotation;
+                    defer self.expected_fn = null;
                     if (self.boxesInto(lb.typeAnnotation, lb.value.*))
                         try self.lowerBoxed(lb.value.*)
                     else
@@ -2954,7 +2963,40 @@ const Emitter = struct {
                                 try self.emit(.{ .local_set = name });
                             }
                         },
-                        else => try self.note("unsupported destructure pattern"),
+                        // `val Circle(r) = s;` — decision 67's R5: the checker
+                        // accepts it only where it cannot fail, so there is no
+                        // test, only the reads. A record reads each binding off
+                        // the declared field at its position; a variant takes
+                        // the `case` arm's binder (`bindPattern`), payload
+                        // slots from offset 4.
+                        .ctor => |pat| {
+                            if (self.ctorRecordFields(pat)) |r| {
+                                for (r.binds, 0..) |bind, i| {
+                                    if (bind.len == 0) continue;
+                                    try self.declareLocal(bind, "i32");
+                                    if (self.fieldTypeIn(r.record, r.fields[i])) |ft| {
+                                        if (std.mem.eql(u8, ft, "string")) try self.str_locals.put(bind, {});
+                                        if (std.mem.eql(u8, ft, "bool")) try self.bool_locals.put(bind, {});
+                                        if (self.resolveRecordName(ft)) |sub| try self.local_types.put(bind, sub);
+                                    }
+                                    try self.emit(.{ .local_get = mem });
+                                    try self.emitLoadOffset(@intCast(i * 4));
+                                    try self.emit(.{ .local_set = bind });
+                                }
+                            } else if (try self.ctorAsFieldsPattern(pat)) |fp| {
+                                try self.bindPattern(fp, mem);
+                            } else try self.note("unsupported destructure pattern");
+                        },
+                        // A spread-only list is the one list the checker lets
+                        // through: `[..rest]` is the whole value.
+                        .list => |pat| if (pat == .list and pat.list.elems.len == 0) {
+                            if (pat.list.spread) |sp| if (sp.len > 0) {
+                                try self.declareLocal(sp, "i32");
+                                try self.noteArrayLocal(sp, lb.value.*);
+                                try self.emit(.{ .local_get = mem });
+                                try self.emit(.{ .local_set = sp });
+                            };
+                        } else try self.note("unsupported destructure pattern"),
                     }
                 },
             },
@@ -4353,6 +4395,47 @@ const Emitter = struct {
     }
 
     /// Bind the names a pattern introduces, from the subject held in `subj`.
+    /// A record constructor in binding position (`val Circle(r) = s;`): the
+    /// record's declared field names and, per position, the name each binds
+    /// (`""` for `_`). Null when the pattern names no record of this module or
+    /// nests a pattern (the checker refuses a nested one as refutable).
+    fn ctorRecordFields(self: *Emitter, pat: ast.Pattern) ?struct { record: []const u8, fields: []const []const u8, binds: []const []const u8 } {
+        if (pat != .variant) return null;
+        const v = pat.variant;
+        const name = bareVariantName(v.name);
+        const fields = self.records.get(name) orelse return null;
+        if (v.payload != .literals) return null;
+        const lits = v.payload.literals;
+        if (lits.len > fields.len) return null;
+        const binds = self.arena().alloc([]const u8, lits.len) catch return null;
+        for (lits, 0..) |l, i| binds[i] = switch (l) {
+            .wildcard => "",
+            .ident => |n| n,
+            else => return null,
+        };
+        return .{ .record = name, .fields = fields, .binds = binds };
+    }
+
+    /// A variant constructor in binding position (`val Sq(side) = q;`) as the
+    /// `case` arm pattern `bindPattern` already reads — its positional names
+    /// as `.fields`. Null for a nested pattern or an unknown variant.
+    fn ctorAsFieldsPattern(self: *Emitter, pat: ast.Pattern) !?ast.Pattern {
+        if (pat != .variant) return null;
+        const v = pat.variant;
+        if (self.variantRef(v.name) == null) return null;
+        if (v.payload != .literals) return pat;
+        const lits = v.payload.literals;
+        const names = try self.arena().alloc([]const u8, lits.len);
+        for (lits, 0..) |l, i| names[i] = switch (l) {
+            .wildcard => "_",
+            .ident => |n| n,
+            else => return null,
+        };
+        var out = v;
+        out.payload = .{ .fields = names };
+        return .{ .variant = out };
+    }
+
     fn bindPattern(self: *Emitter, p: ast.Pattern, subj: []const u8) anyerror!void {
         switch (p) {
             .ident => |n| if (!isVariantPath(n) and self.findVariant(n) == null) {
@@ -5821,6 +5904,18 @@ const Emitter = struct {
         const idx: u32 = @intCast(self.lambdas.items.len);
         const param_str = try ra.alloc(bool, params.len);
         @memset(param_str, false);
+        // A declared function type the lambda is written against types its
+        // parameters: `fn greeter(p: string) -> fn(x: string) -> string {
+        // return { x -> p + x }; }` concatenates, where an untyped `x` was an
+        // `i32` and `p + x` wrote the number (`a264`, exit 0).
+        const expected = self.expected_fn;
+        self.expected_fn = null;
+        if (expected) |et| if (et == .function) {
+            const pts = et.function.params;
+            for (param_str, 0..) |*ps, i| {
+                if (i < pts.len and isStringTypeRef(pts[i])) ps.* = true;
+            }
+        };
         try self.lambdas.append(self.alloc, .{
             .name = try std.fmt.allocPrint(ra, "__lambda{d}", .{idx}),
             .params = params,
@@ -5882,6 +5977,7 @@ const Emitter = struct {
             }
         }.f;
         const is_value = blk: {
+            if (cc.calleeExpr != null) break :blk true;
             if (cc.receiver) |recv| break :blk slotOffset(self, recv.*, cc.callee) != null;
             break :blk self.locals.contains(cc.callee) or self.globals.contains(cc.callee);
         };
@@ -5890,7 +5986,11 @@ const Emitter = struct {
         const tmp = try std.fmt.allocPrint(ra, "__fnv{d}", .{self.loop_seq});
         self.loop_seq += 1;
         try self.declareLocal(tmp, "i32");
-        if (cc.receiver) |recv| {
+        if (cc.calleeExpr) |ce| {
+            // `adder(3)(4)` — the callee is the VALUE of an expression (01
+            // handover 15), the function value the inner call answered.
+            try self.lowerValue(ce.*);
+        } else if (cc.receiver) |recv| {
             const off = slotOffset(self, recv.*, cc.callee).?;
             try self.lowerValue(recv.*);
             try self.emitCf(.{ .load = .{ .offset = off } }, ".{s}", .{cc.callee});
@@ -5900,7 +6000,7 @@ const Emitter = struct {
             try self.emit(.{ .global_get = cc.callee });
         }
         try self.emit(.{ .local_set = tmp });
-        const closure: ?Lifted = if (cc.receiver == null and self.locals.contains(cc.callee))
+        const closure: ?Lifted = if (cc.calleeExpr == null and cc.receiver == null and self.locals.contains(cc.callee))
             if (self.closure_locals.get(cc.callee)) |li| self.lambdas.items[li] else null
         else
             null;
@@ -6305,6 +6405,24 @@ const Emitter = struct {
     }
 
     /// The declared type an expression carries, when a declaration names it.
+    /// The return type of a call whose callee is a function VALUE — the
+    /// callee expression of `adder(3)(4)` or a local/global declared (or bound
+    /// to a call declared) `fn(…) -> R` — or null.
+    fn valueCallTypeRef(self: *Emitter, cc: anytype) ?ast.TypeRef {
+        if (cc.receiver != null) return null;
+        const ft: ast.TypeRef = if (cc.calleeExpr) |ce|
+            self.typeRefOf(ce.*) orelse return null
+        else blk: {
+            const n = self.resolveName(cc.callee);
+            break :blk self.local_typerefs.get(n) orelse
+                (if (self.locals.contains(n)) return null else self.global_typerefs.get(n) orelse return null);
+        };
+        return switch (ft) {
+            .function => |f| f.returnType.*,
+            else => null,
+        };
+    }
+
     fn typeRefOf(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
@@ -6348,6 +6466,10 @@ const Emitter = struct {
                         const sym = self.calleeSymbol(cc, c.loc) orelse break :blk null;
                         break :blk self.fn_ret_typerefs.get(sym);
                     }
+                    // A function VALUE applied — `adder(3)(4)`, or `f(4)` over
+                    // a local bound to one: the call answers the function
+                    // type's return.
+                    if (self.valueCallTypeRef(cc)) |t| break :blk t;
                     break :blk self.fn_ret_typerefs.get(cc.callee);
                 },
                 else => null,
@@ -7049,6 +7171,11 @@ const Emitter = struct {
                     if (self.resolvedCallSym(cc, c.loc)) |sym| {
                         if (self.str_fns.contains(sym)) break :blk true;
                     }
+                    // A function value whose declared type returns a string:
+                    // `greeter("a")("b")`, or `f("b")` after `val f =
+                    // greeter("a")`. Without it the result printed as the
+                    // string's heap address at exit 0.
+                    if (self.valueCallTypeRef(cc)) |t| break :blk isStringTypeRef(t);
                     break :blk false;
                 },
                 else => false,

@@ -28,6 +28,11 @@ pub const Helper = enum {
     /// botopink declaration was renamed `charAt` -> `at` by decision 63's
     /// amendment, which gave every indexable type one reader name.
     string_char_at,
+    /// `Array.at(i) -> ?T`: the element, or `null` out of range. Native
+    /// `Array.prototype.at` answers `undefined` past the end (and counts a
+    /// negative index from the back), where decision 47 gives absence one
+    /// spelling — `null` — and `String.at` above already answers it.
+    array_at,
     /// An open-ended range `a..` used as a value: the lazy, unbounded
     /// sequence `a, a + 1, …` as a generator (a finite array cannot hold it).
     range_from,
@@ -69,7 +74,7 @@ pub const Helper = enum {
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .string_char_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .yield_step };
+pub const order = [_]Helper{ .assert_fatal, .string_char_at, .array_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .yield_step };
 
 /// The receiver family of a primitive method call, as inference recorded it.
 pub const Receiver = enum { string, array, other };
@@ -79,10 +84,13 @@ pub const Receiver = enum { string, array, other };
 /// already matches the signature.
 pub fn forMethod(receiver: Receiver, method: []const u8, argc: usize) ?Helper {
     // `at`, not `charAt`: the botopink declaration is `String.at` (decision
-    // 63, amended). `Array.at` is NOT wrapped — native `Array.prototype.at`
-    // already answers `undefined` for an out-of-range index, which is the
-    // language's absent value on JS.
-    if (receiver == .string and argc == 1 and std.mem.eql(u8, method, "at")) return .string_char_at;
+    // 63, amended). `Array.at` is wrapped too: native `Array.prototype.at`
+    // answers `undefined` past the end, and decision 47's absent is `null`.
+    if (argc == 1 and std.mem.eql(u8, method, "at")) return switch (receiver) {
+        .string => .string_char_at,
+        .array => .array_at,
+        .other => null,
+    };
     return null;
 }
 
@@ -91,6 +99,7 @@ pub fn name(h: Helper) []const u8 {
     return switch (h) {
         .assert_fatal => "__bp_assert_fatal",
         .string_char_at => "__bp_string_char_at",
+        .array_at => "__bp_array_at",
         .range_from => "__bp_range_from",
         .show => "__bp_show",
         .print => "__bp_print",
@@ -107,6 +116,7 @@ pub fn decl(h: Helper) ast.Stmt {
     return switch (h) {
         .assert_fatal => assert_fatal,
         .string_char_at => string_char_at,
+        .array_at => array_at,
         .range_from => range_from,
         .show => show,
         .print => print,
@@ -222,6 +232,25 @@ const string_char_at: ast.Stmt = .{ .function = .{
             .parens = false,
         } } },
         .then = &.{ .call = .{ .callee = &s_char_at, .args = &.{i} } },
+        .else_ = &.null_,
+    } } }}, .layout = .spaced },
+} };
+
+const xs: ast.Expr = .{ .name = "xs" };
+const xs_length: ast.Expr = .{ .member = .{ .object = &xs, .name = "length" } };
+
+/// `function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }`
+const array_at: ast.Stmt = .{ .function = .{
+    .name = "__bp_array_at",
+    .params = &.{ .{ .pattern = .{ .name = "xs" } }, .{ .pattern = .{ .name = "i" } } },
+    .body = .{ .stmts = &.{.{ .return_ = .{ .ternary = .{
+        .cond = &.{ .paren = &.{ .binary = .{
+            .op = "&&",
+            .lhs = &.{ .binary = .{ .op = ">=", .lhs = &i, .rhs = &zero, .parens = false } },
+            .rhs = &.{ .binary = .{ .op = "<", .lhs = &i, .rhs = &xs_length, .parens = false } },
+            .parens = false,
+        } } },
+        .then = &.{ .index = .{ .object = &xs, .index = &i } },
         .else_ = &.null_,
     } } }}, .layout = .spaced },
 } };
@@ -652,8 +681,19 @@ test "js_prelude: string at answers null out of range" {
         aw.written(),
     );
     try std.testing.expectEqual(Helper.string_char_at, forMethod(.string, "at", 1).?);
-    try std.testing.expect(forMethod(.array, "at", 1) == null);
+    try std.testing.expectEqual(Helper.array_at, forMethod(.array, "at", 1).?);
+    try std.testing.expect(forMethod(.other, "at", 1) == null);
     // The old spelling answers nothing: `charAt` is the HOST symbol the
     // template names, not a botopink declaration any more.
     try std.testing.expect(forMethod(.string, "charAt", 1) == null);
+}
+
+test "js_prelude: array at answers null out of range (decision 47)" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.array_at), 0);
+    try std.testing.expectEqualStrings(
+        "function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }",
+        aw.written(),
+    );
 }
