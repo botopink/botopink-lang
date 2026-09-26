@@ -2281,10 +2281,12 @@ by every caller).
 Two limits worth stating here, because a library meets them before it meets a
 rule. The checker half is `00 · 01-checker`'s:
 
-- A default on an **imported function** is not filled. The cross-module export
-  registry carries no plain `fn` declaration, so `import { greet } from "helper";
-  greet("w")` reds `'greet' expects 2 argument(s), got 1` where the same `greet`
-  called inside `helper` fills. An imported record's field default is filled.
+- A default on an **imported function** is filled when it is closed — a
+  literal, `true` / `false`, `null`, a sign, an array or tuple of those — so
+  `import { greet } from "helper"; greet("w")` takes `greet`'s declared
+  greeting. A default that names a binding of its own module cannot be written
+  at the importer's call site: leaving that argument out of an imported call is
+  the arity error (`'greet' expects 2 argument(s), got 1`).
 - On wasm a method called through a **behavior-typed** value traps
   (`unreachable`) at run time; commonJS, erlang and beam dispatch it
   (`00 · 05-wasm`'s).
