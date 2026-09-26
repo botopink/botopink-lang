@@ -1,0 +1,14 @@
+//// A host-backed method on an IMPORTED type: the call `m.plus(2)` in `main` is
+//// answered by the type's owner — the class `meter.js` exports on commonJS,
+//// the type's module (`language_tests@meter@@Meter`, decision 21) on erlang —
+//// exactly as a bodied method on an imported type is. wasm has no host and
+//// refuses the call where it is written (`wasm.expect`).
+
+pub mod meter;
+import {Meter, meter} from "meter";
+
+pub fn main() {
+    val m = meter(40);
+    @print(m.plus(2));
+    @print(Meter(base: 7).tag("id"));
+}

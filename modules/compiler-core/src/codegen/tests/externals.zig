@@ -263,6 +263,109 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
     }, .refused_on_wasm);
 }
 
+// ── host-backed methods ──────────────────────────────────────────────────────
+// A `declare fn` with `#[@External.<Target>(…)]` written INSIDE a `type` body
+// (`codegen/hostMethods.zig`) is a real method of the type on every backend,
+// its body the binding applied to the method's own parameters: `$0` is the
+// receiver, `$1…` the arguments after it. commonJS puts it on the class (an
+// enum's as a static taking `self`), erlang and beam in the type's module,
+// exported; wasm has no host and refuses the call where it is written. The
+// record's `twice` calls a host method from a bodied one, and `absOf` is the
+// plain `(module, symbol)` form, which takes the receiver first.
+test "js: external ---- a host-backed method on a local type is a method of the type" {
+    try h.assertJsRefusedOnWasm(std.testing.allocator, @src(),
+        \\pub type Meter(base: i32) {
+        \\    #[@External.Node("""($0.base + $1)"""),
+        \\      @External.Erlang("""(element(2, $0) + $1)""")]
+        \\    pub declare fn plus(self: Self, n: i32) -> i32;
+        \\
+        \\    #[@External.Node("""[$0.base, $1, $2].join("-")"""),
+        \\      @External.Erlang("""iolist_to_binary(lists:join(<<"-">>, [integer_to_binary(element(2, $0)), integer_to_binary($1), $2]))""")]
+        \\    pub declare fn label(self: Self, n: i32, tail: string) -> string;
+        \\
+        \\    pub fn twice(self: Self) -> i32 {
+        \\        return self.plus(self.base);
+        \\    }
+        \\}
+        \\
+        \\pub type Level {
+        \\    Low,
+        \\    High,
+        \\
+        \\    #[@External.Node("""($0.tag === "High" ? $1 * 10 : $1)"""),
+        \\      @External.Erlang("""case $0 of 'test@main@@Level__v__high' -> $1 * 10; _ -> $1 end""")]
+        \\    pub declare fn scale(self: Self, n: i32) -> i32;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val m = Meter(base: 3);
+        \\    @print(m.plus(4));
+        \\    @print(m.twice());
+        \\    @print(m.label(5, "x"));
+        \\    @print(Level.High.scale(2));
+        \\    @print(Level.Low.scale(2));
+        \\}
+    );
+}
+
+// The owner answers a host-backed method on a type another module imports:
+// commonJS through the class it exports, erlang and beam through the type's
+// module (decision 21's owner, `hostlib@@Meter:plus/2`).
+test "js: external ---- a host-backed method on an imported type is answered by its owner" {
+    try h.assertJsExpecting(std.testing.allocator, @src(), &.{
+        .{
+            .path = "hostlib",
+            .source =
+            \\pub type Meter(base: i32) {
+            \\    #[@External.Node("""($0.base + $1)"""),
+            \\      @External.Erlang("""(element(2, $0) + $1)""")]
+            \\    pub declare fn plus(self: Self, n: i32) -> i32;
+            \\}
+            ,
+        },
+        .{
+            .path = "main",
+            .source =
+            \\import { Meter };
+            \\
+            \\pub fn main() {
+            \\    @print(Meter(base: 40).plus(2));
+            \\}
+            ,
+        },
+    }, .refused_on_wasm);
+}
+
+// A method bound to one host is refused on the other where it is CALLED, as
+// a module-level host function is — the class or module simply has no such
+// function, and a call reaching it would fail at run time instead.
+test "js: external ---- a host-backed method with no binding for the backend is refused at the call" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\pub type Probe(n: i32) {
+        \\    #[@External.Erlang("""element(2, $0)""")]
+        \\    pub declare fn raw(self: Self) -> i32;
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(Probe(n: 1).raw());
+        \\}
+    );
+}
+
+// The `.d.ts` declares what the `.js` beside it defines: a host-backed method
+// with a `node` binding is a class member, one without has no declaration.
+test "js: external ---- a host-backed method is declared in the .d.ts when node binds it" {
+    try h.assertDtsContains(std.testing.allocator,
+        \\pub type Meter(base: i32) {
+        \\    #[@External.Node("""($0.base + $1)""")]
+        \\    pub declare fn plus(self: Self, n: i32) -> i32;
+        \\
+        \\    #[@External.Erlang("""element(2, $0)""")]
+        \\    pub declare fn raw(self: Self) -> i32;
+        \\}
+    , &.{"plus(n: number): number;"}, &.{"raw("});
+}
+
 // ── the prelude's own shape ──────────────────────────────────────────────────
 // A `#[@External.Node("…$0…")]` template on a BEHAVIOR method becomes a
 // `<Owner>.prototype.<m> = function(…)` patch (`commonJS.buildInterface`), so a

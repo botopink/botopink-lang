@@ -11,6 +11,7 @@ const comptimeMod = @import("../comptime.zig");
 const js = @import("./js/js_ast.zig");
 const tsEmitter = @import("./js/ts_emitter.zig");
 const crossModule = @import("./crossModule.zig");
+const hostMethods = @import("./hostMethods.zig");
 
 /// Emit a TypeScript declaration file for all bindings. `cross` (null for a
 /// standalone module) says which imported names another module actually emits.
@@ -158,7 +159,7 @@ const Builder = struct {
         for (r.recordFields(), 0..) |f, i| ctor_params[i] = .{ .name = f.name, .type = try self.typeRef(f.typeRef) };
         try members.append(self.b.arena, .{ .ctor = .{ .params = ctor_params } });
         for (r.methods) |m| {
-            if (m.is_declare) continue;
+            if (m.is_declare and !declaresHostMember(m)) continue;
             if (m.returnType) |ret| if (ret.isTemplateReturnType()) continue;
             try members.append(self.b.arena, .{ .method = .{
                 .name = try self.genericName(m.name, m.genericParams),
@@ -210,7 +211,7 @@ const Builder = struct {
             } });
         }
         for (e.methods) |m| {
-            if (m.is_declare) continue;
+            if (m.is_declare and !declaresHostMember(m)) continue;
             if (m.returnType) |ret| if (ret.isTemplateReturnType()) continue;
             // An enum method is a `static` of the enum's class, and a
             // receiver-first one keeps `self` as a real first parameter, so it
@@ -579,3 +580,11 @@ const Builder = struct {
         return .{ .generic = .{ .name = g.name, .args = args } };
     }
 };
+
+/// A host-backed method the `.js` beside this `.d.ts` defines: a bodyless
+/// `declare fn` member with an `#[@External.Node(…)]` binding is a real class
+/// member there (`commonJS.hostMethodMember`), so it is declared like any other
+/// method. One without a `node` binding has no member and no declaration.
+fn declaresHostMember(m: ast.BehaviorMethod) bool {
+    return hostMethods.isHostMethod(m) and hostMethods.binds(m, .node);
+}

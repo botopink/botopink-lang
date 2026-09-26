@@ -47,7 +47,9 @@
 #                      once, reported as target `*`)
 #   modules/<name>/    a whole project — its own `botopink.json` and `src/` tree;
 #                      `botopink run --target <t>`; stdout must equal
-#                      <name>/expected.out. The kind for what one file cannot
+#                      <name>/expected.out — or, with <name>/<t>.expect, target
+#                      <t> must REFUSE the project like a run/ cell's
+#                      `.<t>.expect` (line 2 is `src/<file>.bp:<L:C>`). The kind for what one file cannot
 #                      express: `pub mod`, `import … from "<module>"`, `from "std"`,
 #                      and a local dependency — a second project inside the cell
 #                      named by a `{ "path": "…" }` dependency of its manifest
@@ -339,9 +341,26 @@ run_one() { # <path> <target>
             fi ;;
         modules/*)
             local expected="$here/$path/expected.out"
+            local refuse="$here/$path/$t.expect"
             exec_run "$dir" "$t"
             local code=$?
-            if [ ! -f "$expected" ]; then
+            if [ -f "$refuse" ]; then
+                # `<cell>/<target>.expect`: the run/ cell's `.<target>.expect`
+                # claim for a whole project — this target refuses it.
+                quiet <"$dir/stdout.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
+                local msg loc; msg="$(sed -n 1p "$refuse")"; loc="$(sed -n 2p "$refuse")"
+                if [ $code -eq 0 ]; then
+                    printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "accepted (exit 0); expected to be refused with: $msg" >"$out"
+                elif ! grep -qF -- "$msg" "$dir/all.txt"; then
+                    local first; first="$(grep -m1 -iE 'error' "$dir/all.txt" | tr '\t' ' ')"
+                    printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "refused (exit $code), but not with \"$msg\" (got: ${first:-no error line})" >"$out"
+                elif [ -n "$loc" ] && ! grep -qF -- "--> $loc" "$dir/all.txt"; then
+                    local where; where="$(grep -m1 -oE -- '--> src/[^ ]+:[0-9]+:[0-9]+' "$dir/all.txt")"
+                    printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "right message, wrong location: ${where:-none} (expected $loc)" >"$out"
+                else
+                    printf '%s\t%s\t%s\t\n' "$t" "$path" ok >"$out"
+                fi
+            elif [ ! -f "$expected" ]; then
                 printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "missing $path/expected.out" >"$out"
             elif [ $code -eq 0 ] && cmp -s "$dir/stdout.txt" "$expected"; then
                 printf '%s\t%s\t%s\t\n' "$t" "$path" ok >"$out"

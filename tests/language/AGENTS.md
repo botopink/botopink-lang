@@ -22,7 +22,7 @@ rewrite a test to match current behaviour.
 | `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` | every test reports `ok` |
 | `run/<name>.bp` + `<name>.out` | a whole program (`pub fn main`), run by `botopink run --target <t>` | exit 0 and stdout equals `.out` byte for byte — or, with a sidecar, § the sidecars of a `run/` cell |
 | `reject/<name>.bp` + `<name>.expect` | a program that must not compile, run by `botopink check` | exit ≠ 0, stderr contains `.expect` line 1, and ` --> src/main.bp:<line 2>` when line 2 is present |
-| `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a second project inside it can be a `{ "path": "…" }` dependency | exit 0 and stdout equals `expected.out` byte for byte |
+| `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a second project inside it can be a `{ "path": "…" }` dependency | exit 0 and stdout equals `expected.out` byte for byte — or, with `<target>.expect`, § the sidecars of a `run/` cell |
 | `expected-failures.txt` | the list of known failures | — |
 
 1.0.10-beta's `00 · 23-std-purity` step 1 (decision 107, the import tree) adds `modules/import_tree`
@@ -57,6 +57,13 @@ the whole of what the rule is for), `std_erlang_node` (decision 64),
 templates deliberately build the pre-decision-21 `#{field => V}` map that an `.erl` sidecar in a
 consumer library still builds, and the boundary adopts it; `.targets` is `commonJS erlang` because
 neither wasm nor beam has a host vocabulary for these templates),
+`external_method_*` (host-backed METHODS — a `declare fn` with `#[@External.<Target>(…)]` inside a
+`type` body, lowered as a real method of the type: `run/external_method_local` — a record's template
+methods naming `$0` and `$1`/`$2`, one called from a bodied method on `self`, the `(module, symbol)`
+form, `inline = true`, an enum's host method — on commonJS, erlang and beam, refused on wasm by
+`.wasm.expect`; `run/external_method_erlang_only` — bound to Erlang only, refused where it is CALLED on
+commonJS and wasm; `modules/external_method_imported` — the method on an IMPORTED type, answered by
+its owner, with `wasm.expect`),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets),
 `lambda_rebinds_case_binders` (front 24, beam: a lambda's own `case` binder, `val` and `for`
 element are not captured from the enclosing frame — `make_fun3` had read the unassigned y-register
@@ -404,6 +411,7 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.exit` holding `nonzero` | the program **aborts** after printing `.out` (`@panic`, `@todo`, a failed index under decision 63) | stdout equals `.out` **and** the status is not 0. The number is never pinned: node 1, erl 1, wasmtime 134 are the runtimes' (§ Never pin an erlang exit status) |
 | `<name>.<target>.expect` | on that target the compiler **refuses** the program — `reject/`'s shape, per target | exit ≠ 0 and the diagnostic contains line 1 (and ` --> src/main.bp:<L:C>` when line 2 is present). `run/external_erlang_only.{commonJS,wasm}.expect` and `run/std_erlang_node.{commonJS,wasm}.expect` are the live ones |
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
+| `modules/<name>/<target>.expect` | the `.<target>.expect` claim for a whole project: that target **refuses** it | exit ≠ 0 and the diagnostic contains line 1 (and ` --> <line 2>` when present — `src/<file>.bp:<L:C>`, the file named because a project has several). `modules/external_method_imported/wasm.expect` is the live one |
 
 Any other content in `.exit` is a malformed claim and fails the cell. **Five cells carry
 `.targets`** (`external_host_record`, `optional_length_method`, `std_default_fn_in_a_std_module`,

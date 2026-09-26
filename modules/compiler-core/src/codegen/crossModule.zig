@@ -14,6 +14,7 @@ const ast = @import("../ast.zig");
 const comptimeMod = @import("../comptime.zig");
 const commonJS = @import("./commonJS.zig");
 const configMod = @import("./config.zig");
+const hostMethods = @import("./hostMethods.zig");
 
 const ComptimeOutput = comptimeMod.ComptimeOutput;
 
@@ -153,6 +154,16 @@ pub const CrossModule = struct {
     method_arrays: std.ArrayListUnmanaged([]const MethodSig) = .empty,
     /// Owns the per-name declaration lists `owners` hands out.
     owner_arrays: std.ArrayListUnmanaged([]const ExportInfo) = .empty,
+    /// Every host-backed method a `type` body declares
+    /// (`hostMethods.isHostMethod`: a bodyless `declare fn` carrying
+    /// `#[@External.<Target>(…)]`), keyed `"<Type>.<method>"` (owned) over
+    /// every module of the program, `pub` or not. A call site knows the
+    /// receiver's type name from inference's `.type_` lowering and nothing
+    /// else, so this is where a backend asks whether that method has a binding
+    /// for it — `hostMethods.missingAt` refuses the call where it is written
+    /// when it has none. Two modules declaring one `Type.method` keep the
+    /// first one walked (the name is all a call site has to go on).
+    host_methods: std.StringHashMapUnmanaged(ast.BehaviorMethod) = .empty,
     /// Which package owns each module path (decision 109) — every atom an
     /// emitter renders for a path goes through `idOf`.
     packages: Packages = .{},
@@ -166,6 +177,9 @@ pub const CrossModule = struct {
         for (self.owner_arrays.items) |arr| self.alloc.free(arr);
         self.owner_arrays.deinit(self.alloc);
         self.owners.deinit();
+        var hit = self.host_methods.keyIterator();
+        while (hit.next()) |k| self.alloc.free(k.*);
+        self.host_methods.deinit(self.alloc);
         self.export_faults.deinit();
         var ait = self.atoms.valueIterator();
         while (ait.next()) |a| self.alloc.free(a.*);
@@ -1053,7 +1067,32 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
             };
         }
     }
-    return .{ .exports = exports, .owners = owners_final, .export_faults = export_faults, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .method_arrays = method_arrays, .owner_arrays = owner_arrays, .packages = packages, .alloc = alloc };
+    var host_methods: std.StringHashMapUnmanaged(ast.BehaviorMethod) = .empty;
+    errdefer {
+        var hit = host_methods.keyIterator();
+        while (hit.next()) |k| alloc.free(k.*);
+        host_methods.deinit(alloc);
+    }
+    for (outputs) |*ct| {
+        const ok = switch (ct.outcome) {
+            .ok => |*o| o,
+            else => continue,
+        };
+        for (ok.transformed.decls) |decl| switch (decl) {
+            .type_ => |t| for (t.methods) |m| {
+                if (!hostMethods.isHostMethod(m)) continue;
+                const key = try hostMethods.keyOf(alloc, t.name, m.name);
+                const gop = try host_methods.getOrPut(alloc, key);
+                if (gop.found_existing) {
+                    alloc.free(key);
+                    continue;
+                }
+                gop.value_ptr.* = m;
+            },
+            else => {},
+        };
+    }
+    return .{ .exports = exports, .owners = owners_final, .export_faults = export_faults, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .method_arrays = method_arrays, .owner_arrays = owner_arrays, .host_methods = host_methods, .packages = packages, .alloc = alloc };
 }
 
 // ── tests: the atom, its qualifier, its decoder and the collision check ───────

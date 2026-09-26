@@ -4,6 +4,7 @@
 
 test {
     _ = @import("crossModule.zig");
+    _ = @import("hostMethods.zig");
     _ = @import("tests/values.zig");
     _ = @import("tests/aggregates.zig");
     _ = @import("tests/control_flow.zig");

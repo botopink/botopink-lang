@@ -20,6 +20,7 @@ const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
+const hostMethods = @import("./hostMethods.zig");
 const effectChain = @import("../comptime/effect_chain.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
 const Ast = @import("./beam/erl_ast.zig");
@@ -4496,15 +4497,20 @@ const Emitter = struct {
     /// unterminated string. Resolve `\"` to `"`; every other escape belongs to
     /// the Erlang source the template carries and passes through untouched.
     fn dupeTemplate(this: *Emitter, s: []const u8) ![]const u8 {
-        if (std.mem.indexOf(u8, s, "\\\"") == null) return this.alloc.dupe(u8, s);
+        return unescapeTemplate(this.alloc, s);
+    }
+
+    /// `dupeTemplate` into `alloc` — an arena for a template rendered once.
+    fn unescapeTemplate(alloc: std.mem.Allocator, s: []const u8) ![]const u8 {
+        if (std.mem.indexOf(u8, s, "\\\"") == null) return alloc.dupe(u8, s);
         var out: std.ArrayListUnmanaged(u8) = .empty;
-        errdefer out.deinit(this.alloc);
+        errdefer out.deinit(alloc);
         var i: usize = 0;
         while (i < s.len) : (i += 1) {
             if (s[i] == '\\' and i + 1 < s.len and s[i + 1] == '"') continue;
-            try out.append(this.alloc, s[i]);
+            try out.append(alloc, s[i]);
         }
-        return out.toOwnedSlice(this.alloc);
+        return out.toOwnedSlice(alloc);
     }
 
     /// The record a host-backed declaration's return type names, looked through
@@ -4533,8 +4539,13 @@ const Emitter = struct {
     /// when this emit cannot place the record's declared field order — in all
     /// three the node is handed back untouched.
     fn adoptHostResult(this: *Emitter, b: Ast.Builder, callee: []const u8, node: Ast.Expr) anyerror!Ast.Expr {
-        if (this.untyped) return node;
         const rec = this.external_record_returns.get(callee) orelse return node;
+        return this.adoptRecord(b, rec, node);
+    }
+
+    /// `adoptHostResult` for a return type already read: `rec` names the record.
+    fn adoptRecord(this: *Emitter, b: Ast.Builder, rec: []const u8, node: Ast.Expr) anyerror!Ast.Expr {
+        if (this.untyped) return node;
         const fields = this.record_fields.get(rec) orelse return node;
         const keys = try b.arena.alloc(Ast.Expr, fields.len);
         for (fields, 0..) |f, i| keys[i] = Ast.Expr.a(f);
@@ -7090,6 +7101,12 @@ const Emitter = struct {
             const mod = try erlangModule(b.arena, name);
             return b.remote(mod, cc.callee, try this.callArgs(b, null, cc));
         }
+        // A host-backed method of the receiver's type with no `erlang` binding:
+        // its module has no such function, so the call is refused here.
+        if (hostMethods.missingAt(this.cross, &this.instance_lowerings, loc, cc.callee, .erlang)) |me| {
+            this.missing_external = me;
+            return error.MissingExternalTarget;
+        }
         if (this.instance_lowerings.get(loc)) |il| switch (il) {
             // Builtin-primitive method (`xs.map(f)`, `s.split(sep)`): the host op.
             .prim => |k| return this.primMethodNode(b, k, cc.callee, recv, cc),
@@ -8548,6 +8565,60 @@ const Emitter = struct {
         return try blockFunction(b, f.name, patterns, try b.body(&.{body}));
     }
 
+    /// A host-backed method (`hostMethods`) as a function of the type's module:
+    /// `name(Self, Args) -> <binding>.` — the method twin of
+    /// `externalWrapperForm`, rendered from the method's own
+    /// `#[@External.Erlang(…)]` with `Self` as the receiver marker and the
+    /// remaining parameters as `$0…` (`parser/template_markers.zig` already
+    /// translated them), or `module:symbol(Self, Args)` for the plain form. It is
+    /// exported, so a call from another module (`sock:recv(…)` on an imported
+    /// `Socket`, decision 21's owner module) reaches it like any other method.
+    /// Nothing is emitted when the method has no `erlang` binding (or no arity
+    /// branch for its parameter count): a call is then refused where it is
+    /// written (`hostMethods.missingAt`).
+    fn hostMethodForms(this: *Emitter, b: Ast.Builder, out: *Forms, unit: ?*SavedUnitState, m: ast.BehaviorMethod) !void {
+        const has_self = hostMethods.takesSelf(m);
+        const rest = if (has_self) m.params[1..] else m.params;
+        this.resetLocals();
+        const patterns = try b.arena.alloc(Ast.Expr, m.params.len);
+        for (m.params, 0..) |p, i| {
+            patterns[i] = Ast.Expr.v(try this.arenaVar(b, p.name));
+            this.addLocal(p.name);
+            if (isNullableParam(p)) try this.nullable_locals.put(p.name, {});
+            if (isStringType(p.typeRef)) try this.string_locals.put(p.name, {});
+            if (numTypeKind(p.typeRef)) |k| try this.num_locals.put(this.alloc, p.name, k);
+        }
+        const args = try b.arena.alloc(ast.CallArg, rest.len);
+        for (rest, 0..) |p, i| args[i] = .{ .label = null, .value = try shimIdent(b, p.name) };
+        const recv: ?*const ast.Expr = if (has_self) try shimIdent(b, m.params[0].name) else null;
+        const cc = .{
+            .callee = m.name,
+            .receiver = recv,
+            .args = args,
+            .trailing = @as([]const ast.TrailingLambda, &.{}),
+        };
+        const saved = this.indent;
+        this.indent = 1;
+        defer this.indent = saved;
+        const raw: Ast.Expr = blk: {
+            if (ast.externalHasArityBranches(m.annotations, "erlang")) {
+                const branch = ast.externalArityBranchFor(m.annotations, "erlang", rest.len) orelse return;
+                break :blk try this.templateNode(b, try unescapeTemplate(b.arena, branch), recv, cc, error.PrimOpRecvInUserTemplate);
+            }
+            const ref = m.externalFor("erlang") orelse return;
+            if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0) {
+                break :blk try this.templateNode(b, try unescapeTemplate(b.arena, ref.symbol), recv, cc, error.PrimOpRecvInUserTemplate);
+            }
+            const all = try b.arena.alloc(Ast.Expr, m.params.len);
+            for (patterns, 0..) |pat, i| all[i] = pat;
+            break :blk try b.remote(ref.module, ref.symbol, all);
+        };
+        const body = if (m.returnType) |rt| if (recordNameOfReturn(rt)) |rec| try this.adoptRecord(b, rec, raw) else raw else raw;
+        try out.append(b.arena, .blank);
+        try out.append(b.arena, try blockFunction(b, m.name, patterns, try b.body(&.{body})));
+        if (unit) |u| try u.exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
+    }
+
     fn shimCall(b: Ast.Builder, argc: usize) !ShimCall {
         const args = try b.arena.alloc(ast.CallArg, argc);
         for (args, 0..) |*arg, i| arg.* = .{
@@ -8849,6 +8920,10 @@ const Emitter = struct {
         // Instance methods take the receiver positionally (`recv.m(args)` →
         // `m(Recv, args)`).
         for (r.methods) |m| {
+            if (hostMethods.isHostMethod(m)) {
+                try this.hostMethodForms(b, target, if (unit) |*u| u else null, m);
+                continue;
+            }
             if (m.is_declare) continue;
             try this.methodForms(b, target, m.name, m);
             if (unit) |*u| try u.exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
@@ -9094,6 +9169,10 @@ const Emitter = struct {
         var unit = try this.openTypeUnit(b, e.name);
         const target: *Forms = if (unit) |*u| &u.forms else out;
         for (e.methods) |m| {
+            if (hostMethods.isHostMethod(m)) {
+                try this.hostMethodForms(b, target, if (unit) |*u| u else null, m);
+                continue;
+            }
             if (m.is_declare) continue;
             try this.methodForms(b, target, m.name, m);
             if (unit) |*u| try u.exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });

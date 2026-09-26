@@ -1660,6 +1660,39 @@ parameters — on a method, `self` is `$0`:
 pub declare fn shout(text: string) -> string;
 ```
 
+**A host function that operates on a value of one type is a method of that
+type.** It is declared inside the type's body with `declare fn`, `self` first,
+and called like any other method — `sock.recv(16, 1000)`, never a free
+`recv(sock, 16, 1000)`. The binding's `$0` is the receiver and `$1`, `$2`, … the
+arguments after it; the plain `("module", "symbol")` form hands the host
+function the receiver first. A host function with no such owner (`listen(port,
+backlog)`, `now()`) stays at module level.
+
+```botopink
+pub type Meter(base: i32) {
+    #[@External.Node("""($0.base + $1)"""),
+      @External.Erlang("""(element(2, $0) + $1)""")]
+    pub declare fn plus(self: Self, n: i32) -> i32;
+
+    pub fn twice(self: Self) -> i32 {
+        return self.plus(self.base);
+    }
+}
+
+fn main() {
+    val m = Meter(base: 3);
+    @print(m.plus(4));               // 7 on every backend that has a host
+}
+```
+
+Every backend lowers such a method as a real method of the type whose body is
+the binding: a class member on commonJS (an enum's is a static taking `self`,
+like every enum method), a function exported by the type's module on erlang and
+beam — so a method on an imported type is answered by its owner exactly as a
+bodied one is — and a declaration in the `.d.ts`. A method with no binding for
+the active backend is refused where it is **called**, naming `Type.method`
+(`` `Meter.plus` has no `#[@External.<Target>(…)]` for the wasm backend ``).
+
 Only `External.<Target>` is read. A lower-case `@external(node, …)` is a located
 error naming the capitalised form (`` `#[@external]` binds no host — an external
 target is written `External.<Target>` ``), rather than a function left silently

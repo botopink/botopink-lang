@@ -28,6 +28,7 @@ const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
+const hostMethods = @import("./hostMethods.zig");
 const effectChain = @import("../comptime/effect_chain.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
 const beamEmitter = @import("./beam/beam_emitter.zig");
@@ -1314,10 +1315,94 @@ pub const EmittedBeam = struct {
     units: []moduleOutput.Unit = &.{},
 };
 
+/// `program` with every host-backed method (`hostMethods`) that has a beam
+/// binding turned into an ordinary bodied method, `return <Type>.<m>(self,
+/// Args)`, plus the bodyless `declare fn <Type>.<m>` it calls, which carries the
+/// method's `#[@External.*]` annotations. That hidden declaration is a
+/// host-backed `declare fn` like any module-level one, so `lowerExternalCall`
+/// renders it (`self` first, so the template's receiver marker is the
+/// receiver), and the method is then emitted, reserved and exported in its
+/// type's module by the machinery every bodied method goes through — the BEAM
+/// twin of erlang's `hostMethodForms`. `<Type>.<m>` holds a `.`, which no source
+/// name can, and the declaration is not `pub`, so it is neither emitted nor
+/// exported. An arity-branched binding is resolved to its branch for the
+/// method's argument count (the receiver not counted) up front, because the
+/// hidden call passes the receiver as an argument. A method with no beam
+/// binding is left as it was: the type has no such function and a call is
+/// refused where it is written (`hostMethods.missingAt`).
+fn withHostMethodBodies(arena: std.mem.Allocator, program: ast.Program) !ast.Program {
+    var any = false;
+    for (program.decls) |d| switch (d) {
+        .type_ => |t| for (t.methods) |m| {
+            if (hostMethods.isHostMethod(m)) any = true;
+        },
+        else => {},
+    };
+    if (!any) return program;
+    var decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    try decls.appendSlice(arena, program.decls);
+    var hidden: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
+    for (decls.items) |*d| switch (d.*) {
+        .type_ => |*t| {
+            var changed = false;
+            const methods = try arena.dupe(ast.BehaviorMethod, t.methods);
+            for (methods) |*m| {
+                if (!hostMethods.isHostMethod(m.*) or !hostMethods.binds(m.*, .beam)) continue;
+                const key = try hostMethods.keyOf(arena, t.name, m.name);
+                var annotations = m.annotations;
+                if (ast.externalHasArityBranches(m.annotations, "erlang")) {
+                    const argc = if (hostMethods.takesSelf(m.*)) m.params.len - 1 else m.params.len;
+                    const branch = ast.externalArityBranchFor(m.annotations, "erlang", argc) orelse continue;
+                    const quoted = try std.fmt.allocPrint(arena, "\"\"\"{s}\"\"\"", .{branch});
+                    annotations = try arena.dupe(ast.Annotation, &.{.{
+                        .name = "External.Erlang",
+                        .args = try arena.dupe([]const u8, &.{quoted}),
+                        .is_builtin = true,
+                    }});
+                }
+                try hidden.append(arena, .{ .@"fn" = .{
+                    .isPub = false,
+                    .isDeclare = true,
+                    .name = key,
+                    .annotations = annotations,
+                    .genericParams = &.{},
+                    .params = m.params,
+                    .returnType = m.returnType,
+                    .body = &.{},
+                } });
+                const args = try arena.alloc(ast.CallArg, m.params.len);
+                for (m.params, 0..) |p, i| {
+                    const v = try arena.create(ast.Expr);
+                    v.* = shimIdent(p.name);
+                    args[i] = .{ .label = null, .value = v };
+                }
+                const call = try arena.create(ast.Expr);
+                call.* = .{ .call = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .call = .{
+                    .receiver = null,
+                    .callee = key,
+                    .is_builtin = false,
+                    .args = args,
+                    .trailing = &.{},
+                } } } };
+                const body = try arena.alloc(ast.Stmt, 1);
+                body[0] = .{ .expr = .{ .jump = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .@"return" = call } } } };
+                m.body = body;
+                m.is_declare = false;
+                m.annotations = &.{};
+                changed = true;
+            }
+            if (changed) t.methods = methods;
+        },
+        else => {},
+    };
+    try decls.appendSlice(arena, hidden.items);
+    return .{ .decls = try decls.toOwnedSlice(arena), .blankLineBefore = &.{} };
+}
+
 fn emitBeamAsm(
     alloc: std.mem.Allocator,
     module_name: []const u8,
-    program: ast.Program,
+    program_in: ast.Program,
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
@@ -1335,6 +1420,10 @@ fn emitBeamAsm(
     //
     // The header needs the final label count, which is only known after
     // emitting; that's why bodies are buffered.
+
+    var host_arena = std.heap.ArenaAllocator.init(alloc);
+    defer host_arena.deinit();
+    const program = try withHostMethodBodies(host_arena.allocator(), program_in);
 
     var body_buf: std.Io.Writer.Allocating = .init(alloc);
     defer body_buf.deinit();
@@ -5271,6 +5360,12 @@ const Emitter = struct {
             return;
         }
         if (cc.receiver) |recv_expr| {
+            // A host-backed method of the receiver's type with no beam binding:
+            // its module has no such function, so the call is refused here.
+            if (hostMethods.missingAt(self.cross, &self.instance_lowerings, loc, cc.callee, .beam)) |me| {
+                self.missing_external = me;
+                return error.MissingExternalTarget;
+            }
             const recv_name: ?[]const u8 = switch (recv_expr.*) {
                 .identifier => |idn| switch (idn.kind) {
                     .ident => |n| n,
@@ -10011,7 +10106,9 @@ const Emitter = struct {
             };
             for (ok.transformed.decls) |d| switch (d) {
                 .type_ => |t| for (t.methods) |m| {
-                    if (m.body == null or m.is_declare) continue;
+                    // A host-backed method with a beam binding is a function of
+                    // its type's module too (`withHostMethodBodies`).
+                    if ((m.body == null or m.is_declare) and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .beam))) continue;
                     if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) return true;
                 },
                 else => {},

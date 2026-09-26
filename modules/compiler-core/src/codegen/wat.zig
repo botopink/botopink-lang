@@ -19,6 +19,7 @@ const moduleOutput = @import("./moduleOutput.zig");
 const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
 const crossModule = @import("./crossModule.zig");
+const hostMethods = @import("./hostMethods.zig");
 const envMod = @import("../comptime/env.zig");
 const wat = @import("./wat/wat_ast.zig");
 const watEmitter = @import("./wat/wat_emitter.zig");
@@ -219,7 +220,7 @@ pub fn codegenEmit(
                 // driver as a located diagnostic naming the function, not as
                 // the bare error name that would abort the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const emitted = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &missing) catch |err| {
+                const emitted = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &cross, &missing) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -341,11 +342,13 @@ fn emitWat(
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     linked: []const Linked,
+    cross: ?*const CrossModule,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
 ) !Emitted {
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     defer em.deinit();
+    em.cross = cross;
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
     };
@@ -774,6 +777,9 @@ const Emitter = struct {
     /// inference. The one piece of type information this untyped backend is
     /// handed; `lowerPrimMethod` and `lowerRecordMethod` lower from it.
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering) = undefined,
+    /// The program's link index — read for its `host_methods`, so a call to a
+    /// host-backed method is refused (`hostMethods.missingAt`).
+    cross: ?*const CrossModule = null,
     /// Element shape of names bound to an array blob (locals; cleared per fn)
     /// and of top-level `val`s. Drives `join`/`indexOf`/`contains` and the
     /// type of a HOF's element parameter.
@@ -3732,6 +3738,13 @@ const Emitter = struct {
                     if (self.primKindAt(cc, c.loc)) |k| {
                         try self.lowerPrimMethod(k, cc);
                         return;
+                    }
+                    // A host-backed method (`hostMethods`): wasm has no host,
+                    // so the call is refused where it is written, as a
+                    // module-level host function's is (`lowerPlainCall`).
+                    if (hostMethods.missingAt(self.cross, &self.instance_lowerings, c.loc, cc.callee, .wasm)) |me| {
+                        self.missing_external = me;
+                        return error.MissingExternalTarget;
                     }
                     if (try self.lowerRecordMethod(cc, c.loc)) return;
                     if (self.assocSym(cc)) |sym_tmp| {

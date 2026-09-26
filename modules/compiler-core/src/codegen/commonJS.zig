@@ -7,6 +7,7 @@ const ast = @import("../ast.zig");
 const crossModule = @import("./crossModule.zig");
 const patternFacts = @import("./patterns.zig");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
+const hostMethods = @import("./hostMethods.zig");
 const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
@@ -742,6 +743,23 @@ const MethodHoles = struct {
     }
     pub fn argExpr(self: *@This(), i: usize) anyerror!js.Expr {
         return .{ .ident = self.params[i].name };
+    }
+};
+
+/// Holes filled from a host-backed method's own parameters
+/// (`hostMethods`): the receiver marker is the receiver the method was handed
+/// (`this` on a record's instance method, the `self` parameter on an enum's
+/// static), `$N` the Nth parameter after it.
+const HostMethodHoles = struct {
+    recv: ?js.Expr,
+    names: []const []const u8,
+
+    pub fn recvExpr(self: *@This()) anyerror!js.Expr {
+        return self.recv orelse error.PrimOpRecvInUserTemplate;
+    }
+    pub fn argExpr(self: *@This(), i: usize) anyerror!js.Expr {
+        if (i >= self.names.len) return error.PrimOpArgIndexOutOfRange;
+        return .{ .ident = self.names[i] };
     }
 };
 
@@ -1674,7 +1692,10 @@ const Emitter = struct {
                     } else owner.value_ptr.* = e.name;
                 }
                 for (e.methods) |m| {
-                    if (m.is_declare or !enumMethodTakesReceiver(m)) continue;
+                    // A host-backed method with a `node` binding is a static of
+                    // the class like any other (`hostMethodMember`).
+                    const emitted = !m.is_declare or (hostMethods.isHostMethod(m) and hostMethods.binds(m, .node));
+                    if (!emitted or !enumMethodTakesReceiver(m)) continue;
                     try self.enum_recv_methods.put(try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ e.name, m.name }), {});
                 }
             },
@@ -1889,6 +1910,62 @@ const Emitter = struct {
         ) } });
     }
 
+    /// A host-backed method (`hostMethods`) as a class member whose body is its
+    /// `#[@External.Node(…)]` binding applied to the member's own parameters —
+    /// the method twin of `buildTemplateWrapper`, so every call site
+    /// (`sock.recv(n)`, here or in a module that imports the type) is an
+    /// ordinary method call. A record's instance method is a prototype method
+    /// whose receiver is `this`; an enum's is a static taking `self` first
+    /// (`enumMethodOwner`), like every other enum method. Null when the method
+    /// has no `node` binding (or no arity branch for its parameter count): the
+    /// class then has no such member, and a call is refused where it is
+    /// written (`hostMethods.missingAt`).
+    fn hostMethodMember(self: *Emitter, m: ast.BehaviorMethod, in_enum: bool) !?js.Class.ClassMember {
+        const has_self = hostMethods.takesSelf(m);
+        const rest = if (has_self) m.params[1..] else m.params;
+        const names = try self.arena().alloc([]const u8, rest.len);
+        for (rest, 0..) |p, i| names[i] = p.name;
+        var params: std.ArrayListUnmanaged(js.Param) = .empty;
+        if (in_enum and has_self) try params.append(self.arena(), .{ .pattern = .{ .ident = "self" } });
+        for (rest) |p| try params.append(self.arena(), .{ .pattern = .{ .ident = p.name } });
+        const recv: ?js.Expr = if (!has_self) null else if (in_enum) js.Expr{ .ident = "self" } else js.Expr.this;
+        var holes = HostMethodHoles{ .recv = recv, .names = names };
+
+        const value: js.Expr = blk: {
+            if (ast.externalHasArityBranches(m.annotations, "node")) {
+                const template = ast.externalArityBranchFor(m.annotations, "node", rest.len) orelse return null;
+                var tmpl = HostTemplate(HostMethodHoles){ .arena = self.arena(), .holes = &holes, .argc = rest.len };
+                try primOpTemplate.render(template, &tmpl);
+                break :blk try tmpl.finish();
+            }
+            const ref = m.externalFor("node") orelse return null;
+            if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0) {
+                var tmpl = HostTemplate(HostMethodHoles){ .arena = self.arena(), .holes = &holes, .argc = rest.len };
+                try primOpTemplate.render(ref.symbol, &tmpl);
+                break :blk try tmpl.finish();
+            }
+            // `(module, symbol)`: the host function takes the receiver first,
+            // as the declaration lists it.
+            const host = if (isJsGlobalNamespace(ref.module))
+                try self.b.member(.{ .name = ref.module }, ref.symbol)
+            else
+                try self.b.member(try self.requireCall(ref.module), ref.symbol);
+            var args: std.ArrayListUnmanaged(js.Expr) = .empty;
+            if (recv) |r| try args.append(self.arena(), r);
+            for (names) |n| try args.append(self.arena(), .{ .ident = n });
+            break :blk try self.b.call(host, try args.toOwnedSlice(self.arena()));
+        };
+        // Decision 126 — a `-> @Task<@Result<T, E>>` host method settles a
+        // rejection as `Error(e)`, as the module-level form does.
+        const wrapped = if (isTaskOfResult(m.returnType)) try self.b.call(self.helper(.host_task), &.{value}) else value;
+        return .{
+            .kind = if (has_self and !in_enum) .method else .static_method,
+            .name = m.name,
+            .params = try params.toOwnedSlice(self.arena()),
+            .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = wrapped }}), .indent = 1 },
+        };
+    }
+
     /// `function name(params) { return <template>; }` for a `pub` template
     /// external: the template's `$N` holes are the declared parameters. An
     /// arity-branched template tests `arguments.length` per branch. Null when
@@ -2095,6 +2172,10 @@ const Emitter = struct {
         }
         var members: std.ArrayListUnmanaged(js.Class.ClassMember) = .empty;
         for (r.methods) |m| {
+            if (hostMethods.isHostMethod(m)) {
+                if (try self.hostMethodMember(m, false)) |member| try members.append(self.arena(), member);
+                continue;
+            }
             if (m.is_declare) continue;
             // A method with no `self` receiver is an associated function
             // (`Response.ok(...)`) — emit it as a `static` method so the call
@@ -2283,6 +2364,10 @@ const Emitter = struct {
         const prev_self_param = self.self_is_param;
         defer self.self_is_param = prev_self_param;
         for (e.methods) |m| {
+            if (hostMethods.isHostMethod(m)) {
+                if (try self.hostMethodMember(m, true)) |member| try members.append(self.arena(), member);
+                continue;
+            }
             if (m.is_declare) continue;
             // A receiver-first method keeps `self` as a real parameter: an enum
             // method is a static of the enum's class, so a call site passes the
@@ -4413,6 +4498,13 @@ const Emitter = struct {
                     for (cc.args) |arg| try args.append(self.arena(), try self.buildExpr(arg.value.*));
                     for (cc.trailing) |tl| try args.append(self.arena(), try self.buildArrow(tl.params, tl.body));
                     return self.b.call(elem, try args.toOwnedSlice(self.arena()));
+                }
+                // A host-backed method of the receiver's type with no `node`
+                // binding: the class has no such member, so the call is refused
+                // here rather than failing as `… is not a function` at run time.
+                if (hostMethods.missingAt(self.cross, self.lowerings, loc, cc.callee, .node)) |me| {
+                    self.missing_external = me;
+                    return error.MissingExternalTarget;
                 }
                 const loc_rename: ?[]const u8 = if (self.renames) |r| r.get(loc) else null;
                 const method = loc_rename orelse self.prim_node_renames.get(cc.callee) orelse cc.callee;
