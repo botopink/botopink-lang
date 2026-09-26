@@ -97,12 +97,13 @@ fn main() {
     call $__print_str
     local.get $s
     i32.const 3
-    i32.const 0
+    local.get $s
+    i32.load ;; source length
     call $__str_slice
     call $__print_str
     local.get $xs
     i32.const 1
-    i32.const 0
+    i32.const 2147483647
     call $__arr_slice
     call $__print_arr_i32
   )
@@ -710,6 +711,6 @@ fn main() {
 bo
 e
 el
-RUNTIME TRAP (wasmtime):
-wasm trap: out of bounds memory access
+lo
+[20, 30]
 ```

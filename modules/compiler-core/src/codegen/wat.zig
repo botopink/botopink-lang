@@ -5767,7 +5767,9 @@ const Emitter = struct {
                 try self.lowerCoerced(callArg(cc, 0).?, "i32");
             } else {
                 try self.lowerCoerced(callArg(cc, 0).?, "i32");
-                if (callArg(cc, 1)) |end| try self.lowerCoerced(end, "i32") else try self.emit(whole);
+                if (callArg(cc, 1)) |end| {
+                    if (isNullLit(end)) try self.emit(whole) else try self.lowerSliceEnd(end, .max);
+                } else try self.emit(whole);
             }
             try self.emit(b.helper(.arr_slice));
         } else {
@@ -8112,14 +8114,46 @@ const Emitter = struct {
             try self.lowerExpr(cc.args[0].value.*)
         else
             try self.emit(zero);
-        if (cc.args.len > 1) {
-            try self.lowerExpr(cc.args[1].value.*);
+        if (cc.args.len > 1 and !isNullLit(cc.args[1].value.*)) {
+            try self.lowerSliceEnd(cc.args[1].value.*, .{ .str_len_of = cc.receiver.?.* });
         } else {
-            // No end argument: slice to the end (load the source length prefix).
+            // No end argument — or a written `null` (`s.slice(2, null)`, what
+            // `s[2..]` passes): slice to the end (the source length prefix).
+            // `null` lowered as `0` made the end fall before the start and
+            // `$__str_slice` read out of bounds (a trap).
             try self.lowerExpr(cc.receiver.?.*);
             try self.emitC(.{ .load = .{} }, "source length");
         }
         try self.emit(self.builder().helper(.str_slice));
+    }
+
+    const SliceWhole = union(enum) { str_len_of: ast.Expr, max };
+
+    /// A slice's `end: ?i32` that is not the literal `null`: a plain `i32`, or
+    /// an optional whose absence means "to the end" — `whole` then.
+    fn lowerSliceEnd(self: *Emitter, end: ast.Expr, whole: SliceWhole) anyerror!void {
+        const oi = self.optInfoOf(end) orelse return self.lowerCoerced(end, "i32");
+        if (!oi.boxed) return self.lowerCoerced(end, "i32");
+        const tmp = try self.memName(self.nextMem());
+        try self.lowerCoerced(end, "i32");
+        try self.emit(.{ .local_tee = tmp });
+        try self.emit(opOf("i32", "eqz"));
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        switch (whole) {
+            .str_len_of => |recv| {
+                try self.lowerExpr(recv);
+                try self.emitC(.{ .load = .{} }, "source length");
+            },
+            .max => try self.emit(try self.constInt(std.math.maxInt(i32))),
+        }
+        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emit(.{ .local_get = tmp });
+        try self.emitC(.{ .load = .{} }, "slice end");
+        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+        try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
     }
 
     /// `a == b` / `a != b` on strings → byte comparison via `$__str_eq`. The

@@ -83,9 +83,9 @@ test "wat: string slice copies bytes into a new buffer" {
 // `libs/std/src/primitives.bp` declares `default fn slice(self, start: i32,
 // end: ?i32 = null)`, so the one-argument call is legal — and now the checker
 // fills the declared default in, so all four snapshots hold the same lowering
-// as the two-argument call and a RUN LOG of `3`. No backend changed: the
-// argument reaches them written out, and `end` is the `null` the declaration
-// gives it.
+// as the two-argument call and a RUN LOG of `3`. The argument reaches the
+// backends written out — `end` is the `null` the declaration gives it — and wasm
+// read that `null` as `0` and trapped until `00 · 05-wasm` made it the end.
 test "wat: string slice without end arg slices to source length" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -611,9 +611,9 @@ test "wat: case ---- a failing guard falls through to the next arm" {
 //
 //   wasm   `rows.at(1)` on an array OF arrays answers a raw heap address (`308`),
 //          and `.at(0)` / `.length` of that is `0`; `s.slice(3, null)` — an open
-//          end — traps with `out of bounds memory access`. Decision 47's `?T` on
-//          wasm carries a non-scalar badly; that is C-18's row and `05-wasm`'s
-//          file, not this one.
+//          end — trapped with `out of bounds memory access` until `00 · 05-wasm`
+//          read a `null` end as the end (`a null end, written or at run time,
+//          is the end`); it answers `lo` / `[20, 30]` now.
 //   beam   `xs.slice(1, null)` and `s.slice(1, 3)` do not assemble:
 //          `beam_asm` folds `Array.slice`'s `default fn` body to its
 //          `end != null` arm with no test emitted (the `.S` calls
@@ -1173,4 +1173,29 @@ test "wat: unknown ---- a type parameter's slot is not boxed by a guess" {
         \\    @print(innerLength(s));
         \\}
     , "-2\nRUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n");
+}
+
+// A slice's `end: ?i32` written out as `null` — or an optional that is absent
+// at run time — means "to the end". Lowered as the `0` a `null` is, the end
+// fell before the start and `$__str_slice` read out of bounds (a trap), where
+// commonJS and erlang answer `cdef`; an optional `end` was read as its box's
+// ADDRESS. (status.md's `slice(2, null)` row.)
+test "wat: slice ---- a null end, written or at run time, is the end" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn cut(s: string, end: ?i32) -> string {
+        \\    return s.slice(1, end);
+        \\}
+        \\fn main() {
+        \\    @print("abcdef".slice(2, null));
+        \\    @print([1, 2, 3, 4].slice(1, null));
+        \\    @print(cut("abcdef", 3));
+        \\    @print(cut("abcdef", null));
+        \\}
+    ,
+        \\cdef
+        \\[2, 3, 4]
+        \\bc
+        \\bcdef
+        \\
+    );
 }
