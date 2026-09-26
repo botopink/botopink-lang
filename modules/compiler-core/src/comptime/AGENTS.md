@@ -567,6 +567,17 @@ binding list handed back is built tolerantly from imports, type declarations, `f
 `val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
 well-typed one binds, so the language server still lists it.
 
+## An integer literal takes the width its position asks for (01-std's handover)
+
+`inferLiteralExpr` types an integer literal as the integer type `env.expectedType` names (through
+one `?T`, `expectedIntegerType`), `i32` when nothing asks — so `val k: i64 = 1000;` and an `i64`
+parameter take a literal. `inferExprTypedInner` lets `.literal`, `.unaryOp` and `.binaryOp` keep the
+expectation; `inferBinaryOpExpr` hands it on only to the operands of an arithmetic operator
+(`3 * 86400000` passed to an `i64`), and types a literal operand of an arithmetic or comparison
+operator from the other operand (`n * 1000`, `1000 - n`, `x > 0`). The arithmetic `unify` of the
+two operands is `unifyAt` the right operand now (01 step 9), so `x + y` with `x: i64, y: i32` reds at
+`y` instead of at no location. A float literal is `f64` as before.
+
 ## One variant table, four symptoms (01 step 12)
 
 Every enum variant's constructor is bound under its bare name in `Env.bindings`, where the last

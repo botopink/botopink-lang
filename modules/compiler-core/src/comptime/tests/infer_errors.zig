@@ -1535,3 +1535,23 @@ test "variant table: a leading dot takes the expected enum; with none, two claim
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`Red` is a variant of `Warm` and of `Cold`, and nothing here says which") != null);
 }
+
+// ── 01-std handover: an integer literal takes the width its position asks for ─
+
+test "integer literal: widens to the i64 its position asks for, and a mismatch is located" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn shrink(x: i64) -> i64 { return x - 1000; }
+        \\fn wide(n: i64) -> i64 { return n * 1000 + 3 * 86400000; }
+        \\fn take(n: i64) -> i64 { return n; }
+        \\fn main() {
+        \\    val k: i64 = 1000;
+        \\    @print(shrink(k) + take(3 * 86400000) + wide(2) + (1000 - k));
+        \\    @print(k > 0);
+        \\}
+    );
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn f(x: i64, y: i32) -> i64 { return x + y; }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected i64, got i32") != null);
+}

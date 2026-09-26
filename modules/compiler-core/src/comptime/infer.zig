@@ -8292,7 +8292,11 @@ fn inferExprTypedInner(env: *Env, expr: ast.Expr) InferError!TypedExpr {
     const outer_expected = env.expectedType;
     defer env.expectedType = outer_expected;
     switch (expr) {
-        .identifier, .collection => {},
+        // `.literal`, `.unaryOp` and `.binaryOp` read it for an integer
+        // literal's width (the literal takes the integer type its position
+        // asks for — `val k: i64 = 1000;`, `n * 1000` with `n: i64`);
+        // `inferBinaryOpExpr` hands it on only to arithmetic operands.
+        .identifier, .collection, .literal, .unaryOp, .binaryOp => {},
         .call => |c| if (!isLeadingDotCall(c)) {
             env.expectedType = null;
         },
@@ -8358,6 +8362,27 @@ fn inferExprExpecting(env: *Env, expr: ast.Expr, expected: ?*T.Type) InferError!
 // ── Helper functions for each expression category ───────────────────────────
 
 /// Infer type for literal expressions (strings, numbers, null, comments)
+/// The integer type the position of an integer literal expects, if any
+/// (through one `?T`).
+fn expectedIntegerType(env: *Env) ?[]const u8 {
+    var t = (env.expectedType orelse return null).deref();
+    if (t.* == .named and std.mem.eql(u8, t.named.name, "optional") and t.named.args.len == 1) t = t.named.args[0].deref();
+    if (t.* != .named or t.named.args.len != 0) return null;
+    const ints = [_][]const u8{ "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize" };
+    for (ints) |i| if (std.mem.eql(u8, i, t.named.name)) return i;
+    return null;
+}
+
+/// True for an integer literal (`1000`), which takes its width from its
+/// position; false for everything else.
+fn isIntegerLiteral(e: ast.Expr) bool {
+    if (e != .literal) return false;
+    return switch (e.literal.kind) {
+        .numberLit => |n| std.mem.indexOfScalar(u8, n, '.') == null,
+        else => false,
+    };
+}
+
 fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (lit.kind) {
         .stringLit => |s| TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType("string"), .kind = .{ .stringLit = s } } },
@@ -8394,7 +8419,11 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
         },
         .numberLit => |n| blk: {
             const isFloat = std.mem.indexOfScalar(u8, n, '.') != null;
-            break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType(if (isFloat) "f64" else "i32"), .kind = .{ .numberLit = n } } };
+            // An integer literal takes the integer type its position asks for
+            // (`val k: i64 = 1000;`, an `i64` parameter, the other operand of
+            // an arithmetic or comparison operator); with nothing asking, `i32`.
+            const width: []const u8 = if (isFloat) "f64" else (expectedIntegerType(env) orelse "i32");
+            break :blk TypedExpr{ .literal = .{ .loc = loc, .type_ = try env.namedType(width), .kind = .{ .numberLit = n } } };
         },
         .null_ => blk: {
             const innerVar = try env.freshVar();
@@ -8632,7 +8661,27 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
 
 /// Infer type for binary operation expressions
 fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
-    const lhsTyped = try inferExprTyped(env, binop.lhs.*);
+    // An integer literal takes its width from the other operand of an
+    // arithmetic or comparison operator (`n * 1000`, `1000 - n`, `x > 0` with
+    // `n`, `x: i64`), and an arithmetic operator hands its own position's
+    // expectation to its operands (`3 * 86400000` passed to an `i64`).
+    const numericOp = switch (binop.op) {
+        .add, .sub, .mul, .div, .mod, .lt, .gt, .lte, .gte, .eq, .ne => true,
+        else => false,
+    };
+    const arithmeticOp = switch (binop.op) {
+        .add, .sub, .mul, .div, .mod => true,
+        else => false,
+    };
+    const outerExpected = env.expectedType;
+    env.expectedType = if (arithmeticOp and expectedIntegerType(env) != null) outerExpected else null;
+    // A literal on the left is typed after the right, from it.
+    const lhsIsLiteral = numericOp and isIntegerLiteral(binop.lhs.*) and !isIntegerLiteral(binop.rhs.*);
+    const early_rhs: ?TypedExpr = if (lhsIsLiteral) try inferExprTypedExpecting(env, binop.rhs.*, env.expectedType) else null;
+    const lhsTyped = if (early_rhs) |r|
+        try inferExprTypedExpecting(env, binop.lhs.*, r.getType())
+    else
+        try inferExprTyped(env, binop.lhs.*);
 
     // AND condition narrowing: `x && x.field` — if LHS is an optional variable,
     // narrow it before inferring the RHS so `.field` access resolves.
@@ -8654,7 +8703,9 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     // 01 step 12 — the right side of `==` / `!=` is compared with the left, so
     // the left's type is its expected type: `decl.kind != .Record` names
     // `TypeInfoKind.Record` even where another enum also declares `Record`.
-    const rhsTyped = if (binop.op == .eq or binop.op == .ne)
+    const rhsTyped = if (early_rhs) |r|
+        r
+    else if (binop.op == .eq or binop.op == .ne or (numericOp and isIntegerLiteral(binop.rhs.*)))
         try inferExprTypedExpecting(env, binop.rhs.*, lhsTyped.getType())
     else
         try inferExprTyped(env, binop.rhs.*);
@@ -8702,7 +8753,9 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
             // Numeric promotion: float wins over int
             if (isFloatType(lhsTy) and isIntType(rhsTy)) break :blk lhsTy;
             if (isIntType(lhsTy) and isFloatType(rhsTy)) break :blk rhsTy;
-            try unify(env, lhsTy, rhsTy);
+            // Located at the right operand (01 step 9): the left one set the
+            // type the right must take.
+            try unifyAt(env, lhsTy, rhsTy, binop.rhs.getLoc());
             break :blk lhsTy;
         },
         .sub, .mul, .div, .mod => blk: {
@@ -8720,7 +8773,9 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
             try requireNumericOperand(env, rhsTy, opName, binop.rhs.getLoc());
             if (isFloatType(lhsTy) and isIntType(rhsTy)) break :blk lhsTy;
             if (isIntType(lhsTy) and isFloatType(rhsTy)) break :blk rhsTy;
-            try unify(env, lhsTy, rhsTy);
+            // Located at the right operand (01 step 9): the left one set the
+            // type the right must take.
+            try unifyAt(env, lhsTy, rhsTy, binop.rhs.getLoc());
             break :blk lhsTy;
         },
     };
