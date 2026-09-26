@@ -403,6 +403,18 @@ fn main() {
     local.get $i
     i32.const 0
     i32.lt_s
+    (if
+      (then
+        local.get $i
+        local.get $xs
+        i32.load
+        i32.add
+        local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
     local.get $i
     local.get $xs
     i32.load

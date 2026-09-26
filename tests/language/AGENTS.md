@@ -44,6 +44,9 @@ Decision 137 (the empty record is `type Name()`) adds `run/type_empty_record` �
 `type MathOps() { … }` constructed and called on all four targets — and two `reject/` cells,
 `type_empty_braces` (`type Marker {}`) and `type_without_field_list` (`type MathOps { fn … }`), both
 `type-without-field-list` where the `()` belongs.
+Decision 138 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
+`xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
+`String.at` / `s[-2]`, and a string array — on all four targets.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

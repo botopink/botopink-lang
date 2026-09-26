@@ -2228,6 +2228,18 @@ test "order case over Order" {
     local.get $i
     i32.const 0
     i32.lt_s
+    (if
+      (then
+        local.get $i
+        local.get $xs
+        i32.load
+        i32.add
+        local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
     local.get $i
     local.get $xs
     i32.load
@@ -4127,6 +4139,18 @@ fn main() {
     local.get $p
   )
   (func $__arr_at_box (param $xs i32) (param $i i32) (result i32)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        local.get $i
+        local.get $xs
+        i32.load
+        i32.add
+        local.set $i
+      )
+    )
     local.get $i
     i32.const 0
     i32.lt_s

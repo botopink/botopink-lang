@@ -347,6 +347,18 @@ fn main() {
     local.get $i
     i32.const 0
     i32.lt_s
+    (if
+      (then
+        local.get $i
+        local.get $xs
+        i32.load
+        i32.add
+        local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
     local.get $i
     local.get $xs
     i32.load
@@ -598,6 +610,18 @@ fn main() {
     local.get $i
     i32.const 0
     i32.lt_s
+    (if
+      (then
+        local.get $i
+        local.get $xs
+        i32.load
+        i32.add
+        local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
     local.get $i
     local.get $xs
     i32.load
@@ -684,6 +708,18 @@ fn main() {
     call $__print_nl
   )
   (func $__str_at (param $s i32) (param $i i32) (result i32)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        local.get $i
+        local.get $s
+        i32.load
+        i32.add
+        local.set $i
+      )
+    )
     local.get $i
     local.get $s
     i32.load

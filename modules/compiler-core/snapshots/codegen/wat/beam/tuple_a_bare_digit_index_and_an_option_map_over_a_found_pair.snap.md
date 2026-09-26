@@ -16,7 +16,7 @@ fn main() {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 59}.
+{labels, 60}.
 
 {function, 'Array_range', 2, 3}.
   {label, 2}.
@@ -453,11 +453,17 @@ fn main() {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 0}}.
-    {test, is_ge, {f, 58}, [{y, 0}, {integer, 0}]}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
+    {test, is_ge, {f, 59}, [{y, 0}, {integer, 0}]}.
     {test, is_lt, {f, 58}, [{y, 0}, {x, 0}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.
+  {label, 59}.
+    {gc_bif, '+', {f, 0}, 1, [{y, 0}, {x, 0}], {x, 0}}.
+    {test, is_ge, {f, 58}, [{x, 0}, {integer, 0}]}.
+    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.
   {label, 58}.

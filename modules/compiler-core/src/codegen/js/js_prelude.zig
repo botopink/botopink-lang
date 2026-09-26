@@ -234,41 +234,37 @@ const yield_step: ast.Stmt = .{ .function = .{
 const s: ast.Expr = .{ .name = "s" };
 const i: ast.Expr = .{ .name = "i" };
 const zero: ast.Expr = .{ .number = "0" };
-const s_length: ast.Expr = .{ .member = .{ .object = &s, .name = "length" } };
-const s_char_at: ast.Expr = .{ .member = .{ .object = &s, .name = "charAt" } };
+const s_at: ast.Expr = .{ .member = .{ .object = &s, .name = "at" } };
 
-/// `function __bp_string_char_at(s, i) { return (i >= 0 && i < s.length) ? s.charAt(i) : null; }`
+/// `function __bp_string_char_at(s, i) { return s.at(i) ?? null; }` — native
+/// `String.prototype.at` counts a negative index from the end (decision 138)
+/// and answers `undefined` outside the string, which `?? null` makes decision
+/// 47's absent.
 const string_char_at: ast.Stmt = .{ .function = .{
     .name = "__bp_string_char_at",
     .params = &.{ .{ .pattern = .{ .name = "s" } }, .{ .pattern = .{ .name = "i" } } },
-    .body = .{ .stmts = &.{.{ .return_ = .{ .ternary = .{
-        .cond = &.{ .paren = &.{ .binary = .{
-            .op = "&&",
-            .lhs = &.{ .binary = .{ .op = ">=", .lhs = &i, .rhs = &zero, .parens = false } },
-            .rhs = &.{ .binary = .{ .op = "<", .lhs = &i, .rhs = &s_length, .parens = false } },
-            .parens = false,
-        } } },
-        .then = &.{ .call = .{ .callee = &s_char_at, .args = &.{i} } },
-        .else_ = &.null_,
+    .body = .{ .stmts = &.{.{ .return_ = .{ .binary = .{
+        .op = "??",
+        .lhs = &.{ .call = .{ .callee = &s_at, .args = &.{i} } },
+        .rhs = &.null_,
+        .parens = false,
     } } }}, .layout = .spaced },
 } };
 
 const xs: ast.Expr = .{ .name = "xs" };
-const xs_length: ast.Expr = .{ .member = .{ .object = &xs, .name = "length" } };
+const xs_at: ast.Expr = .{ .member = .{ .object = &xs, .name = "at" } };
 
-/// `function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }`
+/// `function __bp_array_at(xs, i) { return xs.at(i) ?? null; }` — the same
+/// reading for an array: `-1` is the last element, and past either end is
+/// `null` (decision 138).
 const array_at: ast.Stmt = .{ .function = .{
     .name = "__bp_array_at",
     .params = &.{ .{ .pattern = .{ .name = "xs" } }, .{ .pattern = .{ .name = "i" } } },
-    .body = .{ .stmts = &.{.{ .return_ = .{ .ternary = .{
-        .cond = &.{ .paren = &.{ .binary = .{
-            .op = "&&",
-            .lhs = &.{ .binary = .{ .op = ">=", .lhs = &i, .rhs = &zero, .parens = false } },
-            .rhs = &.{ .binary = .{ .op = "<", .lhs = &i, .rhs = &xs_length, .parens = false } },
-            .parens = false,
-        } } },
-        .then = &.{ .index = .{ .object = &xs, .index = &i } },
-        .else_ = &.null_,
+    .body = .{ .stmts = &.{.{ .return_ = .{ .binary = .{
+        .op = "??",
+        .lhs = &.{ .call = .{ .callee = &xs_at, .args = &.{i} } },
+        .rhs = &.null_,
+        .parens = false,
     } } }}, .layout = .spaced },
 } };
 
@@ -701,12 +697,12 @@ test "js_prelude: a failed assert throws with its message and location" {
     );
 }
 
-test "js_prelude: string at answers null out of range" {
+test "js_prelude: string at counts a negative index from the end, null out of range (decision 138)" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
     try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.string_char_at), 0);
     try std.testing.expectEqualStrings(
-        "function __bp_string_char_at(s, i) { return (i >= 0 && i < s.length) ? s.charAt(i) : null; }",
+        "function __bp_string_char_at(s, i) { return s.at(i) ?? null; }",
         aw.written(),
     );
     try std.testing.expectEqual(Helper.string_char_at, forMethod(.string, "at", 1).?);
@@ -717,12 +713,12 @@ test "js_prelude: string at answers null out of range" {
     try std.testing.expect(forMethod(.string, "charAt", 1) == null);
 }
 
-test "js_prelude: array at answers null out of range (decision 47)" {
+test "js_prelude: array at counts a negative index from the end, null out of range (decisions 47, 138)" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
     try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.array_at), 0);
     try std.testing.expectEqualStrings(
-        "function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }",
+        "function __bp_array_at(xs, i) { return xs.at(i) ?? null; }",
         aw.written(),
     );
 }

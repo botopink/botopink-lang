@@ -379,8 +379,8 @@ codegen/
 - **Prelude helpers** (`js/js_prelude.zig`): a call `recv.m(args)` whose
   receiver inference recorded as a primitive (`instance_lowerings` `.prim`)
   and whose native JS method disagrees with the declaration calls a helper
-  instead — `s.at(i)` is `__bp_string_char_at(s, i)` (`null` out of
-  range). An open-ended range is `__bp_range_from(start)`. `Emitter.helper` marks it, and only marked helpers are declared at
+  instead — `s.at(i)` is `__bp_string_char_at(s, i)` (native `.at(i) ?? null`:
+  a negative index counts from the end, decision 138; `null` out of range). An open-ended range is `__bp_range_from(start)`. `Emitter.helper` marks it, and only marked helpers are declared at
   the top of the module. Interface default-fn bodies are not inferred, so a
   `at` inside one stays native.
 - **Duplicate test names**: two `test "x"` blocks in one module print
@@ -1635,7 +1635,8 @@ codegen/
   call site. `'__bp_index'(Recv, Idx)`: a map → `maps:get(Idx, Recv, undefined)`,
   a binary → `string:slice(Recv, Idx, 1)`, a tuple → `element(Idx + 1, Recv)`,
   anything else → the bounds-checked `'-bp_at-'/2` `xs.at(i)` already uses, so
-  an out-of-range index answers `undefined` instead of raising.
+  an out-of-range index answers `undefined` instead of raising (a negative one
+  counts from the end, decision 138).
   `'__bp_slice'(Recv, Start, End)` is half-open like every other `..`, with
   `End` the atom `infinity` for `xs[0..]` (the convention `lowerRange` uses): a
   binary → `string:slice/2,3`, anything else → `lists:sublist/3`, both of which
@@ -2665,6 +2666,16 @@ generator (`in_generator`) as `yield _tryN; return;`, and `yield try x` /
 decision 105's (22-loops): commonJS's `function*` and beam run
 `run/generator_break_value.bp`; the eager erlang and wasm scopes are pinned in
 `tests/language/expected-failures.txt`.
+
+**A negative index counts from the end** (decision 138), in the one reader
+each backend has for `Array.at` / `String.at` (and so `xs[i]` / `s[i]`, which
+the checker rewrites to them): commonJS's `__bp_array_at` /
+`__bp_string_char_at` are native `.at(i) ?? null`; erlang's are
+`primitives.bp`'s `@External.Erlang` templates (`__J = I + length` when
+`I < 0`), which beam evaluates for `String.at`; beam's `'-bp_at-'/2` adds a
+`J = I + length(L)` branch; wasm's `$__arr_at`, `$__arr_at_box` and `$__str_at`
+add the length to a negative `i` before their bounds test. Past either end is
+the absent `?T` everywhere (`tests/language/run/index_negative_from_end`).
 
 A `try` with no rest of the function to nest in — a call argument or a literal's
 element (`f(try r)`; decision 136 leaves no operand form), a loop's body, an `if`

@@ -616,11 +616,20 @@ its own**: its type is whatever the method answers, which for `at` is `?T`.
 val xs = [10, 20, 30];
 val first: ?i32 = xs[0];         // xs.at(0)
 val none: ?i32 = xs[9];          // null — absent has one spelling
+val last: ?i32 = xs[-1];         // 30 — a negative index counts from the end
+val gone: ?i32 = xs.at(-4);      // null — past the front is absent too
 val tail: i32[] = xs[1..];       // xs.slice(1, null)
 val head: i32[] = xs[0..2];      // xs.slice(0, 2)
 val s = "hello";
 val c: ?string = s[1];           // "e"
+val o: ?string = s.at(-1);       // "o"
 ```
+
+A **negative index counts from the end**, on every backend: `xs.at(-1)` is the
+last element and `xs.at(-xs.length)` the first; an index past either end
+(`xs.at(xs.length)`, `xs.at(-xs.length - 1)`) is the absent `?T`. `Array.at`
+and `String.at` — and so `xs[i]` and `s[i]` — read the same way. `Dict.at` is
+by key and has no position to count from.
 
 Which methods those are comes from two **ambient** behaviors — ambient like
 `Display`, so the syntax finds them with nothing imported:

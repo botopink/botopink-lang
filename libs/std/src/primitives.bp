@@ -215,7 +215,9 @@ behavior String {
     // says `?string`; a helper that returns `null` needs the commonJS helper
     // mechanism (F8 js-bridges) — a template here would patch the global
     // `String.prototype.charAt`.
-    #[@External.Erlang("""(fun(__S, __I) -> case (__I >= 0) andalso (__I < string:length(__S)) of true -> string:slice(__S, __I, 1); false -> undefined end end)($0, $1)""")]
+    // A negative index counts from the end (decision 138): `-1` is the last
+    // character, and past either end is absent.
+    #[@External.Erlang("""(fun(__S, __I) -> __N = string:length(__S), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> string:slice(__S, __J, 1); false -> undefined end end)($0, $1)""")]
     #[@External.Node("charAt")]
     fn at(self: Self, index: i32) -> ?string;
 
@@ -377,7 +379,10 @@ behavior Array<T> {
 
     // ── host-backed primitives ──
     // `Index<i32, T>.at` — the reader `xs[0]` rewrites to.
-    #[@External.Erlang("(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)($0, $1)")]
+    // A negative index counts from the end (decision 138): `xs.at(-1)` is
+    // the last element, `xs.at(-xs.length)` the first, and past either end
+    // is absent.
+    #[@External.Erlang("(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)($0, $1)")]
     #[@External.Node("at")]
     fn at(self: Self, index: i32) -> ?T;
 

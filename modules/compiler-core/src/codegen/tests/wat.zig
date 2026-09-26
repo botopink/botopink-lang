@@ -1013,8 +1013,9 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
 // `unreachable ;; prim method not lowered on wasm: string.at/1`, so
 // `tests/language/run/index_at_optional.bp` died at exit 134 on this backend
 // while commonJS, erlang and beam all answered. `$__str_at` is
-// `$__str_slice(s, i, i + 1)` behind one `i32.ge_u` bounds test — unsigned, so a
-// negative index wraps past any length and is rejected by the same compare.
+// `$__str_slice(s, i, i + 1)` behind one `i32.ge_u` bounds test, after a
+// negative index has been counted from the end (`i + len`, decision 138) — one
+// still negative wraps past any length and is rejected by the same compare.
 //
 // The absent probes are the half that makes the lowering safe rather than merely
 // present: `at` answers a `?string` whose absence is the pointer `0`, and
@@ -1034,9 +1035,10 @@ test "wat: prim method ---- String.at answers a one-character string, and null o
         \\    @print(s.at(2));
         \\    @print(s.at(3));
         \\    @print(s.at(0 - 1));
+        \\    @print(s.at(0 - 4));
         \\    @print("hello world".at(6));
         \\}
-    , "a\nc\nnull\nnull\nw\n");
+    , "a\nc\nnull\nc\nnull\nw\n");
 }
 
 // A self-call in `return` position is a branch to the function's own loop head

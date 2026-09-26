@@ -531,7 +531,7 @@ test "order case over Order" {
 
 ----- JAVASCRIPT -- std/collections.js
 ```javascript
-function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }
+function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
 
 //// std/collections — the four collection types, one namespace each (decision
 

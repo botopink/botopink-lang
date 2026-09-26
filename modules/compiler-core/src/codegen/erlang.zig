@@ -883,8 +883,9 @@ fn unsupportedOf(comptime tag: []const u8, comptime args: anytype) Ast.Expr {
 /// it yet, so the receiver's kind is only known at run time — as for `'__bp_len'`
 /// and the `'__bp_prim_<m>'` shims, the dispatch is a guard sequence:
 ///
-///   - a **list** by position, `undefined` outside it — the same answer
-///     `Array.at` gives, and the same one commonJS's `xs[0]` gives;
+///   - a **list** by position, a negative one counted from the end
+///     (decision 138), `undefined` outside it — the same answer `Array.at`
+///     gives;
 ///   - a **string** by character, not by byte (`string:slice/3` is UTF-8 aware);
 ///   - a **tuple** by position, `undefined` outside it.
 ///
@@ -903,6 +904,17 @@ const index_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_index", .cla
             binOpOf("<", ix_i, bifOf("length", &.{ix_recv})),
         },
         .body = oneExpr(remoteOf("lists", "nth", &.{ binOpOf("+", ix_i, ix_one), ix_recv })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{
+            isA("list", "Recv"),
+            isA("integer", "I"),
+            binOpOf("<", ix_i, ix_zero),
+            binOpOf(">=", binOpOf("+", ix_i, bifOf("length", &.{ix_recv})), ix_zero),
+        },
+        .body = oneExpr(remoteOf("lists", "nth", &.{ binOpOf("+", binOpOf("+", ix_i, bifOf("length", &.{ix_recv})), ix_one), ix_recv })),
         .layout = .inline_,
     },
     .{

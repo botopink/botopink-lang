@@ -758,30 +758,46 @@ const arr_at = ast.Func{
     .name = "__arr_at",
     .params = &.{ .{ .name = "xs", .ty = .i32 }, .{ .name = "i", .ty = .i32 } },
     .result = .i32,
-    .body = .{ .stack = .{ .value = .i32 }, .lines = &.{
-        .{ .indent = 4, .instr = .{ .local_get = "i" } },
-        .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "lt_s" } } },
-        .{ .indent = 4, .instr = .{ .local_get = "i" } },
-        .{ .indent = 4, .instr = .{ .local_get = "xs" } },
-        .{ .indent = 4, .instr = .{ .load = .{ .ty = .i32 } } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "ge_s" } } },
-        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "or" } } },
-        .{ .indent = 4, .instr = .{ .@"if" = .{
-            .result = .i32,
-            .then = .{ .layout = .inline_, .seq = .{ .stack = .{ .value = .i32 }, .lines = &.{.{ .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } }} } },
-            .@"else" = .{ .seq = .{ .stack = .{ .value = .i32 }, .lines = &.{
-                .{ .indent = 8, .instr = .{ .local_get = "xs" } },
-                .{ .indent = 8, .instr = .{ .local_get = "i" } },
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
-                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "mul" } } },
-                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                .{ .indent = 8, .instr = .{ .load = .{ .ty = .i32 } } },
+    .body = .{
+        .stack = .{ .value = .i32 },
+        .lines = &.{
+            // A negative index counts from the end (decision 138): i += len.
+            .{ .indent = 4, .instr = .{ .local_get = "i" } },
+            .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
+            .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "lt_s" } } },
+            .{ .indent = 4, .instr = .{ .@"if" = .{
+                .then = .{ .seq = .{ .stack = .none, .lines = &.{
+                    .{ .indent = 8, .instr = .{ .local_get = "i" } },
+                    .{ .indent = 8, .instr = .{ .local_get = "xs" } },
+                    .{ .indent = 8, .instr = .{ .load = .{ .ty = .i32 } } },
+                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
+                    .{ .indent = 8, .instr = .{ .local_set = "i" } },
+                } } },
             } } },
-        } } },
-    } },
+            .{ .indent = 4, .instr = .{ .local_get = "i" } },
+            .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
+            .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "lt_s" } } },
+            .{ .indent = 4, .instr = .{ .local_get = "i" } },
+            .{ .indent = 4, .instr = .{ .local_get = "xs" } },
+            .{ .indent = 4, .instr = .{ .load = .{ .ty = .i32 } } },
+            .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "ge_s" } } },
+            .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "or" } } },
+            .{ .indent = 4, .instr = .{ .@"if" = .{
+                .result = .i32,
+                .then = .{ .layout = .inline_, .seq = .{ .stack = .{ .value = .i32 }, .lines = &.{.{ .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } }} } },
+                .@"else" = .{ .seq = .{ .stack = .{ .value = .i32 }, .lines = &.{
+                    .{ .indent = 8, .instr = .{ .local_get = "xs" } },
+                    .{ .indent = 8, .instr = .{ .local_get = "i" } },
+                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
+                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
+                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
+                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "mul" } } },
+                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
+                    .{ .indent = 8, .instr = .{ .load = .{ .ty = .i32 } } },
+                } } },
+            } } },
+        },
+    },
 };
 
 const str_concat = ast.Func{
@@ -1254,7 +1270,8 @@ const str_ends_with = func("__str_ends_with", &.{ "s", "x" }, .i32, i32s(&.{ "n"
 });
 
 /// `s.at(i)` as a `?string`: a fresh one-byte string, or `0` — absence — when
-/// `i` is outside `0..len`. A `?string` needs no box on this backend: a string
+/// `i` is outside `0..len` once a negative `i` has been counted from the end
+/// (`i + len`, decision 138). A `?string` needs no box on this backend: a string
 /// IS its own pointer and `$__print_opt_str_raw` reads absence as `i32.eqz`,
 /// which is why this answers a pointer and not the `$__box_i32` cell
 /// `$__arr_at_box` builds for a scalar element. The bounds test is `$__arr_at`'s
@@ -1262,10 +1279,11 @@ const str_ends_with = func("__str_ends_with", &.{ "s", "x" }, .i32, i32s(&.{ "n"
 /// **unsigned** compare: a negative `i` wraps past any length, so `i32.ge_u`
 /// rejects both ends where `$__arr_at` needs `lt_s` and `ge_s` together.
 const str_at = func("__str_at", &.{ "s", "i" }, .i32, &.{}, &.{
-    get("i"),   get("s"),                load(0),
-    op("ge_u"), when(&.{ c32(0), ret }), get("s"),
-    get("i"),   get("i"),                c32(1),
-    op("add"),  call("__str_slice"),
+    get("i"),                                                     c32(0),     op("lt_s"),
+    when(&.{ get("i"), get("s"), load(0), op("add"), set("i") }), get("i"),   get("s"),
+    load(0),                                                      op("ge_u"), when(&.{ c32(0), ret }),
+    get("s"),                                                     get("i"),   get("i"),
+    c32(1),                                                       op("add"),  call("__str_slice"),
 });
 
 /// `mode` bit 1 trims the start, bit 2 the end (whitespace: ' ' \t \n \r).
@@ -1637,9 +1655,12 @@ const box_i32 = func("__box_i32", &.{"v"}, .i32, i32s(&.{"p"}), &.{
     get("p"),
 });
 
-/// `xs.at(i)` as a `?T`: a box holding the element, or 0 out of range.
+/// `xs.at(i)` as a `?T`: a box holding the element, or 0 out of range; a
+/// negative `i` counts from the end (`i + len`, decision 138).
 const arr_at_box = func("__arr_at_box", &.{ "xs", "i" }, .i32, &.{}, &([_]Instr{
-    get("i"),                c32(0), op("lt_s"), get("i"), get("xs"), load(0), op("ge_s"), op("or"),
+    get("i"),                c32(0),  op("lt_s"), when(&.{ get("i"), get("xs"), load(0), op("add"), set("i") }),
+    get("i"),                c32(0),  op("lt_s"), get("i"),
+    get("xs"),               load(0), op("ge_s"), op("or"),
     when(&.{ c32(0), ret }),
 } ++ slot("xs", "i") ++ [_]Instr{ load(0), call("__box_i32") }));
 

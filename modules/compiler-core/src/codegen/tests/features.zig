@@ -1207,15 +1207,18 @@ test "js: a typed array `at` beside a String default fn in use keeps its name" {
     , "bc\n8\na\n");
 }
 
-test "js: string at out of range is null" {
+// Decision 138: a negative index counts from the end — `s.at(-1)` is the last
+// character, and past either end (`2`, `-3`) is `null`.
+test "js: string at out of range is null, a negative index counts from the end" {
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
         \\    val s = "ab";
         \\    @print(s.at(1));
         \\    @print(s.at(2));
         \\    @print(s.at(-1));
+        \\    @print(s.at(-3));
         \\}
-    , "b\nnull\nnull\n");
+    , "b\nnull\nb\nnull\n");
 }
 
 test "js: string methods map to native JS names" {
