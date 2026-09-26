@@ -18,5 +18,3 @@
 # exist in a full run.
 #
 # Owners are the fronts of specs/1.0.10-beta/fronts.md.
-rakun-data erlang 3193053f70ea 03-rakun `test/sql_build_test.bp:137` asserts `#[transactional]` refuses `ids: i32[]` as a parameter "whose type reflection loses" — `@Decl` now spells every type (`Param.typeName` is `i32[]`), so the refusal in `src/sql/transactional.bp:63` no longer fires and the proxy forwards the parameter; the test and the `== "" || == "Array"` condition go
-rakun-security erlang 3193053f70ea 03-rakun `test/build_test.bp:99` asserts `#[preAuthorize]` refuses a parameter "whose type reflection loses" — `@Decl` now spells every type, so the refusal in `src/method_security.bp:129` no longer fires; the test and the `== "" || == "Array"` condition go
