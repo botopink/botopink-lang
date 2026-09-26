@@ -1,0 +1,57 @@
+//// actions: the `state` grammar and `ActionState`, on both targets. Every
+//// expected text is a literal.
+
+import {asserts} from "std";
+import {ActionState, newActionState, writeState, parseState} from "state";
+
+test "actions: writeState answers the pinned state literal" {
+    val s = writeState("Title must be at least 3 characters", [#("title", "Too short")]);
+    try asserts.equals(s, "message=Title%20must%20be%20at%20least%203%20characters&f.title=Too%20short");
+}
+
+test "actions: writeState of nothing is message=" {
+    try asserts.equals(writeState("", []), "message=");
+}
+
+test "actions: parseState reads the pinned literal back" {
+    val parsed = parseState("message=Title%20must%20be%20at%20least%203%20characters&f.title=Too%20short");
+    try asserts.equals(parsed._0, "Title must be at least 3 characters");
+    try asserts.equals(parsed._1.length, 1);
+    val f = parsed._1.at(0).unwrapOr(#("", ""));
+    try asserts.equals(f._0, "title");
+    try asserts.equals(f._1, "Too short");
+}
+
+test "actions: parseState of the empty state is no message and no fields" {
+    val parsed = parseState("");
+    try asserts.equals(parsed._0, "");
+    try asserts.equals(parsed._1.length, 0);
+}
+
+test "actions: parseState ignores a key that is neither message nor f." {
+    val parsed = parseState("ok=true&message=hi&x.title=no&f.name=bad");
+    try asserts.equals(parsed._0, "hi");
+    try asserts.equals(parsed._1.length, 1);
+    try asserts.equals(parsed._1.at(0).unwrapOr(#("", ""))._0, "name");
+}
+
+test "actions: a value with &, =, % and a space round-trips" {
+    val odd = "a&b=c%d e";
+    val s = writeState(odd, [#("q", odd)]);
+    try asserts.equals(s, "message=a%26b%3Dc%25d%20e&f.q=a%26b%3Dc%25d%20e");
+    val parsed = parseState(s);
+    try asserts.equals(parsed._0, odd);
+    try asserts.equals(parsed._1.at(0).unwrapOr(#("", ""))._1, odd);
+}
+
+test "actions: fieldError of an absent name is empty; newActionState is ok with no fields" {
+    val st = newActionState("");
+    try asserts.isTrue(st.ok);
+    try asserts.equals(st.fields.length, 0);
+    try asserts.equals(st.fieldError("title"), "");
+    try asserts.isFalse(st.hasError());
+    val bad = ActionState(ok: false, message: "m", redirectTo: "", fields: [#("title", "Too short")]);
+    try asserts.equals(bad.fieldError("title"), "Too short");
+    try asserts.equals(bad.fieldError("body"), "");
+    try asserts.isTrue(bad.hasError());
+}

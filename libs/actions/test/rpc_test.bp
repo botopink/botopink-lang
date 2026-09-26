@@ -1,0 +1,49 @@
+//// actions: the JSON-RPC body both ways, and its refusals, on both targets.
+
+import {asserts} from "std";
+import {RpcCall, writeRpcBody, parseRpcBody} from "rpc";
+
+fn rpcErr(r: @Result<RpcCall, string>) -> string {
+    val t = case r {
+        Ok(_) -> "";
+        Error(e) -> e;
+    };
+    return t;
+}
+
+fn roundTrips(c: RpcCall) -> bool {
+    val ok = case parseRpcBody(writeRpcBody(c)) {
+        Ok(r) -> r.id == c.id && r.args.join("\n") == c.args.join("\n") && r.args.length == c.args.length;
+        Error(_) -> false;
+    };
+    return ok;
+}
+
+test "actions: writeRpcBody answers the pinned literal" {
+    try asserts.equals(writeRpcBody(RpcCall(id: "a_9f2c1b7e", args: ["x", "y"])), "{\"v\":1,\"id\":\"a_9f2c1b7e\",\"args\":[\"x\",\"y\"]}");
+    try asserts.equals(writeRpcBody(RpcCall(id: "a_1", args: [])), "{\"v\":1,\"id\":\"a_1\",\"args\":[]}");
+}
+
+test "actions: parseRpcBody inverts writeRpcBody, a quote and a newline included" {
+    try asserts.isTrue(roundTrips(RpcCall(id: "a_9f2c1b7e", args: ["x", "y"])));
+    try asserts.isTrue(roundTrips(RpcCall(id: "a_2", args: ["say \"hi\"\nthen", ""])));
+    try asserts.isTrue(roundTrips(RpcCall(id: "a_3", args: [])));
+}
+
+test "actions: parseRpcBody names what is wrong" {
+    try asserts.equals(rpcErr(parseRpcBody("{\"v\":2,\"id\":\"a\",\"args\":[]}")), "actions.parseRpcBody: `v` must be 1 - this reader knows version 1 only");
+    try asserts.equals(rpcErr(parseRpcBody("{\"v\":1,\"args\":[]}")), "actions.parseRpcBody: `id` must be a string, not null");
+    try asserts.equals(rpcErr(parseRpcBody("{\"v\":1,\"id\":\"\",\"args\":[]}")), "actions.parseRpcBody: `id` is empty");
+    try asserts.equals(rpcErr(parseRpcBody("{\"v\":1,\"id\":7}")), "actions.parseRpcBody: `id` must be a string, not a number");
+    try asserts.equals(rpcErr(parseRpcBody("{\"v\":1,\"id\":\"a\",\"args\":[1]}")), "actions.parseRpcBody: `args` must be an array of strings");
+    try asserts.equals(rpcErr(parseRpcBody("{\"v\":1,\"id\":\"a\",\"args\":\"x\"}")), "actions.parseRpcBody: `args` must be an array of strings");
+    try asserts.equals(rpcErr(parseRpcBody("{\"v\":1,")), "actions.parseRpcBody: not JSON (json.decode: expected a member name (a string) at byte 7)");
+    try asserts.equals(rpcErr(parseRpcBody("  ")), "actions.parseRpcBody: the body is empty");
+    try asserts.equals(rpcErr(parseRpcBody("\"x\"")), "actions.parseRpcBody: the body must be an object, not a string");
+}
+
+test "actions: a missing args is the empty list; an unknown key is ignored" {
+    val r = try parseRpcBody("{\"v\":1,\"id\":\"a_1\",\"extra\":true}");
+    try asserts.equals(r.id, "a_1");
+    try asserts.equals(r.args.length, 0);
+}

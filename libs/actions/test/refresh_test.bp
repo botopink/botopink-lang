@@ -1,0 +1,8 @@
+//// actions: the refresh value.
+
+import {asserts} from "std";
+import {refreshValue} from "refresh";
+
+test "actions: refreshValue answers refresh" {
+    try asserts.equals(refreshValue(), "refresh");
+}

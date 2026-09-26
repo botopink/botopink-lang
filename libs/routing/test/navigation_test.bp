@@ -1,0 +1,109 @@
+//// routing: the navigation vocabulary — the four `nav:` reasons and the `n`
+//// wire — on both targets. Every expected text is a literal.
+
+import {asserts} from "std";
+import {NavKind, NavOutcome, signalReason, signalFromReason, isSignalReason, signalPrefixes, signalToWire, signalFromWire} from "navigation";
+
+fn kindText(k: NavKind) -> string {
+    return case k {
+        None -> "None";
+        NotFound -> "NotFound";
+        Redirect -> "Redirect";
+    };
+}
+
+fn same(a: NavOutcome, b: NavOutcome) -> bool {
+    return (kindText(a.kind) == kindText(b.kind) && a.location == b.location) && a.status == b.status;
+}
+
+fn notFound() -> NavOutcome {
+    return NavOutcome(kind: NavKind.NotFound, location: "", status: 404);
+}
+
+fn redirect(loc: string, status: i32) -> NavOutcome {
+    return NavOutcome(kind: NavKind.Redirect, location: loc, status: status);
+}
+
+fn none() -> NavOutcome {
+    return NavOutcome(kind: NavKind.None, location: "", status: 0);
+}
+
+test "routing: signalReason answers each of the four reasons" {
+    try asserts.equals(signalReason(notFound()), "nav:not-found");
+    try asserts.equals(signalReason(redirect("/login", 307)), "nav:redirect:/login");
+    try asserts.equals(signalReason(redirect("/new", 308)), "nav:permanent-redirect:/new");
+    try asserts.equals(signalReason(redirect("/done", 303)), "nav:see-other:/done");
+}
+
+test "routing: signalFromReason inverts signalReason, a location with : and / included" {
+    val outs = [notFound(), redirect("/login", 307), redirect("/new", 308), redirect(
+            "/done",
+            303
+        ), redirect("https://example.com:8443/a/b", 307)];
+    assert outs.filter({ o -> same(signalFromReason(signalReason(o)), o) }).length == 5;
+    val reasons = ["nav:not-found", "nav:redirect:/login", "nav:permanent-redirect:/new", "nav:see-other:/done", "nav:redirect:https://example.com:8443/a:b"];
+    assert reasons.filter({ r -> signalReason(signalFromReason(r)) == r }).length == 5;
+}
+
+test "routing: the n wire round-trips every row" {
+    try asserts.equals(signalToWire(none()), "");
+    try asserts.equals(signalToWire(notFound()), "N");
+    try asserts.equals(signalToWire(redirect("/login", 307)), "R|307|/login");
+    try asserts.equals(signalToWire(redirect("/new", 308)), "R|308|/new");
+    try asserts.equals(signalToWire(redirect("/done", 303)), "R|303|/done");
+    val outs = [none(), notFound(), redirect("/login", 307), redirect("/new", 308), redirect(
+            "/done",
+            303
+        )];
+    assert outs.filter({ o -> same(signalFromWire(signalToWire(o)), o) }).length == 5;
+}
+
+test "routing: a malformed wire is None and the location keeps its bars" {
+    assert same(signalFromWire("garbage"), none());
+    assert same(signalFromWire("R|302|/x"), none());
+    assert same(signalFromWire("R|307"), none());
+    val barred = signalFromWire("R|307|/a|b");
+    try asserts.equals(barred.location, "/a|b");
+    try asserts.equals(barred.status, 307);
+}
+
+test "routing: each reason's wire is the table's literal" {
+    try asserts.equals(signalToWire(signalFromReason("nav:not-found")), "N");
+    try asserts.equals(signalToWire(signalFromReason("nav:redirect:/login")), "R|307|/login");
+    try asserts.equals(signalToWire(signalFromReason("nav:permanent-redirect:/new")), "R|308|/new");
+    try asserts.equals(signalToWire(signalFromReason("nav:see-other:/done")), "R|303|/done");
+}
+
+test "routing: signalPrefixes is exactly the four and isSignalReason reads them" {
+    try asserts.equals(signalPrefixes().join(","), "nav:not-found,nav:redirect:,nav:permanent-redirect:,nav:see-other:");
+    try asserts.equals(signalPrefixes().length, 4);
+    assert isSignalReason("nav:not-found");
+    assert isSignalReason("nav:redirect:/x");
+    assert isSignalReason("nav:permanent-redirect:/x");
+    assert isSignalReason("nav:see-other:/x");
+    assert isSignalReason("nav:").negate();
+    assert isSignalReason("boom").negate();
+    assert isSignalReason("nav:teleport:/x").negate();
+}
+
+test "routing: an unknown verb raises, naming it" {
+    try asserts.throwsWith({ ->
+        signalFromReason("nav:teleport:/x");
+        0;
+    }, "unknown signal verb `teleport`");
+    try asserts.throwsWith({ ->
+        signalFromReason("boom");
+        0;
+    }, "`boom` is not a navigation signal reason");
+}
+
+test "routing: None has no reason and a redirect status outside 303/307/308 raises" {
+    try asserts.throwsWith({ ->
+        signalReason(none());
+        0;
+    }, "a `None` outcome is not a signal");
+    try asserts.throwsWith({ ->
+        signalReason(redirect("/x", 302));
+        0;
+    }, "must be 303, 307 or 308, not 302");
+}

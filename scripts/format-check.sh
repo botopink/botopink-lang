@@ -42,6 +42,9 @@ TREES=(
     examples/modules
     libs/std/src/builtins.d.bp
     libs/std/src/builtins_fns.d.bp
+    libs/routing
+    libs/actions
+    libs/validation
 )
 
 status=0

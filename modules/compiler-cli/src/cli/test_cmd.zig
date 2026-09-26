@@ -192,7 +192,7 @@ pub fn run(
     // so a consumer's tests can `import … from "<lib>"`. Dependency modules are
     // compiled first (their types/exports must resolve before the project), but
     // their OWN `test {}` blocks are not run — only the project's are.
-    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
+    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map, &.{ src_modules, test_modules }) catch |err| {
         build_cmd.reportDependencyError(err);
         return 1;
     };

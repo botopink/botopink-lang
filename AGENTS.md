@@ -33,7 +33,10 @@ botopink-lang/                 ← language core (this project)
 │   ├── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
 │   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
 ├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
-│   └── std/                   ← standard library
+│   ├── std/                   ← standard library
+│   ├── routing/               ← bundled route matcher + routing wires (decision 115)
+│   ├── actions/               ← bundled server-action protocol (decision 116)
+│   └── validation/            ← bundled constraint validation (decision 116)
 ├── examples/                  ← non-framework .bp example programs
 ├── tests/language/            ← botopink language tests of decision 8 (case, tuples, loop) — see tests/language/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks

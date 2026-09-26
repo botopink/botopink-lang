@@ -1512,7 +1512,7 @@ pub fn run(gpa: Allocator, io: std.Io, opts: Options, env_map: libs.EnvMap) !u8 
     defer loaded.free(gpa);
     var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
     defer test_scan.free(gpa);
-    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
+    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map, &.{ loaded.modules, test_scan.modules }) catch |err| {
         build_cmd.reportDependencyError(err);
         return 1;
     };

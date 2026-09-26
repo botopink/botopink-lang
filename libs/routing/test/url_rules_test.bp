@@ -1,0 +1,124 @@
+//// routing: the boundary half of the URL rules, on both targets. Every
+//// expected path is a literal.
+
+import {asserts} from "std";
+import {PathRules, RedirectRule, canonicalize, clientHref, writeRedirectTable, parseRedirectTable} from "url_rules";
+
+fn docs() -> PathRules {
+    return PathRules(basePath: "/docs", trailingSlash: false);
+}
+
+fn docsSlash() -> PathRules {
+    return PathRules(basePath: "/docs", trailingSlash: true);
+}
+
+fn bare() -> PathRules {
+    return PathRules(basePath: "", trailingSlash: false);
+}
+
+test "routing: canonicalize strips basePath and clientHref restores it" {
+    try asserts.equals(canonicalize(docs(), "/docs/about"), "/about");
+    try asserts.equals(clientHref(docs(), "/about"), "/docs/about");
+    try asserts.equals(canonicalize(docs(), "/docs"), "/");
+    try asserts.equals(clientHref(docs(), "/"), "/docs");
+    try asserts.equals(clientHref(docsSlash(), "/"), "/docs/");
+}
+
+// Each href is the canonical client form under its rules: `clientHref` of
+// `canonicalize` answers it back, literal for literal.
+fn roundTrips(rules: PathRules, href: string) -> bool {
+    return clientHref(rules, canonicalize(rules, href)) == href;
+}
+
+test "routing: clientHref inverts canonicalize over twenty paths" {
+    val underDocs = ["/docs", "/docs/about", "/docs/a/b/c", "/docs/search?q=a%20b&x=1", "/docs/a%20b", "/docs/a%252Fb", "/docs/caf%C3%A9", "/docs/guide#install", "/docs/blog/2026/post-1"];
+    val underSlash = ["/docs/", "/docs/about/", "/docs/a/b/", "/docs/q/?page=2"];
+    val noBase = ["/", "/about", "/a/b", "/x?y=1#h", "/a%20b", "/users/42", "/assets/app.js"];
+    var n = 0;
+    for (underDocs) { h ->
+        if (roundTrips(docs(), h)) n = n + 1;
+    };
+    for (underSlash) { h ->
+        if (roundTrips(docsSlash(), h)) n = n + 1;
+    };
+    for (noBase) { h ->
+        if (roundTrips(bare(), h)) n = n + 1;
+    };
+    try asserts.equals(underDocs.length + underSlash.length + noBase.length, 20);
+    try asserts.equals(n, 20);
+}
+
+test "routing: with no basePath both are identity apart from the trailing slash" {
+    try asserts.equals(canonicalize(bare(), "/about"), "/about");
+    try asserts.equals(clientHref(bare(), "/about"), "/about");
+    try asserts.equals(canonicalize(bare(), "/about/"), "/about");
+    try asserts.equals(clientHref(bare(), "/about/"), "/about");
+    try asserts.equals(canonicalize(bare(), "/"), "/");
+}
+
+test "routing: a path outside basePath is answered unchanged" {
+    try asserts.equals(canonicalize(docs(), "/other/about"), "/other/about");
+    try asserts.equals(canonicalize(docs(), "/docsx/about"), "/docsx/about");
+}
+
+test "routing: trailingSlash false drops it and leaves the root alone" {
+    try asserts.equals(canonicalize(bare(), "/about/"), "/about");
+    try asserts.equals(canonicalize(bare(), "/"), "/");
+}
+
+test "routing: trailingSlash true adds it and leaves the root alone" {
+    val rules = PathRules(basePath: "", trailingSlash: true);
+    try asserts.equals(canonicalize(rules, "/about"), "/about/");
+    try asserts.equals(canonicalize(rules, "/"), "/");
+    try asserts.equals(clientHref(rules, "/about"), "/about/");
+}
+
+test "routing: percent-decoding happens once" {
+    try asserts.equals(canonicalize(bare(), "/a%252Fb"), "/a%2Fb");
+    try asserts.equals(canonicalize(bare(), "/a%20b"), "/a b");
+    try asserts.equals(canonicalize(bare(), "/q?x=a%20b"), "/q?x=a%20b");
+}
+
+test "routing: the redirect table is source|destination|permanent" {
+    val rs = [
+        RedirectRule(source: "/old", destination: "/new", permanent: true),
+        RedirectRule(source: "/blog/:slug", destination: "/posts/:slug", permanent: false),
+    ];
+    try asserts.equals(writeRedirectTable(rs), "/old|/new|1\n/blog/:slug|/posts/:slug|0");
+    try asserts.equals(writeRedirectTable([]), "");
+}
+
+test "routing: parseRedirectTable(writeRedirectTable(rs)) recovers every field" {
+    val rs = [
+        RedirectRule(source: "/old", destination: "/new", permanent: true),
+        RedirectRule(source: "/blog/:slug", destination: "/posts/:slug", permanent: false),
+        RedirectRule(source: "/a", destination: "https://example.com/b?c=d", permanent: true),
+    ];
+    val back = parseRedirectTable(writeRedirectTable(rs));
+    try asserts.equals(back.length, 3);
+    var i = 0;
+    while (i < rs.length) {
+        val a = rs
+            .at(i)
+            .unwrapOr(RedirectRule(source: "?", destination: "?", permanent: false));
+        val b = back
+            .at(i)
+            .unwrapOr(RedirectRule(source: "!", destination: "!", permanent: true));
+        assert a.source == b.source;
+        assert a.destination == b.destination;
+        assert a.permanent == b.permanent;
+        i = i + 1;
+    };
+}
+
+test "routing: a malformed redirect line is skipped" {
+    try asserts.equals(parseRedirectTable("garbage\n/a|/b|2\n/a|/b").length, 0);
+    try asserts.equals(parseRedirectTable("/a|/b|0").length, 1);
+}
+
+test "routing: a bar in a redirect source or destination is refused, naming the rule" {
+    try asserts.throwsWith({ ->
+        writeRedirectTable([RedirectRule(source: "/a|b", destination: "/c", permanent: true)]);
+        0;
+    }, "routing: url_rules: the redirect `/a|b` -> `/c` holds a `|` or a newline");
+}

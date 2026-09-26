@@ -1,0 +1,167 @@
+//// routing/segment — the file-convention segment grammar.
+////
+//// Four folder spellings are not URL segments: `(group)` is transparent,
+//// `@slot` renders into a named prop of the parent layout, `_private` is
+//// excluded from routing entirely, and `[dynamic]` / `[...catchAll]` /
+//// `[[...optionalCatchAll]]` capture instead of matching.
+////
+//// Moved from the file router's grammar (decision 115); pure, no host cell,
+//// compiled for erlang and commonJS alike so the server and the browser agree
+//// on what a segment is.
+////
+//// LANGUAGE NOTES (measured): `String.slice` answers a byte range on erlang and
+//// a UTF-16 range on commonJS, so every substring is built through the private
+//// `charOf` / `sub` pair; `&&` / `||` inside an `if (…)` head take their own
+//// parentheses.
+
+pub type SegmentKind {
+    Static,
+    Dynamic,
+    CatchAll,
+    OptionalCatchAll,
+    Group,
+    Slot,
+    Private,
+}
+
+pub type Segment(
+    kind: SegmentKind,
+    name: string,
+    raw: string,
+)
+
+// The one place the bracket and parenthesis spellings are decoded. Pure and
+// total: a name that may not appear on a registered path is still classified
+// here and refused by `pathProblem`, one step up.
+pub fn parseSegment(raw: string) -> Segment {
+    val n = raw.length();
+    if ((raw.startsWith("[[...") && raw.endsWith("]]"))) return Segment(kind: SegmentKind.OptionalCatchAll, name: sub(
+            raw,
+            5,
+            n - 2
+        ), raw: raw) else if ((raw.startsWith("[...") && raw.endsWith("]"))) return Segment(
+        kind: SegmentKind.CatchAll,
+        name: sub(raw, 4, n - 1),
+        raw: raw
+    ) else if ((raw.startsWith("[") && raw.endsWith("]"))) return Segment(kind: SegmentKind.Dynamic, name: sub(
+            raw,
+            1,
+            n - 1
+        ), raw: raw) else if ((raw.startsWith("(") && raw.endsWith(")"))) return Segment(
+        kind: SegmentKind.Group,
+        name: sub(raw, 1, n - 1),
+        raw: raw
+    ) else if (raw.startsWith("@")) return Segment(kind: SegmentKind.Slot, name: sub(
+            raw,
+            1,
+            n
+        ), raw: raw) else if (raw.startsWith("_")) return Segment(kind: SegmentKind.Private, name: sub(
+            raw,
+            1,
+            n
+        ), raw: raw) else return Segment(kind: SegmentKind.Static, name: raw, raw: raw);
+}
+
+// The kind as a word. `case` rather than `==`, so nothing depends on how a
+// payload-free variant compares on either row; it is also what a test asserts
+// against and what a diagnostic prints.
+pub fn kindName(k: SegmentKind) -> string {
+    return case k {
+        Static -> "Static";
+        Dynamic -> "Dynamic";
+        CatchAll -> "CatchAll";
+        OptionalCatchAll -> "OptionalCatchAll";
+        Group -> "Group";
+        Slot -> "Slot";
+        Private -> "Private";
+    };
+}
+
+// `""` when the path is registrable, the refusal otherwise. Split out for the
+// reason `config.bp` splits `durationProblem` out: `parsePath` HALTS on a bad
+// path (it is called from an emitted module-load `val`, which has no `@Result`
+// return to carry an error), and a test can only read the message if reading
+// it does not take the test down with it.
+pub fn pathProblem(seg: string) -> string {
+    var problem = "";
+    val trimmed = trimSlashes(seg);
+    if (trimmed == "") return "" else {
+        for (trimmed.split("/")) { raw ->
+            if (problem == "") {
+                val s = parseSegment(raw);
+                if (raw.contains("|")) problem = "routing: segment `" + raw + "` in `" + seg + "` holds a `|`, which is the route table's field separator" else if (raw.contains(
+                    "\n"
+                )) problem = "routing: segment `" + raw + "` in `" + seg + "` holds a newline, which is the route table's record separator" else if (raw == "") problem = "routing: `" + seg + "` holds an empty segment" else {
+                    val k = kindName(s.kind);
+                    if (k == "Private") problem = "routing: `" + raw + "` in `" + seg + "` is a private folder - a `_`-prefixed directory is excluded from routing and may not appear on a registered path";
+                };
+            };
+        };
+        return problem;
+    };
+}
+
+pub fn trimSlashes(seg: string) -> string {
+    var out = seg;
+    while (out.startsWith("/")) {
+        out = sub(out, 1, out.length());
+    };
+    while (out.endsWith("/")) {
+        out = sub(out, 0, out.length() - 1);
+    };
+    return out;
+}
+
+// The app-relative directory of a convention file, split into segments. `""` is
+// the root and answers the empty list.
+pub fn parsePath(seg: string) -> Segment[] {
+    val problem = pathProblem(seg);
+    assert problem == "", problem;
+    val trimmed = trimSlashes(seg);
+    var out: Segment[] = [];
+    if (trimmed == "") return out else {
+        for (trimmed.split("/")) { raw ->
+            out.push(parseSegment(raw));
+        };
+        return out;
+    };
+}
+
+// The URL pattern: groups and slots removed, the bracket spelling preserved.
+pub fn patternOf(segments: Segment[]) -> string {
+    var parts: string[] = [];
+    for (segments) { s ->
+        val k = kindName(s.kind);
+        if ((k != "Group" && k != "Slot")) parts.push(s.raw);
+    };
+    if (parts.length == 0) return "/" else return "/" + parts.join("/");
+}
+
+// `""` for the children slot, the slot name for an `@slot` entry. A path holds
+// at most one `@slot`; the innermost one wins, which is the only reading that
+// makes `dashboard/@team/settings` a `team` entry rather than a `dashboard` one.
+pub fn slotOf(segments: Segment[]) -> string {
+    var name = "";
+    for (segments) { s ->
+        val k = kindName(s.kind);
+        if (k == "Slot") name = s.name;
+    };
+    return name;
+}
+
+// ── character helpers (private) ─────────────────────────────────────────────
+
+fn charOf(s: string, i: i32) -> string {
+    return s.at(i).unwrapOr("");
+}
+
+fn sub(s: string, begin: i32, end: i32) -> string {
+    var out = "";
+    var i = begin;
+    val stop = if (end > s.length()) s.length() else end;
+    while (i < stop) {
+        out = out + charOf(s, i);
+        i = i + 1;
+    };
+    return out;
+}

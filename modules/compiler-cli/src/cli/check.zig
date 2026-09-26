@@ -64,7 +64,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
 
     // Resolve declared external libs (generic — `libs/<name>/`), same as `build`,
     // so `import … from "<lib>"` type-checks. Dependencies compile first.
-    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
+    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map, &.{ loaded.modules, test_modules }) catch |err| {
         build_cmd.reportDependencyError(err);
         return 1;
     };
