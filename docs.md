@@ -1,8 +1,8 @@
 # Botopink language reference
 
 This reference describes the language as the compiler accepts it today. Every
-`botopink` fence here is compiled by `zig build test-docs`; the two that are
-tables rather than modules say so in a `docs-check` comment.
+`botopink` fence here is compiled by `zig build test-docs`; a fence that is not a
+module (an operator table, a layout sample) says so in a `docs-check` comment.
 
 ## Syntax changes
 
@@ -440,6 +440,32 @@ type Person(name: string) implement Printable {
 }
 ```
 
+A behavior is a type: a parameter or a return typed by it takes any type that
+implements it, and a call on it dispatches to that type's method.
+
+```botopink
+behavior Greeter {
+    fn greet(self: Self) -> string;
+}
+
+type Bob(name: string) implement Greeter {
+    fn greet(self: Self) -> string {
+        return "hi " + self.name;
+    }
+}
+
+fn welcome(g: Greeter) -> string {
+    return g.greet();
+}
+
+fn main() {
+    @print(welcome(Bob(name: "bob")));
+}
+```
+
+Across modules this is not accepted yet — see
+[Decided, not yet implemented](#decided-not-yet-implemented).
+
 A `behavior` no type in the program implements is a **runtime boundary**: the
 host builds the value. Such a value carries its own members — a `val` member is
 read off it, and a method is found on it the same way and applied to the
@@ -820,9 +846,19 @@ fn describe(s: Shape) -> i32 {
 type 'Rect'`, at the arm — the fields a pattern does not name are dropped, and
 `..` is how you say so.
 
-A range in a pattern is `..`, exclusive, exactly as in a loop. The compiler is
-behind that rule and still asks for `...` — see
-[Decided, not yet implemented](#decided-not-yet-implemented).
+A range in a pattern is `...`, inclusive at both ends — Zig's split: `...` in a
+pattern, `..` (exclusive) in a `for` and a slice. `1..9` in an arm is
+`error[pattern-range-exclusive]`, naming `...`; an open end is a guard.
+
+```botopink
+fn bucket(n: i32) -> string {
+    return case n {
+        1...9 { "digit" }
+        _ when (n < 0) { "negative" }
+        _ { "other" }
+    };
+}
+```
 
 A name alone is not a pattern: to give the matched value a name, bind it in the
 body (`_ { n -> … }`). The one exception is the optional, below, where the name
@@ -2066,36 +2102,47 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | Rule | Today | Closes with |
 |---|---|---|
 | `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.10-beta C-15 (`01-checker` step 6) |
-| A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there (decision 60's order): the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a sibling library or a `tests/language` cell that still writes it compiles. Refusing it is the last step | 1.0.10-beta C-13 (decision 29): the siblings and `tests/language` migrate (`09`, `12`), then the parser refuses the `;` (`blockStatementSemicolon`) |
-| A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value the four backends agree since C-06: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, erlang, beam and wasm (wasm printed `256` and erlang `0` before) | 1.0.10-beta C-06 (`02-erlang` step 3, `03-beam` step 3; decision 53 at run time). Decision 105 keeps both spellings and gives `a...b` a value in a `for` as well |
+| A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there: the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a library or a `tests/language` cell that still writes it compiles | 1.0.10-beta C-13, in decision 132's order: each library drops the `;` (`botopink format`), then `tests/language`, then the parser refuses it (`blockStatementSemicolon`) |
 
-Seven of the twelve rows this table carried before this revision left it because
-the compiler now accepts the form: union types, the `unknown` type and its
+A row leaves this table when the compiler accepts the form, and the form is then
+taught in the section that owns it: union types, the `unknown` type and its
 assignability rule, `x is <Type>` with narrowing, `case` arms written
-`Pattern { … }` with `when (…)` guards, `val assert <pattern> = <expr>;`
-(binding its names, and fatal when the match fails), a `//` comment inside a
-`loop` body, and — since 1.0.10-beta's C-04 — a **parameter default applied at
-the call site**, on all four backends, **for a declaration in the calling
-module**. So did the row front 20 added for an **effect on a record method**:
-`fn iter(self: Self) -> @Iterator<i32>` in a `type … { … }` body emits a
-generator method (`*iter()`) on commonJS, and `for (b.iter()) { x -> … }` walks
-it there as it does on erlang. And so did the row on `await` inside a context
-body: `@Component` bodies are an `async function` on commonJS (decision 104),
-and every caller awaits a component. Each
-is documented above, in the section that teaches the form.
+`Pattern { … }` with `when (…)` guards, the pattern range `1...9` (decision 53 —
+the four backends agree on it), `val assert <pattern> = <expr>;` (binding its
+names, and fatal when the match fails), a `//` comment inside a loop body, a
+**parameter default applied at the call site** on all four backends, an
+**effect on a record method** (`fn iter(self: Self) -> @Iterator<i32>` in a
+`type … { … }` body is a generator method, walked by `for (b.iter()) { x -> … }`),
+and `await` inside a `@Component` body (an `async function` on commonJS, awaited
+by every caller).
 
-The one limit worth stating here, because a library will meet it before it
-meets the rule: a default on an **imported** declaration is not filled. The
-checker fills from the parameter list it has, and the cross-module export
-registry carries no plain `fn` declaration, so `import { greet } from "helper";
-greet("w")` still reds `'greet' expects 2 argument(s), got 1` where the same
-`greet` called inside `helper` fills. Same for an imported record's field.
+Two limits worth stating here, because a library meets them before it meets a
+rule. The checker halves are `00 · 01-checker`'s:
 
-Two more left it because the form is **deliberately absent**, so that neither
-reads as unfinished work:
+- A default on an **imported function** is not filled. The cross-module export
+  registry carries no plain `fn` declaration, so `import { greet } from "helper";
+  greet("w")` reds `'greet' expects 2 argument(s), got 1` where the same `greet`
+  called inside `helper` fills. An imported record's field default is filled.
+- A **behavior-typed** parameter or return takes a type that implements the
+  behavior in the same module (see [behavior](#behavior)), but not one imported
+  from a sibling module or a package: with `Greeter` and `Bob` both reached
+  through `import`, `useIt(Bob(n: "bob"))` reds `type mismatch: expected
+  behavior Greeter { … }, got Bob`. And on wasm a method called through a
+  behavior-typed parameter traps (`unreachable`) at run time; commonJS, erlang
+  and beam dispatch it (`00 · 05-wasm`'s).
+
+These forms are **deliberately absent**, so that none reads as unfinished work:
 
 | Form | What the compiler says |
 |---|---|
 | `assert x is Some(n)` — `is` binding a payload | `error[is-variant-binding]`: `is` tests a type; it does not bind. Read the payload in a `case` arm |
 | `type Shape { Circle(i32) }` — a variant payload with no field name | `error[field-needs-name]`: a field with no name, at the payload, naming `Variant(field: T)`. A payload nobody can name is a payload no `case` arm can bind |
 | `val assert Ok(v) = parse("42") catch 0` | ``after `catch` the value is not a @Result — a `val assert` over a `@Result` takes no `catch` `` — the match is fatal, and `try … catch` is the form that supplies a fallback |
+| `c ? a : b` | `error[ternary-absent]` — `if` is an expression: `val x = if (c) { a } else { b };` |
+| `<<` `>>` `&` `^` | `error[bitwise-operator-absent]` — there are no bitwise operators; `&&` and `\|\|` are the boolean ones, and a bit operation is a host function |
+| `'a'` | `error[char-literal-absent]` — a character is a one-character string, `"a"` |
+| `fn inner(…) { … }` inside a body | `error[nested-fn-decl]` — inside a body a function is a value: `val inner = { x -> … };` |
+| `[..a, 3]` | `error[list-spread-not-last]` — the spread of an array literal comes last: `[3, ..a]` |
+| `[...a]` | `error[list-spread-dot-dot-dot]` — `...` is a pattern's inclusive range; an array spreads with `..` |
+| `implement A for P { … }` after a bodyless `type P(…)` | `error[implement-clause-for]` — the type's own clause is `type P(…) implement A { … }` |
+| `#(x: 1, y: 2)` | `error[tuple-literal-label]` — a tuple literal is positional, `#(1, 2)`; labels belong to the tuple type, `#(x: i32, y: i32)` |
