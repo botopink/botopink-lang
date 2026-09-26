@@ -213,15 +213,119 @@ test "beam lowering: a module assembled without erlc answers what erlc's build o
     try std.testing.expect(std.mem.indexOf(u8, ok.listing, "{call_ext, 1, {extfunc, lists, reverse, 1}}") != null);
 }
 
+/// Decision 140's constructs — `receive` (selective, guarded, `after 0`,
+/// `after` alone, in a named `fun` loop), `!`, the old `catch Expr` of each
+/// class, `try … of` (a match, no match, a raise inside an `of` clause),
+/// `try … after` (the value path and the re-raise path) and a binary pattern
+/// of fixed-size integer fields, with and without a tail — with the reply
+/// `erlc`'s build of the same text answers (OTP 29, `+nowarn_deprecated_catch`).
+const mailbox_module =
+        \\-module(bp_lower_mailbox).
+        \\-export([main/1]).
+        \\
+        \\main({N}) ->
+        \\    R1 = selective(N),
+        \\    R2 = drain(),
+        \\    R3 = after_zero(),
+        \\    R4 = after_only(),
+        \\    R5 = collect(3),
+        \\    R6 = catch throw({t, N}),
+        \\    R7 = case catch erlang:error(e) of {'EXIT', {Why, Stack}} when is_list(Stack) -> {exit_error, Why} end,
+        \\    R8 = catch exit(x),
+        \\    R9 = catch N + 1,
+        \\    R10 = tof(fun() -> {ok, N} end),
+        \\    R11 = tof(fun() -> other end),
+        \\    R12 = tof(fun() -> erlang:error(boom) end),
+        \\    R13 = catching(fun() -> try N of 0 -> zero catch throw:nope -> no end end),
+        \\    R14 = catching(fun() -> try N of M -> erlang:error({in_of, M}) catch _:_ -> caught end end),
+        \\    R15 = taft(fun() -> N * 2 end),
+        \\    R16 = catching(fun() -> taft(fun() -> throw(t) end) end),
+        \\    R17 = get(trail),
+        \\    R18 = tofaft(N),
+        \\    R19 = get(trail),
+        \\    R20 = self() ! done,
+        \\    R21 = receive done -> received end,
+        \\    R22 = [fields(<<1, 2, 3, 4, 16#AB, 16#CD, 5, 6>>), fields(<<1, 2>>), fields(nope)],
+        \\    R23 = [split(<<1, 2, "rest">>), split(<<9>>)],
+        \\    R24 = case <<(binary:encode_unsigned(1 bsl 64 - 1))/binary, 7>> of <<Big:64, Small>> -> {Big, Small} end,
+        \\    io_lib:format("~w", [[R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, R16, R17, R18, R19, R20, R21, R22, R23, R24]]).
+        \\
+        \\fields(<<A:32, _:4, C:12, D:16>>) -> {A, C, D};
+        \\fields(_) -> no.
+        \\
+        \\split(<<H:16, Rest/binary>>) -> {H, Rest};
+        \\split(_) -> short.
+        \\
+        \\catching(F) -> try F() catch C:R -> {C, R} end.
+        \\
+        \\selective(N) ->
+        \\    Me = self(),
+        \\    Me ! {b, 2},
+        \\    Me ! {a, N},
+        \\    Me ! {c, 3},
+        \\    A = receive {a, X} when is_integer(X), X > 0 -> {got_a, X} end,
+        \\    B = receive {b, Y} -> Y end,
+        \\    {A, B}.
+        \\
+        \\drain() ->
+        \\    receive {c, Z} -> Z after 0 -> none end.
+        \\
+        \\after_zero() ->
+        \\    receive nothing_here -> no after 0 -> timeout end.
+        \\
+        \\after_only() ->
+        \\    receive after 1 -> slept end.
+        \\
+        \\collect(K) ->
+        \\    Me = self(),
+        \\    [Me ! {item, I} || I <- lists:seq(1, K)],
+        \\    Me ! stop,
+        \\    L = fun Loop(Acc) -> receive {item, I} -> Loop([I | Acc]); stop -> lists:reverse(Acc) end end,
+        \\    L([]).
+        \\
+        \\tof(F) -> try F() of {ok, V} -> {value, V}; _ -> other catch error:E -> {e, E} end.
+        \\
+        \\taft(F) ->
+        \\    put(trail, []),
+        \\    try F() after put(trail, [after_ran | get(trail)]) end.
+        \\
+        \\tofaft(N) ->
+        \\    try N of 7 -> seven after put(trail, [second | get(trail)]) end.
+;
+
+const mailbox_reply =
+    \\[{{got_a,7},2},3,timeout,slept,[1,2,3],{t,7},{exit_error,e},{'EXIT',x},8,{value,7},other,{e,boom},{error,{try_clause,7}},{error,{in_of,7}},14,{throw,t},[after_ran],seven,[second,after_ran],done,received,[{16909060,3021,1286},no,no],[{258,<<114,101,115,116>>},short],{18446744073709551615,7}]
+;
+
+test "beam lowering: receive, send, catch, try-of and try-after answer what erlc's build answers" {
+    const persistent_beam = @import("../persistent_beam.zig");
+    const allocator = std.testing.allocator;
+    const built = try build("bp_lower_mailbox", "bp_lower_mailbox", mailbox_module);
+    const ok = switch (built) {
+        .ok => |o| o,
+        .refused => |why| {
+            std.debug.print("refused: {s}\n", .{why});
+            return error.TestUnexpectedResult;
+        },
+    };
+    var arena_state = std.heap.ArenaAllocator.init(allocator);
+    defer arena_state.deinit();
+    const arg = try etf.encode(arena_state.allocator(), Term.tupleOf(&.{Term.int(7)}));
+    const response = try persistent_beam.evalBeamWithArg(allocator, std.testing.io, ok.beam, "bp_lower_mailbox", arg);
+    defer allocator.free(response.payload());
+    try std.testing.expectEqual(std.meta.Tag(persistent_beam.Response).ok, std.meta.activeTag(response));
+    try std.testing.expectEqualStrings(mailbox_reply, response.payload());
+}
+
 test "beam lowering: a construct outside the subset is refused by name, and cached" {
     const code =
         \\-module(bp_lower_refused).
         \\-export([main/1]).
-        \\main(_) -> receive X -> X end.
+        \\main(_) -> maybe X end.
     ;
     const first = try build("bp_lower_refused", "bp_lower_refused", code);
     try std.testing.expect(first == .refused);
-    try std.testing.expect(std.mem.indexOf(u8, first.refused, "`receive`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, first.refused, "`maybe`") != null);
     const again = try build("bp_lower_refused", "bp_lower_refused", code);
     try std.testing.expectEqual(first.refused.ptr, again.refused.ptr);
 }

@@ -77,26 +77,22 @@ naming").
 
 **What it refuses, by name — a refusal is a compile error of that comptime
 module naming the construct (`the BEAM runtime does not take …`), exactly as
-the wat runtime refuses; there is no `.erl` fallback any more:** from the reader, `receive`, `maybe`, the old `catch Expr`,
-records (`#name{…}`), macros (`?NAME`), `!`; from the lowering, `try … of`,
-`try … after`, a call through a computed module or function name, a `fun`
-with no clause, unary operators other than `-`/`not`/`bnot`, a map update or
-a computed/unbound key in a pattern, a binary pattern other than literal bytes
-plus an optional `Rest/binary` tail, a string `++` pattern with a non-literal
-prefix, a binary segment that is sized (other than `integer:8`), `/float`, or
-of any type but `binary`/`bytes`/`integer`/`utf8`, a binary generator other
-than `<<C/utf8>>` / `<<B>>` over one segment, a guard expression that is not a
-guard BIF, operator, variable or literal, a stack pattern that is not a
-variable, a call to a function the module neither defines, imports nor
-auto-imports (`erlc` refused it too). **Measured: none of these occurs in the
-suite's or the libraries' comptime modules** (37
-distinct modules — 17 template and 19 decorator bodies, plus the parity
-divergence fixture — all lowered, 0 fallbacks; `zig build test`,
-`tests/language/run.sh --target all`; 63 more — 61 decorator and 2 template
-bodies — in `zig build test-libs`'s erlang cells, all lowered), nor in 377 of
-389 modules on disk from
-older builds of the libraries (the 12 refused are modules `erlc` rejects too:
-undefined functions, unsafe variables, a `receive`).
+the wat runtime refuses; there is no `.erl` fallback:** from the reader,
+`maybe`, records (`#name{…}`), macros (`?NAME`); from the lowering, a call
+through a computed module or function name, a `fun` with no clause, unary
+operators other than `-`/`not`/`bnot`, a map update or a computed/unbound key
+in a pattern, a binary pattern other than literal bytes plus an optional
+`Rest/binary` tail or fixed-size unsigned big-endian integer fields (plus the
+same tail once they fill whole bytes), a string `++` pattern with a
+non-literal prefix, a binary construction segment that is sized (other than
+`integer:8`), `/float`, or of any type but `binary`/`bytes`/`integer`/`utf8`,
+a binary generator other than `<<C/utf8>>` / `<<B>>` over one segment, a guard
+expression that is not a guard BIF, operator, variable or literal, a stack
+pattern that is not a variable, a call to a function the module neither
+defines, imports nor auto-imports (`erl_internal:bif/2`'s whole list; `erlc`
+refused it too). `receive` (with `after`), `!`, the old `catch Expr`,
+`try … of` and `try … after` are lowered (decision 140; `lower.zig`'s header
+and `../../comptime/runtime/AGENTS.md` say how).
 
 ## `@External.Erlang` templates compiled at build time (BR5, C-24)
 
@@ -124,26 +120,27 @@ form, a primitive method's template reached through `primErlangTemplate`) — is
   `call`s it. One helper per distinct template text and arity per module
   (`template_fns`, set aside per type unit like the other helper caches).
 
-**What still reaches `'__bp_erl_eval'/2`, and why:** a template the reader or
-the lowering refuses — the constructs `lower.zig` names (`receive`, `!`, the old
-`catch Expr`, `try … of`, `try … after`, records, macros; the list is in
-§ Comptime lowering above). The helper `ensureEvalHelper` stays for exactly
-those, so a refused template is still correct, only interpreted. **Measured
-2026-09-26:** no beam snapshot carries `'__bp_erl_eval'` any more (15 moved,
-every RUN LOG unchanged, `beam_export_audit` 475/475); the 82 primitive-method
-calls of the audit in `../AGENTS.md` § Primitive methods compile with none; of
-the 159 templates in `libs/std/src`, at most 6 carry a refused construct by
-text (`async` `allOf`/`raceOf` — `receive`, `!`; `encoding`'s percent-decode and
-one `json` reader — `try … of`; `http`'s `get` — `catch Expr`; `process`'s run —
-`receive`), and those keep the run-time path.
+**Nothing reaches a run-time evaluator (decision 140).** A template the reader
+or the lowering refuses is a build error at its call site, naming the
+function and the construct (`` `f`'s `#[@External.Erlang(…)]` template does
+not compile for the beam backend: … ``), and `'__bp_erl_eval'/2` is gone.
+**Measured 2026-09-26** by `../tests/beam_templates.zig`, which lowers every
+Erlang template `libs/std` (its modules and `primitives.bp`) and the bundled
+libraries ship: before decision 140, 169 of 177 lowered and 8 kept the
+run-time path (`async`'s `spawnAll`/`raceOf` — `!`, `receive`; `json.unquote`
+and `encoding.percentDecode` — `try … of`; `io/http`'s `fetch` — `catch Expr`;
+`io/random`'s `uuidV4` — an integer-field binary pattern; `io/process`'s
+`run` — `receive`, `open_port/2`; `validation`'s `rkvIsolated` — `!`,
+`receive … after`); now 177 of 177 lower, and the test fails on the first
+refusal.
 
 **Cost, re-measured** (OTP 29, 1 000 000 iterations of a recursive loop whose
 body is `base64:encode(<<"hello">>)` plus `string:length/1`, three runs):
 through the compiled helper **0.25–0.39 µs** per iteration, the same loop
-written directly in Erlang **0.24–0.34 µs** — 1.06–1.16×, the local call. Through
-`'__bp_erl_eval'/2` it was **5.722 µs** per call against 0.113 direct (50.6×,
-2026-09-18). A template that does not parse is now a build-time `null` from the
-reader (and the run-time path), never a helper that compiles and fails later.
+written directly in Erlang **0.24–0.34 µs** — 1.06–1.16×, the local call. The
+retired run-time evaluator cost **5.722 µs** per call against 0.113 direct
+(50.6×, 2026-09-18). A template that does not parse is a build error, never a
+helper that compiles and fails later.
 
 ## Closure values (`make_fun3`) — every build site, classified
 

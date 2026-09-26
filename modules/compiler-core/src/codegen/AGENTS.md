@@ -1872,10 +1872,12 @@ codegen/
   template (`"base64:encode($0)"`, arity branches included) is Erlang source,
   **compiled at build time** (BR5) into a helper `'__bp_tpl_<k>'` through the
   comptime runtime's Erlang reader and BEAM lowering (`compiledTemplate`,
-  markers as the helper's parameters `__BpSelf`/`__BpAN`); only a template the
-  lowering refuses (`receive`, `!`, `try … of`, …) still goes through the
-  run-time `'__bp_erl_eval'(Source, Bindings)`. Details and the re-measured
-  cost in [`beam/AGENTS.md`](beam/AGENTS.md).
+  markers as the helper's parameters `__BpSelf`/`__BpAN`); a template the
+  reader or the lowering refuses is a build error at the call site naming the
+  construct (`error.TemplateRefused` → `MissingExternal.refusal`, decision
+  140) — there is no run-time evaluation of Erlang source. Every template
+  std and the bundled libraries ship lowers (`tests/beam_templates.zig`).
+  Details and the re-measured cost in [`beam/AGENTS.md`](beam/AGENTS.md).
   Decision 64's beam half, for the plain form only: a `pub` host-backed fn
   whose erlang target is `module:symbol` (`hostWrapperRef`, over
   `hostDeclareWrapperNeeded`) gets a wrapper of its own — reserved, exported,
