@@ -2701,6 +2701,29 @@ const Emitter = struct {
                     try beamEmitter.writeLabel(self.out, ok_l);
                     return true;
                 }
+                // `x is Token.Text` — one variant of an enum this module
+                // places: its tag and arity alone (it answered `false` for
+                // every value). The twin of `erlang.zig`'s `typeTestNode`.
+                if (std.mem.lastIndexOfScalar(u8, n, '.')) |dot| {
+                    const en = n[0..dot];
+                    const vn = n[dot + 1 ..];
+                    if (self.enum_variant_names.get(en)) |variants| for (variants) |v| {
+                        if (!std.mem.eql(u8, v.name, vn)) continue;
+                        const tag = self.qualifiedVariantTagOf(en, v.name) orelse v.name;
+                        var tag_buf: [512]u8 = undefined;
+                        const tag_atom = try atomName(tag, &tag_buf);
+                        if (v.fields > 0) {
+                            try beamEmitter.writeTest(self.out, .is_tagged_tuple, fail, &.{
+                                s,
+                                .{ .untagged = @as(i64, @intCast(v.fields + 1)) },
+                                Op.atom(tag_atom),
+                            });
+                        } else {
+                            try beamEmitter.writeTest(self.out, .is_eq_exact, fail, &.{ s, Op.atom(tag_atom) });
+                        }
+                        return true;
+                    };
+                }
                 return false;
             },
             .array => {

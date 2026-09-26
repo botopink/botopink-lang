@@ -638,6 +638,9 @@ codegen/
   the program declares that fn field and none a method of the name — which
   applies `'__bp_field'(C, set)`. Names alone crossed before, and the call was
   a local `set(C, 5)` no module defines.
+- **`x is Enum.Variant`** tests that variant's tag (and arity) alone —
+  `typeTestNode` on erlang, `emitTypeTestBranchOn` on beam; the whole-enum arm
+  had no case for a dotted name, so both answered `false` for every value.
 - **beam `@todo` / `@panic`** raise `erlang:error({todo, Msg})` /
   `{panic, Msg}`, the erlang backend's reason, with `builtins_fns.d.bp`'s
   default message; `@todo()` raised the bare atom `undef`, which read as a

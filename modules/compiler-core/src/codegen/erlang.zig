@@ -8287,6 +8287,22 @@ const Emitter = struct {
                     }
                     return acc orelse Ast.Expr.a("false");
                 }
+                // `x is Token.Text` — one variant of an enum this module
+                // places: its tag (and arity) alone. It answered `false`
+                // for every value, the whole-enum test having no arm for a
+                // dotted name.
+                if (std.mem.lastIndexOfScalar(u8, n, '.')) |dot| {
+                    const en = n[0..dot];
+                    const v = n[dot + 1 ..];
+                    if (this.enum_variant_names.contains(en) and this.isEnumVariantOf(en, v)) {
+                        const tag = this.qualifiedVariantTagOf(en, v) orelse v;
+                        const arity = if (this.variant_fields.get(v)) |f| f.len + 1 else 0;
+                        return if (arity == 0)
+                            try b.binop("=:=", subject, Ast.Expr.a(tag))
+                        else
+                            try this.taggedShapeTest(b, subject, tag, arity);
+                    }
+                }
                 // A name this module cannot place — an imported type it never
                 // indexed, a generic parameter — has no test to write.
                 return null;

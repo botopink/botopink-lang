@@ -1381,6 +1381,39 @@ test "erlang: a bare break at a generator's own level ends it" {
     , "1\n012\n09\n", &.{"'__bp_gen_stop'"});
 }
 
+// `x is Token.Text` tests that one variant's tag; the whole-enum test had no
+// arm for a dotted name, so it answered `false` for every value on erlang and
+// on beam (status: "`x is <Enum>.<Variant>` is wrong on every target").
+test "erlang: x is Enum.Variant tests that variant" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\pub type Token { Text(v: string), Num(n: i32), Eof }
+        \\fn main() {
+        \\  val x: Token = Token.Text(v: "hi");
+        \\  val y: Token = Token.Eof;
+        \\  @print(x is Token.Text);
+        \\  @print(x is Token.Num);
+        \\  @print(y is Token.Eof);
+        \\  @print(y is Token.Text);
+        \\  @print(x is Token);
+        \\}
+    , "true\nfalse\ntrue\nfalse\ntrue\n", &.{});
+}
+
+test "beam: x is Enum.Variant tests that variant" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\pub type Token { Text(v: string), Num(n: i32), Eof }
+        \\fn main() {
+        \\  val x: Token = Token.Text(v: "hi");
+        \\  val y: Token = Token.Eof;
+        \\  @print(x is Token.Text);
+        \\  @print(x is Token.Num);
+        \\  @print(y is Token.Eof);
+        \\  @print(y is Token.Text);
+        \\  @print(x is Token);
+        \\}
+    , "true\nfalse\ntrue\nfalse\ntrue\n", &.{});
+}
+
 test "erlang: calling the result of a call applies it (`calleeExpr`)" {
     // `test/curried_call.bp` (C-09's backend half): `adder(3)(4)` carries its
     // callee as an expression, and lowered as a name it was `''(4)`, which
