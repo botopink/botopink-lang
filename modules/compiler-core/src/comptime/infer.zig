@@ -5961,6 +5961,15 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             if (!b.is_builtin) {
                 if (env.typeAliases.get(b.name)) |alias| return expandTypeAlias(env, alias, b.args, genericMap);
                 if (std.mem.eql(u8, b.name, yield_step_type_name)) env.usesYieldStep = true;
+                // The migration-only mode (24-d): in a legacy file the
+                // pre-122 `YieldStep<T, E>` is read as `YieldStep<T>` — its
+                // `Yield(v)` still binds the plain `T`, the old `Error(e)` arm
+                // is what the codemod marks — and `.next()` there answers
+                // `YieldStep<T>` for an `@Iterator<@Result<T, E>>`
+                // (`inferSequenceNext`). Everywhere else it reds below.
+                if (b.args.len == 2 and legacyEffects(env) and std.mem.eql(u8, b.name, yield_step_type_name)) {
+                    return resolveTypeRefInContext(env, .{ .generic = .{ .name = b.name, .args = b.args[0..1], .is_builtin = false } }, genericMap);
+                }
                 // RG5 on a declared type — an argument past the parameters
                 // the type declares is refused at the annotation, as it is on
                 // a builtin wrapper: `YieldStep<T, E>` after decision 122 took
@@ -10047,7 +10056,9 @@ fn inferSequenceNext(
     env.usesYieldStep = true;
     try env.instanceLowerings.put(loc, .{ .sequence_next = kind });
     const step_args = try env.arena.alloc(*T.Type, 1);
-    step_args[0] = rt.named.args[0];
+    // In a legacy file (24-d) the old step carried the error in its own
+    // `Error` arm: the item of an `@Iterator<@Result<T, E>>` steps as `T`.
+    step_args[0] = legacyPropagated(env, rt.named.args[0]);
     const step = try env.namedTypeArgs(yield_step_type_name, step_args);
     const ret = switch (kind) {
         .iterator => step,
