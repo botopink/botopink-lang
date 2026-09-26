@@ -8,7 +8,10 @@ every discovered project's test suite on each requested backend and aggregates
 the results into a lib×target matrix. Projects are discovered across the resolved
 **root list** (`discovery.resolveRoots`: `BOTOPINK_LIB_ROOTS` env entries → for
 each ancestor `D` of cwd, `D` itself when it holds a workspace manifest,
-`D/repository/botopink-lang/libs`, `D/repository`, `D/libs` → any `--lib-root`
+`D/repository/botopink-lang/libs`, `D/repository`, `D/libs`, stopping after the
+first `D` that holds `repository/` — the enclosing checkout, so a meta worktree
+under `.tasks/<name>` runs in place and sees only its own libraries
+(`manifest.isCheckoutRoot`, decision 140) → any `--lib-root`
 flag entries; de-duped first-occurrence-wins) by the shared
 `manifest.scanRoots` (`modules/manifest`): a root's child holding a
 `botopink.json` is a lib, and a child (or root) whose manifest declares

@@ -75,6 +75,10 @@ pub const ENV_VAR = "BOTOPINK_LIB_ROOTS";
 ///        * `D/repository/botopink-lang/libs`  — bundled libs (std)
 ///        * `D/repository`                     — sibling projects (frameworks)
 ///        * `D/libs`                           — legacy flat tree
+///      The walk stops after the first `D` that holds `repository/`
+///      (`manifest.isCheckoutRoot`): that is the enclosing checkout, and an
+///      ancestor of it — the main checkout above a `.tasks/<name>` worktree —
+///      is another one, whose libraries would be every name a second time.
 ///
 /// The combined list is de-duplicated first-occurrence-wins, so an env entry
 /// always shadows a walk-up duplicate. With `BOTOPINK_LIB_ROOTS` unset the
@@ -164,6 +168,9 @@ fn rootsFrom(
         try addRootIfExists(gpa, io, &roots, &.{ dir, "repository", "botopink-lang", "libs" });
         try addRootIfExists(gpa, io, &roots, &.{ dir, "repository" });
         try addRootIfExists(gpa, io, &roots, &.{ dir, "libs" });
+        // The enclosing checkout ends the walk (`manifest.isCheckoutRoot`): a
+        // worktree nested in the meta checkout must not see its `repository/*`.
+        if (manifest.isCheckoutRoot(io, dir)) break;
 
         const parent = std.fs.path.dirname(dir) orelse break;
         if (std.mem.eql(u8, parent, dir)) break;
@@ -269,9 +276,80 @@ pub fn loadDependencies(
     const entries = try manifest.scanRoots(arena, io, roots);
     const fallback_entries = try manifest.scanRoots(arena, io, fallback_roots);
 
-    for (proj.dependencies) |dep| {
+    try loadClosure(gpa, io, arena, proj.manifest, proj.dir, proj.dependencies, entries, fallback_entries, &modules);
+    try appendBundled(gpa, proj.name, scan, &modules);
+    return try modules.toOwnedSlice(gpa);
+}
+
+/// Load, into `out`, the modules of every package of `DepClosure` for the
+/// project at `project_dir` whose manifest is `project` — dependencies before
+/// dependents.
+fn loadClosure(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    arena: std.mem.Allocator,
+    project: manifest.Manifest,
+    project_dir: []const u8,
+    deps: []const manifest.DepEntry,
+    entries: []const manifest.Entry,
+    fallback_entries: []const manifest.Entry,
+    out: *std.ArrayListUnmanaged(Module),
+) !void {
+    var closure: DepClosure = .{ .arena = arena, .io = io, .entries = entries, .fallback_entries = fallback_entries };
+    // The project's own entries are resolved first, so the directory each of
+    // its names means is the project's — a dependency that means another
+    // directory by one of them is refused, not silently shadowed.
+    for (deps) |dep| _ = try closure.resolve(project, project_dir, dep);
+    for (deps) |dep| try closure.visit(project, dep.name);
+    for (closure.order.items) |pkg| try loadOne(gpa, io, pkg.dir, pkg.manifest, pkg.name, out);
+}
+
+/// The packages a build compiles: every dependency the project declares, every
+/// dependency THOSE declare, and so on — each once, by import name, placed after
+/// every package it depends on.
+///
+/// A dependency is compiled as the `<name>/<stem>` modules of one flat list, in
+/// list order, so a package whose modules import another package has to come
+/// after it, and it has to be there at all. `loadDependencies` used to load only
+/// the project's own entries, in the order the manifest lists them: a package
+/// outside the jhonstart workspace that depends on `jhonstart-forms` compiled
+/// `jhonstart-forms/form` with `from "jhonstart"` and `from "jhonstart-link"`
+/// unbound — neither was loaded, and listing both after it still failed, on the
+/// order (decision 140). Each dependency's own entries resolve from ITS manifest
+/// and directory (`{ "workspace": true }` from its workspace, `path` from its
+/// directory, `git` across the roots), exactly as when it builds itself.
+///
+/// Refused, located on the entry that brought it in: an import name two
+/// packages of the build resolve to two directories (one `<name>/` prefix
+/// cannot hold both), and a cycle between packages (neither can come first). A
+/// bundled name (decisions 115–117) is skipped — the embedded copy follows, and
+/// a dependency's own build is the one that refuses listing it.
+const DepClosure = struct {
+    arena: std.mem.Allocator,
+    io: std.Io,
+    entries: []const manifest.Entry,
+    fallback_entries: []const manifest.Entry,
+    /// Every package resolved so far, by import name.
+    packages: std.StringArrayHashMapUnmanaged(Package) = .empty,
+    /// Dependencies before dependents.
+    order: std.ArrayListUnmanaged(Package) = .empty,
+
+    const Package = struct {
+        name: []const u8,
+        dir: []const u8,
+        manifest: manifest.Manifest,
+        state: enum { resolved, visiting, placed } = .resolved,
+        /// The manifest that first named it, for the located refusals.
+        by: manifest.Manifest,
+    };
+
+    /// Resolve `dep`, an entry of the package at `dir` whose manifest is `by`.
+    /// False for a bundled name, which is not a package of the closure.
+    fn resolve(self: *DepClosure, by: manifest.Manifest, dir: []const u8, dep: manifest.DepEntry) !bool {
+        if (bp.comptime_pipeline.bundledPackage(dep.name) != null) return false;
+        const abs_dir = try std.fs.path.resolve(self.arena, &.{dir});
         var err: ?manifest.Located = null;
-        const resolved = manifest.resolveDependency(arena, io, proj.manifest, proj.dir, dep, entries, fallback_entries, &err) catch |e| switch (e) {
+        const resolved = manifest.resolveDependency(self.arena, self.io, by, abs_dir, dep, self.entries, self.fallback_entries, &err) catch |e| switch (e) {
             error.Invalid => {
                 err.?.print();
                 return error.LibManifestInvalid;
@@ -283,11 +361,42 @@ pub fn loadDependencies(
             std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: dependency '{s}' was not found under any library root\n", .{dep.name});
             return error.LibNotFound;
         };
-        try loadOne(gpa, io, r.dir, r.manifest, dep.name, &modules);
+        const r_dir = try std.fs.path.resolve(self.arena, &.{r.dir});
+        if (self.packages.get(dep.name)) |known| {
+            if (std.mem.eql(u8, known.dir, r_dir)) return true;
+            const msg = try std.fmt.allocPrint(self.arena, "\"{s}\" resolves to {s} here, but to {s} for {s} — one import name is one package in a build", .{ dep.name, r_dir, known.dir, known.by.path });
+            by.locateEntryAt("dependencies", dep.name, msg).print();
+            return error.LibManifestInvalid;
+        }
+        try self.packages.put(self.arena, dep.name, .{ .name = dep.name, .dir = r_dir, .manifest = r.manifest, .by = by });
+        return true;
     }
-    try appendBundled(gpa, proj.name, scan, &modules);
-    return try modules.toOwnedSlice(gpa);
-}
+
+    /// Place `name` after every package it depends on (depth first); `from` is
+    /// the manifest whose `dependencies` entry reached it.
+    fn visit(self: *DepClosure, from: manifest.Manifest, name: []const u8) !void {
+        const pkg = self.packages.getPtr(name) orelse return;
+        switch (pkg.state) {
+            .placed => return,
+            .visiting => {
+                const msg = try std.fmt.allocPrint(self.arena, "\"{s}\" depends on itself through its dependencies — packages cannot form a cycle", .{name});
+                from.locateEntryAt("dependencies", name, msg).print();
+                return error.LibManifestInvalid;
+            },
+            .resolved => {},
+        }
+        pkg.state = .visiting;
+        const m = pkg.manifest;
+        const dir = pkg.dir;
+        for (m.dependencies) |dep| {
+            if (try self.resolve(m, dir, dep)) try self.visit(m, dep.name);
+        }
+        // `resolve` may have grown the map: take the pointer again.
+        const done = self.packages.getPtr(name).?;
+        done.state = .placed;
+        try self.order.append(self.arena, done.*);
+    }
+};
 
 /// Append, to `out`, the embedded modules of every bundled package some module
 /// of `scan` or of `out` itself imports — until no new package is named (a
@@ -380,7 +489,6 @@ fn appendBundled(
     try out.insertSlice(gpa, 0, ordered.items);
     added.clearRetainingCapacity();
 }
-
 
 /// Build the F2 fallback root list: today this is just
 /// `.botopinkbuild/deps/` — the per-project symlink store materialised by
@@ -1333,6 +1441,23 @@ test "rootsFrom: env entries prepend before walk-up roots" {
     try std.testing.expectEqualStrings(test_scratch.path(io, "roots-env/ws/repository"), roots[1]);
 }
 
+test "rootsFrom: the walk-up stops at the enclosing checkout (a nested worktree does not see its parent's repository/)" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    test_scratch.remove(io, "roots-nested");
+    defer test_scratch.remove(io, "roots-nested");
+    try writeFileP(io, test_scratch.path(io, "roots-nested/main/repository/lib/botopink.json"), "{}");
+    try writeFileP(io, test_scratch.path(io, "roots-nested/main/libs/std/botopink.json"), "{}");
+    try writeFileP(io, test_scratch.path(io, "roots-nested/main/.tasks/wt/repository/lib/botopink.json"), "{}");
+
+    const roots = try rootsFrom(gpa, io, &.{}, test_scratch.path(io, "roots-nested/main/.tasks/wt/repository/lib"));
+    defer freeRoots(gpa, roots);
+
+    try std.testing.expectEqual(@as(usize, 1), roots.len);
+    try std.testing.expectEqualStrings(test_scratch.path(io, "roots-nested/main/.tasks/wt/repository"), roots[0]);
+}
+
 test "rootsFrom: non-existent env entry is silently dropped" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
@@ -1414,6 +1539,109 @@ fn loadByName(gpa: std.mem.Allocator, io: std.Io, roots: []const []const u8, dep
         return error.LibManifestInvalid;
     }
     try loadOne(gpa, io, e.dir, e.manifest.?, dep, out);
+}
+
+/// A scratch workspace `kit` under `<root>/ws/repository`: `kit-core`,
+/// `kit-link` (→ kit-core) and `kit-forms` (→ kit-core, kit-link), every
+/// dependency `{ "workspace": true }` — the shape of jhonstart's members.
+fn writeKitWorkspace(io: std.Io, comptime root: []const u8) !void {
+    const files = [_][2][]const u8{
+        .{ "ws/repository/kit/botopink.json", "{ \"name\": \"kit\", \"workspaces\": [\"modules/*\"] }" },
+        .{ "ws/repository/kit/modules/kit-core/botopink.json", "{ \"name\": \"kit-core\", \"files\": [\"core.bp\"] }" },
+        .{ "ws/repository/kit/modules/kit-core/src/core.bp", "pub fn core() {}" },
+        .{ "ws/repository/kit/modules/kit-link/botopink.json", "{ \"name\": \"kit-link\", \"files\": [\"link.bp\"], \"dependencies\": { \"kit-core\": { \"workspace\": true } } }" },
+        .{ "ws/repository/kit/modules/kit-link/src/link.bp", "import {core} from \"kit-core\";" },
+        .{ "ws/repository/kit/modules/kit-forms/botopink.json", "{ \"name\": \"kit-forms\", \"files\": [\"forms.bp\"], \"dependencies\": { \"kit-link\": { \"workspace\": true }, \"kit-core\": { \"workspace\": true } } }" },
+        .{ "ws/repository/kit/modules/kit-forms/src/forms.bp", "import {core} from \"kit-core\";" },
+    };
+    inline for (files) |f| try writeFileP(io, test_scratch.path(io, root ++ "/" ++ f[0]), f[1]);
+}
+
+/// `loadClosure` for the project manifest `text` at `<root>/app`, over the
+/// roots `<root>/ws/repository`; the loaded module paths, joined by spaces.
+fn closureOf(arena: std.mem.Allocator, io: std.Io, comptime root: []const u8, text: []const u8) ![]const u8 {
+    const gpa = std.testing.allocator;
+    const app_dir = test_scratch.path(io, root ++ "/app");
+    const repo = test_scratch.path(io, root ++ "/ws/repository");
+    var err: ?manifest.Located = null;
+    const m = try manifest.parse(arena, text, try std.fmt.allocPrint(arena, "{s}/botopink.json", .{app_dir}), &err);
+    const entries = try manifest.scanRoots(arena, io, &.{repo});
+    var out: std.ArrayListUnmanaged(Module) = .empty;
+    defer {
+        for (out.items) |mod| {
+            gpa.free(mod.path);
+            gpa.free(mod.source);
+            gpa.free(mod.srcPath);
+        }
+        out.deinit(gpa);
+    }
+    try loadClosure(gpa, io, arena, m, app_dir, m.dependencies, entries, &.{}, &out);
+    var names: std.ArrayListUnmanaged(u8) = .empty;
+    for (out.items, 0..) |mod, i| {
+        if (i > 0) try names.append(arena, ' ');
+        try names.appendSlice(arena, mod.path);
+    }
+    return names.items;
+}
+
+test "loadDependencies: a dependency's own dependencies load too, each before the packages that import it" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "closure");
+    defer test_scratch.remove(io, "closure");
+    try writeKitWorkspace(io, "closure");
+
+    // A package outside the workspace that names only `kit-forms` gets the two
+    // members it imports as well (jhonstart-forms → jhonstart, jhonstart-link).
+    try std.testing.expectEqualStrings("kit-core/core kit-link/link kit-forms/forms", try closureOf(arena, io, "closure",
+        \\{ "name": "app", "dependencies": { "kit-forms": { "git": "https://example.invalid/kit" } } }
+    ));
+    // Listed dependents-first, they still compile dependencies-first.
+    try std.testing.expectEqualStrings("kit-core/core kit-link/link kit-forms/forms", try closureOf(arena, io, "closure",
+        \\{ "name": "app", "dependencies": { "kit-forms": { "git": "https://example.invalid/kit" },
+        \\  "kit-link": { "git": "https://example.invalid/kit" }, "kit-core": { "git": "https://example.invalid/kit" } } }
+    ));
+}
+
+test "loadDependencies: one import name meaning two directories in one build is refused" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "closure-clash");
+    defer test_scratch.remove(io, "closure-clash");
+    try writeKitWorkspace(io, "closure-clash");
+    try writeFileP(io, test_scratch.path(io, "closure-clash/other/kit-core/botopink.json"), "{ \"name\": \"kit-core\", \"files\": [\"core.bp\"] }");
+    try writeFileP(io, test_scratch.path(io, "closure-clash/other/kit-core/src/core.bp"), "pub fn core() {}");
+
+    // The project's `kit-core` is another directory than the one `kit-forms`
+    // means by that name.
+    try std.testing.expectError(error.LibManifestInvalid, closureOf(arena, io, "closure-clash",
+        \\{ "name": "app", "dependencies": { "kit-core": { "path": "../other/kit-core" },
+        \\  "kit-forms": { "git": "https://example.invalid/kit" } } }
+    ));
+}
+
+test "loadDependencies: a cycle between packages is refused" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = std.testing.io;
+    test_scratch.remove(io, "closure-cycle");
+    defer test_scratch.remove(io, "closure-cycle");
+    const files = [_][2][]const u8{
+        .{ "closure-cycle/ws/repository/ring/botopink.json", "{ \"name\": \"ring\", \"workspaces\": [\"modules/*\"] }" },
+        .{ "closure-cycle/ws/repository/ring/modules/ring-a/botopink.json", "{ \"name\": \"ring-a\", \"files\": [\"a.bp\"], \"dependencies\": { \"ring-b\": { \"workspace\": true } } }" },
+        .{ "closure-cycle/ws/repository/ring/modules/ring-a/src/a.bp", "pub fn a() {}" },
+        .{ "closure-cycle/ws/repository/ring/modules/ring-b/botopink.json", "{ \"name\": \"ring-b\", \"files\": [\"b.bp\"], \"dependencies\": { \"ring-a\": { \"workspace\": true } } }" },
+        .{ "closure-cycle/ws/repository/ring/modules/ring-b/src/b.bp", "pub fn b() {}" },
+    };
+    inline for (files) |f| try writeFileP(io, test_scratch.path(io, f[0]), f[1]);
+    try std.testing.expectError(error.LibManifestInvalid, closureOf(arena, io, "closure-cycle",
+        \\{ "name": "app", "dependencies": { "ring-a": { "git": "https://example.invalid/ring" } } }
+    ));
 }
 
 test "loadOne: std resolves from the bundled root, rakun from the sibling root; absent dep is LibNotFound" {
@@ -1557,7 +1785,6 @@ test "renderMissingFile names the path it looked for and the manifest entry" {
         \\
     , aw.written());
 }
-
 
 test "loadDependencies: a bundled package a module imports is loaded from the compiler, first, as <pkg>/<stem>" {
     const gpa = std.testing.allocator;

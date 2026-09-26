@@ -335,6 +335,24 @@ pub fn read(arena: std.mem.Allocator, io: std.Io, dir: []const u8, out_err: *?Lo
     return parse(arena, text, path, out_err);
 }
 
+/// True when `<dir>` is the root of the checkout the walk-up started in: it
+/// holds a `repository/` directory — the meta workspace (or a worktree of it
+/// under `.tasks/<name>`), or CI's `botopink-lang` checkout with the libraries
+/// cloned into `repository/<lib>`. The three root walk-ups (`compiler-cli`
+/// `libs.zig`, `lib-test-runner` `discovery.zig`, `language-server`
+/// `project_graph.zig`) add this directory's roots and stop there: an ancestor
+/// of it belongs to another checkout. A worktree nested in the meta checkout
+/// used to see the main checkout's `repository/*` as well, and every library
+/// was "declared by two libraries" (decision 140).
+pub fn isCheckoutRoot(io: std.Io, dir: []const u8) bool {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buf);
+    const path = std.fs.path.join(fba.allocator(), &.{ dir, "repository" }) catch return false;
+    var d = std.Io.Dir.cwd().openDir(io, path, .{}) catch return false;
+    d.close(io);
+    return true;
+}
+
 /// True when `<dir>/botopink.json` exists and declares `workspaces` — the
 /// probe the three root walk-ups use to add an ancestor workspace as a root.
 /// A manifest that does not parse answers false; the walk-up is not the place

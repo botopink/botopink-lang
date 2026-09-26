@@ -75,7 +75,8 @@ pub const Error = error{
 /// Build the discovery root list for `start_dir` (typically cwd). Returns roots
 /// in scan order: env entries (`BOTOPINK_LIB_ROOTS`) first, then walk-up roots
 /// (an ancestor holding a workspace manifest, `repository/botopink-lang/libs`,
-/// `repository`, `libs`), finally any
+/// `repository`, `libs` — stopping after the first ancestor that holds
+/// `repository/`, the enclosing checkout: `manifest.isCheckoutRoot`), finally any
 /// `extra_roots` (e.g. `--lib-root` flag entries). Empty / non-existent entries
 /// are silently dropped, mirroring the CLI driver. De-duped first-occurrence-
 /// wins. Caller owns the slice and every element via `arena`.
@@ -100,6 +101,9 @@ pub fn resolveRoots(
         try addRootIfExists(arena, io, &roots, &.{ dir, "repository", "botopink-lang", "libs" });
         try addRootIfExists(arena, io, &roots, &.{ dir, "repository" });
         try addRootIfExists(arena, io, &roots, &.{ dir, "libs" });
+        // The enclosing checkout ends the walk (`manifest.isCheckoutRoot`): a
+        // worktree nested in the meta checkout must not see its `repository/*`.
+        if (manifest.isCheckoutRoot(io, dir)) break;
         const parent = std.fs.path.dirname(dir) orelse break;
         if (std.mem.eql(u8, parent, dir)) break;
         dir = parent;
@@ -578,6 +582,31 @@ test "resolveRoots: non-existent env entry silently dropped" {
     for (roots) |r| {
         try testing.expect(!std.mem.endsWith(u8, r, "/nonexistent/path/that/should/not/exist/here"));
     }
+}
+
+test "resolveRoots: the walk-up stops at the enclosing checkout (a nested worktree does not see its parent's repository/)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const io = testing.io;
+
+    // `main` is a meta checkout, `main/.tasks/wt` a worktree of it: both hold a
+    // `repository/lib`, and a cell under the worktree must see only its own.
+    test_scratch.remove(io, "runner-roots-nested");
+    defer test_scratch.remove(io, "runner-roots-nested");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "runner-roots-nested/main/repository/lib"));
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "runner-roots-nested/main/libs"));
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "runner-roots-nested/main/.tasks/wt/repository/lib/examples/app"));
+
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd_n = try std.process.currentPath(io, &cwd_buf);
+    const abs_main = try std.fs.path.resolve(arena, &.{ cwd_buf[0..cwd_n], test_scratch.path(io, "runner-roots-nested/main") });
+    const start = try std.fs.path.join(arena, &.{ abs_main, ".tasks/wt/repository/lib/examples/app" });
+
+    const roots = try resolveRoots(arena, io, null, &.{}, start);
+    const own = try std.fs.path.join(arena, &.{ abs_main, ".tasks/wt/repository" });
+    try testing.expectEqual(@as(usize, 1), roots.len);
+    try testing.expectEqualStrings(own, roots[0]);
 }
 
 // ── Workspace discovery tests (fixtures of the shared manifest module) ─────────

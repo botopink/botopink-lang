@@ -93,7 +93,8 @@ resolves the dependency set with the same rules the CLI driver uses:
   from the enclosing workspace, a `{ "git": … }` one by name across the resolved
   **root list** (`BOTOPINK_LIB_ROOTS` env entries, then for each ancestor `D` of
   the project: `D` itself when it holds a workspace manifest,
-  `D/repository/botopink-lang/libs`, `D/repository`, `D/libs`; de-duped
+  `D/repository/botopink-lang/libs`, `D/repository`, `D/libs`, up to the first `D`
+  holding `repository/` — the enclosing checkout, `manifest.isCheckoutRoot`; de-duped
   first-occurrence-wins; every workspace found there contributes its members)
   and then `<project>/.botopinkbuild/deps/`. `.d.bp` declaration files are kept
   for go-to-def but excluded from the compile (the CLI drops them too).
