@@ -1175,7 +1175,7 @@ the commit.
 **Never pin an erlang exit status or an `escript` warning as the point of a line.** `run.sh` runs
 `botopink run --target erlang`, which today is `escript out/main.erl`: escript compiles the file it is
 handed, prints its **compile warnings on stdout** — which the `.out` comparison sees — and answers
-`127` when the program crashes. [Decision 56](../../specs/1.0.5-beta/decisions-taken.md) replaces that
+`127` when the program crashes. [Decision 56](../../../../specs/1.0.5-beta/decisions-taken.md) replaces that
 with `erlc -o <out>` over every emitted `.erl` and then `erl -pa <out>`, in front 13's `cli/run.zig`:
 the crash status becomes **`1`** and an `erlc` warning no longer reaches the program's stdout. So a
 reason line may *quote* either as evidence, and four of this front's do, but the defect it names must

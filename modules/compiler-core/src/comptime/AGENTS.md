@@ -956,7 +956,7 @@ declared return of `@panic` / `todo` / `trap`.
 **Not covered yet**: a top-level bodyless `declare fn` parses as a `DelegateDecl`, whose signature is
 never resolved — an unknown type in one is still accepted. A non-type *value* binding in annotation
 position (`val n = 5; val x: n = 7;`) also still checks; it is
-[types-as-values A1](../../../../specs/1.0.4-beta/06-checker/types-as-values.md)'s, which replaces the
+[types-as-values A1](../../../../../../specs/1.0.4-beta/06-checker/types-as-values.md)'s, which replaces the
 bindings arm with a real `type` kind.
 
 ## `case` exhaustiveness + reachability

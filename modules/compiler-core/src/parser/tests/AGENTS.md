@@ -9,7 +9,7 @@ AST golden snapshots live in `modules/compiler-core/snapshots/parser/`.
 `assertParser` wraps its snapshot call in `utils/snap.zig` `traceEnter(loc)`/`traceLeave`,
 so `BOTOPINK_SNAP_TRACE=<file>` records the test `file:line`.
 
-`decision8.zig` holds the grammar of [decision 8](../../../../../specs) rows N19–N22 — `unknown`,
+`decision8.zig` holds the grammar of [decision 8](../../../../../../../specs/1.0.4-beta/08-review-backlog/decision-8-language.md) rows N19–N22 — `unknown`,
 union types, the `is` expression and the `Pattern { body }` `case` arm — in that order, one section
 per row. A fixture there pins what *parses*; what it means is the checker half's, so a fixture may
 still red in inference until N19–N22's checker rows land.
