@@ -394,3 +394,19 @@ test "format: assert pattern ---- with list and rest" {
         \\}
     );
 }
+
+// Step 1 re-measured (2026-09-26): `val assert P = e;` with no `catch` (decision 8
+// § 9) is parsed with the `@panic(…)` handler it desugars to, and the printer
+// wrote that handler back — `val assert Error(e) = r catch @panic("assert
+// pattern did not match");`, a `catch` the author never wrote and the checker
+// refuses ("after `catch` the value is not a @Result"). Found by formatting a
+// copy of the backend library and running `check`: 15 of its packages stopped
+// compiling.
+test "format: val assert ---- the handler-less form keeps no `catch`" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(r: @Result<i32, string>) -> string {
+        \\    val assert Error(e) = r;
+        \\    return e;
+        \\}
+    );
+}

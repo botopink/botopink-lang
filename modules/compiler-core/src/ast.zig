@@ -951,6 +951,17 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             commentsPerElem: []const u32 = &.{},
             /// true when source had trailing comma after last element → forces multi-line
             trailingComma: bool = false,
+            /// One slot per element: the `//` comment written on the element's
+            /// own line, after it (`1, // one`) — text only, owned. Empty when no
+            /// element has one. Without it the comment was counted among the
+            /// NEXT element's leading ones and printed above it, where it says
+            /// something false (front 16's G7). Omitted from the AST dump when
+            /// empty.
+            trailingPerElem: []const ?[]const u8 = &.{},
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"trailingPerElem"});
+            }
         },
         /// `#(e1, e2, ...)` ---- tuple literal
         tupleLit: struct {
@@ -966,6 +977,12 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             /// built from, so `cfg.server.port` resolves. "" = unlabeled.
             /// Arena-owned; not freed by `deinit`.
             labels: []const []const u8 = &.{},
+            /// One slot per element, as `arrayLit.trailingPerElem`.
+            trailingPerElem: []const ?[]const u8 = &.{},
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"trailingPerElem"});
+            }
         },
         /// `start..end` (exclusive), `start...end` (inclusive, decision 105 —
         /// the pattern token of decision 53 as a value) or `start..` (open,
@@ -1005,6 +1022,7 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
                     for (al.comments) |c| allocator.free(c);
                     allocator.free(al.comments);
                     allocator.free(al.commentsPerElem);
+                    freeTrailingPerElem(allocator, al.trailingPerElem);
                 },
                 .tupleLit => |tl| {
                     for (tl.elems) |*e| e.deinit(allocator);
@@ -1012,6 +1030,7 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
                     for (tl.comments) |c| allocator.free(c);
                     allocator.free(tl.comments);
                     allocator.free(tl.commentsPerElem);
+                    freeTrailingPerElem(allocator, tl.trailingPerElem);
                 },
                 .range => |r| {
                     r.start.deinit(allocator);
@@ -1255,6 +1274,13 @@ pub const Pattern = union(enum) {
 /// therefore invisible in every declaration that does not use it, which is what
 /// keeps adding one — `typeGuardType`, say — from moving several hundred
 /// snapshots that would all gain the same `null`.
+/// Frees an `arrayLit` / `tupleLit` `trailingPerElem` slice and its texts.
+fn freeTrailingPerElem(allocator: std.mem.Allocator, slots: []const ?[]const u8) void {
+    if (slots.len == 0) return;
+    for (slots) |slot| if (slot) |c| allocator.free(c);
+    allocator.free(slots);
+}
+
 fn stringifyOmitting(value: anytype, jws: anytype, comptime omitAlways: []const []const u8, comptime omitIfEmpty: []const []const u8) !void {
     const T = @TypeOf(value);
     try jws.beginObject();
@@ -1889,6 +1915,10 @@ pub const EnumSection = struct {
     /// `//` comment lines written above the section, with "" for a blank source
     /// line. Owned slice; the strings slice into the source.
     comments: []const []const u8 = &.{},
+    /// `//` comment lines written after the section's last member, before its
+    /// closing `}` — `TypeDecl.bodyComments`' convention one level down. The
+    /// parser collected them and freed them, so `format` deleted them.
+    bodyComments: []const []const u8 = &.{},
 
     pub fn deinit(this: *EnumSection, allocator: std.mem.Allocator) void {
         for (this.variants) |*v| v.deinit(allocator);
@@ -1896,10 +1926,11 @@ pub const EnumSection = struct {
         for (this.sections) |*s| s.deinit(allocator);
         allocator.free(this.sections);
         if (this.comments.len > 0) allocator.free(this.comments);
+        if (this.bodyComments.len > 0) allocator.free(this.bodyComments);
     }
 
     pub fn jsonStringify(this: EnumSection, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"order"}, &.{"comments"});
+        return stringifyOmitting(this, jws, &.{"order"}, &.{ "comments", "bodyComments" });
     }
 };
 
@@ -2466,6 +2497,11 @@ pub const DeclKind = union(enum) {
         /// Written at the end of the previous declaration's line
         /// (`pub mod geometry; // note`); the formatter keeps it there.
         trailing: bool = false,
+        /// Where the comment starts in the source. A comment that continues a
+        /// trailing one on the next line, from the same column, is printed
+        /// aligned under it (`format.zig`'s `CommentChain`). Layout only —
+        /// never dumped.
+        loc: Loc = .{ .line = 0, .col = 0 },
 
         pub fn jsonStringify(this: @This(), jws: anytype) !void {
             try jws.beginObject();

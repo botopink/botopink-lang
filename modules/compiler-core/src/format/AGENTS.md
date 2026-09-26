@@ -48,7 +48,9 @@ built and compared against the real column. `Doc.ifBreak(s)` is text that exists
 only in the enclosing group's broken spelling — the trailing comma of an open
 argument list — so a flat and a broken form share one document; `fits` never
 charges it flat and charges it in the trailing half when the group it sits in is
-broken. `tests/predicate.zig` exercises both predicates on hand-built documents —
+broken. `Doc.markColumn` / `Doc.alignToMark` are zero-width to both predicates (a
+pad only ever follows a line break): the first records the render's column, the
+second pads a later line to it. `tests/predicate.zig` exercises both predicates on hand-built documents —
 the exact boundary, the trailing text, the break after the group, the hardline
 inside it, a pinned group past the width, and `ifBreak` flat, broken and trailing.
 
@@ -132,6 +134,14 @@ printer arm, so the six trees format byte-identically to the parent commit.
   member (`withMemberComments`, `fmtMemberBlock`).
 - **Blank lines** — between body members (`""` in `comments`) and between top-level
   declarations (`Program.blankLineBefore`, filled by `parseDecls`).
+- **A trailing comment's continuation lines** — `f(); // one` followed by `// two` starting in the
+  **source** column `// one` starts in, on the very next line, is a continuation: it prints under
+  `// one`'s **printed** column, which moves when the code before it does (`Doc.markColumn` records
+  the column, `Doc.alignToMark` pads to it; `CommentChain` decides). A statement comment's column is
+  its `loc`; a top-level one's is `DeclKind.comment.loc`, which the parser now records. A comment in
+  another column or after a blank line is an ordinary comment, printed at the indentation. Before
+  this every continuation was re-emitted at the statement's column — `09-ecosystem-residuals`' last
+  R1 class (a sibling library's `runtime.bp:13`, whose earlier revision now round-trips).
 - **Trailing comments** — a comment on the line of the previous statement or declaration
   (`f(); // note`, `pub mod x; // note`) sets `trailing` and stays on that line. A **member's**
   is its own slot, `trailingComment` on `Field`, `EnumVariant` and `BehaviorMethod`, filled by the
@@ -141,10 +151,17 @@ printer arm, so the six trees format byte-identically to the parent commit.
   a body may interleave them, so each member carries its position in `order` and `fmtEnumMembers`
   merges the two lists by it. Printing all of one and then all of the other hoisted every variant
   written after a section above it. Nothing in `src/codegen/` may key on a variant's position in
-  `TypeShape.EnumShape.variants` — `order` is source layout, not a run-time encoding.
+  `TypeShape.EnumShape.variants` beyond its index among the variants (wasm's all-unit ordinal) —
+  `order`, the interleaving with sections, is source layout, not a run-time encoding.
 - **Comments on an enum variant or section** — `EnumVariant.comments` / `EnumSection.comments`
   (leading, `""` for a blank line) and `EnumVariant.trailingComment`. Either one forces the enum
-  body open: the compact `{ Red, Blue }` has nowhere to put a `//`.
+  body open: the compact `{ Red, Blue }` has nowhere to put a `//`. The lines before a body's
+  closing `}` are `TypeDecl.bodyComments` (an enum's as well as a record's) and
+  `EnumSection.bodyComments`, printed after the last member — emilia's `tokens.bp` closes four
+  sections with `// ── end front NN ──`, and all four were deleted until 2026-09-26.
+- **The handler-less `val assert P = e;`** (decision 8 § 9) prints no `catch`: `assertPattern.fatal`
+  marks the `@panic(…)` handler the parser desugared it to. Printing it wrote a `catch` the checker
+  refuses, so `format` stopped 15 packages of a sibling library from compiling.
 - **One-line lambdas** — `{ n -> n * 2 }` written on one line with a single value expression
   stays inline (`fmtLambdaAt`).
 - **Blank lines and comments in every block** — including an `if` **then**-branch and a lambda
@@ -186,17 +203,12 @@ annotation list prints as one `#[…]` per annotation, a method chain that fits 
 one that does not opens, a single-expression `if` block drops its braces, a `\\` line string prints
 as `"""…"""`.
 
+- **End-of-line comments on an array or tuple element** (G7) — `trailingPerElem[i]`, the comment
+  written on element `i`'s own line after it and its `,`, prints there (`1, // one`) and forces the
+  open form. Before, the literal counted it among the *next* element's leading comments and the
+  printer put it above that element, where it is false — idempotently.
+
 ## Layout the parser does not record (formatter cannot keep)
 
-- **End-of-line comments on an array element** — the array literal attaches a comment to the *next*
-  item, with no line information, so the formatter prints it above that item. A **field's** is kept
-  (`Field.trailingComment`), and so are a statement's, a variant's and a method's.
-- **The indentation of a comment's continuation line** — a `//` line the author indented to align
-  under the comment above it (one site, in a sibling library under `repository/`) re-emits at the
-  statement's own column. The text is intact; the alignment is not. A comment reaches the AST as text
-  with no column, so keeping it needs a recorded column, not a printer arm — it is the last live
-  member of `09-ecosystem-residuals`' R1 classes and the only fidelity loss left after formatting all
-  five libraries.
-
-Each needs a parser/AST change (`parser/decls.zig`, `parser/exprs.zig`) before the formatter can
-print it back.
+Nothing known, as of 2026-09-26: the five sibling libraries formatted as scratch copies lose no
+token and no comment (a lexical multiset comparison per file), and every package `check`s as before.

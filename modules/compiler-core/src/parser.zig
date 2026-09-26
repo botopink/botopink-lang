@@ -620,6 +620,7 @@ pub const Parser = struct {
                     .is_module = tok.kind == .commentModule,
                     .is_doc = tok.kind == .commentDoc,
                     .trailing = trailing,
+                    .loc = locFromToken(tok),
                 } };
             } else {
                 // A bare `implement …` / `extend …` (optionally `pub`) with no name:

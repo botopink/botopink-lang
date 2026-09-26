@@ -348,3 +348,47 @@ test "format: a string holding a quote keeps its triple fences" {
         \\}
     );
 }
+
+// G7 (09's handover, a sibling example's `main.bp:111-113`): a comment written on an
+// array or tuple element's own line, after the element, is that element's. The
+// literal loops counted it among the NEXT element's leading comments and the
+// printer put it above that element — where it says something false — and the
+// result was idempotent, so `format --check` passed over it.
+test "format: array literal ---- an element keeps its trailing comment on its line" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\val xs = [
+        \\    1, // one
+        \\    2, // two
+        \\    3,
+        \\];
+        \\
+        \\val boxes = [
+        \\    // leading stays above
+        \\    Box(label: "sq", w: 4, h: 4), // w == h, h > 2
+        \\    Box(label: "wide", w: 6, h: 2), // w != h
+        \\];
+    );
+}
+
+test "format: tuple literal ---- an element keeps its trailing comment on its line" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\val t = #(
+        \\    1, // first
+        \\    "b",
+        \\);
+    );
+}
+
+test "format: array literal ---- the last element's comment without a comma stays on its line" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\val ys = [
+        \\    1, 2, // both on one line
+        \\    3 // last, no comma
+        \\];
+    ,
+        \\val ys = [
+        \\    1, 2, // both on one line
+        \\    3, // last, no comma
+        \\];
+    );
+}

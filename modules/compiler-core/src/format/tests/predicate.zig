@@ -172,3 +172,23 @@ test "ifBreak: text that exists only in the broken spelling — absent flat, cha
     try expectRender(doc, 3, "xy,\nz");
     try expectRender(doc, 2, "x\ny,\nz");
 }
+
+test "markColumn / alignToMark: a pad after a line break reaches the recorded column, and never goes back" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var f = Formatter.init(arena.allocator());
+
+    // `abc ` then the mark at column 4; the next line pads 4 spaces.
+    const doc = try f.concat(
+        try f.concat(try f.text("abc "), try f.concat(f.markColumn(), try f.text("// one"))),
+        try f.concat(f.hardline(), try f.concat(f.alignToMark(), try f.text("// two"))),
+    );
+    try expectRender(doc, 80, "abc // one\n    // two");
+
+    // Already past the mark: no pad, and no column taken back.
+    const past = try f.concat(
+        try f.concat(f.markColumn(), try f.text("x")),
+        try f.concat(try f.text("yz"), try f.concat(f.alignToMark(), try f.text("!"))),
+    );
+    try expectRender(past, 80, "xyz!");
+}
