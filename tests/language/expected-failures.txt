@@ -270,7 +270,6 @@ wasm     | modules/method_name_collision | 05-wasm | a method call on a value an
 # index, and its enum-variant path does not, so `Shape.Rect(height: 2, width: 5)`
 # is built `Rect(2, 5)` and the cell prints `205` where it must print `502`.
 # Exit 0 either way, with nothing said — measured 2026-09-21.
-erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's labelled payload, reported 2026-09-21) | an enum variant's payload is zipped positionally even when every argument is labelled: `205` where the declared order asks for `502`. The record-constructor row of the same cell is right, which is what says it is the variant path and not the label
 
 # ── a method call and a loop over a field, on wasm ────────────────────────────
 # `run/effect_method.bp` puts an effect annotation on a method — a record's, an

@@ -1111,7 +1111,8 @@ fn expandTrailingDefaults(agg: *Aggregator, fn_decl: ast.FnDecl, c: anytype) !vo
 /// call in front of us. Inference wrote it against this very AST, so a mismatch
 /// means something else rewrote the call first, and then the call is left alone.
 fn applyDefaultFill(agg: *Aggregator, fill: envMod.DefaultFill, c: anytype) !void {
-    if (c.args.len >= fill.params.len) return;
+    // A complete call is planned only to reorder labelled arguments (01).
+    if (c.args.len > fill.params.len) return;
     var written: usize = 0;
     for (fill.slots) |slot| {
         const ai = slot orelse continue;

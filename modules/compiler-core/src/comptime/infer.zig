@@ -9958,6 +9958,45 @@ fn argumentParamSlots(
 /// C-04 — plan the fill for a short call and record it under the call's loc for
 /// `transform.zig`. Answers the plan, or `null` when the call cannot be filled:
 /// that is N2, and the caller then raises the arity error it always raised.
+/// 01 — the reorder a complete labelled call needs, or null when its labels
+/// name the parameters in order (or it has none). A label that names no
+/// parameter, or names one twice, is refused here, located at the call.
+fn planLabelledCall(
+    env: *Env,
+    callee: []const u8,
+    params: []const ast.Param,
+    typedArgs: []const ast.CallArgOf(.typed),
+    loc: ast.Loc,
+) InferError!?envMod.DefaultFill {
+    const labels = try env.arena.alloc(?[]const u8, typedArgs.len);
+    for (typedArgs, 0..) |ta, i| {
+        // A `..` spread is a record update, matched field by field elsewhere.
+        if (ta.label) |l| if (std.mem.eql(u8, l, "..")) return null;
+        labels[i] = ta.label;
+    }
+    return envMod.planDefaultFill(env.arena, params, labels) catch |e| switch (e) {
+        error.CannotFill => {
+            for (labels) |ml| {
+                const l = ml orelse continue;
+                const known = for (params) |p| {
+                    if (std.mem.eql(u8, p.name, l)) break true;
+                } else false;
+                if (!known) {
+                    const msg = try std.fmt.allocPrint(env.arena, "`{s}` has no parameter named `{s}`", .{ callee, l });
+                    env.lastError = TypeError.custom(msg, "A label names the parameter its argument fills.").withLoc(loc);
+                    return error.TypeError;
+                }
+            }
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "a parameter of `{s}` is given twice", .{callee}),
+                "Each parameter takes one argument: by its label, or by its position among the unlabelled ones.",
+            ).withLoc(loc);
+            return error.TypeError;
+        },
+        else => |rest| return rest,
+    };
+}
+
 fn recordDefaultFill(
     env: *Env,
     loc: ast.Loc,
@@ -10007,16 +10046,28 @@ fn makeMethodCall(
     // declares a default. Inference never arity-checked this shape, so there is
     // no error to keep honest here; what was missing is the fill, and without it
     // `b.bump()` reached node as `bump()` and answered `NaN`.
+    var checkedArgs: []ast.CallArgOf(.typed) = typedArgs;
     if (typedTrailing.len == 0) {
         if (recvPtr) |rp| if (nominalName(rp.getType())) |tn| {
             if (env.getInherentMethodParams(tn, callee)) |declared| {
                 if (declared.len > 0 and std.mem.eql(u8, declared[0].name, "self")) {
-                    _ = try recordDefaultFill(env, loc, declared[1..], typedArgs);
+                    const plan = if (typedArgs.len == declared.len - 1)
+                        try planLabelledCall(env, callee, declared[1..], typedArgs, loc)
+                    else
+                        try recordDefaultFill(env, loc, declared[1..], typedArgs);
+                    // 01 — a complete call whose labels move an argument is
+                    // lowered in declaration order, and checked in it.
+                    if (plan) |p| if (typedArgs.len == declared.len - 1) {
+                        try env.defaultInjections.put(loc, p);
+                        const ordered = try env.arena.alloc(ast.CallArgOf(.typed), typedArgs.len);
+                        for (p.slots, 0..) |slot, pi| ordered[pi] = typedArgs[slot.?];
+                        checkedArgs = ordered;
+                    };
                 }
             }
         };
     }
-    const retType = try methodCallReturnType(env, recvPtr, callee, typedArgs, typedTrailing, loc);
+    const retType = try methodCallReturnType(env, recvPtr, callee, checkedArgs, typedTrailing, loc);
     return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
         .receiver = recvPtr,
         .callee = callee,
@@ -10491,6 +10542,11 @@ fn resolveStdArrayMethod(
             env.lastError = TypeError.arityMismatch(callee, restParams.len, total).withLoc(loc);
             return error.TypeError;
         }
+    } else if (typedTrailing.len == 0) {
+        // 01 — a complete call whose labels move an argument
+        // (`s.slice(end: 3, start: 1)`) is checked and lowered by label.
+        fillPlan = try planLabelledCall(env, callee, restParams, typedArgs, loc);
+        if (fillPlan) |plan| try env.defaultInjections.put(loc, plan);
     }
     if (fillPlan) |fill| {
         for (fill.slots, restParams) |slot, p| {
@@ -11609,7 +11665,16 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             const retType: *T.Type = switch (resolved.*) {
                                 .func => |f| blk: {
                                     if (f.params.len == typedArgs.len) {
-                                        for (typedArgs, f.params) |ta, p|
+                                        // 01 — `Shape.Rect(height: 2, width: 5)`: a
+                                        // label names the field it fills; the call
+                                        // is checked and lowered in declaration
+                                        // order (erlang zipped it positionally).
+                                        const declared = env.ctorParams.get(qualified);
+                                        const plan = if (declared) |d| (if (d.len == f.params.len) try planLabelledCall(env, qualified, d, typedArgs, loc) else null) else null;
+                                        if (plan) |p| {
+                                            try env.defaultInjections.put(loc, p);
+                                            try unifyFilledArgs(env, p, f.params, typedArgs);
+                                        } else for (typedArgs, f.params) |ta, p|
                                             try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
                                     }
                                     break :blk f.ret;
@@ -11837,6 +11902,22 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             // error it has always been, word for word.
                             env.lastError = TypeError.arityMismatch(call.callee, f.params.len, call.args.len).withLoc(loc);
                             return error.TypeError;
+                        }
+                        // 01 — a complete call whose labels move an argument
+                        // (`diff(b: 1, a: 10)`, `P(y: "a", x: 1)`) is checked and
+                        // lowered by the parameter each label names: every
+                        // consumer used to zip the arguments positionally, so the
+                        // checker typed `y`'s value against `x` and the backends
+                        // passed `b` as `a` (a fully-labelled self tail call
+                        // assigned its arguments crosswise and never ended).
+                        if (typeparams == null and exprParams == null and env.templateFns.get(call.callee) == null) {
+                            if (declParamsAst) |declared| if (declared.len == f.params.len) {
+                                if (try planLabelledCall(env, call.callee, declared, typedArgs, loc)) |plan| {
+                                    try env.defaultInjections.put(loc, plan);
+                                    try unifyFilledArgs(env, plan, f.params, typedArgs);
+                                    break :blk f.ret;
+                                }
+                            };
                         }
                         // Look up the template fn before the loop so non-@Expr
                         // params can also be collected as plain arg bindings.

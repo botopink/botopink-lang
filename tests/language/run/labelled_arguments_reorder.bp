@@ -1,0 +1,32 @@
+//// A label names the parameter its argument fills, in every call shape.
+//// Every consumer used to zip a complete call's arguments positionally: the
+//// checker typed `P(y: "a", x: 1)`'s `"a"` against `x`, `diff(b: 1, a: 10)`
+//// answered `-9` on every backend, `"abcdef".slice(end: 3, start: 1)` printed
+//// an empty line on commonJS and raised `function_clause` on erlang, and a
+//// fully-labelled self tail call assigned its arguments crosswise and never
+//// ended. The checker plans the reorder and the transform applies it, so
+//// every backend receives the call in declaration order.
+
+type P(x: i32, y: string)
+
+type Q(n: i32) {
+    pub fn pick(self: Self, a: i32, b: string) -> string { return b; }
+}
+
+fn diff(a: i32, b: i32) -> i32 {
+    return a - b;
+}
+
+fn sum(acc: i32, n: i32) -> i32 {
+    if (n == 0) { return acc; };
+    return sum(n: n - 1, acc: acc + n);
+}
+
+pub fn main() {
+    val p = P(y: "a", x: 1);
+    @print(p.x);
+    @print(diff(b: 1, a: 10));
+    @print(sum(acc: 0, n: 4));
+    @print("abcdef".slice(end: 3, start: 1));
+    @print(Q(n: 1).pick(b: "bee", a: 2));
+}

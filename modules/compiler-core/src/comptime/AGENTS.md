@@ -567,6 +567,21 @@ binding list handed back is built tolerantly from imports, type declarations, `f
 `val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
 well-typed one binds, so the language server still lists it.
 
+## A label names the parameter it fills, in a complete call too
+
+`env.planDefaultFill` planned a call only when it omitted an argument; a COMPLETE call was zipped
+positionally by every consumer, so `P(y: "a", x: 1)` typed `"a"` against `x`, `diff(b: 1, a: 10)`
+answered `-9`, `s.slice(end: 3, start: 1)` sliced backwards, `Shape.Rect(height: 2, width: 5)` was
+`205` on erlang, and a fully-labelled self tail call (`sum(n: n - 1, acc: acc + n)`) assigned its
+arguments crosswise and never ended. A complete call whose labels move an argument now gets a plan
+too — a pure reorder (`planLabelledCall`, which also refuses a label naming no parameter and a
+parameter given twice) — recorded in `defaultInjections` and applied by `transform.zig`'s
+`applyDefaultFill` (which now accepts a call as long as the plan), so every backend receives the
+arguments in declaration order and the checker unifies each with the parameter its label names.
+Reached by the plain fn / record-constructor path, a qualified enum-variant constructor, a
+primitive's interface `default fn` and an instance method. A `..` spread (a record update) is not
+planned.
+
 ## Decision 2 is enforced (01 R7)
 
 A block is a statement and a value leaves a body through `return` (or a value block's `break`).

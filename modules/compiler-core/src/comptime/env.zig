@@ -1557,7 +1557,16 @@ pub fn planDefaultFill(
     labels: []const ?[]const u8,
 ) !?DefaultFill {
     if (labels.len > params.len) return error.CannotFill;
-    if (labels.len == params.len) return null;
+    // A complete call needs no plan unless a label moves an argument (01 —
+    // `diff(b: 1, a: 10)`, `P(y: "a", x: 1)`): the plan is then a pure
+    // reorder into declaration order, which every consumer applies alike.
+    if (labels.len == params.len) {
+        var any_label = false;
+        for (labels) |l| if (l != null) {
+            any_label = true;
+        };
+        if (!any_label) return null;
+    }
 
     const slots = try arena.alloc(?usize, params.len);
     @memset(slots, null);
@@ -1588,6 +1597,13 @@ pub fn planDefaultFill(
     // Pass 3 — N2: every slot the call left empty must declare a default.
     for (slots, params) |slot, p| {
         if (slot == null and p.default == null) return error.CannotFill;
+    }
+    // A complete call whose labels name the parameters in order moves nothing.
+    if (labels.len == params.len) {
+        const identity = for (slots, 0..) |slot, i| {
+            if (slot == null or slot.? != i) break false;
+        } else true;
+        if (identity) return null;
     }
     return DefaultFill{ .params = params, .slots = slots };
 }
