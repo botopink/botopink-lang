@@ -766,8 +766,10 @@ that agree still unify, so one branch pins the other's variables exactly as befo
 §3.3's use rule is `refuseUnknownUse`, shared with §2.2 (see above): a union receiver is refused at
 arithmetic, `+`, an ordering comparison, a field read and a method call. §3.3 allows a use every
 member allows; deciding that means re-resolving the operation once per member, which is not built,
-so the refusal is total — more than §3.3 asks, and never wrong. §3.2's two-location diagnostic (the
-use **and** the branch that widened it) is not built either: `TypeError` carries one `Loc`.
+so the refusal is total — more than §3.3 asks, and never wrong. §3.2's diagnostic names the branch that
+widened it: an `if` or `case` whose branches made a union records its location in
+`Env.unionOrigins`, and the refusal at the use appends "(the `if` at L:C made it one: its branches
+disagree)" — the use is the caret, the widening is in the text (`TypeError` carries one `Loc`).
 
 `error.zig` `typeLabelAlloc` spells a type as a source writes it in a mismatch message: a union as
 `A | B`, an optional as `?T` (decision 2 — `optional` is the checker's internal name and no

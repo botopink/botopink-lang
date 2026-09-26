@@ -1612,3 +1612,11 @@ test "warning: a tuple variable whose name differs from the written label (decis
     try std.testing.expect(std.mem.indexOf(u8, msg, "the variable `city` fills the element labeled `name`") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`pop`") == null);
 }
+
+test "union: a refused use names the branch that widened it (decision 8 §3.2)" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn g(c: bool) -> i32 { val v = if (c) { 1 } else { "a" }; return v + 1; }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "(the `if` at 1:32 made it one: its branches disagree)") != null);
+}

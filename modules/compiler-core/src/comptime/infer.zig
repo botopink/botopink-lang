@@ -7223,8 +7223,13 @@ fn refuseUnknownUse(env: *Env, ty: *T.Type, loc: ast.Loc, what: []const u8) Infe
     }
     if (t.* == .union_) {
         const rendered = try snapshotMod.typeNameOf(env.arena, t);
+        // §3.2 — name the branch that widened it, when inference made it.
+        const widened: []const u8 = if (env.unionOrigins.get(t)) |o|
+            try std.fmt.allocPrint(env.arena, " (the `{s}` at {d}:{d} made it one: its branches disagree)", .{ o.kind, o.loc.line, o.loc.col })
+        else
+            "";
         var e = TypeError.custom(
-            try std.fmt.allocPrint(env.arena, "cannot {s} a `{s}` — not every member of the union answers it", .{ what, rendered }),
+            try std.fmt.allocPrint(env.arena, "cannot {s} a `{s}` — not every member of the union answers it{s}", .{ what, rendered, widened }),
             "Narrow it first: a `case` with one arm per member, or `if (v is i32) { … }`.",
         );
         env.lastError = e.withLoc(loc);
@@ -9428,6 +9433,8 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                     try unify(env, bodyType, elseType);
                 } else {
                     ifType = try unionOf(env, &.{ bodyType, elseType });
+                    const u = ifType.deref();
+                    if (u.* == .union_) try env.unionOrigins.put(env.arena, u, .{ .loc = loc, .kind = "if" });
                 }
             }
             return TypedExpr{ .branch = .{ .loc = loc, .type_ = ifType, .kind = .{ .if_ = .{
@@ -12769,6 +12776,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             // (`return`/`throw`/`break`/`continue`) and a statement arm (`void`, a
             // block without `break <value>`) contribute nothing.
             const caseType = try caseTypeFromArms(env, typedArms);
+            if (caseType.deref().* == .union_) try env.unionOrigins.put(env.arena, caseType.deref(), .{ .loc = loc, .kind = "case" });
             return TypedExpr{ .collection = .{ .loc = loc, .type_ = caseType, .kind = .{ .case = .{
                 .subjects = typedSubjects,
                 .arms = typedArms,

@@ -743,6 +743,10 @@ pub const Env = struct {
     warnings: std.ArrayListUnmanaged(@import("error.zig").TypeError) = .empty,
     /// 01 step 13 — the undo log of the body being inferred (`openBodyScope`).
     bodyScope: ?*std.ArrayListUnmanaged(BindUndo) = null,
+    /// Decision 8 §3.2 — where an inferred union was born: the `if` or `case`
+    /// whose branches disagreed. A use the union refuses names it, so the
+    /// author sees the widening and not only the refusal.
+    unionOrigins: std.AutoHashMapUnmanaged(*T.Type, struct { loc: ast.Loc, kind: []const u8 }) = .empty,
     /// 01 step 13 — each name a top-level body introduced (it was unbound
     /// before the body), mapped to that body's name, for the diagnostic a
     /// later use outside it gets. Allocated in `arena`.
