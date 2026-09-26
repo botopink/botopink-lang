@@ -163,10 +163,14 @@ The checker rows of `front/checker-rows-2` add a cell each, every one failing on
 `run/builtin_noreturn_any_position` (`@todo()` / `@panic(…)` are `noreturn`, the bottom type — a
 `return` of a `-> i32` function, an annotated `val`, an `if` branch and a call argument; on all four
 targets), `reject/builtin_module_not_lowered` (`@module()` is `builtin-not-lowered` at the `@`),
-`reject/enum_variant_duplicate` (a variant written twice at one level, at the second) and
+`reject/enum_variant_duplicate` (a variant written twice at one level, at the second),
 `modules/enum_section_leaf_beside_variant` (a section leaf `Layout.Break.After` beside a top-level
 `After(inner: Token[])`, each reached by its path or its position's type from another module —
-the checker half already held; wasm is listed, its `case` reads the leaf's tag).
+the checker half already held; wasm is listed, its `case` reads the leaf's tag),
+`run/variant_leading_dot_two_enums_case` (two enums declaring `Red`, `.Red` by the position's type
+and a `case` over each — the checker half already held; wasm is listed) and
+`reject/section_path_es4_expected_enum` / `reject/section_path_es4_every_head` (ES4 names the
+expected enum, or every enum carrying the head, sorted — it named the hash walk's first).
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

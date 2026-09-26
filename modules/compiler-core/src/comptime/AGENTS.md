@@ -1434,9 +1434,12 @@ above the argument loop, and the arity arm's default fill reads that same list.
 `raiseAmbiguousSectionPath` refuses at the head segment, naming every candidate
 (sorted, because the set comes off a hash map). It is not a pick: the candidates
 are different types, the program means one of them, and picking is the defect
-this closed. ES4 (a head that matched, a tail that did not) is unchanged and
-still names the FIRST enum whose head segment is a section wrapper — that
-choice is the iterator's, and it decides only which enum the message blames.
+this closed. ES4 (a head that matched, a tail that did not) collects EVERY enum
+whose head segment is a section wrapper: one is blamed by name, several are
+narrowed by the position's expected type (`expectedEnumAmong`), and with no
+expectation the refusal names them all, sorted (`no enum has the path … — "A"
+and "B" each have a section …`) — it used to blame the first the iterator met
+(`reject/section_path_es4_expected_enum`, `reject/section_path_es4_every_head`).
 The refusal's hint names the fully qualified spelling, which is the way out of
 an ambiguity a position cannot type.
 

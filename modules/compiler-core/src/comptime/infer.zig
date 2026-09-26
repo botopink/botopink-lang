@@ -2110,8 +2110,10 @@ fn tryResolveEnumSectionPath(
     // generic "unknown field" error from the fall-through code.
     var candidates: std.ArrayList([]const u8) = .empty;
     defer candidates.deinit(env.arena);
-    var enum_with_head: ?[]const u8 = null;
-    var enum_def_with_head: ?envMod.TypeDef.Enum = null;
+    // Every enum whose head segment matched a section wrapper — the set, so
+    // the ES4 wording is not a function of the hash map's order.
+    var heads: std.ArrayList([]const u8) = .empty;
+    defer heads.deinit(env.arena);
     var it = env.typeDefs.iterator();
     while (it.next()) |entry| {
         const td = entry.value_ptr.*;
@@ -2124,9 +2126,8 @@ fn tryResolveEnumSectionPath(
         // Did the head segment at least match a section wrapper on this
         // enum? If yes, the user intended a section path on this enum — a
         // bad tail is an ES4 candidate.
-        if (enum_with_head == null and headSectionVariantOn(en, segs.items[0])) {
-            enum_with_head = en.name;
-            enum_def_with_head = en;
+        if (headSectionVariantOn(en, segs.items[0]) and !containsStr(heads.items, en.name)) {
+            try heads.append(env.arena, en.name);
         }
     }
 
@@ -2154,14 +2155,44 @@ fn tryResolveEnumSectionPath(
     // wrapper, but the tail didn't resolve. Raise a focused error so the
     // user sees "enum 'Token' has no path '.Color.Bogus'" instead of the
     // generic fall-through diagnostic.
-    if (enum_with_head) |owner| {
+    if (heads.items.len > 0) {
+        // One enum carries the head: it is the one meant. Several: the
+        // position's expected type names it; with none, the refusal names
+        // every one of them, sorted, instead of whichever the walk met first.
+        const chosen: ?[]const u8 = if (heads.items.len == 1)
+            heads.items[0]
+        else
+            expectedEnumAmong(env.expectedType, heads.items);
         const path_text = try sectionPathText(env, segs.items);
+        const owner = chosen orelse {
+            std.mem.sort([]const u8, heads.items, {}, struct {
+                fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                    return std.mem.order(u8, a, b) == .lt;
+                }
+            }.lessThan);
+            var names: std.ArrayList(u8) = .empty;
+            defer names.deinit(env.arena);
+            for (heads.items, 0..) |name, i| {
+                if (i > 0) try names.appendSlice(env.arena, if (i + 1 == heads.items.len) " and " else ", ");
+                try names.append(env.arena, '"');
+                try names.appendSlice(env.arena, name);
+                try names.append(env.arena, '"');
+            }
+            const msg = try std.fmt.allocPrint(
+                env.arena,
+                "no enum has the path \"{s}\" — {s} each have a section \"{s}\" (ES4 — enum-sections path resolution)",
+                .{ path_text, names.items, segs.items[0] },
+            );
+            const badLoc = if (segLocs.items.len > 1) segLocs.items[1] else loc;
+            env.lastError = TypeError.custom(msg, "Check the section/variant chain against the enum declarations' `sections` trees; numeric leaves are matched under their declared digit form (`.Color.Red.500`).").withLoc(badLoc);
+            return error.TypeError;
+        };
         const msg = try std.fmt.allocPrint(
             env.arena,
             "enum \"{s}\" has no path \"{s}\" (ES4 — enum-sections path resolution)",
             .{ owner, path_text },
         );
-        const bad = firstUnresolvedSectionSegment(env, enum_def_with_head.?, segs.items);
+        const bad = firstUnresolvedSectionSegment(env, env.lookupTypeDef(owner).?.enum_, segs.items);
         const badLoc = if (bad < segLocs.items.len) segLocs.items[bad] else loc;
         env.lastError = TypeError.custom(msg, "Check the section/variant chain against the enum declaration's `sections` tree; numeric leaves are matched under their declared digit form (`.Color.Red.500`).").withLoc(badLoc);
         return error.TypeError;
