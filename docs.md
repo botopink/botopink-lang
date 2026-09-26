@@ -2278,18 +2278,14 @@ names, and fatal when the match fails), a `//` comment inside a loop body, a
 and `await` inside a `@Component` body (an `async function` on commonJS, awaited
 by every caller).
 
-Two limits worth stating here, because a library meets them before it meets a
-rule. The checker half is `00 · 01-checker`'s:
-
-- A default on an **imported function** is filled when it is closed — a
-  literal, `true` / `false`, `null`, a sign, an array or tuple of those — so
-  `import { greet } from "helper"; greet("w")` takes `greet`'s declared
-  greeting. A default that names a binding of its own module cannot be written
-  at the importer's call site: leaving that argument out of an imported call is
-  the arity error (`'greet' expects 2 argument(s), got 1`).
-- On wasm a method called through a **behavior-typed** value traps
-  (`unreachable`) at run time; commonJS, erlang and beam dispatch it
-  (`00 · 05-wasm`'s).
+A default on an **imported function** is filled at the call like a local
+one's when it is closed — a literal, `true` / `false`, `null`, a sign, an array
+or tuple of those — so `import { greet } from "helper"; greet("w")` takes
+`greet`'s declared greeting; a default that names a binding of its own module
+cannot be written at the importer's call site, and leaving that argument out
+of an imported call is the arity error (`'greet' expects 2 argument(s), got 1`).
+A method called through a **behavior-typed** value is answered by the value's
+own type on all four backends.
 
 These forms are **deliberately absent**, so that none reads as unfinished work:
 

@@ -1,0 +1,12 @@
+//// C-03 — `std-unsupported-on-target` names the function the program calls,
+//// located at the call. `erlang.nodes` is far down `std/erlang`'s `pub
+//// declare fn`s; the refusal named `std/erlang.abs`, the module's first, and
+//// gave the module rather than the call as its location, sending the reader
+//// to a function they did not call. erlang and beam run it: a node that is
+//// not distributed knows no other node.
+
+import {erlang} from "std";
+
+pub fn main() {
+    @print(erlang.nodes());
+}

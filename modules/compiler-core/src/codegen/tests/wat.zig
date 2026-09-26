@@ -1116,8 +1116,7 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
 // that has NO wasm lowering traps (`prim method not lowered on wasm`) rather
 // than answering — one program per method, so a lowering that lands later
 // fails here and has to move its row into the test above. `words`/`lines`
-// split on a character class, `pop` mutates the array blob in place, and the
-// rest are `default fn`s whose bodies call a function value the inlined HOF
+// split on a character class, and the rest are `default fn`s whose bodies call a function value the inlined HOF
 // path does not reach (`flatMap`) or grow an array through
 // `append` (`flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique`).
 test "wat: prim method ---- a primitive method with no wasm lowering traps, never answers" {
@@ -1136,13 +1135,29 @@ test "wat: prim method ---- a primitive method with no wasm lowering traps, neve
     inline for (calls) |c| {
         try h.assertWasmRunLog(std.testing.allocator, "fn main() {\n    @print(" ++ c ++ ");\n}\n", trap);
     }
+}
+
+// `Array.pop` and `Array.lastIndexOf` left the trap list: `pop` answers the
+// `?T` `at(-1)` does and rebinds the local to a copy one shorter, as `push`
+// rebinds it to a grown one; `lastIndexOf` walks `indexOf`'s equality from
+// the last slot down.
+test "wat: prim method ---- pop shrinks a local array and lastIndexOf searches from the end" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
         \\    var xs = [1, 2, 3];
         \\    val p = xs.pop();
         \\    @print(p);
+        \\    @print(xs);
+        \\    @print([1, 2, 1].lastIndexOf(1));
+        \\    @print(["a", "b"].lastIndexOf("z"));
         \\}
-    , trap);
+    ,
+        \\3
+        \\[1, 2]
+        \\2
+        \\-1
+        \\
+    );
 }
 
 // Decision 8 §11's box on wasm (`00 · 05-wasm` step 2): a value entering an

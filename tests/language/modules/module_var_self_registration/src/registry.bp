@@ -1,0 +1,21 @@
+//// The registry a component registers itself into at module load (rakun
+//// front 04's component model): a module-level `var` grown by `push` and
+//// shrunk by `pop` inside a function. On erlang and beam the `push` computed
+//// the grown list and dropped it — the write never reached the `var`'s
+//// memory — so the module-level `val` in `component` ran (decision 140) and
+//// registered nothing; `pop` read the last name and left it there.
+
+var names: Array<string> = [];
+
+pub fn register(n: string) -> i32 {
+    names.push(n);
+    return names.length;
+}
+
+pub fn registered() -> Array<string> {
+    return names;
+}
+
+pub fn unregisterLast() -> ?string {
+    return names.pop();
+}

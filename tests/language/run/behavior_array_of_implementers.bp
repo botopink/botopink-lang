@@ -5,9 +5,8 @@
 //// `type mismatch: expected A, got B` on every target; each element now meets
 //// the behavior the way an argument meets its parameter. Both spellings of the
 //// annotation, each element's own method answering.
-//// Not scheduled on wasm: a method called through a behavior-typed value does
-//// not dispatch by the value there (`docs.md` § the limits, 05-wasm's row) —
-//// this program answers `a a b b` at exit 0.
+//// On all four targets: wasm read every element as the first one's type and
+//// answered `a a b b` at exit 0; it now reads each value's header.
 
 behavior Plugin {
     fn name(self: Self) -> string;

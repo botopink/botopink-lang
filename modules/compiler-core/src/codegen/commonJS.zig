@@ -3087,6 +3087,15 @@ const Emitter = struct {
                         return self.b.paren(try self.b.binaryBare("in", .{ .quoted = key }, subject));
                     }
                 }
+                // A variant of an enum this module declares is tested by its
+                // `tag`, exactly as a `case` arm tests it (`patternTest`):
+                // `instanceof Circle` named no class any module emits, and
+                // `val assert Circle(r) = s catch …` died `ReferenceError:
+                // Circle is not defined`. A record keeps its class test.
+                const bare = bareVariantName(v.name);
+                if (self.isDeclaredVariantName(bare) and !self.class_names.contains(bare)) {
+                    return (try self.patternTest(pat.*, subject)) orelse js.Expr{ .name = "true" };
+                }
                 return switch (v.payload) {
                     // Check if value is an instance of the variant type.
                     .binding, .fields => try self.b.paren(try self.b.binaryBare("instanceof", subject, .{ .name = v.name })),

@@ -6,8 +6,8 @@
 //// The gap this pins: `val l: Lookup = memory();` was `type mismatch:
 //// expected Lookup, got Memory` on every target, while the same value passed
 //// to a `Lookup` parameter checked.
-//// Not scheduled on wasm: a method called through a behavior-typed value traps
-//// there (`docs.md` § the limits, 05-wasm's row).
+//// On all four targets: wasm, which trapped at a method called through a
+//// behavior-typed value, reads the type from the value's header.
 
 behavior Lookup {
     fn find(self: Self, key: string) -> string;

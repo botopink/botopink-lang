@@ -50,6 +50,7 @@ function __bp_print_as(shapes) {
 //   fn join(...)
 //   fn reverse(...)
 //   fn indexOf(...)
+//   default fn lastIndexOf(...)
 //   fn forEach(...)
 //   fn map(...)
 //   fn filter(...)

@@ -443,7 +443,7 @@ pub const HelperGroup = enum {
     /// module's own dispatch (one descriptor compare per type declaring
     /// `display`), so the group renders alone and a module gets its answer.
     display_of,
-    /// `$__str_char_code(s, i)` — the byte at `i`, `-1` outside `0..len`.
+    /// `$__str_char_code(s, i)` — the code point at code-point index `i`, `-1` outside the string.
     str_char_code,
     /// `$__str_last_index_of(s, sub)` — the last byte offset of `sub`, `-1` when absent.
     str_last_index_of,
@@ -457,6 +457,10 @@ pub const HelperGroup = enum {
     unknown,
     /// `$__print_unknown` (+`_raw`) — such a value printed by what it holds.
     print_unknown,
+    /// `$__arr_last_index_of_i32(xs, x)` / `_str` — `xs.lastIndexOf(x)`, the
+    /// last index of `x` by `indexOf`'s equality, `-1` when absent.
+    arr_last_index_of_i32,
+    arr_last_index_of_str,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -478,7 +482,7 @@ pub const HelperGroup = enum {
             .str_split => &.{ .arr_new, .mem_eq, .str_slice },
             .arr_slice, .arr_reverse, .arr_prepend, .arr_push, .arr_concat => &.{.arr_new},
             .arr_zip => &.{ .arr_new, .alloc },
-            .arr_index_of_str => &.{.str_eq},
+            .arr_index_of_str, .arr_last_index_of_str => &.{.str_eq},
             .arr_join_str => &.{.alloc},
             .arr_join_i32 => &.{ .arr_new, .i32_to_str, .arr_join_str },
             .str_last_index_of => &.{.mem_eq},
@@ -572,6 +576,8 @@ pub const Helper = enum {
     unknown_eq,
     print_unknown,
     print_unknown_raw,
+    arr_last_index_of_i32,
+    arr_last_index_of_str,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {

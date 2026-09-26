@@ -1,1 +1,1 @@
-std-unsupported-on-target: std/testing/mocks.newMock has no `@external` for target 'wasm'
+`thenReturnCell` has no `#[@External.<Target>(…)]` for the wasm backend

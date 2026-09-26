@@ -695,6 +695,21 @@ annotation with the `@Option<T>` diagnostic's text, unless the module declares a
 rewrite never firing on an optional receiver. `x?.field`, narrowing, and the index of C-02
 (`rows[0]?.length`) are the spellings; a METHOD on an optional (`unwrapOr`, …) is not a member read.
 
+## STD-001 names the function called (C-03)
+
+`std-unsupported-on-target` belongs to the call of a host-bound std function
+with no binding for the target, and names it at the call. A symbol import
+(`import {erlang.node}`) is refused at the import, naming its leaf when the leaf
+is one; a namespace import is recorded (`gateStdTargetSupport`,
+`Env.stdTargetGates`) and a qualified call of one of the module's unsupported
+functions reds at the call (`checkStdGatedCall`). A gated import none of whose
+unsupported functions is called is still refused — the module has no binding
+for the target — at the import, once the program is inferred
+(`reportStdTargetGates`), naming the module and every function it lacks. It
+named the module's first unsupported declaration (`std/erlang.abs`) at no
+location. Cells: `tests/language/run/std_unsupported_names_the_call`,
+`run/std_erlang_node`, `modules/import_std_folder_namespace` (`wasm.expect`).
+
 ## An integer literal takes the width its position asks for (01-std's handover)
 
 `inferLiteralExpr` types an integer literal as the integer type `env.expectedType` names (through
@@ -1427,8 +1442,13 @@ at its own index: a label claims the parameter it names (C-04), so
 second mapping out — two mappings could disagree and the expectation would name
 the wrong enum. It allocates nothing for a positional call (`null` means
 "argument `i` is parameter `i`") and answers `params.len` — no expectation —
-for an argument whose parameter is not knowable. `calleeParams` is read once,
-above the argument loop, and the arity arm's default fill reads that same list.
+for an argument whose parameter is not knowable. A complete labelled call has
+no fill to invert, and there a label still names its parameter: the slot is the
+parameter of that name (`Event(name: "a", ts: 0)` reads `ts: i64` at its second
+argument, whatever order the labels come in — an integer literal read no
+expectation there and stayed `i32`; `tests/language/run/integer_literal_labelled_field.bp`).
+`calleeParams` is read once, above the argument loop, and the arity arm's
+default fill reads that same list.
 
 **ES5** — when two enums carry the path and the expectation says nothing,
 `raiseAmbiguousSectionPath` refuses at the head segment, naming every candidate

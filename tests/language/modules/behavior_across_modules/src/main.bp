@@ -8,8 +8,8 @@
 ////   * an implementer imported beside the behavior, passed to a parameter
 ////     typed by it (`pages.bp`);
 ////   * the same implementer held in a `val` annotated with it (`pages.bp`).
-//// wasm is listed in `expected-failures.txt`: a method called through a
-//// behavior-typed value traps there.
+//// On all four targets; wasm trapped at the method called through the
+//// behavior-typed value until it read the type from the value's header.
 
 pub mod web;
 pub mod ssr;

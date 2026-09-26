@@ -49,6 +49,10 @@ fn main() {
     local.get $__case_0
     i32.const 4
     i32.sub
+    local.get $__case_0
+    i32.const 256
+    i32.ge_u
+    i32.mul
     i32.load
     i32.const 260
     i32.eq
@@ -66,6 +70,10 @@ fn main() {
     local.get $__case_0
     i32.const 4
     i32.sub
+    local.get $__case_0
+    i32.const 256
+    i32.ge_u
+    i32.mul
     i32.load
     i32.const 296
     i32.eq
@@ -123,6 +131,10 @@ fn main() {
     local.get $__mem1
     i32.const 4
     i32.sub
+    local.get $__mem1
+    i32.const 256
+    i32.ge_u
+    i32.mul
     i32.load
     i32.const 296
     i32.eq
@@ -135,6 +147,10 @@ fn main() {
     local.get $__mem2
     i32.const 4
     i32.sub
+    local.get $__mem2
+    i32.const 256
+    i32.ge_u
+    i32.mul
     i32.load
     i32.const 260
     i32.eq
@@ -166,12 +182,20 @@ fn main() {
     local.get $__mem4
     i32.const 4
     i32.sub
+    local.get $__mem4
+    i32.const 256
+    i32.ge_u
+    i32.mul
     i32.load
     i32.const 364
     i32.eq
     local.get $__mem4
     i32.const 4
     i32.sub
+    local.get $__mem4
+    i32.const 256
+    i32.ge_u
+    i32.mul
     i32.load
     i32.const 336
     i32.eq
@@ -201,12 +225,20 @@ fn main() {
     local.get $__mem6
     i32.const 4
     i32.sub
+    local.get $__mem6
+    i32.const 256
+    i32.ge_u
+    i32.mul
     i32.load
     i32.const 364
     i32.eq
     local.get $__mem6
     i32.const 4
     i32.sub
+    local.get $__mem6
+    i32.const 256
+    i32.ge_u
+    i32.mul
     i32.load
     i32.const 336
     i32.eq

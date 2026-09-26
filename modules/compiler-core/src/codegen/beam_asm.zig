@@ -671,6 +671,21 @@ fn exprPropagates(e: ast.Expr) bool {
     };
 }
 
+/// Whether `emitSubPattern` lowers `p` — every shape but a list, an
+/// alternation or a multi-subject pattern, at any depth.
+fn subPatternLowered(p: ast.Pattern) bool {
+    return switch (p) {
+        .list, .@"or", .multi => false,
+        .variant => |v| switch (v.payload) {
+            .literals => |ls| for (ls) |sp| {
+                if (!subPatternLowered(sp)) break false;
+            } else true,
+            else => true,
+        },
+        else => true,
+    };
+}
+
 fn patternYSlots(p: ast.Pattern) u32 {
     return switch (p) {
         .wildcard, .numberLit, .stringLit, .@"or" => 0,
@@ -837,6 +852,13 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 countCallStaging(em, if (cc.receiver) |r| r.* else null, cc.args, count);
                 // `@print(a, b, …)` builds its argument list on the stack.
                 if (cc.is_builtin and isPrintBuiltin(cc.callee) and cc.args.len > 1) count.* += 1;
+                // `names.pop()` on a module-level `var` parks the popped pair
+                // and the rest it writes back (`primPop`). Counted for any
+                // bare receiver named like one: a local of the same name only
+                // leaves two slots unused.
+                if (!cc.is_builtin and std.mem.eql(u8, cc.callee, "pop") and cc.args.len == 0) if (cc.receiver) |r| {
+                    if (r.* == .identifier and r.identifier.kind == .ident and em.module_vars.contains(r.identifier.kind.ident)) count.* += 2;
+                };
                 // `@block { … }` runs its statements in this frame.
                 if (cc.is_builtin and std.mem.eql(u8, cc.callee, "block")) {
                     for (cc.trailing) |t| countLocalsRec(em, t.body, count);
@@ -869,7 +891,10 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             },
             .assertPattern => |ap| {
                 countLocalsInExpr(em, ap.expr.*, count);
-                count.* += patternYSlots(ap.pattern);
+                // The pattern's binders, once in the arm and once from the
+                // value either path answers (`lowerAssertPattern`).
+                const slots = patternYSlots(ap.pattern);
+                count.* += if (subPatternLowered(ap.pattern)) 2 * slots else slots;
                 countLocalsInExpr(em, ap.expr.*, count);
                 countLocalsInExpr(em, ap.handler.*, count);
             },
@@ -2119,6 +2144,8 @@ const Emitter = struct {
     method_helper_name: ?[]const u8 = null,
     /// `'-bp_yield_step-'/1` — `seq.next()` by hand (decision 122).
     yield_step_helper_name: ?[]const u8 = null,
+    /// `'-bp_pop-'/1` (`primPop`), emitted once per module on first use.
+    pop_helper_name: ?[]const u8 = null,
     /// Owns the parsed `primitives.bp` prelude (and every key string built for
     /// the tables below) for the whole emission.
     prelude_arena: std.heap.ArenaAllocator,
@@ -2308,6 +2335,7 @@ const Emitter = struct {
         if (self.field_helper_name) |n| self.alloc.free(n);
         if (self.method_helper_name) |n| self.alloc.free(n);
         if (self.yield_step_helper_name) |n| self.alloc.free(n);
+        if (self.pop_helper_name) |n| self.alloc.free(n);
     }
 
     /// §A5: collect `#[@External.Erlang(…)]` annotations on primitive behavior
@@ -3717,6 +3745,7 @@ const Emitter = struct {
         field: ?[]const u8,
         method: ?[]const u8,
         yield_step: ?[]const u8,
+        pop: ?[]const u8,
     };
 
     fn takeHelperNames(self: *Emitter) HelperNames {
@@ -3732,6 +3761,7 @@ const Emitter = struct {
             .field = self.field_helper_name,
             .method = self.method_helper_name,
             .yield_step = self.yield_step_helper_name,
+            .pop = self.pop_helper_name,
         };
         self.at_helper_name = null;
         self.index_helper_name = null;
@@ -3744,6 +3774,7 @@ const Emitter = struct {
         self.field_helper_name = null;
         self.method_helper_name = null;
         self.yield_step_helper_name = null;
+        self.pop_helper_name = null;
         return saved;
     }
 
@@ -3770,6 +3801,8 @@ const Emitter = struct {
         self.method_helper_name = saved.method;
         if (self.yield_step_helper_name) |n| self.alloc.free(n);
         self.yield_step_helper_name = saved.yield_step;
+        if (self.pop_helper_name) |n| self.alloc.free(n);
+        self.pop_helper_name = saved.pop;
     }
 
     /// Open `type_name`'s module: its bodies write into `buf`, its labels start
@@ -4724,6 +4757,14 @@ const Emitter = struct {
                 if (self.forEachLambda(stmt.expr)) |each| {
                     if (try self.lowerMutatingFold(.{ .params = &.{each.param} }, each.body, each.recv.*)) return;
                 }
+                // `names.push(x)` on a module-level `var` (decision 28) is
+                // written back through its memory, as `names = …` is. The
+                // grown list was computed and dropped, so a module whose
+                // component model is load-time self-registration registered
+                // nothing.
+                if (self.moduleVarPush(stmt.expr)) |mv| {
+                    return self.emitMemoryWrite(mv.name, mv.mem, false, &stmt.expr);
+                }
                 try self.lowerExprIntoX0(stmt.expr);
                 // `out.push(x)` on a local array rebinds it: the call's value
                 // is the grown list.
@@ -5358,6 +5399,25 @@ const Emitter = struct {
                 };
                 const subjects = [_]ast.Expr{ap.expr.*};
                 try self.lowerCase(&subjects, &arms);
+                // `val assert P = e catch h` binds P's names from the value
+                // either path answers — `e` when it matched, the fallback `h`
+                // otherwise — as erlang's `P = case … end` does. Bound in the
+                // first arm alone, the fallback path left them unwritten and
+                // `erlc +from_asm` refused the module (`{unassigned, {y, N}}`).
+                // A pattern that binds nothing (`val assert 42 = x catch 0`)
+                // has nothing to rebind, and erlang does not match it again.
+                // A list or an alternation has no `emitSubPattern` lowering
+                // and keeps the arm's binding alone.
+                if (patternYSlots(ap.pattern) == 0 or !subPatternLowered(ap.pattern)) return;
+                const fail_l = self.allocLabel();
+                const ok_l = self.allocLabel();
+                try self.emitSubPattern(0, ap.pattern, fail_l, 1);
+                try beamEmitter.writeJump(self.out, ok_l);
+                try beamEmitter.writeLabel(self.out, fail_l);
+                try beamEmitter.writeTestHeap(self.out, 3, 1);
+                try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("badmatch"), Op.xr(0) });
+                try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
+                try beamEmitter.writeLabel(self.out, ok_l);
             },
         }
     }
@@ -6319,6 +6379,9 @@ const Emitter = struct {
         // x-register pattern and return. The inline switch below handles the
         // BEAM-irreducible cases (`++` ops, inline funs, custom heap shapes,
         // BIF aliases).
+        if (k == .array and std.mem.eql(u8, callee, "pop") and cc.args.len + cc.trailing.len == 0) {
+            if (try self.primPop(recv_expr, mode)) return true;
+        }
         if (try self.tryEmitPrimAnnotation(k, callee, recv_expr, cc, mode)) return true;
         if (try self.emitPrimInline(k, callee, recv_expr, cc, mode)) return true;
         // An `@External.Erlang` template (`"string:trim($0, leading)"`) is
@@ -7306,6 +7369,98 @@ const Emitter = struct {
         try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
         buf.deinit();
         self.yield_step_helper_name = name;
+        return name;
+    }
+
+    /// `xs.pop()` on a local: the last element (absent on an empty list), and
+    /// the local's slot rebound to the rest — `pop` SHRINKS the array
+    /// (`Array.prototype.pop`), as `push` grows it. Its template alone
+    /// (`lists:last/1`) read the element and left the list as it was.
+    /// `'-bp_pop-'/1` answers `{Last, Rest}`; element 2 goes back into the
+    /// local's slot and element 1 is the call's value. A receiver that is not
+    /// a local keeps the template.
+    fn primPop(self: *Emitter, recv_expr: *const ast.Expr, mode: CallMode) anyerror!bool {
+        const name = switch (recv_expr.*) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| n,
+                else => return false,
+            },
+            else => return false,
+        };
+        const reg = self.reg_map.get(name) orelse {
+            // A module-level `var`: the rest goes back through its memory,
+            // from a slot the write reads by name.
+            const mem = self.module_vars.get(name) orelse return false;
+            const helper = try self.ensurePopHelper();
+            const labels = try self.fnLabelsFor(helper, 1);
+            try self.lowerExprIntoX0(recv_expr.*);
+            try beamEmitter.writeCall(self.out, .normal, 1, .{ .local = labels.entry }, 0);
+            const pair_y = self.next_y;
+            const rest_y = self.next_y + 1;
+            self.next_y += 2;
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(pair_y));
+            try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(2), Op.xr(0) }, Dst.yr(rest_y));
+            const rest_name = try std.fmt.allocPrint(self.alloc, "__bp_pop_rest{d}", .{rest_y});
+            defer self.alloc.free(rest_name);
+            try self.reg_map.put(rest_name, .{ .y = rest_y });
+            defer _ = self.reg_map.remove(rest_name);
+            const rest_ref: ast.Expr = .{ .identifier = .{ .loc = recv_expr.getLoc(), .kind = .{ .ident = rest_name } } };
+            try self.emitMemoryWrite(name, mem, false, &rest_ref);
+            try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(1), Op.yr(pair_y) }, Dst.xr(0));
+            if (mode == .tail) try self.emitReturn();
+            return true;
+        };
+        const helper = try self.ensurePopHelper();
+        const labels = try self.fnLabelsFor(helper, 1);
+        try beamEmitter.writeMoveOp(self.out, reg.operand(), Dst.xr(0));
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .local = labels.entry }, 0);
+        // `element/2` rather than `get_tuple_element`: the validator does
+        // not know a local call's answer is a tuple.
+        try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(2), Op.xr(0) }, reg.dest());
+        try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(1), Op.xr(0) }, Dst.xr(0));
+        if (mode == .tail) try self.emitReturn();
+        return true;
+    }
+
+    /// Emit (once per module) `'-bp_pop-'/1`: `[]` → `{undefined, []}`, else
+    /// `{lists:last(L), lists:droplast(L)}`.
+    fn ensurePopHelper(self: *Emitter) anyerror![]const u8 {
+        if (self.pop_helper_name) |n| return n;
+        const name = try self.alloc.dupe(u8, "'-bp_pop-'");
+        try self.reserveFn(name, 1);
+        const labels = try self.fnLabelsFor(name, 1);
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &buf.writer;
+
+        const empty_l = self.allocLabel();
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, name, 1, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, name, 1);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try beamEmitter.writeTest(self.out, .is_nonempty_list, empty_l, &.{Op.xr(0)});
+        try beamEmitter.writeAllocate(self.out, 1, 1);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0)); // y0 = L
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "lists", .function = "droplast" } }, 1);
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1)); // x1 = L
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0)); // y0 = Rest
+        try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.xr(0));
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "lists", .function = "last" } }, 1);
+        try beamEmitter.writeTestHeap(self.out, 3, 1);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.xr(0), Op.yr(0) });
+        try beamEmitter.writeDeallocate(self.out, 1);
+        try beamEmitter.writeReturn(self.out);
+        try beamEmitter.writeLabel(self.out, empty_l);
+        try beamEmitter.writeTestHeap(self.out, 3, 0);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("undefined"), Op.nil });
+        try beamEmitter.writeReturn(self.out);
+
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.pop_helper_name = name;
         return name;
     }
 
@@ -8848,7 +9003,19 @@ const Emitter = struct {
                 } else if (isVariantPath(written) or self.enum_variants.contains(name)) {
                     var vbuf: [256]u8 = undefined;
                     const vatom = try atomName(self.variantTag(written), &vbuf);
-                    try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ Op.xr(src), Op.atom(vatom) });
+                    if (!isVariantPath(written) and self.record_fields.contains(name)) {
+                        // The spelling is a record too: the variant's atom,
+                        // else the record's tagged tuple (the arm-level
+                        // collision above, one element down).
+                        const record_label = self.allocLabel();
+                        const ok_label = self.allocLabel();
+                        try beamEmitter.writeTest(self.out, .is_eq, record_label, &.{ Op.xr(src), Op.atom(vatom) });
+                        try beamEmitter.writeJump(self.out, ok_label);
+                        try beamEmitter.writeLabel(self.out, record_label);
+                        const testable = try self.emitTypeTestBranchOn(.{ .named = name }, src, fail);
+                        if (!testable) try beamEmitter.writeJump(self.out, fail);
+                        try beamEmitter.writeLabel(self.out, ok_label);
+                    } else try beamEmitter.writeTest(self.out, .is_eq, fail, &.{ Op.xr(src), Op.atom(vatom) });
                 } else if (primitiveTypeName(name) or self.record_fields.contains(name) or self.enum_variant_names.contains(name)) {
                     const testable = try self.emitTypeTestBranchOn(.{ .named = name }, src, fail);
                     if (!testable) try beamEmitter.writeJump(self.out, fail);
@@ -8881,6 +9048,33 @@ const Emitter = struct {
                     for (elems, 0..) |e, i| try self.emitElementPattern(src, i, e, v.rest, fail, free);
                 },
                 .variant => {
+                    // A RECORD's constructor pattern (`Person(n, a)`, `val
+                    // assert`'s shape over a record): its tagged tuple, the
+                    // type atom first, the fields at their declared positions.
+                    // Read as a variant, the tag was a variant atom no value
+                    // carries, and the pattern never matched.
+                    const rec_name = bareVariantName(v.name);
+                    if (self.isRecordPattern(v.name)) if (self.record_fields.get(rec_name)) |fields| {
+                        var tag_buf: [512]u8 = undefined;
+                        const tag = try atomName(try self.recordTagAtom(rec_name), &tag_buf);
+                        try beamEmitter.writeTest(self.out, .is_tagged_tuple, fail, &.{ Op.xr(src), .{ .untagged = @as(i64, @intCast(fields.len + 1)) }, Op.atom(tag) });
+                        switch (v.payload) {
+                            .binding => |bn| try self.emitSubPattern(src, .{ .ident = bn }, fail, free),
+                            .fields, .literals => {
+                                const n: usize = if (v.payload == .fields) v.payload.fields.len else v.payload.literals.len;
+                                for (0..n) |i| {
+                                    const at: usize = if (v.labels.len > i and v.labels[i].len > 0) blk: {
+                                        for (fields, 0..) |f, k| if (std.mem.eql(u8, f, v.labels[i])) break :blk k;
+                                        break :blk fields.len;
+                                    } else i;
+                                    if (at >= fields.len) return error.NestedPatternUnsupported;
+                                    const elem: ast.Pattern = if (v.payload == .fields) .{ .ident = v.payload.fields[i] } else v.payload.literals[i];
+                                    try self.emitElementPattern(src, at + 1, elem, false, fail, free);
+                                }
+                            },
+                        }
+                        return;
+                    };
                     var vbuf: [256]u8 = undefined;
                     const vatom = try atomName(self.variantTag(v.name), &vbuf);
                     const written: usize = switch (v.payload) {
@@ -8888,7 +9082,9 @@ const Emitter = struct {
                         .literals => |l| l.len,
                         .binding => 1,
                     };
-                    const declared = self.declaredVariantShape(v.name);
+                    // A `@Result` pattern (`Result.Error`) is the result's
+                    // `{error, E}` even where a user enum declares `Error`.
+                    const declared = if (isResultPath(v.name)) null else self.declaredVariantShape(v.name);
                     if (v.payload == .binding) {
                         // `Ok ok`: the tag, and the whole value bound.
                         try beamEmitter.writeTest(self.out, .is_tuple, fail, &.{Op.xr(src)});
@@ -8963,6 +9159,13 @@ const Emitter = struct {
     /// fills: the position of the label the pattern WROTE when it wrote one
     /// (§5.1 P4), else `i`. Null when the label names no declared field. The
     /// twin of `erlang.zig`'s `slotIndex`.
+    /// A constructor pattern naming a record this module places, not a
+    /// variant (`emitSubPattern` tests its type atom).
+    fn isRecordPattern(self: *const Emitter, written: []const u8) bool {
+        const name = bareVariantName(written);
+        return !isVariantPath(written) and !self.enum_variants.contains(name) and self.record_fields.contains(name);
+    }
+
     fn variantSlotIndex(v: anytype, declared: ?[]const ast.Field, i: usize) ?usize {
         if (v.labels.len > i and v.labels[i].len > 0) {
             const d = declared orelse return i;
@@ -9076,7 +9279,24 @@ const Emitter = struct {
                         var vbuf: [256]u8 = undefined;
                         const vatom = try atomName(self.variantTag(written), &vbuf);
                         const next = self.allocLabel();
-                        try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.atom(vatom) });
+                        if (!isVariantPath(written) and self.record_fields.contains(name)) {
+                            // One spelling can be BOTH a `type` this module
+                            // places and a variant some enum declares (`type
+                            // Block(…)` beside `Token.Layout { Block, … }`).
+                            // §5.3b: the SUBJECT's type says which one the arm
+                            // means, and this emitter has no subject type, so
+                            // the arm tests both — the variant's atom, else the
+                            // record's tagged tuple. Tested by the atom alone, a
+                            // `case` over `Block | Vec` matched no arm.
+                            const record_label = self.allocLabel();
+                            const arm_label = self.allocLabel();
+                            try beamEmitter.writeTest(self.out, .is_eq, record_label, &.{ Op.xr(0), Op.atom(vatom) });
+                            try beamEmitter.writeJump(self.out, arm_label);
+                            try beamEmitter.writeLabel(self.out, record_label);
+                            const testable = try self.emitTypeTestBranch(.{ .named = name }, next);
+                            if (!testable) try beamEmitter.writeJump(self.out, next);
+                            try beamEmitter.writeLabel(self.out, arm_label);
+                        } else try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.atom(vatom) });
                         try self.emitArmTail(arm, subj_y, end_label);
                         try beamEmitter.writeLabel(self.out, next);
                     } else if (std.mem.eql(u8, written, "true") or std.mem.eql(u8, written, "false") or primitiveTypeName(name)) {
@@ -9127,7 +9347,7 @@ const Emitter = struct {
                 // range, a tuple, `..`, labels, a literal or nested payload —
                 // are tested element by element (`emitSubPattern`). They used
                 // to reach an untested arm and match every subject.
-                .variant => |v| if (v.shape != .variant or v.rest or v.labels.len > 0 or v.payload == .literals) {
+                .variant => |v| if (v.shape != .variant or v.rest or v.labels.len > 0 or v.payload == .literals or self.isRecordPattern(v.name)) {
                     try self.emitPatternArm(arm, subj_y, end_label);
                 } else switch (v.payload) {
                     .fields => |fields| {
@@ -9491,6 +9711,28 @@ const Emitter = struct {
         const reg = self.reg_map.get(name) orelse return null;
         const il = self.instanceLowering(e.call.loc, recv.*) orelse return null;
         return if (il == .prim and il.prim == .array) reg else null;
+    }
+
+    /// `names.push(x)` whose receiver is a module-level `var` (no local of
+    /// that name in this frame), or null.
+    fn moduleVarPush(self: *const Emitter, e: ast.Expr) ?struct { name: []const u8, mem: ast.Memory } {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin or !std.mem.eql(u8, cc.callee, "push")) return null;
+        if (cc.args.len + cc.trailing.len != 1) return null;
+        const recv = cc.receiver orelse return null;
+        const name = switch (recv.*) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| n,
+                else => return null,
+            },
+            else => return null,
+        };
+        if (self.reg_map.contains(name)) return null;
+        const mem = self.module_vars.get(name) orelse return null;
+        const il = self.instanceLowering(e.call.loc, recv.*) orelse return null;
+        if (!(il == .prim and il.prim == .array)) return null;
+        return .{ .name = name, .mem = mem };
     }
 
     const ForEachLambda = struct { recv: *const ast.Expr, param: []const u8, body: []const ast.Stmt };

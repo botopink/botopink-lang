@@ -225,13 +225,12 @@ codegen/
   erlang and wasm answered `display:block` (223 passed / 2 failed against
   225 / 0, from one source). Pinned by
   `tests/language/run/case_arm_name_is_also_a_type.bp`, which runs on all four.
-  The other two backends resolve the collision by PRECEDENCE instead, and each
-  gets the mirror case wrong: erlang's `patternNodeExtra` asks `enum_variants`
-  first, so a `case` over a union of records whose arm names a record some enum
-  also declares as a variant matches the variant atom and dies with
-  `case_clause`; wasm's `findVariant` searches every enum for a bare name, so a
-  SECTION whose name also names a record answers its parent's first arm. Both
-  are reported, neither is this backend's.
+  erlang, beam and wasm test both the same way — the variant's identity
+  `orelse` the record's type (`tests/language/run/case_arm_record_named_like_a_variant.bp`,
+  the mirror case: a `case` over `Block | Vec` naming the record). A
+  `val assert` over a variant (`buildPatternCheck`) tests the `tag` as a `case`
+  arm does; `instanceof Circle` named no class and died `ReferenceError`
+  (`tests/language/run/val_assert_variant_pattern.bp`).
 - **Self tail calls are a LOOP, not a frame** (`selfTailLoop`, D6 of
   1.0.10-beta `00 · 04-js`). V8 has no tail-call elimination, so `return f(…)`
   inside `f` cost a stack frame per round and a few thousand rounds ended the
@@ -1062,7 +1061,22 @@ codegen/
   answers `push` for lists only) is marked by `collectMutations` and lowered as
   the rebinding `Out@1 = (Out ++ [X])` — in straight-line position too — so the
   group-out expression reads the grown list. The mutation is name-driven
-  (`push`); `codegen/beam_asm.zig` has no equivalent yet.
+  (`push`). On a module-level `var` the grown list is written back through the
+  var's memory, as `names = …` is (`bindExpr` → `memoryWrite`), and the name is
+  not threaded through a loop; the push used to compute the list and drop it,
+  so load-time self-registration registered nothing
+  (`tests/language/modules/module_var_self_registration`).
+  `xs.pop()` answers the last element and SHRINKS the list (`popLocal`,
+  `popStep`, `popNode`): it rides `seq.next()`'s machinery — `collectSeqNexts`
+  finds it wherever the statement evaluates it unconditionally (now a branch's
+  condition too, which is where `xs.pop() ?? 0` puts it), the statement hoists
+  `{BpPopN, Xs@v} = case Xs of [] -> {undefined, []}; L -> {lists:last(L),
+  lists:droplast(L)} end` in front of itself, and a loop threads `xs`; a pop it
+  could not hoist is a `begin … end` block in place, and on a module-level
+  `var` the rest is written back through its memory. The template alone
+  (`lists:last/1`) read the element and left the list, so a
+  `while (xs.length() > 0)` over it never ended
+  (`tests/language/run/array_pop_removes.bp`).
   A local closure whose body reassigns variables of the enclosing function
   (`val emit = { t -> toks = toks.append([t]); }`) cannot rebind what it
   captured, so it is lowered with those variables as an extra last parameter and
@@ -1210,7 +1224,11 @@ codegen/
   immediate fun, because the test reads it more than once. A `case` arm naming
   a type appends the same expression to the arm's guards
   (`patternNodeExtra`'s `.ident`): written as the bare binder it was, the first
-  arm of a `case` over `Person | Vec` matched every subject. Inside
+  arm of a `case` over `Person | Vec` matched every subject. A name that is
+  both a record and some enum's variant binds and guards
+  `V =:= <variant atom> orelse <record test>`: asked of `enum_variants` first,
+  unconditionally, it matched the atom alone and a `Block` record died
+  `case_clause`. Inside
   `if (x is i32) { … }` the local is the converted value (§4.1): the then-arm
   opens with `X@n = trunc(X)` (`float` for a float type) — `isNarrowing`, at
   each `if` lowering (plain, mutating, early-return and the fold's
@@ -1826,7 +1844,25 @@ codegen/
   `if`/`loop`/`forEach`) lowers to `lists:foldl/3` with those names as the
   accumulator (one value, or a tuple), unpacked back into the caller's slots
   (`unpackGroupFromX0`); `break`/`continue` return the group. A statement `out.push(v)` on a local Array stores the grown list back
-  into its slot (`receiverMutation`).
+  into its slot (`receiverMutation`), and on a module-level `var` through its
+  memory (`moduleVarPush` → `emitMemoryWrite`). `xs.pop()` calls
+  `'-bp_pop-'/1` (`primPop`, `ensurePopHelper`: `{Last, Rest}`, `{undefined,
+  []}` on an empty list) and stores `element(2, …)` back into the local's slot
+  — through the var's memory for a module-level `var`, from two slots
+  `countLocalsInExpr` reserves — answering `element(1, …)`.
+- **`val assert P = e catch h`** binds P's names from the value either path
+  answers — `e` when it matched, `h` otherwise — with a second
+  `emitSubPattern` after the `case` (a mismatch raises `{badmatch, V}`); bound
+  in the matching arm only, `erlc +from_asm` refused the module
+  (`{unassigned, {y, N}}`). `emitSubPattern` reads a RECORD's constructor
+  pattern by its type atom and declared field positions (`isRecordPattern`),
+  where it tested a variant atom no value carries, and a `@Result` pattern
+  (`Result.Error`) as the result's `{error, E}` even beside a user enum's
+  `Error`. A pattern that binds nothing, or that `emitSubPattern` has no
+  lowering for (a list), is not matched again.
+- **A `case` arm naming both a record and a variant** tests the variant's atom,
+  else the record's tagged tuple (`lowerCase`'s `.ident` arm, and
+  `emitSubPattern` one element down).
 - **Mutating closures** (`lowerMutatingClosure`, `mutating_closures`): a local
   `val emit = { w -> out = out + w; }` whose body reassigns names of the
   enclosing frame takes them as one extra argument after its own (the group)
@@ -2174,11 +2210,8 @@ first three are now enforced by the model, not by discipline:
 - **The primitive methods wasm does not lower trap, they never answer.**
   `primCallRes` is the table; a method missing from it emits
   `unreachable ;; prim method not lowered on wasm: <kind>.<name>/<argc>`.
-  Audited against `libs/std/src/primitives.bp` on 2026-09-18 — not lowered, each
-  verified to trap under wasmtime: **string** `charCodeAt`, `chars`,
-  `lastIndexOf`, `lines`, `padEnd`, `padStart`, `replace`, `replaceAll`,
-  `words`; **array** `chunked`, `find`, `pop`, `range`, `sliding`, `unique`;
-  **float** `toString`; **Pair** `first`, `of`, `second`, `swap`.
+  What is lowered and what traps, member by member, is `wat/AGENTS.md` §
+  The primitive method table.
   `toUpperCase` / `toLowerCase` — the host spellings `primitives.bp` gives
   `toUpper` / `toLower` through `#[@External.Node(…)]` — are not lowered: the
   checker refuses a method the primitive's interface does not declare

@@ -1,0 +1,56 @@
+//// Decision 8 §5.3b, the mirror of `case_arm_name_is_also_a_type` — a `case`
+//// over a union of RECORDS whose arm names a record that an enum section also
+//// declares as a variant (`type Block(…)` beside `Token.Layout { Block, … }`).
+//// The subject's type says which one the arm means; erlang asked the variant
+//// table first, unconditionally, so the arm tested the variant atom and the
+//// `case` died with `case_clause`; wasm tested the variant's tag and trapped,
+//// and beam matched no arm and answered the subject itself. `Vec` collides
+//// with a PAYLOAD variant, whose tag lives in memory on wasm: read off a
+//// record, a `Vec(x: 0)` answered as the wrong arm. The section cases keep
+//// the other half honest: over `Token.Layout` the same spelling is the variant.
+
+type Block(size: i32)
+type Vec(x: i32)
+
+type Token {
+    Layout {
+        Block, Inline
+    }
+    Shape {
+        Vec(n: i32), Dot
+    }
+}
+
+fn shapeName(v: Block | Vec) -> string {
+    val out = case v {
+        Block -> "block";
+        Vec -> "vec";
+    };
+    return out;
+}
+
+fn layoutName(t: Token.Layout) -> string {
+    val out = case t {
+        Block -> "layout block";
+        Inline -> "layout inline";
+    };
+    return out;
+}
+
+fn shapeOf(t: Token.Shape) -> string {
+    val out = case t {
+        Vec(n) -> "shape vec";
+        Dot -> "shape dot";
+    };
+    return out;
+}
+
+pub fn main() {
+    @print(shapeName(Block(size: 2)));
+    @print(shapeName(Vec(x: 1)));
+    @print(shapeName(Vec(x: 0)));
+    @print(layoutName(.Block));
+    @print(layoutName(.Inline));
+    @print(shapeOf(.Vec(n: 1)));
+    @print(shapeOf(.Dot));
+}

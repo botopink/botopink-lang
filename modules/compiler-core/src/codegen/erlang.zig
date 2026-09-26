@@ -5594,7 +5594,13 @@ const Emitter = struct {
         if (cc.is_builtin or !std.mem.eql(u8, cc.callee, "push")) return null;
         if (cc.args.len + cc.trailing.len != 1) return null;
         const name = identName((cc.receiver orelse return null).*) orelse return null;
-        if (!this.locals.contains(name) or !this.mutable_locals.contains(name)) return null;
+        // A module-level `var` (decision 28) is written back through its
+        // memory, as `names = …` is — `bindExpr` routes a name that is not a
+        // local there. The push's value was computed and dropped, so a module
+        // whose component model is load-time self-registration registered
+        // nothing.
+        const module_var = !this.locals.contains(name) and this.module_vars.contains(name);
+        if (!module_var and (!this.locals.contains(name) or !this.mutable_locals.contains(name))) return null;
         if (this.untyped) return name;
         const il = this.instance_lowerings.get(e.call.loc) orelse return null;
         return switch (il) {
@@ -5993,6 +5999,9 @@ const Emitter = struct {
                     try out.append(gpa, n);
                 }
             } else if (this.receiverMutation(s.expr)) |n| {
+                // A module `var` is not threaded through a loop: it is read
+                // and written through its memory at each step.
+                if (!this.locals.contains(n)) continue;
                 if (containsName(shadowed, n) or containsName(out.items, n)) continue;
                 try out.append(gpa, n);
             } else if (forEachLambda(s.expr)) |each| try this.collectMutations(gpa, each.body, each.params, out),
@@ -7275,7 +7284,10 @@ const Emitter = struct {
         }
         if (this.instance_lowerings.get(loc)) |il| switch (il) {
             // Builtin-primitive method (`xs.map(f)`, `s.split(sep)`): the host op.
-            .prim => |k| return this.primMethodNode(b, k, cc.callee, recv, cc),
+            .prim => |k| {
+                if (k == .array and this.popLocal(cc) != null) return this.popNode(b, loc, recv);
+                return this.primMethodNode(b, k, cc.callee, recv, cc);
+            },
             // Record/struct/enum instance method: a function taking the receiver
             // first — local `m(Recv, args)`, or `owner:m(Recv, args)` for an
             // imported type. A method name shared by two records is mangled to
@@ -7745,7 +7757,29 @@ const Emitter = struct {
             // `.` is always the first — `Maybe.None`, `.None` — and reaches the
             // atom through `variantTag`, which drops the path.
             .ident => |n| {
-                if (isVariantPath(n) or this.enum_variants.contains(n)) return Ast.Expr.a(this.variantTag(n));
+                if (isVariantPath(n)) return Ast.Expr.a(this.variantTag(n));
+                if (this.enum_variants.contains(n)) {
+                    // One spelling can be BOTH a `type` this module places and
+                    // a variant some enum declares (`type Block(…)` beside
+                    // `Token.Layout { Block, … }`). §5.3b: the SUBJECT's type
+                    // says which one the arm means, and this emitter walks the
+                    // untyped AST, so the arm tests both — the variant's atom
+                    // `orelse` the record's tagged tuple; the subject's own
+                    // type makes at most one of them possible. Emitted as the
+                    // atom alone, a `case` over `Block | Vec` never matched a
+                    // `Block` record and died with `case_clause`.
+                    if (extras) |ex| if (this.record_fields.contains(n)) {
+                        const name = Ast.Expr.v(try this.patternBindVar(b, n));
+                        if (!std.mem.eql(u8, name.variable, "_")) {
+                            if (try this.typeTestNode(b, .{ .named = n }, name)) |record_test| {
+                                const variant_test = try b.binop("=:=", name, Ast.Expr.a(this.variantTag(n)));
+                                try ex.guards.append(b.arena, try b.binop("orelse", variant_test, record_test));
+                                return name;
+                            }
+                        }
+                    };
+                    return Ast.Expr.a(this.variantTag(n));
+                }
                 const name = Ast.Expr.v(try this.patternBindVar(b, n));
                 // `case v { i32 { n -> n } string { s -> s.length } }` (§5.2):
                 // erlang cannot test a type in a pattern, so the arm keeps its
@@ -8153,14 +8187,30 @@ const Emitter = struct {
     /// The tag of `variant` declared by `enum_name` — `variantAtom` rendered
     /// against the module that declares the enum, so a consumer builds the
     /// owner's atom and not its own.
-    const SeqNextSite = struct { loc: ast.Loc, name: []const u8 };
+    /// A receiver-advancing call on a local: `seq.next()` (decision 122) or
+    /// `xs.pop()` — both answer a value AND rebind their receiver.
+    const SeqNextSite = struct { loc: ast.Loc, name: []const u8, pop: bool = false };
+
+    /// The local `xs.pop()` removes the last element of: a bare name bound in
+    /// this function. `pop` answers the last element and SHRINKS the array
+    /// (`Array.prototype.pop`); a list is a value here, so the name is rebound
+    /// to the rest, as `push` rebinds it to the grown list. Its template alone
+    /// (`lists:last/1`) read the element and left the list as it was.
+    fn popLocal(this: *const Emitter, cc: anytype) ?[]const u8 {
+        if (cc.is_builtin or !std.mem.eql(u8, cc.callee, "pop")) return null;
+        if (cc.args.len + cc.trailing.len != 0) return null;
+        const n = identName((cc.receiver orelse return null).*) orelse return null;
+        if (!this.locals.contains(n) and !this.module_vars.contains(n)) return null;
+        return n;
+    }
 
     /// The `seq.next()` calls on a LOCAL receiver that `e` evaluates
     /// unconditionally, in evaluation order: a call's receiver and arguments,
     /// an operator's operands (the left one only of `&&` / `||`), a binding's
-    /// value, a jump's operand, an `assert`'s condition, a literal's elements.
-    /// A lambda, a branch or a loop is not entered — what runs there may not
-    /// run at all, so its `.next()` stays where it is.
+    /// value, a jump's operand, an `assert`'s condition, a literal's elements,
+    /// a branch's condition. A lambda, a branch's arms or a loop is not
+    /// entered — what runs there may not run at all, so its `.next()` stays
+    /// where it is.
     fn collectSeqNexts(this: *const Emitter, gpa: std.mem.Allocator, e: ast.Expr, out: *std.ArrayListUnmanaged(SeqNextSite)) anyerror!void {
         switch (e) {
             .call => |c| switch (c.kind) {
@@ -8168,6 +8218,12 @@ const Emitter = struct {
                     if (cc.receiver) |r| try this.collectSeqNexts(gpa, r.*, out);
                     for (cc.args) |a| try this.collectSeqNexts(gpa, a.value.*, out);
                     const il = this.instance_lowerings.get(c.loc) orelse return;
+                    if (il == .prim and il.prim == .array) {
+                        // A module `var` pops in place (`popNode`): it is not
+                        // a local to hoist a rebinding of.
+                        if (this.popLocal(cc)) |n| if (this.locals.contains(n)) try out.append(gpa, .{ .loc = c.loc, .name = n, .pop = true });
+                        return;
+                    }
                     if (il != .sequence_next) return;
                     const n = identName((cc.receiver orelse return).*) orelse return;
                     if (!this.locals.contains(n)) return;
@@ -8180,6 +8236,13 @@ const Emitter = struct {
                 if (bin.op != .@"and" and bin.op != .@"or") try this.collectSeqNexts(gpa, bin.rhs.*, out);
             },
             .unaryOp => |un| try this.collectSeqNexts(gpa, un.expr.*, out),
+            // A branch's condition — and what `try … catch` tries — always
+            // runs; its arms may not. `a.pop() ?? 0` is such an `if`, and a
+            // loop whose body only reads `xs.pop() ?? 0` never shrank `xs`.
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| try this.collectSeqNexts(gpa, i.cond.*, out),
+                .tryCatch => |tc| try this.collectSeqNexts(gpa, tc.expr.*, out),
+            },
             .jump => |j| switch (j.kind) {
                 .@"return", .throw_, .try_ => |v| if (v) |x| try this.collectSeqNexts(gpa, x.*, out),
                 .await_ => |x| try this.collectSeqNexts(gpa, x.*, out),
@@ -8216,7 +8279,7 @@ const Emitter = struct {
         try this.collectSeqNexts(this.alloc, e, &sites);
         for (sites.items) |site| {
             const recv: ast.Expr = .{ .identifier = .{ .loc = site.loc, .kind = .{ .ident = site.name } } };
-            const step = try this.sequenceStep(b, &recv, site.name);
+            const step = if (site.pop) try this.popStep(b, &recv, site.name) else try this.sequenceStep(b, &recv, site.name);
             try stmts.append(b.arena, .{ .expr = step.bind });
             try this.hoisted_steps.put(this.alloc, site.loc, step.step);
         }
@@ -8244,6 +8307,75 @@ const Emitter = struct {
         try this.var_current.put(name, version);
         const target = Ast.Expr.v(try this.versionedVar(b, name, version));
         return .{ .bind = try b.match(try b.tuple(&.{ Ast.Expr.v(step), target }), stepped), .step = step };
+    }
+
+    /// `{BpPopN, Name@v} = case Name of [] -> {undefined, []}; BpPopListN ->
+    /// {lists:last(BpPopListN), lists:droplast(BpPopListN)} end` — the last
+    /// element (absent on an empty list) and the receiver's next version
+    /// bound to the rest.
+    fn popStep(this: *Emitter, b: Ast.Builder, recv: *const ast.Expr, name: []const u8) anyerror!SequenceStep {
+        const subject = try this.exprNode(b, recv.*);
+        this.pattern_var_next += 1;
+        const id = this.pattern_var_next;
+        const list = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "BpPopList{d}", .{id}));
+        const step = try std.fmt.allocPrint(b.arena, "BpPop{d}", .{id});
+        const popped = try b.caseInline(subject, &.{
+            try b.clause(&.{Ast.Expr{ .list = &.{} }}, &.{}, &.{try b.tuple(&.{ Ast.Expr.a("undefined"), Ast.Expr{ .list = &.{} } })}),
+            try b.clause(&.{list}, &.{}, &.{try b.tuple(&.{
+                try b.remote("lists", "last", &.{list}),
+                try b.remote("lists", "droplast", &.{list}),
+            })}),
+        });
+        const version = (this.var_next.get(name) orelse 0) + 1;
+        try this.var_next.put(name, version);
+        try this.var_current.put(name, version);
+        const target = Ast.Expr.v(try this.versionedVar(b, name, version));
+        return .{ .bind = try b.match(try b.tuple(&.{ Ast.Expr.v(step), target }), popped), .step = step };
+    }
+
+    /// `xs.pop()` on a local: the statement hoisted its step in front of
+    /// itself (`hoistSequenceSteps`) and the call reads it; one it could not
+    /// hoist (inside a branch, a lambda) is a `begin … end` block in place.
+    fn popNode(this: *Emitter, b: Ast.Builder, loc: ast.Loc, recv: *const ast.Expr) anyerror!Ast.Expr {
+        if (this.hoisted_steps.get(loc)) |step| return Ast.Expr.v(step);
+        const name = identName(recv.*) orelse unreachable;
+        if (!this.locals.contains(name)) if (this.module_vars.get(name)) |mem| {
+            // A module `var`: the rest is written back through its memory.
+            // `BpPopRestN` is bound as a local of the block so the write reads it.
+            this.pattern_var_next += 1;
+            const id = this.pattern_var_next;
+            const rest_name = try std.fmt.allocPrint(b.arena, "bpPopRest{d}", .{id});
+            const step = try std.fmt.allocPrint(b.arena, "BpPop{d}", .{id});
+            const list = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "BpPopList{d}", .{id}));
+            const popped = try b.caseInline(try this.exprNode(b, recv.*), &.{
+                try b.clause(&.{Ast.Expr{ .list = &.{} }}, &.{}, &.{try b.tuple(&.{ Ast.Expr.a("undefined"), Ast.Expr{ .list = &.{} } })}),
+                try b.clause(&.{list}, &.{}, &.{try b.tuple(&.{
+                    try b.remote("lists", "last", &.{list}),
+                    try b.remote("lists", "droplast", &.{list}),
+                })}),
+            });
+            const rest_var = Ast.Expr.v(try this.arenaVar(b, rest_name));
+            this.addLocal(rest_name);
+            const rest_ref: ast.Expr = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = rest_name } } };
+            const write = try this.memoryWrite(b, name, mem, false, rest_ref);
+            return .{ .seq = try b.exprs(&.{
+                Ast.Expr.r("begin "),
+                try b.match(try b.tuple(&.{ Ast.Expr.v(step), rest_var }), popped),
+                Ast.Expr.r(", "),
+                write,
+                Ast.Expr.r(", "),
+                Ast.Expr.v(step),
+                Ast.Expr.r(" end"),
+            }) };
+        };
+        const st = try this.popStep(b, recv, name);
+        return .{ .seq = try b.exprs(&.{
+            Ast.Expr.r("begin "),
+            st.bind,
+            Ast.Expr.r(", "),
+            Ast.Expr.v(st.step),
+            Ast.Expr.r(" end"),
+        }) };
     }
 
     /// Decision 122 — `seq.next()` by hand. An eager sequence is the list of

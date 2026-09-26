@@ -6,7 +6,9 @@
 //// The value is the node's own name — `nonode@nohost` under a plain `erl` — so
 //// the cell prints it as is. commonJS and wasm **refuse** the program
 //// (`std-unsupported-on-target`, the two `.expect` sidecars): `std/erlang` is
-//// the BEAM's vocabulary and has no `@external` for either.
+//// the BEAM's vocabulary and has no `@external` for either. The refusal names
+//// the function called, at the call: it named `std/erlang.abs`, the module's
+//// first declaration, at no location (C-03).
 ////
 //// Measured at `85f883bd`: erlang prints `nonode@nohost`; beam dies at boot
 //// `{undef, [{'std@erlang', node, [], []}, …]}` — the beam twin
