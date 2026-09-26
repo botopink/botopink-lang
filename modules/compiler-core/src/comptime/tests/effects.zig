@@ -761,7 +761,7 @@ test "decision 122: a type exposes a fn iter answering @Iterator<@Result<…>> a
         \\}
         \\fn total(b: Bag) -> @Result<i32, string> {
         \\    var acc = 0;
-        \\    for (b.iter()) { r -> acc = acc + try r; };
+        \\    for (b.iter()) { r -> val v = try r; acc = acc + v; };
         \\    return acc;
         \\}
     );

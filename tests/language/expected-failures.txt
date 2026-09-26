@@ -250,3 +250,4 @@ wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope)
 # the absent value.
 erlang   | run/optional_chain_method.bp | 02-erlang | `es.at(9)?.key.length() ?? 42` raises `{bp_unsupported_method, <<"length">>, 0, undefined}` in `'__bp_prim_length'/1` after printing `2` and `3`: the method after the `?.` link is called on `undefined` instead of short-circuiting (measured 2026-09-26)
 beam     | run/optional_chain_method.bp | 03-beam | the erlang shape through `erlc +from_asm` — `2`, `3`, then the run fails at the absent probe (measured 2026-09-26)
+wasm     | run/try_start_positions.bp | 00 · 05-wasm | decision 136: every position parses and types; an ARRAY out of a `@Result` payload iterates as empty on wasm — `for (try items(n))` and `val xs = try items(n); for (xs)` alike — so `total` misses both items and prints `6` for `9`; the position is not the defect (measured 2026-09-26)

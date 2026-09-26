@@ -38,6 +38,6 @@ test "decision 121 a Task body holds the `try` its @Result value grants" {
 
 test "decision 121 an iterator body holds the `try` its @Result item grants" {
     var acc = "";
-    for (upTo(3)) { r -> acc = acc + (try r catch 0).toString(); };
+    for (upTo(3)) { r -> val v = try r catch 0; acc = acc + v.toString(); };
     assert acc == "012";
 }

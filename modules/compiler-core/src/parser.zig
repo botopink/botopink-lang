@@ -233,6 +233,10 @@ pub const ParseErrorType = enum {
     /// declaration without a body says what it answers, even when the answer
     /// is nothing.
     bodylessFnNeedsReturnType,
+    /// `total + try r`, `-try x`, `(try x).len`, `!await ok()` — `try` and
+    /// `await` begin an expression and are never an operand (decision 136).
+    /// Located at the keyword.
+    tryAwaitOperand,
     /// `c ? 1 : 2` — there is no ternary; `if` is an expression (front 15
     /// step 3). Located at the `?`.
     ternaryAbsent,
@@ -1611,6 +1615,7 @@ pub const Parser = struct {
     };
 
     pub const parseBinaryExpr = exprs.parseBinaryExpr;
+    pub const parseExprAtStart = exprs.parseExprAtStart;
 
     pub const parsePrimary = exprs.parsePrimary;
 

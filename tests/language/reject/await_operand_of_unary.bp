@@ -1,0 +1,14 @@
+//// 1.0.10-beta decision 136 — `await` begins an expression like `try`: the
+//// operand of a unary `!` is refused at the `await`. Bind it first:
+//// `val ok = await ready(); if (!ok) { … }`.
+
+fn ready() -> @Task<bool> {
+    return true;
+}
+
+fn run() -> @Task<void> {
+    val blocked = !await ready();
+    @print(blocked);
+}
+
+pub fn main() { run(); }

@@ -34,6 +34,12 @@ second item), `import_group_modifier` (`*` on a node that opens braces) and `imp
 Front 24's type aliases (decision 118 rule 1) add `run/type_alias` — `Id`, `Pair<A, B>`, `Ids` and
 an `@Result` alias typing a function that only passes the value along, on all four targets — and
 `modules/import_type_alias` — a `pub` alias imported like a type, the types its target names with it.
+Decision 136 (`try` / `await` begin an expression) adds `run/try_start_positions` — a `val`
+initializer, a call argument, an array and a tuple element, an `if` condition, a `case` subject, a
+`for` iterable, `x = …`, a `return` and `try … catch` in an argument, on all four targets (wasm listed:
+an array out of a `@Result` payload iterates as empty) — and three `reject/` cells, one per operand
+shape: `try_operand_of_operator` (`total + try r`), `try_in_parentheses` (`(try r).toString()`) and
+`await_operand_of_unary` (`!await ready()`).
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

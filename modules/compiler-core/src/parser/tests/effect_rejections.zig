@@ -17,6 +17,7 @@ const Lexer = lexerMod.Lexer;
 const Parser = parserMod.Parser;
 const ParseErrorType = parserMod.ParseErrorType;
 const ParseErrorInfo = parserMod.ParseErrorInfo;
+const expectErrorAt = @import("helpers.zig").expectErrorAt;
 
 fn expectKind(src: []const u8, kind: ParseErrorType) !void {
     const alloc = std.testing.allocator;
@@ -205,6 +206,61 @@ test "`try await x` is `try (await x)`" {
     const inner = bind.value.jump.kind.try_.?;
     try std.testing.expect(inner.* == .jump);
     try std.testing.expect(inner.jump.kind == .await_);
+}
+
+// ── decision 136: `try` / `await` begin an expression, never an operand ──────
+//
+// Every position where an expression begins takes the prefix form, which reads
+// the whole expression after the keyword; an operand position (under a binary
+// operator, a unary prefix, a group or a chain) refuses it at the keyword.
+
+test "decision 136: `try` / `await` parse wherever an expression begins" {
+    try expectParses(
+        \\fn f(xs: i32[]) -> @Task<@Result<i32, string>> {
+        \\    try g();
+        \\    val a = try g();
+        \\    var b = try await h();
+        \\    b = try g();
+        \\    p.x = try g();
+        \\    k(try g(), await h());
+        \\    val arr = [try g(), await h()];
+        \\    val tup = #(try g(), 1);
+        \\    val rec = P(x: try g());
+        \\    if (try ok()) { b = 1; }
+        \\    while (await more()) { b = 2; }
+        \\    case try g() { 0 { b = 3; } _ { b = 4; } }
+        \\    for (try items()) { x -> b = x; }
+        \\    val c = try g() catch 0;
+        \\    k(try g() catch 0);
+        \\    return try g();
+        \\}
+        \\fn it() -> @Iterator<@Result<i32, string>> { yield try g(); }
+    );
+}
+
+test "decision 136: `try` takes the whole expression after it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "fn f() -> @Result<i32, string> { val n = try a + b; return n; }";
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.initWithSource(tokens, src);
+    const program = try p.parse(alloc);
+    const bind = program.decls[0].@"fn".body[0].expr.binding.kind.localBind;
+    const inner = bind.value.jump.kind.try_.?;
+    try std.testing.expect(inner.* == .binaryOp);
+}
+
+test "decision 136: `try` / `await` as an operand is `try-await-operand`, at the keyword" {
+    try expectErrorAt("fn f() -> @Result<i32, string> { return t + try r(); }", .tryAwaitOperand, 1, 45);
+    try expectErrorAt("fn f() -> @Result<i32, string> { val x = -try r(); return x; }", .tryAwaitOperand, 1, 43);
+    try expectErrorAt("fn f() -> @Result<i32, string> { return (try r()).length; }", .tryAwaitOperand, 1, 42);
+    try expectErrorAt("fn f() -> @Result<i32, string> { return (try r() catch 0) == 1; }", .tryAwaitOperand, 1, 42);
+    try expectErrorAt("fn f() -> @Task<bool> { return !await r(); }", .tryAwaitOperand, 1, 33);
+    try expectErrorAt("fn f() -> @Task<i32> { return x ?? await r(); }", .tryAwaitOperand, 1, 36);
+    try expectErrorAt("fn f() -> @Task<bool> { if (a && await r()) { return true; } return false; }", .tryAwaitOperand, 1, 34);
+    try expectErrorAt("fn f() -> @Task<i32> { return xs[try r()]; }", .tryAwaitOperand, 1, 34);
 }
 
 test "RI6 — legacy `yield break <expr>` is rejected at parse" {

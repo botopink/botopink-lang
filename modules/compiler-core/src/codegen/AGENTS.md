@@ -2666,8 +2666,9 @@ decision 105's (22-loops): commonJS's `function*` and beam run
 `run/generator_break_value.bp`; the eager erlang and wasm scopes are pinned in
 `tests/language/expected-failures.txt`.
 
-A `try` with no rest of the function to nest in — an operand (`total + try r`,
-decision 122's consumer), a loop's body, an `if` arm — propagates on every backend:
+A `try` with no rest of the function to nest in — a call argument or a literal's
+element (`f(try r)`; decision 136 leaves no operand form), a loop's body, an `if`
+arm — propagates on every backend:
 commonJS lowers it to `__bp_try(x)` (prelude `try_unwrap`), which throws
 `{ __bp_try: r }` to a guard `guardExprTry` wraps around the function, lambda,
 method, test or generator-loop body that used it (`return` it; `yield` it and end

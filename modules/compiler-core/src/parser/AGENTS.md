@@ -489,6 +489,7 @@ reaches**, never per arm:
 | `[..a, 3]` | `listSpreadNotLast` | `parseArrayLitExpr`, at the element after the spread (the kind existed; nothing raised it) |
 | `[...a]` | `listSpreadDotDotDot` | `parseArrayLitExpr`, at the `...` |
 | `type P(…)` then `implement A for P { … }` | `implementClauseFor` | `types.zig` `parseImplementClause`, at the `for` — the bodyless type took `implement A` as its clause |
+| `total + try r`, `-try x`, `(try r).len`, `!await t` | `tryAwaitOperand` | `parsePrimary`'s `try` / `await` arm and the group's `(` — at the keyword (decision 136; § *`try` and `await` begin an expression*) |
 | `#(x: 1, y: 2)` | `tupleLiteralLabel` | `parseTupleLitExpr`, at the label — the labeled construction is `01-checker`'s §6, and this replaces `novalBinding` at the value |
 
 **The infix refusals are hoisted the way the chain links are.** Every receiver
@@ -505,6 +506,32 @@ lists is `parseTypeRef`'s, a pattern's `|` is `patterns.zig`'s.
 in `print.zig` (`removedErrorUnion` and `patternRangeExclusive` are the
 models), the check at the one site its every spelling reaches, and an R10 case.
 `grep -c unexpectedToken` over `src/parser/**` does not grow.
+
+## `try` and `await` begin an expression (decision 136)
+
+`try` / `await` are read in one place, `parseExpr`'s prefix arms: the keyword,
+then a whole `parseExpr` (so `try a + b` is `try (a + b)` and `try await f()`
+is `try (await f())`), then an optional `catch` handler. Every position that
+calls `parseExpr` is therefore a position where they may stand — a statement, a
+`val` / `var` initializer, `x = …`, a `return` / `yield` / `break` / `throw`
+operand, a call argument, an array / tuple / record-literal element. Four
+positions the construct delimits read at a precedence level instead of through
+`parseExpr`; they go through `parseExprAtStart`, which hands a leading
+`try` / `await` to `parseExpr` (with `noTrailingLambda` set, so
+`case try g() { … }` leaves the `{` to the `case`) and anything else to
+`parseBinaryExpr`: the `if` / `while` condition, the `case` subjects, the
+right side of `x.f =` / `x.f +=`; `parseForExpr` does the same for its
+iterable.
+
+Everywhere else an operand is read — under a binary operator, a unary `-` /
+`!`, `??`, an index `[…]`, a range bound — the keyword reaches `parsePrimary`,
+which refuses it as `tryAwaitOperand` (`try-await-operand`, at the keyword,
+fix-it "bind it first: `val x = try …;`"). A group `(…)` refuses it too, right
+after its `(`: a group exists to become an operand, so `(try r).length` and
+`(try r catch 0) == 1` are the operand form. Pinned by
+`tests/effect_rejections.zig` ("decision 136: …") and the
+`tests/language/reject/{try_operand_of_operator,try_in_parentheses,await_operand_of_unary}`
+cells.
 
 ## `${…}` interpolation holes
 
