@@ -1365,6 +1365,22 @@ test "beam: a top-level fn named as a value is its fun" {
     , "1\n5\n10\n[2, 3]\n", &.{"{make_fun3, "});
 }
 
+// Decision 103 — a bare `break` at the level of a generator fn's body ends
+// it: erlang threw the loop's `'__bp_break'`, which no scope catches
+// (`{nocatch,'__bp_break'}`, `run/generator_break_value.bp`).
+test "erlang: a bare break at a generator's own level ends it" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn ends() -> @Iterator<i32> { yield 1; break; yield 2; }
+        \\fn upto(n: i32) -> @Iterator<i32> { var i = 0; while (i < n) { yield i; i = i + 1; }; if (n > 1) { break; }; yield 9; }
+        \\fn digits(g: @Iterator<i32>) -> string { var acc = ""; for (g) { x -> acc = acc + x.toString(); }; return acc; }
+        \\fn main() {
+        \\  @print(digits(ends()));
+        \\  @print(digits(upto(3)));
+        \\  @print(digits(upto(1)));
+        \\}
+    , "1\n012\n09\n", &.{"'__bp_gen_stop'"});
+}
+
 test "erlang: calling the result of a call applies it (`calleeExpr`)" {
     // `test/curried_call.bp` (C-09's backend half): `adder(3)(4)` carries its
     // callee as an expression, and lowered as a name it was `''(4)`, which

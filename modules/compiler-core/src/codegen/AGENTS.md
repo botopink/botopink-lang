@@ -638,6 +638,11 @@ codegen/
   the program declares that fn field and none a method of the name — which
   applies `'__bp_field'(C, set)`. Names alone crossed before, and the call was
   a local `set(C, 5)` no module defines.
+- **A bare `break` at a generator fn's own level** (decision 103) ends the
+  generator (`genStopThrow`): `throw({'__bp_gen_stop', Key})`, which
+  `genEndCatch` answers with `ok` — a second catch clause written only when
+  the body has one (`gen_stop_used`). It threw the loop's `'__bp_break'`,
+  which nothing caught (`run/generator_break_value.bp`).
 - **Calling the result of a call** (`adder(3)(4)`, `cc.calleeExpr` with
   `callee == ""`): `(adder(3))(4)` — `applyParen` over the callee expression's
   node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which

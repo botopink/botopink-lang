@@ -611,6 +611,8 @@ const cond_continue_signal = "__bp_cond_continue";
 const gen_end_signal = "__bp_gen_end";
 /// The throw of a `try` with no rest to nest (`tryThrowCase`).
 const try_throw_signal = "__bp_try";
+/// The throw of a bare `break` at a generator fn's own level (`genStopThrow`).
+const gen_stop_signal = "__bp_gen_stop";
 
 /// A `pub enum` of some module in the build, with its variants.
 const EnumExport = struct {
@@ -2539,6 +2541,9 @@ const Emitter = struct {
     /// throws `{'__bp_try', V}` to the function's guard (`returnNode`); a lambda
     /// resets it, since its `return` is its own.
     in_loop_body: bool = false,
+    /// Set when the generator fn body being lowered has a bare `break` at its
+    /// own level (`genStopThrow`); `genEndCatch` then catches it.
+    gen_stop_used: bool = false,
     /// True while the body of a function `fnForms` guards with `guardTry` is
     /// lowered — the only place a thrown `return` is caught.
     fn_guarded: bool = false,
@@ -4973,6 +4978,12 @@ const Emitter = struct {
         const saved = this.gen_scope;
         this.gen_scope = .{ .key = key, .names = &.{} };
         defer this.gen_scope = saved;
+        const saved_stop = this.gen_stop_used;
+        this.gen_stop_used = false;
+        defer this.gen_stop_used = saved_stop;
+        const saved_in_loop = this.in_loop_body;
+        this.in_loop_body = false;
+        defer this.in_loop_body = saved_in_loop;
         const inner = try this.bodyNode(b, body, 0, 2);
         return b.body(&.{
             try b.match(Ast.Expr.v(key), try b.call("make_ref", &.{})),
@@ -4980,6 +4991,16 @@ const Emitter = struct {
             try this.genEndCatch(b, key, inner, false),
             try b.remote("lists", "reverse", &.{try b.remote("erlang", "erase", &.{Ast.Expr.v(key)})}),
         });
+    }
+
+    /// A bare `break` at the level of a generator fn's body (decision 103):
+    /// the generator ends and emits nothing more —
+    /// `throw({'__bp_gen_stop', Key})`, which `genEndCatch` answers with `ok`.
+    /// It was the loop's `'__bp_break'`, which no scope catches:
+    /// `{nocatch,'__bp_break'}` (`run/generator_break_value.bp`).
+    fn genStopThrow(this: *Emitter, b: Ast.Builder, gs: GenScope) anyerror!Ast.Expr {
+        this.gen_stop_used = true;
+        return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(gen_stop_signal), Ast.Expr.v(gs.key) })});
     }
 
     /// A fresh generator-scope key variable, `__BpGen<n>`.
@@ -4997,22 +5018,30 @@ const Emitter = struct {
         // The key is matched by a guard: a bound variable in the pattern
         // draws erlc's "already bound" warning.
         const k_var = try std.fmt.allocPrint(b.arena, "__BpGenK{s}", .{key["__BpGen".len..]});
-        return .{ .try_catch = .{
-            .body = body,
-            .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
-                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{
-                    Ast.Expr.a(gen_end_signal),
-                    Ast.Expr.v(k_var),
-                    Ast.Expr.v(g_var),
-                    Ast.Expr.v(v_var),
-                }))},
+        const end_clause = try b.clause(
+            &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{
+                Ast.Expr.a(gen_end_signal),
+                Ast.Expr.v(k_var),
+                Ast.Expr.v(g_var),
+                Ast.Expr.v(v_var),
+            }))},
+            &.{try b.binop("=:=", Ast.Expr.v(k_var), Ast.Expr.v(key))},
+            &.{
+                try this.genPush(b, key, Ast.Expr.v(v_var)),
+                if (group) Ast.Expr.v(g_var) else Ast.Expr.a("ok"),
+            },
+        );
+        // A bare `break` at the fn's own level (`genStopThrow`) ends it with
+        // nothing more pushed.
+        const catches = if (this.gen_stop_used and !group) try b.arena.dupe(Ast.Clause, &.{
+            end_clause,
+            try b.clause(
+                &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(gen_stop_signal), Ast.Expr.v(k_var) }))},
                 &.{try b.binop("=:=", Ast.Expr.v(k_var), Ast.Expr.v(key))},
-                &.{
-                    try this.genPush(b, key, Ast.Expr.v(v_var)),
-                    if (group) Ast.Expr.v(g_var) else Ast.Expr.a("ok"),
-                },
-            )}),
-        } };
+                &.{Ast.Expr.a("ok")},
+            ),
+        }) else try b.arena.dupe(Ast.Clause, &.{end_clause});
+        return .{ .try_catch = .{ .body = body, .catches = catches } };
     }
 
     /// `erlang:put(Key, [V | erlang:get(Key)])` — one item onto the scope's list.
@@ -6569,6 +6598,8 @@ const Emitter = struct {
                 else
                     this.exprNode(b, bp.*)) else if (this.cond_loop) |names|
                     this.condBreakThrow(b, names)
+                else if (this.gen_scope != null and !this.in_loop_body)
+                    this.genStopThrow(b, this.gen_scope.?)
                 else
                     b.remote("erlang", "throw", &.{Ast.Expr.a(break_signal)}),
                 // `yield v` pushes onto the nearest generator scope's list.
