@@ -1,0 +1,10 @@
+//// 1.0.10-beta `00 · 15-language-surface` step 3 — a detached
+//// `implement A for P { … }` after a bodyless `type P(…)` is not a form: the
+//// bodyless type takes `implement A` as its own clause. Write
+//// `type P(…) implement A { … }`, or name the block `Impl implement A for P`.
+//// Refused by name at the `for`.
+
+behavior Named { fn name(self: Self) -> string; }
+type P(x: i32)
+implement Named for P { fn name(self: Self) -> string { return "p"; } }
+pub fn main() { @print(P(x: 1).name()); }

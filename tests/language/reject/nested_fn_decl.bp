@@ -1,0 +1,8 @@
+//// 1.0.10-beta `00 · 15-language-surface` step 3 — a `fn` declaration
+//// inside a body is not a form; a local function is a lambda bound to a name,
+//// `val inner = { x -> … };`. Refused by name at the `fn`.
+
+pub fn main() {
+    fn inner(x: i32) -> i32 { return x + 1; }
+    @print(inner(1).toString());
+}

@@ -195,6 +195,18 @@ The `reject/` cells name one refusal each: `loop_break_value`, `loop_yield_plain
 `generator_loop_use`, `generator_loop_await`, `generator_loop_break_outer`, `continue_outside_loop`,
 `yield_label_loop`, plus the parser's `loop_parenthesised` and `loop_condition_parameter`.
 
+### Decided-against forms and the step-4b forms (1.0.10-beta `00 · 15-language-surface`)
+
+Eight `reject/` cells, one per form the language decided against, each pinning the named kind and
+the location of the one site every spelling reaches: `ternary_absent` (`c ? 1 : 2`),
+`bitwise_operator_absent` (`1 << 2`), `char_literal_absent` (`'a'`), `nested_fn_decl` (a `fn` in a
+body), `list_spread_not_last` (`[..a, 3]`), `list_spread_dot_dot_dot` (`[...a]`),
+`implement_clause_for` (`implement A for P` after a bodyless `type P(…)`) and `tuple_literal_label`
+(`#(x: 1, y: 2)`). Two `run/` cells for forms that were parse errors and now run on all four
+targets: `decorator_negative_argument` (`#[mark(-20)]` — the decorator receives the number) and
+`loop_one_line_body` (a one-statement body in `for (xs) { x -> … }` and in a trailing lambda needs
+no `;` before its `}`).
+
 ### The `modules/` kind
 
 The kind for what a single file cannot express: `pub mod`, `import … from "<module>"`, a folder index
