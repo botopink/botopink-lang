@@ -129,7 +129,7 @@ right answer on another.
 | `run/narrowing_null_check.bp` | `if (x != null)` over a `?Record` field, a `?string`, a `?T[]` and a `?i32`; `null != x`; `&&` narrowing BOTH names; the else side of `== null`; and that the narrowing ENDS with the branch |
 | `run/narrowing_null_guard_clause.bp` | `if (x == null) { return …; }` and then the rest of the block — in a top-level `fn` and in a record METHOD, plus the `\|\|` form. Each function is called twice, present and absent |
 | `test/narrowing_null.bp` | the same rules inside a `test` block, which is the third statement walk a program has |
-| `reject/if_optional_needs_a_binder.bp` | the limit: `if (x)` on a `?T` with no binder is refused ("expected bool, got optional"). There is no truthiness on an optional |
+| `reject/if_optional_needs_a_binder.bp` | the limit: `if (x)` on a `?T` with no binder is refused ("expected bool, got ?string" — the message spells the type as a source writes it). There is no truthiness on an optional |
 
 **Shapes that do NOT narrow, measured and deliberate.** `while (x != null) { … }` leaves its body
 alone: a condition loop reassigns the name it tests (`cur = es.at(i)`), and a narrowed `cur` would

@@ -570,7 +570,7 @@ pub fn main() {
 Three shapes do **not** narrow, and each for its own reason:
 
 * `if (x)` on a `?T` with no binder is refused — "type mismatch: expected bool,
-  got optional". There is no truthiness on an optional; write `if (x) { v -> … }`
+  got ?string". There is no truthiness on an optional; write `if (x) { v -> … }`
   or `if (x != null)`.
 * `while (x != null) { … }` leaves its body alone. A condition loop reassigns the
   name it tests, and a narrowed name could not be assigned the optional again.

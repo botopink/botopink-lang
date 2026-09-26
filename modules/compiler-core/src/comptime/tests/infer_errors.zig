@@ -1358,7 +1358,7 @@ test "associated fn: `Array.range` answers an array, so a method on it resolves"
         \\pub fn main() { val b: bool = Array.range(0, 3); @print(b); }
     );
     defer std.testing.allocator.free(msg);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "expected bool, got array") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected bool, got i32[]") != null);
 }
 
 // ── decision 57: the warning channel — decision 8 §1.4 and §4.3 ──────────────

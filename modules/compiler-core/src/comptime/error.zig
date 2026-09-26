@@ -496,6 +496,25 @@ fn nonExhaustiveMessage(gpa: std.mem.Allocator, n: anytype) ![]u8 {
 /// goes through this renders byte-identically to one that does not.
 fn typeLabelAlloc(gpa: std.mem.Allocator, ty: *T.Type) ![]const u8 {
     const t = ty.deref();
+    if (t.* == .named) {
+        const n = t.named;
+        // The spellings a source writes, not the checker's internal names:
+        // `?T` (decision 2 — "optional" is no spelling), `T[]`, and a
+        // section's path (`Token.Text`, not `__Token__Text`).
+        if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) {
+            const inner = try typeLabelAlloc(gpa, n.args[0]);
+            defer gpa.free(inner);
+            return std.fmt.allocPrint(gpa, "?{s}", .{inner});
+        }
+        if (std.mem.eql(u8, n.name, "array") and n.args.len == 1 and n.args[0].deref().* == .named) {
+            const inner = try typeLabelAlloc(gpa, n.args[0]);
+            defer gpa.free(inner);
+            return std.fmt.allocPrint(gpa, "{s}[]", .{inner});
+        }
+        if (std.mem.startsWith(u8, n.name, "__") and n.name.len > 2) {
+            return std.mem.replaceOwned(u8, gpa, n.name[2..], "__", ".");
+        }
+    }
     if (t.* != .union_) return gpa.dupe(u8, typeLabel(t));
     var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(gpa);

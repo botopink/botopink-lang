@@ -748,9 +748,11 @@ member allows; deciding that means re-resolving the operation once per member, w
 so the refusal is total — more than §3.3 asks, and never wrong. §3.2's two-location diagnostic (the
 use **and** the branch that widened it) is not built either: `TypeError` carries one `Loc`.
 
-`error.zig` `typeLabelAlloc` spells a union out as `A | B` in a mismatch message; every other kind
-is `typeLabel`'s own text, so a message that goes through it renders byte-identically to one that
-does not.
+`error.zig` `typeLabelAlloc` spells a type as a source writes it in a mismatch message: a union as
+`A | B`, an optional as `?T` (decision 2 — `optional` is the checker's internal name and no
+spelling), an array as `T[]`, a section as its path (`Token.Text`, not `__Token__Text`); every
+other kind is `typeLabel`'s own text. The snapshot renderer's `expected:` / `found:` lines are
+`snapshot.zig`'s and keep their frozen spelling.
 
 **Gap, not owned here:** `(i32 | string)[]` does not parse — a parenthesised type is not in the
 grammar, so §3.1's "array of the union" has no spelling. `i32 | string[]` binds as `i32` or
@@ -831,7 +833,7 @@ this reason.
 
 | Shape | Today |
 |---|---|
-| `if (x)` on a `?T`, no binder | refused — "type mismatch: expected bool, got optional". There is no truthiness on an optional; `if (x) { v -> … }` is the form (`reject/if_optional_needs_a_binder.bp`) |
+| `if (x)` on a `?T`, no binder | refused — "type mismatch: expected bool, got ?string". There is no truthiness on an optional; `if (x) { v -> … }` is the form (`reject/if_optional_needs_a_binder.bp`) |
 | `while (x != null) { … }` | the body is NOT narrowed. A condition loop's whole point is that the body reassigns the name it tests (`cur = es.at(i)`), and a narrowed `cur` would red that assignment — narrowing the body would break the programs that work today. `?string` and `?T[]` bodies run anyway, because the `.length()` rename unwraps one optional layer by itself; a `?Record` field read in one is still a call on commonJS |
 | `o.inner != null` | only a plain NAME narrows, above. `o.inner.v` answers on commonJS and erlang today, by accident: nothing the rename touches is on that path |
 | `case x { null { … } v { … } }` | narrows already, and not through this channel — a 1-parameter arm binds the whole matched value narrowed by its own pattern (§ `case` and `comptime` block types), which is why the `null` arm leaves `v` the payload |

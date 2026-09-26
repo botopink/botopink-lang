@@ -160,7 +160,7 @@ the token that ends the form.
 The then-branch's binder accepts `_` as well as a name, and `_` binds the name
 `"_"` — the same discard `val _ = …` records. It is deliberately not a null
 `binding`: a null binding means "this `if` has no binder", and that is what makes
-an `?T` condition the type error `expected bool, got optional`. An author who
+an `?T` condition the type error `expected bool, got ?string`. An author who
 writes `_` is saying the payload is unwanted, not that the condition is a `bool`.
 
 ## A bodyless `fn` declares its return type (decision 33 (b))
