@@ -135,9 +135,6 @@ erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the on
 
 # ── §8 host externals ─────────────────────────────────────────────────────────
 
-# ── primitive methods ─────────────────────────────────────────────────────────
-erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
-
 # ── wasm, the third executable target ─────────────────────────────────────────
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only
 # run/ and modules/ cells reach wasm. The rows below are the same defects the

@@ -1,8 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print("aB".toUpperCase());
-    @print("aB".toLowerCase());
     @print("aB".toUpper());
     @print("aB".toLower());
 }
@@ -44,8 +42,6 @@ function __bp_print() {
 function main() {
     __bp_print("aB".toUpperCase());
     __bp_print("aB".toLowerCase());
-    __bp_print("aB".toUpperCase());
-    __bp_print("aB".toLowerCase());
 }
 
 function _botopink_main() {
@@ -61,8 +57,6 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-AB
-ab
 AB
 ab
 ```

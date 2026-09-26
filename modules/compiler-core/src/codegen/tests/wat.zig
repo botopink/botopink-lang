@@ -836,19 +836,14 @@ test "wat: tuple ---- an element prints by its shape, positional and labelled" {
 
 // ── step 6: the string case primitives ──────────────────────────────────────
 
-// `"aB".toUpperCase()` trapped on wasm (`prim method not lowered on wasm:
-// string.toUpperCase/0`). The language-facing name is `toUpper`; `toUpperCase`
-// is the host spelling `primitives.bp` gives it through
-// `#[@External.Node("toUpperCase")]`, which commonJS answers because it is
-// JavaScript's own. `tests/language/test/string_case_conversion.bp` writes it,
-// so both spellings now reach `$__str_case`. KNOWN-WRONG (erlang): the module
-// does not assemble — `function toUpperCase/1 undefined` — and KNOWN-WRONG
-// (beam): an empty RUN LOG. Both are `02-erlang` step 7.
-test "wat: string ---- toUpperCase and toLowerCase answer, under both spellings" {
+// `"aB".toUpper()` reaches `$__str_case` on wasm. The host spellings
+// (`toUpperCase`, JavaScript's own, which `primitives.bp` gives `toUpper`
+// through `#[@External.Node("toUpperCase")]`) used to be lowered here too; the
+// checker refuses them now (pending 0203-a, answered (b):
+// `tests/language/reject/primitive_method_undeclared.bp`).
+test "wat: string ---- toUpper and toLower answer" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    @print("aB".toUpperCase());
-        \\    @print("aB".toLowerCase());
         \\    @print("aB".toUpper());
         \\    @print("aB".toLower());
         \\}

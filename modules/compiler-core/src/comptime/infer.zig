@@ -11043,6 +11043,56 @@ fn primMethodNodeRename(env: *Env, recvTy: *T.Type, callee: []const u8) InferErr
     return null;
 }
 
+/// Pending 0203-a, answered (b): a primitive receiver answers only what its
+/// interface (and the interfaces it extends) declares — a `fn` method, a `val`
+/// field, the `len`/`size` spellings of `length` — or what an `extend` block on
+/// it adds. Anything else used to type as a fresh variable and reach the host
+/// under its own spelling: `"abc".toUpperCase()` ran on node, and erlang/beam
+/// needed an alias table to follow. Refused at the call, naming the declared
+/// method a near spelling points at: the one whose `@External.Node` host symbol
+/// is the name written, else one an edit away. Silent when the interface is not
+/// registered (an environment without the prelude has nothing to check against).
+fn refuseUndeclaredPrimMethod(env: *Env, recvTy: *T.Type, callee: []const u8, loc: ast.Loc) InferError!void {
+    const ifaceName = primitiveInterfaceName(recvTy.named.name) orelse return;
+    if (env.assocInterfaceDecls.get(ifaceName) == null) return;
+    if (std.mem.eql(u8, callee, "len") or std.mem.eql(u8, callee, "size")) return;
+    if (env.hasInherentMethod(recvTy.named.name, callee)) return;
+    var ext_it = env.extensions.iterator();
+    while (ext_it.next()) |e| {
+        const entry = e.value_ptr.*;
+        if (!std.mem.eql(u8, entry.target, recvTy.named.name) and !std.mem.eql(u8, entry.target, ifaceName)) continue;
+        if (namesContain(entry.methods, callee)) return;
+    }
+    var host_match: ?[]const u8 = null;
+    var near_match: ?[]const u8 = null;
+    var current: ?[]const u8 = ifaceName;
+    var guard: usize = 0;
+    while (current) |cname| : (guard += 1) {
+        if (guard >= 16) break;
+        const decl = env.assocInterfaceDecls.get(cname) orelse break;
+        for (decl.methods) |m| {
+            if (std.mem.eql(u8, m.name, callee)) return;
+            if (host_match == null) if (m.externalFor("node")) |ref| {
+                if (std.mem.eql(u8, ref.symbol, callee)) host_match = m.name;
+            };
+            if (near_match == null and editDistanceIsOne(callee, m.name)) near_match = m.name;
+        }
+        for (decl.fields) |f| {
+            if (std.mem.eql(u8, f.name, callee)) return;
+            if (near_match == null and editDistanceIsOne(callee, f.name)) near_match = f.name;
+        }
+        current = if (decl.extends.len > 0) decl.extends[0] else null;
+    }
+    const tn = try errorMod.typeLabelAlloc(env.arena, recvTy);
+    const msg = if (host_match orelse near_match) |sugg|
+        try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no method `{s}` — did you mean `{s}`?", .{ diagnostics.unknown_primitive_method, tn, callee, sugg })
+    else
+        try std.fmt.allocPrint(env.arena, "{s}: `{s}` has no method `{s}`", .{ diagnostics.unknown_primitive_method, tn, callee });
+    const hint = try std.fmt.allocPrint(env.arena, "The methods of `{s}` are the ones `{s}` declares in the std prelude (`primitives.bp`), and those an `extend` block adds.", .{ tn, ifaceName });
+    env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+    return error.TypeError;
+}
+
 const FoundMethod = struct { method: ast.BehaviorMethod, owner: []const u8 };
 
 /// Find an instance method (`self` receiver) named `callee` in interface
@@ -11954,6 +12004,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 .trailing = typedTrailing,
                             } } } };
                         }
+                        try refuseUndeclaredPrimMethod(env, recvTy, call.callee, loc);
                     }
                 }
 

@@ -494,7 +494,7 @@ fn nonExhaustiveMessage(gpa: std.mem.Allocator, n: anytype) ![]u8 {
 /// `typeLabel`, with a union spelled out as `A | B`. Owned by the caller.
 /// Every other kind is `typeLabel`'s own text, duplicated, so a message that
 /// goes through this renders byte-identically to one that does not.
-fn typeLabelAlloc(gpa: std.mem.Allocator, ty: *T.Type) ![]const u8 {
+pub fn typeLabelAlloc(gpa: std.mem.Allocator, ty: *T.Type) ![]const u8 {
     const t = ty.deref();
     if (t.* == .named) {
         const n = t.named;

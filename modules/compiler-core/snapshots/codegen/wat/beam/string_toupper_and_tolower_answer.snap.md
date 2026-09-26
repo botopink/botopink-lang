@@ -1,8 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print("aB".toUpperCase());
-    @print("aB".toLowerCase());
     @print("aB".toUpper());
     @print("aB".toLower());
 }
@@ -21,18 +19,6 @@ fn main() {
     {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    %% unresolved_method: toUpperCase/1
-    {move, {literal, {unresolved_method, toUpperCase, 1}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-    {test_heap, 2, 1}.
-    {put_list, {x, 0}, nil, {x, 0}}.
-    {call, 1, {f, 9}}.
-    %% unresolved_method: toLowerCase/1
-    {move, {literal, {unresolved_method, toLowerCase, 1}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-    {test_heap, 2, 1}.
-    {put_list, {x, 0}, nil, {x, 0}}.
-    {call, 1, {f, 9}}.
     {move, {literal, <<"aB">>}, {x, 0}}.
     {call_ext, 1, {extfunc, string, uppercase, 1}}.
     {test_heap, 2, 1}.
@@ -290,4 +276,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+AB
+ab
 ```

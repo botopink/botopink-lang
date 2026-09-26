@@ -185,6 +185,12 @@ pub const src_takes_no_arguments: []const u8 = "src-takes-no-arguments";
 /// A `@name(…)` call no builtin arm recognises. Replaces the silent `void`
 /// fallback that let a typo (`@pritn`) compile (decision 67: refuse).
 pub const unknown_builtin: []const u8 = "unknown-builtin";
+/// A method a primitive receiver's interface does not declare
+/// (`"abc".toUpperCase()` — `String` declares `toUpper`). Used to type as a
+/// fresh variable and reach the host under its own spelling (pending 0203-a,
+/// answered (b)): refused, with the declared method whose host spelling or
+/// name is nearest.
+pub const unknown_primitive_method: []const u8 = "unknown-primitive-method";
 
 /// RC4 — `@getContext(<value>)` (the argument must be a type).
 pub const context_getcontext_expects_type: []const u8 = "context-getcontext-expects-type";

@@ -2033,9 +2033,9 @@ first three are now enforced by the model, not by discipline:
   `words`; **array** `chunked`, `find`, `pop`, `range`, `sliding`, `unique`;
   **float** `toString`; **Pair** `first`, `of`, `second`, `swap`.
   `toUpperCase` / `toLowerCase` — the host spellings `primitives.bp` gives
-  `toUpper` / `toLower` through `#[@External.Node(…)]`, which source writes and
-  commonJS answers — used to be in that list and are now lowered to
-  `$__str_case` like their botopink names.
+  `toUpper` / `toLower` through `#[@External.Node(…)]` — are not lowered: the
+  checker refuses a method the primitive's interface does not declare
+  (`unknown-primitive-method`, pending 0203-a answered (b)).
   **string `at`** left it on 2026-09-21: it is the reader decision 63's
   amendment gave every indexable type (`charAt` before it), it is what `s[i]`
   rewrites to, and commonJS, erlang and beam all answered it while `s.at(1)`
