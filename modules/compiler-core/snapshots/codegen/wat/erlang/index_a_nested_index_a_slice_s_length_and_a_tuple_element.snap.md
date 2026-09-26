@@ -43,15 +43,15 @@ array_repeat(Value, Times) ->
 main() ->
     Rows = [[1, 2], [3, 4]],
     '__bp_print'([Rows]),
-    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Rows, 1)]),
-    '__bp_print'(['__bp_prim_at'((fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Rows, 1), 0)]),
-    '__bp_print'([length((fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Rows, 0))]),
+    '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Rows, 1)]),
+    '__bp_print'(['__bp_prim_at'((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Rows, 1), 0)]),
+    '__bp_print'([length((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Rows, 0))]),
     Xs = [10, 20, 30],
     '__bp_print'([length(array_slice(Xs, 0, 2))]),
     Sl = array_slice(Xs, 0, 2),
     '__bp_print'([length(Sl)]),
     Ps = [{1, <<"a">>}, {2, <<"b">>}],
-    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Ps, 1)]).
+    '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Ps, 1)]).
 
 array_slice(Self, Start, End) ->
     case (End =/= undefined) of
@@ -62,9 +62,9 @@ array_slice(Self, Start, End) ->
     end.
 
 '__bp_prim_at'(Recv, Arg0) when is_list(Recv) ->
-    (fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Recv, Arg0);
+    (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Recv, Arg0);
 '__bp_prim_at'(Recv, Arg0) when is_binary(Recv) ->
-    (fun(__S, __I) -> case (__I >= 0) andalso (__I < string:length(__S)) of true -> string:slice(__S, __I, 1); false -> undefined end end)(Recv, Arg0);
+    (fun(__S, __I) -> __N = string:length(__S), __J = case __I < 0 of true -> __I + __N; false -> __I end, case (__J >= 0) andalso (__J < __N) of true -> string:slice(__S, __J, 1); false -> undefined end end)(Recv, Arg0);
 '__bp_prim_at'(Recv, _) ->
     erlang:error({bp_unsupported_method, <<"at">>, 1, Recv}).
 

@@ -89,7 +89,7 @@ test "format: behavior ---- multiple abstract methods" {
 
 test "format: type (record) ---- no fields, no body" {
     try h.assertFormat(std.testing.allocator,
-        \\type Point
+        \\type Point()
     );
 }
 

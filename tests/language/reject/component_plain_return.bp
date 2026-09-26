@@ -4,7 +4,7 @@
 //// written `-> Element` is an ordinary function and its `use` is refused at
 //// the `use`. The new form is `run/component_hook_and_component.bp`.
 
-pub type ElementBase {}
+pub type ElementBase()
 type Element(count: i32) implement @Context<ElementBase>
 
 fn state(initial: i32) -> @Component<ElementBase, i32> { return initial; }

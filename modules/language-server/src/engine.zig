@@ -200,18 +200,17 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
                 try buf.appendSlice(gpa, "type ");
                 try buf.appendSlice(gpa, b.name);
                 try appendGenericParams(gpa, &buf, tdecl.genericParams);
-                // A record with no fields has no parentheses (MIGRATION.md).
+                // A record always writes its field list, `()` when empty
+                // (decision 138 of 1.0.10-beta).
                 const fields = tdecl.recordFields();
-                if (fields.len > 0) {
-                    try buf.append(gpa, '(');
-                    for (fields, 0..) |field, fi| {
-                        if (fi > 0) try buf.appendSlice(gpa, ", ");
-                        try buf.appendSlice(gpa, field.name);
-                        try buf.appendSlice(gpa, ": ");
-                        try appendTypeRef(gpa, &buf, field.typeRef);
-                    }
-                    try buf.append(gpa, ')');
+                try buf.append(gpa, '(');
+                for (fields, 0..) |field, fi| {
+                    if (fi > 0) try buf.appendSlice(gpa, ", ");
+                    try buf.appendSlice(gpa, field.name);
+                    try buf.appendSlice(gpa, ": ");
+                    try appendTypeRef(gpa, &buf, field.typeRef);
                 }
+                try buf.append(gpa, ')');
             },
             .enum_ => {
                 if (tdecl.isPub) try buf.appendSlice(gpa, "pub ");

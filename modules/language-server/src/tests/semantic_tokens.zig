@@ -61,7 +61,7 @@ test "semanticTokens: free fn, interface method, and effect fn distinguished" {
 
 test "semanticTokens: async modifier follows each effect return wrapper" {
     const source =
-        \\val Element = type implement @Context<Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn plain(a: i32) -> i32 { return a; }
         \\fn fails(a: i32) -> @Result<i32, string> { return a; }
         \\fn waits<T>(a: T) -> @Task<T> { return a; }

@@ -1,0 +1,12 @@
+//// 1.0.10-beta decision 138 — a record writes its field list, even when it
+//// is empty: `type RequestBase()`, `type MathOps() { … }`. Braces alone
+//// declare an enum, so a record spelled `type Name { fn … }` is refused where
+//// the `()` belongs.
+
+type MathOps {
+    fn double(self: Self, x: i32) -> i32 { return x * 2; }
+}
+
+pub fn main() {
+    @print(MathOps().double(2));
+}

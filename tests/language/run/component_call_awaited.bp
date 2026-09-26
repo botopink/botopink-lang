@@ -5,7 +5,7 @@
 //// "`await` expects a `@Task<_>`". A component call nested in the awaited
 //// call's arguments still renders.
 
-pub type ElementBase {}
+pub type ElementBase();
 
 pub type Element(tag: string, kids: Element[]) implement @Context<ElementBase>
 

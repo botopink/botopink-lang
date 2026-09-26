@@ -4,8 +4,8 @@
 //// refused at its own site naming both. Line 1 is the stem of today's message
 //// (`reject/use_two_bases.bp`), without the word the base is called by.
 
-pub type ElementBase {}
-pub type RequestBase {}
+pub type ElementBase()
+pub type RequestBase()
 type Element(count: i32) implement @Context<ElementBase>
 
 fn state(initial: i32) -> @Component<ElementBase, i32> { return initial; }

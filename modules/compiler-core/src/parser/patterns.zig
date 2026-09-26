@@ -34,13 +34,13 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
     if (this.check(.leftParenthesis)) {
         // Single subject wrapped in parens (e.g. tuple)
         _ = this.advance(); // consume '('
-        const e = try this.parseBinaryExpr(alloc, prec.equality);
+        const e = try this.parseExprAtStart(alloc, prec.equality);
         _ = try this.consume(.rightParenthesis);
         try subjects.append(alloc, e);
     } else {
         // Multiple subjects separated by commas
         while (!this.check(.leftBrace) and !this.check(.endOfFile)) {
-            try subjects.append(alloc, try this.parseBinaryExpr(alloc, prec.equality));
+            try subjects.append(alloc, try this.parseExprAtStart(alloc, prec.equality));
             if (!this.match(.comma)) break;
         }
     }

@@ -6907,9 +6907,8 @@ const Emitter = struct {
     /// a single `call`. Index args that aren't `simpleTerm`-reducible (a reg-
     /// resident ident or a literal int) are lowered fresh into `x1` after the
     /// receiver lands in `x0`; both common forms (`val`-bound list, literal /
-    /// `val`-bound index) reduce. Matches the erlang template
-    /// `(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of
-    /// true -> lists:nth(__I + 1, __L); false -> undefined end end)($0, $1)`.
+    /// `val`-bound index) reduce. Matches `primitives.bp`'s erlang template for
+    /// `Array.at`, a negative index counting from the end (decision 139).
     fn primAt(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
         try self.placeStaged(&st);
@@ -7017,7 +7016,9 @@ const Emitter = struct {
     /// single `call`. The helper takes `(L, I)` in `{x, 0}`/`{x, 1}`, spills
     /// both to y-slots so they survive the `erlang:length/1` call, then either
     /// tail-calls `lists:nth(I + 1, L)` on the hit branch or returns the
-    /// `undefined` atom on miss. Cached on the emitter so repeat call sites
+    /// `undefined` atom on miss. A negative `I` counts from the end
+    /// (decision 139): `J = I + length(L)`, and `lists:nth(J + 1, L)` when
+    /// `J >= 0`. Cached on the emitter so repeat call sites
     /// in the same module share one helper.
     fn ensureAtHelper(self: *Emitter) anyerror![]const u8 {
         if (self.at_helper_name) |n| return n;
@@ -7029,6 +7030,7 @@ const Emitter = struct {
         self.out = &buf.writer;
 
         const fail_l = self.allocLabel();
+        const neg_l = self.allocLabel();
         try beamEmitter.writeBlankLine(self.out);
         try beamEmitter.writeFunctionHeader(self.out, name, 2, labels.entry);
         try beamEmitter.writeLabel(self.out, labels.func_info);
@@ -7039,11 +7041,18 @@ const Emitter = struct {
         try beamEmitter.writeInitYregs(self.out, 2);
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(1)); // y1 = list
         try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(0)); // y0 = index
-        try beamEmitter.writeTest(self.out, .is_ge, fail_l, &.{ Op.yr(0), Op.int(0) });
         try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(0));
         try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "length" } }, 0); // x0 = length
+        try beamEmitter.writeTest(self.out, .is_ge, neg_l, &.{ Op.yr(0), Op.int(0) });
         try beamEmitter.writeTest(self.out, .is_lt, fail_l, &.{ Op.yr(0), Op.xr(0) });
         try beamEmitter.writeGcBif(self.out, .add, 0, &.{ Op.yr(0), Op.int(1) }, Dst.xr(0)); // x0 = I+1
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1)); // x1 = list
+        try beamEmitter.writeCall(self.out, .last, 2, .{ .ext = .{ .module = "lists", .function = "nth" } }, 2);
+        // A negative index counts from the end (decision 139): J = I + length.
+        try beamEmitter.writeLabel(self.out, neg_l);
+        try beamEmitter.writeGcBif(self.out, .add, 1, &.{ Op.yr(0), Op.xr(0) }, Dst.xr(0)); // x0 = J
+        try beamEmitter.writeTest(self.out, .is_ge, fail_l, &.{ Op.xr(0), Op.int(0) });
+        try beamEmitter.writeGcBif(self.out, .add, 1, &.{ Op.xr(0), Op.int(1) }, Dst.xr(0)); // x0 = J+1
         try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1)); // x1 = list
         try beamEmitter.writeCall(self.out, .last, 2, .{ .ext = .{ .module = "lists", .function = "nth" } }, 2);
         try beamEmitter.writeLabel(self.out, fail_l);

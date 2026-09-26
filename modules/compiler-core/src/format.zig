@@ -2482,7 +2482,8 @@ pub const Formatter = struct {
 
     /// `#[…] [pub] type Name<G>(fields) implement A { methods }` (record shape)
     /// or `#[…] [pub] type Name<G> implement A { Variant, …, methods }` (enum
-    /// shape) — the 1.0.3 surface. A record with no methods prints no body;
+    /// shape) — the 1.0.3 surface. A record always prints its field list (`()` when
+    /// empty, decision 138); a record with no methods prints no body;
     /// variants stay compact on one line unless the source had a trailing
     /// comma, the body holds a section or a method.
     fn fmtType(this: *Formatter, t: ast.TypeDecl) !*const Doc {
@@ -2507,7 +2508,11 @@ pub const Formatter = struct {
         }
 
         if (t.isRecord()) {
-            if (t.recordFields().len > 0) try parts.append(this.arena, try this.fmtFieldList(t.recordFields(), t.trailingComma));
+            // Decision 138: the field list is always written, `()` when empty.
+            if (t.recordFields().len > 0)
+                try parts.append(this.arena, try this.fmtFieldList(t.recordFields(), t.trailingComma))
+            else
+                try parts.append(this.arena, try this.text("()"));
             try this.appendImplement(&parts, t.implement);
             if (methodDocs.len > 0 or t.bodyComments.len > 0) {
                 try parts.append(this.arena, try this.text(" "));

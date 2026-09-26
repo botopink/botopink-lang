@@ -331,6 +331,21 @@ type Counter(n: i32) {
 }
 ```
 
+The field list is always written. A record with no fields is `type Name()`,
+and with members `type Name() { … }`; braces alone declare an enum, so
+`type Name {}` or `type Name { fn … }` is `type-without-field-list`, refused
+where the `()` belongs:
+
+```botopink
+pub type RequestBase()
+
+type MathOps() {
+    fn double(self: Self, x: i32) -> i32 {
+        return x * 2;
+    }
+}
+```
+
 An anonymous group of values is a tuple, not a type declaration. A tuple is
 positional at run time; a label is a compile-time name, lent by the variable
 used to build it or written in the type:
@@ -653,11 +668,20 @@ its own**: its type is whatever the method answers, which for `at` is `?T`.
 val xs = [10, 20, 30];
 val first: ?i32 = xs[0];         // xs.at(0)
 val none: ?i32 = xs[9];          // null — absent has one spelling
+val last: ?i32 = xs[-1];         // 30 — a negative index counts from the end
+val gone: ?i32 = xs.at(-4);      // null — past the front is absent too
 val tail: i32[] = xs[1..];       // xs.slice(1, null)
 val head: i32[] = xs[0..2];      // xs.slice(0, 2)
 val s = "hello";
 val c: ?string = s[1];           // "e"
+val o: ?string = s.at(-1);       // "o"
 ```
+
+A **negative index counts from the end**, on every backend: `xs.at(-1)` is the
+last element and `xs.at(-xs.length)` the first; an index past either end
+(`xs.at(xs.length)`, `xs.at(-xs.length - 1)`) is the absent `?T`. `Array.at`
+and `String.at` — and so `xs[i]` and `s[i]` — read the same way. `Dict.at` is
+by key and has no position to count from.
 
 Which methods those are comes from two **ambient** behaviors — ambient like
 `Display`, so the syntax finds them with nothing imported:
@@ -1433,6 +1457,24 @@ fn mustPort() {
 }
 ```
 
+**`try` and `await` begin an expression.** They stand where an expression
+starts — a statement, a `val` / `var` initializer, the right side of `=`, a
+`return` / `yield` / `break` / `throw` operand, a call argument, an element of
+an array, tuple or record literal, an `if` / `while` condition, a `case`
+subject, a `for` iterable — and take the whole expression after them:
+`try a + b` is `try (a + b)`, and `try await f()` is `try (await f())`. Neither
+is ever the operand of an operator, of a unary `-` / `!`, of parentheses or of
+a `.` chain; `total + try r`, `-try x` and `(try r).length` are
+`try-await-operand`, and the fix is to bind the value first:
+
+```botopink
+fn total(a: @Result<i32, string>, b: @Result<i32, string>) -> @Result<i32, string> {
+    val x = try a;               // not `try a + try b`
+    val y = try b;
+    return x + y;
+}
+```
+
 ### Tasks
 
 `@Task<T>` is a value that has not arrived yet, and `await` unwraps it. A Task
@@ -1614,7 +1656,10 @@ fn pages(count: i32) -> @Stream<@Result<i32[], string>> {
 
 fn countRows() -> @Task<@Result<i32, string>> {
     var n = 0;
-    for await (pages(3)) { batch -> n = n + (try batch).length; }
+    for await (pages(3)) { batch ->
+        val rows = try batch;                  // `n + (try batch).length` is refused
+        n = n + rows.length;
+    }
     return n;
 }
 ```

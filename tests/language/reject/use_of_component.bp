@@ -4,7 +4,7 @@
 //// The guide gives the refusal no code (README open point 2); line 1 is
 //// today's message, at the `use`.
 
-pub type ElementBase {}
+pub type ElementBase()
 type Element(count: i32) implement @Context<ElementBase>
 
 fn Counter() -> @Component<ElementBase, Element> {

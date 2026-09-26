@@ -22,10 +22,11 @@ fn stream(n: i32) -> @Stream<@Result<i32, string>> {
 
 fn collect(n: i32) -> @Task<@Result<string, string>> {
     var acc = "";
-    for await (stream(n)) { x -> acc = acc + (try x).toString(); };
+    for await (stream(n)) { x -> val v = try x; acc = acc + v.toString(); };
     return acc;
 }
 
 test "decision 122 a stream and its consumer compile" {
-    assert (try parse(3) catch 0) == 3;
+    val v = try parse(3) catch 0;
+    assert v == 3;
 }

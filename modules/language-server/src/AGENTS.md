@@ -108,7 +108,7 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   the whole set at once.
 - **A hover card is source the user could write back.** `renderBindingHover`
   renders a declaration in the 1.0.3 surface — `pub type Point(x: i32, y: i32)`
-  (a record with no fields keeps no parentheses), `pub type Shape { Circle(...),
+  (a record with no fields prints `()`, decision 138), `pub type Shape { Circle(...),
   Square }` (a section prints `Name { ... }`, decision 8 §5.3b) and
   `pub behavior Mappable<T>` — with the type parameters a written generic type
   always carries (decision 8 §1.1, `appendGenericParams`). `record`, `enum` and

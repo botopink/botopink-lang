@@ -1,0 +1,48 @@
+//// 1.0.10-beta decision 137 — `try` and `await` stand where an expression
+//// begins and take the whole expression after them. Each position of the rule
+//// once: a `val` initializer, a call argument, an array element, a tuple
+//// element, an `if` condition, a `case` subject, a `for` iterable, the right
+//// side of `x = …`, a `return` operand, and `try … catch` in an argument.
+//// The operand forms are the `reject/try_*` / `reject/await_*` cells.
+
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; }
+    return n;
+}
+
+fn items(n: i32) -> @Result<i32[], string> {
+    if (n < 0) { throw "negative"; }
+    return [n, n + 1];
+}
+
+fn positive(n: i32) -> @Result<bool, string> {
+    if (n < 0) { throw "negative"; }
+    return n > 0;
+}
+
+fn twice(n: i32) -> i32 { return n * 2; }
+
+fn positions(n: i32) -> @Result<i32, string> {
+    val a = try parse(n);
+    val b = twice(try parse(n));
+    val xs = [try parse(n), 10];
+    val pair = #(try parse(n), 20);
+    var total = a + b + xs[0] ?? 0 + pair.0;
+    if (try positive(n)) { total = total + 1; }
+    val word = case try parse(n) { 0 { "zero" } _ { "more" } };
+    @print(word);
+    for (try items(n)) { x -> total = total + x; }
+    total = try parse(total);
+    return total;
+}
+
+fn fallback(n: i32) -> i32 {
+    return twice(try parse(n) catch 100);
+}
+
+pub fn main() {
+    @print(positions(1).unwrapOr(-1));
+    @print(positions(-1).unwrapOr(-1));
+    @print(fallback(3));
+    @print(fallback(-3));
+}

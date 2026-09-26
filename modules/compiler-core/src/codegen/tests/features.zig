@@ -243,7 +243,7 @@ test "js: import ---- named imports" {
 // activate a hook.
 test "codegen ---- use object destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type implement @Context<Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn state(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}
@@ -259,7 +259,7 @@ test "codegen ---- use object destructure is a plain call" {
 // lowering is the same plain call followed by the destructure.
 test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type implement @Context<Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn optimistic(base: i32, f: fn(current: i32, action: i32) -> i32) -> @Component<Element, #(i32, fn(action: i32) -> i32)> {
         \\    val push = { action -> f(base, action) };
         \\    #(base, push);
@@ -274,7 +274,7 @@ test "codegen ---- use tuple destructure is a plain call" {
 
 test "codegen ---- use memo is a plain call with no inferred deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type implement @Context<Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn state(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}
@@ -291,7 +291,7 @@ test "codegen ---- use memo is a plain call with no inferred deps" {
 
 test "codegen ---- use effect void hook is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type implement @Context<Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn cleanup() {
         \\    0;
         \\}
@@ -307,7 +307,7 @@ test "codegen ---- use effect void hook is a plain call" {
 
 test "codegen ---- inline implement context base erased at runtime" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = type implement @Context<Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn render() -> Element {
         \\    return Element();
         \\}
@@ -1207,15 +1207,18 @@ test "js: a typed array `at` beside a String default fn in use keeps its name" {
     , "bc\n8\na\n");
 }
 
-test "js: string at out of range is null" {
+// Decision 139: a negative index counts from the end — `s.at(-1)` is the last
+// character, and past either end (`2`, `-3`) is `null`.
+test "js: string at out of range is null, a negative index counts from the end" {
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
         \\    val s = "ab";
         \\    @print(s.at(1));
         \\    @print(s.at(2));
         \\    @print(s.at(-1));
+        \\    @print(s.at(-3));
         \\}
-    , "b\nnull\nnull\n");
+    , "b\nnull\nb\nnull\n");
 }
 
 test "js: string methods map to native JS names" {

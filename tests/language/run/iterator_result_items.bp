@@ -20,7 +20,7 @@ fn parseAll(xs: i32[]) -> @Iterator<@Result<i32, string>> {
 
 fn sum(xs: i32[]) -> @Result<i32, string> {
     var total = 0;
-    for (parseAll(xs)) { r -> total = total + try r; };
+    for (parseAll(xs)) { r -> val v = try r; total = total + v; };
     return total;
 }
 

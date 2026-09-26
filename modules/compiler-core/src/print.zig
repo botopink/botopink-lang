@@ -55,6 +55,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         // wrong, and says that a DELIBERATE refusal looks different — which is
         // the distinction whose absence let seven missing forms be routed
         // around instead of filed (front 15).
+        .tryAwaitOperand => .{
+            .code = "try-await-operand",
+            .message = "`try` and `await` begin an expression; they are not an operand",
+            .caretCaption = "bind it first: `val x = try …;`",
+            .hint = "`try` / `await` stand where an expression begins — a statement, a `val` / `var` initializer, the right side of `=`, a `return` / `yield` / `break` / `throw` operand, a call argument, an element of an array, tuple or record literal, an `if` / `while` condition, a `case` subject or a `for` iterable — and take the whole expression after them. Under an operator, a unary `-` / `!`, parentheses or a `.` chain, bind the value first: `val x = try r; total + x`.",
+        },
         .ternaryAbsent => .{
             .code = "ternary-absent",
             .message = "there is no `c ? a : b`",
@@ -249,7 +255,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "removed-keyword-record",
             .message = "`record` was replaced by `type` in 1.0.3",
             .caretCaption = "write `type Name(fields) { methods }`",
-            .hint = "A record is `type Point(x: i32, y: i32) { fn … }`; a record with no fields is `type Name { methods }`.",
+            .hint = "A record is `type Point(x: i32, y: i32) { fn … }`; a record with no fields is `type Name()` (`type Name() { methods }`).",
         },
         .removedKeywordEnum => .{
             .code = "removed-keyword-enum",
@@ -376,10 +382,11 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "a `type` with a field list cannot also declare variants",
             .hint = "A record is `type Name(fields) { methods }`; an enum is `type Name { Variant, … }`. Split the declaration in two.",
         },
-        .typeEmptyFieldList => .{
-            .code = "type-empty-field-list",
-            .message = "an empty field list `()`",
-            .hint = "A record with no fields omits the parentheses: `type Name { methods }`.",
+        .typeWithoutFieldList => .{
+            .code = "type-without-field-list",
+            .message = "a record type writes its field list, even when it is empty",
+            .caretCaption = "write `type Name()` here",
+            .hint = "An empty record is `type Name();`, and one with members `type Name() { fn … }`. Braces alone declare an enum: `type Name { A, B }`.",
         },
         .typeAliasAnnotated => .{
             .code = "type-alias-annotated",

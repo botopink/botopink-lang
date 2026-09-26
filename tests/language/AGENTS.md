@@ -37,6 +37,19 @@ and a type alias (`01-checker`), and the cell imports `Point as P`, `Pair as Two
 Front 24's type aliases (decision 118 rule 1) add `run/type_alias` — `Id`, `Pair<A, B>`, `Ids` and
 an `@Result` alias typing a function that only passes the value along, on all four targets — and
 `modules/import_type_alias` — a `pub` alias imported like a type, the types its target names with it.
+Decision 137 (`try` / `await` begin an expression) adds `run/try_start_positions` — a `val`
+initializer, a call argument, an array and a tuple element, an `if` condition, a `case` subject, a
+`for` iterable, `x = …`, a `return` and `try … catch` in an argument, on all four targets (wasm listed:
+an array out of a `@Result` payload iterates as empty) — and three `reject/` cells, one per operand
+shape: `try_operand_of_operator` (`total + try r`), `try_in_parentheses` (`(try r).toString()`) and
+`await_operand_of_unary` (`!await ready()`).
+Decision 138 (the empty record is `type Name()`) adds `run/type_empty_record` — `type Marker()` and
+`type MathOps() { … }` constructed and called on all four targets — and two `reject/` cells,
+`type_empty_braces` (`type Marker {}`) and `type_without_field_list` (`type MathOps { fn … }`), both
+`type-without-field-list` where the `()` belongs.
+Decision 139 (a negative index counts from the end) adds `run/index_negative_from_end` — `xs.at(-1)`,
+`xs.at(-3)`, `xs.at(-4)` / `xs.at(3)` absent, `xs[-2]`, a negative index held in a `val`, the same for
+`String.at` / `s[-2]`, and a string array — on all four targets.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

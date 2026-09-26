@@ -393,7 +393,7 @@ test "erlang: index ---- a list, a string and a tuple answer by position" {
         \\  val t = #(1, "a");
         \\  @print(t[0]);
         \\}
-    , "10\n30\nb\n1\n", &.{ "lists:nth(__I + 1, __L)", "element(1, T)" });
+    , "10\n30\nb\n1\n", &.{ "lists:nth(__J + 1, __L)", "element(1, T)" });
 }
 
 test "erlang: index ---- out of range answers null, not an error" {

@@ -21,7 +21,9 @@ fn show(r: @Result<i32, string>) {
 fn run() -> @Task<void> {
     show(await hostDouble(21));
     show(await hostDouble(0));
-    val sum = (try await hostDouble(1) catch 0) + (try await hostDouble(-1) catch 100);
+    val a = try await hostDouble(1) catch 0;
+    val b = try await hostDouble(-1) catch 100;
+    val sum = a + b;
     @print(sum);
 }
 

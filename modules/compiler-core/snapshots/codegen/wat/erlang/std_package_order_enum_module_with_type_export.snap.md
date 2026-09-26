@@ -785,7 +785,7 @@ at(Self, Key) ->
     Found.
 
 hasKey(Self, Key) ->
-    ((fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(lists:filter(fun(P) ->
+    ((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(lists:filter(fun(P) ->
         (element(1, P) =:= Key)
     end, element(2, Self)), 0) =/= undefined).
 
@@ -922,12 +922,12 @@ enqueue(Self, Item) ->
     {std@collections@@Queue, (element(2, Self) ++ [Item])}.
 
 dequeue(Self) ->
-    Head = (fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(element(2, Self), 0),
+    Head = (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(element(2, Self), 0),
     Rest = array_slice(element(2, Self), 1, length(element(2, Self))),
     {{std@collections@@Queue, Rest}, Head}.
 
 peek(Self) ->
-    (fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(element(2, Self), 0).
+    (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(element(2, Self), 0).
 
 toList(Self) ->
     element(2, Self).

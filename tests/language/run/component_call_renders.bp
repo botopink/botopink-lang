@@ -4,7 +4,7 @@
 //// `div([title(), Counter()])` used to red "expected Element, got Component"
 //// with no location. A hook is still `use`d.
 
-pub type ElementBase {}
+pub type ElementBase();
 
 pub type Element(tag: string, kids: Element[]) implement @Context<ElementBase>
 

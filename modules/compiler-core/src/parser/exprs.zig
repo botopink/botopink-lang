@@ -175,7 +175,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // to and `if (a && b)` reads as the one condition it looks like. This
         // is the only `prec.equality` call site the delimiter argument reaches;
         // the other eleven are open-ended and stay where they are.
-        const cond = try this.parseBinaryExpr(alloc, prec.lowest);
+        const cond = try parseExprAtStart(this, alloc, prec.lowest);
         errdefer @constCast(&cond).deinit(alloc);
         _ = try this.consume(.rightParenthesis);
         const condPtr = try this.boxExpr(alloc, cond);
@@ -406,7 +406,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             const fieldTok: Token = this.advance();
 
             if (this.match(.equal)) {
-                const valExpr = try this.parseBinaryExpr(alloc, prec.equality);
+                const valExpr = try parseExprAtStart(this, alloc, prec.equality);
                 const valPtr = try this.boxExpr(alloc, valExpr);
                 const recvPtr = try this.boxExpr(alloc, Expr{ .identifier = .{ .loc = locFromToken(first), .kind = .{ .ident = first.lexeme } } });
                 return Expr{ .binding = .{ .loc = locFromToken(first), .kind = .{ .assign = .{
@@ -417,7 +417,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             }
 
             if (this.match(.plusEqual)) {
-                const valExpr = try this.parseBinaryExpr(alloc, prec.equality);
+                const valExpr = try parseExprAtStart(this, alloc, prec.equality);
                 const valPtr = try this.boxExpr(alloc, valExpr);
                 const recvPtr = try this.boxExpr(alloc, Expr{ .identifier = .{ .loc = locFromToken(first), .kind = .{ .ident = first.lexeme } } });
                 return Expr{ .binding = .{ .loc = locFromToken(first), .kind = .{ .assign = .{
@@ -585,6 +585,24 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     }
 
     return this.wrapCatch(alloc, try this.parsePipelineExpr(alloc));
+}
+
+/// An expression the construct delimits on its own — an `if` / `while`
+/// condition, a `case` subject, a `for` iterable, the right side of
+/// `x.f =` / `x.f +=` — read at `level`, except that it may BEGIN with `try`
+/// or `await` (decision 137): then it is `parseExpr`'s prefix form, which
+/// takes the whole rest of the expression. Anywhere else an operand is read,
+/// `parsePrimary` refuses the two keywords.
+pub fn parseExprAtStart(this: *This, alloc: std.mem.Allocator, comptime level: usize) ParseError!Expr {
+    if (this.check(.@"try") or this.check(.await)) {
+        // An operand never takes a trailing lambda; neither does this form,
+        // so `case try parse(s) { … }` leaves the `{` to the `case`.
+        const saved = this.noTrailingLambda;
+        this.noTrailingLambda = true;
+        defer this.noTrailingLambda = saved;
+        return this.parseExpr(alloc);
+    }
+    return this.parseBinaryExpr(alloc, level);
 }
 
 /// True when the current token is a binary operator from `precedence_table`.
@@ -1158,26 +1176,14 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
     if (try parseAsyncBlockAhead(this, alloc)) |blk| return blk;
 
-    // `try x` / `try x catch h` / `await x` as an OPERAND (`total + try r`,
-    // `(try batch).length`, `f(try await g())` — decisions 120 and 122 spell
-    // them there). The statement-level forms in `parseExpr` take a whole
-    // expression; an operand takes the next primary (postfix chain included).
-    if (this.check(.@"try")) {
-        const tryTok = this.advance();
-        const inner = try this.parsePrimary(alloc);
-        const innerPtr = try this.boxExpr(alloc, inner);
-        if (!this.noTailCatch and this.match(.@"catch")) {
-            const handler = try this.parsePrimary(alloc);
-            const handlerPtr = try this.boxExpr(alloc, handler);
-            return Expr{ .branch = .{ .loc = locFromToken(tryTok), .kind = .{ .tryCatch = .{ .expr = innerPtr, .handler = handlerPtr } } } };
-        }
-        return Expr{ .jump = .{ .loc = locFromToken(tryTok), .kind = .{ .try_ = innerPtr } } };
-    }
-    if (this.check(.await)) {
-        const awaitTok = this.advance();
-        const inner = try this.parsePrimary(alloc);
-        const innerPtr = try this.boxExpr(alloc, inner);
-        return Expr{ .jump = .{ .loc = locFromToken(awaitTok), .kind = .{ .await_ = innerPtr } } };
+    // `try` / `await` begin an expression and take everything after it
+    // (`parseExpr`); they are never an operand (decision 137). Reaching one
+    // here means an operator, a unary prefix or a chain would take it as its
+    // operand — `total + try r`, `-try x`, `!await ok()` — refused by name,
+    // with the binding that replaces it.
+    if (this.check(.@"try") or this.check(.await)) {
+        this.parseError = ParseErrorInfo.fromToken(.tryAwaitOperand, this.peek());
+        return ParseError.UnexpectedToken;
     }
 
     // Unary `-` — negation of any expression (-x, -123, -(a+b), etc.)
@@ -1509,6 +1515,12 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // (decision 14).
     if (this.check(.leftParenthesis)) {
         const parenTok = this.advance();
+        // A group exists to become an operand (`(try x).len`, `(await t) + 1`):
+        // `try` / `await` inside one is the operand form decision 137 refuses.
+        if (this.check(.@"try") or this.check(.await)) {
+            this.parseError = ParseErrorInfo.fromToken(.tryAwaitOperand, this.peek());
+            return ParseError.UnexpectedToken;
+        }
         const inner = try this.parseExpr(alloc);
         _ = try this.consume(.rightParenthesis);
         const innerPtr = try this.boxExpr(alloc, inner);
@@ -2046,7 +2058,7 @@ pub fn parseWhileExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr
     const whileTok = this.advance(); // consume 'while'
     const label = try parseLoopLabel(this);
     _ = try this.consume(.leftParenthesis);
-    const cond = try this.parseBinaryExpr(alloc, prec.lowest);
+    const cond = try parseExprAtStart(this, alloc, prec.lowest);
     const iterPtr = try this.boxExprOwned(alloc, cond);
     errdefer {
         iterPtr.deinit(alloc);
@@ -2083,7 +2095,7 @@ pub fn parseForExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr {
     const awaitLoop = this.match(.await);
     const label = try parseLoopLabel(this);
     _ = try this.consume(.leftParenthesis);
-    const iterExpr = try this.parseRangeExpr(alloc);
+    const iterExpr = if (this.check(.@"try") or this.check(.await)) try this.parseExpr(alloc) else try this.parseRangeExpr(alloc);
     const iterPtr = try this.boxExprOwned(alloc, iterExpr);
     errdefer {
         iterPtr.deinit(alloc);
