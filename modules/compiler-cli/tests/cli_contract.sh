@@ -71,7 +71,7 @@ project() {
 }
 
 MAIN_OK='pub fn main() {
-    print("hello");
+    @print("hello");
 }
 '
 BROKEN='pub fn f() {
@@ -105,16 +105,21 @@ expect_code 1 "run after a failed build"
 expect_no_out "stale build v1" "run does not execute the stale artifact"
 
 # ── build does not execute the program it compiles ───────────────────────────
+# erlang is the one target whose build spawns anything: `erl`, compiling every
+# emitted `.erl` in memory with the OTP compiler (`build.zig`, `checkErlang`) —
+# never running the program. With a failing `erl` first on PATH that check
+# cannot run, and the build fails rather than claim what it did not check.
 echo "==> build emits without running the program (no runtime spawn, no runtime cache)"
 SHIMS="$WORK/shims"; SPAWNED="$WORK/spawned.log"
 mkdir -p "$SHIMS"; : >"$SPAWNED"
 for tool in node erl erlc escript wasmtime; do
-  printf '#!/bin/sh\necho "%s $*" >>"%s"\nexit 1\n' "$tool" "$SPAWNED" >"$SHIMS/$tool"
+  # One line per spawn, whatever newlines an argument carries.
+  printf '#!/bin/sh\necho "%s $*" | tr "\\n" " " >>"%s"\necho >>"%s"\nexit 1\n' "$tool" "$SPAWNED" "$SPAWNED" >"$SHIMS/$tool"
   chmod +x "$SHIMS/$tool"
 done
 for target in commonJS erlang beam wasm; do
   P="$(project exec-$target "$target")"
-  printf 'pub fn main() {\n    print("side effect at build time");\n}\n' >"$P/src/main.bp"
+  printf 'pub fn main() {\n    @print("side effect at build time");\n}\n' >"$P/src/main.bp"
   # With the real runtimes on PATH: nothing is executed, so nothing is cached.
   run "$P" build
   expect_code 0 "build --target $target"
@@ -125,9 +130,29 @@ for target in commonJS erlang beam wasm; do
   OUT="$(cd "$P" && PATH="$SHIMS:$PATH" "$BP" build 2>&1)"
   CODE=$?
   set -e
-  expect_code 0 "build --target $target with runtime shims on PATH"
+  if [[ $target == erlang ]]; then
+    expect_code 1 "build --target erlang with a failing erl on PATH (the OTP compiler check cannot run)"
+  else
+    expect_code 0 "build --target $target with runtime shims on PATH"
+  fi
 done
-[[ ! -s "$SPAWNED" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build" || fail "build spawned a runtime: $(tr '\n' ';' <"$SPAWNED")"
+# The OTP compiler check's `erl -noshell -eval Files = …` is the only spawn allowed.
+OTHER="$(grep -v '^erl -noshell -eval Files = init:get_plain_arguments()' "$SPAWNED" || true)"
+[[ -z "$OTHER" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build but the erlang compile check" || fail "build spawned a runtime: $(tr '\n' ';' <<<"$OTHER")"
+[[ "$(grep -c '^erl -noshell -eval Files = init:get_plain_arguments()' "$SPAWNED")" -eq 1 ]] && ok "the erlang build ran the OTP compiler check once" || fail "the erlang build did not run its OTP compiler check"
+
+# ── build --target erlang compiles what it emits ─────────────────────────────
+# A build that only transpiled proved nothing about erlang: a module the OTP
+# compiler rejects was written and the build exited 0. Bare `print(…)` has no
+# erlang lowering today (the portable spelling is `@print`), so its module is
+# one `erlc` refuses — the build must fail and name the refusal.
+echo "==> build --target erlang refuses emitted erlang the OTP compiler rejects"
+P="$(project erlcrefused erlang)"
+printf 'pub fn main() {\n    print("unlowered on erlang");\n}\n' >"$P/src/main.bp"
+run "$P" build
+expect_code 1 "build --target erlang of a module erlc rejects"
+expect_out "erlcrefused@main.erl:" "names the refused module"
+expect_out "the OTP compiler refused emitted erlang" "says the build is not a program"
 
 # ── C5 / C6 / C7 — check covers test/, lex and parse errors are located ──────
 echo "==> C6 a lex error renders with file, line and excerpt on build/check/test"

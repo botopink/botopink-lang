@@ -40,8 +40,19 @@
 #
 #   --cold    delete modules/compiler-core/.botopinkbuild/runtime-cache before
 #             `zig build test`. Required for the run that decides a merge: a
-#             stale cache entry can hide a backend that never ran.
-#   --staged  also run stage 1 over `git diff --cached` (the pre-commit hook).
+#             stale cache entry can hide a backend that never ran. Never
+#             answered from the green-tree record below.
+#   --staged  also run stage 1 over `git diff --cached` (the pre-commit and
+#             pre-merge-commit hooks).
+#
+# One gate at a time per machine (§ gate lock): a second `gate.sh` waits for
+# the first, naming its pid, checkout and start time. The stages already use
+# every CPU; two gates side by side took far more than twice as long and
+# starved each other's timing-sensitive tests.
+#
+# A `--staged` run whose trees were already gated green (§ green-tree record)
+# runs stage 1 and stops: what the commit's diff can affect is nothing that
+# gate did not already run on the same bytes.
 #
 # Exit 0 when every stage passed; 1 at the first stage that failed.
 set -euo pipefail
@@ -52,7 +63,7 @@ for a in "$@"; do
     case "$a" in
         --cold) cold=1 ;;
         --staged) staged=1 ;;
-        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,56p' "$0"; exit 0 ;;
         *) echo "gate: unknown argument '$a'" >&2; exit 1 ;;
     esac
 done
@@ -64,6 +75,40 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 stage() { printf '\n==> gate: %s\n' "$1"; }
 pass() { printf "${GREEN}✓ %s${NC}\n" "$1"; }
 fail() { printf "${RED}✗ %s${NC}\n" "$1" >&2; exit 1; }
+
+# ── § gate lock ──────────────────────────────────────────────────────────────
+# One gate per machine: every checkout and worktree takes the same lock, a
+# directory created with `mkdir` (atomic everywhere, including the macOS
+# runner's bash 3.2, which has no `flock`). The holder writes its pid, checkout
+# and start time into it and removes it on exit. A second gate waits, printing
+# who holds it; a lock whose pid is no longer alive was left by a killed gate
+# and is taken over. There is no flag or variable that skips the wait.
+lock_dir="${XDG_RUNTIME_DIR:-$HOME/.cache}/botopink/gate.lock"
+mkdir -p "$(dirname "$lock_dir")"
+cleanup_dirs=()
+cleanup() { rm -rf ${cleanup_dirs[@]+"${cleanup_dirs[@]}"}; }
+trap cleanup EXIT
+waited=0
+while ! mkdir "$lock_dir" 2>/dev/null; do
+    holder="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+        # The holder is gone without removing its lock — take it over.
+        rm -rf "$lock_dir"
+        continue
+    fi
+    if [ "$waited" -eq 0 ]; then
+        printf 'gate: another gate holds the lock — pid %s, %s, since %s; waiting for it to finish\n' \
+            "${holder:-?}" "$(cat "$lock_dir/checkout" 2>/dev/null || echo '?')" \
+            "$(cat "$lock_dir/since" 2>/dev/null || echo '?')" >&2
+    fi
+    waited=1
+    sleep 5
+done
+cleanup_dirs+=("$lock_dir")
+echo "$$" >"$lock_dir/pid"
+echo "$root" >"$lock_dir/checkout"
+date '+%Y-%m-%d %H:%M:%S' >"$lock_dir/since"
+[ "$waited" -eq 0 ] || echo "gate: lock taken" >&2
 
 if [ "$staged" -eq 1 ]; then
     stage "staged files"
@@ -89,6 +134,55 @@ fi
 # otherwise commit into, and check out branches of, this repository.
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
+
+# ── § green-tree record ──────────────────────────────────────────────────────
+# What a gate reads: this checkout's working tree and every sibling library
+# checkout `test-libs` reaches (`<checkout root>/repository/*`), under one
+# toolchain. `tree_key` hashes exactly that — each repository's working tree as
+# `git write-tree` would record it with every change added (a scratch index,
+# seeded from the real one so unchanged files are not re-read), plus the
+# versions of zig, OTP and node. A gate that passes records the key it started
+# from, and only if the key is the same when it ends (nothing moved under it).
+# A `--staged` run — a commit or a merge — whose key was already recorded
+# green has nothing left that its diff can affect, and stops after stage 1; any
+# other difference, however small, runs the whole gate. A `--cold` run never
+# reads the record.
+tree_key() {
+    local top repos r idx
+    top="$root"
+    while [ "$top" != "/" ] && [ ! -d "$top/repository" ]; do top="$(dirname "$top")"; done
+    repos="$root"
+    if [ -d "$top/repository" ]; then
+        for r in "$top"/repository/*/; do
+            r="${r%/}"
+            [ "$r" = "$root" ] && continue
+            git -C "$r" rev-parse --git-dir >/dev/null 2>&1 && repos="$repos
+$r"
+        done
+    fi
+    idx="$(mktemp "${TMPDIR:-/tmp}/bp-gate-index.XXXXXX")"
+    {
+        while IFS= read -r r; do
+            cp "$(git -C "$r" rev-parse --path-format=absolute --git-path index)" "$idx" 2>/dev/null || rm -f "$idx"
+            printf '%s ' "$r"
+            GIT_INDEX_FILE="$idx" git -C "$r" add -A . >/dev/null 2>&1
+            GIT_INDEX_FILE="$idx" git -C "$r" write-tree
+        done <<<"$repos"
+        zig version
+        erl -noshell -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), halt().' 2>/dev/null || echo no-erl
+        node --version 2>/dev/null || echo no-node
+    } | git hash-object --stdin
+    rm -f "$idx"
+}
+green_record="$(git rev-parse --path-format=absolute --git-path botopink-gate-green)"
+start_key="$(tree_key)"
+if [ "$staged" -eq 1 ] && [ "$cold" -eq 0 ] && [ -f "$green_record" ] &&
+    [ "$(cat "$green_record")" = "$start_key" ]; then
+    stage "stages 2–10"
+    pass "this checkout and its libraries are the trees a gate already passed on (key ${start_key:0:12}) — nothing the diff can affect is left to run"
+    printf "\n${GREEN}gate: every stage passed${NC}\n"
+    exit 0
+fi
 
 stage "zig build"
 zig build || fail "zig build"
@@ -121,7 +215,7 @@ pass "zig build test"
 # printed, as the serial gate never ran them. A stage's stdout and stderr share
 # one capture file, so both reach this script's stdout in the order written.
 par="$(mktemp -d "${TMPDIR:-/tmp}/bp-gate.XXXXXX")"
-trap 'rm -rf "$par"' EXIT
+cleanup_dirs+=("$par")
 launch() { # <n> <cmd…> — run in the background, output in $par/<n>.out, status in $par/<n>.rc
     local n="$1"
     shift
@@ -155,5 +249,10 @@ report 6 "zig build test-language" "zig build test-language" \
     "zig build test-language (a FAIL line above names the file, the test and the rule)"
 report 7 "zig build test-docs" "zig build test-docs" \
     "zig build test-docs (a ✗ line above names the doc, the fence line and the error)"
+
+# Record the trees as green — only when nothing moved while the gate ran.
+if [ "$(tree_key)" = "$start_key" ]; then
+    echo "$start_key" >"$green_record"
+fi
 
 printf "\n${GREEN}gate: every stage passed${NC}\n"

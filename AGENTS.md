@@ -29,6 +29,7 @@ botopink-lang/                 ← language core (this project)
 │   ├── language-server/       ← `botopink-lsp` LSP server
 │   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
+│   ├── source-stamp/          ← `source_stamp` — a library run refuses a binary older than its checkout's sources
 │   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
 │   ├── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
 │   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
@@ -72,7 +73,8 @@ no flag turns either off):
 
 - the **lib-agnostic gate** — it fails if `modules/compiler-core/src` names a
   non-std library (`rakun|jhonstart|erika`);
-- **`scripts/check-test-scratch.sh`** — it fails if a `test` block names a
+- **`scripts/check-test-scratch.sh`** — it fails if a `test` block, or any line
+  of a file under a `tests/` directory (the harness helpers), names a
   cwd-anchored `.botopinkbuild` path. Each test binary runs with its package
   directory as cwd, so a fixed path is shared with every other process running
   the suite and the second one deletes the first one's fixtures mid-test (one
@@ -108,8 +110,12 @@ diagnostic), known red, restricted, skipped (with the reason) or no tests — a 
 no `test` block is still compiled (`botopink build --target <t>`), so it fails
 its cell when it does not compile. A cell listed in
 [`scripts/known-red-libs.txt`](scripts/known-red-libs.txt) is named with its
-owning front and does not fail the run; an unlisted failure does, and so does a
-listed cell that passes (delete its line).
+owning front and the library commit it was measured at, and does not fail the
+run while the library's checkout is at that commit; an unlisted failure does,
+and so does a listed cell that passes (delete its line) and a line whose
+library has moved (re-measure it). A workspace document that quotes the tool's
+member list is checked against the tool, and a stale `botopink` (its checkout's
+sources changed since it was built) is refused before any cell runs.
 
 A member may exclude a backend with `"targets"` in its `botopink.json`. That
 used to make the cell invisible — skipped, `~`, failing nothing even under
@@ -261,10 +267,17 @@ run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other
 9. `zig build test-language` (tests/language — decision 8's `case`, tuples and `loop`; expected failures named);
 10. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles).
 
+One gate runs at a time per machine: a second `gate.sh` waits for the lock,
+naming the holder's pid, checkout and start time. A `--staged` run whose
+working tree, sibling libraries and toolchain were already gated green runs
+stage 1 only (`scripts/AGENTS.md` § Gate lock, § Green-tree record).
+
 `scripts/git-hooks/pre-commit` is the tracked pre-commit hook, self-contained in
 every checkout (standalone clone or meta submodule): it sources
 `scripts/git-hooks/lib/runner-standalone.sh`, which runs `scripts/gate.sh
---staged`. Enable it once per clone:
+--staged`. `scripts/git-hooks/pre-merge-commit` runs the same for a merge that
+commits by itself — git runs that hook there, not `pre-commit`, so an
+auto-merge used to be ungated. Enable both once per clone:
 
 ```sh
 git config core.hooksPath scripts/git-hooks

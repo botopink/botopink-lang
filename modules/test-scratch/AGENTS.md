@@ -84,7 +84,11 @@ path that could escape the per-process root would put the shared path back.
 2. **A test may not spell a cwd-anchored `.botopinkbuild` path by hand.**
    [`../../scripts/check-test-scratch.sh`](../../scripts/check-test-scratch.sh)
    scans every `modules/**/*.zig` and refuses a string literal beginning
-   `.botopinkbuild` inside a `test` block. `zig build test` depends on it.
+   `.botopinkbuild` inside a `test` block — and anywhere in a file under a
+   `tests/` directory, where the harness helpers live (a helper function is
+   outside every `test` block: the codegen and comptime harnesses' build roots
+   and the LSP harness's eval roots escaped the block-only scan that way, and
+   are `test_scratch` paths now). `zig build test` depends on it.
 
 Neither has a flag, an environment variable or a skip list. The only exemption
 is structural: a literal that does not start at the cwd

@@ -15,8 +15,11 @@
 # The one way a test may name a path it writes to is the `test_scratch` module
 # (`modules/test-scratch/src/root.zig`), whose root carries a per-process
 # segment. This gate is the other half: a string literal that begins
-# `.botopinkbuild` inside a `test` block is refused here, so the fixed path
-# cannot come back silently.
+# `.botopinkbuild` inside a `test` block — or anywhere in a file under a
+# `tests/` directory, where the harness helpers the tests call live (a helper
+# function is outside every `test` block, and that is how three fixed build
+# roots in `codegen/tests/helpers.zig` escaped the block-only scan) — is
+# refused here, so the fixed path cannot come back silently.
 #
 # Decision 67: it refuses, it does not warn, and no flag or environment
 # variable turns it off. The only exemption is structural — a literal that does
@@ -32,10 +35,14 @@ if [ ${#roots[@]} -eq 0 ]; then roots=(modules); fi
 
 found=0
 while IFS= read -r -d '' file; do
-  hits=$(awk '
+  # A file under a `tests/` directory is test-only as a whole: every line of
+  # it is scanned, not only its `test` blocks.
+  whole=0
+  case "/$file" in */tests/*) whole=1 ;; esac
+  hits=$(awk -v whole="$whole" '
     /^test "/ || /^test \{/ { in_test = 1 }
     in_test && /^\}/        { in_test = 0 }
-    in_test && /"\.botopinkbuild/ { printf "%d: %s\n", NR, $0 }
+    (in_test || whole) && /"\.botopinkbuild/ { printf "%d: %s\n", NR, $0 }
   ' "$file")
   if [ -n "$hits" ]; then
     found=1
@@ -48,7 +55,8 @@ done < <(find "${roots[@]}" -name '*.zig' -not -path '*/.zig-cache/*' -print0 | 
 if [ "$found" -ne 0 ]; then
   cat >&2 <<'MSG'
 
-error: a test names a cwd-anchored `.botopinkbuild` path.
+error: a test, or a test-only file under `tests/`, names a cwd-anchored
+`.botopinkbuild` path.
 
 `zig build test` gives every test binary a shared checkout as its cwd, so a
 fixed path is shared with every other process running the suite — the second

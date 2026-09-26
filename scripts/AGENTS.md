@@ -22,7 +22,7 @@ scripts/
 ├── restricted-targets.txt ← the ledger: every cell a member's `"targets"` list hides, with its measured failed count
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── check-docs.sh      ← compiles every `botopink` fence of docs.md/README.md (`zig build test-docs`)
-├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block (part of `zig build test`)
+├── check-test-scratch.sh ← refuses a cwd-anchored `.botopinkbuild` path inside a `test` block or a `tests/` file (part of `zig build test`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
 ├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-node compile/load/run split
@@ -30,6 +30,7 @@ scripts/
 │   └── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../tests/language/run.sh and check-docs.sh)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)
+    ├── pre-merge-commit           ← the same gate for a merge that commits by itself (git runs this hook there, not pre-commit)
     └── lib/runner-standalone.sh   ← the hook's runner → `gate.sh --staged`
 ```
 
@@ -130,6 +131,32 @@ every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
 `GIT_INDEX_FILE`, …): a stage that runs `git` in a scratch repository (bpmp's
 install tests) would otherwise act on the committing repository.
 
+### Gate lock
+
+**One gate per machine.** The stages already use every CPU, and two gates
+side by side took far more than twice as long and starved each other's
+timing-sensitive tests. `gate.sh` takes `${XDG_RUNTIME_DIR:-$HOME/.cache}/botopink/gate.lock`
+before its first stage — a directory made with `mkdir` (atomic, and the macOS
+runner's bash 3.2 has no `flock`) holding the holder's `pid`, `checkout` and
+`since` — and removes it on exit. A second gate, from any checkout or worktree,
+prints `gate: another gate holds the lock — pid <n>, <checkout>, since <time>;
+waiting for it to finish` once and polls every 5 s; a lock whose pid is no
+longer alive (a killed gate) is taken over. No flag or variable skips the wait.
+
+### Green-tree record
+
+`tree_key` hashes what a gate reads: this checkout's working tree and every
+sibling library checkout `test-libs` reaches (`<checkout root>/repository/*`),
+each as `git write-tree` would record it with every change added (a scratch
+index seeded from the real one, so unchanged files are not re-read), plus
+`zig version`, the OTP release and `node --version`. A gate that passes writes
+the key it started from to `$(git rev-parse --git-path botopink-gate-green)` —
+only when the key is the same at the end, so nothing moved under the run. A
+`--staged` run (a commit, a merge) whose key was recorded green runs stage 1
+and stops: nothing its diff can affect is left that a gate did not already run
+on the same bytes and toolchain. Any other difference runs the whole gate, and
+`--cold` never reads the record.
+
 ### Where the gate's time goes
 
 The stages stay one ordered REPORT — the first failing stage in the order above
@@ -195,9 +222,14 @@ the files, with the `Unchanged` lines filtered out.
 
 `git-hooks/pre-commit` is self-contained: it sources
 `git-hooks/lib/runner-standalone.sh`, which runs `gate.sh --staged` of the
-committing checkout. Nothing installs it; a clone enables it with `git config
-core.hooksPath scripts/git-hooks` (the relative path resolves against the
-checkout's root, so every worktree runs its own tracked hook).
+committing checkout. `git-hooks/pre-merge-commit` runs the same: `git merge`
+runs `pre-merge-commit`, **not** `pre-commit`, when a merge needs no conflict
+resolution and records its commit itself, so without it an auto-merge was
+never gated unless its author amended it (a merge that stops on a conflict is
+committed with `git commit`, which runs `pre-commit`). Nothing installs them; a
+clone enables both with `git config core.hooksPath scripts/git-hooks` (the
+relative path resolves against the checkout's root, so every worktree runs its
+own tracked hooks).
 
 ## test-libs.sh
 
@@ -210,7 +242,11 @@ the script exports no root — and prints one line per cell — `pass`, `FAIL`, 
 `skipped — <reason>`, `no tests` (the library has no `test` block and
 compiled; one that does not compile is a `FAIL`) — after that cell's diagnostics, and a
 count summary. Exit `1` when an unlisted cell fails, a listed known red passes,
-or the restricted-targets ledger is refused (§ below);
+a known-red line is stale (its library moved from the commit it pins, or it
+pins none — § known-red-libs.txt), a workspace document quotes the tool's
+member list and disagrees with it (`../modules/lib-test-runner/AGENTS.md`
+§ Documents that quote the tool), or the restricted-targets ledger is refused
+(§ below);
 otherwise `0` (or the runner's own error exit). An explicit `--json` argument
 bypasses all of this and execs the runner raw — without `--include-unsupported`,
 so a raw run still skips the restricted cells. `BOTOPINK_KNOWN_RED_LIBS`
@@ -224,17 +260,22 @@ silence.
 
 ## known-red-libs.txt
 
-`<lib> <target> <owner> <reason…>` per line, `#` comments. The owning front
-deletes its line in the commit that turns the cell green, which makes the cell
-a hard assert. **Live entries**: front 24's window (`24-effects-by-return`,
-decisions 118–128) — every jhonstart, rakun and emilia cell (and the examples
-built on them): the compiler refuses the pre-118 effect spellings (`#[@use]`,
-`#[@future]`, `#[@result]`, `@Future<…>`, `@Use<…>`, `@Generator<…>`, …) the
-libraries still write. The jhonstart / emilia lines are deleted by the compiler
-commit after `front/24-libs` lands, the rakun ones after `front/24-rakun`; the
-restricted cells the same window moved to `build` (the rakun rows, and
-`emilia-card erlang`, `jhonstart-todo erlang` from front 21's window) go back to
-their measured counts in that commit.
+`<lib> <target> <commit> <owner> <reason…>` per line, `#` comments.
+`<commit>` is the library checkout's HEAD the red was **measured** at (12 or
+more hex digits of `git -C <library> rev-parse HEAD`). A line is a claim about
+one library commit made in this repository, and the two are never committed
+together — so between a library fix and the compiler-side deletion every
+`test-libs` run used to fail with "known reds that pass", owned by nobody. The
+wrapper now reads each library's directory from the runner's
+`{"event":"lib"}` records and asks git where the checkout is: when the library
+has moved from `<commit>`, the line is **stale** and fails the run, red or
+green, until it is re-measured — deleted when the cell passes, re-pinned when
+it is still red. A line that names no commit, a library with no git checkout
+to compare against, and (on an unfiltered run) a line whose cell does not
+exist fail the same way. At its pinned commit a listed red is counted and does
+not fail the run; a listed cell that passes does, until its line is deleted.
+**Live entries**: `rakun-data erlang` and `rakun-security erlang` (`03-rakun`:
+two tests assert a refusal `@Decl`'s spelled type names no longer make).
 
 ## restricted-targets.txt
 
@@ -274,10 +315,9 @@ runnable set).
 
 The `<owner>` is the front that owns the member's `targets` array in
 `specs/<milestone>/fronts.md` — the front that will delete the line by widening
-the array — not whoever measured it. Eighteen cells are listed today across
-five repositories; `erika-linq erlang` (8 red tests) is the largest thing a
-restriction hides and the only one whose owner is a residuals front rather than
-a library track.
+the array — not whoever measured it. Twenty-one cells are listed today, one
+per member, across three repositories (rakun's commonJS rows, two jhonstart
+examples and `erika-linq` on erlang).
 
 ## check-docs.sh
 
@@ -320,7 +360,12 @@ The one way to name such a path is the `test_scratch` module
 whose root carries a per-process segment. This script is the other half: it
 walks every `<dir>/**/*.zig`, tracks `test` blocks (a top-level `test "`/`test {`
 until the next column-0 `}`) and refuses a string literal that **begins**
-`.botopinkbuild` inside one.
+`.botopinkbuild` inside one — and **anywhere** in a file under a `tests/`
+directory, which is test-only as a whole: the harness helpers a test calls are
+functions outside every `test` block, and that is how the build roots of
+`codegen/tests/helpers.zig` and `comptime/tests/helpers.zig` and the eval roots
+of `language-server/src/tests/helpers.zig` escaped the block-only scan (they are
+`test_scratch` paths now).
 
 It refuses, it does not warn, and no flag or environment variable turns it off
 (decision 67). The only exemption is structural: a literal that does not start
