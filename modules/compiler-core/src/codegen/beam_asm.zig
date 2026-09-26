@@ -594,7 +594,10 @@ fn exprPropagates(e: ast.Expr) bool {
     return switch (e) {
         .jump => |j| switch (j.kind) {
             .try_ => true,
-            .@"return", .throw_ => |v| if (v) |x| exprPropagates(x.*) else false,
+            // A `return` in a loop's fun leaves the FUNCTION: it is thrown to
+            // the loop's call site like a failing `try` (`emitLoopReturn`).
+            .@"return" => true,
+            .throw_ => |v| if (v) |x| exprPropagates(x.*) else false,
             .@"break" => |b| if (b.value) |x| exprPropagates(x.*) else false,
             .yield => |y| if (y.value) |x| exprPropagates(x.*) else false,
             .await_ => |x| exprPropagates(x.*),
@@ -4212,6 +4215,10 @@ const Emitter = struct {
                         try beamEmitter.writeJump(self.out, gl.exit);
                         return;
                     };
+                    if (self.in_loop_lambda and self.inGenLoop() == null) {
+                        try self.emitLoopReturn(if (r) |val| val.* else null);
+                        return;
+                    }
                     if (r) |val| {
                         // §1F F4F-T2 — `#[@future]` eager lowering on BEAM:
                         // strip the `__bp_future_resolved(<t>)` marker back
@@ -4818,6 +4825,10 @@ const Emitter = struct {
             },
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
+                    if (self.in_loop_lambda and self.inGenLoop() == null) {
+                        try self.emitLoopReturn(if (r) |val| val.* else null);
+                        return;
+                    }
                     if (r) |val| try self.lowerExprIntoX0(val.*);
                     try self.emitReturn();
                     return;
@@ -9325,6 +9336,18 @@ const Emitter = struct {
             return;
         }
         try self.emitReturn();
+    }
+
+    /// `return v` inside a loop's fun (`in_loop_lambda`): a return there only
+    /// leaves the fun, so the value is thrown as `{'__bp_try', V}` and the
+    /// loop's call site (`guardLoopCall`) answers it as the function's value —
+    /// the path a failing `try` already takes. `firstUnder(12, 10)` answered
+    /// `12` where commonJS and wasm answer `8`.
+    fn emitLoopReturn(self: *Emitter, value: ?ast.Expr) anyerror!void {
+        if (value) |v| try self.lowerExprIntoX0(v) else try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
+        try beamEmitter.writeTestHeap(self.out, 3, 1);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(try_throw_signal), Op.xr(0) });
+        try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
     }
 
     /// Emit `call` — a `lists:foreach` / `map` / `foldl` over a loop fun whose

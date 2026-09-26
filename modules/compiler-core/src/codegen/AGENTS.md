@@ -606,6 +606,18 @@ codegen/
   keeps one byte per character — `"\u{2028}"` was `<<40>>`, `"\u{1f600}"`
   `<<0>>` — so `"ç" == "\u{e7}"` held only by accident and
   `escape.jsString("f(x)")` answered `f x ` (01-std's handover).
+- **A `return` inside a loop's body leaves the function** (`returnNode`): the
+  body is a fun (`lists:foreach`, the named `__Loop`), whose value is not the
+  function's, so inside one (`in_loop_body`, reset by a lambda, whose `return`
+  is its own) `return v` is `erlang:throw({'__bp_try', V})` and the function's
+  `guardTry` answers `V` — the path a failing `try` with no rest to nest
+  already took. Only a body `fnForms` guards (`fn_guarded`) throws; a
+  generator scope and a `test` body keep their own shapes. The value was
+  dropped: `firstUnder(12, 10)` answered `12` (commonJS/wasm `8`), and a
+  `throw` (a `return {error, E}` after the transform) in an `if` in a `while`
+  bound the loop's variables in one arm only — `variable unsafe in 'case'`.
+  The beam twin is `emitLoopReturn` (`in_loop_lambda`), caught by
+  `guardLoopCall`, which `bodyPropagates` now asks for on any `return`.
 - **Calling the result of a call** (`adder(3)(4)`, `cc.calleeExpr` with
   `callee == ""`): `(adder(3))(4)` — `applyParen` over the callee expression's
   node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which

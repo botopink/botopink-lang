@@ -1240,6 +1240,70 @@ test "beam: a non-ASCII string literal is its UTF-8 bytes" {
     , "true\ntrue\n3\n[\"ç\", \"é\"]\nMEMÓRIA\n", &.{"\\x{C3}\\x{A7}"});
 }
 
+// A `return` inside a loop's body leaves the FUNCTION (commonJS and wasm
+// answer `firstUnder(12, 10)` = `8`). A loop's body is a fun on erlang
+// (`lists:foreach`, the named `__Loop`) and on beam (`lists:foreach`), so the
+// value is thrown as `{'__bp_try', V}` to the function's guard / the loop's
+// call site — the path a failing `try` takes. erlang answered `12`, and a
+// `throw` (a `return` of `{error, E}` after the transform) inside an `if`
+// inside a `while` did not compile: `variable 'I@2' unsafe in 'case'`. A
+// lambda's own `return` stays its own (the last line).
+test "erlang: a return inside a loop's body leaves the function" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn firstUnder(n: i32, limit: i32) -> i32 {
+        \\  for (0..3) { k -> if (n + k > limit) { return firstUnder(n - 1, limit); }; };
+        \\  return n;
+        \\}
+        \\fn find(xs: Array<i32>, t: i32) -> i32 {
+        \\  var i = 0;
+        \\  while (i < xs.length) { if (xs.at(i).unwrapOr(0) == t) { return i; }; i = i + 1; };
+        \\  return -1;
+        \\}
+        \\fn firstBad(n: i32) -> @Result<i32, string> {
+        \\  var i = 0;
+        \\  var acc = 0;
+        \\  while (i < n) { if (i == 7) { throw "seven"; }; acc = acc + i; i = i + 1; };
+        \\  return acc;
+        \\}
+        \\fn main() {
+        \\  @print(firstUnder(12, 10));
+        \\  @print(find([4, 5, 6], 6));
+        \\  @print(find([4, 5, 6], 9));
+        \\  @print(firstBad(5).unwrapOr(-1));
+        \\  @print(firstBad(9).unwrapOr(-1));
+        \\  @print([1, 2].map({ x -> for (0..2) { k -> if (k == 1) { return x * 10; }; }; return x; }));
+        \\}
+    , "8\n2\n-1\n10\n-1\n[10, 20]\n", &.{"'__bp_try'"});
+}
+
+test "beam: a return inside a loop's body leaves the function" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn firstUnder(n: i32, limit: i32) -> i32 {
+        \\  for (0..3) { k -> if (n + k > limit) { return firstUnder(n - 1, limit); }; };
+        \\  return n;
+        \\}
+        \\fn find(xs: Array<i32>, t: i32) -> i32 {
+        \\  var i = 0;
+        \\  while (i < xs.length) { if (xs.at(i).unwrapOr(0) == t) { return i; }; i = i + 1; };
+        \\  return -1;
+        \\}
+        \\fn firstBad(n: i32) -> @Result<i32, string> {
+        \\  var i = 0;
+        \\  var acc = 0;
+        \\  while (i < n) { if (i == 7) { throw "seven"; }; acc = acc + i; i = i + 1; };
+        \\  return acc;
+        \\}
+        \\fn main() {
+        \\  @print(firstUnder(12, 10));
+        \\  @print(find([4, 5, 6], 6));
+        \\  @print(find([4, 5, 6], 9));
+        \\  @print(firstBad(5).unwrapOr(-1));
+        \\  @print(firstBad(9).unwrapOr(-1));
+        \\  @print([1, 2].map({ x -> for (0..2) { k -> if (k == 1) { return x * 10; }; }; return x; }));
+        \\}
+    , "8\n2\n-1\n10\n-1\n[10, 20]\n", &.{"'__bp_try'"});
+}
+
 test "erlang: calling the result of a call applies it (`calleeExpr`)" {
     // `test/curried_call.bp` (C-09's backend half): `adder(3)(4)` carries its
     // callee as an expression, and lowered as a name it was `''(4)`, which

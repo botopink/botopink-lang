@@ -17,14 +17,18 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 validate(Items) ->
-    lists:foreach(fun(I) ->
-        case (I > 2) of
-            true ->
-                {error, <<"too many">>};
-            _ -> ok
-        end
-    end, lists:seq(0, (Items) - 1)),
-    {ok, Items}.
+    try
+        lists:foreach(fun(I) ->
+            case (I > 2) of
+                true ->
+                    erlang:throw({'__bp_try', {error, <<"too many">>}});
+                _ -> ok
+            end
+        end, lists:seq(0, (Items) - 1)),
+        {ok, Items}
+    catch
+        throw:{'__bp_try', __BpTryR} -> __BpTryR
+    end.
 
 main() ->
     '__bp_print'([(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(validate(2))]).

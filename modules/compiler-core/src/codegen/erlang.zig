@@ -2524,6 +2524,14 @@ const Emitter = struct {
     /// Set when the body being lowered used the `'__bp_try'` throw; `fnForms`
     /// then wraps the body in the guard that answers the thrown Error.
     try_throw_used: bool = false,
+    /// True while a loop's body is lowered — a fun (`lists:foreach`, a named
+    /// recursive `__Loop`) whose value is not the function's. A `return` there
+    /// throws `{'__bp_try', V}` to the function's guard (`returnNode`); a lambda
+    /// resets it, since its `return` is its own.
+    in_loop_body: bool = false,
+    /// True while the body of a function `fnForms` guards with `guardTry` is
+    /// lowered — the only place a thrown `return` is caught.
+    fn_guarded: bool = false,
     /// 06 C13 — the host-backed fn whose `#[@External.Erlang(…)]` is missing,
     /// filled at the throw site so `codegenEmit` can turn
     /// `error.MissingExternalTarget` into a located diagnostic naming it.
@@ -4859,6 +4867,12 @@ const Emitter = struct {
         const saved_throw = this.try_throw_used;
         this.try_throw_used = false;
         defer this.try_throw_used = saved_throw;
+        const saved_guarded = this.fn_guarded;
+        this.fn_guarded = true;
+        defer this.fn_guarded = saved_guarded;
+        const saved_in_loop = this.in_loop_body;
+        this.in_loop_body = false;
+        defer this.in_loop_body = saved_in_loop;
         const raw_body: Ast.Body = if (isPlainYieldGenerator(f)) blk: {
             // Finite generator → eager list of yielded items: `[V1, V2, ...]`.
             const items = try b.arena.alloc(Ast.Expr, f.body.len);
@@ -5033,7 +5047,10 @@ const Emitter = struct {
 
             if (!is_last and stmt.expr == .branch and stmt.expr.branch.kind == .if_) {
                 const if_node = stmt.expr.branch.kind.if_;
-                if (if_node.else_ == null and bodyEndsWithReturn(if_node.then_)) {
+                // Inside a loop's body the `return` throws (`returnNode`), so
+                // the rest needs no nesting — nested, it bound the loop's
+                // variables in the false arm only (`unsafe in 'case'`).
+                if (if_node.else_ == null and bodyEndsWithReturn(if_node.then_) and !this.returnThrows()) {
                     try stmts.append(b.arena, .{ .expr = try this.earlyReturnIfExpr(b, body, i, if_node) });
                     break; // remaining statements are nested inside the false arm
                 }
@@ -5247,8 +5264,10 @@ const Emitter = struct {
         switch (stmt.expr) {
             .branch => |br| switch (br.kind) {
                 .if_ => |if_node| {
-                    if (bodyEndsWithReturn(if_node.then_)) return null;
-                    if (if_node.else_) |els| if (bodyEndsWithReturn(els)) return null;
+                    if (!this.returnThrows()) {
+                        if (bodyEndsWithReturn(if_node.then_)) return null;
+                        if (if_node.else_) |els| if (bodyEndsWithReturn(els)) return null;
+                    }
                     try this.collectMutations(b.arena, if_node.then_, &.{}, &names);
                     if (if_node.else_) |els| try this.collectMutations(b.arena, els, &.{}, &names);
                     if (if_node.binding) |bn| removeName(&names, bn);
@@ -5260,6 +5279,9 @@ const Emitter = struct {
             .loop => |lp| {
                 // The annotated loop is a value (decision 105): `exprNode`.
                 if (lp.generator != null) return null;
+                const saved_in_loop = this.in_loop_body;
+                this.in_loop_body = true;
+                defer this.in_loop_body = saved_in_loop;
                 if (lp.condition) {
                     try this.collectMutations(b.arena, lp.body, &.{}, &names);
                     if (names.items.len == 0) return null;
@@ -5572,6 +5594,25 @@ const Emitter = struct {
         });
     }
 
+    /// `return v` as a node: `v` itself (Erlang's last expression is the
+    /// value), except inside a loop's body, whose fun's value is not the
+    /// function's — there it throws `{'__bp_try', V}` and the function's guard
+    /// (`guardTry`) answers `V`. Without it a `return` in a loop was dropped:
+    /// `firstUnder(12, 10)` answered `12` where commonJS and wasm answer `8`,
+    /// and a `throw` in a `@Result` fn (a `return` of `{error, E}` after the
+    /// transform) inside an `if` inside a `while` bound the loop's variables
+    /// in one arm only — erlc's `variable unsafe in 'case'`.
+    fn returnNode(this: *Emitter, b: Ast.Builder, value: Ast.Expr) anyerror!Ast.Expr {
+        if (!this.returnThrows()) return value;
+        this.try_throw_used = true;
+        return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(try_throw_signal), value })});
+    }
+
+    /// Whether a `return` here throws to the function's guard (`returnNode`).
+    fn returnThrows(this: *const Emitter) bool {
+        return this.in_loop_body and this.fn_guarded and this.gen_scope == null and !this.in_test_body;
+    }
+
     /// `try Body catch throw:{'__bp_try', E} -> E end` — the guard of a
     /// function whose body threw from a `try` with no rest to nest.
     fn guardTry(this: *Emitter, b: Ast.Builder, body: Ast.Body) anyerror!Ast.Body {
@@ -5610,6 +5651,14 @@ const Emitter = struct {
         const saved_cond_loop = this.cond_loop;
         this.cond_loop = null;
         defer this.cond_loop = saved_cond_loop;
+        const saved_in_loop = this.in_loop_body;
+        this.in_loop_body = false;
+        defer this.in_loop_body = saved_in_loop;
+        // Its body answers the group, not a value a thrown `return` could be:
+        // a `return` inside a loop in it keeps the old shape.
+        const saved_guarded = this.fn_guarded;
+        this.fn_guarded = false;
+        defer this.fn_guarded = saved_guarded;
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
         const fun_params = try b.arena.alloc(Ast.Expr, params.len + 1);
@@ -6072,11 +6121,11 @@ const Emitter = struct {
         switch (e) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
-                    const val = r orelse return Ast.Expr.a("undefined");
+                    const val = r orelse return this.returnNode(b, Ast.Expr.a("undefined"));
                     // A `@Task` is eager here (decision 120): `return v` is
                     // `v`, and a failure is the `{error, E}` value the
                     // transform built — it never throws.
-                    return this.exprNode(b, val.*);
+                    return this.returnNode(b, try this.exprNode(b, val.*));
                 },
                 else => return this.exprNode(b, e),
             },
@@ -6329,6 +6378,18 @@ const Emitter = struct {
                 const saved_cond_loop = this.cond_loop;
                 this.cond_loop = null;
                 defer this.cond_loop = saved_cond_loop;
+                const saved_in_loop = this.in_loop_body;
+                this.in_loop_body = false;
+                defer this.in_loop_body = saved_in_loop;
+                // A `fun` is a function of its own: a `return` (or a `try`)
+                // thrown from a loop inside it is caught by ITS guard, not by
+                // the enclosing function's.
+                const saved_guarded = this.fn_guarded;
+                this.fn_guarded = true;
+                defer this.fn_guarded = saved_guarded;
+                const saved_throw = this.try_throw_used;
+                this.try_throw_used = false;
+                defer this.try_throw_used = saved_throw;
                 // A `fun` is not the test body: its `try` is its own, and its
                 // body is the statement sequence a `try` nests the rest of.
                 const saved_in_test = this.in_test_body;
@@ -6342,7 +6403,9 @@ const Emitter = struct {
                     params[i] = V(try this.arenaVar(b, p));
                     this.addLocal(p);
                 }
-                const fun: Ast.Expr = .{ .fun = .{ .params = params, .body = try this.bodyNode(b, func.kind.body, 0, this.indent + 1) } };
+                const raw_fun_body = try this.bodyNode(b, func.kind.body, 0, this.indent + 1);
+                const fun_body = if (this.try_throw_used) try this.guardTry(b, raw_fun_body) else raw_fun_body;
+                const fun: Ast.Expr = .{ .fun = .{ .params = params, .body = fun_body } };
                 // `async { … }` (decision 124): the Task is eager here — the
                 // block's fun, called in place.
                 if (func.kind.syntax == .asyncBlock) return b.applyParen(fun, &.{});
@@ -6407,7 +6470,7 @@ const Emitter = struct {
                 // already was, and a bare `throw;` throws `undefined` rather
                 // than rendering as nothing — a hole `erlc` rejected, or worse,
                 // accepted as the next expression.
-                .@"return" => |r| if (r) |val| this.exprNode(b, val.*) else A("undefined"),
+                .@"return" => |r| this.returnNode(b, if (r) |val| try this.exprNode(b, val.*) else A("undefined")),
                 .throw_ => |r| b.remote("erlang", "throw", &.{if (r) |val| try this.exprNode(b, val.*) else A("undefined")}),
                 .try_ => |t| if (t) |val| this.tryThrowCase(b, val.*) else A("undefined"),
                 .await_ => |av| this.exprNode(b, av.*),
@@ -6507,6 +6570,9 @@ const Emitter = struct {
 
             .loop => |lp| {
                 if (lp.generator != null) return this.generatorLoopNode(b, lp);
+                const saved_in_loop = this.in_loop_body;
+                this.in_loop_body = true;
+                defer this.in_loop_body = saved_in_loop;
                 if (lp.condition) {
                     // The variables the body reassigns travel through the loop
                     // fun as its group, exactly as in statement position
