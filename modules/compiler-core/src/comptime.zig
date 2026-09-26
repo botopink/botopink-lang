@@ -1077,18 +1077,18 @@ fn resolveImports(
                     }
                     // Imported template fns (`-> @Expr<…>`) carry their decl
                     // across modules so call sites here can expand them.
-                    if (templateRegistry.get(name)) |tfn| {
+                    if (owner.len > 0) if (templateRegistry.get(try comptimeRegistryKey(env.arena, owner, name))) |tfn| {
                         try infer.registerImportedTemplateFn(env, local, tfn, owner);
-                    }
+                    };
                     // Imported decorators (`comptime _: @Decl` first param) carry
                     // their decl across modules too, so `#[name(args)]` sites in
                     // THIS module argument-check against the marker and run its
                     // body over each annotated declaration at comptime. Without
                     // this a marker only fired in its defining module — a lib
                     // ships its decorators, but they are applied by importers.
-                    if (decoratorRegistry.get(name)) |dfn| {
+                    if (owner.len > 0) if (decoratorRegistry.get(try comptimeRegistryKey(env.arena, owner, name))) |dfn| {
                         try infer.registerImportedDecorator(env, local, dfn, owner);
-                    }
+                    };
                     // Imported + activated extension (`import { Name* } from "mod"`):
                     // an `implement` block defined in another module is opted into
                     // THIS module's dispatch table only when the importer stars it.
@@ -1130,6 +1130,17 @@ const DefaultDsl = struct {
         };
     }
 };
+
+/// 01 step 12's registry half (decisions-pending 01std-d) — the template and
+/// decorator registries are keyed by the EXPORTING module and the name
+/// (`<path>\x00<name>`), never by the bare name: two modules exporting a
+/// `validated` decorator used to leave whichever registered last, so an
+/// import of one ran the other. `resolveImports` looks a name up under the
+/// module that exports it. A package's default handler stays under its bare
+/// handle (`registerExports`), which is what `import <pkg>` names.
+fn comptimeRegistryKey(arena: std.mem.Allocator, path: []const u8, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ path, name });
+}
 
 /// The package key for a module path: the segment before the first `/` (a lib
 /// dependency is loaded as `<lib>/<stem>`), or "" for a root-package module.
@@ -1192,12 +1203,12 @@ fn registerExports(
             if (b.decl == .@"fn") {
                 const f = b.decl.@"fn";
                 if (f.returnType) |rt| {
-                    if (rt.isTemplateReturnType()) try templateRegistry.put(b.name, f);
+                    if (rt.isTemplateReturnType()) try templateRegistry.put(try comptimeRegistryKey(arena, path, b.name), f);
                 }
                 // Decorators (`comptime _: @Decl` first param) export their decl
                 // too, so importing modules can run the body over their annotated
                 // declarations — generic, by shape, no lib name involved.
-                if (infer.isDecoratorParams(f.params)) try decoratorRegistry.put(b.name, f);
+                if (infer.isDecoratorParams(f.params)) try decoratorRegistry.put(try comptimeRegistryKey(arena, path, b.name), f);
             }
         }
     }

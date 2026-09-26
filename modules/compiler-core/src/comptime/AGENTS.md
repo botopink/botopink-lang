@@ -628,6 +628,12 @@ asks the question its position has:
 - `Token.Text.Italic` where `Token.Text` is expected is a value of the section
   (`sectionValueForExpected`), not of `Token`.
 
+- **The comptime registries** — `comptime.zig`'s template and decorator registries are keyed by
+  the exporting module and the name (`comptimeRegistryKey`, `<path>\x00<name>`), and
+  `resolveImports` looks a name up under the module its import resolves to: two modules exporting
+  a `tag` template or a `validated` decorator no longer leave whichever registered last
+  (`modules/template_name_collision`). A package's default handler stays under its bare handle.
+
 Not reached: a `case` arm's leading-dot pattern is resolved against the subject by the backends,
 and wasm's `findVariant` still takes the first enum declaring the name (05-wasm).
 
