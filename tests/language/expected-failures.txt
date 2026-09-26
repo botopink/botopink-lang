@@ -141,7 +141,6 @@ erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method 
 # ── §8 host externals ─────────────────────────────────────────────────────────
 
 # ── primitive methods ─────────────────────────────────────────────────────────
-erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
 
 # ── wasm, the third executable target ─────────────────────────────────────────
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only

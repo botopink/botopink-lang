@@ -1782,7 +1782,13 @@ codegen/
   `'<Iface>_<method>'(Self, …)` (`callIfaceDefault`/`emitNeededDefaults`,
   omitted trailing params filled from their declared defaults). Inside such a
   body inference recorded nothing, so `self`'s kind (`self_prim_kind`) drives
-  the lowering of `self.m(…)`/`self.length`.
+  the lowering of `self.m(…)`/`self.length`. The drain resumes at
+  `emitted_defaults`: it runs again after every shim pass, and restarting at 0
+  wrote each default a second time (`'Array_all'/2` twice — `erlc +from_asm`
+  refuses the module with "label(s) referenced but not defined"), which any
+  program reaching a default and a shim hit. Last, the method's **host
+  spelling** (`toUpperCase` for `String.toUpper`) reaches the method it
+  spells, through erlang's `primNodeAliasIn`.
 - **A primitive method on an untyped receiver** (`ensurePrimShim`,
   `emitPrimShimFn`, `primKindDeclares`): a lambda parameter carries no declared
   type, so inference records no instance lowering for it and
@@ -2471,7 +2477,10 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
    dispatch and the inline switch.
 3. **Inline switch** — what templates can't express:
    - beam_asm: array `contains`/`len`/`prepend`/`push`/`append`/`isEmpty`,
-     2-arg `slice` (`primArraySlice2`, `gc_bif` arithmetic), `at`/`indexOf`/`join`
+     2-arg `slice` (`primArraySlice2`, `gc_bif` arithmetic; an `end` that is
+     `null` — the default `xs.slice(1)` is filled with, or a `?i32` null at run
+     time — is `lists:nthtail/2`, tested at run time unless the operand is a
+     literal; it was `badarith`), `at`/`indexOf`/`join`
      (synthesized helper fns `ensureAtHelper`/`ensureIndexOfHelper`/
      `ensureStringifyHelper`); string `split`, 1-arg `slice`,
      `contains`/`startsWith` (`primCmpAgainstNomatch`). Returning `false` falls
@@ -2480,6 +2489,25 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
    - erlang: array `len`/`length`/`size` → `length/1`, int/float `toString`
      fallback, and BIF-shaped fallbacks for un-annotated default fns
      (`forEach`, `fold`, `drop`, `take`, `toList`).
+4. **Host spelling, last** — erlang and beam resolve a method's
+   `#[@External.Node("<name>")]` spelling (`toUpperCase`, `includes`) to the
+   method it spells (`primNodeAliasIn` in `erlang.zig`, over the process-wide
+   parse of `primitives.bp`), as commonJS (JavaScript's own method) and wasm
+   (`$__str_case`) already answered — only after every other lowering missed,
+   so it can only turn an undefined call into a call. The checker accepts any
+   method name on a primitive receiver (`"x".fooBar()` checks), which is why
+   `test/string_case_conversion.bp` compiled at all; refusing an unknown method
+   is `01-checker`'s.
+
+**The table audited (02 step 7, 2026-09-26):** one call of every method
+`primitives.bp` declares on `Number`/`Integer`/`Signed`/`Float`/`Bool`/`String`/
+`Array` (82 calls, `Array.range`/`Array.repeat` included) compiles on erlang
+and on beam and prints the same 84 lines on both. One method answers on
+neither — nor on commonJS or wasm: **`Array.unique`**, whose prelude body calls
+`prev.unwrapOr(x)` on an option the untyped prelude body never had rewritten to
+`__bp_option_unwrapOr` (erlang `unwrapOr/2 undefined`, beam
+`{unresolved_method, unwrapOr, 2}`). That is how a prelude `default fn` body is
+typed, not a backend lowering.
 
 ## Quick-reference rules
 

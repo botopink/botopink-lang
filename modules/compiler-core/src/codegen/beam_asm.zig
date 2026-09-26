@@ -31,6 +31,8 @@ const primOpTemplate = @import("../comptime/primOpTemplate.zig");
 const effectChain = @import("../comptime/effect_chain.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
 const beamEmitter = @import("./beam/beam_emitter.zig");
+/// Read-only: the embedded prelude `erlang.zig` parses once per process.
+const erlangBackend = @import("./erlang.zig");
 /// Instruction operand / destination shorthands — every `.S` line this backend
 /// writes is built from these and rendered by `beam_emitter.zig`; the backend
 /// never formats target text itself.
@@ -1874,6 +1876,9 @@ const Emitter = struct {
     needed_prim_shims: std.StringArrayHashMapUnmanaged(PrimShim) = .empty,
     /// How many of them have been emitted — the drain's watermark.
     emitted_prim_shims: usize = 0,
+    /// How many of `needed_defaults` are emitted — the drain resumes here, so
+    /// a second pass after the shims does not write every default again.
+    emitted_defaults: usize = 0,
     /// Method names the program's own `behavior` declarations carry (the
     /// primitive interfaces excluded). A call to one of these is a user type's
     /// method that failed to resolve, never a primitive's, so it keeps the
@@ -3397,6 +3402,7 @@ const Emitter = struct {
         needed_defaults: std.StringArrayHashMapUnmanaged(IfaceDefault),
         needed_prim_shims: std.StringArrayHashMapUnmanaged(PrimShim),
         emitted_prim_shims: usize,
+        emitted_defaults: usize,
         exports: std.ArrayListUnmanaged(ExportEntry),
         helpers: HelperNames,
     };
@@ -3494,6 +3500,7 @@ const Emitter = struct {
             .needed_defaults = self.needed_defaults,
             .needed_prim_shims = self.needed_prim_shims,
             .emitted_prim_shims = self.emitted_prim_shims,
+            .emitted_defaults = self.emitted_defaults,
             .exports = .empty,
             .helpers = self.takeHelperNames(),
         };
@@ -3509,6 +3516,7 @@ const Emitter = struct {
         self.needed_defaults = .empty;
         self.needed_prim_shims = .empty;
         self.emitted_prim_shims = 0;
+        self.emitted_defaults = 0;
         return saved;
     }
 
@@ -3569,6 +3577,7 @@ const Emitter = struct {
         self.needed_defaults = unit.needed_defaults;
         self.needed_prim_shims = unit.needed_prim_shims;
         self.emitted_prim_shims = unit.emitted_prim_shims;
+        self.emitted_defaults = unit.emitted_defaults;
         self.restoreHelperNames(unit.helpers);
     }
 
@@ -5814,6 +5823,12 @@ const Emitter = struct {
         }
         // A bodied interface `default fn` (`Array.fold`, `Number.clamp`).
         if (try self.callIfaceDefault(k, callee, recv_expr, cc, mode)) return true;
+        // The host spelling of a primitive method (`toUpperCase` for
+        // `String.toUpper`), after every other lowering missed — erlang's
+        // `primNodeAliasIn`, the same table.
+        if (primIfaceForKind(k)) |iface| {
+            if (erlangBackend.primNodeAliasIn(iface, callee)) |canon| return self.emitPrimMethod(k, canon, recv_expr, cc, mode);
+        }
         return false;
     }
 
@@ -6090,9 +6105,9 @@ const Emitter = struct {
     /// Emit every interface `default fn` a call site reached, with `self`
     /// carrying the interface's primitive kind. Drained to a fixpoint.
     fn emitNeededDefaults(self: *Emitter) anyerror!void {
-        var i: usize = 0;
-        while (i < self.needed_defaults.count()) : (i += 1) {
-            const d = self.needed_defaults.values()[i];
+        while (self.emitted_defaults < self.needed_defaults.count()) {
+            const d = self.needed_defaults.values()[self.emitted_defaults];
+            self.emitted_defaults += 1;
             const saved_kind = self.self_prim_kind;
             defer self.self_prim_kind = saved_kind;
             self.self_prim_kind = primKindForIface(d.iface);
@@ -6498,11 +6513,32 @@ const Emitter = struct {
     fn primArraySlice2(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!bool {
         const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
         const live = @max(self.min_live, st.x_top);
+        // An absent `end` (`xs.slice(1)`, whose trailing default C-04 fills
+        // with `null`, or a `?i32` that is null at run time) is the open slice
+        // `lists:nthtail(Start, Xs)` — `arraySlice0`'s template; `end - start`
+        // on the atom was `badarith`. A literal `end` needs no test.
+        const end_op = st.ops[2];
+        const end_is_null = end_op == .term and end_op.term == .atom and std.mem.eql(u8, end_op.term.atom, "undefined");
+        const end_is_number = end_op == .number or (end_op == .term and end_op.term == .integer);
+        if (end_is_null) {
+            try self.emitParallelMove(&.{ st.ops[1], st.ops[0] }, &.{ 0, 1 });
+            try self.emitPrimCallExt("lists", "nthtail", 2, mode);
+            return true;
+        }
+        const open_l: u32 = if (end_is_number) 0 else self.allocLabel();
+        const end_l: u32 = if (end_is_number) 0 else self.allocLabel();
+        if (!end_is_number) try beamEmitter.writeTest(self.out, .is_ne_exact, open_l, &.{ end_op, Op.atom("undefined") });
         // x{live} = start + 1, x{live+1} = end - start; both above every staged value.
         try beamEmitter.writeGcBif(self.out, .add, live, &.{ st.ops[1], Op.int(1) }, Dst.xr(live));
         try beamEmitter.writeGcBif(self.out, .sub, live + 1, &.{ st.ops[2], st.ops[1] }, Dst.xr(live + 1));
         try self.emitParallelMove(&.{ st.ops[0], Op.xr(live), Op.xr(live + 1) }, &.{ 0, 1, 2 });
         try self.emitPrimCallExt("lists", "sublist", 3, mode);
+        if (end_is_number) return true;
+        if (mode != .tail) try beamEmitter.writeJump(self.out, end_l);
+        try beamEmitter.writeLabel(self.out, open_l);
+        try self.emitParallelMove(&.{ st.ops[1], st.ops[0] }, &.{ 0, 1 });
+        try self.emitPrimCallExt("lists", "nthtail", 2, mode);
+        if (mode != .tail) try beamEmitter.writeLabel(self.out, end_l);
         return true;
     }
 

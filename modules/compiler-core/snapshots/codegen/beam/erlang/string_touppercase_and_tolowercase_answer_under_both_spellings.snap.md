@@ -14,8 +14,8 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
-    '__bp_print'([toUpperCase(<<"aB">>)]),
-    '__bp_print'([toLowerCase(<<"aB">>)]),
+    '__bp_print'([string:uppercase(<<"aB">>)]),
+    '__bp_print'([string:lowercase(<<"aB">>)]),
     '__bp_print'([string:uppercase(<<"aB">>)]),
     '__bp_print'([string:lowercase(<<"aB">>)]).
 
@@ -47,7 +47,8 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-test@main.erl:5:19: function toUpperCase/1 undefined
-test@main.erl:6:19: function toLowerCase/1 undefined
+AB
+ab
+AB
+ab
 ```

@@ -156,12 +156,9 @@ fn main() {
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 20}}.
-    {gc_bif, '+', {f, 0}, 0, [{integer, 1}, {integer, 1}], {x, 0}}.
-    {gc_bif, '-', {f, 0}, 1, [{atom, undefined}, {integer, 1}], {x, 1}}.
-    {move, {x, 1}, {x, 2}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {call_ext, 3, {extfunc, lists, sublist, 3}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, nthtail, 2}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 20}}.
@@ -476,4 +473,11 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+10
+30
+bo
+e
+el
+lo
+[20, 30]
 ```
