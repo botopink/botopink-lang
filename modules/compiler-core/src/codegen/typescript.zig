@@ -18,10 +18,14 @@ pub fn emitProgram(
     alloc: std.mem.Allocator,
     bindings: []const comptimeMod.TypedBinding,
     cross: ?*const crossModule.CrossModule,
+    /// The module's path (`main`, `shapes/circle`, `<dep>/<mod>`): an import's
+    /// source is spelled relative to it, as the `.js` beside it spells its
+    /// `require`.
+    module_name: []const u8,
 ) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
-    var bld = Builder{ .b = .{ .arena = arena.allocator() }, .cross = cross };
+    var bld = Builder{ .b = .{ .arena = arena.allocator() }, .cross = cross, .module_name = module_name };
 
     const decls = try bld.b.arena.alloc(js.TsDecl, bindings.len);
     for (bindings, 0..) |binding, i| decls[i] = try bld.binding(binding);
@@ -36,6 +40,17 @@ pub fn emitProgram(
 const Builder = struct {
     b: js.Builder,
     cross: ?*const crossModule.CrossModule = null,
+    module_name: []const u8 = "",
+    /// What `Self` spells inside the declaration being built — the class with
+    /// its own type parameters (`Dict<K, V>`). TypeScript has no `Self`.
+    self_type: ?js.TsType = null,
+    /// Import declarations already written: the checker hands one
+    /// `TypedBinding` per imported NAME, each carrying the whole
+    /// `ImportDecl`, and every one of them used to write the full `import`.
+    seen_import_decls: std.ArrayListUnmanaged([*]const ast.ImportPath) = .empty,
+    /// Names an `import` already bound in this file — a second binding of
+    /// one is `Duplicate identifier` to `tsc`.
+    seen_import_names: std.ArrayListUnmanaged([]const u8) = .empty,
 
     const Error = anyerror;
 
@@ -84,14 +99,45 @@ const Builder = struct {
         return .{ .const_ = .{ .name = name, .type = try self.inferredType(ty.*) } };
     }
 
+    /// `name<A, B>` — a declaration's name with its type parameters, which
+    /// the `.d.ts` must declare or every `A` in the signature is `Cannot find
+    /// name` (the model has no slot for them, so they ride in the name, as a
+    /// type alias's always have).
+    fn genericName(self: *Builder, name: []const u8, gps: []const ast.GenericParam) Error![]const u8 {
+        if (gps.len == 0) return name;
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        try out.appendSlice(self.b.arena, name);
+        try out.append(self.b.arena, '<');
+        for (gps, 0..) |gp, i| {
+            if (i > 0) try out.appendSlice(self.b.arena, ", ");
+            try out.appendSlice(self.b.arena, gp.name);
+        }
+        try out.append(self.b.arena, '>');
+        return out.items;
+    }
+
+    /// The type a declaration's own `Self` stands for: its name, applied to
+    /// its type parameters.
+    fn selfTypeOf(self: *Builder, name: []const u8, gps: []const ast.GenericParam) Error!js.TsType {
+        if (gps.len == 0) return .{ .name = name };
+        const args = try self.b.arena.alloc(js.TsType, gps.len);
+        for (gps, 0..) |gp, i| args[i] = .{ .name = gp.name };
+        return .{ .generic = .{ .name = name, .args = args } };
+    }
+
     fn fnDecl(self: *Builder, f: ast.FnDecl) Error!js.TsDecl {
         if (!f.isPub) return .none;
         // Template fns (`@Expr<…>` / `@ExprCustom<…>`) expand at their call site
         // and never reach codegen. Their `.d.ts` surface would be unusable from
         // host TypeScript — drop the declaration entirely.
         if (f.returnType) |ret| if (ret.isTemplateReturnType()) return .none;
+        // A decorator (`comptime _: @Decl` first) runs at compile time and is
+        // dropped from the program before the JavaScript is written, so the
+        // `.d.ts` declaring it promised a function the module does not export
+        // — and named `Decl`, which no TypeScript declares.
+        if (f.params.len > 0 and f.params[0].modifier == .@"comptime" and f.params[0].typeRef.isDeclType()) return .none;
         return .{ .func = .{
-            .name = f.name,
+            .name = try self.genericName(f.name, f.genericParams),
             .params = try self.params(f.params),
             .ret = try self.returnType(f.returnType),
         } };
@@ -99,6 +145,9 @@ const Builder = struct {
 
     fn record(self: *Builder, r: ast.TypeDecl) Error!js.TsDecl {
         if (!r.isPub) return .none;
+        const saved_self = self.self_type;
+        defer self.self_type = saved_self;
+        self.self_type = try self.selfTypeOf(r.name, r.genericParams);
         var members: std.ArrayListUnmanaged(js.TsMember) = .empty;
         for (r.recordFields()) |f| try members.append(self.b.arena, .{ .field = .{
             .modifier = "readonly ",
@@ -112,12 +161,12 @@ const Builder = struct {
             if (m.is_declare) continue;
             if (m.returnType) |ret| if (ret.isTemplateReturnType()) continue;
             try members.append(self.b.arena, .{ .method = .{
-                .name = m.name,
+                .name = try self.genericName(m.name, m.genericParams),
                 .params = try self.params(m.params),
                 .ret = try self.returnType(m.returnType),
             } });
         }
-        return .{ .class = .{ .name = r.name, .members = try members.toOwnedSlice(self.b.arena) } };
+        return .{ .class = .{ .name = try self.genericName(r.name, r.genericParams), .members = try members.toOwnedSlice(self.b.arena) } };
     }
 
     /// An enum declares the **class** the JavaScript builds (decision 5): a
@@ -128,6 +177,10 @@ const Builder = struct {
     /// objects, and the `.js` beside it built neither.
     fn enumDecl(self: *Builder, e: ast.TypeDecl) Error!js.TsDecl {
         if (!e.isPub) return .none;
+        const saved_self = self.self_type;
+        defer self.self_type = saved_self;
+        self.self_type = try self.selfTypeOf(e.name, e.genericParams);
+        const enum_type = self.self_type.?;
         var members: std.ArrayListUnmanaged(js.TsMember) = .empty;
         try members.append(self.b.arena, .{ .field = .{
             .modifier = "readonly ",
@@ -143,7 +196,7 @@ const Builder = struct {
                 try members.append(self.b.arena, .{ .field = .{
                     .modifier = "static readonly ",
                     .name = v.name,
-                    .type = .{ .name = e.name },
+                    .type = enum_type,
                 } });
                 continue;
             }
@@ -151,9 +204,9 @@ const Builder = struct {
             for (v.fields, 0..) |f, i| ps[i] = .{ .name = f.name, .type = try self.typeRef(f.typeRef) };
             try members.append(self.b.arena, .{ .method = .{
                 .modifier = "static ",
-                .name = v.name,
+                .name = try self.genericName(v.name, e.genericParams),
                 .params = ps,
-                .ret = .{ .name = e.name },
+                .ret = enum_type,
             } });
         }
         for (e.methods) |m| {
@@ -165,20 +218,28 @@ const Builder = struct {
             var ps: std.ArrayListUnmanaged(js.TsParam) = .empty;
             for (m.params) |p| try ps.append(self.b.arena, .{
                 .name = p.name,
-                .type = if (std.mem.eql(u8, p.name, "self")) js.TsType{ .name = e.name } else try self.typeRef(p.typeRef),
+                .type = if (std.mem.eql(u8, p.name, "self")) enum_type else try self.typeRef(p.typeRef),
             });
+            // A static cannot see the class's type parameters, so it declares
+            // them itself, with its own after them.
+            var gps: std.ArrayListUnmanaged(ast.GenericParam) = .empty;
+            try gps.appendSlice(self.b.arena, e.genericParams);
+            try gps.appendSlice(self.b.arena, m.genericParams);
             try members.append(self.b.arena, .{ .method = .{
                 .modifier = "static ",
-                .name = m.name,
+                .name = try self.genericName(m.name, gps.items),
                 .params = try ps.toOwnedSlice(self.b.arena),
                 .ret = try self.returnType(m.returnType),
             } });
         }
-        return .{ .class = .{ .name = e.name, .members = try members.toOwnedSlice(self.b.arena) } };
+        return .{ .class = .{ .name = try self.genericName(e.name, e.genericParams), .members = try members.toOwnedSlice(self.b.arena) } };
     }
 
     fn interface(self: *Builder, i: ast.BehaviorDecl) Error!js.TsDecl {
         if (!i.isPub) return .none;
+        const saved_self = self.self_type;
+        defer self.self_type = saved_self;
+        self.self_type = try self.selfTypeOf(i.name, i.genericParams);
         var members: std.ArrayListUnmanaged(js.TsMember) = .empty;
         for (i.fields) |f| try members.append(self.b.arena, .{ .field = .{
             .name = f.name,
@@ -188,13 +249,13 @@ const Builder = struct {
             if (m.is_default) continue;
             if (m.returnType) |ret| if (ret.isTemplateReturnType()) continue;
             try members.append(self.b.arena, .{ .method = .{
-                .name = m.name,
+                .name = try self.genericName(m.name, m.genericParams),
                 .params = try self.params(m.params),
                 .ret = try self.returnType(m.returnType),
             } });
         }
         return .{ .interface = .{
-            .name = i.name,
+            .name = try self.genericName(i.name, i.genericParams),
             .extends = i.extends,
             .members = try members.toOwnedSlice(self.b.arena),
         } };
@@ -214,52 +275,113 @@ const Builder = struct {
         return .{ .group = decls };
     }
 
+    /// An import, spelled the way the `.js` beside it spells its `require`
+    /// (`commonJS.zig` `buildUse`): relative to this module's own path, one
+    /// `import` per module that emits the names, and — from `"std"` — a whole
+    /// module bound as a namespace. It used to write the `from` verbatim
+    /// (`from "geometry"`, a bare specifier `tsc` resolves in `node_modules`)
+    /// once per imported name.
     fn use(self: *Builder, u: ast.ImportDecl) Error!js.TsDecl {
         // Fallback activation `X*;` has no type binding — emit nothing.
         if (u.activationOnly) return .none;
+        for (self.seen_import_decls.items) |p| if (p == u.imports.ptr) return .none;
+        try self.seen_import_decls.append(self.b.arena, u.imports.ptr);
 
-        // The shorthand `import { … };` names no module (decision 3), so — as
-        // the JavaScript does — each name is resolved to the file that emits
-        // it, one `import` per owner. It used to write the literal word
-        // `"./module"`, a module `tsc` cannot find.
-        if (u.source == .root) {
-            const xm = &(self.cross orelse return .none).exports;
-            var decls: std.ArrayListUnmanaged(js.TsDecl) = .empty;
-            var seen: std.ArrayListUnmanaged([]const u8) = .empty;
+        const prefix = try self.requirePrefix();
+        var decls: std.ArrayListUnmanaged(js.TsDecl) = .empty;
+
+        if (u.source == .module and std.mem.eql(u8, u.source.module, "std")) {
+            var mods: std.ArrayListUnmanaged([]const u8) = .empty;
+            var names: std.ArrayListUnmanaged(std.ArrayListUnmanaged([]const u8)) = .empty;
             for (u.imports) |imp| {
-                const info = xm.get(imp.name()) orelse continue;
-                const already = for (seen.items) |m| {
-                    if (std.mem.eql(u8, m, info.module)) break true;
-                } else false;
-                if (already) continue;
-                try seen.append(self.b.arena, info.module);
-                var names: std.ArrayListUnmanaged([]const u8) = .empty;
-                for (u.imports) |imp2| {
-                    const info2 = xm.get(imp2.name()) orelse continue;
-                    if (!std.mem.eql(u8, info2.module, info.module)) continue;
-                    try names.append(self.b.arena, imp2.name());
+                if (imp.activate) continue;
+                if (!try self.noteImportName(imp.name())) continue;
+                const whole = try imp.fullPath(self.b.arena);
+                if (!imp.isQualified() or comptimeMod.isStdModule(whole)) {
+                    try decls.append(self.b.arena, .{ .import_namespace = .{
+                        .name = imp.name(),
+                        .source = try std.fmt.allocPrint(self.b.arena, "{s}std/{s}", .{ prefix, whole }),
+                    } });
+                    continue;
                 }
-                try decls.append(self.b.arena, .{ .import = .{
-                    .names = try names.toOwnedSlice(self.b.arena),
-                    .source = try std.fmt.allocPrint(self.b.arena, "./{s}", .{info.module}),
-                } });
+                const mod = try imp.prefixPath(self.b.arena);
+                const slot = for (mods.items, 0..) |m, k| {
+                    if (std.mem.eql(u8, m, mod)) break k;
+                } else blk: {
+                    try mods.append(self.b.arena, mod);
+                    try names.append(self.b.arena, .empty);
+                    break :blk mods.items.len - 1;
+                };
+                try names.items[slot].append(self.b.arena, try importSpec(self.b.arena, imp));
             }
-            if (decls.items.len == 0) return .none;
-            return .{ .group = try decls.toOwnedSlice(self.b.arena) };
+            for (mods.items, names.items) |mod, list| try decls.append(self.b.arena, .{ .import = .{
+                .names = list.items,
+                .source = try std.fmt.allocPrint(self.b.arena, "{s}std/{s}", .{ prefix, mod }),
+            } });
+            return group(decls.items);
         }
 
-        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        // Every other import names its symbols one by one, each resolved to the
+        // module that emits it. A name whose owner's `.d.ts` declares nothing
+        // for it (a template fn, a lib namespace handle, an activated
+        // `implement`) is left out: importing it would dangle.
+        const xm = self.cross orelse return .none;
+        var seen_mods: std.ArrayListUnmanaged([]const u8) = .empty;
         for (u.imports) |imp| {
-            // A package import names only what the owner emits: a template fn
-            // (`html`) or a lib namespace handle has no declaration in the
-            // owner's `.d.ts`, so importing it would dangle.
-            if (self.cross != null and
-                !std.mem.eql(u8, u.source.module, "std") and
-                self.cross.?.exports.get(imp.name()) == null) continue;
-            try names.append(self.b.arena, imp.name());
+            if (imp.activate) continue;
+            const info = xm.picked(imp.leaf(), try u.leafSource(imp, self.b.arena, false), null) orelse continue;
+            const already = for (seen_mods.items) |m| {
+                if (std.mem.eql(u8, m, info.module)) break true;
+            } else false;
+            if (already) continue;
+            try seen_mods.append(self.b.arena, info.module);
+            var names: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (u.imports) |imp2| {
+                if (imp2.activate) continue;
+                const info2 = xm.picked(imp2.leaf(), try u.leafSource(imp2, self.b.arena, false), null) orelse continue;
+                if (!std.mem.eql(u8, info2.module, info.module)) continue;
+                if (!try self.noteImportName(imp2.name())) continue;
+                try names.append(self.b.arena, try importSpec(self.b.arena, imp2));
+            }
+            if (names.items.len == 0) continue;
+            try decls.append(self.b.arena, .{ .import = .{
+                .names = names.items,
+                .source = try std.fmt.allocPrint(self.b.arena, "{s}{s}", .{ prefix, info.module }),
+            } });
         }
-        if (names.items.len == 0) return .none;
-        return .{ .import = .{ .names = names.items, .source = u.source.module } };
+        return group(decls.items);
+    }
+
+    fn group(decls: []const js.TsDecl) js.TsDecl {
+        return switch (decls.len) {
+            0 => .none,
+            1 => decls[0],
+            else => .{ .group = decls },
+        };
+    }
+
+    /// `leaf` or `leaf as alias`.
+    fn importSpec(arena: std.mem.Allocator, imp: ast.ImportPath) Error![]const u8 {
+        if (imp.alias) |a| if (!std.mem.eql(u8, a, imp.leaf()))
+            return std.fmt.allocPrint(arena, "{s} as {s}", .{ imp.leaf(), a });
+        return imp.leaf();
+    }
+
+    /// Records `name` as bound by an import; false when it already was.
+    fn noteImportName(self: *Builder, name: []const u8) Error!bool {
+        for (self.seen_import_names.items) |n| if (std.mem.eql(u8, n, name)) return false;
+        try self.seen_import_names.append(self.b.arena, name);
+        return true;
+    }
+
+    /// `./` for a module at the output root, one `../` per path segment
+    /// otherwise — `commonJS.zig` `buildUse`'s `req_prefix`.
+    fn requirePrefix(self: *Builder) Error![]const u8 {
+        const depth = std.mem.count(u8, self.module_name, "/");
+        if (depth == 0) return "./";
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        for (0..depth) |_| try buf.appendSlice(self.b.arena, "../");
+        return buf.items;
     }
 
     fn delegate(self: *Builder, d: ast.DelegateDecl) Error!js.TsDecl {
@@ -268,7 +390,7 @@ const Builder = struct {
         for (d.params, 0..) |p, i| ps[i] = .{ .name = p.name, .type = try self.typeRef(p.typeRef) };
         const ret = try self.b.typePtr(if (d.returnType) |r| try self.typeRef(r) else js.TsType{ .name = "void" });
         return .{ .type_alias = .{
-            .name = d.name,
+            .name = try self.genericName(d.name, d.genericParams),
             .type = .{ .func = .{ .params = ps, .ret = ret } },
         } };
     }
@@ -367,7 +489,10 @@ const Builder = struct {
     fn typeRef(self: *Builder, tr: ast.TypeRef) Error!js.TsType {
         switch (tr) {
             // A parameter the source leaves unannotated carries an empty name.
-            .named => |n| return namedType(n),
+            .named => |n| {
+                if (std.mem.eql(u8, n, "Self")) if (self.self_type) |st| return st;
+                return namedType(n);
+            },
             .array => |inner| return .{ .array = try self.b.typePtr(try self.typeRef(inner.*)) },
             .tuple_ => |elems| {
                 const out = try self.b.arena.alloc(js.TsType, elems.len);
@@ -387,7 +512,15 @@ const Builder = struct {
             }) },
             .function => |f| {
                 const ps = try self.b.arena.alloc(js.TsParam, f.params.len);
-                for (f.params, 0..) |p, i| ps[i] = .{ .type = try self.typeRef(p) };
+                // TypeScript's function type names every parameter: in
+                // `(A, K) => A` each `A` is a parameter NAME of type `any`.
+                for (f.params, 0..) |p, i| ps[i] = .{
+                    .name = if (i < f.paramNames.len and f.paramNames[i].len > 0)
+                        f.paramNames[i]
+                    else
+                        try std.fmt.allocPrint(self.b.arena, "p{d}", .{i}),
+                    .type = try self.typeRef(p),
+                };
                 return .{ .func = .{ .params = ps, .ret = try self.b.typePtr(try self.typeRef(f.returnType.*)) } };
             },
             .generic => |g| return self.genericTypeRef(g),
@@ -414,14 +547,15 @@ const Builder = struct {
         if (std.mem.eql(u8, g.name, "Component") and g.args.len == 2) {
             return .{ .generic = .{ .name = "Promise", .args = try self.b.types(&.{try self.typeRef(g.args[1])}) } };
         }
+        // `@Result<T, E>` is what the JavaScript builds: `{ ok: v }` or
+        // `{ error: e }` (`buildResult`). It used to promise a tagged
+        // `{ tag: "Ok"; result: T }` no module ever returned.
         if (std.mem.eql(u8, g.name, "Result") and g.args.len == 2) {
             return .{ .union_ = try self.b.types(&.{
                 .{ .object = .{ .fields = try self.b.arena.dupe(js.TsField, &.{
-                    .{ .name = "tag", .type = .{ .literal = "Ok" } },
-                    .{ .name = "result", .type = try self.typeRef(g.args[0]) },
+                    .{ .name = "ok", .type = try self.typeRef(g.args[0]) },
                 }), .sep = "; " } },
                 .{ .object = .{ .fields = try self.b.arena.dupe(js.TsField, &.{
-                    .{ .name = "tag", .type = .{ .literal = "Error" } },
                     .{ .name = "error", .type = try self.typeRef(g.args[1]) },
                 }), .sep = "; " } },
             }) };
@@ -437,6 +571,7 @@ const Builder = struct {
         if (host) |h| if (g.args.len >= 1) {
             return .{ .generic = .{ .name = h, .args = try self.b.types(&.{try self.typeRef(g.args[0])}) } };
         };
+        if (std.mem.eql(u8, g.name, "Self")) if (self.self_type) |st| return st;
         // `@Decl` with no type arguments is the plain name, never `Decl<>`.
         if (g.args.len == 0) return .{ .name = g.name };
         const args = try self.b.arena.alloc(js.TsType, g.args.len);

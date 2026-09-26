@@ -500,7 +500,7 @@ exports.empty = empty;
 
 ----- TYPESCRIPT TYPEDEF -- std/dict.d.ts
 ```typescript
-export declare class Dict {
+export declare class Dict<K, V> {
     readonly pairs: Array<[K, V]>;
     constructor(pairs: Array<[K, V]>);
     at(key: K): V | null;
@@ -512,12 +512,12 @@ export declare class Dict {
     insert(key: K, value: V): Dict<K, V>;
     delete(key: K): Dict<K, V>;
     merge(other: Dict<K, V>): Dict<K, V>;
-    fold(initial: A, f: (A, K, V) => A): A;
-    mapValues(f: (V) => W): Dict<K, W>;
+    fold<A>(initial: A, f: (acc: A, key: K, value: V) => A): A;
+    mapValues<W>(f: (value: V) => W): Dict<K, W>;
 }
 
 
-export declare function empty(): Dict<K, V>;
+export declare function empty<K, V>(): Dict<K, V>;
 
 ```
 
@@ -586,19 +586,16 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Dict, newDict, gt, reverse, toInt } from "std";
+import { Dict, empty as newDict } from "./std/dict";
+import { gt, reverse, toInt } from "./std/order";
 
 
-import { Dict, newDict, gt, reverse, toInt } from "std";
 
 
-import { Dict, newDict, gt, reverse, toInt } from "std";
 
 
-import { Dict, newDict, gt, reverse, toInt } from "std";
 
 
-import { Dict, newDict, gt, reverse, toInt } from "std";
 
 
 

@@ -197,6 +197,13 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
             try w.writeAll(i.source);
             try w.writeAll("\";\n");
         },
+        .import_namespace => |i| {
+            try w.writeAll("import * as ");
+            try w.writeAll(ident(i.name));
+            try w.writeAll(" from \"");
+            try w.writeAll(i.source);
+            try w.writeAll("\";\n");
+        },
         .group => |items| for (items) |item| try writeDecl(w, item),
     }
 }

@@ -89,7 +89,7 @@ exports.make = make;
 export declare class Counter {
     readonly n: number;
     constructor(n: number);
-    zero(): Self;
+    zero(): Counter;
     bump(): number;
 }
 
@@ -171,13 +171,11 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Counter, Shape, make } from "geometry";
+import { Counter, Shape, make } from "./geometry";
 
 
-import { Counter, Shape, make } from "geometry";
 
 
-import { Counter, Shape, make } from "geometry";
 
 
 

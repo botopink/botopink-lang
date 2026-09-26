@@ -120,10 +120,9 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Response, App } from "http";
+import { Response, App } from "./http";
 
 
-import { Response, App } from "http";
 
 
 

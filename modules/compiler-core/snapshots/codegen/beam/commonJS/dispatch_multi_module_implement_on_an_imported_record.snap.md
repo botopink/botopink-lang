@@ -102,7 +102,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Pato } from "pond";
+import { Pato } from "./pond";
 
 
 

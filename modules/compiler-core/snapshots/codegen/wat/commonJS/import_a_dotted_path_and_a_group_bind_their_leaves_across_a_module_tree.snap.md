@@ -135,16 +135,14 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
+import { name as circleName, label as circleLabel } from "./shapes/circle";
 import { seven, label } from "./shapes/helpers";
 
 
-import { seven, label } from "./shapes/helpers";
 
 
-import { seven, label } from "./shapes/helpers";
 
 
-import { seven, label } from "./shapes/helpers";
 
 
 

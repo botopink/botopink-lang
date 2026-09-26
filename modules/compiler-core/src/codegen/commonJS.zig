@@ -107,7 +107,7 @@ pub fn codegenEmit(
 
                 // Generate TypeScript typedefs if configured.
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
-                    try emitTypeDef(alloc, ok.bindings, &cross)
+                    try emitTypeDef(alloc, ok.bindings, &cross, ct.name)
                 else
                     null;
 
@@ -149,8 +149,9 @@ fn emitTypeDef(
     alloc: std.mem.Allocator,
     bindings: []const comptimeMod.TypedBinding,
     cross: *const CrossModule,
+    module_name: []const u8,
 ) ![]u8 {
-    return try tsEmit.emitProgram(alloc, bindings, cross);
+    return try tsEmit.emitProgram(alloc, bindings, cross, module_name);
 }
 
 // ── emit ──────────────────────────────────────────────────────────────────────

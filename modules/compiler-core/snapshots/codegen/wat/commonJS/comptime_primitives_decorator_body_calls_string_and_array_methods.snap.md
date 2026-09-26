@@ -1561,7 +1561,6 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function describe(decl: Decl): void;
 
 
 

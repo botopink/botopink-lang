@@ -105,10 +105,8 @@ _botopink_main();
 import { hostKey, hostLen, nodeOnly } from "./hostlib";
 
 
-import { hostKey, hostLen, nodeOnly } from "./hostlib";
 
 
-import { hostKey, hostLen, nodeOnly } from "./hostlib";
 
 
 export declare function main(): void;

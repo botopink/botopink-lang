@@ -517,8 +517,10 @@ pub const TsDecl = union(enum) {
     enum_: struct { name: []const u8, members: []const TsMember },
     /// `export declare type Name = T;`
     type_alias: struct { name: []const u8, type: TsType },
-    /// `import { a, b } from "src";`
+    /// `import { a, b as c } from "src";` — a name is written as given.
     import: struct { names: []const []const u8, source: []const u8 },
+    /// `import * as name from "src";` — a whole module bound to one name.
+    import_namespace: struct { name: []const u8, source: []const u8 },
     /// Several declarations with no blank line between them.
     group: []const TsDecl,
     /// Nothing at all — a binding with no `.d.ts` surface.

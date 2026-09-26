@@ -109,10 +109,10 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { label } from "models/user";
+import { label } from "./models/user";
 
 
-import { tag } from "services/user";
+import { tag } from "./services/user";
 
 
 
