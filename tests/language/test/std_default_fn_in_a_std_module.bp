@@ -17,8 +17,8 @@
 import {querystring, path} from "std";
 
 test "a String.slice default fn answers inside a std module" {
-    assert querystring.parse("?a=1&b=2").length == 2;
-    assert querystring.parse("a=1").length == 1;
+    assert querystring.parse("?a=1&b=2").unwrapOr([]).length == 2;
+    assert querystring.parse("a=1").unwrapOr([]).length == 1;
 }
 
 test "a std module reached only by its namespace is still loaded" {

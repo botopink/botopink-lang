@@ -90,9 +90,9 @@ pub declare fn percentEncode(s: string) -> string;
 pub declare fn percentDecode(s: string) -> @Result<string, string>;
 
 // `application/x-www-form-urlencoded`, the escaping form: each pair is
-// `percentEncode(name)=percentEncode(value)`, joined with `&`. This is the
-// case `querystring.stringify` documents itself as not handling (its
-// docblock says callers pre-escape).
+// `percentEncode(name)=percentEncode(value)`, joined with `&`.
+// `querystring.stringify` writes the same text and refuses a control
+// character, which this does not.
 pub fn formStringify(pairs: Array<#(string, string)>) -> string {
     return pairs.map({ p -> [percentEncode(p._0), "=", percentEncode(p._1)].join("") }).join("&");
 }
@@ -102,7 +102,8 @@ pub fn formStringify(pairs: Array<#(string, string)>) -> string {
 // as a space (the form encoding's rule), then percent-decoded. A field that
 // does not decode keeps its raw text — a parse over user input must not
 // throw, and a malformed pair is still a pair. Empty fields (`a=1&&b=2`)
-// are dropped.
+// are dropped. `querystring.parseForm` is the refusing reader: a malformed
+// escape or a control character is its `Error`, not a raw field.
 pub fn formParse(q: string) -> Array<#(string, string)> {
     val fields = q.split("&").filter({ f -> f != "" });
     return fields.map({ f -> formField(f) });

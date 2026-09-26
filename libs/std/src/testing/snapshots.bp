@@ -133,9 +133,9 @@ declare fn writeFile(p: string, text: string) -> @Result<i32, string>;
 #[@External.Erlang("""(fun(__P) -> case file:delete(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 declare fn removeFile(p: string) -> @Result<i32, string>;
 
-// Whether a file exists at `p`.
+// Whether a path exists at `p`, of any kind — `io.fs.exists`' cell.
 #[@External.Node("""require('fs').existsSync($0)""")]
-#[@External.Erlang("""filelib:is_file($0)""")]
+#[@External.Erlang("""(case file:read_file_info($0) of {ok, _} -> true; _ -> false end)""")]
 declare fn exists(p: string) -> bool;
 
 // Remove a directory tree — the inline tests' scratch directories, so a run

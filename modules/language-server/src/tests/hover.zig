@@ -272,6 +272,33 @@ test "hover: a grouped std import binds its aliased leaf" {
     try snap.assertHover(gpa, "hover_import_group_leaf_alias", source, h.pos(1, 8), result);
 }
 
+// Decision 110 — `as` on a type leaf binds a checker-local name: the alias
+// hovers as the declared type, and a value annotated through it as that type.
+test "hover: a std type imported under an alias hovers as the declared type" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\import {collections.Dict as D} from "std";
+        \\val d: D<string, i32> = D.empty();
+    ;
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.result.bindingsFor(h.TEST_URI);
+
+    // Cursor on `d` in `val d: D<…>` (line 1, char 4).
+    const on_value = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (on_value) |hov| gpa.free(hov.contents.value);
+    try std.testing.expect(on_value != null);
+    try std.testing.expect(std.mem.indexOf(u8, on_value.?.contents.value, "Dict<string, i32>") != null);
+    try snap.assertHover(gpa, "hover_import_type_alias_value", source, h.pos(1, 4), on_value);
+
+    // Cursor on the alias `D` in `D.empty()` (line 1, char 24).
+    const on_alias = try engine.hover(gpa, source, h.pos(1, 24), bindings);
+    defer if (on_alias) |hov| gpa.free(hov.contents.value);
+    try std.testing.expect(on_alias != null);
+    try std.testing.expect(std.mem.indexOf(u8, on_alias.?.contents.value, "D = Dict") != null);
+    try snap.assertHover(gpa, "hover_import_type_alias_receiver", source, h.pos(1, 24), on_alias);
+}
+
 // NOTE: the "external declare fn in std module" hover test was retired with the
 // stdlib-interface migration — `io` was dissolved and `@[external]` declarations
 // now live in `primitives.d.bp` (flattened into the global env, not an importable

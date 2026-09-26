@@ -1,0 +1,21 @@
+//// Decisions 110 and 111 — a `collections` constructor is type-scoped, and
+//// the module namespace reaches the type: `collections.Dict.empty()` after
+//// `import {collections} from "std"` is the leaf form's `Dict.empty()`,
+//// beside the module's own functions (`collections.lt()`) and an alias of
+//// the same type (`D`).
+
+import {collections} from "std";
+import {collections.Dict as D} from "std";
+
+pub fn main() {
+    val d = collections.Dict.empty().insert("k", 7).insert("j", 1);
+    @print(d.size());
+    @print(d.at("k").unwrapOr(0));
+    val s = collections.Set.fromList([1, 2, 2, 3]);
+    @print(s.size());
+    val q = collections.Queue.fromList(["a", "b"]).enqueue("c");
+    @print(q.size());
+    @print(collections.toInt(collections.lt()));
+    val e: D<string, i32> = D.empty();
+    @print(e.size());
+}

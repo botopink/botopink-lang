@@ -3,7 +3,7 @@
 //// Reference:
 ////   Node.js  — https://nodejs.org/api/process.html
 ////              (`process.exit`, `process.cwd`, `process.platform`,
-////               `process.arch`, `process.pid`)
+////               `process.pid`)
 ////   Erlang   — https://www.erlang.org/doc/apps/stdlib/erlang.html#halt-1
 ////              (`erlang:halt/1`, `file:get_cwd/0`, `os:type/0`,
 ////               `os:getpid/0`)
@@ -44,14 +44,6 @@ pub declare fn cwd() -> string;
 #[@External.Node("process.platform")]
 #[@External.Erlang("""(fun() -> {_, __Flavor} = os:type(), atom_to_binary(__Flavor, utf8) end)()""")]
 pub declare fn platform() -> string;
-
-// Host CPU architecture string — `'x64'`, `'arm64'`, etc.
-// Node: bare `process.arch` (property).
-// Erlang: `erlang:system_info(system_architecture)` returns a
-// charlist; the template converts it to a binary.
-#[@External.Node("process.arch")]
-#[@External.Erlang("list_to_binary(erlang:system_info(system_architecture))")]
-pub declare fn arch() -> string;
 
 // Host process id.
 // Node: `process.pid` (property — i32 in JS, stored as Number).
@@ -112,11 +104,6 @@ test "process.platform is one of the known host families" {
     val knownDarwin = p == "darwin";
     val knownWin = p == "win32";
     assert knownLinux || knownDarwin || knownWin;
-}
-
-test "process.arch is non-empty" {
-    val a = arch();
-    assert a.length > 0;
 }
 
 test "process.pid is positive" {

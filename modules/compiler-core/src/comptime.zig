@@ -7,6 +7,7 @@ const ast = @import("./ast.zig");
 const infer = @import("./comptime/infer.zig");
 const transform = @import("./comptime/transform.zig");
 const alias_erase = @import("./comptime/alias_erase.zig");
+const std_namespace = @import("./comptime/std_namespace.zig");
 const evalMod = @import("./comptime/eval.zig");
 const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
@@ -632,12 +633,16 @@ fn analyzeSource(
     };
 
     var parser = Parser.init(tokens);
-    const program = parser.parse(arena) catch |err| switch (err) {
+    const parsed = parser.parse(arena) catch |err| switch (err) {
         // The caller renders the diagnostic (`ComptimeOutput.parseError`); a
         // library call must not write to stderr — a test runner reads it.
         error.UnexpectedToken => return .{ .parseError = .{ .parse = parser.parseError } },
         else => return err,
     };
+    // Decisions 110 / 111 on the use side: `io.fs.f()` through a folder
+    // namespace and `collections.Dict.empty()` through a module one reach the
+    // checker and the backends as the one-dot forms they lower.
+    const program = try std_namespace.expand(arena, parsed);
 
     if (validation.validateComptime(program)) |err_info| {
         env.deinit();
@@ -903,7 +908,10 @@ fn expandStdImports(arena: std.mem.Allocator, modules: []const Module, target_na
         var lx = Lexer.init(mod.source);
         const tokens = lx.scanAll(arena) catch continue;
         var p = Parser.init(tokens);
-        const program = p.parse(arena) catch continue;
+        // The same rewrite `analyzeSource` makes, so a module reached only
+        // through a folder namespace (`io.fs.f()`) or a module's type
+        // (`collections.Dict.empty()`) is embedded like any imported one.
+        const program = std_namespace.expand(arena, p.parse(arena) catch continue) catch continue;
         for (program.decls) |decl| switch (decl) {
             .val => |v| if (beam_target and v.mutable) {
                 for (std_pkg_modules, 0..) |spm, i| {

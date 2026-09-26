@@ -284,7 +284,7 @@ pub fn lessThan(actual: i32, bound: i32) -> @Result<void, string> {
 // can unify the return — a closure whose only statement is `@panic("…")` does
 // not unify with `void` (noreturn ≠ void). Callers end the body with `0;`.
 #[@External.Node("""(() => { try { $0(); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
-#[@External.Erlang("""(fun(__B) -> try __B(), {ok, 0} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
+#[@External.Erlang("""(fun(__B) -> try __B(), {ok, 0} catch error:{__T, __M} when (__T =:= panic orelse __T =:= todo) andalso (is_binary(__M) orelse is_list(__M)) -> {error, unicode:characters_to_binary(__M)}; __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
 declare fn tryCatch(body: fn() -> i32) -> @Result<i32, string>;
 
 // Private: the message `tryCatch` caught, or `""` for a body that completed.
@@ -308,9 +308,12 @@ pub fn throws(body: fn() -> i32) -> @Result<void, string> {
 }
 
 // Fails when `body` completes normally, or when the caught message does not
-// contain `needle`. On Erlang the caught message is `Class:Reason`
-// (`error:{panic,<<"boom">>}`), so match on the text you raised, not on the
-// wrapping.
+// contain `needle`. A `@panic(text)` / `@todo(text)` is caught as its own
+// `text` on both targets, byte for byte — a needle with a `"`, a `\` or a
+// non-ASCII character matches alike (the erlang cell reads the raised
+// binary, not its `~p` rendering, where `"` came back escaped). Any other
+// host raise is its JS `message` on Node and `Class:Reason` on Erlang
+// (`error:badarg`).
 pub fn throwsWith(body: fn() -> i32, needle: string) -> @Result<void, string> {
     val r = tryCatch(body);
     if (r.isOk()) {
@@ -620,6 +623,29 @@ test "asserts: throwsWith checks the message" {
         explode();
         0;
     }, "on fire");
+}
+
+fn quoteRaiser() -> i32 {
+    @panic("withHeader(\"Set-Cookie\", v) \\ twice");
+    return 0;
+}
+
+test "asserts: throwsWith matches a needle with a quote or a backslash on every target" {
+    try throwsWith({ ->
+        quoteRaiser();
+        0;
+    }, "withHeader(\"Set-Cookie\"");
+    try throwsWith({ ->
+        quoteRaiser();
+        0;
+    }, "v) \\ twice");
+    // The raised text itself, not a rendering of it: the escaped spelling
+    // `\"` is not in the message.
+    val escaped = throwsWith({ ->
+        quoteRaiser();
+        0;
+    }, "withHeader(\\\"");
+    try equals(errorText(escaped), "asserts.throwsWith: message does not contain needle");
 }
 
 test "asserts: throwsWith fails when the body completes" {
