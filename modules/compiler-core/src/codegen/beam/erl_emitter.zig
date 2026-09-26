@@ -177,8 +177,10 @@ fn writeEscaped(w: *Writer, bytes: []const u8) Writer.Error!void {
 
 /// `<<"…">>` from a botopink string literal's lexeme content. The lexer keeps
 /// escape sequences verbatim; botopink's map 1:1 onto Erlang's for the common
-/// set (`\n \r \t \0 \\ \"`), `\$` becomes `$`, and `\u{…}` becomes `\x{…}`.
-/// Raw bytes pass through unchanged.
+/// set (`\n \r \t \0 \\ \"`), `\$` becomes `$`, and `\u{…}` becomes its UTF-8
+/// bytes, each `\x{HH}`, as does a raw byte ≥ 0x80 — a plain Erlang binary
+/// keeps only the low 8 bits of a character above 255, so writing `\x{e7}` or a
+/// raw `ç` stored ONE latin1 byte where botopink means UTF-8.
 pub fn writeBinaryFromLexeme(w: *Writer, s: []const u8) Writer.Error!void {
     try w.writeAll("<<");
     try writeStringFromLexeme(w, s);
@@ -205,13 +207,24 @@ pub fn writeStringFromLexeme(w: *Writer, s: []const u8) Writer.Error!void {
                     i += 2;
                 },
                 'u' => {
-                    try w.writeAll("\\x{");
-                    i += 3; // skip `\u{`
-                    while (i < s.len and s[i] != '}') : (i += 1) {
-                        try w.writeByte(s[i]);
+                    // `\u{…}` is a code point; a binary holds its UTF-8 bytes.
+                    // Erlang's own `\x{263A}` inside a plain `<<"…">>` keeps
+                    // the low 8 bits only (`<<"\x{2028}">>` is `<<40>>`), so
+                    // each byte is written as its own `\x{HH}`.
+                    const open = i + 3; // past `\u{`
+                    var close = open;
+                    while (close < s.len and s[close] != '}') close += 1;
+                    const cp = std.fmt.parseInt(u21, s[open..close], 16) catch null;
+                    var enc: [4]u8 = undefined;
+                    const n: ?u3 = if (cp) |code| std.unicode.utf8Encode(code, &enc) catch null else null;
+                    if (n) |len| {
+                        for (enc[0..len]) |byte| try w.print("\\x{{{X:0>2}}}", .{byte});
+                    } else {
+                        try w.writeAll("\\x{");
+                        try w.writeAll(s[open..close]);
+                        try w.writeByte('}');
                     }
-                    if (i < s.len) i += 1; // skip `}`
-                    try w.writeByte('}');
+                    i = if (close < s.len) close + 1 else close;
                 },
                 else => {
                     try w.writeByte(c);
@@ -224,6 +237,10 @@ pub fn writeStringFromLexeme(w: *Writer, s: []const u8) Writer.Error!void {
                 '\n' => try w.writeAll("\\n"),
                 '\r' => try w.writeAll("\\r"),
                 '\t' => try w.writeAll("\\t"),
+                // A raw non-ASCII source byte: `erlc` reads the file as UTF-8
+                // and a plain `<<"ç">>` keeps one byte per CHARACTER, the
+                // code point's low 8 bits — so each byte is escaped.
+                0x80...0xff => try w.print("\\x{{{X:0>2}}}", .{c}),
                 else => try w.writeByte(c),
             }
             i += 1;
@@ -725,8 +742,8 @@ test "erl_emitter: binaries from raw bytes escape everything non-printable" {
 test "erl_emitter: binaries from lexemes keep botopink escapes" {
     var aw: Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
-    try writeBinaryFromLexeme(&aw.writer, "a\\nb\\$c\\u{1F600}\"é");
-    try std.testing.expectEqualStrings("<<\"a\\nb$c\\x{1F600}\\\"é\">>", aw.written());
+    try writeBinaryFromLexeme(&aw.writer, "a\\nb\\$c\\u{1F600}\"é\\u{e7}\\u{2028}");
+    try std.testing.expectEqualStrings("<<\"a\\nb$c\\x{F0}\\x{9F}\\x{98}\\x{80}\\\"\\x{C3}\\x{A9}\\x{C3}\\x{A7}\\x{E2}\\x{80}\\x{A8}\">>", aw.written());
 }
 
 test "erl_emitter: scalars" {

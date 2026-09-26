@@ -31,7 +31,7 @@ fn main() {
     {move, {literal, <<"Sistema iniciado">>}, {x, 0}}.
     {call, 1, {f, 5}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {literal, <<"Memória alta">>}, {x, 0}}.
+    {move, {literal, <<"Mem\x{C3}\x{B3}ria alta">>}, {x, 0}}.
     {call, 1, {f, 7}}.
     {move, {x, 0}, {y, 1}}.
     {move, {literal, <<"Log replicado">>}, {x, 0}}.

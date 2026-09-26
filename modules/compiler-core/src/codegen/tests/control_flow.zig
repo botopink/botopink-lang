@@ -1207,6 +1207,39 @@ test "beam: an enum variant's labelled payload claims its declared slot" {
     , "502\n502\n502\n", &.{});
 }
 
+// A string literal above U+007F — raw in the source or written `\u{…}` — is
+// its UTF-8 bytes on erlang and beam. `erl_emitter.writeStringFromLexeme`
+// wrote `\x{e7}` / a raw `ç` inside a plain `<<"…">>`, which keeps one byte per
+// character (the low 8 bits): `"\u{2028}"` was `<<40>>`, `"\u{1f600}"` `<<0>>`
+// (handed over by `01-std-lib-enablement`, 2026-09-25).
+test "erlang: a non-ASCII string literal is its UTF-8 bytes" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val a = "ç";
+        \\  val b = "\u{e7}";
+        \\  @print(a == b);
+        \\  @print("\u{1f600}" == "😀");
+        \\  @print("a\u{2028}b".length());
+        \\  @print(["ç", "\u{e9}"]);
+        \\  @print("Memória".toUpper());
+        \\}
+    , "true\ntrue\n3\n[\"ç\", \"é\"]\nMEMÓRIA\n", &.{"\\x{C3}\\x{A7}"});
+}
+
+test "beam: a non-ASCII string literal is its UTF-8 bytes" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val a = "ç";
+        \\  val b = "\u{e7}";
+        \\  @print(a == b);
+        \\  @print("\u{1f600}" == "😀");
+        \\  @print("a\u{2028}b".length());
+        \\  @print(["ç", "\u{e9}"]);
+        \\  @print("Memória".toUpper());
+        \\}
+    , "true\ntrue\n3\n[\"ç\", \"é\"]\nMEMÓRIA\n", &.{"\\x{C3}\\x{A7}"});
+}
+
 test "erlang: calling the result of a call applies it (`calleeExpr`)" {
     // `test/curried_call.bp` (C-09's backend half): `adder(3)(4)` carries its
     // callee as an expression, and lowered as a name it was `''(4)`, which

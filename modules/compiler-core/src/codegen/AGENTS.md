@@ -600,6 +600,12 @@ codegen/
   does — built positionally it was `{…rect, 2, 5}` and
   `run/labelled_arguments.bp` printed `205` for `502`. The beam twin is
   `lowerTaggedTuple`'s `variantDeclOf`.
+- **A string literal is its UTF-8 bytes**: `erl_emitter.writeStringFromLexeme`
+  writes `\u{…}` as the code point's UTF-8 bytes and a raw byte ≥ 0x80 as
+  `\x{HH}`, on erlang and beam alike. A plain `<<"\x{2028}">>` or `<<"ç">>`
+  keeps one byte per character — `"\u{2028}"` was `<<40>>`, `"\u{1f600}"`
+  `<<0>>` — so `"ç" == "\u{e7}"` held only by accident and
+  `escape.jsString("f(x)")` answered `f x ` (01-std's handover).
 - **Calling the result of a call** (`adder(3)(4)`, `cc.calleeExpr` with
   `callee == ""`): `(adder(3))(4)` — `applyParen` over the callee expression's
   node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which

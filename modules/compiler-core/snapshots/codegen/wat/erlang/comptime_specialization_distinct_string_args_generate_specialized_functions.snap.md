@@ -21,7 +21,7 @@ fn main() {
 
 main() ->
     R1 = 'build_$0'(<<"Sistema iniciado">>),
-    R2 = 'build_$1'(<<"Memória alta">>),
+    R2 = 'build_$1'(<<"Mem\x{C3}\x{B3}ria alta">>),
     R3 = 'build_$0'(<<"Log replicado">>),
     '__bp_print'([R1]),
     '__bp_print'([R2]),

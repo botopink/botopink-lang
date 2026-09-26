@@ -2090,13 +2090,13 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
     } });
     const fail_pattern = try b.tuple(&.{ A("fail"), V("FMsg"), V("FLoc") });
     const report = try b.caseOf(V("Outcome"), &.{
-        .{ .patterns = try b.exprs(&.{A("ok")}), .body = try b.body(&.{ try ioFormat(b, "  ok   ~s~n", &.{V("Name")}), A("ok") }) },
+        .{ .patterns = try b.exprs(&.{A("ok")}), .body = try b.body(&.{ try ioFormat(b, "  ok   ~ts~n", &.{V("Name")}), A("ok") }) },
         .{
             .patterns = try b.exprs(&.{fail_pattern}),
             .guards = try b.exprs(&.{try b.call("is_binary", &.{V("FMsg")})}),
-            .body = try b.body(&.{ try ioFormat(b, "  FAIL ~s  (~s)  at ~s~n", &.{ V("Name"), V("FMsg"), V("FLoc") }), A("fail") }),
+            .body = try b.body(&.{ try ioFormat(b, "  FAIL ~ts  (~ts)  at ~ts~n", &.{ V("Name"), V("FMsg"), V("FLoc") }), A("fail") }),
         },
-        .{ .patterns = try b.exprs(&.{fail_pattern}), .body = try b.body(&.{ try ioFormat(b, "  FAIL ~s  (~p)  at ~s~n", &.{ V("Name"), V("FMsg"), V("FLoc") }), A("fail") }) },
+        .{ .patterns = try b.exprs(&.{fail_pattern}), .body = try b.body(&.{ try ioFormat(b, "  FAIL ~ts  (~tp)  at ~ts~n", &.{ V("Name"), V("FMsg"), V("FLoc") }), A("fail") }) },
     });
 
     var run_one: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
@@ -2108,7 +2108,7 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
         "needed for the sync erlang shape).",
     }));
     try run_one.appendSlice(b.arena, &.{
-        .{ .expr = try ioFormat(b, "TEST ~s ~s~n", &.{ V("Loc"), V("Name") }) },
+        .{ .expr = try ioFormat(b, "TEST ~ts ~ts~n", &.{ V("Loc"), V("Name") }) },
         .{ .expr = try ioFormat(b, "----- RUN LOG -----~n```logs~n", &.{}) },
     });
     try run_one.appendSlice(b.arena, try comments(b, &.{
@@ -6001,8 +6001,8 @@ const Emitter = struct {
         const err = try b.tuple(&.{ Ast.Expr.a("error"), err_var });
         // Inside a `test` body (decision 74) the Error ends the test: raise the
         // `{bp_assert, E, Loc}` the runner's first catch clause already
-        // understands, so it prints `FAIL <name>  (<E>)  at <Loc>` — `~s` for a
-        // binary `E`, `~p` for anything else. Elsewhere the Error is the
+        // understands, so it prints `FAIL <name>  (<E>)  at <Loc>` — `~ts` for a
+        // binary `E`, `~tp` for anything else. Elsewhere the Error is the
         // function's value.
         const on_error: Ast.Expr = if (this.in_test_body)
             try b.remote("erlang", "error", &.{try b.tuple(&.{ Ast.Expr.a("bp_assert"), err_var, .{ .lexeme_binary = this.test_loc } })})
