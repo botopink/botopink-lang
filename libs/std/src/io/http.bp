@@ -1,4 +1,4 @@
-//// std/http — minimal HTTP client primitives (cross-backend).
+//// std/io/http — minimal HTTP client primitives (cross-backend).
 ////
 //// Reference:
 ////   Node.js  — https://nodejs.org/api/globals.html#fetch

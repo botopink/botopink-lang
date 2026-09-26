@@ -1,4 +1,4 @@
-//// std/mocks — Mockito-style mocks over a `behavior`: `#[mock]` synthesizes
+//// std/testing/mocks — Mockito-style mocks over a `behavior`: `#[mock]` synthesizes
 //// the double, `when(...)` stubs a return, `verify(...)` checks call counts
 //// (1.0.10-beta front 01-std, `onze-migration.md`; decision 71).
 ////

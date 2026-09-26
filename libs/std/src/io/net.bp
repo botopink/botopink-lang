@@ -1,4 +1,4 @@
-//// std/net — TCP and TLS sockets. SERVER-ONLY (`io/net` after front 23).
+//// std/io/net — TCP and TLS sockets. SERVER-ONLY.
 ////
 //// Reference:
 ////   Erlang — https://www.erlang.org/doc/apps/kernel/gen_tcp.html

@@ -1,4 +1,4 @@
-//// std/asserts — the canonical assertion API every test is written against
+//// std/testing/asserts — the canonical assertion API every test is written against
 //// (1.0.10-beta front 01-std, `asserts-api.md`; decisions 74 and 67).
 ////
 //// Reference:

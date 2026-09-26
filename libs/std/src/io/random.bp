@@ -1,4 +1,4 @@
-//// std/random — pseudo-random number primitives (cross-backend).
+//// std/io/random — pseudo-random number primitives (cross-backend).
 ////
 //// Reference:
 ////   Node.js  — https://nodejs.org/api/  (the `Math.random` global)
@@ -121,7 +121,7 @@ fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
 #[@External.Erlang("""[__X || {_, __X} <- lists:sort([{rand:uniform(), __Y} || __Y <- $0])]""")]
 pub declare fn shuffle<T>(xs: Array<T>) -> Array<T>;
 
-// ── 1.0.10-beta front 01 additions (`io/random` after front 23) ─────────────
+// ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 //
 // The CSPRNG half. Everything ABOVE is `Math.random` / `rand:uniform` — fine
 // for a shuffle, wrong for anything an attacker must not guess. A token, a

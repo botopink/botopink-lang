@@ -1,4 +1,4 @@
-//// std/time — wall-clock primitives, cross-backend.
+//// std/io/clock (was std/time) — wall-clock primitives, cross-backend.
 ////
 //// Reference:
 ////   Node.js  — https://nodejs.org/api/  (the `Date` global, the
@@ -107,7 +107,7 @@ pub fn measureMillis<T>(body: fn() -> T) -> #(T, i64) {
     return #(result, elapsed);
 }
 
-// ── 1.0.10-beta front 01 additions (`io/clock` after front 23) ──────────────
+// ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 //
 // Parsing, the civil breakdown, the host timezone offset, durations,
 // deadlines and `sleep`. The readings above are not edited.
@@ -212,24 +212,24 @@ pub fn isExpired(at: i64) -> bool {
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
-test "time.nowMillis returns a positive epoch reading" {
+test "clock.nowMillis returns a positive epoch reading" {
     val t = nowMillis();
     assert t > 0;
 }
 
-test "time.nowMillis is monotonic within a single tick window" {
+test "clock.nowMillis is monotonic within a single tick window" {
     val t1 = nowMillis();
     val t2 = nowMillis();
     assert t2 >= t1;
 }
 
-test "time.monotonicMillis is non-decreasing across two reads" {
+test "clock.monotonicMillis is non-decreasing across two reads" {
     val a = monotonicMillis();
     val b = monotonicMillis();
     assert b >= a;
 }
 
-test "time.measureMillis returns body result and non-negative elapsed" {
+test "clock.measureMillis returns body result and non-negative elapsed" {
     val pair = measureMillis({ ->
         42;
     });
@@ -237,13 +237,13 @@ test "time.measureMillis returns body result and non-negative elapsed" {
     assert pair._1 >= 0;
 }
 
-test "time.formatIso8601 renders an ISO-8601 prefix for the current time" {
+test "clock.formatIso8601 renders an ISO-8601 prefix for the current time" {
     val s = formatIso8601(nowMillis());
     assert s.startsWith("20") || s.startsWith("21");
     assert s.contains("T");
 }
 
-test "time.parseIso8601 reads back formatIso8601 to the whole second" {
+test "clock.parseIso8601 reads back formatIso8601 to the whole second" {
     val t = nowMillis();
     val whole = t - (t % wide(1000));
     // Erlang renders whole seconds, Node keeps the milliseconds: the read-back
@@ -254,19 +254,19 @@ test "time.parseIso8601 reads back formatIso8601 to the whole second" {
     assert parseIso8601(formatIso8601(whole)).unwrapOr(wide(0)) == whole;
 }
 
-test "time.parseIso8601 reads a fixed timestamp with fraction and offset" {
+test "clock.parseIso8601 reads a fixed timestamp with fraction and offset" {
     assert parseIso8601("1970-01-01T00:00:01Z").unwrapOr(wide(0)) == 1000;
     assert parseIso8601("2024-02-29T12:34:56.789Z").unwrapOr(wide(0)) == 1709210096789;
     assert parseIso8601("2024-02-29T14:34:56+02:00").unwrapOr(wide(0)) == 1709210096000;
 }
 
-test "time.parseIso8601 refuses what is not an RFC 3339 timestamp" {
+test "clock.parseIso8601 refuses what is not an RFC 3339 timestamp" {
     assert parseIso8601("not a date").isError();
     assert parseIso8601("2024").isError();
     assert parseIso8601("2024-02-29T12:34:56").isError();
 }
 
-test "time.toCivil breaks a fixed reading into the same UTC fields" {
+test "clock.toCivil breaks a fixed reading into the same UTC fields" {
     // 2024-02-29T12:34:56.789Z was a Thursday (ISO weekday 4).
     val c = toCivil(parseIso8601("2024-02-29T12:34:56.789Z").unwrapOr(wide(0)));
     assert c.year == 2024;
@@ -280,26 +280,26 @@ test "time.toCivil breaks a fixed reading into the same UTC fields" {
     assert toCivil(wide(259200000)).weekday == 7;
 }
 
-test "time.offsetMinutes is a whole quarter-hour within the UTC offset range" {
+test "clock.offsetMinutes is a whole quarter-hour within the UTC offset range" {
     val off = offsetMinutes(nowMillis());
     assert off >= -720;
     assert off <= 840;
     assert off % 15 == 0;
 }
 
-test "time.Duration builders agree and add" {
+test "clock.Duration builders agree and add" {
     assert toMillis(seconds(2)) == 2000;
     assert toMillis(minutes(1)) == toMillis(seconds(60));
     assert toMillis(hours(1)) == 3600000;
     assert toMillis(add(millis(250), seconds(1))) == 1250;
 }
 
-test "time.deadline is in the future and isExpired reads the wall clock" {
+test "clock.deadline is in the future and isExpired reads the wall clock" {
     assert isExpired(deadline(seconds(60))).negate();
     assert isExpired(wide(0));
 }
 
-test "time.sleep waits at least the asked monotonic milliseconds" {
+test "clock.sleep waits at least the asked monotonic milliseconds" {
     val before = monotonicMillis();
     sleep(20);
     val after = monotonicMillis();

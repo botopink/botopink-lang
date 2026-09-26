@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- std/io/env.bp
 ```botopink
-//// std/env — process environment variables, cross-backend.
+//// std/io/env — process environment variables, cross-backend.
 ////
 //// Reference:
 ////   Node.js  — https://nodejs.org/api/process.html#processenv
@@ -100,7 +100,7 @@ test "env.vars yields a non-empty pair list after env.write" {
 {exports, []}.
 {attributes, []}.
 {labels, 2}.
-%%% std/env — process environment variables, cross-backend.
+%%% std/io/env — process environment variables, cross-backend.
 %%% 
 %%% Reference:
 %%%   Node.js  — https://nodejs.org/api/process.html#processenv

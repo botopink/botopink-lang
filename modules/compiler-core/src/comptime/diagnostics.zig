@@ -237,7 +237,7 @@ pub const generic_arg_count_exceeded: []const u8 = "generic-arg-count-exceeded";
 /// callers see a complete `{ok, _} | {error, _}` lowering.
 pub const result_template_shape_mismatch: []const u8 = "result-template-shape-mismatch";
 
-/// STD-001 — `import {fs} from "std"` (or any other std module) on a target
+/// STD-001 — `import {io.fs} from "std"` (or any other std module) on a target
 /// for which the module has no `#[@External.<target>( …)]` annotation set.
 /// Fires when `Env.target != null` AND the imported module's stdModuleFns
 /// entry holds at least one declare fn without an external matching the
@@ -254,7 +254,7 @@ pub const std_unsupported_on_target: []const u8 = "std-unsupported-on-target";
 pub const import_name_collision: []const u8 = "import-name-collision";
 
 /// Decision 107 — `as` on an item whose leaf is a nominal type
-/// (`import {dict.Dict as D} from "std"`). A type's identity is its declared
+/// (`import {collections.Dict as D} from "std"`). A type's identity is its declared
 /// name on every backend (the record shape, the class, the module a type
 /// module gets — policy 3), so an alias would bind a name the emitted code
 /// never defines. Refused rather than accepted half-way (decision 67).

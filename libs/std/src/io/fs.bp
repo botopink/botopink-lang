@@ -1,4 +1,4 @@
-//// std/fs — synchronous filesystem primitives, cross-backend.
+//// std/io/fs — synchronous filesystem primitives, cross-backend.
 ////
 //// Reference:
 ////   Node.js  — https://nodejs.org/api/fs.html
@@ -91,7 +91,7 @@ pub declare fn copy(src: string, dest: string) -> @Result<i32, string>;
 #[@External.Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn stat(path: string) -> @Result<FileStat, string>;
 
-// ── 1.0.10-beta front 01 additions (`io/fs` after front 23) ─────────────────
+// ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 
 // Every REGULAR FILE under `root`, recursively, as paths relative to `root`
 // with `/` separators, sorted — the same set on both targets (the two hosts

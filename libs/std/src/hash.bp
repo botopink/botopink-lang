@@ -135,8 +135,8 @@ test "hash.hmacSha256 produces a 64-hex-char digest" {
 }
 
 // ── content hashes (was `content_hash`) ──────────────────────────────────────
-// Content hashes (was `content_hash`) — stable hashes for cache keys, ETags and asset
-// fingerprints (1.0.10-beta `01-std` front 03).
+// Stable hashes for cache keys, ETags and asset fingerprints (1.0.10-beta
+// `01-std` front 03).
 //
 // Reference:
 //   RFC 9110 § 8.8.3 — https://www.rfc-editor.org/rfc/rfc9110#field.etag
