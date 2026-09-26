@@ -301,11 +301,3 @@ wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope)
 # The host rows of decision 126 are deferred: a `@External.Node` declared
 # `-> @Task<@Result<T, E>>` is still called as a bare Promise, so a rejection is
 # not turned into `Error(e)` and the resolved raw value reaches a `case` as is.
-# `.next()` by hand on an iterator (decision 122's `YieldStep<T>` protocol) has
-# no lowering: `YieldStep` is documentation in `builtins.d.bp`, not a type the
-# checker registers or a backend constructs, so `it.next()` answers the host's
-# own step (a JS `{value, done}`) and `YieldStep<i32, string>` is not arity-checked.
-commonJS | test/yield_step_next.bp::decision 122 next answers Yield for each item, then Done | 24-effects-by-return (`next()` protocol, deferred) | `it.next()` answers JS's `{ value, done }`, not a `YieldStep` variant
-commonJS | test/yield_step_next.bp::decision 122 a failing item is a Yield of an Error, then Done | 24-effects-by-return (`next()` protocol, deferred) | the same
-erlang   | test/yield_step_next.bp | 24-effects-by-return (`next()` protocol, deferred) | an eager iterator is a list: `it.next()` has no lowering and the module does not compile
-*        | reject/yield_step_error_param.bp | 24-effects-by-return (`next()` protocol, deferred) | `YieldStep` is not a registered type, so its arity is not checked (exit 0)

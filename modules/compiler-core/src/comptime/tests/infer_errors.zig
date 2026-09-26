@@ -632,6 +632,49 @@ test "infer error: RG5 ---- a third argument on @Result reds generic-arg-count-e
     );
 }
 
+test "infer error: RG5 ---- YieldStep with an error parameter reds generic-arg-count-exceeded (decision 122)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn first(step: YieldStep<i32, string>) -> i32 {
+        \\    return 0;
+        \\}
+    );
+}
+
+test "infer error: RG5 ---- a declared type written with more arguments than it declares" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Box<T>(value: T)
+        \\fn open(b: Box<i32, string>) -> i32 {
+        \\    return 0;
+        \\}
+    );
+}
+
+test "infer: decision 122 ---- next() by hand answers YieldStep on an iterator and a Task of it on a stream" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn two() -> @Iterator<i32> {
+        \\    yield 1;
+        \\}
+        \\fn ticks() -> @Stream<i32> {
+        \\    yield 1;
+        \\}
+        \\fn first() -> i32 {
+        \\    val s: YieldStep<i32> = two().next();
+        \\    return case s {
+        \\        Yield(v) -> v;
+        \\        Done -> 0;
+        \\    };
+        \\}
+        \\fn firstTick() -> @Task<i32> {
+        \\    val t: @Task<YieldStep<i32>> = ticks().next();
+        \\    val s = await t;
+        \\    return case s {
+        \\        Yield(v) -> v;
+        \\        Done -> 0;
+        \\    };
+        \\}
+    );
+}
+
 test "infer error: RC5 ---- @getContext outside @Component fn reds context-getcontext-outside-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\type User(id: i32)

@@ -1,0 +1,22 @@
+//// Front 24 E3.9 (decisions 121 and 124 of 1.0.10-beta; README § Step E3,
+//// item 9) — an `async { }` block with a `try` of its own is
+//// `@Task<@Result<U, E>>` without anyone writing the `@Result`, so the error
+//// appears at the use, far from its cause: the hint names the `await` fix AND
+//// points at the `try` (line 15, column 17) that made the block's value a
+//// `@Result`.
+
+fn parse(s: string) -> @Result<i32, string> {
+    if (s == "") { throw "empty"; };
+    return 1;
+}
+
+fn run() -> @Task<void> {
+    val t = async {
+        val n = try parse("7");
+        return n + 1;
+    };
+    val v: i32 = await t;
+    @print(v);
+}
+
+pub fn main() { run(); }

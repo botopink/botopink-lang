@@ -1448,6 +1448,7 @@ fn emitErlangModule(
     defer em.locals.deinit();
     defer em.mutable_locals.deinit(alloc);
     defer em.mutating_closures.deinit(alloc);
+    defer em.hoisted_steps.deinit(alloc);
     defer {
         var kit = em.local_fn_arities.keyIterator();
         while (kit.next()) |k| alloc.free(k.*);
@@ -2647,6 +2648,12 @@ const Emitter = struct {
     /// extra last argument and answers their new values (`mutatingClosureExpr`);
     /// a statement-position call rebinds them. Reset with `locals`.
     mutating_closures: std.StringHashMapUnmanaged([]const []const u8) = .empty,
+    /// Decision 122 — the `seq.next()` calls on a local that the statement
+    /// being lowered hoisted in front of itself (`hoistSequenceSteps`), by call
+    /// loc, valued by the variable holding the step. Erlang deprecates a
+    /// binding exported out of a call's argument, which is where `.next()`
+    /// usually sits (`show(it.next())`).
+    hoisted_steps: std.AutoHashMapUnmanaged(ast.Loc, []const u8) = .empty,
     /// Single-assignment versioning. Erlang variables bind once, so a botopink
     /// name rebound in the same function (`count += 1`, `msg = msg + x`) gets a
     /// fresh variable per binding: `Count`, `Count@1`, `Count@2`. `var_current`
@@ -3531,6 +3538,7 @@ const Emitter = struct {
         this.locals.clearRetainingCapacity();
         this.mutable_locals.clearRetainingCapacity();
         this.mutating_closures.clearRetainingCapacity();
+        this.hoisted_steps.clearRetainingCapacity();
         this.var_current.clearRetainingCapacity();
         this.var_next.clearRetainingCapacity();
         this.nullable_locals.clearRetainingCapacity();
@@ -3711,7 +3719,7 @@ const Emitter = struct {
                     (if (!this.locals.contains(n)) this.num_names.get(n) else null),
                 .identAccess => if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
                     .prim => .int,
-                    .type_, .field_of => null,
+                    .type_, .field_of, .sequence_next => null,
                 } else null,
                 else => null,
             },
@@ -5004,6 +5012,7 @@ const Emitter = struct {
                 continue;
             }
 
+            if (sourceComment(stmt) == null) try this.hoistSequenceSteps(b, stmt.expr, &stmts);
             if (sourceComment(stmt)) |c| {
                 try stmts.append(b.arena, .{ .comment = c });
             } else if (try this.mutatingExpr(b, stmt)) |mutation| {
@@ -5273,7 +5282,7 @@ const Emitter = struct {
         const il = this.instance_lowerings.get(e.call.loc) orelse return null;
         return switch (il) {
             .prim => |k| if (k == .array) name else null,
-            .type_, .field_of => null,
+            .type_, .field_of, .sequence_next => null,
         };
     }
 
@@ -5600,6 +5609,17 @@ const Emitter = struct {
     /// Append (once each) the outer variables that `stmts` reassigns. `shadowed`
     /// names are bound by the construct itself (loop/lambda params) and skipped.
     fn collectMutations(this: *Emitter, gpa: std.mem.Allocator, stmts: []const ast.Stmt, shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        for (stmts) |s| {
+            // `it.next()` advances `it` (decision 122): a loop that steps a
+            // sequence by hand threads it like a reassigned variable.
+            var sites: std.ArrayListUnmanaged(SeqNextSite) = .empty;
+            defer sites.deinit(gpa);
+            try this.collectSeqNexts(gpa, s.expr, &sites);
+            for (sites.items) |site| {
+                if (containsName(shadowed, site.name) or containsName(out.items, site.name)) continue;
+                try out.append(gpa, site.name);
+            }
+        }
         for (stmts) |s| switch (s.expr) {
             .binding => |b| switch (b.kind) {
                 .assign => |a| switch (a.target) {
@@ -6160,7 +6180,7 @@ const Emitter = struct {
                                 else => b.call("length", &.{recv}),
                             };
                         },
-                        .type_, .field_of => {},
+                        .type_, .field_of, .sequence_next => {},
                     };
                     // Same field access on a `Self`-typed receiver inside an
                     // interface instance `default fn` (`self.length`), which
@@ -6844,6 +6864,7 @@ const Emitter = struct {
                 this.typedMethodNode(b, tn, recv, cc),
             // A field READ never reaches the call path.
             .field_of => {},
+            .sequence_next => return this.sequenceNextNode(b, loc, recv),
         };
         // Inside an ADOPTED interface `default fn` body (`implement Sized`'s
         // `isEmpty`, emitted as one of the record's functions) inference records
@@ -7659,6 +7680,134 @@ const Emitter = struct {
     /// The tag of `variant` declared by `enum_name` — `variantAtom` rendered
     /// against the module that declares the enum, so a consumer builds the
     /// owner's atom and not its own.
+    const SeqNextSite = struct { loc: ast.Loc, name: []const u8 };
+
+    /// The `seq.next()` calls on a LOCAL receiver that `e` evaluates
+    /// unconditionally, in evaluation order: a call's receiver and arguments,
+    /// an operator's operands (the left one only of `&&` / `||`), a binding's
+    /// value, a jump's operand, an `assert`'s condition, a literal's elements.
+    /// A lambda, a branch or a loop is not entered — what runs there may not
+    /// run at all, so its `.next()` stays where it is.
+    fn collectSeqNexts(this: *const Emitter, gpa: std.mem.Allocator, e: ast.Expr, out: *std.ArrayListUnmanaged(SeqNextSite)) anyerror!void {
+        switch (e) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| {
+                    if (cc.receiver) |r| try this.collectSeqNexts(gpa, r.*, out);
+                    for (cc.args) |a| try this.collectSeqNexts(gpa, a.value.*, out);
+                    const il = this.instance_lowerings.get(c.loc) orelse return;
+                    if (il != .sequence_next) return;
+                    const n = identName((cc.receiver orelse return).*) orelse return;
+                    if (!this.locals.contains(n)) return;
+                    try out.append(gpa, .{ .loc = c.loc, .name = n });
+                },
+                else => {},
+            },
+            .binaryOp => |bin| {
+                try this.collectSeqNexts(gpa, bin.lhs.*, out);
+                if (bin.op != .@"and" and bin.op != .@"or") try this.collectSeqNexts(gpa, bin.rhs.*, out);
+            },
+            .unaryOp => |un| try this.collectSeqNexts(gpa, un.expr.*, out),
+            .jump => |j| switch (j.kind) {
+                .@"return", .throw_, .try_ => |v| if (v) |x| try this.collectSeqNexts(gpa, x.*, out),
+                .await_ => |x| try this.collectSeqNexts(gpa, x.*, out),
+                .@"break" => |br| if (br.value) |x| try this.collectSeqNexts(gpa, x.*, out),
+                .yield => |y| if (y.value) |x| try this.collectSeqNexts(gpa, x.*, out),
+                else => {},
+            },
+            .binding => |bind| switch (bind.kind) {
+                .localBind => |lb| try this.collectSeqNexts(gpa, lb.value.*, out),
+                .assign => |a| if (a.target == .name) try this.collectSeqNexts(gpa, a.value.*, out),
+                else => {},
+            },
+            .collection => |col| switch (col.kind) {
+                .arrayLit => |al| for (al.elems) |x| try this.collectSeqNexts(gpa, x, out),
+                .tupleLit => |tl| for (tl.elems) |x| try this.collectSeqNexts(gpa, x, out),
+                .grouped => |x| try this.collectSeqNexts(gpa, x.*, out),
+                else => {},
+            },
+            .comptime_ => |ct| switch (ct.kind) {
+                .assert => |a| try this.collectSeqNexts(gpa, a.condition.*, out),
+                else => {},
+            },
+            else => {},
+        }
+    }
+
+    /// Lower, in front of the statement `e`, each `seq.next()` it evaluates
+    /// unconditionally on a local (`collectSeqNexts`) as its own binding —
+    /// `{BpStep1, It@1} = case It of … end` — and remember the step variable
+    /// the call then reads (`hoisted_steps`).
+    fn hoistSequenceSteps(this: *Emitter, b: Ast.Builder, e: ast.Expr, stmts: *std.ArrayListUnmanaged(Ast.Stmt)) anyerror!void {
+        var sites: std.ArrayListUnmanaged(SeqNextSite) = .empty;
+        defer sites.deinit(this.alloc);
+        try this.collectSeqNexts(this.alloc, e, &sites);
+        for (sites.items) |site| {
+            const recv: ast.Expr = .{ .identifier = .{ .loc = site.loc, .kind = .{ .ident = site.name } } };
+            const step = try this.sequenceStep(b, &recv, site.name);
+            try stmts.append(b.arena, .{ .expr = step.bind });
+            try this.hoisted_steps.put(this.alloc, site.loc, step.step);
+        }
+    }
+
+    const SequenceStep = struct { bind: Ast.Expr, step: []const u8 };
+
+    /// `{BpStepN, Name@v} = case Name of [H | T] -> {{Yield, H}, T}; R -> {Done, R} end`,
+    /// the receiver's next version bound to the rest.
+    fn sequenceStep(this: *Emitter, b: Ast.Builder, recv: *const ast.Expr, name: []const u8) anyerror!SequenceStep {
+        const yield_tag = Ast.Expr.a(try this.variantTagAtom("YieldStep", "Yield"));
+        const done_tag = Ast.Expr.a(try this.variantTagAtom("YieldStep", "Done"));
+        const subject = try this.exprNode(b, recv.*);
+        this.pattern_var_next += 1;
+        const id = this.pattern_var_next;
+        const head = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "BpStepHead{d}", .{id}));
+        const rest = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "BpStepRest{d}", .{id}));
+        const step = try std.fmt.allocPrint(b.arena, "BpStep{d}", .{id});
+        const stepped = try b.caseInline(subject, &.{
+            try b.clause(&.{try b.cons(&.{head}, rest)}, &.{}, &.{try b.tuple(&.{ try b.tuple(&.{ yield_tag, head }), rest })}),
+            try b.clause(&.{rest}, &.{}, &.{try b.tuple(&.{ done_tag, rest })}),
+        });
+        const version = (this.var_next.get(name) orelse 0) + 1;
+        try this.var_next.put(name, version);
+        try this.var_current.put(name, version);
+        const target = Ast.Expr.v(try this.versionedVar(b, name, version));
+        return .{ .bind = try b.match(try b.tuple(&.{ Ast.Expr.v(step), target }), stepped), .step = step };
+    }
+
+    /// Decision 122 — `seq.next()` by hand. An eager sequence is the list of
+    /// its items, so the step is its head: `Yield(H)` (the prelude
+    /// `YieldStep`'s tagged tuple), or `Done` on the empty list. On a local
+    /// name the receiver is rebound to the rest — the next version of the
+    /// variable, as an assignment would — so the following `.next()` reads on.
+    /// The statement hoists that binding in front of itself
+    /// (`hoistSequenceSteps`) and the call reads the step variable; one it
+    /// could not hoist is a `begin … end` block in place. Any other receiver
+    /// (`two().next()`) answers the first step only.
+    fn sequenceNextNode(this: *Emitter, b: Ast.Builder, loc: ast.Loc, recv: *const ast.Expr) anyerror!Ast.Expr {
+        if (this.hoisted_steps.get(loc)) |step| return Ast.Expr.v(step);
+        const local: ?[]const u8 = if (identName(recv.*)) |n| (if (this.locals.contains(n)) n else null) else null;
+        const name = local orelse {
+            const yield_tag = Ast.Expr.a(try this.variantTagAtom("YieldStep", "Yield"));
+            const done_tag = Ast.Expr.a(try this.variantTagAtom("YieldStep", "Done"));
+            const subject = try this.exprNode(b, recv.*);
+            this.pattern_var_next += 1;
+            const head = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "BpStepHead{d}", .{this.pattern_var_next}));
+            return b.caseInline(subject, &.{
+                try b.clause(&.{try b.cons(&.{head}, Ast.Expr.v("_"))}, &.{}, &.{try b.tuple(&.{ yield_tag, head })}),
+                try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{done_tag}),
+            });
+        };
+        // A `.next()` the statement could not hoist (inside a branch, a
+        // lambda): a block, whose bindings erlang still lets out.
+        const st = try this.sequenceStep(b, recv, name);
+        return .{ .seq = try b.exprs(&.{
+            Ast.Expr.r("begin "),
+            st.bind,
+            Ast.Expr.r(", "),
+            Ast.Expr.v(st.step),
+            Ast.Expr.r(" end"),
+        }) };
+    }
+
     fn variantTagAtom(this: *Emitter, enum_name: []const u8, variant: []const u8) ![]const u8 {
         return crossModule.variantAtom(this.atom_arena.allocator(), this.idOf(this.typeOwnerPath(enum_name)), enum_name, variant);
     }

@@ -2596,68 +2596,91 @@ fn isFailJump(j: JumpExpr) bool {
 }
 
 fn bodyHasJump(body: []const Stmt, comptime pred: fn (JumpExpr) bool) bool {
-    for (body) |s| {
-        if (exprHasJump(s.expr, pred)) return true;
-    }
-    return false;
+    return bodyFindJump(body, pred) != null;
 }
 
-fn exprHasJump(e: Expr, comptime pred: fn (JumpExpr) bool) bool {
+/// The location of the first jump `pred` accepts in `body`'s own scope (the
+/// borders of `bodyHasJump`), in source order, or null.
+fn bodyFindJump(body: []const Stmt, comptime pred: fn (JumpExpr) bool) ?Loc {
+    for (body) |s| {
+        if (exprFindJump(s.expr, pred)) |l| return l;
+    }
+    return null;
+}
+
+fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
     return switch (e) {
-        .jump => |j| pred(j.kind) or switch (j.kind) {
-            .@"return", .throw_, .try_ => |v| if (v) |x| exprHasJump(x.*, pred) else false,
-            .await_ => |x| exprHasJump(x.*, pred),
-            .@"break" => |b| if (b.value) |x| exprHasJump(x.*, pred) else false,
-            .yield => |y| if (y.value) |x| exprHasJump(x.*, pred) else false,
-            .@"continue" => false,
+        .jump => |j| if (pred(j.kind)) j.loc else switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| exprFindJump(x.*, pred) else null,
+            .await_ => |x| exprFindJump(x.*, pred),
+            .@"break" => |b| if (b.value) |x| exprFindJump(x.*, pred) else null,
+            .yield => |y| if (y.value) |x| exprFindJump(x.*, pred) else null,
+            .@"continue" => null,
         },
         .branch => |b| switch (b.kind) {
-            .if_ => |i| exprHasJump(i.cond.*, pred) or bodyHasJump(i.then_, pred) or (if (i.else_) |els| bodyHasJump(els, pred) else false),
+            .if_ => |i| exprFindJump(i.cond.*, pred) orelse bodyFindJump(i.then_, pred) orelse (if (i.else_) |els| bodyFindJump(els, pred) else null),
             // `try x catch h` handles its own failure; only its operands count.
-            .tryCatch => |tc| exprHasJump(tc.expr.*, pred) or exprHasJump(tc.handler.*, pred),
+            .tryCatch => |tc| exprFindJump(tc.expr.*, pred) orelse exprFindJump(tc.handler.*, pred),
         },
         // A prefixed loop is a scope of its own; an unprefixed one feeds the
         // nearest generator scope (decision 125).
-        .loop => |lp| lp.generator == null and (exprHasJump(lp.iter.*, pred) or bodyHasJump(lp.body, pred)),
+        .loop => |lp| if (lp.generator == null) (exprFindJump(lp.iter.*, pred) orelse bodyFindJump(lp.body, pred)) else null,
         .binding => |b| switch (b.kind) {
-            .localBind => |lb| exprHasJump(lb.value.*, pred),
-            .assign => |a| exprHasJump(a.value.*, pred),
-            .localBindDestruct => |lb| exprHasJump(lb.value.*, pred),
+            .localBind => |lb| exprFindJump(lb.value.*, pred),
+            .assign => |a| exprFindJump(a.value.*, pred),
+            .localBindDestruct => |lb| exprFindJump(lb.value.*, pred),
         },
-        .binaryOp => |op| exprHasJump(op.lhs.*, pred) or exprHasJump(op.rhs.*, pred),
-        .unaryOp => |op| exprHasJump(op.expr.*, pred),
-        .useHook => |u| exprHasJump(u.kind.inner.*, pred),
+        .binaryOp => |op| exprFindJump(op.lhs.*, pred) orelse exprFindJump(op.rhs.*, pred),
+        .unaryOp => |op| exprFindJump(op.expr.*, pred),
+        .useHook => |u| exprFindJump(u.kind.inner.*, pred),
         .collection => |col| switch (col.kind) {
-            .grouped => |inner| exprHasJump(inner.*, pred),
+            .grouped => |inner| exprFindJump(inner.*, pred),
             .case => |c| blk: {
-                for (c.subjects) |x| if (exprHasJump(x, pred)) break :blk true;
-                for (c.arms) |arm| if (exprHasJump(arm.body, pred)) break :blk true;
-                break :blk false;
+                for (c.subjects) |x| if (exprFindJump(x, pred)) |l| break :blk l;
+                for (c.arms) |arm| if (exprFindJump(arm.body, pred)) |l| break :blk l;
+                break :blk null;
             },
             .arrayLit => |al| blk: {
-                for (al.elems) |x| if (exprHasJump(x, pred)) break :blk true;
-                break :blk false;
+                for (al.elems) |x| if (exprFindJump(x, pred)) |l| break :blk l;
+                break :blk null;
             },
             .tupleLit => |tl| blk: {
-                for (tl.elems) |x| if (exprHasJump(x, pred)) break :blk true;
-                break :blk false;
+                for (tl.elems) |x| if (exprFindJump(x, pred)) |l| break :blk l;
+                break :blk null;
             },
-            else => false,
+            else => null,
         },
         .call => |c| switch (c.kind) {
             .call => |cc| blk: {
-                if (cc.receiver) |r| if (exprHasJump(r.*, pred)) break :blk true;
-                for (cc.args) |a| if (exprHasJump(a.value.*, pred)) break :blk true;
+                if (cc.receiver) |r| if (exprFindJump(r.*, pred)) |l| break :blk l;
+                for (cc.args) |a| if (exprFindJump(a.value.*, pred)) |l| break :blk l;
                 if (cc.is_builtin and std.mem.eql(u8, cc.callee, "block") and cc.trailing.len > 0)
-                    break :blk bodyHasJump(cc.trailing[0].body, pred);
-                break :blk false;
+                    break :blk bodyFindJump(cc.trailing[0].body, pred);
+                break :blk null;
             },
-            else => false,
+            else => null,
         },
         // A closure (and an `async { }` block, a closure called in place) is a
         // scope of its own.
-        else => false,
+        else => null,
     };
+}
+
+/// The first `throw` / bare `try` in `body`'s own scope (`bodyFails`' borders) —
+/// what an `async { }` block or an `iter` / `stream` loop became a `@Result`
+/// from (the E3.9 hint points at it) — or null.
+pub fn bodyFirstFail(body: []const Stmt) ?Loc {
+    return bodyFindJump(body, isFailJump);
+}
+
+/// The first `throw` in `body`'s own scope, or null — tells `bodyFirstFail`'s
+/// answer a `throw` from a `try`.
+pub fn bodyFirstThrow(body: []const Stmt) ?Loc {
+    return bodyFindJump(body, isThrowJump);
+}
+
+fn isThrowJump(j: JumpExpr) bool {
+    return j == .throw_;
 }
 
 pub const FnDecl = struct {

@@ -1,0 +1,59 @@
+//// Decision 122 of 1.0.10-beta (front 24, § Cells "Iterators"; guide.md § 5,
+//// `YieldStep<T> = { Yield(value: T), Done }`) — the same protocol by hand on
+//// every target: `it.next()` on an `@Iterator<T>` answers `Yield` for each item
+//// and then `Done`, and keeps answering `Done`; `await s.next()` on a
+//// `@Stream<T>` answers the same steps. The run half of `test/yield_step_next.bp`
+//// (a `test/` cell reaches commonJS and erlang only): commonJS maps the
+//// generator's `{ value, done }` onto the variants, and the eager lowerings of
+//// erlang, beam and wasm — whose sequence is the list of its items — pop the
+//// head and advance the receiver, a local or a parameter, inside a loop too
+//// (`firstThree`). The stream's lines print from inside `run` (see
+//// `run/task_return_layers.bp`), after `main`'s own.
+
+fn two() -> @Iterator<i32> {
+    yield 1;
+    yield 2;
+}
+
+fn countdown(n: i32) -> @Stream<i32> {
+    var i = n;
+    while (i > 0) {
+        yield i;
+        i = i - 1;
+    };
+}
+
+fn stepText(s: YieldStep<i32>) -> string {
+    val t = case s {
+        Yield(v) -> "yield " + v.toString();
+        Done -> "done";
+    };
+    return t;
+}
+
+fn firstThree(it: @Iterator<i32>) -> string {
+    var acc = "";
+    var i = 0;
+    while (i < 3) {
+        acc = acc + stepText(it.next()) + ";";
+        i = i + 1;
+    };
+    return acc;
+}
+
+fn run() -> @Task<void> {
+    val s = countdown(2);
+    @print(stepText(await s.next()));
+    @print(stepText(await s.next()));
+    @print(stepText(await s.next()));
+}
+
+pub fn main() {
+    val it = two();
+    @print(stepText(it.next()));
+    @print(stepText(it.next()));
+    @print(stepText(it.next()));
+    @print(stepText(it.next()));
+    @print(firstThree(two()));
+    run();
+}

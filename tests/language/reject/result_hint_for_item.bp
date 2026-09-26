@@ -1,0 +1,20 @@
+//// Front 24 E3.9 (decision 122 of 1.0.10-beta; README § Step E3, item 9) — a
+//// `for` over `@Iterator<@Result<U, E>>` hands over each item as the
+//// `@Result` (no implicit `try`), and using it as `U` is a type mismatch whose
+//// hint names the fix for a `for` item: `try r`. The mismatch is located at the
+//// file only (the `+` of an assignment carries no location of its own), so the
+//// `.expect` has no second line.
+
+fn upTo(n: i32) -> @Iterator<@Result<i32, string>> {
+    yield n;
+}
+
+fn total(n: i32) -> @Result<i32, string> {
+    var acc = 0;
+    for (upTo(n)) { r ->
+        acc = acc + r;
+    };
+    return acc;
+}
+
+pub fn main() { @print(1); }

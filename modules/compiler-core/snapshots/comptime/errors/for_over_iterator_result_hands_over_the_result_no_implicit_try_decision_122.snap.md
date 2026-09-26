@@ -13,4 +13,4 @@ error: type mismatch
 
   expected: i32
   found:    Result<i32,string>
-  hint: a `@Result` stands where its value is expected: propagate it with `try` (`try await t` for a Task, `try r` for a `for` item) or handle it with `case` / `catch`; a value inferred as `@Result` became one from a `throw` / `try` in its own block
+  hint: a `for` over a sequence of `@Result`s hands over each item as the `@Result` (no implicit `try`): write `try r` to propagate its error, or handle it with `case` / `catch`

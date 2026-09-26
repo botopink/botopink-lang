@@ -89,6 +89,59 @@ test "js: effect annotation ---- generator lowers to function*" {
     );
 }
 
+// Decision 122 — `.next()` by hand answers the prelude `YieldStep<T>`: the
+// module that steps a sequence gets the enum spliced in, commonJS maps the
+// generator's `{ value, done }` onto it and the eager backends pop the list's
+// head and rebind the receiver to the rest.
+test "js: effect annotation ---- next by hand steps an iterator with YieldStep" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn two() -> @Iterator<i32> {
+        \\    yield 1;
+        \\    yield 2;
+        \\}
+        \\fn stepText(s: YieldStep<i32>) -> string {
+        \\    val t = case s {
+        \\        Yield(v) -> "yield " + v.toString();
+        \\        Done -> "done";
+        \\    };
+        \\    return t;
+        \\}
+        \\pub fn main() {
+        \\    val it = two();
+        \\    @print(stepText(it.next()));
+        \\    @print(stepText(it.next()));
+        \\    @print(stepText(it.next()));
+        \\}
+    );
+}
+
+test "js: effect annotation ---- next by hand on a stream answers a Task of YieldStep" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn countdown(n: i32) -> @Stream<i32> {
+        \\    var i = n;
+        \\    while (i > 0) {
+        \\        yield i;
+        \\        i = i - 1;
+        \\    };
+        \\}
+        \\fn stepText(s: YieldStep<i32>) -> string {
+        \\    val t = case s {
+        \\        Yield(v) -> "yield " + v.toString();
+        \\        Done -> "done";
+        \\    };
+        \\    return t;
+        \\}
+        \\fn run() -> @Task<void> {
+        \\    val s = countdown(1);
+        \\    @print(stepText(await s.next()));
+        \\    @print(stepText(await s.next()));
+        \\}
+        \\pub fn main() {
+        \\    run();
+        \\}
+    );
+}
+
 test "js: enum ---- unit variants" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Direction = type {
