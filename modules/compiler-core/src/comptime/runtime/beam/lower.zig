@@ -184,6 +184,7 @@ const Lowerer = struct {
     locals: std.StringHashMapUnmanaged(Local) = .empty,
     imports: std.StringHashMapUnmanaged([]const u8) = .empty,
     lambda_count: usize = 0,
+    key_buf: [300]u8 = undefined,
     /// Where a refusal happened, for its message.
     where: []const u8 = "",
 
@@ -199,10 +200,18 @@ const Lowerer = struct {
         return n;
     }
 
+    /// `name/arity` in a scratch buffer — for a lookup only; a key that is
+    /// stored is `ownedKey`.
     fn key(l: *Lowerer, name: []const u8, arity: usize) Error![]const u8 {
+        return std.fmt.bufPrint(&l.key_buf, "{s}/{d}", .{ name, arity }) catch l.ownedKey(name, arity);
+    }
+
+    fn ownedKey(l: *Lowerer, name: []const u8, arity: usize) Error![]const u8 {
         return std.fmt.allocPrint(l.ar, "{s}/{d}", .{ name, arity });
     }
 };
+
+const Change = struct { name: []const u8, added: bool };
 
 const CatchStack = struct { slot: Arg, vars: []const ?[]const u8 };
 
@@ -223,8 +232,12 @@ const Fn = struct {
     /// A function-head variable is its argument's slot, not a copy of it
     /// (the argument slots are never reused). Per clause.
     aliases: std.StringHashMapUnmanaged(Arg) = .empty,
-    /// The variables bound at this point of the code.
+    /// The variables bound at this point of the code, and the trail of every
+    /// change to it — a branch point saves the trail's length and undoes back
+    /// to it, instead of copying the set (a large body has hundreds of
+    /// variables and hundreds of clauses).
     bound: std.StringHashMapUnmanaged(void) = .empty,
+    trail: std.ArrayListUnmanaged(Change) = .empty,
     n_vars: u32 = 0,
     temp_top: u32 = 0,
     temp_max: u32 = 0,
@@ -301,7 +314,7 @@ const Fn = struct {
     fn freshVar(f: *Fn, name: []const u8) Error!void {
         try f.vars.put(f.ar(), name, f.n_vars);
         f.n_vars += 1;
-        _ = f.bound.remove(name);
+        try f.unsetBound(name);
         _ = f.aliases.remove(name);
     }
 
@@ -310,8 +323,29 @@ const Fn = struct {
     }
 
     fn bind(f: *Fn, name: []const u8) Error!Arg {
-        try f.bound.put(f.ar(), name, {});
+        try f.setBound(name);
         return f.varSlot(name);
+    }
+
+    fn setBound(f: *Fn, name: []const u8) Error!void {
+        const gop = try f.bound.getOrPut(f.ar(), name);
+        if (!gop.found_existing) try f.trail.append(f.ar(), .{ .name = name, .added = true });
+    }
+
+    fn unsetBound(f: *Fn, name: []const u8) Error!void {
+        if (f.bound.remove(name)) try f.trail.append(f.ar(), .{ .name = name, .added = false });
+    }
+
+    /// Undo every change to `bound` made since the trail was `mark` long.
+    fn restoreBound(f: *Fn, mark: usize) Error!void {
+        while (f.trail.items.len > mark) {
+            const c = f.trail.pop().?;
+            if (c.added) {
+                _ = f.bound.remove(c.name);
+            } else {
+                try f.bound.put(f.ar(), c.name, {});
+            }
+        }
     }
 
     /// Raise `erlang:error(Reason)` where `Reason` is `{Tag, Value}`.
@@ -441,8 +475,34 @@ fn prune(ar: std.mem.Allocator, code: []const Instr) Error![]const Instr {
 
 // ── constants ────────────────────────────────────────────────────────────────
 
+/// Whether `e` is a constant — `constTerm` without building the term, so a
+/// large non-constant tree is not rebuilt at every level it is visited from.
+fn isConst(e: ep.Expr) bool {
+    return switch (e) {
+        .atom, .int, .float, .string => true,
+        .binary => |segs| for (segs) |sg| {
+            if (sg.size != null or sg.types.len > 1) break false;
+            switch (sg.value) {
+                .string, .int => {},
+                else => break false,
+            }
+        } else true,
+        .tuple => |items| for (items) |it| {
+            if (!isConst(it)) break false;
+        } else true,
+        .list => |l| l.tail == null and for (l.items) |it| {
+            if (!isConst(it)) break false;
+        } else true,
+        .map => |m| m.base == null and for (m.fields) |fl| {
+            if (fl.exact or !isConst(fl.key) or !isConst(fl.value)) break false;
+        } else true,
+        else => false,
+    };
+}
+
 /// The term `e` denotes when it is a constant, or null.
 fn constTerm(ar: std.mem.Allocator, e: ep.Expr) Error!?Term {
+    if (!isConst(e)) return null;
     return switch (e) {
         .atom => |a| Term.atomOf(a),
         .int => |n| Term.int(n),
@@ -1215,15 +1275,15 @@ fn headClauses(f: *Fn, cls: []const ep.Clause, subjects: []const Arg, no_match: 
 fn clausesValue(f: *Fn, cls: []const ep.Clause, subjects: []const Arg, no_match: NoMatch, tail: bool, fresh_heads: bool, result: ?Arg) Error!Arg {
     const l = f.l;
     const done = l.label();
-    const before = try f.bound.clone(f.ar());
+    const before = f.trail.items.len;
     const catch_stack = f.catch_stack;
     f.catch_stack = null;
     const head = f.head;
     f.head = false;
-    var after: std.StringHashMapUnmanaged(void) = .empty;
+    var after: std.ArrayListUnmanaged([]const u8) = .empty;
     for (cls, 0..) |cl, ci| {
         if (cl.patterns.len != subjects.len) return l.refuse("a clause of {d} patterns for {d} values", .{ cl.patterns.len, subjects.len });
-        f.bound = try before.clone(f.ar());
+        try f.restoreBound(before);
         if (fresh_heads) for (cl.patterns) |p| try unbindPatternVars(f, p);
         const next = l.label();
         const mark = f.temp_top;
@@ -1231,7 +1291,7 @@ fn clausesValue(f: *Fn, cls: []const ep.Clause, subjects: []const Arg, no_match:
         for (cl.patterns, subjects) |p, s| {
             if (head and p == .variable and !std.mem.eql(u8, p.variable, "_") and !f.isBound(p.variable)) {
                 try f.aliases.put(f.ar(), p.variable, s);
-                try f.bound.put(f.ar(), p.variable, {});
+                try f.setBound(p.variable);
                 continue;
             }
             try pattern(f, p, s, next);
@@ -1254,8 +1314,7 @@ fn clausesValue(f: *Fn, cls: []const ep.Clause, subjects: []const Arg, no_match:
         }
         f.temp_top = mark;
         try f.label(next);
-        var it = f.bound.keyIterator();
-        while (it.next()) |k| try after.put(f.ar(), k.*, {});
+        for (f.trail.items[before..]) |c| if (c.added) try after.append(f.ar(), c.name);
     }
     switch (no_match) {
         .function_clause => |fc| {
@@ -1276,7 +1335,10 @@ fn clausesValue(f: *Fn, cls: []const ep.Clause, subjects: []const Arg, no_match:
         },
     }
     try f.label(done);
-    f.bound = after;
+    // What the clauses bound survives them (erlc refuses a use of a variable
+    // some clause leaves unbound, so the union is exact for accepted code).
+    try f.restoreBound(before);
+    for (after.items) |name| try f.setBound(name);
     return result orelse Arg.nil;
 }
 
@@ -1284,7 +1346,7 @@ fn unbindPatternVars(f: *Fn, p: ep.Expr) Error!void {
     var names: std.StringHashMapUnmanaged(void) = .empty;
     try collectPatternVars(f.ar(), p, &names);
     var it = names.keyIterator();
-    while (it.next()) |k| _ = f.bound.remove(k.*);
+    while (it.next()) |k| try f.unsetBound(k.*);
 }
 
 fn caseExpr(f: *Fn, c: ep.Expr.Case, tail: bool) Error!Arg {
@@ -1424,7 +1486,7 @@ fn guardValue(f: *Fn, e: ep.Expr, exc_lbl: u32) Error!Arg {
 
 fn guardBif(f: *Fn, name: []const u8, args: []const ep.Expr, exc_lbl: u32) Error!Arg {
     const l = f.l;
-    const k = try l.key(name, args.len);
+    const k = try l.ownedKey(name, args.len);
     const gb = guard_bifs.get(k) orelse return l.refuse("{s} in a guard", .{k});
     const r = f.temp();
     const mark = f.temp_top;
@@ -1476,7 +1538,7 @@ fn tryExpr(f: *Fn, t: ep.Expr.Try) Error!Arg {
     const result = f.temp();
     const handler = l.label();
     const done = l.label();
-    const before = try f.bound.clone(f.ar());
+    const before = f.trail.items.len;
 
     try f.emit(.@"try", &.{ tag, Arg.lbl(handler) });
     const mark = f.temp_top;
@@ -1490,7 +1552,7 @@ fn tryExpr(f: *Fn, t: ep.Expr.Try) Error!Arg {
     // The handler: x0 = class, x1 = reason, x2 = the raw stack.
     try f.label(handler);
     try f.emit(.try_case, &.{tag});
-    f.bound = before;
+    try f.restoreBound(before);
     const class = f.temp();
     const reason = f.temp();
     const stack = f.temp();
@@ -1537,13 +1599,13 @@ fn listComp(f: *Fn, lc: ep.Expr.ListComp) Error!Arg {
     try f.move(Arg.nil, acc);
     const saved_vars = try f.vars.clone(f.ar());
     const saved_aliases = try f.aliases.clone(f.ar());
-    const saved_bound = try f.bound.clone(f.ar());
+    const saved_bound = f.trail.items.len;
     const end = f.l.label();
     try qualifiers(f, lc, 0, acc, end);
     try f.label(end);
     f.vars = saved_vars;
     f.aliases = saved_aliases;
-    f.bound = saved_bound;
+    try f.restoreBound(saved_bound);
     const mark = f.temp_top;
     try f.move(acc, Arg.xr(0));
     try f.emit(.call_ext, &.{ Arg.uint(1), Arg.extFn("lists", "reverse", 1) });
@@ -1712,9 +1774,9 @@ fn function(l: *Lowerer, func: ep.Function, exported: bool) Error!void {
 /// and the listing and the loaded bytes differ only there).
 pub fn lowerModule(ar: std.mem.Allocator, mod: ep.Module, name: []const u8, failure: *Failure) Error!Output {
     var l: Lowerer = .{ .ar = ar, .mod = mod, .name = name, .failure = failure };
-    for (mod.imports) |im| try l.imports.put(ar, try l.key(im.name, im.arity), im.module);
+    for (mod.imports) |im| try l.imports.put(ar, try l.ownedKey(im.name, im.arity), im.module);
     for (mod.functions) |func| {
-        const k = try l.key(func.name, func.arity);
+        const k = try l.ownedKey(func.name, func.arity);
         if (l.locals.contains(k)) return l.refuse("function {s} defined twice", .{k});
         const info = l.label();
         const entry = l.label();
