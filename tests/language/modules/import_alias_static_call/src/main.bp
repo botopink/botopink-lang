@@ -1,0 +1,22 @@
+//// Decision 110 rule 1 — an imported type's `as` alias in expression
+//// position is the declared type for every backend: an associated call
+//// (`P.origin()`), a unit variant (`S.Dark`) and a payload variant
+//// (`S.Custom(9)`) reach the emitted code as `Point` and `Shade`.
+
+pub mod shapes;
+
+import {Point as P, Shade as S} from "shapes";
+
+fn level(s: S) -> i32 {
+    return case s {
+        Light -> 1;
+        Dark -> 2;
+        Custom(level) -> level;
+    };
+}
+
+pub fn main() {
+    @print(P.origin().sum());
+    @print(level(S.Dark));
+    @print(level(S.Custom(9)));
+}
