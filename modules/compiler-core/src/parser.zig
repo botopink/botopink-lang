@@ -672,7 +672,7 @@ pub const Parser = struct {
         _ = try this.consume(.mod);
         const nameTok = try this.consume(.identifier);
         _ = try this.consume(.semicolon);
-        return .{ .name = nameTok.lexeme, .isPub = isPub, .isDefault = isDefault };
+        return .{ .name = nameTok.lexeme, .isPub = isPub, .isDefault = isDefault, .loc = locFromToken(nameTok) };
     }
 
     /// Dispatches `val [pub] Name = <kind> ...` to the appropriate sub-parser.

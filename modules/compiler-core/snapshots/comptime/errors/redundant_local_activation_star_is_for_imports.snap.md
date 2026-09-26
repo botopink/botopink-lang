@@ -12,6 +12,10 @@ PatoNada*;
 
 ----- ERROR
 error: redundant activation
+  ┌─ :10:1
+  │
+10 │ PatoNada*;
+  │ ^
 
   `PatoNada*` is redundant: a local extension is auto-applied
   hint: drop it — `*` is only for imports

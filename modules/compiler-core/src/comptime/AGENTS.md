@@ -571,6 +571,16 @@ binding list handed back is built tolerantly from imports, type declarations, `f
 `val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
 well-typed one binds, so the language server still lists it.
 
+## Every comptime error snapshot has a box (01 step 9)
+
+The implement/extend/behavior coverage refusals, the two `pub default` duplicates and the two
+activation refusals were raised with no location — their declarations carried none. `TypeDecl`,
+`ImplementDecl`, `ExtendDecl`, `ImplementMethod` and `ModDecl` now record where they are written
+(`ast.zig`, left out of the dump, so no parser snapshot moved), and `locatedAt` attaches it: a
+missing method at the `implement` keyword or the inline type's name, an unknown / ambiguous method
+at the method's name, the duplicate default at the second one, an activation at its item. With the
+annotation-position refusals located earlier, `snapshots/comptime/errors/` has no box-less file.
+
 ## Explicit type arguments at a use (decision 8 §1.3)
 
 `Box<i32>(value: 1)` and `first<string>([], "none")`: the parser keeps the `<…>` on

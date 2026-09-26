@@ -301,20 +301,24 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
 fn validateUniqueDefaults(env: *Env, program: ast.Program) InferError!void {
     var default_mods: usize = 0;
     var default_fns: usize = 0;
+    // 01 step 9 — the refusal points at the SECOND default, the duplicate.
+    var dupLoc: ast.Loc = .{ .line = 0, .col = 0 };
     for (program.decls) |decl| switch (decl) {
         .mod => |m| if (m.isDefault) {
             default_mods += 1;
+            if (default_mods == 2) dupLoc = m.loc;
         },
         .@"fn" => |f| if (f.isDefault) {
             default_fns += 1;
+            if (default_fns == 2 and f.body.len > 0) dupLoc = f.body[0].expr.getLoc();
         },
         else => {},
     };
     if (default_mods > 1 or default_fns > 1) {
-        env.lastError = TypeError.custom(
+        env.lastError = locatedAt(TypeError.custom(
             "a package declares at most one `pub default mod` and one `pub default fn`",
             "Remove the duplicate default declaration; a package has a single default module and handler.",
-        );
+        ), dupLoc);
         return error.TypeError;
     }
 }
@@ -470,7 +474,7 @@ fn validateInlineImplements(
             if (am.body != null) continue; // a default method — optional
             if (typeDeclProvidesMethod(td, am.name)) continue;
             if (separateImplementProvides(program, td.name, iname, am.name)) continue;
-            env.lastError = TypeError.missingMethod(td.name, iname, am.name);
+            env.lastError = locatedAt(TypeError.missingMethod(td.name, iname, am.name), td.loc);
             return error.TypeError;
         }
     }
@@ -547,13 +551,13 @@ fn validateImplement(
         if (m.qualifier) |q| {
             // The qualifier must name an interface this block implements.
             if (!implementsInterface(impl, q)) {
-                env.lastError = TypeError.unknownInterface(q, m.name);
+                env.lastError = locatedAt(TypeError.unknownInterface(q, m.name), m.loc);
                 return error.TypeError;
             }
             // If the interface is visible, it must declare the method.
             if (interfaces.get(q)) |d| {
                 if (!interfaceHasMethod(d, m.name)) {
-                    env.lastError = TypeError.unknownMethod(impl.target, m.name);
+                    env.lastError = locatedAt(TypeError.unknownMethod(impl.target, m.name), m.loc);
                     return error.TypeError;
                 }
             }
@@ -572,11 +576,11 @@ fn validateImplement(
                 }
             }
             if (first == null) {
-                env.lastError = TypeError.unknownMethod(impl.target, m.name);
+                env.lastError = locatedAt(TypeError.unknownMethod(impl.target, m.name), m.loc);
                 return error.TypeError;
             }
             if (second) |snd| {
-                env.lastError = TypeError.ambiguousMethod(m.name, first.?, snd);
+                env.lastError = locatedAt(TypeError.ambiguousMethod(m.name, first.?, snd), m.loc);
                 return error.TypeError;
             }
         }
@@ -602,7 +606,7 @@ fn validateImplement(
                 }
             }
             if (!covered) {
-                env.lastError = TypeError.missingMethod(impl.target, iname, am.name);
+                env.lastError = locatedAt(TypeError.missingMethod(impl.target, iname, am.name), impl.loc);
                 return error.TypeError;
             }
         }
@@ -792,6 +796,14 @@ fn refuseAmbiguousVariant(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc
     const msg = try std.fmt.allocPrint(env.arena, "`{s}` is a variant of {s}, and nothing here says which — write {s}", .{ name, names.items, spellings.items });
     env.lastError = TypeError.custom(msg, "A bare variant name is resolved by the type its position expects; where nothing does, the qualified name says which enum is meant (decision 67: no silent pick).").withLoc(loc);
     return error.TypeError;
+}
+
+/// 01 step 9 — attach `loc` when the declaration recorded one (a synthesised
+/// declaration carries `{0, 0}` and stays unlocated rather than point at
+/// line 0).
+fn locatedAt(err: TypeError, loc: ast.Loc) TypeError {
+    if (loc.line == 0) return err;
+    return err.withLoc(loc);
 }
 
 /// An unbound name, located. 01 step 13 — when the name was a local of a body
@@ -1142,7 +1154,7 @@ fn registerExtensions(env: *Env, program: ast.Program) InferError!void {
                 // Rule A: methods are added to a type only through `implement
                 // <Interface> for T`, which `validateImplement` checks against the
                 // interface. A contract-free `extend` block is rejected.
-                env.lastError = TypeError.extendRequiresInterface(ex.target);
+                env.lastError = locatedAt(TypeError.extendRequiresInterface(ex.target), ex.loc);
                 return error.TypeError;
             },
             else => {},
@@ -1161,10 +1173,10 @@ fn registerExtensions(env: *Env, program: ast.Program) InferError!void {
                 if (u.activationOnly) {
                     // `*` is only for imports. A bare statement is redundant when it
                     // names a local extension, and otherwise names no extension.
-                    env.lastError = if (env.extensions.contains(nm))
+                    env.lastError = locatedAt(if (env.extensions.contains(nm))
                         TypeError.redundantActivation(nm)
                     else
-                        TypeError.notAnExtension(nm);
+                        TypeError.notAnExtension(nm), imp.loc);
                     return error.TypeError;
                 }
                 try env.activations.put(nm, {});
