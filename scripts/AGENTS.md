@@ -111,7 +111,8 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 ## gate.sh
 
 `scripts/gate.sh [--cold] [--staged]` — one ordered run, stopping at the first
-failing stage: staged-file checks (`--staged`: conflict markers, `zig fmt
+failing stage (stages 4b–10 run side by side and are reported in this order —
+§ Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
 --check` on staged `.zig`), `zig build`, `scripts/format-check.sh` (`botopink
 format --check` over the compiler's canonical `.bp` trees — decision 66's
 caller), `zig build test` (`--cold` deletes
@@ -131,9 +132,18 @@ install tests) would otherwise act on the committing repository.
 
 ### Where the gate's time goes
 
-The stages stay one ordered run — the first failing stage is the one reported,
-and each runs only after the cheaper ones passed. The time is saved inside the
-stages, by doing the same work once and on every CPU, never by running less:
+The stages stay one ordered REPORT — the first failing stage in the order above
+is the one reported, with the output and exit status the one-at-a-time gate
+printed. Stages 1–4 still run one after the other, each only after the cheaper
+ones passed. Stages 4b–10 only read what 2–4 built, and write their own scratch,
+so they run side by side (`gate.sh` § side by side): each stage's stdout and
+stderr are captured to one file, and once all of them have finished the blocks
+are printed in stage order up to and including the first red one, whose failure
+line ends the run with exit 1 — the stages after it are not printed, as the
+serial gate never ran them. A red stage among 4b–10 therefore no longer saves the
+time of the stages after it; that is the cost of a red run, never of a green
+one. The time is otherwise saved inside the stages, by doing the same work once
+and on every CPU, never by running less:
 
 | Stage | What makes it fast | Where |
 |---|---|---|

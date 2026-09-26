@@ -236,7 +236,9 @@ it and must not silently wait for it.
 
 **The gate every front runs before landing is `zig build test && zig build
 test-libs`**, with `zig build test` from a cold runtime cache. The full ordered
-run is [`scripts/gate.sh`](scripts/gate.sh):
+run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other,
+4b–10 side by side and reported in this order, the first red one ending the run
+(`scripts/AGENTS.md` § Where the gate's time goes):
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files;
 2. `zig build`;
