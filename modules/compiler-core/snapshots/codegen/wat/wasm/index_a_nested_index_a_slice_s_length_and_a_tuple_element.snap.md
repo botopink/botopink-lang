@@ -5,7 +5,7 @@ fn main() {
     @print(rows);
     @print(rows[1]);
     @print(rows[1][0]);
-    @print(rows[0].length);
+    @print(rows[0]?.length);
     val xs = [10, 20, 30];
     @print(xs[0..2].length);
     val sl = xs[0..2];
@@ -32,6 +32,7 @@ fn main() {
     (local $__mem4 i32)
     (local $__mem5 i32)
     (local $__mem6 i32)
+    (local $__mem7 i32)
     (local $rows i32)
     (local $xs i32)
     (local $sl i32)
@@ -99,7 +100,10 @@ fn main() {
     i32.const 0
     call $__arr_at
     call $__print_i32
-    i32.const 0 ;; field access .length (unknown receiver type)
+    local.get $rows
+    i32.const 0
+    call $__arr_at
+    i32.load ;; .length
     call $__print_i32
     global.get $__heap_ptr
     local.set $__mem3
@@ -1188,7 +1192,7 @@ fn main() {
 [[1, 2], [3, 4]]
 304
 3
-0
+2
 2
 2
 376

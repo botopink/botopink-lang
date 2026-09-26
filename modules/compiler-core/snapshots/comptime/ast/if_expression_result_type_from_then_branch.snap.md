@@ -7,45 +7,14 @@ fn sign(n: i32) -> string {
 val s = sign(1);
 ```
 
------ TYPED AST JSON -- main.json
-```json
-{
-  "declarations": [
-    {
-      "ast": "fn_def",
-      "name": "sign",
-      "is_pub": false,
-      "params": [
-        {
-          "name": "n",
-          "type": "i32"
-        }
-      ],
-      "return_type": "string",
-      "body": [
-        {
-          "source": "val r = if (n > 0) { \"positive\"; };"
-        },
-        {
-          "source": "return r;"
-        }
-      ]
-    },
-    {
-      "ast": "val",
-      "ident": "s",
-      "return_type": "string",
-      "expr": {
-        "ast": "call",
-        "params": [
-          {
-            "value": "i32"
-          }
-        ],
-        "return_type": "string"
-      }
-    }
-  ]
-}
+----- COMPILE DIAGNOSTIC -- main
+```text
+error: an `if` without `else` has no value on its false side
+  ┌─ :2:13
+  │
+2 │     val r = if (n > 0) { "positive"; };
+  │             ^
+
+  hint: Give it an `else` branch, or bind the value inside the branch (decision 2: a block is a statement).
 ```
 

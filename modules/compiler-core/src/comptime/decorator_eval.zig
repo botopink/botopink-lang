@@ -71,6 +71,8 @@ pub fn evaluate(
     arena: std.mem.Allocator,
     io: std.Io,
     build_root: []const u8,
+    /// The module path `dfn` was declared in (`templateEval.ownerId`).
+    owner: []const u8,
     dfn: ast.FnDecl,
     handle: DeclHandle,
     plainArgs: []const template.PlainArg,
@@ -79,7 +81,7 @@ pub fn evaluate(
 ) EvalError!Outcome {
     _ = build_root;
     var unsupported: erlang.UnsupportedMethod = .{};
-    const source = buildModule(arena, dfn, handle, plainArgs, &unsupported) catch |err| switch (err) {
+    const source = buildModule(arena, owner, dfn, handle, plainArgs, &unsupported) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "decorator", dfn.name, unsupported) },
         else => |e| return e,
     };
@@ -217,6 +219,7 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPla
 
 fn buildModule(
     arena: std.mem.Allocator,
+    owner: []const u8,
     dfn: ast.FnDecl,
     handle: DeclHandle,
     plainArgs: []const template.PlainArg,
@@ -245,9 +248,9 @@ fn buildModule(
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
         return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
     const argument = try templateEval.argumentTerm(arena, plans);
-    // A2: `bp@comptime__dec__<decorator>__<16 hex>`; the Wyhash is unchanged, so
-    // content-addressing survives (see `template_eval.buildModule`).
-    const module = crossModule.erlDeclAtom(arena, templateEval.comptime_owner, .dec, dfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
+    // A2: `bp@comptime@<owner path>__dec__<decorator>__<16 hex>`; the Wyhash is
+    // unchanged, so content-addressing survives (see `template_eval.buildModule`).
+    const module = crossModule.erlDeclAtom(arena, try templateEval.ownerId(arena, owner), .dec, dfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return error.EvalFailed,
     };
@@ -424,7 +427,7 @@ test "decorator module: lowered body, handle term and host glue" {
     };
     const args = [_]template.PlainArg{.{ .paramName = "path", .source = "\"/x\"" }};
     var unsupported: erlang.UnsupportedMethod = .{};
-    const m = try buildModule(arena, dfn, handle, &args, &unsupported);
+    const m = try buildModule(arena, "", dfn, handle, &args, &unsupported);
 
     // A2: the atom names the declaration, not just a hash of the body, and it
     // decodes back to `{gen, package "bp", "comptime", "dec", "route", <16 hex>}`.
@@ -492,7 +495,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
     const dfn = program.decls[0].@"fn";
 
     var unsupported: erlang.UnsupportedMethod = .{};
-    const first = try buildModule(arena, dfn, .{
+    const first = try buildModule(arena, "", dfn, .{
         .kind = "Type",
         .name = "Alpha",
         .fields = &.{},
@@ -500,7 +503,7 @@ test "decorator module: one module per decorator, whatever it annotates" {
         .returnType = "",
         .annotations = &.{},
     }, &.{}, &unsupported);
-    const second = try buildModule(arena, dfn, .{
+    const second = try buildModule(arena, "", dfn, .{
         .kind = "Type",
         .name = "Omega",
         .fields = &.{.{ .name = "x", .typeName = "i32", .annotations = &.{} }},

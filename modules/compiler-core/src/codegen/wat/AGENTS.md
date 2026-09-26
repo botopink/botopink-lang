@@ -78,7 +78,7 @@ host-backed declare fn …/N: no wasm host` "so the module still loads", which m
 this the only backend where the program compiled and then died at run time
 (exit 134, stdout empty) — the divergence
 `tests/language/run/external_erlang_only.targets` existed to hold wasm out of.
-[Decision 67](../../../../../specs/1.0.5-beta/decisions-taken.md#67-the-most-restrictive-behaviour-and-no-configuration-that-bypasses-it) settles it: the refusal is
+[Decision 67](../../../../../../../specs/1.0.5-beta/decisions-taken.md#67-the-most-restrictive-behaviour-and-no-configuration-that-bypasses-it) settles it: the refusal is
 located, and **no flag switches it off**. Ten `snapshots/codegen/beam/wasm/external_*`
 fixtures moved from a `WASM TEXT` block with that trap to a
 `COMPILE DIAGNOSTIC` section; their `externals.zig` tests carry the new
@@ -188,7 +188,7 @@ loading a length from address 0 and writing whatever bytes sit there. Measured
 both ways by disabling the `s.at(i)` arm of `optInfoOf` and rebuilding:
 `@print(s.at(3))` on `"abc"` wrote garbage at exit 0 before the guard (six spaces
 at the tip the row was written against, a bare newline at `2e6bb4ac`) and traps
-after it. This is [decision 67](../../../../../specs/1.0.10-beta/decisions-taken.md)
+after it. This is [decision 67](../../../../../../../specs/1.0.10-beta/decisions-taken.md)
 — the most restrictive behaviour, and no flag that turns it off — and it is the
 reason the hand-maintained list below is no longer a silent trap: an optional
 shape nobody registered is now loud.
@@ -298,12 +298,14 @@ unguarded path. `run/optional_chain_method.bp` pins it.
 
 ## Two run-time rules this backend implements first (2026-09-19)
 
-**No loop has a value** ([decision 105](../../../../../specs/1.0.10-beta/decisions-taken.md),
+**No loop has a value** ([decision 105](../../../../../../../specs/1.0.10-beta/decisions-taken.md),
 superseding decision 55's value `break`): `break <v>` belongs to a generator
 scope and ends it — `emitGenBreak` appends `v` and branches out of the
-`iter` loop's `$__gen{n}` block, or returns a generator fn's array.
+`iter` loop's `$__gen{n}` block, or returns a generator fn's array; a bare
+`break` at a generator fn's own level ends it the same way (`emitGenEnd`,
+decision 103).
 
-**A range pattern tests both ends** ([decision 53](../../../../../specs/1.0.5-beta/decisions-taken.md)):
+**A range pattern tests both ends** ([decision 53](../../../../../../../specs/1.0.5-beta/decisions-taken.md)):
 `1...9` arrives as a `.variant` whose `shape` is `.range` with the two bounds in
 `payload.literals`; before `emitPatternTest` read the shape it fell into the
 variant-tag path, found no variant named `""` and answered `0` for every value.

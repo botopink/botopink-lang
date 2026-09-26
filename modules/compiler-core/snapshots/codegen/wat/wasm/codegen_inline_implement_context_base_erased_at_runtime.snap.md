@@ -2,7 +2,7 @@
 ```botopink
 val Element = type implement @Context<Element> { }
 fn render() -> Element {
-    Element();
+    return Element();
 }
 ```
 
@@ -26,6 +26,7 @@ fn render() -> Element {
     local.get $__mem0
     i32.const 4
     i32.add
+    return
   )
 )
 ```

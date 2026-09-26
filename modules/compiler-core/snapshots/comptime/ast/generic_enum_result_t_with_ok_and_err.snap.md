@@ -4,7 +4,7 @@ val Result = type <T> {
     Ok(value: T),
     Err(message: string),
 };
-pub fn isOk(r: Result) -> bool {
+pub fn isOk<T>(r: Result<T>) -> bool {
     return true;
 }
 val r = Result.Ok(value: 42);
@@ -40,10 +40,13 @@ val ok = isOk(r);
       "ast": "fn_def",
       "name": "isOk",
       "is_pub": true,
+      "generic_params": [
+        "T"
+      ],
       "params": [
         {
           "name": "r",
-          "type": "Result<i32>"
+          "type": "Result<'a>"
         }
       ],
       "return_type": "bool",

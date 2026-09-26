@@ -28,8 +28,17 @@
 
 pub type Dict<K, V>(
     pairs: Array<#(K, V)>,
-) implement Index<K, V> {
-    pub fn at(self: Self, key: K) -> ?V {
+) implement Index<K, V>, Display {
+    // Decision 8 §7 — `Dict("a": 1, "b": 2)`: the pairs in order, a string
+    // key or value quoted, anything else in its own text. `K` and `V` are
+    // generic, so which is a string is asked of the value (`is`, decision 8 §4).
+    pub fn display(self: Self<K, V>) -> string {
+        var parts: string[] = [];
+        self.pairs.forEach({ p -> parts.push(shown(p._0) + ": " + shown(p._1)) });
+        return "Dict(" + parts.join(", ") + ")";
+    }
+
+    pub fn at(self: Self<K, V>, key: K) -> ?V {
         // NOTE: written with `forEach` + accumulator rather than
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is
         // not lowered yet (tracked in tasks/v0.beta.4 Part A: primitive/option
@@ -39,37 +48,37 @@ pub type Dict<K, V>(
         return found;
     }
 
-    pub fn hasKey(self: Self, key: K) -> bool {
+    pub fn hasKey(self: Self<K, V>, key: K) -> bool {
         return self.pairs.filter({ p -> p._0 == key }).at(0) != null;
     }
 
-    pub fn size(self: Self) -> i32 {
+    pub fn size(self: Self<K, V>) -> i32 {
         return self.pairs.length;
     }
 
-    pub fn isEmpty(self: Self) -> bool {
+    pub fn isEmpty(self: Self<K, V>) -> bool {
         return self.pairs.length == 0;
     }
 
-    pub fn keys(self: Self) -> Array<K> {
+    pub fn keys(self: Self<K, V>) -> Array<K> {
         return self.pairs.map({ p -> p._0 });
     }
 
-    pub fn values(self: Self) -> Array<V> {
+    pub fn values(self: Self<K, V>) -> Array<V> {
         return self.pairs.map({ p -> p._1 });
     }
 
-    pub fn insert(self: Self, key: K, value: V) -> Dict<K, V> {
+    pub fn insert(self: Self<K, V>, key: K, value: V) -> Dict<K, V> {
         val filtered = self.pairs.filter({ p -> p._0 != key });
         return Dict(pairs: filtered.append([#(key, value)]));
     }
 
-    pub fn delete(self: Self, key: K) -> Dict<K, V> {
+    pub fn delete(self: Self<K, V>, key: K) -> Dict<K, V> {
         return Dict(pairs: self.pairs.filter({ p -> p._0 != key }));
     }
 
     // Right-biased merge: keys in both keep `other`'s value.
-    pub fn merge(self: Self, other: Dict<K, V>) -> Dict<K, V> {
+    pub fn merge(self: Self<K, V>, other: Dict<K, V>) -> Dict<K, V> {
         var out = self;
         other.pairs.forEach({ p ->
             out = out.insert(p._0, p._1);
@@ -78,7 +87,7 @@ pub type Dict<K, V>(
     }
 
     pub fn fold<A>(
-        self: Self,
+        self: Self<K, V>,
         initial: A,
         f: fn(acc: A, key: K, value: V) -> A,
     ) -> A {
@@ -89,8 +98,8 @@ pub type Dict<K, V>(
         return acc;
     }
 
-    pub fn mapValues<W>(self: Self, f: fn(value: V) -> W) -> Dict<K, W> {
-        var out = [];
+    pub fn mapValues<W>(self: Self<K, V>, f: fn(value: V) -> W) -> Dict<K, W> {
+        var out: #(K, W)[] = [];
         self.pairs.forEach({ p -> out.push(#(p._0, f(p._1))) });
         return Dict(pairs: out);
     }
@@ -98,6 +107,22 @@ pub type Dict<K, V>(
     pub fn empty() -> Dict<K, V> {
         return Dict(pairs: []);
     }
+}
+
+// One key or value of `Dict.display`: a string quoted, anything else as it
+// interpolates.
+fn shown<T>(x: T) -> string {
+    if (x is string) {
+        return "\"" + x + "\"";
+    };
+    return "${x}";
+}
+
+test "dict displays as its pairs, a string quoted (decision 8 §7)" {
+    val d = Dict.empty().insert("a", 1).insert("b", 2);
+    assert d.display() == "Dict(\"a\": 1, \"b\": 2)";
+    val n = Dict.empty().insert(1, "x");
+    assert n.display() == "Dict(1: \"x\")";
 }
 
 test "dict empty is empty" {
@@ -223,33 +248,33 @@ test "dict empty boundary: size 0, at misses" {
 pub type Set<T>(
     items: Array<T>,
 ) {
-    pub fn contains(self: Self, x: T) -> bool {
+    pub fn contains(self: Self<T>, x: T) -> bool {
         return self.items.indexOf(x) != -1;
     }
 
-    pub fn size(self: Self) -> i32 {
+    pub fn size(self: Self<T>) -> i32 {
         return self.items.length;
     }
 
-    pub fn isEmpty(self: Self) -> bool {
+    pub fn isEmpty(self: Self<T>) -> bool {
         return self.items.length == 0;
     }
 
-    pub fn toList(self: Self) -> Array<T> {
+    pub fn toList(self: Self<T>) -> Array<T> {
         return self.items;
     }
 
-    pub fn insert(self: Self, x: T) -> Set<T> {
+    pub fn insert(self: Self<T>, x: T) -> Set<T> {
         return if (self.items.indexOf(x) != -1) self else Set(items: self.items.append(
                 [x]
             ));
     }
 
-    pub fn delete(self: Self, x: T) -> Set<T> {
+    pub fn delete(self: Self<T>, x: T) -> Set<T> {
         return Set(items: self.items.filter({ item -> item != x }));
     }
 
-    pub fn union(self: Self, other: Set<T>) -> Set<T> {
+    pub fn union(self: Self<T>, other: Set<T>) -> Set<T> {
         var out = self;
         other.items.forEach({ x ->
             out = out.insert(x);
@@ -257,11 +282,11 @@ pub type Set<T>(
         return out;
     }
 
-    pub fn intersection(self: Self, other: Set<T>) -> Set<T> {
+    pub fn intersection(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(items: self.items.filter({ x -> other.items.indexOf(x) != -1 }));
     }
 
-    pub fn difference(self: Self, other: Set<T>) -> Set<T> {
+    pub fn difference(self: Self<T>, other: Set<T>) -> Set<T> {
         return Set(items: self.items.filter({ x -> other.items.indexOf(x) == -1 }));
     }
 
@@ -367,29 +392,29 @@ test "set empty boundary: size 0, contains misses, toList empty" {
 pub type Queue<T>(
     items: Array<T>,
 ) {
-    pub fn size(self: Self) -> i32 {
+    pub fn size(self: Self<T>) -> i32 {
         return self.items.length;
     }
 
-    pub fn isEmpty(self: Self) -> bool {
+    pub fn isEmpty(self: Self<T>) -> bool {
         return self.items.length == 0;
     }
 
-    pub fn enqueue(self: Self, item: T) -> Queue<T> {
+    pub fn enqueue(self: Self<T>, item: T) -> Queue<T> {
         return Queue(items: self.items.append([item]));
     }
 
-    pub fn dequeue(self: Self) -> #(Queue<T>, ?T) {
+    pub fn dequeue(self: Self<T>) -> #(Queue<T>, ?T) {
         val head = self.items.at(0);
         val rest = self.items.slice(1, self.items.length);
         return #(Queue(items: rest), head);
     }
 
-    pub fn peek(self: Self) -> ?T {
+    pub fn peek(self: Self<T>) -> ?T {
         return self.items.at(0);
     }
 
-    pub fn toList(self: Self) -> Array<T> {
+    pub fn toList(self: Self<T>) -> Array<T> {
         return self.items;
     }
 
@@ -532,9 +557,9 @@ test "order case over Order" {
 ----- BEAM ASSEMBLY -- std/collections.S
 ```erlang
 {module, std@collections}.
-{exports, [{lt, 0}, {eq, 0}, {gt, 0}, {toInt, 1}, {reverse, 1}]}.
+{exports, [{lt, 0}, {eq, 0}, {gt, 0}, {toInt, 1}, {reverse, 1}, {shown, 1}]}.
 {attributes, []}.
-{labels, 18}.
+{labels, 27}.
 %%% std/collections — the four collection types, one namespace each (decision
 %%% 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
 %%% `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
@@ -559,6 +584,67 @@ test "order case over Order" {
 % expression has no typing rule of its own and rewrites to `d.at("k")`. The
 % reader was spelled `lookup` until that amendment gave every indexable type
 % one method name.
+% One key or value of `Dict.display`: a string quoted, anything else as it
+% interpolates.
+
+{function, shown, 1, 3}.
+  {label, 2}.
+    {line, [{location, "std@collections.erl", 14}]}.
+    {func_info, {atom, std@collections}, {atom, shown}, 1}.
+  {label, 3}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_binary, {f, 15}, [{x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 16}}.
+  {label, 15}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 16}.
+    {test, is_eq, {f, 14}, [{x, 0}, {atom, true}]}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {literal, <<"\"">>}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {literal, <<"\"">>}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 18}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {deallocate, 3}.
+    return.
+  {label, 14}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<"">>}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 18}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {deallocate, 3}.
+    return.
 % ── option method API over `at`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
 % ── empty-collection boundary (B1) ──
 % ── Set<T> ──────────────────────────────────────────────────────────────────
@@ -587,99 +673,164 @@ test "order case over Order" {
 % Construct via the module fns (`collections.lt()`); `toInt`/`reverse` operate on
 % an `Order`. Enums are concrete types, not interfaces.
 
-{function, lt, 0, 3}.
-  {label, 2}.
-    {line, [{location, "std@collections.erl", 32}]}.
+{function, lt, 0, 5}.
+  {label, 4}.
+    {line, [{location, "std@collections.erl", 34}]}.
     {func_info, {atom, std@collections}, {atom, lt}, 0}.
-  {label, 3}.
+  {label, 5}.
     {allocate, 0, 0}.
     {move, {atom, std@collections@@Order__v__lt}, {x, 0}}.
     {deallocate, 0}.
     return.
 
-{function, eq, 0, 5}.
-  {label, 4}.
-    {line, [{location, "std@collections.erl", 33}]}.
+{function, eq, 0, 7}.
+  {label, 6}.
+    {line, [{location, "std@collections.erl", 35}]}.
     {func_info, {atom, std@collections}, {atom, eq}, 0}.
-  {label, 5}.
+  {label, 7}.
     {allocate, 0, 0}.
     {move, {atom, std@collections@@Order__v__eq}, {x, 0}}.
     {deallocate, 0}.
     return.
 
-{function, gt, 0, 7}.
-  {label, 6}.
-    {line, [{location, "std@collections.erl", 34}]}.
+{function, gt, 0, 9}.
+  {label, 8}.
+    {line, [{location, "std@collections.erl", 36}]}.
     {func_info, {atom, std@collections}, {atom, gt}, 0}.
-  {label, 7}.
+  {label, 9}.
     {allocate, 0, 0}.
     {move, {atom, std@collections@@Order__v__gt}, {x, 0}}.
     {deallocate, 0}.
     return.
 
-{function, toInt, 1, 9}.
-  {label, 8}.
-    {line, [{location, "std@collections.erl", 35}]}.
-    {func_info, {atom, std@collections}, {atom, toInt}, 1}.
-  {label, 9}.
-    {allocate, 4, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_eq, {f, 13}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
-    {move, {integer, -1}, {x, 0}}.
-    {jump, {f, 12}}.
-  {label, 13}.
-    {test, is_eq, {f, 14}, [{x, 0}, {atom, std@collections@@Order__v__eq}]}.
-    {move, {integer, 0}, {x, 0}}.
-    {jump, {f, 12}}.
-  {label, 14}.
-    {move, {integer, 1}, {x, 0}}.
-    {jump, {f, 12}}.
-  {label, 12}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {deallocate, 4}.
-    return.
-
-{function, reverse, 1, 11}.
+{function, toInt, 1, 11}.
   {label, 10}.
-    {line, [{location, "std@collections.erl", 36}]}.
-    {func_info, {atom, std@collections}, {atom, reverse}, 1}.
+    {line, [{location, "std@collections.erl", 37}]}.
+    {func_info, {atom, std@collections}, {atom, toInt}, 1}.
   {label, 11}.
     {allocate, 4, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq, {f, 16}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
-    {move, {atom, std@collections@@Order__v__gt}, {x, 0}}.
-    {jump, {f, 15}}.
-  {label, 16}.
-    {test, is_eq, {f, 17}, [{x, 0}, {atom, std@collections@@Order__v__gt}]}.
-    {move, {atom, std@collections@@Order__v__lt}, {x, 0}}.
-    {jump, {f, 15}}.
-  {label, 17}.
-    {move, {atom, std@collections@@Order__v__eq}, {x, 0}}.
-    {jump, {f, 15}}.
-  {label, 15}.
+    {test, is_eq, {f, 22}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
+    {move, {integer, -1}, {x, 0}}.
+    {jump, {f, 21}}.
+  {label, 22}.
+    {test, is_eq, {f, 23}, [{x, 0}, {atom, std@collections@@Order__v__eq}]}.
+    {move, {integer, 0}, {x, 0}}.
+    {jump, {f, 21}}.
+  {label, 23}.
+    {move, {integer, 1}, {x, 0}}.
+    {jump, {f, 21}}.
+  {label, 21}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 4}.
     return.
+
+{function, reverse, 1, 13}.
+  {label, 12}.
+    {line, [{location, "std@collections.erl", 38}]}.
+    {func_info, {atom, std@collections}, {atom, reverse}, 1}.
+  {label, 13}.
+    {allocate, 4, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq, {f, 25}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
+    {move, {atom, std@collections@@Order__v__gt}, {x, 0}}.
+    {jump, {f, 24}}.
+  {label, 25}.
+    {test, is_eq, {f, 26}, [{x, 0}, {atom, std@collections@@Order__v__gt}]}.
+    {move, {atom, std@collections@@Order__v__lt}, {x, 0}}.
+    {jump, {f, 24}}.
+  {label, 26}.
+    {move, {atom, std@collections@@Order__v__eq}, {x, 0}}.
+    {jump, {f, 24}}.
+  {label, 24}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 4}.
+    return.
+
+{function, '-bp_stringify-', 1, 18}.
+  {label, 17}.
+    {line, [{location, "std@collections.erl", 15}]}.
+    {func_info, {atom, std@collections}, {atom, '-bp_stringify-'}, 1}.
+  {label, 18}.
+    {allocate, 0, 1}.
+    {test, is_binary, {f, 19}, [{x, 0}]}.
+    {deallocate, 0}.
+    return.
+  {label, 19}.
+    {test, is_integer, {f, 20}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 20}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 0}.
 ```
 
 ----- BEAM ASSEMBLY -- std@collections@@Dict.S
 ```erlang
 {module, std@collections@@Dict}.
-{exports, [{at, 2}, {hasKey, 2}, {size, 1}, {isEmpty, 1}, {keys, 1}, {values, 1}, {insert, 3}, {delete, 2}, {merge, 2}, {fold, 3}, {mapValues, 2}, {empty, 0}, {'__bp_get', 2}, {'__bp_format', 1}]}.
+{exports, [{display, 1}, {at, 2}, {hasKey, 2}, {size, 1}, {isEmpty, 1}, {keys, 1}, {values, 1}, {insert, 3}, {delete, 2}, {merge, 2}, {fold, 3}, {mapValues, 2}, {empty, 0}, {'__bp_get', 2}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 75}.
+{labels, 86}.
 
-{function, at, 2, 3}.
+{function, display, 1, 3}.
   {label, 2}.
     {line, [{location, "std@collections@@Dict.erl", 1}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, at}, 2}.
+    {func_info, {atom, std@collections@@Dict}, {atom, display}, 1}.
   {label, 3}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 34}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 34}.
+    {move, {y, 1}, {x, 1}}.
+    {move, {x, 0}, {x, 2}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 3}.
+    {make_fun3, {f, 29}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 3, {extfunc, lists, foldl, 3}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<")">>}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call, 2, {f, 36}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<"Dict(">>}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 31}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {deallocate, 3}.
+    return.
+
+{function, at, 2, 5}.
+  {label, 4}.
+    {line, [{location, "std@collections@@Dict.erl", 2}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, at}, 2}.
+  {label, 5}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -687,136 +838,136 @@ test "order case over Order" {
     {move, {atom, undefined}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 30}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {test, is_tagged_tuple, {f, 41}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 30}.
+  {label, 41}.
     {move, {y, 2}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 27}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {make_fun3, {f, 38}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, hasKey, 2, 5}.
-  {label, 4}.
-    {line, [{location, "std@collections@@Dict.erl", 2}]}.
+{function, hasKey, 2, 7}.
+  {label, 6}.
+    {line, [{location, "std@collections@@Dict.erl", 3}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, hasKey}, 2}.
-  {label, 5}.
+  {label, 7}.
     {allocate, 4, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 31}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {test, is_tagged_tuple, {f, 42}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 31}.
+  {label, 42}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 33}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {make_fun3, {f, 44}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
     {call_ext, 2, {extfunc, lists, filter, 2}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 37}}.
-    {test, is_ne_exact, {f, 39}, [{x, 0}, {atom, undefined}]}.
+    {call, 2, {f, 48}}.
+    {test, is_ne_exact, {f, 50}, [{x, 0}, {atom, undefined}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 40}}.
-  {label, 39}.
+    {jump, {f, 51}}.
+  {label, 50}.
     {move, {atom, false}, {x, 0}}.
-  {label, 40}.
+  {label, 51}.
     {deallocate, 4}.
     return.
 
-{function, size, 1, 7}.
-  {label, 6}.
-    {line, [{location, "std@collections@@Dict.erl", 3}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, size}, 1}.
-  {label, 7}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 41}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 41}.
-    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {deallocate, 1}.
-    return.
-
-{function, isEmpty, 1, 9}.
+{function, size, 1, 9}.
   {label, 8}.
     {line, [{location, "std@collections@@Dict.erl", 4}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, isEmpty}, 1}.
+    {func_info, {atom, std@collections@@Dict}, {atom, size}, 1}.
   {label, 9}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 42}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {test, is_tagged_tuple, {f, 52}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 42}.
+  {label, 52}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 43}, [{x, 0}, {integer, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 44}}.
-  {label, 43}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 44}.
     {deallocate, 1}.
     return.
 
-{function, keys, 1, 11}.
+{function, isEmpty, 1, 11}.
   {label, 10}.
     {line, [{location, "std@collections@@Dict.erl", 5}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, keys}, 1}.
+    {func_info, {atom, std@collections@@Dict}, {atom, isEmpty}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 45}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {test, is_tagged_tuple, {f, 53}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 45}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 47}, 0, 0, {x, 0}, {list, []}}.
-    {call_ext_last, 2, {extfunc, lists, map, 2}, 1}.
+  {label, 53}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {test, is_eq_exact, {f, 54}, [{x, 0}, {integer, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 55}}.
+  {label, 54}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 55}.
+    {deallocate, 1}.
+    return.
 
-{function, values, 1, 13}.
+{function, keys, 1, 13}.
   {label, 12}.
     {line, [{location, "std@collections@@Dict.erl", 6}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, values}, 1}.
+    {func_info, {atom, std@collections@@Dict}, {atom, keys}, 1}.
   {label, 13}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 48}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {test, is_tagged_tuple, {f, 56}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 48}.
+  {label, 56}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 50}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 58}, 0, 0, {x, 0}, {list, []}}.
     {call_ext_last, 2, {extfunc, lists, map, 2}, 1}.
 
-{function, insert, 3, 15}.
+{function, values, 1, 15}.
   {label, 14}.
     {line, [{location, "std@collections@@Dict.erl", 7}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, insert}, 3}.
+    {func_info, {atom, std@collections@@Dict}, {atom, values}, 1}.
   {label, 15}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 59}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+  {label, 59}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 61}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext_last, 2, {extfunc, lists, map, 2}, 1}.
+
+{function, insert, 3, 17}.
+  {label, 16}.
+    {line, [{location, "std@collections@@Dict.erl", 8}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, insert}, 3}.
+  {label, 17}.
     {allocate, 5, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 51}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {test, is_tagged_tuple, {f, 62}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 51}.
+  {label, 62}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 53}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {make_fun3, {f, 64}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
     {call_ext, 2, {extfunc, lists, filter, 2}}.
     {move, {x, 0}, {y, 3}}.
     {move, nil, {x, 0}}.
@@ -834,33 +985,33 @@ test "order case over Order" {
     {deallocate, 5}.
     return.
 
-{function, delete, 2, 17}.
-  {label, 16}.
-    {line, [{location, "std@collections@@Dict.erl", 8}]}.
+{function, delete, 2, 19}.
+  {label, 18}.
+    {line, [{location, "std@collections@@Dict.erl", 9}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, delete}, 2}.
-  {label, 17}.
+  {label, 19}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 56}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {test, is_tagged_tuple, {f, 67}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 56}.
+  {label, 67}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 58}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {make_fun3, {f, 69}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
     {call_ext, 2, {extfunc, lists, filter, 2}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@collections@@Dict}, {x, 0}]}}.
     {deallocate, 2}.
     return.
 
-{function, merge, 2, 19}.
-  {label, 18}.
-    {line, [{location, "std@collections@@Dict.erl", 9}]}.
+{function, merge, 2, 21}.
+  {label, 20}.
+    {line, [{location, "std@collections@@Dict.erl", 10}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, merge}, 2}.
-  {label, 19}.
+  {label, 21}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -868,24 +1019,24 @@ test "order case over Order" {
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 63}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {test, is_tagged_tuple, {f, 74}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 63}.
+  {label, 74}.
     {move, {y, 2}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 62}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 73}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, fold, 3, 21}.
-  {label, 20}.
-    {line, [{location, "std@collections@@Dict.erl", 10}]}.
+{function, fold, 3, 23}.
+  {label, 22}.
+    {line, [{location, "std@collections@@Dict.erl", 11}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, fold}, 3}.
-  {label, 21}.
+  {label, 23}.
     {allocate, 4, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -894,24 +1045,24 @@ test "order case over Order" {
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 66}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {test, is_tagged_tuple, {f, 77}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 66}.
+  {label, 77}.
     {move, {y, 3}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 65}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
+    {make_fun3, {f, 76}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, mapValues, 2, 23}.
-  {label, 22}.
-    {line, [{location, "std@collections@@Dict.erl", 11}]}.
+{function, mapValues, 2, 25}.
+  {label, 24}.
+    {line, [{location, "std@collections@@Dict.erl", 12}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, mapValues}, 2}.
-  {label, 23}.
+  {label, 25}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -919,13 +1070,13 @@ test "order case over Order" {
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 69}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
+    {test, is_tagged_tuple, {f, 80}, [{x, 0}, 2, {atom, std@collections@@Dict}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 69}.
+  {label, 80}.
     {move, {y, 2}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 68}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
+    {make_fun3, {f, 79}, 0, 0, {x, 0}, {list, [{y, 1}]}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 2}}.
     {test_heap, 3, 0}.
@@ -933,11 +1084,11 @@ test "order case over Order" {
     {deallocate, 3}.
     return.
 
-{function, empty, 0, 25}.
-  {label, 24}.
-    {line, [{location, "std@collections@@Dict.erl", 12}]}.
+{function, empty, 0, 27}.
+  {label, 26}.
+    {line, [{location, "std@collections@@Dict.erl", 13}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, empty}, 0}.
-  {label, 25}.
+  {label, 27}.
     {allocate, 0, 0}.
     {move, nil, {x, 0}}.
     {test_heap, 3, 1}.
@@ -945,44 +1096,118 @@ test "order case over Order" {
     {deallocate, 0}.
     return.
 
-{function, '__bp_get', 2, 71}.
-  {label, 70}.
-    {line, [{location, "std@collections@@Dict.erl", 13}]}.
+{function, '__bp_get', 2, 82}.
+  {label, 81}.
+    {line, [{location, "std@collections@@Dict.erl", 14}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '__bp_get'}, 2}.
-  {label, 71}.
-    {test, is_eq_exact, {f, 72}, [{x, 1}, {atom, pairs}]}.
+  {label, 82}.
+    {test, is_eq_exact, {f, 83}, [{x, 1}, {atom, pairs}]}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext_only, 2, {extfunc, erlang, element, 2}}.
-  {label, 72}.
+  {label, 83}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_format', 1, 74}.
-  {label, 73}.
-    {line, [{location, "std@collections@@Dict.erl", 13}]}.
+{function, '__bp_format', 1, 85}.
+  {label, 84}.
+    {line, [{location, "std@collections@@Dict.erl", 14}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '__bp_format'}, 1}.
-  {label, 74}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, nil, {y, 1}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test_heap, 5, 1}.
-    {put_tuple2, {x, 0}, {list, [{literal, <<"pairs">>}, {x, 0}]}}.
-    {put_list, {x, 0}, {y, 1}, {y, 1}}.
-    {test_heap, 4, 1}.
-    {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Dict">>}, {y, 1}]}}.
-    {deallocate, 2}.
+  {label, 85}.
+    {allocate, 0, 1}.
+    {call, 1, {f, 3}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, text}, {x, 0}]}}.
+    {deallocate, 0}.
     return.
 
-{function, '-/2-fun-0-', 3, 27}.
-  {label, 26}.
+{function, '-bp_stringify-', 1, 31}.
+  {label, 30}.
     {line, [{location, "std@collections@@Dict.erl", 2}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-0-'}, 3}.
-  {label, 27}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-bp_stringify-'}, 1}.
+  {label, 31}.
+    {allocate, 0, 1}.
+    {test, is_binary, {f, 32}, [{x, 0}]}.
+    {deallocate, 0}.
+    return.
+  {label, 32}.
+    {test, is_integer, {f, 33}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 33}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 0}.
+
+{function, '-/1-fun-0-', 2, 29}.
+  {label, 28}.
+    {line, [{location, "std@collections@@Dict.erl", 2}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-/1-fun-0-'}, 2}.
+  {label, 29}.
+    {allocate, 5, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {call_ext, 1, {extfunc, std@collections, shown, 1}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {literal, <<": ">>}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 1}, {x, 0}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {call_ext, 1, {extfunc, std@collections, shown, 1}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 31}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, append, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 5}.
+    return.
+
+{function, '-bp_join-', 2, 36}.
+  {label, 35}.
+    {line, [{location, "std@collections@@Dict.erl", 2}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-bp_join-'}, 2}.
+  {label, 36}.
+    {allocate, 1, 2}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 1}, {y, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 31}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {call_ext_last, 1, {extfunc, erlang, iolist_to_binary, 1}, 1}.
+
+{function, '-/2-fun-1-', 3, 38}.
+  {label, 37}.
+    {line, [{location, "std@collections@@Dict.erl", 3}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-1-'}, 3}.
+  {label, 38}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -992,24 +1217,24 @@ test "order case over Order" {
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 28}, [{x, 0}, {y, 2}]}.
+    {test, is_eq_exact, {f, 39}, [{x, 0}, {y, 2}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {x, 0}, {y, 1}}.
-    {jump, {f, 29}}.
-  {label, 28}.
-  {label, 29}.
+    {jump, {f, 40}}.
+  {label, 39}.
+  {label, 40}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, '-/2-fun-1-', 2, 33}.
-  {label, 32}.
-    {line, [{location, "std@collections@@Dict.erl", 3}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-1-'}, 2}.
-  {label, 33}.
+{function, '-/2-fun-2-', 2, 44}.
+  {label, 43}.
+    {line, [{location, "std@collections@@Dict.erl", 4}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-2-'}, 2}.
+  {label, 44}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1018,41 +1243,41 @@ test "order case over Order" {
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 34}, [{x, 0}, {y, 1}]}.
+    {test, is_eq_exact, {f, 45}, [{x, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 35}}.
-  {label, 34}.
+    {jump, {f, 46}}.
+  {label, 45}.
     {move, {atom, false}, {x, 0}}.
-  {label, 35}.
+  {label, 46}.
     {deallocate, 2}.
     return.
 
-{function, '-bp_at-', 2, 37}.
-  {label, 36}.
-    {line, [{location, "std@collections@@Dict.erl", 3}]}.
+{function, '-bp_at-', 2, 48}.
+  {label, 47}.
+    {line, [{location, "std@collections@@Dict.erl", 4}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-bp_at-'}, 2}.
-  {label, 37}.
+  {label, 48}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 0}}.
-    {test, is_ge, {f, 38}, [{y, 0}, {integer, 0}]}.
+    {test, is_ge, {f, 49}, [{y, 0}, {integer, 0}]}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
-    {test, is_lt, {f, 38}, [{y, 0}, {x, 0}]}.
+    {test, is_lt, {f, 49}, [{y, 0}, {x, 0}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.
-  {label, 38}.
+  {label, 49}.
     {move, {atom, undefined}, {x, 0}}.
     {deallocate, 2}.
     return.
 
-{function, '-/1-fun-2-', 1, 47}.
-  {label, 46}.
-    {line, [{location, "std@collections@@Dict.erl", 6}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, '-/1-fun-2-'}, 1}.
-  {label, 47}.
+{function, '-/1-fun-3-', 1, 58}.
+  {label, 57}.
+    {line, [{location, "std@collections@@Dict.erl", 7}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-/1-fun-3-'}, 1}.
+  {label, 58}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1063,11 +1288,11 @@ test "order case over Order" {
     {deallocate, 1}.
     return.
 
-{function, '-/1-fun-3-', 1, 50}.
-  {label, 49}.
-    {line, [{location, "std@collections@@Dict.erl", 7}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, '-/1-fun-3-'}, 1}.
-  {label, 50}.
+{function, '-/1-fun-4-', 1, 61}.
+  {label, 60}.
+    {line, [{location, "std@collections@@Dict.erl", 8}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-/1-fun-4-'}, 1}.
+  {label, 61}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1078,33 +1303,11 @@ test "order case over Order" {
     {deallocate, 1}.
     return.
 
-{function, '-/3-fun-4-', 2, 53}.
-  {label, 52}.
-    {line, [{location, "std@collections@@Dict.erl", 8}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, '-/3-fun-4-'}, 2}.
-  {label, 53}.
-    {allocate, 2, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {x, 1}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 1}, {x, 0}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_ne_exact, {f, 54}, [{x, 0}, {y, 1}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 55}}.
-  {label, 54}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 55}.
-    {deallocate, 2}.
-    return.
-
-{function, '-/2-fun-5-', 2, 58}.
-  {label, 57}.
+{function, '-/3-fun-5-', 2, 64}.
+  {label, 63}.
     {line, [{location, "std@collections@@Dict.erl", 9}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-5-'}, 2}.
-  {label, 58}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-/3-fun-5-'}, 2}.
+  {label, 64}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1113,20 +1316,42 @@ test "order case over Order" {
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_ne_exact, {f, 59}, [{x, 0}, {y, 1}]}.
+    {test, is_ne_exact, {f, 65}, [{x, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 60}}.
-  {label, 59}.
+    {jump, {f, 66}}.
+  {label, 65}.
     {move, {atom, false}, {x, 0}}.
-  {label, 60}.
+  {label, 66}.
     {deallocate, 2}.
     return.
 
-{function, '-/2-fun-6-', 2, 62}.
-  {label, 61}.
+{function, '-/2-fun-6-', 2, 69}.
+  {label, 68}.
     {line, [{location, "std@collections@@Dict.erl", 10}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-6-'}, 2}.
-  {label, 62}.
+  {label, 69}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 1}, {x, 0}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test, is_ne_exact, {f, 70}, [{x, 0}, {y, 1}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 71}}.
+  {label, 70}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 71}.
+    {deallocate, 2}.
+    return.
+
+{function, '-/2-fun-7-', 2, 73}.
+  {label, 72}.
+    {line, [{location, "std@collections@@Dict.erl", 11}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-7-'}, 2}.
+  {label, 73}.
     {allocate, 5, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1143,17 +1368,17 @@ test "order case over Order" {
     {move, {y, 2}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 3, {f, 15}}.
+    {call, 3, {f, 17}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 5}.
     return.
 
-{function, '-/3-fun-7-', 3, 65}.
-  {label, 64}.
-    {line, [{location, "std@collections@@Dict.erl", 11}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, '-/3-fun-7-'}, 3}.
-  {label, 65}.
+{function, '-/3-fun-8-', 3, 76}.
+  {label, 75}.
+    {line, [{location, "std@collections@@Dict.erl", 12}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-/3-fun-8-'}, 3}.
+  {label, 76}.
     {allocate, 6, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1178,11 +1403,11 @@ test "order case over Order" {
     {deallocate, 6}.
     return.
 
-{function, '-/2-fun-8-', 3, 68}.
-  {label, 67}.
-    {line, [{location, "std@collections@@Dict.erl", 12}]}.
-    {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-8-'}, 3}.
-  {label, 68}.
+{function, '-/2-fun-9-', 3, 79}.
+  {label, 78}.
+    {line, [{location, "std@collections@@Dict.erl", 13}]}.
+    {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-9-'}, 3}.
+  {label, 79}.
     {allocate, 7, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1220,7 +1445,7 @@ test "order case over Order" {
 
 {function, contains, 2, 3}.
   {label, 2}.
-    {line, [{location, "std@collections@@Set.erl", 13}]}.
+    {line, [{location, "std@collections@@Set.erl", 15}]}.
     {func_info, {atom, std@collections@@Set}, {atom, contains}, 2}.
   {label, 3}.
     {allocate, 2, 2}.
@@ -1245,7 +1470,7 @@ test "order case over Order" {
 
 {function, size, 1, 5}.
   {label, 4}.
-    {line, [{location, "std@collections@@Set.erl", 14}]}.
+    {line, [{location, "std@collections@@Set.erl", 16}]}.
     {func_info, {atom, std@collections@@Set}, {atom, size}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
@@ -1261,7 +1486,7 @@ test "order case over Order" {
 
 {function, isEmpty, 1, 7}.
   {label, 6}.
-    {line, [{location, "std@collections@@Set.erl", 15}]}.
+    {line, [{location, "std@collections@@Set.erl", 17}]}.
     {func_info, {atom, std@collections@@Set}, {atom, isEmpty}, 1}.
   {label, 7}.
     {allocate, 1, 1}.
@@ -1283,7 +1508,7 @@ test "order case over Order" {
 
 {function, toList, 1, 9}.
   {label, 8}.
-    {line, [{location, "std@collections@@Set.erl", 16}]}.
+    {line, [{location, "std@collections@@Set.erl", 18}]}.
     {func_info, {atom, std@collections@@Set}, {atom, toList}, 1}.
   {label, 9}.
     {allocate, 1, 1}.
@@ -1298,7 +1523,7 @@ test "order case over Order" {
 
 {function, insert, 2, 11}.
   {label, 10}.
-    {line, [{location, "std@collections@@Set.erl", 17}]}.
+    {line, [{location, "std@collections@@Set.erl", 19}]}.
     {func_info, {atom, std@collections@@Set}, {atom, insert}, 2}.
   {label, 11}.
     {allocate, 3, 2}.
@@ -1339,7 +1564,7 @@ test "order case over Order" {
 
 {function, delete, 2, 13}.
   {label, 12}.
-    {line, [{location, "std@collections@@Set.erl", 18}]}.
+    {line, [{location, "std@collections@@Set.erl", 20}]}.
     {func_info, {atom, std@collections@@Set}, {atom, delete}, 2}.
   {label, 13}.
     {allocate, 2, 2}.
@@ -1361,7 +1586,7 @@ test "order case over Order" {
 
 {function, union, 2, 15}.
   {label, 14}.
-    {line, [{location, "std@collections@@Set.erl", 19}]}.
+    {line, [{location, "std@collections@@Set.erl", 21}]}.
     {func_info, {atom, std@collections@@Set}, {atom, union}, 2}.
   {label, 15}.
     {allocate, 3, 2}.
@@ -1386,7 +1611,7 @@ test "order case over Order" {
 
 {function, intersection, 2, 17}.
   {label, 16}.
-    {line, [{location, "std@collections@@Set.erl", 20}]}.
+    {line, [{location, "std@collections@@Set.erl", 22}]}.
     {func_info, {atom, std@collections@@Set}, {atom, intersection}, 2}.
   {label, 17}.
     {allocate, 2, 2}.
@@ -1408,7 +1633,7 @@ test "order case over Order" {
 
 {function, difference, 2, 19}.
   {label, 18}.
-    {line, [{location, "std@collections@@Set.erl", 21}]}.
+    {line, [{location, "std@collections@@Set.erl", 23}]}.
     {func_info, {atom, std@collections@@Set}, {atom, difference}, 2}.
   {label, 19}.
     {allocate, 2, 2}.
@@ -1430,7 +1655,7 @@ test "order case over Order" {
 
 {function, empty, 0, 21}.
   {label, 20}.
-    {line, [{location, "std@collections@@Set.erl", 22}]}.
+    {line, [{location, "std@collections@@Set.erl", 24}]}.
     {func_info, {atom, std@collections@@Set}, {atom, empty}, 0}.
   {label, 21}.
     {allocate, 0, 0}.
@@ -1442,7 +1667,7 @@ test "order case over Order" {
 
 {function, fromList, 1, 23}.
   {label, 22}.
-    {line, [{location, "std@collections@@Set.erl", 23}]}.
+    {line, [{location, "std@collections@@Set.erl", 25}]}.
     {func_info, {atom, std@collections@@Set}, {atom, fromList}, 1}.
   {label, 23}.
     {allocate, 2, 1}.
@@ -1465,7 +1690,7 @@ test "order case over Order" {
 
 {function, '__bp_get', 2, 63}.
   {label, 62}.
-    {line, [{location, "std@collections@@Set.erl", 24}]}.
+    {line, [{location, "std@collections@@Set.erl", 26}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '__bp_get'}, 2}.
   {label, 63}.
     {test, is_eq_exact, {f, 64}, [{x, 1}, {atom, items}]}.
@@ -1478,7 +1703,7 @@ test "order case over Order" {
 
 {function, '__bp_format', 1, 66}.
   {label, 65}.
-    {line, [{location, "std@collections@@Set.erl", 24}]}.
+    {line, [{location, "std@collections@@Set.erl", 26}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '__bp_format'}, 1}.
   {label, 66}.
     {allocate, 2, 1}.
@@ -1498,7 +1723,7 @@ test "order case over Order" {
 
 {function, '-bp_indexOf-', 3, 26}.
   {label, 25}.
-    {line, [{location, "std@collections@@Set.erl", 14}]}.
+    {line, [{location, "std@collections@@Set.erl", 16}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '-bp_indexOf-'}, 3}.
   {label, 26}.
     {test, is_nonempty_list, {f, 27}, [{x, 0}]}.
@@ -1514,10 +1739,10 @@ test "order case over Order" {
     {move, {integer, -1}, {x, 0}}.
     return.
 
-{function, '-/2-fun-0-', 2, 42}.
+{function, '-shown/2-fun-0-', 2, 42}.
   {label, 41}.
-    {line, [{location, "std@collections@@Set.erl", 19}]}.
-    {func_info, {atom, std@collections@@Set}, {atom, '-/2-fun-0-'}, 2}.
+    {line, [{location, "std@collections@@Set.erl", 21}]}.
+    {func_info, {atom, std@collections@@Set}, {atom, '-shown/2-fun-0-'}, 2}.
   {label, 42}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -1532,10 +1757,10 @@ test "order case over Order" {
     {deallocate, 2}.
     return.
 
-{function, '-/2-fun-1-', 2, 46}.
+{function, '-shown/2-fun-1-', 2, 46}.
   {label, 45}.
-    {line, [{location, "std@collections@@Set.erl", 20}]}.
-    {func_info, {atom, std@collections@@Set}, {atom, '-/2-fun-1-'}, 2}.
+    {line, [{location, "std@collections@@Set.erl", 22}]}.
+    {func_info, {atom, std@collections@@Set}, {atom, '-shown/2-fun-1-'}, 2}.
   {label, 46}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -1549,10 +1774,10 @@ test "order case over Order" {
     {deallocate, 2}.
     return.
 
-{function, '-/2-fun-2-', 2, 50}.
+{function, '-shown/2-fun-2-', 2, 50}.
   {label, 49}.
-    {line, [{location, "std@collections@@Set.erl", 21}]}.
-    {func_info, {atom, std@collections@@Set}, {atom, '-/2-fun-2-'}, 2}.
+    {line, [{location, "std@collections@@Set.erl", 23}]}.
+    {func_info, {atom, std@collections@@Set}, {atom, '-shown/2-fun-2-'}, 2}.
   {label, 50}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -1574,10 +1799,10 @@ test "order case over Order" {
     {deallocate, 2}.
     return.
 
-{function, '-/2-fun-3-', 2, 56}.
+{function, '-shown/2-fun-3-', 2, 56}.
   {label, 55}.
-    {line, [{location, "std@collections@@Set.erl", 22}]}.
-    {func_info, {atom, std@collections@@Set}, {atom, '-/2-fun-3-'}, 2}.
+    {line, [{location, "std@collections@@Set.erl", 24}]}.
+    {func_info, {atom, std@collections@@Set}, {atom, '-shown/2-fun-3-'}, 2}.
   {label, 56}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -1599,10 +1824,10 @@ test "order case over Order" {
     {deallocate, 2}.
     return.
 
-{function, '-/1-fun-4-', 2, 61}.
+{function, '-shown/1-fun-4-', 2, 61}.
   {label, 60}.
-    {line, [{location, "std@collections@@Set.erl", 24}]}.
-    {func_info, {atom, std@collections@@Set}, {atom, '-/1-fun-4-'}, 2}.
+    {line, [{location, "std@collections@@Set.erl", 26}]}.
+    {func_info, {atom, std@collections@@Set}, {atom, '-shown/1-fun-4-'}, 2}.
   {label, 61}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -1626,7 +1851,7 @@ test "order case over Order" {
 
 {function, size, 1, 3}.
   {label, 2}.
-    {line, [{location, "std@collections@@Queue.erl", 24}]}.
+    {line, [{location, "std@collections@@Queue.erl", 26}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, size}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
@@ -1642,7 +1867,7 @@ test "order case over Order" {
 
 {function, isEmpty, 1, 5}.
   {label, 4}.
-    {line, [{location, "std@collections@@Queue.erl", 25}]}.
+    {line, [{location, "std@collections@@Queue.erl", 27}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, isEmpty}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
@@ -1664,7 +1889,7 @@ test "order case over Order" {
 
 {function, enqueue, 2, 7}.
   {label, 6}.
-    {line, [{location, "std@collections@@Queue.erl", 26}]}.
+    {line, [{location, "std@collections@@Queue.erl", 28}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, enqueue}, 2}.
   {label, 7}.
     {allocate, 3, 2}.
@@ -1693,7 +1918,7 @@ test "order case over Order" {
 
 {function, dequeue, 1, 9}.
   {label, 8}.
-    {line, [{location, "std@collections@@Queue.erl", 27}]}.
+    {line, [{location, "std@collections@@Queue.erl", 29}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, dequeue}, 1}.
   {label, 9}.
     {allocate, 3, 1}.
@@ -1738,7 +1963,7 @@ test "order case over Order" {
 
 {function, peek, 1, 11}.
   {label, 10}.
-    {line, [{location, "std@collections@@Queue.erl", 28}]}.
+    {line, [{location, "std@collections@@Queue.erl", 30}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, peek}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
@@ -1753,7 +1978,7 @@ test "order case over Order" {
 
 {function, toList, 1, 13}.
   {label, 12}.
-    {line, [{location, "std@collections@@Queue.erl", 29}]}.
+    {line, [{location, "std@collections@@Queue.erl", 31}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, toList}, 1}.
   {label, 13}.
     {allocate, 1, 1}.
@@ -1768,7 +1993,7 @@ test "order case over Order" {
 
 {function, empty, 0, 15}.
   {label, 14}.
-    {line, [{location, "std@collections@@Queue.erl", 30}]}.
+    {line, [{location, "std@collections@@Queue.erl", 32}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, empty}, 0}.
   {label, 15}.
     {allocate, 0, 0}.
@@ -1780,7 +2005,7 @@ test "order case over Order" {
 
 {function, fromList, 1, 17}.
   {label, 16}.
-    {line, [{location, "std@collections@@Queue.erl", 31}]}.
+    {line, [{location, "std@collections@@Queue.erl", 33}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, fromList}, 1}.
   {label, 17}.
     {allocate, 1, 1}.
@@ -1793,7 +2018,7 @@ test "order case over Order" {
 
 {function, '__bp_get', 2, 34}.
   {label, 33}.
-    {line, [{location, "std@collections@@Queue.erl", 32}]}.
+    {line, [{location, "std@collections@@Queue.erl", 34}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, '__bp_get'}, 2}.
   {label, 34}.
     {test, is_eq_exact, {f, 35}, [{x, 1}, {atom, items}]}.
@@ -1806,7 +2031,7 @@ test "order case over Order" {
 
 {function, '__bp_format', 1, 37}.
   {label, 36}.
-    {line, [{location, "std@collections@@Queue.erl", 32}]}.
+    {line, [{location, "std@collections@@Queue.erl", 34}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, '__bp_format'}, 1}.
   {label, 37}.
     {allocate, 2, 1}.
@@ -1826,7 +2051,7 @@ test "order case over Order" {
 
 {function, '-bp_at-', 2, 25}.
   {label, 24}.
-    {line, [{location, "std@collections@@Queue.erl", 28}]}.
+    {line, [{location, "std@collections@@Queue.erl", 30}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, '-bp_at-'}, 2}.
   {label, 25}.
     {allocate, 2, 2}.
@@ -1855,7 +2080,7 @@ test "order case over Order" {
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "std@collections@@Order.erl", 32}]}.
+    {line, [{location, "std@collections@@Order.erl", 34}]}.
     {func_info, {atom, std@collections@@Order}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.

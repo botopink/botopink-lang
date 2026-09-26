@@ -2,7 +2,7 @@
 ```botopink
 val Element = type implement @Context<Element> { }
 fn render() -> Element {
-    Element();
+    return Element();
 }
 ```
 

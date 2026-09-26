@@ -1,0 +1,16 @@
+//// 01 step 12's registry half (decisions-pending 01std-d) — two modules export
+//// a template named `tag`. The template registry was keyed by the bare name,
+//// so an import of one expanded whichever module registered last — measured
+//// with the `feat` binary: `quiet` on all three targets, at exit 0. It is keyed
+//// by the exporting module now, and the import says which: `LOUD`.
+
+pub mod loud;
+pub mod quiet;
+
+import { tag } from "loud";
+import { marker } from "quiet";
+
+pub fn main() {
+    @print(tag("x"));
+    @print(marker());
+}

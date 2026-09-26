@@ -170,7 +170,7 @@ the token that ends the form.
 The then-branch's binder accepts `_` as well as a name, and `_` binds the name
 `"_"` — the same discard `val _ = …` records. It is deliberately not a null
 `binding`: a null binding means "this `if` has no binder", and that is what makes
-an `?T` condition the type error `expected bool, got optional`. An author who
+an `?T` condition the type error `expected bool, got ?string`. An author who
 writes `_` is saying the payload is unwanted, not that the condition is a `bool`.
 
 ## A bodyless `fn` declares its return type (decision 33 (b))
@@ -299,6 +299,13 @@ copies. A chained call has no name for its callee, so the callee travels as an
 expression on `ast.CallExpr.call.calleeExpr` with `callee = ""` and
 `receiver = null` — a chained call is **not** a method call, and a consumer that
 reads `receiver` to mean "the value before the `.`" must not see one.
+
+`name<T, …>(args)` — decision 8 §1.3's explicit type arguments — is read by
+`parseExplicitTypeArgs` in `parsePrimary`'s identifier arm, speculatively: only
+when the `<` is adjacent to the name, every item parses as a type, `>` closes the
+list and `(` follows; otherwise the cursor and the parse error are restored and
+`<` is a comparison. The list lands on `ast.CallExpr.call.typeArgs` (null, and
+absent from the dump, when none was written).
 
 `xs[i]` is the `[index]` link, built by `makeIndexExpr` for both copies
 (decision 30). It is the reserved builtin call `ast.index_builtin_name` over

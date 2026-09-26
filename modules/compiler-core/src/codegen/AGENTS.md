@@ -1465,7 +1465,7 @@ codegen/
   module (a default body may call another), so only the defaults a call site
   actually reached are emitted. Inside such a body the receiver's type is `Self`,
   which inference leaves unlowered: `selfPrimKind` re-derives the primitive kind
-  from the owning interface (following `-> Self` methods through chained calls) and
+  from the owning interface (following `-> Self` methods through chained calls — `-> Self<T>` too, read through `ast.TypeRef.isSelf()`, since decision 8 §1.2 has `libs/std` write the argument) and
   bare callees also resolve against the std prelude template index
   (`preludeHelperNode`, `in_iface_default`).
 - **Value-receiver instance methods**: record/enum/struct methods keep `self`
@@ -1904,9 +1904,7 @@ codegen/
   `emitted_defaults`: it runs again after every shim pass, and restarting at 0
   wrote each default a second time (`'Array_all'/2` twice — `erlc +from_asm`
   refuses the module with "label(s) referenced but not defined"), which any
-  program reaching a default and a shim hit. Last, the method's **host
-  spelling** (`toUpperCase` for `String.toUpper`) reaches the method it
-  spells, through erlang's `primNodeAliasIn`.
+  program reaching a default and a shim hit.
 - **A primitive method on an untyped receiver** (`ensurePrimShim`,
   `emitPrimShimFn`, `primKindDeclares`): a lambda parameter carries no declared
   type, so inference records no instance lowering for it and
@@ -2159,9 +2157,9 @@ first three are now enforced by the model, not by discipline:
   `words`; **array** `chunked`, `find`, `pop`, `range`, `sliding`, `unique`;
   **float** `toString`; **Pair** `first`, `of`, `second`, `swap`.
   `toUpperCase` / `toLowerCase` — the host spellings `primitives.bp` gives
-  `toUpper` / `toLower` through `#[@External.Node(…)]`, which source writes and
-  commonJS answers — used to be in that list and are now lowered to
-  `$__str_case` like their botopink names.
+  `toUpper` / `toLower` through `#[@External.Node(…)]` — are not lowered: the
+  checker refuses a method the primitive's interface does not declare
+  (`unknown-primitive-method`, pending 0203-a answered (b)).
   **string `at`** left it on 2026-09-21: it is the reader decision 63's
   amendment gave every indexable type (`charAt` before it), it is what `s[i]`
   rewrites to, and commonJS, erlang and beam all answered it while `s.at(1)`
@@ -2202,7 +2200,9 @@ first three are now enforced by the model, not by discipline:
   (`lowerGeneratorLoop`, `$__yield{n}` inside `(block $__gen{n} …)`) — each
   `yield v` appends (`emitYield`), and `break <v>` appends and ends the scope
   from any loop depth (`emitGenBreak`: `br $__gen{n}`, or the fn's
-  `return` of what it collected). The loop is the array. Every other loop is a
+  `return` of what it collected); a bare `break` at a generator fn's own level
+  ends it the same way without appending (`emitGenEnd`, decision 103 —
+  `run/generator_break_value.bp`). The loop is the array. Every other loop is a
   statement: decision 8 §10's search (`$__found{n}`), decision 52's
   `$__got{n}` flag and `$__print_loop_i32` / `$__print_null`, and the
   valueless-loop `null` all left with the loop's value.
@@ -2609,15 +2609,6 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
    - erlang: array `len`/`length`/`size` → `length/1`, int/float `toString`
      fallback, and BIF-shaped fallbacks for un-annotated default fns
      (`forEach`, `fold`, `drop`, `take`, `toList`).
-4. **Host spelling, last** — erlang and beam resolve a method's
-   `#[@External.Node("<name>")]` spelling (`toUpperCase`, `includes`) to the
-   method it spells (`primNodeAliasIn` in `erlang.zig`, over the process-wide
-   parse of `primitives.bp`), as commonJS (JavaScript's own method) and wasm
-   (`$__str_case`) already answered — only after every other lowering missed,
-   so it can only turn an undefined call into a call. The checker accepts any
-   method name on a primitive receiver (`"x".fooBar()` checks), which is why
-   `test/string_case_conversion.bp` compiled at all; refusing an unknown method
-   is `01-checker`'s.
 
 **The table audited (02 step 7, 2026-09-26):** one call of every method
 `primitives.bp` declares on `Number`/`Integer`/`Signed`/`Float`/`Bool`/`String`/

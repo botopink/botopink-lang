@@ -5,18 +5,18 @@ val Color = type {
     Blue,
 };
 val name = fn(c: Color) -> string {
-    case c {
+    return case c {
         Red -> "red";
         Green -> "green";
         Blue if false -> "blue";
-    }
+    };
 };
 
 ----- ERROR
 error: non-exhaustive case
-  ┌─ :7:5
+  ┌─ :7:12
   │
-7 │     case c {
-  │     ^
+7 │     return case c {
+  │            ^
 
   'Color' is missing variant(s): Blue

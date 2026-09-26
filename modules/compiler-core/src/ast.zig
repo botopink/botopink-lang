@@ -208,6 +208,12 @@ pub const ModDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
+    /// Where the module's name is written (01 step 9). Left out of the dump.
+    loc: Loc = .{ .line = 0, .col = 0 },
+
+    pub fn jsonStringify(this: ModDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{});
+    }
 };
 
 /// Source location of a node: line and column (both 1-based).
@@ -878,9 +884,14 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// when null, so the slot moved no snapshot. A backend that does
             /// not read it lowers exactly the calls it lowered before.
             calleeExpr: ?*ExprOf(phase) = null,
+            /// Decision 8 §1.3 — explicit type arguments at a use,
+            /// `Box<i32>(value: 1)` / `first<string>([])`: the `<…>` written
+            /// adjacent to the callee. Read by the checker only; null when none
+            /// was written, and then left out of the AST dump.
+            typeArgs: ?[]TypeRef = null,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr" });
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs" });
             }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
@@ -2069,6 +2080,18 @@ pub const TypeRef = union(enum) {
     /// Surface syntax (post-F0): `type` / `type string | int | bool`.
     typeparam: []TypeRef,
 
+    /// `Self` as written in a signature — bare, or with the type arguments a
+    /// declaration with type parameters writes (`Self<T>`, decision 8 §1.2).
+    /// The arguments are the checker's; a backend asking "does this method
+    /// return the receiver's type" reads both spellings the same.
+    pub fn isSelf(this: TypeRef) bool {
+        return switch (this) {
+            .named => |n| std.mem.eql(u8, n, "Self"),
+            .generic => |g| !g.is_builtin and std.mem.eql(u8, g.name, "Self"),
+            else => false,
+        };
+    }
+
     /// The members of a union type `A | B` (`union_type_name`); null otherwise.
     pub fn unionMembers(this: TypeRef) ?[]TypeRef {
         return switch (this) {
@@ -3010,6 +3033,9 @@ pub const TypeDecl = struct {
     methods: []BehaviorMethod = &.{},
     /// Comment lines after the last member, before `}` ("" = blank line). Owned slice.
     bodyComments: []const []const u8 = &.{},
+    /// Where the declaration is written (01 step 9 — the diagnostics about it
+    /// are located here). Left out of the AST dump.
+    loc: Loc = .{ .line = 0, .col = 0 },
 
     /// True for the record shape (a field list).
     pub fn isRecord(this: TypeDecl) bool {
@@ -3054,7 +3080,7 @@ pub const TypeDecl = struct {
     }
 
     pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{}, &.{"bodyComments"});
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{"bodyComments"});
     }
 };
 
@@ -3105,12 +3131,18 @@ pub const ImplementMethod = struct {
     name: []const u8,
     params: []Param,
     body: []Stmt,
+    /// Where the method's name is written (01 step 9). Left out of the dump.
+    loc: Loc = .{ .line = 0, .col = 0 },
 
     pub fn deinit(this: *ImplementMethod, allocator: std.mem.Allocator) void {
         for (this.params) |*p| p.deinit(allocator);
         allocator.free(this.params);
         for (this.body) |*s| s.deinit(allocator);
         allocator.free(this.body);
+    }
+
+    pub fn jsonStringify(this: ImplementMethod, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{});
     }
 };
 
@@ -3138,6 +3170,10 @@ pub const ImplementDecl = struct {
     target: []const u8,
     methods: []ImplementMethod,
 
+    /// Where the declaration is written (01 step 9 — the diagnostics about it
+    /// are located here). Left out of the AST dump.
+    loc: Loc = .{ .line = 0, .col = 0 },
+
     pub fn deinit(this: *ImplementDecl, allocator: std.mem.Allocator) void {
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
@@ -3145,6 +3181,10 @@ pub const ImplementDecl = struct {
         allocator.free(this.interfaces);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
+    }
+
+    pub fn jsonStringify(this: ImplementDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{});
     }
 };
 
@@ -3170,11 +3210,19 @@ pub const ExtendDecl = struct {
     target: []const u8,
     methods: []ImplementMethod,
 
+    /// Where the declaration is written (01 step 9 — the diagnostics about it
+    /// are located here). Left out of the AST dump.
+    loc: Loc = .{ .line = 0, .col = 0 },
+
     pub fn deinit(this: *ExtendDecl, allocator: std.mem.Allocator) void {
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
+    }
+
+    pub fn jsonStringify(this: ExtendDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"loc"}, &.{});
     }
 };
 

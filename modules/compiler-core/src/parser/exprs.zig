@@ -1114,6 +1114,38 @@ fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) Parse
     return base;
 }
 
+/// Decision 8 §1.3 — `<T, …>` right after `nameTok`, when `<` touches the
+/// name, every item parses as a type, the list closes with `>` and a `(`
+/// follows. Speculative: on any other shape the cursor and the parse error are
+/// put back and null is answered, so `a < b` stays a comparison.
+fn parseExplicitTypeArgs(this: *This, alloc: std.mem.Allocator, nameTok: token.Token) ParseError!?[]ast.TypeRef {
+    if (!this.check(.lessThan)) return null;
+    const lt = this.peek();
+    if (lt.line != nameTok.line or lt.col != nameTok.col + nameTok.lexeme.len) return null;
+    const saved = this.current;
+    const savedErr = this.parseError;
+    var items: std.ArrayList(ast.TypeRef) = .empty;
+    _ = this.advance();
+    const ok = blk: {
+        while (true) {
+            const t = this.parseTypeRef(alloc) catch break :blk false;
+            items.append(alloc, t) catch break :blk false;
+            if (this.match(.comma)) continue;
+            break;
+        }
+        if (!this.match(.greaterThan)) break :blk false;
+        break :blk this.check(.leftParenthesis);
+    };
+    if (!ok) {
+        for (items.items) |*t| t.deinit(alloc);
+        items.deinit(alloc);
+        this.current = saved;
+        this.parseError = savedErr;
+        return null;
+    }
+    return try items.toOwnedSlice(alloc);
+}
+
 pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // `record { … }` ---- the removed anonymous record literal (1.0.3: a tuple).
     // `record` lexes as an identifier; followed by `{` it gets its targeted
@@ -1390,6 +1422,11 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         const tok = this.advance();
         var base: Expr = Expr{ .identifier = .{ .loc = locFromToken(tok), .kind = .{ .ident = tok.lexeme } } };
 
+        // Decision 8 §1.3 — `name<…>(…)`: a type-argument list when `<` is
+        // ADJACENT to the name, its contents parse as types and `>` is
+        // followed by `(`; anything else leaves `<` a comparison.
+        const typeArgs = try parseExplicitTypeArgs(this, alloc, tok);
+
         // `ident(args)` — a call in operand position (e.g. `add(1, 2) == 3`).
         // Trailing lambdas are not consumed here: in a binary operand a `{`
         // belongs to the enclosing construct (if/case/loop bodies).
@@ -1400,6 +1437,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 alloc.free(args);
             }
             base = makeCall(tok, null, tok.lexeme, false, args, try alloc.alloc(TrailingLambda, 0));
+            base.call.kind.call.typeArgs = typeArgs;
         }
 
         // Chained links: `.field`, `.method(args)`, their optional-chaining

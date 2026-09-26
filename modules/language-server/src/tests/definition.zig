@@ -457,10 +457,10 @@ test "definition: self.field jumps to the field declaration (R4)" {
 const generic_source =
     \\pub type Query<T>(
     \\    items: Array<T>) {
-    \\    pub fn reverse(self: Self) -> Query<T> {
+    \\    pub fn reverse(self: Self<T>) -> Query<T> {
     \\        return Query(items: self.items.reverse());
     \\    }
-    \\    pub fn all(self: Self) -> Array<T> {
+    \\    pub fn all(self: Self<T>) -> Array<T> {
     \\        return self.items;
     \\    }
     \\}

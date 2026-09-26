@@ -6,11 +6,11 @@ val Shape = type {
     Point,
 };
 val area = fn(s: Shape) -> f64 {
-    case s {
+    return case s {
         Circle(r) -> 3.14 * r * r;
         Rectangle(w, h) -> w * h;
         Point -> 0.0;
-    }
+    };
 };
 ```
 
@@ -53,7 +53,7 @@ val area = fn(s: Shape) -> f64 {
       "return_type": "f64",
       "body": [
         {
-          "source": "case s {"
+          "source": "return case s {"
         }
       ]
     }

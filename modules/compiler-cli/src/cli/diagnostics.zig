@@ -51,8 +51,23 @@ pub fn renderLocated(
     col: usize,
     span: usize,
 ) !void {
+    return renderLocatedAs(w, "error", message, file, source, line, col, span);
+}
+
+/// `renderLocated` under another severity word — `warning` for the checker's
+/// warning channel (decision 57), which renders exactly like an error.
+pub fn renderLocatedAs(
+    w: *std.Io.Writer,
+    severity: []const u8,
+    message: []const u8,
+    file: []const u8,
+    source: []const u8,
+    line: usize,
+    col: usize,
+    span: usize,
+) !void {
     const line_w = digitWidth(line);
-    try w.print("error: {s}\n", .{message});
+    try w.print("{s}: {s}\n", .{ severity, message });
     try w.splatByteAll(' ', line_w);
     try w.print("--> {s}:{d}:{d}\n", .{ file, line, col });
     try w.splatByteAll(' ', line_w + 1);
@@ -266,7 +281,21 @@ fn printTypeError(gpa: std.mem.Allocator, msg: []const u8, loc: anytype, source:
 /// outcome is a failure.
 pub fn renderOutcome(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, o: bp.codegen.ComptimeOutput) bool {
     switch (o.outcome) {
-        .ok => return false,
+        .ok => |ok| {
+            // Decision 57 — a warning renders like an error and fails nothing.
+            for (ok.warnings) |w| {
+                const msg = w.message(gpa) catch continue;
+                defer gpa.free(msg);
+                const file = fileLabel(arena, io, o.name);
+                if (w.loc) |l| {
+                    var aw: std.Io.Writer.Allocating = .init(gpa);
+                    defer aw.deinit();
+                    renderLocatedAs(&aw.writer, "warning", msg, file, o.src, l.line, l.col, 1) catch continue;
+                    std.debug.print("{s}", .{aw.written()});
+                } else std.debug.print("warning: {s}\n --> {s}\n\n", .{ msg, file });
+            }
+            return false;
+        },
         .parseError => |se| {
             printSyntaxError(gpa, se, o.src, fileLabel(arena, io, o.name));
             return true;

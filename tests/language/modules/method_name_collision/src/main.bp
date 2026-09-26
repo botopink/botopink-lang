@@ -29,7 +29,7 @@ import {queryOf, groupOf} from "shapes";
 pub type Bag<T>(
     items: Array<T>,
 ) {
-    pub fn unwrap(self: Self) -> Array<T> {
+    pub fn unwrap(self: Self<T>) -> Array<T> {
         return self.items;
     }
 }
@@ -38,7 +38,7 @@ pub type Bucket<K, V>(
     key: K,
     items: Array<V>,
 ) {
-    pub fn unwrap(self: Self) -> Array<V> {
+    pub fn unwrap(self: Self<K, V>) -> Array<V> {
         return self.items;
     }
 }

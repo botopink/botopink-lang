@@ -111,11 +111,8 @@
 # they are cells that do not compile in this tree.
 commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
 erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
-*        | reject/case_shorthand_on_unknown.bp   | 01 step 1, 01 step 5 | rejected by `unknown` assignability, without the "full name" diagnostic
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
-commonJS | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 04 step 2 | a label is resolved to a position at the written type, and an element handed back by a generic method (`rs.at(0)`) has lost it: `rs.at(0).b` answers `undefined`. The element type is right, the label is not carried
-erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 02 step 4 | the same, louder: `rs.at(0).b` raises `bad map: {1,<<"x">>}` in `map_get/2` — the label is emitted as a map read against a tuple. (wasm answers `0`; no `test/` cell reaches wasm)
 
 # ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
 # Both rows deleted by `00 · 01-checker`: `test/case_sections.bp` matches on
@@ -135,12 +132,8 @@ erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
 
 # ── §1 generics ───────────────────────────────────────────────────────────────
-*        | reject/generic_missing_argument.bp | 01 step 6 | §1.1: a written generic type without its arguments is accepted (exit 0)
-*        | reject/self_without_argument.bp    | 01 step 6 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
 
 # ── §8 host externals ─────────────────────────────────────────────────────────
-
-# ── primitive methods ─────────────────────────────────────────────────────────
 
 # ── wasm, the third executable target ─────────────────────────────────────────
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only
@@ -228,13 +221,6 @@ wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` out of 
 # in order with the named `val`s). No line is left.
 
 
-# ── decision 103 cells on the eager generator lowerings (front 21) ───────────
-# Measured after merging 22-loops (`52843fd5`): commonJS's `function*` and beam
-# run both cells, and erlang since `00 · 02-erlang` (a bare `break` at the
-# generator's own level throws `'__bp_gen_stop'`, which the scope catches); the
-# eager wasm generator scope does not yet.
-wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope) | decision 103: every `digits` answers the empty string — the eager generator scope yields nothing into the `for` that reads it (three empty lines)
-
 # ── front 24 (effects by return) — the cells of the steps deferred behind the ─
 # ── "Old names that left" table (the maintainer's priority order) ────────────
 # `async { … }` (decision 124, E2/E3.6–E3.7/E5) is deferred: `async` is still an
@@ -250,3 +236,12 @@ wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope)
 # the absent value.
 erlang   | run/optional_chain_method.bp | 02-erlang | `es.at(9)?.key.length() ?? 42` raises `{bp_unsupported_method, <<"length">>, 0, undefined}` in `'__bp_prim_length'/1` after printing `2` and `3`: the method after the `?.` link is called on `undefined` instead of short-circuiting (measured 2026-09-26)
 beam     | run/optional_chain_method.bp | 03-beam | the erlang shape through `erlc +from_asm` — `2`, `3`, then the run fails at the absent probe (measured 2026-09-26)
+
+# ── a generic optional on wasm (C-18) ────────────────────────────────────────
+wasm     | run/explicit_type_arguments.bp | 05-wasm | a generic `T` answered through `xs.at(0) ?? fallback` prints as a heap address (`276`) where `none` is owed — measured without the type arguments too (`first([], "none")` prints `256`), so it is the generic optional on wasm and not §1.3
+
+# ── a static call through a type alias (decision 110 rule 1) ─────────────────
+commonJS | modules/import_alias_on_type | 01 | `D.empty()` through `import {collections.Dict as D}` prints `5` and `a`, then fails: the checker resolves the alias but the backends are handed the call as written (commonJS `ReferenceError: D is not defined`); an alias used as an annotation works (measured 2026-09-26)
+erlang   | modules/import_alias_on_type | 01 | `D.empty()` through `import {collections.Dict as D}` prints `5` and `a`, then fails: the checker resolves the alias but the backends are handed the call as written (commonJS `ReferenceError: D is not defined`); an alias used as an annotation works (measured 2026-09-26)
+wasm     | modules/import_alias_on_type | 01 | `D.empty()` through `import {collections.Dict as D}` prints `5` and `a`, then fails: the checker resolves the alias but the backends are handed the call as written (commonJS `ReferenceError: D is not defined`); an alias used as an annotation works (measured 2026-09-26)
+beam     | modules/import_alias_on_type | 01 | `D.empty()` through `import {collections.Dict as D}` prints `5` and `a`, then fails: the checker resolves the alias but the backends are handed the call as written (commonJS `ReferenceError: D is not defined`); an alias used as an annotation works (measured 2026-09-26)

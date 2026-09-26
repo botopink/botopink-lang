@@ -5,7 +5,7 @@ fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }
 fn connection() -> @Component<Http, i32> {
-    initial;
+    0;
 }
 fn Mixed() -> @Component<Element, Element> {
     val a = use state(0);

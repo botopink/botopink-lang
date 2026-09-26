@@ -5,7 +5,7 @@ fn main() {
     @print(rows);
     @print(rows[1]);
     @print(rows[1][0]);
-    @print(rows[0].length);
+    @print(rows[0]?.length);
     val xs = [10, 20, 30];
     @print(xs[0..2].length);
     val sl = xs[0..2];
@@ -45,7 +45,7 @@ main() ->
     '__bp_print'([Rows]),
     '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Rows, 1)]),
     '__bp_print'(['__bp_prim_at'((fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Rows, 1), 0)]),
-    '__bp_print'(['__bp_len'((fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Rows, 0), length)]),
+    '__bp_print'([length((fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Rows, 0))]),
     Xs = [10, 20, 30],
     '__bp_print'([length(array_slice(Xs, 0, 2))]),
     Sl = array_slice(Xs, 0, 2),
@@ -67,10 +67,6 @@ array_slice(Self, Start, End) ->
     (fun(__S, __I) -> case (__I >= 0) andalso (__I < string:length(__S)) of true -> string:slice(__S, __I, 1); false -> undefined end end)(Recv, Arg0);
 '__bp_prim_at'(Recv, _) ->
     erlang:error({bp_unsupported_method, <<"at">>, 1, Recv}).
-
-'__bp_len'(X, _) when is_list(X) -> length(X);
-'__bp_len'(X, _) when is_binary(X) -> string:length(X);
-'__bp_len'(X, Field) -> maps:get(Field, X).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

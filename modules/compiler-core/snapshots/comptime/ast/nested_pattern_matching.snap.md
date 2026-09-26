@@ -5,10 +5,10 @@ val Result = type <T, E> {
     Err(error: E),
 };
 val unwrap_or = fn(r: Result<i32, string>, fallback: i32) -> i32 {
-    case r {
+    return case r {
         Ok(v) -> v,
         Err(_) -> fallback,
-    }
+    };
 };
 ```
 
@@ -55,7 +55,7 @@ val unwrap_or = fn(r: Result<i32, string>, fallback: i32) -> i32 {
       "return_type": "i32",
       "body": [
         {
-          "source": "case r {"
+          "source": "return case r {"
         }
       ]
     }

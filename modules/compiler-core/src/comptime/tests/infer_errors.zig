@@ -1358,5 +1358,265 @@ test "associated fn: `Array.range` answers an array, so a method on it resolves"
         \\pub fn main() { val b: bool = Array.range(0, 3); @print(b); }
     );
     defer std.testing.allocator.free(msg);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "expected bool, got array") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected bool, got i32[]") != null);
+}
+
+// ── decision 57: the warning channel — decision 8 §1.4 and §4.3 ──────────────
+
+/// Every warning inference recorded for `src`, message and hint joined, one
+/// per line pair. The program must check.
+fn warningMessages(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, allocator);
+    defer env.deinit();
+    _ = try inferMod.inferProgramTyped(&env, program);
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(allocator);
+    for (env.warnings.items) |w| {
+        try std.testing.expect(w.loc != null);
+        const msg = try w.message(allocator);
+        defer allocator.free(msg);
+        try out.print(allocator, "{s}\n", .{msg});
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+test "warning: `is` on a value whose type is known is always false (§4.3)" {
+    const msg = try warningMessages(std.testing.allocator,
+        \\pub fn main() { val a: i32 = 1; @print(a is string); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "this `is string` test is always false: the value's type is `i32`") != null);
+}
+
+test "warning: `is` warns on nothing it can answer — numbers by range, unknown, a union, the same type" {
+    const msg = try warningMessages(std.testing.allocator,
+        \\type P(x: i32)
+        \\pub fn main() {
+        \\    val a: i32 = 1;
+        \\    val f: f64 = 2.0;
+        \\    val u: unknown = 1;
+        \\    val v: i32 | string = 1;
+        \\    val p = P(x: 1);
+        \\    @print(a is f64);
+        \\    @print(f is i32);
+        \\    @print(u is string);
+        \\    @print(v is string);
+        \\    @print(p is P);
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expectEqualStrings("", msg);
+}
+
+test "warning: an unannotated `[]` names the annotation to write (§1.4)" {
+    const msg = try warningMessages(std.testing.allocator,
+        \\fn f() -> i32 { var out = []; out = [1]; return out.length; }
+        \\fn g() -> i32 { val none = []; return 0; }
+        \\pub fn main() { val ok: i32[] = []; @print(f() + g() + ok.length); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "annotate it: `var out: i32[] = [];`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "annotate it: `val none: unknown[] = [];`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`ok`") == null);
+}
+
+// ── decision 8 §2.4: a public declaration writes an `unknown` it means ───────
+
+test "public unknown: a `pub val` inferred as `unknown` is refused; a written one checks" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn mk(s: string) -> unknown { return s; }
+        \\pub val v = mk("a");
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`pub val v` is inferred as `unknown`") != null);
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn mk(s: string) -> unknown { return s; }
+        \\pub val v: unknown = mk("a");
+        \\val w = mk("b");
+        \\pub fn parse(s: string) -> unknown { return s; }
+    );
+}
+
+// ── decision 8 §1.1 / §1.2: a written generic type carries its arguments ─────
+
+test "generics: a generic type written without its arguments is refused, located" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type Box<T>(value: T)
+        \\fn get(b: Box) -> i32 { return 0; }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Box needs 1 type argument") != null);
+}
+
+test "generics: too few arguments names both counts" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type Pair<A, B>(a: A, b: B)
+        \\fn f(p: Pair<i32>) -> i32 { return 0; }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Pair needs 2 type arguments, 1 given") != null);
+}
+
+test "generics: bare `Self` in a generic declaration names `Self<…>`; `Self` in a plain one stays" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type Box<T>(value: T) {
+        \\    pub fn get(self: Self) -> T { return self.value; }
+        \\}
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Self needs 1 type argument: `Box` declares 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "Self<…>") != null);
+    const plain = try typeErrorMessage(std.testing.allocator,
+        \\type Point(x: i32) {
+        \\    pub fn get(self: Self<i32>) -> i32 { return self.x; }
+        \\}
+    );
+    defer std.testing.allocator.free(plain);
+    try std.testing.expect(std.mem.indexOf(u8, plain, "`Point` declares no type parameter") != null);
+}
+
+test "generics: `Self<U>` is the declaration over another argument; A1 binds a behavior's `Self<…>` to a plain implementer" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Box<T>(value: T) {
+        \\    pub fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Self<U> { return Box(value: f(self.value)); }
+        \\}
+        \\behavior Mappable<T> { fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Self<U>; }
+        \\type Point(x: i32) implement Mappable<i32> {
+        \\    fn map(self: Self, f: fn(x: i32) -> i32) -> Self { return Point(x: f(self.x)); }
+        \\}
+        \\fn main() {
+        \\    val b: Box<string> = Box(value: 1).map({ x -> "a" });
+        \\    val p: Point = Point(x: 1).map({ x -> x + 1 });
+        \\    @print(b.value);
+        \\    @print(p.x);
+        \\}
+    );
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\behavior Mappable<T> { fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Self<U>; }
+        \\type Point(x: i32) implement Mappable<i32> {
+        \\    fn map(self: Self, f: fn(x: i32) -> i32) -> Self { return Point(x: f(self.x)); }
+        \\}
+        \\fn main() { val p = Point(x: 1).map({ x -> "a" }); @print(p.x); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected i32, got string") != null);
+}
+
+// ── 01 step 12: one flat variant table under four symptoms ───────────────────
+
+test "variant table: a qualified constructor is the enum written, whatever else declares the name (row 3c)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Shape { Circle(r: i32), Square(s: i32) }
+        \\type Hole { Circle(r: i32), Slot(w: i32) }
+        \\fn area(s: Shape) -> i32 { return 0; }
+        \\fn main() { @print(area(Shape.Circle(r: 3))); }
+    );
+}
+
+test "variant table: a leading dot takes the expected enum; with none, two claimants are a named refusal (row 1)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Warm { Red, Orange }
+        \\type Cold { Blue, Red }
+        \\fn main() { val w: Warm = .Red; val c: Cold = .Red; @print(0); }
+    );
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type Warm { Red, Orange }
+        \\type Cold { Blue, Red }
+        \\fn main() { val x = Red; @print(0); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`Red` is a variant of `Warm` and of `Cold`, and nothing here says which") != null);
+}
+
+// ── 01-std handover: an integer literal takes the width its position asks for ─
+
+test "integer literal: widens to the i64 its position asks for, and a mismatch is located" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn shrink(x: i64) -> i64 { return x - 1000; }
+        \\fn wide(n: i64) -> i64 { return n * 1000 + 3 * 86400000; }
+        \\fn take(n: i64) -> i64 { return n; }
+        \\fn main() {
+        \\    val k: i64 = 1000;
+        \\    @print(shrink(k) + take(3 * 86400000) + wide(2) + (1000 - k));
+        \\    @print(k > 0);
+        \\}
+    );
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn f(x: i64, y: i32) -> i64 { return x + y; }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected i64, got i32") != null);
+}
+
+// ── C-18: decisions 44 and 45 ────────────────────────────────────────────────
+
+test "decision 44: `optional<T>` and `Option<T>` are refused naming `?T`" {
+    for ([_][]const u8{
+        "fn main() { val v: optional<i32> = null; @print(v); }",
+        "fn main() { val v: Option<i32> = null; @print(v); }",
+    }) |src| {
+        const msg = try typeErrorMessage(std.testing.allocator, src);
+        defer std.testing.allocator.free(msg);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "the optional type is written `?T`") != null);
+    }
+}
+
+test "decision 45: a member read off a `?T` names `?.`; `?.` reads it" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type R(a: i32, b: string)
+        \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; @print(rs.at(0).b); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`b` is read off an optional `?R` — write `?.b`") != null);
+    try h.assertInfersOk(std.testing.allocator,
+        \\type R(a: i32, b: string)
+        \\fn main() { val rs: R[] = [R(a: 1, b: "x")]; @print(rs.at(0)?.b); }
+    );
+}
+
+// ── 01 R7: decision 2 — a value leaves a function through `return` ───────────
+
+test "decision 2: a fn that can fall off its end is refused; every exit form checks" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn a(c: bool) -> i32 { if (c) { return 1; } else { return 2; }; }
+        \\fn b(c: i32) -> string { return case c { 0 { "z" } _ { "o" } }; }
+        \\fn d() -> i32 { @todo(); }
+        \\fn e(c: i32) -> i32 { return case c { 0 { 1 } _ { 2 } }; }
+        \\fn main() { @print(a(true)); }
+    );
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn f(c: bool) -> i32 { if (c) { return 1; }; }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`f` declares `-> i32` and its body can reach its end without a `return`") != null);
+}
+
+test "warning: a tuple variable whose name differs from the written label (decision 8 §6 T7)" {
+    const msg = try warningMessages(std.testing.allocator,
+        \\fn load() -> #(name: string, pop: i32) {
+        \\    val city = "SP";
+        \\    val pop = 12;
+        \\    return #(city, pop);
+        \\}
+        \\pub fn main() { @print(load().name); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "the variable `city` fills the element labeled `name`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`pop`") == null);
+}
+
+test "union: a refused use names the branch that widened it (decision 8 §3.2)" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\fn g(c: bool) -> i32 { val v = if (c) { 1 } else { "a" }; return v + 1; }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "(the `if` at 1:32 made it one: its branches disagree)") != null);
 }

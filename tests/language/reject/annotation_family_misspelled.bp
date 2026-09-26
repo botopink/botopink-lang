@@ -1,0 +1,8 @@
+//// A misspelled family is refused, naming the one it is an edit away from:
+//// `@BeamMemroy.Ets` would otherwise leave the `var` in the default mode with
+//// nothing said.
+
+#[@BeamMemroy.Ets]
+var hits: i32 = 0;
+
+pub fn main() { @print(hits); }

@@ -4,7 +4,7 @@ val Color = type {
     Red,
     Green,
     Blue,
-    fn name() -> string {
+    fn name(self: Self) -> string {
         case (self) {
             Red -> "red";
             Green -> "green";
@@ -17,9 +17,9 @@ val Color = type {
 ----- JAVASCRIPT -- main.js
 ```javascript
 class Color {
-    static name() {
+    static name(self) {
         (() => {
-            const _s = this;
+            const _s = self;
             if (_s.tag === "Red") return "red";
             if (_s.tag === "Green") return "green";
             if (_s.tag === "Blue") return "blue";

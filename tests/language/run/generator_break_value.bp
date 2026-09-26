@@ -10,9 +10,7 @@
 //// emitted.
 ////
 //// The checker types `break v` against the item type `T`; the generator scope
-//// of decision 105 lowers it (emit and end). commonJS's `function*` and beam
-//// run the cell; the eager erlang and wasm scopes are pinned in
-//// `expected-failures.txt`.
+//// of decision 105 lowers it (emit and end) — green on all four targets.
 
 fn upto(n: i32) -> @Iterator<i32> {
     var i = 0;
