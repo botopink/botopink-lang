@@ -3658,7 +3658,7 @@ const Emitter = struct {
                 },
                 // Anonymous record literal — a plain JS object (parenthesized
                 // so it stays an expression in statement position).
-                .behaviorLit => |il| return self.b.paren(try self.buildFieldObject(il.fields)),
+                .behaviorLit => |il| return self.b.paren(try self.buildBehaviorLiteral(il.fields)),
             },
 
             .comptime_ => |ct| switch (ct.kind) {
@@ -3715,6 +3715,43 @@ const Emitter = struct {
                 },
             },
         }
+    }
+
+    /// `@Greeter(greet: { self, who -> … })` — a behavior literal. A method
+    /// field whose lambda takes `self` first is a METHOD of the object, as a
+    /// record's is on its prototype: `self` is the receiver the call is made
+    /// on (`g.greet(who)`), so it becomes `this` and leaves the parameter
+    /// list. As an arrow it bound the call's first ARGUMENT — `"hi " + who`
+    /// answered `hi undefined`.
+    fn buildBehaviorLiteral(self: *Emitter, fields: anytype) !js.Expr {
+        const props = try self.arena().alloc(js.Object.Prop, fields.len);
+        for (fields, 0..) |f, i| {
+            const v = f.value.*;
+            if (v == .function and v.function.kind.syntax == .lambda and v.function.kind.params.len > 0 and
+                std.mem.eql(u8, v.function.kind.params[0], "self"))
+            {
+                const lam = v.function.kind;
+                const arrow = try self.buildArrow(lam.params[1..], lam.body);
+                var stmts: std.ArrayListUnmanaged(js.Stmt) = .empty;
+                try stmts.append(self.arena(), .{ .decl = .{ .pattern = .{ .name = "self" }, .value = .this } });
+                switch (arrow.arrow.body) {
+                    .block => |blk| try stmts.appendSlice(self.arena(), blk.stmts),
+                    .expr => |e| try stmts.append(self.arena(), .{ .return_ = e.* }),
+                }
+                const block: js.Block = switch (arrow.arrow.body) {
+                    .block => |blk| blk,
+                    .expr => .{ .stmts = &.{} },
+                };
+                props[i] = .{ .method = .{
+                    .name = f.name,
+                    .params = arrow.arrow.params,
+                    .body = .{ .stmts = try stmts.toOwnedSlice(self.arena()), .layout = block.layout, .indent = block.indent },
+                } };
+                continue;
+            }
+            props[i] = .{ .kv = .{ .key = f.name, .value = try self.buildExpr(v) } };
+        }
+        return .{ .object = .{ .props = props } };
     }
 
     fn buildFieldObject(self: *Emitter, fields: anytype) !js.Expr {

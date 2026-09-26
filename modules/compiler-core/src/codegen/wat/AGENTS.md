@@ -441,6 +441,13 @@ answered, and each had its own `expected-failures.txt` line:
 - **The optional binder takes the payload's record type** (`lowerIfExpr`,
   `local_types`), so `if (hitOf()) { h -> h.rest.length }` reads the declared
   slot instead of `0`.
+- **A behavior literal's `self` method is called with its receiver**
+  (`self_method_fields`, `lowerValueCall`): `g.greet(who)` over `@Greeter(greet:
+  { self, who -> … })` passed one argument fewer than the lifted lambda takes (a
+  trap). The lambda's parameters take their types from the behavior's
+  declaration of the method (`lowerBehaviorLit` → `expected_params`), and the
+  call's result is judged by the lambda's body (`fieldLambdaCallIsString`) — it
+  printed the string's address.
 - **A `_`-named top-level statement runs at module load**, in `$__init_globals`
   in source order with the named `val`s (`deferred_stmts`); it was dropped. A
   synthetic statement that only calls `main()` is skipped, as on the BEAM.

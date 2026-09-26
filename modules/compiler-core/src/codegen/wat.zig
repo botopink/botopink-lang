@@ -728,6 +728,20 @@ const Emitter = struct {
     /// The entries of `deferred_globals` that are `_`-named top-level
     /// statements: run for their effect in `$__init_globals`, stored nowhere.
     deferred_stmts: std.StringHashMapUnmanaged(void) = .empty,
+    /// `<anon record>.<field>` for each behavior-literal field whose lambda
+    /// takes `self` first (`ensureAnonRecord`).
+    self_method_fields: std.StringHashMapUnmanaged(void) = .empty,
+    /// `<anon record>.<field>` → the lambda a record literal's field holds, so
+    /// a call through the field can be judged by the lambda's body
+    /// (`fieldLambdaCallIsString`).
+    field_lambdas: std.StringHashMapUnmanaged(FieldLambda) = .empty,
+    /// `<Behavior>.<method>` → its declaration: what a behavior literal's
+    /// field lambda is written against.
+    behavior_methods: std.StringHashMapUnmanaged(ast.BehaviorMethod) = .empty,
+    /// The parameters a lambda about to be lifted is written against when
+    /// they come from a declaration rather than a function type — a behavior
+    /// literal's method (`expected_fn`'s twin).
+    expected_params: ?[]const ast.Param = null,
 
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
@@ -908,6 +922,9 @@ const Emitter = struct {
         self.data_segments.deinit(self.alloc);
         self.deferred_globals.deinit(self.alloc);
         self.deferred_stmts.deinit(self.alloc);
+        self.self_method_fields.deinit(self.alloc);
+        self.field_lambdas.deinit(self.alloc);
+        self.behavior_methods.deinit(self.alloc);
         self.ext_by_name.deinit();
         self.arr_elem_locals.deinit();
         self.arr_elem_globals.deinit();
@@ -1045,6 +1062,7 @@ const Emitter = struct {
             // be an `unresolved call` trap.
             .type_ => |r| try self.registerInterfaceSigs(r.name, r.methods),
             .behavior => |i| for (i.methods) |m| {
+                try self.behavior_methods.put(self.alloc, try std.fmt.allocPrint(ra, "{s}.{s}", .{ i.name, m.name }), m);
                 const body = m.body orelse continue;
                 if (!m.is_default or m.is_declare or m.isExternal() or m.isHost()) continue;
                 if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
@@ -1563,6 +1581,17 @@ const Emitter = struct {
         }
         try self.records.put(name, names);
         try self.record_field_types.put(name, types);
+        // A behavior literal's method — a field whose lambda takes `self`
+        // first — is called on the literal (`g.greet(who)`), so the call
+        // passes the receiver as that parameter (`lowerValueCall`).
+        for (rl.fields) |f| {
+            const v = f.value.*;
+            if (v != .function or v.function.kind.syntax != .lambda) continue;
+            const key = try std.fmt.allocPrint(ra, "{s}.{s}", .{ name, f.name });
+            try self.field_lambdas.put(self.alloc, key, .{ .params = v.function.kind.params, .body = v.function.kind.body });
+            if (v.function.kind.params.len > 0 and std.mem.eql(u8, v.function.kind.params[0], "self"))
+                try self.self_method_fields.put(self.alloc, key, {});
+        }
         return name;
     }
 
@@ -3464,7 +3493,7 @@ const Emitter = struct {
                 .case => |c| try self.lowerCase(c),
                 .tupleLit => |tl| try self.lowerTupleLit(tl),
                 .arrayLit => |al| try self.lowerArrayLit(al),
-                .behaviorLit => |il| try self.lowerRecordLit(.{ .fields = il.fields }),
+                .behaviorLit => |il| try self.lowerBehaviorLit(il),
                 .range => try self.emitC(zero, "range"),
             },
             .jump => |j| switch (j.kind) {
@@ -4837,6 +4866,24 @@ const Emitter = struct {
         try self.loadBase(base);
     }
 
+    /// `@Greeter(greet: { self, who -> … })` — a record literal whose lambda
+    /// fields take their parameter types from the behavior's declaration of
+    /// the method, so `who` is a string inside the lifted lambda.
+    fn lowerBehaviorLit(self: *Emitter, il: anytype) anyerror!void {
+        _ = self.ensureAnonRecordFromLit(.{ .fields = il.fields }) catch {};
+        const base = try self.allocSlots(@intCast(il.fields.len * 4));
+        for (il.fields, 0..) |f, i| {
+            var buf: [256]u8 = undefined;
+            const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ il.name, f.name }) catch "";
+            if (self.behavior_methods.get(key)) |m| {
+                if (f.value.* == .function) self.expected_params = m.params;
+            }
+            defer self.expected_params = null;
+            try self.storeSlotExpr(base, @intCast(i * 4), f.value.*);
+        }
+        try self.loadBase(base);
+    }
+
     /// `lowerRecordLit` has no `Loc` in hand (`lowerExpr` calls the arm with
     /// just the kind payload). We synthesise a loc from the first field's
     /// loc as a stable identity — a literal with N fields will produce the
@@ -6198,6 +6245,8 @@ const Emitter = struct {
 
     const ParamShape = struct { names: []const []const u8, str: []const bool };
 
+    const FieldLambda = struct { params: []const []const u8, body: []const ast.Stmt };
+
     const Lifted = struct {
         name: []const u8,
         params: []const []const u8,
@@ -6255,6 +6304,11 @@ const Emitter = struct {
             for (param_str, 0..) |*ps, i| {
                 if (i < pts.len and isStringTypeRef(pts[i])) ps.* = true;
             }
+        };
+        const expected_params = self.expected_params;
+        self.expected_params = null;
+        if (expected_params) |eps| for (param_str, 0..) |*ps, i| {
+            if (i < eps.len and isStringTypeRef(eps[i].typeRef)) ps.* = true;
         };
         try self.lambdas.append(self.alloc, .{
             .name = try std.fmt.allocPrint(ra, "__lambda{d}", .{idx}),
@@ -6326,6 +6380,17 @@ const Emitter = struct {
         const tmp = try std.fmt.allocPrint(ra, "__fnv{d}", .{self.loop_seq});
         self.loop_seq += 1;
         try self.declareLocal(tmp, "i32");
+        // A behavior literal's `self` method: the receiver is its first
+        // argument, held here between the slot load and the call.
+        const self_recv: ?[]const u8 = if (cc.calleeExpr == null) if (cc.receiver) |recv| blk: {
+            const rty = self.recordTypeOfExpr(recv.*) orelse break :blk null;
+            const key = try std.fmt.allocPrint(ra, "{s}.{s}", .{ rty, cc.callee });
+            if (!self.self_method_fields.contains(key)) break :blk null;
+            const rt = try std.fmt.allocPrint(ra, "__self{d}", .{self.loop_seq});
+            self.loop_seq += 1;
+            try self.declareLocal(rt, "i32");
+            break :blk rt;
+        } else null else null;
         if (cc.calleeExpr) |ce| {
             // `adder(3)(4)` — the callee is the VALUE of an expression (01
             // handover 15), the function value the inner call answered.
@@ -6333,6 +6398,7 @@ const Emitter = struct {
         } else if (cc.receiver) |recv| {
             const off = slotOffset(self, recv.*, cc.callee).?;
             try self.lowerValue(recv.*);
+            if (self_recv) |rt| try self.emit(.{ .local_tee = rt });
             try self.emitCf(.{ .load = .{ .offset = off } }, ".{s}", .{cc.callee});
         } else if (self.locals.contains(cc.callee)) {
             try self.emit(.{ .local_get = cc.callee });
@@ -6351,9 +6417,10 @@ const Emitter = struct {
             try self.syncCaptures(tmp, l.captures, .into_env);
         }
         try self.emit(.{ .local_get = tmp });
+        if (self_recv) |rt| try self.emit(.{ .local_get = rt });
         for (cc.args) |a| try self.lowerCoerced(a.value.*, "i32");
         for (cc.trailing) |t| try self.lowerLambdaValue(t.params, t.body);
-        try self.emitIndirect(tmp, cc.args.len + cc.trailing.len);
+        try self.emitIndirect(tmp, cc.args.len + cc.trailing.len + @as(usize, if (self_recv != null) 1 else 0));
         if (closure) |l| try self.syncCaptures(tmp, l.captures, .out_of_env);
         return true;
     }
@@ -6438,6 +6505,21 @@ const Emitter = struct {
             },
             else => false,
         };
+    }
+
+    fn fieldLambdaCallIsString(self: *Emitter, cc: anytype) bool {
+        const recv = cc.receiver orelse return false;
+        const rty = self.recordTypeOfExpr(recv.*) orelse return false;
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ rty, cc.callee }) catch return false;
+        const fl = self.field_lambdas.get(key) orelse return false;
+        const skip: usize = if (self.self_method_fields.contains(key)) 1 else 0;
+        const flags = self.arena().alloc(bool, fl.params.len) catch return false;
+        for (flags, 0..) |*f, i| f.* = i >= skip and i - skip < cc.args.len and self.isStringExpr(cc.args[i - skip].value.*);
+        const saved = self.param_shape;
+        defer self.param_shape = saved;
+        self.param_shape = .{ .names = fl.params, .str = flags };
+        return self.bodyIsString(fl.body);
     }
 
     /// Whether a call through the closure local bound to lifted lambda `li`
@@ -7519,6 +7601,11 @@ const Emitter = struct {
                     if (self.resolvedCallSym(cc, c.loc)) |sym| {
                         if (self.str_fns.contains(sym)) break :blk true;
                     }
+                    // A call through a record literal's lambda field — a
+                    // behavior literal's method — is a string when the
+                    // lambda's body is, its parameters shaped by the call's
+                    // arguments (the receiver first for a `self` method).
+                    if (self.fieldLambdaCallIsString(cc)) break :blk true;
                     // A function value whose declared type returns a string:
                     // `greeter("a")("b")`, or `f("b")` after `val f =
                     // greeter("a")`. Without it the result printed as the

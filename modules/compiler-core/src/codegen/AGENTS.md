@@ -490,6 +490,10 @@ codegen/
   it used to write the empty name and emit `(4)`.
 - **A pattern in binding position** (`val Circle(r) = s;`, JS-4): a plain
   destructure — `buildPattern`, `js/AGENTS.md` § Bridges.
+- **A behavior literal's `self` method** (`@Greeter(greet: { self, who -> … })`,
+  `buildBehaviorLiteral`): a method of the object — `greet(who) { const self =
+  this; … }` — because it is called on the literal, `g.greet(who)`. An arrow
+  bound the call's first argument to `self`.
 - **Index** (`buildIndexCall`, decision 30): `receiver[index]` reaches the
   backend as the builtin call `ast.index_builtin_name` (`"[]"`) over
   `(receiver, index)`, so one node carries the element read and the slice. A

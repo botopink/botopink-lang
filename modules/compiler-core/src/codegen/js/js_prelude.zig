@@ -465,38 +465,42 @@ const named_branch: ast.Stmt = .{ .if_ = .{
 /// as `null` (decision 47 — absent has one spelling), anything else through
 /// `%O` — `util.inspect`, the text `console.log` gives it — so the helper needs
 /// no `require`.
-const show: ast.Stmt = .{ .function = .{
-    .name = "__bp_show",
-    .params = &.{ .{ .pattern = .{ .name = "v" } }, .{ .pattern = .{ .name = "s" } }, .{ .pattern = .{ .name = "top" } }, .{ .pattern = .{ .name = "a" } } },
-    .body = .{ .stmts = &.{
-        .{ .if_ = .{
-            .cond = .{ .binary = .{ .op = "===", .lhs = &.{ .unary = .{ .op = "typeof ", .operand = &v, .parens = false } }, .rhs = &.{ .quoted = "string" } } },
-            .then = &pushAndReturn(.{ .ternary = .{ .cond = &.{ .name = "top" }, .then = &v, .else_ = &quoted_v } }, "%s", 1),
-        } },
-        float_branch,
-        .{ .if_ = .{
-            .cond = callOn(&.{ .name = "Array" }, "isArray", &.{v}),
-            .then = &.{ .block = .{ .stmts = &.{
-                .{ .decl = .{ .pattern = .{ .name = "t" }, .value = .{ .binary = .{
-                    .op = "&&",
-                    .lhs = &.{ .binary = .{ .op = "!=", .lhs = &sh, .rhs = &null_ } },
-                    .rhs = &eq(&.{ .index = .{ .object = &sh, .index = &zero } }, "#"),
-                } } } },
-                .{ .return_ = bracketed_v },
-            }, .layout = .indented, .indent = 1 } },
-        } },
-        named_branch,
-        // Decision 47: absent has ONE spelling, `null`. JavaScript has two
-        // nones, and `?.` / an `if` with no `else` answer the other one —
-        // printed through `%O` it read `undefined`.
-        .{ .if_ = .{
-            .cond = .{ .binary = .{ .op = "===", .lhs = &v, .rhs = &.{ .name = "undefined" } } },
-            .then = &.{ .return_ = .{ .quoted = "null" } },
-        } },
-        .{ .expr = callOn(&args_a, "push", &.{v}) },
-        .{ .return_ = .{ .quoted = "%O" } },
-    } },
-} };
+const show: ast.Stmt = .{
+    .function = .{
+        .name = "__bp_show",
+        .params = &.{ .{ .pattern = .{ .name = "v" } }, .{ .pattern = .{ .name = "s" } }, .{ .pattern = .{ .name = "top" } }, .{ .pattern = .{ .name = "a" } } },
+        .body = .{
+            .stmts = &.{
+                .{ .if_ = .{
+                    .cond = .{ .binary = .{ .op = "===", .lhs = &.{ .unary = .{ .op = "typeof ", .operand = &v, .parens = false } }, .rhs = &.{ .quoted = "string" } } },
+                    .then = &pushAndReturn(.{ .ternary = .{ .cond = &.{ .name = "top" }, .then = &v, .else_ = &quoted_v } }, "%s", 1),
+                } },
+                float_branch,
+                .{ .if_ = .{
+                    .cond = callOn(&.{ .name = "Array" }, "isArray", &.{v}),
+                    .then = &.{ .block = .{ .stmts = &.{
+                        .{ .decl = .{ .pattern = .{ .name = "t" }, .value = .{ .binary = .{
+                            .op = "&&",
+                            .lhs = &.{ .binary = .{ .op = "!=", .lhs = &sh, .rhs = &null_ } },
+                            .rhs = &eq(&.{ .index = .{ .object = &sh, .index = &zero } }, "#"),
+                        } } } },
+                        .{ .return_ = bracketed_v },
+                    }, .layout = .indented, .indent = 1 } },
+                } },
+                named_branch,
+                // Decision 47: absent has ONE spelling, `null`. JavaScript has two
+                // nones, and `?.` / an `if` with no `else` answer the other one —
+                // printed through `%O` it read `undefined`.
+                .{ .if_ = .{
+                    .cond = .{ .binary = .{ .op = "===", .lhs = &v, .rhs = &.{ .name = "undefined" } } },
+                    .then = &.{ .return_ = .{ .quoted = "null" } },
+                } },
+                .{ .expr = callOn(&args_a, "push", &.{v}) },
+                .{ .return_ = .{ .quoted = "%O" } },
+            },
+        },
+    },
+};
 
 /// `const a = []; const f = Array.from(<values>, (v, i) => __bp_show(v, <shape>, true, a)).join(" "); console.log.apply(console, [f, ...a]);`
 fn printBody(comptime values: ast.Expr, comptime shape: ast.Expr) ast.Block {

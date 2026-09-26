@@ -547,3 +547,24 @@ test "js: call ---- the result of a call is called (curried)" {
     try h.assertJsRunLog(std.testing.allocator, src, log);
     try h.assertWasmRunLog(std.testing.allocator, src, log);
 }
+
+test "js: behavior literal ---- a method taking self is called on the literal" {
+    // `@Greeter(greet: { self, who -> … })` called `g.greet("bo")`: the
+    // receiver is `self`, as it is for a record's method. commonJS built an
+    // arrow `(self, who) => …`, so `self` bound `"bo"` and `who` nothing
+    // (`hi undefined`); wasm's indirect call passed one argument fewer than the
+    // lifted lambda takes (a trap), then — with the receiver passed — printed
+    // the string's address and concatenated one (`hi 256`), because the lambda's
+    // `who` had no type: it takes it from the behavior's declaration now. The
+    // erlang half (`greet/2 undefined`) is 02's.
+    const src =
+        \\behavior Greeter { fn greet(self: Self, who: string) -> string; }
+        \\fn main() {
+        \\    val g = @Greeter(greet: { self, who -> "hi " + who });
+        \\    @print(g.greet("bo"));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{"greet(who) {"});
+    try h.assertJsRunLog(std.testing.allocator, src, "hi bo\n");
+    try h.assertWasmRunLog(std.testing.allocator, src, "hi bo\n");
+}
