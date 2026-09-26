@@ -1,0 +1,9 @@
+//// A std decorator is reached through its module: the code it emits names
+//// the module's functions through the handle its annotation is written with
+//// (`#[mocks.mock]` emits `mocks.invoke(…)`), and a leaf import leaves it none.
+
+import {testing.mocks.mock} from "std";
+
+pub fn main() {
+    @print(0);
+}

@@ -101,16 +101,14 @@
 
 # ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is closing ──
 # `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
-# so no line below names a parse error. The exception is `test/case_arms.bp`, which
-# decision 20 turned back into a parser row.
+# so no line below names a parse error. `test/case_arms.bp` writes its range arm
+# `1...9`, decision 53's pattern spelling (decision 20's `1..9` was amended).
 #
 # The section is no longer one front's. Front 01's step 4 unwraps a lambda arm body
 # and resolves a `.Variant` arm against the matched value's type, which is why the
 # four `erlang | test/case_*.bp` lines that name tests read `02 step 3` — erlang's
 # pattern emission — and not `01 step 4`. The path-only lines here are still 01's:
 # they are cells that do not compile in this tree.
-commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
-erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
 
@@ -250,3 +248,6 @@ beam     | run/val_assert_record_pattern.bp | 03-beam | `erlc +from_asm` refuses
 
 # ── a host wrapper on wasm: two rules meet (decisions-pending ck-host) ──────
 wasm     | run/external_wrapper_keeps_refusal.bp | 05-wasm | the strict rule (a wrapper around a host call with no wasm binding is refused even if nothing calls it; docs.md § host bindings) meets wasm's `collectHostBound`, which drops such a function and refuses only a call to it (what lets `testing.asserts` build on wasm): wasm now accepts the cell and prints `up`. Which rule holds is decisions-pending ck-host
+
+wasm     | modules/enum_section_leaf_beside_variant | 05-wasm | a `case` over `Token` compares the subject itself with the tag of the section LEAF `Layout.Break.After` (`i32.const 1 ;; After`, no `i32.load`) instead of loading the payload variant's tag: `wat.zig` resolves the pattern's bare name through one flat variant table, and the run traps in `__print_str` (`unreachable`); commonJS, erlang and beam print all six lines, and renaming the leaf makes wasm print them too (measured 2026-09-26)
+wasm     | run/variant_leading_dot_two_enums_case.bp | 05-wasm | a `case` over `Cool` and one over `Warm` each compare with a variant tag read from one flat bare-name table, and the run traps in `__print_str` (`unreachable`) at the first print; commonJS, erlang and beam print the four lines (measured 2026-09-26)

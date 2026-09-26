@@ -1,0 +1,34 @@
+//// `@todo()` and `@panic(…)` are declared `-> noreturn` (`builtins_fns.d.bp`)
+//// and `noreturn` is the bottom type: the call stands wherever a value of any
+//// type is expected — a `return` of a `-> i32` function, an annotated `val`,
+//// an `if` branch, a call argument. The branches that would reach them are
+//// never taken here, so the program prints and exits 0.
+
+fn stub(n: i32) -> i32 {
+    if (n > 100) {
+        return @todo();
+    }
+    return n + 1;
+}
+
+fn name(n: i32) -> string {
+    if (n < 0) {
+        return @panic("negative");
+    }
+    return "n";
+}
+
+fn twice(x: i32) -> i32 {
+    return x * 2;
+}
+
+pub fn main() {
+    val a: i32 = stub(1);
+    val b: string = name(2);
+    val c: i32 = if (a > 0) { a } else { @todo() };
+    val d: i32 = if (a < 0) { twice(@panic("unreachable")) } else { 7 };
+    @print(a);
+    @print(b);
+    @print(c);
+    @print(d);
+}

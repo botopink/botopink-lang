@@ -411,6 +411,11 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "a type alias parameter takes no default",
             .hint = "Write the alias with every argument at each use (`Name<i32>`), or declare a second alias for the defaulted form.",
         },
+        .enumVariantDuplicate => .{
+            .code = "enum-variant-duplicate",
+            .message = "this variant is already declared at this level of the enum",
+            .hint = "A variant name is declared once per level; remove this one or rename it.",
+        },
         .typeVariantAfterMethod => .{
             .code = "type-variant-after-method",
             .message = "a variant after a method",

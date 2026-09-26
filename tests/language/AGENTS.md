@@ -159,6 +159,34 @@ imports, and two functions of one name reaching one decorator are refused where 
 and decision 112's three rows — `modules/dsl_hygiene_private_helper`,
 `modules/dsl_hygiene_consumer_alias` and `modules/dsl_hygiene_consumer_double`, each printing `40`
 (the third's wasm line is the flat namespace's).
+The checker rows of `front/checker-rows-2` add a cell each, every one failing on the parent binary except where noted:
+`run/builtin_noreturn_any_position` (`@todo()` / `@panic(…)` are `noreturn`, the bottom type — a
+`return` of a `-> i32` function, an annotated `val`, an `if` branch and a call argument; on all four
+targets), `reject/builtin_module_not_lowered` (`@module()` is `builtin-not-lowered` at the `@`),
+`reject/enum_variant_duplicate` (a variant written twice at one level, at the second),
+`modules/enum_section_leaf_beside_variant` (a section leaf `Layout.Break.After` beside a top-level
+`After(inner: Token[])`, each reached by its path or its position's type from another module —
+the checker half already held; wasm is listed, its `case` reads the leaf's tag),
+`run/variant_leading_dot_two_enums_case` (two enums declaring `Red`, `.Red` by the position's type
+and a `case` over each — the checker half already held; wasm is listed),
+`reject/section_path_es4_expected_enum` / `reject/section_path_es4_every_head` (ES4 names the
+expected enum, or every enum carrying the head, sorted — it named the hash walk's first),
+`modules/labelled_call_by_label` (a complete labelled call by label on the associated, imported,
+namespace and `"std"` call paths, and a namespace call filled from its default),
+`reject/label_on_function_value` (a label in a call of a function value, `label-on-function-value`),
+`modules/behavior_from_host_declare` (a host `declare fn -> Greeter`, here and in a third module,
+meets a `Greeter` parameter of the behavior's module — the checker half already held; wasm refuses
+the host templates by `wasm.expect`), `modules/import_ambiguous_use` (a bare `import {parse};` over two
+modules declaring `pub fn parse` — the use is `ambiguous-import-use`, located, naming both, on every
+target by `<target>.expect`), `modules/import_ambiguous_unused` (the same import unread compiles),
+`run/std_decorator_through_namespace` (`#[mocks.mock]` after `import {testing.mocks} from "std"`
+synthesizes `mockRepo()` and its stubs answer; wasm refuses the import by `.wasm.expect`),
+`reject/std_decorator_unknown_through_handle` (`#[mocks.mokc]` is `unknown-annotation`),
+`reject/std_decorator_leaf_import` (`import {testing.mocks.mock}` is `std-decorator-leaf-import`),
+`run/pipeline_call_fill` (`lhs |> f(args…)` is `f(lhs, args…)` on every target, and a pipeline takes
+defaults and labels, at expression and statement position) and `run/case_bool_literal_arms` (`true` /
+`false` arms are the bool literals, beside a guard — every backend bound them as names). C-16's
+`test/case_arms.bp` writes its range arm `1...9` (decision 53) and passes on commonJS and erlang.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

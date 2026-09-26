@@ -1,0 +1,26 @@
+//// `00 · 01-checker` / `01-std` — a std module's decorator is reached from a
+//// consumer through the module: `import {testing.mocks} from "std"` makes
+//// `pub fn mock(comptime decl: @Decl)` the annotation `#[mocks.mock]`, which
+//// synthesizes `mockRepo()`; the code it emits names the module's functions
+//// through the same handle (`mocks.invoke(…)`). The marker used to register
+//// nothing and do nothing, silently, and `mockRepo` was unbound. An alias
+//// (`import {testing.mocks as m}` / `#[m.mock]`) is the same handle.
+//// `testing.mocks` has no wasm binding: wasm refuses the import (STD-001,
+//// `.wasm.expect`).
+
+import {testing.mocks} from "std";
+
+#[mocks.mock]
+pub behavior Repo {
+    fn find(self: Self, id: i32) -> string;
+    fn all(self: Self) -> Array<string>;
+}
+
+pub fn main() {
+    val r = mockRepo();
+    val _s = mocks.when(r.find(mocks.eq(7))).thenReturn("ana");
+    val _t = mocks.when(r.all()).thenReturn(["a", "b"]);
+    @print(r.find(7));
+    @print(r.find(8) == "");
+    @print(r.all().join(","));
+}

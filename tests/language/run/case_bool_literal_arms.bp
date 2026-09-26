@@ -1,0 +1,37 @@
+//// §5.2 — `true` and `false` in a `case` arm are the bool literals, in the
+//// brace form and in the `->` form, and beside a guard. The pattern tree
+//// carried them as a name, which every backend bound: `case b { true {…}
+//// false {…} }` took its first arm for both values (`yes` twice on commonJS
+//// and wasm, and erlang warned that the `False` clause could never match).
+
+fn braces(b: bool) -> string {
+    return case b {
+        true { "yes" }
+        false { "no" }
+    };
+}
+
+fn arrows(b: bool) -> string {
+    return case b {
+        false -> "off";
+        true -> "on";
+    };
+}
+
+fn guarded(b: bool, n: i32) -> string {
+    return case b {
+        true when (n > 1) { "many" }
+        true { "one" }
+        false { "none" }
+    };
+}
+
+pub fn main() {
+    @print(braces(true));
+    @print(braces(false));
+    @print(arrows(true));
+    @print(arrows(false));
+    @print(guarded(true, 5));
+    @print(guarded(true, 1));
+    @print(guarded(false, 5));
+}

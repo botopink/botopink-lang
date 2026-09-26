@@ -350,7 +350,7 @@ pub fn transform(
                 if (p0.modifier == .@"comptime" and p0.typeRef.isDeclType()) continue;
             }
         }
-        if (decl == .use and namespaces.modules.count() > 0) {
+        if (decl == .use and (namespaces.modules.count() > 0 or namespaces.ambiguous.count() > 0)) {
             try filtered.append(allocator, .{ .use = try rewriteNamespaceImports(agg.spec_cache.arena, decl.use, namespaces) });
             continue;
         }
@@ -717,7 +717,12 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             }
         }
     }
-    // C-04 — the same fill at statement position (`b.bump();`).
+    // C-04 — the same fill at statement position (`b.bump();`, `x |> log;`).
+    if (stmt.expr == .call and stmt.expr.call.kind == .pipeline) {
+        if (pipelineIsCall(agg, stmt.expr.call.kind.pipeline, stmt.expr.call.loc)) {
+            pipelineAsCall(agg, &stmt.expr) catch return ScanError.OutOfMemory;
+        }
+    }
     if (stmt.expr == .call and stmt.expr.call.kind == .call) {
         if (agg.default_injections.get(stmt.expr.call.loc)) |fill| {
             applyDefaultFill(agg, fill, &stmt.expr.call.kind.call) catch return ScanError.OutOfMemory;
@@ -781,7 +786,10 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         // exactly as a written `if`'s are.
         .collection => |*col| if (col.kind == .case) {
             // Only the arms' patterns: this walk never lowers inside them.
-            for (col.kind.case.arms) |*arm| try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
+            for (col.kind.case.arms) |*arm| {
+                boolLiteralArm(agg, arm) catch return ScanError.OutOfMemory;
+                try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
+            }
             if (agg.optional_null_cases.get(col.loc)) |binder| {
                 try rewriteOptionalNullCase(agg, &stmt.expr, binder);
                 rewriteStmt(agg, fn_decls, comptime_arrays, stmt) catch return ScanError.OutOfMemory;
@@ -865,6 +873,13 @@ fn rewriteNamespaceImports(arena: std.mem.Allocator, u: ast.ImportDecl, namespac
     var changed = false;
     for (u.imports) |imp| {
         const local = imp.name();
+        // A name two modules declare, imported with nothing saying which: every
+        // use was refused by inference, so the item binds nothing any code
+        // reads (`NamespaceImports.ambiguous`).
+        if (!imp.activate and namespaces.ambiguous.contains(local)) {
+            changed = true;
+            continue;
+        }
         if (imp.activate or !namespaces.modules.contains(local)) {
             try items.append(arena, imp);
             continue;
@@ -1012,6 +1027,14 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // and neither can skip the other: they act on disjoint node kinds (a `.call`
     // and a `case` `.collection`), and the `if` the swap produces is walked by
     // this same function, so a call inside a swapped arm still reaches its fill.
+    // `lhs |> f(args…)` IS the call `f(lhs, args…)` — inference types it so —
+    // and is written out as that call, so the fill below (a default, a
+    // labelled argument) completes it like any other call.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .pipeline) {
+        if (pipelineIsCall(agg, expr_ptr.call.kind.pipeline, expr_ptr.call.loc)) {
+            pipelineAsCall(agg, expr_ptr) catch return ScanError.OutOfMemory;
+        }
+    }
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
         if (agg.default_injections.get(expr_ptr.call.loc)) |fill| {
             applyDefaultFill(agg, fill, &expr_ptr.call.kind.call) catch return ScanError.OutOfMemory;
@@ -1090,6 +1113,7 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             .case => |case_node| {
                 for (case_node.subjects) |*s| rewriteExpr(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
                 for (case_node.arms) |*arm| {
+                    boolLiteralArm(agg, arm) catch return ScanError.OutOfMemory;
                     try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
                     rewriteExpr(agg, fn_decls, comptime_arrays, &arm.body) catch return ScanError.OutOfMemory;
                 }
@@ -1226,6 +1250,89 @@ fn expandTrailingDefaults(agg: *Aggregator, fn_decl: ast.FnDecl, c: anytype) !vo
 /// Nothing is trusted: the plan is applied only when it still describes the
 /// call in front of us. Inference wrote it against this very AST, so a mismatch
 /// means something else rewrote the call first, and then the call is left alone.
+/// Whether a pipeline is written out as a call: every `lhs |> f(args…)` whose
+/// RHS is a plain call (inference makes `lhs` its first argument, and the
+/// backends read the node as `f(args…)(lhs)` — commonJS called the result,
+/// erlang's emitter crashed), and `lhs |> f` when inference planned a fill
+/// for it under the pipeline's loc.
+fn pipelineIsCall(agg: *Aggregator, p: anytype, loc: ast.Loc) bool {
+    if (p.rhs.* == .call and p.rhs.call.kind == .call) {
+        const cc = p.rhs.call.kind.call;
+        return cc.receiver == null and cc.trailing.len == 0 and !cc.is_builtin;
+    }
+    return agg.default_injections.contains(loc);
+}
+
+/// `true` / `false` as a `case` arm's pattern is the bool literal (§5.2), but
+/// the pattern tree has no bool literal and carries it as `.ident "true"` —
+/// which every backend read as a BINDER named `true`, so `case b { true {…}
+/// false {…} }` took its first arm for both values. The arm becomes a binder
+/// no source can spell and a guard comparing it with the literal
+/// (`__bp_case_bool_0 == true`, conjoined with a written guard), the form
+/// every backend already lowers. A `.multi` pattern (`case a, b`) gets one
+/// binder per bool element.
+fn boolLiteralArm(agg: *Aggregator, arm: *ast.CaseArm) !void {
+    const arena = agg.spec_cache.arena;
+    var guard: ?ast.Expr = arm.guard;
+    const loc = arm.patternLoc;
+    const Visit = struct {
+        fn one(a: std.mem.Allocator, pat: *ast.Pattern, index: usize, g: *?ast.Expr, l: ast.Loc) !void {
+            if (pat.* != .ident) return;
+            const name = pat.ident;
+            const value = std.mem.eql(u8, name, "true");
+            if (!value and !std.mem.eql(u8, name, "false")) return;
+            const binder = try std.fmt.allocPrint(a, "__bp_case_bool_{d}", .{index});
+            pat.* = .{ .ident = binder };
+            const lhs = try a.create(ast.Expr);
+            lhs.* = .{ .identifier = .{ .loc = l, .kind = .{ .ident = binder } } };
+            const rhs = try a.create(ast.Expr);
+            rhs.* = .{ .identifier = .{ .loc = l, .kind = .{ .ident = if (value) "true" else "false" } } };
+            const test_ = ast.Expr{ .binaryOp = .{ .loc = l, .op = .eq, .lhs = lhs, .rhs = rhs } };
+            if (g.*) |prev| {
+                const left = try a.create(ast.Expr);
+                left.* = test_;
+                const right = try a.create(ast.Expr);
+                right.* = prev;
+                g.* = .{ .binaryOp = .{ .loc = l, .op = .@"and", .lhs = left, .rhs = right } };
+            } else g.* = test_;
+        }
+    };
+    switch (arm.pattern) {
+        .ident => try Visit.one(arena, &arm.pattern, 0, &guard, loc),
+        .multi => |pats| for (pats, 0..) |*p, i| try Visit.one(arena, p, i, &guard, loc),
+        else => return,
+    }
+    arm.guard = guard;
+}
+
+/// `lhs |> f(a)` → `f(lhs, a)` and `lhs |> f` → `f(lhs)`, keeping the
+/// pipeline's loc (the key its fill was recorded under).
+fn pipelineAsCall(agg: *Aggregator, expr_ptr: *ast.Expr) !void {
+    const p = expr_ptr.call.kind.pipeline;
+    const arena = agg.spec_cache.arena;
+    const callee: []const u8, const rest: []const ast.CallArg = switch (p.rhs.*) {
+        .call => |rc| switch (rc.kind) {
+            .call => |cc| if (cc.receiver == null and cc.trailing.len == 0) .{ cc.callee, cc.args } else return,
+            else => return,
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| .{ n, &.{} },
+            else => return,
+        },
+        else => return,
+    };
+    const args = try arena.alloc(ast.CallArg, rest.len + 1);
+    args[0] = .{ .label = null, .value = p.lhs };
+    @memcpy(args[1..], rest);
+    expr_ptr.* = .{ .call = .{ .loc = expr_ptr.call.loc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = callee,
+        .is_builtin = false,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+}
+
 fn applyDefaultFill(agg: *Aggregator, fill: envMod.DefaultFill, c: anytype) !void {
     // A complete call is planned only to reorder labelled arguments (01).
     if (c.args.len > fill.params.len) return;

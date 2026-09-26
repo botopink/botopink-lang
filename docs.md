@@ -142,7 +142,11 @@ extension as `collections.ArraySets*` — and on a node that opens braces they
 are a syntax error (`import-group-modifier`). Two items binding one name are
 `import-name-collision` at the second item (`import {url.parse, json.parse}`);
 an alias on either side clears it (`url.parse as parseUrl, json: {parse as
-parseJson}`). An alias reaches a type and a type alias too (decision 110):
+parseJson}`). One item that reaches two declarations — a bare `import {parse};`
+while two modules of the package declare `pub fn parse` — is not refused itself:
+every **use** of the name is, where it is written, naming both
+(`ambiguous-import-use`), and the item that says which (`import {parse} from
+"a"`) is the way out. An alias reaches a type and a type alias too (decision 110):
 `import {collections.Dict as D}` brings `D`, a name for `Dict` in the program's
 own text — the emitted code keeps `Dict`. An activation cannot be renamed
 (`import-alias-on-activation`). A leaf that names a folder is a namespace of
@@ -425,6 +429,14 @@ fn main() {
     @print(case t { Color(_inner) -> "a colour"; Bold -> "bold"; });
 }
 ```
+
+A variant name is declared once per level of the body (`enum-variant-duplicate`
+at the second). The same name at two levels is two members, told apart by the
+path and by the position's expected type: with `Layout { Break { After } }`
+beside `After(inner: Token[])`, `Token.After(…)` — and `.After(…)` where a
+`Token` is expected — is the payload variant, `.After` where a
+`Token.Layout.Break` is expected is the leaf, and a `case` over a `Token` matches
+the top-level `After` while one over the section matches the leaf.
 
 **Which enum a leading-dot path names is decided by the type the position
 expects.** More than one enum can carry the same path, so the answer is read
@@ -1327,6 +1339,15 @@ connect();   // error: 'connect' expects 2 argument(s), got 0
 Defaults are filled in by the checker, so every backend receives a call with
 every argument written out; no backend emits a default of its own.
 
+A label names the parameter it fills on every call — a free function, a
+constructor, a method, an associated function (`Box.make(count: 3, label: "b")`),
+one imported from another module or reached through a namespace
+(`helper.pad(width: 7, s: "q")`) — so the arguments may be written in any order.
+A function **value** (a parameter, a local, a field) has a positional type with
+no names, so a label in a call of one is refused (`error[label-on-function-value]`).
+A pipeline is a call: `x |> f(a)` is `f(x, a)` and `x |> f` is `f(x)`, so it
+takes defaults and labels like one (`"w" |> greet(mark: "?")`).
+
 ### Effects
 
 An ordinary function cannot fail, wait, activate hooks or produce a sequence.
@@ -1944,6 +1965,12 @@ Other builtins (`@panic`, `@field`, `@emit`, …) are declared in
 names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
 (with the nearest name when one is an edit away), never a silent `void`.
 
+`@panic`, `@todo` and `@trap` never return: they are declared `-> noreturn`, the
+bottom type, so a call to one stands wherever a value of any type is expected —
+`val x: i32 = @todo();`, `return @panic("…");`, one branch of an `if` whose other
+branch has the value. `@module()` is declared but no target lowers it, so it is
+`error[builtin-not-lowered]`.
+
 ### What `@print` writes
 
 A value prints the way the source writes it. A record names its type and its
@@ -2113,15 +2140,32 @@ test "repo: eq(v) stubs only the matching argument" {
 }
 ```
 
-`#[mock]` writes that double for you — it reflects the annotated `behavior`'s
-methods through `@Decl` and `@emit`s the type plus a `mock<Name>()` factory.
-**It fires inside the module that declares it only.** `@emit` splices its text
-into the module that hosts the annotated behavior, and the text names the
-runtime bare (`invoke`, `key`, `newMock`), which resolves in `std/testing/mocks` and
-nowhere else: a `from "std"` import binds the module handle (`mocks`), never
-its functions, and `#[mocks.mock]` is not looked up as a decorator at all. So a
-consumer writes the double by hand, as above. Recorded in
-`specs/1.0.10-beta/01-std/onze-migration.md` § *Language gaps*.
+`#[mocks.mock]` writes that double for you — it reflects the annotated
+`behavior`'s methods through `@Decl` and `@emit`s the type plus a
+`mock<Name>()` factory. A std module's decorators come with its namespace
+import, under the handle it binds: `import {testing.mocks}` makes `mock`
+the annotation `#[mocks.mock]` (an alias `as m` makes it `#[m.mock]`), and the
+code it emits reaches the runtime through that same handle (`mocks.invoke(…)`).
+A name through the handle that is not one of the module's decorators is
+`error[unknown-annotation]`, and a decorator imported as a leaf
+(`import {testing.mocks.mock}`) is `error[std-decorator-leaf-import]`: the code
+it emits would have no handle to name the runtime by.
+
+```botopink
+import {testing.mocks} from "std";
+
+#[mocks.mock]
+behavior OrderRepo {
+    fn total(self: Self, id: i32) -> i32;
+}
+
+test "orders: the synthesized double answers its stub" {
+    val repo = mockOrderRepo();
+    val _s = mocks.when(repo.total(mocks.eq(3))).thenReturn(30);
+    assert repo.total(3) == 30;
+    assert repo.total(4) == 0;
+}
+```
 
 Two more limits carried over from the old library: a matched `thenThrow` is a
 host throw, not an `@Result`, so the caller catches it with `asserts.throws`
@@ -2237,10 +2281,12 @@ by every caller).
 Two limits worth stating here, because a library meets them before it meets a
 rule. The checker half is `00 · 01-checker`'s:
 
-- A default on an **imported function** is not filled. The cross-module export
-  registry carries no plain `fn` declaration, so `import { greet } from "helper";
-  greet("w")` reds `'greet' expects 2 argument(s), got 1` where the same `greet`
-  called inside `helper` fills. An imported record's field default is filled.
+- A default on an **imported function** is filled when it is closed — a
+  literal, `true` / `false`, `null`, a sign, an array or tuple of those — so
+  `import { greet } from "helper"; greet("w")` takes `greet`'s declared
+  greeting. A default that names a binding of its own module cannot be written
+  at the importer's call site: leaving that argument out of an imported call is
+  the arity error (`'greet' expects 2 argument(s), got 1`).
 - On wasm a method called through a **behavior-typed** value traps
   (`unreachable`) at run time; commonJS, erlang and beam dispatch it
   (`00 · 05-wasm`'s).

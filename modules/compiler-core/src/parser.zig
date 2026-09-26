@@ -228,6 +228,9 @@ pub const ParseErrorType = enum {
     typeVariantAfterMethod,
     /// `type P(val x: i32)` — the field list takes no `val` prefix.
     typeFieldValPrefix,
+    /// `type T { A, A }`, `Color { Red, Red }` — a variant declared twice at
+    /// one level of an enum body. The second is located.
+    enumVariantDuplicate,
     /// `type Shape { Circle(i32) }`, `type P(i32)` — a field or a variant
     /// payload written without its name. Decision 12: the form is refused, with
     /// a diagnostic that names `Variant(field: T)`.

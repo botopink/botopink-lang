@@ -1,0 +1,14 @@
+//// The other half of `modules/import_ambiguous_use`: the refusal belongs to
+//// the USE of a name two modules declare, not to the import. A bare
+//// `import {parse};` over `a` and `b` that nothing reads binds nothing and
+//// compiles on every target, beside the import that says which. commonJS and
+//// erlang used to refuse the program with no line; wasm compiled it.
+
+pub mod a;
+pub mod b;
+import {parse};
+import {parse as parseA} from "a";
+
+pub fn main() {
+    @print(parseA("x"));
+}

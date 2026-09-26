@@ -230,6 +230,21 @@ pub const NamespaceImports = struct {
     modules: std.StringHashMapUnmanaged(std.StringHashMap(*T.Type)) = .empty,
     /// Call loc → the namespace and the function it calls.
     calls: std.AutoHashMapUnmanaged(ast.Loc, Call) = .empty,
+    /// `"<namespace>\x00<function>"` → the function's parameters as written
+    /// (the exporting module's `defaultParamsKey` entry), so `ns.f(b: 1, a: 2)`
+    /// is checked and lowered by label and a short call is filled (C-04).
+    params: std.StringHashMapUnmanaged([]const ast.Param) = .empty,
+    /// `00 · 01-std` — an imported name the import resolves to two modules'
+    /// declarations (a bare `import {parse};` over two modules declaring
+    /// `pub fn parse`): local name → the declaring module paths, sorted. The
+    /// name is left unbound, `infer.unboundAt` refuses each use of it, located,
+    /// naming the modules, and `transform.rewriteNamespaceImports` drops the
+    /// item — an import no use reads is no refusal.
+    ambiguous: std.StringHashMapUnmanaged([]const []const u8) = .empty,
+
+    pub fn paramsKey(arena: std.mem.Allocator, namespace: []const u8, callee: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ namespace, callee });
+    }
 
     pub const Call = struct { namespace: []const u8, callee: []const u8 };
 
@@ -755,6 +770,11 @@ pub const Env = struct {
     /// package or a dependency (`import {jwt} from "sec"`, `import {jwt};`):
     /// the bound name, its module's exports, and the calls made through it.
     namespaces: NamespaceImports = .{},
+    /// The handles a `from "std"` namespace import binds (`mocks` for
+    /// `import {testing.mocks}`) → the module, for the annotation check: a
+    /// `#[mocks.<name>]` names a decorator of that module or is refused.
+    stdDecoratorHandles: std.StringHashMapUnmanaged([]const u8) = .empty,
+
     /// Interface names actually used as an associated-fn call receiver
     /// (`Pair.of(...)`), recorded during inference so codegen emits only the
     /// namespaces that are needed.
