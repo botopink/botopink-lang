@@ -202,8 +202,11 @@ pub const ParseErrorType = enum {
     caseBareNameArm,
     /// `case x { MAX { … } }` — a constant is not a pattern (§5.2, 06 N22).
     caseConstantPattern,
-    /// `type P()` — an empty field list; a record with no fields omits `()`.
-    typeEmptyFieldList,
+    /// `type P {}`, `type P { fn … }`, `type P` — a record without its field
+    /// list. The empty record is `type P()` and one with members
+    /// `type P() { … }` (decision 137); braces alone are an enum's. Located
+    /// where the `()` belongs.
+    typeWithoutFieldList,
     /// `#[x] type Name = T;` — an alias is a name for a type, not a
     /// declaration that carries metadata; it takes no annotation.
     typeAliasAnnotated,

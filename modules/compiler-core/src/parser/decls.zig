@@ -1231,7 +1231,8 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
 // Both spellings build the same nodes as `record`/`enum`/`interface`:
 //   type Name<G>(fields) implement B { methods }       → TypeDecl, record shape
 //   type Name<G> implement B { Variant, V(f: T), S { … }, methods } → enum shape
-//   type Name { methods } / type Name                  → record with no fields
+//   type Name() { methods } / type Name()              → record with no fields
+//     (`type Name { methods }` / `type Name` are `type-without-field-list`, decision 137)
 //   behavior Name<G> extends B { val x: T; fn f(self: Self); default fn … { } }
 // Shape resolution and separators: specs/1.0.4-beta/12-surface-cutover/
 // type-grammar.md and separators.md.
@@ -1258,7 +1259,7 @@ pub const FieldList = struct {
 ///   field := comment* annotation* Name ':' TypeRef ('=' Expr)?
 /// Comments before a field are kept on it; a trailing comma is allowed.
 pub fn parseFieldList(this: *This, alloc: std.mem.Allocator) ParseError!FieldList {
-    const open = try this.consume(.leftParenthesis);
+    _ = try this.consume(.leftParenthesis);
     var fields: std.ArrayList(Field) = .empty;
     errdefer {
         for (fields.items) |*f| f.deinit(alloc);
@@ -1320,7 +1321,6 @@ pub fn parseFieldList(this: *This, alloc: std.mem.Allocator) ParseError!FieldLis
         if (!trailingComma) break;
     }
     this.skipComments();
-    if (fields.items.len == 0) return failAt(this, .typeEmptyFieldList, open);
     _ = try this.consume(.rightParenthesis);
     return .{ .fields = try fields.toOwnedSlice(alloc), .trailingComma = trailingComma };
 }
@@ -1347,6 +1347,9 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
     const genericParams = try this.parseGenericParams(alloc);
     errdefer alloc.free(genericParams);
 
+    // Where the field list stands (or should): a record with none is refused
+    // here, once the body has said it declares no variant (decision 137).
+    const fieldListTok = this.peek();
     var fields: []Field = &.{};
     var hasFieldList = false;
     var fieldTrailingComma = false;
@@ -1432,6 +1435,11 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
     }
 
     const isEnum = variants.items.len > 0 or sections.items.len > 0;
+    // Decision 137: a record writes its field list, even when empty —
+    // `type X()` / `type X() { … }`. `type X {}`, `type X { fn … }` and a bare
+    // `type X` are one type spelled a second way (decision 67), refused where
+    // the `()` belongs.
+    if (!isEnum and !hasFieldList) return failAt(this, .typeWithoutFieldList, fieldListTok);
     const shape: ast.TypeShape = if (isEnum)
         .{ .enum_ = .{
             .variants = try variants.toOwnedSlice(alloc),

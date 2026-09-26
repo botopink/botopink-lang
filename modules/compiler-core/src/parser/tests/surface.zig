@@ -153,9 +153,9 @@ test "surface: an enum with sections" {
     try std.testing.expectEqual(@as(usize, 1), t.variants().len);
 }
 
-test "surface: type MathOps { methods } is a record with no fields" {
+test "surface: type MathOps() { methods } is a record with no fields" {
     var parsed = try parse(
-        \\type MathOps {
+        \\type MathOps() {
         \\    pub fn add(a: i32, b: i32) -> i32 {
         \\        return a + b;
         \\    }
@@ -199,8 +199,20 @@ test "surface: a field list and a variant together are type-record-with-variants
     try expectError("type P(x: i32) { A }", .typeRecordWithVariants, 1, 18);
 }
 
-test "surface: an empty field list is an error" {
-    try expectError("type P()", .typeEmptyFieldList, 1, 7);
+test "surface: type P() is the empty record (decision 137)" {
+    var parsed = try parse("type P()");
+    defer parsed.deinit();
+    const t = try onlyType(parsed);
+    try std.testing.expect(t.isRecord());
+    try std.testing.expectEqual(@as(usize, 0), t.recordFields().len);
+}
+
+test "surface: a record without its field list is type-without-field-list, where `()` belongs (decision 137)" {
+    try expectError("type P {}", .typeWithoutFieldList, 1, 8);
+    try expectError("type P { fn f(self: Self) -> i32 { return 1; } }", .typeWithoutFieldList, 1, 8);
+    try expectError("pub type P<T> implement B {}", .typeWithoutFieldList, 1, 15);
+    try expectError("type P", .typeWithoutFieldList, 1, 7);
+    try expectError("val P = type {}", .typeWithoutFieldList, 1, 14);
 }
 
 test "surface: a variant after a method is type-variant-after-method" {

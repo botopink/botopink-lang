@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-type Empty {}
+type Empty()
 val PartialE = partial(Empty);
 ```
 

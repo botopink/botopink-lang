@@ -40,6 +40,10 @@ initializer, a call argument, an array and a tuple element, an `if` condition, a
 an array out of a `@Result` payload iterates as empty) — and three `reject/` cells, one per operand
 shape: `try_operand_of_operator` (`total + try r`), `try_in_parentheses` (`(try r).toString()`) and
 `await_operand_of_unary` (`!await ready()`).
+Decision 137 (the empty record is `type Name()`) adds `run/type_empty_record` — `type Marker()` and
+`type MathOps() { … }` constructed and called on all four targets — and two `reject/` cells,
+`type_empty_braces` (`type Marker {}`) and `type_without_field_list` (`type MathOps { fn … }`), both
+`type-without-field-list` where the `()` belongs.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

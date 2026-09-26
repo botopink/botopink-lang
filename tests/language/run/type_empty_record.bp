@@ -1,0 +1,19 @@
+//// 1.0.10-beta decision 137 — the empty record `type Name()` and the empty
+//// record with members `type Name() { … }` are constructed with `Name()` and
+//// answer their methods, on all four targets.
+
+pub type Marker()
+
+type MathOps() {
+    fn double(self: Self, x: i32) -> i32 { return x * 2; }
+    fn name(self: Self) -> string { return "ops"; }
+}
+
+fn describe(m: Marker) -> string { return "marker"; }
+
+pub fn main() {
+    val ops = MathOps();
+    @print(ops.double(21));
+    @print(ops.name());
+    @print(describe(Marker()));
+}

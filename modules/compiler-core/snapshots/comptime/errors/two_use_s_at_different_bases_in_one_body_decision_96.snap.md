@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-val Element = type implement @Context<Element> { }
-val Http = type implement @Context<Http> { }
+val Element = type() implement @Context<Element>
+val Http = type() implement @Context<Http> { }
 fn state(initial: i32) -> @Component<Element, i32> {
     initial;
 }

@@ -121,7 +121,7 @@ test "format: doc comment ---- multiline before fn" {
 test "format: doc comment ---- before a record with no fields" {
     try h.assertFormatLossless(std.testing.allocator,
         \\/// User account structure
-        \\type Account
+        \\type Account()
     );
 }
 

@@ -255,7 +255,7 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "removed-keyword-record",
             .message = "`record` was replaced by `type` in 1.0.3",
             .caretCaption = "write `type Name(fields) { methods }`",
-            .hint = "A record is `type Point(x: i32, y: i32) { fn … }`; a record with no fields is `type Name { methods }`.",
+            .hint = "A record is `type Point(x: i32, y: i32) { fn … }`; a record with no fields is `type Name()` (`type Name() { methods }`).",
         },
         .removedKeywordEnum => .{
             .code = "removed-keyword-enum",
@@ -382,10 +382,11 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "a `type` with a field list cannot also declare variants",
             .hint = "A record is `type Name(fields) { methods }`; an enum is `type Name { Variant, … }`. Split the declaration in two.",
         },
-        .typeEmptyFieldList => .{
-            .code = "type-empty-field-list",
-            .message = "an empty field list `()`",
-            .hint = "A record with no fields omits the parentheses: `type Name { methods }`.",
+        .typeWithoutFieldList => .{
+            .code = "type-without-field-list",
+            .message = "a record type writes its field list, even when it is empty",
+            .caretCaption = "write `type Name()` here",
+            .hint = "An empty record is `type Name();`, and one with members `type Name() { fn … }`. Braces alone declare an enum: `type Name { A, B }`.",
         },
         .typeAliasAnnotated => .{
             .code = "type-alias-annotated",

@@ -6,7 +6,7 @@
 //// compiler `82e32e36`, where it carries no location — hence no line 2). The
 //// codemod rewrites it to `@Component<ElementBase, Element>`.
 
-pub type ElementBase {}
+pub type ElementBase()
 type Element(count: i32) implement @Context<ElementBase>
 
 fn Widget() -> @Component<Element> {

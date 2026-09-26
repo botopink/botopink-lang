@@ -1,0 +1,9 @@
+//// 1.0.10-beta decision 137 — the empty record is `type Marker()`; the
+//// brace-only spelling `type Marker {}` is refused at the `{`, with the fix-it
+//// naming `type Marker()` (decision 67: one spelling).
+
+pub type Marker {}
+
+pub fn main() {
+    @print(1);
+}

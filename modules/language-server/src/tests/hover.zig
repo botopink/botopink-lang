@@ -176,7 +176,7 @@ test "hover: @Task<@Result<T, E>> fn shows the whole Result as the await value" 
 
 test "hover: @Component<C, T> fn shows T, not the context base" {
     try hoverSnap("hover_effect_component",
-        \\val Element = type implement @Context<Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn state(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}

@@ -6,7 +6,7 @@
 //// reads both with `case`. Printed from inside `Handler` (commonJS: an
 //// `async function`, decision 120).
 
-pub type RequestBase {}
+pub type RequestBase()
 type RequestScope(id: string) implement @Context<RequestBase>
 
 fn requestId() -> @Component<RequestBase, string> {

@@ -726,7 +726,7 @@ test "js: try ---- nested try catch" {
 test "js: try ---- catch tail on method call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type ParseError(msg: string)
-        \\val Parser = type {
+        \\val Parser = type() {
         \\    fn parse(self: Self) -> @Result<i32, ParseError> {
         \\        throw ParseError(msg: "bad input");
         \\    }

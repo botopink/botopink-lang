@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Element = type implement @Context<Element> { }
+val Element = type() implement @Context<Element>
 val Request = type(path: string)
 fn request() -> @Component<Element, Request> {
     Request(path: "/");

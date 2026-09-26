@@ -263,7 +263,7 @@ test "infer: net-new ---- inline test in a generic module resolves" {
 // `Element` with no ContextBase drift.
 test "infer: net-new ---- @Context across three hook layers stays Element-based" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type implement @Context<Element> { }
+        \\val Element = type() implement @Context<Element>
         \\fn layer1(initial: i32) -> @Component<Element, i32> {
         \\    initial;
         \\}

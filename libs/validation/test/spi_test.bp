@@ -20,7 +20,7 @@ import {templateFor, interpolate, message, arg, noArgs, builtInTemplate, current
 // An application constraint. It `implement`s the SPI behavior, so `code` and
 // `check` are checked against it; `check` answers "" when the value is
 // acceptable and a message TEMPLATE otherwise.
-pub type CpfConstraint {
+pub type CpfConstraint() {
     pub fn code(self: Self) -> string {
         return "cpf";
     }

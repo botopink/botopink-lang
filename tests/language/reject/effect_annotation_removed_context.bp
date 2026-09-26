@@ -8,7 +8,7 @@
 //// gone" without naming a code, so this is the recommended reading, reported
 //// as a choice. The new form is `run/component_hook_and_component.bp`.
 
-pub type ElementBase {}
+pub type ElementBase()
 
 #[@context]
 fn state(initial: i32) -> @Component<ElementBase, i32> {

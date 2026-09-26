@@ -3,7 +3,7 @@
 //// alias: `@Use<C, T>` is `effect-type-removed` with the fix-it
 //// `@Component<C, T>`. The new form is `run/component_hook_and_component.bp`.
 
-pub type ElementBase {}
+pub type ElementBase()
 
 fn state(initial: i32) -> @Use<ElementBase, i32> {
     return initial;

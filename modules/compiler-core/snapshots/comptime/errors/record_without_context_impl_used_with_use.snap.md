@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Element = type implement @Context<Element> { }
+val Element = type() implement @Context<Element>
 val Plain = type(x: i32)
 fn make() -> Plain {
     Plain(x: 0);

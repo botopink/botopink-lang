@@ -5,7 +5,7 @@
 //// one type argument. The new form is `-> @Component<C, T>`
 //// (`run/component_hook_and_component.bp`).
 
-pub type ElementBase {}
+pub type ElementBase()
 
 fn state(initial: i32) -> @Context<ElementBase, i32> {
     return initial;

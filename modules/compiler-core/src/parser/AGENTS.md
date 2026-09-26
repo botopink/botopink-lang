@@ -605,6 +605,16 @@ Records and enums parse into one `DeclKind.type_` (`TypeDecl`, whose `shape` is
 `record`/`enum`/`interface` (1.0.4-beta front 12 step 1).
 Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
 
+**The shape is decided by what was written (decision 137).** A field list —
+`()` included — makes a record; braces holding a variant or a section make an
+enum. A record always writes its field list: `type X()` is the empty record,
+`type X() { fn … }` one with members. `parseTypeDeclRest` refuses a `type`
+that ends up with neither (`type X {}`, `type X { fn … }`, a bare `type X`) as
+`typeWithoutFieldList` (`type-without-field-list`), located at the token after
+the name and generics — where the `()` belongs. The empty field list itself is
+legal (`parseFieldList` no longer refuses `()`), and the formatter prints `()`
+for every record with no fields.
+
 ### Member trivia and member order (front 16's carve-out)
 
 A body member carries the layout the formatter has to print back, and a field the

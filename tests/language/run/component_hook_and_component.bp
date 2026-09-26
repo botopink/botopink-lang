@@ -11,7 +11,7 @@
 //// Printed from inside `Widget`: commonJS lowers every `@Component` return to an
 //// `async function` (decision 120) and hands `main` a Promise.
 
-pub type ElementBase {}
+pub type ElementBase()
 type Element(count: i32) implement @Context<ElementBase>
 
 fn state(initial: i32) -> @Component<ElementBase, i32> {

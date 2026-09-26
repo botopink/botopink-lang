@@ -325,6 +325,21 @@ type Counter(n: i32) {
 }
 ```
 
+The field list is always written. A record with no fields is `type Name()`,
+and with members `type Name() { … }`; braces alone declare an enum, so
+`type Name {}` or `type Name { fn … }` is `type-without-field-list`, refused
+where the `()` belongs:
+
+```botopink
+pub type RequestBase()
+
+type MathOps() {
+    fn double(self: Self, x: i32) -> i32 {
+        return x * 2;
+    }
+}
+```
+
 An anonymous group of values is a tuple, not a type declaration. A tuple is
 positional at run time; a label is a compile-time name, lent by the variable
 used to build it or written in the type:

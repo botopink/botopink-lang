@@ -94,13 +94,13 @@ test "format: multiple statements with import and types" {
         \\import {three};
         \\import {two};
         \\
-        \\pub type One
+        \\pub type One()
         \\
-        \\pub type Two
+        \\pub type Two()
         \\
-        \\pub type Three
+        \\pub type Three()
         \\
-        \\pub type Four
+        \\pub type Four()
     );
 }
 

@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Element = type implement @Context<Element> { }
+val Element = type() implement @Context<Element>
 fn Card() -> @Component<Element> {
     return Element();
 }
