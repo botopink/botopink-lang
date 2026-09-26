@@ -54,6 +54,34 @@ pub fn build(b: *std.Build) void {
     }
     pkg_table_src = b.fmt("{s}}};\n", .{pkg_table_src});
 
+    // The bundled packages (decisions 115–117): libraries shipped INSIDE the
+    // compiler and imported by name with no `dependencies` entry, the way `std`
+    // is. `bundled_packages` is the one list of their names — nothing else in
+    // the toolchain spells one. `std` keeps its own embedding above (its module
+    // tree, the ambient core files); every other name is `libs/<name>/`, whose
+    // `botopink.json` `files` are embedded as `<name>/<stem>` modules. A
+    // bundled library ships `.bp` files only (decision 117 rule 8): a `files`
+    // entry that is not `.bp` stops the build.
+    const bundled = bundledPkgFiles(b);
+    pkg_table_src = b.fmt(
+        "{s}\n/// The bundled packages, `std` first (its modules are `pkg_modules` above).\n" ++
+            "pub const BundledModule = struct {{ stem: []const u8, file: []const u8, source: []const u8 }};\n" ++
+            "pub const BundledPackage = struct {{ name: []const u8, modules: []const BundledModule }};\n" ++
+            "pub const bundled_packages = [_]BundledPackage{{\n    .{{ .name = \"std\", .modules = &.{{}} }},\n",
+        .{pkg_table_src},
+    );
+    for (bundled) |pkg| {
+        pkg_table_src = b.fmt("{s}    .{{ .name = \"{s}\", .modules = &.{{\n", .{ pkg_table_src, pkg.name });
+        for (pkg.files) |f| {
+            pkg_table_src = b.fmt(
+                "{s}        .{{ .stem = \"{s}\", .file = \"{s}\", .source = @embedFile(\"{s}/{s}\") }},\n",
+                .{ pkg_table_src, f[0 .. f.len - ".bp".len], f, pkg.name, f },
+            );
+        }
+        pkg_table_src = b.fmt("{s}    }} }},\n", .{pkg_table_src});
+    }
+    pkg_table_src = b.fmt("{s}}};\n", .{pkg_table_src});
+
     const wf = b.addWriteFiles();
     const pkg_table_file = wf.add("std_pkg_modules.zig", pkg_table_src);
     const std_prelude = stdPreludeModule(b, target, std_pkg_files, pkg_table_file);
@@ -199,16 +227,37 @@ pub fn build(b: *std.Build) void {
     wasm3.exposeHeaders(b, core_mod);
     wasm3.exposeHeaders(b, core_test_mod);
 
+    // The compiler-core suite runs as SHARDS: one test binary, `test_shards`
+    // processes side by side, each running the tests whose index is its own
+    // modulo the count (`modules/test-shard/runner.zig` — zig's default
+    // runner restricted by `BOTOPINK_TEST_SHARD=<i>/<n>`). Every test runs
+    // exactly once over the shards and is reported by name as before; the
+    // runner is serial inside one process, and most of this suite's time is
+    // spent waiting on the node/erl/wasmtime a snapshot's RUN LOG spawns, so
+    // one process left the machine idle (front 00 · 25-gate-perf step 2).
+    // The suite was written for concurrent processes over one checkout —
+    // `test_scratch` roots are per process, the runtime cache is written by
+    // rename — which is what makes the shards safe. The count is scheduling,
+    // never coverage: `-Dtest-shards=1` runs the one process of before.
     const core_tests = b.addTest(.{
         .root_module = core_test_mod,
         .filters = test_filters,
+        .test_runner = .{ .path = b.path("modules/test-shard/runner.zig"), .mode = .server },
     });
     wasm3.link(b, core_tests);
 
-    const run_core_tests = b.addRunArtifact(core_tests);
-    // Ensure snapshots are written inside modules/compiler-core/,
-    // not at the workspace root.
-    run_core_tests.setCwd(b.path("modules/compiler-core"));
+    const default_shards: u32 = @intCast(std.math.clamp(std.Thread.getCpuCount() catch 1, 1, 8));
+    const test_shards = b.option(u32, "test-shards", "Processes the compiler-core suite is split across (default: CPUs, at most 8)") orelse default_shards;
+    if (test_shards == 0) @panic("-Dtest-shards must be at least 1");
+    var core_shard_runs: std.ArrayListUnmanaged(*std.Build.Step.Run) = .empty;
+    for (0..test_shards) |shard| {
+        const run_shard = b.addRunArtifact(core_tests);
+        // Ensure snapshots are written inside modules/compiler-core/,
+        // not at the workspace root.
+        run_shard.setCwd(b.path("modules/compiler-core"));
+        run_shard.setEnvironmentVariable("BOTOPINK_TEST_SHARD", b.fmt("{d}/{d}", .{ shard, test_shards }));
+        core_shard_runs.append(b.allocator, run_shard) catch @panic("OOM");
+    }
 
     // `clean-tmp` reaps per-test scratch dirs older than 1 day from
     // `<compiler-core>/.botopinkbuild/tmp/`. A live test run never
@@ -241,11 +290,12 @@ pub fn build(b: *std.Build) void {
 
     // Runs at the start of every test cycle so crashed-test leaks
     // never accumulate beyond a day.
-    run_core_tests.step.dependOn(&clean_tmp_run.step);
-    run_core_tests.step.dependOn(&clean_scratch_run.step);
-
     const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner, manifest, test-scratch)");
-    test_step.dependOn(&run_core_tests.step);
+    for (core_shard_runs.items) |run_shard| {
+        run_shard.step.dependOn(&clean_tmp_run.step);
+        run_shard.step.dependOn(&clean_scratch_run.step);
+        test_step.dependOn(&run_shard.step);
+    }
     test_step.dependOn(&run_manifest_tests.step);
     test_step.dependOn(&run_test_scratch_tests.step);
 
@@ -633,6 +683,13 @@ fn stdPreludeModule(
             .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
         });
     }
+    for (bundledPkgFiles(b)) |pkg| {
+        for (pkg.files) |f| {
+            std_pkg.addAnonymousImport(b.fmt("{s}/{s}", .{ pkg.name, f }), .{
+                .root_source_file = b.path(b.fmt("libs/{s}/{s}{s}", .{ pkg.name, pkg.src, f })),
+            });
+        }
+    }
     std_prelude.addImport("std_pkg", std_pkg);
     return std_prelude;
 }
@@ -650,6 +707,47 @@ fn libcResolvedTarget(b: *std.Build, requested: std.Build.ResolvedTarget) std.Bu
     if (q.glibc_version != null) return requested;
     q.glibc_version = .{ .major = 2, .minor = 38, .patch = 0 };
     return b.resolveTargetQuery(q);
+}
+
+/// The bundled packages besides `std` (decisions 115–117) — the ONE list of
+/// their names in the toolchain. compiler-core, the CLI and the language server
+/// read them from the generated `bundled_packages` table, never by name.
+const bundled_packages = [_][]const u8{ "std", "routing", "actions", "validation" };
+
+const BundledPkg = struct { name: []const u8, src: []const u8, files: []const []const u8 };
+
+/// Each bundled package other than `std`, with its `botopink.json` `src` and
+/// `files`. Panics when the manifest is missing, its `name` is not the
+/// package's, or a `files` entry is not a `.bp` (decision 117 rule 8).
+fn bundledPkgFiles(b: *std.Build) []const BundledPkg {
+    var out: std.ArrayListUnmanaged(BundledPkg) = .empty;
+    for (bundled_packages) |name| {
+        if (std.mem.eql(u8, name, "std")) continue;
+        const path = b.fmt("libs/{s}/botopink.json", .{name});
+        const text = b.build_root.handle.readFileAlloc(b.graph.io, path, b.allocator, .unlimited) catch |err|
+            std.debug.panic("bundled package `{s}`: cannot read {s}: {s}", .{ name, path, @errorName(err) });
+        const parsed = std.json.parseFromSliceLeaky(std.json.Value, b.allocator, text, .{}) catch |err|
+            std.debug.panic("bundled package `{s}`: {s} is not JSON: {s}", .{ name, path, @errorName(err) });
+        const obj = parsed.object;
+        const declared = if (obj.get("name")) |v| v.string else "";
+        if (!std.mem.eql(u8, declared, name)) std.debug.panic(
+            "bundled package `{s}`: {s} declares \"name\": \"{s}\"",
+            .{ name, path, declared },
+        );
+        var src: []const u8 = if (obj.get("src")) |v| v.string else "src/";
+        if (src.len > 0 and src[src.len - 1] != '/') src = b.fmt("{s}/", .{src});
+        const files_val = obj.get("files") orelse std.debug.panic("bundled package `{s}`: {s} has no `files`", .{ name, path });
+        var files: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (files_val.array.items) |f| {
+            if (!std.mem.endsWith(u8, f.string, ".bp") or std.mem.endsWith(u8, f.string, ".d.bp")) std.debug.panic(
+                "bundled package `{s}`: `files` entry \"{s}\" is not a `.bp` module — a bundled library ships `.bp` files only (decision 117 rule 8)",
+                .{ name, f.string },
+            );
+            files.append(b.allocator, f.string) catch @panic("OOM");
+        }
+        out.append(b.allocator, .{ .name = name, .src = src, .files = files.items }) catch @panic("OOM");
+    }
+    return out.items;
 }
 
 /// Derive the importable "std" package module files from the std module tree

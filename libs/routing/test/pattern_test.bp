@@ -1,0 +1,97 @@
+//// routing: the `:param` grammar, on both targets — every assertion of the
+//// two matchers it replaces (the middleware matcher and the CORS preflight's
+//// route matcher) has a line here, with the same literals.
+
+import {asserts} from "std";
+import {PatternSegment, parsePattern, matchPattern, patternProblem} from "pattern";
+
+// `true` when `path` matches `pattern`; a pattern that does not parse matches
+// nothing.
+fn parsedOrNone(pattern: string) -> Array<PatternSegment> {
+    val none: Array<PatternSegment> = [PatternSegment.Literal(text: "<refused>")];
+    return parsePattern(pattern).unwrapOr(none);
+}
+
+fn matches(pattern: string, path: string) -> bool {
+    var hit = false;
+    if (matchPattern(parsedOrNone(pattern), path)) {
+        _ ->
+        hit = true;
+    };
+    return hit;
+}
+
+fn captured(pattern: string, path: string) -> string {
+    val parsed = parsedOrNone(pattern);
+    var out = "<none>";
+    if (matchPattern(parsed, path)) {
+        cs ->
+        out = cs.map({ c -> c._0 + "=" + c._1 }).join(",");
+    };
+    return out;
+}
+
+test "routing: a literal pattern matches only itself" {
+    assert matches("/dashboard", "/dashboard");
+    assert matches("/dashboard", "/dashboard/x") == false;
+    assert matches("/dashboard", "/other") == false;
+    assert matches("/api/users", "/api/users");
+    assert matches("/api/users", "/api/posts") == false;
+}
+
+test "routing: :param binds one segment and :path* binds the tail" {
+    assert matches("/users/:id", "/users/42");
+    assert matches("/users/:id", "/users/42/edit") == false;
+    assert matches("/api/hello/:name", "/api/hello/ana");
+    assert matches("/api/hello/:name", "/api/hello") == false;
+    assert matches("/dashboard/:path*", "/dashboard");
+    assert matches("/dashboard/:path*", "/dashboard/settings");
+    assert matches("/dashboard/:path*", "/dashboard/a/b/c");
+    assert matches("/dashboard/:path*", "/other") == false;
+}
+
+test "routing: /api/:id captures 7 and does not match /api/7/x" {
+    try asserts.equals(captured("/api/:id", "/api/7"), "id=7");
+    try asserts.equals(captured("/api/:id", "/api/7/x"), "<none>");
+}
+
+test "routing: /files/:rest* matches /files and /files/a/b" {
+    try asserts.equals(captured("/files/:rest*", "/files"), "rest=");
+    try asserts.equals(captured("/files/:rest*", "/files/a/b"), "rest=a/b");
+    try asserts.equals(captured("/u/:id/:rest*", "/u/9/x/y"), "id=9,rest=x/y");
+}
+
+test "routing: the empty pattern parses to nothing and matches only the root" {
+    val parsed = try parsePattern("");
+    try asserts.equals(parsed.length, 0);
+    assert matches("", "/");
+    assert matches("", "/anything") == false;
+}
+
+fn refusal(pattern: string) -> string {
+    val r = parsePattern(pattern);
+    val text = case r {
+        Ok(_) -> "<parsed>";
+        Error(e) -> e;
+    };
+    return text;
+}
+
+test "routing: a grammar the pattern does not have is refused by name" {
+    try asserts.equals(refusal("/a/*.js"), patternProblem("/a/*.js", "*.js"));
+    try asserts.equals(refusal("/a/[x]"), patternProblem("/a/[x]", "[x]"));
+    try asserts.equals(refusal("/a/(x)"), patternProblem("/a/(x)", "(x)"));
+    try asserts.equals(refusal("/a/x?"), patternProblem("/a/x?", "x?"));
+    try asserts.equals(refusal("/a/{x}"), patternProblem("/a/{x}", "{x}"));
+    try asserts.equals(refusal("/dashboard/(.*)"), patternProblem("/dashboard/(.*)", "(.*)"));
+    try asserts.equals(refusal("/assets/*"), patternProblem("/assets/*", "*"));
+    try asserts.equals(refusal("/a/:"), patternProblem("/a/:", ":"));
+}
+
+test "routing: :param* anywhere but last is refused" {
+    try asserts.equals(refusal("/a/:rest*/b"), "routing: the pattern `/a/:rest*/b` has `:rest*` before its last segment - a `:param*` captures the rest of the path and must be last");
+}
+
+test "routing: patternProblem names the pattern and the segment" {
+    try asserts.equals(patternProblem("/a/*", "*"), "routing: the pattern `/a/*` uses `*`, which the `:param` grammar does not have - a pattern is literal segments, `:param` and a trailing `:param*`; a glob, a character class, a group, `?` and `{` are refused");
+}

@@ -204,9 +204,30 @@ in `dependencies`:
 import {of, erika} from "erika";   // a library dependency
 ```
 
+**Bundled packages.** `std` is not the only package the compiler ships. The
+libraries both halves of an application run — `routing` (the route matcher,
+the route-table / `k` / `z` / URL-rule wires, the `nav:` navigation signals,
+the `:param` grammar), `actions` (the server-action protocol) and `validation`
+(constraints, `#[validated]`, the violation report) — are bundled with it and
+imported by name exactly as `std` is, with no `dependencies` entry:
+
+<!-- docs-check: skip the docs harness has no page or route table to match against -->
+```botopink
+import {match.matchPath, table.parseTable} from "routing";
+import {envelope.writeEnvelope} from "actions";
+import {decorators.validated} from "validation";
+```
+
+A bundled library is `.bp` source only (target-native code is an inline
+`#[@External.…]` template, never a sidecar file), imports `std` and other
+bundled packages and nothing else, and runs on erlang and commonJS. The copy
+inside the compiler is the one a program gets — never a directory of the same
+name on disk — and listing a bundled name in `dependencies` is refused where it
+is written.
+
 A `from` that names neither a module of this package, nor a declared
-dependency, nor `std` is an error — it is reported where it is written, rather
-than binding nothing in silence.
+dependency, nor a bundled package is an error — it is reported where it is
+written, rather than binding nothing in silence.
 
 ## Bindings
 
@@ -1585,6 +1606,12 @@ pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
   @External.Erlang("helpers", "parse")]
 pub declare fn parse(input: string) -> i32;
 ```
+
+A declaration takes the signature a `fn` does — generic parameters, `comptime`
+parameters, any return type — with or without an annotation. A parameter it
+has no name for is written `_` (`declare fn getContext<T>(comptime _: type) ->
+Component<T, any>;`); `_` is a bodyless declaration's placeholder, and a
+function with a body refuses it (`discard-param-with-body`).
 
 A binding may also be a template, where `$0`, `$1`, … are the declared
 parameters — on a method, `self` is `$0`:

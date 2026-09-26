@@ -62,6 +62,7 @@ fn isTypeStart(kind: TokenKind) bool {
 /// Parses `param, param, ...` up to and including `)`.
 /// The caller must have already consumed the opening `(`.
 pub fn parseParamList(this: *This, alloc: std.mem.Allocator) ParseError![]Param {
+    this.discardParam = null;
     var params: std.ArrayList(Param) = .empty;
     errdefer {
         for (params.items) |*p| p.deinit(alloc);
@@ -388,6 +389,15 @@ pub fn parseFnDeclFromVal(this: *This, alloc: std.mem.Allocator) ParseError!FnDe
     return this.parseFnBody(alloc, name, isPub, false, annotations);
 }
 
+/// Refuses the `_` parameter of the list parsed last when a body follows it:
+/// `_` is a bodyless declaration's placeholder, and a body has nothing to
+/// bind it as (`discard-param-with-body`, at the `_`).
+pub fn refuseDiscardParam(this: *This) ParseError!void {
+    const tok = this.discardParam orelse return;
+    this.parseError = ParseErrorInfo.fromToken(.discardParamWithBody, tok);
+    return ParseError.UnexpectedToken;
+}
+
 /// Records the `deprecated-star-fn` diagnostic at the current `*` token and
 /// returns a parse error. Hard-removed in v0.beta.19; v0.beta.12 was the
 /// deprecation window. The carets cover `*fn` (3 chars).
@@ -514,6 +524,7 @@ pub fn parseFnBody(
         };
     }
 
+    try refuseDiscardParam(this);
     const body = try this.parseFnBodyInBraces(alloc);
 
     return FnDecl{
@@ -572,24 +583,61 @@ pub fn parseShorthandDelegateDecl(this: *This, alloc: std.mem.Allocator) ParseEr
     return this.parseDelegateParams(alloc, name, isPub);
 }
 
-pub fn parseDelegateParams(this: *This, alloc: std.mem.Allocator, name: []const u8, isPub: bool) ParseError!DelegateDecl {
+/// A member or delegate signature: `<G>(params) -> R`, the arrow optional.
+/// One grammar for a behavior's `fn` members and a `declare fn` delegate, and
+/// the same pieces `parseFnBody` reads a `fn`'s head with —
+/// `parseGenericParams`, `parseParamList` (`_`, `comptime`, `syntax`,
+/// defaults), `parseTypeRef` for the return — so neither can fall behind it.
+pub const Signature = struct {
+    genericParams: []GenericParam,
+    params: []Param,
+    returnType: ?ast.TypeRef,
+    returnTypeLoc: ast.Loc,
+};
+
+pub fn parseSignature(this: *This, alloc: std.mem.Allocator) ParseError!Signature {
+    const genericParams = try this.parseGenericParams(alloc);
+    errdefer alloc.free(genericParams);
+
     _ = try this.consume(.leftParenthesis);
     const params = try this.parseParamList(alloc);
     errdefer {
         for (params) |*p| p.deinit(alloc);
         alloc.free(params);
     }
-    var returnType: ?[]const u8 = null;
+
+    var returnType: ?ast.TypeRef = null;
+    var returnTypeLoc: ast.Loc = .{ .line = 0, .col = 0 }; // 06 N30
     if (this.match(.rightArrow)) {
-        returnType = (try this.consumeTypeName()).lexeme;
+        returnTypeLoc = parser.Parser.locFromToken(this.peek());
+        returnType = try this.parseTypeRef(alloc);
+    }
+    return .{
+        .genericParams = genericParams,
+        .params = params,
+        .returnType = returnType,
+        .returnTypeLoc = returnTypeLoc,
+    };
+}
+
+pub fn parseDelegateParams(this: *This, alloc: std.mem.Allocator, name: []const u8, isPub: bool) ParseError!DelegateDecl {
+    var sig = try parseSignature(this, alloc);
+    errdefer {
+        for (sig.genericParams) |*gp| gp.deinit(alloc);
+        alloc.free(sig.genericParams);
+        for (sig.params) |*p| p.deinit(alloc);
+        alloc.free(sig.params);
+        if (sig.returnType) |*rt| rt.deinit(alloc);
     }
     // Semicolon required after delegate declaration
     _ = try this.consume(.semicolon);
     return DelegateDecl{
         .name = name,
         .isPub = isPub,
-        .params = params,
-        .returnType = returnType,
+        .genericParams = sig.genericParams,
+        .params = sig.params,
+        .returnType = sig.returnType,
+        .returnTypeLoc = sig.returnTypeLoc,
     };
 }
 
@@ -613,22 +661,16 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
     _ = try this.consume(.@"fn");
     const name = (try this.consume(.identifier)).lexeme;
 
-    const genericParams = try this.parseGenericParams(alloc);
+    const sig = try parseSignature(this, alloc);
+    const genericParams = sig.genericParams;
     errdefer alloc.free(genericParams);
-
-    _ = try this.consume(.leftParenthesis);
-    const params = try this.parseParamList(alloc);
+    const params = sig.params;
     errdefer {
         for (params) |*p| p.deinit(alloc);
         alloc.free(params);
     }
-
-    var returnType: ?ast.TypeRef = null;
-    var returnTypeLoc: ast.Loc = .{ .line = 0, .col = 0 }; // 06 N30
-    if (this.match(.rightArrow)) {
-        returnTypeLoc = parser.Parser.locFromToken(this.peek());
-        returnType = try this.parseTypeRef(alloc);
-    }
+    var returnType = sig.returnType;
+    const returnTypeLoc = sig.returnTypeLoc;
     errdefer if (returnType) |*rt| rt.deinit(alloc);
 
     if (is_declare) {
@@ -646,6 +688,7 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
         };
     }
 
+    try refuseDiscardParam(this);
     const body = try this.parseMethodBodyStmts(alloc);
     return BehaviorMethod{
         .name = name,
@@ -817,6 +860,7 @@ pub fn parseImplementMethod(this: *This, alloc: std.mem.Allocator) ParseError!Im
         rt.deinit(alloc); // ImplementMethod has no returnType field
     }
 
+    try refuseDiscardParam(this);
     const body = try this.parseSimpleBodyStmts(alloc);
     return ImplementMethod{
         .qualifier = qualifier,
@@ -1496,7 +1540,10 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
     _ = try this.consume(.leftBrace);
 
     var fields: std.ArrayList(BehaviorField) = .empty;
-    errdefer fields.deinit(alloc);
+    errdefer {
+        for (fields.items) |*f| f.typeRef.deinit(alloc);
+        fields.deinit(alloc);
+    }
     var methods: std.ArrayList(BehaviorMethod) = .empty;
     errdefer {
         for (methods.items) |*m| m.deinit(alloc);
@@ -1515,9 +1562,12 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
             _ = try this.consume(.val);
             const fieldName = (try this.consume(.identifier)).lexeme;
             _ = try this.consume(.colon);
-            const typeName = (try this.consume(.identifier)).lexeme;
+            // Any type reference — `Field[]`, `Array<Field>`, `?T` — the
+            // grammar a record field or a parameter takes.
+            var typeRef = try this.parseTypeRef(alloc);
+            errdefer typeRef.deinit(alloc);
             try expectMemberSemicolon(this);
-            try fields.append(alloc, .{ .name = fieldName, .typeName = typeName, .comments = memberComments });
+            try fields.append(alloc, .{ .name = fieldName, .typeRef = typeRef, .comments = memberComments });
         } else if (this.check(.default) or this.check(.@"fn") or this.check(.declare) or
             this.check(.hash) or (this.check(.at) and this.peekAt(1).kind == .leftSquareBracket))
         {
@@ -1566,20 +1616,16 @@ fn expectMemberSemicolon(this: *This) ParseError!void {
 fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) ParseError!BehaviorMethod {
     _ = try this.consume(.@"fn");
     const methodName = (try this.consume(.identifier)).lexeme;
-    const genericParams = try this.parseGenericParams(alloc);
+    const sig = try parseSignature(this, alloc);
+    const genericParams = sig.genericParams;
     errdefer alloc.free(genericParams);
-    _ = try this.consume(.leftParenthesis);
-    const params = try this.parseParamList(alloc);
+    const params = sig.params;
     errdefer {
         for (params) |*p| p.deinit(alloc);
         alloc.free(params);
     }
-    var returnType: ?ast.TypeRef = null;
-    var returnTypeLoc: ast.Loc = .{ .line = 0, .col = 0 }; // 06 N30
-    if (this.match(.rightArrow)) {
-        returnTypeLoc = parser.Parser.locFromToken(this.peek());
-        returnType = try this.parseTypeRef(alloc);
-    }
+    var returnType = sig.returnType;
+    const returnTypeLoc = sig.returnTypeLoc;
     errdefer if (returnType) |*rt| rt.deinit(alloc);
 
     if (!is_default) {
@@ -1594,6 +1640,7 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
             .is_default = false,
         };
     }
+    try refuseDiscardParam(this);
     const body = try this.parseSimpleBodyStmts(alloc);
     if (this.check(.comma)) return failAt(this, .memberCommaSeparator, this.peek());
     return BehaviorMethod{

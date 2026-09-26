@@ -79,6 +79,16 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
   `file` is `Module.srcPath` (package-relative, set by the CLI loaders) or
   `<name>.bp`; `fnName` is `env.currentFnName`. An unrecognised `@name(…)` is
   `unknown-builtin` now, not a silent `void`.
+- **Bundled packages** (1.0.10-beta decisions 115–117): `build.zig`'s
+  `bundled_packages` constant (`std` and the libraries under `libs/` the
+  compiler ships) is the ONE list of their names; it generates
+  `comptime.bundled_packages` (each non-std entry with its embedded `.bp`
+  modules). The core spells none of them — the lib-agnostic gate still allows
+  only `std` — and a non-std bundled library is ordinary code to the checker
+  and the codegens: the CLI (`libs.loadDependencies`) and the LSP
+  (`ProjectGraph`) load its modules as `<pkg>/<stem>`, so its erlang atoms are
+  `<pkg>@<stem>` / `<pkg>@<stem>@@<Type>` (decision 109) and commonJS requires
+  `./<pkg>/<stem>.js` with no new code. The std-only rules keep their `std/` test.
 
 ## Tagging
 

@@ -62,7 +62,9 @@
             }
           }
         ],
-        "returnType": "string"
+        "returnType": {
+          "named": "string"
+        }
       }
     }
   ]

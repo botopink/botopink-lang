@@ -26,6 +26,8 @@ scripts/
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (7 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
 ├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-node compile/load/run split
+├── lib/
+│   └── pool.sh        ← the bounded worker pool the shell runners share (sourced by ../tests/language/run.sh and check-docs.sh)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)
     └── lib/runner-standalone.sh   ← the hook's runner → `gate.sh --staged`
@@ -109,7 +111,8 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 ## gate.sh
 
 `scripts/gate.sh [--cold] [--staged]` — one ordered run, stopping at the first
-failing stage: staged-file checks (`--staged`: conflict markers, `zig fmt
+failing stage (stages 4b–10 run side by side and are reported in this order —
+§ Where the gate's time goes): staged-file checks (`--staged`: conflict markers, `zig fmt
 --check` on staged `.zig`), `zig build`, `scripts/format-check.sh` (`botopink
 format --check` over the compiler's canonical `.bp` trees — decision 66's
 caller), `zig build test` (`--cold` deletes
@@ -129,21 +132,48 @@ install tests) would otherwise act on the committing repository.
 
 ### Where the gate's time goes
 
-The stages stay one ordered run — the first failing stage is the one reported,
-and each runs only after the cheaper ones passed. The time is saved inside the
-stages, by doing the same work once and on every CPU, never by running less:
+The stages stay one ordered REPORT — the first failing stage in the order above
+is the one reported, with the output and exit status the one-at-a-time gate
+printed. Stages 1–4 still run one after the other, each only after the cheaper
+ones passed. Stages 4b–10 only read what 2–4 built, and write their own scratch,
+so they run side by side (`gate.sh` § side by side): each stage's stdout and
+stderr are captured to one file, and once all of them have finished the blocks
+are printed in stage order up to and including the first red one, whose failure
+line ends the run with exit 1 — the stages after it are not printed, as the
+serial gate never ran them. A red stage among 4b–10 therefore no longer saves the
+time of the stages after it; that is the cost of a red run, never of a green
+one. The time is otherwise saved inside the stages, by doing the same work once
+and on every CPU, never by running less:
 
 | Stage | What makes it fast | Where |
 |---|---|---|
+| `zig build test` | the compiler-core suite runs as `-Dtest-shards` processes (default: CPUs, at most 8), each the tests whose index is its own modulo the count; every test runs once and is reported by name, the summary's count is the unsharded one. The default runner is serial inside a process and the suite mostly waits on the node/erl/wasmtime its RUN LOGs spawn | [`../modules/test-shard/AGENTS.md`](../modules/test-shard/AGENTS.md) |
 | `test-libs` | cells run on a bounded worker pool (one per CPU, bounded by `MemAvailable / 768 MiB`, each cell admitted only while `procs_running` ≤ CPUs) and are emitted in discovery order, byte for byte what `--jobs 1` prints | [`../modules/lib-test-runner/AGENTS.md`](../modules/lib-test-runner/AGENTS.md) § Parallel cells |
 | `test-libs` (erlang cells) | `botopink test --target erlang` compiles each `.erl` of a run once (`precompileErlang`), not once per test module that loads it; the host-sidecar shipper resolves each library and probes each qualifier once per run | [`../modules/compiler-cli/src/cli/AGENTS.md`](../modules/compiler-cli/src/cli/AGENTS.md) (`test_cmd.zig`, `libs.zig`) |
-| `test-language` | already parallel (`--jobs 4`, results sorted before the report). One job per CPU was measured and not kept: under the usual shared load it moved the stage's ~27–29 s by nothing measurable and cost ~30 % more CPU-seconds | [`../tests/language/run.sh`](../tests/language/run.sh) header |
+| `test-language` | cells run on `lib/pool.sh` — the `test-libs` rule (one per CPU, bounded by `MemAvailable / 768 MiB`, each cell admitted only while `procs_running` ≤ CPUs); verdicts are written one file per cell and sorted before the report, so the output is byte for byte what `--jobs 1` prints. It used to be `--jobs 4` with no admission; measured under the usual shared load, 28.8 s → 18.3 s at +12 % CPU-seconds | [`../tests/language/run.sh`](../tests/language/run.sh) § parallel cells |
+| `test-docs` | the `botopink check` of every fence runs on `lib/pool.sh`; the report is written in fence order with a placeholder per check and printed once the pool drains, so the output is byte for byte the serial run's. 8.5 s → 1.5 s | § check-docs.sh below |
 
 `zig build` in stage 2 builds every binary the later stages run; `zig build
 test-libs`, `test-language` and `test-docs` re-enter the build graph, find it
 up to date and run the installed `zig-out/bin/*`, so no stage rebuilds one.
 Measured numbers, before and after, are in the meta workspace's
-`specs/1.0.10-beta/00-compiler-carry-over/11-tooling/README.md` § The gate's speed.
+`specs/1.0.10-beta/00-compiler-carry-over/11-tooling/README.md` § The gate's speed
+and, per stage and per step, `specs/1.0.10-beta/00-compiler-carry-over/25-gate-perf/README.md`
+§ Measurements.
+
+## lib/pool.sh
+
+Sourced, never run. The one statement of the pool rule for the shell runners —
+`botopink-lib-test`'s (`../modules/lib-test-runner/AGENTS.md` § Parallel cells):
+`pool_default_jobs` (one per CPU, bounded by `MemAvailable / 768 MiB`, at
+least 1), `pool_check_jobs` (a `--jobs` value must be a positive count),
+`pool_admit <dir>` (while a job of this run is in flight — a file in `<dir>` —
+wait until `procs_running` ≤ CPUs; a run with nothing in flight is always
+admitted) and `pool_job <dir> <cmd…>` (admit, mark, run, unmark). A caller runs
+its jobs with `xargs -P "$jobs" bash -c '… pool_job …'` after `export -f` of
+what they call, and makes its output independent of completion order — one
+file per job, printed in its own order afterwards — which is what lets
+`--jobs 1` and the default print the same bytes. bash 3.2 clean.
 
 ## format-check.sh
 
@@ -251,7 +281,7 @@ a library track.
 
 ## check-docs.sh
 
-`scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list]`
+`scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list] [--jobs <n>]`
 (`zig build test-docs`) — extracts every ```` ```botopink ```` fence of the user
 docs (default `docs.md README.md`) into a scratch project and runs `botopink
 check` on it. An HTML comment on the line above the fence chooses the treatment:
@@ -266,6 +296,11 @@ fence, an unknown directive, a `skip` with no reason and a named project with no
 prints every fence with its directive and compiles nothing. State for a named
 project lives in the scratch tree (`.name`, `.origin`, `src/main.bp`), not in an
 associative array, so the script runs under the macOS runner's bash 3.2.
+The checks run on `lib/pool.sh` (`--jobs`, default one per CPU bounded by
+memory): the report is written in fence order with a `\001CHECK <k>`
+placeholder per check, and printed after the pool has drained with each
+placeholder replaced by its verdict line, so any `--jobs` prints the serial
+run's bytes.
 
 ## check-test-scratch.sh
 

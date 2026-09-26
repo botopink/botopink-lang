@@ -172,7 +172,24 @@ in three spellings, all promoted to `isDeclare = true` in `parseFnDecl`:
 |---|---|
 | `fn f(x: string) -> void` | the arrowed form. It used to be a **parse error**, which made decision 33's own remedy ("the declarations gain `-> void`") unwritable |
 | `fn f(x: string) void` | the arrowless `.d.bp` shortform, the convention in `libs/std/src/builtins.d.bp` |
-| `declare fn f(x: string);` | the `declare` keyword, with its own contract; it parses as a `delegate` decl |
+| `declare fn f(x: string);` | the `declare` keyword, with its own contract; unannotated it parses as a `delegate` decl, annotated (`#[@External.…]`) as a `fn` decl |
+
+The unannotated `declare fn` (a `DelegateDecl`, top-level shorthand or `val f =
+declare fn(…)`) reads its signature with **`parseSignature`** — `parseGenericParams`,
+`parseParamList`, `-> parseTypeRef` — the one a behavior's `fn` member
+(`parseBehaviorMethod`, `parseMethodDecl`) reads too, from the same pieces
+`parseFnBody` uses. So `pub declare fn field<T, F>(obj: T, comptime name: string) -> F;`
+and `-> Component<T, any>` parse; the delegate used to take no generics and a
+one-token return.
+
+**`_` as a parameter name** (`comptime _: type`) is a bodyless declaration's
+placeholder: `consumeParamName` accepts it and notes it in `Parser.discardParam`
+(reset by `parseParamList`), and every signature that goes on to a body —
+`parseFnBody`, `parseMethodDecl`, `parseImplementMethod`, a `default fn` behavior
+member — calls `refuseDiscardParam` first: `discard-param-with-body`
+(`discardParamWithBody`), at the `_`. A body would have nothing to bind it as,
+and the backends have no discard-parameter spelling (two `_` are a duplicate in
+WAT and strict JavaScript).
 
 `fn f(x: string)` — **no body and no return type at all** — stays a parse error,
 now `bodyless-fn-needs-return-type`, located at the `)` the declaration just
@@ -560,6 +577,7 @@ idempotent, so `format --check` then calls the thinned file clean.
 | Slot | On | Written by |
 |---|---|---|
 | `comments` | `Field`, `BehaviorMethod`, `BehaviorField`, `EnumVariant`, `EnumSection` | `takeMemberComments` / `parseFieldList`, `""` for a blank source line |
+| `typeRef` | `BehaviorField` | `parseBehaviorBody` with `parseTypeRef` — `val fields: Field[];`, `val m: Array<Method>;`, `val p: ?Decl;` (it was a single identifier, `typeName`) |
 | `trailingComment` | `Field`, `BehaviorMethod`, `EnumVariant` | `takeTrailingComment`, gated on the comment sitting on the line the member ended on |
 | `order` | `EnumVariant`, `EnumSection` | `parseEnumItem` / `parsePayloadVariant`, as `variants.len + sections.len` at the moment of the append |
 

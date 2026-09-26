@@ -440,11 +440,6 @@ pub const Formatter = struct {
         return this.widthChoice(flat, broken, flatText.len + tailCols);
     }
 
-    fn fmtReturnType(this: *Formatter, ret: ?[]const u8) !*const Doc {
-        if (ret) |r| return this.text(try std.fmt.allocPrint(this.arena, " -> {s}", .{r}));
-        return this.nil();
-    }
-
     fn fmtReturnTypeRef(this: *Formatter, ret: ?ast.TypeRef, typeGuardParam: ?[]const u8) !*const Doc {
         if (ret) |r| {
             if (typeGuardParam) |param| {
@@ -1987,7 +1982,8 @@ pub const Formatter = struct {
         return this.concatAll(&.{
             prefix,
             try this.text(d.name),
-            try this.fmtSignature(d.params, try this.fmtReturnType(d.returnType), 1),
+            try this.fmtGenericParams(d.genericParams),
+            try this.fmtSignature(d.params, try this.fmtReturnTypeRef(d.returnType, null), 1),
         });
     }
 
@@ -2033,9 +2029,11 @@ pub const Formatter = struct {
         var groups: std.ArrayList(u8) = .empty;
         var blanks: std.ArrayList(bool) = .empty;
         for (iface.fields) |f| {
-            const c = try this.withMemberComments(f.comments, try this.text(
-                try std.fmt.allocPrint(this.arena, "val {s}: {s};", .{ f.name, f.typeName }),
-            ));
+            const c = try this.withMemberComments(f.comments, try this.concatAll(&.{
+                try this.text(try std.fmt.allocPrint(this.arena, "val {s}: ", .{f.name})),
+                try this.fmtTypeRef(f.typeRef),
+                try this.text(";"),
+            }));
             try members.append(this.arena, c.doc);
             try blanks.append(this.arena, c.blank);
             try groups.append(this.arena, 0);

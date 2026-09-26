@@ -14,7 +14,8 @@
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --lib-root  where `from "std"` resolves; default <compiler>/../../libs
 #   --only      run one cell (e.g. test/case_arms.bp, modules/two_modules); may repeat
-#   --jobs      parallel cells, default 4
+#   --jobs      parallel cells; default one per CPU, bounded by memory
+#               (MemAvailable / 768 MiB) — § parallel cells below
 #
 # Four kinds, every cell in its own scratch project (a parse error fails only
 # that cell):
@@ -87,7 +88,7 @@ repo="$(cd "$here/../.." && pwd)"
 target="all"
 compiler="$repo/zig-out/bin/botopink"
 lib_root=""
-jobs=4
+jobs=""
 only=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -101,10 +102,25 @@ while [ $# -gt 0 ]; do
         --only=*) only+=("${1#*=}"); shift ;;
         --jobs) jobs="$2"; shift 2 ;;
         --jobs=*) jobs="${1#*=}"; shift ;;
-        -h|--help) sed -n '2,59p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,60p' "$0"; exit 0 ;;
         *) echo "run.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
+
+# ── § parallel cells ─────────────────────────────────────────────────────────
+# Every cell is its own scratch project and writes its verdict to its own
+# `$work/r-<slug>` file; nothing is printed while cells run, and the verdicts are
+# sorted before they are compared with expected-failures.txt. So how many cells
+# run at once changes the wall clock and nothing else: `--jobs 1` and the default
+# print the same bytes and exit with the same status.
+#
+# The pool is scripts/lib/pool.sh — `botopink-lib-test`'s rule: one cell per
+# CPU, bounded by `MemAvailable / 768 MiB`, and a cell admitted only while the
+# machine's runnable threads are at most the CPU count (other gates share it).
+# shellcheck source=../../scripts/lib/pool.sh
+. "$repo/scripts/lib/pool.sh"
+[ -n "$jobs" ] || jobs="$(pool_default_jobs)"
+pool_check_jobs "$jobs" run.sh
 
 # ── § beam ────────────────────────────────────────────────────────────────────
 # `botopink run --target beam` writes `out/*.S` and stops — BEAM Assembly is an
@@ -337,12 +353,13 @@ run_one() { # <path> <target>
         *) printf '*\t%s\t%s\t%s\n' "$path" fail "not under test/, run/, reject/ or modules/" >"$work/r-$slug" ;;
     esac
 }
-export -f run_one json_tests strip quiet project exec_run
+export -f run_one json_tests strip quiet project exec_run pool_job pool_admit pool_cpus
 export here work compiler lib_root
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
 jobs_list="$work/jobs"
 : >"$jobs_list"
+mkdir -p "$work/inflight"
 for f in "${files[@]}"; do
     f="${f%/}"
     if [ ! -f "$here/$f" ] && [ ! -d "$here/$f" ]; then
@@ -371,7 +388,7 @@ for f in "${files[@]}"; do
 done
 while IFS=$'\t' read -r f t; do
     if [ "$t" = "*" ]; then printf '%s\0%s\0' "$f" "${targets[0]}"; else printf '%s\0%s\0' "$f" "$t"; fi
-done <"$jobs_list" | xargs -0 -n 2 -P "$jobs" bash -c 'run_one "$0" "$1"'
+done <"$jobs_list" | xargs -0 -n 2 -P "$jobs" bash -c 'pool_job "$work/inflight" run_one "$0" "$1"'
 
 cat "$work"/r-* 2>/dev/null | sort >"$work/results"
 

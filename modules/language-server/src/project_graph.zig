@@ -24,6 +24,7 @@
 /// `(uri, source)` pairs and `resolveImports` binds them generically.
 const std = @import("std");
 const manifest = @import("manifest");
+const bp = @import("botopink");
 const lsp_types = @import("./lsp_types.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
@@ -243,9 +244,49 @@ pub const ProjectGraph = struct {
         defer self.gpa.free(src_dir);
         try self.loadSrcTree(a, &deps, &problems, src_dir);
 
+        // 3) The bundled packages (decisions 115–117) a loaded module imports:
+        // the copy inside the compiler, as the CLI loads it
+        // (`compiler-cli/src/cli/libs.zig` `appendBundled`), first in the list.
+        // They have no file on disk, so their URI is the virtual
+        // `file:///botopink-bundled/<package>/src/<file>`.
+        const own_name: []const u8 = if (project) |m| m.name else "";
+        try appendBundled(a, &deps, own_name);
+
         cp.deps = try deps.toOwnedSlice(a);
         cp.problems = try problems.toOwnedSlice(a);
         return cp;
+    }
+
+    /// Prepend the embedded modules of every bundled package a module of `deps`
+    /// imports, until no new package is named. `own` is the project's name —
+    /// inside a bundled library's own directory its sources are the project.
+    fn appendBundled(a: std.mem.Allocator, deps: *std.ArrayListUnmanaged(GraphModule), own: []const u8) !void {
+        const pkgs = bp.comptime_pipeline.bundled_packages;
+        var loaded = [_]bool{false} ** pkgs.len;
+        var added: std.ArrayListUnmanaged(GraphModule) = .empty;
+        var changed = true;
+        while (changed) {
+            changed = false;
+            for (pkgs, 0..) |pkg, i| {
+                if (loaded[i] or pkg.modules.len == 0 or std.mem.eql(u8, pkg.name, own)) continue;
+                var named = false;
+                for (deps.items) |m| if (bp.comptime_pipeline.importsPackage(m.source, pkg.name)) {
+                    named = true;
+                };
+                for (added.items) |m| if (bp.comptime_pipeline.importsPackage(m.source, pkg.name)) {
+                    named = true;
+                };
+                if (!named) continue;
+                loaded[i] = true;
+                changed = true;
+                for (pkg.modules) |bm| try added.append(a, .{
+                    .uri = try std.fmt.allocPrint(a, "file:///botopink-bundled/{s}/src/{s}", .{ pkg.name, bm.file }),
+                    .source = bm.source,
+                    .declaration = false,
+                });
+            }
+        }
+        try deps.insertSlice(a, 0, added.items);
     }
 
     /// Load every `file` the resolved dependency `dep` at `lib_dir` lists as a module.
@@ -686,4 +727,38 @@ test "resolve: a refused manifest is a Problem on it — the array form, and a p
     try testing.expect(std.mem.startsWith(u8, app.problems[0].message, "\"dependencies\" must be an object, not an array"));
     try testing.expectEqual(@as(u32, 0), app.problems[0].line);
     try testing.expectEqual(@as(usize, 1), app.deps.len);
+}
+
+test "resolve: an import of a bundled package loads its embedded modules, first, with no dependency" {
+    const gpa = testing.allocator;
+    const io = testing.io;
+    // The first non-std bundled package, whichever it is — the graph names none.
+    var pkg: ?bp.comptime_pipeline.BundledPackage = null;
+    for (bp.comptime_pipeline.bundled_packages) |p| {
+        if (p.modules.len > 0) {
+            pkg = p;
+            break;
+        }
+    }
+    const bundled = pkg orelse return;
+    test_scratch.remove(io, "pg-bundled");
+    defer test_scratch.remove(io, "pg-bundled");
+    try writeFileP(io, test_scratch.path(io, "pg-bundled/app/botopink.json"),
+        \\{ "name": "app" }
+    );
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    const main_src = try std.fmt.allocPrint(a, "import {{x}} from \"{s}\";\n", .{bundled.name});
+    try writeFileP(io, test_scratch.path(io, "pg-bundled/app/src/main.bp"), main_src);
+
+    var graph = ProjectGraph.init(gpa, io, null);
+    defer graph.deinit();
+    const active = try absUri(a, io, test_scratch.path(io, "pg-bundled/app/src/main.bp"));
+    const resolved = (try graph.resolve(active)) orelse return error.TestExpectedProject;
+    try testing.expectEqual(@as(usize, 0), resolved.problems.len);
+    try testing.expectEqual(bundled.modules.len + 1, resolved.deps.len);
+    const first = try std.fmt.allocPrint(a, "file:///botopink-bundled/{s}/src/{s}", .{ bundled.name, bundled.modules[0].file });
+    try testing.expectEqualStrings(first, resolved.deps[0].uri);
+    try testing.expect(std.mem.endsWith(u8, resolved.deps[resolved.deps.len - 1].uri, "/src/main.bp"));
 }

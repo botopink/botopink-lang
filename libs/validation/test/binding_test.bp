@@ -1,0 +1,166 @@
+//// validation — step 4: typed coercion, and the accumulator's lifetime.
+////
+//// The front's test plan marks this file erlang, because the accumulator is
+//// request-scoped and a request is a process only on that row. It runs on BOTH
+//// rows anyway, and it has to: `botopink test` compiles every `test/*.bp` on
+//// both rows with no per-target gate, and this member's `targets` gates both.
+//// So the file asserts what is true on both — coercion, the violation instead
+//// of the zero, and the drain — and asks the host for the one answer that
+//// differs, through `bindingIsolated()`, which the BEAM half MEASURES by
+//// spawning and the node half states about a row that has no second scope.
+////
+//// Every test resets the accumulator first: the file's subject is a store, and
+//// a test that inherited another test's leftovers would be asserting the wrong
+//// thing.
+
+import {bindInt, bindBool, bindRequired, bindEpochMillis, bindingReport, bindingCount, bindingReset, bindingIsolated, isIntegerText, parseI32, parseI64} from "binding";
+import {ValidationReport, Violation} from "report";
+import {setMessageSource, builtInOnly} from "messages";
+
+fn fresh() -> i32 {
+    val _s = setMessageSource(builtInOnly());
+    return bindingReset();
+}
+
+fn codesOf(r: ValidationReport) -> string {
+    return r.violations.map({ v -> v.code }).join(",");
+}
+
+fn fieldsOf(r: ValidationReport) -> string {
+    return r.violations.map({ v -> v.field }).join(",");
+}
+
+// ── the text predicate, which is the same predicate on both rows ────────────
+
+test "validation: what counts as integer text" {
+    assert isIntegerText("0");
+    assert isIntegerText("12");
+    assert isIntegerText("-12");
+    assert isIntegerText("+12");
+    assert isIntegerText("  12  ");
+    assert isIntegerText("") == false;
+    assert isIntegerText("  ") == false;
+    assert isIntegerText("-") == false;
+    assert isIntegerText("12x") == false;
+    assert isIntegerText("x12") == false;
+    assert isIntegerText("1.5") == false;
+    assert isIntegerText("1 2") == false;
+    assert parseI32("0") == 0;
+    assert parseI32("00042") == 42;
+    assert parseI32("-7") == 0 - 7;
+    assert parseI64("1700000000000") > 0;
+}
+
+// ── the binders ─────────────────────────────────────────────────────────────
+
+test "validation: bindInt on an empty string is zero AND a violation" {
+    val _f = fresh();
+    assert bindInt("age", "") == 0;
+    val r = bindingReport();
+    assert codesOf(r) == "typeMismatch";
+    assert fieldsOf(r) == "age";
+    assert r.violations
+        .at(0)
+        .map({ v -> v.message })
+        .unwrapOr("") == "must be a whole number";
+}
+
+test "validation: bindInt rejects a trailing character and accepts a number" {
+    val _f = fresh();
+    assert bindInt("age", "12x") == 0;
+    assert bindingCount() == 1;
+    assert bindInt("age", "12") == 12;
+    assert bindingCount() == 1;
+    assert codesOf(bindingReport()) == "typeMismatch";
+}
+
+test "validation: bindBool takes four spellings and refuses the rest" {
+    val _f = fresh();
+    assert bindBool("flag", "true");
+    assert bindBool("flag", "1");
+    assert bindBool("flag", "false") == false;
+    assert bindBool("flag", "0") == false;
+    assert bindingCount() == 0;
+    assert bindBool("flag", "yes") == false;
+    assert bindBool("flag", "TRUE") == false;
+    assert bindBool("flag", "") == false;
+    val r = bindingReport();
+    assert codesOf(r) == "typeMismatch,typeMismatch,typeMismatch";
+    assert r.violations
+        .at(0)
+        .map({ v -> v.message })
+        .unwrapOr("") == "must be a boolean";
+}
+
+test "validation: bindRequired makes the distinction Request cannot" {
+    val _f = fresh();
+    assert bindRequired("name", "Ana") == "Ana";
+    assert bindingCount() == 0;
+    assert bindRequired("name", "") == "";
+    assert bindRequired("nick", "   ") == "";
+    val r = bindingReport();
+    assert codesOf(r) == "required,required";
+    assert fieldsOf(r) == "name,nick";
+    assert r.violations
+        .at(0)
+        .map({ v -> v.message })
+        .unwrapOr("") == "must be present";
+}
+
+test "validation: bindEpochMillis reads an epoch and refuses anything else" {
+    val _f = fresh();
+    assert bindEpochMillis("ts", "1700000000000") > 0;
+    assert bindingCount() == 0;
+    val bad = bindEpochMillis("ts", "not-a-time");
+    assert bad == parseI64("0");
+    val r = bindingReport();
+    assert codesOf(r) == "typeMismatch";
+    assert r.violations
+        .at(0)
+        .map({ v -> v.message })
+        .unwrapOr("") == "must be a epoch in milliseconds";
+}
+
+// ── the accumulator's lifetime ──────────────────────────────────────────────
+
+test "validation: bind everything, then ask once" {
+    val _f = fresh();
+    val id = bindInt("id", "abc");
+    val on = bindBool("active", "maybe");
+    val name = bindRequired("name", "");
+    assert id == 0;
+    assert on == false;
+    assert name == "";
+    val r = bindingReport();
+    assert r.isValid() == false;
+    assert fieldsOf(r) == "id,active,name";
+    assert codesOf(r) == "typeMismatch,typeMismatch,required";
+}
+
+test "validation: asking drains, so the next request starts clean" {
+    val _f = fresh();
+    val _a = bindInt("age", "x");
+    assert bindingCount() == 1;
+    assert bindingReport().violations.length == 1;
+    assert bindingCount() == 0;
+    assert bindingReport().violations.length == 0;
+    assert bindingReport().isValid();
+}
+
+test "validation: a second scope cannot see this scope's violations" {
+    val _f = fresh();
+    val _a = bindInt("age", "x");
+    assert bindingIsolated();
+    assert bindingCount() == 1;
+    val _d = bindingReset();
+}
+
+test "validation: the report a handler answers with is one problem document" {
+    val _f = fresh();
+    val _a = bindInt("age", "x");
+    val _b = bindRequired("name", "");
+    val body = bindingReport().toProblemDetail();
+    assert body.contains("\"status\":400");
+    assert body.contains("{\"field\":\"age\",\"code\":\"typeMismatch\",\"message\":\"must be a whole number\"}");
+    assert body.contains("{\"field\":\"name\",\"code\":\"required\",\"message\":\"must be present\"}");
+}

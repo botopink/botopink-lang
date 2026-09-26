@@ -30,9 +30,13 @@ botopink-lang/                 ← language core (this project)
 │   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
 │   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
+│   ├── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
 │   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
 ├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
-│   └── std/                   ← standard library
+│   ├── std/                   ← standard library
+│   ├── routing/               ← bundled route matcher + routing wires (decision 115)
+│   ├── actions/               ← bundled server-action protocol (decision 116)
+│   └── validation/            ← bundled constraint validation (decision 116)
 ├── examples/                  ← non-framework .bp example programs
 ├── tests/language/            ← botopink language tests of decision 8 (case, tuples, loop) — see tests/language/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks
@@ -49,6 +53,7 @@ Golden snapshots live inside the owning package (`modules/compiler-core/snapshot
 zig build               # botopink + botopink-lsp + botopink-lib-test + bpmp
 zig build test          # compiler-core + language-server + compiler-cli + lib-test-runner + manifest + test-scratch tests
 zig build test -Dtest-filter=<name>   # only tests whose name matches
+zig build test -Dtest-shards=<n>      # compiler-core as n processes side by side (default: CPUs, at most 8) — modules/test-shard
 zig build run           # build and run the CLI
 zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, recursion, backend parity)
 zig build test-libs     # every visible .bp library's tests per backend (libs/ + sibling repository/*)
@@ -156,7 +161,7 @@ does not mirror them. Entry points:
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`: `zig build test` from a cold runtime cache, then `zig build test-cli`, `zig build test-language` (ubuntu + macos only — it needs `node` and `erl`) and `zig build test-docs`, on ubuntu-22.04 + macos-14 (hard gate) and windows-2022 (allowed to fail). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` over every runnable target. |
+| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`: `zig build test` from a cold runtime cache, then `zig build test-cli`, `zig build test-language` (ubuntu + macos only — it needs `node` and `erl`) and `zig build test-docs`, on ubuntu-22.04 + macos-14 (hard gate) and windows-2022 (allowed to fail; OTP 28 is installed there too, because `zig build` runs `erlc`). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` over every runnable target. |
 | `.github/workflows/release.yml` | tag push `v*` | 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):
@@ -238,7 +243,9 @@ it and must not silently wait for it.
 
 **The gate every front runs before landing is `zig build test && zig build
 test-libs`**, with `zig build test` from a cold runtime cache. The full ordered
-run is [`scripts/gate.sh`](scripts/gate.sh):
+run is [`scripts/gate.sh`](scripts/gate.sh) — stages 1–4 one after the other,
+4b–10 side by side and reported in this order, the first red one ending the run
+(`scripts/AGENTS.md` § Where the gate's time goes):
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files;
 2. `zig build`;

@@ -59,6 +59,10 @@ pub const wasm3_cflags = [_][]const u8{
 /// Zig module that translates a wasm3 header — today that is `compiler-core`
 /// (see `comptime/runtime/persistent_wat.zig`).
 pub fn exposeHeaders(b: *std.Build, mod: *std.Build.Module) void {
+    // `cimport/` first: its `endian.h` stands in for the libc header that
+    // `wasm3_defs.h` reaches under translate-c and that macOS lacks
+    // (see the file). The C sources' own compile (`link`) never sees it.
+    mod.addIncludePath(b.path("modules/wasm3/cimport"));
     mod.addIncludePath(b.path("modules/wasm3/source"));
 }
 

@@ -67,10 +67,13 @@ jobs:
       # via `std.process.run`. Install Erlang/OTP 27+ — the comptime runtime
       # writes JSON via `json:encode/1`, which only landed in OTP 27.
       # `erlef/setup-beam` pins the version cleanly on linux; macos goes
-      # through Homebrew (current bottle is OTP 27 / OTP 28). Windows
-      # skipped — the main test job is allow-fail there anyway.
-      - name: Install Erlang/OTP (linux)
-        if: matrix.runner == 'ubuntu-22.04'
+      # through Homebrew (current bottle is OTP 27 / OTP 28). Windows needs
+      # it too, allow-fail or not: `zig build` itself runs `erlc` (front 18,
+      # decision 83 — the resident comptime modules are compiled at build time
+      # and embedded), so without OTP the windows job stops at `run erlc` and
+      # never reaches the vendored wasm3 (modules/wasm3) it is there to build.
+      - name: Install Erlang/OTP (linux, windows)
+        if: matrix.runner != 'macos-14'
         uses: erlef/setup-beam@v1
         with:
           # OTP 28 (BEAM 16.x) — matches the dev workstation BEAM. OTP 27

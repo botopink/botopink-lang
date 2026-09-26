@@ -1,0 +1,187 @@
+//// validation — `#[validated]` and the constraint markers. Moved from rakun
+//// front 14's validation member (decision 116 rule 5).
+////
+//// `#[validated]` on a record-shaped `type` reflects `decl.fields`, reads each
+//// field's constraint annotations from `f.annotations` — the way any
+//// decorator reads a field's markers — and `@emit`s two module-level functions with deterministic names:
+////
+////     pub fn validate<TypeName>(v: <TypeName>) -> ValidationReport
+////     pub fn constraintsOf<TypeName>() -> string
+////
+//// THE NAMES ARE A CONTRACT, NOT A CONVENTION. A configuration binder (rakun
+//// front 05) depends on them: when a configuration record carries
+//// `#[validated]`, the boot path calls `validate<TypeName>(bound)` after
+//// binding and refuses to start if the report is not valid. It never has to
+//// know what constraints exist; it only has to know the function's name, which
+//// it builds from the type name it already has. If either side changes the
+//// spelling the other breaks at COMPILE time rather than at run time.
+////
+//// IMPORT `validated` FROM `"validation"`, NEVER A FRAMEWORK'S PLACEMENT-ONLY
+//// `#[validated]`, AND NEVER BOTH. rakun's core carries a placement-only
+//// marker of the same name (front 05): it checks that the marker sits on a
+//// record-shaped `type` and EMITS NOTHING. An application that imports that one
+//// instead of this one gets no `validate<TypeName>`, and the failure lands at
+//// the CALL SITE as an unbound variable rather than at the annotation, which is
+//// a long way from the cause. Importing both names into one module is a
+//// duplicate binding.
+////
+//// WHAT THE EMITTED CODE NEEDS IN SCOPE. The emission runs at the APPLICATION
+//// site, so the application imports the names it references (decision 107's
+//// grammar — only the leaf is bound):
+////
+////     import {report.ValidationReport, report.Violation} from "validation";
+////     import {constraints.vNotBlank, constraints.vSizeBetween, …} from "validation";
+////     import {table.constraintTableJson, spi.vConstraint} from "validation";
+////
+//// `ValidationReport` and `Violation` are imported even where the application
+//// never spells them: the erlang backend resolves a record method's owner
+//// module only when the type is imported into the calling module, and without
+//// it `report.isValid()` lowers to an unqualified `isValid/1`.
+////
+//// A DECORATOR BODY CANNOT CALL A SIBLING FUNCTION (each is lowered alone into
+//// the eval script), so the per-marker rule is written out inline here and the
+//// table grammar lives in `table.bp`, reached by the EMITTED code rather than
+//// by this body.
+////
+//// REFUSAL BEATS A CONSTRAINT THAT COULD NEVER FAIL. Decision 67. A marker on a
+//// field whose type it cannot check is a located compile error, not a row that
+//// quietly always passes: `#[notBlank]` on an `i32`, `#[minValue]` on a
+//// `string`, `#[pastDate]` on an `i32`, `#[notNull]` on a field that can never
+//// be null. That is the failure mode this module exists to design out, and it
+//// is designed out at compile time.
+
+// ── `#[validated]` ──────────────────────────────────────────────────────────
+
+pub fn validated(comptime decl: @Decl) {
+    var calls: Array<string> = [];
+    var rows: Array<string> = [];
+    var problem = "";
+    decl.fields.forEach({ f ->
+        f.annotations.forEach({ a ->
+            val t = f.typeName;
+            val read = "v." + f.name;
+            val q = "\"" + f.name + "\"";
+            val raw = a.args.join(", ");
+            val bare = a.args.join("|").replaceAll("\"", "");
+            val n = a.name;
+            val isText = t == "string";
+            val isList = t == "Array";
+            val nullable = t == "";
+            var call = "";
+            var why = "";
+            if (n == "notNull") if (nullable) call = "vNotNull(" + q + ", " + read + " != null)" else why = "a field of type `" + t + "` can never be null, so the constraint could never fail";
+            if (n == "notBlank") if (isText) call = "vNotBlank(" + q + ", " + read + ")" else why = "it applies to `string`, and this field is `" + t + "`";
+            if (n == "notEmpty") if (isText) call = "vNotEmpty(" + q + ", " + read + ")" else if (isList) call = "vNotEmptyList(" + q + ", " + read + ")" else why = "it applies to `string` and `Array<T>`, and this field is `" + t + "`";
+            if (n == "sizeBetween") if (isText) call = "vSizeBetween(" + q + ", " + read + ", " + raw + ")" else if (isList) call = "vSizeBetweenList(" + q + ", " + read + ", " + raw + ")" else why = "it applies to `string` and `Array<T>`, and this field is `" + t + "`";
+            if (n == "minValue") if (t == "i32") call = "vMinValueI32(" + q + ", " + read + ", " + raw + ")" else if (t == "f64") call = "vMinValueF64(" + q + ", " + read + ", " + raw + ")" else why = "it applies to `i32` and `f64`, and this field is `" + t + "` (an integer literal does not widen to `i64`, so an `i64` bound cannot be written)";
+            if (n == "maxValue") if (t == "i32") call = "vMaxValueI32(" + q + ", " + read + ", " + raw + ")" else if (t == "f64") call = "vMaxValueF64(" + q + ", " + read + ", " + raw + ")" else why = "it applies to `i32` and `f64`, and this field is `" + t + "` (an integer literal does not widen to `i64`, so an `i64` bound cannot be written)";
+            if (n == "positive") if (t == "i32") call = "vPositiveI32(" + q + ", " + read + ")" else if (t == "i64") call = "vPositiveI64(" + q + ", " + read + ")" else if (t == "f64") call = "vPositiveF64(" + q + ", " + read + ")" else why = "it applies to `i32`, `i64` and `f64`, and this field is `" + t + "`";
+            if (n == "positiveOrZero") if (t == "i32") call = "vPositiveOrZeroI32(" + q + ", " + read + ")" else if (t == "i64") call = "vPositiveOrZeroI64(" + q + ", " + read + ")" else if (t == "f64") call = "vPositiveOrZeroF64(" + q + ", " + read + ")" else why = "it applies to `i32`, `i64` and `f64`, and this field is `" + t + "`";
+            if (n == "email") if (isText) call = "vEmail(" + q + ", " + read + ")" else why = "it applies to `string`, and this field is `" + t + "`";
+            if (n == "pattern") if (isText) call = "vPattern(" + q + ", " + read + ", " + raw + ")" else why = "it applies to `string`, and this field is `" + t + "`";
+            if (n == "pastDate") if (t == "i64") call = "vPastDate(" + q + ", " + read + ")" else why = "it applies to epoch milliseconds, which is `i64`, and this field is `" + t + "`";
+            if (n == "futureDate") if (t == "i64") call = "vFutureDate(" + q + ", " + read + ")" else why = "it applies to epoch milliseconds, which is `i64`, and this field is `" + t + "`";
+            if (n == "constraint") if (isText) call = "vConstraint(" + q + ", " + raw + ", " + read + ")" else why = "a registered constraint reads a `string`, and this field is `" + t + "`";
+            if (why != "") problem = "#[" + n + "] on field `" + f.name + "` of `" + decl.name + "`: " + why;
+            val suffix = if (bare == "") "" else "|" + bare;
+            if (call != "") calls.push("    __vs = __vs.append(" + call + ");");
+            if (call != "") rows.push(f.name + "|" + n + suffix);
+        });
+    });
+    @emit("pub fn validate" + decl.name + "(v: " + decl.name + ") -> ValidationReport {\n    var __vs: Array<Violation> = [];\n" + calls.join(
+            "\n"
+        ) + "\n    return ValidationReport(violations: __vs);\n}");
+    @emit("pub fn constraintsOf" + decl.name + "() -> string { return constraintTableJson(\"" + decl.name + "\", \"" + rows.join(
+            ";"
+        ) + "\"); }");
+    if (problem != "") decl.fail(problem);
+    if (decl.kind != DeclKind.Type) decl.fail("#[validated] must annotate a type");
+    if (decl.variants.length > 0) decl.fail("#[validated] must annotate a type with fields, not an enum");
+}
+
+// ── the constraint markers ──────────────────────────────────────────────────
+//
+// Thirteen near-identical bodies: placement, and — where the marker takes an
+// argument — what the argument may say. A decorator body cannot call a sibling
+// function, so the separator check is written out in each one, the same
+// duplication any comptime marker family carries.
+//
+// `#[sizeBetween]` takes BOTH bounds because a declared parameter default is
+// never applied at a call site (`docs.md:502-505`); Spring's single
+// `@Size(min = …, max = …)` with either half optional has no botopink spelling,
+// and pretending otherwise would produce a decorator that silently drops an
+// argument.
+//
+// There is no `#[future]` in this module: the name reads as the `future`
+// effect annotation that decision 118 removed (a `-> @Task<…>` return replaced it),
+// and a marker that looks like a removed effect is a trap. The temporal markers
+// are `#[pastDate]` and `#[futureDate]`.
+
+pub fn notNull(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[notNull] must annotate a field");
+}
+
+pub fn notBlank(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[notBlank] must annotate a field");
+}
+
+pub fn notEmpty(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[notEmpty] must annotate a field");
+}
+
+pub fn sizeBetween(comptime decl: @Decl, min: i32, max: i32) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[sizeBetween] must annotate a field");
+    if (min < 0) decl.fail("#[sizeBetween]: the lower bound may not be negative");
+    if (min > max) decl.fail("#[sizeBetween]: the lower bound is above the upper bound, so the constraint could never hold");
+}
+
+pub fn minValue(comptime decl: @Decl, min: i32) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[minValue] must annotate a field");
+}
+
+pub fn maxValue(comptime decl: @Decl, max: i32) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[maxValue] must annotate a field");
+}
+
+pub fn positive(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[positive] must annotate a field");
+}
+
+pub fn positiveOrZero(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[positiveOrZero] must annotate a field");
+}
+
+pub fn email(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[email] must annotate a field");
+}
+
+// The regex reaches the constraint TABLE as well as the predicate, and the
+// table's blob separates records with `;` and fields with `|`. A pattern
+// carrying either would make the table unreadable, so it is refused here
+// rather than escaped there — the grammar has no escape and needs none.
+pub fn pattern(comptime decl: @Decl, regex: string) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[pattern] must annotate a field");
+    if (regex == "") decl.fail("#[pattern]: the pattern may not be empty");
+    if (regex.indexOf(";") >= 0 || regex.indexOf("|") >= 0) decl.fail("#[pattern]: a pattern may not contain ';' or '|' - those are the constraint table's record and field separators");
+    if (regex.indexOf("\"") >= 0) decl.fail("#[pattern]: a pattern may not contain a double quote - it is the argument's own delimiter in the reflected lexeme");
+}
+
+pub fn pastDate(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[pastDate] must annotate a field");
+}
+
+pub fn futureDate(comptime decl: @Decl) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[futureDate] must annotate a field");
+}
+
+// The name of a constraint registered through the SPI. Whether anything is
+// registered under it is a RUN-TIME question — registration happens at module
+// load, and a decorator body has no whole-program view — so an unregistered
+// name is a violation at the first validation call, coded `unknownConstraint`,
+// and never a pass.
+pub fn constraint(comptime decl: @Decl, name: string) {
+    if (decl.kind != DeclKind.Field) decl.fail("#[constraint] must annotate a field");
+    if (name == "") decl.fail("#[constraint]: the name may not be empty");
+    if (name.indexOf(";") >= 0 || name.indexOf("|") >= 0) decl.fail("#[constraint]: a name may not contain ';' or '|' - those are the constraint table's record and field separators");
+    if (name.indexOf("\"") >= 0) decl.fail("#[constraint]: a name may not contain a double quote - it is the argument's own delimiter in the reflected lexeme");
+}

@@ -1282,7 +1282,9 @@ fn stringifyOmitting(value: anytype, jws: anytype, comptime omitAlways: []const 
 
 pub const BehaviorField = struct {
     name: []const u8,
-    typeName: []const u8,
+    /// The member's declared type — any type reference (`Field[]`,
+    /// `Array<Field>`, `?T`), not just a single identifier. Owned.
+    typeRef: TypeRef,
     /// Comment lines written above the member inside the body (the lexemes,
     /// prefix included), with "" for a blank source line. Owned slice; the
     /// strings slice into the source. Kept by the formatter.
@@ -1525,12 +1527,26 @@ pub const DelegateDecl = struct {
     comment: ?[]const u8 = null,
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
+    /// `<T, F>` — the same generic list a `fn` declaration takes.
+    genericParams: []GenericParam = &.{},
     params: []Param,
-    returnType: ?[]const u8 = null,
+    /// `-> R` — any type reference (`Component<T, any>`), not one name.
+    returnType: ?TypeRef = null,
+    /// Where the return type starts (06 N30), `0:0` when there is none.
+    returnTypeLoc: Loc = .{ .line = 0, .col = 0 },
 
     pub fn deinit(this: *DelegateDecl, allocator: std.mem.Allocator) void {
+        for (this.genericParams) |*gp| gp.deinit(allocator);
+        allocator.free(this.genericParams);
         for (this.params) |*p| p.deinit(allocator);
         allocator.free(this.params);
+        if (this.returnType) |*rt| rt.deinit(allocator);
+    }
+
+    /// Dumped without `returnTypeLoc` (a diagnostic aid, not surface), and
+    /// without `genericParams` when there are none.
+    pub fn jsonStringify(this: DelegateDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{"genericParams"});
     }
 };
 
@@ -1800,7 +1816,10 @@ pub const BehaviorDecl = struct {
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         allocator.free(this.extends);
-        for (this.fields) |f| if (f.comments.len > 0) allocator.free(f.comments);
+        for (this.fields) |*f| {
+            f.typeRef.deinit(allocator);
+            if (f.comments.len > 0) allocator.free(f.comments);
+        }
         allocator.free(this.fields);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
@@ -2034,6 +2053,46 @@ pub const TypeRef = union(enum) {
             .labeledTuple => |lt| lt.elems,
             else => null,
         };
+    }
+
+    /// The reference in its source spelling (`Field[]`, `@Result<T, E>`,
+    /// `?T`, `A | B`), for `{f}` — what a codegen comment names a behavior
+    /// member's type with. A display form: it does not add the parentheses
+    /// `(A | B)[]` needs to re-read (the formatter's `fmtTypeRefIn` does).
+    pub fn format(this: TypeRef, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        if (this.unionMembers()) |members| {
+            for (members, 0..) |m, i| try w.print("{s}{f}", .{ if (i > 0) " | " else "", m });
+            return;
+        }
+        switch (this) {
+            .named => |n| try w.writeAll(n),
+            .array => |elem| try w.print("{f}[]", .{elem.*}),
+            .tuple_ => |elems| {
+                try w.writeAll("#(");
+                for (elems, 0..) |e, i| try w.print("{s}{f}", .{ if (i > 0) ", " else "", e });
+                try w.writeAll(")");
+            },
+            .labeledTuple => |lt| {
+                try w.writeAll("#(");
+                for (lt.elems, 0..) |e, i| try w.print("{s}{s}: {f}", .{ if (i > 0) ", " else "", lt.labels[i], e });
+                try w.writeAll(")");
+            },
+            .optional => |inner| try w.print("?{f}", .{inner.*}),
+            .function => |f| {
+                try w.writeAll("fn(");
+                for (f.params, 0..) |p, i| try w.print("{s}{f}", .{ if (i > 0) ", " else "", p });
+                try w.print(") -> {f}", .{f.returnType.*});
+            },
+            .generic => |g| {
+                try w.print("{s}{s}<", .{ if (g.is_builtin) "@" else "", g.name });
+                for (g.args, 0..) |a, i| try w.print("{s}{f}", .{ if (i > 0) ", " else "", a });
+                try w.writeAll(">");
+            },
+            .typeparam => |constraints| {
+                try w.writeAll("type");
+                for (constraints, 0..) |c, i| try w.print("{s}{f}", .{ if (i == 0) " " else " | ", c });
+            },
+        }
     }
 
     pub fn deinit(this: *TypeRef, allocator: std.mem.Allocator) void {

@@ -133,8 +133,8 @@ pub fn assertComptimeAstExpecting(
     // the AST is recorded from the BEAM pass and must be the same text on
     // wat; each pass's decorator/template exchanges are recorded under
     // `comptime/runtime/<runtime>/`.
-    const prev_rt = hostRuntime.select(.beam);
-    defer _ = hostRuntime.select(prev_rt);
+    const prev_rt = hostRuntime.force(.beam);
+    defer _ = hostRuntime.force(prev_rt);
     var session = try comptimeMod.compile(allocator, modules, io, build_root_path, null);
     defer session.deinit(allocator);
 
@@ -144,10 +144,10 @@ pub fn assertComptimeAstExpecting(
         try outputs.append(allocator, output);
     }
 
-    _ = hostRuntime.select(.wat);
+    _ = hostRuntime.force(.wat);
     var wat_session = try comptimeMod.compile(allocator, modules, io, build_root_path, null);
     defer wat_session.deinit(allocator);
-    _ = hostRuntime.select(.beam);
+    _ = hostRuntime.force(.beam);
 
     // One snapshot per test, under `comptime/ast/`. The AST snapshot never
     // included the per-runtime script, so the four `comptime/{node,erlang,wasm,

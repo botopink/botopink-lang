@@ -1,0 +1,110 @@
+//// validation — the constraint table, and what crosses. Moved from rakun
+//// front 14's validation member (decision 116 rule 5).
+////
+//// `constraintsOf<TypeName>()` answers a JSON description of the record's
+//// constraints. It is the ONE thing that is serialized for a consumer that is
+//// not botopink; a consumer that IS botopink gets the module instead and runs
+//// `validate<TypeName>` itself, which is why this front is a boundary front
+//// rather than a code generator.
+////
+//// THIS FILE IMPORTS ONLY std's `json` WRITER, AND SO DOES `report`. A client
+//// bundle obtains the table without importing anything that reaches a socket
+//// or the filesystem; a dependency on anything else here would be that import.
+////
+//// WHY A BLOB AND NOT JSON IN THE DECORATOR. `#[validated]` `@emit`s
+//// `constraintsOf<Name>()` as a call to `constraintTableJson(name, blob)`
+//// rather than as a JSON string literal. A decorator body that wrote the JSON
+//// itself would be writing a string literal INTO source — two levels of
+//// escaping — and the grammar would then live in a comptime body no test can
+//// call. Here the grammar is an ordinary function on both rows, and the
+//// decorator only has to concatenate names. Front 72's condition blob is the
+//// same shape for the same reason.
+////
+//// THE GRAMMAR. Records are separated by `;`, fields of a record by `|`:
+////
+////     <field>|<code>[|<arg>]*
+////
+//// Records arrive in declaration order, grouped by field, because the
+//// decorator walks `decl.fields` and then each field's `annotations`. A
+//// constraint argument carrying `;` or `|` is refused at compile time by the
+//// decorator, so the grammar has no escape and needs none.
+
+import {json} from "std";
+
+pub fn splitBlob(blob: string) -> string[] {
+    val none: string[] = [];
+    if (blob == "") return none else return blob.split(";");
+}
+
+// The parameter names a code writes into the table, in argument order. A code
+// with no parameters answers the empty list, and an unknown code is treated as
+// having none — the decorator is what refuses an unknown marker, and it refuses
+// it by never emitting a row for it.
+pub fn paramNames(code: string) -> string[] {
+    if (code == "sizeBetween") return ["min", "max"];
+    if (code == "minValue") return ["min"];
+    if (code == "maxValue") return ["max"];
+    if (code == "pattern") return ["regex"];
+    if (code == "constraint") return ["name"];
+    val none: string[] = [];
+    return none;
+}
+
+// `min` and `max` are numbers on the wire; `regex` and `name` are strings.
+// Nothing else has a parameter.
+pub fn paramIsNumber(name: string) -> bool {
+    return name == "min" || name == "max";
+}
+
+pub fn renderParam(name: string, value: string) -> string {
+    if (paramIsNumber(name)) return value else return json.quote(value);
+}
+
+pub fn constraintJson(parts: string[]) -> string {
+    val code = parts.at(1).unwrapOr("");
+    val names = paramNames(code);
+    var members: Array<#(string, string)> = [#("code", json.quote(code))];
+    var j = 0;
+    while (j < names.length) {
+        val nm = names.at(j).unwrapOr("");
+        val pv = parts.at(j + 2).unwrapOr("");
+        members.push(#(nm, renderParam(nm, pv)));
+        j = j + 1;
+    };
+    return json.object(members);
+}
+
+// `constraints` is the already-encoded, comma-joined list of one field's
+// constraint objects.
+pub fn fieldJson(name: string, constraints: string) -> string {
+    return json.object([#("name", json.quote(name)), #("constraints", ["[", constraints, "]"].join(
+                    ""
+                ))]);
+}
+
+// The whole table. Deterministic: one pass over the blob, no map, no sort, no
+// clock — the same source produces byte-identical JSON on every rebuild and on
+// both rows.
+pub fn constraintTableJson(typeName: string, blob: string) -> string {
+    val recs = splitBlob(blob);
+    var fields = "";
+    var current = "";
+    var cons = "";
+    var i = 0;
+    while (i < recs.length) {
+        val parts = recs.at(i).unwrapOr("").split("|");
+        val fname = parts.at(0).unwrapOr("");
+        if (fname != current) {
+            if (current != "") fields = fields + fieldJson(current, cons) + ",";
+            current = fname;
+            cons = "";
+        };
+        if (cons != "") cons = cons + ",";
+        cons = cons + constraintJson(parts);
+        i = i + 1;
+    };
+    if (current != "") fields = fields + fieldJson(current, cons);
+    return json.object([#("type", json.quote(typeName)), #("fields", ["[", fields, "]"].join(
+                    ""
+                ))]);
+}

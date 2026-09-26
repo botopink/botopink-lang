@@ -103,7 +103,7 @@ loaded here. `shipMjsSidecars` resolves an owning lib's `.mjs` through the same
 root list, and never writes outside the output directory: a `require` whose path
 escapes it (a lib's `../../src/x.mjs` authored for its own build) ships the file to
 `<out>/<lib>/<base>` (project-own: `<out>/<base>`) and rewrites that module's
-`require` to reach it.
+`require` to reach it. The bundled packages (`std` and the libraries `build.zig`'s `bundled_packages` names — decisions 115–117) are the exception to "declared, then found on disk": `libs.loadDependencies` loads the ones a module imports from the copy embedded in the binary, and refuses one listed in `dependencies`.
 
 `shipErlSidecars` is the erlang counterpart: a `#[@External.Erlang("host",
 "fn")]` lowers to `host:fn(…)`, and `host` is a module the library authors in

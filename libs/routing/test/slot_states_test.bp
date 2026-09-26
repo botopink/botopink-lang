@@ -1,0 +1,65 @@
+//// routing: the `z` blob, on both targets. Every expected wire is a literal.
+
+import {asserts} from "std";
+import {SlotState, writeSlotStates, parseSlotStates} from "slot_states";
+
+fn stateText(s: SlotState) -> string {
+    return case s {
+        Matched -> "Matched";
+        Defaulted -> "Defaulted";
+        Unchanged -> "Unchanged";
+        Empty -> "Empty";
+    };
+}
+
+fn sample() -> Array<#(string, string, SlotState)> {
+    return [
+        #("team", "/dashboard/settings", SlotState.Matched),
+        #("analytics", "/dashboard", SlotState.Defaulted),
+        #("modal", "/photo/[id]", SlotState.Unchanged),
+        #("aside", "", SlotState.Empty),
+    ];
+}
+
+test "routing: writeSlotStates writes slot|pattern|state lines, in order" {
+    try asserts.equals(writeSlotStates(sample()), "team|/dashboard/settings|M\nanalytics|/dashboard|D\nmodal|/photo/[id]|U\naside||E");
+    try asserts.equals(writeSlotStates([]), "");
+}
+
+test "routing: parseSlotStates(writeSlotStates(xs)) recovers each field" {
+    val xs = sample();
+    val back = parseSlotStates(writeSlotStates(xs));
+    try asserts.equals(back.length, 4);
+    var i = 0;
+    while (i < xs.length) {
+        val a = xs.at(i).unwrapOr(#("?", "?", SlotState.Empty));
+        val b = back.at(i).unwrapOr(#("!", "!", SlotState.Matched));
+        assert a._0 == b._0;
+        assert a._1 == b._1;
+        assert stateText(a._2) == stateText(b._2);
+        i = i + 1;
+    };
+}
+
+test "routing: an unknown state letter reads as Empty rather than raising" {
+    val back = parseSlotStates("team|/x|Q\nother|/y|");
+    try asserts.equals(back.length, 2);
+    try asserts.equals(stateText(back
+                .at(0)
+                .unwrapOr(#("", "", SlotState.Matched))._2), "Empty");
+    try asserts.equals(stateText(back
+                .at(1)
+                .unwrapOr(#("", "", SlotState.Matched))._2), "Empty");
+}
+
+test "routing: a malformed line is skipped, not fatal" {
+    try asserts.equals(parseSlotStates("garbage\n\na|b|M|extra").length, 0);
+    try asserts.equals(parseSlotStates("").length, 0);
+}
+
+test "routing: a slot name holding a bar is refused, naming the slot" {
+    try asserts.throwsWith({ ->
+        writeSlotStates([#("te|am", "/x", SlotState.Matched)]);
+        0;
+    }, "routing: slot_states: the slot name `te|am` holds a `|` or a newline");
+}

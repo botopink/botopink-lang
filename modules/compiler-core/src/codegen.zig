@@ -82,15 +82,14 @@ pub fn generateWith(
         .wasm => "wasm",
     };
 
-    // Decision 84: this compilation's comptime bodies run on the target's VM —
-    // beam for erlang/beam, wat for commonJS/wasm (`comptime/runtime/runtime.zig`)
-    // — unless the harness asks for a runtime explicitly (`Config.comptime_runtime`).
-    const prev_runtime = hostRuntime.select(config.comptime_runtime orelse hostRuntime.of(config.targetSource));
-    var session = comptimeMod.compile(allocator, modules, io, config.build_root, target_name) catch |err| {
-        _ = hostRuntime.select(prev_runtime);
-        return err;
+    // Decision 84 is `comptimeMod.compile`'s (it picks the runtime from
+    // `target_name`); a harness that asks for a runtime explicitly
+    // (`Config.comptime_runtime`) pins it for this pass.
+    const prev_pin = if (config.comptime_runtime) |r| hostRuntime.force(r) else null;
+    defer if (config.comptime_runtime != null) {
+        _ = hostRuntime.force(prev_pin);
     };
-    _ = hostRuntime.select(prev_runtime);
+    var session = try comptimeMod.compile(allocator, modules, io, config.build_root, target_name);
     defer session.deinit(allocator);
     const outputs = try switch (config.targetSource) {
         .commonJS => commonJS.codegenEmit(allocator, session.outputs.items, config),

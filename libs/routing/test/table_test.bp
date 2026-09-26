@@ -1,0 +1,70 @@
+//// routing: the route table's wire, on both targets (moved with the matcher,
+//// decision 115). Every expected wire string is a literal.
+
+import {RouteEntry, parseTable, writeTable, kindLabel} from "table";
+
+// The eight `kind` letters, one entry each — the table this front's contract
+// with fronts 23, 25, 27, 30, 31, 60, 61 and 66 is written in.
+fn eightKinds() -> RouteEntry[] {
+    return [
+        RouteEntry(kind: "L", pattern: "/", slot: "", verb: ""),
+        RouteEntry(kind: "T", pattern: "/blog", slot: "", verb: ""),
+        RouteEntry(kind: "P", pattern: "/blog/[slug]", slot: "", verb: ""),
+        RouteEntry(kind: "D", pattern: "/dashboard", slot: "team", verb: ""),
+        RouteEntry(kind: "R", pattern: "/api/posts", slot: "", verb: "GET"),
+        RouteEntry(kind: "S", pattern: "/shop/[...slug]", slot: "", verb: ""),
+        RouteEntry(kind: "E", pattern: "/docs/[[...slug]]", slot: "", verb: ""),
+        RouteEntry(kind: "N", pattern: "/", slot: "", verb: ""),
+    ];
+}
+
+// ── step 3: the wire format ─────────────────────────────────────────────────
+
+test "routing: the wire format round-trips all eight kinds, field by field" {
+    val xs = eightKinds();
+    val back = parseTable(writeTable(xs));
+    assert back.length == xs.length;
+    var i = 0;
+    while (i < xs.length) {
+        val a = xs
+            .at(i)
+            .unwrapOr(RouteEntry(kind: "?", pattern: "?", slot: "?", verb: "?"));
+        val b = back
+            .at(i)
+            .unwrapOr(RouteEntry(kind: "!", pattern: "!", slot: "!", verb: "!"));
+        assert a.kind == b.kind;
+        assert a.pattern == b.pattern;
+        assert a.slot == b.slot;
+        assert a.verb == b.verb;
+        i = i + 1;
+    };
+}
+
+test "routing: writeTable keeps registration order and ends no line with a bar" {
+    val wire = writeTable(eightKinds());
+    val lines = wire.split("\n");
+    assert lines.length == 8;
+    assert lines.at(0).unwrapOr("") == "L|/";
+    assert lines.at(3).unwrapOr("") == "D|/dashboard|team";
+    assert lines.at(4).unwrapOr("") == "R|/api/posts||GET";
+    for (lines) { line ->
+        assert line.endsWith("|").negate();
+    };
+}
+
+test "routing: an empty wire is an empty table" {
+    assert parseTable("").length == 0;
+    assert writeTable([]) == "";
+}
+
+test "routing: each kind letter has a name" {
+    assert kindLabel("L") == "layout";
+    assert kindLabel("T") == "template";
+    assert kindLabel("P") == "page";
+    assert kindLabel("D") == "default";
+    assert kindLabel("R") == "route";
+    assert kindLabel("S") == "loading";
+    assert kindLabel("E") == "error";
+    assert kindLabel("N") == "not-found";
+    assert kindLabel("Z") == "";
+}

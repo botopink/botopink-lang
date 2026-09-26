@@ -1,0 +1,58 @@
+//// routing: the `k` blob, on both targets. Every expected wire is a literal.
+
+import {asserts} from "std";
+import {RouteKind, parseKinds, writeKinds, routeKindOf} from "route_kinds";
+
+fn kindText(k: RouteKind) -> string {
+    return case k {
+        Static -> "Static";
+        Dynamic -> "Dynamic";
+    };
+}
+
+fn sample() -> Array<#(string, RouteKind)> {
+    return [#("/", RouteKind.Static), #("/blog/[slug]", RouteKind.Dynamic), #("/about", RouteKind.Static)];
+}
+
+test "routing: writeKinds writes one pattern|K line per route, in order" {
+    try asserts.equals(writeKinds(sample()), "/|S\n/blog/[slug]|D\n/about|S");
+    try asserts.equals(writeKinds([]), "");
+}
+
+test "routing: parseKinds(writeKinds(xs)) equals xs element by element" {
+    val xs = sample();
+    val back = parseKinds(writeKinds(xs));
+    try asserts.equals(back.length, xs.length);
+    var i = 0;
+    while (i < xs.length) {
+        val a = xs.at(i).unwrapOr(#("?", RouteKind.Dynamic));
+        val b = back.at(i).unwrapOr(#("!", RouteKind.Static));
+        assert b._0 == a._0;
+        assert kindText(b._1) == kindText(a._1);
+        i = i + 1;
+    };
+}
+
+test "routing: routeKindOf answers the recorded kind" {
+    val wire = "/|S\n/blog/[slug]|D\n/about|S";
+    try asserts.equals(kindText(routeKindOf(wire, "/blog/[slug]")), "Dynamic");
+    try asserts.equals(kindText(routeKindOf(wire, "/about")), "Static");
+}
+
+test "routing: an absent blob or an unknown pattern answers Dynamic" {
+    try asserts.equals(kindText(routeKindOf("", "/anything")), "Dynamic");
+    try asserts.equals(kindText(routeKindOf("/|S", "/other")), "Dynamic");
+}
+
+test "routing: a garbage blob answers Dynamic and does not raise" {
+    try asserts.equals(kindText(routeKindOf("garbage", "/x")), "Dynamic");
+    try asserts.equals(kindText(routeKindOf("/x|Q\n/x|S|extra", "/x")), "Dynamic");
+    try asserts.equals(parseKinds("garbage").length, 0);
+}
+
+test "routing: writeKinds refuses a pattern holding the separator" {
+    try asserts.throwsWith({ ->
+        writeKinds([#("/a|b", RouteKind.Static)]);
+        0;
+    }, "routing: route_kinds: the pattern `/a|b` holds a `|` or a newline");
+}

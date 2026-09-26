@@ -1061,3 +1061,58 @@ test "parser: an unlabelled annotation argument has no label" {
     try std.testing.expectEqual(@as(usize, 0), anns[0].labels.len);
     try std.testing.expect(anns[0].labelOf(0) == null);
 }
+
+// ── front 20 — the `declare fn` delegate and behavior `val` members take the
+// full signature / type grammar (the two gaps `builtins.d.bp` hit) ─────────────
+
+test "parser: declare fn ---- unannotated with generic params and a comptime param" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
+    );
+}
+
+test "parser: declare fn ---- unannotated with a discard param and a generic return" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\pub declare fn getContext<T>(comptime _: type) -> Component<T, any>;
+    );
+}
+
+test "parser: declare fn ---- annotated with a discard param" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\#[@External.Node("f")]
+        \\pub declare fn f(_: i32, _: string) -> i32;
+    );
+}
+
+test "parser: behavior ---- val members take a full type reference" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\pub behavior Decl {
+        \\    val name: string;
+        \\    val fields: Field[];
+        \\    val methods: Array<Method>;
+        \\    val parent: ?Decl;
+        \\}
+    );
+}
+
+test "parser: a discard param is refused in a fn with a body" {
+    try h.expectErrorAt(
+        \\fn f(_: i32) -> i32 { return 1; }
+    , .discardParamWithBody, 1, 6);
+}
+
+test "parser: a discard param is refused in a default behavior method" {
+    try h.expectErrorAt(
+        \\behavior B {
+        \\    default fn f(self: Self, comptime _: string) {}
+        \\}
+    , .discardParamWithBody, 2, 39);
+}
+
+test "parser: a discard param is legal in a bodyless behavior member" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\behavior B {
+        \\    fn f(self: Self, _: string) -> i32;
+        \\}
+    );
+}

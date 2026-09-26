@@ -63,7 +63,9 @@
             }
           }
         ],
-        "returnType": "i32"
+        "returnType": {
+          "named": "i32"
+        }
       }
     }
   ]

@@ -1,0 +1,28 @@
+//// validation — the constraints the server enforces are the constraints the
+//// client mirrors. A bundled library (decision 116 rule 5), neutral like
+//// `routing`: it imports `std` and nothing else, ships `.bp` files only
+//// (decision 117 rule 8) and is compiled for erlang and commonJS from one
+//// source.
+////
+//// Consumers write `import {report.ValidationReport, constraints.vNotBlank}
+//// from "validation";` (decision 107). Moved from rakun front 14's validation
+//// member with four changes: the message source is injected
+//// (`messages.setMessageSource`), JSON is written with std's `json`, the host
+//// tables are inline templates, and the emitted code imports from
+//// `"validation"`. See `../AGENTS.md`.
+////
+//// `#[validated]` emits a plain botopink function whose body is string
+//// comparisons, length checks and regex matches, so ONE source compiles for
+//// both targets and the two sides run the same predicate. What is serialized
+//// is only the constraint table, and only for a consumer that is not botopink.
+////
+//// The `files` ORDER in `botopink.json` is a dependency order: a module is
+//// listed before the siblings that import it.
+
+pub mod report;
+pub mod table;
+pub mod messages;
+pub mod spi;
+pub mod constraints;
+pub mod binding;
+pub mod decorators;

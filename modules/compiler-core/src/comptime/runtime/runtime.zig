@@ -6,9 +6,11 @@
 //! runtime (`persistent_erl.zig`); `commonJS` and `wasm` evaluate on the wat
 //! runtime (`persistent_wat.zig`, wasm3 in-process); a compilation that names
 //! no target (the language server's type pass) uses beam. No flag and no build
-//! option: `codegen.generateWith` selects `Config.comptime_runtime orelse
-//! of(Config.targetSource)` for the duration of its comptime pass (`select`),
-//! and the evaluators ask `current` — the evaluators are reached through the
+//! option: `comptime.compile` selects `forTarget(target_name)` — a harness's
+//! pin (`force`, `Config.comptime_runtime`) or `ofTargetName` — for the
+//! duration of its pass (`select`), so every driver that compiles for a target
+//! (`botopink build`, `test`, `check`, the browser build) gets decision 84 from
+//! the one place, and the evaluators ask `current` — the evaluators are reached through the
 //! type checker, which carries no configuration, so the selection travels on
 //! this thread rather than through every call between them.
 //!
@@ -57,6 +59,40 @@ pub fn of(target: configMod.TargetSource) ComptimeRuntime {
         .erlang, .beam => .beam,
         .commonJS, .wasm => .wat,
     };
+}
+
+/// Decision 84 by the target NAME `comptime.compile` receives — the
+/// vocabulary of `#[@External.<Target>]` lookups (`codegen.generateWith`,
+/// `botopink check`): `node` (commonJS) and `wasm` → wat; `erlang`, `beam` and
+/// no target at all → beam. Every driver that evaluates comptime for a target
+/// passes that name, so the choice is made once, inside the pipeline, and a
+/// driver cannot forget it (`botopink check --target commonJS` evaluated on
+/// the BEAM until it was made here).
+pub fn ofTargetName(name: ?[]const u8) ComptimeRuntime {
+    const n = name orelse return .beam;
+    const wat_names = [_][]const u8{ "node", "commonJS", "wasm" };
+    for (wat_names) |w| if (std.mem.eql(u8, n, w)) return .wat;
+    return .beam;
+}
+
+/// A runtime a harness chose for this thread regardless of the target
+/// (`Config.comptime_runtime`, the comptime snapshot helpers). Null — every
+/// driver — leaves decision 84 to decide. Not a flag: nothing a user runs
+/// reaches it.
+threadlocal var forced: ?ComptimeRuntime = null;
+
+/// Pin this thread's comptime runtime to `r` (null unpins) until the returned
+/// value is passed back.
+pub fn force(r: ?ComptimeRuntime) ?ComptimeRuntime {
+    const prev = forced;
+    forced = r;
+    return prev;
+}
+
+/// The runtime a compilation for target `name` runs its comptime pass on:
+/// the harness's pin when there is one, decision 84 otherwise.
+pub fn forTarget(name: ?[]const u8) ComptimeRuntime {
+    return forced orelse ofTargetName(name);
 }
 
 /// The runtime of the comptime pass running on this thread. Beam when no
@@ -362,6 +398,19 @@ test "decision 84: the runtime follows the target, beam by default" {
     const prev = select(.wat);
     defer _ = select(prev);
     try std.testing.expectEqual(ComptimeRuntime.wat, current());
+}
+
+test "decision 84 by target name; a harness pin wins over it" {
+    try std.testing.expectEqual(ComptimeRuntime.wat, ofTargetName("node"));
+    try std.testing.expectEqual(ComptimeRuntime.wat, ofTargetName("wasm"));
+    try std.testing.expectEqual(ComptimeRuntime.beam, ofTargetName("erlang"));
+    try std.testing.expectEqual(ComptimeRuntime.beam, ofTargetName("beam"));
+    try std.testing.expectEqual(ComptimeRuntime.beam, ofTargetName(null));
+    try std.testing.expectEqual(ComptimeRuntime.wat, forTarget("node"));
+    const prev = force(.beam);
+    defer _ = force(prev);
+    try std.testing.expectEqual(ComptimeRuntime.beam, forTarget("node"));
+    try std.testing.expectEqual(ComptimeRuntime.beam, forTarget("wasm"));
 }
 
 test "a native build carries both runtimes" {

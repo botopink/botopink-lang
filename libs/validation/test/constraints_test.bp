@@ -1,0 +1,193 @@
+//// validation — step 2: every marker's true case and false case, and
+//// what `#[validated]` emits.
+////
+//// Every assertion here runs on BOTH rows. The predicates are plain botopink
+//// with no host cell, so a row that disagreed would be a compiler defect and
+//// not a configuration difference — which is the claim `parity_test.bp` makes
+//// byte for byte.
+////
+//// WHAT CANNOT BE ASSERTED HERE, and where it lives instead. A placement
+//// failure and a type-mismatch refusal are COMPILE errors, not values, so
+//// `#[notBlank]` on an `i32`, `#[minValue]` on a `string`, `#[pastDate]` on an
+//// `i32`, `#[notNull]` on a field that can never be null, `#[validated]` on an
+//// enum-shaped `type`, `#[sizeBetween(50, 2)]` and `#[pattern("a|b")]` are all
+//// rejected by the compiler and cannot be written down in a `.bp` test.
+//// `modules/rakun/test/di_test.bp` records the same split for the six
+//// stereotypes: the generic rejection path is the compiler's own
+//// annotation-processor suite. The refusal TEXTS are in `src/decorators.bp`,
+//// beside the rule each one states.
+
+import {validated, notNull, notBlank, notEmpty, sizeBetween, minValue, maxValue, positive, positiveOrZero, email, pattern, pastDate, futureDate, constraint} from "decorators";
+import {ValidationReport, Violation} from "report";
+import {constraintTableJson} from "table";
+import {vNotNull, vNotBlank, vNotEmpty, vNotEmptyList, vSizeBetween, vSizeBetweenList, vMinValueI32, vMaxValueI32, vMinValueF64, vMaxValueF64, vPositiveI32, vPositiveOrZeroI32, vPositiveI64, vPositiveOrZeroI64, vPositiveF64, vPositiveOrZeroF64, vEmail, vPattern, vPastDate, vFutureDate, emailPattern} from "constraints";
+import {vConstraint} from "spi";
+import {time} from "std";
+
+// An `i64` cannot be written as a literal and an integer literal does not widen
+// to one in arithmetic, so the two epochs a temporal test needs are BUILT from
+// the clock. `zero` is the epoch itself (1970) and `far` is roughly twice now —
+// both comfortably outside any plausible test runtime.
+fn epochZero() -> i64 {
+    return time.nowMillis() - time.nowMillis();
+}
+
+fn farFuture() -> i64 {
+    return time.nowMillis() + time.nowMillis();
+}
+
+fn codesOf(vs: Array<Violation>) -> string {
+    return vs.map({ v -> v.code }).join(",");
+}
+
+// ── one predicate at a time ─────────────────────────────────────────────────
+
+test "validation: notNull holds when the value is present" {
+    assert vNotNull("a", true).length == 0;
+    assert codesOf(vNotNull("a", false)) == "notNull";
+}
+
+test "validation: notBlank counts trimmed length" {
+    assert vNotBlank("a", "x").length == 0;
+    assert vNotBlank("a", " x ").length == 0;
+    assert codesOf(vNotBlank("a", "")) == "notBlank";
+    assert codesOf(vNotBlank("a", "   ")) == "notBlank";
+}
+
+test "validation: notEmpty counts length, not trimmed length" {
+    assert vNotEmpty("a", " ").length == 0;
+    assert codesOf(vNotEmpty("a", "")) == "notEmpty";
+    val some: Array<string> = ["x"];
+    val none: Array<string> = [];
+    assert vNotEmptyList("a", some).length == 0;
+    assert codesOf(vNotEmptyList("a", none)) == "notEmpty";
+}
+
+test "validation: sizeBetween is inclusive at both ends" {
+    assert vSizeBetween("a", "ab", 2, 4).length == 0;
+    assert vSizeBetween("a", "abcd", 2, 4).length == 0;
+    assert codesOf(vSizeBetween("a", "a", 2, 4)) == "sizeBetween";
+    assert codesOf(vSizeBetween("a", "abcde", 2, 4)) == "sizeBetween";
+    val two: Array<string> = ["x", "y"];
+    assert vSizeBetweenList("a", two, 2, 4).length == 0;
+    assert codesOf(vSizeBetweenList("a", two, 3, 4)) == "sizeBetween";
+}
+
+test "validation: numeric bounds are inclusive" {
+    assert vMinValueI32("a", 18, 18).length == 0;
+    assert codesOf(vMinValueI32("a", 17, 18)) == "minValue";
+    assert vMaxValueI32("a", 120, 120).length == 0;
+    assert codesOf(vMaxValueI32("a", 121, 120)) == "maxValue";
+    assert vMinValueF64("a", 2.0, 2.0).length == 0;
+    assert codesOf(vMinValueF64("a", 1.9, 2.0)) == "minValue";
+    assert vMaxValueF64("a", 2.0, 2.0).length == 0;
+    assert codesOf(vMaxValueF64("a", 2.1, 2.0)) == "maxValue";
+}
+
+test "validation: positive excludes zero and positiveOrZero admits it" {
+    assert vPositiveI32("a", 1).length == 0;
+    assert codesOf(vPositiveI32("a", 0)) == "positive";
+    assert codesOf(vPositiveI32("a", 0 - 1)) == "positive";
+    assert vPositiveOrZeroI32("a", 0).length == 0;
+    assert codesOf(vPositiveOrZeroI32("a", 0 - 1)) == "positiveOrZero";
+    assert vPositiveI64("a", farFuture()).length == 0;
+    assert codesOf(vPositiveI64("a", epochZero())) == "positive";
+    assert vPositiveOrZeroI64("a", epochZero()).length == 0;
+    assert vPositiveF64("a", 0.5).length == 0;
+    assert codesOf(vPositiveF64("a", 0.0)) == "positive";
+    assert vPositiveOrZeroF64("a", 0.0).length == 0;
+    assert codesOf(vPositiveOrZeroF64("a", 0.0 - 0.5)) == "positiveOrZero";
+}
+
+test "validation: the email grammar is one grammar on both rows" {
+    assert emailPattern() == "^[^@ ]+@[^@ .]+([.][^@ .]+)+$";
+    assert vEmail("a", "user@example.com").length == 0;
+    assert vEmail("a", "u@a.b.co").length == 0;
+    assert codesOf(vEmail("a", "user@example")) == "email";
+    assert codesOf(vEmail("a", "@example.com")) == "email";
+    assert codesOf(vEmail("a", "user@.com")) == "email";
+    assert codesOf(vEmail("a", "us er@example.com")) == "email";
+    assert codesOf(vEmail("a", "")) == "email";
+}
+
+test "validation: pattern runs std/regex on both rows" {
+    assert vPattern("a", "12345-678", "^[0-9]{5}-[0-9]{3}$").length == 0;
+    assert codesOf(vPattern("a", "12345678", "^[0-9]{5}-[0-9]{3}$")) == "pattern";
+    assert vPattern("a", "abc", "^a.c$").length == 0;
+}
+
+test "validation: the temporal markers exclude now itself" {
+    assert vPastDate("a", epochZero()).length == 0;
+    assert codesOf(vPastDate("a", farFuture())) == "pastDate";
+    assert vFutureDate("a", farFuture()).length == 0;
+    assert codesOf(vFutureDate("a", epochZero())) == "futureDate";
+}
+
+// ── what `#[validated]` emits ───────────────────────────────────────────────
+
+#[validated]
+pub type CreateUserRequest(
+    #[notBlank] #[sizeBetween(2, 50)] name: string,
+    #[notBlank] #[email] email: string,
+    #[minValue(18)] #[maxValue(120)] age: i32,
+    #[pattern("^[0-9]{5}-[0-9]{3}$")] postalCode: string,
+)
+
+// A record whose fields carry no constraint at all, and one field that does.
+// The unconstrained fields contribute no violation and no table row.
+#[validated]
+pub type PartlyConstrained(
+    free: string,
+    alsoFree: i32,
+    #[notBlank] watched: string,
+)
+
+// Every remaining marker, so the table above has an emission test for each.
+#[validated]
+pub type EveryMarker(
+    #[notNull] maybe: ?string,
+    #[notEmpty] tags: Array<string>,
+    #[positive] count: i32,
+    #[positiveOrZero] ratio: f64,
+    #[pastDate] createdAt: i64,
+    #[futureDate] expiresAt: i64,
+    #[constraint("cpfShape")] document: string,
+)
+
+fn goodUser() -> CreateUserRequest {
+    return CreateUserRequest(name: "Ana", email: "ana@example.com", age: 30, postalCode: "01310-100");
+}
+
+test "validation: #[validated] emits a callable validator into this module" {
+    assert validateCreateUserRequest(goodUser()).isValid();
+    assert validateCreateUserRequest(goodUser()).violations.length == 0;
+}
+
+test "validation: every constraint on a field runs, in declaration order" {
+    val r = validateCreateUserRequest(CreateUserRequest(name: "", email: "nope", age: 7, postalCode: "x"));
+    assert r.isValid() == false;
+    assert codesOf(r.violations) == "notBlank,sizeBetween,email,minValue,pattern";
+    assert r.violations.at(0).map({ v -> v.field }).unwrapOr("") == "name";
+    assert r.violations.at(1).map({ v -> v.field }).unwrapOr("") == "name";
+}
+
+test "validation: a field with no constraint contributes nothing" {
+    val ok = validatePartlyConstrained(PartlyConstrained(free: "", alsoFree: 0, watched: "x"));
+    assert ok.isValid();
+    val bad = validatePartlyConstrained(PartlyConstrained(free: "", alsoFree: 0, watched: " "));
+    assert codesOf(bad.violations) == "notBlank";
+    assert constraintsOfPartlyConstrained() == "{\"type\":\"PartlyConstrained\",\"fields\":[{\"name\":\"watched\",\"constraints\":[{\"code\":\"notBlank\"}]}]}";
+}
+
+test "validation: the remaining markers all fire through the emitted validator" {
+    val none: Array<string> = [];
+    val r = validateEveryMarker(EveryMarker(maybe: null, tags: none, count: 0, ratio: 0.0 - 1.0, createdAt: farFuture(), expiresAt: epochZero(), document: ""));
+    assert codesOf(r.violations) == "notNull,notEmpty,positive,positiveOrZero,pastDate,futureDate,unknownConstraint";
+}
+
+test "validation: the same record with every marker satisfied is valid" {
+    val some: Array<string> = ["a"];
+    val r = validateEveryMarker(EveryMarker(maybe: "here", tags: some, count: 1, ratio: 0.0, createdAt: epochZero(), expiresAt: farFuture(), document: "x"));
+    assert codesOf(r.violations) == "unknownConstraint";
+    assert r.isValid() == false;
+}
