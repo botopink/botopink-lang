@@ -20,7 +20,7 @@ fn main() {
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 57}.
+{labels, 68}.
 
 {function, 'Array_range', 2, 3}.
   {label, 2}.
@@ -502,29 +502,72 @@ fn main() {
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_erl_eval', 2, 54}.
-  {label, 53}.
-    {line, [{location, "test@main.erl", 6}]}.
-    {func_info, {atom, test@main}, {atom, '__bp_erl_eval'}, 2}.
-  {label, 54}.
-    {allocate, 1, 2}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {x, 1}, {y, 0}}.
-    {call_ext, 1, {extfunc, erlang, binary_to_list, 1}}.
-    {call_ext, 1, {extfunc, erl_scan, string, 1}}.
-    {test, is_tagged_tuple, {f, 55}, [{x, 0}, 3, {atom, ok}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {call_ext, 1, {extfunc, erl_parse, parse_exprs, 1}}.
-    {test, is_tagged_tuple, {f, 55}, [{x, 0}, 2, {atom, ok}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erl_eval, exprs, 2}}.
-    {test, is_tagged_tuple, {f, 55}, [{x, 0}, 3, {atom, value}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {deallocate, 1}.
+{function, '__bp_tpl_0-t/2-fun-0-', 2, 58}.
+  {label, 57}.
+    {func_info, {atom, test@main}, {atom, '__bp_tpl_0-t/2-fun-0-'}, 2}.
+  {label, 58}.
+    {allocate, 5, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {integer, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '>=', 2}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 61}, [{x, 0}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, string, length, 1}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, '<', 2}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {y, 2}}.
+    {jump, {f, 63}}.
+  {label, 61}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_eq_exact, {f, 62}, [{x, 0}, {atom, false}]}.
+    {move, {atom, false}, {y, 2}}.
+    {jump, {f, 63}}.
+  {label, 62}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 3}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 63}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_eq_exact, {f, 65}, [{x, 0}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {move, {integer, 1}, {x, 2}}.
+    {call_ext_last, 3, {extfunc, string, slice, 3}, 5}.
+  {label, 65}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_eq_exact, {f, 66}, [{x, 0}, {atom, false}]}.
+    {move, {atom, undefined}, {x, 0}}.
+    {deallocate, 5}.
     return.
-  {label, 55}.
-    {call_ext_last, 1, {extfunc, erlang, error, 1}, 1}.
+  {label, 66}.
+    {move, {y, 2}, {x, 0}}.
+    {case_end, {x, 0}}.
+
+{function, '__bp_tpl_0', 2, 54}.
+  {label, 53}.
+    {func_info, {atom, test@main}, {atom, '__bp_tpl_0'}, 2}.
+  {label, 54}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 58}, 0, 0, {x, 0}, {list, []}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {move, {y, 2}, {x, 2}}.
+    {call_fun, 2}.
+    {deallocate, 3}.
+    return.
 
 {function, '__bp_prim_at', 2, 45}.
   {label, 44}.
@@ -542,11 +585,11 @@ fn main() {
     {call_last, 2, {f, 42}, 2}.
   {label, 52}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 56}, [{x, 0}]}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 1}, 0, {list, [{atom, '__BpSelf'}, {y, 0}, {atom, '__BpA0'}, {y, 1}]}}.
-    {move, {literal, <<"(fun(__S, __I) -> case (__I >= 0) andalso (__I < string:length(__S)) of true -> string:slice(__S, __I, 1); false -> undefined end end)(__BpSelf, __BpA0).">>}, {x, 0}}.
+    {test, is_binary, {f, 67}, [{x, 0}]}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
     {call_last, 2, {f, 54}, 2}.
-  {label, 56}.
+  {label, 67}.
     %% unresolved_method: at/2
     {move, {literal, {unresolved_method, at, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.

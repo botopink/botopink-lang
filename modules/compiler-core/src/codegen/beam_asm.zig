@@ -33,6 +33,13 @@ const erlEmitter = @import("./beam/erl_emitter.zig");
 const beamEmitter = @import("./beam/beam_emitter.zig");
 /// Read-only: the embedded prelude `erlang.zig` parses once per process.
 const erlangBackend = @import("./erlang.zig");
+/// BR5 — an `@External.Erlang` template compiled at build time: the Erlang
+/// reader and the BEAM lowering the comptime runtime already runs (front 14),
+/// over one helper function per distinct template.
+const erlParse = @import("../comptime/runtime/wat/erl_parse.zig");
+const erlLower = @import("../comptime/runtime/beam/lower.zig");
+const beamFile = @import("./beam/beam_file.zig");
+const asmText = @import("./beam/asm_text.zig");
 /// Instruction operand / destination shorthands — every `.S` line this backend
 /// writes is built from these and rendered by `beam_emitter.zig`; the backend
 /// never formats target text itself.
@@ -1873,6 +1880,11 @@ const Emitter = struct {
     print_helper_name: ?[]const u8 = null,
     add_helper_name: ?[]const u8 = null,
     eval_helper_name: ?[]const u8 = null,
+    /// BR5: `<arity>:<template text>` → the labels of the helper function
+    /// `compiledTemplate` emitted for it in THIS module (a unit gets its own).
+    template_fns: std.StringHashMapUnmanaged(FnLabels) = .empty,
+    /// How many template helpers this module emitted — names them.
+    template_count: u32 = 0,
     field_helper_name: ?[]const u8 = null,
     /// `'-bp_yield_step-'/1` — `seq.next()` by hand (decision 122).
     yield_step_helper_name: ?[]const u8 = null,
@@ -2046,6 +2058,7 @@ const Emitter = struct {
         if (self.print_helper_name) |n| self.alloc.free(n);
         if (self.join_helper_name) |n| self.alloc.free(n);
         if (self.eval_helper_name) |n| self.alloc.free(n);
+        self.freeTemplateFns();
         self.externals.deinit();
         self.iface_defaults.deinit();
         self.needed_defaults.deinit(self.alloc);
@@ -3407,6 +3420,8 @@ const Emitter = struct {
     /// and helper shims are its own, and the file module gets back exactly what
     /// it had.
     const SavedBeamUnit = struct {
+        template_fns: std.StringHashMapUnmanaged(FnLabels),
+        template_count: u32,
         module_name: []const u8,
         out: *std.Io.Writer,
         next_label: u32,
@@ -3505,6 +3520,8 @@ const Emitter = struct {
     /// exports.
     fn openTypeUnit(self: *Emitter, type_name: []const u8, buf: *std.Io.Writer.Allocating) !SavedBeamUnit {
         const saved: SavedBeamUnit = .{
+            .template_fns = self.template_fns,
+            .template_count = self.template_count,
             .module_name = self.module_name,
             .out = self.out,
             .next_label = self.next_label,
@@ -3534,6 +3551,8 @@ const Emitter = struct {
         self.needed_prim_shims = .empty;
         self.emitted_prim_shims = 0;
         self.emitted_defaults = 0;
+        self.template_fns = .empty;
+        self.template_count = 0;
         return saved;
     }
 
@@ -3595,6 +3614,9 @@ const Emitter = struct {
         self.needed_prim_shims = unit.needed_prim_shims;
         self.emitted_prim_shims = unit.emitted_prim_shims;
         self.emitted_defaults = unit.emitted_defaults;
+        self.freeTemplateFns();
+        self.template_fns = unit.template_fns;
+        self.template_count = unit.template_count;
         self.restoreHelperNames(unit.helpers);
     }
 
@@ -6324,6 +6346,18 @@ const Emitter = struct {
         try primOpTemplate.render(template.items, &ctx);
         try src.append(self.alloc, '.');
 
+        // BR5: the template compiled at build time into a helper function of
+        // this module, called like any local function.
+        if (try self.compiledTemplate(src.items, has_recv, exprs.len + trailing.len)) |labels| {
+            const st = try self.stageOperands(exprs, trailing);
+            try self.placeStaged(&st);
+            switch (mode) {
+                .non_tail => try beamEmitter.writeCall(self.out, .normal, st.len, .{ .local = labels.entry }, 0),
+                .tail => try beamEmitter.writeCall(self.out, .last, st.len, .{ .local = labels.entry }, self.num_y),
+            }
+            return;
+        }
+
         const st = try self.stageOperands(exprs, trailing);
         const live = @max(self.min_live, st.x_top);
         var names: [max_staged][16]u8 = undefined;
@@ -6347,6 +6381,128 @@ const Emitter = struct {
             .non_tail => try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = labels.entry }, 0),
             .tail => try beamEmitter.writeCall(self.out, .last, 2, .{ .local = labels.entry }, self.num_y),
         }
+    }
+
+    fn freeTemplateFns(self: *Emitter) void {
+        var it = self.template_fns.keyIterator();
+        while (it.next()) |k| self.alloc.free(k.*);
+        self.template_fns.deinit(self.alloc);
+        self.template_fns = .empty;
+    }
+
+    /// BR5 (C-24): an `@External.Erlang` template compiled at build time.
+    /// `body` is the template with its holes as variables (`__BpSelf`,
+    /// `__BpA<i>`) and a trailing `.`; it becomes the function
+    ///
+    ///     t(__BpSelf, __BpA0, …) -> <body>
+    ///
+    /// read by `comptime/runtime/wat/erl_parse.zig` and lowered by
+    /// `comptime/runtime/beam/lower.zig` — the reader and lowering the comptime
+    /// BEAM runtime runs every template and decorator body through — then
+    /// relabelled into this module's label space, renamed `'__bp_tpl_<k>'`
+    /// (its lifted funs `'__bp_tpl_<k>-…'`), rendered by `beam/asm_text.zig`
+    /// and appended to the module. One helper per distinct template text and
+    /// arity per module. Null when the reader or the lowering refuses the
+    /// template (see `beam/AGENTS.md`): the call site then keeps
+    /// `'__bp_erl_eval'/2`.
+    fn compiledTemplate(self: *Emitter, body: []const u8, has_recv: bool, arity: usize) anyerror!?FnLabels {
+        const key = try std.fmt.allocPrint(self.alloc, "{d}:{s}", .{ arity, body });
+        if (self.template_fns.get(key)) |hit| {
+            self.alloc.free(key);
+            return hit;
+        }
+        var arena_state = std.heap.ArenaAllocator.init(self.alloc);
+        defer arena_state.deinit();
+        const ar = arena_state.allocator();
+        const labels = (try self.lowerTemplateFn(ar, body, has_recv, arity)) orelse {
+            self.alloc.free(key);
+            return null;
+        };
+        try self.template_fns.put(self.alloc, key, labels);
+        return labels;
+    }
+
+    fn lowerTemplateFn(self: *Emitter, ar: std.mem.Allocator, body: []const u8, has_recv: bool, arity: usize) anyerror!?FnLabels {
+        // The helper's Erlang SOURCE, for the reader — not target output: the
+        // `.S` this backend writes is `asm_text`'s rendering of the lowered
+        // model below.
+        var text: std.ArrayListUnmanaged(u8) = .empty;
+        try text.appendSlice(ar, try std.fmt.allocPrint(ar, "-module(bp_tpl).\n-export([t/{d}]).\nt(", .{arity}));
+        const off: usize = @intFromBool(has_recv);
+        for (0..arity) |i| {
+            if (i > 0) try text.appendSlice(ar, ", ");
+            const param = if (has_recv and i == 0) "__BpSelf" else try std.fmt.allocPrint(ar, "__BpA{d}", .{i - off});
+            try text.appendSlice(ar, param);
+        }
+        try text.appendSlice(ar, ") ->\n    ");
+        try text.appendSlice(ar, body);
+        try text.append(ar, '\n');
+
+        var pf: erlParse.Failure = .{};
+        const parsed = erlParse.parseModule(ar, text.items, &pf) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return null,
+        };
+        var lf: erlLower.Failure = .{};
+        const lowered = erlLower.lowerModule(ar, parsed, self.module_name, &lf) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return null,
+        };
+
+        // Relabel: the lowering numbers from 1 and this module's next free
+        // label is `base`, so `L` becomes `L - 1 + base` (`{f, 0}` is "no fail
+        // label" and stays).
+        const base = self.next_label;
+        var max_label: u32 = 0;
+        const k = self.template_count;
+        const functions = try ar.alloc(beamFile.Function, lowered.module.functions.len);
+        var entry_labels: ?FnLabels = null;
+        for (lowered.module.functions, 0..) |f, fi| {
+            const is_main = std.mem.eql(u8, f.name, "t");
+            const name = if (is_main)
+                try std.fmt.allocPrint(ar, "__bp_tpl_{d}", .{k})
+            else
+                try std.fmt.allocPrint(ar, "__bp_tpl_{d}{s}", .{ k, f.name });
+            const code = try ar.alloc(beamFile.Instr, f.code.len);
+            for (f.code, 0..) |ins, ii| {
+                const args = try ar.alloc(beamFile.Arg, ins.args.len);
+                for (ins.args, 0..) |a, ai| args[ai] = try shiftLabels(ar, a, base, &max_label);
+                if (ins.op == .label) {
+                    const l: u32 = @intCast(ins.args[0].u);
+                    max_label = @max(max_label, l);
+                    args[0] = .{ .u = l - 1 + base };
+                }
+                if (ins.op == .func_info) args[1] = beamFile.Arg.atomOf(name);
+                code[ii] = .{ .op = ins.op, .args = args };
+            }
+            functions[fi] = .{ .name = name, .arity = f.arity, .entry = f.entry - 1 + base, .exported = false, .code = code };
+            if (is_main) entry_labels = .{ .func_info = f.entry - 2 + base, .entry = f.entry - 1 + base };
+        }
+        const labels = entry_labels orelse return null;
+
+        var aw: std.Io.Writer.Allocating = .init(ar);
+        asmText.writeModule(&aw.writer, .{ .name = self.module_name, .functions = functions }) catch return null;
+        const listing = aw.written();
+        const first = std.mem.indexOf(u8, listing, "\n{function, ") orelse return null;
+        try self.deferred_lambdas.append(self.alloc, try self.alloc.dupe(u8, listing[first..]));
+        self.next_label = base + max_label;
+        self.template_count += 1;
+        return labels;
+    }
+
+    fn shiftLabels(ar: std.mem.Allocator, a: beamFile.Arg, base: u32, max_label: *u32) !beamFile.Arg {
+        return switch (a) {
+            .f => |l| if (l == 0) a else blk: {
+                max_label.* = @max(max_label.*, l);
+                break :blk .{ .f = l - 1 + base };
+            },
+            .list => |items| blk: {
+                const out = try ar.alloc(beamFile.Arg, items.len);
+                for (items, 0..) |it, i| out[i] = try shiftLabels(ar, it, base, max_label);
+                break :blk .{ .list = out };
+            },
+            else => a,
+        };
     }
 
     /// Emit (once per module) `'__bp_erl_eval'(Source, Bindings)`:

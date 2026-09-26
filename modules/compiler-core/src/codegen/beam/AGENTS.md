@@ -51,6 +51,11 @@ beam/
   verbatim — only its receiver/`$N`/`$args` substitutions are rendered, with
   `writeArg`. `rg -n '\.(print|writeAll|writeByte)\(' ../beam_asm.zig` must
   return exactly those three.
+  BR5's template helpers (`lowerTemplateFn`) are not an exception: their `.S`
+  is `asm_text.writeModule`'s rendering of the `beam_file` model
+  `comptime/runtime/beam/lower.zig` built, spliced function by function; the
+  only text the backend assembles there is the helper's Erlang *source* for the
+  reader.
 - `../erlang.zig` — `emitComptimeModule` helper functions (`comptime_helper_forms`) and host forms; function/lambda/branch bodies (`bodyNode`), expressions (`exprNode`) and calls (`callNode`) are nodes; declarations and the module header are forms (`emitErlangModule` renders them with `writeForms`).
 - `../../comptime/decorator_eval.zig`, `../../comptime/template_eval.zig` — `main/0` as a `Form` built with `Builder`; the `@Decl` handle and captures are `Term`s.
 - `../../comptime/runtime/prelude.zig` — the resident host glue as `Form`s, rendered to Erlang source with `writeForms`; the generated module reaches it through a `Form.import`.
@@ -93,79 +98,52 @@ bodies — in `zig build test-libs`'s erlang cells, all lowered), nor in 377 of
 older builds of the libraries (the 12 refused are modules `erlc` rejects too:
 undefined functions, unsafe variables, a `receive`).
 
-## Run-time evaluation of `@External.Erlang` templates (open decision)
+## `@External.Erlang` templates compiled at build time (BR5, C-24)
 
 `../beam_asm.zig` lowers a host-backed call three ways. An
 `#[@External.Beam("""…""")]` body is `.S` spliced at the call site
 (`renderBeamTemplate`), and an `#[@External.Erlang("mod", "sym")]` pair is a
 plain `call_ext`. An `#[@External.Erlang("…")]` **template** — Erlang *source*
 with receiver/`$N`/`$stringify(…)` holes (`"base64:encode($0)"`, the arity-branch
-form, a primitive method's template reached through `primErlangTemplate`) —
-has no `.S` form, so it is **evaluated at run time** (`evalTemplate`):
+form, a primitive method's template reached through `primErlangTemplate`) — is
+**compiled at build time** into a helper function of the module
+(`evalTemplate` → `compiledTemplate` → `lowerTemplateFn`):
 
-- at build time the holes become variables (the receiver → `__BpSelf`, `$N` →
+- the holes become the helper's parameters (the receiver → `__BpSelf`, `$N` →
   `__BpAN`, `$stringify(e)` → `iolist_to_binary(io_lib:format("~p", [e]))`) and
-  the text, ended with `.`, is a binary literal operand;
-- at the call site the operands are staged into a bindings map
-  (`put_map_assoc`, `#{'__BpSelf' => Recv, '__BpA0' => A0, …}`) and the
-  module-local `'__bp_erl_eval'(Source, Bindings)` is called — synthesised once
-  per module by `ensureEvalHelper`: `binary_to_list` → `erl_scan:string` →
-  `erl_parse:parse_exprs` → `erl_eval:exprs`, the value of the last expression;
-  a step that does not answer `{ok, …}`/`{value, …}` raises its answer with
-  `erlang:error/1`.
+  the text is the body of `t(__BpSelf, __BpA0, …) -> <template>.`;
+- that one-function module is read by `../../comptime/runtime/wat/erl_parse.zig`
+  and lowered by `../../comptime/runtime/beam/lower.zig` — **the reader and the
+  lowering the comptime BEAM runtime already runs every template and decorator
+  body through** (front 14), so this compiler has one Erlang front end, not a
+  second template language;
+- the lowered `beam_file.Module` is relabelled into the module's label space
+  (`L - 1 + next_label`, `{f, 0}` kept), its functions renamed `'__bp_tpl_<k>'`
+  (lifted funs `'__bp_tpl_<k>-t/N-fun-M-'`), rendered by `asm_text.zig` and
+  appended to the module; the call site stages its operands into `x0..` and
+  `call`s it. One helper per distinct template text and arity per module
+  (`template_fns`, set aside per type unit like the other helper caches).
 
-It is correct — the ten beam snapshots that reach it print what erlang prints
-(`string_slice_*`, `external_a2_*`, `external_a3_result_template_owned_declare_fn`,
-`external_1_arg_host_expression_…`, `bool_instance_default_fn_methods`,
-`array_zip_via_external_node_template`, `string_methods_map_to_native_js_names`).
-**Its cost:**
+**What still reaches `'__bp_erl_eval'/2`, and why:** a template the reader or
+the lowering refuses — the constructs `lower.zig` names (`receive`, `!`, the old
+`catch Expr`, `try … of`, `try … after`, records, macros; the list is in
+§ Comptime lowering above). The helper `ensureEvalHelper` stays for exactly
+those, so a refused template is still correct, only interpreted. **Measured
+2026-09-26:** no beam snapshot carries `'__bp_erl_eval'` any more (15 moved,
+every RUN LOG unchanged, `beam_export_audit` 475/475); the 82 primitive-method
+calls of the audit in `../AGENTS.md` § Primitive methods compile with none; of
+the 159 templates in `libs/std/src`, at most 6 carry a refused construct by
+text (`async` `allOf`/`raceOf` — `receive`, `!`; `encoding`'s percent-decode and
+one `json` reader — `try … of`; `http`'s `get` — `catch Expr`; `process`'s run —
+`receive`), and those keep the run-time path.
 
-- **Speed.** Every call re-scans, re-parses and *interprets* the template;
-  nothing is cached. Re-measured on OTP 29 (2026-09-18, 100 000 calls each,
-  `timer:tc/1` over a tail-recursive loop; the 2026-09-17 figures in parentheses):
-  `base64:encode(X)` direct **0.113** µs/call (0.1), through the eval path
-  **5.722** µs/call (5.2) — **50.6×**; `string:slice($0, $1, $2 - $1)` direct
-  **0.244** µs/call, through the eval path **7.412** µs/call (6.9) — 30×. The
-  ratio that motivated BR4 holds. In a loop over a list (`String.slice` per
-  element) it dominates the run time.
-- **Errors surface late.** A template that does not scan or parse, or names an
-  undefined function, compiles cleanly and fails only when the call runs, as
-  `erlang:error({error, …})` from inside the helper, not as a located build
-  error.
-- **Code size and dependencies.** Each call site carries its template as a
-  binary literal plus a map build; the module depends on `erl_scan`,
-  `erl_parse` and `erl_eval` (stdlib, always present on a BEAM node).
-
-**BR5 (1.0.5-beta front 03 step 1) is not written, and the reason is
-structural, not a shortage of effort.** The step says to reuse the erlang
-backend's template rendering rather than add a second template language. The
-erlang backend does not *render* a template, it **splices its text** into `.erl`
-and lets `erlc` read it — there is nothing to reuse, because nothing in this
-compiler parses Erlang. `rg -l 'erl_scan|erl_parse'` over
-`modules/compiler-core/src/` answers one file, `../beam_asm.zig`, and that is the
-`'__bp_erl_eval'/2` helper it *emits*, not a parser it runs. `erl_ast.zig` beside
-this note is a model the compiler **builds and prints**; it has no reader. So
-compiling a template to `.S` at build time requires an Erlang **front end** in
-Zig — the parked sketch is exactly that: `beam/erl_template.zig`, 836 lines of
-lexer + subset parser, plus 419 lines of a slot-machine lowering in
-`beam_asm.zig` (branch `wip/br5-beam-templates`, `1ebef41`, a stash from
-2026-09-17; the untracked half is in `640b6f3b`). It is a sketch, not a base:
-its `templateHelper` answers null for anything outside its subset, so the
-run-time helper stays for the rest, and it does not build at this HEAD —
-`beam_asm.zig` moved **+973/−191** lines (6 277 → 7 059) between the sketch's
-base `440a1d3e` and here, and `git apply --3way` lands it only *with conflicts*.
-What the row costs, measured, is therefore: an Erlang parser this project does
-not otherwise need, a per-template subset check that decides which calls stay
-interpreted, and the 11 snapshots below re-recorded — for a saving that shows up
-only in a loop over a list. It is also the row the front README asks to land
-**before** `13-module-identity` splits this emitter, which has not run yet.
-
-**Open for the maintainer (1.0.4-beta 01 BR4):** keep it as written here, or
-ask for build-time compilation of the template — lower the template text to
-code once, at build time (for example through the erlang backend's template
-lowering into a helper function or aux module assembled next to the `.S`), so a
-call is a local/remote call with no interpretation. The second answer becomes a
-row in `specs/1.0.4-beta/01-backend-residuals/`.
+**Cost, re-measured** (OTP 29, 1 000 000 iterations of a recursive loop whose
+body is `base64:encode(<<"hello">>)` plus `string:length/1`, three runs):
+through the compiled helper **0.25–0.39 µs** per iteration, the same loop
+written directly in Erlang **0.24–0.34 µs** — 1.06–1.16×, the local call. Through
+`'__bp_erl_eval'/2` it was **5.722 µs** per call against 0.113 direct (50.6×,
+2026-09-18). A template that does not parse is now a build-time `null` from the
+reader (and the run-time path), never a helper that compiles and fails later.
 
 ## Closure values (`make_fun3`) — every build site, classified
 

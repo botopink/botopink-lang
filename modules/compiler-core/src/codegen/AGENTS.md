@@ -1807,10 +1807,12 @@ codegen/
   functions): an `@External.Beam` `.S` body renders at the call site; an
   `@External.Erlang("mod", "sym")` is a `call_ext`; an `@External.Erlang`
   template (`"base64:encode($0)"`, arity branches included) is Erlang source,
-  evaluated at run time by the synthesised `'__bp_erl_eval'(Source, Bindings)`
-  (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`)
-  — correct but interpreted on every call (≈ 50× a direct call); its cost and
-  the open keep-or-compile decision are in [`beam/AGENTS.md`](beam/AGENTS.md).
+  **compiled at build time** (BR5) into a helper `'__bp_tpl_<k>'` through the
+  comptime runtime's Erlang reader and BEAM lowering (`compiledTemplate`,
+  markers as the helper's parameters `__BpSelf`/`__BpAN`); only a template the
+  lowering refuses (`receive`, `!`, `try … of`, …) still goes through the
+  run-time `'__bp_erl_eval'(Source, Bindings)`. Details and the re-measured
+  cost in [`beam/AGENTS.md`](beam/AGENTS.md).
   Decision 64's beam half, for the plain form only: a `pub` host-backed fn
   whose erlang target is `module:symbol` (`hostWrapperRef`, over
   `hostDeclareWrapperNeeded`) gets a wrapper of its own — reserved, exported,
@@ -1827,7 +1829,8 @@ codegen/
   interface chain (`primIfaceChain`: `I32 → Signed → Integer → Number`, …):
   an `@External.Beam` template, then an `@External.Erlang("mod", "sym")` host
   call, then the inline BEAM-irreducible arms (`emitPrimInline`), then an
-  `@External.Erlang` template through `'__bp_erl_eval'/2`, then a bodied
+  `@External.Erlang` template compiled into a `'__bp_tpl_<k>'` helper (BR5),
+  then a bodied
   interface `default fn` (`Array.fold`, `Number.clamp`) emitted on demand as
   `'<Iface>_<method>'(Self, …)` (`callIfaceDefault`/`emitNeededDefaults`,
   omitted trailing params filled from their declared defaults). Inside such a
