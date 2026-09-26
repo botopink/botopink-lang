@@ -514,3 +514,73 @@ test "surface R11: a trailing lambda body with several statements keeps its `;`"
         \\}
     , .unexpectedToken, 2, 44);
 }
+
+// ── C-13 — decision 29 (c), ordered by decision 60 ───────────────────────────
+//
+// A braced `if`, loop or `case` statement ends at its `}`: the `;` after it is
+// accepted and not required, in every block (a `fn` body, a lambda body, an
+// `if` branch, a `case` arm's block), and the program is the same either way.
+// The test is the closing brace, not the keyword — a brace-less `if` keeps its
+// `;`, and so does a binding or a `return` whose value is braced.
+
+test "surface C-13: a braced if / loop / case statement takes its `;` or not, to the same AST" {
+    try h.expectSameAst(std.testing.allocator,
+        \\fn f(c: bool, xs: i32[]) -> i32 {
+        \\    var n = 0;
+        \\    if (c) {
+        \\        n = 1;
+        \\        n = 2;
+        \\    };
+        \\    for (xs) { x ->
+        \\        if (x > 1) { n = n + x; n = n - 1; };
+        \\        n = n + x;
+        \\    };
+        \\    while (n > 100) { n = n - 1; };
+        \\    loop { break; };
+        \\    case n {
+        \\        1 -> @print("one");
+        \\        _ -> @print("other");
+        \\    };
+        \\    if (c) n = 3 else { n = 4; n = 5; };
+        \\    return n;
+        \\}
+    ,
+        \\fn f(c: bool, xs: i32[]) -> i32 {
+        \\    var n = 0;
+        \\    if (c) {
+        \\        n = 1;
+        \\        n = 2;
+        \\    }
+        \\    for (xs) { x ->
+        \\        if (x > 1) { n = n + x; n = n - 1; }
+        \\        n = n + x;
+        \\    }
+        \\    while (n > 100) { n = n - 1; }
+        \\    loop { break; }
+        \\    case n {
+        \\        1 -> @print("one");
+        \\        _ -> @print("other");
+        \\    }
+        \\    if (c) n = 3 else { n = 4; n = 5; }
+        \\    return n;
+        \\}
+    );
+}
+
+test "surface C-13: a brace-less if statement still ends with `;`" {
+    try h.expectParseFails(std.testing.allocator,
+        \\fn f(c: bool) -> i32 {
+        \\    if (c) return 1
+        \\    return 2;
+        \\}
+    );
+}
+
+test "surface C-13: a binding whose value is a braced if still ends with `;`" {
+    try h.expectParseFails(std.testing.allocator,
+        \\fn f(c: bool) -> i32 {
+        \\    val x = if (c) { 1 } else { 2 }
+        \\    return x;
+        \\}
+    );
+}

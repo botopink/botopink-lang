@@ -1720,7 +1720,7 @@ pub fn parseBlockExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collecti
     while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
         if (try this.tryParseCommentStmt(alloc, &stmts, 0)) continue;
         const expr = try this.parseExpr(alloc);
-        _ = try this.consume(.semicolon);
+        if (this.isBracedBlockStmt(expr)) _ = this.match(.semicolon) else _ = try this.consume(.semicolon);
         try stmts.append(alloc, .{ .expr = expr });
     }
     _ = try this.consume(.rightBrace);
