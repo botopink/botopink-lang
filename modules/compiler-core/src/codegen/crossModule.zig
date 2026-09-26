@@ -1640,7 +1640,7 @@ test "build: two types whose atoms differ raise no fault, and the module's own a
 /// each module's path once. An import resolves through the export index,
 /// asked of the import's own `from "<mod>"` (`import {double} from "math"`),
 /// or names a module by its path or basename (`import {order} from "std"`).
-/// The module-body order of decision 139 is read off it: an importing module
+/// The module-body order of decision 140 is read off it: an importing module
 /// runs the bodies of these modules, in this order, before its own — what
 /// `require` does on commonJS and static linking does on wasm.
 pub fn importClosure(

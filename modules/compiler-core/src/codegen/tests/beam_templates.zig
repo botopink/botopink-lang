@@ -1,4 +1,4 @@
-//! Decision 140: every `#[@External.Erlang(…)]` template the compiler ships —
+//! Decision 141: every `#[@External.Erlang(…)]` template the compiler ships —
 //! `libs/std` (its modules and the `primitives.bp` prelude) and every bundled
 //! library — compiles for the beam backend. The beam backend lowers a template
 //! at build time into a helper function (BR5) through the comptime runtime's

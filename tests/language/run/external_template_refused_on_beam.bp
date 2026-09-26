@@ -1,4 +1,4 @@
-//// Decision 140 — an `@External.Erlang` template the beam backend cannot
+//// Decision 141 — an `@External.Erlang` template the beam backend cannot
 //// compile is a build error at the call site naming the construct, never a
 //// template evaluated from source at run time. `?MODULE` is Erlang the erlang
 //// backend splices into its module and runs (`true`); the reader the beam

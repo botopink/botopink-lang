@@ -512,7 +512,7 @@ pub fn codegenEmit(
                 // like a type error: only this module fails.
                 var missing: ?moduleOutput.MissingExternal = null;
                 var ambiguous: ?moduleOutput.AmbiguousVariant = null;
-                // Decision 139 — the bodies of the modules this one imports,
+                // Decision 140 — the bodies of the modules this one imports,
                 // transitively, run before its own: the entry calls each
                 // one's `'_botopink_init'/0`, dependencies first.
                 var closure: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -1410,7 +1410,7 @@ fn emitErlang(
     cross: ?*const CrossModule,
     enum_exports: []const EnumExport,
     /// The module atoms whose `'_botopink_init'/0` the entry runs before its
-    /// own module body (decision 139), dependencies first.
+    /// own module body (decision 140), dependencies first.
     import_inits: []const []const u8,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
     /// the caller reports the function and the call site, not the error name.
@@ -1782,7 +1782,7 @@ fn emitErlangModule(
     for (pub_fns.items) |f| try exports.append(b.arena, .{ .name = f.name, .arity = fnArityNoSelf(f) });
     // A module-level `pub val` is its 0-arity function (`top_vals`); another
     // module reads it as `owner:name()` (`imported_vals`), so it is exported
-    // like a `pub fn` (decision 139).
+    // like a `pub fn` (decision 140).
     for (program.decls) |decl| switch (decl) {
         .val => |v| if (v.isPub and !v.mutable and em.top_vals.contains(v.name)) {
             try exports.append(b.arena, .{ .name = v.name, .arity = 0 });
@@ -2344,7 +2344,7 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
     // Front 17 — this module's `PersistentTerm` vars, put before the module
     // body and the tests read them (the build's `-on_load`; see `emitModule`).
     if (run_load) try main_stmts.append(b.arena, try b.call(MEM_LOAD, &.{}));
-    // Decision 139 — the imported modules' bodies first, dependencies first.
+    // Decision 140 — the imported modules' bodies first, dependencies first.
     for (import_inits) |dep| try main_stmts.append(b.arena, try b.remote(dep, "_botopink_init", &.{}));
     if (run_init) try main_stmts.append(b.arena, try b.call("_botopink_init", &.{}));
     try main_stmts.appendSlice(b.arena, &.{
@@ -3769,7 +3769,7 @@ const Emitter = struct {
     /// version, or the call `name()` when it is a module-level `val`.
     fn nameRefNode(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror!Ast.Expr {
         if (!this.locals.contains(name) and this.top_vals.contains(name)) return this.fileCall(b, name, &.{});
-        // An imported `pub val` (decision 139): the owner's exported 0-arity
+        // An imported `pub val` (decision 140): the owner's exported 0-arity
         // function, called where it is read. A local of the same name wins.
         if (!this.locals.contains(name)) if (this.imported_vals.get(name)) |iv| return b.remote(iv.owner, iv.name, &.{});
         // A top-level `fn` named as a value (`apply(one)`, `xs.map(inc)`):

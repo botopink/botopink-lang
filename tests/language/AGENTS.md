@@ -34,11 +34,11 @@ second item), `import_group_modifier` (`*` on a node that opens braces) and `imp
 Front 24's type aliases (decision 118 rule 1) add `run/type_alias` — `Id`, `Pair<A, B>`, `Ids` and
 an `@Result` alias typing a function that only passes the value along, on all four targets — and
 `modules/import_type_alias` — a `pub` alias imported like a type, the types its target names with it.
-Decision 139 adds `modules/pub_val_across_modules` — a module-level `pub val` of a record, an enum,
+Decision 140 adds `modules/pub_val_across_modules` — a module-level `pub val` of a record, an enum,
 an array, a primitive and a lambda imported from a sibling, one under an alias, read from `main`, a
 function and a method; the module bodies of `base` (imported only by `config`) and `config` run
 before `main`, dependencies first, and a val read twice is evaluated once — on all four targets.
-Decision 140 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
+Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
 | `run.sh` | the runner | — |

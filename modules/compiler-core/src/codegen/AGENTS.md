@@ -99,7 +99,7 @@ codegen/
   on a reassigned `const` is what made decision 38 a compile-time rule; the
   front's problem program prints `2` on node.
   A `pub val` is followed by `exports.<name> = <binding>;` (`valExport`), as a
-  `pub fn` is (decision 139): the importer's `require` destructures it by
+  `pub fn` is (decision 140): the importer's `require` destructures it by
   name, and read `undefined` before.
 - **`@print` / `@println` / `@debug`** (decision 8 §7, `buildPrintCall`) lower to
   the on-demand prelude helper `__bp_print(a, b)`, not to `console.log`: each
@@ -1351,13 +1351,13 @@ codegen/
   (`cachedValueExpr`) — node-wide, like the module-level binding it stands for,
   not per process. `'_botopink_init'/0` is exported: a module with neither
   `main/0` nor tests has nothing that calls it locally, and erlc would report it
-  unused. An importing program's entry calls it (decision 139): the driver
+  unused. An importing program's entry calls it (decision 140): the driver
   walks `crossModule.importClosure` — every module the entry imports,
   transitively, dependencies first — and `'_botopink_main'/0` (or the test
   runner's `main/1`, `testRunnerForms(…, import_inits, …)`) calls
   `<dep>:'_botopink_init'()` for each one that has a body (`moduleHasInit`)
   before its own, which is the order `require` gives commonJS.
-- **A module-level `pub val` crosses modules** (decision 139): the owner exports
+- **A module-level `pub val` crosses modules** (decision 140): the owner exports
   its 0-arity reader `name/0` beside its `pub fn`s, and an importer reads it as
   `owner:name()` (`imported_vals`, keyed by the local name so an `as` alias
   reaches the declared one; a call of an imported val holding a fun applies
@@ -1718,7 +1718,7 @@ codegen/
   `'_botopink_init'/0` (`emitInitFunction`, `moduleHasInit`), and the entry's
   `'_botopink_main'/0` `call_ext`s it for every module it imports, transitively,
   dependencies first (`import_inits`, from `crossModule.importClosure`) —
-  decision 139; before, a library module's `_` statements never ran and its
+  decision 140; before, a library module's `_` statements never ran and its
   effectful `val`s ran at their first read, after `main` had started.
 - **A read or a call the emit cannot place asks the value** (decision 21;
   05-wasm step 9's beam row, `modules/{field,method,type}_name_collision`):

@@ -472,7 +472,7 @@ fn emitProgramOptsX(
                 }
                 try items.append(arena_alloc, .{ .stmt = try em.buildValDecl(v) });
                 // A module-level `pub val` is readable from an importing module
-                // (decision 139; the module body is evaluated once, in order, at
+                // (decision 140; the module body is evaluated once, in order, at
                 // load) — the importer's `require` destructures it by name, so
                 // the owner exports it the way it exports a `pub fn`.
                 if (v.isPub) try items.append(arena_alloc, .{ .stmt = try em.valExport(v.name) });

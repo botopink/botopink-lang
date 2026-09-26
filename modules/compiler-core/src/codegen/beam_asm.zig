@@ -390,7 +390,7 @@ fn exprCanHaveEffect(e: ast.Expr) bool {
 /// A synthetic statement that only calls `main()` — the entrypoint wrapper
 /// already does, so it is not run a second time. Mirrors the erlang backend's
 /// `isSyntheticMainEntrypointCall`.
-/// True when `program` has a module body its importers run (decision 139): no
+/// True when `program` has a module body its importers run (decision 140): no
 /// `main/0` of its own, and a `_` statement or an effectful named `val` — the
 /// `entry_stmts` `emitBeamAsm` collects. Such a module exports
 /// `'_botopink_init'/0` (`emitInitFunction`).
@@ -1655,7 +1655,7 @@ fn emitBeamAsm(
         try em.reserveFn("'_botopink_main'", 0);
         try em.reserveFn("main", 1);
     }
-    // Decision 139 — a module without `main/0` runs its body when a program
+    // Decision 140 — a module without `main/0` runs its body when a program
     // that imports it starts: `'_botopink_init'/0`, called by the entry.
     const emit_init = !has_main_0 and em.entry_stmts.items.len > 0;
     if (emit_init) try em.reserveFn("'_botopink_init'", 0);
@@ -2071,7 +2071,7 @@ const Emitter = struct {
     entry_stmts: std.ArrayListUnmanaged(ast.ValDecl) = .empty,
     /// The module atoms whose `'_botopink_init'/0` `'_botopink_main'/0` calls
     /// before its own body — every module this one imports, transitively,
-    /// that has a body (`moduleHasInit`), dependencies first (decision 139).
+    /// that has a body (`moduleHasInit`), dependencies first (decision 140).
     import_inits: std.ArrayListUnmanaged([]const u8) = .empty,
     /// Locals (and string-typed params) bound to a `string` in the frame being
     /// lowered — `isStringExpr` reads it to tell a string `+` from arithmetic.
@@ -4450,7 +4450,7 @@ const Emitter = struct {
             }
             self.num_y = n;
             try self.emitFrame(0);
-            // Decision 139 — the imported modules' bodies first.
+            // Decision 140 — the imported modules' bodies first.
             for (self.import_inits.items) |dep| {
                 try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = dep, .function = "'_botopink_init'" } }, 0);
             }
@@ -4479,7 +4479,7 @@ const Emitter = struct {
 
     /// `'_botopink_init'/0` of a module without `main/0`: its body — the `_`
     /// statements and the effectful named `val`s' readers, in source order —
-    /// run once by the entry of a program that imports it (decision 139).
+    /// run once by the entry of a program that imports it (decision 140).
     fn emitInitFunction(self: *Emitter) !void {
         const labels = try self.fnLabelsFor("'_botopink_init'", 0);
         try beamEmitter.writeBlankLine(self.out);
@@ -6622,7 +6622,7 @@ const Emitter = struct {
     /// text), is compiled at build time into a helper function of this module
     /// (`compiledTemplate`) and the operands are staged into its arguments.
     /// A template the reader or the lowering refuses is a build error naming
-    /// the construct (`error.TemplateRefused`, decision 140) — there is no
+    /// the construct (`error.TemplateRefused`, decision 141) — there is no
     /// run-time evaluation of Erlang source. `exprs` starts with the receiver
     /// when `has_recv`.
     fn evalTemplate(self: *Emitter, template_raw: []const u8, has_recv: bool, exprs: []const ast.Expr, trailing: anytype, mode: CallMode) anyerror!void {

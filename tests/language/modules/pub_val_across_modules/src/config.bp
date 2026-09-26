@@ -1,4 +1,4 @@
-//// Module-level `pub val`s of every kind, read by `main` (decision 139: the
+//// Module-level `pub val`s of every kind, read by `main` (decision 140: the
 //// module body is evaluated once, in order, when the module loads).
 
 import {unit} from "base";

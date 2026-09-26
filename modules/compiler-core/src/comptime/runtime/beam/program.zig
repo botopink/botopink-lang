@@ -213,7 +213,7 @@ test "beam lowering: a module assembled without erlc answers what erlc's build o
     try std.testing.expect(std.mem.indexOf(u8, ok.listing, "{call_ext, 1, {extfunc, lists, reverse, 1}}") != null);
 }
 
-/// Decision 140's constructs — `receive` (selective, guarded, `after 0`,
+/// Decision 141's constructs — `receive` (selective, guarded, `after 0`,
 /// `after` alone, in a named `fun` loop), `!`, the old `catch Expr` of each
 /// class, `try … of` (a match, no match, a raise inside an `of` clause),
 /// `try … after` (the value path and the re-raise path) and a binary pattern

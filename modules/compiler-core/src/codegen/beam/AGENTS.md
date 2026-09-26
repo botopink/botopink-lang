@@ -91,7 +91,7 @@ expression that is not a guard BIF, operator, variable or literal, a stack
 pattern that is not a variable, a call to a function the module neither
 defines, imports nor auto-imports (`erl_internal:bif/2`'s whole list; `erlc`
 refused it too). `receive` (with `after`), `!`, the old `catch Expr`,
-`try … of` and `try … after` are lowered (decision 140; `lower.zig`'s header
+`try … of` and `try … after` are lowered (decision 141; `lower.zig`'s header
 and `../../comptime/runtime/AGENTS.md` say how).
 
 ## `@External.Erlang` templates compiled at build time (BR5, C-24)
@@ -120,13 +120,13 @@ form, a primitive method's template reached through `primErlangTemplate`) — is
   `call`s it. One helper per distinct template text and arity per module
   (`template_fns`, set aside per type unit like the other helper caches).
 
-**Nothing reaches a run-time evaluator (decision 140).** A template the reader
+**Nothing reaches a run-time evaluator (decision 141).** A template the reader
 or the lowering refuses is a build error at its call site, naming the
 function and the construct (`` `f`'s `#[@External.Erlang(…)]` template does
 not compile for the beam backend: … ``), and `'__bp_erl_eval'/2` is gone.
 **Measured 2026-09-26** by `../tests/beam_templates.zig`, which lowers every
 Erlang template `libs/std` (its modules and `primitives.bp`) and the bundled
-libraries ship: before decision 140, 169 of 177 lowered and 8 kept the
+libraries ship: before decision 141, 169 of 177 lowered and 8 kept the
 run-time path (`async`'s `spawnAll`/`raceOf` — `!`, `receive`; `json.unquote`
 and `encoding.percentDecode` — `try … of`; `io/http`'s `fetch` — `catch Expr`;
 `io/random`'s `uuidV4` — an integer-field binary pattern; `io/process`'s

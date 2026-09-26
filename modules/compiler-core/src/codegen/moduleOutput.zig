@@ -87,7 +87,7 @@ pub const MissingExternal = struct {
     loc: @FieldType(comptimeMod.TypeError, "loc") = null,
     /// Set when the target exists but its `#[@External.Erlang]` template does
     /// not compile for the beam backend: the construct the reader or the
-    /// lowering refused, by name (decision 140).
+    /// lowering refused, by name (decision 141).
     refusal: ?[]const u8 = null,
 
     /// This as the diagnostic a failed module carries. The message is owned by
