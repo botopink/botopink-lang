@@ -175,7 +175,7 @@ test "format: comments ---- multiline inside case block" {
         \\        [_, ..rest] -> rest |> do_len(acc + 1);
         \\        // Even the opposite wouldn't be optimised:
         \\        // { acc + 1 } |> do_len(rest, _);
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -249,7 +249,7 @@ test "format: comments ---- an else-branch keeps a blank line between statements
         \\        n = 3;
         \\
         \\        n = 4;
-        \\    };
+        \\    }
         \\    return n;
         \\}
     );
@@ -265,7 +265,7 @@ test "format: comments ---- an else-branch keeps a trailing comment on its line"
         \\    } else {
         \\        n = 3; // why three
         \\        n = 4;
-        \\    };
+        \\    }
         \\    return n;
         \\}
     );
@@ -327,7 +327,7 @@ test "format: comments ---- a loop body keeps a blank line and a comment" {
         \\
         \\        // the second half
         \\        n = n + 1;
-        \\    };
+        \\    }
         \\    return n;
         \\}
     );
@@ -342,7 +342,7 @@ test "format: comments ---- an if then-branch keeps a blank line and a comment" 
         \\
         \\        // and then
         \\        n = 2;
-        \\    };
+        \\    }
         \\    return n;
         \\}
     );
@@ -362,13 +362,13 @@ test "format: comments ---- all three blocks of one `if`/`loop` keep theirs at o
         \\
         \\        // else-branch
         \\        n = 4;
-        \\    };
+        \\    }
         \\    for (xs) { x ->
         \\        n = n + x;
         \\
         \\        // loop body
         \\        n = n + 1;
-        \\    };
+        \\    }
         \\    return n;
         \\}
     );

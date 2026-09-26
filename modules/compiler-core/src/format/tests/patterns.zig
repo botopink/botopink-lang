@@ -14,7 +14,7 @@ test "format: case ---- wildcard and ident" {
         \\        case status {
         \\            0 -> "zero";
         \\            _ -> "nonzero";
-        \\        };
+        \\        }
         \\    }
         \\};
     );
@@ -27,7 +27,7 @@ test "format: case ---- variant with field bindings" {
         \\        case color {
         \\            Red -> "#FF0000";
         \\            Rgb(r, g, b) -> toHex(r, g, b);
-        \\        };
+        \\        }
         \\    }
         \\};
     );
@@ -41,7 +41,7 @@ test "format: case ---- list patterns with spread" {
         \\            [] -> "empty";
         \\            [x] -> "one item";
         \\            [first, ..rest] -> "starts with " + first;
-        \\        };
+        \\        }
         \\    }
         \\};
     );
@@ -55,7 +55,7 @@ test "format: case ---- OR patterns" {
         \\            0 | 2 | 4 | 6 | 8 -> "even digit";
         \\            1 | 3 | 5 | 7 | 9 -> "odd digit";
         \\            _ -> "not a digit";
-        \\        };
+        \\        }
         \\    }
         \\};
     );
@@ -69,7 +69,7 @@ test "format: case ---- guard clauses" {
         \\            x if x > 0 -> "positive";
         \\            0 -> "zero";
         \\            _ -> "negative";
-        \\        };
+        \\        }
         \\    }
         \\};
     );
@@ -166,7 +166,7 @@ test "format: case ---- simple" {
         \\    case 1 {
         \\        1 -> 1;
         \\        _ -> 0;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -183,7 +183,7 @@ test "format: case ---- block body" {
         \\            2;
         \\        }
         \\        _ -> 1;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -210,7 +210,7 @@ test "format: case ---- decision 8 arms" {
         \\        _ { n ->
         \\            n;
         \\        }
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -221,7 +221,7 @@ test "format: case ---- multiple subjects" {
         \\    case 1, 2, 3, 4 {
         \\        1, 2, 3, 4 -> 1;
         \\        _, _, _, _ -> 0;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -231,7 +231,7 @@ test "format: case ---- alternative patterns" {
         \\fn main() {
         \\    case 1 {
         \\        1 | 2 | 3 -> null;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -245,7 +245,7 @@ test "format: case ---- nested case" {
         \\            _ -> 0;
         \\        };
         \\        _ -> 1;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -258,7 +258,7 @@ test "format: case ---- fn body" {
         \\            x;
         \\        };
         \\        _ -> 1;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -272,7 +272,7 @@ test "format: case ---- with empty lines between arms" {
         \\        2 -> 3;
         \\
         \\        _ -> 0;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -282,7 +282,7 @@ test "format: complex ---- case with long message" {
         \\fn main() {
         \\    case x {
         \\        _ -> [123];
-        \\    };
+        \\    }
         \\}
     );
 }

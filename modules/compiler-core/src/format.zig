@@ -559,13 +559,53 @@ pub const Formatter = struct {
                 try items.append(this.arena, this.hardline());
             }
             const exprDoc = try this.fmtExpr(s.expr);
-            const stmtDoc = switch (s.expr) {
-                .literal => |lit| if (lit.kind == .comment) exprDoc else try this.concat(exprDoc, try this.text(";")),
-                else => try this.concat(exprDoc, try this.text(";")),
-            };
-            try items.append(this.arena, stmtDoc);
+            try items.append(this.arena, try this.terminated(s.expr, exprDoc));
         }
         return this.concatAll(items.items);
+    }
+
+    /// A statement and what ends it: nothing for a comment and for a **braced
+    /// block statement** — an `if` (not `a ?? b`), a loop or a `case` whose
+    /// printed text ends in `}` (decision 29 (c), C-13) — and `;` for every
+    /// other statement. The test is the printed closing brace, exactly as the
+    /// parser's `isBracedBlockStmt` tests the last token: `if (c) return x;`
+    /// keeps its `;`, and so does an `if` whose last branch came out bare.
+    fn terminated(this: *Formatter, expr: ast.Expr, doc: *const Doc) !*const Doc {
+        const bare = switch (expr) {
+            .literal => |lit| lit.kind == .comment,
+            .branch => |b| b.kind == .if_ and nullishDefaultFallback(b.kind.if_) == null and lastChar(doc) == .closeBrace,
+            .loop => lastChar(doc) == .closeBrace,
+            .collection => |c| c.kind == .case and lastChar(doc) == .closeBrace,
+            else => false,
+        };
+        return if (bare) doc else this.concat(doc, try this.text(";"));
+    }
+
+    const LastChar = enum { empty, closeBrace, other, unknown };
+
+    /// The last character a document prints, as far as it can be known
+    /// without rendering: a `widthChoice` whose two spellings end alike, text
+    /// through any `concat` / `nest` / `group`. A line break or an `ifBreak`
+    /// at the end is `unknown`, and an unknown end keeps its `;` — which always
+    /// parses.
+    fn lastChar(doc: *const Doc) LastChar {
+        return switch (doc.*) {
+            .nil, .markColumn, .alignToMark => .empty,
+            .text => |t| if (t.len == 0) .empty else if (t[t.len - 1] == '}') .closeBrace else .other,
+            .line, .softline, .hardline => .unknown,
+            .ifBreak => |t| if (t.len == 0) .empty else .unknown,
+            .concat => |c| switch (lastChar(c.right)) {
+                .empty => lastChar(c.left),
+                else => |r| r,
+            },
+            .nest => |n| lastChar(n.doc),
+            .group => |g| lastChar(g.doc),
+            .forceBreak => |d| lastChar(d),
+            .widthChoice => |w| blk: {
+                const a = lastChar(w.flat);
+                break :blk if (a == lastChar(w.broken)) a else .unknown;
+            },
+        };
     }
 
     fn fmtOptionalBody(this: *Formatter, body: ?[]ast.Stmt) !*const Doc {
@@ -1098,8 +1138,7 @@ pub const Formatter = struct {
                 .comptimeBlock => |cb| blk: {
                     var items = try this.arena.alloc(*const Doc, cb.body.len);
                     for (cb.body, 0..) |s, i| {
-                        const exprDoc = try this.fmtExpr(s.expr);
-                        items[i] = try this.concat(exprDoc, try this.text(";"));
+                        items[i] = try this.terminated(s.expr, try this.fmtExpr(s.expr));
                     }
                     const inner = try this.join(items, this.hardline());
                     break :blk this.concat(
