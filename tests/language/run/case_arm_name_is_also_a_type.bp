@@ -19,15 +19,16 @@
 //// named types is still the type test, so a fix that simply deleted the class
 //// test would fail here too.
 ////
-//// One neighbouring collision is deliberately NOT here, for want of an owner
-//// row: on wasm, a SECTION whose name also names a record (`Size { Small,
-//// Large }` beside a `type Size(px: i32)`) makes `.Layout.Size.Large` answer
-//// the FIRST arm of the section's parent — `display:block` — where commonJS
-//// and erlang answer `font-size:large`. Reported to the maintainer; this cell
-//// stays green on all four.
+//// The neighbouring collision is here too: a SECTION whose name also names a
+//// record (`Size { Small, Large }` beside `type Size(px: i32)`). wasm built the
+//// RECORD for `.Layout.Size.Large`, so the value answered the first arm of the
+//// section's parent — `display:block` — where commonJS and erlang answer
+//// `font-size:large`; it takes the enum's variant since 1.0.10-beta
+//// `00 · 05-wasm` (a variant reached through its enum is the enum's).
 
 type Block(size: i32)
 type Vec(x: i32)
+type Size(px: i32)
 
 type Token {
     Layout {

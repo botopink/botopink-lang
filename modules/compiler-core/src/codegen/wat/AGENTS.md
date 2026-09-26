@@ -471,6 +471,10 @@ answered, and each had its own `expected-failures.txt` line:
   declaration of the method (`lowerBehaviorLit` → `expected_params`), and the
   call's result is judged by the lambda's body (`fieldLambdaCallIsString`) — it
   printed the string's address.
+- **A variant reached through its enum is the enum's** (`callKind`):
+  `__Token__Layout.Size(…)` — what a section path desugars to — built the
+  RECORD `Size` when one of that name was in scope, and `.Layout.Size.Large`
+  answered the section's first arm (`display:block`).
 - **A `_`-named top-level statement runs at module load**, in `$__init_globals`
   in source order with the named `val`s (`deferred_stmts`); it was dropped. A
   synthetic statement that only calls `main()` is skipped, as on the BEAM.

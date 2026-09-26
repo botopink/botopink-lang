@@ -2546,6 +2546,13 @@ const Emitter = struct {
 
     fn callKind(self: *Emitter, cc: anytype) CallKind {
         if (cc.is_builtin) return .builtin;
+        // A variant reached through its enum (`__Token__Layout.Size(…)`, what a
+        // section path desugars to) is that enum's, even when a record of the
+        // same name is in scope (`type Size(px: i32)`): it used to build the
+        // record, and `.Layout.Size.Large` answered the section's first arm.
+        if (receiverName(cc)) |rcv| if (self.enums.get(rcv)) |vs| {
+            for (vs) |v| if (std.mem.eql(u8, v.name, cc.callee)) return .enum_ctor;
+        };
         if (self.records.contains(cc.callee)) return .record_ctor;
         if (receiverName(cc)) |rcv| {
             if (self.enums.contains(rcv)) return .enum_ctor;
