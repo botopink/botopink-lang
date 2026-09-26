@@ -62,8 +62,11 @@ neither wasm nor beam has a host vocabulary for these templates),
 methods naming `$0` and `$1`/`$2`, one called from a bodied method on `self`, the `(module, symbol)`
 form, `inline = true`, an enum's host method — on commonJS, erlang and beam, refused on wasm by
 `.wasm.expect`; `run/external_method_erlang_only` — bound to Erlang only, refused where it is CALLED on
-commonJS and wasm; `modules/external_method_imported` — the method on an IMPORTED type, answered by
-its owner, with `wasm.expect`),
+commonJS and wasm; `run/external_method_on_host_record` — a host method on a record the HOST built,
+adopted directly, through `@Result` and through an array, and a lambda-parameter receiver whose
+method shares `name/arity` with a module function (`.targets commonJS erlang`, as
+`external_host_record`'s); `modules/external_method_imported` — the method on an IMPORTED type,
+answered by its owner, with `wasm.expect`),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets),
 `lambda_rebinds_case_binders` (front 24, beam: a lambda's own `case` binder, `val` and `for`
 element are not captured from the enclosing frame — `make_fun3` had read the unassigned y-register
@@ -413,9 +416,9 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 | `modules/<name>/<target>.expect` | the `.<target>.expect` claim for a whole project: that target **refuses** it | exit ≠ 0 and the diagnostic contains line 1 (and ` --> <line 2>` when present — `src/<file>.bp:<L:C>`, the file named because a project has several). `modules/external_method_imported/wasm.expect` is the live one |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **Five cells carry
-`.targets`** (`external_host_record`, `optional_length_method`, `std_default_fn_in_a_std_module`,
-`string_char_code_after_slice` and `variant_name_ambiguous`). The one the paragraph below was written about is
+Any other content in `.exit` is a malformed claim and fails the cell. **Six cells carry
+`.targets`** (`external_host_record`, `external_method_on_host_record`, `optional_length_method`,
+`std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `variant_name_ambiguous`). The one the paragraph below was written about is
 `run/string_char_code_after_slice.bp`, which names `commonJS erlang` because
 `String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
 (`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it

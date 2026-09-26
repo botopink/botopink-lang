@@ -613,6 +613,38 @@ fn isTaskOfResult(rt: ?ast.TypeRef) bool {
     return inner == .generic and inner.generic.is_builtin and std.mem.eql(u8, inner.generic.name, "Result");
 }
 
+/// The record a host declaration's return type names, and the containers the
+/// adoption walks to reach it (`jsPrelude.Helper.adopt`'s path: `a` an array,
+/// `r` an `@Result`'s ok side; `?T` is walked for free, `null` passes). The
+/// commonJS twin of erlang's `recordNameOfReturn`. `@Task` is not looked
+/// through: its answer arrives later, through `__bp_host_task`.
+const AdoptTarget = struct { rec: []const u8, path: []const u8 };
+
+fn adoptTargetOf(buf: *[16]u8, t: ast.TypeRef, depth: usize) ?AdoptTarget {
+    if (depth >= buf.len) return null;
+    return switch (t) {
+        .named => |n| .{ .rec = n, .path = buf[0..depth] },
+        .optional => |inner| adoptTargetOf(buf, inner.*, depth),
+        .array => |inner| {
+            buf[depth] = 'a';
+            return adoptTargetOf(buf, inner.*, depth + 1);
+        },
+        .generic => |g| {
+            if (g.args.len == 0) return null;
+            if (std.mem.eql(u8, g.name, "Array")) {
+                buf[depth] = 'a';
+                return adoptTargetOf(buf, g.args[0], depth + 1);
+            }
+            if (g.is_builtin and std.mem.eql(u8, g.name, "Result")) {
+                buf[depth] = 'r';
+                return adoptTargetOf(buf, g.args[0], depth + 1);
+            }
+            return null;
+        },
+        else => null,
+    };
+}
+
 /// The operand of a transform-inserted `__bp_ok(<v>)` wrap, or null.
 fn okWrapOperand(e: ast.Expr) ?ast.Expr {
     if (e != .call or e.call.kind != .call) return null;
@@ -1152,6 +1184,10 @@ const Emitter = struct {
     /// goes through `__bp_host_task`, so a rejection becomes `Error(e)`.
     host_task_externals: std.StringHashMap(void) = undefined,
     host_task_externals_init: bool = false,
+    /// Every host-backed `declare fn`'s declared return type, by name, for the
+    /// call-site adoption (`adoptHost`). Arena-backed, set up with
+    /// `host_task_externals`.
+    host_returns: std.StringHashMap(ast.TypeRef) = undefined,
     /// The innermost `loop` whose body is being built, which is what a
     /// `break` / `continue` / accumulator `yield` binds to. Reset to `.none`
     /// wherever a JS function boundary starts (an arrow, an IIFE), because a
@@ -1576,12 +1612,14 @@ const Emitter = struct {
     fn collectExternals(self: *Emitter, program: ast.Program) !void {
         if (!self.host_task_externals_init) {
             self.host_task_externals = std.StringHashMap(void).init(self.arena());
+            self.host_returns = std.StringHashMap(ast.TypeRef).init(self.arena());
             self.host_task_externals_init = true;
         }
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| {
                 if (!f.isExternal()) continue;
                 if (isTaskOfResult(f.returnType)) try self.host_task_externals.put(f.name, {});
+                if (f.returnType) |rt| try self.host_returns.put(f.name, rt);
                 // §A2 arity-branched template: `when(argc == N): "<tmpl>"`.
                 if (ast.externalHasArityBranches(f.annotations, "node")) {
                     var branches: std.ArrayList(ast.ArityBranch) = .empty;
@@ -1910,6 +1948,24 @@ const Emitter = struct {
         ) } });
     }
 
+    /// `__bp_adopt(<value>, <Record>, "<path>")` when a host declaration's
+    /// return type names a record class this module can reach (declared here or
+    /// imported), else `value` untouched — the boundary adoption `docs.md`
+    /// § Host bindings describes, so a host-built record carries its type's
+    /// methods (a host-backed method on `Regex` answers on the object
+    /// `compile` built) and prints as the record. erlang's `adoptHostResult`.
+    fn adoptHost(self: *Emitter, ret: ?ast.TypeRef, value: js.Expr) !js.Expr {
+        const rt = ret orelse return value;
+        var buf: [16]u8 = undefined;
+        const target = adoptTargetOf(&buf, rt, 0) orelse return value;
+        if (!self.class_names.contains(target.rec)) return value;
+        return self.b.call(self.helper(.adopt), &.{
+            value,
+            .{ .name = target.rec },
+            .{ .quoted = try self.arena().dupe(u8, target.path) },
+        });
+    }
+
     /// A host-backed method (`hostMethods`) as a class member whose body is its
     /// `#[@External.Node(…)]` binding applied to the member's own parameters —
     /// the method twin of `buildTemplateWrapper`, so every call site
@@ -1957,7 +2013,8 @@ const Emitter = struct {
         };
         // Decision 126 — a `-> @Task<@Result<T, E>>` host method settles a
         // rejection as `Error(e)`, as the module-level form does.
-        const wrapped = if (isTaskOfResult(m.returnType)) try self.b.call(self.helper(.host_task), &.{value}) else value;
+        const adopted = try self.adoptHost(m.returnType, value);
+        const wrapped = if (isTaskOfResult(m.returnType)) try self.b.call(self.helper(.host_task), &.{adopted}) else adopted;
         return .{
             .kind = if (has_self and !in_enum) .method else .static_method,
             .name = m.name,
@@ -1993,7 +2050,8 @@ const Emitter = struct {
         } else {
             const value = try self.renderParamTemplate(call.symbol, &holes, names.items.len) orelse return null;
             // Decision 126 — the exported face of a `-> @Task<@Result<…>>` host fn.
-            const wrapped = if (isTaskOfResult(f.returnType)) try self.b.call(self.helper(.host_task), &.{value}) else value;
+            const adopted = try self.adoptHost(f.returnType, value);
+            const wrapped = if (isTaskOfResult(f.returnType)) try self.b.call(self.helper(.host_task), &.{adopted}) else adopted;
             try body.append(self.arena(), .{ .return_ = wrapped });
         }
         return .{ .function = .{
@@ -4412,7 +4470,13 @@ const Emitter = struct {
     }
 
     fn buildCall(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
-        const out = try self.buildCallRaw(loc, cc);
+        const raw = try self.buildCallRaw(loc, cc);
+        // A host-backed `declare fn` of this module whose return names a record.
+        const out = if (!cc.is_builtin and cc.receiver == null and self.host_task_externals_init and
+            (self.user_node_templates.contains(cc.callee) or self.externals.contains(cc.callee)))
+            (if (self.host_returns.get(cc.callee)) |rt| try self.adoptHost(rt, raw) else raw)
+        else
+            raw;
         // Decision 126 — a host call declared `-> @Task<@Result<T, E>>`.
         if (!cc.is_builtin and cc.receiver == null and self.host_task_externals_init and
             self.host_task_externals.contains(cc.callee))

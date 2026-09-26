@@ -66,6 +66,14 @@ pub const Helper = enum {
     /// Promise resolves with `{ ok: v }`, and a rejection resolves with
     /// `{ error: <message> }` instead of rejecting.
     host_task,
+    /// A host answer adopted into the record class its declaration names
+    /// (`docs.md` § Host bindings: "a plain object … is adopted into the record
+    /// the declaration names"): `__bp_adopt(v, C, path)` gives a plain object
+    /// `C`'s prototype — its methods and its `__bp` marker — keeping its fields,
+    /// and leaves an instance of `C` (or `null`) as it is. `path` walks the
+    /// containers the declaration looks through, one letter each: `a` an
+    /// array, `r` an `@Result`'s ok side.
+    adopt,
     /// `seq.next()` by hand (decision 122): a JS generator step `{ value, done }`
     /// as the prelude enum `YieldStep` — `Yield(value)`, or `Done` once the
     /// generator finished. The module declares `YieldStep` (the checker splices
@@ -74,7 +82,7 @@ pub const Helper = enum {
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .string_char_at, .array_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .yield_step };
+pub const order = [_]Helper{ .assert_fatal, .string_char_at, .array_at, .range_from, .structural_eq, .show, .print, .print_as, .try_unwrap, .host_task, .adopt, .yield_step };
 
 /// The receiver family of a primitive method call, as inference recorded it.
 pub const Receiver = enum { string, array, other };
@@ -107,6 +115,7 @@ pub fn name(h: Helper) []const u8 {
         .structural_eq => "__bp_eq",
         .try_unwrap => "__bp_try",
         .host_task => "__bp_host_task",
+        .adopt => "__bp_adopt",
         .yield_step => "__bp_yield_step",
     };
 }
@@ -124,6 +133,7 @@ pub fn decl(h: Helper) ast.Stmt {
         .structural_eq => structural_eq,
         .try_unwrap => try_unwrap,
         .host_task => host_task,
+        .adopt => adopt,
         .yield_step => yield_step,
     };
 }
@@ -196,6 +206,13 @@ const host_task: ast.Stmt = .{ .function = .{
             } } } }} } } } } } },
         },
     } } }}, .layout = .spaced },
+} };
+
+/// `function __bp_adopt(v, C, p) { return … }` — see `Helper.adopt`.
+const adopt: ast.Stmt = .{ .function = .{
+    .name = "__bp_adopt",
+    .params = &.{ .{ .pattern = .{ .name = "v" } }, .{ .pattern = .{ .name = "C" } }, .{ .pattern = .{ .name = "p" } } },
+    .body = .{ .stmts = &.{.{ .return_ = .{ .host = &.{.{ .text = "(v == null) ? v : (p === \"\") ? ((typeof v === \"object\" && !(v instanceof C)) ? Object.assign(Object.create(C.prototype), v) : v) : (p[0] === \"a\") ? (Array.isArray(v) ? v.map((e) => __bp_adopt(e, C, p.slice(1))) : v) : (p[0] === \"r\" && typeof v === \"object\" && \"ok\" in v) ? { ok: __bp_adopt(v.ok, C, p.slice(1)) } : v" }} } }}, .layout = .spaced },
 } };
 
 const yield_step_class: ast.Expr = .{ .name = "YieldStep" };

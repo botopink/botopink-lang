@@ -4332,7 +4332,9 @@ const Emitter = struct {
             },
             .type_ => |tdecl| for (tdecl.methods) |m| {
                 try self.putLocalFn(m.name, m.params.len);
-                if (m.is_declare) continue;
+                // A host-backed method with an erlang binding is a function of
+                // its type's module like a bodied one (`hostMethodForms`).
+                if (m.is_declare and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .erlang))) continue;
                 try self.putMethodOwner(m.name, m.params.len, tdecl.name);
             },
             .implement => |im| for (im.methods) |m| try self.putLocalFn(m.name, m.params.len),

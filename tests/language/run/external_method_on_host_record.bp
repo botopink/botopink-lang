@@ -1,0 +1,47 @@
+//// A host-backed method called on a record the HOST built. The host answers a
+//// plain object (Node) or a map (Erlang) and the boundary adopts it into the
+//// record its declaration names — decision 21's T2 on erlang, and on commonJS
+//// the record's class, whose prototype carries the methods: before the method
+//// form existed a host-built record was only ever read field by field there,
+//// so a plain object was enough and `r.at(1)` answered `… is not a function`.
+//// Adopted directly, through `@Result` and element by element through an
+//// array, like `run/external_host_record`.
+////
+//// `at` is ALSO the name of a module function taking two arguments — the
+//// method's `at/2` in the type's module and the file's `at/2` must not be
+//// confused where the receiver is a lambda parameter.
+////
+//// `.targets` is `commonJS erlang`, as `run/external_host_record`'s: beam
+//// adopts no host map yet and wasm has no host.
+
+pub type Pair(a: i32, b: i32) {
+    #[@External.Node("""($1 === 0 ? $0.a : $0.b)"""),
+      @External.Erlang("""element($1 + 2, $0)""")]
+    pub declare fn at(self: Self, i: i32) -> i32;
+}
+
+pub fn at(xs: i32[], i: i32) -> i32 {
+    return xs.length + i;
+}
+
+#[@External.Node("""({ a: $0, b: $1 })"""),
+  @External.Erlang("""#{a => $0, b => $1}""")]
+declare fn hostPair(a: i32, b: i32) -> Pair;
+
+#[@External.Node("""({ ok: { a: $0, b: $1 } })"""),
+  @External.Erlang("""{ok, #{a => $0, b => $1}}""")]
+declare fn hostPairResult(a: i32, b: i32) -> @Result<Pair, string>;
+
+#[@External.Node("""[{ a: 1, b: 2 }, { a: 3, b: 4 }]"""),
+  @External.Erlang("""[#{a => 1, b => 2}, #{a => 3, b => 4}]""")]
+declare fn hostPairs() -> Pair[];
+
+pub fn main() {
+    @print(hostPair(5, 6).at(1));
+    @print(hostPairResult(7, 8).map({ p -> p.at(0) }).unwrapOr(-1));
+    var total = 0;
+    for (hostPairs()) { p -> total = total + p.at(1); };
+    @print(total);
+    @print(at([1, 2], 10));
+    @print(hostPair(1, 2));
+}
