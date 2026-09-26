@@ -588,11 +588,11 @@ test "completion: @Task receiver offers map and then" {
 test "completion: std module member after import from std" {
     const gpa = std.testing.allocator;
     const source =
-        \\import {order} from "std";
-        \\val xs = order.
+        \\import {collections} from "std";
+        \\val xs = collections.
     ;
-    // Cursor right after `order.` (line 1, char 15).
-    const cursor = h.pos(1, 15);
+    // Cursor right after `collections.` (line 1, char 21).
+    const cursor = h.pos(1, 21);
     const items = try engine.completion(gpa, source, cursor, &.{});
     defer {
         for (items) |it| {

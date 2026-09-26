@@ -2,7 +2,7 @@
 //// its declared name on every backend (the record shape, the class, the type
 //// module), so an alias on a type leaf is refused rather than bound half-way.
 
-import {dict.Dict as D} from "std";
+import {collections.Dict as D} from "std";
 
 pub fn main() {
     @print(1);

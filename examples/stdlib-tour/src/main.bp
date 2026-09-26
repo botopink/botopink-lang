@@ -1,19 +1,21 @@
 // stdlib-tour — a runnable tour of the `.bp` standard library collections,
-// consumed the way an application does: `import {…} from "std"` with qualified
-// module calls (`dict.empty()`, `queue.empty()`, `sets.fromList()`, `order.lt()`).
+// consumed the way an application does: `import {…} from "std"`, one group
+// under `collections` (decision 106) — the type is the namespace
+// (`Dict.empty()`, `Queue.empty()`, `Set.fromList()`, decision 111) and the
+// `Order` helpers are leaves of their own (`lt()`, `toInt(…)`).
 //
 // The `test {}` blocks double as the demo's regression suite (B1): the dict /
 // queue / set / order tour, the Array combinators, an Order-driven sort, a Queue
 // BFS, and structural record keys / record-set dedup.
 
-import {dict, queue, sets, order} from "std";
+import {collections: {Dict, Queue, Set, Order, lt, eq, gt, toInt, reverse}} from "std";
 
 type Point(x: i32, y: i32)
 
 // ── tour: dict ────────────────────────────────────────────────────────────────
 
 fn wordCounts() -> Dict<string, i32> {
-    return dict.empty().insert("ann", 1).insert("bob", 2).insert("ann", 3); // right-biased: overwrites
+    return Dict.empty().insert("ann", 1).insert("bob", 2).insert("ann", 3); // right-biased: overwrites
 }
 
 test "dict tour: insert overwrites + at returns Option" {
@@ -26,7 +28,7 @@ test "dict tour: insert overwrites + at returns Option" {
 // ── tour: queue (FIFO) ──────────────────────────────────────────────────────
 
 test "queue tour: fifo order over enqueue/dequeue" {
-    val q = queue.empty().enqueue("a").enqueue("b").enqueue("c");
+    val q = Queue.empty().enqueue("a").enqueue("b").enqueue("c");
     val r1 = q.dequeue();
     assert r1._1.unwrapOr("?") == "a";
     assert r1._0.size() == 2;
@@ -35,8 +37,8 @@ test "queue tour: fifo order over enqueue/dequeue" {
 // ── tour: set ────────────────────────────────────────────────────────────────
 
 test "set tour: fromList dedups + set algebra" {
-    val a = sets.fromList([1, 2, 3]);
-    val b = sets.fromList([2, 3, 4]);
+    val a = Set.fromList([1, 2, 3]);
+    val b = Set.fromList([2, 3, 4]);
     assert a.union(b).size() == 4;
     assert a.intersection(b).size() == 2;
     assert a.difference(b).size() == 1;
@@ -45,8 +47,8 @@ test "set tour: fromList dedups + set algebra" {
 // ── tour: order ──────────────────────────────────────────────────────────────
 
 test "order tour: toInt + reverse" {
-    assert order.toInt(order.lt()) == -1;
-    assert order.toInt(order.reverse(order.lt())) == 1;
+    assert toInt(lt()) == -1;
+    assert toInt(reverse(lt())) == 1;
 }
 
 // ── Array combinators (B1: map/filter/fold std-level) ───────────────────────
@@ -63,13 +65,13 @@ test "array map/filter/fold compose" {
 // `Order` sum type and threads it through an insertion sort.
 
 fn cmpInt(a: i32, b: i32) -> Order {
-    return if (a < b) order.lt() else if (a > b) order.gt() else order.eq();
+    return if (a < b) lt() else if (a > b) gt() else eq();
 }
 
 fn insertSorted(x: i32, sorted: Array<i32>) -> Array<i32> {
     return if (sorted.isEmpty()) [x] else {
         val head = sorted.at(0).unwrapOr(0);
-        if (order.toInt(cmpInt(x, head)) <= 0) [x].append(sorted) else [head].append(
+        if (toInt(cmpInt(x, head)) <= 0) [x].append(sorted) else [head].append(
             insertSorted(x, sorted.slice(1, sorted.length))
         );
     };
@@ -112,8 +114,8 @@ fn bfs(q: Queue<i32>, visited: Set<i32>, acc: Array<i32>) -> Array<i32> {
 }
 
 test "queue BFS: visits the graph in level order" {
-    val start: Queue<i32> = queue.empty().enqueue(0);
-    val seen: Set<i32> = sets.empty();
+    val start: Queue<i32> = Queue.empty().enqueue(0);
+    val seen: Set<i32> = Set.empty();
     val order2 = bfs(start, seen, []);
     assert order2.join(",") == "0,1,2,3,4";
 }
@@ -132,7 +134,7 @@ test "queue BFS: visits the graph in level order" {
 
 test "dict with record keys: identity-keyed (same binding hits, rebuild misses)" {
     val k = Point(x: 1, y: 2);
-    val d: Dict<Point, string> = dict.empty().insert(k, "a");
+    val d: Dict<Point, string> = Dict.empty().insert(k, "a");
     // The very same key value resolves.
     assert d.at(k).unwrapOr("?") == "a";
     // A structurally-equal but freshly-built key misses (reference equality).
@@ -140,7 +142,7 @@ test "dict with record keys: identity-keyed (same binding hits, rebuild misses)"
 }
 
 test "set of records: no structural dedup under reference equality" {
-    val s = sets.fromList([
+    val s = Set.fromList([
             Point(x: 1, y: 1),
             Point(x: 1, y: 1),
             Point(x: 2, y: 2),

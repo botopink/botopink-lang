@@ -17,9 +17,9 @@
 //// answer the bytes read back as UTF-8 (a non-UTF-8 payload is lossy —
 //// `language-gaps.md`).
 ////
-//// `base64.bp` still carries `encode`/`decode`/`encodeUrlSafe`/
-//// `decodeUrlSafe`; front 23 folds it into this file (decision 106) and
-//// the four here are their names in the final registry.
+//// Was also `base64` (decision 106): its `encode`/`decode`/`encodeUrlSafe`/
+//// `decodeUrlSafe` are `base64Encode`/`base64Decode`/`base64UrlEncode`/
+//// `base64UrlDecode` here, and its four tests sit at the foot of this file.
 
 // Standard base64 (RFC 4648 §4) of the UTF-8 bytes of `s`, with `=` padding.
 #[@External.Node("""Buffer.from($0, 'utf8').toString('base64')""")]
@@ -196,4 +196,32 @@ test "encoding.formParse reads back what formStringify wrote, plus form pluses" 
     assert pairs.length == 6;
     assert pairs.map({ p -> p._0 }).join(",") == "q,a,b&c,plus,flag,bad";
     assert pairs.map({ p -> p._1 }).join(",") == "a b,1,x=y,a b,,%zz";
+}
+
+// ── the tests of the retired `base64` module, over the names that replaced it ──
+
+test "encoding.base64Encode of an ASCII string round-trips" {
+    val encoded = base64Encode("hello");
+    assert encoded == "aGVsbG8=";
+    val decoded = base64Decode(encoded).unwrapOr("?");
+    assert decoded == "hello";
+}
+
+test "encoding.base64Encode of an empty string is an empty string" {
+    assert base64Encode("") == "";
+    assert base64Decode("").unwrapOr("?") == "";
+}
+
+test "encoding.base64UrlEncode drops padding and substitutes the unsafe pair" {
+    val s = base64Encode("hello world");
+    val urlSafe = base64UrlEncode("hello world");
+    assert urlSafe.contains("=").negate();
+    assert s.contains("=");
+}
+
+test "encoding.base64UrlDecode reverses base64UrlEncode round-trip" {
+    val original = "any carnal pleasure.";
+    val urlSafe = base64UrlEncode(original);
+    val decoded = base64UrlDecode(urlSafe).unwrapOr("?");
+    assert decoded == original;
 }

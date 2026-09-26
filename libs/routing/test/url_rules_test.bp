@@ -1,7 +1,7 @@
 //// routing: the boundary half of the URL rules, on both targets. Every
 //// expected path is a literal.
 
-import {asserts} from "std";
+import {testing.asserts} from "std";
 import {PathRules, RedirectRule, canonicalize, clientHref, writeRedirectTable, parseRedirectTable} from "url_rules";
 
 fn docs() -> PathRules {

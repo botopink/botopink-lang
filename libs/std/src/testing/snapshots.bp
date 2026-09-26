@@ -1,4 +1,4 @@
-//// std/snapshots — the snapshot engine every `<lib>-test` writes through
+//// std/testing/snapshots — the snapshot engine every `<lib>-test` writes through
 //// (1.0.10-beta front 01-std, `snapshots.md`; decisions 72, 73 and 67).
 ////
 //// Three rules:

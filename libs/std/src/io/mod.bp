@@ -1,0 +1,13 @@
+//// std/io — everything that talks to the world outside the process (decision
+//// 106): the disk, the network, the clock, entropy, the host OS, the
+//// environment and child processes. A module here may import from the pure
+//// root; a root module may not import from here.
+
+pub mod fs;
+pub mod http;
+pub mod net;
+pub mod clock;
+pub mod random;
+pub mod os;
+pub mod env;
+pub mod process;

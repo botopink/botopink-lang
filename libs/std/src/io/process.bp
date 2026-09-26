@@ -1,4 +1,4 @@
-//// std/process — host process introspection, cross-backend.
+//// std/io/process — host process introspection, cross-backend.
 ////
 //// Reference:
 ////   Node.js  — https://nodejs.org/api/process.html
@@ -61,7 +61,7 @@ pub declare fn arch() -> string;
 #[@External.Erlang("list_to_integer(os:getpid())")]
 pub declare fn pid() -> i32;
 
-// ── 1.0.10-beta front 01 additions (`io/process` after front 23) ────────────
+// ── 1.0.10-beta front 01 additions ──────────────────────────────────────────
 //
 // Child processes. The five introspections above are not edited. Signals
 // (`onSignal`) are not here: a closure handed to a host cell is unverified on

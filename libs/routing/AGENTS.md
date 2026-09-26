@@ -18,7 +18,7 @@ consumer only through a rebuilt compiler (`zig build`).
 Pure `.bp` only (decision 117 rule 8): no `#[@External]` cell, no `declare fn`, no
 `.erl` / `.mjs` sidecar, and no framework name anywhere under `src/`. It imports `std`
 and nothing else (`url_rules` uses `encoding.percentDecode` / `percentEncode`, `match`
-uses `dict`).
+uses `collections.Dict`).
 
 ## Tree
 

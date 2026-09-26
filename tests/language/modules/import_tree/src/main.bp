@@ -1,18 +1,18 @@
 //// Decision 107 — a dotted path and a braced group are one tree, and only the
 //// leaf enters scope. Without `from`, the package's own module tree
 //// (`shapes/circle`, `shapes/helpers`); with `from "std"`, the std package.
-//// `as` binds the alias (`circleName`, `newDict`); a leaf that is a type
-//// (`Dict`) keeps its name; `shapes`, `circle`, `dict` and `order` are not
+//// `as` binds the alias (`circleName`, `rank`); a leaf that is a type
+//// (`Dict`) keeps its name; `shapes`, `circle` and `collections` are not
 //// bound — only the leaves are.
 
 pub mod shapes;
 import {shapes.circle.name as circleName, shapes: {helpers: {seven}}};
-import {dict.Dict, dict: {empty as newDict}, order: {gt, reverse, toInt}} from "std";
+import {collections.Dict, collections: {gt, reverse, toInt as rank}} from "std";
 
 pub fn main() {
     @print(circleName());
     @print(seven());
-    val d: Dict<string, i32> = newDict();
+    val d: Dict<string, i32> = Dict.empty();
     @print(d.insert("a", 1).size());
-    @print(toInt(reverse(gt())));
+    @print(rank(reverse(gt())));
 }

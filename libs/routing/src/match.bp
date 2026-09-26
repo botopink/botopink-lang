@@ -4,7 +4,7 @@
 //// commonJS — the one function the server and the browser must run
 //// identically to agree on which route a URL is.
 
-import {dict} from "std";
+import {collections.Dict} from "std";
 import {SegmentKind, parseSegment, kindName, trimSlashes} from "segment";
 import {RouteEntry} from "table";
 
@@ -148,7 +148,7 @@ pub fn paramOf(m: RouteMatch, name: string) -> string {
 }
 
 pub fn paramsOf(names: string[], values: string[]) -> Dict<string, string> {
-    var d = dict.empty();
+    var d = Dict.empty();
     var i = 0;
     while (i < names.length) {
         d = d.insert(names.at(i).unwrapOr(""), values.at(i).unwrapOr(""));

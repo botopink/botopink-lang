@@ -1,6 +1,6 @@
 //// actions: the refresh value.
 
-import {asserts} from "std";
+import {testing.asserts} from "std";
 import {refreshValue} from "refresh";
 
 test "actions: refreshValue answers refresh" {

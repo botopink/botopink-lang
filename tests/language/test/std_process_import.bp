@@ -5,7 +5,7 @@
 //// dropped out of the count (found by rakun front 74 and std front 01). The
 //// runner now reads `globalThis.process`. Erlang passed either way.
 
-import { process } from "std";
+import { io.process } from "std";
 
 test "a file importing std's process still runs its tests" {
     assert 1 + 1 == 2;

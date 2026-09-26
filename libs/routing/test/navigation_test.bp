@@ -1,7 +1,7 @@
 //// routing: the navigation vocabulary — the four `nav:` reasons and the `n`
 //// wire — on both targets. Every expected text is a literal.
 
-import {asserts} from "std";
+import {testing.asserts} from "std";
 import {NavKind, NavOutcome, signalReason, signalFromReason, isSignalReason, signalPrefixes, signalToWire, signalFromWire} from "navigation";
 
 fn kindText(k: NavKind) -> string {

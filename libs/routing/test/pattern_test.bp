@@ -2,7 +2,7 @@
 //// two matchers it replaces (the middleware matcher and the CORS preflight's
 //// route matcher) has a line here, with the same literals.
 
-import {asserts} from "std";
+import {testing.asserts} from "std";
 import {PatternSegment, parsePattern, matchPattern, patternProblem} from "pattern";
 
 // `true` when `path` matches `pattern`; a pattern that does not parse matches

@@ -1,15 +1,15 @@
 ----- SOURCE CODE
-import {order} from "std";
+import {collections} from "std";
 
 fn main() {
-    val x = order.collapse(true);
+    val x = collections.collapse(true);
 }
 
 ----- ERROR
 error: this "std" module has no such public function
-  ┌─ :4:19
+  ┌─ :4:25
   │
-4 │     val x = order.collapse(true);
-  │                   ^
+4 │     val x = collections.collapse(true);
+  │                         ^
 
   hint: Check the function name against the module's exports.

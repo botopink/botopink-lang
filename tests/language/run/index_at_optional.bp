@@ -22,10 +22,10 @@
 ////             the program died there (exit 134). It has one now (`$__str_at`),
 ////             and `run/string_at.bp` pins it on all four targets
 
-import {dict} from "std";
+import {collections.Dict} from "std";
 
 pub fn main() {
-    val d = dict.empty().insert("a", 1);
+    val d = Dict.empty().insert("a", 1);
     @print(d.at("a"));
     @print(d.at("zz"));
 

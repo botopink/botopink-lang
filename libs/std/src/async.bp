@@ -62,9 +62,9 @@
 #[@External.Erlang("""<<"erlang">>""")]
 declare fn hostTarget() -> string;
 
-// The host's monotonic clock in milliseconds. `std/time` has the same cell, but
-// a std module cannot import another std module (language gap), so this file
-// carries its own. Private — `time.monotonicMillis()` is the public spelling.
+// The host's monotonic clock in milliseconds. `std/io/clock` has the same cell,
+// and this root module may not import from `io/` (decision 106), so this file
+// carries its own. Private — `clock.monotonicMillis()` is the public spelling.
 #[@External.Node("""Math.floor(performance.now())""")]
 #[@External.Erlang("erlang:monotonic_time(1000)")]
 declare fn monoMillis() -> i64;

@@ -2,7 +2,7 @@
 //// from `n`, the control-character case, the round trip and the refusals, on
 //// both targets. Every expected text is a literal.
 
-import {asserts, json.decode} from "std";
+import {testing.asserts, json.decode} from "std";
 import {ActionState} from "state";
 import {ActionEnvelope, writeEnvelope, readEnvelope, parseActionState} from "envelope";
 

@@ -1,13 +1,13 @@
 ----- SOURCE
 ```botopink
-import {order} from "std";
+import {collections} from "std";
         ↑
-val n = order.toInt(order.lt());
+val n = collections.toInt(collections.lt());
 ```
 
 ----- DEFINITION at (line 0, char 8)
-uri: std/order
+uri: std/collections
 range: (0,0) → (0,0)
-in std/order:
-  //// Gleam-style `order` module, inspired by `gleam/order`. A sum type — the
+in std/collections:
+  //// std/collections — the four collection types, one namespace each (decision
   

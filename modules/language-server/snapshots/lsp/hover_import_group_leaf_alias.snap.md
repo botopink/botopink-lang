@@ -1,7 +1,7 @@
 ----- SOURCE
 ```botopink
-import {dict: {empty as newDict}} from "std";
-val d = newDict();
+import {collections: {gt, reverse as flip}} from "std";
+val d = flip(gt());
         ↑
 ```
 
@@ -9,5 +9,5 @@ val d = newDict();
 kind: markdown
 
 ```botopink
-newDict : fn() -> Dict<T122, T123>
+flip : fn(Order) -> Order
 ```

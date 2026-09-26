@@ -1,6 +1,6 @@
 //// actions: the JSON-RPC body both ways, and its refusals, on both targets.
 
-import {asserts} from "std";
+import {testing.asserts} from "std";
 import {RpcCall, writeRpcBody, parseRpcBody} from "rpc";
 
 fn rpcErr(r: @Result<RpcCall, string>) -> string {

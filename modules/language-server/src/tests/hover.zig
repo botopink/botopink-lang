@@ -213,31 +213,31 @@ test "hover: @Result fn has no element footer" {
 test "hover: std module fn shows its signature" {
     const gpa = std.testing.allocator;
     const source =
-        \\import {order} from "std";
-        \\val n = order.toInt(order.lt());
+        \\import {collections} from "std";
+        \\val n = collections.toInt(collections.lt());
     ;
-    // Cursor on `toInt` in `order.toInt` (line 1, char 14).
-    const result = try engine.hover(gpa, source, h.pos(1, 14), &.{});
+    // Cursor on `toInt` in `collections.toInt` (line 1, char 20).
+    const result = try engine.hover(gpa, source, h.pos(1, 20), &.{});
     defer if (result) |hov| gpa.free(hov.contents.value);
 
     try std.testing.expect(result != null);
     try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "fn toInt") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "std/order") != null);
-    try snap.assertHover(gpa, "hover_std_module_fn", source, h.pos(1, 14), result);
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "std/collections") != null);
+    try snap.assertHover(gpa, "hover_std_module_fn", source, h.pos(1, 20), result);
 }
 
 // ── decision 107 — the leaf an import path binds, in either spelling ─────────
 //
 // The server compiles with the same `resolveImports` the CLI runs, so a
-// binding an aliased std leaf introduces (`newDict`) hovers with the fn's
+// binding an aliased std leaf introduces (`flip`) hovers with the fn's
 // type. One snapshot per spelling: the dotted path and the braced group are
 // one tree, and the two hovers are byte-identical.
 
 test "hover: a dotted std import path binds its aliased leaf" {
     const gpa = std.testing.allocator;
     const source =
-        \\import {dict.empty as newDict} from "std";
-        \\val d = newDict();
+        \\import {collections.gt, collections.reverse as flip} from "std";
+        \\val d = flip(gt());
     ;
     var c = try h.compile(gpa, source);
     defer c.deinit(gpa);
@@ -245,20 +245,20 @@ test "hover: a dotted std import path binds its aliased leaf" {
     // module's bindings are asked for by URI, not taken from the first output.
     const bindings = c.result.bindingsFor(h.TEST_URI);
 
-    // Cursor on `newDict` in `val d = newDict();` (line 1, char 8).
+    // Cursor on `flip` in `val d = flip(gt());` (line 1, char 8).
     const result = try engine.hover(gpa, source, h.pos(1, 8), bindings);
     defer if (result) |hov| gpa.free(hov.contents.value);
 
     try std.testing.expect(result != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "Dict") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "Order") != null);
     try snap.assertHover(gpa, "hover_import_dotted_leaf_alias", source, h.pos(1, 8), result);
 }
 
 test "hover: a grouped std import binds its aliased leaf" {
     const gpa = std.testing.allocator;
     const source =
-        \\import {dict: {empty as newDict}} from "std";
-        \\val d = newDict();
+        \\import {collections: {gt, reverse as flip}} from "std";
+        \\val d = flip(gt());
     ;
     var c = try h.compile(gpa, source);
     defer c.deinit(gpa);
@@ -268,7 +268,7 @@ test "hover: a grouped std import binds its aliased leaf" {
     defer if (result) |hov| gpa.free(hov.contents.value);
 
     try std.testing.expect(result != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "Dict") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "Order") != null);
     try snap.assertHover(gpa, "hover_import_group_leaf_alias", source, h.pos(1, 8), result);
 }
 

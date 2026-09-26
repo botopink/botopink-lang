@@ -20,13 +20,13 @@
 //// (`undefined` on erlang and beam, `0` on wasm), which is decision 47's own
 //// row, C-18, and is listed per target in `expected-failures.txt`.
 
-import {dict} from "std";
+import {collections.Dict} from "std";
 
 pub fn main() {
-    val d = dict.empty().insert("a", 1);
+    val d = Dict.empty().insert("a", 1);
     @print(d["a"]);
 
-    val o: Dict<string, ?i32> = dict.empty();
+    val o: Dict<string, ?i32> = Dict.empty();
     @print(o["missing"]);
 
     @print(d["zz"]);

@@ -799,8 +799,17 @@ pub fn shipMjsSidecars(
         var rewrites: std.ArrayListUnmanaged([2][]const u8) = .empty;
         const emitted_dir = std.fs.path.dirname(emitted_rel) orelse out_dir;
         // The owning lib is the first path segment of a dependency module name
-        // (`rakun/http` → `rakun`); a project-own module has no such prefix.
-        const owner: ?[]const u8 = if (std.mem.indexOfScalar(u8, o.name, '/')) |i| o.name[0..i] else null;
+        // (`rakun/http` → `rakun`). A project-own module has no such prefix —
+        // unless it sits in a folder of the project's own tree (`io/random`
+        // under `libs/std`'s own `botopink test`), which its source in the
+        // project's `src` tells apart from a dependency.
+        const owner: ?[]const u8 = if (std.mem.indexOfScalar(u8, o.name, '/')) |i| blk: {
+            const proj = project.get(arena, io);
+            const own_src = if (proj) |p| p.src else "src/";
+            const sep: []const u8 = if (own_src.len > 0 and own_src[own_src.len - 1] != '/') "/" else "";
+            const own = try std.fmt.allocPrint(arena, "{s}{s}{s}.bp", .{ own_src, sep, o.name });
+            break :blk if (fileExists(io, own)) null else o.name[0..i];
+        } else null;
 
         var search: usize = 0;
         const js = o.result.js;
