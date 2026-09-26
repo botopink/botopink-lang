@@ -290,6 +290,13 @@ expression on `ast.CallExpr.call.calleeExpr` with `callee = ""` and
 `receiver = null` — a chained call is **not** a method call, and a consumer that
 reads `receiver` to mean "the value before the `.`" must not see one.
 
+`name<T, …>(args)` — decision 8 §1.3's explicit type arguments — is read by
+`parseExplicitTypeArgs` in `parsePrimary`'s identifier arm, speculatively: only
+when the `<` is adjacent to the name, every item parses as a type, `>` closes the
+list and `(` follows; otherwise the cursor and the parse error are restored and
+`<` is a comparison. The list lands on `ast.CallExpr.call.typeArgs` (null, and
+absent from the dump, when none was written).
+
 `xs[i]` is the `[index]` link, built by `makeIndexExpr` for both copies
 (decision 30). It is the reserved builtin call `ast.index_builtin_name` over
 `(receiver, index)` and **not** a new AST variant — `ast.zig` states the rule

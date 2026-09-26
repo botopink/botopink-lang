@@ -897,6 +897,7 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
             // the parameters as written so a short call can be told from a
             // call missing a required argument.
             try env.fnParams.put(f.name, f.params);
+            try env.fnDecls.put(env.arena, f.name, f);
             registerDecoratorSig(env, f.name, f.params, f);
             // C-01 — a template or decorator this module declares is owned by
             // this module's path, which its evaluated module atom names.
@@ -1287,6 +1288,62 @@ fn hookBaseOfType(env: *Env, ty: *T.Type) ?[]const u8 {
         .named => |n| if (std.mem.eql(u8, n.name, "Component") and n.args.len >= 1) baseNameOfType(n.args[0]) else null,
         else => null,
     };
+}
+
+/// Decision 8 §1.3 — `Box<i32>(value: 1)`, `first<string>([])`: type
+/// arguments written at a use pin the callee's type parameters, in order. A
+/// constructor's arguments are its type's parameters (`Box<T>`); a generic
+/// fn's are its own (`fn first<T>`) — the declared signature is re-read with
+/// each parameter bound to its argument and unified with the call. The count
+/// must match exactly, and a callee with no type parameters takes none.
+fn applyExplicitTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!TypedExpr {
+    if (c.kind != .call) return typed;
+    const call = c.kind.call;
+    const written = call.typeArgs orelse return typed;
+    if (typed != .call) return typed;
+    const loc = c.loc;
+    const prevLoc = env.atTypeRef(loc);
+    defer env.typeRefLoc = prevLoc;
+    const resolved = try env.arena.alloc(*T.Type, written.len);
+    for (written, 0..) |w, i| resolved[i] = try resolveTypeRef(env, w);
+    const countError = struct {
+        fn f(e: *Env, name: []const u8, declared: usize, given: usize, l: ast.Loc) InferError {
+            const msg = if (declared == 0)
+                std.fmt.allocPrint(e.arena, "`{s}` takes no type arguments, {d} given", .{ name, given }) catch return error.OutOfMemory
+            else
+                std.fmt.allocPrint(e.arena, "`{s}` takes {d} type argument{s}, {d} given", .{ name, declared, if (declared == 1) "" else "s", given }) catch return error.OutOfMemory;
+            e.lastError = TypeError.custom(msg, "Write one type argument per type parameter the declaration names, in order (decision 8 §1.3).").withLoc(l);
+            return error.TypeError;
+        }
+    }.f;
+    const resultTy = typed.getType();
+    if (env.lookupTypeDef(call.callee)) |td| {
+        const params = td.genericParams();
+        if (params.len != resolved.len) return countError(env, call.callee, params.len, resolved.len, loc);
+        const rt = resultTy.deref();
+        if (rt.* == .named and rt.named.args.len == resolved.len) {
+            for (rt.named.args, resolved) |a, r| try unifyAt(env, r, a, loc);
+        }
+        return typed;
+    }
+    if (env.fnDecls.get(call.callee)) |f| {
+        if (f.genericParams.len != resolved.len) return countError(env, call.callee, f.genericParams.len, resolved.len, loc);
+        var gm = std.StringHashMap(*T.Type).init(env.arena);
+        defer gm.deinit();
+        for (f.genericParams, resolved) |gp, r| try gm.put(gp.name, r);
+        for (f.params, 0..) |p, i| {
+            if (i >= typed.call.kind.call.args.len) break;
+            if (typed.call.kind.call.args[i].label != null) break;
+            const pt = try resolveTypeRefInContext(env, p.typeRef, gm);
+            try unifyAt(env, pt, typed.call.kind.call.args[i].value.getType(), typed.call.kind.call.args[i].value.getLoc());
+        }
+        if (f.returnType) |rtRef| {
+            const want = try resolveTypeRefInContext(env, rtRef, gm);
+            try unifyAt(env, want, resultTy, loc);
+        }
+        return typed;
+    }
+    return countError(env, call.callee, 0, resolved.len, loc);
 }
 
 /// Decisions 104, 118 and 128 — a component is CALLED, and called inside a
@@ -8410,7 +8467,7 @@ fn inferExprTypedInner(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         .useHook => |uh| inferUseHookExpr(env, uh, uh.loc),
 
         // ── call expressions ───────────────────────────────────────────────────
-        .call => |c| inferComponentCall(env, c, try inferCallExpr(env, c, c.loc)),
+        .call => |c| inferComponentCall(env, c, try applyExplicitTypeArgs(env, c, try inferCallExpr(env, c, c.loc))),
 
         // ── function definition expressions ────────────────────────────────────
         .function => |f| inferFunctionExpr(env, f, f.loc),

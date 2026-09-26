@@ -878,9 +878,14 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// when null, so the slot moved no snapshot. A backend that does
             /// not read it lowers exactly the calls it lowered before.
             calleeExpr: ?*ExprOf(phase) = null,
+            /// Decision 8 §1.3 — explicit type arguments at a use,
+            /// `Box<i32>(value: 1)` / `first<string>([])`: the `<…>` written
+            /// adjacent to the callee. Read by the checker only; null when none
+            /// was written, and then left out of the AST dump.
+            typeArgs: ?[]TypeRef = null,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr" });
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr", "typeArgs" });
             }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain

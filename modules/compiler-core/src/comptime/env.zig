@@ -750,6 +750,10 @@ pub const Env = struct {
     /// (`registerImportedTypeAlias`); a constructor call through the alias is
     /// renamed at the call so no backend sees the alias.
     importedTypeAliases: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Decision 8 §1.3 — a top-level fn's declaration, for a call that writes
+    /// its type arguments (`first<string>([])`): the generic parameters, the
+    /// parameters and the return as written. Filled by `registerFnSignatures`.
+    fnDecls: std.StringHashMapUnmanaged(ast.FnDecl) = .empty,
     /// Decision 8 §3.2 — where an inferred union was born: the `if` or `case`
     /// whose branches disagreed. A use the union refuses names it, so the
     /// author sees the widening and not only the refusal.

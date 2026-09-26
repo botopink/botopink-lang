@@ -571,6 +571,18 @@ binding list handed back is built tolerantly from imports, type declarations, `f
 `val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
 well-typed one binds, so the language server still lists it.
 
+## Explicit type arguments at a use (decision 8 §1.3)
+
+`Box<i32>(value: 1)` and `first<string>([], "none")`: the parser keeps the `<…>` on
+`CallExpr.call.typeArgs` (`parser/exprs.zig` `parseExplicitTypeArgs` — only when `<` touches the
+name, the items parse as types, `>` closes and `(` follows; `a < b` stays a comparison), and
+`applyExplicitTypeArgs` pins the callee's type parameters in order: a constructor's are its type's
+(`Box<T>`, the result type's arguments unified with them), a generic fn's are its own — its
+declaration (`Env.fnDecls`) is re-read with each parameter bound to its argument and unified with
+the call's positional arguments and result. A count that does not match, or type arguments on a
+callee with none, is refused at the call. `Option<i32>.None` (type arguments before a `.`) is not
+parsed yet.
+
 ## Three rules the effects guide's page needs (maintainer, 24-box-1)
 
 - **`try x catch null` is a `?U`.** The handler is the other way the expression ends: a `null`

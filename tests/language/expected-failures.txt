@@ -295,3 +295,4 @@ wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope)
 # The host rows of decision 126 are deferred: a `@External.Node` declared
 # `-> @Task<@Result<T, E>>` is still called as a bare Promise, so a rejection is
 # not turned into `Error(e)` and the resolved raw value reaches a `case` as is.
+wasm     | run/explicit_type_arguments.bp | 05-wasm | a generic `T` answered through `xs.at(0) ?? fallback` prints as a heap address (`276`) where `none` is owed — measured without the type arguments too (`first([], "none")` prints `256`), so it is the generic optional on wasm and not §1.3

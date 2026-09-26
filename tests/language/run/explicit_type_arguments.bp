@@ -1,0 +1,21 @@
+//// Decision 8 §1.3 — `name<…>` is a type-argument list when `<` touches the
+//// name, the contents are types and `>` is followed by `(`; otherwise `<` is a
+//// comparison. `Box<i32>(value: 1).get()` used to red at `value` (front 15's
+//// handover row 3) and `first<string>([], …)` never parsed.
+
+type Box<T>(value: T) {
+    pub fn get(self: Self<T>) -> T { return self.value; }
+}
+
+fn first<T>(xs: T[], fallback: T) -> T {
+    return xs.at(0) ?? fallback;
+}
+
+pub fn main() {
+    @print(Box<i32>(value: 1).get());
+    val s: string = first<string>([], "none");
+    @print(s);
+    val a = 1;
+    val b = 2;
+    @print(a < b);
+}
