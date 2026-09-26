@@ -98,7 +98,17 @@ pub declare fn matchAll(pattern: string, input: string) -> Array<Match>;
 // A compiled pattern: the host's own compiled form (a `RegExp` on Node, the
 // `re:compile/1` result on Erlang) behind an opaque field, so a hot path
 // compiles once and runs many times.
-pub type Regex(handle: any)
+pub type Regex(handle: any) {
+    // True when the compiled pattern matches anywhere in `input` — the module's
+    // `matches(pattern, input)` without re-compiling.
+    // Node: `RegExp#test` on a pattern without the `g` flag (no `lastIndex`
+    // state carried between calls).
+    // Erlang: `re:run/2` over the compiled form (a record crosses into a cell
+    // as its tagged tuple, so the handle is `element(2, R)`).
+    #[@External.Node("""($0.handle.test($1))""")]
+    #[@External.Erlang("""(re:run($1, element(2, $0)) =/= nomatch)""")]
+    pub declare fn matches(self: Self, input: string) -> bool;
+}
 
 // Compile `pattern` once. A pattern the host cannot compile is an `Error`
 // naming why.
@@ -107,16 +117,6 @@ pub type Regex(handle: any)
 #[@External.Node("""(() => { try { return { ok: { handle: new RegExp($0) } } } catch (__e) { return { error: String(__e && __e.message ? __e.message : __e) } } })()""")]
 #[@External.Erlang("""(fun(__P) -> case re:compile(__P) of {ok, __M} -> {ok, #{handle => __M}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn compile(pattern: string) -> @Result<Regex, string>;
-
-// True when the compiled pattern matches anywhere in `input` — `matches`
-// without re-compiling.
-// Node: `RegExp#test` on a pattern without the `g` flag (no `lastIndex`
-// state carried between calls).
-// Erlang: `re:run/2` over the compiled form (a record crosses into a cell as
-// its tagged tuple, so the handle is `element(2, R)`).
-#[@External.Node("""($0.handle.test($1))""")]
-#[@External.Erlang("""(re:run($1, element(2, $0)) =/= nomatch)""")]
-pub declare fn runCompiled(r: Regex, input: string) -> bool;
 
 // Every group of the first match, group 0 (the whole match) first; a group
 // that did not take part is `""`. `null` when the pattern does not match —
@@ -229,13 +229,13 @@ test "regex.compile refuses a malformed pattern" {
     assert compile("[0-9]+").isOk();
 }
 
-test "regex.runCompiled agrees with matches on the same source" {
+test "regex: a compiled Regex's matches agrees with matches on the same source" {
     val digits = compile("[0-9]+");
-    assert digits.map({ r -> runCompiled(r, "abc123") }).unwrapOr(false);
-    assert digits.map({ r -> runCompiled(r, "abc") }).unwrapOr(true).negate();
+    assert digits.map({ r -> r.matches("abc123") }).unwrapOr(false);
+    assert digits.map({ r -> r.matches("abc") }).unwrapOr(true).negate();
     assert matches("[0-9]+", "abc123");
     // Run twice: no `lastIndex`-style state is carried between calls.
-    assert digits.map({ r -> runCompiled(r, "7") && runCompiled(r, "7") }).unwrapOr(false);
+    assert digits.map({ r -> r.matches("7") && r.matches("7") }).unwrapOr(false);
 }
 
 test "regex.escapeLiteral matches the literal text and nothing else" {

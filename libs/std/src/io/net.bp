@@ -17,6 +17,11 @@
 //// The refusal keeps std compiling for both targets and makes the absence
 //// assertable instead of hopeful — the tests assert it on commonJS.
 ////
+//// What operates on a listener or a socket is a method of its type
+//// (`listener.accept(t)`, `sock.recv(n, t)`, `sock.close()`), the same names on
+//// the TCP and the TLS types; the four functions that make one — `listen`,
+//// `connect`, `tlsListen`, `tlsConnect` — are the module's.
+////
 //// Text in, text out: `recv` answers the received bytes as a `string` (there
 //// is no byte type — `language-gaps.md`).
 ////
@@ -26,70 +31,99 @@
 //// `ssl` application is started on demand (`ssl:start/0` is idempotent).
 
 // A listening TCP socket.
-pub type Listener(handle: any)
+pub type Listener(handle: any) {
+    // The port the listener is bound to — the one the host chose for
+    // `listen(0, _)`.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__L) -> case inet:port(element(2, __L)) of {ok, __P} -> {ok, __P}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+    pub declare fn port(self: Self) -> @Result<i32, string>;
+
+    // Wait up to `timeoutMillis` for the next connection. No pending connection
+    // in time is `Error("timeout")`.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__L, __T) -> case gen_tcp:accept(element(2, __L), __T) of {ok, __S} -> {ok, #{handle => __S}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
+    pub declare fn accept(self: Self, timeoutMillis: i32) -> @Result<Socket, string>;
+
+    // Close a listener; connections it accepted stay open.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__L) -> gen_tcp:close(element(2, __L)), {ok, 0} end)($0)""")]
+    pub declare fn close(self: Self) -> @Result<i32, string>;
+}
 
 // A connected TCP socket.
-pub type Socket(handle: any)
+pub type Socket(handle: any) {
+    // Receive exactly `length` bytes (`0`: whatever is available), waiting up to
+    // `timeoutMillis`. A peer that closed is `Error("closed")`.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__S, __N, __T) -> case gen_tcp:recv(element(2, __S), __N, __T) of {ok, __D} -> {ok, __D}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1, $2)""")]
+    pub declare fn recv(self: Self, length: i32, timeoutMillis: i32) -> @Result<string, string>;
+
+    // Send `data`; answers the number of bytes handed to the host.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__S, __D) -> case gen_tcp:send(element(2, __S), __D) of ok -> {ok, byte_size(__D)}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
+    pub declare fn send(self: Self, data: string) -> @Result<i32, string>;
+
+    // Close a connected socket.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__S) -> gen_tcp:close(element(2, __S)), {ok, 0} end)($0)""")]
+    pub declare fn close(self: Self) -> @Result<i32, string>;
+
+    // The remote address and port of a connected socket.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__S) -> case inet:peername(element(2, __S)) of {ok, {__A, __P}} -> {ok, #{host => list_to_binary(inet:ntoa(__A)), port => __P}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+    pub declare fn peer(self: Self) -> @Result<Peer, string>;
+}
 
 // A listening TLS socket.
-pub type TlsListener(handle: any)
+pub type TlsListener(handle: any) {
+    // The port the TLS listener is bound to — the one the host chose for
+    // `tlsListen(0, …)`.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__L) -> case ssl:sockname(element(2, __L)) of {ok, {_, __P}} -> {ok, __P}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+    pub declare fn port(self: Self) -> @Result<i32, string>;
+
+    // Wait up to `timeoutMillis` for the next connection AND complete its TLS
+    // handshake within the same budget.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__L, __T) -> case ssl:transport_accept(element(2, __L), __T) of {ok, __S0} -> case ssl:handshake(__S0, __T) of {ok, __S} -> {ok, #{handle => __S}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
+    pub declare fn accept(self: Self, timeoutMillis: i32) -> @Result<TlsSocket, string>;
+}
 
 // A connected TLS socket, handshake complete.
-pub type TlsSocket(handle: any)
+pub type TlsSocket(handle: any) {
+    // `recv` over TLS: exactly `length` decrypted bytes (`0`: whatever is
+    // available), waiting up to `timeoutMillis`.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__S, __N, __T) -> case ssl:recv(element(2, __S), __N, __T) of {ok, __D} -> {ok, __D}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1, $2)""")]
+    pub declare fn recv(self: Self, length: i32, timeoutMillis: i32) -> @Result<string, string>;
+
+    // `send` over TLS; answers the number of plaintext bytes handed to the host.
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__S, __D) -> case ssl:send(element(2, __S), __D) of ok -> {ok, byte_size(__D)}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
+    pub declare fn send(self: Self, data: string) -> @Result<i32, string>;
+
+    // Close a TLS socket (sends `close_notify`).
+    #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
+    #[@External.Erlang("""(fun(__S) -> ssl:close(element(2, __S)), {ok, 0} end)($0)""")]
+    pub declare fn close(self: Self) -> @Result<i32, string>;
+}
 
 // The remote end of a socket: its address as text (`127.0.0.1`, `::1`) and
 // its port.
 pub type Peer(host: string, port: i32)
 
 // Listen on `port` (`0` asks the host for a free one — read it back with
-// `listenerPort`) with a pending-connection queue of `backlog`, all
+// `Listener.port`) with a pending-connection queue of `backlog`, all
 // interfaces, `SO_REUSEADDR` set.
 #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
 #[@External.Erlang("""(fun(__P, __B) -> case gen_tcp:listen(__P, [binary, {packet, raw}, {active, false}, {reuseaddr, true}, {backlog, __B}]) of {ok, __L} -> {ok, #{handle => __L}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
 pub declare fn listen(port: i32, backlog: i32) -> @Result<Listener, string>;
-
-// The port a listener is bound to — the one the host chose for `listen(0, _)`.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__L) -> case inet:port(element(2, __L)) of {ok, __P} -> {ok, __P}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
-pub declare fn listenerPort(listener: Listener) -> @Result<i32, string>;
-
-// Wait up to `timeoutMillis` for the next connection. No pending connection
-// in time is `Error("timeout")`.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__L, __T) -> case gen_tcp:accept(element(2, __L), __T) of {ok, __S} -> {ok, #{handle => __S}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
-pub declare fn accept(listener: Listener, timeoutMillis: i32) -> @Result<Socket, string>;
 
 // Connect to `host:port`, giving up after `timeoutMillis`. A closed port is
 // `Error("econnrefused")`.
 #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
 #[@External.Erlang("""(fun(__H, __P, __T) -> case gen_tcp:connect(binary_to_list(__H), __P, [binary, {packet, raw}, {active, false}], __T) of {ok, __S} -> {ok, #{handle => __S}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1, $2)""")]
 pub declare fn connect(host: string, port: i32, timeoutMillis: i32) -> @Result<Socket, string>;
-
-// Receive exactly `length` bytes (`0`: whatever is available), waiting up to
-// `timeoutMillis`. A peer that closed is `Error("closed")`.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__S, __N, __T) -> case gen_tcp:recv(element(2, __S), __N, __T) of {ok, __D} -> {ok, __D}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1, $2)""")]
-pub declare fn recv(sock: Socket, length: i32, timeoutMillis: i32) -> @Result<string, string>;
-
-// Send `data`; answers the number of bytes handed to the host.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__S, __D) -> case gen_tcp:send(element(2, __S), __D) of ok -> {ok, byte_size(__D)}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
-pub declare fn send(sock: Socket, data: string) -> @Result<i32, string>;
-
-// Close a connected socket.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__S) -> gen_tcp:close(element(2, __S)), {ok, 0} end)($0)""")]
-pub declare fn close(sock: Socket) -> @Result<i32, string>;
-
-// Close a listener; connections it accepted stay open.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__L) -> gen_tcp:close(element(2, __L)), {ok, 0} end)($0)""")]
-pub declare fn closeListener(listener: Listener) -> @Result<i32, string>;
-
-// The remote address and port of a connected socket.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__S) -> case inet:peername(element(2, __S)) of {ok, {__A, __P}} -> {ok, #{host => list_to_binary(inet:ntoa(__A)), port => __P}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
-pub declare fn peer(sock: Socket) -> @Result<Peer, string>;
 
 // ── TLS ──────────────────────────────────────────────────────────────────────
 
@@ -99,40 +133,12 @@ pub declare fn peer(sock: Socket) -> @Result<Peer, string>;
 #[@External.Erlang("""(fun(__P, __C, __K) -> _ = ssl:start(), case ssl:listen(__P, [binary, {packet, raw}, {active, false}, {reuseaddr, true}, {certfile, binary_to_list(__C)}, {keyfile, binary_to_list(__K)}]) of {ok, __L} -> {ok, #{handle => __L}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1, $2)""")]
 pub declare fn tlsListen(port: i32, certFile: string, keyFile: string) -> @Result<TlsListener, string>;
 
-// The port a TLS listener is bound to — the one the host chose for
-// `tlsListen(0, …)`.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__L) -> case ssl:sockname(element(2, __L)) of {ok, {_, __P}} -> {ok, __P}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
-pub declare fn tlsListenerPort(listener: TlsListener) -> @Result<i32, string>;
-
-// Wait up to `timeoutMillis` for the next connection AND complete its TLS
-// handshake within the same budget.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__L, __T) -> case ssl:transport_accept(element(2, __L), __T) of {ok, __S0} -> case ssl:handshake(__S0, __T) of {ok, __S} -> {ok, #{handle => __S}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
-pub declare fn tlsAccept(listener: TlsListener, timeoutMillis: i32) -> @Result<TlsSocket, string>;
-
 // Connect to `host:port` over TLS, verifying the server certificate against
 // the PEM CA bundle `caFile` and checking it names `host`. A certificate that
 // does not verify is an `Error` — there is no unverified mode.
 #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
 #[@External.Erlang("""(fun(__H, __P, __Ca, __T) -> _ = ssl:start(), case ssl:connect(binary_to_list(__H), __P, [binary, {packet, raw}, {active, false}, {verify, verify_peer}, {cacertfile, binary_to_list(__Ca)}, {server_name_indication, binary_to_list(__H)}], __T) of {ok, __S} -> {ok, #{handle => __S}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1, $2, $3)""")]
 pub declare fn tlsConnect(host: string, port: i32, caFile: string, timeoutMillis: i32) -> @Result<TlsSocket, string>;
-
-// `recv` over TLS: exactly `length` decrypted bytes (`0`: whatever is
-// available), waiting up to `timeoutMillis`.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__S, __N, __T) -> case ssl:recv(element(2, __S), __N, __T) of {ok, __D} -> {ok, __D}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1, $2)""")]
-pub declare fn tlsRecv(sock: TlsSocket, length: i32, timeoutMillis: i32) -> @Result<string, string>;
-
-// `send` over TLS; answers the number of plaintext bytes handed to the host.
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__S, __D) -> case ssl:send(element(2, __S), __D) of ok -> {ok, byte_size(__D)}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
-pub declare fn tlsSend(sock: TlsSocket, data: string) -> @Result<i32, string>;
-
-// Close a TLS socket (sends `close_notify`).
-#[@External.Node("""({ error: 'std/io/net: server-only' })""")]
-#[@External.Erlang("""(fun(__S) -> ssl:close(element(2, __S)), {ok, 0} end)($0)""")]
-pub declare fn tlsClose(sock: TlsSocket) -> @Result<i32, string>;
 
 // ── test instruments (private) ───────────────────────────────────────────────
 
@@ -183,20 +189,20 @@ declare fn removeTree(dir: string) -> void;
 test "net: a self-connected socket round-trips 11 bytes" {
     if (hostTarget() == "erlang") {
         val l = listen(0, 4).unwrapOr(Listener(handle: noHandle()));
-        val port = listenerPort(l).unwrapOr(0);
+        val port = l.port().unwrapOr(0);
         assert port > 0;
         val client = connect("127.0.0.1", port, 1000).unwrapOr(Socket(handle: noHandle()));
-        val server = accept(l, 1000).unwrapOr(Socket(handle: noHandle()));
-        assert send(client, "hello world").unwrapOr(-1) == 11;
-        assert recv(server, 11, 1000).unwrapOr("?") == "hello world";
-        assert send(server, "pong").unwrapOr(-1) == 4;
-        assert recv(client, 4, 1000).unwrapOr("?") == "pong";
-        assert peer(server).map({ p -> p.host }).unwrapOr("?") == "127.0.0.1";
-        assert peer(client).map({ p -> p.port }).unwrapOr(-1) == port;
-        assert close(client).isOk();
-        assert recv(server, 1, 1000).isError();
-        assert close(server).isOk();
-        assert closeListener(l).isOk();
+        val server = l.accept(1000).unwrapOr(Socket(handle: noHandle()));
+        assert client.send("hello world").unwrapOr(-1) == 11;
+        assert server.recv(11, 1000).unwrapOr("?") == "hello world";
+        assert server.send("pong").unwrapOr(-1) == 4;
+        assert client.recv(4, 1000).unwrapOr("?") == "pong";
+        assert server.peer().map({ p -> p.host }).unwrapOr("?") == "127.0.0.1";
+        assert client.peer().map({ p -> p.port }).unwrapOr(-1) == port;
+        assert client.close().isOk();
+        assert server.recv(1, 1000).isError();
+        assert server.close().isOk();
+        assert l.close().isOk();
     } else {
         assert listen(0, 4).isError();
     }
@@ -205,19 +211,19 @@ test "net: a self-connected socket round-trips 11 bytes" {
 test "net: accept with nothing pending times out instead of blocking" {
     if (hostTarget() == "erlang") {
         val l = listen(0, 4).unwrapOr(Listener(handle: noHandle()));
-        val r = accept(l, 50);
-        assert closeListener(l).isOk();
+        val r = l.accept(50);
+        assert l.close().isOk();
         assert errText(r) == "timeout";
     } else {
-        assert accept(Listener(handle: noHandle()), 50).isError();
+        assert Listener(handle: noHandle()).accept(50).isError();
     }
 }
 
 test "net: connecting to a closed port names the refusal" {
     if (hostTarget() == "erlang") {
         val l = listen(0, 4).unwrapOr(Listener(handle: noHandle()));
-        val port = listenerPort(l).unwrapOr(0);
-        assert closeListener(l).isOk();
+        val port = l.port().unwrapOr(0);
+        assert l.close().isOk();
         assert errText(connect("127.0.0.1", port, 200)) == "econnrefused";
     } else {
         assert connect("127.0.0.1", 1, 200).isError();
@@ -232,21 +238,21 @@ test "net: every cell refuses with server-only on commonJS" {
         val tl = TlsListener(handle: noHandle());
         val ts = TlsSocket(handle: noHandle());
         assert errText(listen(0, 4)) == refusal;
-        assert errText(listenerPort(l)) == refusal;
-        assert errText(accept(l, 50)) == refusal;
+        assert errText(l.port()) == refusal;
+        assert errText(l.accept(50)) == refusal;
         assert errText(connect("127.0.0.1", 1, 200)) == refusal;
-        assert errText(recv(s, 1, 50)) == refusal;
-        assert errText(send(s, "x")) == refusal;
-        assert errText(close(s)) == refusal;
-        assert errText(closeListener(l)) == refusal;
-        assert errText(peer(s)) == refusal;
+        assert errText(s.recv(1, 50)) == refusal;
+        assert errText(s.send("x")) == refusal;
+        assert errText(s.close()) == refusal;
+        assert errText(l.close()) == refusal;
+        assert errText(s.peer()) == refusal;
         assert errText(tlsListen(0, "c.pem", "k.pem")) == refusal;
-        assert errText(tlsListenerPort(tl)) == refusal;
-        assert errText(tlsAccept(tl, 50)) == refusal;
+        assert errText(tl.port()) == refusal;
+        assert errText(tl.accept(50)) == refusal;
         assert errText(tlsConnect("localhost", 1, "c.pem", 200)) == refusal;
-        assert errText(tlsRecv(ts, 1, 50)) == refusal;
-        assert errText(tlsSend(ts, "x")) == refusal;
-        assert errText(tlsClose(ts)) == refusal;
+        assert errText(ts.recv(1, 50)) == refusal;
+        assert errText(ts.send("x")) == refusal;
+        assert errText(ts.close()) == refusal;
     }
 }
 
@@ -256,13 +262,13 @@ test "net: TLS handshakes against a throwaway CA and round-trips" {
         val cert = [dir, "/cert.pem"].join("");
         val ca = [dir, "/ca.pem"].join("");
         val l = tlsListen(0, cert, [dir, "/key.pem"].join("")).unwrapOr(TlsListener(handle: noHandle()));
-        val port = tlsListenerPort(l).unwrapOr(0);
+        val port = l.port().unwrapOr(0);
         assert port > 0;
         tlsEchoOnce(l, 5);
         val c = tlsConnect("localhost", port, ca, 5000).unwrapOr(TlsSocket(handle: noHandle()));
-        assert tlsSend(c, "hello").unwrapOr(-1) == 5;
-        val echoed = tlsRecv(c, 5, 5000).unwrapOr("?");
-        assert tlsClose(c).isOk();
+        assert c.send("hello").unwrapOr(-1) == 5;
+        val echoed = c.recv(5, 5000).unwrapOr("?");
+        assert c.close().isOk();
         removeTree(dir);
         assert echoed == "hello";
     }
@@ -273,7 +279,7 @@ test "net: TLS refuses a server its CA file does not vouch for" {
         val dir = tlsFixture();
         val other = tlsFixture();
         val l = tlsListen(0, [dir, "/cert.pem"].join(""), [dir, "/key.pem"].join("")).unwrapOr(TlsListener(handle: noHandle()));
-        val port = tlsListenerPort(l).unwrapOr(0);
+        val port = l.port().unwrapOr(0);
         tlsEchoOnce(l, 5);
         val r = tlsConnect("localhost", port, [other, "/ca.pem"].join(""), 5000);
         removeTree(dir);
