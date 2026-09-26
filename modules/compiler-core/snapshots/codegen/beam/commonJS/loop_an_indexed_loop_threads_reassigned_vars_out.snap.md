@@ -26,6 +26,8 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_array_at(xs, i) { return xs.at(i) ?? null; }
+
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
@@ -73,7 +75,7 @@ function pick(xs) {
 function weigh(xs) {
     let total = 0;
     for (const i of Array.from({length: Math.max(0, (xs.length) - (0))}, (_, __i) => (0) + __i)) {
-    total = (total + (((() => { const __bp_nullish = xs[i]; if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })()) * ((i + 1))));
+    total = (total + (((() => { const __bp_nullish = __bp_array_at(xs, i); if (__bp_nullish != null) { return __bp_nullish; } else { return 0; } })()) * ((i + 1))));
 }
     return total;
 }

@@ -46,7 +46,7 @@ pub fn run(
 
     // Resolve project source files through the explicit module tree.
     // (`sources.load` reports resolution errors itself.)
-    var loaded = sources.load(gpa, io, proj, "src") catch return 1;
+    var loaded = sources.load(gpa, io, proj, proj.srcDir()) catch return 1;
     defer loaded.free(gpa);
     const project_modules = loaded.modules;
 

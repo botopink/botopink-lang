@@ -837,8 +837,10 @@ codegen/
   the source in the run's own directory when there is one (`'__bp_prebuilt'/1`,
   written by `test_cmd.zig`'s `precompileErlang` — one compile per module per
   run, not one per sibling per test module) and compiles the source itself
-  otherwise, which is also the arm every module that does not compile takes. "Reaches another one" is `imported_fns`, `imported_types`,
-  **`std_imports`** and a type module of its own — the std route was missing, so
+  otherwise, which is also the arm every module that does not compile takes. "Reaches another one" is `imported_fns`, `imported_vals`
+  (a sibling's `pub val`, decision 140 — missing until onze F1, so a test that
+  read one died `{error,undef}`; `tests/language/modules/pub_val_in_a_test`),
+  `imported_types`, **`std_imports`** and a type module of its own — the std route was missing, so
   `import {querystring} from "std"` emitted the remote `std@querystring:parse/1`
   in a module whose runner never loaded `std@querystring` and the test died
   `{error,undef}`.
@@ -2656,6 +2658,18 @@ typed, not a backend lowering.
   defaults).
 - A function-typed record field (`set: fn(next: T)`) is stored like any field;
   the `Children` coercion is type-level only.
+- `/` over integers truncates toward zero and answers an integer on every
+  backend (onze F7). Inference marks each `/` whose type resolved with
+  `InstanceLowering.division` (`.integer` / `.float`, keyed by the operator's
+  loc): commonJS writes `Math.trunc(a / b)` for an integer one; erlang
+  (`divisionKind` → `div` / `/`) and beam (`div_` / `fdiv`) take it before
+  their operand heuristics, and their `numKind` answers it for the quotient;
+  wat's typed `i32.div_s` / `i64.div_s` already truncated. The other
+  `instance_lowerings` readers ignore `.division` (a `/` is never a call or a
+  field read).
+- erlang and beam write a number token through `beam/erl_emitter.zig`'s
+  `writeNumber`: `5e-324` → `5.0e-324` (Erlang refuses a float with no `.`
+  before its exponent), `0xFF` → `16#FF`.
 
 ## Effects (the return is the effect — decisions 118–128)
 

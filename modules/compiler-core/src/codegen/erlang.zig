@@ -2017,7 +2017,10 @@ fn emitErlangModule(
         // `std_imports`, not `imported_fns`, so `querystring.parse(q)` lowered
         // to the remote `std@querystring:parse/1` in a module whose runner
         // never loaded `std@querystring` — `{error,undef}`, pinned to the test.
+        // A `pub val` read from a sibling (decision 140) is a remote call
+        // too — `imported_vals`, the fifth route.
         const calls_out = em.imported_fns.count() > 0 or
+            em.imported_vals.count() > 0 or
             em.imported_types.count() > 0 or
             em.std_imports.count() > 0 or
             em.module_vars.count() > 0 or
@@ -3859,7 +3862,7 @@ const Emitter = struct {
                     (if (!this.locals.contains(n)) this.num_names.get(n) else null),
                 .identAccess => if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
                     .prim => .int,
-                    .type_, .field_of, .sequence_next => null,
+                    .type_, .field_of, .sequence_next, .division => null,
                 } else null,
                 else => null,
             },
@@ -3870,8 +3873,10 @@ const Emitter = struct {
             .unaryOp => |un| if (un.op == .neg) this.numKind(un.expr.*) else null,
             .binaryOp => |bin| switch (bin.op) {
                 .add => if (this.isStringExpr(e)) null else combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)),
-                // `-`, `*` and `/` only ever answer a number in erlang.
-                .sub, .mul, .div => combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)) orelse .number,
+                // `-`, `*` and `/` only ever answer a number in erlang; a `/`
+                // inference read answers its own kind.
+                .div => if (this.divisionKind(bin.loc)) |k| (if (k == .integer) NumKind.int else NumKind.float) else combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)) orelse .number,
+                .sub, .mul => combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)) orelse .number,
                 .mod => .int,
                 else => null,
             },
@@ -3881,6 +3886,12 @@ const Emitter = struct {
             },
             else => null,
         };
+    }
+
+    /// Inference's `InstanceLowering.division` for the `/` at `loc`.
+    fn divisionKind(this: *const Emitter, loc: ast.Loc) ?envMod.DivisionKind {
+        const il = this.instance_lowerings.get(loc) orelse return null;
+        return if (il == .division) il.division else null;
     }
 
     fn combineNum(a: ?NumKind, b: ?NumKind) ?NumKind {
@@ -5502,7 +5513,7 @@ const Emitter = struct {
         const il = this.instance_lowerings.get(e.call.loc) orelse return null;
         return switch (il) {
             .prim => |k| if (k == .array) name else null,
-            .type_, .field_of, .sequence_next => null,
+            .type_, .field_of, .sequence_next, .division => null,
         };
     }
 
@@ -6439,7 +6450,7 @@ const Emitter = struct {
                                 else => b.call("length", &.{recv}),
                             };
                         },
-                        .type_, .field_of, .sequence_next => {},
+                        .type_, .field_of, .sequence_next, .division => {},
                     };
                     // Same field access on a `Self`-typed receiver inside an
                     // interface instance `default fn` (`self.length`), which
@@ -6508,7 +6519,11 @@ const Emitter = struct {
                     .mul => "*",
                     // `div` is integer division and raises `badarith` on a float;
                     // an operand known to be a float takes `/`.
-                    .div => if (this.numKind(bin.lhs.*) == .float or this.numKind(bin.rhs.*) == .float) "/" else "div",
+                    // Inference's reading of this `/` wins when it has one
+                    // (onze F7: integer division truncates on every backend).
+                    .div => if (this.divisionKind(bin.loc)) |k|
+                        (if (k == .integer) "div" else "/")
+                    else if (this.numKind(bin.lhs.*) == .float or this.numKind(bin.rhs.*) == .float) "/" else "div",
                     .mod => "rem",
                     .lt => "<",
                     .gt => ">",
@@ -7176,8 +7191,8 @@ const Emitter = struct {
                 this.dynamicMethodNode(b, recv, cc)
             else
                 this.typedMethodNode(b, tn, recv, cc),
-            // A field READ never reaches the call path.
-            .field_of => {},
+            // A field READ never reaches the call path, nor does a `/`.
+            .field_of, .division => {},
             .sequence_next => return this.sequenceNextNode(b, loc, recv),
         };
         // Inside an ADOPTED interface `default fn` body (`implement Sized`'s

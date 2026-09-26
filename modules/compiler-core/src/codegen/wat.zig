@@ -5482,7 +5482,7 @@ const Emitter = struct {
         const il = self.instance_lowerings.get(loc) orelse return null;
         return switch (il) {
             .prim => |k| k,
-            .type_, .field_of, .sequence_next => null,
+            .type_, .field_of, .sequence_next, .division => null,
         };
     }
 
@@ -7573,7 +7573,7 @@ const Emitter = struct {
         // `.length` on its result answered `0` at exit 0.
         const rec = if (self.instance_lowerings.get(loc)) |il| switch (il) {
             .type_ => |r| r,
-            .prim, .field_of, .sequence_next => return null,
+            .prim, .field_of, .sequence_next, .division => return null,
         } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
         if (!self.fn_sigs.contains(sym)) return null;

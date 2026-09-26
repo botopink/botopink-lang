@@ -47,7 +47,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
         return 1;
     };
 
-    var loaded = sources.load(gpa, io, proj, "src") catch return 1;
+    var loaded = sources.load(gpa, io, proj, proj.srcDir()) catch return 1;
     defer loaded.free(gpa);
     var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
     defer test_scan.free(gpa);

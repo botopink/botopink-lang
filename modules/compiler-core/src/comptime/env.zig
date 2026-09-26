@@ -329,7 +329,15 @@ pub const InstanceLowering = union(enum) {
     /// sequence is the list of its items, pop the head and rebind the receiver
     /// to the rest when it is a local name.
     sequence_next: SequenceKind,
+    /// Onze F7 — a `/`, keyed by its operator's loc: whether inference typed
+    /// it over integers (it truncates toward zero, and answers an integer, on
+    /// every backend) or over floats. Absent when the operands' type was never
+    /// resolved (a generic `T`); a backend then keeps its own reading.
+    division: DivisionKind,
 };
+
+/// Which `/` an `InstanceLowering.division` is.
+pub const DivisionKind = enum { integer, float };
 
 /// Which sequence a `.next()` (`InstanceLowering.sequence_next`) steps.
 pub const SequenceKind = enum { iterator, stream };
@@ -717,6 +725,10 @@ pub const Env = struct {
     /// loc. Lets backends without native method dispatch lower record + builtin
     /// primitive methods. Empty contribution on commonJS (native dispatch).
     instanceLowerings: std.AutoHashMap(ast.Loc, InstanceLowering),
+    /// Every `/` inferred, keyed by its operator's loc, with its result type.
+    /// Read once inference is done (the operands may be type variables when
+    /// the `/` is met) and turned into `InstanceLowering.division` entries.
+    divisions: std.AutoHashMap(ast.Loc, *T.Type),
     /// Stdlib modules implicitly required via array method dispatch; used by
     /// the compile session to prepend synthetic imports for the codegen.
     implicitStdModules: std.StringHashMap(void),
@@ -862,6 +874,7 @@ pub const Env = struct {
             .stdModuleFns = std.StringHashMap([]const ast.FnDecl).init(arena),
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
             .instanceLowerings = std.AutoHashMap(ast.Loc, InstanceLowering).init(arena),
+            .divisions = std.AutoHashMap(ast.Loc, *T.Type).init(arena),
             .implicitStdModules = std.StringHashMap(void).init(arena),
             .decorators = std.StringHashMap(DecoratorSig).init(arena),
             .stdlibFnDecls = std.StringHashMap(ast.FnDecl).init(arena),
@@ -940,6 +953,7 @@ pub const Env = struct {
             .stdModuleFns = try tmpl.stdModuleFns.cloneWithAllocator(arena),
             .stdArrayLowerings = std.AutoHashMap(ast.Loc, StdArrayLowering).init(arena),
             .instanceLowerings = std.AutoHashMap(ast.Loc, InstanceLowering).init(arena),
+            .divisions = std.AutoHashMap(ast.Loc, *T.Type).init(arena),
             .implicitStdModules = std.StringHashMap(void).init(arena),
             .decorators = try tmpl.decorators.cloneWithAllocator(arena),
             .stdlibFnDecls = try tmpl.stdlibFnDecls.cloneWithAllocator(arena),
@@ -1001,6 +1015,7 @@ pub const Env = struct {
         self.stdModuleFns.deinit();
         self.stdArrayLowerings.deinit();
         self.instanceLowerings.deinit();
+        self.divisions.deinit();
         self.implicitStdModules.deinit();
         self.decorators.deinit();
         self.stdlibFnDecls.deinit();

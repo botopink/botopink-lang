@@ -1154,6 +1154,64 @@ fn pkgKey(path: []const u8) []const u8 {
     return "";
 }
 
+/// The key under which a module's type-declaration map (`typeDeclRegistry`)
+/// holds a type it IMPORTS rather than declares: `"\x00" ++ name`. No import
+/// item can spell it, so an importer's `get(name)` never answers with one —
+/// the module does not re-export what it imports. Only the type closure of an
+/// imported type reads it (`infer.registerImportedTypeClosure`): `Outer`'s
+/// fields name `Other`, which `Outer`'s module took from a third one.
+pub const imported_type_scope_prefix = "\x00";
+
+/// Onze F2 — record in `typeDecls` the types this module imports, and the
+/// imported-type scope of the modules they come from, under
+/// `imported_type_scope_prefix`. A module that imports `Outer` from here then
+/// resolves `Outer(others: Array<Other>)` without naming `Other`, however
+/// many modules the chain crosses. This module's own imports win a collision.
+fn addImportedTypeScope(
+    arena: std.mem.Allocator,
+    typeDeclRegistry: *std.StringHashMap(std.StringHashMap(ast.DeclKind)),
+    typeDecls: *std.StringHashMap(ast.DeclKind),
+    decls: []const ast.DeclKind,
+) !void {
+    const P = imported_type_scope_prefix;
+    var inherited: std.ArrayListUnmanaged(std.StringHashMap(ast.DeclKind)) = .empty;
+    for (decls) |d| {
+        if (d != .use) continue;
+        const u = d.use;
+        switch (u.source) {
+            .module => |m| if (std.mem.eql(u8, m, "std")) continue,
+            .root => {},
+        }
+        for (u.imports) |imp| {
+            const name = imp.leaf();
+            const leaf_src = try u.leafSource(imp, arena, false);
+            var found = false;
+            for ([2]bool{ true, false }) |named_only| {
+                if (found) break;
+                var it = typeDeclRegistry.iterator();
+                while (it.next()) |e| {
+                    if (isStdPkgPath(e.key_ptr.*)) continue;
+                    if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
+                    const decl = e.value_ptr.get(name) orelse continue;
+                    const key = try std.mem.concat(arena, u8, &.{ P, name });
+                    if (!typeDecls.contains(key)) try typeDecls.put(key, decl);
+                    try inherited.append(arena, e.value_ptr.*);
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+    for (inherited.items) |m| {
+        var it = m.iterator();
+        while (it.next()) |e| {
+            const k = e.key_ptr.*;
+            const key = if (std.mem.startsWith(u8, k, P)) k else try std.mem.concat(arena, u8, &.{ P, k });
+            if (!typeDecls.contains(key)) try typeDecls.put(key, e.value_ptr.*);
+        }
+    }
+}
+
 fn registerExports(
     arena: std.mem.Allocator,
     registry: *std.StringHashMap(std.StringHashMap(*T.Type)),
@@ -1217,6 +1275,7 @@ fn registerExports(
             }
         }
     }
+    try addImportedTypeScope(arena, typeDeclRegistry, &typeDecls, decls);
     try registry.put(path, exports);
     try typeDeclRegistry.put(path, typeDecls);
     try extensionRegistry.put(path, extensions);
@@ -1578,6 +1637,9 @@ pub fn compileTypesOnly(
                 {
                     var rit = succ.env.instanceLowerings.iterator();
                     while (rit.next()) |e| try instance_lowerings.put(e.key_ptr.*, e.value_ptr.*);
+                    var dit = succ.env.divisions.iterator();
+                    while (dit.next()) |e| if (infer.divisionKind(e.value_ptr.*)) |k|
+                        try instance_lowerings.put(e.key_ptr.*, .{ .division = k });
                 }
                 if (idx < all_modules.len - 1) {
                     var env = succ.env;
@@ -1771,6 +1833,9 @@ pub fn compile(
                 {
                     var rit = succ.env.instanceLowerings.iterator();
                     while (rit.next()) |e| try instance_lowerings.put(e.key_ptr.*, e.value_ptr.*);
+                    var dit = succ.env.divisions.iterator();
+                    while (dit.next()) |e| if (infer.divisionKind(e.value_ptr.*)) |k|
+                        try instance_lowerings.put(e.key_ptr.*, .{ .division = k });
                 }
                 if (idx < all_modules.len - 1) {
                     var env = succ.env;

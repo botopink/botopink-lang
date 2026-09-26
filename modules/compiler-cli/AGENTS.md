@@ -235,7 +235,16 @@ Cross-command rules:
   `build.zig`'s `std_core_files` and declared in `libs/std`'s `files`, never in
   `root.bp`'s `pub mod` chain. Knowing only the first route, the check warned
   about it on every gate run. A file in neither is still an orphan, which is the
-  case the warning exists for.
+  case the warning exists for. The walk skips what is not this package's tree
+  (`resolver.inOwnTree`): a hidden directory, the flat `test/` suite when the
+  source root is the project root, and a directory holding its own
+  `botopink.json` (a nested package, such as a local `path` dependency).
+- **The source root is the manifest's `src`.** `build`, `check` and `test` load
+  the project's modules from `ProjectConfig.srcDir()` — `"src/"` → `src`,
+  `"."` → the project root. They used to read a hard-coded `src/`, so a package
+  whose `src` is `"."` compiled nothing: `check` answered "no source files found
+  in src/ or test/" and a test could not import a nested module (onze F5,
+  `tests/language/modules/src_at_package_root`).
 - **An import names something.** `import … from "<name>"` must resolve to a
   package module (the `mod` tree, dotted path), to a declared dependency
   (`<dep>` or `<dep>.<module>`) or to `std`; otherwise `build`, `check` and
@@ -243,6 +252,10 @@ Cross-command rules:
   naming what the `from` said and where (`at: src/main.bp:1:20`). A `from` that
   names a module which *does* exist but does not export the symbol is the other
   error (`imported symbol is not exported by the named module`), also located.
+  It is not raised against a module that does not lex or parse
+  (`Analysis.broken`): its export list is unknown, not empty, and the compile
+  reports the module's own located error instead (onze F8,
+  `tests/language/modules/lexer_error_in_imported_module`).
   Before this, an import naming nothing bound nothing and said nothing: exit 0,
   with code emitted.
 - **Two loaders, one import rule.** `src/` is a package and loads through

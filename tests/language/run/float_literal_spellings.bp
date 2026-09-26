@@ -1,0 +1,22 @@
+//// A float literal in every spelling the lexer takes is an `f64` and runs on
+//// every backend. An exponent without a `.` (`1e3`, `3e+2`) was typed `i32`
+//// by the checker, and the erlang and beam backends wrote the token as it
+//// was spelled — Erlang reads a float only with a `.` before the exponent,
+//// so `1e3` did not compile there. Each line compares, so no line depends on
+//// how a backend prints a float.
+
+fn id(x: f64) -> f64 {
+    return x;
+}
+
+pub fn main() {
+    @print(1e3 == 1000.0);
+    @print(2.5E3 == 2500.0);
+    @print(3e+2 == 300.0);
+    @print(5e-1 == 0.5);
+    @print(1_000.5 > 1000.0);
+    @print(id(1e2) > 99.0);
+    @print(id(4e0) == 4.0);
+    val x: f64 = 2.0;
+    @print(x * 1e1 == 20.0);
+}

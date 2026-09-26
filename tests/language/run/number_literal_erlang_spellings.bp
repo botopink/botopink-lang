@@ -1,0 +1,19 @@
+//// The erlang float-literal item (found beside onze front 49): every number
+//// token is written as an Erlang number. `5e-324`, the least subnormal `f64`,
+//// was written as spelled, and Erlang refuses a float with no `.` before its
+//// exponent — `libs/std`'s json test had to spell it `5.0e-324`; a radix
+//// integer (`0xFF`) was written as spelled too, where Erlang wants `16#FF`.
+//// Not scheduled on wasm: the wasm backend lowers a float literal to an
+//// `f32.const`, where `5e-324` is `0`, and interns a radix literal as a
+//// string — wasm gaps of their own, not this cell's claim.
+
+type Num(value: f64)
+
+pub fn main() {
+    val least: f64 = 5e-324;
+    @print(least > 0.0);
+    @print(least / 2.0 == 0.0);
+    @print(Num(value: 4.9406564584124654e-324).value == least);
+    @print(1.7976931348623157e308 > 1e308);
+    @print(0xFF + 0b101 + 0o17 == 275);
+}
