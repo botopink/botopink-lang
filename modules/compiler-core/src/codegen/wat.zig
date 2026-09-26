@@ -5580,17 +5580,16 @@ const Emitter = struct {
         const Row = struct { []const u8, usize, PrimRes };
         const rows: []const Row = switch (k) {
             .array => &.{
-                .{ "length", 0, .i32 },    .{ "at", 1, .i32 },      .{ "first", 0, .i32 },
-                .{ "find", 1, .i32 },
-                .{ "join", 1, .str },      .{ "indexOf", 1, .i32 }, .{ "contains", 1, .bool_ },
-                .{ "isEmpty", 0, .bool_ }, .{ "reverse", 0, .arr }, .{ "prepend", 1, .arr },
-                .{ "append", 1, .arr },    .{ "push", 1, .none },   .{ "zip", 1, .arr },
-                .{ "slice", 1, .arr },     .{ "slice", 2, .arr },   .{ "rest", 0, .arr },
-                .{ "take", 1, .arr },      .{ "drop", 1, .arr },    .{ "toList", 0, .arr },
-                .{ "map", 1, .arr },       .{ "filter", 1, .arr },  .{ "forEach", 1, .none },
-                .{ "all", 1, .bool_ },     .{ "every", 1, .bool_ }, .{ "any", 1, .bool_ },
-                .{ "some", 1, .bool_ },    .{ "count", 1, .i32 },   .{ "findIndex", 1, .i32 },
-                .{ "fold", 2, .i32 },
+                .{ "length", 0, .i32 },     .{ "at", 1, .i32 },        .{ "first", 0, .i32 },
+                .{ "find", 1, .i32 },       .{ "join", 1, .str },      .{ "indexOf", 1, .i32 },
+                .{ "contains", 1, .bool_ }, .{ "isEmpty", 0, .bool_ }, .{ "reverse", 0, .arr },
+                .{ "prepend", 1, .arr },    .{ "append", 1, .arr },    .{ "push", 1, .none },
+                .{ "zip", 1, .arr },        .{ "slice", 1, .arr },     .{ "slice", 2, .arr },
+                .{ "rest", 0, .arr },       .{ "take", 1, .arr },      .{ "drop", 1, .arr },
+                .{ "toList", 0, .arr },     .{ "map", 1, .arr },       .{ "filter", 1, .arr },
+                .{ "forEach", 1, .none },   .{ "all", 1, .bool_ },     .{ "every", 1, .bool_ },
+                .{ "any", 1, .bool_ },      .{ "some", 1, .bool_ },    .{ "count", 1, .i32 },
+                .{ "findIndex", 1, .i32 },  .{ "fold", 2, .i32 },
             },
             .string => &.{
                 .{ "length", 0, .i32 },      .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
