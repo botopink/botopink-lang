@@ -43,6 +43,11 @@ pub const ExportInfo = struct {
     kind: ExportKind,
     is_class: bool,
     fields: []const []const u8 = &.{},
+    /// The record's fields of function type (a subset of `fields`): a consumer
+    /// calling one like a method (`c.set(5)`) applies the field's value — the
+    /// owner emits no `set/2`. Names only crossed before, so an importer
+    /// lowered the call to a local `set(C, 5)` that no module defines.
+    fn_fields: []const []const u8 = &.{},
     /// The methods a record/enum export declares, name and arity (empty
     /// otherwise). A consumer calling one on an imported value
     /// (`stub.thenReturn(v)`) emits no local definition of it: erlang resolves
@@ -947,7 +952,18 @@ pub fn buildIn(alloc: std.mem.Allocator, outputs: []ComptimeOutput, packages: Pa
                         const fields = try alloc.alloc([]const u8, record_fields.len);
                         for (record_fields, 0..) |f, i| fields[i] = f.name;
                         try field_arrays.append(alloc, fields);
-                        try putExport(alloc, &exports, &owners, r.name, .{ .module = ct.name, .kind = .record, .is_class = true, .fields = fields, .methods = methods });
+                        var n_fn: usize = 0;
+                        for (record_fields) |f| {
+                            if (f.typeRef == .function) n_fn += 1;
+                        }
+                        const fn_fields = try alloc.alloc([]const u8, n_fn);
+                        n_fn = 0;
+                        for (record_fields) |f| if (f.typeRef == .function) {
+                            fn_fields[n_fn] = f.name;
+                            n_fn += 1;
+                        };
+                        try field_arrays.append(alloc, fn_fields);
+                        try putExport(alloc, &exports, &owners, r.name, .{ .module = ct.name, .kind = .record, .is_class = true, .fields = fields, .fn_fields = fn_fields, .methods = methods });
                     },
                     .enum_ => try putExport(alloc, &exports, &owners, r.name, .{ .module = ct.name, .kind = .@"enum", .is_class = false, .methods = methods }),
                 }

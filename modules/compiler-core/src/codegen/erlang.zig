@@ -4087,6 +4087,16 @@ const Emitter = struct {
                         if (!self.record_fields.contains(name)) {
                             try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
                         }
+                        // Its fields of function type, as `collectTypeShapes`
+                        // records a local record's: `c.set(5)` applies the
+                        // field. With names only, the call fell through to a
+                        // local `set(C, 5)` no module defines.
+                        for (info.fn_fields) |ff| {
+                            var key_buf: [256]u8 = undefined;
+                            const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ name, ff }) catch continue;
+                            if (!self.fn_typed_fields.contains(key)) try self.fn_typed_fields.put(try self.alloc.dupe(u8, key), {});
+                            try self.fn_typed_field_names.put(ff, {});
+                        }
                         // Its methods and associated fns are in the TYPE's
                         // module (policy 3), not the file's.
                         try self.imported_types.put(name, try crossModule.typeAtom(self.atom_arena.allocator(), self.idOf(info.module), name));
@@ -4269,6 +4279,23 @@ const Emitter = struct {
         var key_buf: [256]u8 = undefined;
         const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ type_name, name }) catch return false;
         return this.fn_typed_fields.contains(key);
+    }
+
+    /// True when some `pub` record of the program declares a field `name` of
+    /// function type and no record declares a METHOD of that name — the
+    /// program-wide half of `fn_typed_field_names`, for a value whose record
+    /// this module never imported by name (`cell(3).set(5)`).
+    fn programFnFieldName(this: *const Emitter, name: []const u8) bool {
+        const xc = this.cross orelse return false;
+        var found = false;
+        var it = xc.owners.valueIterator();
+        while (it.next()) |owners| for (owners.*) |o| {
+            for (o.methods) |m| if (std.mem.eql(u8, m.name, name)) return false;
+            for (o.fn_fields) |f| if (std.mem.eql(u8, f, name)) {
+                found = true;
+            };
+        };
+        return found;
     }
 
     /// True when some record of the module declares a field named `name`.
@@ -7096,7 +7123,7 @@ const Emitter = struct {
         // left untyped (`c.set(9)` where some record declares `set: fn(…)`):
         // apply what the field holds. A function of that name taking the
         // receiver first wins — that is a real method.
-        if (this.fn_typed_field_names.contains(cc.callee) and
+        if ((this.fn_typed_field_names.contains(cc.callee) or this.programFnFieldName(cc.callee)) and
             this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len + 1) == null and
             !this.local_fn_arities.contains(try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 })))
         {

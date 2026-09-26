@@ -811,6 +811,43 @@ pub fn assertErlangRunLog(
     return error.ModuleDidNotCompile;
 }
 
+/// `assertErlangRunLog` over several modules: `files` are compiled as one
+/// program for the erlang target and the RUN LOG of the module named
+/// `run_module` (the one declaring `main`) must equal `expected`; `needles`
+/// are looked for in that module's emitted erlang. For a row that lives on a
+/// module boundary (an imported record's field, an imported fn), where an
+/// all-backend snapshot would record other fronts' baselines.
+pub fn assertErlangRunLogModules(
+    allocator: Allocator,
+    files: []const Module,
+    run_module: []const u8,
+    expected: []const u8,
+    needles: []const []const u8,
+) !void {
+    const io = std.testing.io;
+    var outputs = try generate(allocator, files, io, configs[1]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, run_module)) continue;
+        const got = o.result.run_output orelse "";
+        if (!std.mem.eql(u8, got, expected)) {
+            std.debug.print("\n=== generated erlang ===\n{s}\n=== RUN LOG ===\n{s}\n=== expected ===\n{s}\n", .{ o.result.js, got, expected });
+            return error.RunLogMismatch;
+        }
+        for (needles) |needle| {
+            if (std.mem.indexOf(u8, o.result.js, needle) == null) {
+                std.debug.print("\n=== generated erlang ===\n{s}\n=== missing needle: {s} ===\n", .{ o.result.js, needle });
+                return error.NeedleNotFound;
+            }
+        }
+        return;
+    }
+    return error.ModuleDidNotCompile;
+}
+
 /// The beam twin of `assertErlangRunLog` (front `03-beam`): compiles `src` for
 /// the beam target, assembles every emitted `.S` with `erlc +from_asm`, runs
 /// the entry under `erl` and asserts its RUN LOG equals `expected`, then that

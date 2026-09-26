@@ -630,6 +630,14 @@ codegen/
   variable. It was the unbound variable `One`, and `erlc` refused the whole
   module. The beam twin is a `make_fun3` over the function's own entry
   (`top_fns`), which was `{unresolved_identifier, one}`.
+- **A field of function type of an imported record** (`c.set(5)`):
+  `ExportInfo.fn_fields` (`crossModule.zig`) carries which of a `pub` record's
+  fields are functions; `collectImportedTypes` registers them like a local
+  record's (`fn_typed_fields`), and a receiver whose record was never imported
+  by name (`cell(3).set(5)`) reaches `programFnFieldName` — some `pub` record of
+  the program declares that fn field and none a method of the name — which
+  applies `'__bp_field'(C, set)`. Names alone crossed before, and the call was
+  a local `set(C, 5)` no module defines.
 - **Calling the result of a call** (`adder(3)(4)`, `cc.calleeExpr` with
   `callee == ""`): `(adder(3))(4)` — `applyParen` over the callee expression's
   node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which
