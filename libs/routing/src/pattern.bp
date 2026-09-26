@@ -29,7 +29,7 @@ fn sub(s: string, begin: i32, end: i32) -> string {
     while (i < stop) {
         out = out + charOf(s, i);
         i = i + 1;
-    };
+    }
     return out;
 }
 
@@ -37,7 +37,7 @@ fn segments(path: string) -> string[] {
     var out: string[] = [];
     for (path.split("/")) { s ->
         if (s != "") out.push(s);
-    };
+    }
     return out;
 }
 
@@ -84,7 +84,7 @@ fn problemOf(pattern: string) -> string {
                     + seg
                     + "` before its last segment - a `:param*` captures the rest of the path and must be last";
         i = i + 1;
-    };
+    }
     return problem;
 }
 
@@ -151,9 +151,9 @@ pub fn matchPattern(
             else
                 "";
             captures.push(#(text, rest));
-        };
+        }
         i = i + 1;
-    };
+    }
     if (tail) {
         if (want.length < pattern.length - 1) ok = false;
     } else if (want.length != pattern.length) ok = false;

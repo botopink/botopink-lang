@@ -42,7 +42,7 @@ pub fn writeTable(entries: RouteEntry[]) -> string {
             lines.push(head + "|" + e.slot)
         else
             lines.push(head);
-    };
+    }
     return lines.join("\n");
 }
 
@@ -60,10 +60,10 @@ pub fn parseTable(wire: string) -> RouteEntry[] {
                         verb: f.at(3).unwrapOr(""),
                     ),
                 );
-            };
-        };
+            }
+        }
         return out;
-    };
+    }
 }
 
 // The long name of a `kind` letter, for a diagnostic and for a reader that would

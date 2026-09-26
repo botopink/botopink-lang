@@ -120,21 +120,21 @@ pub fn pathProblem(seg: string) -> string {
                             + "` in `"
                             + seg
                             + "` is a private folder - a `_`-prefixed directory is excluded from routing and may not appear on a registered path";
-                };
-            };
-        };
+                }
+            }
+        }
         return problem;
-    };
+    }
 }
 
 pub fn trimSlashes(seg: string) -> string {
     var out = seg;
     while (out.startsWith("/")) {
         out = sub(out, 1, out.length());
-    };
+    }
     while (out.endsWith("/")) {
         out = sub(out, 0, out.length() - 1);
-    };
+    }
     return out;
 }
 
@@ -148,9 +148,9 @@ pub fn parsePath(seg: string) -> Segment[] {
     if (trimmed == "") return out else {
         for (trimmed.split("/")) { raw ->
             out.push(parseSegment(raw));
-        };
+        }
         return out;
-    };
+    }
 }
 
 // The URL pattern: groups and slots removed, the bracket spelling preserved.
@@ -159,7 +159,7 @@ pub fn patternOf(segments: Segment[]) -> string {
     for (segments) { s ->
         val k = kindName(s.kind);
         if ((k != "Group" && k != "Slot")) parts.push(s.raw);
-    };
+    }
     if (parts.length == 0) return "/" else return "/" + parts.join("/");
 }
 
@@ -171,7 +171,7 @@ pub fn slotOf(segments: Segment[]) -> string {
     for (segments) { s ->
         val k = kindName(s.kind);
         if (k == "Slot") name = s.name;
-    };
+    }
     return name;
 }
 
@@ -188,6 +188,6 @@ fn sub(s: string, begin: i32, end: i32) -> string {
     while (i < stop) {
         out = out + charOf(s, i);
         i = i + 1;
-    };
+    }
     return out;
 }

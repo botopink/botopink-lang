@@ -599,7 +599,7 @@ behavior Array<T> {
         val len = self.length;
         for (0..len) { k ->
             if (k % n == 0) out = out.append([self.slice(k, k + n)]);
-        };
+        }
         return out;
     }
 
@@ -613,7 +613,7 @@ behavior Array<T> {
         if (windows <= 0) return out;
         for (0..windows) { k ->
             out = out.append([self.slice(k, k + n)]);
-        };
+        }
         return out;
     }
 
@@ -629,12 +629,12 @@ behavior Array<T> {
                 if (prev.unwrapOr(x) != x) {
                     out = out.append([x]);
                     prev = self.at(out.length);
-                };
+                }
             } else {
                 out = out.append([x]);
                 seenLast = true;
                 prev = self.at(0);
-            };
+            }
         });
         return out;
     }

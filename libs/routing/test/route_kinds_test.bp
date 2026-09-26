@@ -34,7 +34,7 @@ test "routing: parseKinds(writeKinds(xs)) equals xs element by element" {
         assert b._0 == a._0;
         assert kindText(b._1) == kindText(a._1);
         i = i + 1;
-    };
+    }
 }
 
 test "routing: routeKindOf answers the recorded kind" {

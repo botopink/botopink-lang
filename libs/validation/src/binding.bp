@@ -114,7 +114,7 @@ pub fn isIntegerText(raw: string) -> bool {
     while (i < t.length()) {
         if (digits().indexOf(t.at(i).unwrapOr("")) < 0) ok = false;
         i = i + 1;
-    };
+    }
     return ok;
 }
 
@@ -131,7 +131,7 @@ pub fn parseI32(raw: string) -> i32 {
     while (i < t.length()) {
         n = n * 10 + digits().indexOf(t.at(i).unwrapOr(""));
         i = i + 1;
-    };
+    }
     if (negative) return 0 - n else return n;
 }
 

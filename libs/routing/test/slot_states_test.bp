@@ -41,7 +41,7 @@ test "routing: parseSlotStates(writeSlotStates(xs)) recovers each field" {
         assert a._1 == b._1;
         assert stateText(a._2) == stateText(b._2);
         i = i + 1;
-    };
+    }
 }
 
 test "routing: an unknown state letter reads as Empty rather than raising" {

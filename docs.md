@@ -493,14 +493,14 @@ guards.
 fn describe(x: i32 | string) -> string {
     if (x is i32) {
         return "an integer";
-    };
+    }
     return "a string";
 }
 
 fn read(raw: unknown) -> string {
     if (raw is string) {
         return raw;
-    };
+    }
     return "not a string";
 }
 ```
@@ -534,7 +534,7 @@ type Entry(key: string) {}
 
 fn firstKeyLength(entries: Entry[]) -> i32 {
     val first = entries.at(0);
-    if (first == null) { return 0; };
+    if (first == null) { return 0; }
     return first.key.length();     // `first` is an `Entry` here, not a `?Entry`
 }
 
@@ -704,14 +704,14 @@ parentheses close it, so nothing has to be bound to a `val` first:
 ```botopink
 val a = true;
 val b = false;
-if (a && b) { @print("both"); } else if (a || b) { @print("either"); };
+if (a && b) { @print("both"); } else if (a || b) { @print("either"); }
 ```
 
 `if` on an optional unwraps it in the then-branch:
 
 ```botopink
 fn show(x: ?i32) {
-    if (x) { n -> @print(n); };
+    if (x) { n -> @print(n); }
 }
 ```
 
@@ -720,7 +720,7 @@ Write the binder `_` when the branch only asks whether the value is there:
 <!-- docs-check: body -->
 ```botopink
 val x: ?i32 = 5;
-if (x) { _ -> @print("present"); } else { @print("absent"); };
+if (x) { _ -> @print("present"); } else { @print("absent"); }
 ```
 
 ### Case (pattern matching)
@@ -786,7 +786,7 @@ fn grade(n: i32) {
         i32 when (n > 100) { @print("impossible"); }
         0 { @print("zero"); }
         _ { @print("something else"); }
-    };
+    }
 }
 ```
 
@@ -870,21 +870,21 @@ val xs = [1, 2, 3];
 
 for (xs) { item ->
     @print(item);
-};
+}
 
 for (1...3) { i ->
     @print(i);
-};
+}
 
 var n = 0;
 while (n < 3) {
     n = n + 1;
-};
+}
 
 loop {
     n = n - 1;
-    if (n == 0) { break; };
-};
+    if (n == 0) { break; }
+}
 ```
 
 **`yield v` and `break v` need a generator scope** — a function whose return is
@@ -904,13 +904,13 @@ enclosing scope — a `var` it reassigns is its state:
 var count = 0;
 val doubles = iter loop {
     count = count + 1;
-    if (count == 10) { break count * 2; };   // the last item: 20
+    if (count == 10) { break count * 2; }   // the last item: 20
     yield count * 2;                          // 2 4 6 … 18
 };
-for (doubles) { d -> @print(d); };
+for (doubles) { d -> @print(d); }
 
-val evens = iter for ([1, 2, 3, 4]) { x -> if (x % 2 == 0) { yield x; }; };
-for (evens) { e -> @print(e); };
+val evens = iter for ([1, 2, 3, 4]) { x -> if (x % 2 == 0) { yield x; } };
+for (evens) { e -> @print(e); }
 ```
 
 The rules of the prefixed loop:
@@ -965,7 +965,7 @@ the match fails, so the names below the binding are never unbound. It takes no
 fn parse(s: string) -> @Result<i32, string> {
     if (s == "") {
         throw "empty input";
-    };
+    }
     return 42;
 }
 
@@ -1303,8 +1303,8 @@ A function that can fail returns `@Result<T, E>`; `throw` produces the error,
 type PortError { Zero, TooBig(value: i32) }
 
 fn port(n: i32) -> @Result<i32, PortError> {
-    if (n == 0) { throw PortError.Zero; };
-    if (n > 65535) { throw PortError.TooBig(value: n); };
+    if (n == 0) { throw PortError.Zero; }
+    if (n > 65535) { throw PortError.TooBig(value: n); }
     return n;                                  // becomes Ok(n)
 }
 
@@ -1328,7 +1328,7 @@ Three ways to consume a `@Result`, and a fourth for when a failure is a bug:
 type PortError { Zero, TooBig(value: i32) }
 
 fn port(n: i32) -> @Result<i32, PortError> {
-    if (n == 0) { throw PortError.Zero; };
+    if (n == 0) { throw PortError.Zero; }
     return n;
 }
 
@@ -1369,7 +1369,7 @@ combine it with `try`:
 type User(id: i32, name: string)
 
 fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
-    if (id <= 0) { throw "no user " + id.toString(); };   // legal: the value is a @Result
+    if (id <= 0) { throw "no user " + id.toString(); }   // legal: the value is a @Result
     return User(id: id, name: "ana");                     // a Task holding Ok(…)
 }
 
@@ -1414,7 +1414,7 @@ it waits for nothing, it creates the Task.
 type User(id: i32, name: string)
 
 fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
-    if (id <= 0) { throw "no user"; };
+    if (id <= 0) { throw "no user"; }
     return User(id: id, name: "ana");
 }
 
@@ -1466,18 +1466,18 @@ fn fibonacci(limit: i32) -> @Iterator<i32> {
         a = b;
         b = t;
         i = i + 1;
-    };
+    }
 }
 
 fn firstNegative(xs: i32[]) -> @Iterator<i32> {
     for (xs) { x ->
-        if (x < 0) { break x; };               // emits the negative and ends
+        if (x < 0) { break x; }               // emits the negative and ends
         yield x;
-    };
+    }
 }
 
 fn main() {
-    for (fibonacci(10)) { n -> @print(n); };  // an ordinary function may iterate
+    for (fibonacci(10)) { n -> @print(n); }  // an ordinary function may iterate
 }
 ```
 
@@ -1490,12 +1490,12 @@ emits `Error(e)` and ends. Whoever iterates receives the `@Result` and decides �
 
 ```botopink
 fn port(n: i32) -> @Result<i32, string> {
-    if (n <= 0) { throw "not a port: " + n.toString(); };
+    if (n <= 0) { throw "not a port: " + n.toString(); }
     return n;
 }
 
 fn ports(xs: i32[]) -> @Iterator<@Result<i32, string>> {
-    for (xs) { x -> yield try port(x); };     // a failed `try` emits Error(e) and ends
+    for (xs) { x -> yield try port(x); }     // a failed `try` emits Error(e) and ends
 }
 
 // stop at the first error: an explicit try, under a @Result return
@@ -1504,7 +1504,7 @@ fn sumPorts(xs: i32[]) -> @Result<i32, string> {
     for (ports(xs)) { r ->
         val p = try r;                         // the explicit try: an Error rises from here
         total = total + p;
-    };
+    }
     return total;
 }
 
@@ -1514,8 +1514,8 @@ fn printPorts(xs: i32[]) {
         case r {
             Ok(p) -> @print(p);
             Error(e) -> @print("error: " + e);
-        };
-    };
+        }
+    }
 }
 ```
 
@@ -1524,7 +1524,7 @@ hold, and a failing `try await` also emits `Error(e)` and ends:
 
 ```botopink
 fn fetchPage(n: i32) -> @Task<@Result<i32[], string>> {
-    if (n > 9) { throw "no page " + n.toString(); };
+    if (n > 9) { throw "no page " + n.toString(); }
     return [n, n + 1];
 }
 
@@ -1534,12 +1534,12 @@ fn pages(count: i32) -> @Stream<@Result<i32[], string>> {
         val rows = try await fetchPage(page);  // failed: emits Error(e) and ends
         yield rows;                            // emits Ok(rows)
         page = page + 1;
-    };
+    }
 }
 
 fn countRows() -> @Task<@Result<i32, string>> {
     var n = 0;
-    for await (pages(3)) { batch -> n = n + (try batch).length; };
+    for await (pages(3)) { batch -> n = n + (try batch).length; }
     return n;
 }
 ```
@@ -1552,11 +1552,11 @@ inner `iter` / `stream` loops); otherwise it is an ordinary function that
 
 ```botopink
 fn evens(xs: i32[]) -> @Iterator<i32> {                 // an iterator: it yields
-    for (xs) { x -> if (x % 2 == 0) { yield x; }; };
+    for (xs) { x -> if (x % 2 == 0) { yield x; } }
 }
 
 fn evensOf(xs: i32[]) -> @Iterator<i32> {               // a factory: it returns one
-    return iter for (xs) { x -> if (x % 2 == 0) { yield x; }; };
+    return iter for (xs) { x -> if (x % 2 == 0) { yield x; } };
 }
 ```
 
@@ -1566,13 +1566,13 @@ iterable behavior, and the consumer calls it — `for (grid.iter())`:
 ```botopink
 type Grid(cells: i32[]) {
     fn iter(self: Self) -> @Iterator<i32> {
-        for (self.cells) { c -> yield c; };
+        for (self.cells) { c -> yield c; }
     }
 }
 
 fn main() {
     val g = Grid(cells: [1, 2, 3]);
-    for (g.iter()) { c -> @print(c); };
+    for (g.iter()) { c -> @print(c); }
 }
 ```
 
@@ -1870,7 +1870,7 @@ lambda's, not the test's. An assertion helper is therefore an ordinary
 
 ```botopink
 fn isPositive(n: i32) -> @Result<void, string> {
-    if (n <= 0) { throw "asserts.isPositive: value not positive"; };
+    if (n <= 0) { throw "asserts.isPositive: value not positive"; }
     return;
 }
 

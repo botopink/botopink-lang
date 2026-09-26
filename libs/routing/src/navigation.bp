@@ -35,7 +35,7 @@ fn sub(s: string, begin: i32, end: i32) -> string {
     while (i < stop) {
         out = out + charOf(s, i);
         i = i + 1;
-    };
+    }
     return out;
 }
 
@@ -134,7 +134,7 @@ pub fn signalFromReason(reason: string) -> NavOutcome {
                     + reason
                     + "` is not a navigation signal reason",
             );
-    };
+    }
 }
 
 // ── the `n` wire ────────────────────────────────────────────────────────────
@@ -169,5 +169,5 @@ pub fn signalFromWire(wire: string) -> NavOutcome {
                 location: after(wire, "R|000|"),
                 status: head,
             );
-    };
+    }
 }

@@ -31,7 +31,7 @@ pub fn writeKinds(kinds: Array<#(string, RouteKind)>) -> string {
             + pattern
             + "` holds a `|` or a newline, which the `k` blob uses as separators";
         lines.push(pattern + "|" + kindLetter(k._1));
-    };
+    }
     return lines.join("\n");
 }
 
@@ -46,8 +46,8 @@ pub fn parseKinds(wire: string) -> Array<#(string, RouteKind)> {
                 out.push(#(pattern, RouteKind.Static))
             else if (letter == "D")
                 out.push(#(pattern, RouteKind.Dynamic));
-        };
-    };
+        }
+    }
     return out;
 }
 
@@ -60,7 +60,7 @@ pub fn routeKindOf(wire: string, pattern: string) -> RouteKind {
         if ((found == false && k._0 == pattern)) {
             kind = k._1;
             found = true;
-        };
-    };
+        }
+    }
     return kind;
 }

@@ -41,7 +41,7 @@ test "routing: the wire format round-trips all eight kinds, field by field" {
         assert a.slot == b.slot;
         assert a.verb == b.verb;
         i = i + 1;
-    };
+    }
 }
 
 test "routing: writeTable keeps registration order and ends no line with a bar" {
@@ -53,7 +53,7 @@ test "routing: writeTable keeps registration order and ends no line with a bar" 
     assert lines.at(4).unwrapOr("") == "R|/api/posts||GET";
     for (lines) { line ->
         assert line.endsWith("|").negate();
-    };
+    }
 }
 
 test "routing: an empty wire is an empty table" {

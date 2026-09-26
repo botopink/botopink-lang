@@ -60,13 +60,13 @@ test "routing: clientHref inverts canonicalize over twenty paths" {
     var n = 0;
     for (underDocs) { h ->
         if (roundTrips(docs(), h)) n = n + 1;
-    };
+    }
     for (underSlash) { h ->
         if (roundTrips(docsSlash(), h)) n = n + 1;
-    };
+    }
     for (noBase) { h ->
         if (roundTrips(bare(), h)) n = n + 1;
-    };
+    }
     try asserts.equals(
         underDocs.length + underSlash.length + noBase.length,
         20,
@@ -153,7 +153,7 @@ test "routing: parseRedirectTable(writeRedirectTable(rs)) recovers every field" 
         assert a.destination == b.destination;
         assert a.permanent == b.permanent;
         i = i + 1;
-    };
+    }
 }
 
 test "routing: a malformed redirect line is skipped" {

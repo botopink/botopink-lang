@@ -100,7 +100,7 @@ fn digest() -> string {
             .unwrapOr(ValidationReport.empty());
         out.push(digestOne(i, rep));
         i = i + 1;
-    };
+    }
     return out.join(";");
 }
 

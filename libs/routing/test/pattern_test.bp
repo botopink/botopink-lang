@@ -19,7 +19,7 @@ fn matches(pattern: string, path: string) -> bool {
     if (matchPattern(parsedOrNone(pattern), path)) {
         _ ->
         hit = true;
-    };
+    }
     return hit;
 }
 
@@ -29,7 +29,7 @@ fn captured(pattern: string, path: string) -> string {
     if (matchPattern(parsed, path)) {
         cs ->
         out = cs.map({ c -> c._0 + "=" + c._1 }).join(",");
-    };
+    }
     return out;
 }
 

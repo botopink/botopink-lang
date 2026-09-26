@@ -199,7 +199,7 @@ test "net: a self-connected socket round-trips 11 bytes" {
         assert closeListener(l).isOk();
     } else {
         assert listen(0, 4).isError();
-    };
+    }
 }
 
 test "net: accept with nothing pending times out instead of blocking" {
@@ -210,7 +210,7 @@ test "net: accept with nothing pending times out instead of blocking" {
         assert errText(r) == "timeout";
     } else {
         assert accept(Listener(handle: noHandle()), 50).isError();
-    };
+    }
 }
 
 test "net: connecting to a closed port names the refusal" {
@@ -221,7 +221,7 @@ test "net: connecting to a closed port names the refusal" {
         assert errText(connect("127.0.0.1", port, 200)) == "econnrefused";
     } else {
         assert connect("127.0.0.1", 1, 200).isError();
-    };
+    }
 }
 
 test "net: every cell refuses with server-only on commonJS" {
@@ -247,7 +247,7 @@ test "net: every cell refuses with server-only on commonJS" {
         assert errText(tlsRecv(ts, 1, 50)) == refusal;
         assert errText(tlsSend(ts, "x")) == refusal;
         assert errText(tlsClose(ts)) == refusal;
-    };
+    }
 }
 
 test "net: TLS handshakes against a throwaway CA and round-trips" {
@@ -265,7 +265,7 @@ test "net: TLS handshakes against a throwaway CA and round-trips" {
         assert tlsClose(c).isOk();
         removeTree(dir);
         assert echoed == "hello";
-    };
+    }
 }
 
 test "net: TLS refuses a server its CA file does not vouch for" {
@@ -279,5 +279,5 @@ test "net: TLS refuses a server its CA file does not vouch for" {
         removeTree(dir);
         removeTree(other);
         assert r.isError();
-    };
+    }
 }

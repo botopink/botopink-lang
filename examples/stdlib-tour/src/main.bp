@@ -107,7 +107,7 @@ fn bfs(q: Queue<i32>, visited: Set<i32>, acc: Array<i32>) -> Array<i32> {
                     next = next.enqueue(m);
                 });
             bfs(next, visited.insert(node), acc.append([node]));
-        };
+        }
     };
 }
 
