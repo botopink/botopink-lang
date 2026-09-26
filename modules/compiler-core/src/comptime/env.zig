@@ -417,6 +417,16 @@ pub const Env = struct {
     /// may export a template of one name. Read by `comptimeOwnerOf` when the
     /// evaluator names its module atom (`bp@comptime@<path>__tpl__<decl>__<hash>`).
     comptimeOwners: std.AutoHashMap(usize, []const u8),
+    /// 01 step 12 — every enum variant's constructor under its QUALIFIED name
+    /// (`Shape.Circle`). The bare name is also bound in `bindings`, one flat
+    /// table in which the last enum to declare a name wins; a written
+    /// qualification is answered from here, so it cannot be overridden by
+    /// another enum that declares the same variant.
+    variantCtors: std.StringHashMap(*T.Type),
+    /// 01 step 12 — bare variant name → every enum declaring it, in
+    /// declaration order. Two or more claimants make the bare name ambiguous:
+    /// a use that relies on the flat table is refused naming them.
+    variantClaims: std.StringHashMap([]const []const u8),
     /// Call-site expansions: call loc → the expanded (untyped) expression that
     /// replaces the call. Recorded by inference (post splice + re-check); the
     /// transform pass rewrites the untyped AST from this map.
@@ -799,6 +809,8 @@ pub const Env = struct {
             .templateLowerings = std.AutoHashMap(ast.Loc, TemplateOp).init(arena),
             .templateFns = std.StringHashMap(ast.FnDecl).init(arena),
             .comptimeOwners = std.AutoHashMap(usize, []const u8).init(arena),
+            .variantCtors = std.StringHashMap(*T.Type).init(arena),
+            .variantClaims = std.StringHashMap([]const []const u8).init(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
@@ -875,6 +887,8 @@ pub const Env = struct {
             .templateLowerings = std.AutoHashMap(ast.Loc, TemplateOp).init(arena),
             .templateFns = try tmpl.templateFns.cloneWithAllocator(arena),
             .comptimeOwners = try tmpl.comptimeOwners.cloneWithAllocator(arena),
+            .variantCtors = try tmpl.variantCtors.cloneWithAllocator(arena),
+            .variantClaims = try tmpl.variantClaims.cloneWithAllocator(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
@@ -944,6 +958,8 @@ pub const Env = struct {
         self.templateLowerings.deinit();
         self.templateFns.deinit();
         self.comptimeOwners.deinit();
+        self.variantCtors.deinit();
+        self.variantClaims.deinit();
         self.templateExpansions.deinit();
         self.srcRewrites.deinit();
         self.customAstByLoc.deinit();

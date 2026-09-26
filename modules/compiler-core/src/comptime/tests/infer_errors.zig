@@ -1509,3 +1509,29 @@ test "generics: `Self<U>` is the declaration over another argument; A1 binds a b
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected i32, got string") != null);
 }
+
+// ── 01 step 12: one flat variant table under four symptoms ───────────────────
+
+test "variant table: a qualified constructor is the enum written, whatever else declares the name (row 3c)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Shape { Circle(r: i32), Square(s: i32) }
+        \\type Hole { Circle(r: i32), Slot(w: i32) }
+        \\fn area(s: Shape) -> i32 { return 0; }
+        \\fn main() { @print(area(Shape.Circle(r: 3))); }
+    );
+}
+
+test "variant table: a leading dot takes the expected enum; with none, two claimants are a named refusal (row 1)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Warm { Red, Orange }
+        \\type Cold { Blue, Red }
+        \\fn main() { val w: Warm = .Red; val c: Cold = .Red; @print(0); }
+    );
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type Warm { Red, Orange }
+        \\type Cold { Blue, Red }
+        \\fn main() { val x = Red; @print(0); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`Red` is a variant of `Warm` and of `Cold`, and nothing here says which") != null);
+}

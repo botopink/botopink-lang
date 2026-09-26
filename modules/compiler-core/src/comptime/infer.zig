@@ -778,6 +778,68 @@ fn typeContainsUnknown(ty: *T.Type) bool {
     };
 }
 
+/// 01 step 12 — the written spelling (`Token.Layout.Break`) of the first
+/// section enum declaring a unit leaf `name`, or null.
+fn sectionOwningLeaf(env: *Env, name: []const u8) InferError!?[]const u8 {
+    var it = env.typeDefs.iterator();
+    while (it.next()) |e| {
+        const key = e.key_ptr.*;
+        if (!std.mem.startsWith(u8, key, "__")) continue;
+        const td = e.value_ptr.*;
+        if (td != .enum_) continue;
+        for (td.enum_.variants) |v| {
+            if (!std.mem.eql(u8, v.name, name) or v.fields.len != 0) continue;
+            return try std.mem.replaceOwned(u8, env.arena, key[2..], "__", ".");
+        }
+    }
+    return null;
+}
+
+/// 01 step 12 — record that enum `enumName` declares `variant`, under its
+/// qualified name and in the bare name's claimant list.
+fn noteVariantClaim(env: *Env, enumName: []const u8, variant: []const u8, ctorType: *T.Type) InferError!void {
+    try env.variantCtors.put(try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ enumName, variant }), ctorType);
+    const prev = env.variantClaims.get(variant) orelse &.{};
+    for (prev) |p| if (std.mem.eql(u8, p, enumName)) return;
+    const next = try env.arena.alloc([]const u8, prev.len + 1);
+    @memcpy(next[0..prev.len], prev);
+    next[prev.len] = enumName;
+    try env.variantClaims.put(variant, next);
+}
+
+/// 01 step 12 — a bare variant name two enums claim is a **named refusal**,
+/// never the flat table's last writer (decision 67). Only a use that reached
+/// a claimant's constructor through the table is judged: a local or a fn
+/// that shadows the name is not a variant use.
+fn refuseAmbiguousVariant(env: *Env, name: []const u8, ty: *T.Type, loc: ast.Loc) InferError!void {
+    const claims = env.variantClaims.get(name) orelse return;
+    if (claims.len < 2) return;
+    // A name that is also a type or a behavior (`Array.range(…)`) is read as
+    // that, not as a variant.
+    if (env.lookupTypeDef(name) != null or env.assocInterfaceDecls.contains(name)) return;
+    const isCtor = for (claims) |c| {
+        const q = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ c, name });
+        if (env.variantCtors.get(q)) |ct| if (ct == ty) break true;
+    } else false;
+    if (!isCtor) return;
+    // The erlang emitter's own refusal of the same program reads this way
+    // (`run/variant_name_ambiguous`); the checker now says it first, for
+    // every target.
+    var names: std.ArrayListUnmanaged(u8) = .empty;
+    var spellings: std.ArrayListUnmanaged(u8) = .empty;
+    for (claims, 0..) |c, i| {
+        if (i > 0) {
+            try names.appendSlice(env.arena, " and of ");
+            try spellings.appendSlice(env.arena, " or ");
+        }
+        try names.print(env.arena, "`{s}`", .{c});
+        try spellings.print(env.arena, "`{s}.{s}`", .{ c, name });
+    }
+    const msg = try std.fmt.allocPrint(env.arena, "`{s}` is a variant of {s}, and nothing here says which — write {s}", .{ name, names.items, spellings.items });
+    env.lastError = TypeError.custom(msg, "A bare variant name is resolved by the type its position expects; where nothing does, the qualified name says which enum is meant (decision 67: no silent pick).").withLoc(loc);
+    return error.TypeError;
+}
+
 /// An unbound name, located. 01 step 13 — when the name was a local of a body
 /// already inferred (`Env.closedLocals`), the message names that body: the
 /// name existed, in another function, and a local ends with its body.
@@ -1657,6 +1719,7 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
             break :blk try env.funcType(ps, ctorRetType);
         };
         try env.bind(v.name, ctorType);
+        try noteVariantClaim(env, e.name, v.name, ctorType);
 
         // Constructor params (F4 fn-param-default-expansion): register the
         // variant under both its bare name (`Error`) and the qualified path
@@ -1671,6 +1734,11 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
     // for type-def semantics, but stable for snapshot determinism.
     for (section_wrappers, 0..) |w, wi| {
         variants[e.variants().len + wi] = w;
+        // 01 step 12 — the wrapper's constructor under its qualified name
+        // (`Token.Color`); it has no bare binding.
+        const ps = try env.arena.alloc(*T.Type, 1);
+        ps[0] = w.fields[0].type_;
+        try env.variantCtors.put(try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ e.name, w.name }), try env.funcType(ps, ctorRetType));
     }
 
     // §1G — resolve generic defaults against the same map.
@@ -1764,6 +1832,22 @@ fn registerEnumSection(
         variants[i] = .{ .name = variant_name, .fields = fields };
     }
     for (sub_wrappers, 0..) |w, i| variants[sec.variants.len + i] = w;
+    // 01 step 12 — each section variant's constructor under its qualified
+    // name (`__Token__Color.Hex`), so a leading-dot payload path resolves
+    // through the section and not through a flat bare name.
+    const sectionTy = try env.namedType(mangled);
+    // The section enum's own name answers as a receiver (`__Token__Color.Hex(…)`
+    // is what a payload section path is spliced into), as a declared enum's
+    // name does; no source can spell a `__`-mangled name.
+    try env.bind(mangled, sectionTy);
+    for (variants) |v| {
+        const ctor = if (v.fields.len == 0) sectionTy else blk: {
+            const ps = try env.arena.alloc(*T.Type, v.fields.len);
+            for (v.fields, 0..) |f, i| ps[i] = f.type_;
+            break :blk try env.funcType(ps, sectionTy);
+        };
+        try env.variantCtors.put(try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ mangled, v.name }), ctor);
+    }
 
     const type_id = env.allocTypeId();
     try env.registerTypeDef(mangled, .{ .enum_ = .{
@@ -1927,6 +2011,10 @@ fn tryResolveEnumSectionPath(
         // ambiguous about. A chain that turns out not to be a section path is
         // handed back to the ordinary identAccess handling, which reports it.
         if (!enumCarriesSectionPath(env, owner, segs.items)) return null;
+        // 01 step 4 (d) — where the position expects the SECTION's own type
+        // (`val w: Token.Text = Token.Text.Italic;`), the path names a value
+        // of that section, not of the enum carrying it.
+        if (try sectionValueForExpected(env, owner.name, segs.items, loc)) |te| return te;
         return try resolveAndRecordSectionPath(env, owner, segs.items, loc);
     }
 
@@ -1998,6 +2086,38 @@ fn tryResolveEnumSectionPath(
         return error.TypeError;
     }
     return null;
+}
+
+/// 01 step 4 (d) — `Token.Text.Italic` where `Token.Text` is expected: the
+/// section enum's own variant (`__Token__Text.Italic`), recorded as the
+/// path's rewrite. Null when the expectation is not the section the path's
+/// prefix names.
+fn sectionValueForExpected(env: *Env, owner: []const u8, path: []const []const u8, loc: ast.Loc) InferError!?TypedExpr {
+    if (path.len < 2) return null;
+    const want = (env.expectedType orelse return null).deref();
+    if (want.* != .named) return null;
+    var mbuf: std.ArrayList(u8) = .empty;
+    try mbuf.appendSlice(env.arena, "__");
+    try mbuf.appendSlice(env.arena, owner);
+    for (path[0 .. path.len - 1]) |seg| {
+        try mbuf.appendSlice(env.arena, "__");
+        try mbuf.appendSlice(env.arena, seg);
+    }
+    if (!std.mem.eql(u8, mbuf.items, want.named.name)) return null;
+    const td = env.lookupTypeDef(want.named.name) orelse return null;
+    if (td != .enum_) return null;
+    const leaf = path[path.len - 1];
+    const has = for (td.enum_.variants) |v| {
+        if (std.mem.eql(u8, v.name, leaf) and v.fields.len == 0) break true;
+    } else false;
+    if (!has) return null;
+    const recv = try env.arena.create(ast.Expr);
+    recv.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = want.named.name } } };
+    const node = try env.arena.create(ast.Expr);
+    node.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .identAccess = .{ .receiver = recv, .member = leaf } } } };
+    try env.enumSectionRewrites.put(loc, node);
+    env.expectedType = null;
+    return try inferExprTyped(env, node.*);
 }
 
 /// The chain as the user wrote it, leading dot and all: `.Color.Red.500`.
@@ -2327,6 +2447,146 @@ fn resolveSectionPathInEnum(
         .args = args,
         .trailing = &.{},
     } } } };
+}
+
+/// 01 step 12 — `.Color.Hex("#abc")` / `Token.Color.Hex("#abc")`: a section
+/// path whose LEAF is a payload variant, written as a call. The unit-leaf path
+/// (`.Color.Red.500`) is an identifier chain and `tryResolveEnumSectionPath`
+/// answers it; a call was never walked, so its receiver `.Color` fell to the
+/// flat table and resolved to whatever enum last declared a bare `Color` —
+/// `Ns` in emilia, a type the author never wrote. The enum is chosen exactly
+/// as the unit path chooses it: the one written (`Token.…`), the one carrier,
+/// or the one the position expects; several carriers and no expectation is
+/// ES5's refusal. The qualified constructor chain is spliced in through the
+/// index channel, so no backend learns a shape.
+fn tryResolveSectionPayloadCall(env: *Env, c: ast.CallExprOf(.untyped), receiver: *const ast.Expr, loc: ast.Loc) InferError!?TypedExpr {
+    const call = c.kind.call;
+    var segs: std.ArrayList([]const u8) = .empty;
+    defer segs.deinit(env.arena);
+    var cur: *const ast.Expr = receiver;
+    var owner: ?envMod.TypeDef.Enum = null;
+    var head_loc: ast.Loc = loc;
+    while (true) {
+        if (cur.* != .identifier) return null;
+        switch (cur.*.identifier.kind) {
+            .identAccess => |sub| {
+                try segs.append(env.arena, sub.member);
+                cur = sub.receiver;
+            },
+            .dotIdent => |name| {
+                try segs.append(env.arena, name);
+                head_loc = cur.*.getLoc();
+                break;
+            },
+            .ident => |name| {
+                // `Token.Color.Hex(…)`: the root names the enum, and at least
+                // one section segment follows it (`Token.Hex(…)` is an
+                // ordinary qualified constructor call).
+                if (segs.items.len == 0) return null;
+                const td = env.lookupTypeDef(name) orelse return null;
+                if (td != .enum_) return null;
+                owner = td.enum_;
+                head_loc = cur.*.getLoc();
+                break;
+            },
+        }
+    }
+    std.mem.reverse([]const u8, segs.items);
+    try segs.append(env.arena, call.callee);
+    const path = segs.items;
+
+    const chosen: envMod.TypeDef.Enum = if (owner) |o| blk: {
+        if (!enumCarriesPayloadSectionPath(env, o, path)) return null;
+        break :blk o;
+    } else blk: {
+        var candidates: std.ArrayList([]const u8) = .empty;
+        defer candidates.deinit(env.arena);
+        var it = env.typeDefs.iterator();
+        while (it.next()) |entry| {
+            const td = entry.value_ptr.*;
+            if (td != .enum_) continue;
+            if (enumCarriesPayloadSectionPath(env, td.enum_, path) and !containsStr(candidates.items, td.enum_.name))
+                try candidates.append(env.arena, td.enum_.name);
+        }
+        if (candidates.items.len == 0) return null;
+        const pick: ?[]const u8 = if (candidates.items.len == 1) candidates.items[0] else expectedEnumAmong(env.expectedType, candidates.items);
+        const name = pick orelse {
+            const locs = try env.arena.alloc(ast.Loc, path.len);
+            for (locs) |*l| l.* = head_loc;
+            _ = try raiseAmbiguousSectionPath(env, candidates.items, path, locs[0]);
+            return error.TypeError;
+        };
+        break :blk env.lookupTypeDef(name).?.enum_;
+    };
+    const tree = try buildPayloadSectionRewrite(env, chosen, path, c, loc) orelse return null;
+    try env.indexRewrites.put(loc, tree);
+    env.expectedType = null;
+    return try inferExprTyped(env, tree.*);
+}
+
+/// `enumCarriesSectionPath` for a path whose leaf is a PAYLOAD variant: every
+/// segment but the last is a section wrapper, the last a variant with fields.
+fn enumCarriesPayloadSectionPath(env: *Env, en: envMod.TypeDef.Enum, path: []const []const u8) bool {
+    if (path.len < 2) return false;
+    var current = en;
+    for (path, 0..) |seg, i| {
+        var matched: ?envMod.VariantDef = null;
+        for (current.variants) |v| {
+            if (std.mem.eql(u8, v.name, seg)) {
+                matched = v;
+                break;
+            }
+        }
+        const variant = matched orelse return false;
+        const isWrapper = variant.fields.len == 1 and std.mem.eql(u8, variant.fields[0].name, "_inner");
+        if (i + 1 == path.len) return variant.fields.len > 0 and !isWrapper;
+        if (!isWrapper) return false;
+        const inner_type = variant.fields[0].type_.deref();
+        if (inner_type.* != .named) return false;
+        const inner_def = env.lookupTypeDef(inner_type.named.name) orelse return false;
+        if (inner_def != .enum_) return false;
+        current = inner_def.enum_;
+    }
+    return false;
+}
+
+/// The untyped qualified chain for a payload section path: every wrapper is
+/// `<Enum>.<Section>(_inner: …)` and the leaf is `<Section enum>.<Variant>(args)`
+/// with the call's own arguments. The outermost node carries the call's loc
+/// (it replaces the call); inner nodes the sentinel `{0, 0}`.
+fn buildPayloadSectionRewrite(env: *Env, en: envMod.TypeDef.Enum, path: []const []const u8, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!?*ast.Expr {
+    const synth_loc = ast.Loc{ .line = 0, .col = 0 };
+    const recv = try env.arena.create(ast.Expr);
+    recv.* = .{ .identifier = .{ .loc = synth_loc, .kind = .{ .ident = en.name } } };
+    const node = try env.arena.create(ast.Expr);
+    if (path.len == 1) {
+        var leaf = c;
+        leaf.loc = loc;
+        leaf.kind.call.receiver = recv;
+        leaf.kind.call.callee = path[0];
+        node.* = .{ .call = leaf };
+        return node;
+    }
+    var inner_def: ?envMod.TypeDef.Enum = null;
+    for (en.variants) |v| {
+        if (!std.mem.eql(u8, v.name, path[0])) continue;
+        const it = v.fields[0].type_.deref();
+        if (it.* != .named) return null;
+        const d = env.lookupTypeDef(it.named.name) orelse return null;
+        if (d != .enum_) return null;
+        inner_def = d.enum_;
+    }
+    const inner = try buildPayloadSectionRewrite(env, inner_def orelse return null, path[1..], c, synth_loc) orelse return null;
+    const args = try env.arena.alloc(ast.CallArg, 1);
+    args[0] = .{ .label = "_inner", .value = inner, .comments = &.{} };
+    node.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = recv,
+        .callee = path[0],
+        .is_builtin = false,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+    return node;
 }
 
 /// True when every byte of `s` is an ASCII digit (`0`–`9`). Used to detect
@@ -8151,6 +8411,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
     return switch (ident.kind) {
         .ident => |name| {
             if (env.lookup(name)) |ty| {
+                try refuseAmbiguousVariant(env, name, ty, loc);
                 // A generic fn referenced as a value (`val f = identity;`,
                 // `xs.map(identity)`) gets its own instantiation — the
                 // scheme's `.generic` vars must never reach `unify`.
@@ -8161,7 +8422,33 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             return error.TypeError;
         },
         .dotIdent => |name| {
-            if (env.lookup(name)) |ty| return TypedExpr{ .identifier = .{ .loc = loc, .type_ = ty, .kind = .{ .dotIdent = name } } };
+            // 01 step 12 — a leading-dot variant takes its enum from the
+            // position's expected type (as `.Circle(…)` does), spliced in as
+            // `Enum.Variant` so the backends see the qualified form. Without
+            // an expectation the flat table answers only when one enum
+            // claims the name.
+            if (expectedEnumDeclaring(env, name)) |en| {
+                const recv = try env.arena.create(ast.Expr);
+                recv.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = en } } };
+                const qualified = try env.arena.create(ast.Expr);
+                qualified.* = .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = .{ .receiver = recv, .member = name } } } };
+                try env.indexRewrites.put(loc, qualified);
+                return inferExprTyped(env, qualified.*);
+            }
+            if (env.lookup(name)) |ty| {
+                try refuseAmbiguousVariant(env, name, ty, loc);
+                return TypedExpr{ .identifier = .{ .loc = loc, .type_ = ty, .kind = .{ .dotIdent = name } } };
+            }
+            // A section leaf has a leading-dot shorthand only where the
+            // position's type is that section (`val b: Token.Layout.Break =
+            // .Zeta;`); anywhere else it is named for what it is, not
+            // reported as a variable nobody declared.
+            if (try sectionOwningLeaf(env, name)) |section| {
+                const msg = try std.fmt.allocPrint(env.arena, "`.{s}` is a leaf of the section `{s}`, and nothing here says the position is that section", .{ name, section });
+                const hint = try std.fmt.allocPrint(env.arena, "Give the position the section's type (`val v: {s} = .{s};`, a typed parameter) or write the full path.", .{ section, name });
+                env.lastError = TypeError.custom(msg, hint).withLoc(loc);
+                return error.TypeError;
+            }
             env.lastError = try unboundAt(env, name, loc);
             return error.TypeError;
         },
@@ -8364,7 +8651,13 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
         }
     }
 
-    const rhsTyped = try inferExprTyped(env, binop.rhs.*);
+    // 01 step 12 — the right side of `==` / `!=` is compared with the left, so
+    // the left's type is its expected type: `decl.kind != .Record` names
+    // `TypeInfoKind.Record` even where another enum also declares `Record`.
+    const rhsTyped = if (binop.op == .eq or binop.op == .ne)
+        try inferExprTypedExpecting(env, binop.rhs.*, lhsTyped.getType())
+    else
+        try inferExprTyped(env, binop.rhs.*);
 
     // Restore after RHS inference.
     if (andSnapshots.items.len > 0) {
@@ -10894,6 +11187,11 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     return inferCallExpr(env, direct, loc);
                 }
             }
+            // 01 step 12 — a section path whose leaf is a payload variant
+            // (`.Color.Hex("#abc")`, `Token.Color.Hex("#abc")`).
+            if (call.receiver) |re| {
+                if (try tryResolveSectionPayloadCall(env, c, re, loc)) |te| return te;
+            }
             // C-02 (decision 63, amended 2026-09-19) — `xs[k]` IS `xs.at(k)`.
             // First of all, and before the arguments are inferred: the index
             // has no typing rule of its own, so there is nothing here to type
@@ -11242,7 +11540,11 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     if (re.* == .identifier and re.*.identifier.kind == .ident and
                         env.lookupTypeDef(re.*.identifier.kind.ident) != null)
                     {
-                        if (env.lookup(call.callee)) |calleeTypeRaw| {
+                        // 01 step 12 — the qualification the author wrote is
+                        // the answer: `Shape.Circle` is Shape's constructor
+                        // whatever other enum also declares `Circle`.
+                        const qualified = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ re.*.identifier.kind.ident, call.callee });
+                        if (env.variantCtors.get(qualified) orelse env.lookup(call.callee)) |calleeTypeRaw| {
                             // Generic enum variant constructor — instantiate per
                             // call site (the receiver names the type def).
                             const calleeType = try instantiateCtorType(env, re.*.identifier.kind.ident, calleeTypeRaw);
@@ -11421,6 +11723,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 env.lastError = try unboundAt(env, call.callee, loc);
                 return error.TypeError;
             };
+            try refuseAmbiguousVariant(env, call.callee, calleeTypeRaw, loc);
             // Generic record/struct/enum constructor: instantiate per call site
             // so the registration-time cells never unify destructively.
             const ctorInstantiated = try instantiateCtorType(env, call.callee, calleeTypeRaw);

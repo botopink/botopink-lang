@@ -567,6 +567,36 @@ binding list handed back is built tolerantly from imports, type declarations, `f
 `val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
 well-typed one binds, so the language server still lists it.
 
+## One variant table, four symptoms (01 step 12)
+
+Every enum variant's constructor is bound under its bare name in `Env.bindings`, where the last
+enum to declare a name wins. Four spellings read that table and answered the wrong enum; each now
+asks the question its position has:
+
+- **Qualified** — `Shape.Circle(r: 3)` reads `Env.variantCtors["Shape.Circle"]` (every variant of
+  every enum, section wrappers `Token.Color` and section variants `__Token__Color.Hex` included),
+  so another enum's `Circle` cannot answer it (row 3c, the step's gate).
+- **Leading dot** — `.Red` takes the enum the position expects (`expectedEnumDeclaring`, the rule
+  `.Circle(…)` already had), spliced in as `Warm.Red` through the index channel so every backend
+  sees the qualified form (`transform.zig` replaces a `dotIdent` node carrying an identifier
+  rewrite). A section type is an enum too, so `val b: Token.Layout.Break = .Zeta;` resolves the
+  section leaf; with no expectation a section leaf is refused naming its section
+  (`sectionOwningLeaf`) rather than reported unbound. The right side of `==` / `!=` expects the
+  left side's type.
+- **Bare, with several claimants** — `Env.variantClaims` lists every enum declaring a name; a use
+  that reaches a claimant's constructor through the flat table while two or more claim it is
+  refused, naming them (`refuseAmbiguousVariant`, decision 67). A name that is also a type or a
+  behavior (`Array.range`) is read as that.
+- **A payload leaf in a section path** — `.Color.Hex("#abc")` / `Token.Color.Hex("#abc")`
+  (`tryResolveSectionPayloadCall`): the carrier is chosen as for a unit path (the enum written,
+  the one carrier, or the expected one, else ES5), and the qualified constructor chain is spliced
+  in through the index channel.
+- `Token.Text.Italic` where `Token.Text` is expected is a value of the section
+  (`sectionValueForExpected`), not of `Token`.
+
+Not reached: a `case` arm's leading-dot pattern is resolved against the subject by the backends,
+and wasm's `findVariant` still takes the first enum declaring the name (05-wasm).
+
 ## A local ends with its body (01 step 13)
 
 `Env.bindings` is one flat table, and a body's parameters and locals used to stay in it: a `val` of

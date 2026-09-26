@@ -833,6 +833,16 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             expr_ptr.* = rewrite.*;
         }
     }
+    // 01 step 12 — a leading-dot unit variant (`.Red`) whose enum the
+    // position's expected type named: inference recorded the qualified
+    // `Warm.Red` under the node's loc, so every backend sees the qualified
+    // form. Only an identifier replaces an identifier; a call at the same loc
+    // is the index/leading-dot call rewrite below.
+    if (expr_ptr.* == .identifier and expr_ptr.identifier.kind == .dotIdent) {
+        if (agg.index_rewrites.get(expr_ptr.identifier.loc)) |rewrite| {
+            if (rewrite.* == .identifier) expr_ptr.* = rewrite.*;
+        }
+    }
     // 06 N24 — a tuple element of function type called by its LABEL
     // (`c.set(9)` on `#(value: i32, set: fn(…))`). Inference stashed the
     // positional callee under the call's loc; only the name moves, the
@@ -874,8 +884,13 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // The same channel carries front 15's leading-dot call: `.Circle(r: 1)`
     // arrives with its callee in `calleeExpr` and is replaced by the named
     // constructor call inference resolved (`Shape.Circle(r: 1)`).
+    //
+    // And 01 step 12's payload section path (`.Color.Hex("#abc")`,
+    // `Token.Color.Hex("#abc")`): a call whose receiver is a path, replaced by
+    // the qualified constructor chain inference resolved.
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call and
-        (expr_ptr.call.kind.call.is_builtin or expr_ptr.call.kind.call.calleeExpr != null))
+        (expr_ptr.call.kind.call.is_builtin or expr_ptr.call.kind.call.calleeExpr != null or
+            isPathReceiver(expr_ptr.call.kind.call.receiver)))
     {
         if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
             expr_ptr.* = rewrite.*;
@@ -1334,5 +1349,16 @@ fn extractComptimeLiteral(e: anytype) ?[]const u8 {
             else => null,
         },
         else => null,
+    };
+}
+
+/// 01 step 12 — a call receiver written as a path (`.Color`, `Token.Color`):
+/// the only receivers a payload section path is recorded under.
+fn isPathReceiver(receiver: ?*ast.Expr) bool {
+    const r = receiver orelse return false;
+    if (r.* != .identifier) return false;
+    return switch (r.identifier.kind) {
+        .dotIdent, .identAccess => true,
+        else => false,
     };
 }
