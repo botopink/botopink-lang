@@ -1,0 +1,27 @@
+//// Module-level `pub val`s of every kind, read by `main` (decision 140: the
+//// module body is evaluated once, in order, when the module loads).
+
+import {unit} from "base";
+
+pub type Globals(payload: string, fill: string, count: i32) {
+    pub fn label(self: Self) -> string {
+        return self.payload + "/" + self.fill;
+    }
+}
+
+pub type Mode { Fast, Slow }
+
+fn announce(what: string) -> i32 {
+    @print(what);
+    return 1;
+}
+
+val _configLoaded = announce("config body");
+pub val globals = Globals(payload: "p", fill: "f", count: 3);
+pub val mode = Mode.Slow;
+pub val sizes = [1, 2, 3];
+pub val limit = 42;
+pub val scaled = limit * unit;
+pub val name = "cfg";
+pub val twice = { x -> x * 2 };
+pub val counted = announce("counted evaluated");

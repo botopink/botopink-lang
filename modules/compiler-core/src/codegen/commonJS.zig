@@ -467,9 +467,15 @@ fn emitProgramOptsX(
                             },
                         },
                     });
+                    if (v.isPub) try items.append(arena_alloc, .{ .stmt = try em.valExport(v.name) });
                     continue;
                 }
                 try items.append(arena_alloc, .{ .stmt = try em.buildValDecl(v) });
+                // A module-level `pub val` is readable from an importing module
+                // (decision 140; the module body is evaluated once, in order, at
+                // load) — the importer's `require` destructures it by name, so
+                // the owner exports it the way it exports a `pub fn`.
+                if (v.isPub) try items.append(arena_alloc, .{ .stmt = try em.valExport(v.name) });
             },
             .@"fn" => |f| try items.append(arena_alloc, .{ .stmt = try em.buildFnItem(f) }),
             .type_ => |tdecl| switch (tdecl.shape) {
@@ -1783,6 +1789,17 @@ const Emitter = struct {
             try self.b.member(.{ .name = "exports" }, name),
             "=",
             .{ .name = name },
+        ) };
+    }
+
+    /// `exports.<name> = <binding>;` for a module-level `pub val`: the
+    /// property keeps the botopink name, the value is the binding after the
+    /// reserved-word rename.
+    fn valExport(self: *Emitter, name: []const u8) !js.Stmt {
+        return .{ .expr = try self.b.assign(
+            try self.b.member(.{ .name = "exports" }, name),
+            "=",
+            .{ .ident = name },
         ) };
     }
 

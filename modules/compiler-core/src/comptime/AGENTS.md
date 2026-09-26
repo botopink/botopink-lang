@@ -371,7 +371,12 @@ dispatch rewrite emits the extension's declared name). An alias on a TYPE or a
 type alias is legal (decision 110): `registerImportedTypeAlias` registers the
 declaration under its own name and the alias as a checker-local type alias of
 it; a constructor call through the alias is renamed to the declared name at the
-call, and `comptime.zig`'s `withImportTypeAliasesErased` drops the alias from
+call, and any other use in expression position — a receiver (`D.empty()`,
+`S.Dark`, `S.Custom(9)`) or a bare value — is renamed by
+`importedTypeAliasReceiver` / `inferIdentifierExpr` (`importedTypeAliasTarget`,
+which leaves a shadowing local alone) and recorded in `env.indexRewrites` under
+the alias identifier's own loc, which `transform.zig` splices (a plain name for
+a plain name); `comptime.zig`'s `withImportTypeAliasesErased` drops the alias from
 the import items the backends read, so no backend sees it. A `resolveImports`
 refusal is the module's `typeError`, like one from inference.
 

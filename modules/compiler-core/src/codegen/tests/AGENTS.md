@@ -5,7 +5,11 @@
 
 Codegen tests, split by feature (`values.zig` etc. for codegen, `wat.zig` for the
 WAT backend, `externals.zig` for `#[@External.<Target>(…)]` FFI declarations,
-`comptime_module.zig` for `erlang.emitComptimeModule`). Aggregated by the
+`comptime_module.zig` for `erlang.emitComptimeModule`, `beam_templates.zig` for
+decision 141's audit — every `#[@External.Erlang(…)]` template std, its
+`primitives.bp` and the bundled libraries ship lowers for beam, through
+`beam_asm.templateBody` / `templateModuleText` / `lowerTemplateText`, the
+functions the backend compiles a call site's template with). Aggregated by the
 sibling barrel `../tests.zig` for `test_root.zig`; shared harness
 (`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`.
 Snapshots are recorded per comptime runtime (front 18 step 4, decision 85):

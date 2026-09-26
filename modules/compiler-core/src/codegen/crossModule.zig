@@ -1635,3 +1635,48 @@ test "build: two types whose atoms differ raise no fault, and the module's own a
     try testing.expect(xc.atomFault("app/models") == null);
     try testing.expectEqualStrings("test@app@models", xc.atomFor("app/models"));
 }
+
+/// The modules `program` imports from, transitively, dependencies first —
+/// each module's path once. An import resolves through the export index,
+/// asked of the import's own `from "<mod>"` (`import {double} from "math"`),
+/// or names a module by its path or basename (`import {order} from "std"`).
+/// The module-body order of decision 140 is read off it: an importing module
+/// runs the bodies of these modules, in this order, before its own — what
+/// `require` does on commonJS and static linking does on wasm.
+pub fn importClosure(
+    alloc: std.mem.Allocator,
+    outputs: []const ComptimeOutput,
+    cross: *const CrossModule,
+    program: ast.Program,
+    visited: *std.StringHashMapUnmanaged(void),
+    out: *std.ArrayListUnmanaged([]const u8),
+) !void {
+    var scratch = std.heap.ArenaAllocator.init(alloc);
+    defer scratch.deinit();
+    const sa = scratch.allocator();
+    for (program.decls) |decl| {
+        const u = switch (decl) {
+            .use => |u| u,
+            else => continue,
+        };
+        for (u.imports) |imp| {
+            const leaf_src = try u.leafSource(imp, sa, false);
+            const whole = try u.leafSource(imp, sa, true);
+            const picked_info = cross.picked(imp.leaf(), leaf_src, null);
+            for (outputs) |*o| {
+                const owns = if (picked_info) |info|
+                    std.mem.eql(u8, info.module, o.name)
+                else
+                    whole.namesModule(o.name) or std.mem.eql(u8, moduleBasename(o.name), imp.leaf());
+                if (!owns or visited.contains(o.name)) continue;
+                const ok = switch (o.outcome) {
+                    .ok => |*ok| ok,
+                    else => continue,
+                };
+                try visited.put(alloc, o.name, {});
+                try importClosure(alloc, outputs, cross, ok.transformed, visited, out);
+                try out.append(alloc, o.name);
+            }
+        }
+    }
+}

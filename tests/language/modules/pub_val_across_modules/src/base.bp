@@ -1,0 +1,12 @@
+//// The bottom of the chain: `config` reads `unit`, and `main` never names
+//// this module — its body still runs first, because `config` imports it.
+//// Its helper is `note`, not `config`'s `announce`: wasm links the modules
+//// into one namespace, where two private functions of one name collide.
+
+fn note(what: string) -> i32 {
+    @print(what);
+    return 1;
+}
+
+val _baseLoaded = note("base body");
+pub val unit = 10;

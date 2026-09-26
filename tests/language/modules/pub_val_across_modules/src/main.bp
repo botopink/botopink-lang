@@ -1,0 +1,38 @@
+//// A `pub val` of a record, an enum, an array, a primitive and a lambda,
+//// imported from a sibling module — one of them under an alias — and read
+//// from `main`, from another function and from a method. The module bodies
+//// run before `main`, dependencies first, and a val read twice is evaluated
+//// once.
+
+pub mod base;
+pub mod config;
+import {Globals, Mode, globals, mode, sizes, limit as maxItems, scaled, name, twice, counted} from "config";
+
+type Box(n: i32) {
+    pub fn fill(self: Self) -> string {
+        return globals.fill;
+    }
+}
+
+fn modeName() -> string {
+    return case mode {
+        Mode.Fast -> "fast";
+        Mode.Slow -> "slow";
+    };
+}
+
+pub fn main() {
+    @print("main starts");
+    @print(globals.payload);
+    @print(globals.count + globals.count);
+    @print(globals.label());
+    @print(Box(n: 1).fill());
+    @print(modeName());
+    @print(sizes.length);
+    for (sizes) { s -> @print(s); }
+    @print(maxItems);
+    @print(scaled);
+    @print(name);
+    @print(twice(21));
+    @print(counted + counted);
+}

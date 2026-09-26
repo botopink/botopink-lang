@@ -8561,9 +8561,43 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
 }
 
 /// Infer type for identifier expressions (ident, dotIdent, identAccess)
+/// Decision 110 rule 1 — the declared name behind an imported type's `as`
+/// alias written in expression position, or null when `name` is no such alias
+/// or a local binding shadows it (the alias is bound to the declared type's
+/// constructor, when it has one, by `registerImportedTypeAlias`).
+fn importedTypeAliasTarget(env: *Env, name: []const u8) ?[]const u8 {
+    const real = env.importedTypeAliases.get(name) orelse return null;
+    if (env.lookup(name)) |bound| {
+        const ctor = env.lookup(real) orelse return null;
+        if (bound != ctor) return null;
+    }
+    return real;
+}
+
+/// Decision 110 rule 1 — a receiver that is an imported type's alias (`D` in
+/// `D.empty()`, `S` in `S.Red`) becomes the declared name. The renamed
+/// identifier is recorded under the alias's own loc (`Env.indexRewrites`), so
+/// `comptime/transform.zig` splices it and no backend sees the alias.
+fn importedTypeAliasReceiver(env: *Env, re: *ast.Expr) !?*ast.Expr {
+    if (re.* != .identifier or re.identifier.kind != .ident) return null;
+    const real = importedTypeAliasTarget(env, re.identifier.kind.ident) orelse return null;
+    const recv = try env.arena.create(ast.Expr);
+    recv.* = .{ .identifier = .{ .loc = re.identifier.loc, .kind = .{ .ident = real } } };
+    try env.indexRewrites.put(re.identifier.loc, recv);
+    return recv;
+}
+
 fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (ident.kind) {
         .ident => |name| {
+            // Decision 110 — the alias as a value (`xs.map(P)`) is the
+            // declared name's binding, renamed for the backends.
+            if (importedTypeAliasTarget(env, name)) |real| {
+                const renamed = try env.arena.create(ast.Expr);
+                renamed.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = real } } };
+                try env.indexRewrites.put(loc, renamed);
+                return inferIdentifierExpr(env, renamed.identifier, loc);
+            }
             if (env.lookup(name)) |ty| {
                 try refuseAmbiguousVariant(env, name, ty, loc);
                 // A generic fn referenced as a value (`val f = identity;`,
@@ -8607,6 +8641,12 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             return error.TypeError;
         },
         .identAccess => |ia| {
+            // Decision 110 — `S.Red` for `import {Shape as S}` is `Shape.Red`.
+            if (try importedTypeAliasReceiver(env, ia.receiver)) |recv| {
+                var direct = ident;
+                direct.kind.identAccess.receiver = recv;
+                return inferIdentifierExpr(env, direct, loc);
+            }
             // §enum-sections F2 — path-access via dot-shorthand chain.
             // `.Color.Red.500` parses as `identAccess(identAccess(dotIdent(Color),
             // Red), 500)`. When the chain root is a `dotIdent`, the chain may
@@ -11515,6 +11555,15 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     return inferCallExpr(env, direct, loc);
                 }
             }
+            // Decision 110 — `D.empty()` for `import {Dict as D}` is
+            // `Dict.empty()`: the receiver is renamed before anything reads
+            // it, so every path below resolves the declared type and no
+            // backend sees `D`.
+            if (call.receiver) |re| if (try importedTypeAliasReceiver(env, re)) |recv| {
+                var direct = c;
+                direct.kind.call.receiver = recv;
+                return inferCallExpr(env, direct, loc);
+            };
             // 01 step 12 — a section path whose leaf is a payload variant
             // (`.Color.Hex("#abc")`, `Token.Color.Hex("#abc")`).
             if (call.receiver) |re| {

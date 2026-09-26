@@ -390,6 +390,24 @@ fn exprCanHaveEffect(e: ast.Expr) bool {
 /// A synthetic statement that only calls `main()` — the entrypoint wrapper
 /// already does, so it is not run a second time. Mirrors the erlang backend's
 /// `isSyntheticMainEntrypointCall`.
+/// True when `program` has a module body its importers run (decision 140): no
+/// `main/0` of its own, and a `_` statement or an effectful named `val` — the
+/// `entry_stmts` `emitBeamAsm` collects. Such a module exports
+/// `'_botopink_init'/0` (`emitInitFunction`).
+fn moduleHasInit(program: ast.Program) bool {
+    var body = false;
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| if (isMain0(f)) return false,
+        .val => |v| if (!isSyntheticEntrypointVal(v)) {
+            if (topValIsCached(v)) body = true;
+        } else if (!isSyntheticMainCall(v)) {
+            body = true;
+        },
+        else => {},
+    };
+    return body;
+}
+
 fn isSyntheticMainCall(v: ast.ValDecl) bool {
     if (std.mem.startsWith(u8, v.name, "_main")) return true;
     return isSyntheticEntrypointVal(v) and isZeroArgMainCall(v.value.*);
@@ -829,7 +847,8 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 }
                 // Calling a module-level `val` that holds a fun parks the fun
                 // on the stack while the arguments are staged (`lowerCall`).
-                if (!cc.is_builtin and cc.receiver == null and em.top_vals.contains(cc.callee)) count.* += 1;
+                if (!cc.is_builtin and cc.receiver == null and (em.top_vals.contains(cc.callee) or
+                    em.imported_val_owners.contains(cc.callee))) count.* += 1;
                 // `adder(3)(4)`: the callee value is parked the same way.
                 if (cc.calleeExpr) |ce| {
                     countLocalsInExpr(em, ce.*, count);
@@ -1303,6 +1322,95 @@ pub fn codegenEmit(
     return results;
 }
 
+// ── @External.Erlang templates ───────────────────────────────────────────────
+
+/// The Erlang body of template `template_raw` called with `argc` arguments
+/// besides its receiver: the receiver marker → `__BpSelf`, `$N` → `__BpAN`,
+/// `$stringify(e)` → its `~p` text, a `\"` kept from a `"…"` annotation
+/// unescaped, and a trailing `.`. Owned by `alloc`.
+pub fn templateBody(alloc: std.mem.Allocator, template_raw: []const u8, argc: usize) anyerror![]u8 {
+    var src: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer src.deinit(alloc);
+    var template: std.ArrayListUnmanaged(u8) = .empty;
+    defer template.deinit(alloc);
+    var ti: usize = 0;
+    while (ti < template_raw.len) : (ti += 1) {
+        if (template_raw[ti] == '\\' and ti + 1 < template_raw.len and template_raw[ti + 1] == '"') continue;
+        try template.append(alloc, template_raw[ti]);
+    }
+    const Ctx = struct {
+        alloc: std.mem.Allocator,
+        out: *std.ArrayListUnmanaged(u8),
+        argc: usize,
+        pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
+            try c.out.append(c.alloc, ch);
+        }
+        pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
+            try c.out.appendSlice(c.alloc, s);
+        }
+        pub fn emitRecv(c: *@This()) anyerror!void {
+            try c.out.appendSlice(c.alloc, "__BpSelf");
+        }
+        pub fn emitArg(c: *@This(), idx: usize) anyerror!void {
+            var name_buf: [16]u8 = undefined;
+            try c.out.appendSlice(c.alloc, try std.fmt.bufPrint(&name_buf, "__BpA{d}", .{idx}));
+        }
+        pub fn emitStringifyOpen(c: *@This()) anyerror!void {
+            try c.out.appendSlice(c.alloc, "iolist_to_binary(io_lib:format(\"~p\", [");
+        }
+        pub fn emitStringifyClose(c: *@This()) anyerror!void {
+            try c.out.appendSlice(c.alloc, "]))");
+        }
+    };
+    var ctx = Ctx{ .alloc = alloc, .out = &src, .argc = argc };
+    try primOpTemplate.render(template.items, &ctx);
+    try src.append(alloc, '.');
+    return src.toOwnedSlice(alloc);
+}
+
+/// The one-function module a template helper is read from:
+/// `t(__BpSelf, __BpA0, …) -> <body>` over `arity` parameters, the first the
+/// receiver when `has_recv`.
+pub fn templateModuleText(ar: std.mem.Allocator, body: []const u8, has_recv: bool, arity: usize) std.mem.Allocator.Error![]u8 {
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    try text.appendSlice(ar, try std.fmt.allocPrint(ar, "-module(bp_tpl).\n-export([t/{d}]).\nt(", .{arity}));
+    const off: usize = @intFromBool(has_recv);
+    for (0..arity) |i| {
+        if (i > 0) try text.appendSlice(ar, ", ");
+        const param = if (has_recv and i == 0) "__BpSelf" else try std.fmt.allocPrint(ar, "__BpA{d}", .{i - off});
+        try text.appendSlice(ar, param);
+    }
+    try text.appendSlice(ar, ") ->\n    ");
+    try text.appendSlice(ar, body);
+    try text.append(ar, '\n');
+    return text.items;
+}
+
+/// What `lowerTemplateText` made of a template helper's module.
+pub const TemplateLowering = union(enum) {
+    ok: erlLower.Output,
+    /// The construct the reader or the lowering refused, by name.
+    refused: []const u8,
+};
+
+/// Read and lower the one-function module a template helper is
+/// (`t(__BpSelf, __BpA0, …) -> <template>.`) — the reader and the lowering
+/// the comptime BEAM runtime runs every body through (BR5).
+pub fn lowerTemplateText(ar: std.mem.Allocator, text: []const u8, module_name: []const u8) std.mem.Allocator.Error!TemplateLowering {
+    var pf: erlParse.Failure = .{};
+    const parsed = erlParse.parseModule(ar, text, &pf) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Unsupported => return .{ .refused = pf.message },
+        error.Syntax => return .{ .refused = try std.fmt.allocPrint(ar, "it does not read as Erlang: {s}", .{pf.message}) },
+    };
+    var lf: erlLower.Failure = .{};
+    const lowered = erlLower.lowerModule(ar, parsed, module_name, &lf) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Unsupported => return .{ .refused = lf.message },
+    };
+    return .{ .ok = lowered };
+}
+
 // ── top-level emitter ────────────────────────────────────────────────────────
 
 const ExportEntry = beamEmitter.Export;
@@ -1519,8 +1627,8 @@ fn emitBeamAsm(
                 try em.top_vals.put(v.name, {});
                 // The module body evaluates an effectful named `val` once, in
                 // declaration order with the `_` statements (`cachedTopVal`).
-                if (has_main_0 and topValIsCached(v)) try em.entry_stmts.append(alloc, v);
-            } else if (has_main_0 and !isSyntheticMainCall(v)) {
+                if (topValIsCached(v)) try em.entry_stmts.append(alloc, v);
+            } else if (!isSyntheticMainCall(v)) {
                 try em.entry_stmts.append(alloc, v);
             },
             // Policy 3: a `type`'s methods belong to the TYPE's module, which
@@ -1547,6 +1655,27 @@ fn emitBeamAsm(
         try em.reserveFn("'_botopink_main'", 0);
         try em.reserveFn("main", 1);
     }
+    // Decision 140 — a module without `main/0` runs its body when a program
+    // that imports it starts: `'_botopink_init'/0`, called by the entry.
+    const emit_init = !has_main_0 and em.entry_stmts.items.len > 0;
+    if (emit_init) try em.reserveFn("'_botopink_init'", 0);
+    // The modules this one imports, transitively, whose body the entry runs
+    // before its own, dependencies first.
+    if (has_main_0) if (cross) |xc| {
+        var closure: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer closure.deinit(alloc);
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+        defer seen.deinit(alloc);
+        try seen.put(alloc, module_name, {});
+        try crossModule.importClosure(alloc, all_outputs, xc, program, &seen, &closure);
+        for (closure.items) |dep| for (all_outputs) |*o| {
+            if (!std.mem.eql(u8, o.name, dep)) continue;
+            switch (o.outcome) {
+                .ok => |*dok| if (moduleHasInit(dok.transformed)) try em.import_inits.append(alloc, xc.atomFor(dep)),
+                else => {},
+            }
+        };
+    };
     if (em.module_vars.count() > 0) try em.reserveFn(MEM_PD_SET, 2);
     if (any_ets_var) {
         try em.reserveFn(MEM_ETS_GUARD, 2);
@@ -1577,6 +1706,7 @@ fn emitBeamAsm(
         try exports.append(alloc, .{ .name = "'_botopink_main'", .arity = 0 });
         try exports.append(alloc, .{ .name = "main", .arity = 1 });
     }
+    if (emit_init) try exports.append(alloc, .{ .name = "'_botopink_init'", .arity = 0 });
     for (program.decls) |decl| {
         switch (decl) {
             .@"fn" => |f| if (f.isPub and !isHostDeclare(f)) {
@@ -1634,6 +1764,7 @@ fn emitBeamAsm(
     if (has_main_0) {
         try em.emitEntrypointWrappers();
     }
+    if (emit_init) try em.emitInitFunction();
 
     // Front 17 — the storage the module `var`s above lower onto.
     if (em.module_vars.count() > 0) try em.emitPdSet();
@@ -1922,6 +2053,11 @@ const Emitter = struct {
     /// `picked` with the item's own source, so `import {url.parse}` and
     /// `import {json.parse}` reach different modules.
     imported_fn_owners: std.StringHashMap(ImportedFn),
+    /// An imported module-level `pub val`, keyed by the name this module binds
+    /// (the alias when one is written): the owner's atom and the declared name
+    /// of the 0-arity function it exports. A read is `call_ext owner:name/0`;
+    /// the name-keyed index (`crossOwnerOf`) knows no alias.
+    imported_val_owners: std.StringHashMapUnmanaged(ImportedFn) = .empty,
     /// Named top-level `val`s of this module — each is a 0-arity function, so a
     /// bare reference is a local call.
     top_vals: std.StringHashMap(void),
@@ -1933,6 +2069,10 @@ const Emitter = struct {
     /// `val`s whose initialiser can have an effect (`topValIsCached`), each
     /// as the call to its reader.
     entry_stmts: std.ArrayListUnmanaged(ast.ValDecl) = .empty,
+    /// The module atoms whose `'_botopink_init'/0` `'_botopink_main'/0` calls
+    /// before its own body — every module this one imports, transitively,
+    /// that has a body (`moduleHasInit`), dependencies first (decision 140).
+    import_inits: std.ArrayListUnmanaged([]const u8) = .empty,
     /// Locals (and string-typed params) bound to a `string` in the frame being
     /// lowered — `isStringExpr` reads it to tell a string `+` from arithmetic.
     /// Cleared per function; a lambda/loop body inherits it (its captures).
@@ -1968,12 +2108,14 @@ const Emitter = struct {
     stringify_helper_name: ?[]const u8 = null,
     print_helper_name: ?[]const u8 = null,
     add_helper_name: ?[]const u8 = null,
-    eval_helper_name: ?[]const u8 = null,
     /// BR5: `<arity>:<template text>` → the labels of the helper function
     /// `compiledTemplate` emitted for it in THIS module (a unit gets its own).
     template_fns: std.StringHashMapUnmanaged(FnLabels) = .empty,
     /// How many template helpers this module emitted — names them.
     template_count: u32 = 0,
+    /// Why the last template the reader or the lowering refused was refused
+    /// (in `atom_arena`) — the text of the build error at its call site.
+    template_refusal: ?[]const u8 = null,
     field_helper_name: ?[]const u8 = null,
     /// `'-bp_yield_step-'/1` — `seq.next()` by hand (decision 122).
     yield_step_helper_name: ?[]const u8 = null,
@@ -2133,9 +2275,11 @@ const Emitter = struct {
         self.prim_beam_templates.deinit();
         self.std_imports.deinit();
         self.imported_fn_owners.deinit();
+        self.imported_val_owners.deinit(self.alloc);
         self.top_vals.deinit();
         self.top_fns.deinit(self.alloc);
         self.entry_stmts.deinit(self.alloc);
+        self.import_inits.deinit(self.alloc);
         self.string_locals.deinit();
         self.count_strings.deinit();
         self.string_names.deinit();
@@ -2146,7 +2290,6 @@ const Emitter = struct {
         if (self.add_helper_name) |n| self.alloc.free(n);
         if (self.print_helper_name) |n| self.alloc.free(n);
         if (self.join_helper_name) |n| self.alloc.free(n);
-        if (self.eval_helper_name) |n| self.alloc.free(n);
         self.freeTemplateFns();
         self.externals.deinit();
         self.iface_defaults.deinit();
@@ -2519,7 +2662,7 @@ const Emitter = struct {
                         };
                     },
                     .@"fn" => try self.imported_fn_owners.put(imp.name(), .{ .owner = owner, .exported = name }),
-                    else => {},
+                    .val => try self.imported_val_owners.put(self.alloc, imp.name(), .{ .owner = owner, .exported = name }),
                 }
             },
             else => {},
@@ -3567,7 +3710,6 @@ const Emitter = struct {
         stringify: ?[]const u8,
         print: ?[]const u8,
         add: ?[]const u8,
-        eval: ?[]const u8,
         join: ?[]const u8,
         field: ?[]const u8,
         yield_step: ?[]const u8,
@@ -3582,7 +3724,6 @@ const Emitter = struct {
             .stringify = self.stringify_helper_name,
             .print = self.print_helper_name,
             .add = self.add_helper_name,
-            .eval = self.eval_helper_name,
             .join = self.join_helper_name,
             .field = self.field_helper_name,
             .yield_step = self.yield_step_helper_name,
@@ -3594,7 +3735,6 @@ const Emitter = struct {
         self.stringify_helper_name = null;
         self.print_helper_name = null;
         self.add_helper_name = null;
-        self.eval_helper_name = null;
         self.join_helper_name = null;
         self.field_helper_name = null;
         self.yield_step_helper_name = null;
@@ -3616,8 +3756,6 @@ const Emitter = struct {
         self.print_helper_name = saved.print;
         if (self.add_helper_name) |n| self.alloc.free(n);
         self.add_helper_name = saved.add;
-        if (self.eval_helper_name) |n| self.alloc.free(n);
-        self.eval_helper_name = saved.eval;
         if (self.join_helper_name) |n| self.alloc.free(n);
         self.join_helper_name = saved.join;
         if (self.field_helper_name) |n| self.alloc.free(n);
@@ -4301,7 +4439,7 @@ const Emitter = struct {
         try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
         try beamEmitter.writeFuncInfo(self.out, self.module_name, "'_botopink_main'", 0);
         try beamEmitter.writeLabel(self.out, wrapper.entry);
-        if (self.entry_stmts.items.len == 0) {
+        if (self.entry_stmts.items.len == 0 and self.import_inits.items.len == 0) {
             try beamEmitter.writeCall(self.out, .only, 0, .{ .local = main0.entry }, 0);
         } else {
             self.resetFnState(0);
@@ -4312,6 +4450,10 @@ const Emitter = struct {
             }
             self.num_y = n;
             try self.emitFrame(0);
+            // Decision 140 — the imported modules' bodies first.
+            for (self.import_inits.items) |dep| {
+                try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = dep, .function = "'_botopink_init'" } }, 0);
+            }
             for (self.entry_stmts.items) |v| {
                 if (isSyntheticEntrypointVal(v)) {
                     try self.lowerExprIntoX0(v.value.*);
@@ -4332,6 +4474,38 @@ const Emitter = struct {
         try beamEmitter.writeFuncInfo(self.out, self.module_name, "main", 1);
         try beamEmitter.writeLabel(self.out, main1.entry);
         try beamEmitter.writeCall(self.out, .only, 0, .{ .local = wrapper.entry }, 0);
+        self.cur_line += 1;
+    }
+
+    /// `'_botopink_init'/0` of a module without `main/0`: its body — the `_`
+    /// statements and the effectful named `val`s' readers, in source order —
+    /// run once by the entry of a program that imports it (decision 140).
+    fn emitInitFunction(self: *Emitter) !void {
+        const labels = try self.fnLabelsFor("'_botopink_init'", 0);
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, "'_botopink_init'", 0, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, "'_botopink_init'", 0);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        self.resetFnState(0);
+        self.cur_fn_name = "_botopink_init";
+        var n: u32 = 0;
+        for (self.entry_stmts.items) |v| {
+            if (isSyntheticEntrypointVal(v)) n += self.precountLocalsInExpr(v.value.*);
+        }
+        self.num_y = n;
+        try self.emitFrame(0);
+        for (self.entry_stmts.items) |v| {
+            if (isSyntheticEntrypointVal(v)) {
+                try self.lowerExprIntoX0(v.value.*);
+            } else {
+                const reader = try self.fnLabelsFor(v.name, 0);
+                try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = reader.entry }, 0);
+            }
+        }
+        try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+        try self.emitReturn();
         self.cur_line += 1;
     }
 
@@ -4839,14 +5013,14 @@ const Emitter = struct {
                     // bare reference is a call — local for this module's own
                     // vals, remote for an imported `pub val` (which used to
                     // lower to the bare atom `'HOST'`).
-                    if (self.crossOwnerOf(n, .val)) |owner| {
+                    if (self.importedValOwner(n)) |imported| {
                         var name_buf: [256]u8 = undefined;
-                        const val_atom = atomName(n, &name_buf) catch n;
+                        const val_atom = atomName(imported.exported, &name_buf) catch imported.exported;
                         try beamEmitter.writeCall(
                             self.out,
                             .normal,
                             0,
-                            .{ .ext = .{ .module = owner, .function = val_atom } },
+                            .{ .ext = .{ .module = imported.owner, .function = val_atom } },
                             0,
                         );
                         return;
@@ -5731,6 +5905,22 @@ const Emitter = struct {
             return;
         }
 
+        // An imported `pub val` holding a fun: read it from its owner
+        // (`call_ext owner:name/0`), park it, stage the arguments, `call_fun`.
+        if (self.imported_val_owners.get(cc.callee)) |imported| {
+            var name_buf: [256]u8 = undefined;
+            const val_atom = atomName(imported.exported, &name_buf) catch imported.exported;
+            try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = imported.owner, .function = val_atom } }, 0);
+            const fun_y = self.next_y;
+            self.next_y += 1;
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(fun_y));
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(fun_y), Dst.xr(arity));
+            try beamEmitter.writeCallFun(self.out, arity);
+            if (mode == .tail) try self.emitReturn();
+            return;
+        }
+
         // A PascalCase callee that names a known record/struct (local or
         // cross-imported) is a constructor: `AppError(code: 400, msg: "x")` /
         // `App(8080, "/")` → a map `#{…}`. Positional args take their field name
@@ -5955,6 +6145,15 @@ const Emitter = struct {
     /// Owning module atom for a cross-module export of the given kind, or null
     /// when the name is local, shadowed by a register, or exported with a
     /// different shape.
+    /// The owner and declared name of an imported module-level `pub val` read
+    /// under `name`: this module's own import first (alias-aware), then the
+    /// name-keyed index for a val reached without one.
+    fn importedValOwner(self: *const Emitter, name: []const u8) ?ImportedFn {
+        if (self.imported_val_owners.get(name)) |iv| return iv;
+        const owner = self.crossOwnerOf(name, .val) orelse return null;
+        return .{ .owner = owner, .exported = name };
+    }
+
     fn crossOwnerOf(self: *const Emitter, name: []const u8, kind: crossModule.ExportKind) ?[]const u8 {
         const xc = self.cross orelse return null;
         const info = xc.exports.get(name) orelse return null;
@@ -6006,11 +6205,12 @@ const Emitter = struct {
         if (try self.tryEmitPrimAnnotation(k, callee, recv_expr, cc, mode)) return true;
         if (try self.emitPrimInline(k, callee, recv_expr, cc, mode)) return true;
         // An `@External.Erlang` template (`"string:trim($0, leading)"`) is
-        // Erlang source: evaluated at run time through `'__bp_erl_eval'/2`.
+        // Erlang source, compiled at build time into a helper (BR5).
         if (self.primErlangTemplate(k, callee, cc.args.len + cc.trailing.len)) |template| {
             var exprs: [max_staged]ast.Expr = undefined;
             exprs[0] = recv_expr.*;
             for (cc.args, 0..) |arg, i| exprs[i + 1] = arg.value.*;
+            self.missing_external = .{ .name = callee, .target = "beam", .loc = null };
             try self.evalTemplate(template, true, exprs[0 .. 1 + cc.args.len], cc.trailing, mode);
             return true;
         }
@@ -6350,7 +6550,7 @@ const Emitter = struct {
 
     /// A call to a host-backed `declare fn`: its `@External.Beam` `.S` body,
     /// else its `@External.Erlang` target — `module:symbol` as a `call_ext`,
-    /// a template evaluated through `'__bp_erl_eval'/2`. A fn with no beam or
+    /// a template compiled at build time into a helper (BR5). A fn with no beam or
     /// erlang target fails the lowering (`MissingExternalTarget`), like the
     /// other backends.
     fn lowerExternalCall(self: *Emitter, f: ast.FnDecl, cc: anytype, mode: CallMode, loc: ast.Loc) anyerror!void {
@@ -6411,56 +6611,22 @@ const Emitter = struct {
         return null;
     }
 
-    /// Evaluate an `@External.Erlang` template at run time: the template, with
-    /// the receiver marker → `__BpSelf` and `$N` → `__BpAN` (and `$stringify(e)` → its
-    /// `~p` text), goes to `'__bp_erl_eval'(Source, #{'__BpSelf' => …})`,
-    /// which scans, parses and evaluates it with `erl_eval`. The Erlang text is
-    /// the annotation author's, carried as a binary operand — the backend
-    /// writes no target syntax of its own. `exprs` starts with the receiver
+    /// Call an `@External.Erlang` template: the template, with the receiver
+    /// marker → `__BpSelf` and `$N` → `__BpAN` (and `$stringify(e)` → its `~p`
+    /// text), is compiled at build time into a helper function of this module
+    /// (`compiledTemplate`) and the operands are staged into its arguments.
+    /// A template the reader or the lowering refuses is a build error naming
+    /// the construct (`error.TemplateRefused`, decision 141) — there is no
+    /// run-time evaluation of Erlang source. `exprs` starts with the receiver
     /// when `has_recv`.
     fn evalTemplate(self: *Emitter, template_raw: []const u8, has_recv: bool, exprs: []const ast.Expr, trailing: anytype, mode: CallMode) anyerror!void {
-        var src: std.ArrayListUnmanaged(u8) = .empty;
-        defer src.deinit(self.alloc);
-        // A template written inside a `"…"` annotation keeps its `\"` escapes.
-        var template: std.ArrayListUnmanaged(u8) = .empty;
-        defer template.deinit(self.alloc);
-        var ti: usize = 0;
-        while (ti < template_raw.len) : (ti += 1) {
-            if (template_raw[ti] == '\\' and ti + 1 < template_raw.len and template_raw[ti + 1] == '"') continue;
-            try template.append(self.alloc, template_raw[ti]);
-        }
-        const Ctx = struct {
-            em: *Emitter,
-            out: *std.ArrayListUnmanaged(u8),
-            argc: usize,
-            pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                try c.out.append(c.em.alloc, ch);
-            }
-            pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                try c.out.appendSlice(c.em.alloc, s);
-            }
-            pub fn emitRecv(c: *@This()) anyerror!void {
-                try c.out.appendSlice(c.em.alloc, "__BpSelf");
-            }
-            pub fn emitArg(c: *@This(), idx: usize) anyerror!void {
-                var name_buf: [16]u8 = undefined;
-                try c.out.appendSlice(c.em.alloc, try std.fmt.bufPrint(&name_buf, "__BpA{d}", .{idx}));
-            }
-            pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                try c.out.appendSlice(c.em.alloc, "iolist_to_binary(io_lib:format(\"~p\", [");
-            }
-            pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                try c.out.appendSlice(c.em.alloc, "]))");
-            }
-        };
         const off: usize = @intFromBool(has_recv);
-        var ctx = Ctx{ .em = self, .out = &src, .argc = exprs.len - off + trailing.len };
-        try primOpTemplate.render(template.items, &ctx);
-        try src.append(self.alloc, '.');
+        const src = try templateBody(self.alloc, template_raw, exprs.len - off + trailing.len);
+        defer self.alloc.free(src);
 
         // BR5: the template compiled at build time into a helper function of
         // this module, called like any local function.
-        if (try self.compiledTemplate(src.items, has_recv, exprs.len + trailing.len)) |labels| {
+        if (try self.compiledTemplate(src, has_recv, exprs.len + trailing.len)) |labels| {
             const st = try self.stageOperands(exprs, trailing);
             try self.placeStaged(&st);
             switch (mode) {
@@ -6470,29 +6636,9 @@ const Emitter = struct {
             return;
         }
 
-        const st = try self.stageOperands(exprs, trailing);
-        const live = @max(self.min_live, st.x_top);
-        var names: [max_staged][16]u8 = undefined;
-        var pairs: [max_staged]beamEmitter.MapPair = undefined;
-        for (0..st.len) |i| {
-            const key = if (has_recv and i == 0)
-                "__BpSelf"
-            else
-                try std.fmt.bufPrint(&names[i], "__BpA{d}", .{i - off});
-            pairs[i] = .{ .key = Op.atom(key), .value = st.ops[i] };
-        }
-        const bindings: Op = if (st.len == 0) .{ .term = Term.mapOf(&.{}) } else blk: {
-            const dst = @max(live, 1);
-            try beamEmitter.writePutMap(self.out, false, .{ .term = Term.mapOf(&.{}) }, Dst.xr(dst), live, pairs[0..st.len]);
-            break :blk Op.xr(dst);
-        };
-        try self.emitParallelMove(&.{ Op.str(src.items), bindings }, &.{ 0, 1 });
-        const helper = try self.ensureEvalHelper();
-        const labels = try self.fnLabelsFor(helper, 2);
-        switch (mode) {
-            .non_tail => try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = labels.entry }, 0),
-            .tail => try beamEmitter.writeCall(self.out, .last, 2, .{ .local = labels.entry }, self.num_y),
-        }
+        const refusal = self.template_refusal orelse "the template did not compile";
+        self.missing_external.?.refusal = refusal;
+        return error.TemplateRefused;
     }
 
     fn freeTemplateFns(self: *Emitter) void {
@@ -6515,8 +6661,8 @@ const Emitter = struct {
     /// (its lifted funs `'__bp_tpl_<k>-…'`), rendered by `beam/asm_text.zig`
     /// and appended to the module. One helper per distinct template text and
     /// arity per module. Null when the reader or the lowering refuses the
-    /// template (see `beam/AGENTS.md`): the call site then keeps
-    /// `'__bp_erl_eval'/2`.
+    /// template (see `beam/AGENTS.md`), with the reason in
+    /// `template_refusal`: the call site is then a build error.
     fn compiledTemplate(self: *Emitter, body: []const u8, has_recv: bool, arity: usize) anyerror!?FnLabels {
         const key = try std.fmt.allocPrint(self.alloc, "{d}:{s}", .{ arity, body });
         if (self.template_fns.get(key)) |hit| {
@@ -6538,27 +6684,13 @@ const Emitter = struct {
         // The helper's Erlang SOURCE, for the reader — not target output: the
         // `.S` this backend writes is `asm_text`'s rendering of the lowered
         // model below.
-        var text: std.ArrayListUnmanaged(u8) = .empty;
-        try text.appendSlice(ar, try std.fmt.allocPrint(ar, "-module(bp_tpl).\n-export([t/{d}]).\nt(", .{arity}));
-        const off: usize = @intFromBool(has_recv);
-        for (0..arity) |i| {
-            if (i > 0) try text.appendSlice(ar, ", ");
-            const param = if (has_recv and i == 0) "__BpSelf" else try std.fmt.allocPrint(ar, "__BpA{d}", .{i - off});
-            try text.appendSlice(ar, param);
-        }
-        try text.appendSlice(ar, ") ->\n    ");
-        try text.appendSlice(ar, body);
-        try text.append(ar, '\n');
-
-        var pf: erlParse.Failure = .{};
-        const parsed = erlParse.parseModule(ar, text.items, &pf) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => return null,
-        };
-        var lf: erlLower.Failure = .{};
-        const lowered = erlLower.lowerModule(ar, parsed, self.module_name, &lf) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => return null,
+        const text = try templateModuleText(ar, body, has_recv, arity);
+        const lowered = switch (try lowerTemplateText(ar, text, self.module_name)) {
+            .ok => |o| o,
+            .refused => |why| {
+                self.template_refusal = try self.atom_arena.allocator().dupe(u8, why);
+                return null;
+            },
         };
 
         // Relabel: the lowering numbers from 1 and this module's next free
@@ -6615,51 +6747,6 @@ const Emitter = struct {
             },
             else => a,
         };
-    }
-
-    /// Emit (once per module) `'__bp_erl_eval'(Source, Bindings)`:
-    /// `erl_scan:string` → `erl_parse:parse_exprs` → `erl_eval:exprs`, the
-    /// value of the last expression. A step that does not answer `ok`/`value`
-    /// raises its answer with `erlang:error/1`.
-    fn ensureEvalHelper(self: *Emitter) anyerror![]const u8 {
-        if (self.eval_helper_name) |n| return n;
-        const name = try self.alloc.dupe(u8, "'__bp_erl_eval'");
-        try self.reserveFn(name, 2);
-        const labels = try self.fnLabelsFor(name, 2);
-        var buf: std.Io.Writer.Allocating = .init(self.alloc);
-        const saved_out = self.out;
-        self.out = &buf.writer;
-        const w = self.out;
-        const fail = self.allocLabel();
-        try beamEmitter.writeBlankLine(w);
-        try beamEmitter.writeFunctionHeader(w, name, 2, labels.entry);
-        try beamEmitter.writeLabel(w, labels.func_info);
-        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
-        try beamEmitter.writeFuncInfo(w, self.module_name, name, 2);
-        try beamEmitter.writeLabel(w, labels.entry);
-        try beamEmitter.writeAllocate(w, 1, 2);
-        try beamEmitter.writeInitYregs(w, 1);
-        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.yr(0));
-        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "binary_to_list" } }, 0);
-        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erl_scan", .function = "string" } }, 0);
-        try beamEmitter.writeTest(w, .is_tagged_tuple, fail, &.{ Op.xr(0), .{ .untagged = 3 }, Op.atom("ok") });
-        try beamEmitter.writeGetTupleElement(w, Op.xr(0), 1, Dst.xr(0));
-        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erl_parse", .function = "parse_exprs" } }, 0);
-        try beamEmitter.writeTest(w, .is_tagged_tuple, fail, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom("ok") });
-        try beamEmitter.writeGetTupleElement(w, Op.xr(0), 1, Dst.xr(0));
-        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
-        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "erl_eval", .function = "exprs" } }, 0);
-        try beamEmitter.writeTest(w, .is_tagged_tuple, fail, &.{ Op.xr(0), .{ .untagged = 3 }, Op.atom("value") });
-        try beamEmitter.writeGetTupleElement(w, Op.xr(0), 1, Dst.xr(0));
-        try beamEmitter.writeDeallocate(w, 1);
-        try beamEmitter.writeReturn(w);
-        try beamEmitter.writeLabel(w, fail);
-        try beamEmitter.writeCall(w, .last, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 1);
-        self.out = saved_out;
-        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
-        buf.deinit();
-        self.eval_helper_name = name;
-        return name;
     }
 
     /// §A5 BEAM dispatch: emit a primitive method call from its `#[@External.Erlang(
@@ -8261,7 +8348,7 @@ const Emitter = struct {
         return switch (e) {
             .literal => false,
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.top_vals.contains(n) or self.crossOwnerOf(n, .val) != null,
+                .ident => |n| self.top_vals.contains(n) or self.importedValOwner(n) != null,
                 .dotIdent => false,
                 .identAccess => |ia| blk: {
                     if (self.exprMayCall(strings, ia.receiver.*)) break :blk true;

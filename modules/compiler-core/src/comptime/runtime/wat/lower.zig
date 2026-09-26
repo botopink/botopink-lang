@@ -672,6 +672,10 @@ fn lowerExpr(x: Ctx, e: ep.Expr) Error!void {
         },
         .if_ => |clauses| try lowerClauses(x, clauses, &.{}, .if_clause),
         .try_ => |t| try lowerTry(x, t),
+        // The reader takes them for the BEAM lowering; this runtime has no
+        // mailbox and no old-style catch.
+        .receive_ => return x.f.l.refuse("`receive`", .{}),
+        .catch_ => return x.f.l.refuse("`catch Expr` (the old-style catch)", .{}),
         .block => |body| try lowerBody(x, body),
         .list_comp => |lc| try lowerListComp(x, lc),
     }
@@ -1040,6 +1044,14 @@ fn collectUses(f: *Fn, e: ep.Expr, shadow: *std.StringHashMapUnmanaged(void), ou
             for (t.catches) |cl| try collectClauseUses(f, cl, shadow, out);
             for (t.after) |b| try collectUses(f, b, shadow, out);
         },
+        .receive_ => |r| {
+            for (r.clauses) |cl| try collectClauseUses(f, cl, shadow, out);
+            if (r.after) |a| {
+                try collectUses(f, a.timeout.*, shadow, out);
+                for (a.body) |b| try collectUses(f, b, shadow, out);
+            }
+        },
+        .catch_ => |c| try collectUses(f, c.*, shadow, out),
         .block => |b| for (b) |it| try collectUses(f, it, shadow, out),
         .list_comp => |lc| {
             var inner = try shadow.clone(ar);
