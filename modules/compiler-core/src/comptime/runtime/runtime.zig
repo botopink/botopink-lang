@@ -3,7 +3,7 @@
 //!
 //! **Decision 84: the comptime runtime follows the target's VM, beam by
 //! default.** A build whose target is `erlang` or `beam` evaluates on the BEAM
-//! runtime (`persistent_erl.zig`); `commonJS` and `wasm` evaluate on the wat
+//! runtime (`persistent_beam.zig`); `commonJS` and `wasm` evaluate on the wat
 //! runtime (`persistent_wat.zig`, wasm3 in-process); a compilation that names
 //! no target (the language server's type pass) uses beam. No flag and no build
 //! option: `comptime.compile` selects `forTarget(target_name)` — a harness's
@@ -16,7 +16,7 @@
 //!
 //! What a host can run is decided at compile time: the BEAM runtime needs a
 //! process the compiler can spawn (`can_spawn`, false on `wasm32`, where
-//! `persistent_erl.zig` is never analysed); the wat runtime needs an engine —
+//! `persistent_beam.zig` is never analysed); the wat runtime needs an engine —
 //! wasm3 on a native host, the page's `WebAssembly.instantiate` in the browser
 //! build (not wired yet, step 5's comptime half). An evaluation whose runtime
 //! the host lacks is REFUSED with a located diagnostic naming it (decision 67),
@@ -31,7 +31,7 @@ const configMod = @import("../../codegen/config.zig");
 const replyOrder = @import("reply_order.zig");
 
 const is_wasm = builtin.cpu.arch.isWasm();
-const persistent_erl = if (is_wasm) struct {} else @import("persistent_erl.zig");
+const persistent_beam = if (is_wasm) struct {} else @import("persistent_beam.zig");
 const persistent_wat = @import("persistent_wat.zig");
 const watProgram = @import("wat/program.zig");
 const beamProgram = @import("beam/program.zig");
@@ -142,16 +142,16 @@ pub const Result = union(enum) {
 
 pub const EvalError = error{ OutOfMemory, EvalFailed };
 
-/// Evaluate generated module `module` (Erlang text `code`, staged under
-/// `dir` for the BEAM runtime) with the ETF argument `arg`, on this thread's
-/// runtime. `host` names the evaluator in diagnostics.
-pub fn evalWithArg(arena: std.mem.Allocator, io: std.Io, host: []const u8, dir: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
+/// Evaluate generated module `module` (Erlang text `code`) with the ETF
+/// argument `arg`, on this thread's runtime. `host` names the evaluator in
+/// diagnostics and the placeholder atom of its listing.
+pub fn evalWithArg(arena: std.mem.Allocator, io: std.Io, host: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
     const r = current();
-    const result = try evalOn(arena, io, r, host, dir, module, code, arg);
+    const result = try evalOn(arena, io, r, host, module, code, arg);
     if (parity) |p| {
         const other: ComptimeRuntime = if (r == .beam) .wat else .beam;
         if (available(other)) {
-            const second = try evalOn(arena, io, other, host, dir, module, code, arg);
+            const second = try evalOn(arena, io, other, host, module, code, arg);
             const beam_result = if (r == .beam) result else second;
             const wat_result = if (r == .beam) second else result;
             try p.record(host, module, beam_result, wat_result);
@@ -160,30 +160,30 @@ pub fn evalWithArg(arena: std.mem.Allocator, io: std.Io, host: []const u8, dir: 
     return result;
 }
 
-pub fn evalOn(arena: std.mem.Allocator, io: std.Io, r: ComptimeRuntime, host: []const u8, dir: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
+pub fn evalOn(arena: std.mem.Allocator, io: std.Io, r: ComptimeRuntime, host: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
     if (!available(r)) return .{ .unavailable = try std.fmt.allocPrint(arena, "the {s} evaluator has {s}", .{ host, missingRuntimeMessage(r) }) };
     return switch (r) {
-        .beam => if (comptime can_spawn) evalBeam(arena, io, host, dir, module, code, arg) else unreachable,
+        .beam => if (comptime can_spawn) evalBeam(arena, io, host, module, code, arg) else unreachable,
         .wat => evalWat(arena, module, code, arg),
     };
 }
 
 /// The BEAM runtime: the module lowered to BEAM instructions and loaded as
-/// `.beam` bytes (cmd 4, no Erlang compiler — front 14 step 3); a module the
-/// lowering refuses is staged as `.erl` and compiled by the node (cmd 2), the
-/// per-declaration fallback its listing reports.
-fn evalBeam(arena: std.mem.Allocator, io: std.Io, host: []const u8, dir: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
+/// `.beam` bytes (cmd 4, no Erlang compiler — front 14 step 3). A construct
+/// the lowering refuses is a `compile_error` naming it, as on the wat runtime
+/// — never a module run some other way.
+fn evalBeam(arena: std.mem.Allocator, io: std.Io, host: []const u8, module: []const u8, code: []const u8, arg: []const u8) EvalError!Result {
     const built = try beamProgram.build(module, try placeholderOf(arena, host), code);
-    const outcome = switch (built) {
-        .ok => |ok| persistent_erl.evalBeamWithArg(arena, io, ok.beam, module, arg),
-        .refused => persistent_erl.evalWithArg(arena, io, try ensureModule(arena, io, dir, module, code), module, arg),
+    const ok = switch (built) {
+        .ok => |o| o,
+        .refused => |why| return .{ .response = .{ .compile_error = try std.fmt.allocPrint(arena, "the BEAM runtime does not take {s}", .{why}) } },
     };
-    const response = outcome catch |err| switch (err) {
+    const response = persistent_beam.evalBeamWithArg(arena, io, ok.beam, module, arg) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => {
             // No message means `erl` is missing rather than a broken stream:
             // the caller's hint for that case names PATH.
-            const detail = persistent_erl.lastTransportError() orelse return error.EvalFailed;
+            const detail = persistent_beam.lastTransportError() orelse return error.EvalFailed;
             return .{ .unavailable = try std.fmt.allocPrint(arena, "the {s} evaluator's erl runtime failed ({s}): {s}", .{ host, @errorName(err), detail }) };
         },
     };
@@ -225,11 +225,10 @@ pub const Listing = struct {
 
 /// The listing of the module this thread's runtime ran. On the BEAM runtime:
 /// the module as BEAM assembly (`beam/program.zig`), then `main/1`'s argument
-/// as `%%` comments — or, for a module the lowering refused, the Erlang it
-/// ran from (`erl_listing`: the lowered body and `main/1`, then the same
-/// comments) under a first line naming the refusal. On the wat runtime: the
-/// generated module's functions as lowered to wasm (`wat/program.zig`), then
-/// the same argument comments as `;;` lines — or the refusal.
+/// as `%%` comments (the tail of `erl_listing`, the Erlang listing the
+/// evaluator rendered) — or the refusal. On the wat runtime: the generated
+/// module's functions as lowered to wasm (`wat/program.zig`), then the same
+/// argument comments as `;;` lines — or the refusal.
 pub fn listingOf(arena: std.mem.Allocator, host: []const u8, module: []const u8, code: []const u8, erl_listing: []const u8) EvalError!Listing {
     const marker = "\n%% main/1 argument";
     const argument: ?[]const u8 = if (std.mem.indexOf(u8, erl_listing, marker)) |i| erl_listing[i + 1 ..] else null;
@@ -237,7 +236,7 @@ pub fn listingOf(arena: std.mem.Allocator, host: []const u8, module: []const u8,
         const built = try beamProgram.build(module, try placeholderOf(arena, host), code);
         return switch (built) {
             .ok => |ok| .{ .lang = .beam, .text = if (argument) |a| try std.fmt.allocPrint(arena, "{s}\n{s}", .{ ok.listing, a }) else ok.listing },
-            .refused => |why| .{ .lang = .erlang, .text = try std.fmt.allocPrint(arena, "%% not lowered to BEAM assembly, run from this Erlang: {s}\n{s}", .{ why, erl_listing }) },
+            .refused => |why| .{ .lang = .beam, .text = try std.fmt.allocPrint(arena, "%% not lowered: {s}\n", .{why}) },
         };
     }
     const built = try watProgram.build(module, code);
@@ -259,42 +258,6 @@ pub fn listingOf(arena: std.mem.Allocator, host: []const u8, module: []const u8,
         }
     }
     return .{ .lang = .wat, .text = out.items };
-}
-
-// ── the BEAM runtime's staging ───────────────────────────────────────────────
-
-/// Stage `<dir>/<module>.erl` unless it is already there, and return its path
-/// either way. The atom **is** the content's hash, and `writeModule` stages and
-/// renames, so a file at that path is that content, complete — a second call
-/// site of one declaration would rewrite the same bytes. The check is a single
-/// `access`, and asking the filesystem rather than remembering means a cleared
-/// `.botopinkbuild/` or a changed working directory mid-process writes the file
-/// again instead of pointing the node at one that is gone.
-fn ensureModule(arena: std.mem.Allocator, io: std.Io, dir: []const u8, module: []const u8, code: []const u8) EvalError![]const u8 {
-    const path = try std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ dir, module });
-    if (std.Io.Dir.cwd().access(io, path, .{})) |_| return path else |_| {}
-    return writeModule(arena, io, dir, module, code);
-}
-
-/// Write `<dir>/<module>.erl` and return its path. The module is written to a
-/// uniquely named sibling first and renamed into place, so a reader never sees
-/// a partial file: two evaluations of the same body — concurrent tests, or two
-/// compiler processes sharing a working directory — derive the same
-/// content-hashed name, and a plain truncate-and-write let one `compile:file`
-/// read the file mid-rewrite and fail with no usable diagnostic.
-fn writeModule(arena: std.mem.Allocator, io: std.Io, dir: []const u8, module: []const u8, code: []const u8) EvalError![]const u8 {
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDirPath(io, dir) catch return error.EvalFailed;
-    const path = try std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ dir, module });
-    var nonce: [8]u8 = undefined;
-    io.random(&nonce);
-    const staging = try std.fmt.allocPrint(arena, "{s}.{x}.tmp", .{ path, std.mem.readInt(u64, &nonce, .little) });
-    cwd.writeFile(io, .{ .sub_path = staging, .data = code }) catch return error.EvalFailed;
-    cwd.rename(staging, cwd, path, io) catch {
-        cwd.deleteFile(io, staging) catch {};
-        return error.EvalFailed;
-    };
-    return path;
 }
 
 // ── parity ───────────────────────────────────────────────────────────────────
@@ -411,6 +374,19 @@ test "decision 84 by target name; a harness pin wins over it" {
     defer _ = force(prev);
     try std.testing.expectEqual(ComptimeRuntime.beam, forTarget("node"));
     try std.testing.expectEqual(ComptimeRuntime.beam, forTarget("wasm"));
+}
+
+test "the BEAM runtime refuses a module its lowering does not take, naming the construct" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const code =
+        \\-module(bp_runtime_refused).
+        \\-export([main/1]).
+        \\main(_) -> receive X -> X end.
+    ;
+    const result = try evalOn(arena_state.allocator(), std.testing.io, .beam, "template", "bp_runtime_refused", code, "\x83\x6a");
+    try std.testing.expect(result == .response and result.response == .compile_error);
+    try std.testing.expect(std.mem.indexOf(u8, result.response.compile_error, "`receive`") != null);
 }
 
 test "a native build carries both runtimes" {

@@ -1,14 +1,14 @@
 //! The resident node's server module, as Erlang source — the text `erlc`
 //! compiles **at `zig build` time** (decision 83).
 //!
-//! It lives apart from `persistent_erl.zig` because two programs need it: the
+//! It lives apart from `persistent_beam.zig` because two programs need it: the
 //! runtime, which embeds the compiled `.beam` (`@embedFile`) and describes the
 //! protocol, and `render_resident.zig`, the build-time tool that writes this
 //! source (and the two preludes of `prelude.zig`) for `erlc`. The renderer must
 //! not import the runtime — the runtime embeds what the renderer produces —
 //! so the source sits in a file with no imports of its own.
 //!
-//! The protocol this module speaks is documented in `persistent_erl.zig`; the
+//! The protocol this module speaks is documented in `persistent_beam.zig`; the
 //! `.beam` that embeds it is loaded into the node by the spawn bootstrap there,
 //! never from the code path.
 
@@ -44,12 +44,6 @@ const server_body =
     \\loop() ->
     \\    case read_frame() of
     \\        eof -> ok;
-    \\        {1, PathBin} ->  %% eval: compile .erl file, run main/0
-    \\            write_frame(compile_then(binary_to_list(PathBin), fun(Mod) -> safe_call(Mod, []) end)),
-    \\            loop();
-    \\        {2, PathBin} ->  %% load: compile .erl file, answer the module atom
-    \\            write_frame(compile_then(binary_to_list(PathBin), fun atom_to_binary/1)),
-    \\            loop();
     \\        {3, Payload} ->  %% call: <<NameLen:16, Name, ExternalTerm>> -> main/1
     \\            <<NameLen:16/unsigned-big-integer, Rest/binary>> = Payload,
     \\            <<NameBin:NameLen/binary, ArgBin/binary>> = Rest,
@@ -65,8 +59,10 @@ const server_body =
     \\
     \\%% Load `.beam` bytes assembled by the compiler (no source, no `compile:file`),
     \\%% then answer the module atom. The loader's rejection (`badfile`, an opcode
-    \\%% above what this release knows) is reported on the compile-error channel:
-    \\%% to the evaluators it is the same event a rejected `.erl` was.
+    \\%% above what this release knows) is reported on the compile-error channel.
+    \\%% `code:purge/1` drops a previous version of the same atom before it becomes
+    \\%% old code: one module serves every call site of a declaration, so a reload
+    \\%% means the declaration itself changed.
     \\load_beam(Mod, Beam) ->
     \\    _ = code:purge(Mod),
     \\    case code:load_binary(Mod, "", Beam) of
@@ -74,23 +70,6 @@ const server_body =
     \\        {error, Reason} ->
     \\            io_lib:format("__BP_ERL_COMPILE_ERROR__:~p", [{load_binary, Mod, Reason}])
     \\    end.
-    \\
-    \\%% Compile and load `Path`, then answer `Then(Mod)`; a compiler rejection is
-    \\%% the error frame instead. `code:purge/1` drops a previous version of the
-    \\%% same atom before it becomes old code: one module now serves every call
-    \\%% site of a declaration, so a reload means the declaration itself changed.
-    \\compile_then(Path, Then) ->
-    \\    case compile:file(Path, [binary, return]) of
-    \\        {ok, Mod, Beam} -> load_then(Mod, Beam, Then);
-    \\        {ok, Mod, Beam, _Warnings} -> load_then(Mod, Beam, Then);
-    \\        {error, Errors, Warnings} ->
-    \\            io_lib:format("__BP_ERL_COMPILE_ERROR__:~p", [{Errors, Warnings}])
-    \\    end.
-    \\
-    \\load_then(Mod, Beam, Then) ->
-    \\    _ = code:purge(Mod),
-    \\    {module, _} = code:load_binary(Mod, "", Beam),
-    \\    Then(Mod).
     \\
     \\%% `Mod:main(Args…)` runs in a monitored process so a runaway comptime body
     \\%% (infinite loop, blocked receive) is killed after the timeout instead of

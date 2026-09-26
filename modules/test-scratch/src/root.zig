@@ -62,7 +62,7 @@ pub const PREFIX = ".botopinkbuild/test-scratch";
 const ID_LEN = 16;
 const ROOT_LEN = PREFIX.len + 1 + ID_LEN;
 
-/// An atomic spin-lock, the same shape `comptime/runtime/persistent_erl.zig`
+/// An atomic spin-lock, the same shape `comptime/runtime/persistent_beam.zig`
 /// uses: a test binary's tests may run on several threads, and two of them
 /// drawing the root would give one process two roots.
 var mu: std.atomic.Value(u8) = .init(0);

@@ -16,7 +16,7 @@ pub const TypeDefLang = enum {
 };
 
 /// The VM a compilation's decorator and template bodies run on (front 18,
-/// `comptime/runtime/runtime.zig`): the BEAM (`persistent_erl.zig`) or wasm3
+/// `comptime/runtime/runtime.zig`): the BEAM (`persistent_beam.zig`) or wasm3
 /// (`persistent_wat.zig`).
 pub const ComptimeRuntime = enum { beam, wat };
 

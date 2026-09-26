@@ -100,12 +100,9 @@ test "parity: a prelude helper edited on one side is a reported divergence" {
     const edited = try module_of("bp@parity_divergence_b", "X * 2 + 1");
     defer alloc.free(edited);
     const arg = try etf.encode(arena, Term.tupleOf(&.{.{ .integer = 20 }}));
-    const dir = test_scratch.path(io, "comptime-parity/erl");
-    defer test_scratch.remove(io, "comptime-parity");
-
-    const beam = try runtime.evalOn(arena, io, .beam, "parity", dir, "bp@parity_divergence_a", original, arg);
-    const wat = try runtime.evalOn(arena, io, .wat, "parity", dir, "bp@parity_divergence_b", edited, arg);
-    const same = try runtime.evalOn(arena, io, .wat, "parity", dir, "bp@parity_divergence_a", original, arg);
+    const beam = try runtime.evalOn(arena, io, .beam, "parity", "bp@parity_divergence_a", original, arg);
+    const wat = try runtime.evalOn(arena, io, .wat, "parity", "bp@parity_divergence_b", edited, arg);
+    const same = try runtime.evalOn(arena, io, .wat, "parity", "bp@parity_divergence_a", original, arg);
 
     var parity: runtime.Parity = .{ .alloc = alloc };
     defer parity.deinit();

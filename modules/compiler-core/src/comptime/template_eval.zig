@@ -1,4 +1,4 @@
-/// Template evaluation in the persistent erl runtime.
+/// Template evaluation on the comptime runtimes (`runtime/runtime.zig`).
 ///
 /// When the V1 classifier in `infer.zig` cannot reduce a template body by
 /// inspection, the body runs here:
@@ -116,7 +116,6 @@ pub fn evaluate(
         arena,
         io,
         "template",
-        ".botopinkbuild/tmp/template",
         source.module,
         source.code,
         try etf.encode(arena, source.argument),
@@ -170,7 +169,7 @@ const Rendered = struct {
     listing: []const u8,
 };
 
-/// Serialises the registry. An atomic spin-lock, as `runtime/persistent_erl.zig`
+/// Serialises the registry. An atomic spin-lock, as `runtime/persistent_beam.zig`
 /// uses for the pipes: the critical sections are a hash lookup and an insert,
 /// and parallel test binaries are the only contenders.
 var rendered_lock: std.atomic.Value(u8) = .init(0);
@@ -485,7 +484,7 @@ fn buildModule(
     const argument = try argumentTerm(arena, plans);
     // A2: `bp@comptime__tpl__<template>__<16 hex>`. The Wyhash is unchanged, so
     // an identical generated body is still the identical module and re-loading
-    // it is still a no-op (`runtime/persistent_erl.zig`).
+    // it is still a no-op (`runtime/persistent_beam.zig`).
     const module = crossModule.erlDeclAtom(arena, comptime_owner, .tpl, tfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return error.EvalFailed,

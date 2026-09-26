@@ -2,7 +2,7 @@
 //! Erlang compiler: its text is parsed (`../wat/erl_parse.zig`, the reader
 //! the wat runtime uses), lowered to BEAM instructions (`lower.zig`) and
 //! assembled into `.beam` bytes (`codegen/beam/beam_file.zig`), which the
-//! resident node loads with cmd 4 (`persistent_erl.evalBeamWithArg`). The
+//! resident node loads with cmd 4 (`persistent_beam.evalBeamWithArg`). The
 //! same instructions rendered as text (`codegen/beam/asm_text.zig`) are the
 //! `COMPTIME BEAM ASSEMBLY` listing. Front 14 step 3, front 18 step 1b.
 //!
@@ -10,9 +10,11 @@
 //! hit is the same program — for the life of the process.
 //!
 //! A construct the lowering does not take is a **refusal** naming it
-//! (`Built.refused`): the evaluator then runs that one declaration from
-//! Erlang source, as before, and says so in its listing (decision 67 — a
-//! fallback is counted and visible, never silent). `refusals` is the count.
+//! (`Built.refused`), which the runtime reports as the module not compiling —
+//! the channel the wat runtime uses for its own refusals. There is no second
+//! way to run a module: the `.erl` staging and `compile:file` are gone
+//! (decision 67 — refuse rather than fall back). `counts` is how many
+//! distinct modules this process lowered and refused.
 const std = @import("std");
 const ep = @import("../wat/erl_parse.zig");
 const lower = @import("lower.zig");
@@ -120,7 +122,6 @@ fn renamed(ar: std.mem.Allocator, m: bf.Module, name: []const u8) Error!bf.Modul
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
-const persistent_erl = @import("../persistent_erl.zig");
 const etf = @import("../etf.zig");
 const Term = @import("../../../codegen/beam/term.zig").Term;
 
@@ -190,6 +191,7 @@ const semantics_reply =
 ;
 
 test "beam lowering: a module assembled without erlc answers what erlc's build of it answers" {
+    const persistent_beam = @import("../persistent_beam.zig");
     const allocator = std.testing.allocator;
     const built = try build("bp_lower_semantics", "bp_lower_semantics", semantics_module);
     const ok = switch (built) {
@@ -202,9 +204,9 @@ test "beam lowering: a module assembled without erlc answers what erlc's build o
     var arena_state = std.heap.ArenaAllocator.init(allocator);
     defer arena_state.deinit();
     const arg = try etf.encode(arena_state.allocator(), Term.tupleOf(&.{Term.int(7)}));
-    const response = try persistent_erl.evalBeamWithArg(allocator, std.testing.io, ok.beam, "bp_lower_semantics", arg);
+    const response = try persistent_beam.evalBeamWithArg(allocator, std.testing.io, ok.beam, "bp_lower_semantics", arg);
     defer allocator.free(response.payload());
-    try std.testing.expectEqual(std.meta.Tag(persistent_erl.Response).ok, std.meta.activeTag(response));
+    try std.testing.expectEqual(std.meta.Tag(persistent_beam.Response).ok, std.meta.activeTag(response));
     try std.testing.expectEqualStrings(semantics_reply, response.payload());
     // The listing is the same module as `.S` text, named by the placeholder.
     try std.testing.expect(std.mem.startsWith(u8, ok.listing, "{module, bp_lower_semantics}.\n"));

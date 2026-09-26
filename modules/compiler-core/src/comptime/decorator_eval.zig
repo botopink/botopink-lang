@@ -1,13 +1,14 @@
-/// Decorator invocation in the persistent erl runtime.
+/// Decorator invocation on the comptime runtimes (`runtime/runtime.zig`).
 ///
 /// A decorator is a comptime function whose first parameter is `comptime _:
 /// @Decl`. When `#[d(args)]` is applied to a declaration, the core reflects that
 /// declaration into a `DeclHandle` and runs the decorator body over it:
 ///
-///   decorator `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─ `main/1` → .erl
+///   decorator `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─ `main/1` → Erlang text
 ///   handle + args ─ `Term` ─ comptime/runtime/etf ─ external term ─┐
-///     → comptime/runtime/persistent_erl `evalWithArg`              │
-///       (compile+load once, then call `<module>:main(<term>)`) ←───┘
+///     → comptime/runtime/runtime `evalWithArg`: on BEAM the text   │
+///       lowered to `.beam` bytes (runtime/beam/), loaded once, then │
+///       `<module>:main(<term>)`; on wat the text lowered to wasm ←─┘
 ///     → JSON `{kind, contributions | message | span}` → `Outcome`
 ///
 /// The body is lowered by the regular Erlang backend (untyped mode), so every
@@ -16,7 +17,7 @@
 /// Erlang functions resident in `bp_comptime_decorator`, built once at server
 /// warmup (`runtime/prelude.zig`) and reached by the `-import`
 /// `emitComptimeModule` writes; only `main/1` is generated, and it carries nothing
-/// from the declaration it runs over — so one `.erl` serves every declaration a
+/// from the declaration it runs over — so one module serves every declaration a
 /// decorator annotates with the same annotation arguments.
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -89,7 +90,6 @@ pub fn evaluate(
         arena,
         io,
         "decorator",
-        ".botopinkbuild/tmp/decorator",
         source.module,
         source.code,
         try etf.encode(arena, source.argument),

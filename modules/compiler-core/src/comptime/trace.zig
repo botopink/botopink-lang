@@ -1,29 +1,25 @@
-/// What a decorator or template evaluation exchanged with the `erl` runtime,
-/// kept for snapshots.
+/// What a decorator or template evaluation exchanged with its comptime
+/// runtime, kept for snapshots.
 ///
 /// `template_eval` / `decorator_eval` record one `Entry` per evaluation: the
-/// Erlang they generated (the lowered body plus the `main/0` that encodes the
-/// JSON reply — module header, exports and host glue left out) and the reply
-/// the runtime sent back to the compiler. `render` writes them as
-/// `COMPTIME ERLANG` / `COMPTIME REPLY` snapshot sections.
+/// module that ran (`Lang`) and the reply the runtime sent back to the
+/// compiler. `render` writes them as `COMPTIME BEAM ASSEMBLY` or
+/// `COMPTIME WAT`, then `COMPTIME REPLY`, snapshot sections.
 const std = @import("std");
 const replyOrder = @import("runtime/reply_order.zig");
 
 pub const Kind = enum { template, decorator };
 
 /// What the listing of an evaluation is: the BEAM assembly the BEAM runtime
-/// loaded (front 14 step 3), the generated Erlang when that declaration fell
-/// back to source (the listing's first line says why), or the wasm the wat
-/// runtime lowered it to.
+/// loaded (front 14 step 3), or the wasm the wat runtime lowered the module
+/// to.
 pub const Lang = enum {
     beam,
-    erlang,
     wat,
 
     fn section(l: Lang) []const u8 {
         return switch (l) {
             .beam => "COMPTIME BEAM ASSEMBLY",
-            .erlang => "COMPTIME ERLANG",
             .wat => "COMPTIME WAT",
         };
     }
@@ -32,7 +28,7 @@ pub const Lang = enum {
     /// codegen `BEAM ASSEMBLY` sections are.
     fn fence(l: Lang) []const u8 {
         return switch (l) {
-            .beam, .erlang => "erlang",
+            .beam => "erlang",
             .wat => "wat",
         };
     }
@@ -42,17 +38,16 @@ pub const Entry = struct {
     kind: Kind,
     /// Name of the template / decorator function.
     name: []const u8,
-    /// The module that ran: the lowered function and `main/1` in Erlang, or
-    /// the generated module's functions in wat (`lang`), then `main/1`'s
-    /// argument as comments.
+    /// The module that ran: its BEAM assembly, or the generated module's
+    /// functions in wat (`lang`), then `main/1`'s argument as comments.
     listing: []const u8,
-    lang: Lang = .erlang,
+    lang: Lang = .beam,
     /// The runtime's reply: the JSON `main/0` printed, or the compile/runtime
     /// error text when the module did not compile or raised.
     reply: []const u8,
 };
 
-/// Append the `COMPTIME ERLANG` / `COMPTIME REPLY` sections of every entry.
+/// Append the listing and `COMPTIME REPLY` sections of every entry.
 pub fn render(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), entries: []const Entry) !void {
     for (entries) |e| {
         const kind = @tagName(e.kind);
@@ -97,15 +92,15 @@ fn prettyJson(allocator: std.mem.Allocator, text: []const u8) !?[]u8 {
 test "trace: json replies are re-indented, error texts kept" {
     const alloc = std.testing.allocator;
     const out = (try renderAlloc(alloc, &.{
-        .{ .kind = .template, .name = "shout", .listing = "shout(Q) ->\n    ok.\n", .reply = "{\"kind\":\"code\",\"source\":\"1\"}" },
-        .{ .kind = .decorator, .name = "route", .listing = "route(D) -> ok.", .reply = "the decorator body raised: badarg" },
+        .{ .kind = .template, .name = "shout", .listing = "{function, shout, 1, 2}.\n    return.\n", .reply = "{\"kind\":\"code\",\"source\":\"1\"}" },
+        .{ .kind = .decorator, .name = "route", .listing = "(func $route)", .lang = .wat, .reply = "the decorator body raised: badarg" },
     })).?;
     defer alloc.free(out);
     try std.testing.expectEqualStrings(
-        \\----- COMPTIME ERLANG -- template shout
+        \\----- COMPTIME BEAM ASSEMBLY -- template shout
         \\```erlang
-        \\shout(Q) ->
-        \\    ok.
+        \\{function, shout, 1, 2}.
+        \\    return.
         \\```
         \\
         \\----- COMPTIME REPLY -- template shout
@@ -116,9 +111,9 @@ test "trace: json replies are re-indented, error texts kept" {
         \\}
         \\```
         \\
-        \\----- COMPTIME ERLANG -- decorator route
-        \\```erlang
-        \\route(D) -> ok.
+        \\----- COMPTIME WAT -- decorator route
+        \\```wat
+        \\(func $route)
         \\```
         \\
         \\----- COMPTIME REPLY -- decorator route

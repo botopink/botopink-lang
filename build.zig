@@ -158,7 +158,7 @@ pub fn build(b: *std.Build) void {
     // ── resident comptime modules: `.erl` → `erlc` → `.beam`, embedded ───────
     // Decision 83 (front 18 step 1c): the comptime node's server and its two
     // preludes are compiled by `erlc` HERE, once per source change, and reach
-    // `comptime/runtime/persistent_erl.zig` as `@embedFile`s — so `erlc` is a
+    // `comptime/runtime/persistent_beam.zig` as `@embedFile`s — so `erlc` is a
     // dependency of building the compiler and of nothing a user runs. The
     // renderer runs on the HOST (a cross-build still renders here), so it gets
     // a host-targeted `std_prelude`; `erlc` must be on PATH (OTP 28+, the

@@ -37,7 +37,7 @@ compiler-web/
 - `entry = .disabled` (a library of exports, no `_start`) and `rdynamic` (the
   `export fn`s stay in the export table).
 - What is compiled out, and where: `comptime/runtime/runtime.zig` (`can_spawn`,
-  `active`) — the evaluators' `persistent_erl` path and `codegen.zig`'s
+  `active`) — the evaluators' `persistent_beam` path and `codegen.zig`'s
   executors sit behind comptime-false conditions on `wasm32`, so
   `std.process` is never resolved. The one source change the target needed
   outside those gates: `codegen/erlang.zig`'s prelude spin lock yields with

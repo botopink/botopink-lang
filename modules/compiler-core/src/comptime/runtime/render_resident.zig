@@ -8,7 +8,7 @@
 //!   bp_comptime_decorator.erl      `prelude.zig`
 //!
 //! `erlc +deterministic` then compiles the three into `.beam`s the build hands
-//! to `persistent_erl.zig` as `@embedFile`s (decision 83): the Erlang compiler
+//! to `persistent_beam.zig` as `@embedFile`s (decision 83): the Erlang compiler
 //! is a dependency of *building* the botopink compiler, and of nothing a user
 //! runs. This program imports the sources' Zig and nothing of the runtime, so
 //! the graph is acyclic: renderer → `.erl` → `erlc` → `.beam` → runtime.

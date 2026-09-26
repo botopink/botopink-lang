@@ -63,7 +63,7 @@ test "…" {
 
 `rel` is **comptime**: it keys a static buffer sized exactly `<root>/<rel>`,
 filled once behind an atomic spin-lock (the same shape
-`comptime/runtime/persistent_erl.zig` uses — a test binary's tests may run on
+`comptime/runtime/persistent_beam.zig` uses — a test binary's tests may run on
 several threads, and two of them drawing the root would give one process two
 roots). So nothing is allocated, nothing leaks under `std.testing.allocator`,
 and the slice is valid for the whole process — it can sit in an array beside

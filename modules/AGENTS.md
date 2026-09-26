@@ -99,5 +99,5 @@ the std modules). The lib-test-runner's unit tests run under the workspace
   for `wasm32-wasi`, with the comptime runtime and the RUN LOG executors compiled
   out (`compiler-core/src/comptime/runtime/runtime.zig`).
 - Comptime evaluation (templates, decorators) runs through compiler-core's
-  persistent `erl` process (`compiler-core/src/comptime/runtime/persistent_erl.zig`);
+  persistent `erl` process (`compiler-core/src/comptime/runtime/persistent_beam.zig`);
   the CLI and the LSP share that pipeline.

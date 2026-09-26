@@ -276,16 +276,17 @@ Do not use `--no-verify`.
 
 ## Debugging tips & gotchas
 
-### Persistent erl server (`comptime/runtime/persistent_erl.zig`)
+### Persistent BEAM node (`comptime/runtime/persistent_beam.zig`)
 
 Decorator and template bodies run in one long-lived `erl` process speaking
-length-prefixed binary frames over stdin/stdout: `cmd 1` = compile+run `.erl`
-(one-shot), `cmd 2` = compile+load `.erl` and answer the module atom, `cmd 3` =
-call `<module>:main(<external term>)`, `cmd 4` = load `.beam` **bytes** carried
-in the frame and answer the module atom (what `codegen/beam/beam_file.zig`
-assembles). The evaluators use 2 + 3, so a module is compiled once per
-**declaration** and every later call site sends cmd 3 alone with its own
-capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
+length-prefixed binary frames over stdin/stdout: `cmd 4` = load `.beam`
+**bytes** carried in the frame and answer the module atom, `cmd 3` = call
+`<module>:main(<external term>)`. The bytes are the generated module lowered
+and assembled in Zig (`comptime/runtime/beam/`, `codegen/beam/beam_file.zig`
+— front 14 step 3); nothing on this path compiles Erlang, and the `.erl`
+commands (1, 2) are gone. A module is loaded once per **declaration** and
+every later call site sends cmd 3 alone with its own capture. Comptime
+`val`s are folded in Zig (`comptime/eval.zig`).
 
 - **`file:read/2` on `standard_io` can return a list, not a binary.** `read_frame/0`
   converts with `list_to_binary/1` before matching `<<Len:32/unsigned-big-integer>>`;
@@ -294,7 +295,7 @@ capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
 - **stdout is the frame channel only.** The server moves the default logger
   handler to `standard_error` and runs `main/0` with `standard_error` as its
   group leader, so `io:format/1` in a comptime body and a SIGTERM notice go to
-  `.botopinkbuild/tmp/persistent_erl/erl.<id>.stderr.log` (write-only, truncated
+  `.botopinkbuild/tmp/persistent_beam/erl.<id>.stderr.log` (write-only, truncated
   at each spawn; `<id>` is 64 random bits per process, so two compilers sharing
   this cwd do not truncate each other's live log). A reply length above `max_frame_len` (16 MiB) fails as
   `error.PersistentErlFrameTooLarge` with a message in `lastTransportError()`.
@@ -309,10 +310,10 @@ capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
   module used to copy. `zig build` renders the three `.erl` with
   `render_resident.zig` (host target), compiles them with `erlc +deterministic`
   and hands the `.beam`s to compiler-core as anonymous imports;
-  `persistent_erl.zig` `@embedFile`s them and the spawn bootstrap
+  `persistent_beam.zig` `@embedFile`s them and the spawn bootstrap
   (`erl -noshell -eval …`) loads them from stdin — one cmd-4 frame each — before
   `start/0` runs. Editing the server or a prelude re-runs `erlc` at the next
-  build, nothing else; `.botopinkbuild/tmp/persistent_erl/` holds only
+  build, nothing else; `.botopinkbuild/tmp/persistent_beam/` holds only
   `erl.<id>.stderr.log`, one per process. A generated module reaches the prelude through `-import`,
   so a missing prelude would be a run-time failure of every comptime
   evaluation, not a compile error. An `erl` below OTP 28 is refused by the
@@ -321,13 +322,12 @@ capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
   `__BP_ERL_LOAD_ERROR__` — the compiler was built with a newer `erlc` than the
   machine's `erl`.
 - **Manual testing.** Frame = `struct.pack('>I', len(payload)) + payload`, payload
-  = `b'\x01' + b'/path/to/mod.erl'` for the one-shot path (cmd 2 is the same
-  payload with `b'\x02'`, cmd 3 is
-  `b'\x03' + struct.pack('>H', len(mod)) + mod + term_to_binary_bytes`, and cmd 4
-  is `b'\x04' + struct.pack('>H', len(mod)) + mod + beam_bytes`). Pipe three cmd-4
+  = `b'\x04' + struct.pack('>H', len(mod)) + mod + beam_bytes` to load (a `.beam`
+  from `erlc` works as well as an assembled one), then
+  `b'\x03' + struct.pack('>H', len(mod)) + mod + term_to_binary_bytes` to call. Pipe three cmd-4
   frames of the resident `.beam`s (find them under
   `.zig-cache/o/*/resident-beam/`) and then the request into
-  `erl -noshell -eval "<bootstrap_eval of persistent_erl.zig>"`; the first reply
+  `erl -noshell -eval "<bootstrap_eval of persistent_beam.zig>"`; the first reply
   frame is the handshake (`ok`). Never use `-noinput` — it disables stdin reading.
 
 ### Comptime specialization (`comptime/transform.zig`)
