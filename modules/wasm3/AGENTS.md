@@ -23,6 +23,7 @@ wasm3/
 ├── README.md          ← upstream pin + excluded content + upgrade procedure
 ├── LICENSE            ← upstream MIT (unchanged)
 ├── build.zig          ← exports link() + exposeHeaders() + arrays
+├── cimport/endian.h   ← botopink's: an empty stand-in for <endian.h>, on the @cImport path only (macOS lacks it)
 └── source/            ← vendored upstream `source/` tree (byte-identical)
     ├── m3_*.{c,h}     ← interpreter core + WASI/libc shims (16 .c, ~30 .h)
     └── extra/         ← embedded test wasm blobs + WASI reference header
@@ -48,7 +49,15 @@ wasm3.link(b, cli_exe);
 wasm3.link(b, lsp_exe);
 ```
 
-- `exposeHeaders(b, mod)` — adds the include path on `mod`. Required wherever
+- `exposeHeaders(b, mod)` — adds the include paths on `mod`: `cimport/`
+  first, then `source/`. Zig's translate-c reports itself neither as clang
+  nor as gcc ≥ 4.8, so `wasm3_defs.h` falls through its byte-swap chain to
+  `#include <endian.h>` — a header glibc and mingw ship and macOS does not, and the
+  `@cImport` failed there ("'endian.h' not found": `zig build -Dtarget=x86_64-macos`
+  and `aarch64-macos` were red, linux and windows-gnu green). `cimport/endian.h`
+  is empty, so the header takes its portable inline swaps (called only on a
+  big-endian target); the C sources' own compile (`link`) never sees it and
+  `source/` stays byte-identical to upstream. Required wherever
   Zig source `@cImport`s a wasm3 header (today: `compiler-core`'s
   `persistent_wat.zig`, only on a native target). `@cImport`
   resolves headers at the *module* level, not the Compile level.
