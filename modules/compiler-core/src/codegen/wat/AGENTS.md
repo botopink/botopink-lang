@@ -282,9 +282,19 @@ a binder nothing typed, and requiring both arms made `["x", "yz"].at(1) ??
 "none"` print the string's address. `run/map_record_field_strings.bp` and
 `run/map_record_field_length.bp` pin both.
 
-**Still open, measured here and left.** `es.at(1)?.key.length().toString()`
-traps (`unresolved call: toString/0`): a `?.` chain loses the receiver's type
-for the SECOND method.
+**A method on the rest of a `?.` chain runs under the chain's guard**
+(`lowerChainedCall`, `00 · 05-wasm` step 9). `?.` short-circuits everything
+after it, but only the link written with `?.` carried the guard: in
+`es.at(1)?.key.length().toString()` the `length()` read a length from address 0
+when the entry was absent (the WASI iovec, exit 0) and `toString()` found no
+receiver type at all and trapped. A primitive method whose receiver continues a
+`?.` chain (`isOptionalChain`) is now lowered as `recv; tee; eqz; if (result
+i32) 0 else <unbox a boxed receiver; the method on it; box a scalar result>`,
+the receiver's family read off the chain (`chainPayloadKind`: the previous
+guarded link's result, a field's declared type, a string). The whole expression
+is the `?T` the checker typed — `optInfoOf` answers it (`chainedCallOpt`) — and
+prints `null` or its value. A float result has no box here and keeps the
+unguarded path. `run/optional_chain_method.bp` pins it.
 
 ## Two run-time rules this backend implements first (2026-09-19)
 

@@ -1413,6 +1413,33 @@ const Emitter = struct {
             only[0] = d;
             return only;
         }
+        // `x is Token.Num` / `x is .Num` — ONE variant, the descriptor its
+        // values carry (the enum's other variants carry their own).
+        if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+            const vname = name[dot + 1 ..];
+            const ename = name[0..dot];
+            const en: []const u8 = if (ename.len > 0 and self.enums.contains(ename)) ename else blk: {
+                // A leading dot names the variant alone: the one enum that
+                // declares it, or no test at all when two do — never a guess.
+                var found: ?[]const u8 = null;
+                var it = self.enums.iterator();
+                while (it.next()) |entry| for (entry.value_ptr.*) |v| {
+                    if (!std.mem.eql(u8, v.name, vname)) continue;
+                    if (found != null) return &.{};
+                    found = entry.key_ptr.*;
+                };
+                break :blk found orelse return &.{};
+            };
+            const vs = self.enums.get(en) orelse return &.{};
+            if (!enumHasPayload(vs)) return &.{};
+            for (vs) |v| if (std.mem.eql(u8, v.name, vname)) {
+                const d = try self.variantDescriptorAddr(en, v) orelse return &.{};
+                const only = try self.arena().alloc(u32, 1);
+                only[0] = d;
+                return only;
+            };
+            return &.{};
+        }
         const variants = self.enums.get(name) orelse return &.{};
         if (!enumHasPayload(variants)) return &.{};
         var out: std.ArrayListUnmanaged(u32) = .empty;
@@ -3290,6 +3317,7 @@ const Emitter = struct {
                         try self.lowerSequenceNext(cc);
                         return;
                     };
+                    if (try self.lowerChainedCall(cc, c.loc)) return;
                     if (self.primKindAt(cc, c.loc)) |k| {
                         try self.lowerPrimMethod(k, cc);
                         return;
@@ -4913,6 +4941,144 @@ const Emitter = struct {
             .prim => |k| k,
             .type_, .field_of, .sequence_next => null,
         };
+    }
+
+    // ── a method on the rest of a `?.` chain ─────────────────────────────────
+    //
+    // `es.at(1)?.key.length().toString()`: the `?.` makes EVERYTHING after it
+    // conditional — absent short-circuits the whole chain — but only the link
+    // written with `?.` carried the guard. The next method started from a
+    // carrier that may be `0` and read it as a string (`length` loaded a
+    // length from address 0, the WASI iovec, at exit 0) or found no receiver
+    // type at all (`unresolved call: toString/0`, a trap). A primitive method
+    // whose receiver is such a chain is lowered under the same guard: absent
+    // stays `0`, present unboxes the receiver, runs the method on it, and
+    // boxes a scalar result — so the whole expression is the `?T` the checker
+    // typed it as, and prints `null` or its value.
+
+    /// Whether `e` is, or continues, a `?.` chain.
+    fn isOptionalChain(e: ast.Expr) bool {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| ia.optional or isOptionalChain(ia.receiver.*),
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc.optional or (if (cc.receiver) |r| isOptionalChain(r.*) else false),
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| isOptionalChain(inner.*),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// The primitive family of the PAYLOAD of an optional-chain receiver:
+    /// what inference recorded for it, what the previous guarded link answers,
+    /// or a string field read through `?.`.
+    fn chainPayloadKind(self: *Emitter, recv: ast.Expr) ?envMod.PrimKind {
+        switch (recv) {
+            .call => |c| switch (c.kind) {
+                .call => |inner| if (self.chainedCallKind(inner, c.loc)) |k| {
+                    return switch (primCallRes(k, inner) orelse return null) {
+                        .i32 => .int,
+                        .bool_ => .bool,
+                        .str => .string,
+                        .arr => .array,
+                        .f64, .none => null,
+                    };
+                },
+                else => {},
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.chainPayloadKind(inner.*),
+                else => {},
+            },
+            // `x?.n` — a field read through the chain: its declared type. A
+            // float field has no box here (`OptInfo.float_` is an `f32` slot
+            // of an array), so it is left to the unguarded path.
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| if (self.recordTypeOfExpr(ia.receiver.*)) |rty| {
+                    if (self.fieldTypeIn(rty, ia.member)) |ft| {
+                        if (std.mem.eql(u8, ft, "string")) return .string;
+                        if (std.mem.eql(u8, ft, "bool")) return .bool;
+                        for ([_][]const u8{ "i32", "i64", "u32", "u64", "int" }) |n| {
+                            if (std.mem.eql(u8, ft, n)) return .int;
+                        }
+                        return null;
+                    }
+                },
+                else => {},
+            },
+            else => {},
+        }
+        if (self.isStringExpr(recv)) return .string;
+        return null;
+    }
+
+    /// The family `cc`'s receiver has once the chain is present — only for a
+    /// call that continues a `?.` chain and is not itself the `?.` link.
+    fn chainedCallKind(self: *Emitter, cc: anytype, loc: ast.Loc) ?envMod.PrimKind {
+        if (cc.optional or cc.is_builtin) return null;
+        const recv = cc.receiver orelse return null;
+        if (!isOptionalChain(recv.*)) return null;
+        if (self.primKindAt(cc, loc)) |k| return k;
+        return self.chainPayloadKind(recv.*);
+    }
+
+    /// What a guarded chain link leaves: a boxed scalar or a pointer (`0` is
+    /// absence either way). Null when the link is not one this lowers — a
+    /// float result has no box here.
+    fn chainedCallOpt(self: *Emitter, cc: anytype, loc: ast.Loc) ?OptInfo {
+        const k = self.chainedCallKind(cc, loc) orelse return null;
+        return switch (primCallRes(k, cc) orelse return null) {
+            .i32 => .{ .boxed = true },
+            .bool_ => .{ .boxed = true, .bool_ = true },
+            .str => .{ .boxed = false, .str = true },
+            .arr => .{ .boxed = false },
+            .f64, .none => null,
+        };
+    }
+
+    fn lowerChainedCall(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!bool {
+        const res = self.chainedCallOpt(cc, loc) orelse return false;
+        const k = self.chainedCallKind(cc, loc).?;
+        const recv = cc.receiver.?.*;
+        const recv_boxed = if (self.optInfoOf(recv)) |oi| oi.boxed else false;
+        const mem = try self.memName(self.nextMem());
+        try self.lowerValue(recv);
+        try self.emit(.{ .local_tee = mem });
+        try self.emit(opOf("i32", "eqz"));
+
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.emitC(zero, "?. chain: absent");
+        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        if (recv_boxed) {
+            try self.emit(.{ .local_get = mem });
+            try self.emitC(.{ .load = .{} }, "?. chain: unbox");
+            try self.emit(.{ .local_set = mem });
+        }
+        if (k == .string) try self.str_locals.put(mem, {});
+        const payload = try self.arena().create(ast.Expr);
+        payload.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = mem } } };
+        var link = cc;
+        link.receiver = payload;
+        try self.lowerPrimMethod(k, link);
+        if (res.boxed) try self.emit(self.builder().helper(.box_i32));
+        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+
+        try self.emit(.{ .@"if" = .{
+            .result = .i32,
+            .then = .{ .seq = then_seq },
+            .@"else" = .{ .seq = else_seq },
+        } });
+        return true;
     }
 
     /// What a primitive method leaves on the stack. Null: no wasm lowering.
@@ -6657,7 +6823,9 @@ const Emitter = struct {
             },
 
             .call => |c| switch (c.kind) {
-                .call => |cc| if (self.primKindAt(cc, c.loc)) |k| {
+                .call => |cc| if (self.chainedCallOpt(cc, c.loc)) |oi| {
+                    return oi;
+                } else if (self.primKindAt(cc, c.loc)) |k| {
                     if (k == .array and
                         (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first")))
                     {

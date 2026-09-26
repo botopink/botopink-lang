@@ -25,13 +25,12 @@
 //// pointer for the same reason a record is.
 ////
 //// NOT here, and deliberately: `@print` of an ABSENT optional. Every backend
-//// spells absence differently today (`null` on commonJS, the atom `undefined`
-//// on erlang and beam, `undefined` on wasm) and decision 47's row owns that
+//// spells absence differently today (`null` on commonJS and wasm, the atom
+//// `undefined` on erlang and beam) and decision 47's row owns that
 //// disagreement — `run/index_at_optional.bp` carries it. This cell reads the
 //// absent value through `??` instead, which every backend agrees on. Nor is
-//// `.toString()` after a `?.` chain: `es.at(1)?.key.length().toString()`
-//// traps on wasm (`unresolved call: toString/0` — the chain loses the
-//// receiver's type for the SECOND method), a gap of its own and not the
+//// `.toString()` after a `?.` chain (`es.at(1)?.key.length().toString()`):
+//// that is `run/optional_chain_method.bp`'s, a gap of its own and not the
 //// carrier's.
 
 type Entry(key: string) {}

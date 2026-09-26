@@ -298,3 +298,11 @@ wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope)
 # The host rows of decision 126 are deferred: a `@External.Node` declared
 # `-> @Task<@Result<T, E>>` is still called as a bare Promise, so a rejection is
 # not turned into `Error(e)` and the resolved raw value reaches a `case` as is.
+
+# ── a method on the rest of a `?.` chain (05-wasm step 9's `?.` row) ─────────
+# `?.` short-circuits the whole chain. wasm lowers each further link under the
+# guard since `00 · 05-wasm` (the cell passes there and on commonJS); erlang
+# and beam guard only the link written with `?.`, so the next method runs on
+# the absent value.
+erlang   | run/optional_chain_method.bp | 02-erlang | `es.at(9)?.key.length() ?? 42` raises `{bp_unsupported_method, <<"length">>, 0, undefined}` in `'__bp_prim_length'/1` after printing `2` and `3`: the method after the `?.` link is called on `undefined` instead of short-circuiting (measured 2026-09-26)
+beam     | run/optional_chain_method.bp | 03-beam | the erlang shape through `erlc +from_asm` — `2`, `3`, then the run fails at the absent probe (measured 2026-09-26)
