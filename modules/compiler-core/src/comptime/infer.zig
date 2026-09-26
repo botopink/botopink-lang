@@ -5179,10 +5179,36 @@ fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
     // `Children` coercion — applied before unification since `unifyAt` is
     // always called target-first (`unifyAt(param, arg)`).
     if (childrenCoercion(env, a, b)) return;
+    // Decision 8 §6 T7 — read before `unify` links anything.
+    const ta = a.deref();
+    const tb = b.deref();
     unify(env, a, b) catch |err| {
         if (env.lastError) |*e| e.loc = loc;
         return err;
     };
+    try warnTupleLabelMismatch(env, ta, tb, loc);
+}
+
+/// Decision 8 §6 T7 — a tuple built from variables lends their names as
+/// labels (T1); entering a written type whose label at that position is
+/// another name, the written one wins (T3) and the author is told: the
+/// variable's name says one thing and the type another. A warning (decision
+/// 57's channel) — the program is fine, the names disagree.
+fn warnTupleLabelMismatch(env: *Env, expected: *T.Type, got: *T.Type, loc: ast.Loc) InferError!void {
+    if (expected == got) return;
+    if (expected.* != .named or got.* != .named) return;
+    if (!std.mem.eql(u8, expected.named.name, "tuple") or !std.mem.eql(u8, got.named.name, "tuple")) return;
+    const want = expected.named.labels;
+    const have = got.named.labels;
+    if (want.len == 0 or have.len == 0) return;
+    for (want, 0..) |w, i| {
+        if (i >= have.len) break;
+        const h = have[i];
+        if (w.len == 0 or h.len == 0 or std.mem.eql(u8, w, h)) continue;
+        const msg = try std.fmt.allocPrint(env.arena, "the variable `{s}` fills the element labeled `{s}`", .{ h, w });
+        const hint = try std.fmt.allocPrint(env.arena, "The written type's label wins (decision 8 §6 T3): the element is read as `.{s}`. Rename the variable if it means the same thing.", .{w});
+        try env.warn(TypeError.custom(msg, hint).withLoc(loc));
+    }
 }
 
 /// True when `target` names a behavior and `source` is a named type that

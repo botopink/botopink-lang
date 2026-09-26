@@ -1598,3 +1598,17 @@ test "decision 2: a fn that can fall off its end is refused; every exit form che
     defer std.testing.allocator.free(msg);
     try std.testing.expect(std.mem.indexOf(u8, msg, "`f` declares `-> i32` and its body can reach its end without a `return`") != null);
 }
+
+test "warning: a tuple variable whose name differs from the written label (decision 8 §6 T7)" {
+    const msg = try warningMessages(std.testing.allocator,
+        \\fn load() -> #(name: string, pop: i32) {
+        \\    val city = "SP";
+        \\    val pop = 12;
+        \\    return #(city, pop);
+        \\}
+        \\pub fn main() { @print(load().name); }
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "the variable `city` fills the element labeled `name`") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`pop`") == null);
+}

@@ -704,7 +704,7 @@ one (a warning already recorded at the same location with the same text is not r
 untyped and the typed pass may walk one expression twice). `comptime.zig` surfaces the list as
 `OkData.warnings`, and `botopink check` renders each like an error under `warning:`
 (`compiler-cli/src/cli/diagnostics.zig` `renderOutcome`); `build`, `test` and the language server
-do not print them yet. Writers: §1.4's `flushBirthWarnings` and §4.3's `warnAlwaysFalseIs`.
+do not print them yet. Writers: §1.4's `flushBirthWarnings`, §4.3's `warnAlwaysFalseIs` and §6 T7's `warnTupleLabelMismatch`.
 
 ## union types (decision 8 §3, 1.0.4's 06 N20)
 
@@ -1314,8 +1314,12 @@ Tuple labels (decision 8 §6) ride the same map: a `tuple` type carries
 compares them). `row.label` on a labeled tuple resolves the element type and puts
 `row._N` into `env.enumSectionRewrites` under the access loc, so every backend
 sees a positional access; an unknown or ambiguous label is a located error naming
-the positional form. The name-mismatch warning (T7) is not implemented; the
-warning channel it waited for exists now (decision 57, above).
+the positional form. **T7** is a warning (decision 57's channel): `unifyAt` compares, before it
+unifies, a labeled written tuple type with a value whose labels came from the variables it was
+built from (T1), and a position whose two labels differ warns "the variable `city` fills the
+element labeled `name`" (`warnTupleLabelMismatch`) — the written label wins (T3). A labeled
+CONSTRUCTION (`#(x: 1, y: 2)`) stays the parser's `tuple-literal-label` refusal: T1 says
+construction has no labels.
 
 `comptime.zig withSynthesisedEnumDecls` (after `transform` /
 `withUsedAssocInterfaces`) prepends every `env.synthesisedEnumDecls` entry as a
