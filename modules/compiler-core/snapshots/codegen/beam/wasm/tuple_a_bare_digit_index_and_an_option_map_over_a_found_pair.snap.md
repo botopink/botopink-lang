@@ -22,14 +22,79 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 280))
   (func $lookup (param $pairs i32) (param $key i32) (result i32)
     (local $_res0 i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $__out0 i32)
     (local $pair i32)
-    unreachable ;; prim method not lowered on wasm: array.find/1
+    local.get $pairs
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    local.get $__len0
+    call $__arr_new
+    local.set $__out0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $pair
+    local.get $pair
+    i32.load
+    local.get $key
+    call $__str_eq
+    (if
+      (then
+    local.get $__out0
+    local.get $__acc0
+    i32.const 4
+    i32.mul
+    i32.add
+    local.get $__iter0
+    local.get $__idx0
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load offset=4
+    i32.store offset=4
+    local.get $__acc0
+    i32.const 1
+    i32.add
+    local.set $__acc0
+      )
+    )
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $__out0
+    local.get $__acc0
+    i32.store ;; kept count
+    local.get $__out0
+    i32.const 0
+    call $__arr_at
     local.set $_res0
     local.get $_res0 ;; Option (0 = None, else Some payload)
     (if (result i32)
       (then
     local.get $_res0
-    i32.load ;; optional payload
     local.set $pair
     local.get $pair
     i32.load offset=4
@@ -39,7 +104,6 @@ fn main() {
     i32.const 0 ;; None — propagate absence
       )
     )
-    call $__box_i32
     return
   )
   (func $main
@@ -335,6 +399,68 @@ fn main() {
       )
     )
   )
+  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    i32.load
+    i32.ge_s
+    i32.or
+    (if (result i32)
+      (then i32.const 0)
+      (else
+        local.get $xs
+        local.get $i
+        i32.const 1
+        i32.add
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+      )
+    )
+  )
+  (func $__str_eq (param $a i32) (param $b i32) (result i32)
+    (local $i i32) (local $alen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $alen
+    local.get $b
+    i32.load
+    i32.ne
+    (if
+      (then i32.const 0 return)
+    )
+    (block $done
+      (loop $cmp
+        local.get $i
+        local.get $alen
+        i32.ge_u
+        br_if $done
+        local.get $a
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        local.get $b
+        local.get $i
+        i32.add
+        i32.load8_u offset=4
+        i32.ne
+        (if
+          (then i32.const 0 return)
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cmp
+      )
+    )
+    i32.const 1
+  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32)
     global.get $__heap_ptr
@@ -347,6 +473,20 @@ fn main() {
     i32.const -4
     i32.and
     global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__arr_new (param $n i32) (result i32)
+    (local $p i32)
+    local.get $n
+    i32.const 1
+    i32.add
+    i32.const 4
+    i32.mul
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.store
     local.get $p
   )
   (func $__box_i32 (param $v i32) (result i32)
@@ -428,6 +568,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-RUNTIME TRAP (wasmtime):
-wasm trap: wasm `unreachable` instruction executed
+2
+true
 ```

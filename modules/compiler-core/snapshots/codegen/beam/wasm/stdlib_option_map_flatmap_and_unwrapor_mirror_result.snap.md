@@ -53,7 +53,6 @@ fn greet(p: Person) -> string {
     (if (result i32)
       (then
     local.get $_res1
-    i32.load ;; optional payload
     local.set $n
     local.get $n
     call $shout

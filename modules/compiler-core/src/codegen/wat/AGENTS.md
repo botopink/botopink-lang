@@ -458,6 +458,11 @@ answered, and each had its own `expected-failures.txt` line:
 - **A method declared `-> @Iterator<T>` / `-> @Stream<T>` accumulates its
   yields** (`methodYieldsEagerly` → `renderAccumulatingBody`), as a fn does; its
   body was rendered plain, every `yield` dropped.
+- **`opt.map({ x -> … })` is a registered optional** (`optInfoOf`): boxed when
+  the closure answers a scalar, a pointer otherwise — what
+  `lowerResultOptionOp` builds. Unregistered, a `return` into `-> ?i32` boxed
+  the box (an address printed), and a `map` answering a string was read one
+  indirection too far by the `flatMap` after it.
 - **A type adopts its behaviors' `default fn`s** (`adoptedDefaults`,
   `methodsWithDefaults`): each one the type does not write is emitted as its own
   `$<Type>_<method>`, through `extends` too — `Money(…).clamp(lo, hi)` over
@@ -503,7 +508,7 @@ member `libs/std/src/primitives.bp` declares:
 | Family | Lowered | Traps (pinned one program each by `tests/wat.zig` `a primitive method with no wasm lowering traps, never answers`) |
 |---|---|---|
 | `String` | every member but two — `charCodeAt` (`$__str_char_code`, `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte) and `chars` (`$__str_split` on `""`) since this row | `lines`, `words` — a split on a character class |
-| `Array` | the rest | `pop` (mutates the blob in place), `find`, `flatMap` (a function value the inlined HOF path does not reach), `flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique` (grow through `append`) |
+| `Array` | the rest — `find` (`filter` then `at(0)`, the `?T` `at` answers) since this row | `pop` (mutates the blob in place), `flatMap` (a function value the inlined HOF path does not reach), `flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique` (grow through `append`) |
 | `Integer`, `Bool` | all | — |
 | `Float` | all — `toString` (`$__f64_to_str`, `5.0` → `5` as on node) since this row | — |
 

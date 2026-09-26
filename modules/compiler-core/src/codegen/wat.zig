@@ -1376,7 +1376,7 @@ const Emitter = struct {
                     // the reader fell back to the unique-field guess and, when
                     // the value was a box, read one indirection short.
                     if (self.primKindAt(cc, c.loc)) |k| {
-                        if (k == .array and (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first"))) {
+                        if (k == .array and (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first") or std.mem.eql(u8, cc.callee, "find"))) {
                             if (cc.receiver) |r| if (self.elemRecordOf(r.*)) |rec| break :blk rec;
                         }
                     }
@@ -5581,6 +5581,7 @@ const Emitter = struct {
         const rows: []const Row = switch (k) {
             .array => &.{
                 .{ "length", 0, .i32 },    .{ "at", 1, .i32 },      .{ "first", 0, .i32 },
+                .{ "find", 1, .i32 },
                 .{ "join", 1, .str },      .{ "indexOf", 1, .i32 }, .{ "contains", 1, .bool_ },
                 .{ "isEmpty", 0, .bool_ }, .{ "reverse", 0, .arr }, .{ "prepend", 1, .arr },
                 .{ "append", 1, .arr },    .{ "push", 1, .none },   .{ "zip", 1, .arr },
@@ -5832,6 +5833,19 @@ const Emitter = struct {
             return self.lowerArrayHof(@intFromEnum(h), recv, lam, if (h == .fold) callArg(cc, 0) else null);
         }
         if (eq(u8, name, "push")) return self.lowerArrayPush(cc);
+        // `xs.find(pred)` is `xs.filter(pred).at(0)` — `primitives.bp`'s own
+        // body — as the `?T` `at` answers (`arrayElemOpt`: a scalar boxed, a
+        // pointer as itself).
+        if (eq(u8, name, "find")) {
+            const lam = lambdaAt(cc, 0) orelse {
+                try self.emitCf(.@"unreachable", "{s} needs a literal lambda on wasm (no function values)", .{name});
+                return;
+            };
+            try self.lowerArrayHof(@intFromEnum(Hof.filter), recv, lam, null);
+            try self.emit(zero);
+            try self.emit(b.helper(if (self.arrayElemOpt(recv).boxed) .arr_at_box else .arr_at));
+            return;
+        }
 
         try self.lowerCoerced(recv, "i32");
         const elem = self.elemKindOf(recv);
@@ -7380,9 +7394,17 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| if (self.chainedCallOpt(cc, c.loc)) |oi| {
                     return oi;
+                } else if (cc.is_builtin and std.mem.eql(u8, cc.callee, "__bp_option_map") and cc.args.len > 1 and lambdaArg(cc.args[1].value) != null) {
+                    // `opt.map({ x -> … })` is an optional again, boxed when
+                    // the closure answers a scalar (`lowerResultOptionOp`).
+                    // Unregistered, a `return` into `-> ?i32` boxed the box
+                    // (`lookup(pairs, "b")` printed its address).
+                    const body = lambdaArg(cc.args[1].value).?.function.kind.body;
+                    if (self.lambdaTailIsPointer(body)) return .{ .boxed = false, .str = self.bodyIsString(body) };
+                    return .{ .boxed = true };
                 } else if (self.primKindAt(cc, c.loc)) |k| {
                     if (k == .array and
-                        (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first")))
+                        (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first") or std.mem.eql(u8, cc.callee, "find")))
                     {
                         return self.arrayElemOpt(cc.receiver.?.*);
                     }

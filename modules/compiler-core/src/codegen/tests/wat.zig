@@ -1092,6 +1092,8 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
         \\    @print("a-b-c".replaceAll("-", "+="));
         \\    @print("ab".replaceAll("", "-"));
         \\    @print("xy".chars());
+        \\    @print([1, 2, 3].find({ x -> x > 1 }));
+        \\    @print([1, 2, 3].find({ x -> x > 5 }));
         \\}
     ,
         \\2.5
@@ -1107,6 +1109,8 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
         \\a+=b+=c
         \\-a-b-
         \\["x", "y"]
+        \\2
+        \\null
         \\
     );
 }
@@ -1117,14 +1121,13 @@ test "wat: prim method ---- the String and Float members step 6's audit lowered"
 // fails here and has to move its row into the test above. `words`/`lines`
 // split on a character class, `pop` mutates the array blob in place, and the
 // rest are `default fn`s whose bodies call a function value the inlined HOF
-// path does not reach (`find`, `flatMap`) or grow an array through
+// path does not reach (`flatMap`) or grow an array through
 // `append` (`flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique`).
 test "wat: prim method ---- a primitive method with no wasm lowering traps, never answers" {
     const trap = "RUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n";
     const calls = [_][]const u8{
         "\"a b\".words()",
         "\"a\\nb\".lines()",
-        "[1, 2, 3].find({ x -> x > 1 })",
         "[3, 1, 3].unique()",
         "[[1], [2, 3]].flatten()",
         "[[1], [2, 3]].flat()",
