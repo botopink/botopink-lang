@@ -301,7 +301,9 @@ unguarded path. `run/optional_chain_method.bp` pins it.
 **No loop has a value** ([decision 105](../../../../../specs/1.0.10-beta/decisions-taken.md),
 superseding decision 55's value `break`): `break <v>` belongs to a generator
 scope and ends it — `emitGenBreak` appends `v` and branches out of the
-`iter` loop's `$__gen{n}` block, or returns a generator fn's array.
+`iter` loop's `$__gen{n}` block, or returns a generator fn's array; a bare
+`break` at a generator fn's own level ends it the same way (`emitGenEnd`,
+decision 103).
 
 **A range pattern tests both ends** ([decision 53](../../../../../specs/1.0.5-beta/decisions-taken.md)):
 `1...9` arrives as a `.variant` whose `shape` is `.range` with the two bounds in

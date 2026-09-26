@@ -3316,6 +3316,12 @@ const Emitter = struct {
                         try self.emit(.{ .br = break_label });
                         return .terminated;
                     }
+                    // Decision 103: a bare `break` at a generator body's own
+                    // level ends it — nothing after it is emitted.
+                    if (self.yield_target != null) {
+                        try self.emitGenEnd();
+                        return .terminated;
+                    }
                     return .none;
                 },
                 .yield => |y| {
@@ -3828,7 +3834,12 @@ const Emitter = struct {
                             // Decision 105 — see the statement-position arm above.
                             try self.emitGenBreak(v.*);
                         } else try self.lowerExpr(v.*);
-                    } else if (self.loop_depth > 0) try self.emit(.{ .br = break_label });
+                    } else if (self.loop_depth > 0) {
+                        try self.emit(.{ .br = break_label });
+                    } else if (self.yield_target != null) {
+                        // Decision 103 — see the statement-position arm above.
+                        try self.emitGenEnd();
+                    }
                 },
                 .yield => |y| {
                     if (y.value) |v| {
@@ -8361,6 +8372,14 @@ const Emitter = struct {
     /// return what the body collected.
     fn emitGenBreak(self: *Emitter, v: ast.Expr) anyerror!void {
         try self.emitYield(v);
+        try self.emitGenEnd();
+    }
+
+    /// End the generator scope without emitting: branch out of the annotated
+    /// loop's block, or, in a generator fn, return what the body collected —
+    /// a bare `break` at the body's own level (decision 103), and the tail
+    /// of `break <v>`.
+    fn emitGenEnd(self: *Emitter) anyerror!void {
         if (self.gen_end) |label| {
             try self.emit(.{ .br = label });
             return;

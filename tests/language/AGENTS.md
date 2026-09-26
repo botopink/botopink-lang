@@ -892,7 +892,8 @@ iterator effect is `#[@resultGenerator]` / `@ResultGenerator<T, E>` in every cel
 renamed with it), the completion channel `C` is gone, and two cells carry what the
 decision adds: `run/generator_break_value.bp` — `break v` at the level of a generator body
 emits `v` as the last item and ends, a bare `break` there ends it (`0127` / `1` / `56`;
-commonJS and beam run it, the eager erlang and wasm generator scopes are pinned);
+green on all four targets — erlang throws `'__bp_gen_stop'` to its scope, wasm returns
+what the body collected (`wat.zig` `emitGenEnd`));
 `run/generator_levels.bp` — re-spelled by front 24 (decisions 121, 122): an
 `@Iterator<@Result<i32, string>>` body holds `try` (a failing one emits the Error as the last
 item), the `-> @Result` body that iterates it propagates with an explicit `try r` (there is no

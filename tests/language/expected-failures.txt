@@ -228,13 +228,6 @@ wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` out of 
 # in order with the named `val`s). No line is left.
 
 
-# ── decision 103 cells on the eager generator lowerings (front 21) ───────────
-# Measured after merging 22-loops (`52843fd5`): commonJS's `function*` and beam
-# run both cells, and erlang since `00 · 02-erlang` (a bare `break` at the
-# generator's own level throws `'__bp_gen_stop'`, which the scope catches); the
-# eager wasm generator scope does not yet.
-wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope) | decision 103: every `digits` answers the empty string — the eager generator scope yields nothing into the `for` that reads it (three empty lines)
-
 # ── front 24 (effects by return) — the cells of the steps deferred behind the ─
 # ── "Old names that left" table (the maintainer's priority order) ────────────
 # `async { … }` (decision 124, E2/E3.6–E3.7/E5) is deferred: `async` is still an

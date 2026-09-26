@@ -2177,7 +2177,9 @@ first three are now enforced by the model, not by discipline:
   (`lowerGeneratorLoop`, `$__yield{n}` inside `(block $__gen{n} …)`) — each
   `yield v` appends (`emitYield`), and `break <v>` appends and ends the scope
   from any loop depth (`emitGenBreak`: `br $__gen{n}`, or the fn's
-  `return` of what it collected). The loop is the array. Every other loop is a
+  `return` of what it collected); a bare `break` at a generator fn's own level
+  ends it the same way without appending (`emitGenEnd`, decision 103 —
+  `run/generator_break_value.bp`). The loop is the array. Every other loop is a
   statement: decision 8 §10's search (`$__found{n}`), decision 52's
   `$__got{n}` flag and `$__print_loop_i32` / `$__print_null`, and the
   valueless-loop `null` all left with the loop's value.
