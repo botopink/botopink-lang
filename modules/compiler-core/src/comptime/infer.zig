@@ -2903,7 +2903,9 @@ fn validateExternalInline(env: *Env, program: ast.Program) InferError!void {
 /// Type-checks one `external(target, module, symbol)` annotation against its
 /// builtin signature (builtins.d.bp): `fn external(target: Target, module: string, symbol: string)`.
 fn validateExternalAnnotation(env: *Env, f: ast.FnDecl, a: ast.Annotation) InferError!void {
-    const fnLoc: ?ast.Loc = if (f.body.len > 0) f.body[0].expr.getLoc() else null;
+    // 01 step 9 — the annotation itself is the location (a `declare fn` has no
+    // body statement to fall back on).
+    const fnLoc: ?ast.Loc = a.loc orelse if (f.body.len > 0) f.body[0].expr.getLoc() else null;
     const fail = struct {
         fn fail(e_: *Env, loc: ?ast.Loc, msg: []const u8, hint: []const u8) InferError {
             var e = TypeError.custom(msg, hint);
@@ -6472,10 +6474,12 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             if (b.is_builtin) {
                 if (builtinRequiredGenericArgs(b.name)) |required| {
                     if (b.args.len < required) {
-                        env.lastError = TypeError.custom(
+                        var err = TypeError.custom(
                             "generic-required-arg-missing: a required generic argument is missing",
                             "Provide every leading (non-defaulted) type argument; only the trailing defaulted range may be omitted.",
                         );
+                        if (env.typeRefLoc) |l| err = err.withLoc(l);
+                        env.lastError = err;
                         return error.TypeError;
                     }
                 }
@@ -6546,10 +6550,12 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // `interface Option<T>` is the declarative reference for `?T`'s
             // methods, not a type.
             if (b.is_builtin and (std.mem.eql(u8, b.name, "Option") or std.mem.eql(u8, b.name, "Optional"))) {
-                env.lastError = TypeError.custom(
+                var err = TypeError.custom(
                     "`@Option<T>` is not a type — the optional type is written `?T`",
                     "Replace the annotation with `?T` (e.g. `?i32`).",
                 );
+                if (env.typeRefLoc) |l| err = err.withLoc(l);
+                env.lastError = err;
                 return error.TypeError;
             }
             // `@Expr<T>` is encoded like `optional`/`array` — a named type with

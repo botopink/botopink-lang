@@ -8,5 +8,9 @@ fn main() {
 
 ----- ERROR
 error: `@Option<T>` is not a type — the optional type is written `?T`
+  ┌─ :1:18
+  │
+1 │ fn takeOption(x: @Option<i32>) -> i32 {
+  │                  ^
 
   hint: Replace the annotation with `?T` (e.g. `?i32`).
