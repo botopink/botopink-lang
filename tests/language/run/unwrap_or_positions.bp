@@ -1,0 +1,73 @@
+//// onze findings F4 and F9 — `xs.at(i).unwrapOr(d)` is lowered wherever it
+//// is written. A method body took only the `@src()` splice from the
+//// transform, so the `@Option` method stayed a call to an undefined
+//// `unwrapOr` (commonJS "is not a function", erlang `unwrapOr/2 undefined`);
+//// and a parenthesised expression was not walked at all, so an `if` branch
+//// read through `( … ).v` kept it too, as did the operand of a unary `-` /
+//// `!`. Each line prints a value.
+
+type R(v: string)
+
+type Box(items: Array<R>, sizes: Array<i32>) {
+    pub fn firstV(self: Self) -> string {
+        val hit: Array<R> = self.items.filter({ r -> r.v != "" });
+        return hit.at(0).unwrapOr(R(v: "none")).v;
+    }
+
+    pub fn size(self: Self, i: i32) -> i32 {
+        return self.sizes.at(i).unwrapOr(-1);
+    }
+
+    pub fn pick(self: Self, flag: bool) -> string {
+        return (if (flag) self.items.at(0).unwrapOr(R(v: "d")) else R(v: "e")).v;
+    }
+
+    pub fn nested(self: Self) -> i32 {
+        return self.sizes.at(9).unwrapOr(self.sizes.at(0).unwrapOr(7));
+    }
+
+    pub fn pairs(self: Self) -> i32 {
+        val ps = self.sizes.map({ s -> #(s, s * 10) });
+        var total = 0;
+        for (self.sizes) { s ->
+            val p = ps.at(0).unwrapOr(#(0, 0));
+            total = total + p.1;
+        }
+        return total;
+    }
+}
+
+fn pick(xs: Array<R>, flag: bool) -> string {
+    return (if (flag) xs.at(0).unwrapOr(R(v: "d")) else R(v: "e")).v;
+}
+
+fn nested(xs: Array<i32>, ys: Array<i32>) -> i32 {
+    return xs.at(5).unwrapOr(ys.at(0).unwrapOr(9));
+}
+
+fn negated(xs: Array<i32>) -> i32 {
+    return -xs.at(0).unwrapOr(1);
+}
+
+fn inverted(flags: Array<bool>) -> bool {
+    return !flags.at(0).unwrapOr(false);
+}
+
+pub fn main() {
+    val b = Box(items: [R(v: ""), R(v: "a")], sizes: [4, 5]);
+    @print(b.firstV());
+    @print(Box(items: [], sizes: []).firstV());
+    @print(b.size(1));
+    @print(b.size(2));
+    @print(b.pick(true));
+    @print(b.pick(false));
+    @print(Box(items: [], sizes: []).pick(true));
+    @print(b.nested());
+    @print(b.pairs());
+    @print(pick([R(v: "x")], true));
+    @print(pick([], true));
+    @print(nested([1], [4]));
+    @print(nested([], []));
+    @print(negated([]));
+    @print(inverted([]));
+}

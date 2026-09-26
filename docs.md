@@ -737,6 +737,11 @@ a |> f                                // pipe: f(a)
 x?.field                              // optional chaining
 ```
 
+`/` over two integers is integer division: it truncates toward zero and answers
+an integer of the operands' type, on every target (`7 / 2` is `3`, `-7 / 2` is
+`-3`). With a float operand it is float division (`7.0 / 2.0` is `3.5`). A number
+literal with a `.` or an exponent is a float (`2.5`, `1e3`, `5e-324`).
+
 ### Lambdas and method chains
 
 <!-- docs-check: body -->

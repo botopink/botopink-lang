@@ -4452,6 +4452,16 @@ fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8
 
 // ── expression inference ──────────────────────────────────────────────────────
 
+/// Onze F7 — the `InstanceLowering.division` a `/` of result type `t` records:
+/// integer division over integers, float division over floats, nothing while
+/// `t` is unresolved.
+pub fn divisionKind(t: *T.Type) ?envMod.DivisionKind {
+    const d = t.deref();
+    if (isIntType(d)) return .integer;
+    if (isFloatType(d)) return .float;
+    return null;
+}
+
 fn isIntType(t: *T.Type) bool {
     return t.isNamed("i8") or t.isNamed("u8") or
         t.isNamed("i16") or t.isNamed("u16") or
@@ -4647,7 +4657,9 @@ pub fn registerImportedTypeAlias(env: *Env, decl: ast.DeclKind, alias: []const u
 /// of the closure is registered as a TYPE only: the constructor and variant
 /// bindings its registration adds are removed again — naming it in the
 /// import is what brings its constructor into scope. Call before registering
-/// `decl` itself: its fields resolve against the closure.
+/// `decl` itself: its fields resolve against the closure. A type the
+/// module imported from a third one is found under the `"\x00"` scope key
+/// `comptime.registerExports` writes (onze F2).
 pub fn registerImportedTypeClosure(
     env: *Env,
     moduleDecls: std.StringHashMap(ast.DeclKind),
@@ -4677,7 +4689,15 @@ fn registerTypeClosureDepth(
     for (names.items) |n| {
         if (std.mem.eql(u8, n, td.name)) continue;
         if (env.lookupTypeDef(n) != null) continue;
-        const dep = moduleDecls.get(n) orelse continue;
+        // A type the module imported rather than declared is in its map
+        // under the scope prefix (`comptime.imported_type_scope_prefix`).
+        const dep = moduleDecls.get(n) orelse blk: {
+            var buf: [256]u8 = undefined;
+            if (n.len + 1 > buf.len) continue;
+            buf[0] = 0;
+            @memcpy(buf[1 .. n.len + 1], n);
+            break :blk moduleDecls.get(buf[0 .. n.len + 1]) orelse continue;
+        };
         if (dep == .typeAlias) {
             try registerAliasClosure(env, moduleDecls, dep.typeAlias, depth + 1);
             continue;
@@ -6910,7 +6930,15 @@ fn registerAliasClosure(
     try collectTypeRefNames(env, a.target, &names);
     for (names.items) |n| {
         if (env.lookupTypeDef(n) != null or env.typeAliases.contains(n)) continue;
-        const dep = moduleDecls.get(n) orelse continue;
+        // A type the module imported rather than declared is in its map
+        // under the scope prefix (`comptime.imported_type_scope_prefix`).
+        const dep = moduleDecls.get(n) orelse blk: {
+            var buf: [256]u8 = undefined;
+            if (n.len + 1 > buf.len) continue;
+            buf[0] = 0;
+            @memcpy(buf[1 .. n.len + 1], n);
+            break :blk moduleDecls.get(buf[0 .. n.len + 1]) orelse continue;
+        };
         switch (dep) {
             .typeAlias => |d| try registerAliasClosure(env, moduleDecls, d, depth + 1),
             .type_ => {
@@ -8503,9 +8531,17 @@ fn expectedIntegerType(env: *Env) ?[]const u8 {
 fn isIntegerLiteral(e: ast.Expr) bool {
     if (e != .literal) return false;
     return switch (e.literal.kind) {
-        .numberLit => |n| std.mem.indexOfScalar(u8, n, '.') == null,
+        .numberLit => |n| !isFloatLiteralText(n),
         else => false,
     };
+}
+
+/// Whether a number literal is a float: it has a `.` or, being decimal, an
+/// exponent — `5e-324` and `1e10` are floats, `0x1E` is an integer.
+fn isFloatLiteralText(n: []const u8) bool {
+    if (std.mem.indexOfScalar(u8, n, '.') != null) return true;
+    if (n.len >= 2 and n[0] == '0' and std.ascii.isAlphabetic(n[1])) return false;
+    return std.mem.indexOfAny(u8, n, "eE") != null;
 }
 
 fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
@@ -8543,7 +8579,7 @@ fn inferLiteralExpr(env: *Env, lit: ast.LiteralExprOf(.untyped), loc: ast.Loc) I
             return inferExprTyped(env, acc.?.*);
         },
         .numberLit => |n| blk: {
-            const isFloat = std.mem.indexOfScalar(u8, n, '.') != null;
+            const isFloat = isFloatLiteralText(n);
             // An integer literal takes the integer type its position asks for
             // (`val k: i64 = 1000;`, an `i64` parameter, the other operand of
             // an arithmetic or comparison operator); with nothing asking, `i32`.
@@ -8954,6 +8990,7 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
             break :blk lhsTy;
         },
     };
+    if (binop.op == .div) try env.divisions.put(loc, resultType);
     return TypedExpr{ .binaryOp = .{
         .loc = loc,
         .type_ = resultType,

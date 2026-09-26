@@ -1,0 +1,30 @@
+//// onze finding F7 — `/` over integers truncates toward zero and answers an
+//// integer, on every backend: `7 / 2` is `3`, `-7 / 2` is `-3` (erlang's
+//// `div`). commonJS divided every `/` as a float and printed `3.5`. A `/`
+//// with a float operand stays a float division.
+
+fn half(n: i32) -> i32 {
+    return n / 2;
+}
+
+fn mean(xs: Array<i32>) -> i32 {
+    val total = xs.fold(0, { acc, x -> acc + x });
+    return total / xs.length;
+}
+
+fn ratio(x: f64, y: f64) -> f64 {
+    return x / y;
+}
+
+pub fn main() {
+    @print(half(7));
+    @print(half(-7));
+    @print(7 / 2);
+    @print(mean([1, 2, 4]));
+    val per = [10, 11].map({ n -> n / 3 });
+    @print(per);
+    val big: i64 = 90001;
+    @print(big / 2);
+    @print(ratio(7.0, 2.0));
+    @print(half(7) * 2 == 6);
+}

@@ -297,6 +297,7 @@ fn collectOrphans(
     while (walker.next(io) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!isSource(entry.basename)) continue;
+        if (!inOwnTree(io, src_dir_path, entry.path)) continue;
         const full = std.fs.path.join(gpa, &.{ src_dir_path, entry.path }) catch continue;
         if (visited.contains(full) or isDeclared(entry.path, declared)) {
             gpa.free(full);
@@ -305,6 +306,30 @@ fn collectOrphans(
         try orphans.append(gpa, .{ .file = full });
     }
     return try orphans.toOwnedSlice(gpa);
+}
+
+/// Whether `rel` (relative to `src_dir_path`) belongs to this package's source
+/// tree at all. A package whose `"src"` is `"."` (onze F5) has its source root
+/// at the project root, next to things that are not its modules: a hidden
+/// directory (`.botopinkbuild/`, `.git/`), the flat `test/` suite `botopink
+/// test` loads on its own, and a nested package — a directory holding its own
+/// `botopink.json`, such as a local `path` dependency. None of them is an orphan.
+fn inOwnTree(io: std.Io, src_dir_path: []const u8, rel: []const u8) bool {
+    const at_root = std.mem.eql(u8, src_dir_path, ".");
+    var it = std.mem.tokenizeAny(u8, rel, "/\\");
+    var first = true;
+    var end: usize = 0;
+    while (it.next()) |seg| {
+        end = it.index;
+        if (it.peek() == null) break; // the file itself
+        if (seg.len > 0 and seg[0] == '.') return false;
+        if (first and at_root and std.mem.eql(u8, seg, "test")) return false;
+        first = false;
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const manifest_path = std.fmt.bufPrint(&buf, "{s}/{s}/botopink.json", .{ src_dir_path, rel[0..end] }) catch return true;
+        if (std.Io.Dir.cwd().access(io, manifest_path, .{})) |_| return false else |_| {}
+    }
+    return true;
 }
 
 /// Whether `rel` — a path relative to `src`, as the walker yields it — is one of
@@ -385,6 +410,11 @@ const Analysis = struct {
     /// `sources[i]` are the `from "…"` clauses module i writes, in source order.
     sources: []const []const SourceRef,
     paths: std.StringHashMapUnmanaged(usize),
+    /// `broken[i]`: module i does not lex or parse. Its export list is empty
+    /// because it was never read, so an import from it is not refused as
+    /// "not exported" — the compile reports the module's own located error,
+    /// which is the one that says what is wrong (onze F8).
+    broken: []const bool = &.{},
 };
 
 fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
@@ -396,13 +426,15 @@ fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
     const imports = sa.alloc([]const ImportRef, mods.len) catch return empty;
     const exports = sa.alloc([]const []const u8, mods.len) catch return empty;
     const sources = sa.alloc([]const SourceRef, mods.len) catch return empty;
+    const broken = sa.alloc(bool, mods.len) catch return empty;
     for (mods, 0..) |m, i| {
         const refs = collectModuleRefs(sa, m.source, &owner, i) catch ModuleRefs{ .imports = &.{}, .exports = &.{}, .sources = &.{} };
         imports[i] = refs.imports;
         exports[i] = refs.exports;
         sources[i] = refs.sources;
+        broken[i] = refs.broken;
     }
-    return .{ .owner = owner, .imports = imports, .exports = exports, .sources = sources, .paths = paths };
+    return .{ .owner = owner, .imports = imports, .exports = exports, .sources = sources, .paths = paths, .broken = broken };
 }
 
 /// The module an import DEPENDS on: the one its `from "<mod>"` names, when that
@@ -553,6 +585,7 @@ fn checkImportResolution(
             const from = ref.from orelse continue;
             const target = analysis.paths.get(from) orelse continue; // not a package module
             if (target == importer) continue;
+            if (target < analysis.broken.len and analysis.broken[target]) continue;
             // A leaf that is itself a module of the tree (`import {shapes.circle};`
             // binds the namespace `circle`) is not an export of `shapes`.
             var sub_buf: [512]u8 = undefined;
@@ -702,6 +735,9 @@ const ModuleRefs = struct {
     imports: []const ImportRef,
     exports: []const []const u8,
     sources: []const SourceRef = &.{},
+    /// The module does not lex or parse, so its exports are unknown rather
+    /// than empty (onze F8).
+    broken: bool = false,
 };
 
 const Loc = struct { line: usize, col: usize };
@@ -734,9 +770,9 @@ fn collectModuleRefs(
     idx: usize,
 ) !ModuleRefs {
     var lx = Lexer.init(source);
-    const tokens = lx.scanAll(sa) catch return .{ .imports = &.{}, .exports = &.{} };
+    const tokens = lx.scanAll(sa) catch return .{ .imports = &.{}, .exports = &.{}, .broken = true };
     var p = Parser.init(tokens);
-    const program = p.parse(sa) catch return .{ .imports = &.{}, .exports = &.{} };
+    const program = p.parse(sa) catch return .{ .imports = &.{}, .exports = &.{}, .broken = true };
 
     const from_locs = fromLocations(sa, tokens);
     var from_idx: usize = 0;

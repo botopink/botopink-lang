@@ -77,6 +77,16 @@ pub const ProjectConfig = struct {
     /// `{ "workspace": true }` dependencies resolve to its members.
     workspace: ?manifest.Workspace = null,
 
+    /// The manifest's `src` as a directory relative to the project (onze
+    /// F5): `"src/"` → `"src"`, `"."` or `"./"` → `"."`. Every command loads
+    /// the project's own modules from here; a hand-rolled config answers
+    /// the manifest default, `src`.
+    pub fn srcDir(self: ProjectConfig) []const u8 {
+        var s = std.mem.trimEnd(u8, self.manifest.src, "/");
+        if (std.mem.startsWith(u8, s, "./") and s.len > 2) s = s[2..];
+        return if (s.len == 0) "." else s;
+    }
+
     /// The manifest's `target`, or null when it names a target the compiler
     /// does not support. Never degrades an unknown target to commonJS — the
     /// caller reports it (`reportUnsupportedTarget`) and fails.

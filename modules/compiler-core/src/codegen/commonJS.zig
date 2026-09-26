@@ -1771,7 +1771,7 @@ const Emitter = struct {
         const lw = self.lowerings orelse return null;
         const type_name = switch (lw.get(loc) orelse return null) {
             .type_ => |n| n,
-            .prim, .field_of, .sequence_next => return null,
+            .prim, .field_of, .sequence_next, .division => return null,
         };
         if (self.imported_enums.contains(type_name)) return type_name;
         var buf: [256]u8 = undefined;
@@ -3601,6 +3601,15 @@ const Emitter = struct {
                     });
                     return if (bin.op == .eq) cmp else self.b.unary("!", cmp, true);
                 }
+                // Onze F7 — `/` over integers truncates toward zero and
+                // answers an integer, as erlang's `div` does: `7 / 2` is `3`.
+                // A JS number division is a float one, so the quotient is
+                // truncated. Inference says which `/` this is (`.division`).
+                if (bin.op == .div) if (self.lowerings) |lw| if (lw.get(bin.loc)) |il| if (il == .division and il.division == .integer) {
+                    return self.b.call(.{ .name = "Math.trunc" }, &.{
+                        try self.b.binary("/", try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*)),
+                    });
+                };
                 const op: []const u8 = switch (bin.op) {
                     .add => "+",
                     .sub => "-",
@@ -4284,7 +4293,7 @@ const Emitter = struct {
                             .string => "String",
                             else => break :blk null,
                         },
-                        .type_, .field_of, .sequence_next => break :blk null,
+                        .type_, .field_of, .sequence_next, .division => break :blk null,
                     };
                     const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
                     for (iface.methods) |m| {
@@ -4408,7 +4417,7 @@ const Emitter = struct {
         const il = lw.get(loc) orelse return null;
         const kind = switch (il) {
             .prim => |k| k,
-            .type_, .field_of, .sequence_next => return null,
+            .type_, .field_of, .sequence_next, .division => return null,
         };
         const receiver: jsPrelude.Receiver = switch (kind) {
             .string => .string,

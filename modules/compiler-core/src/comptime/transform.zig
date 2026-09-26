@@ -80,9 +80,11 @@ const Aggregator = struct {
     /// Decision 8 §10 — loops to mark `condition` (their `iter` is a `bool`).
     optional_null_cases: *const OptionalNullCases,
     /// True for the aggregator that walks method bodies: every map but
-    /// `src_rewrites` is empty and the one unconditional rewrite (the `${}`
-    /// template desugar) is skipped, so a method body lowers byte-for-byte as
-    /// before 1.0.10-beta except for the `@src()` splice. Lowering method
+    /// `src_rewrites`, `method_lowerings` (onze F4 — `xs.at(i).unwrapOr(d)` in
+    /// a method), `index_rewrites` and `default_injections` is empty and the
+    /// one unconditional rewrite (the `${}` template desugar) is skipped, so a
+    /// method body lowers byte-for-byte as before 1.0.10-beta except for those
+    /// rewrites. Lowering method
     /// bodies through the full walk is a separate change: it moves
     /// `record_method_with_todo_placeholder` on erlang (`@todo()` gets its
     /// default injected there as it does in a fn body).
@@ -184,9 +186,8 @@ pub fn transform(
     var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
 
-    // The method-body aggregator (`src_only`): the `@src()` splice alone.
-    var empty_ml = MethodLowerings.init(allocator);
-    defer empty_ml.deinit();
+    // The method-body aggregator (`src_only`): the `@src()` splice, the
+    // `@Result`/`@Option` method lowerings, index rewrites and default fills.
     var empty_te = TemplateExpansions.init(allocator);
     defer empty_te.deinit();
     var empty_rj = ResultJumpLowerings.init(allocator);
@@ -201,7 +202,7 @@ pub fn transform(
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_sa, &empty_es, index_rewrites, &empty_onc, empty_ctor, default_injections);
+    var src_agg = Aggregator.init(allocator, empty_vals, method_lowerings, &empty_te, src_rewrites, &empty_rj, &empty_sa, &empty_es, index_rewrites, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
     defer src_agg.deinit(allocator);
 
@@ -271,7 +272,7 @@ pub fn transform(
         // inference-recorded rewrite a method body must receive, so they ride
         // the `src_only` aggregator: the splice and nothing else (see the
         // field's doc for what the full walk would move).
-        if (src_rewrites.count() > 0) {
+        if (src_rewrites.count() > 0 or method_lowerings.count() > 0) {
             if (decl.* == .type_) {
                 for (decl.type_.methods) |*m| {
                     const body = m.body orelse continue;
@@ -765,7 +766,13 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                 rewriteStmt(agg, fn_decls, comptime_arrays, stmt) catch return ScanError.OutOfMemory;
             }
         },
-        else => {},
+        // Any other expression statement — the value of an `if` branch
+        // (`else s.slice(1) + "/x"`), a field read, a string template — is
+        // walked like the same expression anywhere else. It was skipped, so
+        // the call inside never received its default fill: erlang emitted
+        // `string_slice(S, 1)` against the `string_slice/3` it defines
+        // (onze F6).
+        else => rewriteExpr(agg, fn_decls, comptime_arrays, &stmt.expr) catch return ScanError.OutOfMemory,
     }
 }
 
@@ -983,6 +990,9 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             rewriteExpr(agg, fn_decls, comptime_arrays, b.lhs) catch return ScanError.OutOfMemory;
             rewriteExpr(agg, fn_decls, comptime_arrays, b.rhs) catch return ScanError.OutOfMemory;
         },
+        // `-xs.at(0).unwrapOr(1)`, `!flags.at(0).unwrapOr(false)` — the
+        // operand was never walked (onze F9's family).
+        .unaryOp => |*u| rewriteExpr(agg, fn_decls, comptime_arrays, u.expr) catch return ScanError.OutOfMemory,
         .collection => |*col| switch (col.kind) {
             .arrayLit => |al| {
                 for (al.elems) |*e| rewriteExpr(agg, fn_decls, comptime_arrays, e) catch return ScanError.OutOfMemory;
@@ -1003,7 +1013,9 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                 rewriteExpr(agg, fn_decls, comptime_arrays, r.start) catch return ScanError.OutOfMemory;
                 if (r.end) |e| rewriteExpr(agg, fn_decls, comptime_arrays, e) catch return ScanError.OutOfMemory;
             },
-            else => {},
+            // `(if (c) xs.at(0).unwrapOr(d) else e).v` — a parenthesised
+            // expression is walked like the one it holds (onze F9).
+            .grouped => |g| rewriteExpr(agg, fn_decls, comptime_arrays, g) catch return ScanError.OutOfMemory,
         },
         .function => |*func| {
             for (func.kind.body) |*s| rewriteStmt(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;

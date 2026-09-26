@@ -1,0 +1,8 @@
+//// onze finding F5 — a package whose `"src"` is `"."`: the module tree
+//// starts at the project root. `botopink check`, `build` and `test` read
+//// the project's own modules from a hard-coded `src/`, so `check` answered
+//// "no source files found in src/ or test/" and the test below could not
+//// import `lib.db`. The root's neighbours — `test/`, `.botopinkbuild/` —
+//// are not orphans of the tree.
+
+pub mod lib;

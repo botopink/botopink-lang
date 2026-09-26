@@ -3187,7 +3187,7 @@ const Emitter = struct {
                 .ident => |n| nums.get(n) orelse self.num_names.get(n),
                 .identAccess => |ia| if (self.instanceLowering(id.loc, ia.receiver.*)) |il| switch (il) {
                     .prim => .int,
-                    .type_, .field_of, .sequence_next => null,
+                    .type_, .field_of, .sequence_next, .division => null,
                 } else null,
                 else => null,
             },
@@ -3198,8 +3198,10 @@ const Emitter = struct {
             .unaryOp => |un| if (un.op == .neg) self.numKind(strings, un.expr.*) else null,
             .binaryOp => |bin| switch (bin.op) {
                 .add => if (self.isStringExpr(strings, e)) null else combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)),
-                // `-`, `*` and `/` only ever answer a number.
-                .sub, .mul, .div => combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)) orelse .number,
+                // `-`, `*` and `/` only ever answer a number; a `/` inference
+                // read answers its own kind.
+                .div => if (self.divisionKind(bin.loc)) |k| (if (k == .integer) NumKind.int else NumKind.float) else combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)) orelse .number,
+                .sub, .mul => combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)) orelse .number,
                 .mod => .int,
                 else => null,
             },
@@ -5391,6 +5393,12 @@ const Emitter = struct {
         }
     }
 
+    /// Inference's `InstanceLowering.division` for the `/` at `loc`.
+    fn divisionKind(self: *const Emitter, loc: ast.Loc) ?envMod.DivisionKind {
+        const il = self.instance_lowerings.get(loc) orelse return null;
+        return if (il == .division) il.division else null;
+    }
+
     /// Arithmetic via `gc_bif`. Handles non-simple operands by materializing
     /// them into scratch x-registers above `cur_arity`.
     fn lowerArithGcBif(self: *Emitter, bin: anytype, dest: u32) anyerror!void {
@@ -5400,7 +5408,11 @@ const Emitter = struct {
             .mul => .mul,
             // `div` is integer division and raises `badarith` on a float; an
             // operand known to be a float takes `'/'`.
-            .div => if (self.numKind(&self.string_locals, bin.lhs.*) == .float or
+            // Inference's reading of this `/` wins when it has one (onze F7:
+            // integer division truncates on every backend).
+            .div => if (self.divisionKind(bin.loc)) |k|
+                (if (k == .integer) beamEmitter.GcBif.div_ else beamEmitter.GcBif.fdiv)
+            else if (self.numKind(&self.string_locals, bin.lhs.*) == .float or
                 self.numKind(&self.string_locals, bin.rhs.*) == .float) .fdiv else .div_,
             .mod => .rem,
             else => unreachable,
@@ -5650,8 +5662,8 @@ const Emitter = struct {
                         } else |_| {}
                     } else |_| {}
                 },
-                // A field READ never reaches the call path.
-                .field_of => {},
+                // A field READ never reaches the call path, nor does a `/`.
+                .field_of, .division => {},
                 // Decision 122 — `seq.next()` by hand. The eager sequence is
                 // the list of its items: `'-bp_yield_step-'/1` answers its
                 // head's step — `{Yield, Head}`, or `Done` on the empty list —
@@ -10032,7 +10044,7 @@ const Emitter = struct {
                 }
                 return;
             },
-            .type_, .field_of, .sequence_next => {},
+            .type_, .field_of, .sequence_next, .division => {},
         };
 
         try self.lowerExprIntoX0(ia.receiver.*);

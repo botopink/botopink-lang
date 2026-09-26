@@ -53,7 +53,10 @@
 #                      express: `pub mod`, `import … from "<module>"`, `from "std"`,
 #                      and a local dependency — a second project inside the cell
 #                      named by a `{ "path": "…" }` dependency of its manifest
-#                      (front 12 step 4.2; no network, nothing special here)
+#                      (front 12 step 4.2; no network, nothing special here).
+#                      A project cell with a `test/` tree and no expected.out is
+#                      the test/ kind over the project: `botopink test --target
+#                      <t> --json` (commonJS and erlang), keyed <name>::<test>
 #
 # expected-failures.txt — one line per expected failure, `|`-separated (test
 # names contain spaces):
@@ -245,6 +248,23 @@ project() { # <dir> <kind>
     printf '{ "name": "language_tests", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang", "wasm"] }\n' > "$1/botopink.json"
 }
 
+# `botopink test --json` in <dir>; one result line per test, keyed <path>::<name>,
+# or one `fail` line for <path> when nothing ran.
+test_project() { # <dir> <path> <target> <out>
+    local dir="$1" path="$2" t="$3" out="$4"
+    (cd "$dir" && timeout 300 "$compiler" test --target "$t" --json >"$dir/o.json" 2>"$dir/e.txt")
+    json_tests <"$dir/o.json" >"$dir/tests.tsv"
+    if [ ! -s "$dir/tests.tsv" ]; then
+        local why; why="$(strip <"$dir/e.txt" | grep -m1 -E 'error' | tr '\t' ' ')"
+        printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "does not compile: ${why:-no test ran}" >"$out"
+    else
+        : >"$out"
+        while IFS=$'\t' read -r name status why; do
+            printf '%s\t%s::%s\t%s\t%s\n' "$t" "$path" "$name" "$status" "$why" >>"$out"
+        done <"$dir/tests.tsv"
+    fi
+}
+
 run_one() { # <path> <target>
     local path="$1" t="$2" slug dir out
     slug="$(printf '%s-%s' "$path" "$t" | tr '/.' '__')"
@@ -258,17 +278,14 @@ run_one() { # <path> <target>
     case "$path" in
         test/*)
             cp "$here/$path" "$dir/test/$(basename "$path")"
-            (cd "$dir" && timeout 300 "$compiler" test --target "$t" --json >"$dir/o.json" 2>"$dir/e.txt")
-            json_tests <"$dir/o.json" >"$dir/tests.tsv"
-            if [ ! -s "$dir/tests.tsv" ]; then
-                local why; why="$(strip <"$dir/e.txt" | grep -m1 -E 'error' | tr '\t' ' ')"
-                printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "does not compile: ${why:-no test ran}" >"$out"
-            else
-                : >"$out"
-                while IFS=$'\t' read -r name status why; do
-                    printf '%s\t%s::%s\t%s\t%s\n' "$t" "$path" "$name" "$status" "$why" >>"$out"
-                done <"$dir/tests.tsv"
-            fi ;;
+            test_project "$dir" "$path" "$t" "$out" ;;
+        modules/*)
+            # A project cell with a `test/` tree and no `expected.out` is the
+            # test/ kind over a whole project: `botopink test`, every test ok.
+            if [ -d "$here/$path/test" ] && [ ! -f "$here/$path/expected.out" ]; then
+                test_project "$dir" "$path" "$t" "$out"
+                return
+            fi ;;&
         run/*)
             local expected="$here/${path%.bp}.out"
             local refuse="$here/${path%.bp}.$t.expect"
@@ -372,7 +389,7 @@ run_one() { # <path> <target>
         *) printf '*\t%s\t%s\t%s\n' "$path" fail "not under test/, run/, reject/ or modules/" >"$work/r-$slug" ;;
     esac
 }
-export -f run_one json_tests strip quiet project exec_run pool_job pool_admit pool_cpus
+export -f run_one test_project json_tests strip quiet project exec_run pool_job pool_admit pool_cpus
 export here work compiler lib_root
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
@@ -402,6 +419,15 @@ for f in "${files[@]}"; do
                     done
                 fi
                 for t in "${local_targets[@]}"; do printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"; done ;;
+        modules/*)
+                # a project cell of the test/ kind (a `test/` tree, no
+                # expected.out) is `botopink test`: commonJS and erlang only
+                for t in "${targets[@]}"; do
+                    if [ -d "$here/$f/test" ] && [ ! -f "$here/$f/expected.out" ]; then
+                        [ "$t" = "wasm" ] || [ "$t" = "beam" ] && continue
+                    fi
+                    printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"
+                done ;;
         *) for t in "${targets[@]}"; do printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"; done ;;
     esac
 done

@@ -1,0 +1,5 @@
+pub fn dotted() -> string {
+    return """
+a\.b
+""";
+}

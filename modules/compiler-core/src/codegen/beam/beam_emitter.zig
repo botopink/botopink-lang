@@ -81,10 +81,7 @@ pub const Number = struct {
     negate: bool = false,
 
     fn isFloat(self: Number) bool {
-        for (self.token) |c| {
-            if (c == '.' or c == 'e' or c == 'E') return true;
-        }
-        return false;
+        return erl.isFloatNumeral(self.token);
     }
 };
 
@@ -192,11 +189,14 @@ pub fn writeArg(w: *Writer, o: Operand) Error!void {
         .term => |t| try writeOperand(w, t),
         .lexeme => |s| try writeLexemeBinaryOperand(w, s),
         .untagged => |n| try w.print("{d}", .{n}),
-        .number => |n| try w.print("{{{s}, {s}{s}}}", .{
-            if (n.isFloat()) "float" else "integer",
-            if (n.negate) "-" else "",
-            n.token,
-        }),
+        .number => |n| {
+            try w.print("{{{s}, {s}", .{
+                if (n.isFloat()) "float" else "integer",
+                if (n.negate) "-" else "",
+            });
+            try erl.writeNumber(w, n.token);
+            try w.writeAll("}");
+        },
     }
 }
 

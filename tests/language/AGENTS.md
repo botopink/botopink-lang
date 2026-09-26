@@ -23,6 +23,7 @@ rewrite a test to match current behaviour.
 | `run/<name>.bp` + `<name>.out` | a whole program (`pub fn main`), run by `botopink run --target <t>` | exit 0 and stdout equals `.out` byte for byte — or, with a sidecar, § the sidecars of a `run/` cell |
 | `reject/<name>.bp` + `<name>.expect` | a program that must not compile, run by `botopink check` | exit ≠ 0, stderr contains `.expect` line 1, and ` --> src/main.bp:<line 2>` when line 2 is present |
 | `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a second project inside it can be a `{ "path": "…" }` dependency | exit 0 and stdout equals `expected.out` byte for byte — or, with `<target>.expect`, § the sidecars of a `run/` cell |
+| `modules/<name>/` with a `test/` tree and no `expected.out` | the `test/` kind over a whole project, run by `botopink test --target <t> --json` on commonJS and erlang; results are keyed `modules/<name>::<test>` | every test reports `ok` |
 | `expected-failures.txt` | the list of known failures | — |
 
 1.0.10-beta's `00 · 23-std-purity` step 1 (decision 107, the import tree) adds `modules/import_tree`
@@ -59,6 +60,22 @@ before `main`, dependencies first, and a val read twice is evaluated once — on
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
+The onze front's compiler findings (`specs/1.0.10-beta/06-onze/49-onze-stand-up`, F1–F10) add a
+cell each: `modules/pub_val_in_a_test` (F1 — a sibling's `pub val` read by a TEST: the erlang runner
+did not load the sibling; the first project cell of the test kind), `modules/import_type_closure_across_modules`
+(F2 — `import {Canvas}` from a local dependency whose fields name types of the package's other
+modules), `run/unwrap_or_positions.bp` (F4/F9 — `xs.at(i).unwrapOr(d)` in a method, as the branch of
+a parenthesised `if` read with `.v`, nested in another `unwrapOr`, over an unannotated `map`),
+`modules/src_at_package_root` (F5 — `"src": "."`, a test importing `lib.db`),
+`run/string_slice_in_if_branch.bp` (F6 — a one-argument `slice`, an array `slice` and a string
+template as the value of an `if` branch), `run/integer_division_truncates.bp` (F7 — integer `/`
+truncates toward zero on every target, float `/` stays float) and `modules/lexer_error_in_imported_module`
+(F8 — every target refuses the project with `bad string escape` located in the imported module, via
+`<target>.expect`). The erlang float-literal item adds `run/float_literal_spellings.bp` (`1e3`,
+`2.5E3`, `3e+2`, `5e-1`, `1_000.5` are `f64` on all four targets) and
+`run/number_literal_erlang_spellings.bp` (`5e-324`, the largest `f64`, and `0xFF + 0b101 + 0o17`;
+`.targets` is `commonJS erlang beam` — wasm lowers a float literal to `f32.const` and interns a radix
+literal as a string, gaps of its own).
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
@@ -439,8 +456,8 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 | `modules/<name>/<target>.expect` | the `.<target>.expect` claim for a whole project: that target **refuses** it | exit ≠ 0 and the diagnostic contains line 1 (and ` --> <line 2>` when present — `src/<file>.bp:<L:C>`, the file named because a project has several). `modules/external_method_imported/wasm.expect` is the live one |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **Eleven cells carry
-`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `external_host_record`, `external_method_on_host_record`, `host_erlang_task_result`, `host_node_task_result`, `std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `task_throw_resolves_error`). The one the paragraph below was written about is
+Any other content in `.exit` is a malformed claim and fails the cell. **Thirteen cells carry
+`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `external_host_record`, `external_method_on_host_record`, `external_template_refused_on_beam`, `host_erlang_task_result`, `host_node_task_result`, `number_literal_erlang_spellings`, `std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `task_throw_resolves_error`). The one the paragraph below was written about is
 `run/string_char_code_after_slice.bp`, which names `commonJS erlang` because
 `String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
 (`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it

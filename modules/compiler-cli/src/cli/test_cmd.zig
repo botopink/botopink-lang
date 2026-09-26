@@ -171,7 +171,7 @@ pub fn run(
     // already registered when they compile.
     // `src/` resolves through the explicit module tree; the flat `test/` suite
     // dir is not a package, so it keeps the plain directory scan.
-    var src_loaded = sources.load(gpa, io, proj, "src") catch return 1;
+    var src_loaded = sources.load(gpa, io, proj, proj.srcDir()) catch return 1;
     defer src_loaded.free(gpa);
     const src_modules = src_loaded.modules;
     var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");

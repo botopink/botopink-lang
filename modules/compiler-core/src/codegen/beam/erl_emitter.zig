@@ -268,6 +268,80 @@ pub fn writeFloat(w: *Writer, f: f64) Error!void {
     try w.writeAll(".0");
 }
 
+/// Whether a botopink number token is a radix integer (`0x…`, `0b…`, `0o…`),
+/// answering its base.
+fn radixOf(text: []const u8) ?u8 {
+    if (text.len < 3 or text[0] != '0') return null;
+    return switch (text[1]) {
+        'x', 'X' => 16,
+        'b', 'B' => 2,
+        'o', 'O' => 8,
+        else => null,
+    };
+}
+
+/// Whether `text` is a decimal botopink numeral (`12`, `1_000.5`, `5e-324`).
+/// The comptime folder also parks rendered non-numeric values in a number
+/// node (`["calc", "noop"]`); those are written as they are.
+fn isDecimalNumeral(text: []const u8) bool {
+    if (text.len == 0 or !std.ascii.isDigit(text[0])) return false;
+    for (text) |c| switch (c) {
+        '0'...'9', '_', '.', 'e', 'E', '+', '-' => {},
+        else => return false,
+    };
+    return true;
+}
+
+/// Whether a botopink number token is a float: a decimal numeral with a `.`
+/// or an exponent. `0x1E` is an integer.
+pub fn isFloatNumeral(text: []const u8) bool {
+    if (radixOf(text) != null) return false;
+    return std.mem.indexOfAny(u8, text, ".eE") != null;
+}
+
+/// Write a botopink number token as an Erlang number. Erlang reads a float
+/// only with a `.` before its exponent — `5e-324` is a syntax error, `5.0e-324`
+/// is the float — and spells a radix integer `16#FF`, not `0xFF`. Every other
+/// token (a decimal integer, a float with a `.`, digit separators included)
+/// is already Erlang.
+pub fn writeNumber(w: *Writer, text: []const u8) Writer.Error!void {
+    if (radixOf(text)) |base| {
+        try w.print("{d}#", .{base});
+        return w.writeAll(text[2..]);
+    }
+    if (isDecimalNumeral(text) and std.mem.indexOfScalar(u8, text, '.') == null) {
+        if (std.mem.indexOfAny(u8, text, "eE")) |e| {
+            try w.writeAll(text[0..e]);
+            try w.writeAll(".0");
+            return w.writeAll(text[e..]);
+        }
+    }
+    return w.writeAll(text);
+}
+
+test "writeNumber spells every botopink numeral as an Erlang number" {
+    const cases = [_][2][]const u8{
+        .{ "5e-324", "5.0e-324" },
+        .{ "1e10", "1.0e10" },
+        .{ "3E+2", "3.0E+2" },
+        .{ "2.5e3", "2.5e3" },
+        .{ "1_000.5", "1_000.5" },
+        .{ "42", "42" },
+        .{ "0xFF", "16#FF" },
+        .{ "0b101", "2#101" },
+        .{ "0o17", "8#17" },
+        .{ "[\"one\"]", "[\"one\"]" },
+    };
+    for (cases) |c| {
+        var buf: [64]u8 = undefined;
+        var w: Writer = .fixed(&buf);
+        try writeNumber(&w, c[0]);
+        try std.testing.expectEqualStrings(c[1], w.buffered());
+    }
+    try std.testing.expect(isFloatNumeral("5e-324"));
+    try std.testing.expect(!isFloatNumeral("0x1E"));
+}
+
 /// Render `t` as an Erlang term expression.
 pub fn writeTerm(w: *Writer, t: Term) Error!void {
     switch (t) {
@@ -470,7 +544,7 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             }
             try w.writeAll(">>");
         },
-        .number => |text| try w.writeAll(text),
+        .number => |text| try writeNumber(w, text),
         .paren => |inner| {
             try w.writeByte('(');
             try writeExpr(w, inner.*, indent);

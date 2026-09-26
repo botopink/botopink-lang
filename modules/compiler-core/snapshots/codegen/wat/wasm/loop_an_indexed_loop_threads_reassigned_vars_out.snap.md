@@ -124,11 +124,12 @@ fn main() {
     local.get $total
     local.get $xs
     local.get $i
-    call $__arr_at
+    call $__arr_at_box
     local.tee $__opt0
     (if (result i32)
       (then
     local.get $__opt0
+    i32.load ;; optional payload
     local.set $__bp_nullish
     local.get $__bp_nullish
       )
@@ -405,41 +406,6 @@ fn main() {
     call $__print_str_raw
     call $__print_nl
   )
-  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    (if
-      (then
-        local.get $i
-        local.get $xs
-        i32.load
-        i32.add
-        local.set $i
-      )
-    )
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    local.get $i
-    local.get $xs
-    i32.load
-    i32.ge_s
-    i32.or
-    (if (result i32)
-      (then i32.const 0)
-      (else
-        local.get $xs
-        local.get $i
-        i32.const 1
-        i32.add
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-      )
-    )
-  )
   (func $__str_concat (param $a i32) (param $b i32) (result i32)
     (local $base i32) (local $alen i32) (local $blen i32)
     local.get $a
@@ -486,6 +452,67 @@ fn main() {
     local.get $blen
     memory.copy
     local.get $base
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
+    local.get $p
+  )
+  (func $__arr_at_box (param $xs i32) (param $i i32) (result i32)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        local.get $i
+        local.get $xs
+        i32.load
+        i32.add
+        local.set $i
+      )
+    )
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    i32.load
+    i32.ge_s
+    i32.or
+    (if
+      (then
+        i32.const 0
+        return
+      )
+    )
+    local.get $xs
+    i32.const 4
+    i32.add
+    local.get $i
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load
+    call $__box_i32
   )
 )
 ```
