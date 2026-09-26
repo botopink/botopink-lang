@@ -76,6 +76,28 @@ truncates toward zero on every target, float `/` stays float) and `modules/lexer
 `run/number_literal_erlang_spellings.bp` (`5e-324`, the largest `f64`, and `0xFF + 0b101 + 0o17`;
 `.targets` is `commonJS erlang beam` — wasm lowers a float literal to `f32.const` and interns a radix
 literal as a string, gaps of its own).
+The rakun rows of `language-gaps.md` (the language-gaps sweep, `front/compiler-gaps-rakun`) add a
+cell each, every one failing on the parent binary: `run/behavior_method_by_receiver_type` and
+`run/behavior_method_host_value` (a method a `behavior` declares is the VALUE's, beside another type
+declaring the same name — an implementer's, a host-built one, on an unannotated local; `.targets`
+`commonJS erlang beam`, wasm traps on behavior dispatch), `modules/behavior_method_imported` (the
+same for an imported behavior; `wasm.expect`), `run/behavior_value_from_implementer` (an implementer
+converts to its behavior at an annotated `val` and a `var`), `modules/behavior_across_modules` (an
+imported behavior is the same type in its importer; an imported fn-type alias resolves its names in
+its own module), `run/return_nested_in_if_block` and `run/return_in_case_arm_statement` (a `return`
+at any depth of a statement ends the function), `run/result_method_throw` (a METHOD returning
+`@Result` wraps its `throw` / `return`), `modules/test_in_subdirectory` (a test file in `test/unit/`
+reaches the project on erlang), `run/record_method_named_length` (a type's `length` method never
+answers an array's `length`), `modules/imported_fn_field_call` (a function-typed field of an imported
+record is applied), `modules/method_on_unimported_type` (a method on a value whose type the module
+never imported: std's `Dict`, and another imported type declaring the same method),
+`reject/method_missing_argument`, `reject/method_extra_argument` and `run/method_default_argument` (a
+method call's arity), `run/result_pattern_beside_enum_variant` (`Error(e)` over a `@Result` beside an
+enum declaring `Error`), `run/decorator_calls_module_function` and
+`modules/decorator_imported_calls_module_function` (a decorator body calls its module's
+functions), `run/decorator_emitted_proxies_dispatch` (two proxies a decorator emits call their own
+types) and `modules/namespace_import_module` (decision 107's namespace form over a dependency's
+module and the project's own).
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
@@ -456,8 +478,8 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 | `modules/<name>/<target>.expect` | the `.<target>.expect` claim for a whole project: that target **refuses** it | exit ≠ 0 and the diagnostic contains line 1 (and ` --> <line 2>` when present — `src/<file>.bp:<L:C>`, the file named because a project has several). `modules/external_method_imported/wasm.expect` is the live one |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **Thirteen cells carry
-`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `external_host_record`, `external_method_on_host_record`, `external_template_refused_on_beam`, `host_erlang_task_result`, `host_node_task_result`, `number_literal_erlang_spellings`, `std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `task_throw_resolves_error`). The one the paragraph below was written about is
+Any other content in `.exit` is a malformed claim and fails the cell. **Sixteen cells carry
+`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `behavior_method_by_receiver_type`, `behavior_method_host_value`, `behavior_value_from_implementer`, `external_host_record`, `external_method_on_host_record`, `external_template_refused_on_beam`, `host_erlang_task_result`, `host_node_task_result`, `number_literal_erlang_spellings`, `std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `task_throw_resolves_error`). The one the paragraph below was written about is
 `run/string_char_code_after_slice.bp`, which names `commonJS erlang` because
 `String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
 (`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it

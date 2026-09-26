@@ -1,0 +1,61 @@
+//// A METHOD whose return is a `@Result` lowers its `throw` and its `return`
+//// like a function's: `throw e` answers `Error(e)` and `return v` answers
+//// `Ok(v)` — in a record's own body, in an enum's, through a `try` of
+//// another method; and a returned `@Result` passes through unwrapped.
+////
+//// The gap this pins: method bodies skipped the `@Result` wrapping, so on
+//// erlang and beam `Reader(…).read("")` died with `{nocatch, <<"empty">>}`,
+//// on commonJS with an uncaught `empty`, and a returned value was not an
+//// `Ok` (wasm printed its string as a heap address).
+
+type Reader(limit: i32) {
+    pub fn read(self: Self, body: string) -> @Result<string, string> {
+        if (body == "") throw "empty";
+        if (body.length() > self.limit) throw "long";
+        return body;
+    }
+
+    pub fn delegate(self: Self, body: string) -> @Result<string, string> {
+        return checkLength(body, self.limit);
+    }
+
+    pub fn twice(self: Self, body: string) -> @Result<string, string> {
+        val once = try self.read(body);
+        return once + "!";
+    }
+}
+
+type Mode {
+    Strict,
+    Loose,
+
+    pub fn check(self: Self, n: i32) -> @Result<i32, string> {
+        if (n < 0) throw "negative";
+        return n;
+    }
+}
+
+fn checkLength(body: string, limit: i32) -> @Result<string, string> {
+    if (body.length() > limit) throw "too long";
+    return body;
+}
+
+fn describe(r: @Result<string, string>) -> string {
+    return case r {
+        Ok(v) { "ok " + v }
+        Error(e) { "error " + e }
+    };
+}
+
+pub fn main() {
+    val reader = Reader(limit: 3);
+    @print(describe(reader.read("abc")));
+    @print(describe(reader.read("")));
+    @print(describe(reader.read("abcd")));
+    @print(describe(reader.twice("ab")));
+    @print(describe(reader.twice("")));
+    @print(describe(reader.delegate("ab")));
+    @print(describe(reader.delegate("abcdef")));
+    @print(Mode.Strict.check(-1).isError());
+    @print(Mode.Loose.check(1).isError());
+}

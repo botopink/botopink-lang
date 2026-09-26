@@ -45,11 +45,11 @@ main() ->
     '__bp_print'([Rows]),
     '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Rows, 1)]),
     '__bp_print'(['__bp_prim_at'((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Rows, 1), 0)]),
-    '__bp_print'([length((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Rows, 0))]),
+    '__bp_print'([erlang:length((fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Rows, 0))]),
     Xs = [10, 20, 30],
-    '__bp_print'([length(array_slice(Xs, 0, 2))]),
+    '__bp_print'([erlang:length(array_slice(Xs, 0, 2))]),
     Sl = array_slice(Xs, 0, 2),
-    '__bp_print'([length(Sl)]),
+    '__bp_print'([erlang:length(Sl)]),
     Ps = [{1, <<"a">>}, {2, <<"b">>}],
     '__bp_print'([(fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Ps, 1)]).
 

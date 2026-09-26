@@ -1,0 +1,12 @@
+//// A function answering std's `Dict`, built here.
+
+import {collections.Dict} from "std";
+
+pub fn queryDict(q: string) -> Dict<string, string> {
+    var d: Dict<string, string> = Dict.empty();
+    for (q.split("&")) { pair ->
+        val kv = pair.split("=");
+        d = d.insert(kv.at(0) ?? "", kv.at(1) ?? "");
+    };
+    return d;
+}

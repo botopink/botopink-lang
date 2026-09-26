@@ -42,7 +42,7 @@ array_repeat(Value, Times) ->
 
 firstAndRest(Xs) ->
     Head = (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(Xs, 0),
-    Rest = array_slice(Xs, 1, length(Xs)),
+    Rest = array_slice(Xs, 1, erlang:length(Xs)),
     {Rest, Head}.
 
 main() ->

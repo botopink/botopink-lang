@@ -1,0 +1,10 @@
+//// A module of the project, called from a test file in `test/` and from one
+//// in `test/unit/`: a function, a type's method and a `pub val`.
+
+pub fn double(n: i32) -> i32 { return n * 2; }
+
+pub type Box(v: i32) {
+    pub fn get(self: Self) -> i32 { return self.v; }
+}
+
+pub val base: i32 = 40;

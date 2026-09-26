@@ -57,7 +57,7 @@ weigh(Xs) ->
                 __bp_nullish
         end) * ((I + 1)))),
         Total@2
-    end, Total, lists:seq(0, (length(Xs)) - 1)),
+    end, Total, lists:seq(0, (erlang:length(Xs)) - 1)),
     Total@3.
 
 main() ->

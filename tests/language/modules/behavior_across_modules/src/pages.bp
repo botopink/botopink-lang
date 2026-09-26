@@ -1,0 +1,17 @@
+//// An implementer imported beside its behavior: passed to a parameter typed
+//// by the behavior, and held in a `val` annotated with it.
+
+import {Request, Page} from "web";
+
+fn describe(req: Request) -> string {
+    return "at " + req.path();
+}
+
+pub fn about() -> string {
+    return describe(Page(route: "/about"));
+}
+
+pub fn held() -> string {
+    val req: Request = Page(route: "/held");
+    return req.path();
+}

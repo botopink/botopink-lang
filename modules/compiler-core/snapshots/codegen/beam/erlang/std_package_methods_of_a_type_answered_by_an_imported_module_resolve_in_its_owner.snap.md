@@ -790,10 +790,10 @@ hasKey(Self, Key) ->
     end, element(2, Self)), 0) =/= undefined).
 
 size(Self) ->
-    length(element(2, Self)).
+    erlang:length(element(2, Self)).
 
 isEmpty(Self) ->
-    (length(element(2, Self)) =:= 0).
+    (erlang:length(element(2, Self)) =:= 0).
 
 keys(Self) ->
     lists:map(fun(P) ->
@@ -855,10 +855,10 @@ contains(Self, X) ->
     ((fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)(element(2, Self), X) =/= (-1)).
 
 size(Self) ->
-    length(element(2, Self)).
+    erlang:length(element(2, Self)).
 
 isEmpty(Self) ->
-    (length(element(2, Self)) =:= 0).
+    (erlang:length(element(2, Self)) =:= 0).
 
 toList(Self) ->
     element(2, Self).
@@ -913,17 +913,17 @@ fromList(Xs) ->
 -export([size/1, isEmpty/1, enqueue/2, dequeue/1, peek/1, toList/1, empty/0, fromList/1, '__bp_get'/2, '__bp_format'/1]).
 
 size(Self) ->
-    length(element(2, Self)).
+    erlang:length(element(2, Self)).
 
 isEmpty(Self) ->
-    (length(element(2, Self)) =:= 0).
+    (erlang:length(element(2, Self)) =:= 0).
 
 enqueue(Self, Item) ->
     {std@collections@@Queue, (element(2, Self) ++ [Item])}.
 
 dequeue(Self) ->
     Head = (fun(__L, __I) -> __N = length(__L), __J = case __I < 0 of true -> __I + __N; false -> __I end, case ((__J >= 0) andalso (__J < __N)) of true -> lists:nth(__J + 1, __L); false -> undefined end end)(element(2, Self), 0),
-    Rest = array_slice(element(2, Self), 1, length(element(2, Self))),
+    Rest = array_slice(element(2, Self), 1, erlang:length(element(2, Self))),
     {{std@collections@@Queue, Rest}, Head}.
 
 peek(Self) ->

@@ -46,7 +46,7 @@ main() ->
     end)]).
 
 array_all(Self, Pred) ->
-    (length(lists:filter(Pred, Self)) =:= length(Self)).
+    (erlang:length(lists:filter(Pred, Self)) =:= erlang:length(Self)).
 
 '__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
 '__bp_add'(A, B) -> A + B.

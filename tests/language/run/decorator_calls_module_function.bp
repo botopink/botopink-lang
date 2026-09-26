@@ -1,0 +1,28 @@
+//// A decorator body calls the functions of its own module — directly, and
+//// through one another — like any other body. Here `#[sized]` asks
+//// `fieldSummary`, which asks `plural`, and `@emit`s what they answer.
+////
+//// The gap this pins: the decorator ran in a module holding the decorator
+//// alone, so every such call was `the decorator module did not compile: …
+//// call to undefined function fieldSummary/1` and a library repeated the
+//// logic inline in the body.
+
+fn plural(n: i32, word: string) -> string {
+    return if (n == 1) { "1 " + word } else { n.toString() + " " + word + "s" };
+}
+
+fn fieldSummary(count: i32) -> string {
+    return plural(count, "field");
+}
+
+fn sized(comptime decl: @Decl) {
+    @emit("pub fn summary() -> string { return \"" + decl.name + ": " + fieldSummary(decl.fields.length) + "\"; }");
+}
+
+#[sized]
+type Point(x: i32, y: i32)
+
+pub fn main() {
+    @print(summary());
+    @print(plural(1, "run"));
+}

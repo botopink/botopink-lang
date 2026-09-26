@@ -20,16 +20,20 @@ fetch() ->
     {error, {test@main@@NetError, 500}}.
 
 safe() ->
-    R = case try
-        fetch()
+    try
+        R = case try
+            fetch()
+        catch
+            error:_TryR0 -> {error, _TryR0}
+        end of
+            {ok, TryV0} -> TryV0;
+            {error, _TryE0} ->
+                erlang:throw({'__bp_try', (-1)})
+        end,
+        R
     catch
-        error:_TryR0 -> {error, _TryR0}
-    end of
-        {ok, TryV0} -> TryV0;
-        {error, _TryE0} ->
-            (-1)
-    end,
-    R.
+        throw:{'__bp_try', __BpTryR} -> __BpTryR
+    end.
 ```
 
 ----- ERLANG -- test@main@@NetError.erl

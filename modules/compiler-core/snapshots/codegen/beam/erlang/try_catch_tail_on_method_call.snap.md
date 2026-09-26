@@ -49,7 +49,7 @@ run(P) ->
 -export([parse/1, '__bp_format'/1]).
 
 parse(Self) ->
-    erlang:throw({test@main@@ParseError, <<"bad input">>}).
+    {error, {test@main@@ParseError, <<"bad input">>}}.
 
 '__bp_format'(_) -> {record, "Parser", []}.
 ```

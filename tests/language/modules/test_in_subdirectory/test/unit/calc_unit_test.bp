@@ -1,0 +1,11 @@
+//// A test file one folder down. On erlang its runner loaded only the `.erl`
+//// files of its own folder, so every call into the project died
+//// `{error,undef}`; it now loads the run's whole tree, as a flat one does.
+
+import {double, Box, base} from "calc";
+
+test "a nested test file calls into the project" {
+    assert double(5) == 10;
+    assert Box(v: 7).get() == 7;
+    assert base + 2 == 42;
+}

@@ -1,0 +1,15 @@
+//// The behavior, a type implementing it, and a function answering it.
+
+pub behavior Request {
+    fn path(self: Self) -> string;
+}
+
+pub type Out(tag: string)
+
+pub type Page(route: string) implement Request {
+    fn path(self: Self) -> string { return self.route; }
+}
+
+pub fn home() -> Request {
+    return Page(route: "/home");
+}

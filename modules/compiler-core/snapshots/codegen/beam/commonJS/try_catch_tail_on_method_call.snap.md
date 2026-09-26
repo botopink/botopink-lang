@@ -23,7 +23,7 @@ ParseError.prototype.__bp = "ParseError";
 
 class Parser {
     parse() {
-        throw new ParseError("bad input");
+        return ({ error: new ParseError("bad input") });
     }
 }
 Parser.prototype.__bp = "Parser";

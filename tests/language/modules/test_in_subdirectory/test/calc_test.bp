@@ -1,0 +1,9 @@
+//// The flat test file: the shape that always worked.
+
+import {double, Box, base} from "calc";
+
+test "a flat test file calls into the project" {
+    assert double(2) == 4;
+    assert Box(v: 3).get() == 3;
+    assert base == 40;
+}

@@ -310,7 +310,7 @@ test "comptime module: a method named like an auto-imported BIF dispatches on th
     try expectContains(out, "'__bp_prim_round'(B)");
     try expectContains(out, "'__bp_prim_floor'(C)");
     try expectContains(out, "'__bp_prim_ceil'(A)");
-    try expectContains(out, "'__bp_prim_length'(Recv) when is_list(Recv) ->\n    length(Recv);");
+    try expectContains(out, "'__bp_prim_length'(Recv) when is_list(Recv) ->\n    erlang:length(Recv);");
     try expectContains(out, "'__bp_prim_length'(Recv) when is_binary(Recv) ->\n    string:length(Recv);");
     // `abs` is declared on `Signed` and `Float`; an int receiver's controller
     // interface is `Integer` (as on the typed path), so only floats answer it.

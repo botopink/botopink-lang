@@ -104,7 +104,11 @@ fn run(p: Parser) -> i32 {
     {move, {literal, <<"bad input">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@ParseError}, {x, 0}]}}.
-    {call_ext_only, 1, {extfunc, erlang, throw, 1}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 1}.
+    return.
 
 {function, '__bp_format', 1, 5}.
   {label, 4}.

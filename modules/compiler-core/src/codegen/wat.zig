@@ -1218,6 +1218,9 @@ const Emitter = struct {
                 if (isStringTypeRef(rt)) try self.str_fns.put(sym, {});
                 if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
                 if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(sym, ek);
+                // A method answering `@Result<string, …>`: what a `try` of it
+                // binds is a string (`val once = try self.read(b)`).
+                if (resultOfString(rt)) try self.result_str_fns.put(sym, {});
             }
         }
     }
@@ -4840,7 +4843,7 @@ const Emitter = struct {
     };
 
     fn variantRef(self: *Emitter, name: []const u8) ?VariantRef {
-        if (self.findVariant(name)) |fv| return .{ .user = fv };
+        if (!isResultPath(name)) if (self.findVariant(name)) |fv| return .{ .user = fv };
         const bare = bareVariantName(name);
         if (std.mem.eql(u8, bare, "Ok")) return .result_ok;
         if (std.mem.eql(u8, bare, "Err") or std.mem.eql(u8, bare, "Error")) return .result_err;
@@ -5482,7 +5485,7 @@ const Emitter = struct {
         const il = self.instance_lowerings.get(loc) orelse return null;
         return switch (il) {
             .prim => |k| k,
-            .type_, .field_of, .sequence_next, .division => null,
+            .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => null,
         };
     }
 
@@ -7572,7 +7575,10 @@ const Emitter = struct {
         // emitted beside the local ones. Without it the call fell through and
         // `.length` on its result answered `0` at exit 0.
         const rec = if (self.instance_lowerings.get(loc)) |il| switch (il) {
-            .type_ => |r| r,
+            // A type this module never imported is linked in all the same.
+            .type_, .unplaced_type => |r| r,
+            // A behavior-typed receiver keeps the recovery below.
+            .by_value => self.recordTypeOfExpr(cc.receiver.?.*) orelse return null,
             .prim, .field_of, .sequence_next, .division => return null,
         } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
@@ -8070,7 +8076,7 @@ const Emitter = struct {
             .identifier => resultOfString(self.typeRefOf(e) orelse return false),
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
-                    const sym = self.calleeSymbol(cc, c.loc) orelse break :blk false;
+                    const sym = self.calleeSymbol(cc, c.loc) orelse self.resolvedCallSym(cc, c.loc) orelse break :blk false;
                     break :blk self.result_str_fns.contains(sym);
                 },
                 else => false,
@@ -9388,4 +9394,14 @@ fn exprNumType(e: ast.Expr) []const u8 {
         },
         else => "i32",
     };
+}
+
+/// `Result.Ok` / `Result.Err` / `Result.Error` — how the transform writes an
+/// `Ok(…)` / `Error(…)` pattern over a `@Result` subject
+/// (`Env.resultPatternLocs`). Always the `@Result` variant, even where a user
+/// enum declares one of those names.
+fn isResultPath(name: []const u8) bool {
+    if (!std.mem.startsWith(u8, name, "Result.")) return false;
+    const bare = name["Result.".len..];
+    return std.mem.eql(u8, bare, "Ok") or std.mem.eql(u8, bare, "Err") or std.mem.eql(u8, bare, "Error");
 }

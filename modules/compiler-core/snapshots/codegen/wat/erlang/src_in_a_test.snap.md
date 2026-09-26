@@ -102,7 +102,7 @@ helper() ->
 
 '__bp_load_siblings'() ->
     (fun() ->
-        Dir = filename:dirname(escript:script_name()),
+        Dir = filename:dirname(filename:absname(escript:script_name())),
         Self = atom_to_list(?MODULE) ++ ".erl",
         Loaded = lists:foldl(fun(Src, Acc) ->
             case filename:basename(Src) =:= Self of

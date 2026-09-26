@@ -1,0 +1,9 @@
+ok abc
+error empty
+error long
+ok ab!
+error empty
+ok ab
+error too long
+true
+false

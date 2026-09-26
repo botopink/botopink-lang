@@ -94,7 +94,7 @@ total(Self) ->
     Sum.
 
 isBig(Self) ->
-    (length(element(2, Self)) > 1).
+    (erlang:length(element(2, Self)) > 1).
 
 doubled(Self) ->
     lists:map(fun(N) ->

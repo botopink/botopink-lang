@@ -81,7 +81,10 @@ const Aggregator = struct {
     optional_null_cases: *const OptionalNullCases,
     /// True for the aggregator that walks method bodies: every map but
     /// `src_rewrites`, `method_lowerings` (onze F4 — `xs.at(i).unwrapOr(d)` in
-    /// a method), `index_rewrites` and `default_injections` is empty and the
+    /// a method), `result_jump_lowerings` (a method returning `@Result`
+    /// wraps its `return` / `throw` like a fn — it was compiled as a plain
+    /// function: a `throw` escaped as a host exception and a `return` was not
+    /// an `Ok`), `index_rewrites` and `default_injections` is empty and the
     /// one unconditional rewrite (the `${}` template desugar) is skipped, so a
     /// method body lowers byte-for-byte as before 1.0.10-beta except for those
     /// rewrites. Lowering method
@@ -89,6 +92,13 @@ const Aggregator = struct {
     /// `record_method_with_todo_placeholder` on erlang (`@todo()` gets its
     /// default injected there as it does in a fn body).
     src_only: bool = false,
+    /// `Env.resultPatternLocs`: the `Ok` / `Error` patterns over a `@Result`
+    /// subject, written `Result.Ok` / `Result.Error` by `qualifyResultPattern`.
+    /// Applied by both aggregators.
+    result_patterns: ?*const std.AutoHashMapUnmanaged(ast.Loc, void) = null,
+    /// `Env.namespaces`: `jwt.sign(x)` through a namespace import is written
+    /// as the call of an aliased import (`namespaceCall`). Both aggregators.
+    namespaces: ?*const envMod.NamespaceImports = null,
     /// fn_name → total calls with comptime params found during rewrite.
     total_calls: std.StringHashMap(usize),
     /// fn_name → calls that were actually rewritten to specialized names.
@@ -182,16 +192,17 @@ pub fn transform(
     optional_null_cases: *const OptionalNullCases,
     ctor_params: std.StringHashMap([]const ast.Param),
     default_injections: *const DefaultInjections,
+    result_patterns: *const std.AutoHashMapUnmanaged(ast.Loc, void),
+    namespaces: *const envMod.NamespaceImports,
 ) !ast.Program {
     var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
 
     // The method-body aggregator (`src_only`): the `@src()` splice, the
-    // `@Result`/`@Option` method lowerings, index rewrites and default fills.
+    // `@Result`/`@Option` method lowerings, the `@Result` jump wrappings,
+    // index rewrites and default fills.
     var empty_te = TemplateExpansions.init(allocator);
     defer empty_te.deinit();
-    var empty_rj = ResultJumpLowerings.init(allocator);
-    defer empty_rj.deinit();
     var empty_sa = StdArrayLowerings.init(allocator);
     defer empty_sa.deinit();
     var empty_es = EnumSectionRewrites.init(allocator);
@@ -202,8 +213,12 @@ pub fn transform(
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, method_lowerings, &empty_te, src_rewrites, &empty_rj, &empty_sa, &empty_es, index_rewrites, &empty_onc, empty_ctor, default_injections);
+    var src_agg = Aggregator.init(allocator, empty_vals, method_lowerings, &empty_te, src_rewrites, result_jump_lowerings, &empty_sa, &empty_es, index_rewrites, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
+    agg.result_patterns = result_patterns;
+    src_agg.result_patterns = result_patterns;
+    agg.namespaces = namespaces;
+    src_agg.namespaces = namespaces;
     defer src_agg.deinit(allocator);
 
     // Phase 1: Scan and specialize.
@@ -272,7 +287,7 @@ pub fn transform(
         // inference-recorded rewrite a method body must receive, so they ride
         // the `src_only` aggregator: the splice and nothing else (see the
         // field's doc for what the full walk would move).
-        if (src_rewrites.count() > 0 or method_lowerings.count() > 0) {
+        if (src_rewrites.count() > 0 or method_lowerings.count() > 0 or result_jump_lowerings.count() > 0) {
             if (decl.* == .type_) {
                 for (decl.type_.methods) |*m| {
                     const body = m.body orelse continue;
@@ -334,6 +349,10 @@ pub fn transform(
                 const p0 = fn_decl.params[0];
                 if (p0.modifier == .@"comptime" and p0.typeRef.isDeclType()) continue;
             }
+        }
+        if (decl == .use and namespaces.modules.count() > 0) {
+            try filtered.append(allocator, .{ .use = try rewriteNamespaceImports(agg.spec_cache.arena, decl.use, namespaces) });
+            continue;
         }
         try filtered.append(allocator, decl);
     }
@@ -761,6 +780,8 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
         // re-dispatched through this same function, so its branches are walked
         // exactly as a written `if`'s are.
         .collection => |*col| if (col.kind == .case) {
+            // Only the arms' patterns: this walk never lowers inside them.
+            for (col.kind.case.arms) |*arm| try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
             if (agg.optional_null_cases.get(col.loc)) |binder| {
                 try rewriteOptionalNullCase(agg, &stmt.expr, binder);
                 rewriteStmt(agg, fn_decls, comptime_arrays, stmt) catch return ScanError.OutOfMemory;
@@ -822,7 +843,68 @@ fn rewriteOptionalNullCase(
     };
 }
 
+/// `Ok(…)` / `Error(…)` over a `@Result` subject (`Env.resultPatternLocs`) is
+/// written `Result.Ok(…)` / `Result.Error(…)`: every backend reads that path
+/// as the `@Result` variant, and none reads it as a user enum's `Error`.
+fn qualifyResultPattern(agg: *Aggregator, pattern: *ast.Pattern, at: ast.Loc) ScanError!void {
+    const set = agg.result_patterns orelse return;
+    if (!set.contains(at)) return;
+    if (pattern.* != .variant) return;
+    const name = pattern.variant.name;
+    if (std.mem.indexOfScalar(u8, name, '.') != null) return;
+    pattern.variant.name = std.mem.concat(agg.spec_cache.arena, u8, &.{ "Result.", name }) catch return ScanError.OutOfMemory;
+}
+
+/// Decision 107's namespace form (`Env.namespaces`): an import item that
+/// binds a module of the program as a namespace becomes one aliased leaf per
+/// function called through it — `import {jwt} from "sec"` with `jwt.sign(x)`
+/// is `import {jwt.sign as __bp_ns_jwt__sign} from "sec"`, the form every
+/// backend already lowers — and the namespace item itself is dropped.
+fn rewriteNamespaceImports(arena: std.mem.Allocator, u: ast.ImportDecl, namespaces: *const envMod.NamespaceImports) !ast.ImportDecl {
+    var items: std.ArrayListUnmanaged(ast.ImportPath) = .empty;
+    var changed = false;
+    for (u.imports) |imp| {
+        const local = imp.name();
+        if (imp.activate or !namespaces.modules.contains(local)) {
+            try items.append(arena, imp);
+            continue;
+        }
+        changed = true;
+        var seen = std.StringHashMap(void).init(arena);
+        var it = namespaces.calls.valueIterator();
+        while (it.next()) |c| {
+            if (!std.mem.eql(u8, c.namespace, local) or seen.contains(c.callee)) continue;
+            try seen.put(c.callee, {});
+            const segments = try arena.alloc([]const u8, imp.segments.len + 1);
+            @memcpy(segments[0..imp.segments.len], imp.segments);
+            segments[imp.segments.len] = c.callee;
+            try items.append(arena, .{
+                .segments = segments,
+                .alias = try envMod.NamespaceImports.aliasFor(arena, local, c.callee),
+                .loc = imp.loc,
+            });
+        }
+    }
+    if (!changed) return u;
+    var out = u;
+    out.imports = items.items;
+    return out;
+}
+
+/// `jwt.sign(x)` recorded by inference as a namespace call → `__bp_ns_jwt__sign(x)`,
+/// the alias `rewriteNamespaceImports` binds.
+fn namespaceCall(agg: *Aggregator, expr_ptr: *ast.Expr) ScanError!void {
+    const ns = agg.namespaces orelse return;
+    if (expr_ptr.* != .call or expr_ptr.call.kind != .call) return;
+    const c = ns.calls.get(expr_ptr.call.loc) orelse return;
+    const cc = &expr_ptr.call.kind.call;
+    if (cc.receiver == null) return;
+    cc.receiver = null;
+    cc.callee = envMod.NamespaceImports.aliasFor(agg.spec_cache.arena, c.namespace, c.callee) catch return ScanError.OutOfMemory;
+}
+
 fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_arrays: std.StringHashMap([]const ast.TypedExpr), expr_ptr: *ast.Expr) ScanError!void {
+    try namespaceCall(agg, expr_ptr);
     // Decision 54's `?T` pattern form — swapped before the other dispatches so
     // the `if` it becomes rides through the same recursive walker.
     if (expr_ptr.* == .collection and expr_ptr.collection.kind == .case) {
@@ -1007,7 +1089,10 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             },
             .case => |case_node| {
                 for (case_node.subjects) |*s| rewriteExpr(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
-                for (case_node.arms) |*arm| rewriteExpr(agg, fn_decls, comptime_arrays, &arm.body) catch return ScanError.OutOfMemory;
+                for (case_node.arms) |*arm| {
+                    try qualifyResultPattern(agg, &arm.pattern, arm.patternLoc);
+                    rewriteExpr(agg, fn_decls, comptime_arrays, &arm.body) catch return ScanError.OutOfMemory;
+                }
             },
             .range => |r| {
                 rewriteExpr(agg, fn_decls, comptime_arrays, r.start) catch return ScanError.OutOfMemory;
@@ -1033,7 +1118,8 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                 rewriteExpr(agg, fn_decls, comptime_arrays, a.condition) catch return ScanError.OutOfMemory;
                 if (a.message) |msg| rewriteExpr(agg, fn_decls, comptime_arrays, msg) catch return ScanError.OutOfMemory;
             },
-            .assertPattern => |ap| {
+            .assertPattern => |*ap| {
+                try qualifyResultPattern(agg, &ap.pattern, ct.loc);
                 rewriteExpr(agg, fn_decls, comptime_arrays, ap.expr) catch return ScanError.OutOfMemory;
                 rewriteExpr(agg, fn_decls, comptime_arrays, ap.handler) catch return ScanError.OutOfMemory;
             },

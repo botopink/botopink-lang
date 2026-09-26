@@ -1,0 +1,14 @@
+//// A `pub behavior` the host builds, and a type of the same module that
+//// declares a method of the same name and arity.
+
+pub behavior Request {
+    fn header(self: Self, name: string) -> string;
+}
+
+#[@External.Node("({ header: function (n) { return 'h:' + n; } })"),
+  @External.Erlang("#{header => fun(_S, N) -> iolist_to_binary([<<\"h:\">>, N]) end}")]
+pub declare fn hostRequest() -> Request;
+
+pub type Response(status: i32) {
+    pub fn header(self: Self, name: string) -> string { return "response " + name; }
+}

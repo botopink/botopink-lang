@@ -1,0 +1,36 @@
+//// A `behavior` no type implements is a runtime boundary: the host builds the
+//// value, and a method it declares is found on the value. Held in a local
+//// bound from a call — no annotation — the call still dispatches through the
+//// value, and a type of the program that declares the same `greet/2` is not
+//// consulted.
+////
+//// The gaps this pins: on erlang the unannotated local lowered to a bare local
+//// `greet(G, …)` (`function greet/2 undefined`, the module did not compile),
+//// and an annotated one went to `Echo:greet/2` — `badarg` on the host's map;
+//// beam asked the map for `element(1, V)` in both cases.
+//// Not scheduled on wasm: no host vocabulary builds this value there.
+
+behavior Greeter {
+    fn greet(self: Self, who: string) -> string;
+}
+
+type Echo(word: string) {
+    pub fn greet(self: Self, who: string) -> string { return self.word + " " + who; }
+}
+
+#[@External.Node("({ greet: function (who) { return 'hi, ' + who; } })"),
+  @External.Erlang("#{greet => fun(_Self, Who) -> iolist_to_binary([<<\"hi, \">>, Who]) end}")]
+declare fn makeGreeter() -> Greeter;
+
+fn welcome(g: Greeter) -> string {
+    return g.greet("param");
+}
+
+pub fn main() {
+    val g = makeGreeter();
+    @print(g.greet("local"));
+    val a: Greeter = makeGreeter();
+    @print(a.greet("annotated"));
+    @print(welcome(g));
+    @print(Echo(word: "echo").greet("x"));
+}

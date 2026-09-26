@@ -2685,6 +2685,99 @@ pub fn bodyFails(body: []const Stmt) bool {
     return bodyHasJump(body, isFailJump);
 }
 
+/// Every bare name `body` reads or calls — a callee written without a
+/// receiver (`problemOf(x)`) and a plain identifier (`map(xs, problemOf)`) —
+/// lambdas and nested blocks included, appended to `out` (duplicates kept).
+/// What a caller keeps is its own business: the decorator evaluator keeps the
+/// names of the module's top-level functions (`infer.decoratorSupport`). A
+/// node kind this walk does not open contributes nothing.
+pub fn collectNames(gpa: std.mem.Allocator, body: []const Stmt, out: *std.ArrayListUnmanaged([]const u8)) std.mem.Allocator.Error!void {
+    for (body) |s| try collectExprNames(gpa, s.expr, out);
+}
+
+fn collectExprNames(gpa: std.mem.Allocator, e: Expr, out: *std.ArrayListUnmanaged([]const u8)) std.mem.Allocator.Error!void {
+    switch (e) {
+        .literal => |lit| switch (lit.kind) {
+            .stringTemplate => |t| for (t.parts) |p| switch (p) {
+                .expr => |x| try collectExprNames(gpa, x.*, out),
+                .text => {},
+            },
+            else => {},
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| try out.append(gpa, n),
+            .identAccess => |ia| try collectExprNames(gpa, ia.receiver.*, out),
+            .dotIdent => {},
+        },
+        .jump => |j| switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| try collectExprNames(gpa, x.*, out),
+            .await_ => |x| try collectExprNames(gpa, x.*, out),
+            .@"break" => |b| if (b.value) |x| try collectExprNames(gpa, x.*, out),
+            .yield => |y| if (y.value) |x| try collectExprNames(gpa, x.*, out),
+            .@"continue" => {},
+        },
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| {
+                try collectExprNames(gpa, i.cond.*, out);
+                try collectNames(gpa, i.then_, out);
+                if (i.else_) |els| try collectNames(gpa, els, out);
+            },
+            .tryCatch => |tc| {
+                try collectExprNames(gpa, tc.expr.*, out);
+                try collectExprNames(gpa, tc.handler.*, out);
+            },
+        },
+        .loop => |lp| {
+            try collectExprNames(gpa, lp.iter.*, out);
+            try collectNames(gpa, lp.body, out);
+        },
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| try collectExprNames(gpa, lb.value.*, out),
+            .assign => |a| try collectExprNames(gpa, a.value.*, out),
+            .localBindDestruct => |lb| try collectExprNames(gpa, lb.value.*, out),
+        },
+        .binaryOp => |op| {
+            try collectExprNames(gpa, op.lhs.*, out);
+            try collectExprNames(gpa, op.rhs.*, out);
+        },
+        .unaryOp => |op| try collectExprNames(gpa, op.expr.*, out),
+        .useHook => |u| try collectExprNames(gpa, u.kind.inner.*, out),
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| try collectExprNames(gpa, inner.*, out),
+            .case => |c| {
+                for (c.subjects) |x| try collectExprNames(gpa, x, out);
+                for (c.arms) |arm| {
+                    try collectExprNames(gpa, arm.body, out);
+                    if (arm.guard) |g| try collectExprNames(gpa, g, out);
+                }
+            },
+            .arrayLit => |al| for (al.elems) |x| try collectExprNames(gpa, x, out),
+            .tupleLit => |tl| for (tl.elems) |x| try collectExprNames(gpa, x, out),
+            else => {},
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| {
+                if (cc.receiver) |r| try collectExprNames(gpa, r.*, out) else if (!cc.is_builtin) try out.append(gpa, cc.callee);
+                for (cc.args) |a| try collectExprNames(gpa, a.value.*, out);
+                for (cc.trailing) |tl| try collectNames(gpa, tl.body, out);
+            },
+            else => {},
+        },
+        .function => |f| try collectNames(gpa, f.kind.body, out),
+        .comptime_ => {},
+    }
+}
+
+/// True when `e` holds a valued or bare `return` in its OWN scope (the same
+/// borders as `bodyYields`: a closure's `return` is the closure's).
+pub fn exprReturns(e: Expr) bool {
+    return exprFindJump(e, isReturnJump) != null;
+}
+
+fn isReturnJump(j: JumpExpr) bool {
+    return j == .@"return";
+}
+
 fn isYieldJump(j: JumpExpr) bool {
     return switch (j) {
         .yield => true,
@@ -2743,7 +2836,16 @@ fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
             .grouped => |inner| exprFindJump(inner.*, pred),
             .case => |c| blk: {
                 for (c.subjects) |x| if (exprFindJump(x, pred)) |l| break :blk l;
-                for (c.arms) |arm| if (exprFindJump(arm.body, pred)) |l| break :blk l;
+                for (c.arms) |arm| {
+                    // A braced arm is parsed as a lambda, but it is the
+                    // arm's block, not a closure: its `return` is the
+                    // enclosing function's.
+                    if (pred == isReturnJump and arm.body == .function and arm.body.function.kind.syntax == .lambda) {
+                        if (bodyFindJump(arm.body.function.kind.body, pred)) |l| break :blk l;
+                        continue;
+                    }
+                    if (exprFindJump(arm.body, pred)) |l| break :blk l;
+                }
                 break :blk null;
             },
             .arrayLit => |al| blk: {
@@ -2760,8 +2862,10 @@ fn exprFindJump(e: Expr, comptime pred: fn (JumpExpr) bool) ?Loc {
             .call => |cc| blk: {
                 if (cc.receiver) |r| if (exprFindJump(r.*, pred)) |l| break :blk l;
                 for (cc.args) |a| if (exprFindJump(a.value.*, pred)) |l| break :blk l;
+                // A `@block { … }`'s `return` is the block's value, not the
+                // enclosing function's.
                 if (cc.is_builtin and std.mem.eql(u8, cc.callee, "block") and cc.trailing.len > 0)
-                    break :blk bodyFindJump(cc.trailing[0].body, pred);
+                    break :blk if (pred == isReturnJump) null else bodyFindJump(cc.trailing[0].body, pred);
                 break :blk null;
             },
             else => null,
