@@ -770,6 +770,10 @@ pub const Env = struct {
     /// package or a dependency (`import {jwt} from "sec"`, `import {jwt};`):
     /// the bound name, its module's exports, and the calls made through it.
     namespaces: NamespaceImports = .{},
+    /// The handles a `from "std"` namespace import binds (`mocks` for
+    /// `import {testing.mocks}`) → the module, for the annotation check: a
+    /// `#[mocks.<name>]` names a decorator of that module or is refused.
+    stdDecoratorHandles: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     /// Interface names actually used as an associated-fn call receiver
     /// (`Pair.of(...)`), recorded during inference so codegen emits only the

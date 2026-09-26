@@ -2138,15 +2138,32 @@ test "repo: eq(v) stubs only the matching argument" {
 }
 ```
 
-`#[mock]` writes that double for you — it reflects the annotated `behavior`'s
-methods through `@Decl` and `@emit`s the type plus a `mock<Name>()` factory.
-**It fires inside the module that declares it only.** `@emit` splices its text
-into the module that hosts the annotated behavior, and the text names the
-runtime bare (`invoke`, `key`, `newMock`), which resolves in `std/testing/mocks` and
-nowhere else: a `from "std"` import binds the module handle (`mocks`), never
-its functions, and `#[mocks.mock]` is not looked up as a decorator at all. So a
-consumer writes the double by hand, as above. Recorded in
-`specs/1.0.10-beta/01-std/onze-migration.md` § *Language gaps*.
+`#[mocks.mock]` writes that double for you — it reflects the annotated
+`behavior`'s methods through `@Decl` and `@emit`s the type plus a
+`mock<Name>()` factory. A std module's decorators come with its namespace
+import, under the handle it binds: `import {testing.mocks}` makes `mock`
+the annotation `#[mocks.mock]` (an alias `as m` makes it `#[m.mock]`), and the
+code it emits reaches the runtime through that same handle (`mocks.invoke(…)`).
+A name through the handle that is not one of the module's decorators is
+`error[unknown-annotation]`, and a decorator imported as a leaf
+(`import {testing.mocks.mock}`) is `error[std-decorator-leaf-import]`: the code
+it emits would have no handle to name the runtime by.
+
+```botopink
+import {testing.mocks} from "std";
+
+#[mocks.mock]
+behavior OrderRepo {
+    fn total(self: Self, id: i32) -> i32;
+}
+
+test "orders: the synthesized double answers its stub" {
+    val repo = mockOrderRepo();
+    val _s = mocks.when(repo.total(mocks.eq(3))).thenReturn(30);
+    assert repo.total(3) == 30;
+    assert repo.total(4) == 0;
+}
+```
 
 Two more limits carried over from the old library: a matched `thenThrow` is a
 host throw, not an `@Result`, so the caller catches it with `asserts.throws`

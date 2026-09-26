@@ -178,7 +178,11 @@ namespace and `"std"` call paths, and a namespace call filled from its default),
 meets a `Greeter` parameter of the behavior's module — the checker half already held; wasm refuses
 the host templates by `wasm.expect`), `modules/import_ambiguous_use` (a bare `import {parse};` over two
 modules declaring `pub fn parse` — the use is `ambiguous-import-use`, located, naming both, on every
-target by `<target>.expect`) and `modules/import_ambiguous_unused` (the same import unread compiles).
+target by `<target>.expect`), `modules/import_ambiguous_unused` (the same import unread compiles),
+`run/std_decorator_through_namespace` (`#[mocks.mock]` after `import {testing.mocks} from "std"`
+synthesizes `mockRepo()` and its stubs answer; wasm refuses the import by `.wasm.expect`),
+`reject/std_decorator_unknown_through_handle` (`#[mocks.mokc]` is `unknown-annotation`) and
+`reject/std_decorator_leaf_import` (`import {testing.mocks.mock}` is `std-decorator-leaf-import`).
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

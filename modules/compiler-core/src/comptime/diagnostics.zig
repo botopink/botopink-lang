@@ -202,6 +202,10 @@ pub const label_on_function_value: []const u8 = "label-on-function-value";
 /// declarations (`00 · 01-std`: the refusal of a duplicate `pub` name belongs
 /// to the consumer's unqualified use).
 pub const ambiguous_import_use: []const u8 = "ambiguous-import-use";
+/// `import {testing.mocks.mock} from "std"` — a std decorator imported as a
+/// leaf: the code it emits reaches its module through the annotation's handle,
+/// so it is imported through the module (`#[mocks.mock]`).
+pub const std_decorator_leaf_import: []const u8 = "std-decorator-leaf-import";
 /// A method a primitive receiver's interface does not declare
 /// (`"abc".toUpperCase()` — `String` declares `toUpper`). Used to type as a
 /// fresh variable and reach the host under its own spelling (pending 0203-a,

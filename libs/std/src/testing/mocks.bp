@@ -208,22 +208,15 @@ pub fn verify<T>(mock: T, spec: i32) -> T {
 // (`""` / `false` / `0` / `[]`).
 //
 // `@emit` splices its text into the module that hosts the annotated behavior,
-// so the names it writes must resolve THERE. It writes the bare `invoke`,
-// `key` and `newMock`, which resolves in this module and nowhere else — so
-// **`#[mock]` fires inside `mocks.bp` only**, which is where the tests below
-// use it. Measured 2026-09-21, both halves of the consumer path:
-//   • `import {mocks} from "std"` binds the module handle, never its functions
-//     — a bare `import {mock, invoke, …} from "std"` is refused outright with
-//     `unknown "std" module in import` (`comptime/infer.zig` `markStdImports`
-//     reads the last segment as a MODULE name), so the emitted bare names
-//     cannot resolve in a consumer;
-//   • `#[mocks.mock]` parses (the annotation name lands as `"mocks.mock"`) but
-//     is never registered: a std import puts nothing into `env.decorators`, so
-//     the marker silently does nothing and `mock<Name>()` comes out unbound.
-// A consumer therefore writes the double by hand over the qualified runtime,
-// which works in full (`docs.md` § Tests ---- Mocks). Closing the gap needs
-// both a lookup fix and an emission that is bare here and qualified there:
-// `onze-migration.md` § Language gaps carries the row.
+// so the names it writes must resolve THERE. Inside this module they are the
+// bare `invoke`, `key` and `newMock`; in a consumer they are reached through
+// the handle the consumer imported this module under, which is the prefix of
+// the annotation that fired: `import {testing.mocks} from "std"` and
+// `#[mocks.mock]` emit `mocks.invoke(…)`, an alias `#[m.mock]` emits
+// `m.invoke(…)`. A std module's decorators are registered under
+// `<handle>.<fn>` by the import (`comptime/infer.zig`
+// `registerStdImportDecorators`); a leaf import of `mock` is refused, since it
+// would leave the emitted code no handle.
 //
 // Comptime-body constraints (`libs/std/AGENTS.md`, `reference` gotchas): `if` is
 // an expression (needs `else`, `;`-terminated branches); a bare `if {…}`
@@ -231,6 +224,12 @@ pub fn verify<T>(mock: T, spec: i32) -> T {
 // call sibling fns — only this one is lowered into the decorator eval script —
 // so the return-type default is inlined rather than factored out.
 pub fn mock(comptime decl: @Decl) {
+    var q = "";
+    decl.annotations.forEach({ a ->
+        if (a.name.endsWith(".mock")) {
+            q = a.name.slice(0, a.name.length() - 4);
+        }
+    });
     var methods = "";
     decl.methods.forEach({ m ->
         var paramList: Array<string> = [];
@@ -238,7 +237,7 @@ pub fn mock(comptime decl: @Decl) {
         m.params.forEach({ p ->
             if (p.name != "self") {
                 paramList.push(p.name + ": " + p.typeName);
-                keyList.push("key(" + p.name + ")");
+                keyList.push(q + "key(" + p.name + ")");
             }
         });
         val params = paramList.join(", ");
@@ -247,10 +246,10 @@ pub fn mock(comptime decl: @Decl) {
         val def = if (m.returnType == "string") "\"\"" else if (m.returnType == "bool") "false" else if (m.returnType.startsWith(
             "Array<"
         ) || m.returnType.endsWith("[]")) "[]" else "0";
-        methods = methods + "  fn " + m.name + "(" + sig + ") -> " + m.returnType + " { return invoke(self.__id, \"" + m.name + "\", [" + keys + "], " + def + "); }\n";
+        methods = methods + "  fn " + m.name + "(" + sig + ") -> " + m.returnType + " { return " + q + "invoke(self.__id, \"" + m.name + "\", [" + keys + "], " + def + "); }\n";
     });
     @emit("type Mock" + decl.name + "(__id: string) implement " + decl.name + " {\n" + methods + "}");
-    @emit("pub fn mock" + decl.name + "() -> " + decl.name + " { return Mock" + decl.name + "(__id: newMock()); }");
+    @emit("pub fn mock" + decl.name + "() -> " + decl.name + " { return Mock" + decl.name + "(__id: " + q + "newMock()); }");
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────

@@ -184,6 +184,16 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
                     break;
                 }
             }
+            // A std decorator is reached through its module: the code it
+            // `@emit`s names the module's functions through the handle the
+            // annotation is written with (`#[mocks.mock]` → `mocks.invoke`),
+            // and a leaf import gives it none.
+            if (!bound_type and stdDecoratorNamed(env, mod_name, leaf)) {
+                const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a decorator of std module `{s}`, and a std decorator is reached through its module", .{ diagnostics.std_decorator_leaf_import, leaf, mod_name });
+                const hint = try std.fmt.allocPrint(env.arena, "Import the module (`import {{{s}}} from \"std\"`) and write the annotation through it (`#[{s}.{s}]`).", .{ try std.mem.replaceOwned(u8, env.arena, mod_name, "/", "."), imp.segments[imp.segments.len - 2], leaf });
+                env.lastError = TypeError.custom(msg, hint).withLoc(imp.loc);
+                return error.TypeError;
+            }
             if (!bound_type) {
                 const ty = exports.get(leaf) orelse {
                     const msg = try std.fmt.allocPrint(env.arena, "std module `{s}` has no public `{s}`", .{ mod_name, leaf });
@@ -202,6 +212,58 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
         return error.TypeError;
     }
     return true;
+}
+
+/// Whether the std module `mod_name` declares the decorator `pub fn name`.
+fn stdDecoratorNamed(env: *Env, mod_name: []const u8, name: []const u8) bool {
+    const fns = env.stdModuleFns.get(mod_name) orelse return false;
+    for (fns) |f| if (f.isPub and isDecoratorParams(f.params) and std.mem.eql(u8, f.name, name)) return true;
+    return false;
+}
+
+/// A std module's decorators travel with its import, as a library's do: `import
+/// {testing.mocks} from "std"` makes `pub fn mock(comptime decl: @Decl)` the
+/// annotation `#[mocks.mock]` (the name the import binds, an alias included).
+/// A leaf import of a decorator is refused by `markStdImports`
+/// (`std-decorator-leaf-import`). Registered before `validateDecorators`,
+/// which runs ahead of the `use` declarations' own inference; every handle is
+/// noted in `Env.stdDecoratorHandles`, so an annotation through one that names
+/// no decorator of the module is refused (`refuseUnknownAnnotationList`).
+fn registerStdImportDecorators(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| {
+        if (decl != .use) continue;
+        const u = decl.use;
+        const from_std = switch (u.source) {
+            .module => |m| std.mem.eql(u8, m, "std"),
+            .root => false,
+        };
+        if (!from_std) continue;
+        for (u.imports) |imp| {
+            const whole = try imp.fullPath(env.arena);
+            if (env.stdModules.contains(whole)) {
+                try registerStdDecorators(env, whole, imp.name());
+                try env.stdDecoratorHandles.put(env.arena, imp.name(), whole);
+            }
+        }
+    }
+}
+
+/// Register the decorators (`pub fn d(comptime decl: @Decl, …)`) of the std
+/// module `mod_name` in the importing env, each under `<handle>.<fn>` — the
+/// namespace import `import {testing.mocks}` makes `#[mocks.mock]`. The
+/// functions a decorator body reaches in its module travel with it
+/// (`decoratorSupport`), as for a library's.
+fn registerStdDecorators(env: *Env, mod_name: []const u8, handle: []const u8) InferError!void {
+    const fns = env.stdModuleFns.get(mod_name) orelse return;
+    var byName = std.StringHashMap(ast.FnDecl).init(env.arena);
+    for (fns) |f| try byName.put(f.name, f);
+    for (fns) |f| {
+        if (!f.isPub or !isDecoratorParams(f.params)) continue;
+        const name = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ handle, f.name });
+        const support = try decoratorSupport(env.arena, byName, &env.importedFnSupport, f);
+        const owner = try std.fmt.allocPrint(env.arena, "std/{s}", .{mod_name});
+        try registerImportedDecorator(env, name, f, owner, support.fns, support.conflict);
+    }
 }
 
 /// STD-001 — when an active target is set on this env (the CLI codegen
@@ -270,6 +332,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // decorator's `@emit`ed decls must be spliced before a body referencing them
     // is inferred. Bail out early when contributions exist — the spliced
     // re-analysis does the real inference.
+    try registerStdImportDecorators(env, program);
     try validateDecorators(env, program);
     try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
@@ -344,6 +407,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     try buildScopeSnapshot(env, program);
     try registerFnSignatures(env, program);
     try registerAnnotationTypes(env, program);
+    try registerStdImportDecorators(env, program);
 
     // Annotation processors run BEFORE bodies are inferred: a decorator's
     // `@emit`ed declarations must be spliced (by `analyzeSource`) and present
@@ -3256,7 +3320,18 @@ fn refuseUnknownAnnotations(env: *Env, program: ast.Program) InferError!void {
 
 fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferError!void {
     for (anns) |a| {
-        if (!a.is_builtin) continue;
+        if (!a.is_builtin) {
+            // `#[mocks.mokc]` through a std module handle names a decorator
+            // of that module or nothing: it used to do nothing, silently.
+            const dot = std.mem.indexOfScalar(u8, a.name, '.') orelse continue;
+            const mod = env.stdDecoratorHandles.get(a.name[0..dot]) orelse continue;
+            if (env.decorators.contains(a.name)) continue;
+            const msg = try std.fmt.allocPrint(env.arena, "{s}: std module `{s}` has no decorator `{s}`", .{ diagnostics.unknown_annotation, mod, a.name[dot + 1 ..] });
+            var err = TypeError.custom(msg, "A std module's decorators are its `pub fn`s whose first parameter is `comptime decl: @Decl`.");
+            if (a.loc) |l| err = err.withLoc(l);
+            env.lastError = err;
+            return error.TypeError;
+        }
         try refuseLowerCaseExternal(env, a);
         if (ast.isRemovedEffectAnnotation(a.name)) continue;
         const family = if (std.mem.indexOfScalar(u8, a.name, '.')) |i| a.name[0..i] else a.name;
