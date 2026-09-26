@@ -1,0 +1,7 @@
+fn fallback() -> string {
+    return "world";
+}
+
+pub fn greet(prefix: string, who: string = fallback()) -> string {
+    return prefix + " " + who;
+}

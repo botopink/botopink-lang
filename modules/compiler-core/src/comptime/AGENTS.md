@@ -634,6 +634,21 @@ Reached by the plain fn / record-constructor path, a qualified enum-variant cons
 primitive's interface `default fn` and an instance method. A `..` spread (a record update) is not
 planned.
 
+## A default travels with an imported function (C-04 across a module boundary)
+
+`Env.fnParams` held only the module's own functions, so a call to an imported one that omitted a
+trailing default was the arity error of a required argument (`'text' expects 2 argument(s), got 1`
+for jhonstart's `text("hi")`), and every library call site spelled the default by hand. A `pub fn`
+whose parameters declare a default now exports them as written (`registerExports`, under
+`defaultParamsKey(path, name)` in the template registry, a key no import item can spell), and the
+importer puts them in `Env.fnParams` under its local name, so the fill and the label reorder run as
+for a local call. Only a **closed** default travels (`isClosedDefault`: a literal, `true` / `false`,
+a sign, an array or tuple literal of those): a default naming a binding of the declaring module
+cannot be written at the importer's call site, so that parameter is exported without it and omitting
+it stays the arity error. `tests/language/modules/default_argument_across_modules` (a sibling module
+and a path dependency, on all four targets) and `modules/default_argument_open_across_modules` (the
+refusal).
+
 ## Decision 2 is enforced (01 R7)
 
 A block is a statement and a value leaves a body through `return` (or a value block's `break`).

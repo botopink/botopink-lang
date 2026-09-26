@@ -76,6 +76,11 @@ truncates toward zero on every target, float `/` stays float) and `modules/lexer
 `run/number_literal_erlang_spellings.bp` (`5e-324`, the largest `f64`, and `0xFF + 0b101 + 0o17`;
 `.targets` is `commonJS erlang beam` — wasm lowers a float literal to `f32.const` and interns a radix
 literal as a string, gaps of its own).
+C-04 across a module boundary adds `modules/default_argument_across_modules` — a call omitting
+trailing defaulted parameters of a sibling module's and of a path dependency's function, one label
+claiming its parameter, on all four targets — and `modules/default_argument_open_across_modules`: a
+default that names a private function of its module does not travel, so omitting it from another
+module is the arity error, on every target (`<target>.expect`).
 The rakun rows of `language-gaps.md` (the language-gaps sweep, `front/compiler-gaps-rakun`) add a
 cell each, every one failing on the parent binary: `run/behavior_method_by_receiver_type` and
 `run/behavior_method_host_value` (a method a `behavior` declares is the VALUE's, beside another type
