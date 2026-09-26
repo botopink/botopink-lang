@@ -503,14 +503,14 @@ guards.
 fn describe(x: i32 | string) -> string {
     if (x is i32) {
         return "an integer";
-    };
+    }
     return "a string";
 }
 
 fn read(raw: unknown) -> string {
     if (raw is string) {
         return raw;
-    };
+    }
     return "not a string";
 }
 ```
@@ -544,7 +544,7 @@ type Entry(key: string) {}
 
 fn firstKeyLength(entries: Entry[]) -> i32 {
     val first = entries.at(0);
-    if (first == null) { return 0; };
+    if (first == null) { return 0; }
     return first.key.length();     // `first` is an `Entry` here, not a `?Entry`
 }
 
@@ -671,6 +671,34 @@ val total = xs
 
 The pipe operator `|>` is left-associative.
 
+### Line width
+
+`botopink format` keeps lines within 80 columns where a break exists, and every
+construct breaks **all or nothing**: it fits on one line, or each of its parts
+takes a line of its own, `+4` from the statement. The outer construct decides
+first, so a list never breaks for what follows it:
+
+<!-- docs-check: skip a layout sample, not a program -->
+```botopink
+val entry = ThemeEntry(
+    name: "--text-3xl--line-height",
+    value: "calc(2.25 / 1.875)",
+);
+
+return reportTitle()
+    + "\n\n"
+    + notAppliedLine()
+    + known.length;
+
+if (absDiff > tolerance)
+    throw "values differ by more than tolerance";
+```
+
+A method chain breaks before every `.call`, a binary run before every operator, an
+argument list or a literal after its opening bracket with a trailing comma, and an
+`if` with a brace-less branch before that branch. Formatting is a function of the
+content only: a hand-broken list that fits is joined.
+
 ### If / else
 
 <!-- docs-check: body -->
@@ -686,14 +714,14 @@ parentheses close it, so nothing has to be bound to a `val` first:
 ```botopink
 val a = true;
 val b = false;
-if (a && b) { @print("both"); } else if (a || b) { @print("either"); };
+if (a && b) { @print("both"); } else if (a || b) { @print("either"); }
 ```
 
 `if` on an optional unwraps it in the then-branch:
 
 ```botopink
 fn show(x: ?i32) {
-    if (x) { n -> @print(n); };
+    if (x) { n -> @print(n); }
 }
 ```
 
@@ -702,7 +730,7 @@ Write the binder `_` when the branch only asks whether the value is there:
 <!-- docs-check: body -->
 ```botopink
 val x: ?i32 = 5;
-if (x) { _ -> @print("present"); } else { @print("absent"); };
+if (x) { _ -> @print("present"); } else { @print("absent"); }
 ```
 
 ### Case (pattern matching)
@@ -768,7 +796,7 @@ fn grade(n: i32) {
         i32 when (n > 100) { @print("impossible"); }
         0 { @print("zero"); }
         _ { @print("something else"); }
-    };
+    }
 }
 ```
 
@@ -852,21 +880,21 @@ val xs = [1, 2, 3];
 
 for (xs) { item ->
     @print(item);
-};
+}
 
 for (1...3) { i ->
     @print(i);
-};
+}
 
 var n = 0;
 while (n < 3) {
     n = n + 1;
-};
+}
 
 loop {
     n = n - 1;
-    if (n == 0) { break; };
-};
+    if (n == 0) { break; }
+}
 ```
 
 **`yield v` and `break v` need a generator scope** — a function whose return is
@@ -886,13 +914,13 @@ enclosing scope — a `var` it reassigns is its state:
 var count = 0;
 val doubles = iter loop {
     count = count + 1;
-    if (count == 10) { break count * 2; };   // the last item: 20
+    if (count == 10) { break count * 2; }   // the last item: 20
     yield count * 2;                          // 2 4 6 … 18
 };
-for (doubles) { d -> @print(d); };
+for (doubles) { d -> @print(d); }
 
-val evens = iter for ([1, 2, 3, 4]) { x -> if (x % 2 == 0) { yield x; }; };
-for (evens) { e -> @print(e); };
+val evens = iter for ([1, 2, 3, 4]) { x -> if (x % 2 == 0) { yield x; } };
+for (evens) { e -> @print(e); }
 ```
 
 The rules of the prefixed loop:
@@ -947,7 +975,7 @@ the match fails, so the names below the binding are never unbound. It takes no
 fn parse(s: string) -> @Result<i32, string> {
     if (s == "") {
         throw "empty input";
-    };
+    }
     return 42;
 }
 
@@ -1285,8 +1313,8 @@ A function that can fail returns `@Result<T, E>`; `throw` produces the error,
 type PortError { Zero, TooBig(value: i32) }
 
 fn port(n: i32) -> @Result<i32, PortError> {
-    if (n == 0) { throw PortError.Zero; };
-    if (n > 65535) { throw PortError.TooBig(value: n); };
+    if (n == 0) { throw PortError.Zero; }
+    if (n > 65535) { throw PortError.TooBig(value: n); }
     return n;                                  // becomes Ok(n)
 }
 
@@ -1310,7 +1338,7 @@ Three ways to consume a `@Result`, and a fourth for when a failure is a bug:
 type PortError { Zero, TooBig(value: i32) }
 
 fn port(n: i32) -> @Result<i32, PortError> {
-    if (n == 0) { throw PortError.Zero; };
+    if (n == 0) { throw PortError.Zero; }
     return n;
 }
 
@@ -1351,7 +1379,7 @@ combine it with `try`:
 type User(id: i32, name: string)
 
 fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
-    if (id <= 0) { throw "no user " + id.toString(); };   // legal: the value is a @Result
+    if (id <= 0) { throw "no user " + id.toString(); }   // legal: the value is a @Result
     return User(id: id, name: "ana");                     // a Task holding Ok(…)
 }
 
@@ -1396,7 +1424,7 @@ it waits for nothing, it creates the Task.
 type User(id: i32, name: string)
 
 fn fetchUser(id: i32) -> @Task<@Result<User, string>> {
-    if (id <= 0) { throw "no user"; };
+    if (id <= 0) { throw "no user"; }
     return User(id: id, name: "ana");
 }
 
@@ -1448,18 +1476,18 @@ fn fibonacci(limit: i32) -> @Iterator<i32> {
         a = b;
         b = t;
         i = i + 1;
-    };
+    }
 }
 
 fn firstNegative(xs: i32[]) -> @Iterator<i32> {
     for (xs) { x ->
-        if (x < 0) { break x; };               // emits the negative and ends
+        if (x < 0) { break x; }               // emits the negative and ends
         yield x;
-    };
+    }
 }
 
 fn main() {
-    for (fibonacci(10)) { n -> @print(n); };  // an ordinary function may iterate
+    for (fibonacci(10)) { n -> @print(n); }  // an ordinary function may iterate
 }
 ```
 
@@ -1472,12 +1500,12 @@ emits `Error(e)` and ends. Whoever iterates receives the `@Result` and decides �
 
 ```botopink
 fn port(n: i32) -> @Result<i32, string> {
-    if (n <= 0) { throw "not a port: " + n.toString(); };
+    if (n <= 0) { throw "not a port: " + n.toString(); }
     return n;
 }
 
 fn ports(xs: i32[]) -> @Iterator<@Result<i32, string>> {
-    for (xs) { x -> yield try port(x); };     // a failed `try` emits Error(e) and ends
+    for (xs) { x -> yield try port(x); }     // a failed `try` emits Error(e) and ends
 }
 
 // stop at the first error: an explicit try, under a @Result return
@@ -1486,7 +1514,7 @@ fn sumPorts(xs: i32[]) -> @Result<i32, string> {
     for (ports(xs)) { r ->
         val p = try r;                         // the explicit try: an Error rises from here
         total = total + p;
-    };
+    }
     return total;
 }
 
@@ -1496,8 +1524,8 @@ fn printPorts(xs: i32[]) {
         case r {
             Ok(p) -> @print(p);
             Error(e) -> @print("error: " + e);
-        };
-    };
+        }
+    }
 }
 ```
 
@@ -1506,7 +1534,7 @@ hold, and a failing `try await` also emits `Error(e)` and ends:
 
 ```botopink
 fn fetchPage(n: i32) -> @Task<@Result<i32[], string>> {
-    if (n > 9) { throw "no page " + n.toString(); };
+    if (n > 9) { throw "no page " + n.toString(); }
     return [n, n + 1];
 }
 
@@ -1516,12 +1544,12 @@ fn pages(count: i32) -> @Stream<@Result<i32[], string>> {
         val rows = try await fetchPage(page);  // failed: emits Error(e) and ends
         yield rows;                            // emits Ok(rows)
         page = page + 1;
-    };
+    }
 }
 
 fn countRows() -> @Task<@Result<i32, string>> {
     var n = 0;
-    for await (pages(3)) { batch -> n = n + (try batch).length; };
+    for await (pages(3)) { batch -> n = n + (try batch).length; }
     return n;
 }
 ```
@@ -1534,11 +1562,11 @@ inner `iter` / `stream` loops); otherwise it is an ordinary function that
 
 ```botopink
 fn evens(xs: i32[]) -> @Iterator<i32> {                 // an iterator: it yields
-    for (xs) { x -> if (x % 2 == 0) { yield x; }; };
+    for (xs) { x -> if (x % 2 == 0) { yield x; } }
 }
 
 fn evensOf(xs: i32[]) -> @Iterator<i32> {               // a factory: it returns one
-    return iter for (xs) { x -> if (x % 2 == 0) { yield x; }; };
+    return iter for (xs) { x -> if (x % 2 == 0) { yield x; } };
 }
 ```
 
@@ -1548,13 +1576,13 @@ iterable behavior, and the consumer calls it — `for (grid.iter())`:
 ```botopink
 type Grid(cells: i32[]) {
     fn iter(self: Self) -> @Iterator<i32> {
-        for (self.cells) { c -> yield c; };
+        for (self.cells) { c -> yield c; }
     }
 }
 
 fn main() {
     val g = Grid(cells: [1, 2, 3]);
-    for (g.iter()) { c -> @print(c); };
+    for (g.iter()) { c -> @print(c); }
 }
 ```
 
@@ -1852,7 +1880,7 @@ lambda's, not the test's. An assertion helper is therefore an ordinary
 
 ```botopink
 fn isPositive(n: i32) -> @Result<void, string> {
-    if (n <= 0) { throw "asserts.isPositive: value not positive"; };
+    if (n <= 0) { throw "asserts.isPositive: value not positive"; }
     return;
 }
 
@@ -2006,7 +2034,7 @@ closes it, or says that it has none yet. Every row below was re-derived by
 | Rule | Today | Closes with |
 |---|---|---|
 | `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.10-beta C-15 (`01-checker` step 6) |
-| A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.10-beta C-13 (decision 29): `15-language-surface`'s parser half first, `16-formatter` second (the formatter has to stop printing it in the same wave), then the sources |
+| A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there (decision 60's order): the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a sibling library or a `tests/language` cell that still writes it compiles. Refusing it is the last step | 1.0.10-beta C-13 (decision 29): the siblings and `tests/language` migrate (`09`, `12`), then the parser refuses the `;` (`blockStatementSemicolon`) |
 | A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value the four backends agree since C-06: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, erlang, beam and wasm (wasm printed `256` and erlang `0` before) | 1.0.10-beta C-06 (`02-erlang` step 3, `03-beam` step 3; decision 53 at run time). Decision 105 keeps both spellings and gives `a...b` a value in a `for` as well |
 
 Seven of the twelve rows this table carried before this revision left it because

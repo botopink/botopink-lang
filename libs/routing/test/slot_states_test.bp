@@ -22,7 +22,10 @@ fn sample() -> Array<#(string, string, SlotState)> {
 }
 
 test "routing: writeSlotStates writes slot|pattern|state lines, in order" {
-    try asserts.equals(writeSlotStates(sample()), "team|/dashboard/settings|M\nanalytics|/dashboard|D\nmodal|/photo/[id]|U\naside||E");
+    try asserts.equals(
+        writeSlotStates(sample()),
+        "team|/dashboard/settings|M\nanalytics|/dashboard|D\nmodal|/photo/[id]|U\naside||E",
+    );
     try asserts.equals(writeSlotStates([]), "");
 }
 
@@ -38,18 +41,20 @@ test "routing: parseSlotStates(writeSlotStates(xs)) recovers each field" {
         assert a._1 == b._1;
         assert stateText(a._2) == stateText(b._2);
         i = i + 1;
-    };
+    }
 }
 
 test "routing: an unknown state letter reads as Empty rather than raising" {
     val back = parseSlotStates("team|/x|Q\nother|/y|");
     try asserts.equals(back.length, 2);
-    try asserts.equals(stateText(back
-                .at(0)
-                .unwrapOr(#("", "", SlotState.Matched))._2), "Empty");
-    try asserts.equals(stateText(back
-                .at(1)
-                .unwrapOr(#("", "", SlotState.Matched))._2), "Empty");
+    try asserts.equals(
+        stateText(back.at(0).unwrapOr(#("", "", SlotState.Matched))._2),
+        "Empty",
+    );
+    try asserts.equals(
+        stateText(back.at(1).unwrapOr(#("", "", SlotState.Matched))._2),
+        "Empty",
+    );
 }
 
 test "routing: a malformed line is skipped, not fatal" {

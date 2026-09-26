@@ -133,7 +133,9 @@ pub fn parseCaseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collectio
                 }
                 while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
                     const e = try this.parseExpr(alloc);
-                    _ = try this.consume(.semicolon);
+                    // A braced `if`/loop/`case` ends at its `}` (decision 29 (c));
+                    // the `;` after it is optional (`Parser.isBracedBlockStmt`).
+                    if (this.isBracedBlockStmt(e)) _ = this.match(.semicolon) else _ = try this.consume(.semicolon);
                     try blockStmts.append(alloc, .{ .expr = e });
                 }
                 _ = try this.consume(.rightBrace);

@@ -46,7 +46,7 @@ pub fn writeState(message: string, fields: Array<#(string, string)>) -> string {
     var pairs: Array<#(string, string)> = [#("message", message)];
     for (fields) { f ->
         pairs.push(#(["f.", f._0].join(""), f._1));
-    };
+    }
     return encoding.formStringify(pairs);
 }
 

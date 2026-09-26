@@ -225,7 +225,7 @@ fn writeCandidate(newPath: string, text: string) -> @Result<void, string> {
     val w = writeFile(newPath, text);
     if (w.isError()) {
         throw ["snapshots: cannot write ", newPath, ": ", errorOf(w)].join("");
-    };
+    }
     return;
 }
 
@@ -237,20 +237,20 @@ fn check(loc: SourceLocation, file: string, subject: string, actual: string) -> 
     if (recorded.isError()) {
         try writeCandidate(newPath, expected);
         throw ["snapshots: missing ", file, " - candidate written to ", newPath, "; review it and rename it to record"].join("");
-    };
+    }
     val why = verdict(recorded.unwrapOr(""), loc.fnName, subject, actual);
     if (why == "not a snapshot file") {
         throw ["snapshots: not a snapshot file: ", file].join("");
-    };
+    }
     if (why != "") {
         try writeCandidate(newPath, expected);
         throw ["snapshots: mismatch ", file, " - candidate written to ", newPath, " ", why].join("");
-    };
+    }
     // A match: a stale `.new` from an earlier red run is review noise.
     val cleared = removeFile(newPath);
     if (cleared.isError()) {
         throw ["snapshots: cannot remove ", newPath, ": ", errorOf(cleared)].join("");
-    };
+    }
     return;
 }
 
@@ -258,10 +258,10 @@ fn check(loc: SourceLocation, file: string, subject: string, actual: string) -> 
 fn requireSuite(loc: SourceLocation) -> @Result<void, string> {
     if (loc.fnName == "") {
         throw "snapshots: test name needs a suite - a @src() taken outside a test has no test name; take it inside test \"<suite>: <description>\" { ... }";
-    };
+    }
     if (suiteOf(loc.fnName) == "") {
         throw "snapshots: test name needs a suite - write \"<suite>: <description>\"";
-    };
+    }
     return;
 }
 
@@ -296,7 +296,7 @@ pub fn assertNamedAs(loc: SourceLocation, name: string, subject: string, actual:
     try requireSuite(loc);
     if (slugOf(name) == "") {
         throw "snapshots: a named snapshot needs a name - pass a non-empty name to assertNamed/assertNamedAs";
-    };
+    }
     try check(loc, pathNamed(loc, name), subject, actual);
     return;
 }

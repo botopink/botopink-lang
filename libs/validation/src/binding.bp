@@ -81,7 +81,14 @@ pub fn bindingIsolated() -> bool {
 }
 
 fn record(field: string, code: string, raw: string, params: Array<Arg>) -> i32 {
-    return rkvPush(violation(field, code, message(code, builtInTemplate(code), field, raw, params), raw));
+    return rkvPush(
+        violation(
+            field,
+            code,
+            message(code, builtInTemplate(code), field, raw, params),
+            raw,
+        ),
+    );
 }
 
 // ── the text predicates: one predicate, both rows ───────────────────────────
@@ -107,7 +114,7 @@ pub fn isIntegerText(raw: string) -> bool {
     while (i < t.length()) {
         if (digits().indexOf(t.at(i).unwrapOr("")) < 0) ok = false;
         i = i + 1;
-    };
+    }
     return ok;
 }
 
@@ -124,7 +131,7 @@ pub fn parseI32(raw: string) -> i32 {
     while (i < t.length()) {
         n = n * 10 + digits().indexOf(t.at(i).unwrapOr(""));
         i = i + 1;
-    };
+    }
     if (negative) return 0 - n else return n;
 }
 
@@ -170,6 +177,11 @@ pub fn bindRequired(field: string, raw: string) -> string {
 
 pub fn bindEpochMillis(field: string, raw: string) -> i64 {
     if (isIntegerText(raw)) return parseI64(raw);
-    val _v = record(field, "typeMismatch", raw, [arg("type", "epoch in milliseconds")]);
+    val _v = record(
+        field,
+        "typeMismatch",
+        raw,
+        [arg("type", "epoch in milliseconds")],
+    );
     return parseI64("0");
 }

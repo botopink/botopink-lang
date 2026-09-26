@@ -20,14 +20,21 @@ pub fn splitPath(p: string) -> string[] {
     var out: string[] = [];
     for (trimSlashes(p).split("/")) { s ->
         if (s != "") out.push(s);
-    };
+    }
     return out;
 }
 
 // The score of one pattern segment, highest first.
 pub fn segmentWeight(k: SegmentKind) -> i32 {
     val name = kindName(k);
-    if (name == "Static") return 3 else if (name == "Dynamic") return 2 else if (name == "CatchAll") return 1 else return 0;
+    if (name == "Static")
+        return 3
+    else if (name == "Dynamic")
+        return 2
+    else if (name == "CatchAll")
+        return 1
+    else
+        return 0;
 }
 
 // Lexicographic, segment by segment; a longer score wins a shared prefix, which
@@ -39,10 +46,15 @@ pub fn scoreBeats(a: i32[], b: i32[]) -> bool {
     while (i < n) {
         val av = a.at(i).unwrapOr(0);
         val bv = b.at(i).unwrapOr(0);
-        if (verdict == 0) if (av > bv) verdict = 1 else if (av < bv) verdict = 0 - 1;
+        if (verdict == 0)
+            if (av > bv) verdict = 1 else if (av < bv) verdict = 0 - 1;
         i = i + 1;
-    };
-    if (verdict == 0) if (a.length > b.length) verdict = 1 else if (a.length < b.length) verdict = 0 - 1;
+    }
+    if (verdict == 0)
+        if (a.length > b.length)
+            verdict = 1
+        else if (a.length < b.length)
+            verdict = 0 - 1;
     return verdict > 0;
 }
 
@@ -99,9 +111,15 @@ pub fn attempt(pattern: string, pathname: string) -> Attempt {
             i = url.length;
         } else ok = false;
         p = p + 1;
-    };
+    }
     if (i != url.length) ok = false;
-    return Attempt(ok: ok, names: names, values: values, rest: rest, score: score);
+    return Attempt(
+        ok: ok,
+        names: names,
+        values: values,
+        rest: rest,
+        score: score,
+    );
 }
 
 // The `L` entries wrapping a pattern, root first. Group segments never appear,
@@ -115,7 +133,7 @@ pub fn ancestorPatterns(pattern: string) -> string[] {
         acc = acc + "/" + segs.at(i).unwrapOr("");
         out.push(acc);
         i = i + 1;
-    };
+    }
     return out;
 }
 
@@ -123,9 +141,10 @@ pub fn layoutChain(table: RouteEntry[], pattern: string) -> RouteEntry[] {
     var chain: RouteEntry[] = [];
     for (ancestorPatterns(pattern)) { p ->
         for (table) { e ->
-            if (((e.kind == "L" && e.slot == "") && e.pattern == p)) chain.push(e);
-        };
-    };
+            if (((e.kind == "L" && e.slot == "") && e.pattern == p))
+                chain.push(e);
+        }
+    }
     return chain;
 }
 
@@ -153,7 +172,7 @@ pub fn paramsOf(names: string[], values: string[]) -> Dict<string, string> {
     while (i < names.length) {
         d = d.insert(names.at(i).unwrapOr(""), values.at(i).unwrapOr(""));
         i = i + 1;
-    };
+    }
     return d;
 }
 
@@ -169,22 +188,25 @@ pub fn matchPath(table: RouteEntry[], pathname: string) -> ?RouteMatch {
     for (table) { e ->
         if (((e.kind == "P" || e.kind == "R") && e.slot == "")) {
             val a = attempt(e.pattern, pathname);
-            if (a.ok) if ((best.length == 0 || scoreBeats(a.score, bestScore))) {
-                best = [e];
-                bestScore = a.score;
-                bestNames = a.names;
-                bestValues = a.values;
-                bestRest = a.rest;
-            };
-        };
-    };
+            if (a.ok)
+                if ((best.length == 0 || scoreBeats(a.score, bestScore))) {
+                    best = [e];
+                    bestScore = a.score;
+                    bestNames = a.names;
+                    bestValues = a.values;
+                    bestRest = a.rest;
+                }
+        }
+    }
     if (best.length == 0) return null else {
         val entry = best
             .at(0)
             .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: ""));
-        return RouteMatch(entry: entry, params: paramsOf(bestNames, bestValues), rest: bestRest, chain: layoutChain(
-                table,
-                entry.pattern
-            ));
-    };
+        return RouteMatch(
+            entry: entry,
+            params: paramsOf(bestNames, bestValues),
+            rest: bestRest,
+            chain: layoutChain(table, entry.pattern),
+        );
+    }
 }

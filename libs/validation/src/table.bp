@@ -70,16 +70,19 @@ pub fn constraintJson(parts: string[]) -> string {
         val pv = parts.at(j + 2).unwrapOr("");
         members.push(#(nm, renderParam(nm, pv)));
         j = j + 1;
-    };
+    }
     return json.object(members);
 }
 
 // `constraints` is the already-encoded, comma-joined list of one field's
 // constraint objects.
 pub fn fieldJson(name: string, constraints: string) -> string {
-    return json.object([#("name", json.quote(name)), #("constraints", ["[", constraints, "]"].join(
-                    ""
-                ))]);
+    return json.object(
+        [
+            #("name", json.quote(name)),
+            #("constraints", ["[", constraints, "]"].join("")),
+        ],
+    );
 }
 
 // The whole table. Deterministic: one pass over the blob, no map, no sort, no
@@ -98,13 +101,16 @@ pub fn constraintTableJson(typeName: string, blob: string) -> string {
             if (current != "") fields = fields + fieldJson(current, cons) + ",";
             current = fname;
             cons = "";
-        };
+        }
         if (cons != "") cons = cons + ",";
         cons = cons + constraintJson(parts);
         i = i + 1;
-    };
+    }
     if (current != "") fields = fields + fieldJson(current, cons);
-    return json.object([#("type", json.quote(typeName)), #("fields", ["[", fields, "]"].join(
-                    ""
-                ))]);
+    return json.object(
+        [
+            #("type", json.quote(typeName)),
+            #("fields", ["[", fields, "]"].join("")),
+        ],
+    );
 }

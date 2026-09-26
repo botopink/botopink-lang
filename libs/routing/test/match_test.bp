@@ -24,13 +24,15 @@ test "routing: a dynamic segment binds its parameter" {
         hit ->
         slug = paramOf(hit, "slug");
         pattern = hit.entry.pattern;
-    };
+    }
     assert pattern == "/blog/[slug]";
     assert slug == "hello";
 }
 
 test "routing: a catch-all binds the remainder and fills rest" {
-    val table = [RouteEntry(kind: "P", pattern: "/shop/[...slug]", slot: "", verb: "")];
+    val table = [
+        RouteEntry(kind: "P", pattern: "/shop/[...slug]", slot: "", verb: ""),
+    ];
     val m = matchPath(table, "/shop/a/b");
     var slug = "";
     var rest: string[] = [];
@@ -38,7 +40,7 @@ test "routing: a catch-all binds the remainder and fills rest" {
         hit ->
         slug = paramOf(hit, "slug");
         rest = hit.rest;
-    };
+    }
     assert slug == "a/b";
     assert rest.length == 2;
     assert rest.at(0).unwrapOr("") == "a";
@@ -46,7 +48,9 @@ test "routing: a catch-all binds the remainder and fills rest" {
 }
 
 test "routing: a required catch-all does not match its own bare prefix" {
-    val table = [RouteEntry(kind: "P", pattern: "/shop/[...slug]", slot: "", verb: "")];
+    val table = [
+        RouteEntry(kind: "P", pattern: "/shop/[...slug]", slot: "", verb: ""),
+    ];
     var matched = true;
     if (matchPath(table, "/shop")) {
         _ ->
@@ -56,18 +60,20 @@ test "routing: a required catch-all does not match its own bare prefix" {
 }
 
 test "routing: an optional catch-all matches with and without a remainder" {
-    val table = [RouteEntry(kind: "P", pattern: "/docs/[[...slug]]", slot: "", verb: "")];
+    val table = [
+        RouteEntry(kind: "P", pattern: "/docs/[[...slug]]", slot: "", verb: ""),
+    ];
     var bareRest = 0 - 1;
     if (matchPath(table, "/docs")) {
         hit ->
         bareRest = hit.rest.length;
-    };
+    }
     assert bareRest == 0;
     var deep: string[] = [];
     if (matchPath(table, "/docs/a/b")) {
         hit ->
         deep = hit.rest;
-    };
+    }
     assert deep.length == 2;
     assert deep.join("/") == "a/b";
 }
@@ -81,13 +87,13 @@ test "routing: a static entry beats a dynamic one for the same URL" {
     if (matchPath(table, "/blog/new")) {
         hit ->
         pattern = hit.entry.pattern;
-    };
+    }
     assert pattern == "/blog/new";
     var other = "";
     if (matchPath(table, "/blog/x")) {
         hit ->
         other = hit.entry.pattern;
-    };
+    }
     assert other == "/blog/[slug]";
 }
 
@@ -100,7 +106,7 @@ test "routing: a dynamic segment beats a catch-all at the same depth" {
     if (matchPath(table, "/shop/7")) {
         hit ->
         pattern = hit.entry.pattern;
-    };
+    }
     assert pattern == "/shop/[id]";
 }
 
@@ -113,7 +119,7 @@ test "routing: registration order decides between two equal scores" {
     if (matchPath(table, "/x/1")) {
         hit ->
         name = hit.entry.pattern;
-    };
+    }
     assert name == "/x/[a]";
 }
 
@@ -136,7 +142,7 @@ test "routing: a layout alone does not make a route public" {
     if (matchPath(withPage, "/settings")) {
         hit ->
         kind = hit.entry.kind;
-    };
+    }
     assert kind == "R";
 }
 
@@ -157,13 +163,16 @@ test "routing: the layout chain is root-first and skips what has no layout" {
     assert chain.length == 3;
     assert chain
         .at(0)
-        .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: "")).pattern == "/";
+        .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: "")).pattern
+        == "/";
     assert chain
         .at(1)
-        .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: "")).pattern == "/blog";
+        .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: "")).pattern
+        == "/blog";
     assert chain
         .at(2)
-        .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: "")).pattern == "/blog/[slug]";
+        .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: "")).pattern
+        == "/blog/[slug]";
     val sparse = [
         RouteEntry(kind: "L", pattern: "/", slot: "", verb: ""),
         RouteEntry(kind: "L", pattern: "/blog/[slug]", slot: "", verb: ""),
@@ -175,7 +184,12 @@ test "routing: a group never reaches the chain because it is not in a pattern" {
     val pattern = patternOf(parsePath("(marketing)/about"));
     val table = [
         RouteEntry(kind: "L", pattern: "/", slot: "", verb: ""),
-        RouteEntry(kind: "L", pattern: patternOf(parsePath("(marketing)")), slot: "", verb: ""),
+        RouteEntry(
+            kind: "L",
+            pattern: patternOf(parsePath("(marketing)")),
+            slot: "",
+            verb: "",
+        ),
         RouteEntry(kind: "P", pattern: pattern, slot: "", verb: ""),
     ];
     assert pattern == "/about";
@@ -183,15 +197,17 @@ test "routing: a group never reaches the chain because it is not in a pattern" {
     assert chain.length == 2;
     assert chain
         .at(0)
-        .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: "")).pattern == "/";
+        .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: "")).pattern
+        == "/";
     assert chain
         .at(1)
-        .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: "")).pattern == "/";
+        .unwrapOr(RouteEntry(kind: "", pattern: "", slot: "", verb: "")).pattern
+        == "/";
     var found = "";
     if (matchPath(table, "/about")) {
         hit ->
         found = hit.entry.pattern;
-    };
+    }
     assert found == "/about";
 }
 
@@ -200,7 +216,7 @@ test "routing: a match carries its own layout chain" {
     if (matchPath(blogTable(), "/blog/hello")) {
         hit ->
         depth = hit.chain.length;
-    };
+    }
     assert depth == 3;
 }
 

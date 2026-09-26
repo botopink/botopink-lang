@@ -133,10 +133,14 @@ test "format: implement ---- two interfaces with qualified methods" {
     try h.assertFormat(std.testing.allocator,
         \\val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
         \\    fn UsbCharger.Connect(self: Self) {
-        \\        Console.WriteLine("Connected via USB. Battery level: " + self.batteryLevel);
+        \\        Console.WriteLine(
+        \\            "Connected via USB. Battery level: " + self.batteryLevel,
+        \\        );
         \\    }
         \\    fn SolarCharger.Connect(self: Self) {
-        \\        Console.WriteLine("Connected via Solar Panel. Battery level: " + self.batteryLevel);
+        \\        Console.WriteLine(
+        \\            "Connected via Solar Panel. Battery level: " + self.batteryLevel,
+        \\        );
         \\    }
         \\};
     );
@@ -373,11 +377,23 @@ test "format: const ---- multiple constants" {
     );
 }
 
+// One element per line in the open form: `1, 2,` written on one line used to
+// stay on one line, which made the layout a function of the source's (decision
+// 65 part 2) and, once the list measures width, was not idempotent.
 test "format: const list ---- with comments" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatAs(std.testing.allocator,
         \\val wibble = [
         \\    // A comment
         \\    1, 2,
+        \\    // Another comment
+        \\    3,
+        \\    // One last comment
+        \\];
+    ,
+        \\val wibble = [
+        \\    // A comment
+        \\    1,
+        \\    2,
         \\    // Another comment
         \\    3,
         \\    // One last comment

@@ -28,7 +28,7 @@ format/
 `format(parse(src))` must produce output that re-parses to an equivalent AST,
 and running `format` twice in a row must produce identical text.
 
-## `fits` measures width; every group but one is still pinned
+## `fits` measures width; the value constructs are enabled, the rest still pinned
 
 Two predicates decide a `group` ([decision 65](../../../../specs/1.0.5-beta/decisions-taken.md)).
 `fits` is the Wadler-Lindig one: it walks the candidate's flat spelling on its own
@@ -48,7 +48,9 @@ built and compared against the real column. `Doc.ifBreak(s)` is text that exists
 only in the enclosing group's broken spelling — the trailing comma of an open
 argument list — so a flat and a broken form share one document; `fits` never
 charges it flat and charges it in the trailing half when the group it sits in is
-broken. `tests/predicate.zig` exercises both predicates on hand-built documents —
+broken. `Doc.markColumn` / `Doc.alignToMark` are zero-width to both predicates (a
+pad only ever follows a line break): the first records the render's column, the
+second pads a later line to it. `tests/predicate.zig` exercises both predicates on hand-built documents —
 the exact boundary, the trailing text, the break after the group, the hardline
 inside it, a pinned group past the width, and `ifBreak` flat, broken and trailing.
 
@@ -76,19 +78,33 @@ still-pinned argument list is what runs long. The HEAD output is idempotent
 tree still parses. Commands: `zig build` in three worktrees, `find . -name '*.bp'
 | sort | xargs botopink format` per copy, `diff -ru`.
 
-**The call argument list is measured and still pinned** (2026-09-25). Enabled as
-the signature's shape (decision 61 rule 4: all-or-nothing, one argument per line
-`+4`, `ifBreak(",")`, `)` on its own line) and run over the six trees at the pinned
-sibling commits (245 files, the same walk), it moves **105 files, 879 hunks, +11 718
-−4 072 lines**, and takes the lines past 80 columns from **5 601 to 2 903** — but of
-the ~2 770 lists it opens, ~1 480 close on a line that goes on with an operator or
-a member access (`) != -1;`, `) + "…"`, `).length`): the list is opened for what
-*follows* it, because the binary expression, the `assert` and the `case` arm around
-it are pinned and cannot break first. That is the wrong middle decision 65 names,
-so the construct waits for the maintainer's order (the enclosing constructs first,
-or the list with them); the enabling is the two-line patch parked beside the
-front's README as `argument-list.patch`. `ifBreak` lands ahead of it, unused by any
-printer arm, so the six trees format byte-identically to the parent commit.
+**The value constructs are enabled together, enclosing ones first** (2026-09-26,
+C-12). The argument list could not be enabled alone: measured 2026-09-25 over the
+six trees it opened ~1 480 of ~2 770 lists for what *followed* them (`) != -1;`,
+`) + "…"`) because the binary expression around it was pinned — the wrong middle
+decision 65 names. The order chosen is the enclosing constructs with it, in one
+change: a **binary run**, a **brace-less `if`**, the **argument list**, and the
+**array, tuple and behavior literals** (which enclose calls too — `[ThemeEntry(`
+opened inside a pinned list). Each is one `groupMeasured`, all-or-nothing; the
+outer decides first and the inner is measured where the outer put it, so a list
+never breaks for what follows it: the enclosing binary breaks first
+(`assert doc.indexOf(…)` / `    != -1;`) and the list is measured on its own
+line. Measured over the compiler's trees (`libs/std`, the three bundled
+libraries, `examples/`) and the five sibling libraries at their pinned commits —
+248 files, formatted as scratch copies with the parent commit's binary and this
+one: **140 files, 1 079 hunks, +20 319 −6 776 lines**; lines past 80 columns
+**5 973 → 1 840** (the rest are strings and comments no rule breaks); lines that
+open with `)` and go on with an operator **192 → 8** (the 8 are `) implement …`,
+a `), // comment` and one call argument ending a pinned pattern list); a second
+pass moves **0** files; every file keeps every token and comment
+(`assertLossless`' property, run lexically over the copies). What stays pinned:
+`commaList` — generic, parameter, pattern, import and type lists, none of which
+can hold a call — and the single-step pipeline. The array literal's open form is
+one element per line: keeping elements written on one source line together made
+the layout a function of the source's (decision 65 part 2) and was not idempotent
+once the list measured width. A trailing comma still opens a list (the canonical
+form has always done that); whether it should is a question, recorded in
+`decisions-pending.md` beside this landing.
 
 ## Formatting rules
 
@@ -102,20 +118,23 @@ printer arm, so the six trees format byte-identically to the parent commit.
 | Behavior | `behavior Name<G> extends B { … }`; `val x: T;`, bodyless `fn …;`, `default fn … { }`; a blank line between the field, signature and default-method groups; `{}` when empty |
 | `fn` signatures | A signature that does not fit breaks **one parameter per line, with a trailing comma**, closing on its own line, with the return type and the body's `{` after the `)` ([decision 61](../../../../specs/1.0.5-beta/decisions-taken.md) rule 4). It covers all five signature printers — `fn`, `declare fn`, a `type`'s method, a behavior method bodyless or not, and an `implement`/`extend` method. `fmtParams`' `commaList` is a `group` that was meant to do this and never once did: `fits` stops at the first `concat`, so a signature joined past the width (the decision's own example reached **104** columns against 80). `fmtSignature` decides from a flat width measured at build time against the column the render has really reached, which is why a method four columns in breaks four columns earlier; the `;` or ` {` that follows the signature is counted too, so the boundary is exact — 80 columns stays on one line, 81 breaks. A parameter default that itself needs a line (a lambda) has no flat width and keeps whatever it printed before |
 | Pipeline `\|>` | A single step with no comments stays inline if it fits; multi-step chains (or any step comment) put each `\|>` on its own line |
-| Array / list literals | Trailing comma or comments → multi-line; otherwise inline if it fits |
-| Call arguments | A **lambda argument hugs the call** ([decision 61](../../../../specs/1.0.5-beta/decisions-taken.md) rule 1): the argument list drops its `nest(INDENT)` and its softlines, so the lambda's own `forceBreak` opens at the call's indentation — body at +4 from the call line, `});` level with the call. It applies to a lambda in **any** argument position (`throws({ -> … }, "expected")` puts it first) and only when that lambda's own printing breaks; a one-line lambda, an argument carrying a `//` comment and a multiline-string argument all keep the grouped/open forms. Before this the two nests compounded: one line break paid +8 for the body and +4 for the brace |
+| Array / list / tuple literals | One `groupMeasured`: on one line when it fits, what follows counted; otherwise one element per line, `+4`, the trailing comma of the open form (`ifBreak(",")`), `]` / `)` on its own line. A trailing comma or a comment in the source opens it; the open form puts **one element per line** — elements written on one source line are no longer kept together |
+| Binary expressions | A run of operands at one precedence level (`a + b - c`) is one `groupMeasured`; broken, the first operand stays on the line and every other one starts a line of its own **operator first**, `+4` from the statement — the method chain's shape, the operator where the chain puts its `.`. A run at another level is its own group, measured where the outer run put it |
+| Behavior literal | `@Decl(kind: …, fields: […])` — the argument list's shape |
+| Call arguments | One `groupMeasured` (decision 61 rule 4's shape, C-12): one line when it fits, else one argument per line `+4`, trailing comma, `)` on its own line — a hand-opened list that fits is joined. A **lambda argument hugs the call** ([decision 61](../../../../specs/1.0.5-beta/decisions-taken.md) rule 1): the argument list drops its `nest(INDENT)` and its softlines, so the lambda's own `forceBreak` opens at the call's indentation — body at +4 from the call line, `});` level with the call. It applies to a lambda in **any** argument position (`throws({ -> … }, "expected")` puts it first) and only when that lambda's own printing breaks; a one-line lambda, an argument carrying a `//` comment and a multiline-string argument all keep the grouped/open forms. Before this the two nests compounded: one line break paid +8 for the body and +4 for the brace |
+| Statement terminators | Every statement ends with `;` except a comment and a **braced block statement** — an `if` (not `a ?? b`), a loop or a `case` whose printed text ends in `}` (C-13, decision 29 (c)): `terminated` decides from the printed text's last character (`lastChar`) exactly as the parser's `isBracedBlockStmt` decides from the last token. `if (c) return x;` keeps its `;` (no closing brace), and so do a binding and a `return` whose value is braced — the statement there is the binding. An end the printer cannot know without rendering (a trailing line break or `ifBreak`) keeps its `;`, which always parses |
 | Blank lines | `emptyLinesBefore` on statements and case arms is preserved as blank lines |
 | Test blocks | `test { … }` / `test "name" { … }` — no trailing semicolon, body formatted like a `fn` body |
 | Lambdas | A parameterless lambda in expression position keeps `{ -> … }` (the braces alone re-parse as a block); a trailing lambda `f { … }` and a `case` arm's block body (a parameterless lambda in the AST) print `{ … }`. An **empty** body stays inline — `{ next -> }`, `{ -> }`, and `{}` where no arrow is printed ([decision 61](../../../../specs/1.0.5-beta/decisions-taken.md) rule 2). The open form had nothing to put between its two hardlines, so it printed the body's indentation and then a newline: a line of eight spaces and nothing else, in a printer that emits a bare `"\n"` for a blank statement line precisely to avoid that |
 | `case` arms | An arm whose body is a lambda prints decision 8 §5.1's `Pattern [when (…)] { body }` — no arrow, no `;`, the whole-value binder kept (`_ { n -> … }`); every other body keeps `pattern [if …] -> value;`. The pre-decision-8 block arm `1 -> { … };` is the same node, so it comes back in decision 8's spelling |
 | Patterns | `ast.PatternShape` decides the spelling: a tuple pattern prints `#(…)`, an inclusive range `A...B`, a payload label `name: p`, and a pattern that ignores the rest ends in `..` |
-| `if` branches | A single-expression branch prints bare; a multi-statement branch prints its statements through the same `fmtStmtSeq` a `fn`, `test`, loop and lambda body use — one per line, each ended by `;`, keeping a blank line and a trailing comment on its own statement's line |
+| `if` branches | A **bare** (single-expression) then-branch makes the `if` one `groupMeasured` (C-12): when its line does not fit the branch moves to the next line `+4`, a bare `else` branch likewise under an `else` of its own line, and an `else if` chain breaks at every `else` or at none — so a condition never breaks for the branch that follows it. A braced `else { … }` stays outside the group (its block always breaks). A single-expression branch prints bare; a multi-statement branch prints its statements through the same `fmtStmtSeq` a `fn`, `test`, loop and lambda body use — one per line, each ended as `terminated` says, keeping a blank line and a trailing comment on its own statement's line |
 | String literals | `"""…"""` when the content spans lines or holds an unescaped `"`; `"…"` otherwise |
-| Loops | Decision 105's three keywords print back as written, from `LoopExpr.keyword`: `for [await] [:label] (iter) { x ->`, `while [:label] (cond) {`, `loop [:label] {` — and the `iter` / `stream` prefix from `LoopExpr.generator` (decision 125): `iter loop {` as it stands, and a prefixed `while` / `for` — held as `loop { <written loop>; break; }` with `LoopExpr.prefixedKeyword` set — printed as `iter ` / `stream ` followed by the written loop (`body[0]`). The prefix arm is front 24's carve-out of front 16, and so is the `async { … }` arm of a `.function` node with `syntax = .asyncBlock` (decision 124). A range prints `a..b` or, when `inclusive`, `a...b`. An empty body stays inline (`for (xs) { x -> }`); otherwise one statement per line, each ended by `;` (the body shares `fmtStmtSeq` with `fn`, lambda and `if`-branch bodies, including a trailing comment on its statement's line). The `while`/`for` arms are front 22's carve-out of front 16; their width and breaking are 16's |
+| Loops | Decision 105's three keywords print back as written, from `LoopExpr.keyword`: `for [await] [:label] (iter) { x ->`, `while [:label] (cond) {`, `loop [:label] {` — and the `iter` / `stream` prefix from `LoopExpr.generator` (decision 125): `iter loop {` as it stands, and a prefixed `while` / `for` — held as `loop { <written loop>; break; }` with `LoopExpr.prefixedKeyword` set — printed as `iter ` / `stream ` followed by the written loop (`body[0]`). The prefix arm is front 24's carve-out of front 16, and so is the `async { … }` arm of a `.function` node with `syntax = .asyncBlock` (decision 124). A range prints `a..b` or, when `inclusive`, `a...b`. An empty body stays inline (`for (xs) { x -> }`); otherwise one statement per line, each ended as `terminated` says (the body shares `fmtStmtSeq` with `fn`, lambda and `if`-branch bodies, including a trailing comment on its statement's line). The `while`/`for` arms are front 22's carve-out of front 16; their width and breaking are 16's |
 | Imports | `import {a, b} from "m"`; the package-namespace forms keep the handle: `import pkg`, `import pkg from "m"`, `import pkg, {a} from "m"` |
 | Package default | `[pub] default mod Name;` and `[pub] default fn f(…)` keep the `default` keyword, in the parser's order (`pub`, `default`, `declare`). It is not decoration: `default mod` names the package handle `import <pkg>` resolves to and `default fn` names the handler aliased under it (`comptime.zig`'s package-default DSL). Dropping it unbinds every consumer of a package whose handle and handler have different names, and — a deletion being idempotent — `format --check` then reports the broken file as clean |
 | Parser desugarings | Printed back in the spelling that was **written**, never as the call the parser built: `xs[0]` (and `xs[0..2]`, `d["k"]`, `t[0]` — one node, decision 30) rather than `@[](xs, 0)`; `x is T` (decision 8 §4) rather than `@is(x)`, which deleted the tested type outright; `a ?? b` (decision 28) rather than `if (a) { __bp_nullish -> __bp_nullish } else { b }`. The reserved callees cannot be written by hand (`is` is a keyword, `@[]` does not lex) and the binding name is the reserved `__bp` prefix, so a node carrying one is always the desugaring. `nullishDefaultFallback` tests all four parts of the `if`, so an `if` that binds a name of its own is untouched |
-| Method chain | Two or more method calls in a row (`a.b().c()`) are **one** `groupMeasured`, all-or-nothing ([decision 65](../../../../specs/1.0.5-beta/decisions-taken.md)): one line when the flat spelling fits — what follows on the line (`;`, `)`) counted, so 80 columns stay and 81 break — otherwise the root (`of(people)`, `self.items`, `xs`) on the statement's line and **every** call on its own line, `+4` from the statement and never aligned under the receiver (a rename must not re-indent a chain). No two calls share a line in the broken form. The output is a pure function of the content: a hand-broken chain that fits is joined, a one-line chain that does not fit is opened, and a link holding a lambda that breaks (`.forEach({ x ->` with a statement body) breaks the whole chain, because its flat spelling does not exist. A link is `recv.name(…)` / `recv?.name(…)`; a plain call, a builtin, a tagged call and `adder(3)(4)` are not links, and a single method call is not a chain (it keeps the flat/hug printing it always had). This is the first construct enabled under the fixed `fits`; every other `group` is still pinned flat |
+| Method chain | Two or more method calls in a row (`a.b().c()`) are **one** `groupMeasured`, all-or-nothing ([decision 65](../../../../specs/1.0.5-beta/decisions-taken.md)): one line when the flat spelling fits — what follows on the line (`;`, `)`) counted, so 80 columns stay and 81 break — otherwise the root (`of(people)`, `self.items`, `xs`) on the statement's line and **every** call on its own line, `+4` from the statement and never aligned under the receiver (a rename must not re-indent a chain). No two calls share a line in the broken form. The output is a pure function of the content: a hand-broken chain that fits is joined, a one-line chain that does not fit is opened, and a link holding a lambda that breaks (`.forEach({ x ->` with a statement body) breaks the whole chain, because its flat spelling does not exist. A link is `recv.name(…)` / `recv?.name(…)`; a plain call, a builtin, a tagged call and `adder(3)(4)` are not links, and a single method call is not a chain (it keeps the flat/hug printing it always had). This was the first construct enabled under the fixed `fits` |
 | Chained call | `adder(3)(4)` — calling what a call returned. There is no name, so the callee is an **expression** (`ast.CallExpr.call.calleeExpr`, `callee` is `""`) and `receiver` stays null: a chained call is not a method call. Reading only `receiver` and `callee` printed the empty name and dropped the receiver — `adder(3)(4)` came back as `(4)` |
 | Type references | A parenthesis is printed exactly where it is load-bearing. `parser/types.zig` binds `[]`, `?` and `\|` to a **base** type and does not keep `(T)` in the AST (`(T)` *is* `T`), so `fmtTypeRefIn` decides from the shape: an array of a union, an optional or a function type (`(i32 \| string)[]`, `(?i32)[]`, `(fn(i32) -> i32)[]`), an optional of a union (`?(i32 \| string)`), and a union or constraint-list member that is a function type (`(fn() -> i32) \| string`). Everywhere else the shortest spelling is the canonical one — `?i32[]`, `i32[] \| string[]`, `i32 \| string[]`. Printing the parentheses away gave **a different type**, and idempotently, so `format --check` reported it clean |
 | One-line lambda value | Rendered flat as one text (it may run past the width); a value that needs a line break of its own prints the open form — so a second `format` pass decides the same way. Whether the lambda **binds a name** takes no part: `{ -> 3 + 4 }` stays on one line exactly as `{ n -> n * 2 }` does ([decision 61](../../../../specs/1.0.5-beta/decisions-taken.md) rule 3). The rule stops at `arrow_when_empty`, and the reason is the parser's, measured: a **trailing** lambda's body is a statement block, so its statements keep their `;` and `executar { ok }` answers *unexpected `}`* — as does `calcular(fator: 2) { a, b -> a + b }` — while `{ -> 42 }` and `{ n -> n * 2 }` in argument position both parse |
@@ -132,6 +151,14 @@ printer arm, so the six trees format byte-identically to the parent commit.
   member (`withMemberComments`, `fmtMemberBlock`).
 - **Blank lines** — between body members (`""` in `comments`) and between top-level
   declarations (`Program.blankLineBefore`, filled by `parseDecls`).
+- **A trailing comment's continuation lines** — `f(); // one` followed by `// two` starting in the
+  **source** column `// one` starts in, on the very next line, is a continuation: it prints under
+  `// one`'s **printed** column, which moves when the code before it does (`Doc.markColumn` records
+  the column, `Doc.alignToMark` pads to it; `CommentChain` decides). A statement comment's column is
+  its `loc`; a top-level one's is `DeclKind.comment.loc`, which the parser now records. A comment in
+  another column or after a blank line is an ordinary comment, printed at the indentation. Before
+  this every continuation was re-emitted at the statement's column — `09-ecosystem-residuals`' last
+  R1 class (a sibling library's `runtime.bp:13`, whose earlier revision now round-trips).
 - **Trailing comments** — a comment on the line of the previous statement or declaration
   (`f(); // note`, `pub mod x; // note`) sets `trailing` and stays on that line. A **member's**
   is its own slot, `trailingComment` on `Field`, `EnumVariant` and `BehaviorMethod`, filled by the
@@ -141,10 +168,17 @@ printer arm, so the six trees format byte-identically to the parent commit.
   a body may interleave them, so each member carries its position in `order` and `fmtEnumMembers`
   merges the two lists by it. Printing all of one and then all of the other hoisted every variant
   written after a section above it. Nothing in `src/codegen/` may key on a variant's position in
-  `TypeShape.EnumShape.variants` — `order` is source layout, not a run-time encoding.
+  `TypeShape.EnumShape.variants` beyond its index among the variants (wasm's all-unit ordinal) —
+  `order`, the interleaving with sections, is source layout, not a run-time encoding.
 - **Comments on an enum variant or section** — `EnumVariant.comments` / `EnumSection.comments`
   (leading, `""` for a blank line) and `EnumVariant.trailingComment`. Either one forces the enum
-  body open: the compact `{ Red, Blue }` has nowhere to put a `//`.
+  body open: the compact `{ Red, Blue }` has nowhere to put a `//`. The lines before a body's
+  closing `}` are `TypeDecl.bodyComments` (an enum's as well as a record's) and
+  `EnumSection.bodyComments`, printed after the last member — emilia's `tokens.bp` closes four
+  sections with `// ── end front NN ──`, and all four were deleted until 2026-09-26.
+- **The handler-less `val assert P = e;`** (decision 8 § 9) prints no `catch`: `assertPattern.fatal`
+  marks the `@panic(…)` handler the parser desugared it to. Printing it wrote a `catch` the checker
+  refuses, so `format` stopped 15 packages of a sibling library from compiling.
 - **One-line lambdas** — `{ n -> n * 2 }` written on one line with a single value expression
   stays inline (`fmtLambdaAt`).
 - **Blank lines and comments in every block** — including an `if` **then**-branch and a lambda
@@ -186,17 +220,12 @@ annotation list prints as one `#[…]` per annotation, a method chain that fits 
 one that does not opens, a single-expression `if` block drops its braces, a `\\` line string prints
 as `"""…"""`.
 
+- **End-of-line comments on an array or tuple element** (G7) — `trailingPerElem[i]`, the comment
+  written on element `i`'s own line after it and its `,`, prints there (`1, // one`) and forces the
+  open form. Before, the literal counted it among the *next* element's leading comments and the
+  printer put it above that element, where it is false — idempotently.
+
 ## Layout the parser does not record (formatter cannot keep)
 
-- **End-of-line comments on an array element** — the array literal attaches a comment to the *next*
-  item, with no line information, so the formatter prints it above that item. A **field's** is kept
-  (`Field.trailingComment`), and so are a statement's, a variant's and a method's.
-- **The indentation of a comment's continuation line** — a `//` line the author indented to align
-  under the comment above it (one site, in a sibling library under `repository/`) re-emits at the
-  statement's own column. The text is intact; the alignment is not. A comment reaches the AST as text
-  with no column, so keeping it needs a recorded column, not a printer arm — it is the last live
-  member of `09-ecosystem-residuals`' R1 classes and the only fidelity loss left after formatting all
-  five libraries.
-
-Each needs a parser/AST change (`parser/decls.zig`, `parser/exprs.zig`) before the formatter can
-print it back.
+Nothing known, as of 2026-09-26: the five sibling libraries formatted as scratch copies lose no
+token and no comment (a lexical multiset comparison per file), and every package `check`s as before.

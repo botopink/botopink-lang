@@ -101,7 +101,11 @@ pub fn clearConstraints() -> i32 {
 }
 
 pub fn unknownConstraintMessage(name: string) -> string {
-    return "validation: no constraint is registered under \"" + name + "\" — registered: [" + rkvNames() + "]";
+    return "validation: no constraint is registered under \""
+        + name
+        + "\" — registered: ["
+        + rkvNames()
+        + "]";
 }
 
 // `#[constraint("cpf")]` lowers to this. An unregistered name is a violation
@@ -112,16 +116,34 @@ pub fn vConstraint(
     name: string,
     value: string,
 ) -> Array<Violation> {
-    if (rkvHas(name) == false) return oneViolation(violation(field, "unknownConstraint", message(
-                "unknownConstraint",
-                builtInTemplate("unknownConstraint"),
+    if (rkvHas(name) == false)
+        return oneViolation(
+            violation(
                 field,
+                "unknownConstraint",
+                message(
+                    "unknownConstraint",
+                    builtInTemplate("unknownConstraint"),
+                    field,
+                    value,
+                    [
+                        arg("name", "\"" + name + "\""),
+                        arg("registered", rkvNames()),
+                    ],
+                ),
                 value,
-                [arg("name", "\"" + name + "\""), arg("registered", rkvNames())]
-            ), value));
+            ),
+        );
     val check = rkvGet(name);
     val template = check(field, value);
     if (template == "") return noViolation();
     val code = rkvCode(name);
-    return oneViolation(violation(field, code, message(code, template, field, value, noArgs()), value));
+    return oneViolation(
+        violation(
+            field,
+            code,
+            message(code, template, field, value, noArgs()),
+            value,
+        ),
+    );
 }

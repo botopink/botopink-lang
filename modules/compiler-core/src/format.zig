@@ -69,6 +69,16 @@ pub const Doc = union(enum) {
     /// comma on the last argument of a broken call and on nothing else, so that
     /// `f(a, b)` and the open form share one document.
     ifBreak: []const u8,
+    /// Records the column the render has reached. It prints nothing; the next
+    /// `alignToMark` pads to it. It exists for one layout: a comment written on
+    /// a statement's line and continued on the lines below, each continuation
+    /// indented to sit under the first (`f(); // one` / `      // two`). The
+    /// first comment's column is wherever the statement it trails ends, which
+    /// only the render knows.
+    markColumn,
+    /// Spaces from the current column up to the last `markColumn` — nothing when
+    /// the render is already there or past it.
+    alignToMark,
 };
 
 // ── global singletons (zero-cost leaves) ──────────────────────────────────────
@@ -77,6 +87,8 @@ const DOC_NIL: Doc = .nil;
 const DOC_LINE: Doc = .line;
 const DOC_SOFTLINE: Doc = .softline;
 const DOC_HARDLINE: Doc = .hardline;
+const DOC_MARK_COLUMN: Doc = .markColumn;
+const DOC_ALIGN_TO_MARK: Doc = .alignToMark;
 
 // ── Formatter ─────────────────────────────────────────────────────────────────
 
@@ -154,6 +166,14 @@ pub const Formatter = struct {
     /// `s` in the enclosing group's broken spelling, nothing in its flat one.
     pub fn ifBreak(this: *Formatter, s: []const u8) !*const Doc {
         return this.alloc(.{ .ifBreak = s });
+    }
+
+    pub fn markColumn(_: *Formatter) *const Doc {
+        return &DOC_MARK_COLUMN;
+    }
+
+    pub fn alignToMark(_: *Formatter) *const Doc {
+        return &DOC_ALIGN_TO_MARK;
     }
 
     // ── higher-level combinators ───────────────────────────────────────────────
@@ -457,6 +477,30 @@ pub const Formatter = struct {
 
     // ── body / statements ──────────────────────────────────────────────────────
 
+    /// A comment written on a line's end and continued on the lines below, each
+    /// continuation starting in the **source** column the first one started in.
+    /// The printer puts the continuation under the first comment's **printed**
+    /// column (`markColumn` / `alignToMark`), since the code before it may have
+    /// moved. A comment line that does not start in that column, or is not on
+    /// the very next line, is an ordinary comment and prints at the indentation.
+    const CommentChain = struct {
+        line: ?usize = null,
+        col: usize = 0,
+
+        fn start(this: *CommentChain, loc: ast.Loc) void {
+            this.* = .{ .line = loc.line, .col = loc.col };
+        }
+
+        fn continues(this: CommentChain, loc: ast.Loc) bool {
+            const last = this.line orelse return false;
+            return loc.line == last + 1 and loc.col == this.col;
+        }
+
+        fn advance(this: *CommentChain, loc: ast.Loc) void {
+            this.line = loc.line;
+        }
+    };
+
     fn fmtBody(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
         if (stmts.len == 0) return this.text("{}");
         return this.surroundBreak("{", try this.fmtStmtSeq(stmts), "}");
@@ -481,14 +525,29 @@ pub const Formatter = struct {
     fn fmtStmtSeq(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
         var items: std.ArrayList(*const Doc) = .empty;
         defer items.deinit(this.arena);
+        // The source position of the trailing comment the statement before
+        // ended with, or of its last continuation line (`CommentChain`).
+        var chain: CommentChain = .{};
 
         for (stmts, 0..) |s, i| {
-            if (i > 0 and s.expr == .literal and s.expr.literal.kind == .comment and s.expr.literal.kind.comment.trailing) {
+            const isComment = s.expr == .literal and s.expr.literal.kind == .comment;
+            if (i > 0 and isComment and s.expr.literal.kind.comment.trailing) {
                 // A trailing comment stays at the end of the previous line.
                 try items.append(this.arena, try this.text(" "));
+                try items.append(this.arena, this.markColumn());
                 try items.append(this.arena, try this.fmtExpr(s.expr));
+                chain.start(s.expr.literal.loc);
                 continue;
             }
+            if (isComment and s.emptyLinesBefore == 0 and chain.continues(s.expr.literal.loc)) {
+                // Its continuation: aligned under it, wherever it now starts.
+                try items.append(this.arena, this.hardline());
+                try items.append(this.arena, this.alignToMark());
+                try items.append(this.arena, try this.fmtExpr(s.expr));
+                chain.advance(s.expr.literal.loc);
+                continue;
+            }
+            chain = .{};
             if (i > 0 and s.emptyLinesBefore > 0) {
                 // Emit plain "\n" (no indent) to create blank lines without trailing spaces
                 for (0..s.emptyLinesBefore) |_| {
@@ -500,13 +559,53 @@ pub const Formatter = struct {
                 try items.append(this.arena, this.hardline());
             }
             const exprDoc = try this.fmtExpr(s.expr);
-            const stmtDoc = switch (s.expr) {
-                .literal => |lit| if (lit.kind == .comment) exprDoc else try this.concat(exprDoc, try this.text(";")),
-                else => try this.concat(exprDoc, try this.text(";")),
-            };
-            try items.append(this.arena, stmtDoc);
+            try items.append(this.arena, try this.terminated(s.expr, exprDoc));
         }
         return this.concatAll(items.items);
+    }
+
+    /// A statement and what ends it: nothing for a comment and for a **braced
+    /// block statement** — an `if` (not `a ?? b`), a loop or a `case` whose
+    /// printed text ends in `}` (decision 29 (c), C-13) — and `;` for every
+    /// other statement. The test is the printed closing brace, exactly as the
+    /// parser's `isBracedBlockStmt` tests the last token: `if (c) return x;`
+    /// keeps its `;`, and so does an `if` whose last branch came out bare.
+    fn terminated(this: *Formatter, expr: ast.Expr, doc: *const Doc) !*const Doc {
+        const bare = switch (expr) {
+            .literal => |lit| lit.kind == .comment,
+            .branch => |b| b.kind == .if_ and nullishDefaultFallback(b.kind.if_) == null and lastChar(doc) == .closeBrace,
+            .loop => lastChar(doc) == .closeBrace,
+            .collection => |c| c.kind == .case and lastChar(doc) == .closeBrace,
+            else => false,
+        };
+        return if (bare) doc else this.concat(doc, try this.text(";"));
+    }
+
+    const LastChar = enum { empty, closeBrace, other, unknown };
+
+    /// The last character a document prints, as far as it can be known
+    /// without rendering: a `widthChoice` whose two spellings end alike, text
+    /// through any `concat` / `nest` / `group`. A line break or an `ifBreak`
+    /// at the end is `unknown`, and an unknown end keeps its `;` — which always
+    /// parses.
+    fn lastChar(doc: *const Doc) LastChar {
+        return switch (doc.*) {
+            .nil, .markColumn, .alignToMark => .empty,
+            .text => |t| if (t.len == 0) .empty else if (t[t.len - 1] == '}') .closeBrace else .other,
+            .line, .softline, .hardline => .unknown,
+            .ifBreak => |t| if (t.len == 0) .empty else .unknown,
+            .concat => |c| switch (lastChar(c.right)) {
+                .empty => lastChar(c.left),
+                else => |r| r,
+            },
+            .nest => |n| lastChar(n.doc),
+            .group => |g| lastChar(g.doc),
+            .forceBreak => |d| lastChar(d),
+            .widthChoice => |w| blk: {
+                const a = lastChar(w.flat);
+                break :blk if (a == lastChar(w.broken)) a else .unknown;
+            },
+        };
     }
 
     fn fmtOptionalBody(this: *Formatter, body: ?[]ast.Stmt) !*const Doc {
@@ -588,25 +687,7 @@ pub const Formatter = struct {
                     try this.text(ia.member),
                 }),
             },
-            .binaryOp => |bin| this.fmtBinop(
-                bin.lhs.*,
-                switch (bin.op) {
-                    .add => " + ",
-                    .sub => " - ",
-                    .mul => " * ",
-                    .div => " / ",
-                    .mod => " % ",
-                    .lt => " < ",
-                    .gt => " > ",
-                    .lte => " <= ",
-                    .gte => " >= ",
-                    .eq => " == ",
-                    .ne => " != ",
-                    .@"and" => " && ",
-                    .@"or" => " || ",
-                },
-                bin.rhs.*,
-            ),
+            .binaryOp => this.fmtBinaryChain(expr),
             .unaryOp => |un| switch (un.op) {
                 .not => this.concat(try this.text("!"), try this.fmtExpr(un.expr.*)),
                 .neg => this.concat(try this.text("-"), try this.fmtExpr(un.expr.*)),
@@ -647,65 +728,7 @@ pub const Formatter = struct {
                     try this.text(" catch "),
                     try this.fmtExpr(tc.handler.*),
                 }),
-                .if_ => |i| blk: {
-                    // `a ?? b` — decision 28's nullish default, which the parser
-                    // desugars into exactly this `if` (`ast.nullish_binding_name`
-                    // says why: no `BinOp` variant, no new node). Printing the
-                    // desugaring gave back a program nobody wrote and lost the
-                    // `??` token with it.
-                    if (nullishDefaultFallback(i)) |fallback| {
-                        break :blk this.concatAll(&.{
-                            try this.fmtExpr(i.cond.*),
-                            try this.text(" ?? "),
-                            try this.fmtExpr(fallback),
-                        });
-                    }
-                    const condDoc = try this.fmtExpr(i.cond.*);
-                    // Build then block: with or without binding
-                    const thenDoc = if (i.binding) |b| blk2: {
-                        const body = try this.fmtStmtSeq(i.then_);
-                        const inner = try this.concatAll(&.{
-                            try this.text(b),
-                            try this.text(" ->"),
-                            this.hardline(),
-                            body,
-                        });
-                        break :blk2 try this.surroundBreak("{", inner, "}");
-                    } else blk2: {
-                        // Single expression body — format without braces, unless it
-                        // is itself an `if` and an `else` follows (the `else` would
-                        // bind to the inner `if`).
-                        const nestedIf = i.then_.len == 1 and i.then_[0].expr == .branch and i.then_[0].expr.branch.kind == .if_;
-                        if (i.then_.len == 1 and !(nestedIf and i.else_ != null)) {
-                            break :blk2 try this.fmtExpr(i.then_[0].expr);
-                        }
-                        // Multi-statement block: one statement per line, as written.
-                        const inner = try this.fmtStmtSeq(i.then_);
-                        break :blk2 try this.surroundBreak("{", inner, "}");
-                    };
-                    if (i.else_) |els| {
-                        const elseDoc = if (els.len == 1)
-                            try this.fmtExpr(els[0].expr)
-                        else blk2: {
-                            const inner = try this.fmtStmtSeq(els);
-                            break :blk2 try this.surroundBreak("{", inner, "}");
-                        };
-                        break :blk this.concatAll(&.{
-                            try this.text("if ("),
-                            condDoc,
-                            try this.text(") "),
-                            thenDoc,
-                            try this.text(" else "),
-                            elseDoc,
-                        });
-                    }
-                    break :blk this.concatAll(&.{
-                        try this.text("if ("),
-                        condDoc,
-                        try this.text(") "),
-                        thenDoc,
-                    });
-                },
+                .if_ => |i| try this.fmtIf(i),
             },
             .loop => |lp| blk: {
                 // Decision 105's three keywords, printed back as written:
@@ -863,17 +886,27 @@ pub const Formatter = struct {
                     try this.text(")"),
                 }),
                 // `record { name: value, … }` — anonymous record literal.
+                // The argument list's shape: one measured group, a field per
+                // line with the trailing comma when it does not fit.
                 .behaviorLit => |il| blk: {
-                    var doc: *const Doc = try this.text("@");
-                    doc = try this.concat(doc, try this.text(il.name));
-                    doc = try this.concat(doc, try this.text("("));
-                    for (il.fields, 0..) |f, i| {
-                        if (i > 0) doc = try this.concat(doc, try this.text(", "));
-                        doc = try this.concat(doc, try this.text(f.name));
-                        doc = try this.concat(doc, try this.text(": "));
-                        doc = try this.concat(doc, try this.fmtExpr(f.value.*));
-                    }
-                    break :blk try this.concat(doc, try this.text(")"));
+                    const head = try this.text(try std.fmt.allocPrint(this.arena, "@{s}", .{il.name}));
+                    if (il.fields.len == 0) break :blk try this.concat(head, try this.text("()"));
+                    const fields = try this.arena.alloc(*const Doc, il.fields.len);
+                    for (il.fields, 0..) |f, i| fields[i] = try this.concatAll(&.{
+                        try this.text(f.name),
+                        try this.text(": "),
+                        try this.fmtExpr(f.value.*),
+                    });
+                    break :blk try this.concat(head, try this.groupMeasured(try this.concatAll(&.{
+                        try this.text("("),
+                        try this.nest(INDENT, try this.concatAll(&.{
+                            this.softline(),
+                            try this.join(fields, try this.concat(try this.text(","), this.line())),
+                            try this.ifBreak(","),
+                        })),
+                        this.softline(),
+                        try this.text(")"),
+                    })));
                 },
                 .case => |c| try this.fmtCase(c.subjects, c.arms, c.trailingComments),
                 .arrayLit => |al| blk: {
@@ -884,7 +917,9 @@ pub const Formatter = struct {
                     defer docs.deinit(this.arena);
 
                     var commentIdx: usize = 0;
-                    const hasComments = al.comments.len > 0;
+                    // A trailing element comment (G7) forces the open form like
+                    // any other comment: a flat list has nowhere to end a line.
+                    const hasComments = al.comments.len > 0 or al.trailingPerElem.len > 0;
                     const hasCounts = al.commentsPerElem.len > 0;
 
                     for (al.elems, 0..) |e, i| {
@@ -906,20 +941,18 @@ pub const Formatter = struct {
                         // In multi-line mode (trailingComma/comments), always add comma
                         const hasMore = (i < al.elems.len - 1) or (al.spread != null) or (al.spreadExpr != null);
                         const shouldAddComma = hasMore or al.trailingComma or hasComments;
-                        const elemWithComma = if (shouldAddComma)
+                        const elemWithComma = try this.withElemTrailingComment(if (shouldAddComma)
                             try this.concat(elemDoc, try this.text(","))
                         else
-                            elemDoc;
-                        // Group this element with the previous one if they share the same source line
-                        // and this element has no preceding comments.
-                        const sameLineAsPrev = i > 0 and numCommentsBefore == 0 and
-                            e.getLoc().line == al.elems[i - 1].getLoc().line;
-                        if (sameLineAsPrev and docs.items.len > 0) {
-                            const prev = docs.items[docs.items.len - 1];
-                            docs.items[docs.items.len - 1] = try this.concat(prev, try this.concat(try this.text(" "), elemWithComma));
-                        } else {
-                            try docs.append(this.arena, elemWithComma);
-                        }
+                            elemDoc, al.trailingPerElem, i);
+                        // One element per line in the open form. Elements written
+                        // on one source line used to be kept on one output line,
+                        // which made the layout a function of the source's layout
+                        // (decision 65 part 2 rules that out) and, once the list
+                        // measures width, was not idempotent: the joined line ran
+                        // past the width, a call inside it broke, and the next
+                        // pass read a different layout.
+                        try docs.append(this.arena, elemWithComma);
                     }
                     // Emit spread comments (commentsPerElem[elems.len])
                     const spreadCommentCount: usize = if (hasCounts and al.commentsPerElem.len > al.elems.len)
@@ -983,12 +1016,18 @@ pub const Formatter = struct {
                         }));
                     }
 
-                    // Otherwise, use group for flexible inline/multi-line
-                    const inner = try this.join(docs.items, this.line());
-                    break :blk this.group(try this.concatAll(&.{
+                    // Otherwise one measured group (decision 65): the list on one
+                    // line when it fits, what follows it counted; otherwise one
+                    // element per line, `+4`, with the trailing comma of the open
+                    // form, the spread included, `]` on its own line.
+                    var inner = try this.join(docs.items, this.line());
+                    if (hasSpread) inner = if (docs.items.len > 0)
+                        try this.concatAll(&.{ inner, this.line(), spreadDoc })
+                    else
+                        spreadDoc;
+                    break :blk this.groupMeasured(try this.concatAll(&.{
                         try this.text("["),
-                        try this.nest(INDENT, try this.concat(this.softline(), inner)),
-                        if (spreadDoc != this.nil()) try this.concatAll(&.{ this.line(), spreadDoc }) else this.nil(),
+                        try this.nest(INDENT, try this.concatAll(&.{ this.softline(), inner, try this.ifBreak(",") })),
                         this.softline(),
                         try this.text("]"),
                     }));
@@ -1001,7 +1040,7 @@ pub const Formatter = struct {
                     var isComment: std.ArrayList(bool) = .empty;
                     defer isComment.deinit(this.arena);
 
-                    const tlHasComments = tl.comments.len > 0;
+                    const tlHasComments = tl.comments.len > 0 or tl.trailingPerElem.len > 0;
                     const tlHasCounts = tl.commentsPerElem.len > 0;
 
                     var commentIdx: usize = 0;
@@ -1026,7 +1065,7 @@ pub const Formatter = struct {
                         // In comment mode: attach comma to element doc (all args get trailing comma)
                         // In non-comment mode: no comma attached (separator handles it)
                         try items.append(this.arena, if (tlHasComments)
-                            try this.concat(elemDoc, try this.text(","))
+                            try this.withElemTrailingComment(try this.concat(elemDoc, try this.text(",")), tl.trailingPerElem, i)
                         else
                             elemDoc);
                         _ = isLast;
@@ -1079,9 +1118,10 @@ pub const Formatter = struct {
                         try parts.append(this.arena, item);
                     }
                     const inner = try this.concatAll(parts.items);
-                    break :blk this.group(try this.concatAll(&.{
+                    // One measured group, as the array literal's.
+                    break :blk this.groupMeasured(try this.concatAll(&.{
                         try this.text("#("),
-                        try this.nest(INDENT, try this.concat(this.softline(), inner)),
+                        try this.nest(INDENT, try this.concatAll(&.{ this.softline(), inner, try this.ifBreak(",") })),
                         this.softline(),
                         try this.text(")"),
                     }));
@@ -1098,8 +1138,7 @@ pub const Formatter = struct {
                 .comptimeBlock => |cb| blk: {
                     var items = try this.arena.alloc(*const Doc, cb.body.len);
                     for (cb.body, 0..) |s, i| {
-                        const exprDoc = try this.fmtExpr(s.expr);
-                        items[i] = try this.concat(exprDoc, try this.text(";"));
+                        items[i] = try this.terminated(s.expr, try this.fmtExpr(s.expr));
                     }
                     const inner = try this.join(items, this.hardline());
                     break :blk this.concat(
@@ -1123,20 +1162,203 @@ pub const Formatter = struct {
                     doc = try this.concat(doc, try this.fmtPattern(ap.pattern));
                     doc = try this.concat(doc, try this.text(" = "));
                     doc = try this.concat(doc, try this.fmtExpr(ap.expr.*));
-                    doc = try this.concat(doc, try this.text(" catch "));
-                    doc = try this.concat(doc, try this.fmtExpr(ap.handler.*));
+                    // The handler-less `val assert P = e;` (decision 8 § 9)
+                    // carries the `@panic(…)` the parser desugared it to;
+                    // printing that handler wrote a `catch` the author never
+                    // did, and the checker refuses it ("after `catch` the value
+                    // is not a @Result") — `format` broke the file it formatted.
+                    if (!ap.fatal) {
+                        doc = try this.concat(doc, try this.text(" catch "));
+                        doc = try this.concat(doc, try this.fmtExpr(ap.handler.*));
+                    }
                     break :blk doc;
                 },
             },
         };
     }
 
-    fn fmtBinop(this: *Formatter, lhs: ast.Expr, op: []const u8, rhs: ast.Expr) !*const Doc {
-        return this.concatAll(&.{
-            try this.fmtExpr(lhs),
-            try this.text(op),
-            try this.fmtExpr(rhs),
-        });
+    /// An `if` expression or statement.
+    fn fmtIf(this: *Formatter, i: anytype) anyerror!*const Doc {
+        const parts = try this.fmtIfParts(i);
+        return parts.whole(this);
+    }
+
+    /// An `if` in two halves: `head`, which holds every break a bare branch
+    /// adds, and `tail`, a braced `else` body that follows it. `tail` stays
+    /// outside the measured group: its `{` block always breaks, and inside the
+    /// group that would break every bare branch before it too.
+    const IfParts = struct {
+        head: *const Doc,
+        tail: *const Doc,
+        measured: bool,
+
+        fn whole(p: IfParts, f: *Formatter) !*const Doc {
+            const h = if (p.measured) try f.groupMeasured(p.head) else p.head;
+            return f.concat(h, p.tail);
+        }
+    };
+
+    fn fmtIfParts(this: *Formatter, i: anytype) anyerror!IfParts {
+        // `a ?? b` — decision 28's nullish default, which the parser
+        // desugars into exactly this `if` (`ast.nullish_binding_name`
+        // says why: no `BinOp` variant, no new node). Printing the
+        // desugaring gave back a program nobody wrote and lost the
+        // `??` token with it.
+        if (nullishDefaultFallback(i)) |fallback| {
+            return .{ .head = try this.concatAll(&.{
+                try this.fmtExpr(i.cond.*),
+                try this.text(" ?? "),
+                try this.fmtExpr(fallback),
+            }), .tail = this.nil(), .measured = false };
+        }
+        const condDoc = try this.fmtExpr(i.cond.*);
+        // Build then block: with or without binding
+        const thenDoc = if (i.binding) |b| blk2: {
+            const body = try this.fmtStmtSeq(i.then_);
+            const inner = try this.concatAll(&.{
+                try this.text(b),
+                try this.text(" ->"),
+                this.hardline(),
+                body,
+            });
+            break :blk2 try this.surroundBreak("{", inner, "}");
+        } else blk2: {
+            // Single expression body — format without braces, unless it
+            // is itself an `if` and an `else` follows (the `else` would
+            // bind to the inner `if`).
+            const nestedIf = i.then_.len == 1 and i.then_[0].expr == .branch and i.then_[0].expr.branch.kind == .if_;
+            if (i.then_.len == 1 and !(nestedIf and i.else_ != null)) {
+                break :blk2 try this.fmtExpr(i.then_[0].expr);
+            }
+            // Multi-statement block: one statement per line, as written.
+            const inner = try this.fmtStmtSeq(i.then_);
+            break :blk2 try this.surroundBreak("{", inner, "}");
+        };
+        // A bare (brace-less) then-branch has a break before it: an
+        // `if` whose one line does not fit puts the branch on the
+        // next line, `+4`, and a bare `else` branch on the line
+        // after that — one measured group, all-or-nothing
+        // (decision 65). Without it the condition's own groups were
+        // the only place to break, and they broke for the branch
+        // that FOLLOWED them (`if (absDiff` / `    > tolerance) throw
+        // "…"`), the wrong middle. A braced branch keeps `) {` and
+        // `} else {` exactly as before; an `else if` keeps its `if`
+        // on the `else` line.
+        const thenBare = !(i.binding != null or i.then_.len != 1 or
+            (i.then_[0].expr == .branch and i.then_[0].expr.branch.kind == .if_ and i.else_ != null));
+        const thenPart: *const Doc = if (thenBare)
+            try this.concat(try this.text(")"), try this.nest(INDENT, try this.concat(this.line(), thenDoc)))
+        else
+            try this.concat(try this.text(") "), thenDoc);
+        if (i.else_) |els| {
+            const elseIsIf = els.len == 1 and els[0].expr == .branch and els[0].expr.branch.kind == .if_ and
+                nullishDefaultFallback(els[0].expr.branch.kind.if_) == null;
+            if (!thenBare) {
+                const elseDoc = if (els.len == 1)
+                    try this.fmtExpr(els[0].expr)
+                else
+                    try this.surroundBreak("{", try this.fmtStmtSeq(els), "}");
+                return .{
+                    .head = try this.concatAll(&.{ try this.text("if ("), condDoc, thenPart, try this.text(" else "), elseDoc }),
+                    .tail = this.nil(),
+                    .measured = false,
+                };
+            }
+            const head = try this.concatAll(&.{ try this.text("if ("), condDoc, thenPart, this.line(), try this.text("else") });
+            if (els.len != 1) {
+                // `else {` — the braced body is the tail.
+                return .{
+                    .head = head,
+                    .tail = try this.concat(try this.text(" "), try this.surroundBreak("{", try this.fmtStmtSeq(els), "}")),
+                    .measured = true,
+                };
+            }
+            if (elseIsIf) {
+                // An `else if` under a bare then-branch is the same chain: its
+                // breaks join this group, so the chain breaks at every `else`
+                // or at none (a last `else if (…) a else b` left flat was the
+                // middle). Its own braced `else`, if any, is the tail of all.
+                const child = try this.fmtIfParts(els[0].expr.branch.kind.if_);
+                if (child.measured) return .{
+                    .head = try this.concatAll(&.{ head, try this.text(" "), child.head }),
+                    .tail = child.tail,
+                    .measured = true,
+                };
+                return .{ .head = head, .tail = try this.concat(try this.text(" "), try child.whole(this)), .measured = true };
+            }
+            return .{
+                .head = try this.concat(head, try this.nest(INDENT, try this.concat(this.line(), try this.fmtExpr(els[0].expr)))),
+                .tail = this.nil(),
+                .measured = true,
+            };
+        }
+        return .{ .head = try this.concatAll(&.{ try this.text("if ("), condDoc, thenPart }), .tail = this.nil(), .measured = thenBare };
+    }
+
+    fn binOpText(op: anytype) []const u8 {
+        return switch (op) {
+            .add => "+",
+            .sub => "-",
+            .mul => "*",
+            .div => "/",
+            .mod => "%",
+            .lt => "<",
+            .gt => ">",
+            .lte => "<=",
+            .gte => ">=",
+            .eq => "==",
+            .ne => "!=",
+            .@"and" => "&&",
+            .@"or" => "||",
+        };
+    }
+
+    /// The parser's precedence level of `op` (`parser/exprs.zig`'s
+    /// `precedence_table`, lowest first). Operands of one level form one chain.
+    fn binOpLevel(op: anytype) u8 {
+        return switch (op) {
+            .@"or" => 0,
+            .@"and" => 1,
+            .eq, .ne => 2,
+            .lt, .gt, .lte, .gte => 3,
+            .add, .sub => 4,
+            .mul, .div, .mod => 5,
+        };
+    }
+
+    /// A binary expression — **one** `groupMeasured` over the run of operands
+    /// that share a precedence level (`a + b - c` is one run; `a + b * c` is a
+    /// run of two whose second operand is a run of its own). All-or-nothing
+    /// (decision 65): one line when the flat spelling fits, what follows on the
+    /// line counted; otherwise the first operand stays on the line and every
+    /// other one starts a line of its own, **operator first**, `+4` from the
+    /// statement — the method chain's shape, the operator where the chain puts
+    /// its `.`. The parser is left-associative, so the run is the left spine.
+    fn fmtBinaryChain(this: *Formatter, expr: ast.Expr) !*const Doc {
+        const top = expr.binaryOp;
+        const level = binOpLevel(top.op);
+        var rest: std.ArrayList(ast.BinOpExpr) = .empty;
+        var head: ast.Expr = expr;
+        while (head == .binaryOp and binOpLevel(head.binaryOp.op) == level) {
+            try rest.append(this.arena, head.binaryOp);
+            head = head.binaryOp.lhs.*;
+        }
+        var links: std.ArrayList(*const Doc) = .empty;
+        var i = rest.items.len;
+        while (i > 0) {
+            i -= 1;
+            const b = rest.items[i];
+            try links.append(this.arena, try this.concatAll(&.{
+                this.line(),
+                try this.text(binOpText(b.op)),
+                try this.text(" "),
+                try this.fmtExpr(b.rhs.*),
+            }));
+        }
+        return this.groupMeasured(try this.concat(
+            try this.fmtExpr(head),
+            try this.nest(INDENT, try this.concatAll(links.items)),
+        ));
     }
 
     /// A builtin call the **parser** synthesised for a form that has its own
@@ -1424,9 +1646,10 @@ pub const Formatter = struct {
                 // pinned and cannot break first: the middle decision 65 calls
                 // wrong. Measured and parked (`format/AGENTS.md`); the enabling
                 // is `groupMeasured` plus `ifBreak(",")` before the softline.
-                break :blk try this.group(try this.concatAll(&.{
+                break :blk try this.groupMeasured(try this.concatAll(&.{
                     try this.text("("),
                     try this.nest(INDENT, try this.concat(this.softline(), inner)),
+                    try this.ifBreak(","),
                     this.softline(),
                     try this.text(")"),
                 }));
@@ -1578,23 +1801,9 @@ pub const Formatter = struct {
     }
 
     fn fmtFnExpr(this: *Formatter, params: []const []const u8, body: []ast.Stmt) !*const Doc {
-        var items: std.ArrayList(*const Doc) = .empty;
-        defer items.deinit(this.arena);
-        for (body, 0..) |s, i| {
-            if (i > 0 and s.emptyLinesBefore > 0) {
-                for (0..s.emptyLinesBefore) |_| {
-                    try items.append(this.arena, try this.text("\n"));
-                }
-            }
-            if (i > 0) try items.append(this.arena, this.hardline());
-            const exprDoc = try this.fmtExpr(s.expr);
-            const stmtDoc = switch (s.expr) {
-                .literal => |lit| if (lit.kind == .comment) exprDoc else try this.concat(exprDoc, try this.text(";")),
-                else => try this.concat(exprDoc, try this.text(";")),
-            };
-            try items.append(this.arena, stmtDoc);
-        }
-        const inner = try this.concatAll(items.items);
+        // The one statement-sequence printer — this body had a copy of its
+        // loop that kept no trailing comment on its statement's line.
+        const inner = try this.fmtStmtSeq(body);
 
         if (params.len == 0) {
             return this.concatAll(&.{
@@ -1871,9 +2080,28 @@ pub const Formatter = struct {
         var parts: std.ArrayList(*const Doc) = .empty;
         defer parts.deinit(this.arena);
         try parts.append(this.arena, docs[0]);
+        var chain: CommentChain = .{};
         for (1..docs.len) |i| {
             const prev = program.decls[i - 1];
             const curr = program.decls[i];
+            const sourceBlankHere = program.blankLineBefore.len == program.decls.len and program.blankLineBefore[i];
+            if (curr == .comment and curr.comment.trailing) {
+                // A trailing comment: its column is recorded for a continuation.
+                try parts.append(this.arena, try this.text(" "));
+                try parts.append(this.arena, this.markColumn());
+                try parts.append(this.arena, docs[i]);
+                chain.start(curr.comment.loc);
+                continue;
+            }
+            if (curr == .comment and !sourceBlankHere and chain.continues(curr.comment.loc)) {
+                // Its continuation, aligned under it.
+                try parts.append(this.arena, this.hardline());
+                try parts.append(this.arena, this.alignToMark());
+                try parts.append(this.arena, docs[i]);
+                chain.advance(curr.comment.loc);
+                continue;
+            }
+            chain = .{};
             // `mod` declarations group with imports — both are tight module-graph
             // statements, so adjacent ones get a single newline, not a blank line.
             const prevIsUse = prev == .use or prev == .mod;
@@ -2125,6 +2353,14 @@ pub const Formatter = struct {
         ));
     }
 
+    /// An array or tuple element followed by the comment written on its own
+    /// line (`1, // one`) — `trailingPerElem[i]`, front 16's G7.
+    fn withElemTrailingComment(this: *Formatter, elem: *const Doc, slots: []const ?[]const u8, i: usize) !*const Doc {
+        if (i >= slots.len) return elem;
+        const c = slots[i] orelse return elem;
+        return this.concat(elem, try this.text(try std.fmt.allocPrint(this.arena, " // {s}", .{c})));
+    }
+
     fn withMemberComments(this: *Formatter, comments: []const []const u8, member: *const Doc) !struct { doc: *const Doc, blank: bool } {
         const lines = try this.commentLines(comments);
         const leadingBlank = comments.len > 0 and comments[0].len == 0;
@@ -2271,7 +2507,11 @@ pub const Formatter = struct {
         const variants = t.variants();
         const sections = t.sections();
         const itemCount = variants.len + sections.len;
-        if (itemCount + methodDocs.len == 0) {
+        // The comments before the body's `}` (`TypeDecl.bodyComments`) — the
+        // record path printed them and this one did not, so a `//` closing an
+        // enum body was deleted.
+        const closing = try this.commentLines(t.bodyComments);
+        if (itemCount + methodDocs.len == 0 and closing.items.len == 0) {
             try parts.append(this.arena, try this.text("{}"));
             return this.concatAll(parts.items);
         }
@@ -2282,7 +2522,7 @@ pub const Formatter = struct {
         for (sections) |sec| {
             if (sec.comments.len > 0) hasMemberComment = true;
         }
-        const open = t.trailingComma or sections.len > 0 or methodDocs.len > 0 or hasMemberComment;
+        const open = t.trailingComma or sections.len > 0 or methodDocs.len > 0 or hasMemberComment or closing.items.len > 0;
         if (!open) {
             const vdocs = try this.arena.alloc(*const Doc, variants.len);
             for (variants, 0..) |v, i| vdocs[i] = try this.fmtEnumVariant(v);
@@ -2304,6 +2544,12 @@ pub const Formatter = struct {
                 try this.concatAll(&.{ inner, try this.text("\n"), this.hardline(), methods })
             else
                 methods;
+        }
+        if (closing.items.len > 0) {
+            var cparts: std.ArrayList(*const Doc) = .empty;
+            try cparts.append(this.arena, inner);
+            try this.appendCommentLines(&cparts, closing, itemCount + methodDocs.len > 0);
+            inner = try this.concatAll(cparts.items);
         }
         try parts.append(this.arena, try this.surroundBreak("{", inner, "}"));
         return this.concatAll(parts.items);
@@ -2329,10 +2575,17 @@ pub const Formatter = struct {
     /// nested sections (arbitrarily deep). Always rendered broken, and never
     /// followed by a comma — the closing brace ends the item.
     fn fmtEnumSection(this: *Formatter, s: ast.EnumSection) anyerror!*const Doc {
-        const body = if (s.variants.len + s.sections.len == 0)
+        const closing = try this.commentLines(s.bodyComments);
+        const hasMembers = s.variants.len + s.sections.len > 0;
+        const body = if (!hasMembers and closing.items.len == 0)
             try this.text("{}")
-        else
-            try this.surroundBreak("{", try this.fmtEnumMembers(s.variants, s.sections), "}");
+        else blk: {
+            var parts: std.ArrayList(*const Doc) = .empty;
+            if (hasMembers) try parts.append(this.arena, try this.fmtEnumMembers(s.variants, s.sections));
+            // The comments before the section's `}` (`EnumSection.bodyComments`).
+            try this.appendCommentLines(&parts, closing, hasMembers);
+            break :blk try this.surroundBreak("{", try this.concatAll(parts.items), "}");
+        };
         return this.concatAll(&.{ try this.text(s.name), try this.text(" "), body });
     }
 
@@ -2791,6 +3044,8 @@ fn fitsPinned(budget: isize, work: *std.ArrayList(Item)) bool {
             .ifBreak => |s| if (item.mode == .break_) {
                 remaining -= @intCast(s.len);
             },
+            // Zero-width, and a pad only ever follows a line break.
+            .markColumn, .alignToMark => {},
         }
     }
     return remaining >= 0;
@@ -2852,6 +3107,9 @@ fn fits(
             .widthChoice => |w| remaining -= @intCast(w.flatWidth),
             // Absent from the flat spelling by definition.
             .ifBreak => {},
+            // Zero-width; a pad only ever follows a line break, which ended the
+            // flat spelling already.
+            .markColumn, .alignToMark => {},
         }
         if (remaining < 0) return false;
     }
@@ -2885,6 +3143,7 @@ fn fits(
             .ifBreak => |s| if (item.mode == .break_) {
                 remaining -= @intCast(s.len);
             },
+            .markColumn, .alignToMark => {},
         }
         if (remaining < 0) return false;
     }
@@ -2909,6 +3168,8 @@ pub fn render(allocator: std.mem.Allocator, doc: *const Doc, width: usize) ![]u8
     var scratch: std.ArrayList(Item) = .empty;
 
     var col: usize = 0;
+    // The column `markColumn` last recorded (`alignToMark` pads to it).
+    var mark: usize = 0;
 
     while (work.items.len > 0) {
         const item = work.pop().?;
@@ -3004,6 +3265,13 @@ pub fn render(allocator: std.mem.Allocator, doc: *const Doc, width: usize) ![]u8
             .ifBreak => |s| if (item.mode == .break_) {
                 try out.appendSlice(allocator, s);
                 col += s.len;
+            },
+
+            .markColumn => mark = col,
+
+            .alignToMark => if (mark > col) {
+                try out.appendNTimes(allocator, ' ', mark - col);
+                col = mark;
             },
         }
     }

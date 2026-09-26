@@ -8,7 +8,9 @@ import {PatternSegment, parsePattern, matchPattern, patternProblem} from "patter
 // `true` when `path` matches `pattern`; a pattern that does not parse matches
 // nothing.
 fn parsedOrNone(pattern: string) -> Array<PatternSegment> {
-    val none: Array<PatternSegment> = [PatternSegment.Literal(text: "<refused>")];
+    val none: Array<PatternSegment> = [
+        PatternSegment.Literal(text: "<refused>"),
+    ];
     return parsePattern(pattern).unwrapOr(none);
 }
 
@@ -17,7 +19,7 @@ fn matches(pattern: string, path: string) -> bool {
     if (matchPattern(parsedOrNone(pattern), path)) {
         _ ->
         hit = true;
-    };
+    }
     return hit;
 }
 
@@ -27,7 +29,7 @@ fn captured(pattern: string, path: string) -> string {
     if (matchPattern(parsed, path)) {
         cs ->
         out = cs.map({ c -> c._0 + "=" + c._1 }).join(",");
-    };
+    }
     return out;
 }
 
@@ -83,15 +85,24 @@ test "routing: a grammar the pattern does not have is refused by name" {
     try asserts.equals(refusal("/a/(x)"), patternProblem("/a/(x)", "(x)"));
     try asserts.equals(refusal("/a/x?"), patternProblem("/a/x?", "x?"));
     try asserts.equals(refusal("/a/{x}"), patternProblem("/a/{x}", "{x}"));
-    try asserts.equals(refusal("/dashboard/(.*)"), patternProblem("/dashboard/(.*)", "(.*)"));
+    try asserts.equals(
+        refusal("/dashboard/(.*)"),
+        patternProblem("/dashboard/(.*)", "(.*)"),
+    );
     try asserts.equals(refusal("/assets/*"), patternProblem("/assets/*", "*"));
     try asserts.equals(refusal("/a/:"), patternProblem("/a/:", ":"));
 }
 
 test "routing: :param* anywhere but last is refused" {
-    try asserts.equals(refusal("/a/:rest*/b"), "routing: the pattern `/a/:rest*/b` has `:rest*` before its last segment - a `:param*` captures the rest of the path and must be last");
+    try asserts.equals(
+        refusal("/a/:rest*/b"),
+        "routing: the pattern `/a/:rest*/b` has `:rest*` before its last segment - a `:param*` captures the rest of the path and must be last",
+    );
 }
 
 test "routing: patternProblem names the pattern and the segment" {
-    try asserts.equals(patternProblem("/a/*", "*"), "routing: the pattern `/a/*` uses `*`, which the `:param` grammar does not have - a pattern is literal segments, `:param` and a trailing `:param*`; a glob, a character class, a group, `?` and `{` are refused");
+    try asserts.equals(
+        patternProblem("/a/*", "*"),
+        "routing: the pattern `/a/*` uses `*`, which the `:param` grammar does not have - a pattern is literal segments, `:param` and a trailing `:param*`; a glob, a character class, a group, `?` and `{` are refused",
+    );
 }

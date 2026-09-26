@@ -964,10 +964,14 @@ fn parseEnumItem(
             sub_sections.deinit(alloc);
         }
 
+        // The comments before the section's `}` are its `bodyComments`; they
+        // used to be collected and freed here, so `format` deleted them.
+        var sectionBodyComments: []const []const u8 = &.{};
+        errdefer if (sectionBodyComments.len > 0) alloc.free(sectionBodyComments);
         while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
             const subLeading = try takeMemberComments(this, alloc);
             if (this.check(.rightBrace) or this.check(.endOfFile)) {
-                alloc.free(subLeading);
+                sectionBodyComments = subLeading;
                 break;
             }
             _ = try parseEnumItem(this, alloc, &sub_variants, &sub_sections, true, subLeading);
@@ -982,6 +986,7 @@ fn parseEnumItem(
             .sections = try sub_sections.toOwnedSlice(alloc),
             .order = order,
             .comments = leading,
+            .bodyComments = sectionBodyComments,
         });
         return consumed;
     }

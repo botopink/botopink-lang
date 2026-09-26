@@ -30,7 +30,13 @@ pub type TableUserRequest(
 )
 
 pub fn expectedTable() -> string {
-    return "{\"type\":\"TableUserRequest\",\"fields\":[" + "{\"name\":\"name\",\"constraints\":[{\"code\":\"notBlank\"},{\"code\":\"sizeBetween\",\"min\":2,\"max\":50}]}," + "{\"name\":\"email\",\"constraints\":[{\"code\":\"notBlank\"},{\"code\":\"email\"}]}," + "{\"name\":\"age\",\"constraints\":[{\"code\":\"minValue\",\"min\":18},{\"code\":\"maxValue\",\"max\":120}]}," + "{\"name\":\"postalCode\",\"constraints\":[{\"code\":\"pattern\",\"regex\":\"^[0-9]{5}-[0-9]{3}$\"}]}," + "{\"name\":\"document\",\"constraints\":[{\"code\":\"constraint\",\"name\":\"cpfShape\"}]}" + "]}";
+    return "{\"type\":\"TableUserRequest\",\"fields\":["
+        + "{\"name\":\"name\",\"constraints\":[{\"code\":\"notBlank\"},{\"code\":\"sizeBetween\",\"min\":2,\"max\":50}]},"
+        + "{\"name\":\"email\",\"constraints\":[{\"code\":\"notBlank\"},{\"code\":\"email\"}]},"
+        + "{\"name\":\"age\",\"constraints\":[{\"code\":\"minValue\",\"min\":18},{\"code\":\"maxValue\",\"max\":120}]},"
+        + "{\"name\":\"postalCode\",\"constraints\":[{\"code\":\"pattern\",\"regex\":\"^[0-9]{5}-[0-9]{3}$\"}]},"
+        + "{\"name\":\"document\",\"constraints\":[{\"code\":\"constraint\",\"name\":\"cpfShape\"}]}"
+        + "]}";
 }
 
 test "validation: the table names every constrained field, code and parameter" {
@@ -45,11 +51,13 @@ test "validation: the table names nothing else" {
 
 test "validation: the table is byte-stable across calls" {
     assert constraintsOfTableUserRequest() == constraintsOfTableUserRequest();
-    assert constraintTableJson("X", "a|notBlank") == constraintTableJson("X", "a|notBlank");
+    assert constraintTableJson("X", "a|notBlank")
+        == constraintTableJson("X", "a|notBlank");
 }
 
 test "validation: a record with no constrained field answers an empty table" {
-    assert constraintTableJson("Empty", "") == "{\"type\":\"Empty\",\"fields\":[]}";
+    assert constraintTableJson("Empty", "")
+        == "{\"type\":\"Empty\",\"fields\":[]}";
     assert splitBlob("").length == 0;
 }
 
@@ -68,5 +76,6 @@ test "validation: numeric parameters are numbers and text parameters are strings
 test "validation: the table's JSON escapes a parameter that needs it" {
     assert renderParam("regex", "a\"b") == "\"a\\\"b\"";
     assert fieldJson("f", "") == "{\"name\":\"f\",\"constraints\":[]}";
-    assert constraintJson(["f", "minValue", "3"]) == "{\"code\":\"minValue\",\"min\":3}";
+    assert constraintJson(["f", "minValue", "3"])
+        == "{\"code\":\"minValue\",\"min\":3}";
 }

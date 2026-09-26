@@ -144,6 +144,19 @@ not copy the loop.** The semicolon policy is per block and is what each copy
 already applied — they are recorded above rather than unified, because
 tightening one would refuse a program that compiles today.
 
+**A braced block statement's `;` is optional in every block** (C-13 — decision 29
+(c), ordered by decision 60). After a statement, `Parser.isBracedBlockStmt` asks
+whether it is an `if` (not `a ?? b`'s desugaring), a loop or a `case` **and** the
+token that ended it is its `}`; if so the `;` is matched, never required,
+whatever the block's policy — `parseBlockBody`, `parseBlockExpr` and the
+pre-decision-8 `case` arm block (`1 -> { … }`) alike. The test is the closing
+brace, not the keyword: `if (c) return x;` keeps its `;`, and so does a binding or
+a `return` whose value is braced, since the statement there is the binding.
+`format.zig` prints no `;` after exactly these statements. The `;` stays accepted
+until every tree has migrated — rejecting it (`blockStatementSemicolon`, front
+15's parked patch) would refuse the sibling libraries and `tests/language`, which
+still write it.
+
 ## The `if` condition and its binder (C-08)
 
 The condition parses at **`prec.lowest`**, not `prec.equality`: `if (a && b)`
@@ -580,6 +593,8 @@ idempotent, so `format --check` then calls the thinned file clean.
 | `typeRef` | `BehaviorField` | `parseBehaviorBody` with `parseTypeRef` — `val fields: Field[];`, `val m: Array<Method>;`, `val p: ?Decl;` (it was a single identifier, `typeName`) |
 | `trailingComment` | `Field`, `BehaviorMethod`, `EnumVariant` | `takeTrailingComment`, gated on the comment sitting on the line the member ended on |
 | `order` | `EnumVariant`, `EnumSection` | `parseEnumItem` / `parsePayloadVariant`, as `variants.len + sections.len` at the moment of the append |
+| `trailingPerElem` | `arrayLit`, `tupleLit` (not members, but the same slot) | `takeElemTrailingComment` in `parser/exprs.zig`'s two literal loops, after the element's `,`, gated on `onPreviousTokenLine` — empty unless some element has one, and omitted from the dump then |
+| `bodyComments` | `TypeDecl`, `EnumSection` | the member loop's last `takeMemberComments`, the one that meets the closing `}` — a section's was collected and freed, so `format` deleted the `// end of …` line closing it |
 
 `takeTrailingComment`'s same-line test is the whole of the distinction between a
 member's own trailing comment and the **next** member's leading one. Collected at
@@ -594,10 +609,13 @@ interleaving is gone before any reader sees the AST, so a printer can only emit
 all of one list and then all of the other. It is additive on purpose — the 35
 `.variants()` / `.sections()` call sites across the five emitters, `comptime/` and
 `format.zig` keep reading the two slices unchanged. **Nothing in `src/codegen/`
-may key on a variant's position in `TypeShape.EnumShape.variants`**: `order` is
-source layout, not a run-time encoding, and a backend that started deriving a tag
-from a position would turn the formatter's member-ordering into a correctness
-question without anything saying so.
+may key on `order`**: it is source layout, not a run-time encoding, and a backend
+that started deriving a tag from a member's place among the sections would turn
+the formatter's member-ordering into a correctness question without anything
+saying so. wasm's all-unit enum *is* a variant's index among `variants` alone
+(`codegen/wat.zig`), which the formatter never permutes — re-measured 2026-09-26:
+an enum written with a variant after a section and with it hoisted above builds
+byte-identically on all four targets.
 
 None of the three reaches a snapshot: `order` is in `stringifyOmitting`'s
 `omitAlways` list and the two trivia slots in its `omitIfEmpty` list, so a member

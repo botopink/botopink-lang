@@ -108,7 +108,7 @@ pub fn allOf<T, E>(tasks: Array<@Task<@Result<T, E>>>) -> @Task<@Result<Array<T>
     for (tasks) { t ->
         val v = try await t;
         out.push(v);
-    };
+    }
     return out;
 }
 
@@ -118,7 +118,7 @@ pub fn all<T>(tasks: Array<@Task<T>>) -> @Task<Array<T>> {
     for (tasks) { t ->
         val v = await t;
         out.push(v);
-    };
+    }
     return out;
 }
 
@@ -279,7 +279,7 @@ test "async: race ---- fastest on commonJS, element zero on erlang" {
         assert first == "zero";
     } else {
         assert first == "one";
-    };
+    }
 }
 
 // ── runAll ───────────────────────────────────────────────────────────────────

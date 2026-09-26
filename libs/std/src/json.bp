@@ -133,12 +133,12 @@ pub fn decode(s: string) -> @Result<Json, string> {
     val start = skipWs(doc, 0);
     if (start >= doc.cps.length) {
         throw problemAt(doc, start, "no JSON value");
-    };
+    }
     val v = try readValue(doc, start);
     val end = skipWs(doc, v.next);
     if (end < doc.cps.length) {
         throw problemAt(doc, end, "unexpected text after the value");
-    };
+    }
     return v.value;
 }
 
@@ -169,7 +169,7 @@ fn skipWs(doc: Doc, start: i32) -> i32 {
     var i = start;
     while (isWs(cpAt(doc, i))) {
         i = i + 1;
-    };
+    }
     return i;
 }
 
@@ -185,7 +185,7 @@ fn problemAt(doc: Doc, i: i32, what: string) -> string {
     while (k < i && k < doc.cps.length) {
         bytes = bytes + utf8Len(cpAt(doc, k));
         k = k + 1;
-    };
+    }
     return ["json.decode: ", what, " at byte ", bytes.toString()].join("");
 }
 
@@ -193,32 +193,32 @@ fn readValue(doc: Doc, i: i32) -> @Result<Parsed, string> {
     val c = cpAt(doc, i);
     if (c == 123) {
         return try readObject(doc, i);
-    };
+    }
     if (c == 91) {
         return try readArray(doc, i);
-    };
+    }
     if (c == 34) {
         val t = try readString(doc, i);
         return Parsed(value: Json.Str(value: t.text), next: t.next);
-    };
+    }
     if (c == 116) {
         val n = try readWord(doc, i, "true");
         return Parsed(value: Json.Bool(value: true), next: n);
-    };
+    }
     if (c == 102) {
         val n = try readWord(doc, i, "false");
         return Parsed(value: Json.Bool(value: false), next: n);
-    };
+    }
     if (c == 110) {
         val n = try readWord(doc, i, "null");
         return Parsed(value: Json.Null, next: n);
-    };
+    }
     if (c == 45 || isDigit(c)) {
         return try readNumber(doc, i);
-    };
+    }
     if (c < 0) {
         throw problemAt(doc, i, "unexpected end of input");
-    };
+    }
     throw problemAt(doc, i, "unexpected character");
 }
 
@@ -230,12 +230,12 @@ fn readWord(doc: Doc, i: i32, word: string) -> @Result<i32, string> {
     while (k < want.length) {
         if (doc.chs.at(i + k).unwrapOr("") != want.at(k).unwrapOr("")) {
             ok = false;
-        };
+        }
         k = k + 1;
-    };
+    }
     if (!ok) {
         throw problemAt(doc, i, ["not a JSON value (expected `", word, "`)"].join(""));
-    };
+    }
     return i + want.length;
 }
 
@@ -249,7 +249,7 @@ fn readArray(doc: Doc, open: i32) -> @Result<Parsed, string> {
     var i = skipWs(doc, open + 1);
     if (cpAt(doc, i) == 93) {
         return Parsed(value: Json.Arr(items: items), next: i + 1);
-    };
+    }
     var more = true;
     var problem = "";
     while (more) {
@@ -265,11 +265,11 @@ fn readArray(doc: Doc, open: i32) -> @Result<Parsed, string> {
         } else {
             problem = problemAt(doc, after, "expected `,` or `]` in an array");
             more = false;
-        };
-    };
+        }
+    }
     if (problem != "") {
         throw problem;
-    };
+    }
     return Parsed(value: Json.Arr(items: items), next: i);
 }
 
@@ -278,7 +278,7 @@ fn readObject(doc: Doc, open: i32) -> @Result<Parsed, string> {
     var i = skipWs(doc, open + 1);
     if (cpAt(doc, i) == 125) {
         return Parsed(value: Json.Obj(members: members), next: i + 1);
-    };
+    }
     var more = true;
     var problem = "";
     while (more) {
@@ -294,11 +294,11 @@ fn readObject(doc: Doc, open: i32) -> @Result<Parsed, string> {
         } else {
             problem = problemAt(doc, after, "expected `,` or `}` in an object");
             more = false;
-        };
-    };
+        }
+    }
     if (problem != "") {
         throw problem;
-    };
+    }
     return Parsed(value: Json.Obj(members: members), next: i);
 }
 
@@ -309,15 +309,15 @@ type ParsedMember(key: string, value: Json, next: i32)
 fn readMember(doc: Doc, i: i32, seen: Array<#(string, Json)>) -> @Result<ParsedMember, string> {
     if (cpAt(doc, i) != 34) {
         throw problemAt(doc, i, "expected a member name (a string)");
-    };
+    }
     val key = try readString(doc, i);
     if (seen.filter({ m -> m._0 == key.text }).length > 0) {
         throw problemAt(doc, i, ["duplicate member name `", key.text, "`"].join(""));
-    };
+    }
     val colon = skipWs(doc, key.next);
     if (cpAt(doc, colon) != 58) {
         throw problemAt(doc, colon, "expected `:` after a member name");
-    };
+    }
     val v = try readValue(doc, skipWs(doc, colon + 1));
     return ParsedMember(key: key.text, value: v.value, next: v.next);
 }
@@ -337,9 +337,9 @@ fn hex4(doc: Doc, i: i32) -> i32 {
             acc = 0 - 1;
         } else {
             acc = acc * 16 + h;
-        };
+        }
         k = k + 1;
-    };
+    }
     return acc;
 }
 
@@ -368,15 +368,15 @@ fn readString(doc: Doc, open: i32) -> @Result<ParsedText, string> {
             } else {
                 parts.push(esc.text);
                 i = esc.next;
-            };
+            }
         } else {
             parts.push(doc.chs.at(i).unwrapOr(""));
             i = i + 1;
-        };
-    };
+        }
+    }
     if (problem != "") {
         throw problem;
-    };
+    }
     return ParsedText(text: parts.join(""), next: i);
 }
 
@@ -419,7 +419,7 @@ fn digitsFrom(doc: Doc, i: i32) -> ParsedText {
     while (isDigit(cpAt(doc, k))) {
         parts.push(doc.chs.at(k).unwrapOr(""));
         k = k + 1;
-    };
+    }
     return ParsedText(text: parts.join(""), next: k);
 }
 
@@ -432,27 +432,27 @@ fn readNumber(doc: Doc, start: i32) -> @Result<Parsed, string> {
     if (cpAt(doc, i) == 45) {
         sign = "-";
         i = i + 1;
-    };
+    }
     if (!isDigit(cpAt(doc, i))) {
         throw problemAt(doc, i, "a number needs a digit");
-    };
+    }
     if (cpAt(doc, i) == 48 && isDigit(cpAt(doc, i + 1))) {
         throw problemAt(doc, i, "a number may not have a leading zero");
-    };
+    }
     val whole = digitsFrom(doc, i);
     val frac = fractionFrom(doc, whole.next);
     if (frac.next < 0) {
         throw frac.text;
-    };
+    }
     val exp = exponentFrom(doc, frac.next);
     if (exp.next < 0) {
         throw exp.text;
-    };
+    }
     val numeral = [sign, whole.text, ".", frac.text, "e", exp.text].join("");
     val value = numeralValue(numeral);
     if (value.isError()) {
         throw problemAt(doc, start, "number overflows f64");
-    };
+    }
     return Parsed(value: Json.Num(value: value.unwrapOr(0.0)), next: exp.next);
 }
 
@@ -475,8 +475,8 @@ fn exponentFrom(doc: Doc, i: i32) -> ParsedText {
         if (!isDigit(cpAt(doc, at))) return ParsedText(text: problemAt(doc, at, "an exponent needs a digit"), next: 0 - 1) else {
             val d = digitsFrom(doc, at);
             return ParsedText(text: [sign, d.text].join(""), next: d.next);
-        };
-    };
+        }
+    }
 }
 
 // Internal: the `f64` of a numeral `readNumber` has ALREADY validated, in the
@@ -605,11 +605,11 @@ fn itemsEq(xs: Array<Json>, ys: Array<Json>) -> bool {
         while (i < xs.length) {
             if (jsonEq(xs.at(i).unwrapOr(Json.Null), ys.at(i).unwrapOr(Json.Null)).negate()) {
                 same = false;
-            };
+            }
             i = i + 1;
-        };
+        }
         return same;
-    };
+    }
 }
 
 fn membersEq(xs: Array<#(string, Json)>, ys: Array<#(string, Json)>) -> bool {
@@ -621,11 +621,11 @@ fn membersEq(xs: Array<#(string, Json)>, ys: Array<#(string, Json)>) -> bool {
             val y = ys.at(i).unwrapOr(#("", Json.Null));
             if ((x._0 != y._0) || jsonEq(x._1, y._1).negate()) {
                 same = false;
-            };
+            }
             i = i + 1;
-        };
+        }
         return same;
-    };
+    }
 }
 
 // `decode(s)` answers exactly `want`.

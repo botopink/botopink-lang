@@ -175,7 +175,7 @@ test "format: comments ---- multiline inside case block" {
         \\        [_, ..rest] -> rest |> do_len(acc + 1);
         \\        // Even the opposite wouldn't be optimised:
         \\        // { acc + 1 } |> do_len(rest, _);
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -249,7 +249,7 @@ test "format: comments ---- an else-branch keeps a blank line between statements
         \\        n = 3;
         \\
         \\        n = 4;
-        \\    };
+        \\    }
         \\    return n;
         \\}
     );
@@ -265,7 +265,7 @@ test "format: comments ---- an else-branch keeps a trailing comment on its line"
         \\    } else {
         \\        n = 3; // why three
         \\        n = 4;
-        \\    };
+        \\    }
         \\    return n;
         \\}
     );
@@ -327,7 +327,7 @@ test "format: comments ---- a loop body keeps a blank line and a comment" {
         \\
         \\        // the second half
         \\        n = n + 1;
-        \\    };
+        \\    }
         \\    return n;
         \\}
     );
@@ -342,7 +342,7 @@ test "format: comments ---- an if then-branch keeps a blank line and a comment" 
         \\
         \\        // and then
         \\        n = 2;
-        \\    };
+        \\    }
         \\    return n;
         \\}
     );
@@ -362,14 +362,75 @@ test "format: comments ---- all three blocks of one `if`/`loop` keep theirs at o
         \\
         \\        // else-branch
         \\        n = 4;
-        \\    };
+        \\    }
         \\    for (xs) { x ->
         \\        n = n + x;
         \\
         \\        // loop body
         \\        n = n + 1;
-        \\    };
+        \\    }
         \\    return n;
+        \\}
+    );
+}
+
+// Step 1 re-measured (2026-09-26): the comments written before an enum body's or
+// an enum section's closing `}` were deleted — four in emilia's `tokens.bp`
+// (`// ── end front 38 ──…` and its siblings). The section's were collected by
+// the parser and freed; the enum's were recorded in `TypeDecl.bodyComments` and
+// read only by the record path.
+test "format: comments ---- a comment before a section's and an enum's closing brace is kept" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\pub type T {
+        \\    Text {
+        \\        A,
+        \\        B,
+        \\        // end of text
+        \\    }
+        \\    Empty {
+        \\        // nothing yet
+        \\    }
+        \\
+        \\    // end of all
+        \\}
+    );
+}
+
+// C-12's comment column (09's handover: a sibling library's `runtime.bp:13`). A
+// comment written at a line's end and continued on the lines below, each
+// continuation starting in the column the first one starts in, keeps that
+// alignment — under the first comment's PRINTED column, which moves when the
+// code before it does. A comment line in another column, or after a blank line,
+// is an ordinary comment and prints at the indentation. Before, every
+// continuation was re-emitted at the statement's own column.
+test "format: comments ---- a trailing comment's continuation stays aligned under it" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\import {Response} from "http"; // sibling module — the handler type
+        \\                               // `rkRegisterRoute` names in its signature
+        \\// a comment of its own
+        \\
+        \\fn f() -> i32 {
+        \\    val x = 1; // first line
+        \\               // second line
+        \\               // third line
+        \\    // not a continuation
+        \\    return x;
+        \\}
+    );
+}
+
+test "format: comments ---- a continuation follows its comment when the code before it moves" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f() -> i32 {
+        \\    val x   =   1; // first line
+        \\                   // second line
+        \\    return x;
+        \\}
+    ,
+        \\fn f() -> i32 {
+        \\    val x = 1; // first line
+        \\               // second line
+        \\    return x;
         \\}
     );
 }

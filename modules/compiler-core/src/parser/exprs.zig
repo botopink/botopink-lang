@@ -1488,6 +1488,33 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     return ParseError.UnexpectedToken;
 }
 
+/// G7 — the comment written on an element's own line, after the element and
+/// its `,` (`1, // one`), is that element's: `slots[elemCount - 1]`. The test is
+/// the line — `onPreviousTokenLine` — which is the whole of the difference from
+/// a comment on a line of its own, which leads the next element. Without it the
+/// literal loops counted it as the next element's leading comment, and the
+/// formatter printed it above that element, where it is false.
+fn takeElemTrailingComment(this: *This, alloc: std.mem.Allocator, slots: *std.ArrayList(?[]const u8), elemCount: usize) ParseError!void {
+    while (slots.items.len < elemCount) try slots.append(alloc, null);
+    if (!isComment(this) or !this.onPreviousTokenLine()) return;
+    const cTok = this.advance();
+    slots.items[elemCount - 1] = try alloc.dupe(u8, commentText(cTok.lexeme));
+}
+
+fn freeTrailingSlots(alloc: std.mem.Allocator, slots: *std.ArrayList(?[]const u8)) void {
+    for (slots.items) |slot| if (slot) |c| alloc.free(c);
+    slots.deinit(alloc);
+}
+
+/// The slots as the AST's slice — empty when no element carries a comment, so
+/// a literal without one dumps and prints exactly as before.
+fn trailingSlotsOwned(alloc: std.mem.Allocator, slots: *std.ArrayList(?[]const u8)) ParseError![]const ?[]const u8 {
+    for (slots.items) |slot| if (slot != null) return slots.toOwnedSlice(alloc);
+    slots.deinit(alloc);
+    slots.* = .empty;
+    return &.{};
+}
+
 /// `#(e1, e2, ...)` ---- tuple literal.  Call when current token is `#`.
 pub fn parseTupleLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!CollectionExpr {
     const tupleTok = this.advance(); // '#'
@@ -1504,6 +1531,8 @@ pub fn parseTupleLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
     }
     var commentsPerElem: std.ArrayList(u32) = .empty;
     errdefer commentsPerElem.deinit(alloc);
+    var trailingPerElem: std.ArrayList(?[]const u8) = .empty;
+    errdefer freeTrailingSlots(alloc, &trailingPerElem);
 
     while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
         var commentsBefore: u32 = 0;
@@ -1525,7 +1554,9 @@ pub fn parseTupleLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
             return ParseError.UnexpectedToken;
         }
         try elems.append(alloc, try this.parseExpr(alloc));
-        if (!this.match(.comma)) break;
+        const hadComma = this.match(.comma);
+        try takeElemTrailingComment(this, alloc, &trailingPerElem, elems.items.len);
+        if (!hadComma) break;
     }
     var trailingCount: u32 = 0;
     while (this.isComment()) {
@@ -1548,6 +1579,7 @@ pub fn parseTupleLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
                 .elems = try elems.toOwnedSlice(alloc),
                 .comments = try allComments.toOwnedSlice(alloc),
                 .commentsPerElem = try commentsPerElem.toOwnedSlice(alloc),
+                .trailingPerElem = try trailingSlotsOwned(alloc, &trailingPerElem),
             },
         },
     };
@@ -1575,6 +1607,8 @@ pub fn parseArrayLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
     }
     var commentsPerElem: std.ArrayList(u32) = .empty;
     errdefer commentsPerElem.deinit(alloc);
+    var trailingPerElem: std.ArrayList(?[]const u8) = .empty;
+    errdefer freeTrailingSlots(alloc, &trailingPerElem);
 
     while (!this.check(.rightSquareBracket) and !this.check(.endOfFile)) {
         var commentsBefore: u32 = 0;
@@ -1623,7 +1657,9 @@ pub fn parseArrayLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
 
         try commentsPerElem.append(alloc, commentsBefore);
         try elems.append(alloc, try this.parseExpr(alloc));
-        if (!this.match(.comma)) break;
+        const hadComma = this.match(.comma);
+        try takeElemTrailingComment(this, alloc, &trailingPerElem, elems.items.len);
+        if (!hadComma) break;
         if (this.check(.rightSquareBracket)) {
             trailingComma = true;
             break;
@@ -1665,6 +1701,7 @@ pub fn parseArrayLitExpr(this: *This, alloc: std.mem.Allocator) ParseError!Colle
                 .comments = commentsSlice,
                 .commentsPerElem = try commentsPerElem.toOwnedSlice(alloc),
                 .trailingComma = trailingComma,
+                .trailingPerElem = try trailingSlotsOwned(alloc, &trailingPerElem),
             },
         },
     };
@@ -1683,7 +1720,7 @@ pub fn parseBlockExpr(this: *This, alloc: std.mem.Allocator) ParseError!Collecti
     while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
         if (try this.tryParseCommentStmt(alloc, &stmts, 0)) continue;
         const expr = try this.parseExpr(alloc);
-        _ = try this.consume(.semicolon);
+        if (this.isBracedBlockStmt(expr)) _ = this.match(.semicolon) else _ = try this.consume(.semicolon);
         try stmts.append(alloc, .{ .expr = expr });
     }
     _ = try this.consume(.rightBrace);

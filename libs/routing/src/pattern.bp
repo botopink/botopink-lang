@@ -29,7 +29,7 @@ fn sub(s: string, begin: i32, end: i32) -> string {
     while (i < stop) {
         out = out + charOf(s, i);
         i = i + 1;
-    };
+    }
     return out;
 }
 
@@ -37,12 +37,16 @@ fn segments(path: string) -> string[] {
     var out: string[] = [];
     for (path.split("/")) { s ->
         if (s != "") out.push(s);
-    };
+    }
     return out;
 }
 
 pub fn patternProblem(pattern: string, segment: string) -> string {
-    return "routing: the pattern `" + pattern + "` uses `" + segment + "`, which the `:param` grammar does not have - a pattern is literal segments, `:param` and a trailing `:param*`; a glob, a character class, a group, `?` and `{` are refused";
+    return "routing: the pattern `"
+        + pattern
+        + "` uses `"
+        + segment
+        + "`, which the `:param` grammar does not have - a pattern is literal segments, `:param` and a trailing `:param*`; a glob, a character class, a group, `?` and `{` are refused";
 }
 
 fn isRest(seg: string) -> bool {
@@ -51,12 +55,15 @@ fn isRest(seg: string) -> bool {
 
 // True when `seg` is none of: a literal free of `*([?{`, `:name`, `:name*`.
 fn unsupported(seg: string) -> bool {
-    val body = if (isRest(seg)) sub(seg, 1, seg.length() - 1) else if (seg.startsWith(
-        ":"
-    )) sub(seg, 1, seg.length()) else seg;
-    val special = (body.contains("*") || body.contains("(")) || ((body.contains("[") || body.contains(
-        "?"
-    )) || (body.contains("{") || body.contains(":")));
+    val body = if (isRest(seg))
+        sub(seg, 1, seg.length() - 1)
+    else if (seg.startsWith(":"))
+        sub(seg, 1, seg.length())
+    else
+        seg;
+    val special = (body.contains("*") || body.contains("("))
+        || ((body.contains("[") || body.contains("?"))
+            || (body.contains("{") || body.contains(":")));
     return special || body == "";
 }
 
@@ -67,20 +74,27 @@ fn problemOf(pattern: string) -> string {
     var i = 0;
     while (i < segs.length) {
         val seg = segs.at(i).unwrapOr("");
-        if (problem == "") if (unsupported(seg)) problem = patternProblem(pattern, seg) else if ((isRest(
-            seg
-        ) && i != segs.length - 1)) problem = "routing: the pattern `" + pattern + "` has `" + seg + "` before its last segment - a `:param*` captures the rest of the path and must be last";
+        if (problem == "")
+            if (unsupported(seg))
+                problem = patternProblem(pattern, seg)
+            else if ((isRest(seg) && i != segs.length - 1))
+                problem = "routing: the pattern `"
+                    + pattern
+                    + "` has `"
+                    + seg
+                    + "` before its last segment - a `:param*` captures the rest of the path and must be last";
         i = i + 1;
-    };
+    }
     return problem;
 }
 
 fn segmentOf(seg: string) -> PatternSegment {
-    if (isRest(seg)) return PatternSegment.Rest(name: sub(seg, 1, seg.length() - 1)) else if (seg.startsWith(
-        ":"
-    )) return PatternSegment.Param(name: sub(seg, 1, seg.length())) else return PatternSegment.Literal(
-        text: seg
-    );
+    if (isRest(seg))
+        return PatternSegment.Rest(name: sub(seg, 1, seg.length() - 1))
+    else if (seg.startsWith(":"))
+        return PatternSegment.Param(name: sub(seg, 1, seg.length()))
+    else
+        return PatternSegment.Literal(text: seg);
 }
 
 pub fn parsePattern(pattern: string) -> @Result<Array<PatternSegment>, string> {
@@ -132,13 +146,14 @@ pub fn matchPattern(
             if (present) captures.push(#(text, got)) else ok = false;
         } else {
             tail = true;
-            val rest = if (present) want
-                .slice(i, want.length)
-                .join("/") else "";
+            val rest = if (present)
+                want.slice(i, want.length).join("/")
+            else
+                "";
             captures.push(#(text, rest));
-        };
+        }
         i = i + 1;
-    };
+    }
     if (tail) {
         if (want.length < pattern.length - 1) ok = false;
     } else if (want.length != pattern.length) ok = false;

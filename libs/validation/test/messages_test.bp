@@ -20,13 +20,19 @@ fn tableSource(
     locale: string,
     entries: Array<#(string, string)>,
 ) -> MessageSource {
-    return MessageSource(locale: { -> locale }, template: { key -> lookup(entries, key) });
+    return MessageSource(
+        locale: { -> locale },
+        template: { key -> lookup(entries, key) },
+    );
 }
 
 // The shape a server framework installs at boot: its own property table read
 // through its own keys. Here the table is a literal; in rakun it is `rkProp`.
 fn propertySource(props: Array<#(string, string)>) -> MessageSource {
-    return MessageSource(locale: { -> lookup(props, "rakun.validation.locale") }, template: { key -> lookup(props, "rakun.validation.messages." + key) });
+    return MessageSource(
+        locale: { -> lookup(props, "rakun.validation.locale") },
+        template: { key -> lookup(props, "rakun.validation.messages." + key) },
+    );
 }
 
 fn messagesOf(vs: Array<Violation>) -> string {
@@ -36,7 +42,8 @@ fn messagesOf(vs: Array<Violation>) -> string {
 test "validation: with no source set the built-in text answers" {
     val _s = setMessageSource(builtInOnly());
     assert templateFor("size", builtInTemplate("size")) == "is not valid";
-    assert templateFor("sizeBetween", builtInTemplate("sizeBetween")) == "size must be between {min} and {max}";
+    assert templateFor("sizeBetween", builtInTemplate("sizeBetween"))
+        == "size must be between {min} and {max}";
     assert currentLocale() == "";
 }
 
@@ -46,13 +53,17 @@ test "validation: the locale entry, then the code entry, then the built-in" {
     assert templateFor("size", "built-in size") == "tamanho invalido";
     val _en = setMessageSource(tableSource("en", table));
     assert templateFor("size", "built-in size") == "bad size";
-    val _none = setMessageSource(tableSource("pt", [#("pt.other", "x"), #("other", "y")]));
+    val _none = setMessageSource(
+        tableSource("pt", [#("pt.other", "x"), #("other", "y")]),
+    );
     assert templateFor("size", "built-in size") == "built-in size";
     val _z = setMessageSource(builtInOnly());
 }
 
 test "validation: an empty locale skips the locale lookup entirely" {
-    val _s = setMessageSource(tableSource("", [#(".size", "never read"), #("size", "bad size")]));
+    val _s = setMessageSource(
+        tableSource("", [#(".size", "never read"), #("size", "bad size")]),
+    );
     assert templateFor("size", "built-in size") == "bad size";
     val _z = setMessageSource(builtInOnly());
 }
@@ -68,26 +79,46 @@ test "validation: the last source set is the one in force" {
 }
 
 test "validation: a property-table source reproduces the framework's messages" {
-    val _g = setMessageSource(propertySource([#("rakun.validation.messages.sizeBetween", "tamanho entre {min} e {max}")]));
-    assert message("sizeBetween", builtInTemplate("sizeBetween"), "nome", "a", [arg(
-                "min",
-                "2"
-            ), arg("max", "50")]) == "tamanho entre 2 e 50";
-    assert messagesOf(vSizeBetween("name", "a", 2, 50)) == "tamanho entre 2 e 50";
+    val _g = setMessageSource(
+        propertySource(
+            [
+                #(
+                    "rakun.validation.messages.sizeBetween",
+                    "tamanho entre {min} e {max}",
+                ),
+            ],
+        ),
+    );
+    assert message(
+        "sizeBetween",
+        builtInTemplate("sizeBetween"),
+        "nome",
+        "a",
+        [arg("min", "2"), arg("max", "50")],
+    )
+        == "tamanho entre 2 e 50";
+    assert messagesOf(vSizeBetween("name", "a", 2, 50))
+        == "tamanho entre 2 e 50";
     val props = [
         #("rakun.validation.messages.email", "global address"),
         #("rakun.validation.messages.pt-BR.email", "endereco invalido"),
     ];
     val _n = setMessageSource(propertySource(props));
     assert messagesOf(vEmail("email", "nope")) == "global address";
-    val _l = setMessageSource(propertySource(props.append([#("rakun.validation.locale", "pt-BR")])));
+    val _l = setMessageSource(
+        propertySource(props.append([#("rakun.validation.locale", "pt-BR")])),
+    );
     assert messagesOf(vEmail("email", "nope")) == "endereco invalido";
-    val _o = setMessageSource(propertySource(props.append([#("rakun.validation.locale", "es-ES")])));
+    val _o = setMessageSource(
+        propertySource(props.append([#("rakun.validation.locale", "es-ES")])),
+    );
     assert messagesOf(vEmail("email", "nope")) == "global address";
     val _e = setMessageSource(propertySource([]));
     assert messagesOf(vNotBlank("name", "")) == "must not be blank";
-    assert messagesOf(vSizeBetween("name", "A", 2, 50)) == "size must be between 2 and 50";
+    assert messagesOf(vSizeBetween("name", "A", 2, 50))
+        == "size must be between 2 and 50";
     assert messagesOf(vMinValueI32("age", 17, 18)) == "must be at least 18";
-    assert messagesOf(vPattern("postalCode", "x", "^[0-9]{5}-[0-9]{3}$")) == "must match ^[0-9]{5}-[0-9]{3}$";
+    assert messagesOf(vPattern("postalCode", "x", "^[0-9]{5}-[0-9]{3}$"))
+        == "must match ^[0-9]{5}-[0-9]{3}$";
     val _z = setMessageSource(builtInOnly());
 }

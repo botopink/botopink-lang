@@ -83,7 +83,7 @@ test "format: lambda ---- case expression in body" {
         \\        case x {
         \\            1 -> 1;
         \\            _ -> 0;
-        \\        };
+        \\        }
         \\    };
         \\}
     );
@@ -466,7 +466,7 @@ test "format: a loop body keeps each statement's semicolon" {
         \\        if (x == "a") a = a + x;
         \\        val y = x;
         \\        a = a + y;
-        \\    };
+        \\    }
         \\    return a;
         \\}
     );
@@ -487,7 +487,7 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
         \\    for (xs) { x ->
         \\        if (x == "a") a = a + x;
         \\        if (x == "b") b = b + x;
-        \\    };
+        \\    }
         \\    return a + b;
         \\}
     );
@@ -507,25 +507,25 @@ test "format: for, for await, while, loop and the annotated loop round-trip" {
         \\fn f(xs: i32[], gen: @Stream<i32>) {
         \\    for :outer (xs) { x ->
         \\        if (x == 2) break :outer;
-        \\    };
+        \\    }
         \\    for (0..xs.length) { i ->
         \\        @print(i);
-        \\    };
+        \\    }
         \\    for (1...3) { i ->
         \\        @print(i);
-        \\    };
+        \\    }
         \\    for await (gen) { v ->
         \\        @print(v);
-        \\    };
+        \\    }
         \\    var n = 0;
         \\    while :w (n < 3 && true) {
         \\        n = n + 1;
         \\        continue;
-        \\    };
+        \\    }
         \\    loop :l {
         \\        n = n - 1;
         \\        if (n == 0) break :l;
-        \\    };
+        \\    }
         \\    val g = iter loop :gen {
         \\        n = n + 1;
         \\        if (n == 10) break n * 2;
@@ -571,7 +571,7 @@ test "format: the front-24 forms round-trip — async block, the prefixed while 
         \\fn g(xs: i32[]) -> @Iterator<i32> :out {
         \\    for (xs) { x ->
         \\        yield :out x;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -579,11 +579,11 @@ test "format: the front-24 forms round-trip — async block, the prefixed while 
 test "format: an empty loop body prints on one line and a body breaks" {
     try h.assertFormat(std.testing.allocator,
         \\fn f(xs: i32[]) {
-        \\    for (xs) { x -> };
-        \\    while (true) { };
+        \\    for (xs) { x -> }
+        \\    while (true) { }
         \\    loop {
         \\        break;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -730,7 +730,7 @@ test "format: nullish ---- an optional-binding `if` is still printed as an `if`"
         \\    if (o) {
         \\        n ->
         \\        @print(n);
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -821,7 +821,7 @@ test "format: lambda ---- an empty trailing lambda and an empty case arm print {
         \\            @print("one");
         \\        }
         \\        _ {}
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -1040,6 +1040,200 @@ test "format: method chain ---- round trip is idempotent and lossless" {
         \\        .forEach({ x ->
         \\            @print(x);
         \\        });
+        \\}
+    );
+}
+
+// ── C-12: the constructs under `fits`, enclosing ones first (decision 65) ──────
+//
+// The argument list could not be enabled alone: about half the lists it opened
+// closed on a line that went on with an operator (`) != -1;`), opened for what
+// FOLLOWED them because the binary expression and the brace-less `if` around
+// them were pinned — the middle decision 65 calls wrong. So the enclosing
+// constructs measure too: a binary run, a brace-less `if`, the argument list,
+// the array / tuple / behavior literal. Each is all-or-nothing; the outer one
+// decides first, and an inner one is measured where the outer one put it.
+
+test "format: C-12 ---- a call that fits stays on one line, 80 columns exactly" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f() {
+        \\    val entry = ThemeEntry(name: "--text-3xl--line-height", value: "calc(2)");
+        \\}
+    );
+}
+
+test "format: C-12 ---- an argument list past the width takes one argument per line" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f() {
+        \\    val entry = ThemeEntry(
+        \\        name: "--text-3xl--line-height",
+        \\        value: "calc(2.25 / 1.875)",
+        \\    );
+        \\}
+    );
+}
+
+test "format: C-12 ---- an open argument list that fits is joined (a pure function of the content)" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f() {
+        \\    g(
+        \\        1,
+        \\        2,
+        \\    );
+        \\}
+    ,
+        \\fn f() {
+        \\    g(1, 2);
+        \\}
+    );
+}
+
+test "format: C-12 ---- a binary run breaks before every operator, +4" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(title: string, known: string[]) -> string {
+        \\    return reportTitle()
+        \\        + "\n\n"
+        \\        + notAppliedLine()
+        \\        + "\n"
+        \\        + known.length
+        \\        + " registered, none evaluated";
+        \\}
+    );
+}
+
+test "format: C-12 ---- the binary breaks before the argument list inside it" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(doc: string, a: string) {
+        \\    assert doc.indexOf(
+        \\        "." + a + "{background-attachment:fixed;background-attachment:local}",
+        \\    )
+        \\        != -1;
+        \\}
+    );
+}
+
+test "format: C-12 ---- a brace-less if puts its branch on the next line, not its condition" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(absDiff: f64, tolerance: f64) -> @Result<void, string> {
+        \\    if (absDiff > tolerance)
+        \\        throw "asserts.approxEquals: values differ by more than tolerance";
+        \\    return;
+        \\}
+    );
+}
+
+test "format: C-12 ---- an else-if chain breaks at every else or at none" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn kindLabel(kind: string) -> string {
+        \\    if (kind == "L")
+        \\        return "layout"
+        \\    else if (kind == "T")
+        \\        return "template"
+        \\    else if (kind == "P")
+        \\        return "page"
+        \\    else
+        \\        return "";
+        \\}
+        \\
+        \\fn short(k: string) -> string {
+        \\    if (k == "L") return "layout" else return "";
+        \\}
+    );
+}
+
+test "format: C-12 ---- a braced else stays outside the measured if" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn pick(xs: Array<i32>) -> i32 {
+        \\    return if (xs.isEmpty()) 0 else {
+        \\        val head = xs.length;
+        \\        head + 1;
+        \\    };
+        \\}
+    );
+}
+
+test "format: C-12 ---- a tuple and a behavior literal break like an argument list" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f() {
+        \\    val t = #(
+        \\        "the first element is long enough",
+        \\        "and the second one pushes it over",
+        \\    );
+        \\    val decl = @Decl(
+        \\        kind: "Record",
+        \\        name: "ServiceWithALongName",
+        \\        fields: [Field(name: "x", typeName: "i32")],
+        \\    );
+        \\}
+    );
+}
+
+// ── C-13: no `;` after a braced block statement (decision 29 (c)) ─────────────
+//
+// The parser accepts the `;` as optional (decision 60's order), so the printer
+// picks the side the decision took: a braced `if`, loop or `case` statement
+// ends at its `}`. What ends in `}` is decided from the printed text, as the
+// parser decides from the last token — a brace-less `if`, a binding or a
+// `return` whose value is braced, and `a ?? b` all keep their `;`.
+
+test "format: C-13 ---- a braced if, loop and case statement print no `;`" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f(c: bool, xs: i32[]) -> i32 {
+        \\    var n = 0;
+        \\    if (c) { n = 1; n = 2; };
+        \\    for (xs) { x -> n = n + x; n = n - 1; };
+        \\    while (n > 100) { n = n - 1; };
+        \\    loop { break; };
+        \\    case n { 1 -> @print("one"); _ -> @print("other"); };
+        \\    if (c) n = 3 else { n = 4; n = 5; };
+        \\    return n;
+        \\}
+    ,
+        \\fn f(c: bool, xs: i32[]) -> i32 {
+        \\    var n = 0;
+        \\    if (c) {
+        \\        n = 1;
+        \\        n = 2;
+        \\    }
+        \\    for (xs) { x ->
+        \\        n = n + x;
+        \\        n = n - 1;
+        \\    }
+        \\    while (n > 100) {
+        \\        n = n - 1;
+        \\    }
+        \\    loop {
+        \\        break;
+        \\    }
+        \\    case n {
+        \\        1 -> @print("one");
+        \\        _ -> @print("other");
+        \\    }
+        \\    if (c) n = 3 else {
+        \\        n = 4;
+        \\        n = 5;
+        \\    }
+        \\    return n;
+        \\}
+    );
+}
+
+test "format: C-13 ---- a brace-less if, a braced value and `??` keep their `;`" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(c: bool, o: ?i32) -> i32 {
+        \\    if (c) return 1;
+        \\    val x = if (c) {
+        \\        val a = 1;
+        \\        a;
+        \\    } else {
+        \\        val b = 2;
+        \\        b;
+        \\    };
+        \\    o ?? 0;
+        \\    return case x {
+        \\        1 -> 10;
+        \\        _ -> 20;
+        \\    };
         \\}
     );
 }

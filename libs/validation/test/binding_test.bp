@@ -59,10 +59,8 @@ test "validation: bindInt on an empty string is zero AND a violation" {
     val r = bindingReport();
     assert codesOf(r) == "typeMismatch";
     assert fieldsOf(r) == "age";
-    assert r.violations
-        .at(0)
-        .map({ v -> v.message })
-        .unwrapOr("") == "must be a whole number";
+    assert r.violations.at(0).map({ v -> v.message }).unwrapOr("")
+        == "must be a whole number";
 }
 
 test "validation: bindInt rejects a trailing character and accepts a number" {
@@ -86,10 +84,8 @@ test "validation: bindBool takes four spellings and refuses the rest" {
     assert bindBool("flag", "") == false;
     val r = bindingReport();
     assert codesOf(r) == "typeMismatch,typeMismatch,typeMismatch";
-    assert r.violations
-        .at(0)
-        .map({ v -> v.message })
-        .unwrapOr("") == "must be a boolean";
+    assert r.violations.at(0).map({ v -> v.message }).unwrapOr("")
+        == "must be a boolean";
 }
 
 test "validation: bindRequired makes the distinction Request cannot" {
@@ -101,10 +97,8 @@ test "validation: bindRequired makes the distinction Request cannot" {
     val r = bindingReport();
     assert codesOf(r) == "required,required";
     assert fieldsOf(r) == "name,nick";
-    assert r.violations
-        .at(0)
-        .map({ v -> v.message })
-        .unwrapOr("") == "must be present";
+    assert r.violations.at(0).map({ v -> v.message }).unwrapOr("")
+        == "must be present";
 }
 
 test "validation: bindEpochMillis reads an epoch and refuses anything else" {
@@ -115,10 +109,8 @@ test "validation: bindEpochMillis reads an epoch and refuses anything else" {
     assert bad == parseI64("0");
     val r = bindingReport();
     assert codesOf(r) == "typeMismatch";
-    assert r.violations
-        .at(0)
-        .map({ v -> v.message })
-        .unwrapOr("") == "must be a epoch in milliseconds";
+    assert r.violations.at(0).map({ v -> v.message }).unwrapOr("")
+        == "must be a epoch in milliseconds";
 }
 
 // ── the accumulator's lifetime ──────────────────────────────────────────────
@@ -161,6 +153,10 @@ test "validation: the report a handler answers with is one problem document" {
     val _b = bindRequired("name", "");
     val body = bindingReport().toProblemDetail();
     assert body.contains("\"status\":400");
-    assert body.contains("{\"field\":\"age\",\"code\":\"typeMismatch\",\"message\":\"must be a whole number\"}");
-    assert body.contains("{\"field\":\"name\",\"code\":\"required\",\"message\":\"must be present\"}");
+    assert body.contains(
+        "{\"field\":\"age\",\"code\":\"typeMismatch\",\"message\":\"must be a whole number\"}",
+    );
+    assert body.contains(
+        "{\"field\":\"name\",\"code\":\"required\",\"message\":\"must be present\"}",
+    );
 }

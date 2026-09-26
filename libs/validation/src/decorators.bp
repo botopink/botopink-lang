@@ -69,34 +69,156 @@ pub fn validated(comptime decl: @Decl) {
             val nullable = t == "";
             var call = "";
             var why = "";
-            if (n == "notNull") if (nullable) call = "vNotNull(" + q + ", " + read + " != null)" else why = "a field of type `" + t + "` can never be null, so the constraint could never fail";
-            if (n == "notBlank") if (isText) call = "vNotBlank(" + q + ", " + read + ")" else why = "it applies to `string`, and this field is `" + t + "`";
-            if (n == "notEmpty") if (isText) call = "vNotEmpty(" + q + ", " + read + ")" else if (isList) call = "vNotEmptyList(" + q + ", " + read + ")" else why = "it applies to `string` and `Array<T>`, and this field is `" + t + "`";
-            if (n == "sizeBetween") if (isText) call = "vSizeBetween(" + q + ", " + read + ", " + raw + ")" else if (isList) call = "vSizeBetweenList(" + q + ", " + read + ", " + raw + ")" else why = "it applies to `string` and `Array<T>`, and this field is `" + t + "`";
-            if (n == "minValue") if (t == "i32") call = "vMinValueI32(" + q + ", " + read + ", " + raw + ")" else if (t == "f64") call = "vMinValueF64(" + q + ", " + read + ", " + raw + ")" else why = "it applies to `i32` and `f64`, and this field is `" + t + "` (an integer literal does not widen to `i64`, so an `i64` bound cannot be written)";
-            if (n == "maxValue") if (t == "i32") call = "vMaxValueI32(" + q + ", " + read + ", " + raw + ")" else if (t == "f64") call = "vMaxValueF64(" + q + ", " + read + ", " + raw + ")" else why = "it applies to `i32` and `f64`, and this field is `" + t + "` (an integer literal does not widen to `i64`, so an `i64` bound cannot be written)";
-            if (n == "positive") if (t == "i32") call = "vPositiveI32(" + q + ", " + read + ")" else if (t == "i64") call = "vPositiveI64(" + q + ", " + read + ")" else if (t == "f64") call = "vPositiveF64(" + q + ", " + read + ")" else why = "it applies to `i32`, `i64` and `f64`, and this field is `" + t + "`";
-            if (n == "positiveOrZero") if (t == "i32") call = "vPositiveOrZeroI32(" + q + ", " + read + ")" else if (t == "i64") call = "vPositiveOrZeroI64(" + q + ", " + read + ")" else if (t == "f64") call = "vPositiveOrZeroF64(" + q + ", " + read + ")" else why = "it applies to `i32`, `i64` and `f64`, and this field is `" + t + "`";
-            if (n == "email") if (isText) call = "vEmail(" + q + ", " + read + ")" else why = "it applies to `string`, and this field is `" + t + "`";
-            if (n == "pattern") if (isText) call = "vPattern(" + q + ", " + read + ", " + raw + ")" else why = "it applies to `string`, and this field is `" + t + "`";
-            if (n == "pastDate") if (t == "i64") call = "vPastDate(" + q + ", " + read + ")" else why = "it applies to epoch milliseconds, which is `i64`, and this field is `" + t + "`";
-            if (n == "futureDate") if (t == "i64") call = "vFutureDate(" + q + ", " + read + ")" else why = "it applies to epoch milliseconds, which is `i64`, and this field is `" + t + "`";
-            if (n == "constraint") if (isText) call = "vConstraint(" + q + ", " + raw + ", " + read + ")" else why = "a registered constraint reads a `string`, and this field is `" + t + "`";
-            if (why != "") problem = "#[" + n + "] on field `" + f.name + "` of `" + decl.name + "`: " + why;
+            if (n == "notNull")
+                if (nullable)
+                    call = "vNotNull(" + q + ", " + read + " != null)"
+                else
+                    why = "a field of type `"
+                        + t
+                        + "` can never be null, so the constraint could never fail";
+            if (n == "notBlank")
+                if (isText)
+                    call = "vNotBlank(" + q + ", " + read + ")"
+                else
+                    why = "it applies to `string`, and this field is `"
+                        + t
+                        + "`";
+            if (n == "notEmpty")
+                if (isText)
+                    call = "vNotEmpty(" + q + ", " + read + ")"
+                else if (isList)
+                    call = "vNotEmptyList(" + q + ", " + read + ")"
+                else
+                    why = "it applies to `string` and `Array<T>`, and this field is `"
+                        + t
+                        + "`";
+            if (n == "sizeBetween")
+                if (isText)
+                    call = "vSizeBetween(" + q + ", " + read + ", " + raw + ")"
+                else if (isList)
+                    call = "vSizeBetweenList("
+                        + q
+                        + ", "
+                        + read
+                        + ", "
+                        + raw
+                        + ")"
+                else
+                    why = "it applies to `string` and `Array<T>`, and this field is `"
+                        + t
+                        + "`";
+            if (n == "minValue")
+                if (t == "i32")
+                    call = "vMinValueI32(" + q + ", " + read + ", " + raw + ")"
+                else if (t == "f64")
+                    call = "vMinValueF64(" + q + ", " + read + ", " + raw + ")"
+                else
+                    why = "it applies to `i32` and `f64`, and this field is `"
+                        + t
+                        + "` (an integer literal does not widen to `i64`, so an `i64` bound cannot be written)";
+            if (n == "maxValue")
+                if (t == "i32")
+                    call = "vMaxValueI32(" + q + ", " + read + ", " + raw + ")"
+                else if (t == "f64")
+                    call = "vMaxValueF64(" + q + ", " + read + ", " + raw + ")"
+                else
+                    why = "it applies to `i32` and `f64`, and this field is `"
+                        + t
+                        + "` (an integer literal does not widen to `i64`, so an `i64` bound cannot be written)";
+            if (n == "positive")
+                if (t == "i32")
+                    call = "vPositiveI32(" + q + ", " + read + ")"
+                else if (t == "i64")
+                    call = "vPositiveI64(" + q + ", " + read + ")"
+                else if (t == "f64")
+                    call = "vPositiveF64(" + q + ", " + read + ")"
+                else
+                    why = "it applies to `i32`, `i64` and `f64`, and this field is `"
+                        + t
+                        + "`";
+            if (n == "positiveOrZero")
+                if (t == "i32")
+                    call = "vPositiveOrZeroI32(" + q + ", " + read + ")"
+                else if (t == "i64")
+                    call = "vPositiveOrZeroI64(" + q + ", " + read + ")"
+                else if (t == "f64")
+                    call = "vPositiveOrZeroF64(" + q + ", " + read + ")"
+                else
+                    why = "it applies to `i32`, `i64` and `f64`, and this field is `"
+                        + t
+                        + "`";
+            if (n == "email")
+                if (isText)
+                    call = "vEmail(" + q + ", " + read + ")"
+                else
+                    why = "it applies to `string`, and this field is `"
+                        + t
+                        + "`";
+            if (n == "pattern")
+                if (isText)
+                    call = "vPattern(" + q + ", " + read + ", " + raw + ")"
+                else
+                    why = "it applies to `string`, and this field is `"
+                        + t
+                        + "`";
+            if (n == "pastDate")
+                if (t == "i64")
+                    call = "vPastDate(" + q + ", " + read + ")"
+                else
+                    why = "it applies to epoch milliseconds, which is `i64`, and this field is `"
+                        + t
+                        + "`";
+            if (n == "futureDate")
+                if (t == "i64")
+                    call = "vFutureDate(" + q + ", " + read + ")"
+                else
+                    why = "it applies to epoch milliseconds, which is `i64`, and this field is `"
+                        + t
+                        + "`";
+            if (n == "constraint")
+                if (isText)
+                    call = "vConstraint(" + q + ", " + raw + ", " + read + ")"
+                else
+                    why = "a registered constraint reads a `string`, and this field is `"
+                        + t
+                        + "`";
+            if (why != "")
+                problem = "#["
+                    + n
+                    + "] on field `"
+                    + f.name
+                    + "` of `"
+                    + decl.name
+                    + "`: "
+                    + why;
             val suffix = if (bare == "") "" else "|" + bare;
             if (call != "") calls.push("    __vs = __vs.append(" + call + ");");
             if (call != "") rows.push(f.name + "|" + n + suffix);
         });
     });
-    @emit("pub fn validate" + decl.name + "(v: " + decl.name + ") -> ValidationReport {\n    var __vs: Array<Violation> = [];\n" + calls.join(
-            "\n"
-        ) + "\n    return ValidationReport(violations: __vs);\n}");
-    @emit("pub fn constraintsOf" + decl.name + "() -> string { return constraintTableJson(\"" + decl.name + "\", \"" + rows.join(
-            ";"
-        ) + "\"); }");
+    @emit(
+        "pub fn validate"
+            + decl.name
+            + "(v: "
+            + decl.name
+            + ") -> ValidationReport {\n    var __vs: Array<Violation> = [];\n"
+            + calls.join("\n")
+            + "\n    return ValidationReport(violations: __vs);\n}",
+    );
+    @emit(
+        "pub fn constraintsOf"
+            + decl.name
+            + "() -> string { return constraintTableJson(\""
+            + decl.name
+            + "\", \""
+            + rows.join(";")
+            + "\"); }",
+    );
     if (problem != "") decl.fail(problem);
-    if (decl.kind != DeclKind.Type) decl.fail("#[validated] must annotate a type");
-    if (decl.variants.length > 0) decl.fail("#[validated] must annotate a type with fields, not an enum");
+    if (decl.kind != DeclKind.Type)
+        decl.fail("#[validated] must annotate a type");
+    if (decl.variants.length > 0)
+        decl.fail("#[validated] must annotate a type with fields, not an enum");
 }
 
 // ── the constraint markers ──────────────────────────────────────────────────
@@ -118,41 +240,54 @@ pub fn validated(comptime decl: @Decl) {
 // are `#[pastDate]` and `#[futureDate]`.
 
 pub fn notNull(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[notNull] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[notNull] must annotate a field");
 }
 
 pub fn notBlank(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[notBlank] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[notBlank] must annotate a field");
 }
 
 pub fn notEmpty(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[notEmpty] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[notEmpty] must annotate a field");
 }
 
 pub fn sizeBetween(comptime decl: @Decl, min: i32, max: i32) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[sizeBetween] must annotate a field");
-    if (min < 0) decl.fail("#[sizeBetween]: the lower bound may not be negative");
-    if (min > max) decl.fail("#[sizeBetween]: the lower bound is above the upper bound, so the constraint could never hold");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[sizeBetween] must annotate a field");
+    if (min < 0)
+        decl.fail("#[sizeBetween]: the lower bound may not be negative");
+    if (min > max)
+        decl.fail(
+            "#[sizeBetween]: the lower bound is above the upper bound, so the constraint could never hold",
+        );
 }
 
 pub fn minValue(comptime decl: @Decl, min: i32) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[minValue] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[minValue] must annotate a field");
 }
 
 pub fn maxValue(comptime decl: @Decl, max: i32) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[maxValue] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[maxValue] must annotate a field");
 }
 
 pub fn positive(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[positive] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[positive] must annotate a field");
 }
 
 pub fn positiveOrZero(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[positiveOrZero] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[positiveOrZero] must annotate a field");
 }
 
 pub fn email(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[email] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[email] must annotate a field");
 }
 
 // The regex reaches the constraint TABLE as well as the predicate, and the
@@ -160,18 +295,27 @@ pub fn email(comptime decl: @Decl) {
 // carrying either would make the table unreadable, so it is refused here
 // rather than escaped there — the grammar has no escape and needs none.
 pub fn pattern(comptime decl: @Decl, regex: string) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[pattern] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[pattern] must annotate a field");
     if (regex == "") decl.fail("#[pattern]: the pattern may not be empty");
-    if (regex.indexOf(";") >= 0 || regex.indexOf("|") >= 0) decl.fail("#[pattern]: a pattern may not contain ';' or '|' - those are the constraint table's record and field separators");
-    if (regex.indexOf("\"") >= 0) decl.fail("#[pattern]: a pattern may not contain a double quote - it is the argument's own delimiter in the reflected lexeme");
+    if (regex.indexOf(";") >= 0 || regex.indexOf("|") >= 0)
+        decl.fail(
+            "#[pattern]: a pattern may not contain ';' or '|' - those are the constraint table's record and field separators",
+        );
+    if (regex.indexOf("\"") >= 0)
+        decl.fail(
+            "#[pattern]: a pattern may not contain a double quote - it is the argument's own delimiter in the reflected lexeme",
+        );
 }
 
 pub fn pastDate(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[pastDate] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[pastDate] must annotate a field");
 }
 
 pub fn futureDate(comptime decl: @Decl) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[futureDate] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[futureDate] must annotate a field");
 }
 
 // The name of a constraint registered through the SPI. Whether anything is
@@ -180,8 +324,15 @@ pub fn futureDate(comptime decl: @Decl) {
 // name is a violation at the first validation call, coded `unknownConstraint`,
 // and never a pass.
 pub fn constraint(comptime decl: @Decl, name: string) {
-    if (decl.kind != DeclKind.Field) decl.fail("#[constraint] must annotate a field");
+    if (decl.kind != DeclKind.Field)
+        decl.fail("#[constraint] must annotate a field");
     if (name == "") decl.fail("#[constraint]: the name may not be empty");
-    if (name.indexOf(";") >= 0 || name.indexOf("|") >= 0) decl.fail("#[constraint]: a name may not contain ';' or '|' - those are the constraint table's record and field separators");
-    if (name.indexOf("\"") >= 0) decl.fail("#[constraint]: a name may not contain a double quote - it is the argument's own delimiter in the reflected lexeme");
+    if (name.indexOf(";") >= 0 || name.indexOf("|") >= 0)
+        decl.fail(
+            "#[constraint]: a name may not contain ';' or '|' - those are the constraint table's record and field separators",
+        );
+    if (name.indexOf("\"") >= 0)
+        decl.fail(
+            "#[constraint]: a name may not contain a double quote - it is the argument's own delimiter in the reflected lexeme",
+        );
 }

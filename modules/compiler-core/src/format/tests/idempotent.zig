@@ -47,7 +47,7 @@ test "format: idempotent ---- case with empty lines" {
         \\        2 -> 3;
         \\
         \\        _ -> 0;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -73,7 +73,7 @@ test "format: idempotent ---- nested case expressions" {
         \\            _ -> 0;
         \\        };
         \\        _ -> 1;
-        \\    };
+        \\    }
         \\}
     );
 }
@@ -108,7 +108,7 @@ test "format: idempotent ---- complex case with OR patterns" {
         \\        0 | 2 | 4 | 6 | 8 -> "even digit";
         \\        1 | 3 | 5 | 7 | 9 -> "odd digit";
         \\        _ -> "not a digit";
-        \\    };
+        \\    }
         \\}
     );
 }

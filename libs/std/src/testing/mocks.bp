@@ -239,7 +239,7 @@ pub fn mock(comptime decl: @Decl) {
             if (p.name != "self") {
                 paramList.push(p.name + ": " + p.typeName);
                 keyList.push("key(" + p.name + ")");
-            };
+            }
         });
         val params = paramList.join(", ");
         val sig = if (params == "") "self: Self" else "self: Self, " + params;

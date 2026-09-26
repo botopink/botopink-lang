@@ -35,7 +35,7 @@ fn sub(s: string, begin: i32, end: i32) -> string {
     while (i < stop) {
         out = out + charOf(s, i);
         i = i + 1;
-    };
+    }
     return out;
 }
 
@@ -58,13 +58,18 @@ fn none() -> NavOutcome {
 // ── reasons ─────────────────────────────────────────────────────────────────
 
 pub fn signalPrefixes() -> string[] {
-    return ["nav:not-found", "nav:redirect:", "nav:permanent-redirect:", "nav:see-other:"];
+    return [
+        "nav:not-found",
+        "nav:redirect:",
+        "nav:permanent-redirect:",
+        "nav:see-other:",
+    ];
 }
 
 pub fn isSignalReason(reason: string) -> bool {
-    return (reason == "nav:not-found" || reason.startsWith("nav:redirect:")) || (reason.startsWith(
-        "nav:permanent-redirect:"
-    ) || reason.startsWith("nav:see-other:"));
+    return (reason == "nav:not-found" || reason.startsWith("nav:redirect:"))
+        || (reason.startsWith("nav:permanent-redirect:")
+            || reason.startsWith("nav:see-other:"));
 }
 
 // The raised reason of an outcome. `None` is not a signal and a redirect
@@ -72,45 +77,97 @@ pub fn isSignalReason(reason: string) -> bool {
 // asked.
 pub fn signalReason(out: NavOutcome) -> string {
     val k = kindWord(out.kind);
-    assert k != "None", "routing: navigation: a `None` outcome is not a signal and has no reason";
-    if (k == "NotFound") return "nav:not-found" else if (out.status == 307) return "nav:redirect:" + out.location else if (out.status == 308) return "nav:permanent-redirect:" + out.location else if (out.status == 303) return "nav:see-other:" + out.location else @panic(
-        "routing: navigation: a redirect status must be 303, 307 or 308, not " + out.status.toString()
-    );
+    assert k
+        != "None", "routing: navigation: a `None` outcome is not a signal and has no reason";
+    if (k == "NotFound")
+        return "nav:not-found"
+    else if (out.status == 307)
+        return "nav:redirect:" + out.location
+    else if (out.status == 308)
+        return "nav:permanent-redirect:" + out.location
+    else if (out.status == 303)
+        return "nav:see-other:" + out.location
+    else
+        @panic(
+            "routing: navigation: a redirect status must be 303, 307 or 308, not "
+                + out.status.toString(),
+        );
 }
 
 // The outcome a raised reason names. A reason that is not a `nav:` signal,
 // and a `nav:` reason with an unknown verb, halt — naming the verb.
 pub fn signalFromReason(reason: string) -> NavOutcome {
-    if (reason == "nav:not-found") return NavOutcome(kind: NavKind.NotFound, location: "", status: 404) else if (reason.startsWith(
-        "nav:redirect:"
-    )) return NavOutcome(kind: NavKind.Redirect, location: after(reason, "nav:redirect:"), status: 307) else if (reason.startsWith(
-        "nav:permanent-redirect:"
-    )) return NavOutcome(kind: NavKind.Redirect, location: after(reason, "nav:permanent-redirect:"), status: 308) else if (reason.startsWith(
-        "nav:see-other:"
-    )) return NavOutcome(kind: NavKind.Redirect, location: after(reason, "nav:see-other:"), status: 303) else {
+    if (reason == "nav:not-found")
+        return NavOutcome(kind: NavKind.NotFound, location: "", status: 404)
+    else if (reason.startsWith("nav:redirect:"))
+        return NavOutcome(
+            kind: NavKind.Redirect,
+            location: after(reason, "nav:redirect:"),
+            status: 307,
+        )
+    else if (reason.startsWith("nav:permanent-redirect:"))
+        return NavOutcome(
+            kind: NavKind.Redirect,
+            location: after(reason, "nav:permanent-redirect:"),
+            status: 308,
+        )
+    else if (reason.startsWith("nav:see-other:"))
+        return NavOutcome(
+            kind: NavKind.Redirect,
+            location: after(reason, "nav:see-other:"),
+            status: 303,
+        )
+    else {
         val rest = after(reason, "nav:");
         val verb = rest.split(":").at(0).unwrapOr("");
-        if (reason.startsWith("nav:")) @panic("routing: navigation: unknown signal verb `" + verb + "` in `" + reason + "` - the verbs are not-found, redirect, permanent-redirect and see-other") else @panic(
-            "routing: navigation: `" + reason + "` is not a navigation signal reason"
-        );
-    };
+        if (reason.startsWith("nav:"))
+            @panic(
+                "routing: navigation: unknown signal verb `"
+                    + verb
+                    + "` in `"
+                    + reason
+                    + "` - the verbs are not-found, redirect, permanent-redirect and see-other",
+            )
+        else
+            @panic(
+                "routing: navigation: `"
+                    + reason
+                    + "` is not a navigation signal reason",
+            );
+    }
 }
 
 // ── the `n` wire ────────────────────────────────────────────────────────────
 
 pub fn signalToWire(out: NavOutcome) -> string {
     val k = kindWord(out.kind);
-    if (k == "None") return "" else if (k == "NotFound") return "N" else return "R|" + out.status.toString() + "|" + out.location;
+    if (k == "None")
+        return ""
+    else if (k == "NotFound")
+        return "N"
+    else
+        return "R|" + out.status.toString() + "|" + out.location;
 }
 
 pub fn signalFromWire(wire: string) -> NavOutcome {
-    if (wire == "N") return NavOutcome(kind: NavKind.NotFound, location: "", status: 404) else {
-        val head = if (wire.startsWith("R|307|")) 307 else if (wire.startsWith("R|308|")) 308 else if (wire.startsWith(
-            "R|303|"
-        )) 303 else 0;
-        if (head == 0) return none() else return NavOutcome(kind: NavKind.Redirect, location: after(
-                wire,
-                "R|000|"
-            ), status: head);
-    };
+    if (wire == "N")
+        return NavOutcome(kind: NavKind.NotFound, location: "", status: 404)
+    else {
+        val head = if (wire.startsWith("R|307|"))
+            307
+        else if (wire.startsWith("R|308|"))
+            308
+        else if (wire.startsWith("R|303|"))
+            303
+        else
+            0;
+        if (head == 0)
+            return none()
+        else
+            return NavOutcome(
+                kind: NavKind.Redirect,
+                location: after(wire, "R|000|"),
+                status: head,
+            );
+    }
 }

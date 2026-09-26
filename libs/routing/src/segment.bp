@@ -35,31 +35,40 @@ pub type Segment(
 // here and refused by `pathProblem`, one step up.
 pub fn parseSegment(raw: string) -> Segment {
     val n = raw.length();
-    if ((raw.startsWith("[[...") && raw.endsWith("]]"))) return Segment(kind: SegmentKind.OptionalCatchAll, name: sub(
-            raw,
-            5,
-            n - 2
-        ), raw: raw) else if ((raw.startsWith("[...") && raw.endsWith("]"))) return Segment(
-        kind: SegmentKind.CatchAll,
-        name: sub(raw, 4, n - 1),
-        raw: raw
-    ) else if ((raw.startsWith("[") && raw.endsWith("]"))) return Segment(kind: SegmentKind.Dynamic, name: sub(
-            raw,
-            1,
-            n - 1
-        ), raw: raw) else if ((raw.startsWith("(") && raw.endsWith(")"))) return Segment(
-        kind: SegmentKind.Group,
-        name: sub(raw, 1, n - 1),
-        raw: raw
-    ) else if (raw.startsWith("@")) return Segment(kind: SegmentKind.Slot, name: sub(
-            raw,
-            1,
-            n
-        ), raw: raw) else if (raw.startsWith("_")) return Segment(kind: SegmentKind.Private, name: sub(
-            raw,
-            1,
-            n
-        ), raw: raw) else return Segment(kind: SegmentKind.Static, name: raw, raw: raw);
+    if ((raw.startsWith("[[...") && raw.endsWith("]]")))
+        return Segment(
+            kind: SegmentKind.OptionalCatchAll,
+            name: sub(raw, 5, n - 2),
+            raw: raw,
+        )
+    else if ((raw.startsWith("[...") && raw.endsWith("]")))
+        return Segment(
+            kind: SegmentKind.CatchAll,
+            name: sub(raw, 4, n - 1),
+            raw: raw,
+        )
+    else if ((raw.startsWith("[") && raw.endsWith("]")))
+        return Segment(
+            kind: SegmentKind.Dynamic,
+            name: sub(raw, 1, n - 1),
+            raw: raw,
+        )
+    else if ((raw.startsWith("(") && raw.endsWith(")")))
+        return Segment(
+            kind: SegmentKind.Group,
+            name: sub(raw, 1, n - 1),
+            raw: raw,
+        )
+    else if (raw.startsWith("@"))
+        return Segment(kind: SegmentKind.Slot, name: sub(raw, 1, n), raw: raw)
+    else if (raw.startsWith("_"))
+        return Segment(
+            kind: SegmentKind.Private,
+            name: sub(raw, 1, n),
+            raw: raw,
+        )
+    else
+        return Segment(kind: SegmentKind.Static, name: raw, raw: raw);
 }
 
 // The kind as a word. `case` rather than `==`, so nothing depends on how a
@@ -89,26 +98,43 @@ pub fn pathProblem(seg: string) -> string {
         for (trimmed.split("/")) { raw ->
             if (problem == "") {
                 val s = parseSegment(raw);
-                if (raw.contains("|")) problem = "routing: segment `" + raw + "` in `" + seg + "` holds a `|`, which is the route table's field separator" else if (raw.contains(
-                    "\n"
-                )) problem = "routing: segment `" + raw + "` in `" + seg + "` holds a newline, which is the route table's record separator" else if (raw == "") problem = "routing: `" + seg + "` holds an empty segment" else {
+                if (raw.contains("|"))
+                    problem = "routing: segment `"
+                        + raw
+                        + "` in `"
+                        + seg
+                        + "` holds a `|`, which is the route table's field separator"
+                else if (raw.contains("\n"))
+                    problem = "routing: segment `"
+                        + raw
+                        + "` in `"
+                        + seg
+                        + "` holds a newline, which is the route table's record separator"
+                else if (raw == "")
+                    problem = "routing: `" + seg + "` holds an empty segment"
+                else {
                     val k = kindName(s.kind);
-                    if (k == "Private") problem = "routing: `" + raw + "` in `" + seg + "` is a private folder - a `_`-prefixed directory is excluded from routing and may not appear on a registered path";
-                };
-            };
-        };
+                    if (k == "Private")
+                        problem = "routing: `"
+                            + raw
+                            + "` in `"
+                            + seg
+                            + "` is a private folder - a `_`-prefixed directory is excluded from routing and may not appear on a registered path";
+                }
+            }
+        }
         return problem;
-    };
+    }
 }
 
 pub fn trimSlashes(seg: string) -> string {
     var out = seg;
     while (out.startsWith("/")) {
         out = sub(out, 1, out.length());
-    };
+    }
     while (out.endsWith("/")) {
         out = sub(out, 0, out.length() - 1);
-    };
+    }
     return out;
 }
 
@@ -122,9 +148,9 @@ pub fn parsePath(seg: string) -> Segment[] {
     if (trimmed == "") return out else {
         for (trimmed.split("/")) { raw ->
             out.push(parseSegment(raw));
-        };
+        }
         return out;
-    };
+    }
 }
 
 // The URL pattern: groups and slots removed, the bracket spelling preserved.
@@ -133,7 +159,7 @@ pub fn patternOf(segments: Segment[]) -> string {
     for (segments) { s ->
         val k = kindName(s.kind);
         if ((k != "Group" && k != "Slot")) parts.push(s.raw);
-    };
+    }
     if (parts.length == 0) return "/" else return "/" + parts.join("/");
 }
 
@@ -145,7 +171,7 @@ pub fn slotOf(segments: Segment[]) -> string {
     for (segments) { s ->
         val k = kindName(s.kind);
         if (k == "Slot") name = s.name;
-    };
+    }
     return name;
 }
 
@@ -162,6 +188,6 @@ fn sub(s: string, begin: i32, end: i32) -> string {
     while (i < stop) {
         out = out + charOf(s, i);
         i = i + 1;
-    };
+    }
     return out;
 }

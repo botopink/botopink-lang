@@ -49,7 +49,7 @@
 pub fn isTrue(condition: bool) -> @Result<void, string> {
     if (condition == false) {
         throw "asserts.isTrue: condition was false";
-    };
+    }
     return;
 }
 
@@ -58,7 +58,7 @@ pub fn isTrue(condition: bool) -> @Result<void, string> {
 pub fn isFalse(condition: bool) -> @Result<void, string> {
     if (condition) {
         throw "asserts.isFalse: condition was true";
-    };
+    }
     return;
 }
 
@@ -68,7 +68,7 @@ pub fn isFalse(condition: bool) -> @Result<void, string> {
 pub fn equals<T>(actual: T, expected: T) -> @Result<void, string> {
     if (actual != expected) {
         throw "asserts.equals: values differ";
-    };
+    }
     return;
 }
 
@@ -76,7 +76,7 @@ pub fn equals<T>(actual: T, expected: T) -> @Result<void, string> {
 pub fn notEquals<T>(actual: T, expected: T) -> @Result<void, string> {
     if (actual == expected) {
         throw "asserts.notEquals: values match";
-    };
+    }
     return;
 }
 
@@ -88,7 +88,7 @@ pub fn approxEquals(actual: f64, expected: f64, tolerance: f64) -> @Result<void,
     val absDiff = if (diff >= 0.0) diff else 0.0 - diff;
     if (absDiff > tolerance) {
         throw "asserts.approxEquals: values differ by more than tolerance";
-    };
+    }
     return;
 }
 
@@ -105,7 +105,7 @@ declare fn canonical<T>(v: T) -> string;
 pub fn deepEquals<T>(actual: T, expected: T) -> @Result<void, string> {
     if (canonical(actual) != canonical(expected)) {
         throw "asserts.deepEquals: values differ structurally";
-    };
+    }
     return;
 }
 
@@ -116,7 +116,7 @@ pub fn deepEquals<T>(actual: T, expected: T) -> @Result<void, string> {
 pub fn isNil<T>(value: ?T) -> @Result<void, string> {
     if (value != null) {
         throw "asserts.isNil: value was present";
-    };
+    }
     return;
 }
 
@@ -124,7 +124,7 @@ pub fn isNil<T>(value: ?T) -> @Result<void, string> {
 pub fn isNotNil<T>(value: ?T) -> @Result<void, string> {
     if (value == null) {
         throw "asserts.isNotNil: value was null";
-    };
+    }
     return;
 }
 
@@ -135,7 +135,7 @@ pub fn isNotNil<T>(value: ?T) -> @Result<void, string> {
 pub fn isOk<T, E>(result: @Result<T, E>) -> @Result<void, string> {
     if (result.isError()) {
         throw "asserts.isOk: result was Error";
-    };
+    }
     return;
 }
 
@@ -144,7 +144,7 @@ pub fn isOk<T, E>(result: @Result<T, E>) -> @Result<void, string> {
 pub fn isError<T, E>(result: @Result<T, E>) -> @Result<void, string> {
     if (result.isOk()) {
         throw "asserts.isError: result was Ok";
-    };
+    }
     return;
 }
 
@@ -154,7 +154,7 @@ pub fn isError<T, E>(result: @Result<T, E>) -> @Result<void, string> {
 pub fn contains(actual: string, needle: string) -> @Result<void, string> {
     if (actual.contains(needle) == false) {
         throw "asserts.contains: needle not in actual";
-    };
+    }
     return;
 }
 
@@ -162,7 +162,7 @@ pub fn contains(actual: string, needle: string) -> @Result<void, string> {
 pub fn notContains(actual: string, needle: string) -> @Result<void, string> {
     if (actual.contains(needle)) {
         throw "asserts.notContains: needle found in actual";
-    };
+    }
     return;
 }
 
@@ -170,7 +170,7 @@ pub fn notContains(actual: string, needle: string) -> @Result<void, string> {
 pub fn startsWith(actual: string, prefix: string) -> @Result<void, string> {
     if (actual.startsWith(prefix) == false) {
         throw "asserts.startsWith: prefix does not match";
-    };
+    }
     return;
 }
 
@@ -178,7 +178,7 @@ pub fn startsWith(actual: string, prefix: string) -> @Result<void, string> {
 pub fn endsWith(actual: string, suffix: string) -> @Result<void, string> {
     if (actual.endsWith(suffix) == false) {
         throw "asserts.endsWith: suffix does not match";
-    };
+    }
     return;
 }
 
@@ -195,7 +195,7 @@ declare fn regexMatches(actual: string, pattern: string) -> bool;
 pub fn matches(actual: string, pattern: string) -> @Result<void, string> {
     if (regexMatches(actual, pattern) == false) {
         throw "asserts.matches: pattern did not match";
-    };
+    }
     return;
 }
 
@@ -205,7 +205,7 @@ pub fn matches(actual: string, pattern: string) -> @Result<void, string> {
 pub fn isEmpty<T>(actual: T[]) -> @Result<void, string> {
     if (actual.length != 0) {
         throw "asserts.isEmpty: array was not empty";
-    };
+    }
     return;
 }
 
@@ -213,7 +213,7 @@ pub fn isEmpty<T>(actual: T[]) -> @Result<void, string> {
 pub fn isNotEmpty<T>(actual: T[]) -> @Result<void, string> {
     if (actual.length == 0) {
         throw "asserts.isNotEmpty: array was empty";
-    };
+    }
     return;
 }
 
@@ -221,7 +221,7 @@ pub fn isNotEmpty<T>(actual: T[]) -> @Result<void, string> {
 pub fn lengthIs<T>(actual: T[], expected: i32) -> @Result<void, string> {
     if (actual.length != expected) {
         throw "asserts.lengthIs: length differs";
-    };
+    }
     return;
 }
 
@@ -230,7 +230,7 @@ pub fn lengthIs<T>(actual: T[], expected: i32) -> @Result<void, string> {
 pub fn includes<T>(actual: T[], element: T) -> @Result<void, string> {
     if (actual.indexOf(element) < 0) {
         throw "asserts.includes: element not found";
-    };
+    }
     return;
 }
 
@@ -238,7 +238,7 @@ pub fn includes<T>(actual: T[], element: T) -> @Result<void, string> {
 pub fn notIncludes<T>(actual: T[], element: T) -> @Result<void, string> {
     if (actual.indexOf(element) >= 0) {
         throw "asserts.notIncludes: element found";
-    };
+    }
     return;
 }
 
@@ -254,7 +254,7 @@ pub fn between(actual: i32, low: i32, high: i32) -> @Result<void, string> {
     val outside = actual < low || actual > high;
     if (outside) {
         throw "asserts.between: value out of range";
-    };
+    }
     return;
 }
 
@@ -262,7 +262,7 @@ pub fn between(actual: i32, low: i32, high: i32) -> @Result<void, string> {
 pub fn greaterThan(actual: i32, bound: i32) -> @Result<void, string> {
     if (actual <= bound) {
         throw "asserts.greaterThan: value not greater";
-    };
+    }
     return;
 }
 
@@ -270,7 +270,7 @@ pub fn greaterThan(actual: i32, bound: i32) -> @Result<void, string> {
 pub fn lessThan(actual: i32, bound: i32) -> @Result<void, string> {
     if (actual >= bound) {
         throw "asserts.lessThan: value not less";
-    };
+    }
     return;
 }
 
@@ -303,7 +303,7 @@ pub fn throws(body: fn() -> i32) -> @Result<void, string> {
     val r = tryCatch(body);
     if (r.isOk()) {
         throw "asserts.throws: body did not raise";
-    };
+    }
     return;
 }
 
@@ -315,10 +315,10 @@ pub fn throwsWith(body: fn() -> i32, needle: string) -> @Result<void, string> {
     val r = tryCatch(body);
     if (r.isOk()) {
         throw "asserts.throwsWith: body did not raise";
-    };
+    }
     if (caughtMessage(r).contains(needle) == false) {
         throw "asserts.throwsWith: message does not contain needle";
-    };
+    }
     return;
 }
 
@@ -350,7 +350,7 @@ pub fn errorText(r: @Result<void, string>) -> string {
 fn parsePort(s: string) -> @Result<i32, string> {
     if (s == "") {
         throw "empty input";
-    };
+    }
     return 8080;
 }
 

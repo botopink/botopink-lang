@@ -620,6 +620,7 @@ pub const Parser = struct {
                     .is_module = tok.kind == .commentModule,
                     .is_doc = tok.kind == .commentDoc,
                     .trailing = trailing,
+                    .loc = locFromToken(tok),
                 } };
             } else {
                 // A bare `implement …` / `extend …` (optionally `pub`) with no name:
@@ -920,7 +921,13 @@ pub const Parser = struct {
                     return ParseError.UnexpectedToken;
                 }
             }
-            switch (opts.semicolonPolicy) {
+            if (this.isBracedBlockStmt(expr)) {
+                // Decision 29 (c) as decision 60 orders it: a braced `if`,
+                // `loop` or `case` statement ends at its `}`, and the `;` after
+                // it is optional while the sources migrate — accepted, never
+                // required, whatever the block's policy.
+                _ = this.match(.semicolon);
+            } else switch (opts.semicolonPolicy) {
                 .required => _ = try this.consume(.semicolon),
                 .optional => _ = this.match(.semicolon),
                 .requiredExceptLast => if (!this.match(.semicolon) and !this.check(.rightBrace))
@@ -930,6 +937,39 @@ pub const Parser = struct {
         }
         _ = try this.consume(.rightBrace);
         return stmts.toOwnedSlice(alloc);
+    }
+
+    /// True when `expr`, just parsed as a statement, is a **braced
+    /// block-shaped statement**: an `if` (`a ?? b`'s desugaring excluded — it
+    /// is written without braces), a loop (`while`, `for`, `loop`, prefixed or
+    /// annotated) or a `case`, **and** the token that ended it is its closing
+    /// `}` (decision 29 (c), narrowed by decision 60 to the braced form).
+    ///
+    /// The test is the last token, not the keyword: `if (c) return x;` is an
+    /// `if` with no closing brace to end it, and keeps its `;`; `if (c) a else
+    /// { b; }` ends in one. It does not descend either: `val x = if (c) { 1 }
+    /// else { 2 };` is a binding and `return case s { … };` a `return`, and
+    /// both end with `;` like any statement.
+    ///
+    /// `format.zig` prints no `;` after exactly these statements, deciding from
+    /// the printed text's last character the way this decides from the last
+    /// token — the two agree on what "ends in `}`" means.
+    pub fn isBracedBlockStmt(this: *const This, expr: Expr) bool {
+        const shaped = switch (expr) {
+            .branch => |b| b.kind == .if_ and !isNullishDesugar(b.kind.if_),
+            .loop => true,
+            .collection => |c| c.kind == .case,
+            else => false,
+        };
+        if (!shaped or this.current == 0) return false;
+        return this.tokens[this.current - 1].kind == .rightBrace;
+    }
+
+    /// `a ?? b` is parsed into an `if` binding the reserved
+    /// `ast.nullish_binding_name`; it is an expression, never a block statement.
+    fn isNullishDesugar(i: anytype) bool {
+        const b = i.binding orelse return false;
+        return std.mem.eql(u8, b, ast.nullish_binding_name);
     }
 
     /// Parse `{ expr; expr; ... }` — a brace-delimited block of semicolon-separated expressions.

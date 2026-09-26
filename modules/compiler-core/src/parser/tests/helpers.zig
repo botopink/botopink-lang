@@ -184,3 +184,22 @@ pub fn expectEqualOutput(
     std.debug.print("-------------------------------------------------------------\n\n", .{});
     if (hasDiff) return error.TestOutputMismatch;
 }
+
+/// `a` and `b` both parse, to the same AST dump — two spellings of one program.
+pub fn expectSameAst(allocator: Allocator, a: []const u8, b: []const u8) !void {
+    const dumpA = try dumpProgram(allocator, a);
+    defer allocator.free(dumpA);
+    const dumpB = try dumpProgram(allocator, b);
+    defer allocator.free(dumpB);
+    try expectEqualOutput(allocator, dumpA, dumpB);
+}
+
+fn dumpProgram(allocator: Allocator, src: []const u8) ![]u8 {
+    var l = Lexer.init(src);
+    const tokens = try l.scanAll(allocator);
+    defer l.deinit(allocator);
+    var p = Parser.init(tokens);
+    var program = try p.parse(allocator);
+    defer program.deinit(allocator);
+    return std.json.Stringify.valueAlloc(allocator, program, .{ .whitespace = .indent_2 });
+}
