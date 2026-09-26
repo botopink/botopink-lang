@@ -954,17 +954,19 @@ fn resolveImports(
                 if (u.package) |pkg| {
                     // Value/type binding so a bare `pkg "…"` callee type-checks
                     // (mirrors the named-import value binding below).
+                    var pkg_owner: []const u8 = "";
                     var pit = registry.iterator();
                     while (pit.next()) |e| {
                         if (isStdPkgPath(e.key_ptr.*)) continue;
                         if (e.value_ptr.get(pkg)) |ty| {
                             try env.bind(pkg, ty);
+                            pkg_owner = e.key_ptr.*;
                             break;
                         }
                     }
                     // Template-fn binding so the call expands at comptime.
                     if (templateRegistry.get(pkg)) |tfn| {
-                        try infer.registerImportedTemplateFn(env, pkg, tfn);
+                        try infer.registerImportedTemplateFn(env, pkg, tfn, pkg_owner);
                     }
                 }
                 for (u.imports) |imp| {
@@ -1037,6 +1039,23 @@ fn resolveImports(
                     // already bound the constructor with the importing module's
                     // own type ids, and clobbering it with the exported `*T.Type`
                     // would reintroduce the defining module's ids.
+                    // C-01 — the module that exports `name`, found the way
+                    // the value binding below finds it (the named module
+                    // first): a template or decorator evaluated here names it
+                    // in its module atom.
+                    var owner: []const u8 = "";
+                    for ([2]bool{ true, false }) |named_only| {
+                        if (owner.len > 0) break;
+                        var oit = registry.iterator();
+                        while (oit.next()) |e| {
+                            if (isStdPkgPath(e.key_ptr.*)) continue;
+                            if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
+                            if (e.value_ptr.contains(name)) {
+                                owner = e.key_ptr.*;
+                                break;
+                            }
+                        }
+                    }
                     if (!bound_type_decl) {
                         var bound_value = false;
                         for ([2]bool{ true, false }) |named_only| {
@@ -1056,7 +1075,7 @@ fn resolveImports(
                     // Imported template fns (`-> @Expr<…>`) carry their decl
                     // across modules so call sites here can expand them.
                     if (templateRegistry.get(name)) |tfn| {
-                        try infer.registerImportedTemplateFn(env, local, tfn);
+                        try infer.registerImportedTemplateFn(env, local, tfn, owner);
                     }
                     // Imported decorators (`comptime _: @Decl` first param) carry
                     // their decl across modules too, so `#[name(args)]` sites in
@@ -1065,7 +1084,7 @@ fn resolveImports(
                     // this a marker only fired in its defining module — a lib
                     // ships its decorators, but they are applied by importers.
                     if (decoratorRegistry.get(name)) |dfn| {
-                        infer.registerImportedDecorator(env, local, dfn);
+                        try infer.registerImportedDecorator(env, local, dfn, owner);
                     }
                     // Imported + activated extension (`import { Name* } from "mod"`):
                     // an `implement` block defined in another module is opted into

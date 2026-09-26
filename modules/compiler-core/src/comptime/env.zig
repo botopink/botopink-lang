@@ -409,6 +409,14 @@ pub const Env = struct {
     /// Template functions (`-> expr [T]` return): name → declaration. Calls to
     /// these are expanded at comptime (F6); the decls never reach codegen.
     templateFns: std.StringHashMap(ast.FnDecl),
+    /// C-01 (13 half 1, step 5) — the module path each comptime-evaluated
+    /// declaration (a template fn, a decorator with a body) was DECLARED in,
+    /// keyed by the declaration's identity: the address of its body, which the
+    /// defining module and every importer share because the registry hands the
+    /// same `ast.FnDecl` across. A name is not an identity here — two modules
+    /// may export a template of one name. Read by `comptimeOwnerOf` when the
+    /// evaluator names its module atom (`bp@comptime@<path>__tpl__<decl>__<hash>`).
+    comptimeOwners: std.AutoHashMap(usize, []const u8),
     /// Call-site expansions: call loc → the expanded (untyped) expression that
     /// replaces the call. Recorded by inference (post splice + re-check); the
     /// transform pass rewrites the untyped AST from this map.
@@ -775,6 +783,7 @@ pub const Env = struct {
             .exprCaptures = std.AutoHashMap(ast.Loc, []const template.CapturedExpr).init(arena),
             .templateLowerings = std.AutoHashMap(ast.Loc, TemplateOp).init(arena),
             .templateFns = std.StringHashMap(ast.FnDecl).init(arena),
+            .comptimeOwners = std.AutoHashMap(usize, []const u8).init(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
@@ -850,6 +859,7 @@ pub const Env = struct {
             .exprCaptures = std.AutoHashMap(ast.Loc, []const template.CapturedExpr).init(arena),
             .templateLowerings = std.AutoHashMap(ast.Loc, TemplateOp).init(arena),
             .templateFns = try tmpl.templateFns.cloneWithAllocator(arena),
+            .comptimeOwners = try tmpl.comptimeOwners.cloneWithAllocator(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
@@ -918,6 +928,7 @@ pub const Env = struct {
         self.exprCaptures.deinit();
         self.templateLowerings.deinit();
         self.templateFns.deinit();
+        self.comptimeOwners.deinit();
         self.templateExpansions.deinit();
         self.srcRewrites.deinit();
         self.customAstByLoc.deinit();
@@ -1125,6 +1136,23 @@ pub const Env = struct {
     /// Look up the typeparam constraints for a function, or null if it has none.
     pub fn lookupTypeparams(self: *Env, name: []const u8) ?[]const TypeparamConstraint {
         return self.fnTypeparams.get(name);
+    }
+
+    /// C-01 — record the module path `decl` was declared in (see
+    /// `comptimeOwners`). A bodyless declaration is never evaluated and has no
+    /// identity to key by, so it is not recorded. The first owner stays: the
+    /// defining module registers its own declaration before any importer sees it.
+    pub fn noteComptimeOwner(self: *Env, decl: ast.FnDecl, owner: []const u8) !void {
+        if (decl.body.len == 0) return;
+        const gop = try self.comptimeOwners.getOrPut(@intFromPtr(decl.body.ptr));
+        if (!gop.found_existing) gop.value_ptr.* = owner;
+    }
+
+    /// The module path `decl` was declared in, or "" when nothing recorded it
+    /// (the compiler's own tests evaluate a declaration no module owns).
+    pub fn comptimeOwnerOf(self: *const Env, decl: ast.FnDecl) []const u8 {
+        if (decl.body.len == 0) return "";
+        return self.comptimeOwners.get(@intFromPtr(decl.body.ptr)) orelse "";
     }
 
     /// Record the `expr` meta-kind params for a function (keyed by name).

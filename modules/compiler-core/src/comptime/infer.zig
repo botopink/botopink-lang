@@ -775,6 +775,9 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
             // call missing a required argument.
             try env.fnParams.put(f.name, f.params);
             registerDecoratorSig(env, f.name, f.params, f);
+            // C-01 — a template or decorator this module declares is owned by
+            // this module's path, which its evaluated module atom names.
+            try env.noteComptimeOwner(f, env.modulePath);
             if (f.typeGuardParam) |paramName| {
                 var paramIndex: usize = 0;
                 for (f.params, 0..) |p, i| {
@@ -814,8 +817,9 @@ pub fn isDecoratorParams(params: []const ast.Param) bool {
 /// comptime. Mirrors `registerImportedTemplateFn` for the `@Expr` template case;
 /// the core stays lib-agnostic (it carries the decorator across modules by its
 /// generic `@Decl`-first shape, never by any lib's name). No-op for non-decorators.
-pub fn registerImportedDecorator(env: *Env, name: []const u8, fn_decl: ast.FnDecl) void {
+pub fn registerImportedDecorator(env: *Env, name: []const u8, fn_decl: ast.FnDecl, owner: []const u8) !void {
     registerDecoratorSig(env, name, fn_decl.params, fn_decl);
+    try env.noteComptimeOwner(fn_decl, owner);
 }
 
 /// Register an `implement` block imported and activated from another module
@@ -2832,7 +2836,7 @@ fn runDeclDecorators(
 
         // Diagnostics point at the annotation. A `failAt` span has no source text
         // to map onto for a declaration, so it is reported at the annotation too.
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handle, plain, &env.comptimeTraces) catch {
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, env.comptimeOwnerOf(dfn), dfn, handle, plain, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.");
         };
         switch (outcome) {
@@ -4087,8 +4091,9 @@ fn captureExprArg(
 /// capture logic needs. NOTE (V1 hygiene caveat, recorded): code the template
 /// builds re-infers in the *caller's* scope — library helpers it references
 /// must be visible there.
-pub fn registerImportedTemplateFn(env: *Env, name: []const u8, decl: ast.FnDecl) !void {
+pub fn registerImportedTemplateFn(env: *Env, name: []const u8, decl: ast.FnDecl, owner: []const u8) !void {
     try env.templateFns.put(name, decl);
+    try env.noteComptimeOwner(decl, owner);
     var infos: std.ArrayListUnmanaged(envMod.ExprParamInfo) = .empty;
     for (decl.params, 0..) |p, i| {
         if (p.typeRef.isExprType()) {
@@ -4336,7 +4341,7 @@ fn expandTemplateCallViaRuntime(
         }
     }
 
-    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, tfn, captures, plainArgs, &env.comptimeTraces) catch {
+    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, env.comptimeOwnerOf(tfn), tfn, captures, plainArgs, &env.comptimeTraces) catch {
         env.lastError = TypeError.custom(
             "the template evaluator failed to run",
             "Template bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.",
