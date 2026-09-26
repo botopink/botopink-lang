@@ -18,9 +18,9 @@ val page = html """<p>${name}</p>""";
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
 ```botopink
-val name = "world";
+pub val name = "world";
 
-val page = "" + "<p>" + name + "</p>";
+pub val page = "" + "<p>" + name + "</p>";
 ```
 
 ----- TYPED AST JSON -- main.json

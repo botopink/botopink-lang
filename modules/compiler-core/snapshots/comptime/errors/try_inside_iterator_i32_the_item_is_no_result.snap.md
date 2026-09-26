@@ -16,7 +16,7 @@ fn counted(n: i32) -> @Iterator<i32> {
 
 ----- ERROR
 error: effect-try-without-fallible-channel: `try` needs a `@Result` in some layer of the return — the item of `@Iterator<T>` has to be `@Result<T, E>` to use `throw` / `try`
-  ┌─ :12:13
+  ┌─ main.bp:12:13
   │
 12 │     val v = try parse(n);
   │             ^

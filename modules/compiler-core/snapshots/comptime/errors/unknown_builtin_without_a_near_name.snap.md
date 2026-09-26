@@ -5,7 +5,7 @@ fn main() {
 
 ----- ERROR
 error: unknown-builtin: unknown builtin `@frobnicate`
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     @frobnicate(1, 2);
   │     ^

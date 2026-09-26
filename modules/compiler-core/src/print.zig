@@ -242,6 +242,19 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "`_` names no parameter",
             .hint = "`_` is a declaration's placeholder, e.g. `declare fn getContext<T>(comptime _: type) -> T;`. A function with a body names what it takes: write a name, e.g. `unused: i32`.",
         },
+        .selfParamOutsideType => .{
+            .code = "self-param-outside-type",
+            .message = "`self` names a method's receiver, and a free function has none",
+            .caretCaption = "`self` outside a `type` or `behavior` body",
+            .hint = "Declare the function inside the type's body (`type Box(n: i32) { fn twice(self: Self, k: i32) -> i32 { … } }`), or give the parameter another name.",
+        },
+        .reservedWordAsName => .{
+            .code = "reserved-word-as-name",
+            .message = "a reserved word cannot be a name",
+            .caretCaption = "reserved word",
+            .lexemeInCaption = true,
+            .hint = "Every keyword is reserved in every position — a field, a parameter and a binding alike (`from` is the import keyword). Choose another name: `source` / `target`, `start`, `origin`.",
+        },
         .fnParamDefaultTrailingOnly => .{
             .message = "fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.",
             .hint = "Move the defaulted parameter to the end of the list, or give the following parameter a default too.",

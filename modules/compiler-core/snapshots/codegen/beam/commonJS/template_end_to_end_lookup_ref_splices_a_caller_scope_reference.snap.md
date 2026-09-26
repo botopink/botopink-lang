@@ -149,10 +149,25 @@ fn main() {
 %%         multiline => false
 %%     },
 %%     bindings => [
-%%         #{name => <<"greeting">>, kind => 'Val'},
-%%         #{name => <<"refer">>, kind => 'Fn'},
-%%         #{name => <<"s">>, kind => 'Val'},
-%%         #{name => <<"main">>, kind => 'Fn'}
+%%         #{
+%%             name => <<"greeting">>,
+%%             kind => 'Val',
+%%             identity => <<"main@@greeting">>,
+%%             local => <<"greeting">>
+%%         },
+%%         #{
+%%             name => <<"refer">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@refer">>,
+%%             local => <<"refer">>
+%%         },
+%%         #{name => <<"s">>, kind => 'Val', identity => <<"main@@s">>, local => <<"s">>},
+%%         #{
+%%             name => <<"main">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@main">>,
+%%             local => <<"main">>
+%%         }
 %%     ]
 %% }
 ```
@@ -201,11 +216,16 @@ function __bp_print() {
 
 const greeting = "ola mundo";
 
+exports.greeting = greeting;
+
 const s = greeting;
+
+exports.s = s;
 
 function main() {
     __bp_print(s);
 }
+exports.main = main;
 
 function _botopink_main() {
     main();

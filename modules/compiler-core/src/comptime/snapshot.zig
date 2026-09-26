@@ -995,14 +995,15 @@ pub fn getSourceLine(src: []const u8, line: usize) []const u8 {
     return src[start..];
 }
 
-/// The `error: …` body of a type-error diagnostic (title, location box and
-/// per-kind detail). `comptime/tests/helpers.zig` prefixes it with the
+/// The `error: …` body of a type-error diagnostic (title, location box naming
+/// `file`, and per-kind detail). `comptime/tests/helpers.zig` prefixes it with the
 /// `----- SOURCE CODE` / `----- ERROR` headers the `errors/` snapshots use;
 /// the compile-diagnostic sections embed it directly.
 pub fn renderTypeErrorBody(
     allocator: std.mem.Allocator,
     src: []const u8,
     err: errorMod.TypeError,
+    file: []const u8,
 ) ![]u8 {
     // Use an arena so intermediate allocPrint strings are freed together.
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -1050,11 +1051,11 @@ pub fn renderTypeErrorBody(
     if (err.loc) |errLoc| {
         const lineText = getSourceLine(src, errLoc.line);
         const col0 = if (errLoc.col > 0) errLoc.col - 1 else 0;
-        // ┌─ :line:col
+        // ┌─ file:line:col
         try out.appendSlice(allocator, try std.fmt.allocPrint(
             tmp,
-            "  \u{250c}\u{2500} :{d}:{d}\n",
-            .{ errLoc.line, errLoc.col },
+            "  \u{250c}\u{2500} {s}:{d}:{d}\n",
+            .{ file, errLoc.line, errLoc.col },
         ));
         // │
         try out.appendSlice(allocator, "  \u{2502}\n");
@@ -1302,7 +1303,7 @@ pub fn renderTypeErrorBody(
 
 /// Re-parses `src` to describe the parse failure the pipeline only reports as
 /// `Outcome.parseError` (which carries no payload). Caller owns the result.
-pub fn renderParseErrorBody(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
+pub fn renderParseErrorBody(allocator: std.mem.Allocator, src: []const u8, file: []const u8) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1328,8 +1329,8 @@ pub fn renderParseErrorBody(allocator: std.mem.Allocator, src: []const u8) ![]u8
         errdefer out.deinit(allocator);
         try out.appendSlice(allocator, try std.fmt.allocPrint(
             alloc,
-            "error: parse error ({s})\n  \u{250c}\u{2500} :{d}:{d}\n  \u{2502}\n{d} \u{2502} {s}\n",
-            .{ kind, line, col, line, getSourceLine(src, line) },
+            "error: parse error ({s})\n  \u{250c}\u{2500} {s}:{d}:{d}\n  \u{2502}\n{d} \u{2502} {s}\n",
+            .{ kind, file, line, col, line, getSourceLine(src, line) },
         ));
         try out.appendSlice(allocator, try std.fmt.allocPrint(
             alloc,
@@ -1357,13 +1358,20 @@ pub fn renderOutcomeDiagnostic(
     allocator: std.mem.Allocator,
     src: []const u8,
     outcome: comptimeMod.ComptimeOutput.Outcome,
+    file: []const u8,
 ) !?[]u8 {
     return switch (outcome) {
         .ok => null,
-        .parseError => try renderParseErrorBody(allocator, src),
-        .typeError => |te| try renderTypeErrorBody(allocator, src, te),
-        .validationError => |ce| try ce.renderAlloc(allocator, src),
+        .parseError => try renderParseErrorBody(allocator, src, file),
+        .typeError => |te| try renderTypeErrorBody(allocator, src, te, file),
+        .validationError => |ce| try ce.renderAlloc(allocator, src, file),
     };
+}
+
+/// The file a module's diagnostic box names: its path and `.bp`, the name
+/// its `----- SOURCE CODE -- <file>` header carries.
+pub fn moduleFile(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
+    return std.fmt.allocPrint(allocator, "{s}.bp", .{name});
 }
 
 /// `----- COMPILE DIAGNOSTIC -- <name>` section, shared by the codegen and
@@ -1511,7 +1519,9 @@ pub fn buildSnapshot(allocator: std.mem.Allocator, output: comptimeMod.ComptimeO
         // H3 — a module that never compiled used to add nothing after the
         // source, so the snapshot compared source-with-source and passed.
         .validationError, .typeError, .parseError => {
-            const body = (try renderOutcomeDiagnostic(allocator, output.src, output.outcome)).?;
+            const file = try moduleFile(allocator, output.name);
+            defer allocator.free(file);
+            const body = (try renderOutcomeDiagnostic(allocator, output.src, output.outcome, file)).?;
             defer allocator.free(body);
             try appendDiagnosticSection(allocator, &buf, output.name, body);
         },

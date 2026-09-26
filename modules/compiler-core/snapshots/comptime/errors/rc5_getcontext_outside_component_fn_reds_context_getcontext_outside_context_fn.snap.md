@@ -6,7 +6,7 @@ fn lookup() -> User {
 
 ----- ERROR
 error: context-getcontext-outside-context-fn: `@getContext(T)` only resolves inside a `-> @Component<C, T>` fn body
-  ┌─ :3:24
+  ┌─ main.bp:3:24
   │
 3 │     return @getContext(User);
   │                        ^

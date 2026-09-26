@@ -7,7 +7,7 @@ fn main() {
 
 ----- ERROR
 error: unbound variable
-  ┌─ :3:34
+  ┌─ main.bp:3:34
   │
 3 │     val assert 42 = answer catch fallback;
   │                                  ^

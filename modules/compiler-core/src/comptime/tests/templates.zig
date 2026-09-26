@@ -273,7 +273,7 @@ test "template: context exposes declaration position and scope for second-layer 
         "'__bp_capture' => <<\"template\">>",
         "source => #{file => <<\"\">>, line => 7, col => 13}",
         "text => <<\"\\n<Button/>\\n\">>, multiline => true}",
-        "bindings => [#{name => <<\"Button\">>, kind => 'Record_'}, #{name => <<\"dsl\">>, kind => 'Fn'}, #{name => <<\"c\">>, kind => 'Val'}]",
+        "bindings => [#{name => <<\"Button\">>, kind => 'Record_', identity => <<\"main@@Button\">>, local => <<\"Button\">>}, #{name => <<\"dsl\">>, kind => 'Fn', identity => <<\"main@@dsl\">>, local => <<\"dsl\">>}, #{name => <<\"c\">>, kind => 'Val', identity => <<\"main@@c\">>, local => <<\"c\">>}]",
     };
     for (expected) |needle| {
         if (std.mem.indexOf(u8, term, needle) == null) {
@@ -584,6 +584,54 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
     try std.testing.expect(leaf.ref != null);
     try std.testing.expectEqualStrings("Item", leaf.ref.?.name);
     try std.testing.expectEqualStrings("Record_", leaf.ref.?.kind);
+}
+
+test "decision 112: lookup answers the declaration's identity, never the alias" {
+    // `e.lookup("surface")` for `import {area as surface}` resolves at the call
+    // site and answers `area` — its own name and `<package>@<path>@@<Decl>` —
+    // while `ref()` still splices the name the call site spells. The library's
+    // private `double` in the built text resolves in the library (row 1 of
+    // decision 112's table).
+    const lib =
+        \\pub fn area(w: i32, h: i32) -> i32 { return w * h; }
+        \\fn double(x: i32) -> i32 { return x * 2; }
+        \\pub default fn shapesdsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
+        \\    val code = e.build("double(" + e.text() + ")");
+        \\    val root = CustomNode(kind: "call", span: Span(0, 7, 1), label: "keyword", ref: e.lookup("surface"), children: []);
+        \\    return e.custom(root, code);
+        \\}
+    ;
+    const main =
+        \\import shapesdsl, {area as surface} from "shapesdsl";
+        \\val x = shapesdsl "surface(4, 5)";
+    ;
+    const io = std.testing.io;
+    var session = try comptimeMod.compile(
+        std.testing.allocator,
+        &.{
+            .{ .path = "shapesdsl/root", .source = "pub default mod shapesdsl;" },
+            .{ .path = "shapesdsl/shapesdsl", .source = lib },
+            .{ .path = "", .source = main },
+        },
+        io,
+        test_scratch.path(io, "comptime/dsl_hygiene_lookup"),
+        null,
+    );
+    defer session.deinit(std.testing.allocator);
+
+    const out = session.outputs.items[session.outputs.items.len - 1];
+    if (out.outcome == .typeError) {
+        const desc = try h.renderTypeError(std.testing.allocator, main, out.outcome.typeError);
+        defer std.testing.allocator.free(desc);
+        std.debug.print("\nunexpected type error:\n{s}\n", .{desc});
+    }
+    try std.testing.expect(out.outcome == .ok);
+    const entries = out.outcome.ok.custom_ast;
+    try std.testing.expectEqual(@as(usize, 1), entries.len);
+    const ref = entries[0].root.ref orelse return error.TestExpectedRef;
+    try std.testing.expectEqualStrings("area", ref.name);
+    try std.testing.expectEqualStrings("shapesdsl@shapesdsl@@area", ref.identity);
+    try std.testing.expectEqualStrings("surface", ref.local);
 }
 
 test "gate: the @ExprCustom carrier code names no sub-language" {

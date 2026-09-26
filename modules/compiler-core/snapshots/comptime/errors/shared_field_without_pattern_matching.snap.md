@@ -9,7 +9,7 @@ val get_value = fn(r: Result) -> i32 {
 
 ----- ERROR
 error: unknown field
-  ┌─ :6:7
+  ┌─ main.bp:6:7
   │
 6 │     r.kind
   │       ^

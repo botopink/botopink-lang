@@ -14,7 +14,7 @@ val CircleDrawing = implement Drawable for Circle {
 
 ----- ERROR
 error: unknown method
-  ┌─ :9:8
+  ┌─ main.bp:9:8
   │
 9 │     fn explode(self: Self) {
   │        ^

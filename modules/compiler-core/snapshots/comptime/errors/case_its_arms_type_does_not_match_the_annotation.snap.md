@@ -3,7 +3,7 @@ val a: bool = case 42 { 0 -> "a"; _ -> "b"; };
 
 ----- ERROR
 error: type mismatch
-  ┌─ :1:15
+  ┌─ main.bp:1:15
   │
 1 │ val a: bool = case 42 { 0 -> "a"; _ -> "b"; };
   │               ^

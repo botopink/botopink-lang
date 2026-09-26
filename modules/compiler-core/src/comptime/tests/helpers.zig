@@ -183,7 +183,9 @@ pub fn assertComptimeAstExpecting(
         if (output.outcome != .ok) {
             failed = true;
             if (expectation == .must_compile) {
-                const body = (try snapshot.renderOutcomeDiagnostic(allocator, output.src, output.outcome)).?;
+                const file = try snapshot.moduleFile(allocator, output.name);
+                defer allocator.free(file);
+                const body = (try snapshot.renderOutcomeDiagnostic(allocator, output.src, output.outcome, file)).?;
                 defer allocator.free(body);
                 std.debug.print(
                     "\n{s}: module '{s}' did not compile:\n{s}\n" ++
@@ -232,7 +234,9 @@ pub fn renderTypeError(
     if (src.len > 0 and src[src.len - 1] != '\n') try out.append(allocator, '\n');
     try out.appendSlice(allocator, "\n----- ERROR\n");
 
-    const body = try snapshot.renderTypeErrorBody(allocator, src, err);
+    // A single-source test compiles module `main` (path ""), as every
+    // `----- SOURCE CODE -- main.bp` header says.
+    const body = try snapshot.renderTypeErrorBody(allocator, src, err, "main.bp");
     defer allocator.free(body);
     try out.appendSlice(allocator, body);
 

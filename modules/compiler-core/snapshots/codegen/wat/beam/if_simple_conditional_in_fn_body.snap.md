@@ -14,7 +14,7 @@ fn main() {
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: an `if` without `else` has no value on its false side
-  ┌─ :2:13
+  ┌─ main.bp:2:13
   │
 2 │     val r = if (n > 0) { "positive"; };
   │             ^

@@ -6,7 +6,7 @@ fn nums() -> @Iterator<@Result<i32, string>> {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :3:5
+  ┌─ main.bp:3:5
   │
 3 │     break "not an i32";
   │     ^

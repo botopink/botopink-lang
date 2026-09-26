@@ -19,7 +19,7 @@ pub type Button(
     label: string,
 )
 
-val r = "ok";
+pub val r = "ok";
 ```
 
 ----- TYPED AST JSON -- main.json

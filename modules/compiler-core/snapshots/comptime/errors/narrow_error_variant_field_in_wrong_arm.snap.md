@@ -12,7 +12,7 @@ fn bad(s: Shape) -> f64 {
 
 ----- ERROR
 error: unbound variable
-  ┌─ :8:25
+  ┌─ main.bp:8:25
   │
 8 │         Square(side) -> radius;
   │                         ^

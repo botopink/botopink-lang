@@ -7,7 +7,7 @@ val c = html(tpl);
 
 ----- ERROR
 error: an `expr` argument must be a literal string at the call site
-  ┌─ :5:14
+  ┌─ main.bp:5:14
   │
 5 │ val c = html(tpl);
   │              ^

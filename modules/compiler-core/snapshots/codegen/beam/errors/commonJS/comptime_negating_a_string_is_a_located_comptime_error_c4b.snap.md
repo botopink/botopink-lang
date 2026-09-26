@@ -5,7 +5,7 @@ val q = comptime -"s";
 
 ----- ERROR
 error comptime: expression cannot be evaluated at compile time
- ┌─ :1:18
+ ┌─ main.bp:1:18
   │
 1 │ val q = comptime -"s";
   │                  ^

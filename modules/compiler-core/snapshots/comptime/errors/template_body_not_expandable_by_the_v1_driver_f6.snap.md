@@ -7,7 +7,7 @@ val c = hard "SELECT 1";
 
 ----- ERROR
 error: cannot expand this template function at compile time
-  ┌─ :5:9
+  ┌─ main.bp:5:9
   │
 5 │ val c = hard "SELECT 1";
   │         ^

@@ -9,7 +9,7 @@ fn main() {
 
 ----- ERROR
 error: unknown `result` namespace function
-  ┌─ :6:20
+  ┌─ main.bp:6:20
   │
 6 │     val x = result.collapse(parse(1));
   │                    ^

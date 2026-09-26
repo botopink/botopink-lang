@@ -17,7 +17,7 @@ fn main() {
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, test@main}.
-{exports, [{'_botopink_main', 0}, {main, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {name, 0}, {page, 0}, {main, 0}]}.
 {attributes, []}.
 {labels, 42}.
 

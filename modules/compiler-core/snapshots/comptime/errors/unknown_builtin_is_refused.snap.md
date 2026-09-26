@@ -5,7 +5,7 @@ fn main() {
 
 ----- ERROR
 error: unknown-builtin: unknown builtin `@pritn` — did you mean `@print`?
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     @pritn("x");
   │     ^

@@ -251,10 +251,30 @@ fn main() {
 %%         multiline => true
 %%     },
 %%     bindings => [
-%%         #{name => <<"html">>, kind => 'Fn'},
-%%         #{name => <<"name">>, kind => 'Val'},
-%%         #{name => <<"page">>, kind => 'Val'},
-%%         #{name => <<"main">>, kind => 'Fn'}
+%%         #{
+%%             name => <<"html">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@html">>,
+%%             local => <<"html">>
+%%         },
+%%         #{
+%%             name => <<"name">>,
+%%             kind => 'Val',
+%%             identity => <<"main@@name">>,
+%%             local => <<"name">>
+%%         },
+%%         #{
+%%             name => <<"page">>,
+%%             kind => 'Val',
+%%             identity => <<"main@@page">>,
+%%             local => <<"page">>
+%%         },
+%%         #{
+%%             name => <<"main">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@main">>,
+%%             local => <<"main">>
+%%         }
 %%     ]
 %% }
 ```
@@ -280,7 +300,7 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 288))
   (global $name (mut i32) (i32.const 256))
   (global $page (mut i32) (i32.const 0))
-  (func $main
+  (func $main (export "main")
     global.get $page
     call $__print_str
   )

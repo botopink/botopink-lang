@@ -5,7 +5,7 @@ val x = cfg.prot;
 
 ----- ERROR
 error: this tuple has no element labeled `prot`
-  ┌─ :3:13
+  ┌─ main.bp:3:13
   │
 3 │ val x = cfg.prot;
   │             ^

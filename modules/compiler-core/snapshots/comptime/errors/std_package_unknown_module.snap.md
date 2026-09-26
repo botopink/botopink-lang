@@ -3,7 +3,7 @@ import {linked_list} from "std";
 
 ----- ERROR
 error: unknown "std" module in import
-  ┌─ :1:9
+  ┌─ main.bp:1:9
   │
 1 │ import {linked_list} from "std";
   │         ^

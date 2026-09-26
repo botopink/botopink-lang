@@ -3,7 +3,7 @@ val bad = -"s";
 
 ----- ERROR
 error: `-` takes numbers, not `string`
-  ┌─ :1:12
+  ┌─ main.bp:1:12
   │
 1 │ val bad = -"s";
   │            ^

@@ -3,7 +3,7 @@ fn f(p: NoSuchType) -> i32 { return 1; }
 
 ----- ERROR
 error: unknown type
-  ┌─ :1:9
+  ┌─ main.bp:1:9
   │
 1 │ fn f(p: NoSuchType) -> i32 { return 1; }
   │         ^

@@ -3,7 +3,7 @@ type Shape { Circle(r: bogusType), Square(side: f64) }
 
 ----- ERROR
 error: unknown type
-  ┌─ :1:24
+  ┌─ main.bp:1:24
   │
 1 │ type Shape { Circle(r: bogusType), Square(side: f64) }
   │                        ^

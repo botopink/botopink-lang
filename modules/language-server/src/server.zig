@@ -443,7 +443,10 @@ pub const Server = struct {
             if (self.compileWithGraph(uri, source)) |res| {
                 var result = res;
                 defer result.deinit(self.gpa);
-                if (try engine.definitionCustomRef(self.gpa, uri, source, pos, tokens, result.customAstFor(uri))) |loc| {
+                var ga = std.heap.ArenaAllocator.init(self.gpa);
+                defer ga.deinit();
+                const g_others = self.graphOthers(ga.allocator(), uri) catch &.{};
+                if (try engine.definitionCustomRef(self.gpa, uri, source, pos, tokens, result.customAstFor(uri), g_others)) |loc| {
                     defer self.gpa.free(loc.uri);
                     return messages.writeResponse(self.io, self.gpa, msg.id(), loc);
                 }

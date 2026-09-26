@@ -16,7 +16,7 @@ fn plain(n: i32) -> i32 {
 
 ----- ERROR
 error: effect-try-without-fallible-channel: `try` needs a `@Result` in some layer of the return — this fn's return has no `@Result` in it
-  ┌─ :12:13
+  ┌─ main.bp:12:13
   │
 12 │     val v = try parse(n);
   │             ^

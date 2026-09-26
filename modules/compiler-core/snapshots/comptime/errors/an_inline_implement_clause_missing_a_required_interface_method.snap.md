@@ -6,7 +6,7 @@ type Money(cents: i32) implement Display { }
 
 ----- ERROR
 error: missing interface method
-  ┌─ :4:6
+  ┌─ main.bp:4:6
   │
 4 │ type Money(cents: i32) implement Display { }
   │      ^

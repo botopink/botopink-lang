@@ -17,7 +17,7 @@
             "name": "External.Erlang",
             "args": [
               "\"lists\"",
-              "\"reverse(self)\""
+              "\"reverse(xs)\""
             ],
             "labels": [
               "module",
@@ -29,7 +29,7 @@
         "genericParams": [],
         "params": [
           {
-            "name": "self",
+            "name": "xs",
             "typeRef": {
               "generic": {
                 "name": "Array",

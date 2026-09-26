@@ -1,0 +1,17 @@
+//// Decision 112's library: a public `area`, a PRIVATE `double`, and a DSL
+//// whose frame (`double(` … `)`) the library writes around the consumer's
+//// text (`e.text()`).
+
+pub fn area(w: i32, h: i32) -> i32 {
+    return w * h;
+}
+
+fn double(x: i32) -> i32 {
+    return x * 2;
+}
+
+pub default fn shapesdsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
+    val code = e.build("double(" + e.text() + ")");
+    val root = CustomNode(kind: "call", span: Span(0, 4, 1), label: "keyword", ref: null, children: []);
+    return e.custom(root, code);
+}

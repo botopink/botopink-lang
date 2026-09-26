@@ -9,7 +9,7 @@ fn run() -> @Task<@Result<i32, string>> {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :5:22
+  ┌─ main.bp:5:22
   │
 5 │     val count: i32 = await fetchCount(3);
   │                      ^

@@ -7,7 +7,7 @@ val c = wrap("hello", p);
 
 ----- ERROR
 error: non-`@Expr` parameter of a template function must receive a literal value at the call site
-  ┌─ :5:23
+  ┌─ main.bp:5:23
   │
 5 │ val c = wrap("hello", p);
   │                       ^

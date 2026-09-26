@@ -9,7 +9,7 @@ val n = six "ignored";
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
 ```botopink
-val n = 6;
+pub val n = 6;
 ```
 
 ----- TYPED AST JSON -- main.json

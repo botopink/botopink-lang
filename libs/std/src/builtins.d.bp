@@ -552,6 +552,12 @@ pub type DeclAnnotation(
     args: string[],
 )
 
+// Every type name below (`Param.typeName`, `Field.typeName`,
+// `Method.returnType`, `Decl.returnType`) is the type as the source spells it:
+// `string`, `Array<string>`, `string[]`, `?i32`, `fn(i32) -> i32`,
+// `#(string, string)`, `@Task<Element>` — never a bare head, never empty for a
+// written type (a missing return type is `""`).
+
 // One parameter of a reflected method/fn.
 pub type Param(
     name: string,

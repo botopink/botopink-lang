@@ -8,7 +8,7 @@ val c = html """
 
 ----- ERROR
 error: component `Buttom` not found in caller scope
-  ┌─ :5:2
+  ┌─ main.bp:5:2
   │
 5 │ <Buttom label="Send"/>
   │  ^

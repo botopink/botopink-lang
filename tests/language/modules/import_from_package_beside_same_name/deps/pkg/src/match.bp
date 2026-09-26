@@ -1,0 +1,5 @@
+//// `attempt` — the name the consumer's own `main` also declares.
+
+pub fn attempt(pattern: string) -> string {
+    return "pkg:" + pattern;
+}

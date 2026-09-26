@@ -9,7 +9,7 @@ val s = shout "hey";
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
 ```botopink
-val s = "hey!";
+pub val s = "hey!";
 ```
 
 ----- TYPED AST JSON -- main.json

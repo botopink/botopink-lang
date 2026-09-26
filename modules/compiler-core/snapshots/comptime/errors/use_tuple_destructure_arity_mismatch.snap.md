@@ -11,7 +11,7 @@ fn LikeWidget() -> @Component<Element, Element> {
 
 ----- ERROR
 error: use-tuple-arity: `val #(…)` from a `use` binds the tuple's elements
-  ┌─ :7:5
+  ┌─ main.bp:7:5
   │
 7 │     val #(shown) = use optimistic(12, { c, a -> c + a });
   │     ^

@@ -10,7 +10,7 @@ fn pick() -> Token {
 
 ----- ERROR
 error: enum "Token" has no path ".Color.Bogus.500" (ES4 — enum-sections path resolution)
-  ┌─ :7:19
+  ┌─ main.bp:7:19
   │
 7 │     return .Color.Bogus.500;
   │                   ^

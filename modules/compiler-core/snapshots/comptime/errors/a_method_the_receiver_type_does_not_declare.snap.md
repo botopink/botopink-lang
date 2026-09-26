@@ -7,7 +7,7 @@ fn main() {
 
 ----- ERROR
 error: unknown method
-  ┌─ :4:14
+  ┌─ main.bp:4:14
   │
 4 │     @print(d.swim());
   │              ^

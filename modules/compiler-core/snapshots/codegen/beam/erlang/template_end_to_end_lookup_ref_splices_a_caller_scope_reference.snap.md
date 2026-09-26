@@ -149,10 +149,25 @@ fn main() {
 %%         multiline => false
 %%     },
 %%     bindings => [
-%%         #{name => <<"greeting">>, kind => 'Val'},
-%%         #{name => <<"refer">>, kind => 'Fn'},
-%%         #{name => <<"s">>, kind => 'Val'},
-%%         #{name => <<"main">>, kind => 'Fn'}
+%%         #{
+%%             name => <<"greeting">>,
+%%             kind => 'Val',
+%%             identity => <<"main@@greeting">>,
+%%             local => <<"greeting">>
+%%         },
+%%         #{
+%%             name => <<"refer">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@refer">>,
+%%             local => <<"refer">>
+%%         },
+%%         #{name => <<"s">>, kind => 'Val', identity => <<"main@@s">>, local => <<"s">>},
+%%         #{
+%%             name => <<"main">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@main">>,
+%%             local => <<"main">>
+%%         }
 %%     ]
 %% }
 ```
@@ -169,6 +184,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export([main/0, greeting/0, s/0]).
 
 greeting() ->
     <<"ola mundo">>.

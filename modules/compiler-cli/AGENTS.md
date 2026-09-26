@@ -273,6 +273,16 @@ Cross-command rules:
   ones. A `*_test.bp` may therefore import the package it tests, and still
   cannot name a module that does not exist. `format` scans without checking:
   it rewrites files and resolves nothing.
+- **An import under `from "…"` depends only on what the clause names**
+  (`resolver.importOwner`): the project module the clause names, or nothing
+  when it names std or a library — never whichever project module declares a
+  `pub` of the same name (`ImportRef.has_from`). A `pub fn attempt` beside
+  another module's `import {match.attempt} from "routing"` drew an edge to the
+  declarer, formed a cycle, and compiled an importer before the module it
+  imports (`unbound variable` at an unrelated call). `checkVisibility` reads
+  the same owner. Only a from-less import falls back to the bare-name owner.
+- **A comptime validation error's box names its file**
+  (`diagnostics.renderValidationError`, `fileLabel`).
 - **Compiling does not execute.** `build` and `test` call
   `codegen.generateWith` with `.execute = false`: no `node`/`erl`/`wasmtime`
   spawn and no `.botopinkbuild/runtime-cache` entry at build time (`test` runs

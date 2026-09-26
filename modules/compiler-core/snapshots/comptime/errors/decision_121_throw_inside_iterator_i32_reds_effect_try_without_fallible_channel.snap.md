@@ -6,7 +6,7 @@ fn nums() -> @Iterator<i32> {
 
 ----- ERROR
 error: effect-try-without-fallible-channel: `throw` needs a `@Result` in some layer of the return — the item of `@Iterator<T>` has to be `@Result<T, E>` to use `throw` / `try`
-  ┌─ :3:5
+  ┌─ main.bp:3:5
   │
 3 │     throw "no";
   │     ^

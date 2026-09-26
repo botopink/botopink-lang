@@ -6,7 +6,7 @@ fn lookup() -> @Component<User, User> {
 
 ----- ERROR
 error: context-getcontext-expects-type: `@getContext(T)` expects a type as its sole argument
-  ┌─ :3:24
+  ┌─ main.bp:3:24
   │
 3 │     return @getContext(42);
   │                        ^

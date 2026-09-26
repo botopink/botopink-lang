@@ -6,7 +6,7 @@ fn Card() -> @Component<Element> {
 
 ----- ERROR
 error: generic-required-arg-missing: a required generic argument is missing
-  ┌─ :2:14
+  ┌─ main.bp:2:14
   │
 2 │ fn Card() -> @Component<Element> {
   │              ^

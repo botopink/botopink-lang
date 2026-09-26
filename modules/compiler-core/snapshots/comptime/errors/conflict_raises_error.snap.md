@@ -5,7 +5,7 @@ val Merged = mergeRecords(A, B);
 
 ----- ERROR
 error: mergeRecords: field 'x' has conflicting types in the two records
-  ┌─ :3:14
+  ┌─ main.bp:3:14
   │
 3 │ val Merged = mergeRecords(A, B);
   │              ^

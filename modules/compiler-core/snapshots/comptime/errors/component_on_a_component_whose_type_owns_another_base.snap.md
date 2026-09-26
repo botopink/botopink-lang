@@ -7,7 +7,7 @@ fn bad() -> @Component<Http, Element> {
 
 ----- ERROR
 error: effect-wrapper-mismatch: a component's `T` implements `@Context<C>` with the `C` of its `@Component<C, T>` — here `T` anchors at `Element`, not `Http`
-  ┌─ :3:13
+  ┌─ main.bp:3:13
   │
 3 │ fn bad() -> @Component<Http, Element> {
   │             ^

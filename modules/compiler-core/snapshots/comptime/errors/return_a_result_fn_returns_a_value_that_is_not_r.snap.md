@@ -4,7 +4,7 @@ fn f() -> @Result<i32, Oops> { return "s"; }
 
 ----- ERROR
 error: type mismatch
-  ┌─ :2:39
+  ┌─ main.bp:2:39
   │
 2 │ fn f() -> @Result<i32, Oops> { return "s"; }
   │                                       ^

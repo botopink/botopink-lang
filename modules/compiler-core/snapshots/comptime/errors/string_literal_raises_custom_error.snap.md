@@ -3,7 +3,7 @@ val err = @comptimeError("field x not found");
 
 ----- ERROR
 error: comptime error: field x not found
-  ┌─ :1:26
+  ┌─ main.bp:1:26
   │
 1 │ val err = @comptimeError("field x not found");
   │                          ^

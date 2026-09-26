@@ -7,7 +7,7 @@ val categorize = fn(s: string) -> string {
 
 ----- ERROR
 error: non-exhaustive case
-  ┌─ :2:12
+  ┌─ main.bp:2:12
   │
 2 │     return case s {
   │            ^

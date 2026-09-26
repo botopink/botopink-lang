@@ -4,7 +4,7 @@ val r = 1 |> add(1, 2);
 
 ----- ERROR
 error: arity mismatch
-  ┌─ :2:14
+  ┌─ main.bp:2:14
   │
 2 │ val r = 1 |> add(1, 2);
   │              ^

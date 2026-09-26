@@ -10,7 +10,7 @@ fn Counter() -> @Component<Element, Element> {
 
 ----- ERROR
 error: use-tuple-arity: `val #(…)` from a `use` binds the tuple's elements
-  ┌─ :6:5
+  ┌─ main.bp:6:5
   │
 6 │     val #(count, setCount) = use state(0);
   │     ^

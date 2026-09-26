@@ -12,7 +12,7 @@ fn LikeWidget() -> @Component<Element, Element> {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :8:10
+  ┌─ main.bp:8:10
   │
 8 │     push("x");
   │          ^

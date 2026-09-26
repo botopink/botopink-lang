@@ -13,6 +13,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export([main/0]).
 
 main() ->
     P = (8080 + 1),

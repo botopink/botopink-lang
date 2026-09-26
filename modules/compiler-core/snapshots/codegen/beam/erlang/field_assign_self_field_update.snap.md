@@ -11,7 +11,7 @@ val Counter = type(
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: a `Counter` is immutable — its field `count` cannot be assigned
-  ┌─ :4:9
+  ┌─ main.bp:4:9
   │
 4 │         self.count += 1;
   │         ^

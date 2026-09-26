@@ -132,9 +132,24 @@ fn main() {
 ;;         multiline => false
 ;;     },
 ;;     bindings => [
-;;         #{name => <<"conf">>, kind => 'Fn'},
-;;         #{name => <<"cfg">>, kind => 'Val'},
-;;         #{name => <<"main">>, kind => 'Fn'}
+;;         #{
+;;             name => <<"conf">>,
+;;             kind => 'Fn',
+;;             identity => <<"main@@conf">>,
+;;             local => <<"conf">>
+;;         },
+;;         #{
+;;             name => <<"cfg">>,
+;;             kind => 'Val',
+;;             identity => <<"main@@cfg">>,
+;;             local => <<"cfg">>
+;;         },
+;;         #{
+;;             name => <<"main">>,
+;;             kind => 'Fn',
+;;             identity => <<"main@@main">>,
+;;             local => <<"main">>
+;;         }
 ;;     ]
 ;; }
 ```
@@ -160,7 +175,7 @@ fn main() {
   (start $__init_globals)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (global $cfg (mut i32) (i32.const 0))
-  (func $main
+  (func $main (export "main")
     global.get $cfg
     i32.load
     i32.const 1

@@ -5,7 +5,7 @@ fn parse(n: i32) -> @Result<i32, string> {
 
 ----- ERROR
 error: return-must-be-bare-R: a body whose return carries `@Result<R, E>` must `return` a value of type R; the @Result::Ok wrapping is implicit.
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     return Result.Ok(result: n * 2);
   │     ^

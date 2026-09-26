@@ -4,7 +4,7 @@ val NoField = omit(User, "email");
 
 ----- ERROR
 error: omit: field 'email' not found in type 'User'
-  ┌─ :2:26
+  ┌─ main.bp:2:26
   │
 2 │ val NoField = omit(User, "email");
   │                          ^

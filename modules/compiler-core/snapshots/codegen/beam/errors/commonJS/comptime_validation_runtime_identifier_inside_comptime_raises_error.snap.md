@@ -11,7 +11,7 @@ fn main() {
 
 ----- ERROR
 error comptime: expression cannot be evaluated at compile time
- ┌─ :3:11
+ ┌─ main.bp:3:11
   │
 3 │     break greeting;
   │           ^^^^^^^^

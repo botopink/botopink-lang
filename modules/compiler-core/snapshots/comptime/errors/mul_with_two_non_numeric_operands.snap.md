@@ -3,7 +3,7 @@ val bad = "a" * "b";
 
 ----- ERROR
 error: `*` takes numbers, not `string`
-  ┌─ :1:11
+  ┌─ main.bp:1:11
   │
 1 │ val bad = "a" * "b";
   │           ^

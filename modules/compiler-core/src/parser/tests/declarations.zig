@@ -606,16 +606,16 @@ test "parser: interface with default method and external declare member" {
 
 test "parser: external ---- qualified enum target and call template" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Erlang("lists", "zip(other, self)"),
+        \\#[@External.Erlang("lists", "zip(other, xs)"),
         \\  @External.Node("./gleam_stdlib.mjs", "zip")]
-        \\pub declare fn zip(self: Array<i32>, other: Array<i32>) -> Array<i32>;
+        \\pub declare fn zip(xs: Array<i32>, other: Array<i32>) -> Array<i32>;
     );
 }
 
 test "parser: external ---- keyword-argument form" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\#[@External.Erlang( module: "lists", method: "reverse(self)")]
-        \\pub declare fn reverse(self: Array<i32>) -> Array<i32>;
+        \\#[@External.Erlang( module: "lists", method: "reverse(xs)")]
+        \\pub declare fn reverse(xs: Array<i32>) -> Array<i32>;
     );
 }
 
@@ -623,7 +623,7 @@ test "parser: external ---- node prototype shorthand (module omitted)" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[@External.Node("reverse"),
         \\  @External.Erlang("lists", "reverse")]
-        \\pub declare fn reverse(self: Array<i32>) -> Array<i32>;
+        \\pub declare fn reverse(xs: Array<i32>) -> Array<i32>;
     );
 }
 
@@ -635,7 +635,7 @@ test "parser: external ---- qualified enum variant with inline: true flag" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[@External.Erlang("lists", "search", inline: true),
         \\  @External.Node("./gleam_stdlib.mjs", "index_of")]
-        \\pub declare fn indexOf(self: Array<i32>, item: i32) -> i32;
+        \\pub declare fn indexOf(xs: Array<i32>, item: i32) -> i32;
     );
 }
 
@@ -646,13 +646,13 @@ test "parser: external ---- qualified enum variant with inline: true flag" {
 test "ast: externalFor resolves extended @external vocabulary" {
     const alloc = std.testing.allocator;
     const src =
-        \\#[@External.Erlang("lists", "zip(other, self)"),
+        \\#[@External.Erlang("lists", "zip(other, xs)"),
         \\  @External.Node("zip")]
-        \\pub declare fn zip(self: Array<i32>, other: Array<i32>) -> Array<i32>;
+        \\pub declare fn zip(xs: Array<i32>, other: Array<i32>) -> Array<i32>;
         \\#[@External.Erlang( "lists", "reverse")]
-        \\pub declare fn rev(self: Array<i32>) -> Array<i32>;
-        \\#[@External.Erlang( module: "lists", method: "reverse(self)")]
-        \\pub declare fn kwrev(self: Array<i32>) -> Array<i32>;
+        \\pub declare fn rev(xs: Array<i32>) -> Array<i32>;
+        \\#[@External.Erlang( module: "lists", method: "reverse(xs)")]
+        \\pub declare fn kwrev(xs: Array<i32>) -> Array<i32>;
     ;
     var l = Lexer.init(src);
     const tokens = try l.scanAll(alloc);
@@ -679,7 +679,7 @@ test "ast: externalFor resolves extended @external vocabulary" {
     // Qualified `Target.Erlang` target + call template carried in the symbol slot.
     const erl = zip.?.externalFor("erlang").?;
     try std.testing.expectEqualStrings("lists", erl.module);
-    try std.testing.expectEqualStrings("zip(other, self)", erl.symbol);
+    try std.testing.expectEqualStrings("zip(other, xs)", erl.symbol);
 
     // Keyword form with the module omitted (node prototype) → empty module.
     const nod = zip.?.externalFor("node").?;
@@ -697,7 +697,7 @@ test "ast: externalFor resolves extended @external vocabulary" {
     // so it must resolve exactly like the positional spelling.
     const kw = kwrev.?.externalFor("erlang").?;
     try std.testing.expectEqualStrings("lists", kw.module);
-    try std.testing.expectEqualStrings("reverse(self)", kw.symbol);
+    try std.testing.expectEqualStrings("reverse(xs)", kw.symbol);
 }
 
 // Splits the symbol slot into `(host symbol, ordered arg names)`. The bare

@@ -6,7 +6,7 @@ val n = loadTyped().name;
 
 ----- ERROR
 error: this tuple has no element labeled `name`
-  ┌─ :4:21
+  ┌─ main.bp:4:21
   │
 4 │ val n = loadTyped().name;
   │                     ^

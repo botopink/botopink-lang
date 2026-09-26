@@ -5,7 +5,7 @@ fn nums() -> @Stream<i32, string> {
 
 ----- ERROR
 error: generic-arg-count-exceeded: `@Stream` takes at most 1 type argument, 2 given
-  ┌─ :1:14
+  ┌─ main.bp:1:14
   │
 1 │ fn nums() -> @Stream<i32, string> {
   │              ^

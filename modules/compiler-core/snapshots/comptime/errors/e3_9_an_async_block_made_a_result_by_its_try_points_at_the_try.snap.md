@@ -12,7 +12,7 @@ fn run() -> @Task<void> {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :9:18
+  ┌─ main.bp:9:18
   │
 9 │     val v: i32 = await t;
   │                  ^

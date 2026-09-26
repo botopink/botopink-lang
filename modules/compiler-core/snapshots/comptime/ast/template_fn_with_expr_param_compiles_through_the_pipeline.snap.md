@@ -10,7 +10,7 @@ val c = html """
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
 ```botopink
-val c = """
+pub val c = """
 <p>hello</p>
 """;
 ```

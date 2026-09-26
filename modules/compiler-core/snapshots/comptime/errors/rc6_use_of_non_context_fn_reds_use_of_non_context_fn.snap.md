@@ -8,7 +8,7 @@ fn lookup() -> @Component<User, User> {
 
 ----- ERROR
 error: use-of-non-context-fn: `use` takes a hook
-  ┌─ :4:13
+  ┌─ main.bp:4:13
   │
 4 │     val u = use plain();
   │             ^

@@ -11,7 +11,7 @@ val CircleDrawing = implement Drawable for Circle {
 
 ----- ERROR
 error: unknown interface
-  ┌─ :6:8
+  ┌─ main.bp:6:8
   │
 6 │     fn Renderable.draw(self: Self) {
   │        ^

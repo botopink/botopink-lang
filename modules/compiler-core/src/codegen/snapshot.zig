@@ -96,7 +96,9 @@ pub fn buildSnapshot(
     // Comptime validation rejected the module: the backends emit an empty
     // program, so show the diagnostic in place of the (empty) code section.
     if (result.comptime_err) |ct_err| {
-        const body = try ct_err.renderAlloc(alloc, src);
+        const file = try comptimeSnapshot.moduleFile(alloc, name);
+        defer alloc.free(file);
+        const body = try ct_err.renderAlloc(alloc, src, file);
         defer alloc.free(body);
         try comptimeSnapshot.appendDiagnosticSection(alloc, &buf, name, body);
         return try buf.toOwnedSlice(alloc);

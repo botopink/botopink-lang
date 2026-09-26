@@ -15,7 +15,7 @@ fn Mixed() -> @Component<Element, Element> {
 
 ----- ERROR
 error: context-anchor-violation: two ContextBases in one body
-  ┌─ :11:13
+  ┌─ main.bp:11:13
   │
 11 │     val b = use connection();
   │             ^

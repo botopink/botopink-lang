@@ -8,7 +8,7 @@ fn main() {
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: unknown-builtin: unknown builtin `@Src` — did you mean `@src`?
-  ┌─ :2:15
+  ┌─ main.bp:2:15
   │
 2 │     val loc = @Src();
   │               ^

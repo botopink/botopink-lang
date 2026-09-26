@@ -3,7 +3,7 @@ fn empty() -> @Stream<> { break; }
 
 ----- ERROR
 error: generic-required-arg-missing: a required generic argument is missing
-  ┌─ :1:15
+  ┌─ main.bp:1:15
   │
 1 │ fn empty() -> @Stream<> { break; }
   │               ^

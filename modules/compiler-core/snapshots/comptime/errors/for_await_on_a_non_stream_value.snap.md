@@ -7,7 +7,7 @@ fn bad() -> @Task<i32> {
 
 ----- ERROR
 error: for-await-expects-stream: `for await` expects a `@Stream<T>` value
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     for await (5) { x ->
   │     ^

@@ -155,9 +155,24 @@ fn main() {
 %%         multiline => false
 %%     },
 %%     bindings => [
-%%         #{name => <<"conf">>, kind => 'Fn'},
-%%         #{name => <<"cfg">>, kind => 'Val'},
-%%         #{name => <<"main">>, kind => 'Fn'}
+%%         #{
+%%             name => <<"conf">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@conf">>,
+%%             local => <<"conf">>
+%%         },
+%%         #{
+%%             name => <<"cfg">>,
+%%             kind => 'Val',
+%%             identity => <<"main@@cfg">>,
+%%             local => <<"cfg">>
+%%         },
+%%         #{
+%%             name => <<"main">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@main">>,
+%%             local => <<"main">>
+%%         }
 %%     ]
 %% }
 ```
@@ -211,9 +226,12 @@ function __bp_print() {
 
 const cfg = [8004, true];
 
+exports.cfg = cfg;
+
 function main() {
     __bp_print((cfg[0] + 1));
 }
+exports.main = main;
 
 function _botopink_main() {
     main();

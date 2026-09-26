@@ -331,13 +331,13 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
         for (m.params, 0..) |p, j| {
             const pe = try arena.alloc(Term.MapEntry, 2);
             pe[0] = Term.field("name", Term.str(p.name));
-            pe[1] = Term.field("typeName", Term.str(typeName(p.typeRef, p.typeName)));
+            pe[1] = Term.field("typeName", Term.str(try typeName(arena, p.typeRef)));
             params[j] = Term.mapOf(pe);
         }
         const entries = try arena.alloc(Term.MapEntry, 4);
         entries[0] = Term.field("name", Term.str(m.name));
         entries[1] = Term.field("params", Term.listOf(params));
-        entries[2] = Term.field("returnType", Term.str(if (m.returnType) |rt| typeName(rt, "") else ""));
+        entries[2] = Term.field("returnType", Term.str(if (m.returnType) |rt| try typeName(arena, rt) else ""));
         entries[3] = Term.field("annotations", try annotationsToTerm(arena, m.annotations));
         methods[i] = Term.mapOf(entries);
     }
@@ -356,12 +356,12 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
     return Term.mapOf(entries);
 }
 
-/// Display name of a type reference; `fallback` when the reference has none.
-fn typeName(tr: ast.TypeRef, fallback: []const u8) []const u8 {
+/// A type reference as the source spells it (`TypeRef.format`) — the same
+/// rendering as a field's `typeName` (`infer.zig` `declTypeName`).
+fn typeName(arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Error![]const u8 {
     return switch (tr) {
         .named => |n| n,
-        .generic => |g| g.name,
-        else => fallback,
+        else => std.fmt.allocPrint(arena, "{f}", .{tr}),
     };
 }
 

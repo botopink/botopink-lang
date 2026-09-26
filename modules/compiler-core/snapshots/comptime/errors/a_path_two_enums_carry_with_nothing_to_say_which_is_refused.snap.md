@@ -13,7 +13,7 @@ val x = .Color.Red.500;
 
 ----- ERROR
 error: the path ".Color.Red.500" is carried by more than one enum — "Border" and "Token" — and nothing here says which (ES5 — enum-sections path ambiguity)
-  ┌─ :11:9
+  ┌─ main.bp:11:9
   │
 11 │ val x = .Color.Red.500;
   │         ^

@@ -6,7 +6,7 @@ fn f() {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :3:5
+  ┌─ main.bp:3:5
   │
 3 │     x = "oops";
   │     ^

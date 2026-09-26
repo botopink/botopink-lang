@@ -201,6 +201,21 @@ member — calls `refuseDiscardParam` first: `discard-param-with-body`
 and the backends have no discard-parameter spelling (two `_` are a duplicate in
 WAT and strict JavaScript).
 
+**`self` names a method's receiver and nothing else.** `consumeParamName` notes
+the first parameter called `self` in `Parser.selfParam` (reset by
+`parseParamList`), and `parseFnBody` — which parses only FREE functions (a
+top-level `fn`, `declare fn`, `val name = fn …`; a method's signature goes
+through `parseSignature`) — refuses it: `self-param-outside-type`
+(`selfParamOutsideType`), at the name. The backends read a parameter called
+`self` as a receiver and dropped it (erlang `twice/1`, commonJS `NaN`), so
+`template_markers.zig` no longer shifts a free function's markers either.
+
+**A keyword where a name is declared** is `reserved-word-as-name`
+(`reservedWordAsName`), with the word in the caret caption: a field
+(`parseFieldList`, before `field-needs-name`), and — through `parse`'s
+fallback, when the parser stopped on a keyword-shaped token followed by `:`,
+`=` or `->` (`isKeywordName`) — a parameter, a binding and a lambda parameter.
+
 `fn f(x: string)` — **no body and no return type at all** — stays a parse error,
 now `bodyless-fn-needs-return-type`, located at the `)` the declaration just
 closed, because "add `-> void`" means *there*. The `)` is captured into

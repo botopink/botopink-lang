@@ -21,10 +21,15 @@ const template = @import("template.zig");
 const primOpTemplate = @import("primOpTemplate.zig");
 const templateEval = @import("template_eval.zig");
 const decoratorEval = @import("decorator_eval.zig");
+const dslHygiene = @import("dsl_hygiene.zig");
 const specializeMod = @import("specialize.zig");
 const unifyMod = @import("unify.zig");
 const snapshotMod = @import("snapshot.zig");
-const unify = unifyMod.unify;
+/// `unify` raises its `TypeError` unlocated: it sees types, not source. Every
+/// call is `unifyAt` (which stamps the location it is given) or sits under a
+/// caller that stamps one with `locateLast` — 01 step 9: no type error leaves
+/// inference without a place in the source.
+const unifyUnlocated = unifyMod.unify;
 const Lexer = @import("../lexer.zig").Lexer;
 const Parser = @import("../parser.zig").Parser;
 const Module = @import("../module.zig").Module;
@@ -957,21 +962,45 @@ pub fn isDecoratorParams(params: []const ast.Param) bool {
 /// comptime. Mirrors `registerImportedTemplateFn` for the `@Expr` template case;
 /// the core stays lib-agnostic (it carries the decorator across modules by its
 /// generic `@Decl`-first shape, never by any lib's name). No-op for non-decorators.
-pub fn registerImportedDecorator(env: *Env, name: []const u8, fn_decl: ast.FnDecl, owner: []const u8, support: []const ast.FnDecl) !void {
+pub fn registerImportedDecorator(env: *Env, name: []const u8, fn_decl: ast.FnDecl, owner: []const u8, support: []const ast.FnDecl, conflict: ?[]const u8) !void {
     registerDecoratorSig(env, name, fn_decl.params, fn_decl);
-    if (env.decorators.getPtr(name)) |sig| sig.support = support;
+    if (env.decorators.getPtr(name)) |sig| {
+        sig.support = support;
+        sig.conflict = conflict;
+    }
     try env.noteComptimeOwner(fn_decl, owner);
 }
 
-/// The top-level functions of `dfn`'s module that its body calls or names,
-/// directly or through one another — what a decorator module needs beside
-/// the decorator to compile. `lookup` answers a name with that module's
-/// function of that name. A decorator, a template and a bodyless `declare fn`
-/// are left out: none of them runs as a plain function in the decorator
-/// module. Before this a decorator body could call no function at all
-/// (`call to undefined function problemOf/1`).
-pub fn decoratorSupport(arena: std.mem.Allocator, lookup: anytype, dfn: ast.FnDecl) std.mem.Allocator.Error![]const ast.FnDecl {
+/// What a decorator module needs beside the decorator (`decoratorSupport`),
+/// or why it cannot be built: two functions it reaches share a name.
+pub const Support = struct {
+    fns: []const ast.FnDecl,
+    /// Set when two DIFFERENT functions the body reaches carry one name — a
+    /// module-local helper and one an imported function brings, say. The
+    /// decorator module is one namespace, so one of them would silently answer
+    /// for the other; the decorator is refused instead (decision 67).
+    conflict: ?[]const u8 = null,
+};
+
+/// The functions `dfn`'s body calls or names, directly or through one another
+/// — what a decorator module needs beside the decorator to compile. `lookup`
+/// answers a name with a function of `dfn`'s own module; `imported` answers a
+/// name the module IMPORTS with that function and every function it reaches
+/// in its own module (`Env.importedFnSupport` — already closed, so their
+/// bodies are not walked here: their names resolve where they were written).
+/// A decorator, a template and a bodyless `declare fn` are left out: none of
+/// them runs as a plain function in the decorator module. Before this a
+/// decorator body could call no function at all (`call to undefined function
+/// problemOf/1`), and then none it imported (`shout/1`).
+pub fn decoratorSupport(
+    arena: std.mem.Allocator,
+    lookup: anytype,
+    imported: *const std.StringHashMapUnmanaged([]const ast.FnDecl),
+    dfn: ast.FnDecl,
+) std.mem.Allocator.Error!Support {
     var out: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
+    // name → the body that name stands for in the decorator module.
+    var bodies = std.StringHashMap([*]const ast.Stmt).init(arena);
     var seen = std.StringHashMap(void).init(arena);
     try seen.put(dfn.name, {});
     var names: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -981,13 +1010,41 @@ pub fn decoratorSupport(arena: std.mem.Allocator, lookup: anytype, dfn: ast.FnDe
         const n = names.items[i];
         if (seen.contains(n)) continue;
         try seen.put(n, {});
-        const f: ast.FnDecl = lookup.get(n) orelse continue;
-        if (f.body.len == 0 or isDecoratorParams(f.params)) continue;
-        if (f.returnType) |rt| if (rt.isTemplateReturnType()) continue;
-        try out.append(arena, f);
-        try ast.collectNames(arena, f.body, &names);
+        if (lookup.get(n)) |f| {
+            if (f.body.len == 0 or isDecoratorParams(f.params)) continue;
+            if (f.returnType) |rt| if (rt.isTemplateReturnType()) continue;
+            if (try claimName(arena, &bodies, f, dfn.name)) |c| return .{ .fns = out.items, .conflict = c };
+            try out.append(arena, f);
+            try ast.collectNames(arena, f.body, &names);
+            continue;
+        }
+        const closure = imported.get(n) orelse continue;
+        for (closure) |g| {
+            if (bodies.get(g.name)) |b| if (b == g.body.ptr) continue;
+            if (try claimName(arena, &bodies, g, dfn.name)) |c| return .{ .fns = out.items, .conflict = c };
+            try out.append(arena, g);
+        }
     }
-    return out.items;
+    return .{ .fns = out.items };
+}
+
+/// Records that `f.name` means `f` in the decorator module; the message when
+/// the name already means another function.
+fn claimName(arena: std.mem.Allocator, bodies: *std.StringHashMap([*]const ast.Stmt), f: ast.FnDecl, decorator: []const u8) std.mem.Allocator.Error!?[]const u8 {
+    if (bodies.get(f.name)) |b| {
+        if (b == f.body.ptr) return null;
+        return try std.fmt.allocPrint(arena, "the decorator `{s}` reaches two different functions named `{s}` — one of its module's and one an imported function calls — and a decorator runs as one module, where one name is one function", .{ decorator, f.name });
+    }
+    try bodies.put(f.name, f.body.ptr);
+    return null;
+}
+
+/// A plain function with a body, as a decorator module can carry it: not a
+/// decorator, not a template, not a bodyless declaration.
+pub fn isCarriableFn(f: ast.FnDecl) bool {
+    if (f.body.len == 0 or isDecoratorParams(f.params)) return false;
+    if (f.returnType) |rt| if (rt.isTemplateReturnType()) return false;
+    return true;
 }
 
 /// Register an `implement` block imported and activated from another module
@@ -1228,21 +1285,26 @@ fn registerExtensions(env: *Env, program: ast.Program) InferError!void {
 /// imported name's kind is derived from its bound type (`fn` vs value).
 fn buildScopeSnapshot(env: *Env, program: ast.Program) InferError!void {
     const snap = template.ScopeSnapshot.init(env.arena, env.modulePath) catch return error.OutOfMemory;
+    const here = env.modulePath;
     for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| try snap.put(f.name, .fn_, false),
-        .val => |v| try snap.put(v.name, .val, false),
+        .@"fn" => |f| try snap.putDeclared(f.name, .fn_, false, f.name, try envMod.declIdentity(env.arena, here, f.name)),
+        .val => |v| try snap.putDeclared(v.name, .val, false, v.name, try envMod.declIdentity(env.arena, here, v.name)),
         .type_ => |tdecl| switch (tdecl.shape) {
-            .record => try snap.put(tdecl.name, .struct_, false),
-            .enum_ => try snap.put(tdecl.name, .enum_, false),
+            .record => try snap.putDeclared(tdecl.name, .struct_, false, tdecl.name, try envMod.declIdentity(env.arena, here, tdecl.name)),
+            .enum_ => try snap.putDeclared(tdecl.name, .enum_, false, tdecl.name, try envMod.declIdentity(env.arena, here, tdecl.name)),
         },
-        .behavior => |i| try snap.put(i.name, .interface, false),
+        .behavior => |i| try snap.putDeclared(i.name, .interface, false, i.name, try envMod.declIdentity(env.arena, here, i.name)),
         .use => |u| for (u.imports) |imp| {
             const name = imp.name();
             const kind: template.BindingKind = blk: {
                 const ty = env.lookup(name) orelse break :blk .val;
                 break :blk if (ty.deref().* == .func) .fn_ else .val;
             };
-            try snap.put(name, kind, true);
+            // Decision 112 — an import answers with the declaration it
+            // names, never with the alias it is bound under.
+            if (env.importOwners.get(name)) |o| {
+                try snap.putDeclared(name, kind, true, o.name, try envMod.declIdentity(env.arena, o.owner, o.name));
+            } else try snap.put(name, kind, true);
         },
         else => {},
     };
@@ -3220,13 +3282,16 @@ fn checkDecoratorArgs(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, ow
 // in the full compile pipeline (`env.templateEval` set, node available); tooling
 // paths (LSP / compileTypesOnly) skip it.
 
-/// Render a `TypeRef` as the simple type name a `@Decl` handle exposes
-/// (best-effort: the named/generic head, else empty).
-fn declTypeName(tr: ast.TypeRef) []const u8 {
+/// Render a `TypeRef` as the type name a `@Decl` handle exposes: the type as
+/// the source spells it (`TypeRef.format`) — `string`, `Array<string>`,
+/// `string[]`, `fn(i32) -> i32`, `#(string, string)`, `?i32`,
+/// `@Task<HandlerResponse>`. Never erased to a head and never empty: a
+/// decorator that admits `Array<string>` must be able to refuse
+/// `Array<Element>`.
+fn declTypeName(arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Error![]const u8 {
     return switch (tr) {
         .named => |n| n,
-        .generic => |g| g.name,
-        else => "",
+        else => std.fmt.allocPrint(arena, "{f}", .{tr}),
     };
 }
 
@@ -3252,10 +3317,13 @@ fn runDeclDecorators(
         // Diagnostics point at the annotation. A `failAt` span has no source text
         // to map onto for a declaration, so it is reported at the annotation too.
         const owner = env.comptimeOwnerOf(dfn);
-        const support = if (std.mem.eql(u8, owner, env.modulePath))
-            try decoratorSupport(env.arena, env.fnDecls, dfn)
+        const local = std.mem.eql(u8, owner, env.modulePath);
+        const found: Support = if (local)
+            try decoratorSupport(env.arena, env.fnDecls, &env.importedFnSupport, dfn)
         else
-            sig.support;
+            .{ .fns = sig.support, .conflict = sig.conflict };
+        if (found.conflict) |c| return decoratorError(env, a, c, "Rename one of the two functions, so each name the decorator reaches is one function.");
+        const support = found.fns;
         const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, owner, dfn, support, handle, plain, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.");
         };
@@ -3291,7 +3359,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 .name = f.name,
                 .fields = &.{},
                 .methods = &.{},
-                .returnType = if (f.returnType) |rt| declTypeName(rt) else "",
+                .returnType = if (f.returnType) |rt| try declTypeName(env.arena, rt) else "",
                 .annotations = f.annotations,
             };
             try runDeclDecorators(env, ctx, f.annotations, h);
@@ -3302,7 +3370,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 for (tdecl.recordFields(), 0..) |fld, i| {
                     fields[i] = .{
                         .name = fld.name,
-                        .typeName = declTypeName(fld.typeRef),
+                        .typeName = try declTypeName(env.arena, fld.typeRef),
                         .annotations = fld.annotations,
                     };
                 }
@@ -3321,7 +3389,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .name = fld.name,
                         .fields = &.{},
                         .methods = &.{},
-                        .returnType = declTypeName(fld.typeRef),
+                        .returnType = try declTypeName(env.arena, fld.typeRef),
                         .annotations = fld.annotations,
                     };
                     try runDeclDecorators(env, ctx, fld.annotations, fh);
@@ -3332,7 +3400,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .name = m.name,
                         .fields = &.{},
                         .methods = &.{},
-                        .returnType = if (m.returnType) |rt| declTypeName(rt) else "",
+                        .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                     };
                     try runDeclDecorators(env, ctx, m.annotations, mh);
@@ -3360,7 +3428,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                         .name = m.name,
                         .fields = &.{},
                         .methods = &.{},
-                        .returnType = if (m.returnType) |rt| declTypeName(rt) else "",
+                        .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                         .annotations = m.annotations,
                     };
                     try runDeclDecorators(env, ctx, m.annotations, mh);
@@ -3375,7 +3443,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
             for (i.fields, 0..) |fld, idx| {
                 fields[idx] = .{
                     .name = fld.name,
-                    .typeName = declTypeName(fld.typeRef),
+                    .typeName = try declTypeName(env.arena, fld.typeRef),
                     .annotations = &.{},
                 };
             }
@@ -3394,7 +3462,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                     .name = m.name,
                     .fields = &.{},
                     .methods = &.{},
-                    .returnType = if (m.returnType) |rt| declTypeName(rt) else "",
+                    .returnType = if (m.returnType) |rt| try declTypeName(env.arena, rt) else "",
                     .annotations = m.annotations,
                 };
                 try runDeclDecorators(env, ctx, m.annotations, mh);
@@ -4942,6 +5010,7 @@ fn expandTemplateCallViaRuntime(
                 ).withLoc(loc);
                 return error.TypeError;
             };
+            try applyDslHygiene(env, tfn, @constCast(parsed), src, captures);
             // Splice the caller's `${…}` hole expressions back in place of
             // the `__bp_hole_<param>_<i>` placeholders the template embedded.
             substituteHoles(@constCast(parsed), captures);
@@ -4964,6 +5033,7 @@ fn expandTemplateCallViaRuntime(
                 ).withLoc(loc);
                 return error.TypeError;
             };
+            try applyDslHygiene(env, tfn, @constCast(parsed), c.code, captures);
             substituteHoles(@constCast(parsed), captures);
             // The `ast` half: the reference tree the template built.
             const root = template.parseCustomNodeFromTree(env.arena, c.ast) catch return error.OutOfMemory;
@@ -5011,6 +5081,41 @@ fn expandTemplateCallViaRuntime(
         env.templateEvalCache.put(key, expansion) catch return error.OutOfMemory;
     }
     return finishExpansion(env, expansion, retType, loc);
+}
+
+/// Decision 112 — the names the template's LIBRARY wrote into `parsed` (the
+/// built code of `src`) resolve in the library's module (`dsl_hygiene.zig`);
+/// the consumer's text keeps resolving here. A template declared in this very
+/// module has one author's scope and is left alone.
+fn applyDslHygiene(env: *Env, tfn: ast.FnDecl, parsed: *ast.Expr, src: []const u8, captures: []const template.CapturedExpr) InferError!void {
+    const owner = env.comptimeOwnerOf(tfn);
+    if (std.mem.eql(u8, owner, env.modulePath)) return;
+    const exports = env.templateOwnerExports.get(owner) orelse return;
+    const Resolver = struct {
+        env: *Env,
+        owner: []const u8,
+        exports: *const std.StringHashMap(*T.Type),
+
+        pub fn aliasFor(self: @This(), name: []const u8) dslHygiene.Error!?[]const u8 {
+            const ty = self.exports.get(name) orelse
+                self.exports.get(try envMod.templatePrivateKey(self.env.arena, name)) orelse return null;
+            var mangled: std.ArrayListUnmanaged(u8) = .empty;
+            for (self.owner) |ch| try mangled.append(self.env.arena, if (std.ascii.isAlphanumeric(ch)) ch else '_');
+            const alias = try std.fmt.allocPrint(self.env.arena, "__bp_tpl_{s}__{s}", .{ mangled.items, name });
+            if (!self.env.templateImports.contains(alias)) {
+                try self.env.templateImports.put(self.env.arena, alias, .{ .owner = self.owner, .name = name });
+                // Module-wide, like an import: the expansion may sit in a
+                // body whose scope closes before the next one uses it.
+                const scope = self.env.bodyScope;
+                self.env.bodyScope = null;
+                defer self.env.bodyScope = scope;
+                try self.env.bind(alias, ty);
+            }
+            return alias;
+        }
+    };
+    const spans = try dslHygiene.userSpans(env.arena, src, captures);
+    try dslHygiene.apply(env.arena, parsed, src, spans, Resolver{ .env = env, .owner = owner, .exports = exports });
 }
 
 /// Replace `__bp_hole_<param>_<i>` placeholder identifiers in freshly parsed
@@ -5429,6 +5534,18 @@ fn validateTypeparams(
     }
 }
 
+/// Gives `err`'s pending `TypeError` the location `loc` when it has none — the
+/// stamp a caller holding the source position puts on an error raised below it
+/// by `unifyUnlocated` (01 step 9). An error already located keeps its place.
+fn locateLast(env: *Env, err: InferError, loc: ast.Loc) InferError {
+    if (err == error.TypeError and loc.line != 0) {
+        if (env.lastError) |*e| if (e.loc == null) {
+            e.loc = loc;
+        };
+    }
+    return err;
+}
+
 /// Calls `unify` and, if it fails, stamps the expression's location onto the error.
 fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
     // `Children` coercion — applied before unification since `unifyAt` is
@@ -5437,7 +5554,7 @@ fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
     // Decision 8 §6 T7 — read before `unify` links anything.
     const ta = a.deref();
     const tb = b.deref();
-    unify(env, a, b) catch |err| {
+    unifyUnlocated(env, a, b) catch |err| {
         if (env.lastError) |*e| e.loc = loc;
         return err;
     };
@@ -5482,6 +5599,13 @@ fn behaviorCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
     };
     for (impls) |i| if (behaviorReaches(env, i, t.named.name, 0)) return true;
     return false;
+}
+
+/// True when `ty` is a named `behavior` — declared here or imported.
+fn isBehaviorType(env: *Env, ty: *T.Type) bool {
+    const t = ty.deref();
+    if (t.* != .named) return false;
+    return env.assocInterfaceDecls.contains(t.named.name) or env.importedBehaviorDecls.contains(t.named.name);
 }
 
 /// 01 R4 — whether behavior `from` is `to` or extends it, through the
@@ -7266,7 +7390,9 @@ fn bindPatternNamesForSubject(
                     }
                     if (inFirst) {
                         if (ls.previous) |prev| {
-                            try unify(env, prev, newTy);
+                            // Located by the caller that holds the pattern's
+                            // place (`locateLast`).
+                            try unifyUnlocated(env, prev, newTy);
                             try env.bind(ls.name, prev);
                         }
                     } else {
@@ -9160,7 +9286,7 @@ fn fallibleChannelRefusal(env: *Env, what: []const u8) ![]const u8 {
 /// `gen-infer-conflicting-errors`, asking for the annotation.
 fn unifyErrorChannel(env: *Env, errType: *T.Type, got: *T.Type, loc: ast.Loc) InferError!void {
     if (!env.inferredErrorScope) return unifyAt(env, errType, got, loc);
-    unify(env, errType, got) catch |err| switch (err) {
+    unifyUnlocated(env, errType, got) catch |err| switch (err) {
         error.TypeError => {
             env.lastError = TypeError.custom(
                 diagnostics.gen_infer_conflicting_errors ++
@@ -9721,9 +9847,9 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             var ifType = bodyType;
             if (elseTyped != null and stmtsYieldValue(thenTyped) and stmtsYieldValue(elseTyped.?)) {
                 if (caseArmTypesAgree(bodyType, elseType)) {
-                    try unify(env, bodyType, elseType);
+                    try unifyAt(env, bodyType, elseType, loc);
                 } else {
-                    ifType = try unionOf(env, &.{ bodyType, elseType });
+                    ifType = unionOf(env, &.{ bodyType, elseType }) catch |err| return locateLast(env, err, loc);
                     const u = ifType.deref();
                     if (u.* == .union_) try env.unionOrigins.put(env.arena, u, .{ .loc = loc, .kind = "if" });
                 }
@@ -9998,30 +10124,38 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             const valTyped = try inferExprTyped(env, a.value.*);
             const valPtr = try makeTypedPtr(env, valTyped);
 
-            return TypedExpr{ .binding = .{ .loc = loc, .type_ = valTyped.getType(), .kind = .{ .assign = .{
-                .target = switch (a.target) {
-                    .name => |name| blk: {
-                        if (env.lookup(name)) |ty| {
-                            try refuseValAssign(env, name, loc);
-                            try refuseMemoryWrite(env, name, a.op == .plusAssign, a.value, loc);
-                            // A `var` typed by a behavior takes an implementer.
-                            try unifyArgument(env, ty, valTyped.getType(), loc);
-                        } else {
-                            env.lastError = try unboundAt(env, name, loc);
-                            return error.TypeError;
-                        }
-                        break :blk .{ .name = name };
-                    },
-                    .fieldAccess => |fa| blk: {
-                        const recvTyped = try inferExprTyped(env, fa.receiver.*);
-                        try refuseRecordFieldAssign(env, fa.receiver.*, recvTyped.getType(), fa.field, loc);
-                        const recvPtr = try makeTypedPtr(env, recvTyped);
-                        break :blk .{ .fieldAccess = .{ .receiver = recvPtr, .field = fa.field } };
+            return TypedExpr{
+                .binding = .{
+                    .loc = loc,
+                    .type_ = valTyped.getType(),
+                    .kind = .{
+                        .assign = .{
+                            .target = switch (a.target) {
+                                .name => |name| blk: {
+                                    if (env.lookup(name)) |ty| {
+                                        try refuseValAssign(env, name, loc);
+                                        try refuseMemoryWrite(env, name, a.op == .plusAssign, a.value, loc);
+                                        // A `var` typed by a behavior takes an implementer.
+                                        try unifyArgument(env, ty, valTyped.getType(), loc);
+                                    } else {
+                                        env.lastError = try unboundAt(env, name, loc);
+                                        return error.TypeError;
+                                    }
+                                    break :blk .{ .name = name };
+                                },
+                                .fieldAccess => |fa| blk: {
+                                    const recvTyped = try inferExprTyped(env, fa.receiver.*);
+                                    try refuseRecordFieldAssign(env, fa.receiver.*, recvTyped.getType(), fa.field, loc);
+                                    const recvPtr = try makeTypedPtr(env, recvTyped);
+                                    break :blk .{ .fieldAccess = .{ .receiver = recvPtr, .field = fa.field } };
+                                },
+                            },
+                            .op = a.op,
+                            .value = valPtr,
+                        },
                     },
                 },
-                .op = a.op,
-                .value = valPtr,
-            } } } };
+            };
         },
 
         .localBindDestruct => |lb| {
@@ -10111,7 +10245,7 @@ fn bindDestructPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, mu
                 .enum_ => |en| {
                     if (en.variants.len != 1 or !std.mem.eql(u8, en.variants[0].name, bare)) break :blk false;
                     if (!try variantPayloadIrrefutable(env, subjectType, v.name, v.payload)) break :blk false;
-                    try bindPatternNamesForSubject(env, pattern, subjectType, &snapshots);
+                    bindPatternNamesForSubject(env, pattern, subjectType, &snapshots) catch |err| return locateLast(env, err, loc);
                     break :blk true;
                 },
                 .record => |rec| {
@@ -10123,7 +10257,7 @@ fn bindDestructPattern(env: *Env, pattern: ast.Pattern, subjectType: *T.Type, mu
                         // cells; the subject's instantiation is not read here.
                         const fieldTy = if (rec.genericParams.len == 0) rec.fields[i].type_ else try env.freshVar();
                         if (!try patternIsIrrefutable(env, a, fieldTy)) break :blk false;
-                        try bindPatternNamesForSubject(env, a, fieldTy, &snapshots);
+                        bindPatternNamesForSubject(env, a, fieldTy, &snapshots) catch |err| return locateLast(env, err, loc);
                     }
                     break :blk true;
                 },
@@ -12679,7 +12813,7 @@ fn caseArmValueType(env: *Env, body: ast.TypedExpr) InferError!?*T.Type {
                 // A `break <value>` names the arm's value explicitly and wins
                 // over the tail; that is the block arm's own rule (06 C2a).
                 .@"break" => |b| if (b.value) |v| {
-                    if (found) |f| try unify(env, f, v.getType()) else found = v.getType();
+                    if (found) |f| try unifyAt(env, f, v.getType(), v.getLoc()) else found = v.getType();
                 },
                 else => {},
             }
@@ -12720,10 +12854,11 @@ fn appendUnionMember(
     // A variable inference has not decided is not a distinct alternative. It
     // joins whatever is already there instead of standing beside it, so a
     // union never carries a `?` member that says nothing.
-    if (m.isUnbound() and into.items.len > 0) return unify(env, into.items[0], m);
+    // Located by the caller that holds the union's place (`locateLast`).
+    if (m.isUnbound() and into.items.len > 0) return unifyUnlocated(env, into.items[0], m);
     for (into.items) |existing| {
         if (sameTypeShape(existing, m)) return;
-        if (existing.isUnbound()) return unify(env, existing, m);
+        if (existing.isUnbound()) return unifyUnlocated(env, existing, m);
     }
     try into.append(env.arena, m);
 }
@@ -12834,7 +12969,7 @@ fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*
         var merged = false;
         for (members.items) |m| {
             if (caseArmTypesAgree(m, t)) {
-                try unify(env, m, t);
+                try unifyAt(env, m, t, arm.body.getLoc());
                 merged = true;
                 break;
             }
@@ -13105,10 +13240,17 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             for (al.elems, 0..) |elem, i| {
                 typedElems[i] = try inferExprTypedExpecting(env, elem, elemExpected);
             }
-            const elemType = if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
+            // With a BEHAVIOR as the expected element type every element meets
+            // it, the way an argument meets its parameter — so
+            // `val ps: Array<Plugin> = [A(…), B(…)]` takes two different
+            // implementers, where unifying each element with the first one
+            // refused the second (`expected A, got B`). Any other expectation
+            // stays a hint (it may be a scheme's generic variable).
+            const behaviorElem: ?*T.Type = if (elemExpected) |ee| (if (isBehaviorType(env, ee)) ee else null) else null;
+            const elemType = behaviorElem orelse if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
             for (typedElems) |elem| {
                 // Located at the element that disagrees (01 step 9).
-                try unifyAt(env, elemType, elem.getType(), elem.getLoc());
+                try unifyArgument(env, elemType, elem.getType(), elem.getLoc());
             }
             const arrayArgs = try env.arena.alloc(*T.Type, 1);
             arrayArgs[0] = elemType;
@@ -13206,7 +13348,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                     if (i == 1 and binder.len > 0) {
                         try saveAndBindPatternName(env, &snapshots, binder, optionalInner(subjectTy.?).?);
                     }
-                } else try bindCaseArmPatternNames(env, arm.pattern, typedSubjects, &snapshots);
+                } else bindCaseArmPatternNames(env, arm.pattern, typedSubjects, &snapshots) catch |err| return locateLast(env, err, arm.patternLoc);
                 if (typedSubjects.len == 1) try noteResultPattern(env, arm.pattern, typedSubjects[0].getType(), arm.patternLoc);
 
                 // A guard clause must type-check to a boolean, with the
@@ -13263,7 +13405,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             // arms of different types make a union (decision 8 §3.2). A jump arm
             // (`return`/`throw`/`break`/`continue`) and a statement arm (`void`, a
             // block without `break <value>`) contribute nothing.
-            const caseType = try caseTypeFromArms(env, typedArms);
+            const caseType = caseTypeFromArms(env, typedArms) catch |err| return locateLast(env, err, loc);
             if (caseType.deref().* == .union_) try env.unionOrigins.put(env.arena, caseType.deref(), .{ .loc = loc, .kind = "case" });
             return TypedExpr{ .collection = .{ .loc = loc, .type_ = caseType, .kind = .{ .case = .{
                 .subjects = typedSubjects,
@@ -13356,7 +13498,7 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             // scope (`val assert Ok(n) = parse("42"); @print(n);`), so the
             // snapshots a case arm would restore are deliberately dropped.
             var bound: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
-            try bindPatternNamesForSubject(env, ap.pattern, exprTyped.getType(), &bound);
+            bindPatternNamesForSubject(env, ap.pattern, exprTyped.getType(), &bound) catch |err| return locateLast(env, err, loc);
             try noteResultPattern(env, ap.pattern, exprTyped.getType(), loc);
             const handlerExpr = ap.handler.*;
             const handlerTyped = try inferExprTyped(env, handlerExpr);

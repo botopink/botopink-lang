@@ -219,7 +219,9 @@ fn collectCompileDiagnostics(
     defer session.deinit(allocator);
 
     for (session.outputs.items) |o| {
-        const body = (try ctSnapshot.renderOutcomeDiagnostic(allocator, o.src, o.outcome)) orelse continue;
+        const file = try ctSnapshot.moduleFile(allocator, o.name);
+        defer allocator.free(file);
+        const body = (try ctSnapshot.renderOutcomeDiagnostic(allocator, o.src, o.outcome, file)) orelse continue;
         try out.append(allocator, .{ .name = o.name, .src = o.src, .text = body });
     }
     if (out.items.len > 0) return;
@@ -492,7 +494,7 @@ pub fn assertJsError(allocator: Allocator, comptime loc: std.builtin.SourceLocat
             continue;
         };
 
-        const errText = try ct_err.renderAlloc(allocator, src);
+        const errText = try ct_err.renderAlloc(allocator, src, "main.bp");
         defer allocator.free(errText);
 
         snap.assertCodegenError(allocator, slug, src, errText, c) catch |err| {

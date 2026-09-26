@@ -6,7 +6,7 @@ fn nums() -> @Iterator<@Result<i32, string>> :outer {
 
 ----- ERROR
 error: break-label-unbound: `break :<label>` targets an unknown label
-  ┌─ :3:5
+  ┌─ main.bp:3:5
   │
 3 │     break :nonsense 42;
   │     ^

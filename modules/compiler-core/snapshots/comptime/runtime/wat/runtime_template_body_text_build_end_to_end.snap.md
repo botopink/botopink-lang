@@ -83,7 +83,15 @@ val s = shout "hey";
 ;;         text => <<"hey">>,
 ;;         multiline => false
 ;;     },
-;;     bindings => [#{name => <<"shout">>, kind => 'Fn'}, #{name => <<"s">>, kind => 'Val'}]
+;;     bindings => [
+;;         #{
+;;             name => <<"shout">>,
+;;             kind => 'Fn',
+;;             identity => <<"main@@shout">>,
+;;             local => <<"shout">>
+;;         },
+;;         #{name => <<"s">>, kind => 'Val', identity => <<"main@@s">>, local => <<"s">>}
+;;     ]
 ;; }
 ```
 

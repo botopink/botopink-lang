@@ -132,6 +132,17 @@ pub const ParseErrorType = enum {
     /// it is a declaration's placeholder (`declare fn f(comptime _: type)`),
     /// legal only where there is no body to bind it in.
     discardParamWithBody,
+    /// A free function names a parameter `self`. `self` is the receiver of a
+    /// method — a function written in a `type`, `behavior`, `implement` or
+    /// `extend` body — and nothing else; outside one it would be an ordinary
+    /// name that every backend reads as a receiver.
+    selfParamOutsideType,
+    /// A keyword written where a name is declared — a field, a parameter, a
+    /// binding (`type Edge(from: string, …)`, `fn f(from: i32)`,
+    /// `val from = 1`). Every keyword is reserved in every position; the
+    /// diagnostic names the word rather than report a field "with no name"
+    /// or a stray token.
+    reservedWordAsName,
     /// D2 (fn-param-default-expansion §F2) — a positional call argument
     /// follows a named one (`f(host: "x", "y")`). Once the call switches to
     /// named-arg form, the remaining args must also be named (the
@@ -341,6 +352,10 @@ pub const Parser = struct {
     /// (`parseParamList` resets it), for `refuseDiscardParam` — a `_` is
     /// legal only in a signature with no body.
     discardParam: ?Token = null,
+    /// The first parameter named `self` of the list parsed last
+    /// (`parseParamList` resets it). `self` is a method's receiver, so a free
+    /// function (`parseFnBody`) that names one is `self-param-outside-type`.
+    selfParam: ?Token = null,
     /// The static-prefix rule of `use` (front 19 step 1, decision 88): true once
     /// an `if`, `case`, `loop` or `return` of the **current function body** has
     /// been parsed, at any nesting. A `use` seen while it is set is
@@ -445,7 +460,13 @@ pub const Parser = struct {
         // error name.
         var program = this.parseDecls(alloc) catch |err| {
             if (err == ParseError.UnexpectedToken and this.parseError == null) {
-                this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+                // A keyword where a name is being declared — `from: i32` in a
+                // parameter list, `val from = 1`, `{ from -> … }` — stops the
+                // parser on the keyword with a declarator after it; say so.
+                const tok = this.peek();
+                const next = this.peekAt(1).kind;
+                const declares = next == .colon or next == .equal or next == .rightArrow;
+                this.parseError = ParseErrorInfo.fromToken(if (declares and isKeywordName(tok)) .reservedWordAsName else .unexpectedToken, tok);
             }
             return err;
         };
@@ -1439,6 +1460,15 @@ pub const Parser = struct {
         return list.toOwnedSlice(alloc);
     }
 
+    /// True when `tok` is a keyword spelled like a name (`from`, `type`,
+    /// `case`): identifier-shaped, but lexed as a keyword. `_` is not one.
+    pub fn isKeywordName(tok: Token) bool {
+        if (tok.kind == .identifier or tok.lexeme.len == 0) return false;
+        if (!std.ascii.isAlphabetic(tok.lexeme[0])) return false;
+        for (tok.lexeme) |c| if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+        return true;
+    }
+
     /// Reports a reserved word error for the current token.
     pub fn reportReservedWordError(this: *This) void {
         const tok = this.peek();
@@ -1562,7 +1592,11 @@ pub const Parser = struct {
     /// A parameter name — an identifier, or `_`, the placeholder of a bodyless
     /// declaration (noted in `discardParam` for `refuseDiscardParam`).
     pub fn consumeParamName(this: *This) ParseError!Token {
-        if (this.check(.identifier)) return this.advance();
+        if (this.check(.identifier)) {
+            const tok = this.advance();
+            if (this.selfParam == null and std.mem.eql(u8, tok.lexeme, "self")) this.selfParam = tok;
+            return tok;
+        }
         if (this.check(.underscore)) {
             const tok = this.advance();
             if (this.discardParam == null) this.discardParam = tok;

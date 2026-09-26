@@ -26,8 +26,8 @@ test "definition: member access on a `from \"<lib>\"` symbol resolves through th
     const lib_uri = "file:///libs/rakun/http.bp";
     const lib_src =
         \\pub type Response(code: i32)
-        \\pub fn created(self: Response, body: string) -> Response {
-        \\    return self;
+        \\pub fn created(r: Response, body: string) -> Response {
+        \\    return r;
         \\}
     ;
     // The app file calling `Response.created(...)`.

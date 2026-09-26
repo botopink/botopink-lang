@@ -5,7 +5,7 @@ fn parse(s: string) -> @Result<i32, string> {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :2:5
+  ┌─ main.bp:2:5
   │
 2 │     throw 404;
   │     ^

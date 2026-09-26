@@ -12,7 +12,7 @@ PatoNada*;
 
 ----- ERROR
 error: redundant activation
-  ┌─ :10:1
+  ┌─ main.bp:10:1
   │
 10 │ PatoNada*;
   │ ^

@@ -1,0 +1,31 @@
+//// A decorator body calls a function its module IMPORTS, and a decorator of
+//// this module calls one under an alias. The decorator module held the
+//// decorator and its own module's functions only, so an imported one was
+//// `call to undefined function shout/1` when the module was loaded. An
+//// imported function now travels with what it reaches in its own module
+//// (`wrap`, private to `text`), and a decorator carries it like a local one.
+
+pub mod text;
+pub mod sched;
+import {scheduled} from "sched";
+import {shout as yell} from "text";
+
+fn tag(comptime decl: @Decl) {
+    @emit("pub fn tagged() -> string { return \"" + yell(decl.name) + "\"; }");
+}
+
+#[scheduled("* * * * *")]
+fn tick() -> i32 {
+    return 1;
+}
+
+#[tag]
+fn tock() -> i32 {
+    return 2;
+}
+
+pub fn main() {
+    @print(schedule());
+    @print(tagged());
+    @print(tick() + tock());
+}

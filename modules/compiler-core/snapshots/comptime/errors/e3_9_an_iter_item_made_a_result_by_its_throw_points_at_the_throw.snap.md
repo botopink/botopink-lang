@@ -11,7 +11,7 @@ fn count(xs: string[]) -> i32 {
 
 ----- ERROR
 error: type mismatch
-  ┌─ :7:36
+  ┌─ main.bp:7:36
   │
 7 │     for (items) { r -> acc = acc + r; };
   │                                    ^

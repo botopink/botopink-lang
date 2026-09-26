@@ -255,9 +255,12 @@ knows only `CustomNode` — it never branches on any sub-language:
 - **Diagnostics** — a template's `failAt(span, msg)` maps through compiler-core's
   `template.failDiagnostic` to a type error located **inside** the literal.
 - **Hover / go-to-definition** — a node may carry `ref` (a `q.lookup` result tying
-  it to a caller-scope symbol). `engine.customRefNameAt` finds the deepest
-  covering node under the cursor; `hoverCustomRef` renders the bound symbol's
-  card, `definitionCustomRef` jumps to its declaration. Go-to-def is gated on
+  it to a caller-scope symbol). `engine.customRefAt` finds the deepest
+  covering node under the cursor; `hoverCustomRef` renders the card of the
+  binding the file holds under `ref.local`, and `definitionCustomRef` jumps to
+  the declaration of `ref.name` — the declared name, never an import's alias
+  (decision 112) — in this file or, through the project graph's modules, in the
+  module that declares it `pub`. Go-to-def is gated on
   `engine.cursorInString` so the common path skips the extra compile.
 
 Any lib returning `@ExprCustom` lights up for free. See

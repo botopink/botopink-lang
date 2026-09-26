@@ -155,9 +155,24 @@ fn main() {
 %%         multiline => false
 %%     },
 %%     bindings => [
-%%         #{name => <<"conf">>, kind => 'Fn'},
-%%         #{name => <<"cfg">>, kind => 'Val'},
-%%         #{name => <<"main">>, kind => 'Fn'}
+%%         #{
+%%             name => <<"conf">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@conf">>,
+%%             local => <<"conf">>
+%%         },
+%%         #{
+%%             name => <<"cfg">>,
+%%             kind => 'Val',
+%%             identity => <<"main@@cfg">>,
+%%             local => <<"cfg">>
+%%         },
+%%         #{
+%%             name => <<"main">>,
+%%             kind => 'Fn',
+%%             identity => <<"main@@main">>,
+%%             local => <<"main">>
+%%         }
 %%     ]
 %% }
 ```
@@ -179,6 +194,7 @@ fn main() {
 ```erlang
 -module(test@main).
 -export(['_botopink_main'/0, main/1]).
+-export([main/0, cfg/0]).
 
 cfg() ->
     {8004, true}.

@@ -6,7 +6,7 @@ fn open(b: Box<i32, string>) -> i32 {
 
 ----- ERROR
 error: generic-arg-count-exceeded: `Box` takes at most 1 type argument, 2 given
-  ┌─ :2:12
+  ┌─ main.bp:2:12
   │
 2 │ fn open(b: Box<i32, string>) -> i32 {
   │            ^

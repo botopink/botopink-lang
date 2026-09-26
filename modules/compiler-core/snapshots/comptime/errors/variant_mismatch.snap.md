@@ -8,7 +8,7 @@ val dog = Subject.Animal(..alice);
 
 ----- ERROR
 error: type mismatch
-  ┌─ :6:28
+  ┌─ main.bp:6:28
   │
 6 │ val dog = Subject.Animal(..alice);
   │                            ^

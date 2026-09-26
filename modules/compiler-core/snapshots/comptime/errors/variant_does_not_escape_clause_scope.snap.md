@@ -13,7 +13,7 @@ val test = fn(r: Result) -> i32 {
 
 ----- ERROR
 error: unknown field
-  ┌─ :10:14
+  ┌─ main.bp:10:14
   │
 10 │     return r.kind;
   │              ^

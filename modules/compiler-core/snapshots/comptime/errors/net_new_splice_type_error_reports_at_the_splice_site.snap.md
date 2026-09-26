@@ -6,7 +6,7 @@ val p = port();
 
 ----- ERROR
 error: type mismatch
-  ┌─ :4:9
+  ┌─ main.bp:4:9
   │
 4 │ val p = port();
   │         ^

@@ -2280,7 +2280,8 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
         const loader: Ast.Expr = .{ .raw = try std.mem.concat(b.arena, u8, &.{
             \\(fun() ->
             \\        Dir = 
-            , root.items,
+            ,
+            root.items,
             \\,
             \\        Self = atom_to_list(?MODULE) ++ ".erl",
             \\        Loaded = lists:foldl(fun(Src, Acc) ->
@@ -3151,17 +3152,15 @@ const Emitter = struct {
     }
 
     /// A bare call to a std prelude `declare fn` whose `@External.Erlang` symbol
-    /// is a template (`stringSlice1(self, start, end)` →
-    /// `string:slice(Self, Start, (End - Start))`). The declaration's first
-    /// parameter is named `self`, so the template's receiver marker (the source's `$0`) is the call's
-    /// FIRST positional argument and `$N` the (N+1)-th — unlike a method call,
-    /// where the receiver marker is the receiver. Null when the callee has no template.
+    /// is a template (`stringSlice1(s, start, end)` →
+    /// `string:slice(S, Start, (End - Start))`). A free function has no
+    /// receiver (`self-param-outside-type`), so `$N` is the call's N-th
+    /// positional argument, as for any other free `declare fn`. Null when the
+    /// callee has no template.
     fn preludeHelperNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
         const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
-        if (cc.args.len == 0) return null;
-        const shifted = .{ .args = cc.args[1..], .trailing = cc.trailing };
-        const template = templateFor(call, shifted) orelse return null;
-        return try this.templateNode(b, template, cc.args[0].value, shifted, error.PrimOpRecvInBuiltinTemplate);
+        const template = templateFor(call, cc) orelse return null;
+        return try this.templateNode(b, template, null, cc, error.PrimOpRecvInBuiltinTemplate);
     }
 
     /// The template an annotation renders for this call site: the arity branch

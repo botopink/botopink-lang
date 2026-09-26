@@ -240,6 +240,36 @@ pub const NamespaceImports = struct {
     }
 };
 
+/// One name of a template's library bound in the consumer (`Env.templateImports`).
+pub const TemplateImport = struct {
+    /// The module path the template was declared in.
+    owner: []const u8,
+    /// The name as that module declares it.
+    name: []const u8,
+};
+
+/// The key a module's PRIVATE function or value is exported under for its
+/// templates' text (decision 112): a NUL no source name contains, so no
+/// `import` can reach it.
+pub fn templatePrivateKey(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "\x00tpl\x00{s}", .{name});
+}
+
+/// A declaration's identity as `lookup` answers it (decision 112):
+/// `<module path>@@<Decl>` with the path's `/` written `@` — a dependency's
+/// module path starts with its package (`shapesdsl/shapesdsl` →
+/// `shapesdsl@shapesdsl@@area`, decision 109). A root-package module's path
+/// carries no package here: the checker is not told the root package's name
+/// (`decisions-pending.md` 01c-a), so its identity starts at the path.
+pub fn declIdentity(arena: std.mem.Allocator, modulePath: []const u8, name: []const u8) ![]const u8 {
+    const path = if (modulePath.len == 0) "main" else modulePath;
+    const out = try std.fmt.allocPrint(arena, "{s}@@{s}", .{ path, name });
+    for (out[0..path.len]) |*ch| if (ch.* == '/') {
+        ch.* = '@';
+    };
+    return out;
+}
+
 pub const TemplateEvalCtx = struct {
     io: std.Io,
     build_root: []const u8,
@@ -390,6 +420,9 @@ pub const DecoratorSig = struct {
     /// decorator module beside it. Filled for an IMPORTED decorator; a local
     /// one computes it from `Env.fnDecls` when it runs.
     support: []const ast.FnDecl = &.{},
+    /// Why the imported decorator's module cannot be built (`infer.Support`):
+    /// two functions it reaches share a name. Refused where it is applied.
+    conflict: ?[]const u8 = null,
 };
 
 /// A type-directed lowering for a `return`/`throw`/`yield`/`break` jump inside
@@ -819,6 +852,24 @@ pub const Env = struct {
     /// its type arguments (`first<string>([])`): the generic parameters, the
     /// parameters and the return as written. Filled by `registerFnSignatures`.
     fnDecls: std.StringHashMapUnmanaged(ast.FnDecl) = .empty,
+    /// A function this module IMPORTS, by the name it is bound under, with
+    /// every function it reaches in its own module (the first entry is the
+    /// imported function itself, under that name) — what a decorator of this
+    /// module carries when its body calls it (`infer.decoratorSupport`).
+    importedFnSupport: std.StringHashMapUnmanaged([]const ast.FnDecl) = .empty,
+    /// Decision 112 — the exports of each module an imported template was
+    /// declared in, by module path, private functions and values included
+    /// under `templatePrivateKey`: the names the template's own text may use.
+    templateOwnerExports: std.StringHashMapUnmanaged(*const std.StringHashMap(*T.Type)) = .empty,
+    /// Decision 112 — a name a template's LIBRARY wrote into the built code,
+    /// bound under an alias that no source can spell, and the declaration it
+    /// stands for (`dsl_hygiene.zig`). `comptime.zig` imports each alias from
+    /// its owner so the backends lower it as a cross-module reference.
+    templateImports: std.StringArrayHashMapUnmanaged(TemplateImport) = .empty,
+    /// Decision 112 — each imported name, by the name it is bound under, with
+    /// the module that declares it and its declared name: what a template's
+    /// `lookup` answers for it (`infer.buildScopeSnapshot`).
+    importOwners: std.StringHashMapUnmanaged(TemplateImport) = .empty,
     /// Decision 8 §3.2 — where an inferred union was born: the `if` or `case`
     /// whose branches disagreed. A use the union refuses names it, so the
     /// author sees the widening and not only the refusal.

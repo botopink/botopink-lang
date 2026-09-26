@@ -1,0 +1,12 @@
+//// A decorator whose body calls functions its module IMPORTS — directly
+//// (`shout`) and through a local helper (`describe` calls `count`).
+
+import {shout, count} from "text";
+
+fn describe(expr: string) -> string {
+    return if (count(expr) == 5) { "every minute" } else { "custom" };
+}
+
+pub fn scheduled(comptime decl: @Decl, cron: string) {
+    @emit("pub fn schedule() -> string { return \"" + shout(decl.name) + " runs " + describe(cron) + "\"; }");
+}

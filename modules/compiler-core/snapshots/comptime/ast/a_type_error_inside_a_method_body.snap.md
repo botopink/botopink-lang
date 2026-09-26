@@ -11,7 +11,7 @@ type D(id: i32) {
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: type mismatch
-  ┌─ :3:30
+  ┌─ main.bp:3:30
   │
 3 │         val z: string = self.id;
   │                              ^
