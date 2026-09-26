@@ -343,7 +343,7 @@ pub fn read(arena: std.mem.Allocator, io: std.Io, dir: []const u8, out_err: *?Lo
 /// `project_graph.zig`) add this directory's roots and stop there: an ancestor
 /// of it belongs to another checkout. A worktree nested in the meta checkout
 /// used to see the main checkout's `repository/*` as well, and every library
-/// was "declared by two libraries" (decision 140).
+/// was "declared by two libraries" (decision 143).
 pub fn isCheckoutRoot(io: std.Io, dir: []const u8) bool {
     var buf: [std.fs.max_path_bytes]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buf);

@@ -315,7 +315,7 @@ fn loadClosure(
 /// outside the jhonstart workspace that depends on `jhonstart-forms` compiled
 /// `jhonstart-forms/form` with `from "jhonstart"` and `from "jhonstart-link"`
 /// unbound — neither was loaded, and listing both after it still failed, on the
-/// order (decision 140). Each dependency's own entries resolve from ITS manifest
+/// order (decision 143). Each dependency's own entries resolve from ITS manifest
 /// and directory (`{ "workspace": true }` from its workspace, `path` from its
 /// directory, `git` across the roots), exactly as when it builds itself.
 ///

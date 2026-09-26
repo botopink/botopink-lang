@@ -191,7 +191,7 @@ Library resolution (`modules/compiler-cli/src/cli/libs.zig`): roots from
 `BOTOPINK_LIB_ROOTS` first, then for each ancestor `D` of cwd:
 `D/repository/botopink-lang/libs`, `D/repository`, `D/libs` — up to the first `D`
 that holds `repository/` (the enclosing checkout, `manifest.isCheckoutRoot`), so a
-meta worktree under `.tasks/<name>` sees only its own libraries (decision 140).
+meta worktree under `.tasks/<name>` sees only its own libraries (decision 143).
 
 ## Conventions
 

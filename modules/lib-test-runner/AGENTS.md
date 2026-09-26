@@ -11,7 +11,7 @@ each ancestor `D` of cwd, `D` itself when it holds a workspace manifest,
 `D/repository/botopink-lang/libs`, `D/repository`, `D/libs`, stopping after the
 first `D` that holds `repository/` — the enclosing checkout, so a meta worktree
 under `.tasks/<name>` runs in place and sees only its own libraries
-(`manifest.isCheckoutRoot`, decision 140) → any `--lib-root`
+(`manifest.isCheckoutRoot`, decision 143) → any `--lib-root`
 flag entries; de-duped first-occurrence-wins) by the shared
 `manifest.scanRoots` (`modules/manifest`): a root's child holding a
 `botopink.json` is a lib, and a child (or root) whose manifest declares
