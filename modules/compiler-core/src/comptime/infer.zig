@@ -172,12 +172,9 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
                         else => continue,
                     };
                     if (!std.mem.eql(u8, type_name, leaf)) continue;
-                    if (imp.alias != null) {
-                        const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a type; a type keeps its declared name", .{ diagnostics.import_alias_on_type, leaf });
-                        env.lastError = TypeError.custom(msg, "Import the type under its own name (`import {collections.Dict}`); `as` renames a value or a function.").withLoc(imp.loc);
-                        return error.TypeError;
-                    }
                     try registerTypeDecl(env, d);
+                    // Decision 110 — `as` binds a type leaf like any other.
+                    if (imp.alias) |al| try registerImportedTypeAlias(env, d, al, imp.loc);
                     bound_type = true;
                     break;
                 }
@@ -4476,6 +4473,41 @@ pub fn registerImportedTemplateFn(env: *Env, name: []const u8, decl: ast.FnDecl,
 /// constructor with this module's own type ids.
 pub fn registerImportedTypeDecl(env: *Env, decl: ast.DeclKind) !void {
     try registerTypeDecl(env, decl);
+}
+
+/// Decision 110 rule 1 — `import {Dict as D}`: the alias is a local name of
+/// the imported type (or type alias) IN THE CHECKER ONLY. The declaration is
+/// registered under its own name (the emitted identity, decision 109), and
+/// `alias` becomes a checker-local type alias of it with the same parameters
+/// (`D<K, V>` is `Dict<K, V>`), erased before the backends like any alias.
+/// A value use of the alias — the constructor `D(…)` — is renamed to the
+/// declared name at the call (`Env.importedTypeAliases`, read by
+/// `inferCallExpr`), so no backend sees `D`.
+pub fn registerImportedTypeAlias(env: *Env, decl: ast.DeclKind, alias: []const u8, loc: ast.Loc) !void {
+    const real: []const u8 = switch (decl) {
+        .type_ => |t| t.name,
+        .typeAlias => |a| a.name,
+        else => return,
+    };
+    const params: []ast.GenericParam = switch (decl) {
+        .type_ => |t| t.genericParams,
+        .typeAlias => |a| a.genericParams,
+        else => &.{},
+    };
+    const target: ast.TypeRef = if (params.len == 0) .{ .named = real } else blk: {
+        const args = try env.arena.alloc(ast.TypeRef, params.len);
+        for (params, 0..) |gp, i| args[i] = .{ .named = gp.name };
+        break :blk .{ .generic = .{ .name = real, .args = args, .is_builtin = false } };
+    };
+    try env.typeAliases.put(env.arena, alias, .{
+        .name = alias,
+        .genericParams = params,
+        .target = target,
+        .loc = loc,
+        .targetLoc = loc,
+    });
+    try env.importedTypeAliases.put(env.arena, alias, real);
+    if (env.lookup(real)) |ctor| try env.bind(alias, ctor);
 }
 
 /// 01 R2 — importing a type registers the closure of the types its
@@ -11929,6 +11961,16 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 return error.TypeError;
             };
             try refuseAmbiguousVariant(env, call.callee, calleeTypeRaw, loc);
+            // Decision 110 — `D(…)` for `import {Dict as D}` constructs the
+            // declared `Dict`: the name moves at the call (the channel that
+            // renames a tuple-label callee), so no backend sees `D`.
+            if (call.receiver == null) if (env.importedTypeAliases.get(call.callee)) |real| {
+                const renamed = try env.arena.create(ast.Expr);
+                var rc = c;
+                rc.kind.call.callee = real;
+                renamed.* = .{ .call = rc };
+                try env.enumSectionRewrites.put(loc, renamed);
+            };
             // Generic record/struct/enum constructor: instantiate per call site
             // so the registration-time cells never unify destructively.
             const ctorInstantiated = try instantiateCtorType(env, call.callee, calleeTypeRaw);

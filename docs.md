@@ -142,8 +142,10 @@ extension as `collections.ArraySets*` — and on a node that opens braces they
 are a syntax error (`import-group-modifier`). Two items binding one name are
 `import-name-collision` at the second item (`import {url.parse, json.parse}`);
 an alias on either side clears it (`url.parse as parseUrl, json: {parse as
-parseJson}`). A type keeps its declared name (`import-alias-on-type`), and an
-activation cannot be renamed (`import-alias-on-activation`).
+parseJson}`). An alias reaches a type and a type alias too (decision 110):
+`import {collections.Dict as D}` brings `D`, a name for `Dict` in the program's
+own text — the emitted code keeps `Dict`. An activation cannot be renamed
+(`import-alias-on-activation`).
 
 <!-- docs-check: project import_tree src/main.bp -->
 ```botopink

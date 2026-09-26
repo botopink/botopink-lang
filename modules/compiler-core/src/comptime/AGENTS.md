@@ -366,9 +366,13 @@ leaf as a value (`env.bind`) or registers the one `pub type` it names. Three
 refusals, each located at the item: `import-name-collision` (a second item
 binding a name already bound — `noteImportBindings`, over every `use` decl,
 an identical repeated item excepted because an `@emit` contribution re-imports
-what its module already imports), `import-alias-on-type` (a type's identity is
-its declared name on every backend) and `import-alias-on-activation` (the
-dispatch rewrite emits the extension's declared name). A `resolveImports`
+what its module already imports) and `import-alias-on-activation` (the
+dispatch rewrite emits the extension's declared name). An alias on a TYPE or a
+type alias is legal (decision 110): `registerImportedTypeAlias` registers the
+declaration under its own name and the alias as a checker-local type alias of
+it; a constructor call through the alias is renamed to the declared name at the
+call, and `comptime.zig`'s `withImportTypeAliasesErased` drops the alias from
+the import items the backends read, so no backend sees it. A `resolveImports`
 refusal is the module's `typeError`, like one from inference.
 
 **The root of std is pure (decision 106).** `checkStdRootPurity`, first in
@@ -969,7 +973,8 @@ is a **transparent** name, never a typedef and never a value:
   annotation. An imported alias arrives through `registerTypeDecl` (the `from "std"` type export,
   `registerImportedTypeDecl`); `registerAliasClosure` brings the types its target names, as types
   only (01 R2). `registerExports` puts a `pub` alias in the type-decl registry and never in the
-  value exports; `import {Parser as P}` is refused like any type (`import-alias-on-type`).
+  value exports; `import {Parser as P}` binds `P` as a checker-local alias of it (decision 110,
+decisions-pending 129 point 4 reversed by the maintainer).
 - **Substitution.** `resolveTypeRefInContext` expands `Name` / `Name<args>` (not a generic param
   of the scope) with `expandTypeAlias`: each argument resolved in the caller's generic map, the
   target resolved in a map holding only the alias's own parameters. Arity must match exactly —

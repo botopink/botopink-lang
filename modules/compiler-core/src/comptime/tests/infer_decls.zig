@@ -680,8 +680,10 @@ test "infer: std package ---- an alias on either side clears the collision" {
     );
 }
 
+// Decision 110 — `as` binds a type leaf: `D` is a checker-local name of
+// `Dict` (it used to be refused as `import-alias-on-type`).
 test "infer: std package ---- a type keeps its declared name" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+    try h.assertInfersOk(std.testing.allocator,
         \\import {dict.Dict as D} from "std";
         \\
         \\fn main() {

@@ -746,6 +746,10 @@ pub const Env = struct {
     /// True while the operand of a `use` is inferred: a component call there
     /// is `use`'s to refuse, not an implicit render (`inferComponentCall`).
     inUseOperand: bool = false,
+    /// Decision 110 — an imported type's `as` name → the declared name
+    /// (`registerImportedTypeAlias`); a constructor call through the alias is
+    /// renamed at the call so no backend sees the alias.
+    importedTypeAliases: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Decision 8 §3.2 — where an inferred union was born: the `if` or `case`
     /// whose branches disagreed. A use the union refuses names it, so the
     /// author sees the widening and not only the refusal.

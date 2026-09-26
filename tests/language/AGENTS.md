@@ -28,7 +28,10 @@ rewrite a test to match current behaviour.
 1.0.10-beta's `00 · 23-std-purity` step 1 (decision 107, the import tree) adds `modules/import_tree`
 — a dotted path and a braced group over the package's own tree and over std, aliases bound, only the
 leaves in scope, on commonJS/erlang/wasm — and three `reject/` cells: `import_name_collision` (the
-second item), `import_group_modifier` (`*` on a node that opens braces) and `import_alias_on_type`.
+second item) and `import_group_modifier` (`*` on a node that opens braces); the third,
+`import_alias_on_type`, is now `modules/import_alias_on_type` — decision 110 made `as` legal on a type
+and a type alias (`01-checker`), and the cell imports `Point as P`, `Pair as Two` and std's
+`Dict as D` and runs on commonJS, erlang and wasm.
 `00 · 01-checker` step 8 R2 adds `modules/import_type_closure` — `import { User, makeUser }` where
 `User(role: Role)`, `Role` not named, on commonJS/erlang.
 Front 24's type aliases (decision 118 rule 1) add `run/type_alias` — `Id`, `Pair<A, B>`, `Ids` and

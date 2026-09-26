@@ -1,0 +1,27 @@
+//// Decision 110 rule 1 — `as` binds a type leaf like any other leaf, a type
+//// alias included (decisions-pending 129 point 4, reversed by the
+//// maintainer). The alias is a local name in the checker only: `P(…)`
+//// constructs the declared `Point`, `P` and `Two<…>` annotate as `Point` and
+//// `Pair<…>`, and no backend sees either alias. `std`'s `Dict` too. The
+//// `import-alias-on-type` refusal is gone.
+
+pub mod shapes;
+
+import {Point as P, Pair as Two} from "shapes";
+import {dict.Dict as D, dict.empty} from "std";
+
+fn total(p: P) -> i32 {
+    return p.sum();
+}
+
+fn first(t: Two<string, i32>) -> string {
+    return t.0;
+}
+
+pub fn main() {
+    val p: P = P(x: 2, y: 3);
+    @print(total(p));
+    @print(first(#("a", 1)));
+    val d: D<string, i32> = empty().insert("k", 7);
+    @print(d.size());
+}

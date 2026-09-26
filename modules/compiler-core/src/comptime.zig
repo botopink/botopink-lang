@@ -258,6 +258,31 @@ fn displaySrcPath(arena: std.mem.Allocator, mod: Module) ![]const u8 {
 /// list through the record path it already has (commonJS `class`, erlang/beam
 /// map, wat layout) and no codegen file learns the name. A module that never
 /// touches it emits byte-for-byte what it emitted before.
+/// Decision 110 — an import's `as` on a type (or type alias) is a name in the
+/// checker only: the backends import the type under its declared name, which
+/// is what every use of the alias was renamed to (`registerImportedTypeAlias`).
+/// So the alias is dropped from the transformed program's import items.
+fn withImportTypeAliasesErased(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
+    if (env.importedTypeAliases.count() == 0) return prog;
+    const decls = try arena.dupe(ast.DeclKind, prog.decls);
+    for (decls) |*d| switch (d.*) {
+        .use => |*u| {
+            var touched = false;
+            for (u.imports) |imp| if (imp.alias) |al| {
+                if (env.importedTypeAliases.contains(al)) touched = true;
+            };
+            if (!touched) continue;
+            const items = try arena.dupe(ast.ImportPath, u.imports);
+            for (items) |*imp| if (imp.alias) |al| {
+                if (env.importedTypeAliases.contains(al)) imp.alias = null;
+            };
+            u.imports = items;
+        },
+        else => {},
+    };
+    return .{ .decls = decls };
+}
+
 fn withSourceLocationDecl(arena: std.mem.Allocator, prog: ast.Program, env: *const envMod.Env) !ast.Program {
     if (!env.usesSourceLocation) return prog;
     for (prog.decls) |d| switch (d) {
@@ -1025,13 +1050,12 @@ fn resolveImports(
                                 // A type's identity is its declared name on
                                 // every backend; an alias would bind a name
                                 // the emitted code never defines.
-                                if (imp.alias != null) {
-                                    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a type; a type keeps its declared name", .{ diagnostics.import_alias_on_type, name });
-                                    env.lastError = validation.TypeError.custom(msg, "Import the type under its own name; `as` renames a value or a function.").withLoc(imp.loc);
-                                    return error.TypeError;
-                                }
                                 try infer.registerImportedTypeClosure(env, e.value_ptr.*, type_decl);
                                 try infer.registerImportedTypeDecl(env, type_decl);
+                                // Decision 110 — `as` binds a type leaf like any
+                                // other: a checker-local alias of the declared
+                                // name, which is the emitted identity.
+                                if (imp.alias) |al| try infer.registerImportedTypeAlias(env, type_decl, al, imp.loc);
                                 bound_type_decl = true;
                                 break;
                             }
@@ -1648,7 +1672,8 @@ pub fn compileTypesOnly(
                     const with_enums = withSynthesisedEnumDecls(arena_alloc, with_assoc, &succ.env) catch with_assoc;
                     const with_src = withSourceLocationDecl(arena_alloc, with_enums, &succ.env) catch with_enums;
                     const with_step = withYieldStepDecl(arena_alloc, with_src, &succ.env) catch with_src;
-                    break :blk_t alias_erase.erase(arena_alloc, with_step, &succ.env.typeAliases) catch with_step;
+                    const erased = alias_erase.erase(arena_alloc, with_step, &succ.env.typeAliases) catch with_step;
+                    break :blk_t withImportTypeAliasesErased(arena_alloc, erased, &succ.env) catch erased;
                 };
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
@@ -1831,11 +1856,11 @@ pub fn compile(
                     @memcpy(new_decls[synth.items.len..], succ.program.decls);
                     break :blk ast.Program{ .decls = new_decls };
                 };
-                const transformed = try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
+                const transformed = try withImportTypeAliasesErased(arena_alloc, try alias_erase.erase(arena_alloc, try withYieldStepDecl(arena_alloc, try withSourceLocationDecl(arena_alloc, try withSynthesisedEnumDecls(
                     arena_alloc,
                     try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.srcRewrites, &succ.env.result_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.indexRewrites, &succ.env.optionalNullCases, succ.env.ctorParams, &succ.env.defaultInjections), &succ.env),
                     &succ.env,
-                ), &succ.env), &succ.env), &succ.env.typeAliases);
+                ), &succ.env), &succ.env), &succ.env.typeAliases), &succ.env);
 
                 var type_ids = std.StringHashMap(usize).init(arena_alloc);
                 for (succ.bindings) |b| {

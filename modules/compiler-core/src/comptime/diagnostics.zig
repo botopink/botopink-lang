@@ -253,13 +253,6 @@ pub const std_unsupported_on_target: []const u8 = "std-unsupported-on-target";
 /// already imports) is not a collision.
 pub const import_name_collision: []const u8 = "import-name-collision";
 
-/// Decision 107 — `as` on an item whose leaf is a nominal type
-/// (`import {dict.Dict as D} from "std"`). A type's identity is its declared
-/// name on every backend (the record shape, the class, the module a type
-/// module gets — policy 3), so an alias would bind a name the emitted code
-/// never defines. Refused rather than accepted half-way (decision 67).
-pub const import_alias_on_type: []const u8 = "import-alias-on-type";
-
 /// Decision 107 — `as` on an activated item (`import {PatoNada* as Voa}`).
 /// An activation opts an extension in BY NAME (the dispatch rewrite emits
 /// `PatoNada.swim(donald)`), so a renamed binding would never be the one the
@@ -360,7 +353,6 @@ pub const all_codes = [_][]const u8{
     result_template_shape_mismatch,
     std_unsupported_on_target,
     import_name_collision,
-    import_alias_on_type,
     import_alias_on_activation,
     std_root_imports_io,
     fn_param_default_trailing_only,
