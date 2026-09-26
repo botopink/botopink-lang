@@ -147,7 +147,6 @@ erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only
 # run/ and modules/ cells reach wasm. The rows below are the same defects the
 # commonJS and erlang lines above name, seen from the third backend.
-wasm     | run/display_print.bp       | 05-wasm | re-measured 2026-09-21 by running, after C-01 half 3 step 17: the trap is GONE and the record prints — `Money(cents: 5)` and `[Money(cents: 1), Money(cents: 2)]`, decision 8 §7's record text read from the value's own header. What is left is §7's `Display` half, which on this backend needs a function the printer can reach through the value: the descriptor would have to carry the table index of `display/1` and `$__print_tagged_raw` would `call_indirect` it, and the table is built from the lifted-lambda list, whose indices are assigned as lambdas are lifted. 05-wasm owns the table; the other three backends answer `$5` / `[$1, $2]`
 
 # ── the forms front 15 landed, that nothing lowers or types yet ─────────────
 # `109f6c9` made five forms parse. Three of them run everywhere and are pinned by

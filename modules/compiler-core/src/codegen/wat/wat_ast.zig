@@ -437,6 +437,12 @@ pub const HelperGroup = enum {
     /// has to be answered before it is called. Last in declaration order, so
     /// every module that does not call it renders exactly as before it existed.
     print_opt_tagged,
+    /// `$__display_of(v) -> i32` — the hook `$__print_tagged_raw` asks first:
+    /// the string a value's own `display(self) -> string` answers, or `0`. The
+    /// prelude's form answers `0` for every value; `wat.zig` substitutes the
+    /// module's own dispatch (one descriptor compare per type declaring
+    /// `display`), so the group renders alone and a module gets its answer.
+    display_of,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -450,7 +456,7 @@ pub const HelperGroup = enum {
             .print_opt_f32 => &.{ .print, .print_f64, .print_opt },
             .print_opt_tagged => &.{ .print, .print_opt, .print_shaped },
             .assert_fail => &.{.print},
-            .print_shaped => &.{ .print, .print_bool, .print_f64 },
+            .print_shaped => &.{ .print, .print_bool, .print_f64, .display_of },
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
             .f64_to_str => &.{ .i32_to_str, .alloc },
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
@@ -535,6 +541,7 @@ pub const Helper = enum {
     print_tagged,
     print_opt_tagged,
     print_opt_tagged_raw,
+    display_of,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {

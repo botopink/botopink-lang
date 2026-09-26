@@ -84,20 +84,27 @@ fn putPair(comptime a: comptime_int, comptime b: comptime_int) [8]Instr {
 /// descriptor needs no length for it. A record's fields start at the pointer;
 /// a variant's start one slot in, because slot 0 holds the variant ordinal the
 /// `case` arms test.
-const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d", "p", "k", "i", "n", "b" }), &.{
-    get("v"),                                          c32(4),                                                   op("sub"), load(0),                                                  set("d"),
-    get("d"),                                          c32(1),                                                   op("add"), set("p"),
+const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d", "p", "k", "i", "n", "b", "s" }), &.{
+    // Decision 8 §7's `Display` half: a type whose `display(self) -> string`
+    // the module declares answers its own text. `$__display_of` is written by
+    // `wat.zig` per module (a descriptor compare per such type, `0` for none).
+    get("v"),                                                                               call("__display_of"),                                     set("s"),              get("s"),
+    when(&.{ get("s"), c32(4), op("add"), get("s"), load(0), call("__write_bytes"), ret }), get("v"),                                                 c32(4),                op("sub"),
+    load(0),                                                                                set("d"),                                                 get("d"),              c32(1),
+    op("add"),                                                                              set("p"),
     // 'V' (86) puts the fields one slot in; 'R' leaves them at the pointer.
-                                                    get("v"),
-    set("b"),                                          get("d"),                                                 load8(0),  c32('V'),                                                 op("eq"),
+                                                    get("v"),              set("b"),
+    get("d"),                                                                               load8(0),                                                 c32('V'),              op("eq"),
     when(&.{ get("v"), c32(4), op("add"), set("b") }),
     // The declaration's name.
-    get("p"),                                                 load8(0),  set("n"),                                                 get("p"),
-    c32(1),                                            op("add"),                                                set("p"),  get("p"),                                                 get("n"),
-    call("__write_bytes"),                             get("p"),                                                 get("n"),  op("add"),                                                set("p"),
+                                         get("p"),                                                 load8(0),              set("n"),
+    get("p"),                                                                               c32(1),                                                   op("add"),             set("p"),
+    get("p"),                                                                               get("n"),                                                 call("__write_bytes"), get("p"),
+    get("n"),                                                                               op("add"),                                                set("p"),
     // The field count, then one `label: value` per field.
-    get("p"),                                          load8(0),                                                 set("k"),  get("p"),                                                 c32(1),
-    op("add"),                                         set("p"),                                                 get("k"),  when(&(putByte('(') ++ [_]Instr{call("__write_bytes")})),
+                 get("p"),
+    load8(0),                                                                               set("k"),                                                 get("p"),              c32(1),
+    op("add"),                                                                              set("p"),                                                 get("k"),              when(&(putByte('(') ++ [_]Instr{call("__write_bytes")})),
     loop(&([_]Instr{
         get("i"), get("k"),                                             op("ge_u"), brk,
         get("i"), when(&(putSep() ++ [_]Instr{call("__write_bytes")})), get("p"),   load8(0),
@@ -112,10 +119,14 @@ const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d",
         set("p"),  get("i"),  c32(1),
         op("add"), set("i"),  again,
     })),
-    get("k"),                                          when(&(putByte(')') ++ [_]Instr{call("__write_bytes")})),
+    get("k"),                                                                               when(&(putByte(')') ++ [_]Instr{call("__write_bytes")})),
 });
 
 const print_tagged = func("__print_tagged", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_tagged_raw"), call("__print_nl") });
+
+/// The `Display` hook's default: no value answers its own text. `wat.zig`
+/// replaces it with the module's dispatch when some type declares `display`.
+const display_of = func("__display_of", &.{"v"}, .i32, &.{}, &.{c32(0)});
 
 /// `fd_write`, the one host function the print helpers need.
 pub const fd_write_import = ast.Import{

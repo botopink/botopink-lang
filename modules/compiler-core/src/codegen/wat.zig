@@ -463,7 +463,14 @@ fn emitWat(
     try items.appendSlice(ar, em.items.items);
 
     for (prelude.order) |group| {
-        if (em.b.helpers.has(group)) try items.appendSlice(ar, prelude.items(group));
+        if (!em.b.helpers.has(group)) continue;
+        // `$__print_tagged_raw` asks the module which of its types answers its
+        // own text (decision 8 §7's `Display`); the answer is this module's.
+        if (group == .display_of) if (try em.displayDispatch()) |f| {
+            try items.append(ar, .{ .func = f });
+            continue;
+        };
+        try items.appendSlice(ar, prelude.items(group));
     }
 
     // One model, two renderings: the text the snapshot records and the binary
@@ -2707,6 +2714,66 @@ const Emitter = struct {
             // the expression is plainly a float.
             else => self.wasmTypeOf(v.value.*),
         };
+    }
+
+    /// `$__display_of(v) -> i32`: the string a record's own `display(self)
+    /// -> string` answers for `v`, or `0` when `v`'s type declares none — the
+    /// hook `$__print_tagged_raw` calls first. Null when no record qualifies:
+    /// the prelude's `display_of` group (`0`) is then the module's answer. One compare per record type that
+    /// has both a descriptor (some value of it was built) and a `display`
+    /// method: `v` is a pointer past the data floor and the header four bytes
+    /// behind it is that type's descriptor. A dispatch written after lowering,
+    /// not a table index interned into the descriptor, because table indices
+    /// are handed out as lambdas are lifted and would shift under it.
+    fn displayDispatch(self: *Emitter) !?wat.Func {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        var it = self.records.keyIterator();
+        while (it.next()) |k| try names.append(self.arena(), k.*);
+        std.mem.sort([]const u8, names.items, {}, struct {
+            fn lt(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lt);
+        var c: Capture = .{};
+        self.open(&c);
+        var any = false;
+        for (names.items) |rec| {
+            const desc = self.type_descs.get(rec) orelse continue;
+            const sym = try std.fmt.allocPrint(self.arena(), "{s}_display", .{rec});
+            const sig = self.fn_sigs.get(sym) orelse continue;
+            if (sig.params.len != 1 or sig.result == null) continue;
+            any = true;
+            var hit: Capture = .{};
+            self.open(&hit);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .call = sym });
+            try self.emit(.@"return");
+            const hit_seq = self.seal(&hit, .terminated);
+            var guard: Capture = .{};
+            self.open(&guard);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "4" } });
+            try self.emit(opOf("i32", "sub"));
+            try self.emit(.{ .load = .{} });
+            try self.emit(try self.constInt(desc));
+            try self.emit(opOf("i32", "eq"));
+            try self.emitC(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } }, rec);
+            const guard_seq = self.seal(&guard, .none);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "256" } });
+            try self.emit(opOf("i32", "ge_u"));
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = guard_seq } } });
+        }
+        try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "0" } });
+        const body = self.seal(&c, .{ .value = .i32 });
+        // No type declares `display`: the prelude's form (`0`) is the answer.
+        if (!any) return null;
+        return try self.builder().func(.{
+            .name = "__display_of",
+            .params = &.{wat.Builder.param("v", .i32)},
+            .result = .i32,
+            .body = body,
+        });
     }
 
     fn emitEntrypointWrapper(self: *Emitter, main_returns_value: bool) !void {
