@@ -192,6 +192,9 @@ pub const src_takes_no_arguments: []const u8 = "src-takes-no-arguments";
 /// A `@name(…)` call no builtin arm recognises. Replaces the silent `void`
 /// fallback that let a typo (`@pritn`) compile (decision 67: refuse).
 pub const unknown_builtin: []const u8 = "unknown-builtin";
+/// A builtin `builtins.d.bp` declares that no target lowers (`@module()`):
+/// refused at the `@` instead of typed `void` and emitted verbatim.
+pub const builtin_not_lowered: []const u8 = "builtin-not-lowered";
 /// A method a primitive receiver's interface does not declare
 /// (`"abc".toUpperCase()` — `String` declares `toUpper`). Used to type as a
 /// fresh variable and reach the host under its own spelling (pending 0203-a,

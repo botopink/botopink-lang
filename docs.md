@@ -1944,6 +1944,12 @@ Other builtins (`@panic`, `@field`, `@emit`, …) are declared in
 names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
 (with the nearest name when one is an edit away), never a silent `void`.
 
+`@panic`, `@todo` and `@trap` never return: they are declared `-> noreturn`, the
+bottom type, so a call to one stands wherever a value of any type is expected —
+`val x: i32 = @todo();`, `return @panic("…");`, one branch of an `if` whose other
+branch has the value. `@module()` is declared but no target lowers it, so it is
+`error[builtin-not-lowered]`.
+
 ### What `@print` writes
 
 A value prints the way the source writes it. A record names its type and its

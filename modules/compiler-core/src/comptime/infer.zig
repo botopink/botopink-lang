@@ -5850,9 +5850,29 @@ fn inferBuiltinCallReturnType(
         );
         return error.TypeError;
     }
-    // The runtime builtins (`@print`, `@panic`, `@todo`, …) are typed by the
-    // backends; here they are `void` placeholders. Anything else is a typo —
-    // refuse it (decision 67) instead of compiling it to `void` in silence.
+    // `@panic` / `@todo` / `@trap` never return: each is declared `-> noreturn`
+    // (`builtins_fns.d.bp`, `builtins.d.bp`), and `noreturn` is the bottom type
+    // `unify` accepts wherever a value is expected, so `val x: i32 = @todo();`
+    // and `return @panic("…");` type in any position. A declared
+    // `builtins_fns.d.bp` entry answers its own return; the name list only
+    // holds the doc-only `trap`.
+    if (env.stdlibFnDecls.get(callee)) |fd| {
+        if (fd.returnType) |rt| if (rt == .named and std.mem.eql(u8, rt.named, "noreturn")) return env.namedType("noreturn");
+    }
+    if (std.mem.eql(u8, callee, "trap")) return env.namedType("noreturn");
+    // `@module()` is declared `-> module` in `builtins.d.bp` but no target
+    // lowers it (commonJS emitted `@module()` verbatim, erlang `module/0`
+    // undefined): refused at the `@` rather than typed `void` in silence.
+    if (std.mem.eql(u8, callee, "module")) {
+        env.lastError = TypeError.custom(
+            diagnostics.builtin_not_lowered ++ ": `@module()` is declared but no target lowers it",
+            "Nothing reads a module value yet; import the module's members with `import {…} from \"…\"` instead.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    // The other runtime builtins (`@print`, `@debug`, `@emit`, …) answer
+    // nothing: `void`. Anything else is a typo — refuse it (decision 67)
+    // instead of compiling it to `void` in silence.
     if (isKnownBuiltinName(env, callee)) return env.namedType("void");
     env.lastError = TypeError.custom(
         try unknownBuiltinMessage(env, callee),
@@ -12941,6 +12961,15 @@ fn finishUnion(env: *Env, members: []*T.Type) InferError!*T.Type {
 fn unionOf(env: *Env, members: []const *T.Type) InferError!*T.Type {
     var flat: std.ArrayListUnmanaged(*T.Type) = .empty;
     for (members) |m| try appendUnionMember(env, &flat, m);
+    // `noreturn` is the bottom type: a branch that never returns adds no
+    // alternative (`if (c) { a } else { @todo() }` is `a`'s type).
+    var kept: usize = 0;
+    for (flat.items) |m| {
+        if (m.deref().isNamed("noreturn")) continue;
+        flat.items[kept] = m;
+        kept += 1;
+    }
+    if (kept > 0) flat.items.len = kept;
     return finishUnion(env, flat.items);
 }
 

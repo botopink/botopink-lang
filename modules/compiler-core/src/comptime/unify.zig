@@ -71,6 +71,13 @@ fn unifyTypes(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
         return error.TypeError;
     }
 
+    // `noreturn` is the one-way bottom type: a call that never returns
+    // (`@todo()`, `@panic(…)`, a `-> noreturn` fn) stands wherever a value of
+    // any type is expected. An unbound variable on the left is not linked to
+    // it — `val x = @todo();` leaves `x` open rather than typed `noreturn`.
+    // The other way round (`-> noreturn` answered by a value) still reds.
+    if (tb.isNamed("noreturn")) return;
+
     switch (ta.*) {
         // ── type variable on the left ─────────────────────────────────────────
         .typeVar => |cellA| switch (cellA.state) {

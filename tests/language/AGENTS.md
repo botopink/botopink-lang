@@ -159,6 +159,10 @@ imports, and two functions of one name reaching one decorator are refused where 
 and decision 112's three rows — `modules/dsl_hygiene_private_helper`,
 `modules/dsl_hygiene_consumer_alias` and `modules/dsl_hygiene_consumer_double`, each printing `40`
 (the third's wasm line is the flat namespace's).
+The checker rows of `front/checker-rows-2` add a cell each, every one failing on the parent binary:
+`run/builtin_noreturn_any_position` (`@todo()` / `@panic(…)` are `noreturn`, the bottom type — a
+`return` of a `-> i32` function, an annotated `val`, an `if` branch and a call argument; on all four
+targets) and `reject/builtin_module_not_lowered` (`@module()` is `builtin-not-lowered` at the `@`).
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
