@@ -1466,7 +1466,8 @@ codegen/
   `get_map_elements` for a receiver whose type this emit cannot place),
   `comptime` nodes
   (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
-  the value of `e`).
+  the value of `e`; `await e;` / `try e;` as a statement are the same lowering,
+  value dropped).
 - **`@print` / `@println` / `@debug`** (`lowerPrint`, `ensurePrintHelper`) lower
   to `'__bp_print'([A, B, …])`, whose four synthesised functions are decision 8
   §7's formatter: `'__bp_print'/1` joins the arguments with a space and ends the
@@ -1666,8 +1667,10 @@ codegen/
   of silently wrong. No beam snapshot reached this path, so nothing was
   re-recorded.
 - **Closures** (`emitMakeFun`, `closureEnv`): a lambda or loop body's free
-  variables — every name it reads that the enclosing frame binds — travel in
-  `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
+  variables — every name it reads that the enclosing frame binds and it does
+  not bind itself where it reads it (`collectNamesIn*` with `NameCollector`'s
+  `bound` scope: a block's `val`/`var`, a lambda/trailing/`for` parameter, a
+  `case` arm's pattern binder) — travel in `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
   as extra parameters after the fun's own, spilled to stack slots like params.
   `Live` honours the `min_live` floor; lambda bodies reset it to 0. The **eight**
   places that emit a fun value are classified one by one in
@@ -1677,6 +1680,10 @@ codegen/
   `@block { … }` runs in the current frame on this backend and the `case`-arm
   block that did build a throwaway closure was removed by `ae813cc8`. The
   13 `make_fun3` hits `grep` finds in `beam_asm.zig` are all comments.
+  Scope matters because a `case` binder's y-register is written only on the
+  arm that binds it: capturing an enclosing `v` a lambda's own `Ok(v)` shadows
+  made `make_fun3` read an unassigned `{y, N}`, which `erlc +from_asm` refuses
+  (`run/lambda_rebinds_case_binders`).
 - **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
   `for (xs) { x -> … }` or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
   (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
@@ -1694,7 +1701,11 @@ codegen/
   names on out. Parity with erlang's `mutatingClosureExpr`: a call whose value
   is used keeps the plain application (and raises `badarity`).
 - **Loops are statements** (decision 105). `for (xs) { x -> … }` is a
-  `lists:foreach` fun (`lowerLoop`); `while (cond) { … }` / `loop { … }` run
+  `lists:foreach` fun (`lowerLoop`) — `for await` too (a `@Stream` is an
+  eager list here), so one that reassigns outer names is the same `foldl`, and
+  one whose body propagates a `try` (`bodyPropagates`: through member reads,
+  `case` subjects, array/tuple literals too — `(try batch).length`) is called
+  inside `guardLoopCall`'s catch section; `while (cond) { … }` / `loop { … }` run
   in the enclosing frame (`lowerConditionLoop`): `{label, Top}`, the condition
   as a test jumping to `Exit`, the body, `{jump, {f, Top}}`, `{label, Exit}`.
   The variables it reassigns are this frame's registers, so nothing is
@@ -1708,13 +1719,16 @@ codegen/
   `cond_loop`) that each `yield v` conses onto (`genPush`), reversed with
   `lists:reverse/1` at the scope's `Exit`. `break <v>` pushes and jumps to that
   `Exit` from any loop depth; a bare `break` or `return;` with no loop to leave
-  jumps there too. A `for` that yields inside a scope is walked in the frame
-  (`lowerInFrameFor`: `is_nonempty_list` / `get_list` over a y-slot list), so
-  its `yield`s reach the accumulator; `countGenForSlots` adds its slots to the
-  frame. A captured `var` is the frame's register, so an `iter` loop's
-  counter is read after it at its last value. Generator METHODS are not scopes
-  yet (a method's effect is not read here — `run/effect_method.bp` is red on
-  beam for that reason and others). A body that yields outside any scope is
+  jumps there too. A `for` that yields inside a scope — its own `yield`, or
+  one in an unprefixed loop nested in it (`ast.bodyYields`, decision 125: the
+  nearest generator scope) — is walked in the frame (`lowerInFrameFor`:
+  `is_nonempty_list` / `get_list` over a y-slot list), so its `yield`s reach
+  the accumulator; `countGenForSlots` adds its slots to the frame. A captured
+  `var` is the frame's register, so an `iter` loop's counter is read after it
+  at its last value. A generator METHOD is a scope exactly as a fn is
+  (`emitMethodAsFn`): `ast.BehaviorMethod` has no parsed `effect`, so it is
+  read off the return type (`ast.EffectKind.ofMethod`, erlang's
+  `methodEffect`). A body that yields outside any scope is
   `error.ConditionLoopValueUnsupported` (`condLoopYieldsValue`) — the checker
   refuses it first.
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
@@ -1948,8 +1962,11 @@ first three are now enforced by the model, not by discipline:
   - `loop` over anything that is not a range or a known array emits
     `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` accepts an array
     literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
-    parameter or fn result, an array-returning primitive method and an
-    annotated `loop`, and nothing else, because walking the layout of a non-array
+    parameter or fn result, a record field (or tuple element) declared as one of
+    those — a `stream loop` stored in `Ticker(s: …)` and walked by `for await
+    (t.s)`, `run/stream_loop_no_failure` — an array-returning primitive method
+    and an annotated `loop`, and nothing else (an optional `?T[]` field is not
+    an array until unwrapped), because walking the layout of a non-array
     would read its first word as an element count and trap;
   - an array of tuples/records prints as the element addresses (no printer);
   - every function value's parameters and result are `i32`;
@@ -2166,6 +2183,20 @@ first three are now enforced by the model, not by discipline:
   `val #(a, b) = #(…)`), an array's element shape (for a loop parameter) and a
   top-level `val`'s initialiser (`str_globals`, `global_rec_types`). A value
   whose shape nothing recovers still prints through `$__print_i32`.
+- **A declared type answers for its eager wrapper and for its binders**:
+  `eagerTypeRef` peels `@Task<T>` and `@Component<C, T>` to `T` (both run in
+  place here; `await` / `use` are identity) before any shape question —
+  `watType`, `isNamedTypeRef`, `typeRefName`, the `@Result` and array readers —
+  so a `-> @Task<string>` fn, an `@Task<string>` record field or a
+  `-> @Component<C, string>` hook is a string, and `await e` / `use e` has the
+  shape of `e`. A `@Result`'s `ResultShape` carries its payload types
+  (`ok` / `err`), recovered from a call, a local, a **parameter**
+  (`noteParamShape`), a record field or an `await`; a `case` binder `Ok(v)` /
+  `Error(e)` gets everything a parameter of that type gets (`noteTypedBinder`:
+  string, array, record type, a nested `@Result`), and so does a `for` element
+  over a declared array / `@Iterator` / `@Stream` (`elemTypeRefOf`). Without
+  it a string payload printed its heap address (`error 256`) —
+  `run/result_string_payloads.bp` pins the shapes.
 - **`@print` of an array of strings, a tuple or an array of tuples** (semantics
   decision 1a) goes through `$__print_shaped_raw(v, shape, 1)`: the emitter
   interns a shape string (`i` i32, `f` f32 slot, `b` bool, `s` string, `[X` array
