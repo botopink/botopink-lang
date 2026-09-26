@@ -124,6 +124,104 @@ const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d",
 
 const print_tagged = func("__print_tagged", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_tagged_raw"), call("__print_nl") });
 
+/// `s.charCodeAt(i)`: the byte at `i`, or `-1` outside `0..len` — the answer
+/// the Node and Erlang templates give out of range. One unsigned compare
+/// catches a negative `i` too. Bytes, not code points: an ASCII string answers
+/// as the other backends do.
+const str_char_code = func("__str_char_code", &.{ "s", "i" }, .i32, &.{}, &.{
+    get("i"), get("s"), load(0),   op("ge_u"), when(&.{ c32(-1), ret }),
+    get("s"), get("i"), op("add"), load8(4),
+});
+
+/// `s.lastIndexOf(sub)`: the last byte offset of `sub`, `-1` when absent, and
+/// the length for an empty `sub` (JavaScript's answer).
+const str_last_index_of = func("__str_last_index_of", &.{ "s", "sub" }, .i32, i32s(&.{ "n", "m", "i" }), &.{
+    get("s"),   load(0),  set("n"),
+    get("sub"), load(0),  set("m"),
+    get("n"),   get("m"), op("sub"),
+    set("i"),
+    loop(&.{
+        get("i"),  c32(0),           op("lt_s"),                brk,
+        get("s"),  c32(4),           op("add"),                 get("i"),
+        op("add"), get("sub"),       c32(4),                    op("add"),
+        get("m"),  call("__mem_eq"), when(&.{ get("i"), ret }), get("i"),
+        c32(1),    op("sub"),        set("i"),                  again,
+    }),
+    c32(-1),
+});
+
+/// `s.padStart(width, pad)` (`start = 1`) / `padEnd` (`start = 0`): `s` when it
+/// is already `width` long or the pad is empty, else a fresh string of `width`
+/// bytes with the pad repeated into the gap (JavaScript's cycling).
+const str_pad = func("__str_pad", &.{ "s", "width", "pad", "start" }, .i32, i32s(&.{ "n", "pl", "k", "p", "i", "at" }), &.{
+    get("s"),                  load(0),         set("n"),
+    get("pad"),                load(0),         set("pl"),
+    get("width"),              get("n"),        op("le_s"),
+    get("pl"),                 op("eqz"),       op("or"),
+    when(&.{ get("s"), ret }), get("width"),    c32(4),
+    op("add"),                 call("__alloc"), set("p"),
+    get("p"),                  get("width"),    store(0),
+    get("width"),              get("n"),        op("sub"),
+    set("k"),
+    // the text lands after the gap on `padStart`, at the front on `padEnd`
+                     get("p"),        c32(4),
+    op("add"),                 get("start"),    get("k"),
+    op("mul"),                 op("add"),       get("s"),
+    c32(4),                    op("add"),       get("n"),
+    copy,
+    // the gap starts at 0 on `padStart`, after the text on `padEnd`
+                         get("start"),    op("eqz"),
+    get("n"),                  op("mul"),       set("at"),
+    loop(&.{
+        get("i"),    get("k"),   op("ge_u"), brk,
+        get("p"),    get("at"),  op("add"),  get("i"),
+        op("add"),   get("pad"), get("i"),   get("pl"),
+        op("rem_u"), op("add"),  load8(4),   store8(4),
+        get("i"),    c32(1),     op("add"),  set("i"),
+        again,
+    }),
+    get("p"),
+});
+
+/// `s.replace(pat, with)` (`all = 0`: the first occurrence) / `replaceAll`
+/// (`all = 1`). An empty `pat` matches before every byte and at the end, as
+/// JavaScript's does: `replace` puts `with` in front, `replaceAll` around
+/// every byte.
+const str_replace = func("__str_replace", &.{ "s", "pat", "with", "all" }, .i32, i32s(&.{ "m", "n", "out", "rest", "idx", "i" }), &.{
+    get("pat"), load(0),         set("m"),
+    get("s"),   load(0),         set("n"),
+    get("m"),   op("eqz"),
+    when(&.{
+        get("with"),                                                        set("out"),
+        get("all"),
+        when(&.{loop(&.{
+            get("i"),   get("n"),   op("ge_u"),          brk,
+            get("out"), get("s"),   get("i"),            get("i"),
+            c32(1),     op("add"),  call("__str_slice"), call("__str_concat"),
+            set("out"), get("out"), get("with"),         call("__str_concat"),
+            set("out"), get("i"),   c32(1),              op("add"),
+            set("i"),   again,
+        })}),
+        get("all"),                                                         op("eqz"),
+        when(&.{ get("out"), get("s"), call("__str_concat"), set("out") }), get("out"),
+        ret,
+    }),
+    c32(4),     call("__alloc"), set("out"),
+    get("out"), c32(0),          store(0),
+    get("s"),   set("rest"),
+    loop(&.{
+        get("rest"),         get("pat"),           call("__str_index_of"), set("idx"),
+        get("idx"),          c32(-1),              op("eq"),               brk,
+        get("out"),          get("rest"),          c32(0),                 get("idx"),
+        call("__str_slice"), call("__str_concat"), set("out"),             get("out"),
+        get("with"),         call("__str_concat"), set("out"),             get("rest"),
+        get("idx"),          get("m"),             op("add"),              get("rest"),
+        load(0),             call("__str_slice"),  set("rest"),            get("all"),
+        op("eqz"),           brk,                  again,
+    }),
+    get("out"), get("rest"),     call("__str_concat"),
+});
+
 /// The `Display` hook's default: no value answers its own text. `wat.zig`
 /// replaces it with the module's dispatch when some type declares `display`.
 const display_of = func("__display_of", &.{"v"}, .i32, &.{}, &.{c32(0)});

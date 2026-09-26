@@ -443,6 +443,14 @@ pub const HelperGroup = enum {
     /// module's own dispatch (one descriptor compare per type declaring
     /// `display`), so the group renders alone and a module gets its answer.
     display_of,
+    /// `$__str_char_code(s, i)` — the byte at `i`, `-1` outside `0..len`.
+    str_char_code,
+    /// `$__str_last_index_of(s, sub)` — the last byte offset of `sub`, `-1` when absent.
+    str_last_index_of,
+    /// `$__str_pad(s, width, pad, start)` — `padStart` (`start = 1`) / `padEnd`.
+    str_pad,
+    /// `$__str_replace(s, pat, with, all)` — `replace` (`all = 0`) / `replaceAll`.
+    str_replace,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -467,6 +475,9 @@ pub const HelperGroup = enum {
             .arr_index_of_str => &.{.str_eq},
             .arr_join_str => &.{.alloc},
             .arr_join_i32 => &.{ .arr_new, .i32_to_str, .arr_join_str },
+            .str_last_index_of => &.{.mem_eq},
+            .str_pad => &.{.alloc},
+            .str_replace => &.{ .alloc, .str_concat, .str_slice, .str_index_of },
             else => &.{},
         };
     }
@@ -542,6 +553,10 @@ pub const Helper = enum {
     print_opt_tagged,
     print_opt_tagged_raw,
     display_of,
+    str_char_code,
+    str_last_index_of,
+    str_pad,
+    str_replace,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {

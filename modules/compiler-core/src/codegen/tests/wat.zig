@@ -1067,3 +1067,80 @@ test "wat: tail call ---- a self-call in return position runs in one frame" {
         \\}
     , "1000000\n500500\n");
 }
+
+// `00 · 05-wasm` step 6's audit of `primitives.bp` against `primCallRes`: the
+// `String` and `Float` members with a byte-level answer are lowered, each
+// answering what commonJS answers for the same program (measured side by
+// side). `5.0.toString()` is `5`, as on node; `charCodeAt` out of range is
+// `-1`, the answer both host templates give; the pad cycles as JavaScript's
+// does; an empty pattern matches before every byte.
+test "wat: prim method ---- the String and Float members step 6's audit lowered" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val f = 2.5;
+        \\    @print(f.toString());
+        \\    val g = 5.0;
+        \\    @print(g.toString());
+        \\    @print("abc".charCodeAt(1));
+        \\    @print("abc".charCodeAt(7));
+        \\    @print("a-b-c".lastIndexOf("-"));
+        \\    @print("a-b-c".lastIndexOf("z"));
+        \\    @print("ab".padStart(5, "*-"));
+        \\    @print("ab".padEnd(5, "*-"));
+        \\    @print("abcdef".padStart(3, "*"));
+        \\    @print("a-b-c".replace("-", "+"));
+        \\    @print("a-b-c".replaceAll("-", "+="));
+        \\    @print("ab".replaceAll("", "-"));
+        \\    @print("xy".chars());
+        \\}
+    ,
+        \\2.5
+        \\5
+        \\98
+        \\-1
+        \\3
+        \\-1
+        \\*-*ab
+        \\ab*-*
+        \\abcdef
+        \\a+b-c
+        \\a+=b+=c
+        \\-a-b-
+        \\["x", "y"]
+        \\
+    );
+}
+
+// The rest of step 6's audit: every primitive method `primitives.bp` declares
+// that has NO wasm lowering traps (`prim method not lowered on wasm`) rather
+// than answering — one program per method, so a lowering that lands later
+// fails here and has to move its row into the test above. `words`/`lines`
+// split on a character class, `pop` mutates the array blob in place, and the
+// rest are `default fn`s whose bodies call a function value the inlined HOF
+// path does not reach (`find`, `flatMap`) or grow an array through
+// `append` (`flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique`).
+test "wat: prim method ---- a primitive method with no wasm lowering traps, never answers" {
+    const trap = "RUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n";
+    const calls = [_][]const u8{
+        "\"a b\".words()",
+        "\"a\\nb\".lines()",
+        "[1, 2, 3].find({ x -> x > 1 })",
+        "[3, 1, 3].unique()",
+        "[[1], [2, 3]].flatten()",
+        "[[1], [2, 3]].flat()",
+        "[1, 2].flatMap({ x -> [x, x] })",
+        "[1, 2, 3].chunked(2)",
+        "[1, 2, 3].sliding(2)",
+        "[1, 2].fill(0)",
+    };
+    inline for (calls) |c| {
+        try h.assertWasmRunLog(std.testing.allocator, "fn main() {\n    @print(" ++ c ++ ");\n}\n", trap);
+    }
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var xs = [1, 2, 3];
+        \\    val p = xs.pop();
+        \\    @print(p);
+        \\}
+    , trap);
+}

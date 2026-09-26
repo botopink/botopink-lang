@@ -5198,6 +5198,11 @@ const Emitter = struct {
                 // shape; `optInfoOf` is what routes the print through
                 // `$__print_opt_str`, and `$__str_at` is the lowering.
                  .{ "at", 1, .str },
+                // `00 · 05-wasm` step 6's audit: the rest of `primitives.bp`'s
+                // `String` that has a byte-level answer.
+                .{ "charCodeAt", 1, .i32 },  .{ "lastIndexOf", 1, .i32 },  .{ "padStart", 2, .str },
+                .{ "padEnd", 2, .str },      .{ "replace", 2, .str },      .{ "replaceAll", 2, .str },
+                .{ "chars", 0, .arr },
             },
             .bool => &.{
                 .{ "negate", 0, .bool_ },      .{ "nor", 1, .bool_ },          .{ "nand", 1, .bool_ },
@@ -5211,7 +5216,7 @@ const Emitter = struct {
             .float => &.{
                 .{ "abs", 0, .f64 },   .{ "min", 1, .f64 },        .{ "max", 1, .f64 },
                 .{ "clamp", 2, .f64 }, .{ "floor", 0, .f64 },      .{ "ceil", 0, .f64 },
-                .{ "round", 0, .f64 }, .{ "squareRoot", 0, .f64 },
+                .{ "round", 0, .f64 }, .{ "squareRoot", 0, .f64 }, .{ "toString", 0, .str },
             },
         };
         for (rows) |r| {
@@ -5324,6 +5329,8 @@ const Emitter = struct {
                     try self.emit(opOf("f64", "floor"));
                 } else if (eq(u8, name, "squareRoot")) {
                     try self.emit(opOf("f64", "sqrt"));
+                } else if (eq(u8, name, "toString")) {
+                    try self.emit(b.helper(.f64_to_str));
                 } else {
                     // abs / floor / ceil are opcodes of the same name.
                     try self.emit(opOf("f64", name));
@@ -5357,6 +5364,22 @@ const Emitter = struct {
             try self.emit(b.helper(.str_trim));
         } else if (eq(u8, name, "toString")) {
             // already the string
+        } else if (eq(u8, name, "chars")) {
+            // One fresh string per byte: `$__str_split` with an empty
+            // separator cuts between every byte.
+            const empty = try self.internString("");
+            try self.emit(try self.constInt(empty.offset));
+            try self.emit(b.helper(.str_split));
+        } else if (eq(u8, name, "padStart") or eq(u8, name, "padEnd")) {
+            try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            try self.lowerCoerced(callArg(cc, 1).?, "i32");
+            try self.emit(try self.constInt(@as(i32, if (eq(u8, name, "padStart")) 1 else 0)));
+            try self.emit(b.helper(.str_pad));
+        } else if (eq(u8, name, "replace") or eq(u8, name, "replaceAll")) {
+            try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            try self.lowerCoerced(callArg(cc, 1).?, "i32");
+            try self.emit(try self.constInt(@as(i32, if (eq(u8, name, "replaceAll")) 1 else 0)));
+            try self.emit(b.helper(.str_replace));
         } else {
             try self.lowerCoerced(callArg(cc, 0).?, "i32");
             if (eq(u8, name, "at")) {
@@ -5373,6 +5396,10 @@ const Emitter = struct {
                 try self.emit(b.helper(.str_ends_with));
             } else if (eq(u8, name, "split")) {
                 try self.emit(b.helper(.str_split));
+            } else if (eq(u8, name, "charCodeAt")) {
+                try self.emit(b.helper(.str_char_code));
+            } else if (eq(u8, name, "lastIndexOf")) {
+                try self.emit(b.helper(.str_last_index_of));
             } else {
                 try self.emit(b.helper(.str_repeat));
             }
