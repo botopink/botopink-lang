@@ -14,9 +14,13 @@ import {json.Json, json.decode, json.quote, json.array, json.object} from "std";
 pub type RpcCall(id: string, args: Array<string>)
 
 pub fn writeRpcBody(call: RpcCall) -> string {
-    return object([#("v", "1"), #("id", quote(call.id)), #("args", array(call.args.map(
-                        { a -> quote(a) }
-                    )))]);
+    return object(
+        [
+            #("v", "1"),
+            #("id", quote(call.id)),
+            #("args", array(call.args.map({ a -> quote(a) }))),
+        ],
+    );
 }
 
 fn kindName(v: Json) -> string {
@@ -39,9 +43,10 @@ fn membersOf(v: Json) -> Array<#(string, Json)> {
 
 fn fieldOf(ms: Array<#(string, Json)>, key: string) -> ?Json {
     val hit = ms.filter({ m -> m._0 == key });
-    if (hit.length == 0) return null else return hit
-        .at(0)
-        .unwrapOr(#("", Json.Null))._1;
+    if (hit.length == 0)
+        return null
+    else
+        return hit.at(0).unwrapOr(#("", Json.Null))._1;
 }
 
 fn strOf(v: Json) -> string {
@@ -77,22 +82,28 @@ pub fn parseRpcBody(body: string) -> @Result<RpcCall, string> {
     // An empty or whitespace-only body is named as such, not as "not JSON".
     if (body.trim() == "") throw "actions.parseRpcBody: the body is empty";
     val doc = decode(body);
-    if (doc.isError()) throw ["actions.parseRpcBody: not JSON (", errorOf(doc), ")"].join(
-        ""
-    );
+    if (doc.isError())
+        throw ["actions.parseRpcBody: not JSON (", errorOf(doc), ")"].join("");
     val root = doc.unwrapOr(Json.Null);
-    if (kindName(root) != "an object") throw ["actions.parseRpcBody: the body must be an object, not ", kindName(
-            root
-        )].join("");
+    if (kindName(root) != "an object")
+        throw [
+            "actions.parseRpcBody: the body must be an object, not ",
+            kindName(root),
+        ].join("");
     val ms = membersOf(root);
-    if (isOne(fieldOf(ms, "v") ?? Json.Null).negate()) throw "actions.parseRpcBody: `v` must be 1 - this reader knows version 1 only";
+    if (isOne(fieldOf(ms, "v") ?? Json.Null).negate())
+        throw "actions.parseRpcBody: `v` must be 1 - this reader knows version 1 only";
     val id = fieldOf(ms, "id") ?? Json.Null;
-    if (kindName(id) != "a string") throw ["actions.parseRpcBody: `id` must be a string, not ", kindName(
-            id
-        )].join("");
+    if (kindName(id) != "a string")
+        throw [
+            "actions.parseRpcBody: `id` must be a string, not ",
+            kindName(id),
+        ].join("");
     if (strOf(id) == "") throw "actions.parseRpcBody: `id` is empty";
     val args = fieldOf(ms, "args") ?? Json.Arr(items: []);
     val items = itemsOf(args);
-    if (kindName(args) != "an array" || items.filter({ x -> kindName(x) != "a string" }).length > 0) throw "actions.parseRpcBody: `args` must be an array of strings";
+    if (kindName(args) != "an array"
+        || items.filter({ x -> kindName(x) != "a string" }).length > 0)
+        throw "actions.parseRpcBody: `args` must be an array of strings";
     return RpcCall(id: strOf(id), args: items.map({ x -> strOf(x) }));
 }

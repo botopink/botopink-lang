@@ -5,8 +5,14 @@ import {asserts} from "std";
 import {ActionState, newActionState, writeState, parseState} from "state";
 
 test "actions: writeState answers the pinned state literal" {
-    val s = writeState("Title must be at least 3 characters", [#("title", "Too short")]);
-    try asserts.equals(s, "message=Title%20must%20be%20at%20least%203%20characters&f.title=Too%20short");
+    val s = writeState(
+        "Title must be at least 3 characters",
+        [#("title", "Too short")],
+    );
+    try asserts.equals(
+        s,
+        "message=Title%20must%20be%20at%20least%203%20characters&f.title=Too%20short",
+    );
 }
 
 test "actions: writeState of nothing is message=" {
@@ -14,7 +20,9 @@ test "actions: writeState of nothing is message=" {
 }
 
 test "actions: parseState reads the pinned literal back" {
-    val parsed = parseState("message=Title%20must%20be%20at%20least%203%20characters&f.title=Too%20short");
+    val parsed = parseState(
+        "message=Title%20must%20be%20at%20least%203%20characters&f.title=Too%20short",
+    );
     try asserts.equals(parsed._0, "Title must be at least 3 characters");
     try asserts.equals(parsed._1.length, 1);
     val f = parsed._1.at(0).unwrapOr(#("", ""));
@@ -50,7 +58,12 @@ test "actions: fieldError of an absent name is empty; newActionState is ok with 
     try asserts.equals(st.fields.length, 0);
     try asserts.equals(st.fieldError("title"), "");
     try asserts.isFalse(st.hasError());
-    val bad = ActionState(ok: false, message: "m", redirectTo: "", fields: [#("title", "Too short")]);
+    val bad = ActionState(
+        ok: false,
+        message: "m",
+        redirectTo: "",
+        fields: [#("title", "Too short")],
+    );
     try asserts.equals(bad.fieldError("title"), "Too short");
     try asserts.equals(bad.fieldError("body"), "");
     try asserts.isTrue(bad.hasError());

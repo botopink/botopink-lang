@@ -30,7 +30,14 @@ fn fail(
     value: string,
     params: Array<Arg>,
 ) -> Array<Violation> {
-    return oneViolation(violation(field, code, message(code, builtInTemplate(code), field, value, params), value));
+    return oneViolation(
+        violation(
+            field,
+            code,
+            message(code, builtInTemplate(code), field, value, params),
+            value,
+        ),
+    );
 }
 
 // ── presence ────────────────────────────────────────────────────────────────
@@ -38,21 +45,31 @@ fn fail(
 // `present` is the emitted `v.<field> != null`. `#[notNull]` is refused on a
 // field whose type cannot be null at all, so this is never trivially true.
 pub fn vNotNull(field: string, present: bool) -> Array<Violation> {
-    if (present) return noViolation() else return fail(field, "notNull", "", noArgs());
+    if (present)
+        return noViolation()
+    else
+        return fail(field, "notNull", "", noArgs());
 }
 
 pub fn vNotBlank(field: string, value: string) -> Array<Violation> {
-    if (value.trim().length() > 0) return noViolation() else return fail(field, "notBlank", value, noArgs());
+    if (value.trim().length() > 0)
+        return noViolation()
+    else
+        return fail(field, "notBlank", value, noArgs());
 }
 
 pub fn vNotEmpty(field: string, value: string) -> Array<Violation> {
-    if (value.length() > 0) return noViolation() else return fail(field, "notEmpty", value, noArgs());
+    if (value.length() > 0)
+        return noViolation()
+    else
+        return fail(field, "notEmpty", value, noArgs());
 }
 
 pub fn vNotEmptyList<T>(field: string, value: Array<T>) -> Array<Violation> {
-    if (value.length > 0) return noViolation() else return fail(field, "notEmpty", showI32(
-            value.length
-        ), noArgs());
+    if (value.length > 0)
+        return noViolation()
+    else
+        return fail(field, "notEmpty", showI32(value.length), noArgs());
 }
 
 // ── size ────────────────────────────────────────────────────────────────────
@@ -73,10 +90,10 @@ pub fn vSizeBetween(
     max: i32,
 ) -> Array<Violation> {
     val n = value.length();
-    if (n >= min && n <= max) return noViolation() else return fail(field, "sizeBetween", value, sizeArgs(
-            min,
-            max
-        ));
+    if (n >= min && n <= max)
+        return noViolation()
+    else
+        return fail(field, "sizeBetween", value, sizeArgs(min, max));
 }
 
 pub fn vSizeBetweenList<T>(
@@ -86,35 +103,60 @@ pub fn vSizeBetweenList<T>(
     max: i32,
 ) -> Array<Violation> {
     val n = value.length;
-    if (n >= min && n <= max) return noViolation() else return fail(field, "sizeBetween", showI32(
-            n
-        ), sizeArgs(min, max));
+    if (n >= min && n <= max)
+        return noViolation()
+    else
+        return fail(field, "sizeBetween", showI32(n), sizeArgs(min, max));
 }
 
 // ── numeric bounds ──────────────────────────────────────────────────────────
 
 pub fn vMinValueI32(field: string, value: i32, min: i32) -> Array<Violation> {
-    if (value >= min) return noViolation() else return fail(field, "minValue", showI32(
-            value
-        ), [arg("min", showI32(min))]);
+    if (value >= min)
+        return noViolation()
+    else
+        return fail(
+            field,
+            "minValue",
+            showI32(value),
+            [arg("min", showI32(min))],
+        );
 }
 
 pub fn vMaxValueI32(field: string, value: i32, max: i32) -> Array<Violation> {
-    if (value <= max) return noViolation() else return fail(field, "maxValue", showI32(
-            value
-        ), [arg("max", showI32(max))]);
+    if (value <= max)
+        return noViolation()
+    else
+        return fail(
+            field,
+            "maxValue",
+            showI32(value),
+            [arg("max", showI32(max))],
+        );
 }
 
 pub fn vMinValueF64(field: string, value: f64, min: f64) -> Array<Violation> {
-    if (value >= min) return noViolation() else return fail(field, "minValue", showF64(
-            value
-        ), [arg("min", showF64(min))]);
+    if (value >= min)
+        return noViolation()
+    else
+        return fail(
+            field,
+            "minValue",
+            showF64(value),
+            [arg("min", showF64(min))],
+        );
 }
 
 pub fn vMaxValueF64(field: string, value: f64, max: f64) -> Array<Violation> {
-    if (value <= max) return noViolation() else return fail(field, "maxValue", showF64(
-            value
-        ), [arg("max", showF64(max))]);
+    if (value <= max)
+        return noViolation()
+    else
+        return fail(
+            field,
+            "maxValue",
+            showF64(value),
+            [arg("max", showF64(max))],
+        );
 }
 
 // ── sign ────────────────────────────────────────────────────────────────────
@@ -124,39 +166,45 @@ pub fn vMaxValueF64(field: string, value: f64, max: f64) -> Array<Violation> {
 // per width is still what keeps the emitted call typed to the field.
 
 pub fn vPositiveI32(field: string, value: i32) -> Array<Violation> {
-    if (value > 0) return noViolation() else return fail(field, "positive", showI32(
-            value
-        ), noArgs());
+    if (value > 0)
+        return noViolation()
+    else
+        return fail(field, "positive", showI32(value), noArgs());
 }
 
 pub fn vPositiveOrZeroI32(field: string, value: i32) -> Array<Violation> {
-    if (value >= 0) return noViolation() else return fail(field, "positiveOrZero", showI32(
-            value
-        ), noArgs());
+    if (value >= 0)
+        return noViolation()
+    else
+        return fail(field, "positiveOrZero", showI32(value), noArgs());
 }
 
 pub fn vPositiveI64(field: string, value: i64) -> Array<Violation> {
-    if (value > 0) return noViolation() else return fail(field, "positive", showI64(
-            value
-        ), noArgs());
+    if (value > 0)
+        return noViolation()
+    else
+        return fail(field, "positive", showI64(value), noArgs());
 }
 
 pub fn vPositiveOrZeroI64(field: string, value: i64) -> Array<Violation> {
-    if (value >= 0) return noViolation() else return fail(field, "positiveOrZero", showI64(
-            value
-        ), noArgs());
+    if (value >= 0)
+        return noViolation()
+    else
+        return fail(field, "positiveOrZero", showI64(value), noArgs());
 }
 
 pub fn vPositiveF64(field: string, value: f64) -> Array<Violation> {
-    if (value > 0.0) return noViolation() else return fail(field, "positive", showF64(
-            value
-        ), noArgs());
+    if (value > 0.0)
+        return noViolation()
+    else
+        return fail(field, "positive", showF64(value), noArgs());
 }
 
 pub fn vPositiveOrZeroF64(field: string, value: f64) -> Array<Violation> {
-    if (value >= 0.0) return noViolation() else return fail(field, "positiveOrZero", showF64(
-            value
-        ), noArgs());
+    if (value >= 0.0)
+        return noViolation()
+    else
+        return fail(field, "positiveOrZero", showF64(value), noArgs());
 }
 
 // ── text shapes ─────────────────────────────────────────────────────────────
@@ -171,12 +219,10 @@ pub fn emailPattern() -> string {
 }
 
 pub fn vEmail(field: string, value: string) -> Array<Violation> {
-    if (regex.matches(emailPattern(), value)) return noViolation() else return fail(
-        field,
-        "email",
-        value,
-        noArgs()
-    );
+    if (regex.matches(emailPattern(), value))
+        return noViolation()
+    else
+        return fail(field, "email", value, noArgs());
 }
 
 pub fn vPattern(
@@ -184,9 +230,10 @@ pub fn vPattern(
     value: string,
     pattern: string,
 ) -> Array<Violation> {
-    if (regex.matches(pattern, value)) return noViolation() else return fail(field, "pattern", value, [
-            arg("regex", pattern)
-        ]);
+    if (regex.matches(pattern, value))
+        return noViolation()
+    else
+        return fail(field, "pattern", value, [arg("regex", pattern)]);
 }
 
 // ── time ────────────────────────────────────────────────────────────────────
@@ -197,13 +244,15 @@ pub fn vPattern(
 // is a violation for both markers rather than acceptable to both.
 
 pub fn vPastDate(field: string, value: i64) -> Array<Violation> {
-    if (value < time.nowMillis()) return noViolation() else return fail(field, "pastDate", showI64(
-            value
-        ), noArgs());
+    if (value < time.nowMillis())
+        return noViolation()
+    else
+        return fail(field, "pastDate", showI64(value), noArgs());
 }
 
 pub fn vFutureDate(field: string, value: i64) -> Array<Violation> {
-    if (value > time.nowMillis()) return noViolation() else return fail(field, "futureDate", showI64(
-            value
-        ), noArgs());
+    if (value > time.nowMillis())
+        return noViolation()
+    else
+        return fail(field, "futureDate", showI64(value), noArgs());
 }

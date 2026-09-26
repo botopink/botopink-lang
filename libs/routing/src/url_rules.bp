@@ -85,11 +85,13 @@ pub fn canonicalize(rules: PathRules, pathname: string) -> string {
     val base = baseOf(rules);
     var inside = true;
     var path = raw;
-    if (base != "") if (raw == base) path = "/" else if (raw.startsWith(base + "/")) path = sub(
-        raw,
-        base.length(),
-        raw.length()
-    ) else inside = false;
+    if (base != "")
+        if (raw == base)
+            path = "/"
+        else if (raw.startsWith(base + "/"))
+            path = sub(raw, base.length(), raw.length())
+        else
+            inside = false;
     if (inside) {
         val trimmed = withTrailing(rules, path);
         val decoded = encoding.percentDecode(trimmed).unwrapOr(trimmed);
@@ -108,7 +110,10 @@ pub fn clientHref(rules: PathRules, pathname: string) -> string {
     val path = withTrailing(rules, encoded);
     val base = baseOf(rules);
     if (base == "") return path + suffix else if (path == "/") {
-        if (rules.trailingSlash) return base + "/" + suffix else return base + suffix;
+        if (rules.trailingSlash)
+            return base + "/" + suffix
+        else
+            return base + suffix;
     } else return base + path + suffix;
 }
 
@@ -121,7 +126,14 @@ fn separatorFree(s: string) -> bool {
 pub fn writeRedirectTable(rs: Array<RedirectRule>) -> string {
     var lines: string[] = [];
     for (rs) { r ->
-        assert (separatorFree(r.source) && separatorFree(r.destination)), "routing: url_rules: the redirect `" + r.source + "` -> `" + r.destination + "` holds a `|` or a newline, which the redirect table uses as separators";
+        assert (separatorFree(r.source)
+            && separatorFree(
+                r.destination,
+            )), "routing: url_rules: the redirect `"
+            + r.source
+            + "` -> `"
+            + r.destination
+            + "` holds a `|` or a newline, which the redirect table uses as separators";
         val flag = if (r.permanent) "1" else "0";
         lines.push(r.source + "|" + r.destination + "|" + flag);
     };
@@ -134,11 +146,14 @@ pub fn parseRedirectTable(wire: string) -> Array<RedirectRule> {
         val f: string[] = line.split("|");
         if (f.length == 3) {
             val flag = f.at(2).unwrapOr("");
-            if ((flag == "1" || flag == "0")) out.push(RedirectRule(source: f
-                        .at(0)
-                        .unwrapOr(""), destination: f
-                        .at(1)
-                        .unwrapOr(""), permanent: flag == "1"));
+            if ((flag == "1" || flag == "0"))
+                out.push(
+                    RedirectRule(
+                        source: f.at(0).unwrapOr(""),
+                        destination: f.at(1).unwrapOr(""),
+                        permanent: flag == "1",
+                    ),
+                );
         };
     };
     return out;

@@ -11,7 +11,8 @@ test "validation: an empty report is valid, one violation is not" {
     assert ValidationReport.empty().isValid();
     assert ValidationReport
         .of([v("name", "notBlank", "must not be blank")])
-        .isValid() == false;
+        .isValid()
+        == false;
     assert ValidationReport.empty().violations.length == 0;
 }
 
@@ -27,21 +28,25 @@ test "validation: merge preserves order, receiver first" {
 }
 
 test "validation: toJson escapes a quote and a backslash" {
-    assert violationJson(v("a\"b", "c", "m")) == "{\"field\":\"a\\\"b\",\"code\":\"c\",\"message\":\"m\"}";
-    assert violationJson(v("a\\b", "c", "m")) == "{\"field\":\"a\\\\b\",\"code\":\"c\",\"message\":\"m\"}";
-    assert violationJson(v("a\nb", "c", "m")) == "{\"field\":\"a\\nb\",\"code\":\"c\",\"message\":\"m\"}";
+    assert violationJson(v("a\"b", "c", "m"))
+        == "{\"field\":\"a\\\"b\",\"code\":\"c\",\"message\":\"m\"}";
+    assert violationJson(v("a\\b", "c", "m"))
+        == "{\"field\":\"a\\\\b\",\"code\":\"c\",\"message\":\"m\"}";
+    assert violationJson(v("a\nb", "c", "m"))
+        == "{\"field\":\"a\\nb\",\"code\":\"c\",\"message\":\"m\"}";
     val r = ValidationReport.of([v("name", "pattern", "must match \"a\\b\"")]);
-    assert r.toJson() == "{\"errors\":[{\"field\":\"name\",\"code\":\"pattern\",\"message\":\"must match \\\"a\\\\b\\\"\"}]}";
+    assert r.toJson()
+        == "{\"errors\":[{\"field\":\"name\",\"code\":\"pattern\",\"message\":\"must match \\\"a\\\\b\\\"\"}]}";
 }
 
 test "validation: one field failing two constraints is two violations" {
-    val r = ValidationReport.of([v("name", "notBlank", "a"), v("name", "sizeBetween", "b")]);
+    val r = ValidationReport.of(
+        [v("name", "notBlank", "a"), v("name", "sizeBetween", "b")],
+    );
     assert r.violations.length == 2;
     assert r.violations.at(0).map({ x -> x.code }).unwrapOr("") == "notBlank";
-    assert r.violations
-        .at(1)
-        .map({ x -> x.code })
-        .unwrapOr("") == "sizeBetween";
+    assert r.violations.at(1).map({ x -> x.code }).unwrapOr("")
+        == "sizeBetween";
 }
 
 test "validation: toProblemDetail is RFC 9457 with status 400" {
@@ -50,23 +55,26 @@ test "validation: toProblemDetail is RFC 9457 with status 400" {
     assert body.contains("\"status\":400");
     assert body.contains("\"title\":\"Validation failed\"");
     assert body.contains("\"type\":\"about:blank\"");
-    assert body.contains("{\"field\":\"age\",\"code\":\"minValue\",\"message\":\"must be at least 18\"}");
+    assert body.contains(
+        "{\"field\":\"age\",\"code\":\"minValue\",\"message\":\"must be at least 18\"}",
+    );
 }
 
 test "validation: the rejected value never reaches the wire" {
-    val r = ValidationReport.of([violation("pin", "pattern", "must match", "hunter2")]);
+    val r = ValidationReport.of(
+        [violation("pin", "pattern", "must match", "hunter2")],
+    );
     assert r.toJson().contains("hunter2") == false;
     assert r.toProblemDetail().contains("hunter2") == false;
-    assert r.violations
-        .at(0)
-        .map({ x -> x.invalidValue })
-        .unwrapOr("") == "hunter2";
+    assert r.violations.at(0).map({ x -> x.invalidValue }).unwrapOr("")
+        == "hunter2";
 }
 
 test "validation: the two array answers a constraint gives" {
     assert noViolation().length == 0;
     assert oneViolation(v("a", "b", "c")).length == 1;
-    assert violationJson(v("a", "b", "c")) == "{\"field\":\"a\",\"code\":\"b\",\"message\":\"c\"}";
+    assert violationJson(v("a", "b", "c"))
+        == "{\"field\":\"a\",\"code\":\"b\",\"message\":\"c\"}";
 }
 
 // Step 4 of `01-std/06-validation-lib`: the control-character case the old
@@ -74,10 +82,11 @@ test "validation: the two array answers a constraint gives" {
 // Read back with std's strict reader (`json.decode`, 01-std-lib-enablement
 // Step 13), which refuses a raw control character inside a string.
 test "validation: a message holding U+0001 and a quote is valid JSON" {
-    val r = ValidationReport.of([v("name", "notBlank", "bad \u{1} \"quoted\"")]);
-    assert violationJson(r.violations
-            .at(0)
-            .unwrapOr(v("", "", ""))) == "{\"field\":\"name\",\"code\":\"notBlank\",\"message\":\"bad \\u0001 \\\"quoted\\\"\"}";
+    val r = ValidationReport.of(
+        [v("name", "notBlank", "bad \u{1} \"quoted\"")],
+    );
+    assert violationJson(r.violations.at(0).unwrapOr(v("", "", "")))
+        == "{\"field\":\"name\",\"code\":\"notBlank\",\"message\":\"bad \\u0001 \\\"quoted\\\"\"}";
     assert json.decode(r.toJson()).isOk();
     assert json.decode(r.toProblemDetail()).isOk();
 }

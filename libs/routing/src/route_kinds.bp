@@ -24,7 +24,12 @@ pub fn writeKinds(kinds: Array<#(string, RouteKind)>) -> string {
     var lines: string[] = [];
     for (kinds) { k ->
         val pattern = k._0;
-        assert (pattern.contains("|") || pattern.contains("\n")).negate(), "routing: route_kinds: the pattern `" + pattern + "` holds a `|` or a newline, which the `k` blob uses as separators";
+        assert (pattern.contains("|")
+            || pattern.contains(
+                "\n",
+            )).negate(), "routing: route_kinds: the pattern `"
+            + pattern
+            + "` holds a `|` or a newline, which the `k` blob uses as separators";
         lines.push(pattern + "|" + kindLetter(k._1));
     };
     return lines.join("\n");
@@ -37,9 +42,10 @@ pub fn parseKinds(wire: string) -> Array<#(string, RouteKind)> {
         if (f.length == 2) {
             val pattern = f.at(0).unwrapOr("");
             val letter = f.at(1).unwrapOr("");
-            if (letter == "S") out.push(#(pattern, RouteKind.Static)) else if (letter == "D") out.push(
-                #(pattern, RouteKind.Dynamic)
-            );
+            if (letter == "S")
+                out.push(#(pattern, RouteKind.Static))
+            else if (letter == "D")
+                out.push(#(pattern, RouteKind.Dynamic));
         };
     };
     return out;

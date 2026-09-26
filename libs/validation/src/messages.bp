@@ -94,7 +94,10 @@ pub fn templateFor(code: string, builtIn: string) -> string {
 // here scans for braces — only the bindings the constraint actually passed are
 // replaced.
 pub fn interpolate(template: string, args: Array<Arg>) -> string {
-    return args.fold(template, { acc, a -> acc.replaceAll("{" + a.name + "}", a.value) });
+    return args.fold(
+        template,
+        { acc, a -> acc.replaceAll("{" + a.name + "}", a.value) },
+    );
 }
 
 // The message a constraint reports: its template, resolved, with `{field}` and
@@ -133,7 +136,8 @@ pub fn builtInTemplate(code: string) -> string {
     if (code == "pattern") return "must match {regex}";
     if (code == "pastDate") return "must be in the past";
     if (code == "futureDate") return "must be in the future";
-    if (code == "unknownConstraint") return "names the constraint {name}, which is not registered - registered: [{registered}]";
+    if (code == "unknownConstraint")
+        return "names the constraint {name}, which is not registered - registered: [{registered}]";
     if (code == "typeMismatch") return "must be a {type}";
     if (code == "required") return "must be present";
     return "is not valid";

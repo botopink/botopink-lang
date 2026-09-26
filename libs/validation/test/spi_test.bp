@@ -27,7 +27,10 @@ pub type CpfConstraint {
 
     pub fn check(self: Self, field: string, value: string) -> string {
         val digits = value.replaceAll(".", "").replaceAll("-", "");
-        if (digits.length() != 11) return "{field} must be a CPF with 11 digits, got \"{value}\"" else return "";
+        if (digits.length() != 11)
+            return "{field} must be a CPF with 11 digits, got \"{value}\""
+        else
+            return "";
     }
 }
 
@@ -45,7 +48,10 @@ fn tableSource(
     locale: string,
     entries: Array<#(string, string)>,
 ) -> MessageSource {
-    return MessageSource(locale: { -> locale }, template: { key -> lookup(entries, key) });
+    return MessageSource(
+        locale: { -> locale },
+        template: { key -> lookup(entries, key) },
+    );
 }
 
 fn cpf() -> CpfConstraint {
@@ -66,36 +72,55 @@ test "validation: an unregistered name is a violation, never a pass" {
     val v = vConstraint("document", "cpf", "anything at all");
     assert v.length == 1;
     assert codesOf(v) == "unknownConstraint";
-    assert messagesOf(v) == "names the constraint \"cpf\", which is not registered - registered: []";
+    assert messagesOf(v)
+        == "names the constraint \"cpf\", which is not registered - registered: []";
     assert unknownConstraintMessage("cpf").contains("cpf");
 }
 
 test "validation: a registered constraint is reached by name" {
     val _c = clearConstraints();
     val c = cpf();
-    val _r = registerConstraint("cpf", c.code(), { field, value -> c.check(field, value) });
+    val _r = registerConstraint(
+        "cpf",
+        c.code(),
+        { field, value -> c.check(field, value) },
+    );
     assert constraintRegistered("cpf");
     assert registeredConstraints() == "cpf";
     assert vConstraint("document", "cpf", "12345678901").length == 0;
     val bad = vConstraint("document", "cpf", "123");
     assert codesOf(bad) == "cpf";
-    assert messagesOf(bad) == "document must be a CPF with 11 digits, got \"123\"";
+    assert messagesOf(bad)
+        == "document must be a CPF with 11 digits, got \"123\"";
 }
 
 test "validation: the refusal names what IS registered, so a typo is visible" {
     val _c = clearConstraints();
     val c = cpf();
-    val _r = registerConstraint("cpf", c.code(), { field, value -> c.check(field, value) });
+    val _r = registerConstraint(
+        "cpf",
+        c.code(),
+        { field, value -> c.check(field, value) },
+    );
     val v = vConstraint("document", "cpv", "x");
     assert codesOf(v) == "unknownConstraint";
-    assert messagesOf(v) == "names the constraint \"cpv\", which is not registered - registered: [cpf]";
+    assert messagesOf(v)
+        == "names the constraint \"cpv\", which is not registered - registered: [cpf]";
 }
 
 test "validation: registering twice replaces rather than doubles" {
     val _c = clearConstraints();
     val c = cpf();
-    val _a = registerConstraint("cpf", c.code(), { field, value -> c.check(field, value) });
-    val _b = registerConstraint("cpf", c.code(), { field, value -> c.check(field, value) });
+    val _a = registerConstraint(
+        "cpf",
+        c.code(),
+        { field, value -> c.check(field, value) },
+    );
+    val _b = registerConstraint(
+        "cpf",
+        c.code(),
+        { field, value -> c.check(field, value) },
+    );
     assert registeredConstraints() == "cpf";
 }
 
@@ -103,33 +128,56 @@ test "validation: registering twice replaces rather than doubles" {
 
 test "validation: a global override replaces the built-in for every field" {
     val _e = setMessageSource(tableSource("", []));
-    assert templateFor("sizeBetween", builtInTemplate("sizeBetween")) == "size must be between {min} and {max}";
-    val _s = setMessageSource(tableSource("", [#("sizeBetween", "tamanho entre {min} e {max}")]));
-    assert templateFor("sizeBetween", builtInTemplate("sizeBetween")) == "tamanho entre {min} e {max}";
-    assert message("sizeBetween", builtInTemplate("sizeBetween"), "nome", "a", [arg(
-                "min",
-                "2"
-            ), arg("max", "50")]) == "tamanho entre 2 e 50";
+    assert templateFor("sizeBetween", builtInTemplate("sizeBetween"))
+        == "size must be between {min} and {max}";
+    val _s = setMessageSource(
+        tableSource("", [#("sizeBetween", "tamanho entre {min} e {max}")]),
+    );
+    assert templateFor("sizeBetween", builtInTemplate("sizeBetween"))
+        == "tamanho entre {min} e {max}";
+    assert message(
+        "sizeBetween",
+        builtInTemplate("sizeBetween"),
+        "nome",
+        "a",
+        [arg("min", "2"), arg("max", "50")],
+    )
+        == "tamanho entre 2 e 50";
     val _z = setMessageSource(builtInOnly());
 }
 
 test "validation: the locale key wins over the global one" {
-    val table = [#("email", "global address"), #("pt-BR.email", "endereco invalido")];
+    val table = [
+        #("email", "global address"),
+        #("pt-BR.email", "endereco invalido"),
+    ];
     val _n = setMessageSource(tableSource("", table));
     assert currentLocale() == "";
     assert templateFor("email", builtInTemplate("email")) == "global address";
     val _l = setMessageSource(tableSource("pt-BR", table));
     assert currentLocale() == "pt-BR";
-    assert templateFor("email", builtInTemplate("email")) == "endereco invalido";
+    assert templateFor("email", builtInTemplate("email"))
+        == "endereco invalido";
     val _o = setMessageSource(tableSource("es-ES", table));
     assert templateFor("email", builtInTemplate("email")) == "global address";
     val _z = setMessageSource(builtInOnly());
 }
 
 test "validation: an unknown placeholder survives verbatim" {
-    assert interpolate("{min} to {max}, limit {limit}", [arg("min", "2"), arg("max", "5")]) == "2 to 5, limit {limit}";
+    assert interpolate(
+        "{min} to {max}, limit {limit}",
+        [arg("min", "2"), arg("max", "5")],
+    )
+        == "2 to 5, limit {limit}";
     assert interpolate("{field} is {value}", noArgs()) == "{field} is {value}";
-    assert message("pattern", "{field} must match {regex}", "pin", "x", [arg("regex", "^a$")]) == "pin must match ^a$";
+    assert message(
+        "pattern",
+        "{field} must match {regex}",
+        "pin",
+        "x",
+        [arg("regex", "^a$")],
+    )
+        == "pin must match ^a$";
 }
 
 test "validation: every built-in code has a template of its own" {
@@ -138,7 +186,8 @@ test "validation: every built-in code has a template of its own" {
     assert builtInTemplate("minValue") == "must be at least {min}";
     assert builtInTemplate("maxValue") == "must be at most {max}";
     assert builtInTemplate("positive") == "must be greater than 0";
-    assert builtInTemplate("positiveOrZero") == "must be greater than or equal to 0";
+    assert builtInTemplate("positiveOrZero")
+        == "must be greater than or equal to 0";
     assert builtInTemplate("pastDate") == "must be in the past";
     assert builtInTemplate("futureDate") == "must be in the future";
     assert builtInTemplate("required") == "must be present";

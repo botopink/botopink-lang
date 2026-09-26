@@ -43,7 +43,9 @@ pub type ValidationReport(
     // erlang and `concat` on node, both of which answer a NEW array — neither
     // mutates the receiver, so merging twice from the same report is stable.
     pub fn merge(self: Self, other: ValidationReport) -> ValidationReport {
-        return ValidationReport(violations: self.violations.append(other.violations));
+        return ValidationReport(
+            violations: self.violations.append(other.violations),
+        );
     }
 
     pub fn toJson(self: Self) -> string {
@@ -56,12 +58,14 @@ pub type ValidationReport(
     // application never has two error shapes to read.
     pub fn toProblemDetail(self: Self) -> string {
         val rows = self.violations.map({ v -> violationJson(v) });
-        return json.object([
+        return json.object(
+            [
                 #("type", json.quote("about:blank")),
                 #("title", json.quote("Validation failed")),
                 #("status", "400"),
                 #("errors", json.array(rows)),
-            ]);
+            ],
+        );
     }
 
     pub fn empty() -> ValidationReport {
@@ -79,10 +83,13 @@ pub type ValidationReport(
 // rejected value there is how a validation error becomes a reflected-input
 // hole. The value stays on the `Violation` for a log line to read.
 pub fn violationJson(v: Violation) -> string {
-    return json.object([#("field", json.quote(v.field)), #("code", json.quote(v.code)), #(
-                "message",
-                json.quote(v.message)
-            )]);
+    return json.object(
+        [
+            #("field", json.quote(v.field)),
+            #("code", json.quote(v.code)),
+            #("message", json.quote(v.message)),
+        ],
+    );
 }
 
 // One violation, built where every constraint builds one.
@@ -92,7 +99,12 @@ pub fn violation(
     message: string,
     invalidValue: string,
 ) -> Violation {
-    return Violation(field: field, code: code, message: message, invalidValue: invalidValue);
+    return Violation(
+        field: field,
+        code: code,
+        message: message,
+        invalidValue: invalidValue,
+    );
 }
 
 // The two answers a constraint gives, as the array the emitted validator

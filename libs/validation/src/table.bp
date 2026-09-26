@@ -77,9 +77,12 @@ pub fn constraintJson(parts: string[]) -> string {
 // `constraints` is the already-encoded, comma-joined list of one field's
 // constraint objects.
 pub fn fieldJson(name: string, constraints: string) -> string {
-    return json.object([#("name", json.quote(name)), #("constraints", ["[", constraints, "]"].join(
-                    ""
-                ))]);
+    return json.object(
+        [
+            #("name", json.quote(name)),
+            #("constraints", ["[", constraints, "]"].join("")),
+        ],
+    );
 }
 
 // The whole table. Deterministic: one pass over the blob, no map, no sort, no
@@ -104,7 +107,10 @@ pub fn constraintTableJson(typeName: string, blob: string) -> string {
         i = i + 1;
     };
     if (current != "") fields = fields + fieldJson(current, cons);
-    return json.object([#("type", json.quote(typeName)), #("fields", ["[", fields, "]"].join(
-                    ""
-                ))]);
+    return json.object(
+        [
+            #("type", json.quote(typeName)),
+            #("fields", ["[", fields, "]"].join("")),
+        ],
+    );
 }

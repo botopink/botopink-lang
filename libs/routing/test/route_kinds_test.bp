@@ -11,7 +11,11 @@ fn kindText(k: RouteKind) -> string {
 }
 
 fn sample() -> Array<#(string, RouteKind)> {
-    return [#("/", RouteKind.Static), #("/blog/[slug]", RouteKind.Dynamic), #("/about", RouteKind.Static)];
+    return [
+        #("/", RouteKind.Static),
+        #("/blog/[slug]", RouteKind.Dynamic),
+        #("/about", RouteKind.Static),
+    ];
 }
 
 test "routing: writeKinds writes one pattern|K line per route, in order" {
@@ -46,7 +50,10 @@ test "routing: an absent blob or an unknown pattern answers Dynamic" {
 
 test "routing: a garbage blob answers Dynamic and does not raise" {
     try asserts.equals(kindText(routeKindOf("garbage", "/x")), "Dynamic");
-    try asserts.equals(kindText(routeKindOf("/x|Q\n/x|S|extra", "/x")), "Dynamic");
+    try asserts.equals(
+        kindText(routeKindOf("/x|Q\n/x|S|extra", "/x")),
+        "Dynamic",
+    );
     try asserts.equals(parseKinds("garbage").length, 0);
 }
 

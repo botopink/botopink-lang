@@ -31,9 +31,32 @@ fn roundTrips(rules: PathRules, href: string) -> bool {
 }
 
 test "routing: clientHref inverts canonicalize over twenty paths" {
-    val underDocs = ["/docs", "/docs/about", "/docs/a/b/c", "/docs/search?q=a%20b&x=1", "/docs/a%20b", "/docs/a%252Fb", "/docs/caf%C3%A9", "/docs/guide#install", "/docs/blog/2026/post-1"];
-    val underSlash = ["/docs/", "/docs/about/", "/docs/a/b/", "/docs/q/?page=2"];
-    val noBase = ["/", "/about", "/a/b", "/x?y=1#h", "/a%20b", "/users/42", "/assets/app.js"];
+    val underDocs = [
+        "/docs",
+        "/docs/about",
+        "/docs/a/b/c",
+        "/docs/search?q=a%20b&x=1",
+        "/docs/a%20b",
+        "/docs/a%252Fb",
+        "/docs/caf%C3%A9",
+        "/docs/guide#install",
+        "/docs/blog/2026/post-1",
+    ];
+    val underSlash = [
+        "/docs/",
+        "/docs/about/",
+        "/docs/a/b/",
+        "/docs/q/?page=2",
+    ];
+    val noBase = [
+        "/",
+        "/about",
+        "/a/b",
+        "/x?y=1#h",
+        "/a%20b",
+        "/users/42",
+        "/assets/app.js",
+    ];
     var n = 0;
     for (underDocs) { h ->
         if (roundTrips(docs(), h)) n = n + 1;
@@ -44,7 +67,10 @@ test "routing: clientHref inverts canonicalize over twenty paths" {
     for (noBase) { h ->
         if (roundTrips(bare(), h)) n = n + 1;
     };
-    try asserts.equals(underDocs.length + underSlash.length + noBase.length, 20);
+    try asserts.equals(
+        underDocs.length + underSlash.length + noBase.length,
+        20,
+    );
     try asserts.equals(n, 20);
 }
 
@@ -82,17 +108,32 @@ test "routing: percent-decoding happens once" {
 test "routing: the redirect table is source|destination|permanent" {
     val rs = [
         RedirectRule(source: "/old", destination: "/new", permanent: true),
-        RedirectRule(source: "/blog/:slug", destination: "/posts/:slug", permanent: false),
+        RedirectRule(
+            source: "/blog/:slug",
+            destination: "/posts/:slug",
+            permanent: false,
+        ),
     ];
-    try asserts.equals(writeRedirectTable(rs), "/old|/new|1\n/blog/:slug|/posts/:slug|0");
+    try asserts.equals(
+        writeRedirectTable(rs),
+        "/old|/new|1\n/blog/:slug|/posts/:slug|0",
+    );
     try asserts.equals(writeRedirectTable([]), "");
 }
 
 test "routing: parseRedirectTable(writeRedirectTable(rs)) recovers every field" {
     val rs = [
         RedirectRule(source: "/old", destination: "/new", permanent: true),
-        RedirectRule(source: "/blog/:slug", destination: "/posts/:slug", permanent: false),
-        RedirectRule(source: "/a", destination: "https://example.com/b?c=d", permanent: true),
+        RedirectRule(
+            source: "/blog/:slug",
+            destination: "/posts/:slug",
+            permanent: false,
+        ),
+        RedirectRule(
+            source: "/a",
+            destination: "https://example.com/b?c=d",
+            permanent: true,
+        ),
     ];
     val back = parseRedirectTable(writeRedirectTable(rs));
     try asserts.equals(back.length, 3);
@@ -100,10 +141,14 @@ test "routing: parseRedirectTable(writeRedirectTable(rs)) recovers every field" 
     while (i < rs.length) {
         val a = rs
             .at(i)
-            .unwrapOr(RedirectRule(source: "?", destination: "?", permanent: false));
+            .unwrapOr(
+                RedirectRule(source: "?", destination: "?", permanent: false),
+            );
         val b = back
             .at(i)
-            .unwrapOr(RedirectRule(source: "!", destination: "!", permanent: true));
+            .unwrapOr(
+                RedirectRule(source: "!", destination: "!", permanent: true),
+            );
         assert a.source == b.source;
         assert a.destination == b.destination;
         assert a.permanent == b.permanent;
@@ -118,7 +163,9 @@ test "routing: a malformed redirect line is skipped" {
 
 test "routing: a bar in a redirect source or destination is refused, naming the rule" {
     try asserts.throwsWith({ ->
-        writeRedirectTable([RedirectRule(source: "/a|b", destination: "/c", permanent: true)]);
+        writeRedirectTable(
+            [RedirectRule(source: "/a|b", destination: "/c", permanent: true)],
+        );
         0;
     }, "routing: url_rules: the redirect `/a|b` -> `/c` holds a `|` or a newline");
 }

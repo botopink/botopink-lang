@@ -28,10 +28,14 @@ test "routing: the wire format round-trips all eight kinds, field by field" {
     while (i < xs.length) {
         val a = xs
             .at(i)
-            .unwrapOr(RouteEntry(kind: "?", pattern: "?", slot: "?", verb: "?"));
+            .unwrapOr(
+                RouteEntry(kind: "?", pattern: "?", slot: "?", verb: "?"),
+            );
         val b = back
             .at(i)
-            .unwrapOr(RouteEntry(kind: "!", pattern: "!", slot: "!", verb: "!"));
+            .unwrapOr(
+                RouteEntry(kind: "!", pattern: "!", slot: "!", verb: "!"),
+            );
         assert a.kind == b.kind;
         assert a.pattern == b.pattern;
         assert a.slot == b.slot;
