@@ -353,6 +353,13 @@ every later call site sends cmd 3 alone with its own capture. Comptime
 - **Output cache.** Executions are content-keyed and cached under
   `.botopinkbuild/runtime-cache/`. Keys ignore toolchain versions — delete the dir
   after upgrading node/erl.
+- **`.beam` cache of `botopink test --target erlang`.** `precompileErlang`
+  (`modules/compiler-cli/src/cli/test_cmd.zig`) keeps every compiled `.beam` in
+  `${XDG_CACHE_HOME:-$HOME/.cache}/botopink/beam/`, shared by every checkout,
+  worktree and gate of the machine. Its key does include the OTP / compiler
+  versions, and a hit is relocated to the run's own path, byte for byte what the
+  compile writes there; `botopink clean` does not touch it, and each run reaps
+  one random shard (entries unused for 7 days).
 
 ### General
 
