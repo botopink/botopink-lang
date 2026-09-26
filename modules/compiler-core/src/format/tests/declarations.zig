@@ -943,3 +943,30 @@ test "format: type alias ---- plain, generic and pub round-trip" {
         \\type Handler = fn(string) -> ?i32;
     );
 }
+
+// Front 20 — the unannotated `declare fn` (a delegate) prints its generic list
+// and a whole return type, and a behavior `val` member its whole type; before,
+// the delegate had a one-token return and the member a one-identifier type.
+test "format: declare fn ---- unannotated generics, discard param and generic return round-trip" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\pub declare fn field<T, F>(obj: T, comptime name: string) -> F;
+        \\
+        \\pub declare fn getContext<T>(comptime _: type) -> Component<T, any>;
+        \\
+        \\declare fn marker(comptime decl: @Decl);
+    );
+}
+
+test "format: behavior ---- val members keep their full type" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\pub behavior Decl {
+        \\    val kind: DeclKind;
+        \\    val fields: Field[];
+        \\    val methods: Array<Method>;
+        \\    val parent: ?Decl;
+        \\    val pick: (i32 | string)[];
+        \\
+        \\    fn fail(self: Self, message: string);
+        \\}
+    );
+}

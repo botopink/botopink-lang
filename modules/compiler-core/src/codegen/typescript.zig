@@ -182,7 +182,7 @@ const Builder = struct {
         var members: std.ArrayListUnmanaged(js.TsMember) = .empty;
         for (i.fields) |f| try members.append(self.b.arena, .{ .field = .{
             .name = f.name,
-            .type = namedType(f.typeName),
+            .type = try self.typeRef(f.typeRef),
         } });
         for (i.methods) |m| {
             if (m.is_default) continue;
@@ -266,7 +266,7 @@ const Builder = struct {
         if (!d.isPub) return .none;
         const ps = try self.b.arena.alloc(js.TsParam, d.params.len);
         for (d.params, 0..) |p, i| ps[i] = .{ .name = p.name, .type = try self.typeRef(p.typeRef) };
-        const ret = try self.b.typePtr(if (d.returnType) |r| namedType(r) else js.TsType{ .name = "void" });
+        const ret = try self.b.typePtr(if (d.returnType) |r| try self.typeRef(r) else js.TsType{ .name = "void" });
         return .{ .type_alias = .{
             .name = d.name,
             .type = .{ .func = .{ .params = ps, .ret = ret } },

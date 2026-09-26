@@ -12,9 +12,8 @@
 # 2026-09-20 with the formatter at this commit:
 #
 #   libs/std                          src/path.bp:82 and src/querystring.bp:38 — method chains
-#                                     decision 65 opens (C-14 / 09's reformat); src/builtins.d.bp:116
-#                                     `fn await(self: Self) -> Result<T, E>;` does not parse
-#                                     (C-11's parser defect — `await` as a method name, 01 step 11 / 08)
+#                                     decision 65 opens (C-14 / 09's reformat); its two `.d.bp` files
+#                                     are canonical and listed below by path (front 20)
 #   examples/generic-loader-binding   src/main.bp — two method chains (decision 65) → C-14
 #   examples/stdlib-tour              src/main.bp — one method chain (decision 65) and two lambda
 #                                     arguments that hug the call (decision 61 rule 1) → C-14
@@ -41,6 +40,8 @@ bin="zig-out/bin/botopink"
 
 TREES=(
     examples/modules
+    libs/std/src/builtins.d.bp
+    libs/std/src/builtins_fns.d.bp
 )
 
 status=0

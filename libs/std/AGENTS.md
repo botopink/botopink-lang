@@ -315,15 +315,16 @@ gone, not aliased (decision 127).
 
 - Stable, additive signatures — renames force snapshot churn.
 - `.d.bp` files stay declarative (no bodies).
-- **Every `.bp` here is at the formatter's canonical form, and `format --check`
-  does not cover all of it.** The default scan is `src/**`, excluding `.d.bp`, so
-  `test/` and `builtins_fns.d.bp` have to be named explicitly:
-  `botopink format --check src/builtins_fns.d.bp test/*.bp`. `builtins.d.bp`
-  cannot be formatted at all — `fn await(self: Self)` in the `Future` behavior
-  is a parse error (`await` is a keyword), which is a parser row, not a
-  formatter one. Front 20 removed the file's other unparseable form: the five
-  intrinsics at the foot (`field` / `trap` / `emit` / `module` / `getContext`)
-  are `pub declare fn … -> …;` now, like every other bodyless fn here.
+- **Both `.d.bp` files are at the formatter's canonical form, and
+  `scripts/format-check.sh` holds them there** (it names
+  `src/builtins.d.bp` and `src/builtins_fns.d.bp`; the rest of `libs/std` is not
+  in its trees yet). `builtins.d.bp` parses whole since front 20: an unannotated
+  `pub declare fn` takes the full signature (`field<T, F>(…) -> F`,
+  `getContext<T>(comptime _: type) -> Component<T, any>`), a behavior `val`
+  member any type (`val fields: Field[];`). The compiler's external scanners read
+  it (`scanDeclareFnExternal`) and stop on a parse failure, and
+  `codegen/tests/builtins.zig` pins that it parses — so a form the parser refuses
+  here reds a test, not a build.
 - No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`.
 - `get`/`set`/`test`/`from`/`assert` are keywords (`new`, `delegate` and `const` are identifiers since 06 N27) — pick other names (`empty`/`at`/`insert`, `matches`, `src`, `asserts`).
 - Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS) — or `asserts.deepEquals`, which renders both sides on the same host.

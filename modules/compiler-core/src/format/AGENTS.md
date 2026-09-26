@@ -122,6 +122,10 @@ printer arm, so the six trees format byte-identically to the parent commit.
 
 ## Layout the formatter keeps (front 12 step 4)
 
+- **A behavior `val` member and a `declare fn` delegate print whole types** — `fmtBehavior`
+  prints `BehaviorField.typeRef` through `fmtTypeRef` (`val fields: Field[];`), and
+  `fmtDelegate` prints the generic list and `fmtReturnTypeRef`
+  (`pub declare fn getContext<T>(comptime _: type) -> Component<T, any>;`) — front 20.
 - **Comments inside a `type`/`behavior` body** — the parser attaches the `//` lines above a
   member to `BehaviorMethod.comments` / `BehaviorField.comments` (and the lines before `}` to
   `bodyComments`), with `""` for a blank source line; the formatter prints them above the
@@ -161,9 +165,8 @@ printer arm, so the six trees format byte-identically to the parent commit.
 directories, `node_modules` and a `reject/<n>.bp` beside its `<n>.expect` (decision 66;
 `modules/compiler-cli/src/cli/format_cmd.zig`). Measured with that walk at HEAD (2026-09-20), the
 reds and their causes: **`libs/std`** — `src/path.bp:82` and `src/querystring.bp:38` are method
-chains decision 65 opens (09's reformat), and `src/builtins.d.bp:116` does not parse (`fn
-await(self: Self) -> Result<T, E>;` — `await` as a method name, C-11's parser defect, not the
-formatter's). **`examples/generic-loader-binding`** (two chains) and **`examples/stdlib-tour`** (one
+chains decision 65 opens (09's reformat); `src/builtins.d.bp` and `src/builtins_fns.d.bp` are
+canonical and in `scripts/format-check.sh` since front 20. **`examples/generic-loader-binding`** (two chains) and **`examples/stdlib-tour`** (one
 chain and two lambda arguments that hug the call, decision 61 rule 1). **`tests/language`** — never
 formatted: `modules/*` 7 of 7 files (C-16's row), `run/` 8 of 15, `test/` 41 of 49; two cells do not
 parse, `run/optional_null_pattern.bp:21` (`null` as a `case` pattern) and `test/case_arms.bp:21`

@@ -826,7 +826,7 @@ fn bindingToRepr(
             var entries: std.ArrayList(FieldMap.Entry) = .empty;
             defer entries.deinit(allocator);
             for (i.fields) |fld| {
-                try entries.append(allocator, .{ .name = fld.name, .value = fld.typeName });
+                try entries.append(allocator, .{ .name = fld.name, .value = try typeRefName(allocator, fld.typeRef) });
             }
             break :blk .{ .interface = .{
                 .ast = "interface_def",

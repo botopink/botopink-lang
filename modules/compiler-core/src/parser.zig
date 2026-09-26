@@ -128,6 +128,10 @@ pub const ParseErrorType = enum {
     /// follows one with a default (`fn f(a: i32 = 1, b: i32)`). Defaults
     /// occupy trailing positions only, mirroring §1G's generic-param rule.
     fnParamDefaultTrailingOnly,
+    /// A `_` parameter in a function that has a body. `_` names no parameter —
+    /// it is a declaration's placeholder (`declare fn f(comptime _: type)`),
+    /// legal only where there is no body to bind it in.
+    discardParamWithBody,
     /// D2 (fn-param-default-expansion §F2) — a positional call argument
     /// follows a named one (`f(host: "x", "y")`). Once the call switches to
     /// named-arg form, the remaining args must also be named (the
@@ -344,6 +348,10 @@ pub const Parser = struct {
     noTrailingLambda: bool = false,
     /// When true, `parsePipelineExpr` will not consume a trailing `catch` operator.
     noTailCatch: bool = false,
+    /// The first `_` parameter of the parameter list parsed last
+    /// (`parseParamList` resets it), for `refuseDiscardParam` — a `_` is
+    /// legal only in a signature with no body.
+    discardParam: ?Token = null,
     /// The static-prefix rule of `use` (front 19 step 1, decision 88): true once
     /// an `if`, `case`, `loop` or `return` of the **current function body** has
     /// been parsed, at any nesting. A `use` seen while it is set is
@@ -1534,8 +1542,15 @@ pub const Parser = struct {
 
     // ── param / type name helpers ─────────────────────────────────────────────
 
+    /// A parameter name — an identifier, or `_`, the placeholder of a bodyless
+    /// declaration (noted in `discardParam` for `refuseDiscardParam`).
     pub fn consumeParamName(this: *This) ParseError!Token {
         if (this.check(.identifier)) return this.advance();
+        if (this.check(.underscore)) {
+            const tok = this.advance();
+            if (this.discardParam == null) this.discardParam = tok;
+            return tok;
+        }
         return ParseError.UnexpectedToken;
     }
 

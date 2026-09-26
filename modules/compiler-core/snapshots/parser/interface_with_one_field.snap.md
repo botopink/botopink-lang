@@ -15,7 +15,9 @@
         "fields": [
           {
             "name": "color",
-            "typeName": "string"
+            "typeRef": {
+              "named": "string"
+            }
           }
         ],
         "trailingComma": false,
