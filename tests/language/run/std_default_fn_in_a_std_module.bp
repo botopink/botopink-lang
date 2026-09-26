@@ -25,7 +25,7 @@
 import {querystring, path, url, collections.Queue} from "std";
 
 pub fn main() {
-    @print(querystring.parse("?a=1&b=2").length);
+    @print(querystring.parse("?a=1&b=2").unwrapOr([]).length);
     @print(path.extname("dir/report.tar.gz"));
     @print(url.parse("https://example.com/a?b=1").host);
     val r = Queue.empty().enqueue(1).enqueue(2).dequeue();

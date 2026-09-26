@@ -150,6 +150,21 @@ fn appendGenericParams(
     try buf.append(gpa, '>');
 }
 
+/// The declared type an import binding aliases (`import {collections.Dict as
+/// D}` → `Dict`), or null when the binding is no aliased type leaf. A type
+/// leaf is capitalised; a function or value leaf is not (camelCase).
+fn typeAliasLeaf(b: comptime_pipeline.TypedBinding) ?[]const u8 {
+    if (b.decl != .use) return null;
+    for (b.decl.use.imports) |imp| {
+        const alias = imp.alias orelse continue;
+        if (!std.mem.eql(u8, alias, b.name)) continue;
+        const leaf = imp.leaf();
+        if (leaf.len == 0 or !std.ascii.isUpper(leaf[0])) return null;
+        return leaf;
+    }
+    return null;
+}
+
 /// Renders the markdown hover card for a resolved top-level binding. Shared by
 /// `hover` (cursor on a botopink symbol) and `hoverCustomRef` (cursor on a
 /// sub-language node whose `ref` resolves to this binding).
@@ -242,7 +257,13 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
             try buf.appendSlice(gpa, b.name);
             try appendGenericParams(gpa, &buf, bdecl.genericParams);
         },
-        else => {
+        else => if (typeAliasLeaf(b)) |leaf| {
+            // Decision 110 — `as` on a type leaf binds a checker-local name
+            // of the declared type, and the card says which.
+            try buf.appendSlice(gpa, b.name);
+            try buf.appendSlice(gpa, " = ");
+            try buf.appendSlice(gpa, leaf);
+        } else {
             const type_str = try renderType(gpa, b.type_);
             defer gpa.free(type_str);
             try buf.appendSlice(gpa, b.name);

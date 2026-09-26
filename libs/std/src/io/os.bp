@@ -26,7 +26,9 @@
 #[@External.Erlang("""(fun() -> {ok, __H} = inet:gethostname(), list_to_binary(__H) end)()""")]
 pub declare fn hostname() -> string;
 
-// Host CPU architecture string — `'x64'`, `'arm64'`, etc.
+// Host CPU architecture string — `'x64'`, `'arm64'`, etc. std's one
+// `arch`: `io.process` declared the same function (`process.arch`) and was
+// folded here.
 // Node: `require('os').arch()`.
 // Erlang: `erlang:system_info(system_architecture)`.
 #[@External.Node("""require('os').arch()""")]

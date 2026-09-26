@@ -204,7 +204,7 @@ test "erlang: std package ---- a String.slice default fn inside a std module" {
         \\import {querystring} from "std";
         \\
         \\fn main() {
-        \\    @print(querystring.parse("?a=1&b=2").length);
+        \\    @print(querystring.parse("?a=1&b=2").unwrapOr([]).length);
         \\}
     , "2\n", &.{
         "std@querystring:parse(<<\"?a=1&b=2\">>)",
@@ -230,7 +230,7 @@ test "erlang: std package ---- the test runner loads a std sibling and refuses a
         \\import {querystring} from "std";
         \\
         \\test "reaches a std module" {
-        \\    assert querystring.parse("?a=1").length == 1;
+        \\    assert querystring.parse("?a=1").unwrapOr([]).length == 1;
         \\}
     , &.{
         // 1 — the loader is emitted at all, and `main/1` calls it.

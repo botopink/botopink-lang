@@ -35,6 +35,12 @@ and a type alias (`01-checker`), and the cell imports `Point as P`, `Pair as Two
 `Dict as D` and runs on all four targets; `modules/import_alias_static_call` covers the alias in
 expression position — an associated call (`P.origin()`) and a unit and a payload variant (`S.Dark`,
 `S.Custom(9)`) — which inference renames to the declared type for the backends.
+Step 6 (decision 110 rule 2, 111 through the namespace) adds `modules/import_std_folder_namespace`
+— `import {io} from "std"` and `io.clock.nowMillis()` beside the leaf `io.clock as clock`, on
+commonJS, erlang and beam, refused on wasm by STD-001 (`wasm.expect`) as the leaf form is — and
+`modules/import_std_type_through_module` — `collections.Dict.empty()`, `collections.Set.fromList`,
+`collections.Queue.fromList` after `import {collections}`, beside `collections.lt()` and an alias
+`D`, on all four targets.
 `00 · 01-checker` step 8 R2 adds `modules/import_type_closure` — `import { User, makeUser }` where
 `User(role: Role)`, `Role` not named, on commonJS/erlang.
 Front 24's type aliases (decision 118 rule 1) add `run/type_alias` — `Id`, `Pair<A, B>`, `Ids` and

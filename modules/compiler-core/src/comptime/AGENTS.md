@@ -24,6 +24,7 @@ comptime/
 ├── specialize.zig     ← `SpecializedFn`, `SpecCache`, `specialize()`
 ├── transform.zig      ← `Aggregator` — drives the full transform pass
 ├── alias_erase.zig    ← type aliases erased for the backends (reflective `TypeRef` walk; a return alias of a wrapper stays)
+├── std_namespace.zig  ← decisions 110/111 on the use side: `io.fs.f()` through a std folder namespace and `collections.Dict.empty()` through a module one, rewritten on the parsed program into the one-dot forms (`analyzeSource`, `expandStdImports`)
 ├── template.zig       ← `@Expr` templates: CapturedExpr, PlainArg, ScopeSnapshot, CustomNode, fail diagnostics
 ├── template_eval.zig  ← runtime-backed template body evaluation (through runtime/runtime.zig's dispatcher)
 ├── decorator_eval.zig ← runtime-backed decorator body invocation (erl; the same refusal)
@@ -379,6 +380,21 @@ the alias identifier's own loc, which `transform.zig` splices (a plain name for
 a plain name); `comptime.zig`'s `withImportTypeAliasesErased` drops the alias from
 the import items the backends read, so no backend sees it. A `resolveImports`
 refusal is the module's `typeError`, like one from inference.
+
+**A std namespace reached through two dots (decisions 110 rule 2, 111).**
+`std_namespace.expand` runs on the parsed program before `resolveImports`
+(and in `expandStdImports`, so the reached modules are embedded):
+`import {io} from "std"` names a FOLDER of std (no module of that key, some
+module under it) and `io.fs.f()` becomes the namespace of `io/fs` bound as
+`__bp_ns_io_fs` (a name no source can spell), with the item `io.fs as
+__bp_ns_io_fs` added; `collections.Dict` after `import {collections}` becomes
+`Dict` with the item `collections.Dict` added — the leaf form, so the checker
+and the four backends see nothing new. The folder item leaves the list, only the
+modules the program reaches are imported (STD-001 checks those), a module that
+declares its own top-level `Dict` keeps `collections.Dict` as written, and a
+member that names nothing (`io.nope`) stays and is refused as the unbound
+folder name, located. Cells: `tests/language/modules/import_std_folder_namespace`,
+`import_std_type_through_module`.
 
 **The root of std is pure (decision 106).** `checkStdRootPurity`, first in
 `markStdImports`, refuses an import item whose first segment is `io` in a

@@ -112,7 +112,10 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   Square }` (a section prints `Name { ... }`, decision 8 §5.3b) and
   `pub behavior Mappable<T>` — with the type parameters a written generic type
   always carries (decision 8 §1.1, `appendGenericParams`). `record`, `enum` and
-  `interface` are parse errors; a card must never print one.
+  `interface` are parse errors; a card must never print one. An import binding
+  that aliases a type leaf (`import {collections.Dict as D}`, decision 110)
+  prints `D = Dict` (`typeAliasLeaf`) rather than the constructor's signature:
+  the alias is a checker-local name of the declared type.
 - **`renderType` writes a type the way the source writes it**, not the way the
   checker names it: `array<i32>` → `i32[]`, `optional<i32>` → `?i32`,
   `tuple<…>` → `#(i32, string)` and,

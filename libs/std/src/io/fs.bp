@@ -42,12 +42,16 @@ pub declare fn writeText(
     contents: string,
 ) -> @Result<i32, string>;
 
-// Does the file exist at `path`?
-// Node: `require('fs').existsSync($0)`.
-// Erlang: `filelib:is_file/1` (covers both regular files and
-// directories — matching Node's semantics).
+// Whether a path exists, of any kind: a regular file, a directory, a
+// character or block device (`/dev/null`), a FIFO or a socket. A symbolic
+// link is followed — one whose target is missing is `false`, the answer
+// every read through it would give.
+// Node: `require('fs').existsSync($0)` (a `stat`).
+// Erlang: `file:read_file_info/1` (a `stat`; `filelib:is_file/1`, which it
+// replaces, answers only regular files and directories, so `/dev/null`
+// was `false` on erlang and `true` on commonJS).
 #[@External.Node("""require('fs').existsSync($0)""")]
-#[@External.Erlang("filelib:is_file($0)")]
+#[@External.Erlang("""(case file:read_file_info($0) of {ok, _} -> true; _ -> false end)""")]
 pub declare fn exists(path: string) -> bool;
 
 // List the names of the directory entries at `path` (relative).
@@ -139,6 +143,17 @@ declare fn removeTree(path: string) -> void;
 test "fs.exists is false for a fixed-name path that doesn't exist" {
     val e = exists("/__bp_std_fs_definitely_not_a_real_path_xyz__");
     assert e.negate();
+}
+
+test "fs.exists is true for a path of any kind" {
+    assert exists("/");
+    assert exists("/dev/null");
+    val dir = scratchDir();
+    writeText([dir, "/file.txt"].join(""), "x");
+    assert exists([dir, "/file.txt"].join(""));
+    assert exists(dir);
+    removeTree(dir);
+    assert exists(dir).negate();
 }
 
 test "fs.list of the host '/' resolves Ok" {
