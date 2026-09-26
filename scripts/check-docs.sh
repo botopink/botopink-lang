@@ -3,11 +3,14 @@
 # (`zig build test-docs`).
 #
 # Usage:
-#   scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list]
+#   scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list] [--jobs <n>]
 #
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --doc       a markdown file to check; repeatable, default `docs.md README.md`
 #   --list      print every fence with its directive and exit (compiles nothing)
+#   --jobs      parallel `botopink check` runs; default one per CPU, bounded by
+#               memory (scripts/lib/pool.sh). The report is printed in fence
+#               order whatever the count, so `--jobs 1` prints the same bytes
 #
 # A fence is ```botopink. What the checker does with it is decided by an HTML
 # comment on the line just above the fence (invisible in rendered markdown, and
@@ -34,6 +37,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
 compiler="$repo/zig-out/bin/botopink"
+jobs=""
 docs=()
 have_docs=0    # `${#docs[@]}` on an empty array is an unbound variable in bash 3.2
 list=0
@@ -44,7 +48,9 @@ while [ $# -gt 0 ]; do
         --doc) docs+=("$2"); have_docs=1; shift 2 ;;
         --doc=*) docs+=("${1#*=}"); have_docs=1; shift ;;
         --list) list=1; shift ;;
-        -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+        --jobs) jobs="$2"; shift 2 ;;
+        --jobs=*) jobs="${1#*=}"; shift ;;
+        -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
         *) echo "check-docs.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
@@ -55,6 +61,10 @@ if [ "$list" -eq 0 ]; then
     compiler="$(cd "$(dirname "$compiler")" && pwd)/$(basename "$compiler")"
 fi
 lib_root="$repo/libs"
+# shellcheck source=lib/pool.sh
+. "$here/lib/pool.sh"
+[ -n "$jobs" ] || jobs="$(pool_default_jobs)"
+pool_check_jobs "$jobs" check-docs.sh
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/bp-check-docs.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
@@ -107,6 +117,51 @@ check_project() { # <dir> → prints the first error line on failure
 
 fences=0 ok=0 skipped=0 failed=0
 
+# The `botopink check` runs are deferred and run on the pool (scripts/lib/pool.sh)
+# once every fence is extracted. The report is written in fence order to
+# `$work/report`, each deferred check as a `\001CHECK <k>` placeholder line, and
+# printed after the pool has drained with each placeholder replaced by that
+# check's verdict line — so the bytes are the serial run's whatever `--jobs` is.
+mkdir -p "$work/checks" "$work/inflight"
+nchecks=0
+defer_check() { # <dir> <label> <suffix>  — the verdict line is
+    #   ok:   "  ✓ <label><suffix>"          fail: "  ✗ <label><NC><suffix>  <why>"
+    nchecks=$((nchecks + 1))
+    printf '%s\n%s\n%s\n' "$1" "$2" "$3" > "$work/checks/$nchecks.job"
+    printf '\001CHECK %d\n' "$nchecks"
+}
+check_job() { # <k> — writes <k>.ok, or <k>.fail holding the first error line
+    local dir
+    dir="$(sed -n 1p "$work/checks/$1.job")"
+    if why="$(check_project "$dir")"; then
+        : > "$work/checks/$1.ok"
+    else
+        printf '%s' "$why" > "$work/checks/$1.fail"
+    fi
+}
+run_checks() {
+    [ "$nchecks" -gt 0 ] || return 0
+    export -f check_job check_project strip pool_job pool_admit pool_cpus
+    export work compiler lib_root
+    seq 1 "$nchecks" | xargs -n 1 -P "$jobs" bash -c 'pool_job "$work/inflight" check_job "$0"'
+}
+print_report() {
+    local l k label suffix
+    while IFS= read -r l; do
+        case "$l" in
+            $'\001CHECK '*)
+                k="${l#$'\001CHECK '}"
+                label="$(sed -n 2p "$work/checks/$k.job")"; suffix="$(sed -n 3p "$work/checks/$k.job")"
+                if [ -f "$work/checks/$k.ok" ]; then
+                    printf '  %s✓%s %s%s\n' "$GREEN" "$NC" "$label" "$suffix"; ok=$((ok + 1))
+                else
+                    printf '  %s✗ %s%s%s  %s\n' "$RED" "$label" "$NC" "$suffix" "$(cat "$work/checks/$k.fail" 2>/dev/null)"; failed=$((failed + 1))
+                fi ;;
+            *) printf '%s\n' "$l" ;;
+        esac
+    done < "$work/report"
+}
+
 # A named project's state lives in the filesystem, not in an associative array:
 # the directory `$work/g-<slug>` is its existence, `.name`/`.origin` inside it
 # carry the name and the fence that opened it, and `src/main.bp` is the
@@ -127,19 +182,11 @@ for doc in "${docs[@]}"; do
         case "$kind" in
             "")
                 dir="$work/p-$fences"; project "$dir"; cp "$body" "$dir/src/main.bp"
-                if why="$(check_project "$dir")"; then
-                    printf '  %s✓%s %s:%s\n' "$GREEN" "$NC" "$d" "$line"; ok=$((ok + 1))
-                else
-                    printf '  %s✗ %s:%s%s  %s\n' "$RED" "$d" "$line" "$NC" "$why"; failed=$((failed + 1))
-                fi ;;
+                defer_check "$dir" "$d:$line" "" ;;
             body)
                 dir="$work/p-$fences"; project "$dir"
                 { echo "fn main() {"; sed -r 's/^/    /' "$body"; echo "}"; } > "$dir/src/main.bp"
-                if why="$(check_project "$dir")"; then
-                    printf '  %s✓%s %s:%s (body)\n' "$GREEN" "$NC" "$d" "$line"; ok=$((ok + 1))
-                else
-                    printf '  %s✗ %s:%s%s (body)  %s\n' "$RED" "$d" "$line" "$NC" "$why"; failed=$((failed + 1))
-                fi ;;
+                defer_check "$dir" "$d:$line" " (body)" ;;
             project)
                 name="${rest%% *}"; path="${rest#"$name"}"; path="${path# }"
                 if [ -z "$name" ] || [ -z "$path" ]; then
@@ -163,9 +210,9 @@ for doc in "${docs[@]}"; do
                 printf '  %s✗ %s:%s%s  unknown directive: %s\n' "$RED" "$d" "$line" "$NC" "$directive"; failed=$((failed + 1)) ;;
         esac
     done < <(extract "$repo/$doc" | sed "s#^$repo/##")
-done
+done > "$work/report"
 
-if [ "$list" -eq 1 ]; then exit 0; fi
+if [ "$list" -eq 1 ]; then cat "$work/report"; exit 0; fi
 
 for dir in "$work"/g-*; do
     [ -d "$dir" ] || continue    # no named project in these docs
@@ -174,12 +221,11 @@ for dir in "$work"/g-*; do
         printf '  %s✗ project %s%s  no fence writes src/main.bp (first at %s)\n' "$RED" "$name" "$NC" "$origin"
         failed=$((failed + 1)); continue
     fi
-    if why="$(check_project "$dir")"; then
-        printf '  %s✓%s project %s (%s)\n' "$GREEN" "$NC" "$name" "$origin"; ok=$((ok + 1))
-    else
-        printf '  %s✗ project %s%s (%s)  %s\n' "$RED" "$name" "$NC" "$origin" "$why"; failed=$((failed + 1))
-    fi
-done
+    defer_check "$dir" "project $name" " ($origin)"
+done >> "$work/report"
+
+run_checks
+print_report
 
 printf '\ndocs: %d fences — %d checked, %d skipped, %d failed\n' "$fences" "$ok" "$skipped" "$failed"
 [ "$failed" -eq 0 ] || exit 1
