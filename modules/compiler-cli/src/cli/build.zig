@@ -114,16 +114,108 @@ pub fn run(
     };
     removeStaleArtifacts(arena, io, failed, opts.out_dir, target, cfg.packages);
 
+    // erlang: emitted text is not yet a program — the OTP compiler must accept
+    // it. Every `.erl` this build wrote is compiled (in memory, nothing is
+    // written) and one it refuses fails the build, so "it builds on erlang"
+    // means what it says.
+    const erl_ok = if (target == .erlang)
+        try checkErlang(arena, io, outputs.items, opts.out_dir, cfg.packages)
+    else
+        true;
+
     diagnostics.reportOrphans(arena, loaded.orphans.len);
 
     if (failed.len > 0) {
         diagnostics.reportFailedModules(arena, failed);
         return 1;
     }
+    if (!erl_ok) return 1;
 
     reporter.compiled(reporter.nsToMs(t0.durationTo(t1).nanoseconds));
     return 0;
 }
+
+/// Compile every `.erl` this build wrote with the OTP compiler, in one `erl`
+/// (one process per scheduler, `compile:file(F, [binary, return_errors])` —
+/// in memory, so `out/` holds exactly what it held before), and print each
+/// refusal as `<file>:<line>: <message>`. False when any module is refused, or
+/// when `erl` cannot be run: a build that did not check its output does not
+/// get to say it succeeded.
+///
+/// A build that only transpiles proved nothing about erlang: a module `erlc`
+/// rejects wrote, exited 0, and a `botopink run` / `test` of the same program
+/// then failed on it — and "it builds on that target" was read as evidence.
+/// The warnings of generated code are not reported (`return_errors` alone).
+fn checkErlang(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    outputs: []const bp.codegen.ModuleOutput,
+    out_dir: []const u8,
+    packages: bp.codegen.crossModule.Packages,
+) !bool {
+    var argv = std.ArrayListUnmanaged([]const u8).empty;
+    try argv.appendSlice(arena, &.{ "erl", "-noshell", "-eval", ERLANG_CHECK_EVAL, "-extra" });
+    const first_file = argv.items.len;
+    for (outputs) |o| {
+        if (o.result.failed()) continue;
+        try argv.append(arena, try artifactPath(arena, out_dir, .erlang, packages, o.name, ".erl"));
+        for (o.result.units) |u| {
+            try argv.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}{s}.erl", .{ out_dir, targetSubdir(.erlang), u.atom }));
+        }
+    }
+    if (argv.items.len == first_file) return true;
+
+    const result = std.process.run(arena, io, .{
+        .argv = argv.items,
+        .stdout_limit = .limited(16 * 1024 * 1024),
+        .stderr_limit = .limited(16 * 1024 * 1024),
+    }) catch |err| {
+        const msg = try std.fmt.allocPrint(arena, "`botopink build --target erlang` compiles what it emits with the OTP compiler, and `erl` could not be run: {s}", .{@errorName(err)});
+        reporter.errMsg(msg);
+        reporter.hintMsg("install Erlang/OTP 28+ and put `erl` on PATH");
+        return false;
+    };
+    if (result.stdout.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stdout) catch {};
+    if (result.stderr.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stderr) catch {};
+    const code: u8 = switch (result.term) {
+        .exited => |c| c,
+        .signal, .stopped, .unknown => 1,
+    };
+    if (code == 0) return true;
+    reporter.errMsg("the OTP compiler refused emitted erlang — the build is not a program");
+    return false;
+}
+
+/// The check `checkErlang` runs in one `erl`: the plain arguments are the
+/// files; they are dealt round-robin to one process per online scheduler,
+/// each compiling its share in memory; every refusal is printed as
+/// `<file>:<line>: <message>`; exit 1 when there is any.
+const ERLANG_CHECK_EVAL =
+    \\Files = init:get_plain_arguments(),
+    \\N = erlang:max(1, erlang:system_info(schedulers_online)),
+    \\Indexed = lists:zip(lists:seq(0, length(Files) - 1), Files),
+    \\Parts = [[F || {I, F} <- Indexed, I rem N =:= K] || K <- lists:seq(0, N - 1)],
+    \\Self = self(),
+    \\Loc = fun({L, C}) -> io_lib:format("~p:~p", [L, C]); (none) -> "0"; (L) -> io_lib:format("~p", [L]) end,
+    \\Check = fun(F) ->
+    \\    case catch compile:file(F, [binary, return_errors]) of
+    \\        {ok, _, _} -> [];
+    \\        {ok, _, _, _} -> [];
+    \\        {error, Errors, _} ->
+    \\            [io_lib:format("~ts:~ts: ~ts~n", [File, Loc(L), M:format_error(D)])
+    \\             || {File, Items} <- Errors, {L, M, D} <- Items];
+    \\        Other -> [io_lib:format("~ts: ~p~n", [F, Other])]
+    \\    end
+    \\end,
+    \\Refs = [begin
+    \\            R = make_ref(),
+    \\            spawn(fun() -> Self ! {R, lists:append([Check(F) || F <- Part])} end),
+    \\            R
+    \\        end || Part <- Parts],
+    \\Out = lists:append([receive {R, Lines} -> Lines end || R <- Refs]),
+    \\io:put_chars(Out),
+    \\halt(case Out of [] -> 0; _ -> 1 end).
+;
 
 /// `botopink.json` names a target the compiler does not support.
 pub fn reportUnsupportedTarget(name: []const u8) void {

@@ -9,6 +9,8 @@
 /// Currently only the `commonJS` target runs tests (node); other targets
 /// are pending phases of the `test-blocks` spec.
 const std = @import("std");
+const source_stamp = @import("source_stamp");
+const build_stamp = @import("build_stamp");
 const bp = @import("botopink");
 const reporter = @import("./reporter.zig");
 const config = @import("./config.zig");
@@ -342,6 +344,16 @@ pub fn run(
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
 
+    // A test run against a stale build measures the previous compiler: when
+    // this binary's checkout still exists and its sources have changed since
+    // the binary was built, refuse to start (`source_stamp`). An installed
+    // binary, built elsewhere, has no checkout here and is never refused.
+    if (try source_stamp.checkFresh(gpa, io, build_stamp.source_root, build_stamp.source_hash)) |stale| {
+        var msg_buf: [1024]u8 = undefined;
+        reporter.errMsg(std.mem.trimEnd(u8, source_stamp.render(&msg_buf, stale, "this botopink"), "\n"));
+        return 1;
+    }
+
     // Load project config.
     const proj = config.load(arena, io) catch |err| {
         switch (err) {
@@ -602,6 +614,15 @@ pub fn run(
     // Text mode: how many of those runners exited non-zero — a failing test
     // or a module that did not load; the footer names the count.
     var modules_nonzero: usize = 0;
+    // Text mode: the run's total, summed from each module's own summary line,
+    // printed LAST as `total: <P> passed, <F> failed in <N> module(s)` — the
+    // one line of the run a reader (or `botopink-lib-test`) may take as its
+    // count. A module whose runner printed no summary line (it crashed before
+    // its tests finished) is named and fails the run: its tests are in no
+    // total, so a green-looking sum must not survive it.
+    var text_passed_total: usize = 0;
+    var text_failed_total: usize = 0;
+    var no_summary = std.ArrayListUnmanaged([]const u8).empty;
     // JSON mode accumulates `passed`/`failed` across modules so the final
     // `summary` JSON object reflects the whole run, not the last module only.
     var json_passed_total: usize = 0;
@@ -648,6 +669,7 @@ pub fn run(
             };
             json_passed_total += counts.passed;
             json_failed_total += counts.failed;
+            if (parseModuleSummary(result.stdout) == null) try no_summary.append(arena, o.name);
 
             const code: u8 = switch (result.term) {
                 .exited => |c| c,
@@ -676,13 +698,21 @@ pub fn run(
         const banner = try std.fmt.allocPrint(arena, "----- TESTS OF {s} -----\n", .{o.name});
         reporter.stdout(io, banner);
 
-        // Spawn and wait — stdio is inherited so the runner reports directly.
-        var child = std.process.spawn(io, .{ .argv = argv.items, .environ_map = child_env }) catch |err| {
+        // Spawn and wait — stderr is inherited; stdout is streamed through
+        // as it arrives (the report stays live) and scanned for the module's
+        // summary line, which the run's total is summed from.
+        var child = std.process.spawn(io, .{ .argv = argv.items, .environ_map = child_env, .stdout = .pipe }) catch |err| {
             const msg = try std.fmt.allocPrint(arena, "failed to spawn '{s}': {s}", .{ runner, @errorName(err) });
             reporter.errMsg(msg);
             return 1;
         };
         defer child.kill(io);
+
+        const summary = try teeModuleStdout(arena, io, child.stdout.?);
+        if (summary) |c| {
+            text_passed_total += c.passed;
+            text_failed_total += c.failed;
+        } else try no_summary.append(arena, o.name);
 
         const term = try child.wait(io);
         const code: u8 = switch (term) {
@@ -714,15 +744,6 @@ pub fn run(
         std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
     }
 
-    if (!opts.json and modules_ran > 0) {
-        const footer = try std.fmt.allocPrint(
-            arena,
-            "----- {d} MODULE(S) RAN, {d} EXITED NON-ZERO — each \"N passed, M failed\" above is that module's own -----\n",
-            .{ modules_ran, modules_nonzero },
-        );
-        reporter.stdout(io, footer);
-    }
-
     // `testing.snapshots` writes `<path>.new` on a mismatch or a missing
     // snapshot, and nothing else says so: name every candidate the project
     // holds, after the results (stderr under `--json`, which keeps stdout
@@ -743,6 +764,24 @@ pub fn run(
                 reporter.stdout(io, text.items);
         }
     }
+
+    for (no_summary.items) |name| {
+        const msg = try std.fmt.allocPrint(arena, "the tests of '{s}' printed no summary — the module's runner stopped before its tests finished, so they are in no count", .{name});
+        reporter.errMsg(msg);
+        exit_code = 1;
+    }
+
+    if (!opts.json and modules_ran > 0) {
+        // The run's total is the LAST line of the report, so the last line
+        // is never a module's own count again.
+        const footer = try std.fmt.allocPrint(
+            arena,
+            "----- {d} MODULE(S) RAN, {d} EXITED NON-ZERO — each \"N passed, M failed\" above is that module's own -----\n" ++ TOTAL_PREFIX ++ "{d} passed, {d} failed in {d} module(s)\n",
+            .{ modules_ran, modules_nonzero, text_passed_total, text_failed_total, modules_ran },
+        );
+        reporter.stdout(io, footer);
+    }
+
 
     diagnostics.reportOrphans(arena, src_loaded.orphans.len);
 
@@ -818,6 +857,69 @@ fn snapshotCandidates(arena: std.mem.Allocator, io: std.Io) ![]const []const u8 
 }
 
 const JsonCounts = struct { passed: usize, failed: usize };
+
+/// The first bytes of the run's total — the last line `botopink test` prints
+/// in text mode (`total: <P> passed, <F> failed in <N> module(s)`).
+/// `botopink-lib-test` reads a text-mode cell's count from this line.
+pub const TOTAL_PREFIX = "total: ";
+
+/// A module runner's own summary line, `<P> passed, <F> failed` (the commonJS
+/// and erlang runners both print it last); the last such line of `text`, or
+/// null when there is none.
+fn parseModuleSummary(text: []const u8) ?JsonCounts {
+    var found: ?JsonCounts = null;
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |raw| {
+        const line = std.mem.trimEnd(u8, raw, "\r");
+        if (parseSummaryLine(line)) |c| found = c;
+    }
+    return found;
+}
+
+/// `<P> passed, <F> failed`, exactly.
+fn parseSummaryLine(line: []const u8) ?JsonCounts {
+    const mid = " passed, ";
+    const end = " failed";
+    if (!std.mem.endsWith(u8, line, end)) return null;
+    const at = std.mem.indexOf(u8, line, mid) orelse return null;
+    const passed = std.fmt.parseUnsigned(usize, line[0..at], 10) catch return null;
+    const failed = std.fmt.parseUnsigned(usize, line[at + mid.len .. line.len - end.len], 10) catch return null;
+    return .{ .passed = passed, .failed = failed };
+}
+
+/// Copy a module runner's stdout to ours as it arrives and return the
+/// module's summary (its last `<P> passed, <F> failed` line), or null when it
+/// printed none.
+fn teeModuleStdout(arena: std.mem.Allocator, io: std.Io, src: std.Io.File) !?JsonCounts {
+    var found: ?JsonCounts = null;
+    var line: std.ArrayListUnmanaged(u8) = .empty;
+    var buf: [4096]u8 = undefined;
+    while (true) {
+        const n = src.readStreaming(io, &.{&buf}) catch |err| switch (err) {
+            error.EndOfStream => break,
+            else => return err,
+        };
+        if (n == 0) continue;
+        std.Io.File.stdout().writeStreamingAll(io, buf[0..n]) catch {};
+        for (buf[0..n]) |c| {
+            if (c == '\n') {
+                if (parseSummaryLine(std.mem.trimEnd(u8, line.items, "\r"))) |got| found = got;
+                line.clearRetainingCapacity();
+            } else try line.append(arena, c);
+        }
+    }
+    if (parseSummaryLine(std.mem.trimEnd(u8, line.items, "\r"))) |got| found = got;
+    return found;
+}
+
+test "a module summary line is `<P> passed, <F> failed`, and the last one counts" {
+    try std.testing.expectEqual(@as(?JsonCounts, null), parseModuleSummary("TEST a.bp:1 x\n  ok   x\n"));
+    const c = parseModuleSummary("3 passed, 1 failed\nnoise\n12 passed, 0 failed\n").?;
+    try std.testing.expectEqual(@as(usize, 12), c.passed);
+    try std.testing.expectEqual(@as(usize, 0), c.failed);
+    try std.testing.expectEqual(@as(?JsonCounts, null), parseSummaryLine("x passed, 0 failed"));
+    try std.testing.expectEqual(@as(?JsonCounts, null), parseSummaryLine("1 passed, 0 failed!"));
+}
 
 /// Parse the §T text envelope emitted by the commonJS / erlang runners and
 /// re-emit each test result as a single-line JSON object on stdout. Returns

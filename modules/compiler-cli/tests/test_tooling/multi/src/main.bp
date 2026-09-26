@@ -1,0 +1,13 @@
+// test-tooling fixture (two modules): each runner prints its own
+// `<P> passed, <F> failed`; `botopink test` ends with the run's total.
+// See ../../test_tooling.sh.
+
+mod other;
+
+test "main one" {
+    assert 1 + 1 == 2;
+}
+
+test "main two" {
+    assert 2 + 2 == 4;
+}

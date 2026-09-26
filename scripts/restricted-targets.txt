@@ -46,9 +46,8 @@
 # A restricted cell never consults `known-red-libs.txt`: its verdict is this
 # file's, and only this file's.
 #
-# Measured 2026-09-21 against botopink-lang ef2604af, with each library
-# checkout at its own `feat` tip, by `botopink-lib-test --json
-# --include-unsupported`. 18 cells, 17 members.
+# Every line is measured by `botopink-lib-test --json --include-unsupported`
+# over each library checkout's own `feat` tip. 21 cells, one per member.
 
 # ── examples that declare one target (`02-packaging`'s examples row) ─────────
 jhonstart-counter       erlang    0      00/02-erlang          `"targets": ["commonJS"]`; was `build` while a `fn`-typed field called across a module boundary lowered to an undefined local (`set/2`) — `ExportInfo.fn_fields` carries the field types now (compiler `847add1c`), and the cell passes; the restriction outlived its reason

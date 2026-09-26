@@ -71,7 +71,7 @@ project() {
 }
 
 MAIN_OK='pub fn main() {
-    print("hello");
+    @print("hello");
 }
 '
 BROKEN='pub fn f() {
@@ -93,7 +93,7 @@ expect_out "unbound variable 'noSuchFunction'" "renders the type error"
 # ── C2 — no stale artifact survives a failed build ───────────────────────────
 echo "==> C2 a failed rebuild leaves no stale artifact for run"
 P="$(project c2)"
-printf 'pub fn main() {\n    print("stale build v1");\n}\n' >"$P/src/main.bp"
+printf 'pub fn main() {\n    @print("stale build v1");\n}\n' >"$P/src/main.bp"
 run "$P" build
 expect_code 0 "v1 build"
 printf 'pub fn main() {\n    noSuchFunction();\n}\n' >"$P/src/main.bp"
@@ -105,16 +105,21 @@ expect_code 1 "run after a failed build"
 expect_no_out "stale build v1" "run does not execute the stale artifact"
 
 # ── build does not execute the program it compiles ───────────────────────────
+# erlang is the one target whose build spawns anything: `erl`, compiling every
+# emitted `.erl` in memory with the OTP compiler (`build.zig`, `checkErlang`) —
+# never running the program. With a failing `erl` first on PATH that check
+# cannot run, and the build fails rather than claim what it did not check.
 echo "==> build emits without running the program (no runtime spawn, no runtime cache)"
 SHIMS="$WORK/shims"; SPAWNED="$WORK/spawned.log"
 mkdir -p "$SHIMS"; : >"$SPAWNED"
 for tool in node erl erlc escript wasmtime; do
-  printf '#!/bin/sh\necho "%s $*" >>"%s"\nexit 1\n' "$tool" "$SPAWNED" >"$SHIMS/$tool"
+  # One line per spawn, whatever newlines an argument carries.
+  printf '#!/bin/sh\necho "%s $*" | tr "\\n" " " >>"%s"\necho >>"%s"\nexit 1\n' "$tool" "$SPAWNED" "$SPAWNED" >"$SHIMS/$tool"
   chmod +x "$SHIMS/$tool"
 done
 for target in commonJS erlang beam wasm; do
   P="$(project exec-$target "$target")"
-  printf 'pub fn main() {\n    print("side effect at build time");\n}\n' >"$P/src/main.bp"
+  printf 'pub fn main() {\n    @print("side effect at build time");\n}\n' >"$P/src/main.bp"
   # With the real runtimes on PATH: nothing is executed, so nothing is cached.
   run "$P" build
   expect_code 0 "build --target $target"
@@ -125,9 +130,31 @@ for target in commonJS erlang beam wasm; do
   OUT="$(cd "$P" && PATH="$SHIMS:$PATH" "$BP" build 2>&1)"
   CODE=$?
   set -e
-  expect_code 0 "build --target $target with runtime shims on PATH"
+  if [[ $target == erlang ]]; then
+    expect_code 1 "build --target erlang with a failing erl on PATH (the OTP compiler check cannot run)"
+  else
+    expect_code 0 "build --target $target with runtime shims on PATH"
+  fi
 done
-[[ ! -s "$SPAWNED" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build" || fail "build spawned a runtime: $(tr '\n' ';' <"$SPAWNED")"
+# The OTP compiler check's `erl -noshell -eval Files = …` and the host-module
+# probe (`code:which` over the `@External.Erlang` modules no package ships) are
+# the only spawns allowed.
+OTHER="$(grep -v -e '^erl -noshell -eval Files = init:get_plain_arguments()' -e '^erl -noshell -noinput -eval lists:foreach(fun(M) -> case code:which(M)' "$SPAWNED" || true)"
+[[ -z "$OTHER" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build but the erlang compile check" || fail "build spawned a runtime: $(tr '\n' ';' <<<"$OTHER")"
+[[ "$(grep -c -e '^erl -noshell -eval Files = init:get_plain_arguments()' -e '^erl -noshell -noinput -eval lists:foreach(fun(M) -> case code:which(M)' "$SPAWNED")" -eq 1 ]] && ok "the erlang build ran one erl check, and a failing erl stopped it there" || fail "the erlang build did not run its erl check exactly once"
+
+# ── build --target erlang compiles what it emits ─────────────────────────────
+# A build that only transpiled proved nothing about erlang: a module the OTP
+# compiler rejects was written and the build exited 0. A host template that is
+# not Erlang (`lists:reverse($0 ++)`) is emitted as written, so its module is
+# one `erlc` refuses — the build must fail and name the refusal.
+echo "==> build --target erlang refuses emitted erlang the OTP compiler rejects"
+P="$(project erlcrefused erlang)"
+printf '#[@External.Erlang("lists:reverse($0 ++)")]\ndeclare fn bad(xs: i32[]) -> i32[];\n\npub fn main() {\n    @print(bad([1]).length);\n}\n' >"$P/src/main.bp"
+run "$P" build
+expect_code 1 "build --target erlang of a module erlc rejects"
+expect_out "erlcrefused@main.erl:" "names the refused module"
+expect_out "the OTP compiler refused emitted erlang" "says the build is not a program"
 
 # ── C5 / C6 / C7 — check covers test/, lex and parse errors are located ──────
 echo "==> C6 a lex error renders with file, line and excerpt on build/check/test"
@@ -351,7 +378,7 @@ done
 echo "==> a dependency's .mjs sidecar ships inside --out and the build runs"
 P="$(project sidecar)"
 printf '{ "name": "sidecar", "version": "0.1.0", "target": "commonJS", "dependencies": { "sidelib": { "git": "https://example.invalid/sidelib.git" } } }\n' >"$P/botopink.json"
-printf 'import { greet } from "sidelib";\n\npub fn main() {\n    print(greet());\n}\n' >"$P/src/main.bp"
+printf 'import { greet } from "sidelib";\n\npub fn main() {\n    @print(greet());\n}\n' >"$P/src/main.bp"
 LIBROOT="$WORK/sideroot"; mkdir -p "$LIBROOT/sidelib/src"
 printf '{ "name": "sidelib", "src": "src/", "files": ["sidelib.bp"] }\n' >"$LIBROOT/sidelib/botopink.json"
 # Authored relative to the lib's own build output, like onze's `../../src/onze.mjs`.
@@ -542,7 +569,7 @@ cat >"$WS/examples/acme-app/botopink.json" <<'JSON'
 { "name": "acme-app", "version": "0.0.1", "target": "commonJS", "entry": "main.bp",
   "dependencies": { "acme": { "workspace": true } } }
 JSON
-printf 'import { core } from "acme";\n\npub fn main() {\n    print(core());\n}\n' >"$WS/examples/acme-app/src/main.bp"
+printf 'import { core } from "acme";\n\npub fn main() {\n    @print(core());\n}\n' >"$WS/examples/acme-app/src/main.bp"
 
 run "$WS/modules/acme-web" build
 expect_code 0 "build of a member depending on a sibling"
@@ -595,7 +622,7 @@ mkdir -p "$WORK/pathlib/src"
 printf '{ "name": "pathlib", "files": ["pathlib.bp"] }\n' >"$WORK/pathlib/botopink.json"
 printf 'pub fn answer() -> i32 {\n    return 7;\n}\n' >"$WORK/pathlib/src/pathlib.bp"
 printf '{ "name": "pathdep", "version": "0.1.0", "target": "commonJS", "dependencies": { "pathlib": { "path": "../pathlib" } } }\n' >"$P/botopink.json"
-printf 'import { answer } from "pathlib";\n\npub fn main() {\n    print(answer());\n}\n' >"$P/src/main.bp"
+printf 'import { answer } from "pathlib";\n\npub fn main() {\n    @print(answer());\n}\n' >"$P/src/main.bp"
 run "$P" build
 expect_code 0 "build with a path dependency (no library root involved)"
 
@@ -619,7 +646,7 @@ JSON
 sidecar_app() { # <dir> <dependency-json>
   mkdir -p "$1/src"
   printf '{ "name": "side-app", "version": "0.0.1", "target": "commonJS", "entry": "main.bp",\n  "dependencies": { "side": %s } }\n' "$2" >"$1/botopink.json"
-  printf 'import { mark } from "side";\n\npub fn main() {\n    print(mark());\n}\n' >"$1/src/main.bp"
+  printf 'import { mark } from "side";\n\npub fn main() {\n    @print(mark());\n}\n' >"$1/src/main.bp"
 }
 
 SWS="$WORK/sidews"; rm -rf "$SWS"

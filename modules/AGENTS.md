@@ -36,6 +36,8 @@ modules/
 ├── wasm3/                   ← vendored wasm3 (C, v0.5.0): the wat comptime runtime's engine, in-process
 ├── test-scratch/            ← `test_scratch` — the one way a TEST spells a path it writes to
 │   └── src/root.zig         ← per-process scratch root; given to the test modules only
+├── source-stamp/            ← `source_stamp` — the stale-binary refusal of a library run
+│   └── src/root.zig         ← the content hash of the sources the binaries are built from
 ├── test-shard/              ← the compiler-core test runner: one shard of the suite per process
 │   └── runner.zig           ← zig's default runner restricted by `BOTOPINK_TEST_SHARD=<i>/<n>`
 └── bpmp/                    ← `bpmp` — Boto Pink Package Manager + toolchain manager
@@ -54,6 +56,7 @@ modules/
 | `lib-test-runner/` | `botopink-lib-test` executable | `manifest` only (shells out to `botopink`) | [link](lib-test-runner/AGENTS.md) |
 | `manifest/` | library (the `botopink.json` model) | `std` only | [link](manifest/AGENTS.md) |
 | `test-scratch/` | library (`test_scratch` — per-process scratch paths for tests) | `std` only | [link](test-scratch/AGENTS.md) |
+| `source-stamp/` | library (`source_stamp` — the hash `build.zig` embeds in `botopink` and `botopink-lib-test`; a library run refuses a binary whose checkout moved) | `std` only | [link](source-stamp/AGENTS.md) |
 | `test-shard/` | the compiler-core test binary's runner (`build.zig` `.test_runner`), run as `-Dtest-shards` processes | `std` only | [link](test-shard/AGENTS.md) |
 | `wasm3/` | C sources linked into every native artifact that imports `compiler-core` (`link`), headers for its `@cImport` (`exposeHeaders`) | libc | [link](wasm3/AGENTS.md) |
 | `bpmp/` | `bpmp` executable | `manifest` only (spawns `botopink`) | [link](bpmp/AGENTS.md) |
@@ -69,7 +72,7 @@ zig build                  # build all four executables into zig-out/bin/
 zig build run -- <args>    # build + run the botopink CLI
 zig build test             # compiler-core + language-server + compiler-cli + lib-test-runner + manifest + test-scratch tests
                            # (+ lib-agnostic grep gate over compiler-core/src)
-                           # (+ scripts/check-test-scratch.sh — no cwd-anchored .botopinkbuild path in a test)
+                           # (+ scripts/check-test-scratch.sh — no cwd-anchored .botopinkbuild path in a test or a tests/ file)
 zig build test -Dtest-filter=<substr>
 zig build test -Dtest-shards=<n>   # compiler-core split across n processes (default: CPUs, at most 8; 1 = one process)
 zig build test-bpmp        # bpmp unit tests          (not part of `test`)

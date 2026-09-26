@@ -391,7 +391,7 @@ test "infer error: template body not expandable by the V1 driver (F6)" {
 /// which silently hides template-evaluation failures.
 fn assertCompilesOk(comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(loc);
+    const build_root = h.buildRootPathFromSrc(io, loc);
     var session = try comptimeMod.compile(
         std.testing.allocator,
         &.{.{ .path = "", .source = src }},

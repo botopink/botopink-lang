@@ -9,6 +9,8 @@
 #     (commonJS, and erlang when `escript` is on PATH)
 #   • a mixed pass/fail run still runs every test AND exits non-zero
 #   • a run lists every `*.snap.new` snapshot candidate it leaves
+#   • the LAST line of a run is its total, `total: <P> passed, <F> failed in
+#     <N> module(s)` — never the last module's own summary
 #   • botopink-lib-test compiles a library with no test block (`–` when it
 #     compiles, `✗` when it does not)
 #
@@ -90,6 +92,7 @@ failrun() { # failrun <target>
     fail "$1: the try's FAIL line should carry the error string at src/main.bp:25"
   grep -qF "TEST src/main.bp:17 this one passes" <<<"$out" || fail "$1: the TEST line should name src/main.bp"
   grep -q "1 passed, 2 failed" <<<"$out" || fail "$1: expected a 1-pass / 2-fail summary"
+  [[ "$(tail -1 <<<"$out")" == "total: 1 passed, 2 failed in 1 module(s)" ]] || fail "$1: the last line should be the run's total, got: $(tail -1 <<<"$out")"
 }
 failrun commonJS
 if command -v escript >/dev/null 2>&1; then failrun erlang; fi
@@ -120,6 +123,18 @@ set -e
 grep -qxF "  src/__snapshots__/snap/first.snap.new" <<<"$err" || fail "under --json the candidates go to stderr"
 rm -rf "$SNAPWORK"
 
+# ── two modules: two module summaries, then ONE total as the last line ───────
+MULTI="$SCRIPT_DIR/test_tooling/multi"
+for t in commonJS erlang; do
+  if [[ $t == erlang ]] && ! command -v escript >/dev/null 2>&1; then continue; fi
+  echo "==> [multi] botopink test --target $t (two modules: 2 + 1 tests)"
+  out="$( cd "$MULTI" && "$BP_BIN" test --target "$t" )"
+  echo "$out"
+  grep -qx "2 passed, 0 failed" <<<"$out" || fail "$t: main's own summary is missing"
+  grep -qx "1 passed, 0 failed" <<<"$out" || fail "$t: other's own summary is missing"
+  [[ "$(tail -1 <<<"$out")" == "total: 3 passed, 0 failed in 2 module(s)" ]] || fail "$t: the last line should be the run's total, got: $(tail -1 <<<"$out")"
+done
+
 # ── botopink-lib-test compiles a library that has no test block ──────────────
 echo "==> [libs] a test-less library is still compiled: – when it compiles, ✗ when it does not"
 LIB_TEST_BIN="$REPO_ROOT/zig-out/bin/botopink-lib-test"
@@ -144,6 +159,9 @@ libtest quietok
 [[ $code -eq 0 ]] || fail "a test-less library that compiles must not fail test-libs (exit $code)"
 grep -q '"lib":"quietok","target":"commonJS","status":"no_tests"' <<<"$out" || fail "quietok should be no_tests"
 [[ -d "$LIBWORK/root/quietok/.botopinkbuild/lib-test-build/commonJS" ]] || fail "quietok was not compiled"
+# The compile's output is this run's own directory (`<target>/<id>`), removed
+# when the cell ends — two gates over one checkout never share it.
+[[ -z "$(ls -A "$LIBWORK/root/quietok/.botopinkbuild/lib-test-build/commonJS")" ]] || fail "the compile-only cell left its per-run output behind"
 libtest quietbad
 [[ $code -eq 1 ]] || fail "a test-less library that does not compile must fail test-libs (exit $code)"
 grep -q '"lib":"quietbad","target":"commonJS","status":"fail"' <<<"$out" || fail "quietbad should be fail"
@@ -163,6 +181,65 @@ serial="$(jobsrun 1)"
 pooled="$(jobsrun 4)"
 [[ -n "$serial" ]] || fail "the serial run printed nothing"
 [[ "$serial" == "$pooled" ]] || { diff <(echo "$serial") <(echo "$pooled"); fail "--jobs 4 printed something --jobs 1 did not"; }
+
+# ── a known-red line is a measurement of one library commit ─────────────────
+# `scripts/test-libs.sh` reads `<lib> <target> <commit> <owner> <reason…>`: the
+# cell is a known red only while the library's checkout is at `<commit>`; once
+# the library moves, the line is stale and fails the run, red or green.
+echo "==> [libs] a known-red line pins the library commit it measured; a moved library fails it"
+TEST_LIBS="$REPO_ROOT/scripts/test-libs.sh"
+gitq() { git -C "$LIBWORK/root/quietbad" -c user.email=t@t -c user.name=t "$@" >/dev/null; }
+gitq init -q
+gitq add -A
+gitq commit -q -m one
+pin="$(git -C "$LIBWORK/root/quietbad" rev-parse HEAD)"
+KNOWN="$LIBWORK/known-red.txt"
+redrun() { # redrun — the wrapper over quietbad·commonJS, the known-red list at $KNOWN
+  set +e
+  out="$( BOTOPINK_KNOWN_RED_LIBS="$KNOWN" bash "$TEST_LIBS" --lib-root "$LIBWORK/root" --lib quietbad --target commonJS 2>&1 )"
+  code=$?
+  set -e
+  echo "$out"
+}
+printf 'quietbad commonJS %s probe-front does not parse\n' "${pin:0:12}" >"$KNOWN"
+redrun
+[[ $code -eq 0 ]] || fail "a known red at its pinned commit must not fail the run (exit $code)"
+grep -q "quietbad · commonJS: known red — probe-front" <<<"$out" || fail "the cell should read as a known red"
+printf 'quietbad commonJS probe-front does not parse\n' >"$KNOWN"
+redrun
+[[ $code -eq 1 ]] || fail "a known-red line that names no commit must fail the run (exit $code)"
+grep -q "names no library commit" <<<"$out" || fail "the refusal should say the line names no commit"
+printf 'quietbad commonJS %s probe-front does not parse\n' "${pin:0:12}" >"$KNOWN"
+printf '// moved\n' >>"$LIBWORK/root/quietbad/src/root.bp"
+gitq commit -q -am two
+redrun
+[[ $code -eq 1 ]] || fail "a known-red line whose library moved must fail the run (exit $code)"
+grep -q "known-red line stale — pinned at ${pin:0:12}, but the library is at" <<<"$out" || fail "the refusal should name both commits"
+
+# ── a workspace document that quotes the tool is checked against it ─────────
+echo "==> [libs] a workspace AGENTS.md quoting a stale member list fails the run"
+mkdir -p "$LIBWORK/ws/umbrella/modules/um-core/src" "$LIBWORK/ws/umbrella/modules/um-extra/src"
+printf '{ "name": "umbrella", "workspaces": ["modules/*"] }\n' >"$LIBWORK/ws/umbrella/botopink.json"
+for m in um-core um-extra; do
+  printf '{ "name": "%s", "version": "0.0.1", "src": "src/", "files": ["um.bp"] }\n' "$m" >"$LIBWORK/ws/umbrella/modules/$m/botopink.json"
+  printf 'pub mod um;\n' >"$LIBWORK/ws/umbrella/modules/$m/src/root.bp"
+  printf 'pub fn one() -> i32 {\n    return 1;\n}\n' >"$LIBWORK/ws/umbrella/modules/$m/src/um.bp"
+done
+wsrun() {
+  set +e
+  out="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --bin "$BP_BIN" --lib-root "$LIBWORK/ws" --target commonJS 2>&1 )"
+  code=$?
+  set -e
+  echo "$out"
+}
+printf 'The refusal: `run this command inside one of its members: um-core,\num-extra`.\n' >"$LIBWORK/ws/umbrella/AGENTS.md"
+wsrun
+[[ $code -eq 0 ]] || fail "a quote that agrees with the tool must not fail the run (exit $code)"
+printf 'The refusal: `run this command inside one of its members: um-core`.\n' >"$LIBWORK/ws/umbrella/AGENTS.md"
+wsrun
+[[ $code -eq 1 ]] || fail "a quote that dropped a member must fail the run (exit $code)"
+grep -q "umbrella/AGENTS.md:1: the workspace refusal is quoted with the members \`um-core\`, but the tool prints \`um-core, um-extra\`" <<<"$out" ||
+  fail "the refusal should name the file, the quote and the tool's list"
 
 # ── a library ships its erlang host module ───────────────────────────────────
 # `#[@External.Erlang("host", "fn")]` lowers to `host:fn(…)`. `host` is a module
