@@ -52,7 +52,7 @@
 
 # ── examples that declare one target (`02-packaging`'s examples row) ─────────
 emilia-card             erlang    0      02-packaging          `"targets": ["commonJS"]`; the erlang row is green today — the restriction outlived its reason
-jhonstart-counter       erlang    build  00/02-erlang          `"targets": ["commonJS"]`; a `fn`-typed field called across a module boundary lowers to an undefined local (`set/2`) — `collectImportedTypes` copies an imported record's field NAMES without their types, so the fn-typed-field arm never fires. Repro: jhonstart `repro/erlang-imported-fn-field/`
+jhonstart-counter       erlang    0      00/02-erlang          `"targets": ["commonJS"]`; was `build` while a `fn`-typed field called across a module boundary lowered to an undefined local (`set/2`) — `ExportInfo.fn_fields` carries the field types now (compiler `847add1c`), and the cell passes; the restriction outlived its reason
 jhonstart-todo          erlang    0      04-jhonstart          `"targets": ["commonJS"]`; was `build` while the example wrote bare `print(…)`, which type-checks everywhere and only commonJS lowers — jhonstart `bef57e2` spells it `@print`, and the cell now passes 3/3
 rakun-example           erlang    0          02-packaging          `"targets": ["commonJS"]`; no `test {}` block — `botopink build --target erlang` is clean
 rakun-container-example erlang    0          03-rakun/F06          `"targets": ["commonJS"]`; the container showcase F06 added — no `test {}` block, and it compiles on erlang

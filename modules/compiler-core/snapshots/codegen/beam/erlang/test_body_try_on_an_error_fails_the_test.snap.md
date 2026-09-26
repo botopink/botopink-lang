@@ -63,6 +63,7 @@ passing() ->
 '__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
 '__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
 '__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(undefined, _) -> "null";
 '__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
 
@@ -80,7 +81,7 @@ passing() ->
     %% io:format/io:put_chars calls land inside the fence
     %% sequentially via the group leader (no explicit capture
     %% needed for the sync erlang shape).
-    io:format("TEST ~s ~s~n", [Loc, Name]),
+    io:format("TEST ~ts ~ts~n", [Loc, Name]),
     io:format("----- RUN LOG -----~n```logs~n", []),
     %% §T duration: monotonic millisecond clock around Fun(); the
     %% delta lands on its own `  duration <ms>ms` line between the
@@ -102,13 +103,13 @@ passing() ->
     io:format("  duration ~pms~n", [DurMs]),
     case Outcome of
         ok ->
-            io:format("  ok   ~s~n", [Name]),
+            io:format("  ok   ~ts~n", [Name]),
             ok;
         {fail, FMsg, FLoc} when is_binary(FMsg) ->
-            io:format("  FAIL ~s  (~s)  at ~s~n", [Name, FMsg, FLoc]),
+            io:format("  FAIL ~ts  (~ts)  at ~ts~n", [Name, FMsg, FLoc]),
             fail;
         {fail, FMsg, FLoc} ->
-            io:format("  FAIL ~s  (~p)  at ~s~n", [Name, FMsg, FLoc]),
+            io:format("  FAIL ~ts  (~tp)  at ~ts~n", [Name, FMsg, FLoc]),
             fail
     end.
 

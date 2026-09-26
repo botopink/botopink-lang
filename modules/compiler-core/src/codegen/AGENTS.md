@@ -605,6 +605,68 @@ codegen/
 
 ### erlang
 
+- **Variant constructors** (`Shape.Rect(height: 2, width: 5)`): a labelled
+  argument fills the slot of the field it names (`variant_fields`, the declared
+  fields a `case` pattern's labels already read), as a record constructor's
+  does — built positionally it was `{…rect, 2, 5}` and
+  `run/labelled_arguments.bp` printed `205` for `502`. The beam twin is
+  `lowerTaggedTuple`'s `variantDeclOf`.
+- **A string literal is its UTF-8 bytes**: `erl_emitter.writeStringFromLexeme`
+  writes `\u{…}` as the code point's UTF-8 bytes and a raw byte ≥ 0x80 as
+  `\x{HH}`, on erlang and beam alike. A plain `<<"\x{2028}">>` or `<<"ç">>`
+  keeps one byte per character — `"\u{2028}"` was `<<40>>`, `"\u{1f600}"`
+  `<<0>>` — so `"ç" == "\u{e7}"` held only by accident and
+  `escape.jsString("f(x)")` answered `f x ` (01-std's handover).
+- **A `return` inside a loop's body leaves the function** (`returnNode`): the
+  body is a fun (`lists:foreach`, the named `__Loop`), whose value is not the
+  function's, so inside one (`in_loop_body`, reset by a lambda, whose `return`
+  is its own) `return v` is `erlang:throw({'__bp_try', V})` and the function's
+  `guardTry` answers `V` — the path a failing `try` with no rest to nest
+  already took. Only a body `fnForms` guards (`fn_guarded`) throws; a
+  generator scope and a `test` body keep their own shapes. The value was
+  dropped: `firstUnder(12, 10)` answered `12` (commonJS/wasm `8`), and a
+  `throw` (a `return {error, E}` after the transform) in an `if` in a `while`
+  bound the loop's variables in one arm only — `variable unsafe in 'case'`.
+  The beam twin is `emitLoopReturn` (`in_loop_lambda`), caught by
+  `guardLoopCall`, which `bodyPropagates` now asks for on any `return`.
+- **A `@Result`/`@Option` op's fun names nothing a program writes**
+  (`resultOptionNode`): `(fun(__BpR) -> case __BpR of {ok, __BpV<n>} -> …)`,
+  the payload numbered per function (`opt_seq`, reset with `try_seq`) because a
+  fun nested in the first clause (a `map`'s lambda) sees the outer one bound.
+  They were `R`/`O`/`V`, and a program's `v` is `V`: the case pattern MATCHED
+  the bound variable, so `val v = load(5); v.unwrapOr(1)` answered `1`.
+- **A top-level `fn` named as a value** (`apply(one)`, `xs.map(inc)`) is its
+  fun (`nameRefNode` → `fileFnArity`): `fun one/0`, or from a type's module a
+  `fun(__BpA0…) -> file:one(…) end`; a name declared at two arities stays a
+  variable. It was the unbound variable `One`, and `erlc` refused the whole
+  module. The beam twin is a `make_fun3` over the function's own entry
+  (`top_fns`), which was `{unresolved_identifier, one}`.
+- **A field of function type of an imported record** (`c.set(5)`):
+  `ExportInfo.fn_fields` (`crossModule.zig`) carries which of a `pub` record's
+  fields are functions; `collectImportedTypes` registers them like a local
+  record's (`fn_typed_fields`), and a receiver whose record was never imported
+  by name (`cell(3).set(5)`) reaches `programFnFieldName` — some `pub` record of
+  the program declares that fn field and none a method of the name — which
+  applies `'__bp_field'(C, set)`. Names alone crossed before, and the call was
+  a local `set(C, 5)` no module defines.
+- **`x is Enum.Variant`** tests that variant's tag (and arity) alone —
+  `typeTestNode` on erlang, `emitTypeTestBranchOn` on beam; the whole-enum arm
+  had no case for a dotted name, so both answered `false` for every value.
+- **beam `@todo` / `@panic`** raise `erlang:error({todo, Msg})` /
+  `{panic, Msg}`, the erlang backend's reason, with `builtins_fns.d.bp`'s
+  default message; `@todo()` raised the bare atom `undef`, which read as a
+  missing function (`{undef, main:notReady/0}`, reported by C-16).
+- **A bare `break` at a generator fn's own level** (decision 103) ends the
+  generator (`genStopThrow`): `throw({'__bp_gen_stop', Key})`, which
+  `genEndCatch` answers with `ok` — a second catch clause written only when
+  the body has one (`gen_stop_used`). It threw the loop's `'__bp_break'`,
+  which nothing caught (`run/generator_break_value.bp`).
+- **Calling the result of a call** (`adder(3)(4)`, `cc.calleeExpr` with
+  `callee == ""`): `(adder(3))(4)` — `applyParen` over the callee expression's
+  node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which
+  `erlc` refuses (`test/curried_call.bp`, C-09's backend half). The beam twin
+  parks the value in a y-slot (`countLocalsInExpr` reserves it) and
+  `call_fun`s it, as a module-level `val` holding a fun is applied.
 - **One module per `type` — policy 3 of `13-module-identity`.** A source file
   emits its own module plus one per `type` it declares
   (`crossModule.typeAtom` → `myapp@main@@Person`, `std@dict@@Dict` — decision 109; `test@main@@Person` in the snapshots, which compile under the implicit test manifest), carried out
@@ -1327,8 +1389,10 @@ codegen/
   through `'__bp_render'/1`: `{record, "Point", [{"x", 1}, …]}` →
   `Point(x: 1, y: 2)`, `{variant, "Shape.Dot", []}` → `Shape.Dot`, and
   `{text, …}` → a `Display` implementation's own string, nested containers
-  included. Everything else — a Result `{ok, V}`, a host tuple, a plain atom,
-  `true`/`false`/`undefined` — keeps the `~p` it had. Numeric formatting is
+  included. **Absent — the atom `undefined` — prints `null`** (decision 47's
+  one spelling, a `'__bp_show'(undefined, _)` clause; it printed the atom's
+  name). Everything else — a Result `{ok, V}`, a host tuple, a plain atom,
+  `true`/`false` — keeps the `~p` it had. Numeric formatting is
   `~p`: `1.0` prints `1.0`, decision 8 §7's text on every backend.
 - **Every `type` has a module, and it answers about its own values** (half 3):
   `recordIdentityForms` / `enumIdentityForms` put `'__bp_format'/1` — and
@@ -1507,8 +1571,9 @@ codegen/
   (`{record, "Point", [{"x", 1}, …]}` → `Point(x: 1, y: 2)`,
   `{variant, "Shape.Dot", []}` → `Shape.Dot`, `{text, …}` → a `Display`
   implementation's own string) with `'-bp_render_pair-'/1` rendering one
-  `label: value` through `'__bp_show'/2`. Everything else is `~p`: an integer, a
-  float (which keeps its `.0`), `true`/`false`/`undefined`, a `@Result`
+  `label: value` through `'__bp_show'/2`. Absent (`undefined`) is `null`
+  (decision 47; the `absent` label). Everything else is `~p`: an integer, a
+  float (which keeps its `.0`), `true`/`false`, a `@Result`
   `{ok, V}`, a host tuple, and any atom no loadable module formats.
   It replaced the per-value format-verb machinery (`'__bp_print_fmt'/1` +
   `'__bp_print_sep'/1`, `~ts` for a binary and `~p` for everything else), which
@@ -1768,10 +1833,12 @@ codegen/
   functions): an `@External.Beam` `.S` body renders at the call site; an
   `@External.Erlang("mod", "sym")` is a `call_ext`; an `@External.Erlang`
   template (`"base64:encode($0)"`, arity branches included) is Erlang source,
-  evaluated at run time by the synthesised `'__bp_erl_eval'(Source, Bindings)`
-  (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`)
-  — correct but interpreted on every call (≈ 50× a direct call); its cost and
-  the open keep-or-compile decision are in [`beam/AGENTS.md`](beam/AGENTS.md).
+  **compiled at build time** (BR5) into a helper `'__bp_tpl_<k>'` through the
+  comptime runtime's Erlang reader and BEAM lowering (`compiledTemplate`,
+  markers as the helper's parameters `__BpSelf`/`__BpAN`); only a template the
+  lowering refuses (`receive`, `!`, `try … of`, …) still goes through the
+  run-time `'__bp_erl_eval'(Source, Bindings)`. Details and the re-measured
+  cost in [`beam/AGENTS.md`](beam/AGENTS.md).
   Decision 64's beam half, for the plain form only: a `pub` host-backed fn
   whose erlang target is `module:symbol` (`hostWrapperRef`, over
   `hostDeclareWrapperNeeded`) gets a wrapper of its own — reserved, exported,
@@ -1788,12 +1855,19 @@ codegen/
   interface chain (`primIfaceChain`: `I32 → Signed → Integer → Number`, …):
   an `@External.Beam` template, then an `@External.Erlang("mod", "sym")` host
   call, then the inline BEAM-irreducible arms (`emitPrimInline`), then an
-  `@External.Erlang` template through `'__bp_erl_eval'/2`, then a bodied
+  `@External.Erlang` template compiled into a `'__bp_tpl_<k>'` helper (BR5),
+  then a bodied
   interface `default fn` (`Array.fold`, `Number.clamp`) emitted on demand as
   `'<Iface>_<method>'(Self, …)` (`callIfaceDefault`/`emitNeededDefaults`,
   omitted trailing params filled from their declared defaults). Inside such a
   body inference recorded nothing, so `self`'s kind (`self_prim_kind`) drives
-  the lowering of `self.m(…)`/`self.length`.
+  the lowering of `self.m(…)`/`self.length`. The drain resumes at
+  `emitted_defaults`: it runs again after every shim pass, and restarting at 0
+  wrote each default a second time (`'Array_all'/2` twice — `erlc +from_asm`
+  refuses the module with "label(s) referenced but not defined"), which any
+  program reaching a default and a shim hit. Last, the method's **host
+  spelling** (`toUpperCase` for `String.toUpper`) reaches the method it
+  spells, through erlang's `primNodeAliasIn`.
 - **A primitive method on an untyped receiver** (`ensurePrimShim`,
   `emitPrimShimFn`, `primKindDeclares`): a lambda parameter carries no declared
   type, so inference records no instance lowering for it and
@@ -2482,7 +2556,10 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
    dispatch and the inline switch.
 3. **Inline switch** — what templates can't express:
    - beam_asm: array `contains`/`len`/`prepend`/`push`/`append`/`isEmpty`,
-     2-arg `slice` (`primArraySlice2`, `gc_bif` arithmetic), `at`/`indexOf`/`join`
+     2-arg `slice` (`primArraySlice2`, `gc_bif` arithmetic; an `end` that is
+     `null` — the default `xs.slice(1)` is filled with, or a `?i32` null at run
+     time — is `lists:nthtail/2`, tested at run time unless the operand is a
+     literal; it was `badarith`), `at`/`indexOf`/`join`
      (synthesized helper fns `ensureAtHelper`/`ensureIndexOfHelper`/
      `ensureStringifyHelper`); string `split`, 1-arg `slice`,
      `contains`/`startsWith` (`primCmpAgainstNomatch`). Returning `false` falls
@@ -2491,6 +2568,25 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
    - erlang: array `len`/`length`/`size` → `length/1`, int/float `toString`
      fallback, and BIF-shaped fallbacks for un-annotated default fns
      (`forEach`, `fold`, `drop`, `take`, `toList`).
+4. **Host spelling, last** — erlang and beam resolve a method's
+   `#[@External.Node("<name>")]` spelling (`toUpperCase`, `includes`) to the
+   method it spells (`primNodeAliasIn` in `erlang.zig`, over the process-wide
+   parse of `primitives.bp`), as commonJS (JavaScript's own method) and wasm
+   (`$__str_case`) already answered — only after every other lowering missed,
+   so it can only turn an undefined call into a call. The checker accepts any
+   method name on a primitive receiver (`"x".fooBar()` checks), which is why
+   `test/string_case_conversion.bp` compiled at all; refusing an unknown method
+   is `01-checker`'s.
+
+**The table audited (02 step 7, 2026-09-26):** one call of every method
+`primitives.bp` declares on `Number`/`Integer`/`Signed`/`Float`/`Bool`/`String`/
+`Array` (82 calls, `Array.range`/`Array.repeat` included) compiles on erlang
+and on beam and prints the same 84 lines on both. One method answers on
+neither — nor on commonJS or wasm: **`Array.unique`**, whose prelude body calls
+`prev.unwrapOr(x)` on an option the untyped prelude body never had rewritten to
+`__bp_option_unwrapOr` (erlang `unwrapOr/2 undefined`, beam
+`{unresolved_method, unwrapOr, 2}`). That is how a prelude `default fn` body is
+typed, not a backend lowering.
 
 ## Quick-reference rules
 

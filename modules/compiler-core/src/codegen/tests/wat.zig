@@ -840,9 +840,9 @@ test "wat: tuple ---- an element prints by its shape, positional and labelled" {
 // is the host spelling `primitives.bp` gives it through
 // `#[@External.Node("toUpperCase")]`, which commonJS answers because it is
 // JavaScript's own. `tests/language/test/string_case_conversion.bp` writes it,
-// so both spellings now reach `$__str_case`. KNOWN-WRONG (erlang): the module
-// does not assemble — `function toUpperCase/1 undefined` — and KNOWN-WRONG
-// (beam): an empty RUN LOG. Both are `02-erlang` step 7.
+// so both spellings now reach `$__str_case`. erlang and beam resolve the host
+// spelling to the method it spells (`erlang.zig`'s `primNodeAliasIn`), so the
+// four RUN LOGs agree (`00 · 02-erlang` step 7).
 test "wat: string ---- toUpperCase and toLowerCase answer, under both spellings" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {

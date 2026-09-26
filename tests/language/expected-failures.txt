@@ -141,7 +141,6 @@ erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method 
 # ── §8 host externals ─────────────────────────────────────────────────────────
 
 # ── primitive methods ─────────────────────────────────────────────────────────
-erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
 
 # ── wasm, the third executable target ─────────────────────────────────────────
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only
@@ -163,7 +162,6 @@ erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `
 # fails silently" is gone, because nothing is dropped any more. wasm keeps one
 # line below, and it is a different defect: not the index, but `Array.at` on an
 # array OF arrays.
-erlang   | test/curried_call.bp       | C-09 (backend half) | 01 types it; erlang does not read `calleeExpr` and emits `''(4)`, which `erlc` refuses — the cell does not compile
 
 # ── run-time type identity (front 12 step 4.1) ────────────────────────────────
 # The botopink-level statement of `13-module-identity`: a value knows its own
@@ -209,22 +207,15 @@ erlang   | test/curried_call.bp       | C-09 (backend half) | 01 types it; erlan
 # backends, and `run/index_dict.bp`'s first probe passes everywhere.
 #
 # What is left below is decision 47's spelling of ABSENCE, which is C-18's row
-# and not this one: on erlang and beam an absent optional prints the atom
-# `undefined`, on wasm a `Dict`'s absent `?V` prints `0`. `Array.at` past the
-# end answers `null` on commonJS (`__bp_array_at`) and on wasm (`$__print_null`)
-# since `00 · 04-js` / `05-wasm`. Every line names what it measured.
+# and not this one: on wasm a `Dict`'s absent `?V` over a type parameter prints `0`.
+# `Array.at` past the end answers `null` on commonJS (`__bp_array_at`) and on wasm
+# (`$__print_null`) since `00 · 04-js` / `05-wasm`, and erlang and beam print `null` since
+# `00 · 02-erlang` / `03-beam` (their print preludes write the atom `undefined` as
+# `null`). Every line names what it measured.
 commonJS | run/map_record_field_length.bp | 04-js (the commonJS half of 05-wasm step 9's `map` row) | `ks.at(...)?.length is not a function`, exit 1: with nothing between `es.map({ e -> e.key })` and `ks.at(0)?.length()` the element type is unresolved at the read, and `length` is emitted as a property-then-call. wasm, erlang and beam answer `3`; `run/map_record_field_strings.bp` shows the same read answering once `ks.at(1) ?? "none"` has resolved the type (measured 2026-09-25)
-erlang   | run/index_past_the_end_is_null.bp | C-18 | decision 47: `xs[9]` is `xs.at(9)` and reaches `Array.at`, which answers the atom `undefined` where `null` is owed (commonJS and wasm print `null` since `00 · 04-js` / `05-wasm`)
-beam     | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`, the erlang shape through `erlc +from_asm`
-erlang   | run/index_dict.bp | C-18 | decision 47: the PRESENT key is right (`1`); the two absent probes print the atom `undefined` where `null` is owed. `Dict.at` itself answers correctly — the atom is how an empty optional prints (measured 2026-09-21)
 wasm     | run/index_dict.bp | C-18 | decision 47: the present key is right (`1`); the two absent probes print `0` — `Dict.at`'s `?V` over a type parameter is carried unboxed on wasm (the generic-parameter limit, `src/codegen/wat/AGENTS.md`), so the empty optional is never seen as one
-beam     | run/index_dict.bp | C-18 | decision 47: the erlang shape — `1`, then `undefined` twice
-erlang   | run/index_user_type.bp | C-18 | decision 47: the user type is reached — `m[1]` runs `Matrix.at` and `r["bo"]` runs `Registry.at`, with no compiler change — and ONE thing is left: an absent `?i32` prints the atom `undefined` where `null` is owed. Re-measured 2026-09-21 after C-01 half 3: the array now prints `[3, 4]` WITH decision 8 §7's separator space, so the half of this line that named §7 is gone
 wasm     | run/index_user_type.bp | C-18 (decision 47 on wasm) | the user type is reached and the SHAPE is right — four lines, the slice's length is `2` — but a `?T` whose `T` is not a scalar is carried as a raw value: `m[1]` prints a heap address (`384` at this tip; the number drifts with the layout, the wrongness does not) and `r["bo"]` prints `16777216` for `1`. Spelling the two methods by name (`m.at(1)`, `r.at("bo")`) prints the same four lines byte for byte, which is what says the index is not the defect. Re-measured 2026-09-21 after C-01 half 3
-beam     | run/index_user_type.bp | C-18 | decision 47: the user type is reached, the array prints WITH the separator's space, and the one difference left is the absent `?i32` — the atom `undefined` where `null` is owed. Measured 2026-09-21
-erlang   | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` prints the atom `undefined`, not `null` — `1` / `undefined` / `b` / `undefined`; `Dict.at` and `String.at` themselves answer correctly
 wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` out of `Dict.at` prints as `0` — `1` / `0` / `b` / `null`, exit 0. `s.at(7)` prints `null` since `00 · 05-wasm` spelled the empty `?T` `null` (`$__print_null`); what is left is that `Dict<K, V>.at` answers a `?V` whose `V` is a type parameter, which this backend carries unboxed (no monomorphisation — `src/codegen/wat/AGENTS.md` § the generic-parameter limit), so absence and a present `0` are the same word
-beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `undefined` twice for the two absent probes
 
 
 # ── the module body on wasm and on the BEAM ──────────────────────────────────
@@ -236,24 +227,12 @@ beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `
 # wasm since `00 · 05-wasm` (a `_`-named statement runs in `$__init_globals`,
 # in order with the named `val`s). No line is left.
 
-# ── a labelled argument claims its slot, on erlang ───────────────────────────
-# `run/labelled_arguments.bp` writes a record constructor and an enum variant
-# out of declared order. `docs.md` § Parameters with defaults is the rule — "a
-# parameter the call names by label keeps the argument it was given, whichever
-# position it is in" — and the three backends disagree in three ways, which is
-# why the cell prints an asymmetric `width * 100 + height` rather than an area.
-# The RECORD row is right on all three. The enum-variant row is right on wasm
-# and on commonJS (1.0.10-beta `00 · 04-js`, this branch) and wrong on erlang:
-# `erlang.zig`'s record-constructor path places a labelled argument by field
-# index, and its enum-variant path does not, so `Shape.Rect(height: 2, width: 5)`
-# is built `Rect(2, 5)` and the cell prints `205` where it must print `502`.
-# Exit 0 either way, with nothing said — measured 2026-09-21.
-erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's labelled payload, reported 2026-09-21) | an enum variant's payload is zipped positionally even when every argument is labelled: `205` where the declared order asks for `502`. The record-constructor row of the same cell is right, which is what says it is the variant path and not the label
 
 # ── decision 103 cells on the eager generator lowerings (front 21) ───────────
 # Measured after merging 22-loops (`52843fd5`): commonJS's `function*` and beam
-# run both cells; the eager erlang and wasm generator scopes do not yet.
-erlang   | run/generator_break_value.bp | C-30 (22-loops' eager generator scope) | decision 103: a bare `break` at the level of a generator body is thrown as `'__bp_break'` and never caught by the scope — `ends()` crashes the program after `0127` (`{nocatch,'__bp_break'}`)
+# run both cells, and erlang since `00 · 02-erlang` (a bare `break` at the
+# generator's own level throws `'__bp_gen_stop'`, which the scope catches); the
+# eager wasm generator scope does not yet.
 wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope) | decision 103: every `digits` answers the empty string — the eager generator scope yields nothing into the `for` that reads it (three empty lines)
 
 # ── front 24 (effects by return) — the cells of the steps deferred behind the ─

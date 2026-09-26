@@ -1207,6 +1207,260 @@ test "beam: an enum variant's labelled payload claims its declared slot" {
     , "502\n502\n502\n", &.{});
 }
 
+// A string literal above U+007F — raw in the source or written `\u{…}` — is
+// its UTF-8 bytes on erlang and beam. `erl_emitter.writeStringFromLexeme`
+// wrote `\x{e7}` / a raw `ç` inside a plain `<<"…">>`, which keeps one byte per
+// character (the low 8 bits): `"\u{2028}"` was `<<40>>`, `"\u{1f600}"` `<<0>>`
+// (handed over by `01-std-lib-enablement`, 2026-09-25).
+test "erlang: a non-ASCII string literal is its UTF-8 bytes" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val a = "ç";
+        \\  val b = "\u{e7}";
+        \\  @print(a == b);
+        \\  @print("\u{1f600}" == "😀");
+        \\  @print("a\u{2028}b".length());
+        \\  @print(["ç", "\u{e9}"]);
+        \\  @print("Memória".toUpper());
+        \\}
+    , "true\ntrue\n3\n[\"ç\", \"é\"]\nMEMÓRIA\n", &.{"\\x{C3}\\x{A7}"});
+}
+
+test "beam: a non-ASCII string literal is its UTF-8 bytes" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val a = "ç";
+        \\  val b = "\u{e7}";
+        \\  @print(a == b);
+        \\  @print("\u{1f600}" == "😀");
+        \\  @print("a\u{2028}b".length());
+        \\  @print(["ç", "\u{e9}"]);
+        \\  @print("Memória".toUpper());
+        \\}
+    , "true\ntrue\n3\n[\"ç\", \"é\"]\nMEMÓRIA\n", &.{"\\x{C3}\\x{A7}"});
+}
+
+// A `return` inside a loop's body leaves the FUNCTION (commonJS and wasm
+// answer `firstUnder(12, 10)` = `8`). A loop's body is a fun on erlang
+// (`lists:foreach`, the named `__Loop`) and on beam (`lists:foreach`), so the
+// value is thrown as `{'__bp_try', V}` to the function's guard / the loop's
+// call site — the path a failing `try` takes. erlang answered `12`, and a
+// `throw` (a `return` of `{error, E}` after the transform) inside an `if`
+// inside a `while` did not compile: `variable 'I@2' unsafe in 'case'`. A
+// lambda's own `return` stays its own (the last line).
+test "erlang: a return inside a loop's body leaves the function" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn firstUnder(n: i32, limit: i32) -> i32 {
+        \\  for (0..3) { k -> if (n + k > limit) { return firstUnder(n - 1, limit); }; };
+        \\  return n;
+        \\}
+        \\fn find(xs: Array<i32>, t: i32) -> i32 {
+        \\  var i = 0;
+        \\  while (i < xs.length) { if (xs.at(i).unwrapOr(0) == t) { return i; }; i = i + 1; };
+        \\  return -1;
+        \\}
+        \\fn firstBad(n: i32) -> @Result<i32, string> {
+        \\  var i = 0;
+        \\  var acc = 0;
+        \\  while (i < n) { if (i == 7) { throw "seven"; }; acc = acc + i; i = i + 1; };
+        \\  return acc;
+        \\}
+        \\fn main() {
+        \\  @print(firstUnder(12, 10));
+        \\  @print(find([4, 5, 6], 6));
+        \\  @print(find([4, 5, 6], 9));
+        \\  @print(firstBad(5).unwrapOr(-1));
+        \\  @print(firstBad(9).unwrapOr(-1));
+        \\  @print([1, 2].map({ x -> for (0..2) { k -> if (k == 1) { return x * 10; }; }; return x; }));
+        \\}
+    , "8\n2\n-1\n10\n-1\n[10, 20]\n", &.{"'__bp_try'"});
+}
+
+test "beam: a return inside a loop's body leaves the function" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn firstUnder(n: i32, limit: i32) -> i32 {
+        \\  for (0..3) { k -> if (n + k > limit) { return firstUnder(n - 1, limit); }; };
+        \\  return n;
+        \\}
+        \\fn find(xs: Array<i32>, t: i32) -> i32 {
+        \\  var i = 0;
+        \\  while (i < xs.length) { if (xs.at(i).unwrapOr(0) == t) { return i; }; i = i + 1; };
+        \\  return -1;
+        \\}
+        \\fn firstBad(n: i32) -> @Result<i32, string> {
+        \\  var i = 0;
+        \\  var acc = 0;
+        \\  while (i < n) { if (i == 7) { throw "seven"; }; acc = acc + i; i = i + 1; };
+        \\  return acc;
+        \\}
+        \\fn main() {
+        \\  @print(firstUnder(12, 10));
+        \\  @print(find([4, 5, 6], 6));
+        \\  @print(find([4, 5, 6], 9));
+        \\  @print(firstBad(5).unwrapOr(-1));
+        \\  @print(firstBad(9).unwrapOr(-1));
+        \\  @print([1, 2].map({ x -> for (0..2) { k -> if (k == 1) { return x * 10; }; }; return x; }));
+        \\}
+    , "8\n2\n-1\n10\n-1\n[10, 20]\n", &.{"'__bp_try'"});
+}
+
+// A `@Result`/`@Option` op's fun used the names `R`/`O` and `V`, and a
+// program's own `v` is `V`: Erlang's case pattern MATCHED the bound variable,
+// so `v.unwrapOr(1)` over `{ok, 5}` answered `1` and `o.unwrapOr(9)` raised a
+// `case_clause`; `x.unwrapOr(r)` read the fun's own `R` (other threads saw
+// `beam_ssa_opt` crash on the same shape with a record default).
+test "erlang: a @Result/@Option op does not capture the program's own names" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Conf(name: string, port: i32)
+        \\fn load(n: i32) -> @Result<i32, string> { if (n < 0) { throw "neg"; }; return n; }
+        \\fn conf(n: i32) -> @Result<Conf, string> { if (n < 0) { throw "neg"; }; return Conf(name: "a", port: n); }
+        \\fn main() {
+        \\  val v = load(5);
+        \\  @print(v.unwrapOr(1));
+        \\  val r = 7;
+        \\  @print(load(-1).unwrapOr(r));
+        \\  val o: ?i32 = 3;
+        \\  val u = o;
+        \\  @print(u.unwrapOr(9));
+        \\  @print(v.map({ x -> load(x + 1).unwrapOr(0) }).unwrapOr(0));
+        \\  val c = conf(-1);
+        \\  @print(c.unwrapOr(Conf(name: "dflt", port: 1)).port);
+        \\}
+    , "5\n7\n3\n6\n1\n", &.{"__BpV0"});
+}
+
+// A top-level `fn` named as a value is its fun: `fun one/0` on erlang, a
+// `make_fun3` over the function's entry on beam. erlang read `One` as an
+// unbound variable (`erlc` refused the whole module; a library front found it),
+// beam aborted `{unresolved_identifier, one}`.
+test "erlang: a top-level fn named as a value is its fun" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn one() -> i32 { return 1; }
+        \\fn inc(x: i32) -> i32 { return x + 1; }
+        \\fn apply(f: fn() -> i32) -> i32 { return f(); }
+        \\fn apply1(f: fn(x: i32) -> i32, v: i32) -> i32 { return f(v); }
+        \\fn main() {
+        \\  @print(apply(one));
+        \\  @print(apply1(inc, 4));
+        \\  val g = inc;
+        \\  @print(g(9));
+        \\  @print([1, 2].map(inc));
+        \\}
+    , "1\n5\n10\n[2, 3]\n", &.{"fun one/0"});
+}
+
+test "beam: a top-level fn named as a value is its fun" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn one() -> i32 { return 1; }
+        \\fn inc(x: i32) -> i32 { return x + 1; }
+        \\fn apply(f: fn() -> i32) -> i32 { return f(); }
+        \\fn apply1(f: fn(x: i32) -> i32, v: i32) -> i32 { return f(v); }
+        \\fn main() {
+        \\  @print(apply(one));
+        \\  @print(apply1(inc, 4));
+        \\  val g = inc;
+        \\  @print(g(9));
+        \\  @print([1, 2].map(inc));
+        \\}
+    , "1\n5\n10\n[2, 3]\n", &.{"{make_fun3, "});
+}
+
+// Decision 103 — a bare `break` at the level of a generator fn's body ends
+// it: erlang threw the loop's `'__bp_break'`, which no scope catches
+// (`{nocatch,'__bp_break'}`, `run/generator_break_value.bp`).
+test "erlang: a bare break at a generator's own level ends it" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn ends() -> @Iterator<i32> { yield 1; break; yield 2; }
+        \\fn upto(n: i32) -> @Iterator<i32> { var i = 0; while (i < n) { yield i; i = i + 1; }; if (n > 1) { break; }; yield 9; }
+        \\fn digits(g: @Iterator<i32>) -> string { var acc = ""; for (g) { x -> acc = acc + x.toString(); }; return acc; }
+        \\fn main() {
+        \\  @print(digits(ends()));
+        \\  @print(digits(upto(3)));
+        \\  @print(digits(upto(1)));
+        \\}
+    , "1\n012\n09\n", &.{"'__bp_gen_stop'"});
+}
+
+// `x is Token.Text` tests that one variant's tag; the whole-enum test had no
+// arm for a dotted name, so it answered `false` for every value on erlang and
+// on beam (status: "`x is <Enum>.<Variant>` is wrong on every target").
+test "erlang: x is Enum.Variant tests that variant" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\pub type Token { Text(v: string), Num(n: i32), Eof }
+        \\fn main() {
+        \\  val x: Token = Token.Text(v: "hi");
+        \\  val y: Token = Token.Eof;
+        \\  @print(x is Token.Text);
+        \\  @print(x is Token.Num);
+        \\  @print(y is Token.Eof);
+        \\  @print(y is Token.Text);
+        \\  @print(x is Token);
+        \\}
+    , "true\nfalse\ntrue\nfalse\ntrue\n", &.{});
+}
+
+test "beam: x is Enum.Variant tests that variant" {
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\pub type Token { Text(v: string), Num(n: i32), Eof }
+        \\fn main() {
+        \\  val x: Token = Token.Text(v: "hi");
+        \\  val y: Token = Token.Eof;
+        \\  @print(x is Token.Text);
+        \\  @print(x is Token.Num);
+        \\  @print(y is Token.Eof);
+        \\  @print(y is Token.Text);
+        \\  @print(x is Token);
+        \\}
+    , "true\nfalse\ntrue\nfalse\ntrue\n", &.{});
+}
+
+test "erlang: calling the result of a call applies it (`calleeExpr`)" {
+    // `test/curried_call.bp` (C-09's backend half): `adder(3)(4)` carries its
+    // callee as an expression, and lowered as a name it was `''(4)`, which
+    // `erlc` refuses.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
+        \\fn pick(which: bool) -> fn(x: i32) -> i32 { return { x -> if (which) { x } else { 0 - x } }; }
+        \\fn main() {
+        \\  @print(adder(3)(4));
+        \\  @print(pick(false)(5));
+        \\  @print(adder(10)(adder(1)(2)));
+        \\}
+    , "7\n-5\n13\n", &.{"(adder(3))(4)"});
+}
+
+test "beam: calling the result of a call applies it (`calleeExpr`)" {
+    // The beam twin: the callee value is parked on the stack while the
+    // arguments are staged, then `call_fun` — it was
+    // `{unresolved_call, '', 1}` at run time.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
+        \\fn twice(n: i32) -> i32 { return adder(n)(n); }
+        \\fn main() {
+        \\  @print(adder(3)(4));
+        \\  @print(adder(10)(adder(1)(2)));
+        \\  @print(twice(4));
+        \\  val xs: Array<i32> = [1, 2];
+        \\  @print(xs.map({ x -> adder(x)(100) }));
+        \\}
+    , "7\n13\n8\n[101, 102]\n", &.{"{call_fun, 1}"});
+}
+
+test "erlang: an enum variant's labelled payload claims its declared slot" {
+    // `run/labelled_arguments.bp`'s erlang row: the variant constructor zipped
+    // by position, so `Shape.Rect(height: 2, width: 5)` was built
+    // `{…rect, 2, 5}` and the cell printed `205` (02-erlang, no step).
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Shape { Rect(width: i32, height: i32), Dot }
+        \\fn shown(s: Shape) -> i32 { return case s { Shape.Rect(w, h) -> w * 100 + h; Shape.Dot -> 0; }; }
+        \\fn main() {
+        \\  @print(shown(Shape.Rect(height: 2, width: 5)));
+        \\  @print(shown(Shape.Rect(width: 5, height: 2)));
+        \\  @print(shown(Shape.Rect(5, 2)));
+        \\}
+    , "502\n502\n502\n", &.{});
+}
+
 test "beam: a lambda whose body is an if, a case or a try answers its value" {
     // 03 handover 01, `run/lambda_expression_body.bp`. `emitLambdaBody`
     // treated only a literal/name/operator/call tail as the lambda's value;

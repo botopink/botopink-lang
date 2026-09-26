@@ -17,17 +17,21 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 validate(Items) ->
-    lists:foreach(fun(I) ->
-        case (I > 2) of
-            true ->
-                {error, <<"too many">>};
-            _ -> ok
-        end
-    end, lists:seq(0, (Items) - 1)),
-    {ok, Items}.
+    try
+        lists:foreach(fun(I) ->
+            case (I > 2) of
+                true ->
+                    erlang:throw({'__bp_try', {error, <<"too many">>}});
+                _ -> ok
+            end
+        end, lists:seq(0, (Items) - 1)),
+        {ok, Items}
+    catch
+        throw:{'__bp_try', __BpTryR} -> __BpTryR
+    end.
 
 main() ->
-    '__bp_print'([(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(validate(2))]).
+    '__bp_print'([(fun(__BpR) -> case __BpR of {ok, _} -> true; _ -> false end end)(validate(2))]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -37,6 +41,7 @@ main() ->
 '__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
 '__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
 '__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(undefined, _) -> "null";
 '__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
 

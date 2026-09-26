@@ -29,7 +29,7 @@ beam/
 |---|---|
 | `term.zig` | `Term` union + `Term.MapEntry { key: Term, value: Term }` and small constructors (`atomOf`, `str`, `int`, `listOf`, `tupleOf`, `mapOf`, `field`). Atoms hold the *unquoted* name; binaries hold raw runtime bytes. Terms borrow their slices — build them in an arena that outlives emission. |
 | `erl_ast.zig` | Erlang code model. `Expr` (`raw`, `term`, `variable`, `atom`, `lexeme_binary`, `call` local/remote, `apply`, `binop`, `unop`, `match`, `tuple`, `list`, `cons`, `map`/`map_update` with `=>`/`:=`, `list_comp`, `case_` (`block` or one-line `inline_` layout), `fun` (optionally NAMED — `fun Loop(I) -> … end`, how an unbounded loop recurses), `try_catch`, `bin` segments, `exception` `Class:Reason`, `number` (verbatim token), `paren`, `fun_clauses` (one-line multi-clause `fun`), `string` (character list), `fun_ref` (`fun f/N`), `list_block` (one element per line), `comment` (in expression position), `seq` (parts written back to back — host templates)), `Clause` (patterns, guard sequence, body, `block`/`inline_` layout), `Body` (statements), `Stmt` (expr / comment), `Comment` (`level` `line`/`doc`/`module` → `%`/`%%`/`%%%`, text; `Comment.doc(text)`), `Function`, `FnRef` (`name/arity`), `Form` (`module`, `exports`, `import` (`Import{module, funs}` → `-import(m, [f/1])`, how a comptime module reaches the resident prelude), `no_auto_import`, `on_load` (`-on_load(f/0).`, front 17 — where a `PersistentTerm` var is put), function, comment, `blank`). `raw` carries host template text only (see Rules). `Builder` (arena, with `caseInline`/`applyParen`) copies slices and allocates child nodes for trees built from runtime values; `str`/`field`/`exactField` helpers. |
-| `erl_emitter.zig` | Erlang source. **Names:** `isReserved`, `isUnquotedAtom`, `atomText(name, buf)` / `writeAtom` (bare when `[a-z][A-Za-z0-9_@]*` and not reserved, else single-quoted with `'`/`\` escaped; pre-quoted names pass through), `varName` / `writeVar` (`decl` → `Decl`), `moduleName` (`List` → `list`). **Binaries:** `writeBinaryFromBytes` (raw bytes; `"`, `\`, control bytes escaped, bytes ≥ 0x80 as `\x{HH}` so the binary is exact regardless of source encoding) and `writeBinaryFromLexeme` (a string literal's lexer content: botopink escapes map to Erlang's, `\$` → `$`, `\u{…}` → `\x{…}`, raw bytes pass through — the historical `erlang.zig` `emitBinary`); both delegate the escaping to `writeString`/`writeStringFromLexeme`, which a `bin` segment reuses — a binary-literal segment of a binary construction is written as the plain string it holds (`<<"a", X/binary>>`), never as a nested `<<<<"a">>/binary, …>>`. **Terms:** `writeFloat` (always has a `.`), `writeTerm` (lists `[a, b]`, tuples `{a, b}`, maps `#{k => v}`). **Code:** `writeExpr(w, expr, indent)` (multi-line constructs indent relative to `indent`: `case … of` clauses at +1 with block bodies at +2, `fun(…) ->` body at +1, `try`/`catch`), `writeBody` (the backend's statement rules: `,` only between real statements, comments without separator, empty body → `undefined`), `writeFunction` (clauses joined `;\n`, ending `.\n`), `writeForm`/`writeForms`; `writeString` for character lists; `writeComment` (prefix by level, one space, text). |
+| `erl_emitter.zig` | Erlang source. **Names:** `isReserved`, `isUnquotedAtom`, `atomText(name, buf)` / `writeAtom` (bare when `[a-z][A-Za-z0-9_@]*` and not reserved, else single-quoted with `'`/`\` escaped; pre-quoted names pass through), `varName` / `writeVar` (`decl` → `Decl`), `moduleName` (`List` → `list`). **Binaries:** `writeBinaryFromBytes` (raw bytes; `"`, `\`, control bytes escaped, bytes ≥ 0x80 as `\x{HH}` so the binary is exact regardless of source encoding) and `writeBinaryFromLexeme` (a string literal's lexer content: botopink escapes map to Erlang's, `\$` → `$`, `\u{…}` → its UTF-8 bytes each as `\x{HH}`, and a raw byte ≥ 0x80 → `\x{HH}` — a plain `<<"…">>` keeps only the low 8 bits of a character, so `\x{2028}` was `<<40>>` and a raw `ç` one latin1 byte; the historical `erlang.zig` `emitBinary`); both delegate the escaping to `writeString`/`writeStringFromLexeme`, which a `bin` segment reuses — a binary-literal segment of a binary construction is written as the plain string it holds (`<<"a", X/binary>>`), never as a nested `<<<<"a">>/binary, …>>`. **Terms:** `writeFloat` (always has a `.`), `writeTerm` (lists `[a, b]`, tuples `{a, b}`, maps `#{k => v}`). **Code:** `writeExpr(w, expr, indent)` (multi-line constructs indent relative to `indent`: `case … of` clauses at +1 with block bodies at +2, `fun(…) ->` body at +1, `try`/`catch`), `writeBody` (the backend's statement rules: `,` only between real statements, comments without separator, empty body → `undefined`), `writeFunction` (clauses joined `;\n`, ending `.\n`), `writeForm`/`writeForms`; `writeString` for character lists; `writeComment` (prefix by level, one space, text). |
 | `beam_emitter.zig` | `.S` operands **and instructions**. *Operands:* `Operand` (`.x`/`.y` registers, `.f` label, `.term`, `.lexeme`, `.untagged` bare int, `.number` source-token numeric) with constructors `xr`/`yr`/`lbl`/`atom`/`int`/`str`/`num`/`negNum`/`nil`; `Dest` (`.x`/`.y`); `writeArg`, plus the term-level `writeOperand` (`atom` -> `{atom, A}`, `boolean` -> `{atom, true}`, `integer` -> `{integer, N}`, `float` -> `{float, F}`, `nil`/empty list -> `nil`, binary/list/tuple/map -> `{literal, <term>}`), `writeLiteral`, `writeAtomOperand`, `writeLexemeBinaryOperand`. *Selectors:* `TestOp` (`is_list`/`is_float`/`is_boolean` added for the run-time primitive dispatch shim `beam_asm.zig` synthesises; `is_number` and `is_ne` for decision 8 §4.1 / §2.3, `is_pid` for the `Ets` owner's wait loop), `GcBif` (`div_` is `'div'`, `fdiv` is float `'/'`, `trunc`/`float` the §4.1 conversions), `Callee` (`.local` label / `.ext` module+function), `CallKind` (`normal`/`last`/`only`). *Module preamble:* `Export` (`name`, `arity`), `writeModuleForm` (`{module, M}.`), `writeExports` (`{exports, [{Name, Arity}, …]}.`, shared atom quoting per name), `writeAttributes` (`{attributes, []}.`), `writeOnLoadAttributes` (`{attributes, [{on_load, [{F, 0}]}]}.`, front 17), `writeLabels` (`{labels, N}.`). *Instructions* (each writes one full line, indentation and trailing `.` included): `writeMove`/`writeMoveOp`, `writeLabel`, `writeJump`, `writeReturn`, `writeAllocate`, `writeDeallocate`, `writeInitYregs`, `writeTest`, `writeTestHeap`, `writeTestHeapAlloc`, `writeGcBif`, `writeCall`, `writeCallFun`, `writeMakeFun3` (with the closure environment operands), `writeBif` (a non-allocating guard BIF such as `element/2`), `writeTry`/`writeTryEnd`/`writeTryCase` (a catch section), `writePutList`, `writePutTuple2`, `writeGetTupleElement`, `writeGetList`, `writeGetMapElements`, `writePutMap` (+`MapPair`), `writeFunctionHeader`, `writeFuncInfo`, `writeLine`, `writeBlankLine`, `writeComment`/`writeTopComment`/`writeSourceComment`. The inner term syntax of `{literal, ...}` is the Erlang source form, so it delegates to `erl_emitter`. |
 | `beam_file.zig` | **The `.beam` container writer** (front 18 step 1a, decisions 83/86). Input: `Module { name, functions, source_file }` → `Function { name, arity, entry, exported, code }` → `Instr { op: Op, args }` → `Arg` (`u` bare unsigned, `i` integer, `atom`, `nil`, `x`/`y`/`f`, `literal: Term`, `ext: ExtFunc` `{extfunc, M, F, A}`, `list`, `alloc`, `line`) — one variant per compact-term operand kind of `beam_asm.erl`'s `encode_arg/2`, so the adapter from `beam_emitter`'s `Operand`/`Dest`/`TestOp`/`GcBif`/`Callee` (step 1c's untyped `beam_asm.zig` mode, not written yet) is a mapping (`## Adapter` in the file header). `assemble(alloc, module)` → bytes: `FOR1`/`BEAM` with `AtU8` (module atom at index 1, first-insertion order), `Code` (16-byte sub-header; `label_count` = highest label + 1; `function_count`; the stream closed by `int_code_end`), `StrT` (empty), `ImpT` (first-use `(M, F, A)` rows — `Arg.ext` encodes the row index), `ExpT` (exported functions with entry labels), `FunT` (only when `make_fun3` is used: its first operand is the fun's **entry label**, resolved here to the row index; `old_uniq` = 27 bits of a Wyhash of the code), `LitT` (only when a compound literal exists; ETF via `comptime/runtime/etf.zig`, deduplicated by bytes, framed as a **zlib stream of stored blocks** — valid on every OTP, where OTP 28's own uncompressed-behind-a-zero-word form is 28+ only), `Line` (one item per distinct `(file, line)`; `source_file` is fname 1 so a stack trace's `{file, …}` names the `.bp`). **`{f, N}` is the label number** — the loader resolves labels, nothing is patched. **`opcode_max` in the `Code` header is a version stamp**: the loader refuses `< swap` (169) as "compiled for an old version", so the writer stamps `opcodes.opcode_max` (184, OTP 28) whatever the module uses — a VM below decision 86's floor refuses it with the loader's own "compiled for a later version" message. Refusals (`Error`): `OpcodeNotEmittable` (obsolete, or newer than OTP 24), `ArityMismatch` (operand count ≠ `genop.tab` arity), `UndefinedLabel`, `DuplicateLabel`, `EntryIsNotALabel`, `FunEntryIsNotAFunction`, `InvalidAtom` (empty or > 255 bytes), `LineOperand`, `NoFunctions`. No `beam_validator` pass: a register misuse the loader accepts is a run-time crash of the body. Tests: compact-term byte vectors read off `beam_asm:encode/2`; a stored zlib stream's adler32; and three `erl -noshell -eval` round trips — `-module(t). main() -> ok.` through `beam_lib:info/1` + `beam_lib:chunks/2` (`atoms`, `imports`, `labeled_exports`) + `code:load_binary/3` + `t:main()`; a module with a `<<"hello">>` literal, `erlang:'+'/2` (`gc_bif2`) and `erlang:error/1` (`call_ext_only`) imports and a `Line` chunk whose stack frame reads `{file,"t2.bp"},{line,7}`; and three one-byte flips (form id → `beam_lib:info` refuses; `AtU8` id → `beam_lib` refuses; an opcode → `{error, badfile}`). The tests are reached through `comptime/runtime/persistent_beam.zig` (which imports this file) until `../tests.zig` lists them. |
 | `asm_text.zig` | `writeModule(w, beam_file.Module)`: the model as BEAM assembly in the generic shapes `erlc -S` writes and `erlc +from_asm` reads (`{test, is_eq_exact, {f, L}, [A, B]}`, `{bif, Name, {f, L}, Args, Dst}`, `{gc_bif, Name, {f, L}, Live, Args, Dst}`, `{make_fun3, {f, L}, Index, 0, Dst, {list, Env}}`, `{'try', Y, {f, L}}`, `{literal, T}` with atoms/integers/`[]` folded and floats as `{float, F}` as the assembler folds them); an opcode it has no shape for is `error.UnrenderedOpcode`. It exists so one model has two renderers — the bytes the node loads and the listing a snapshot shows cannot describe different programs — and so `scripts/beam_export_audit.sh` can put the listing through `beam_validator`, which the load path does not run |
@@ -51,6 +51,11 @@ beam/
   verbatim — only its receiver/`$N`/`$args` substitutions are rendered, with
   `writeArg`. `rg -n '\.(print|writeAll|writeByte)\(' ../beam_asm.zig` must
   return exactly those three.
+  BR5's template helpers (`lowerTemplateFn`) are not an exception: their `.S`
+  is `asm_text.writeModule`'s rendering of the `beam_file` model
+  `comptime/runtime/beam/lower.zig` built, spliced function by function; the
+  only text the backend assembles there is the helper's Erlang *source* for the
+  reader.
 - `../erlang.zig` — `emitComptimeModule` helper functions (`comptime_helper_forms`) and host forms; function/lambda/branch bodies (`bodyNode`), expressions (`exprNode`) and calls (`callNode`) are nodes; declarations and the module header are forms (`emitErlangModule` renders them with `writeForms`).
 - `../../comptime/decorator_eval.zig`, `../../comptime/template_eval.zig` — `main/0` as a `Form` built with `Builder`; the `@Decl` handle and captures are `Term`s.
 - `../../comptime/runtime/prelude.zig` — the resident host glue as `Form`s, rendered to Erlang source with `writeForms`; the generated module reaches it through a `Form.import`.
@@ -93,79 +98,52 @@ bodies — in `zig build test-libs`'s erlang cells, all lowered), nor in 377 of
 older builds of the libraries (the 12 refused are modules `erlc` rejects too:
 undefined functions, unsafe variables, a `receive`).
 
-## Run-time evaluation of `@External.Erlang` templates (open decision)
+## `@External.Erlang` templates compiled at build time (BR5, C-24)
 
 `../beam_asm.zig` lowers a host-backed call three ways. An
 `#[@External.Beam("""…""")]` body is `.S` spliced at the call site
 (`renderBeamTemplate`), and an `#[@External.Erlang("mod", "sym")]` pair is a
 plain `call_ext`. An `#[@External.Erlang("…")]` **template** — Erlang *source*
 with receiver/`$N`/`$stringify(…)` holes (`"base64:encode($0)"`, the arity-branch
-form, a primitive method's template reached through `primErlangTemplate`) —
-has no `.S` form, so it is **evaluated at run time** (`evalTemplate`):
+form, a primitive method's template reached through `primErlangTemplate`) — is
+**compiled at build time** into a helper function of the module
+(`evalTemplate` → `compiledTemplate` → `lowerTemplateFn`):
 
-- at build time the holes become variables (the receiver → `__BpSelf`, `$N` →
+- the holes become the helper's parameters (the receiver → `__BpSelf`, `$N` →
   `__BpAN`, `$stringify(e)` → `iolist_to_binary(io_lib:format("~p", [e]))`) and
-  the text, ended with `.`, is a binary literal operand;
-- at the call site the operands are staged into a bindings map
-  (`put_map_assoc`, `#{'__BpSelf' => Recv, '__BpA0' => A0, …}`) and the
-  module-local `'__bp_erl_eval'(Source, Bindings)` is called — synthesised once
-  per module by `ensureEvalHelper`: `binary_to_list` → `erl_scan:string` →
-  `erl_parse:parse_exprs` → `erl_eval:exprs`, the value of the last expression;
-  a step that does not answer `{ok, …}`/`{value, …}` raises its answer with
-  `erlang:error/1`.
+  the text is the body of `t(__BpSelf, __BpA0, …) -> <template>.`;
+- that one-function module is read by `../../comptime/runtime/wat/erl_parse.zig`
+  and lowered by `../../comptime/runtime/beam/lower.zig` — **the reader and the
+  lowering the comptime BEAM runtime already runs every template and decorator
+  body through** (front 14), so this compiler has one Erlang front end, not a
+  second template language;
+- the lowered `beam_file.Module` is relabelled into the module's label space
+  (`L - 1 + next_label`, `{f, 0}` kept), its functions renamed `'__bp_tpl_<k>'`
+  (lifted funs `'__bp_tpl_<k>-t/N-fun-M-'`), rendered by `asm_text.zig` and
+  appended to the module; the call site stages its operands into `x0..` and
+  `call`s it. One helper per distinct template text and arity per module
+  (`template_fns`, set aside per type unit like the other helper caches).
 
-It is correct — the ten beam snapshots that reach it print what erlang prints
-(`string_slice_*`, `external_a2_*`, `external_a3_result_template_owned_declare_fn`,
-`external_1_arg_host_expression_…`, `bool_instance_default_fn_methods`,
-`array_zip_via_external_node_template`, `string_methods_map_to_native_js_names`).
-**Its cost:**
+**What still reaches `'__bp_erl_eval'/2`, and why:** a template the reader or
+the lowering refuses — the constructs `lower.zig` names (`receive`, `!`, the old
+`catch Expr`, `try … of`, `try … after`, records, macros; the list is in
+§ Comptime lowering above). The helper `ensureEvalHelper` stays for exactly
+those, so a refused template is still correct, only interpreted. **Measured
+2026-09-26:** no beam snapshot carries `'__bp_erl_eval'` any more (15 moved,
+every RUN LOG unchanged, `beam_export_audit` 475/475); the 82 primitive-method
+calls of the audit in `../AGENTS.md` § Primitive methods compile with none; of
+the 159 templates in `libs/std/src`, at most 6 carry a refused construct by
+text (`async` `allOf`/`raceOf` — `receive`, `!`; `encoding`'s percent-decode and
+one `json` reader — `try … of`; `http`'s `get` — `catch Expr`; `process`'s run —
+`receive`), and those keep the run-time path.
 
-- **Speed.** Every call re-scans, re-parses and *interprets* the template;
-  nothing is cached. Re-measured on OTP 29 (2026-09-18, 100 000 calls each,
-  `timer:tc/1` over a tail-recursive loop; the 2026-09-17 figures in parentheses):
-  `base64:encode(X)` direct **0.113** µs/call (0.1), through the eval path
-  **5.722** µs/call (5.2) — **50.6×**; `string:slice($0, $1, $2 - $1)` direct
-  **0.244** µs/call, through the eval path **7.412** µs/call (6.9) — 30×. The
-  ratio that motivated BR4 holds. In a loop over a list (`String.slice` per
-  element) it dominates the run time.
-- **Errors surface late.** A template that does not scan or parse, or names an
-  undefined function, compiles cleanly and fails only when the call runs, as
-  `erlang:error({error, …})` from inside the helper, not as a located build
-  error.
-- **Code size and dependencies.** Each call site carries its template as a
-  binary literal plus a map build; the module depends on `erl_scan`,
-  `erl_parse` and `erl_eval` (stdlib, always present on a BEAM node).
-
-**BR5 (1.0.5-beta front 03 step 1) is not written, and the reason is
-structural, not a shortage of effort.** The step says to reuse the erlang
-backend's template rendering rather than add a second template language. The
-erlang backend does not *render* a template, it **splices its text** into `.erl`
-and lets `erlc` read it — there is nothing to reuse, because nothing in this
-compiler parses Erlang. `rg -l 'erl_scan|erl_parse'` over
-`modules/compiler-core/src/` answers one file, `../beam_asm.zig`, and that is the
-`'__bp_erl_eval'/2` helper it *emits*, not a parser it runs. `erl_ast.zig` beside
-this note is a model the compiler **builds and prints**; it has no reader. So
-compiling a template to `.S` at build time requires an Erlang **front end** in
-Zig — the parked sketch is exactly that: `beam/erl_template.zig`, 836 lines of
-lexer + subset parser, plus 419 lines of a slot-machine lowering in
-`beam_asm.zig` (branch `wip/br5-beam-templates`, `1ebef41`, a stash from
-2026-09-17; the untracked half is in `640b6f3b`). It is a sketch, not a base:
-its `templateHelper` answers null for anything outside its subset, so the
-run-time helper stays for the rest, and it does not build at this HEAD —
-`beam_asm.zig` moved **+973/−191** lines (6 277 → 7 059) between the sketch's
-base `440a1d3e` and here, and `git apply --3way` lands it only *with conflicts*.
-What the row costs, measured, is therefore: an Erlang parser this project does
-not otherwise need, a per-template subset check that decides which calls stay
-interpreted, and the 11 snapshots below re-recorded — for a saving that shows up
-only in a loop over a list. It is also the row the front README asks to land
-**before** `13-module-identity` splits this emitter, which has not run yet.
-
-**Open for the maintainer (1.0.4-beta 01 BR4):** keep it as written here, or
-ask for build-time compilation of the template — lower the template text to
-code once, at build time (for example through the erlang backend's template
-lowering into a helper function or aux module assembled next to the `.S`), so a
-call is a local/remote call with no interpretation. The second answer becomes a
-row in `specs/1.0.4-beta/01-backend-residuals/`.
+**Cost, re-measured** (OTP 29, 1 000 000 iterations of a recursive loop whose
+body is `base64:encode(<<"hello">>)` plus `string:length/1`, three runs):
+through the compiled helper **0.25–0.39 µs** per iteration, the same loop
+written directly in Erlang **0.24–0.34 µs** — 1.06–1.16×, the local call. Through
+`'__bp_erl_eval'/2` it was **5.722 µs** per call against 0.113 direct (50.6×,
+2026-09-18). A template that does not parse is now a build-time `null` from the
+reader (and the run-time path), never a helper that compiles and fails later.
 
 ## Closure values (`make_fun3`) — every build site, classified
 

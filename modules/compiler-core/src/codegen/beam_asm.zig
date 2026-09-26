@@ -31,6 +31,15 @@ const primOpTemplate = @import("../comptime/primOpTemplate.zig");
 const effectChain = @import("../comptime/effect_chain.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
 const beamEmitter = @import("./beam/beam_emitter.zig");
+/// Read-only: the embedded prelude `erlang.zig` parses once per process.
+const erlangBackend = @import("./erlang.zig");
+/// BR5 — an `@External.Erlang` template compiled at build time: the Erlang
+/// reader and the BEAM lowering the comptime runtime already runs (front 14),
+/// over one helper function per distinct template.
+const erlParse = @import("../comptime/runtime/wat/erl_parse.zig");
+const erlLower = @import("../comptime/runtime/beam/lower.zig");
+const beamFile = @import("./beam/beam_file.zig");
+const asmText = @import("./beam/asm_text.zig");
 /// Instruction operand / destination shorthands — every `.S` line this backend
 /// writes is built from these and rendered by `beam_emitter.zig`; the backend
 /// never formats target text itself.
@@ -592,7 +601,10 @@ fn exprPropagates(e: ast.Expr) bool {
     return switch (e) {
         .jump => |j| switch (j.kind) {
             .try_ => true,
-            .@"return", .throw_ => |v| if (v) |x| exprPropagates(x.*) else false,
+            // A `return` in a loop's fun leaves the FUNCTION: it is thrown to
+            // the loop's call site like a failing `try` (`emitLoopReturn`).
+            .@"return" => true,
+            .throw_ => |v| if (v) |x| exprPropagates(x.*) else false,
             .@"break" => |b| if (b.value) |x| exprPropagates(x.*) else false,
             .yield => |y| if (y.value) |x| exprPropagates(x.*) else false,
             .await_ => |x| exprPropagates(x.*),
@@ -817,6 +829,11 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 // Calling a module-level `val` that holds a fun parks the fun
                 // on the stack while the arguments are staged (`lowerCall`).
                 if (!cc.is_builtin and cc.receiver == null and em.top_vals.contains(cc.callee)) count.* += 1;
+                // `adder(3)(4)`: the callee value is parked the same way.
+                if (cc.calleeExpr) |ce| {
+                    countLocalsInExpr(em, ce.*, count);
+                    count.* += 1;
+                }
             },
             .pipeline => |pl| {
                 countLocalsInExpr(em, pl.lhs.*, count);
@@ -1402,7 +1419,12 @@ fn emitBeamAsm(
         switch (decl) {
             // A host-backed `declare fn` has no body: every call lowers to
             // its host target at the call site (`lowerExternalCall`).
-            .@"fn" => |f| if (!isHostDeclare(f)) try em.reserveFn(f.name, fnArityNoSelf(f)),
+            .@"fn" => |f| if (!isHostDeclare(f)) {
+                try em.reserveFn(f.name, fnArityNoSelf(f));
+                // Two arities under one name answer no single fun.
+                const gop = try em.top_fns.getOrPut(alloc, f.name);
+                gop.value_ptr.* = if (gop.found_existing and gop.value_ptr.* != fnArityNoSelf(f)) std.math.maxInt(usize) else fnArityNoSelf(f);
+            },
             .val => |v| if (!isSyntheticEntrypointVal(v)) {
                 try em.reserveFn(v.name, 0);
                 try em.top_vals.put(v.name, {});
@@ -1814,6 +1836,9 @@ const Emitter = struct {
     /// Named top-level `val`s of this module — each is a 0-arity function, so a
     /// bare reference is a local call.
     top_vals: std.StringHashMap(void),
+    /// This module's top-level `fn`s by name → arity (`maxInt` when two
+    /// arities share the name), for a name used as a value (`apply(one)`).
+    top_fns: std.StringHashMapUnmanaged(usize) = .empty,
     /// The module body, run in source order by `'_botopink_main'/0` before it
     /// calls `main/0`: the `_`-named synthetic statements, and the named
     /// `val`s whose initialiser can have an effect (`topValIsCached`), each
@@ -1855,6 +1880,11 @@ const Emitter = struct {
     print_helper_name: ?[]const u8 = null,
     add_helper_name: ?[]const u8 = null,
     eval_helper_name: ?[]const u8 = null,
+    /// BR5: `<arity>:<template text>` → the labels of the helper function
+    /// `compiledTemplate` emitted for it in THIS module (a unit gets its own).
+    template_fns: std.StringHashMapUnmanaged(FnLabels) = .empty,
+    /// How many template helpers this module emitted — names them.
+    template_count: u32 = 0,
     field_helper_name: ?[]const u8 = null,
     /// `'-bp_yield_step-'/1` — `seq.next()` by hand (decision 122).
     yield_step_helper_name: ?[]const u8 = null,
@@ -1874,6 +1904,9 @@ const Emitter = struct {
     needed_prim_shims: std.StringArrayHashMapUnmanaged(PrimShim) = .empty,
     /// How many of them have been emitted — the drain's watermark.
     emitted_prim_shims: usize = 0,
+    /// How many of `needed_defaults` are emitted — the drain resumes here, so
+    /// a second pass after the shims does not write every default again.
+    emitted_defaults: usize = 0,
     /// Method names the program's own `behavior` declarations carry (the
     /// primitive interfaces excluded). A call to one of these is a user type's
     /// method that failed to resolve, never a primitive's, so it keeps the
@@ -2012,6 +2045,7 @@ const Emitter = struct {
         self.std_imports.deinit();
         self.imported_fn_owners.deinit();
         self.top_vals.deinit();
+        self.top_fns.deinit(self.alloc);
         self.entry_stmts.deinit(self.alloc);
         self.string_locals.deinit();
         self.count_strings.deinit();
@@ -2024,6 +2058,7 @@ const Emitter = struct {
         if (self.print_helper_name) |n| self.alloc.free(n);
         if (self.join_helper_name) |n| self.alloc.free(n);
         if (self.eval_helper_name) |n| self.alloc.free(n);
+        self.freeTemplateFns();
         self.externals.deinit();
         self.iface_defaults.deinit();
         self.needed_defaults.deinit(self.alloc);
@@ -2665,6 +2700,29 @@ const Emitter = struct {
                     try beamEmitter.writeJump(self.out, fail);
                     try beamEmitter.writeLabel(self.out, ok_l);
                     return true;
+                }
+                // `x is Token.Text` — one variant of an enum this module
+                // places: its tag and arity alone (it answered `false` for
+                // every value). The twin of `erlang.zig`'s `typeTestNode`.
+                if (std.mem.lastIndexOfScalar(u8, n, '.')) |dot| {
+                    const en = n[0..dot];
+                    const vn = n[dot + 1 ..];
+                    if (self.enum_variant_names.get(en)) |variants| for (variants) |v| {
+                        if (!std.mem.eql(u8, v.name, vn)) continue;
+                        const tag = self.qualifiedVariantTagOf(en, v.name) orelse v.name;
+                        var tag_buf: [512]u8 = undefined;
+                        const tag_atom = try atomName(tag, &tag_buf);
+                        if (v.fields > 0) {
+                            try beamEmitter.writeTest(self.out, .is_tagged_tuple, fail, &.{
+                                s,
+                                .{ .untagged = @as(i64, @intCast(v.fields + 1)) },
+                                Op.atom(tag_atom),
+                            });
+                        } else {
+                            try beamEmitter.writeTest(self.out, .is_eq_exact, fail, &.{ s, Op.atom(tag_atom) });
+                        }
+                        return true;
+                    };
                 }
                 return false;
             },
@@ -3385,6 +3443,8 @@ const Emitter = struct {
     /// and helper shims are its own, and the file module gets back exactly what
     /// it had.
     const SavedBeamUnit = struct {
+        template_fns: std.StringHashMapUnmanaged(FnLabels),
+        template_count: u32,
         module_name: []const u8,
         out: *std.Io.Writer,
         next_label: u32,
@@ -3397,6 +3457,7 @@ const Emitter = struct {
         needed_defaults: std.StringArrayHashMapUnmanaged(IfaceDefault),
         needed_prim_shims: std.StringArrayHashMapUnmanaged(PrimShim),
         emitted_prim_shims: usize,
+        emitted_defaults: usize,
         exports: std.ArrayListUnmanaged(ExportEntry),
         helpers: HelperNames,
     };
@@ -3482,6 +3543,8 @@ const Emitter = struct {
     /// exports.
     fn openTypeUnit(self: *Emitter, type_name: []const u8, buf: *std.Io.Writer.Allocating) !SavedBeamUnit {
         const saved: SavedBeamUnit = .{
+            .template_fns = self.template_fns,
+            .template_count = self.template_count,
             .module_name = self.module_name,
             .out = self.out,
             .next_label = self.next_label,
@@ -3494,6 +3557,7 @@ const Emitter = struct {
             .needed_defaults = self.needed_defaults,
             .needed_prim_shims = self.needed_prim_shims,
             .emitted_prim_shims = self.emitted_prim_shims,
+            .emitted_defaults = self.emitted_defaults,
             .exports = .empty,
             .helpers = self.takeHelperNames(),
         };
@@ -3509,6 +3573,9 @@ const Emitter = struct {
         self.needed_defaults = .empty;
         self.needed_prim_shims = .empty;
         self.emitted_prim_shims = 0;
+        self.emitted_defaults = 0;
+        self.template_fns = .empty;
+        self.template_count = 0;
         return saved;
     }
 
@@ -3569,6 +3636,10 @@ const Emitter = struct {
         self.needed_defaults = unit.needed_defaults;
         self.needed_prim_shims = unit.needed_prim_shims;
         self.emitted_prim_shims = unit.emitted_prim_shims;
+        self.emitted_defaults = unit.emitted_defaults;
+        self.freeTemplateFns();
+        self.template_fns = unit.template_fns;
+        self.template_count = unit.template_count;
         self.restoreHelperNames(unit.helpers);
     }
 
@@ -4198,6 +4269,10 @@ const Emitter = struct {
                         try beamEmitter.writeJump(self.out, gl.exit);
                         return;
                     };
+                    if (self.in_loop_lambda and self.inGenLoop() == null) {
+                        try self.emitLoopReturn(if (r) |val| val.* else null);
+                        return;
+                    }
                     if (r) |val| {
                         // §1F F4F-T2 — `#[@future]` eager lowering on BEAM:
                         // strip the `__bp_future_resolved(<t>)` marker back
@@ -4692,6 +4767,17 @@ const Emitter = struct {
                         try beamEmitter.writeMoveOp(self.out, Op.atom(n), Dst.xr(0));
                         return;
                     }
+                    // A top-level `fn` of this module named as a value
+                    // (`apply(one)`, `xs.map(inc)`): its fun, a `make_fun3` over
+                    // the function's own entry with no environment — erlang's
+                    // `fun one/0`. It was `{unresolved_identifier, one}`.
+                    if (self.cur_type == null and self.top_fns.get(n) != null and self.top_fns.get(n).? != std.math.maxInt(usize)) {
+                        const arity = self.top_fns.get(n).?;
+                        if (self.fnLabelsFor(n, arity)) |labels| {
+                            try self.emitMakeFun(labels.entry, 0, &.{});
+                            return;
+                        } else |_| {}
+                    }
                     // Nothing binds the name. It used to become the atom of its
                     // own name — a value, so the program printed the word. Now
                     // the site aborts: `erlang:error({unresolved_identifier, N})`.
@@ -4804,6 +4890,10 @@ const Emitter = struct {
             },
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
+                    if (self.in_loop_lambda and self.inGenLoop() == null) {
+                        try self.emitLoopReturn(if (r) |val| val.* else null);
+                        return;
+                    }
                     if (r) |val| try self.lowerExprIntoX0(val.*);
                     try self.emitReturn();
                     return;
@@ -5159,6 +5249,23 @@ const Emitter = struct {
     /// Lower a `call.call` form into BEAM assembly. Evaluates each arg into
     /// `{x, i}`, then emits the appropriate call opcode.
     fn lowerCall(self: *Emitter, cc: anytype, mode: CallMode, loc: ast.Loc) anyerror!void {
+        // `adder(3)(4)`: the callee is the previous call's value (`calleeExpr`,
+        // `callee == ""`) — evaluate it, park it on the stack while the
+        // arguments are staged, then `call_fun`, as a module-level `val`
+        // holding a fun is applied. Lowered as a name it was
+        // `{unresolved_call, '', 1}` at run time.
+        if (cc.calleeExpr) |ce| {
+            const arity: u32 = @intCast(cc.args.len + cc.trailing.len);
+            try self.lowerExprIntoX0(ce.*);
+            const fun_y = self.next_y;
+            self.next_y += 1;
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(fun_y));
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            try beamEmitter.writeMoveOp(self.out, Op.yr(fun_y), Dst.xr(arity));
+            try beamEmitter.writeCallFun(self.out, arity);
+            if (mode == .tail) try self.emitReturn();
+            return;
+        }
         if (cc.is_builtin) {
             try self.lowerBuiltinCall(cc, mode);
             return;
@@ -5814,6 +5921,12 @@ const Emitter = struct {
         }
         // A bodied interface `default fn` (`Array.fold`, `Number.clamp`).
         if (try self.callIfaceDefault(k, callee, recv_expr, cc, mode)) return true;
+        // The host spelling of a primitive method (`toUpperCase` for
+        // `String.toUpper`), after every other lowering missed — erlang's
+        // `primNodeAliasIn`, the same table.
+        if (primIfaceForKind(k)) |iface| {
+            if (erlangBackend.primNodeAliasIn(iface, callee)) |canon| return self.emitPrimMethod(k, canon, recv_expr, cc, mode);
+        }
         return false;
     }
 
@@ -6090,9 +6203,9 @@ const Emitter = struct {
     /// Emit every interface `default fn` a call site reached, with `self`
     /// carrying the interface's primitive kind. Drained to a fixpoint.
     fn emitNeededDefaults(self: *Emitter) anyerror!void {
-        var i: usize = 0;
-        while (i < self.needed_defaults.count()) : (i += 1) {
-            const d = self.needed_defaults.values()[i];
+        while (self.emitted_defaults < self.needed_defaults.count()) {
+            const d = self.needed_defaults.values()[self.emitted_defaults];
+            self.emitted_defaults += 1;
             const saved_kind = self.self_prim_kind;
             defer self.self_prim_kind = saved_kind;
             self.self_prim_kind = primKindForIface(d.iface);
@@ -6256,6 +6369,18 @@ const Emitter = struct {
         try primOpTemplate.render(template.items, &ctx);
         try src.append(self.alloc, '.');
 
+        // BR5: the template compiled at build time into a helper function of
+        // this module, called like any local function.
+        if (try self.compiledTemplate(src.items, has_recv, exprs.len + trailing.len)) |labels| {
+            const st = try self.stageOperands(exprs, trailing);
+            try self.placeStaged(&st);
+            switch (mode) {
+                .non_tail => try beamEmitter.writeCall(self.out, .normal, st.len, .{ .local = labels.entry }, 0),
+                .tail => try beamEmitter.writeCall(self.out, .last, st.len, .{ .local = labels.entry }, self.num_y),
+            }
+            return;
+        }
+
         const st = try self.stageOperands(exprs, trailing);
         const live = @max(self.min_live, st.x_top);
         var names: [max_staged][16]u8 = undefined;
@@ -6279,6 +6404,128 @@ const Emitter = struct {
             .non_tail => try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = labels.entry }, 0),
             .tail => try beamEmitter.writeCall(self.out, .last, 2, .{ .local = labels.entry }, self.num_y),
         }
+    }
+
+    fn freeTemplateFns(self: *Emitter) void {
+        var it = self.template_fns.keyIterator();
+        while (it.next()) |k| self.alloc.free(k.*);
+        self.template_fns.deinit(self.alloc);
+        self.template_fns = .empty;
+    }
+
+    /// BR5 (C-24): an `@External.Erlang` template compiled at build time.
+    /// `body` is the template with its holes as variables (`__BpSelf`,
+    /// `__BpA<i>`) and a trailing `.`; it becomes the function
+    ///
+    ///     t(__BpSelf, __BpA0, …) -> <body>
+    ///
+    /// read by `comptime/runtime/wat/erl_parse.zig` and lowered by
+    /// `comptime/runtime/beam/lower.zig` — the reader and lowering the comptime
+    /// BEAM runtime runs every template and decorator body through — then
+    /// relabelled into this module's label space, renamed `'__bp_tpl_<k>'`
+    /// (its lifted funs `'__bp_tpl_<k>-…'`), rendered by `beam/asm_text.zig`
+    /// and appended to the module. One helper per distinct template text and
+    /// arity per module. Null when the reader or the lowering refuses the
+    /// template (see `beam/AGENTS.md`): the call site then keeps
+    /// `'__bp_erl_eval'/2`.
+    fn compiledTemplate(self: *Emitter, body: []const u8, has_recv: bool, arity: usize) anyerror!?FnLabels {
+        const key = try std.fmt.allocPrint(self.alloc, "{d}:{s}", .{ arity, body });
+        if (self.template_fns.get(key)) |hit| {
+            self.alloc.free(key);
+            return hit;
+        }
+        var arena_state = std.heap.ArenaAllocator.init(self.alloc);
+        defer arena_state.deinit();
+        const ar = arena_state.allocator();
+        const labels = (try self.lowerTemplateFn(ar, body, has_recv, arity)) orelse {
+            self.alloc.free(key);
+            return null;
+        };
+        try self.template_fns.put(self.alloc, key, labels);
+        return labels;
+    }
+
+    fn lowerTemplateFn(self: *Emitter, ar: std.mem.Allocator, body: []const u8, has_recv: bool, arity: usize) anyerror!?FnLabels {
+        // The helper's Erlang SOURCE, for the reader — not target output: the
+        // `.S` this backend writes is `asm_text`'s rendering of the lowered
+        // model below.
+        var text: std.ArrayListUnmanaged(u8) = .empty;
+        try text.appendSlice(ar, try std.fmt.allocPrint(ar, "-module(bp_tpl).\n-export([t/{d}]).\nt(", .{arity}));
+        const off: usize = @intFromBool(has_recv);
+        for (0..arity) |i| {
+            if (i > 0) try text.appendSlice(ar, ", ");
+            const param = if (has_recv and i == 0) "__BpSelf" else try std.fmt.allocPrint(ar, "__BpA{d}", .{i - off});
+            try text.appendSlice(ar, param);
+        }
+        try text.appendSlice(ar, ") ->\n    ");
+        try text.appendSlice(ar, body);
+        try text.append(ar, '\n');
+
+        var pf: erlParse.Failure = .{};
+        const parsed = erlParse.parseModule(ar, text.items, &pf) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return null,
+        };
+        var lf: erlLower.Failure = .{};
+        const lowered = erlLower.lowerModule(ar, parsed, self.module_name, &lf) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return null,
+        };
+
+        // Relabel: the lowering numbers from 1 and this module's next free
+        // label is `base`, so `L` becomes `L - 1 + base` (`{f, 0}` is "no fail
+        // label" and stays).
+        const base = self.next_label;
+        var max_label: u32 = 0;
+        const k = self.template_count;
+        const functions = try ar.alloc(beamFile.Function, lowered.module.functions.len);
+        var entry_labels: ?FnLabels = null;
+        for (lowered.module.functions, 0..) |f, fi| {
+            const is_main = std.mem.eql(u8, f.name, "t");
+            const name = if (is_main)
+                try std.fmt.allocPrint(ar, "__bp_tpl_{d}", .{k})
+            else
+                try std.fmt.allocPrint(ar, "__bp_tpl_{d}{s}", .{ k, f.name });
+            const code = try ar.alloc(beamFile.Instr, f.code.len);
+            for (f.code, 0..) |ins, ii| {
+                const args = try ar.alloc(beamFile.Arg, ins.args.len);
+                for (ins.args, 0..) |a, ai| args[ai] = try shiftLabels(ar, a, base, &max_label);
+                if (ins.op == .label) {
+                    const l: u32 = @intCast(ins.args[0].u);
+                    max_label = @max(max_label, l);
+                    args[0] = .{ .u = l - 1 + base };
+                }
+                if (ins.op == .func_info) args[1] = beamFile.Arg.atomOf(name);
+                code[ii] = .{ .op = ins.op, .args = args };
+            }
+            functions[fi] = .{ .name = name, .arity = f.arity, .entry = f.entry - 1 + base, .exported = false, .code = code };
+            if (is_main) entry_labels = .{ .func_info = f.entry - 2 + base, .entry = f.entry - 1 + base };
+        }
+        const labels = entry_labels orelse return null;
+
+        var aw: std.Io.Writer.Allocating = .init(ar);
+        asmText.writeModule(&aw.writer, .{ .name = self.module_name, .functions = functions }) catch return null;
+        const listing = aw.written();
+        const first = std.mem.indexOf(u8, listing, "\n{function, ") orelse return null;
+        try self.deferred_lambdas.append(self.alloc, try self.alloc.dupe(u8, listing[first..]));
+        self.next_label = base + max_label;
+        self.template_count += 1;
+        return labels;
+    }
+
+    fn shiftLabels(ar: std.mem.Allocator, a: beamFile.Arg, base: u32, max_label: *u32) !beamFile.Arg {
+        return switch (a) {
+            .f => |l| if (l == 0) a else blk: {
+                max_label.* = @max(max_label.*, l);
+                break :blk .{ .f = l - 1 + base };
+            },
+            .list => |items| blk: {
+                const out = try ar.alloc(beamFile.Arg, items.len);
+                for (items, 0..) |it, i| out[i] = try shiftLabels(ar, it, base, max_label);
+                break :blk .{ .list = out };
+            },
+            else => a,
+        };
     }
 
     /// Emit (once per module) `'__bp_erl_eval'(Source, Bindings)`:
@@ -6498,11 +6745,32 @@ const Emitter = struct {
     fn primArraySlice2(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!bool {
         const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
         const live = @max(self.min_live, st.x_top);
+        // An absent `end` (`xs.slice(1)`, whose trailing default C-04 fills
+        // with `null`, or a `?i32` that is null at run time) is the open slice
+        // `lists:nthtail(Start, Xs)` — `arraySlice0`'s template; `end - start`
+        // on the atom was `badarith`. A literal `end` needs no test.
+        const end_op = st.ops[2];
+        const end_is_null = end_op == .term and end_op.term == .atom and std.mem.eql(u8, end_op.term.atom, "undefined");
+        const end_is_number = end_op == .number or (end_op == .term and end_op.term == .integer);
+        if (end_is_null) {
+            try self.emitParallelMove(&.{ st.ops[1], st.ops[0] }, &.{ 0, 1 });
+            try self.emitPrimCallExt("lists", "nthtail", 2, mode);
+            return true;
+        }
+        const open_l: u32 = if (end_is_number) 0 else self.allocLabel();
+        const end_l: u32 = if (end_is_number) 0 else self.allocLabel();
+        if (!end_is_number) try beamEmitter.writeTest(self.out, .is_ne_exact, open_l, &.{ end_op, Op.atom("undefined") });
         // x{live} = start + 1, x{live+1} = end - start; both above every staged value.
         try beamEmitter.writeGcBif(self.out, .add, live, &.{ st.ops[1], Op.int(1) }, Dst.xr(live));
         try beamEmitter.writeGcBif(self.out, .sub, live + 1, &.{ st.ops[2], st.ops[1] }, Dst.xr(live + 1));
         try self.emitParallelMove(&.{ st.ops[0], Op.xr(live), Op.xr(live + 1) }, &.{ 0, 1, 2 });
         try self.emitPrimCallExt("lists", "sublist", 3, mode);
+        if (end_is_number) return true;
+        if (mode != .tail) try beamEmitter.writeJump(self.out, end_l);
+        try beamEmitter.writeLabel(self.out, open_l);
+        try self.emitParallelMove(&.{ st.ops[1], st.ops[0] }, &.{ 0, 1 });
+        try self.emitPrimCallExt("lists", "nthtail", 2, mode);
+        if (mode != .tail) try beamEmitter.writeLabel(self.out, end_l);
         return true;
     }
 
@@ -7048,8 +7316,18 @@ const Emitter = struct {
     /// and the rest of the builtins require strings/binaries (Fase 3+).
     fn lowerBuiltinCall(self: *Emitter, cc: anytype, mode: CallMode) anyerror!void {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
-            const atom: []const u8 = if (std.mem.eql(u8, cc.callee, "todo")) "undef" else "panic";
-            try beamEmitter.writeMove(self.out, Term.atomOf(atom), 0);
+            // `erlang:error({todo, Msg})` / `{panic, Msg}` — the erlang
+            // backend's reason, message defaulted as `builtins_fns.d.bp`
+            // declares it. `@todo()` raised the bare atom `undef`, which read
+            // as a missing function (`{undef, main:notReady/0}`).
+            const is_todo = std.mem.eql(u8, cc.callee, "todo");
+            if (cc.args.len > 0) {
+                try self.lowerExprIntoX0(cc.args[0].value.*);
+            } else {
+                try beamEmitter.writeMoveOp(self.out, Op.str(if (is_todo) "not implemented" else "panic"), Dst.xr(0));
+            }
+            try beamEmitter.writeTestHeap(self.out, 3, 1);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(if (is_todo) "todo" else "panic"), Op.xr(0) });
             try beamEmitter.writeCall(
                 self.out,
                 if (mode == .tail) .only else .normal,
@@ -7441,6 +7719,7 @@ const Emitter = struct {
         const not_tuple = self.allocLabel();
         const tagged = self.allocLabel();
         const generic = self.allocLabel();
+        const absent = self.allocLabel();
         try beamEmitter.writeBlankLine(w);
         try beamEmitter.writeFunctionHeader(w, show_name, 2, show_l.entry);
         try beamEmitter.writeLabel(w, show_l.func_info);
@@ -7518,7 +7797,7 @@ const Emitter = struct {
         try beamEmitter.writeTest(w, .is_atom, generic, &.{Op.xr(0)});
         try beamEmitter.writeTest(w, .is_ne_exact, generic, &.{ Op.xr(0), Op.atom("true") });
         try beamEmitter.writeTest(w, .is_ne_exact, generic, &.{ Op.xr(0), Op.atom("false") });
-        try beamEmitter.writeTest(w, .is_ne_exact, generic, &.{ Op.xr(0), Op.atom("undefined") });
+        try beamEmitter.writeTest(w, .is_ne_exact, absent, &.{ Op.xr(0), Op.atom("undefined") });
 
         try beamEmitter.writeLabel(w, tagged);
         try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
@@ -7530,6 +7809,13 @@ const Emitter = struct {
         try beamEmitter.writePutList(w, Op.xr(0), Op.nil, Dst.xr(1));
         try beamEmitter.writeMoveOp(w, Op.str("~p"), Dst.xr(0));
         try beamEmitter.writeCall(w, .last, 2, .{ .ext = .{ .module = "io_lib", .function = "format" } }, 2);
+
+        // Absent (`undefined`, botopink's `null`) is written `null` —
+        // decision 47's one spelling; `~p` wrote the atom's name.
+        try beamEmitter.writeLabel(w, absent);
+        try beamEmitter.writeMoveOp(w, Op.str("null"), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
+        try beamEmitter.writeReturn(w);
 
         try self.emitTaggedHelpers(w, tagged_name, tagged_l, render_name, render_l, pair_name, pair_l, show_l);
 
@@ -9267,6 +9553,18 @@ const Emitter = struct {
             return;
         }
         try self.emitReturn();
+    }
+
+    /// `return v` inside a loop's fun (`in_loop_lambda`): a return there only
+    /// leaves the fun, so the value is thrown as `{'__bp_try', V}` and the
+    /// loop's call site (`guardLoopCall`) answers it as the function's value —
+    /// the path a failing `try` already takes. `firstUnder(12, 10)` answered
+    /// `12` where commonJS and wasm answer `8`.
+    fn emitLoopReturn(self: *Emitter, value: ?ast.Expr) anyerror!void {
+        if (value) |v| try self.lowerExprIntoX0(v) else try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
+        try beamEmitter.writeTestHeap(self.out, 3, 1);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(try_throw_signal), Op.xr(0) });
+        try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
     }
 
     /// Emit `call` — a `lists:foreach` / `map` / `foldl` over a loop fun whose

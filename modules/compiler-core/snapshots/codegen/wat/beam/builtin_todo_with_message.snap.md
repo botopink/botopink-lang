@@ -18,7 +18,9 @@ fn notImplemented() {
     {func_info, {atom, test@main}, {atom, notImplemented}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    {move, {atom, undef}, {x, 0}}.
+    {move, {literal, <<"implement this function">>}, {x, 0}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, todo}, {x, 0}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.

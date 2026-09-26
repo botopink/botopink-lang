@@ -428,6 +428,39 @@ test "js: import ---- the shorthand resolves a sibling inside a dependency" {
     );
 }
 
+test "erlang: a field of function type of an IMPORTED record is applied" {
+    // `c.set(5)` on a record another module declares: the export index carried
+    // the field NAMES only, so the importer's call fell through to a local
+    // `set(C, 5)` no module defines (`function set/2 undefined` — a hook
+    // library's consumer, by construction). `ExportInfo.fn_fields` crosses
+    // now: by name when the type is imported, program-wide when only the fn
+    // that built the value is (`programFnFieldName`).
+    const shape =
+        \\pub type Cell(value: i32, set: fn(next: i32) -> i32)
+        \\pub fn cell(v: i32) -> Cell { return Cell(value: v, set: { n -> n * 2 }); }
+    ;
+    try h.assertErlangRunLogModules(std.testing.allocator, &.{
+        .{ .path = "shape", .source = shape },
+        .{ .path = "main", .source =
+        \\import { cell, Cell } from "shape";
+        \\pub fn main() {
+        \\    val c = cell(3);
+        \\    @print(c.set(5));
+        \\    @print(c.value);
+        \\}
+        },
+    }, "main", "10\n3\n", &.{});
+    try h.assertErlangRunLogModules(std.testing.allocator, &.{
+        .{ .path = "shape", .source = shape },
+        .{ .path = "main", .source =
+        \\import { cell } from "shape";
+        \\pub fn main() {
+        \\    @print(cell(3).set(5));
+        \\}
+        },
+    }, "main", "10\n", &.{});
+}
+
 test "js: record ---- a field of function type is called like a method" {
     // `c.set(9)` on a record whose `set` field holds a lambda: the record emits
     // no `set/2`, so the call applies what the field holds. erlang read the map

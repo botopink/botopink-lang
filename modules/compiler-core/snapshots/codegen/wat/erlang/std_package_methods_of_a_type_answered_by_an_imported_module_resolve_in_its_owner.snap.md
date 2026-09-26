@@ -935,7 +935,7 @@ fn main() {
 
 main() ->
     D = std@collections@@Dict:insert(std@collections@@Dict:empty(), <<"a">>, 1),
-    '__bp_print'([(fun(O) -> case O of undefined -> (0); V -> V end end)(std@collections@@Dict:at(D, <<"a">>))]),
+    '__bp_print'([(fun(__BpO) -> case __BpO of undefined -> (0); __BpV0 -> __BpV0 end end)(std@collections@@Dict:at(D, <<"a">>))]),
     '__bp_print'([std@collections@@Dict:size(std@collections@@Dict:insert(D, <<"b">>, 2))]).
 
 '__bp_print'(Values) ->
@@ -946,6 +946,7 @@ main() ->
 '__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
 '__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
 '__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(undefined, _) -> "null";
 '__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
 
