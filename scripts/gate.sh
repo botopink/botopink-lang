@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# gate.sh — the botopink-lang gate, one ordered run. Each stage runs only after
-# the previous one passed, so a failure is found by the cheapest stage that can
-# see it.
+# gate.sh — the botopink-lang gate, one ordered run. Stages 1–4 run one after
+# the other, each only after the previous one passed, so a failure there is
+# found by the cheapest stage that can see it. Stages 4b–10 only read the tree
+# stage 4 has built and tested, so they run SIDE BY SIDE, each with its output
+# captured; they are then printed one block per stage in the order below, and
+# the gate stops at the first red one IN THAT ORDER — the stage, the output and
+# the exit status the one-at-a-time gate printed (§ side by side, below).
 #
 #   1. staged files: no conflict markers, `zig fmt --check` on staged .zig (--staged)
 #   2. zig build            the CLI, the LSP and the runners link
@@ -48,7 +52,7 @@ for a in "$@"; do
     case "$a" in
         --cold) cold=1 ;;
         --staged) staged=1 ;;
-        -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
         *) echo "gate: unknown argument '$a'" >&2; exit 1 ;;
     esac
 done
@@ -101,32 +105,55 @@ fi
 zig build test || fail "zig build test"
 pass "zig build test"
 
-stage "comptime runtime parity (snap_audit.sh --mode=runtime-parity)"
-bash scripts/snap_audit.sh --mode=runtime-parity || fail "scripts/snap_audit.sh --mode=runtime-parity (the diff above names the pair; a difference is a defect in one runtime, never re-recorded away)"
-pass "comptime runtime parity"
+# ── § side by side: stages 4b–10 ─────────────────────────────────────────────
+# Each reads what stages 2–4 left and writes only its own scratch (`mktemp`
+# directories, per-run `test-out/<target>/<id>/`, per-process test-scratch
+# roots); `test-cli`'s four scripts, which share `zig-out/` and fixture `out/`
+# directories, stay one stage and run in order inside it. The pools inside
+# `test-libs`, `test-language` and `test-docs` admit a job only while the
+# machine's runnable threads are at most its CPUs, so running them together
+# shares the CPUs rather than multiplying the load.
+#
+# Every stage runs to completion even when an earlier one is red — that is the
+# price of a red run, never of a green one. The report is the serial gate's: the
+# blocks are printed in stage order up to and including the first red stage,
+# whose failure line ends the run with exit 1; the stages after it are not
+# printed, as the serial gate never ran them. A stage's stdout and stderr share
+# one capture file, so both reach this script's stdout in the order written.
+par="$(mktemp -d "${TMPDIR:-/tmp}/bp-gate.XXXXXX")"
+trap 'rm -rf "$par"' EXIT
+launch() { # <n> <cmd…> — run in the background, output in $par/<n>.out, status in $par/<n>.rc
+    local n="$1"
+    shift
+    (
+        if "$@" >"$par/$n.out" 2>&1; then echo 0 >"$par/$n.rc"; else echo $? >"$par/$n.rc"; fi
+    ) &
+}
+launch 1 bash scripts/snap_audit.sh --mode=runtime-parity
+launch 2 zig build test-bpmp
+launch 3 bash scripts/beam_export_audit.sh
+launch 4 zig build test-cli
+launch 5 zig build test-libs
+launch 6 zig build test-language
+launch 7 zig build test-docs
+wait
 
-stage "zig build test-bpmp"
-zig build test-bpmp || fail "zig build test-bpmp"
-pass "zig build test-bpmp"
-
-stage "beam export audit"
-bash scripts/beam_export_audit.sh || fail "scripts/beam_export_audit.sh (a REJECTED block above names the module, function and reason)"
-pass "beam export audit"
-
-stage "zig build test-cli"
-zig build test-cli || fail "zig build test-cli"
-pass "zig build test-cli"
-
-stage "zig build test-libs"
-zig build test-libs || fail "zig build test-libs"
-pass "zig build test-libs"
-
-stage "zig build test-language"
-zig build test-language || fail "zig build test-language (a FAIL line above names the file, the test and the rule)"
-pass "zig build test-language"
-
-stage "zig build test-docs"
-zig build test-docs || fail "zig build test-docs (a ✗ line above names the doc, the fence line and the error)"
-pass "zig build test-docs"
+report() { # <n> <stage title> <pass text> <fail text>
+    stage "$2"
+    cat "$par/$1.out"
+    [ "$(cat "$par/$1.rc" 2>/dev/null)" = 0 ] || fail "$4"
+    pass "$3"
+}
+report 1 "comptime runtime parity (snap_audit.sh --mode=runtime-parity)" "comptime runtime parity" \
+    "scripts/snap_audit.sh --mode=runtime-parity (the diff above names the pair; a difference is a defect in one runtime, never re-recorded away)"
+report 2 "zig build test-bpmp" "zig build test-bpmp" "zig build test-bpmp"
+report 3 "beam export audit" "beam export audit" \
+    "scripts/beam_export_audit.sh (a REJECTED block above names the module, function and reason)"
+report 4 "zig build test-cli" "zig build test-cli" "zig build test-cli"
+report 5 "zig build test-libs" "zig build test-libs" "zig build test-libs"
+report 6 "zig build test-language" "zig build test-language" \
+    "zig build test-language (a FAIL line above names the file, the test and the rule)"
+report 7 "zig build test-docs" "zig build test-docs" \
+    "zig build test-docs (a ✗ line above names the doc, the fence line and the error)"
 
 printf "\n${GREEN}gate: every stage passed${NC}\n"

@@ -199,16 +199,37 @@ pub fn build(b: *std.Build) void {
     wasm3.exposeHeaders(b, core_mod);
     wasm3.exposeHeaders(b, core_test_mod);
 
+    // The compiler-core suite runs as SHARDS: one test binary, `test_shards`
+    // processes side by side, each running the tests whose index is its own
+    // modulo the count (`modules/test-shard/runner.zig` — zig's default
+    // runner restricted by `BOTOPINK_TEST_SHARD=<i>/<n>`). Every test runs
+    // exactly once over the shards and is reported by name as before; the
+    // runner is serial inside one process, and most of this suite's time is
+    // spent waiting on the node/erl/wasmtime a snapshot's RUN LOG spawns, so
+    // one process left the machine idle (front 00 · 25-gate-perf step 2).
+    // The suite was written for concurrent processes over one checkout —
+    // `test_scratch` roots are per process, the runtime cache is written by
+    // rename — which is what makes the shards safe. The count is scheduling,
+    // never coverage: `-Dtest-shards=1` runs the one process of before.
     const core_tests = b.addTest(.{
         .root_module = core_test_mod,
         .filters = test_filters,
+        .test_runner = .{ .path = b.path("modules/test-shard/runner.zig"), .mode = .server },
     });
     wasm3.link(b, core_tests);
 
-    const run_core_tests = b.addRunArtifact(core_tests);
-    // Ensure snapshots are written inside modules/compiler-core/,
-    // not at the workspace root.
-    run_core_tests.setCwd(b.path("modules/compiler-core"));
+    const default_shards: u32 = @intCast(std.math.clamp(std.Thread.getCpuCount() catch 1, 1, 8));
+    const test_shards = b.option(u32, "test-shards", "Processes the compiler-core suite is split across (default: CPUs, at most 8)") orelse default_shards;
+    if (test_shards == 0) @panic("-Dtest-shards must be at least 1");
+    var core_shard_runs: std.ArrayListUnmanaged(*std.Build.Step.Run) = .empty;
+    for (0..test_shards) |shard| {
+        const run_shard = b.addRunArtifact(core_tests);
+        // Ensure snapshots are written inside modules/compiler-core/,
+        // not at the workspace root.
+        run_shard.setCwd(b.path("modules/compiler-core"));
+        run_shard.setEnvironmentVariable("BOTOPINK_TEST_SHARD", b.fmt("{d}/{d}", .{ shard, test_shards }));
+        core_shard_runs.append(b.allocator, run_shard) catch @panic("OOM");
+    }
 
     // `clean-tmp` reaps per-test scratch dirs older than 1 day from
     // `<compiler-core>/.botopinkbuild/tmp/`. A live test run never
@@ -241,11 +262,12 @@ pub fn build(b: *std.Build) void {
 
     // Runs at the start of every test cycle so crashed-test leaks
     // never accumulate beyond a day.
-    run_core_tests.step.dependOn(&clean_tmp_run.step);
-    run_core_tests.step.dependOn(&clean_scratch_run.step);
-
     const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner, manifest, test-scratch)");
-    test_step.dependOn(&run_core_tests.step);
+    for (core_shard_runs.items) |run_shard| {
+        run_shard.step.dependOn(&clean_tmp_run.step);
+        run_shard.step.dependOn(&clean_scratch_run.step);
+        test_step.dependOn(&run_shard.step);
+    }
     test_step.dependOn(&run_manifest_tests.step);
     test_step.dependOn(&run_test_scratch_tests.step);
 

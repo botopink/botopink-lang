@@ -36,6 +36,8 @@ modules/
 ├── wasm3/                   ← vendored wasm3 (C, v0.5.0): the wat comptime runtime's engine, in-process
 ├── test-scratch/            ← `test_scratch` — the one way a TEST spells a path it writes to
 │   └── src/root.zig         ← per-process scratch root; given to the test modules only
+├── test-shard/              ← the compiler-core test runner: one shard of the suite per process
+│   └── runner.zig           ← zig's default runner restricted by `BOTOPINK_TEST_SHARD=<i>/<n>`
 └── bpmp/                    ← `bpmp` — Boto Pink Package Manager + toolchain manager
     ├── build.zig.zon        ← no own build.zig; built by the workspace build.zig
     └── src/                 ← manifest + lockfiles + semver + resolver + commands
@@ -52,6 +54,7 @@ modules/
 | `lib-test-runner/` | `botopink-lib-test` executable | `manifest` only (shells out to `botopink`) | [link](lib-test-runner/AGENTS.md) |
 | `manifest/` | library (the `botopink.json` model) | `std` only | [link](manifest/AGENTS.md) |
 | `test-scratch/` | library (`test_scratch` — per-process scratch paths for tests) | `std` only | [link](test-scratch/AGENTS.md) |
+| `test-shard/` | the compiler-core test binary's runner (`build.zig` `.test_runner`), run as `-Dtest-shards` processes | `std` only | [link](test-shard/AGENTS.md) |
 | `wasm3/` | C sources linked into every native artifact that imports `compiler-core` (`link`), headers for its `@cImport` (`exposeHeaders`) | libc | [link](wasm3/AGENTS.md) |
 | `bpmp/` | `bpmp` executable | `manifest` only (spawns `botopink`) | [link](bpmp/AGENTS.md) |
 | `../../vscode-extension/` | VS Code `.vsix` extension (sibling project) | `language-server` (runtime) | [link](../../vscode-extension/AGENTS.md) |
@@ -68,6 +71,7 @@ zig build test             # compiler-core + language-server + compiler-cli + li
                            # (+ lib-agnostic grep gate over compiler-core/src)
                            # (+ scripts/check-test-scratch.sh — no cwd-anchored .botopinkbuild path in a test)
 zig build test -Dtest-filter=<substr>
+zig build test -Dtest-shards=<n>   # compiler-core split across n processes (default: CPUs, at most 8; 1 = one process)
 zig build test-bpmp        # bpmp unit tests          (not part of `test`)
 zig build test-libs        # every libs/ project per backend via botopink-lib-test
 zig build test-vscode      # VS Code extension unit tests (needs node/npm)

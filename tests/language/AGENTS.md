@@ -474,6 +474,13 @@ tests/language/run.sh --target beam                       # opt-in; needs erlc +
 
 `--lib-root` defaults to `<compiler>/../../libs` (where `from "std"` resolves).
 
+Cells run in parallel on `../../scripts/lib/pool.sh` — `botopink-lib-test`'s rule: `--jobs`
+defaults to one per CPU bounded by `MemAvailable / 768 MiB`, and a cell is admitted only while
+`procs_running` ≤ CPUs when another cell of the run is in flight (`run.sh` § parallel cells). Every
+cell writes its verdict to its own file and the verdicts are sorted before the report, so
+`--jobs 1` prints the same bytes and exits with the same status — checked on the whole suite, on
+`--target beam`, and with red cells planted (front `00 · 25-gate-perf` step 1).
+
 ## expected-failures.txt
 
 ```
