@@ -522,7 +522,13 @@ pub fn run(
     // emitted runner's `__bp_load_siblings/0` compiles and loads every `.erl`
     // beside the script before running the tests.
     if (target == .erlang) {
-        _ = libs.shipErlSidecars(gpa, io, outputs.items, test_out, env_map) catch 0;
+        _ = libs.shipErlSidecars(gpa, io, outputs.items, test_out, env_map) catch |err| switch (err) {
+            // A host module that is neither shipped nor in the Erlang code
+            // path: the located refusal is already printed, and every call
+            // into it would be `{error,undef}`.
+            error.SidecarRefused => return 1,
+            else => return err,
+        };
         // Every `.erl` of the run is now in place: compile each once, here,
         // instead of once per test module that loads it.
         precompileErlang(arena, io, test_out, beamCacheDir(arena, env_map));
@@ -593,6 +599,9 @@ pub fn run(
     // there were; `--json` already aggregates one `{"event":"summary",…}` and
     // gets neither (its stdout channel stays pure JSONL).
     var modules_ran: usize = 0;
+    // Text mode: how many of those runners exited non-zero — a failing test
+    // or a module that did not load; the footer names the count.
+    var modules_nonzero: usize = 0;
     // JSON mode accumulates `passed`/`failed` across modules so the final
     // `summary` JSON object reflects the whole run, not the last module only.
     var json_passed_total: usize = 0;
@@ -645,6 +654,21 @@ pub fn run(
                 .signal, .stopped, .unknown => 1,
             };
             if (code != 0) exit_code = code;
+            // A runner that ends without its own `<P> passed, <F> failed` line
+            // did not finish — the module did not load (a `SyntaxError`, an
+            // `erlc` refusal) or died mid-run. It is one failure of its own,
+            // never a module that passed nothing and failed nothing.
+            if (!hasRunnerSummary(result.stdout)) {
+                json_failed_total += 1;
+                var rec = std.ArrayListUnmanaged(u8).empty;
+                try rec.appendSlice(arena, "{\"event\":\"module_crashed\",\"module\":");
+                try writeJsonString(arena, &rec, o.name);
+                try rec.appendSlice(arena, ",\"exit\":");
+                try appendDecimal(arena, &rec, if (code == 0) 1 else code);
+                try rec.appendSlice(arena, "}\n");
+                std.Io.File.stdout().writeStreamingAll(io, rec.items) catch {};
+                if (code == 0) exit_code = 1;
+            }
             continue;
         }
 
@@ -665,7 +689,16 @@ pub fn run(
             .exited => |c| c,
             .signal, .stopped, .unknown => 1,
         };
-        if (code != 0) exit_code = code;
+        if (code != 0) {
+            exit_code = code;
+            modules_nonzero += 1;
+            // The runner's stdout streams straight through, so a module that
+            // did not load (a `SyntaxError`, an `erlc` refusal) prints no
+            // `N passed, M failed` line of its own. Say so under its banner,
+            // so the module never reads as one that ran clean.
+            const tail = try std.fmt.allocPrint(arena, "----- {s} EXITED WITH STATUS {d} -----\n", .{ o.name, code });
+            reporter.stdout(io, tail);
+        }
     }
 
     if (opts.json and any_tests) {
@@ -684,8 +717,8 @@ pub fn run(
     if (!opts.json and modules_ran > 0) {
         const footer = try std.fmt.allocPrint(
             arena,
-            "----- {d} MODULE(S) RAN — each \"N passed, M failed\" above is that module's own -----\n",
-            .{modules_ran},
+            "----- {d} MODULE(S) RAN, {d} EXITED NON-ZERO — each \"N passed, M failed\" above is that module's own -----\n",
+            .{ modules_ran, modules_nonzero },
         );
         reporter.stdout(io, footer);
     }
@@ -701,6 +734,36 @@ pub fn run(
     }
 
     return exit_code;
+}
+
+/// Whether a runner's stdout carries its closing `<P> passed, <F> failed`
+/// line — the one line every commonJS / erlang runner prints once all of
+/// its tests have run. Absent, the module did not finish.
+fn hasRunnerSummary(stdout_buf: []const u8) bool {
+    var it = std.mem.splitScalar(u8, stdout_buf, '\n');
+    while (it.next()) |raw| {
+        const line = std.mem.trimEnd(u8, raw, "\r");
+        const sp = std.mem.indexOf(u8, line, " passed, ") orelse continue;
+        if (sp == 0 or !std.mem.endsWith(u8, line, " failed")) continue;
+        const failed = line[sp + " passed, ".len .. line.len - " failed".len];
+        if (failed.len == 0) continue;
+        const digits = struct {
+            fn all(x: []const u8) bool {
+                for (x) |c| if (c < '0' or c > '9') return false;
+                return true;
+            }
+        };
+        if (digits.all(line[0..sp]) and digits.all(failed)) return true;
+    }
+    return false;
+}
+
+test "hasRunnerSummary: a finished runner's line, and a crash without one" {
+    try std.testing.expect(hasRunnerSummary("TEST a:1 x\n  ok   x\n1 passed, 0 failed\n"));
+    try std.testing.expect(hasRunnerSummary("0 passed, 12 failed"));
+    try std.testing.expect(!hasRunnerSummary("SyntaxError: await is only valid in async functions\n"));
+    try std.testing.expect(!hasRunnerSummary("x passed, 0 failed\n"));
+    try std.testing.expect(!hasRunnerSummary(""));
 }
 
 const JsonCounts = struct { passed: usize, failed: usize };

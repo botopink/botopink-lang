@@ -60,21 +60,24 @@ erika-linq              erlang    0      00/09-ecosystem-residuals  `"targets": 
 
 # ── rakun: erlang-only (decision 113), the commonJS row is hidden ──────────
 # The measured commonJS count of each member, so a change there still shows.
-rakun                   commonJS  15     03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-actuator          commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-actuator-api      commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-app               commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+# A test module that does not load (a required sibling that did not compile, a
+# host binding node lacks) is one failure of its own (`botopink test --json`'s
+# `module_crashed`), so a cell with no running test reads a count, not `build`.
+rakun                   commonJS  30     03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-actuator          commonJS  5      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-actuator-api      commonJS  2      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-app               commonJS  2      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
 rakun-cache             commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-client            commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-client            commonJS  4      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
 rakun-container-example commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-data              commonJS  1      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-data              commonJS  6      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
 rakun-example           commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-hateoas           commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-logging           commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-hateoas           commonJS  1      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-logging           commonJS  6      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
 rakun-messaging         commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-scheduling        commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-security          commonJS  1      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-session           commonJS  1      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-scheduling        commonJS  6      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-security          commonJS  10      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-session           commonJS  6      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
 rakun-ssr-example       commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-test              commonJS  7      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
-rakun-web               commonJS  build  03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-test              commonJS  9      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding
+rakun-web               commonJS  9      03-rakun             `"targets": ["erlang"]` — rakun is erlang-only (decision 113); on commonJS its host cells (`#[@External.Erlang]` only) have no node binding

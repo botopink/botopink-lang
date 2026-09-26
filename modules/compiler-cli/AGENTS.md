@@ -393,6 +393,10 @@ stdout, parses the envelope above, and re-emits one JSON object per line
   three `error_*` keys appear only on `"status":"fail"`; `duration_ms` appears
   only when the envelope carries a `duration` line. Strings are RFC 8259 §7
   escaped.
+- per module that did not finish (its runner printed no `<P> passed, <F>
+  failed` line — it did not load, or died mid-run):
+  `{"event":"module_crashed","module":"<src-name>","exit":<n>}`; it counts as
+  ONE failure in the summary, so a crashed module never reads as `"failed":0`.
 - end of run: `{"event":"summary","passed":<P>,"failed":<F>}` — one record
   aggregated across every module the run touched.
 

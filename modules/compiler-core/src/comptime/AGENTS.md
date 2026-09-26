@@ -460,7 +460,12 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   trailing defaults are injected at bare `todo()`/`panic()` calls. The synthetic
   `Result`/`Task`/`Component`/`Iterator`/`Stream`/`Context` interfaces
   stay doc-only in `builtins.d.bp` (they are pre-registered by
-  `Env.registerBuiltins`).
+  `Env.registerBuiltins`). `registerBuiltins` binds no `print` / `println`:
+  printing is `@print` / `@println` / `@debug`, which every backend lowers, and
+  a bare `print(x)` is `unbound variable 'print' — printing is the builtin
+  `@print`` (`unboundAt`, `reject/bare_print_call`). It used to type-check
+  against a placeholder binding and lower on commonJS alone — erlang emitted
+  an undefined local, beam an unresolved call, wasm a trap.
 - `@compilerError(message)` — generic compile-time rejection usable from a
   decorator or template body without a `@Decl` handle. commonJS lowers it to
   `__compilerError`; the decorator and template Erlang modules define

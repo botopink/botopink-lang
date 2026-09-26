@@ -2099,13 +2099,15 @@ first three are now enforced by the model, not by discipline:
   primitive methods, function values, `@print` via WASI `fd_write`,
   `_botopink_main`/`_start`.
 - **Known gaps** (loadable, but not yet right):
-  - `loop` over anything that is not a range or a known array emits
-    `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` accepts an array
+  - `loop` over anything that is not a range or a known array TRAPS
+    (`unreachable ;; loop over an iterable wasm cannot walk`; it was a no-op that
+    ran the body zero times at exit 0) — `isArrayExpr` accepts an array
     literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
     parameter or fn result, a record field (or tuple element) declared as one of
     those — a `stream loop` stored in `Ticker(s: …)` and walked by `for await
-    (t.s)`, `run/stream_loop_no_failure` — an array-returning primitive method
-    and an annotated `loop`, and nothing else (an optional `?T[]` field is not
+    (t.s)`, `run/stream_loop_no_failure` — an array-returning primitive method,
+    an annotated `loop` and `try f()` over a `-> @Result<T[], E>`
+    (`tryPayloadTypeRef`, `run/try_start_positions`), and nothing else (an optional `?T[]` field is not
     an array until unwrapped), because walking the layout of a non-array
     would read its first word as an element count and trap;
   - an array of tuples/records prints as the element addresses (no printer);
@@ -2123,8 +2125,11 @@ first three are now enforced by the model, not by discipline:
     `unreachable ;; unresolved call: map/N`. The fixtures pin the call's arity
     and have no `main`; the shape needs a `List` to exist before any backend
     can lower it;
-  - an `f64` aggregate field round-trips at `f32` precision (4-byte slots), and
-    is read back as a raw `i32.load` unless the field's declared type is known.
+  - an `f64` element of an array, a tuple, an anonymous record or an enum
+    variant's payload round-trips at `f32` precision (4-byte slots). A NAMED
+    record's float field does not: its slot holds the address of an 8-byte
+    `f64` cell (`storeBoxedF64`), read back through `f64.load` by a field
+    read, `wasmTypeOf` and both destructurings (`run/float_record_field`).
 - **Non-constant top-level `val`s** (`emitGlobalVal` → `deferred_globals`): a
   wasm `(global …)` accepts only a constant initialiser, so an array/tuple/call
   initialiser declares a zeroed mutable global and is evaluated in
@@ -2671,7 +2676,18 @@ typed, not a backend lowering.
   field read).
 - erlang and beam write a number token through `beam/erl_emitter.zig`'s
   `writeNumber`: `5e-324` → `5.0e-324` (Erlang refuses a float with no `.`
-  before its exponent), `0xFF` → `16#FF`.
+  before its exponent), `0xFF` → `16#FF`. wasm writes a float literal as an
+  `f64.const` (`numLitType`; it was an `f32.const`, where `5e-324` is `0`) and
+  a radix integer as its decimal value (`numLitConst` / `numeralText`: wat has
+  no `0b` / `0o`, and the token used to be interned as a string, so `0xFF`
+  printed an address) — `run/number_literal_erlang_spellings` runs on all four.
+  A method's float parameter and result are the float it declares
+  (`memberValType`); every other method word stays an `i32`.
+- A record CONSTRUCTOR in binding position (`val Pt(y, _) = p;`, decision 67's
+  R5) is matched once on erlang (`patternNode`, whose record arm tags the tuple
+  with the record's own atom, `recordTagAtom`) and read off by position on beam
+  (`emitDestructFromX0`'s `.ctor` arm, `isRecordCtorBind`); it lowered to the
+  value alone on erlang (`variable 'Y' is unbound`) and to a comment on beam.
 
 ## Effects (the return is the effect — decisions 118–128)
 

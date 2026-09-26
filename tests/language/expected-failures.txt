@@ -199,16 +199,14 @@ erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the on
 # route itself is no longer in question. `d["a"]` answers `1` on ALL FOUR
 # backends, and `run/index_dict.bp`'s first probe passes everywhere.
 #
-# What is left below is decision 47's spelling of ABSENCE, which is C-18's row
-# and not this one: on wasm a `Dict`'s absent `?V` over a type parameter prints `0`.
-# `Array.at` past the end answers `null` on commonJS (`__bp_array_at`) and on wasm
-# (`$__print_null`) since `00 · 04-js` / `05-wasm`, and erlang and beam print `null` since
+# Decision 47's spelling of ABSENCE holds on every backend: `Array.at` past the
+# end answers `null` on commonJS (`__bp_array_at`) and on wasm (`$__print_null`)
+# since `00 · 04-js` / `05-wasm`, erlang and beam print `null` since
 # `00 · 02-erlang` / `03-beam` (their print preludes write the atom `undefined` as
-# `null`). Every line names what it measured.
+# `null`), and wasm boxes a `?V` over a type parameter since C-18's wasm half
+# (`optInfoOfTypeRef`), so `Dict.at`'s absent key is `null` there too. Every line
+# names what it measured.
 commonJS | run/map_record_field_length.bp | 04-js (the commonJS half of 05-wasm step 9's `map` row) | `ks.at(...)?.length is not a function`, exit 1: with nothing between `es.map({ e -> e.key })` and `ks.at(0)?.length()` the element type is unresolved at the read, and `length` is emitted as a property-then-call. wasm, erlang and beam answer `3`; `run/map_record_field_strings.bp` shows the same read answering once `ks.at(1) ?? "none"` has resolved the type (measured 2026-09-25)
-wasm     | run/index_dict.bp | C-18 | decision 47: the present key is right (`1`); the two absent probes print `0` — `Dict.at`'s `?V` over a type parameter is carried unboxed on wasm (the generic-parameter limit, `src/codegen/wat/AGENTS.md`), so the empty optional is never seen as one
-wasm     | run/index_user_type.bp | C-18 (decision 47 on wasm) | the user type is reached and the SHAPE is right — four lines, the slice's length is `2` — but a `?T` whose `T` is not a scalar is carried as a raw value: `m[1]` prints a heap address (`384` at this tip; the number drifts with the layout, the wrongness does not) and `r["bo"]` prints `16777216` for `1`. Spelling the two methods by name (`m.at(1)`, `r.at("bo")`) prints the same four lines byte for byte, which is what says the index is not the defect. Re-measured 2026-09-21 after C-01 half 3
-wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` out of `Dict.at` prints as `0` — `1` / `0` / `b` / `null`, exit 0. `s.at(7)` prints `null` since `00 · 05-wasm` spelled the empty `?T` `null` (`$__print_null`); what is left is that `Dict<K, V>.at` answers a `?V` whose `V` is a type parameter, which this backend carries unboxed (no monomorphisation — `src/codegen/wat/AGENTS.md` § the generic-parameter limit), so absence and a present `0` are the same word
 
 
 # ── the module body on wasm and on the BEAM ──────────────────────────────────
@@ -237,14 +235,15 @@ wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` out of 
 erlang   | run/optional_chain_method.bp | 02-erlang | `es.at(9)?.key.length() ?? 42` raises `{bp_unsupported_method, <<"length">>, 0, undefined}` in `'__bp_prim_length'/1` after printing `2` and `3`: the method after the `?.` link is called on `undefined` instead of short-circuiting (measured 2026-09-26)
 beam     | run/optional_chain_method.bp | 03-beam | the erlang shape through `erlc +from_asm` — `2`, `3`, then the run fails at the absent probe (measured 2026-09-26)
 
-# ── a generic optional on wasm (C-18) ────────────────────────────────────────
-wasm     | run/explicit_type_arguments.bp | 05-wasm | a generic `T` answered through `xs.at(0) ?? fallback` prints as a heap address (`276`) where `none` is owed — measured without the type arguments too (`first([], "none")` prints `256`), so it is the generic optional on wasm and not §1.3
-
-# ── an array out of a `@Result` payload on wasm (decision 137) ────────────────
-wasm     | run/try_start_positions.bp | 00 · 05-wasm | decision 137: every position parses and types; an ARRAY out of a `@Result` payload iterates as empty on wasm — `for (try items(n))` and `val xs = try items(n); for (xs)` alike — so `total` misses both items and prints `6` for `9`; the position is not the defect (measured 2026-09-26)
-wasm     | modules/imported_fn_field_call | 05-wasm | a string answered through a function-typed field prints as its heap address (`396` / `> 324`, exit 0): the lambda `{ s -> prefix + s }` stored in the field types `s` as a number, so `+` adds instead of concatenating, and the call site does not know the field returns a `string`. The erlang half this cell pins passes on commonJS, erlang and beam (measured 2026-09-26)
+# ── wasm, the remaining rows of `00 · 05-wasm` ───────────────────────────────
 wasm     | modules/behavior_across_modules | 05-wasm | the checker half this cell pins passes (the program compiles on every target); wasm then traps (`unreachable`) at the first method called through a behavior-typed value — the limit `docs.md` states for every behavior dispatch there (measured 2026-09-26)
-wasm     | modules/method_on_unimported_type | C-18 | decision 47: `queryDict(q).at("y") ?? "none"` prints `none` for a present key — `Dict<K, V>.at`'s `?V` over a type parameter is carried unboxed on wasm (the generic-parameter limit, as `run/index_dict.bp`); the other four lines agree with commonJS, erlang and beam (measured 2026-09-26)
-wasm     | modules/namespace_import_module | 05-wasm | the namespace calls resolve (the same cell without the local `sign` prints every line), but wasm links every module into one function namespace and the program's own `fn sign` and `jwt`'s `sign` are one `$sign` there: the run traps (`unreachable`). The same trap as `import {jwt.sign as jwtSign} from "sec"` beside a local `sign` — wasm's name-collision limit, not the namespace form (measured 2026-09-26)
-wasm     | modules/import_from_package_beside_same_name | 05-wasm | the dependency order this cell pins passes on commonJS, erlang and beam; wasm links every module into one function namespace, so the project's `fn attempt` and the package's `attempt` are one `$attempt` and the run traps (`unreachable`) — the name-collision limit, not the import (measured 2026-09-26)
-wasm     | modules/dsl_hygiene_consumer_double | 05-wasm | decision 112's resolution passes on commonJS, erlang and beam (the library's `double` is the library's); wasm links every module into one function namespace, so the consumer's `fn double` and the library's are one `$double` and the run traps (`unreachable`) — the name-collision limit, not the resolution (measured 2026-09-26)
+wasm     | modules/method_on_unimported_type | C-18 | `queryDict(q).at("y") ?? "none"` prints `none` for a present key: `Dict.at` compares `p._0 == key` with `K` a type parameter, and nothing here monomorphises, so the `==` compares the two WORDS — a key built at run time by `split` is a different pointer from the literal `"y"`, and no string key equals it (`Dict.empty().insert("y", "2").at("y")` answers `2`: both are the one interned literal). The `?V` itself is boxed and reads right; the other four lines agree with commonJS, erlang and beam (measured 2026-09-26)
+
+# ── an erlang host module on beam ────────────────────────────────────────────
+beam     | modules/erlang_host_sidecar_shipped | 03-beam | the project's `src/sidecars/lt_greeter.erl` is shipped by the erlang build (and `botopink test`), but the beam build ships no host module: the `.S` output calls `lt_greeter:hello/1` and the run dies with `undef` (`Failed to eval`); commonJS and wasm refuse the program by `.expect`, erlang prints `hello, sidecar`
+beam     | modules/erlang_sidecar_named_like_a_module | 03-beam | the same as `modules/erlang_host_sidecar_shipped`: the beam build ships no host module, so `text:shout/1` is `undef` (`Failed to eval`); erlang prints `HELLO, SIDECAR`
+
+# ── `val assert` over a record's constructor pattern ─────────────────────────
+wasm     | run/val_assert_record_pattern.bp | 05-wasm | `val assert Person(n, a) = p catch …` binds nothing: the assert lowers the subject into `$__assert_0` and neither tests the record nor reads its fields, so `n` is an unbound identifier (`i32.const 0 ;; unbound identifier n`) and `a.toString()` traps (`unresolved call: toString/0`, exit 134); commonJS and erlang print both lines
+beam     | run/val_assert_record_pattern.bp | 03-beam | `erlc +from_asm` refuses the module: `{unassigned,{y,2}}` — the assert's binders are read from a y-register one path left unwritten; commonJS and erlang print both lines
+

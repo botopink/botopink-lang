@@ -82,7 +82,8 @@ fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\06\00\00\00circle")
   (data (i32.const 268) "\0d\00\00\00shapes/circle")
-  (global $__heap_ptr (mut i32) (i32.const 288))
+  (data (i32.const 288) "\0e\00\00\00shapes/helpers")
+  (global $__heap_ptr (mut i32) (i32.const 308))
   (func $name (result i32)
     i32.const 256
     return
@@ -95,14 +96,18 @@ fn main() {
     i32.const 7
     return
   )
+  (func $shapes/helpers/label (result i32)
+    i32.const 288
+    return
+  )
   (func $main
     call $name
     call $__print_str
     call $seven
     call $__print_i32
-    unreachable ;; two linked modules declare `label` and wasm links them into one namespace
+    call $shapes/helpers/label
     call $__print_str
-    unreachable ;; two linked modules declare `label` and wasm links them into one namespace
+    call $label
     call $__print_str
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -317,6 +322,6 @@ fn main() {
 ```logs
 circle
 7
-RUNTIME TRAP (wasmtime):
-wasm trap: wasm `unreachable` instruction executed
+shapes/helpers
+shapes/circle
 ```

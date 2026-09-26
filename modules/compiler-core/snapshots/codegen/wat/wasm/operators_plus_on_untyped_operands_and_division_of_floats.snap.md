@@ -26,15 +26,15 @@ fn main() {
   (data (i32.const 264) "\02\00\00\00cd")
   (global $__heap_ptr (mut i32) (i32.const 272))
   (func $average (param $xs i32) (result f64)
-    (local $total f32)
-    (local $n f32)
+    (local $total f64)
+    (local $n f64)
     (local $x f32)
     (local $__iter0 i32)
     (local $__idx0 i32)
     (local $__len0 i32)
-    f32.const 0.0
+    f64.const 0.0
     local.set $total
-    f32.const 0.0
+    f64.const 0.0
     local.set $n
     local.get $xs
     local.set $__iter0
@@ -58,11 +58,12 @@ fn main() {
         local.set $x
     local.get $total
     local.get $x
-    f32.add
+    f64.promote_f32
+    f64.add
     local.set $total
     local.get $n
-    f32.const 1.0
-    f32.add
+    f64.const 1.0
+    f64.add
     local.set $n
         local.get $__idx0
         i32.const 1
@@ -75,8 +76,7 @@ fn main() {
     drop
     local.get $total
     local.get $n
-    f32.div
-    f64.promote_f32
+    f64.div
     return
   )
   (func $main
@@ -114,13 +114,16 @@ fn main() {
     i32.const 3
     i32.store
     local.get $__mem1
-    f32.const 2.0
+    f64.const 2.0
+    f32.demote_f64
     f32.store offset=4
     local.get $__mem1
-    f32.const 4.0
+    f64.const 4.0
+    f32.demote_f64
     f32.store offset=8
     local.get $__mem1
-    f32.const 9.0
+    f64.const 9.0
+    f32.demote_f64
     f32.store offset=12
     local.get $__mem1
     call $average

@@ -5363,14 +5363,14 @@ const Emitter = struct {
         const tmp = try std.fmt.allocPrint(b.arena, "BpAssert{d}_{d}", .{ loc.line, loc.col });
         const subject = try this.exprNode(b, ap.expr.*);
         this.pattern_discard = true;
-        const check = try this.patternNode(b, ap.pattern);
+        const check = try this.ctorBindPattern(b, ap.pattern);
         this.pattern_discard = false;
         const handler = try this.exprNode(b, ap.handler.*);
         const decided = try b.caseInline(Ast.Expr.v(tmp), &.{
             try b.clause(&.{check}, &.{}, &.{Ast.Expr.v(tmp)}),
             try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{handler}),
         });
-        const bind = try this.patternNode(b, ap.pattern);
+        const bind = try this.ctorBindPattern(b, ap.pattern);
         const stmts = try b.arena.alloc(Ast.Stmt, 2);
         stmts[0] = .{ .expr = try b.match(Ast.Expr.v(tmp), subject) };
         stmts[1] = .{ .expr = try b.match(bind, decided) };
@@ -6383,7 +6383,11 @@ const Emitter = struct {
                     const value = try this.exprNode(b, lb.value.*);
                     return switch (lb.pattern) {
                         .names, .tuple_ => b.match(try this.destructPatternExpr(b, lb.pattern), value),
-                        .list, .ctor => value,
+                        // `val Pt(y, m) = p;` — the checker accepts only a
+                        // constructor that cannot fail (decision 67's R5), so
+                        // it is the arm's pattern matched once.
+                        .ctor => |pat| b.match(try this.ctorBindPattern(b, pat), value),
+                        .list => value,
                     };
                 },
             },
@@ -7465,8 +7469,17 @@ const Emitter = struct {
                     const value = try this.exprNode(b, lb.value.*);
                     return b.match(try this.destructPatternExpr(b, lb.pattern), value);
                 },
-                // List / constructor patterns are not lowered yet: the value alone.
-                .list, .ctor => return this.exprNode(b, lb.value.*),
+                // `val Pt(y, m) = p;` — the checker accepts only a constructor
+                // that cannot fail (decision 67's R5), so it is the arm's
+                // pattern matched once. It used to lower to the value alone,
+                // and every name it bound was unbound (`variable 'Y' is
+                // unbound`, the module refused by `erlc`).
+                .ctor => |pat| {
+                    const value = try this.exprNode(b, lb.value.*);
+                    return b.match(try this.ctorBindPattern(b, pat), value);
+                },
+                // A list pattern is not lowered yet: the value alone.
+                .list => return this.exprNode(b, lb.value.*),
             },
         }
     }
@@ -7523,7 +7536,7 @@ const Emitter = struct {
             // `case E of Pat -> E; _ -> Handler end`.
             .assertPattern => |ap| {
                 const subject = try this.exprNode(b, ap.expr.*);
-                const pattern = try this.patternNode(b, ap.pattern);
+                const pattern = try this.ctorBindPattern(b, ap.pattern);
                 const matched = try this.exprNode(b, ap.expr.*);
                 const handler = try this.exprNode(b, ap.handler.*);
                 return b.caseInline(subject, &.{
@@ -7681,6 +7694,29 @@ const Emitter = struct {
         /// `X = element(1, T)` matches the clause body opens with.
         binds: std.ArrayListUnmanaged(Ast.Expr) = .empty,
     };
+
+    /// The pattern of a constructor in BINDING position (`val Pt(y, _) = p;`,
+    /// `val assert Person(n, a) = v catch …`).
+    /// A record's is tagged with the record's own atom — `{'<pkg>@<path>@@Pt',
+    /// Y, _}`, what its constructor builds (decision 109) — where a `case`
+    /// arm's `patternNode` writes a variant's bare `'Pt'`; a variant keeps
+    /// that. Only here: in a `case`, `Size(_inner)` may name a section variant
+    /// beside a record `Size`, and the arm means the variant.
+    fn ctorBindPattern(this: *Emitter, b: Ast.Builder, pat: ast.Pattern) anyerror!Ast.Expr {
+        if (pat == .variant and pat.variant.shape == .variant) {
+            const v = pat.variant;
+            if (!this.enum_variant_names.contains(v.name) and this.record_fields.contains(v.name)) {
+                var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                try items.append(b.arena, Ast.Expr.a(try this.recordTagAtom(v.name)));
+                switch (v.payload) {
+                    .binding => |binding| try items.append(b.arena, Ast.Expr.v(try this.patternBindVar(b, binding))),
+                    .fields, .literals => try items.appendSlice(b.arena, try this.variantPayloadSlots(b, v, null)),
+                }
+                return .{ .tuple = items.items };
+            }
+        }
+        return this.patternNode(b, pat);
+    }
 
     fn patternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern) anyerror!Ast.Expr {
         return this.patternNodeExtra(b, pat, null);
