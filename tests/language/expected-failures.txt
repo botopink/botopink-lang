@@ -231,34 +231,10 @@ beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `
 # A module-level `val` is the module body: evaluated once, in declaration order,
 # at module load — before `main`. commonJS has always done that and erlang does
 # since `fix/erlang-module-load` (front 00 · 02-erlang), which is what
-# `run/module_init_order.bp` pins. wasm still misses half of it, measured at
-# that branch with OTP 29 / node v25; beam runs it since front 03 (the module
-# body in `'_botopink_main'/0`, an effectful `val` cached in `persistent_term`).
-wasm     | run/module_init_order.bp | 05 (no step; the module body on wasm) | a `_`-named top-level statement is dropped: `first` / `main` / `1` / `1` — `second` never runs. The named `val` is already evaluated once at load, so only the statement half is owed
-
-# ── a field read whose receiver lost its type, on wasm ───────────────────────
-# `modules/field_name_collision` pins decision 21's positional read against the
-# name-alone guess that places it: the name only identifies a record when nothing
-# else in the PROGRAM declares it, and counting only what one file imports read a
-# `Hit` at a `Ctx`'s offset (erlang answered `1` where commonJS answered `2`).
-# The wasm backend resolves a field to an offset the same way and has a wider gap
-# underneath it: measured on this branch with NO name collision at all — one
-# record in the program, one field called `rest` — wasm answers `0` for a read off
-# the optional binder and `2` for the same read through a typed parameter, so what
-# it is missing is the receiver's type at the binder, not this cell's collision.
-wasm     | modules/field_name_collision | 05-wasm | a field read off an optional binder answers `0`: `0` / `0` where the other two rows answer `2` / `0`. Measured with the collision removed as well, so it is the binder's lost type and not the offset guess
-
-# ── a method call whose receiver lost its type, on wasm ──────────────────────
-# `modules/method_name_collision` is the method axis of the cell above: policy 3
-# puts a method in its type's module on erlang, so a call on a receiver inference
-# left untyped needs an owner, and the owner came from the method's name alone —
-# over the modules one file happens to import from, keyed by the name with no
-# arity and no dissent check, so the export index's hash iteration order picked
-# it. The wasm backend stays single-module and never reaches that question:
-# measured on this branch with NO name collision at all (`Grouping.toArray`
-# renamed to `toList`), wasm answers the same `0` / `0`, so what it is missing is
-# the imported receiver, not this cell's collision.
-wasm     | modules/method_name_collision | 05-wasm | a method call on a value answered by an imported fn answers `0`: `0` / `0` / `4` where the other two rows answer `3` / `2` / `4`. The local collision (the third line) is right on every row. Measured with the collision removed as well, so it is the imported receiver and not the owner guess
+# `run/module_init_order.bp` pins. beam runs it since front 03 (the module body
+# in `'_botopink_main'/0`, an effectful `val` cached in `persistent_term`) and
+# wasm since `00 · 05-wasm` (a `_`-named statement runs in `$__init_globals`,
+# in order with the named `val`s). No line is left.
 
 # ── a labelled argument claims its slot, on erlang ───────────────────────────
 # `run/labelled_arguments.bp` writes a record constructor and an enum variant
@@ -273,17 +249,6 @@ wasm     | modules/method_name_collision | 05-wasm | a method call on a value an
 # is built `Rect(2, 5)` and the cell prints `205` where it must print `502`.
 # Exit 0 either way, with nothing said — measured 2026-09-21.
 erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's labelled payload, reported 2026-09-21) | an enum variant's payload is zipped positionally even when every argument is labelled: `205` where the declared order asks for `502`. The record-constructor row of the same cell is right, which is what says it is the variant path and not the label
-
-# ── a method call and a loop over a field, on wasm ────────────────────────────
-# `run/effect_method.bp` puts an effect annotation on a method — a record's, an
-# `implement` block's and an enum's. commonJS and erlang both run it. wasm
-# answers `0` for the first row and TRAPS on the third, and neither has anything
-# to do with the effect: measured on this branch with every `#[@<effect>]` and
-# every `yield` removed, a plain record method that loops over its own
-# `Array<i32>` field still answers `0`, and a plain method declared in an enum's
-# body still traps (`wasm trap: unreachable`). The cell is listed whole because
-# the first failing row stops the run.
-wasm     | run/effect_method.bp | 05-wasm | a record method looping over its own array field answers `0`, and a method declared in an enum's body traps (`unreachable`). Measured with the effect annotations removed as well, so it is the method call and not the effect
 
 # ── decision 103 cells on the eager generator lowerings (front 21) ───────────
 # Measured after merging 22-loops (`52843fd5`): commonJS's `function*` and beam

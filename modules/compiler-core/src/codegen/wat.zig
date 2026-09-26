@@ -96,6 +96,34 @@ fn isSyntheticEntrypointVal(v: ast.ValDecl) bool {
     return std.mem.startsWith(u8, v.name, "_");
 }
 
+/// A synthetic statement that only calls `main()` — the entrypoint wrapper
+/// already does, so it is not run a second time (`beam_asm.zig`'s
+/// `isSyntheticMainCall`, erlang's `isSyntheticMainEntrypointCall`).
+fn isSyntheticMainCall(v: ast.ValDecl) bool {
+    if (std.mem.startsWith(u8, v.name, "_main")) return true;
+    return isSyntheticEntrypointVal(v) and isZeroArgMainCall(v.value.*);
+}
+
+fn isZeroArgMainCall(e: ast.Expr) bool {
+    return switch (e) {
+        .call => |c| switch (c.kind) {
+            .call => |cc| !cc.is_builtin and cc.receiver == null and cc.args.len == 0 and
+                cc.trailing.len == 0 and std.mem.eql(u8, cc.callee, "main"),
+            else => false,
+        },
+        .jump => |j| switch (j.kind) {
+            .@"return" => |r| if (r) |rp| isZeroArgMainCall(rp.*) else false,
+            .try_ => |t| if (t) |tp| isZeroArgMainCall(tp.*) else false,
+            else => false,
+        },
+        .collection => |col| switch (col.kind) {
+            .grouped => |g| isZeroArgMainCall(g.*),
+            else => false,
+        },
+        else => false,
+    };
+}
+
 /// The value an eager effect wrapper carries. wasm runs a `@Task<T>` and a
 /// `@Component<C, T>` in place (`await` and `use` are identity), so a value of
 /// either type IS its `T`: every question about its representation — a string,
@@ -697,6 +725,9 @@ const Emitter = struct {
     /// which the module's `(start …)` runs before anything else. They used to
     /// stay at the `(i32.const 0)` placeholder, so every read saw 0.
     deferred_globals: std.ArrayListUnmanaged(ast.ValDecl) = .empty,
+    /// The entries of `deferred_globals` that are `_`-named top-level
+    /// statements: run for their effect in `$__init_globals`, stored nowhere.
+    deferred_stmts: std.StringHashMapUnmanaged(void) = .empty,
 
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
@@ -876,6 +907,7 @@ const Emitter = struct {
         self.reg_arena.deinit();
         self.data_segments.deinit(self.alloc);
         self.deferred_globals.deinit(self.alloc);
+        self.deferred_stmts.deinit(self.alloc);
         self.ext_by_name.deinit();
         self.arr_elem_locals.deinit();
         self.arr_elem_globals.deinit();
@@ -900,7 +932,15 @@ const Emitter = struct {
         switch (decl) {
             .@"fn" => |f| if (!f.isHost()) try self.emitFn(f),
             .val => |v| {
-                if (!isSyntheticEntrypointVal(v)) try self.emitGlobalVal(v);
+                if (!isSyntheticEntrypointVal(v)) {
+                    try self.emitGlobalVal(v);
+                } else if (!isSyntheticMainCall(v)) {
+                    // A `_`-named top-level statement runs at module load, in
+                    // source order with the named `val`s around it — what
+                    // commonJS, erlang and beam do. It used to be dropped.
+                    try self.deferred_stmts.put(self.alloc, v.name, {});
+                    try self.deferred_globals.append(self.alloc, v);
+                }
             },
             .comment => |c| try self.itemComment(c.text),
             // Extension methods lower to linear-memory functions named
@@ -911,7 +951,7 @@ const Emitter = struct {
             // extension methods (same `$<target>_<method>` mangling); `self` is the
             // record pointer + a method body's `self.field` walks the declared
             // layout via `self_type`.
-            .type_ => |r| if (r.isRecord()) try self.emitInterfaceMethods(r.name, r.methods),
+            .type_ => |r| try self.emitInterfaceMethods(r.name, r.methods),
             // An import is linked statically: `emitWat` has already put the
             // owner's declarations in front of this module's.
             // A type alias is erased: the checker substituted its target.
@@ -1000,7 +1040,10 @@ const Emitter = struct {
             },
             .implement => |im| try self.registerMethodSigs(im.target, im.methods),
             .extend => |ex| try self.registerMethodSigs(ex.target, ex.methods),
-            .type_ => |r| if (r.isRecord()) try self.registerInterfaceSigs(r.name, r.methods),
+            // An enum's methods too: `Shape.Rect(…).counts(3)` is
+            // `$Shape_counts(self, 3)` exactly as a record's is — it used to
+            // be an `unresolved call` trap.
+            .type_ => |r| try self.registerInterfaceSigs(r.name, r.methods),
             .behavior => |i| for (i.methods) |m| {
                 const body = m.body orelse continue;
                 if (!m.is_default or m.is_declare or m.isExternal() or m.isHost()) continue;
@@ -2046,7 +2089,15 @@ const Emitter = struct {
         try self.declareScratch("__mem", self.countMems(body));
         try self.emitLocalDecls(body);
 
-        const seq = try self.renderBody(body, null);
+        // A method declared `-> @Iterator<T>` / `-> @Stream<T>` runs eagerly
+        // like a fn does (`emitFn`): every `yield` is appended to one array,
+        // which is what it returns. Rendered as a plain body, each `yield` was
+        // dropped and the method answered `0` — or whatever its last
+        // statement left.
+        const seq = if (has_result and methodYieldsEagerly(m) and bodyYieldsDeep(body))
+            try self.renderAccumulatingBody(body)
+        else
+            try self.renderBody(body, null);
 
         const ar = self.arena();
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
@@ -2061,6 +2112,16 @@ const Emitter = struct {
             .locals = try self.localLines(),
             .body = seq,
         }) });
+    }
+
+    /// A method whose declared return is an `@Iterator<T>` / `@Stream<T>` —
+    /// what `FnDecl.effect` says for a fn (a method carries no effect field).
+    fn methodYieldsEagerly(m: ast.BehaviorMethod) bool {
+        const rt = m.returnType orelse return false;
+        return switch (rt) {
+            .generic => |g| g.is_builtin and (std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "Stream")),
+            else => false,
+        };
     }
 
     /// True when any `self` identifier appears anywhere in `body` (used to
@@ -2116,6 +2177,21 @@ const Emitter = struct {
                 else => false,
             },
             .loop => |lp| exprReferencesSelf(lp.iter.*) or bodyReferencesSelf(lp.body),
+            // `case (self) { … }` in an enum's method — the subject and every
+            // arm. Missed, the method got no `$self` and read `0` for it.
+            .collection => |col| switch (col.kind) {
+                .case => |cs| blk: {
+                    for (cs.subjects) |sub| if (exprReferencesSelf(sub)) break :blk true;
+                    for (cs.arms) |arm| {
+                        if (exprReferencesSelf(arm.body)) break :blk true;
+                        if (arm.guard) |g| if (exprReferencesSelf(g)) break :blk true;
+                    }
+                    break :blk false;
+                },
+                .grouped => |inner| exprReferencesSelf(inner.*),
+                else => false,
+            },
+            .function => |f| bodyReferencesSelf(f.kind.body),
             else => false,
         };
     }
@@ -2671,6 +2747,10 @@ const Emitter = struct {
         var c: Capture = .{};
         self.open(&c);
         for (self.deferred_globals.items) |v| {
+            if (self.deferred_stmts.contains(v.name)) {
+                _ = try self.emitStmt(.{ .expr = v.value.* }, false);
+                continue;
+            }
             if (self.boxesInto(v.typeAnnotation, v.value.*))
                 try self.lowerBoxed(v.value.*)
             else
@@ -6446,10 +6526,11 @@ const Emitter = struct {
         const rn = receiverName(cc) orelse return null;
         if (self.locals.contains(rn) or self.globals.contains(rn)) return null;
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rn, cc.callee }) catch return null;
-        // An interface associated `default fn`, or a record's own fn called on
-        // the type (`Response.ok(…)`).
+        // An interface associated `default fn`, or a record's or an enum's own
+        // fn called on the type (`Response.ok(…)`, `Shape.unit()` — which took
+        // the variant path and answered `0 ;; unknown variant`).
         if (self.iface_assoc.contains(sym)) return sym;
-        if (self.records.contains(rn) and self.fn_sigs.contains(sym)) return sym;
+        if ((self.records.contains(rn) or self.enums.contains(rn)) and self.fn_sigs.contains(sym)) return sym;
         return null;
     }
 
@@ -6938,11 +7019,16 @@ const Emitter = struct {
     /// receiver as a record value and the module emitted that method.
     fn recordMethodSym(self: *Emitter, cc: anytype, loc: ast.Loc) ?[]const u8 {
         if (cc.receiver == null or cc.is_builtin) return null;
-        const il = self.instance_lowerings.get(loc) orelse return null;
-        const rec = switch (il) {
+        // Inference records no note for a method on a value of an IMPORTED
+        // type (`queryOf(xs).toArray()` with `Query` declared in `shapes`), so
+        // the receiver's record is recovered here as it is for a field read —
+        // the modules are linked into this one, so its `<Type>_<method>` is
+        // emitted beside the local ones. Without it the call fell through and
+        // `.length` on its result answered `0` at exit 0.
+        const rec = if (self.instance_lowerings.get(loc)) |il| switch (il) {
             .type_ => |r| r,
             .prim, .field_of, .sequence_next => return null,
-        };
+        } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
         if (!self.fn_sigs.contains(sym)) return null;
         return sym;
@@ -8565,6 +8651,15 @@ const Emitter = struct {
                 if (o.str) try self.str_locals.put(name, {});
                 if (o.bool_) try self.bool_locals.put(name, {});
                 if (o.inner) |tr| try self.local_typerefs.put(name, tr);
+                // A record payload types the binder, so `h.rest` reads the
+                // declared slot rather than guessing one by the field's name
+                // (`modules/field_name_collision` answered `0` / `0`).
+                const rec: ?[]const u8 = o.rec orelse if (o.inner) |tr| switch (tr) {
+                    .named => |n| self.resolveRecordName(n),
+                    .generic => |g| self.resolveRecordName(g.name),
+                    else => null,
+                } else null;
+                if (rec) |r| try self.local_types.put(name, r);
             }
             try self.emit(.{ .local_set = name });
         }

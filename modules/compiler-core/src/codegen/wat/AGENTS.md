@@ -421,6 +421,30 @@ the table and left the arm answering a closure-cell address
 and a bare `{ 1 + 2 }` in value position does not parse at all ("this token cannot
 appear here"). So decision 2's enforcement leaves nothing dead here.
 
+## Methods, binders and the module body (`00 · 05-wasm`, the rows no step named)
+
+Each of these answered `0` at exit 0 or trapped where the other three backends
+answered, and each had its own `expected-failures.txt` line:
+
+- **An enum's methods are emitted** (`registerInterfaceSigs` / `emitInterfaceMethods`
+  take every `type`, not only records): `Shape.Rect(…).counts(3)` was an
+  `unresolved call` trap. An enum's associated fn called on the type
+  (`Shape.unit()`) is `assocSym`'s, as a record's is — it took the variant path
+  and answered `0 ;; unknown variant`. `exprReferencesSelf` walks a `case`'s
+  subject and arms, so `fn name() { case (self) { … } }` gets its `$self`.
+- **A method declared `-> @Iterator<T>` / `-> @Stream<T>` accumulates its
+  yields** (`methodYieldsEagerly` → `renderAccumulatingBody`), as a fn does; its
+  body was rendered plain, every `yield` dropped.
+- **A method on a value of an IMPORTED type** resolves through the receiver's
+  record type (`recordMethodSym`'s fallback to `recordTypeOfExpr`): inference
+  records no note for it, so `queryOf(xs).toArray().length` answered `0`.
+- **The optional binder takes the payload's record type** (`lowerIfExpr`,
+  `local_types`), so `if (hitOf()) { h -> h.rest.length }` reads the declared
+  slot instead of `0`.
+- **A `_`-named top-level statement runs at module load**, in `$__init_globals`
+  in source order with the named `val`s (`deferred_stmts`); it was dropped. A
+  synthetic statement that only calls `main()` is skipped, as on the BEAM.
+
 ## Self-recursion in tail position (`00 · 05-wasm` step 9)
 
 **`return f(args)` inside `fn f` is a branch, not a call** (`noteSelfTailCalls`,

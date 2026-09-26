@@ -27,13 +27,80 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\15\00\00\00V\0cShape.Square\01\04sidei")
+  (global $__heap_ptr (mut i32) (i32.const 284))
+  (func $Shape_unit (result i32)
+    (local $__mem0 i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 12
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 260
+    i32.store
+    local.get $__mem0
+    i32.const 1
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 1
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    return
+  )
+  (func $Shape_area (param $self i32) (result i32)
+    (local $r i32)
+    (local $s i32)
+    (local $__case_0 i32)
+    local.get $self
+    local.set $__case_0
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 0 ;; Circle
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $r
+    local.get $r
+    local.get $r
+    i32.mul
+    i32.const 3
+    i32.mul
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 1 ;; Square
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $s
+    local.get $s
+    local.get $s
+    i32.mul
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
+    return
+  )
   (func $main
     (local $__mem0 i32)
     (local $s i32)
-    i32.const 0 ;; unknown variant
+    call $Shape_unit
     local.set $s
-    unreachable ;; unresolved call: area/0
+    local.get $s
+    call $Shape_area
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -224,6 +291,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-RUNTIME TRAP (wasmtime):
-wasm trap: wasm `unreachable` instruction executed
+1
 ```
