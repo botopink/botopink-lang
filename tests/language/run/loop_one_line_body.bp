@@ -1,0 +1,18 @@
+//// 1.0.10-beta `00 · 15-language-surface` step 4b — a one-statement lambda
+//// body needs no `;` before its `}`, in a collection loop and in a trailing
+//// lambda alike: both take the fn body's semicolon policy
+//// (`requiredExceptLast`). `for (xs) { x -> @print(x) };` was a parse error
+//// (`this token cannot appear here`) while `{ x -> @print(x); }` compiled.
+//// Specified by 15 as `loop (xs) { … }`; decision 105 renamed the collection
+//// loop to `for`, which is the spelling here. The `;` AFTER the loop's `}` is
+//// decision 29's (C-13) and stays until that lands.
+
+fn f(x: i32) -> i32 { return x + 1; }
+
+pub fn main() {
+    val xs = [1, 2];
+    var acc = 0;
+    for (xs) { x -> acc = acc + f(x) };
+    val ys = xs.map { x -> f(x) };
+    @print(acc.toString() + ys.length.toString());
+}

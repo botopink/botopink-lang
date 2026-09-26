@@ -1,0 +1,9 @@
+//// 1.0.10-beta `00 · 15-language-surface` step 3 — there is no ternary
+//// operator; a conditional value is `if (c) { a } else { b }`. Refused by name
+//// at the `?`, once, at the exit of the postfix chain every spelling reaches.
+
+pub fn main() {
+    val c = true;
+    val x = c ? 1 : 2;
+    @print(x.toString());
+}

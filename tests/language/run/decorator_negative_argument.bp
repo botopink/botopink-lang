@@ -1,0 +1,18 @@
+//// 1.0.10-beta `00 · 15-language-surface` step 4b — a negative integer
+//// literal is a decorator argument. `#[mark(20)]` always compiled;
+//// `#[mark(-20)]` was a parse error blaming the digits (`unexpected `20``),
+//// which is why rakun front 07 shipped `#[order("-100")]` through a `toI32`
+//// wrapper. `parseAnnotationCall` now spans the `-` and the digits into one
+//// argument, so the decorator receives the NUMBER `-20`: the emitted function
+//// answers it, and `-20 + 25` prints `5`.
+
+fn mark(comptime decl: @Decl, n: i32) {
+    @emit("pub fn markedWith() -> i32 { return " + n.toString() + "; }");
+}
+
+#[mark(-20)]
+type Account(id: i32)
+
+pub fn main() {
+    @print((markedWith() + 25).toString());
+}
