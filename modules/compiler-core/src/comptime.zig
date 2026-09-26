@@ -34,25 +34,6 @@ pub const Env_ = Env; // alias: use `comptimeMod.Env` in callers
 /// What `compileTypesOnly`'s opt-in template evaluator needs (`{ io, build_root }`).
 /// Re-exported so tooling (the LSP) builds it without importing comptime internals.
 pub const TemplateEvalCtx = envMod.TemplateEvalCtx;
-/// Tooling hook — the type the checker gave each expression, per file and
-/// location (`botopink migrate effects`, front 24 E6). See `infer.ExprTypeLog`.
-pub const ExprTypeLog = infer.ExprTypeLog;
-/// Install (or clear, with null) the `ExprTypeLog` the next inference fills.
-pub fn setExprTypeLog(log: ?*ExprTypeLog) void {
-    infer.expr_type_log = log;
-}
-/// Turn the migration-only mode of `botopink migrate effects` on (with the
-/// files written against the pre-front-24 surface, as their `srcPath`) or
-/// off (null) — front 24 E6, decisions-pending 24-d. While on, the parser
-/// reads the removed effect annotations and wrappers as their new spelling
-/// (`parser.effect_migration`) and the checker types the listed files with
-/// the old meaning (`infer.effect_migration_files`). Only the codemod calls
-/// it, around its own analysis, and turns it off before returning — no
-/// command line flag of `build` / `check` / `test` reaches it (decision 67).
-pub fn setEffectMigration(legacy_files: ?[]const []const u8) void {
-    @import("./parser.zig").effect_migration = legacy_files != null;
-    infer.effect_migration_files = legacy_files;
-}
 
 // ── Intermediate types ────────────────────────────────────────────────────────
 

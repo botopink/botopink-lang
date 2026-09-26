@@ -2018,9 +2018,8 @@ and every refusal are in [`docs/botopink-json.md`](docs/botopink-json.md).
 118–128) and kept no compatibility window (decision 127): every old form below
 is a located compile error with a fix-it — `effect-annotation-removed` for an
 annotation (on a loop it suggests `iter` / `stream`), `effect-type-removed` for
-a wrapper name, `iterator-error-param-removed` for `@Iterator<T, E>`.
-`botopink migrate effects` applies the mechanical rows and marks the rest with
-`// TODO(migrate-effects)`.
+a wrapper name, `iterator-error-param-removed` for `@Iterator<T, E>`. There is
+no automatic rewriter: each error names the new spelling, from the table below.
 
 | Old | Now |
 |---|---|

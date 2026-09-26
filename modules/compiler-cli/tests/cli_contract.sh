@@ -342,27 +342,6 @@ expect_code 0 "migrate --dry-run"
 after="$(cd "$P" && find src -type f | sort | xargs cat | cksum)"
 [[ "$before" == "$after" ]] && [[ ! -e "$P/src/shapes/mod.bp" ]] && ok "src/ untouched" || fail "migrate --dry-run wrote into src/"
 
-# ── C8b — migrate effects: --dry-run writes nothing; the rewrite is idempotent
-echo "==> C8b migrate effects --dry-run writes nothing; a second run changes nothing"
-P="$(project c8b)"
-printf '#[@future]\nfn one() -> @Future<i32> {\n    return 1;\n}\n\npub fn main() {\n    @print(1);\n}\n' >"$P/src/main.bp"
-before="$(cksum <"$P/src/main.bp")"
-run "$P" migrate effects src
-expect_code 1 "migrate effects with a positional is a usage error"
-run "$P" migrate effects --dry-run
-expect_code 0 "migrate effects --dry-run"
-expect_out "would rewrite" "--dry-run names the file it would rewrite"
-[[ "$before" == "$(cksum <"$P/src/main.bp")" ]] && ok "src/ untouched by --dry-run" || fail "migrate effects --dry-run wrote into src/"
-run "$P" migrate effects
-expect_code 0 "migrate effects"
-expect_file_out "$P/src/main.bp" "fn one() -> @Task<i32> {" "@Future<T> became @Task<T>"
-if grep -qF "#[@future]" "$P/src/main.bp"; then fail "the #[@future] annotation is still there"; else ok "the annotation is gone"; fi
-once="$(cksum <"$P/src/main.bp")"
-run "$P" migrate effects
-expect_code 0 "a second migrate effects"
-expect_out "nothing to migrate" "the second run finds nothing"
-[[ "$once" == "$(cksum <"$P/src/main.bp")" ]] && ok "the second run changed nothing" || fail "migrate effects is not idempotent"
-
 # ── C9 — format / format --check count an unparseable file as an error ──────
 echo "==> C9 format and format --check fail on unlexable or unparseable source"
 P="$(project c9)"
