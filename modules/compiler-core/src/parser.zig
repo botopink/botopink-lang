@@ -317,24 +317,6 @@ pub const ParseErrorInfo = struct {
 
 pub const ParseError = error{ UnexpectedToken, OutOfMemory };
 
-/// The migration-only parse of `botopink migrate effects` (front 24 E6,
-/// decisions-pending 24-d). False everywhere else — no compile, check, test
-/// or language-server path sets it, and no CLI flag reaches it (decision 67):
-/// only `comptime.setEffectMigration`, which the codemod calls around its own
-/// analysis and resets before returning. While it is set the pre-front-24
-/// effect surface is READ instead of refused, as the new language spells what
-/// it meant: a removed `#[@<effect>]` annotation on a declaration is dropped
-/// (the return type carries the effect); on a loop it becomes the `iter` /
-/// `stream` prefix; `@Future<T, E>` reads as `@Task<@Result<T, E>>`,
-/// `@Future<T>` as `@Task<T>`, `@Generator<T>` as `@Iterator<T>`,
-/// `@ResultGenerator<T, E>` / `@Iterator<T, E>` as `@Iterator<@Result<T, E>>`,
-/// `@FutureGenerator<T, E>` as `@Stream<@Result<T, E>>` and `@Use<C, T>` as
-/// `@Component<C, T>`. The checker's half is `infer.effect_migration_files`.
-/// Thread-local, like `infer.expr_type_log`: it holds for the thread that
-/// set it (the codemod parses and checks on its own thread), so a concurrent
-/// compile on another thread never sees it.
-pub threadlocal var effect_migration: bool = false;
-
 // ── Parser ────────────────────────────────────────────────────────────────────
 
 pub const Parser = struct {
@@ -367,11 +349,6 @@ pub const Parser = struct {
     /// token (`Array<Array<T>>`). `consumeGenericClose` consumes the `>>`
     /// for the inner list and credits the second `>` here for the outer one.
     pending_gt: bool = false,
-    /// Under `effect_migration`: the generator kind of the last removed
-    /// effect annotation `parseAnnotations` dropped (`#[@generator]` →
-    /// `.iterator`, `#[@futureGenerator]` → `.stream`, others null), read by
-    /// `parseAnnotatedLoopExpr` to prefix the loop it annotates.
-    legacyLoopKind: ?ast.EffectKind = null,
     /// Auto-incrementing counters for unique IDs per declaration type.
     id_counters: struct {
         behavior: u32 = 0,
@@ -1119,15 +1096,8 @@ pub const Parser = struct {
             var removed: ?Token = null;
             while (true) {
                 const nameTok = this.peek();
-                var ann = try this.parseAnnotationCall(alloc);
+                const ann = try this.parseAnnotationCall(alloc);
                 if (ann.is_builtin and ast.isRemovedEffectAnnotation(ann.name)) {
-                    if (effect_migration) {
-                        // Read, not refused (24-d): the effect is the return's.
-                        this.legacyLoopKind = ast.legacyGeneratorKind(ann.name);
-                        ann.deinit(alloc);
-                        if (!this.match(.comma)) break;
-                        continue;
-                    }
                     if (removed == null) removed = nameTok;
                 }
                 try list.append(alloc, ann);

@@ -2640,18 +2640,6 @@ pub const EffectKind = enum {
 /// `#[@iterator]`, `#[@asyncGenerator]`), which stay refused.
 pub const removed_effect_annotations = [_][]const u8{ "result", "future", "use", "generator", "resultGenerator", "futureGenerator", "context", "iterator", "asyncGenerator" };
 
-/// The generator kind a removed effect annotation gave the loop it annotated
-/// (`#[@generator] loop` → `iter loop`, `#[@futureGenerator] loop` →
-/// `stream loop`); null for the non-generator ones. Read only by the
-/// migration parse (`parser.effect_migration`, front 24 E6).
-pub fn legacyGeneratorKind(name: []const u8) ?EffectKind {
-    const iters = [_][]const u8{ "generator", "resultGenerator", "iterator" };
-    const streams = [_][]const u8{ "futureGenerator", "asyncGenerator" };
-    for (iters) |a| if (std.mem.eql(u8, a, name)) return .iterator;
-    for (streams) |a| if (std.mem.eql(u8, a, name)) return .stream;
-    return null;
-}
-
 /// True when `name` is one of the removed effect annotations.
 pub fn isRemovedEffectAnnotation(name: []const u8) bool {
     for (removed_effect_annotations) |a| {

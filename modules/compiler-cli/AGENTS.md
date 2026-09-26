@@ -12,8 +12,7 @@ compiler-cli/
 ├── AGENTS.md            ← you are here
 ├── botopink.json        ← module manifest (`version` drives the auto-tag)
 ├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all four
-│   ├── cli_contract.sh      ← the command contract (rows C1–C13 and C8b —
-│   │                          `migrate effects`, plus the
+│   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus the
 │   │                          build-does-not-execute and `new`-scaffold-prints
 │   │                          rows) against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
@@ -27,9 +26,6 @@ compiler-cli/
 │   │                          and prints under `--jobs 4` what `--jobs 1` prints;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
 │   └── test_tooling/        ← pass + fail fixture projects
-├── snapshots/cli/       ← `migrate effects` text snapshots (`bp.snap.checkText`,
-│                          cwd = this package): every automatic pattern, every
-│                          review pattern
 └── src/
     ├── AGENTS.md
     ├── main.zig         ← argv parser, subcommand dispatcher
@@ -45,7 +41,7 @@ zig build               # produce zig-out/bin/botopink
 zig build run -- help
 zig build run -- version
 zig build test          # includes the CLI unit tests (main.zig parsers / config /
-                        # libs / resolver / migrate / migrate_effects / test_cmd /
+                        # libs / resolver / migrate / test_cmd /
                         # diagnostics / clean;
                         # root = src/main.zig, cwd = modules/compiler-cli) — main.zig's
                         # `test { _ = @import(...) }` block pulls every cli/ file in; a
@@ -208,7 +204,6 @@ What each command promises. A row the code does not meet yet is marked
 | `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
 | `clean` | nothing | deletes `out/` and `.botopinkbuild/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
 | `migrate [--dry-run]` | the `src/` tree | index files (`root.bp`/`main.bp`/`mod.bp`) — **none** under `--dry-run` | nothing | the tree is covered | `src/` unreadable |
-| `migrate effects [--dry-run]` | `botopink.json`, every `.bp`/`.d.bp` under `src/` and `test/`, dependencies (context bases and types, never rewritten) | the rewritten files in place — **none** under `--dry-run`; a second run writes nothing (C8b) | `erl` (comptime, through `compileTypesOnly`) | every file rewritten or already migrated — a module that does not type-check is rendered and its type-dependent sites marked, not refused | no project, unreadable source, unresolvable dependency |
 
 Cross-command rules:
 
