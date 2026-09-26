@@ -266,6 +266,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // is inferred. Bail out early when contributions exist — the spliced
     // re-analysis does the real inference.
     try validateDecorators(env, program);
+    try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
     if (env.contributions.items.len > 0) {
@@ -347,6 +348,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // test`. The serialized handles read only the AST, so no body inference is
     // needed first.)
     try validateDecorators(env, program);
+    try refuseUnknownAnnotations(env, program);
     try validateExternalInline(env, program);
     try invokeDecorators(env, program);
     if (env.contributions.items.len > 0) {
@@ -3076,6 +3078,64 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
         },
         else => {},
     };
+}
+
+/// The builtin annotation families: what a `#[@<Family>…]` may name. `External`
+/// (the host targets, `validateExternalAnnotation`), `BeamMemory`
+/// (`validateMemoryAnnotations`) and `Host` (wasm's prelude-backed fns). The
+/// removed effect annotations never reach here — the parser refuses them.
+const builtin_annotation_families = [_][]const u8{ "External", "BeamMemory", "Host" };
+
+/// Decision 15 gives the annotation grammar to the checker, and front 17 step
+/// 3 recorded the hole: `#[@TotallyMadeUp.Nonsense(whatever = 42)]` parsed,
+/// checked and was dropped — on a `fn`, a `var`, a type, a field, a method. A
+/// misspelled family (`#[@BeamMemroy.Ets]`) moves where the state lives with
+/// nothing said. Every `@`-prefixed annotation now names a family the compiler
+/// reads, or an annotation type (`implement @Annotation`) the module can see;
+/// anything else is `unknown-annotation` at the annotation, naming the family
+/// an edit away when there is one. The lower-case `@external` keeps its own
+/// message (`refuseLowerCaseExternal`).
+fn refuseUnknownAnnotations(env: *Env, program: ast.Program) InferError!void {
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| try refuseUnknownAnnotationList(env, f.annotations),
+        .val => |v| try refuseUnknownAnnotationList(env, v.annotations),
+        .type_ => |tdecl| {
+            try refuseUnknownAnnotationList(env, tdecl.annotations);
+            if (tdecl.shape == .record) for (tdecl.recordFields()) |fld| try refuseUnknownAnnotationList(env, fld.annotations);
+            for (tdecl.methods) |m| try refuseUnknownAnnotationList(env, m.annotations);
+        },
+        .behavior => |i| {
+            try refuseUnknownAnnotationList(env, i.annotations);
+            for (i.methods) |m| try refuseUnknownAnnotationList(env, m.annotations);
+        },
+        else => {},
+    };
+}
+
+fn refuseUnknownAnnotationList(env: *Env, anns: []const ast.Annotation) InferError!void {
+    for (anns) |a| {
+        if (!a.is_builtin) continue;
+        try refuseLowerCaseExternal(env, a);
+        if (ast.isRemovedEffectAnnotation(a.name)) continue;
+        const family = if (std.mem.indexOfScalar(u8, a.name, '.')) |i| a.name[0..i] else a.name;
+        var known = false;
+        for (builtin_annotation_families) |k| {
+            if (std.mem.eql(u8, family, k)) known = true;
+        }
+        if (known or env.decorators.contains(a.name)) continue;
+        var near: ?[]const u8 = null;
+        for (builtin_annotation_families) |k| {
+            if (editDistanceIsOne(family, k)) near = k;
+        }
+        const msg = if (near) |n|
+            try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation family — did you mean `@{s}`?", .{ diagnostics.unknown_annotation, a.name, n })
+        else
+            try std.fmt.allocPrint(env.arena, "{s}: `#[@{s}]` names no annotation family", .{ diagnostics.unknown_annotation, a.name });
+        var e = TypeError.custom(msg, "The builtin annotations are `@External.<Target>`, `@BeamMemory.<Mode>` and `@Host`; an annotation type of your own (`implement @Annotation`) is written without the `@`.");
+        if (a.loc) |l| e = e.withLoc(l);
+        env.lastError = e;
+        return error.TypeError;
+    }
 }
 
 /// Check one declaration's annotation list. `owner` names the annotated

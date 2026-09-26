@@ -191,6 +191,10 @@ pub const unknown_builtin: []const u8 = "unknown-builtin";
 /// answered (b)): refused, with the declared method whose host spelling or
 /// name is nearest.
 pub const unknown_primitive_method: []const u8 = "unknown-primitive-method";
+/// A `#[@Family…]` annotation whose family the compiler does not read
+/// (`#[@TotallyMadeUp.Nonsense(whatever = 42)]`). It used to parse, check and
+/// be dropped (decision 15's failure mode; front 17 step 3's recorded row).
+pub const unknown_annotation: []const u8 = "unknown-annotation";
 
 /// RC4 — `@getContext(<value>)` (the argument must be a type).
 pub const context_getcontext_expects_type: []const u8 = "context-getcontext-expects-type";
