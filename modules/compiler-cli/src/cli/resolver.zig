@@ -534,6 +534,76 @@ fn orderByDependencies(sa: std.mem.Allocator, mods: []Module, analysis: Analysis
     @memcpy(mods, tmp);
 }
 
+/// Reorder one dependency package's modules — `<prefix>/<stem>`, loaded in its
+/// manifest's `files` order — so every module comes after the siblings it
+/// imports. The comptime pipeline registers a module's exports as it compiles
+/// it, so an importer compiled first found its import unbound (`unbound
+/// variable 'base'`), while the package's own build — ordered by
+/// `orderByDependencies` — resolved the same modules. The edges are the
+/// project's (`analyzeModules`, `importOwner`) read with the package prefix
+/// stripped, so `from "a"`, `from "<prefix>.a"` and a bare `import {Leaf};`
+/// all count. Each step places the first module in `files` order whose
+/// imports are all placed, so a package whose list is already in import order
+/// keeps it; a cycle keeps the rest in `files` order and the checker names
+/// what is unbound.
+pub fn orderPackageModules(sa: std.mem.Allocator, prefix: []const u8, mods: []Module) void {
+    const n = mods.len;
+    if (n < 2) return;
+    const local = sa.alloc(Module, n) catch return;
+    for (mods, 0..) |m, i| {
+        local[i] = m;
+        if (std.mem.startsWith(u8, m.path, prefix) and m.path.len > prefix.len and m.path[prefix.len] == '/')
+            local[i].path = m.path[prefix.len + 1 ..];
+    }
+    const analysis = analyzeModules(sa, local);
+    if (analysis.imports.len != n) return;
+    // needs[i * n + j]: module i imports from sibling j.
+    const needs = sa.alloc(bool, n * n) catch return;
+    @memset(needs, false);
+    for (analysis.imports, 0..) |imps, i| for (imps) |ref| {
+        var r = ref;
+        if (r.from) |f| if (std.mem.startsWith(u8, f, prefix) and f.len > prefix.len and f[prefix.len] == '/') {
+            r.from = f[prefix.len + 1 ..];
+        };
+        const j = importOwner(analysis, r) orelse continue;
+        if (j != i) needs[i * n + j] = true;
+    };
+    const placed = sa.alloc(bool, n) catch return;
+    @memset(placed, false);
+    const order = sa.alloc(Module, n) catch return;
+    for (0..n) |count| {
+        const pick: usize = pick: {
+            for (0..n) |i| {
+                if (placed[i]) continue;
+                for (0..n) |j| {
+                    if (needs[i * n + j] and !placed[j]) break;
+                } else break :pick i;
+            }
+            for (0..n) |i| if (!placed[i]) break :pick i;
+            unreachable;
+        };
+        placed[pick] = true;
+        order[count] = mods[pick];
+    }
+    @memcpy(mods, order);
+}
+
+test "orderPackageModules: a module follows the siblings it imports; the rest keep files order" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    var mods = [_]Module{
+        .{ .path = "dep/root", .source = "pub mod a;\npub mod b;\npub mod c;\npub mod leaf;\n" },
+        .{ .path = "dep/b", .source = "import {base} from \"a\";\npub fn derived() -> i32 { return base() + 1; }\n" },
+        .{ .path = "dep/c", .source = "import {Leaf};\npub fn seven() -> i32 { return Leaf(v: 7).v; }\n" },
+        .{ .path = "dep/d", .source = "import {base} from \"dep.a\";\npub fn two() -> i32 { return base() * 2; }\n" },
+        .{ .path = "dep/a", .source = "pub fn base() -> i32 { return 1; }\n" },
+        .{ .path = "dep/leaf", .source = "pub type Leaf(v: i32)\n" },
+    };
+    orderPackageModules(arena_inst.allocator(), "dep", &mods);
+    const want = [_][]const u8{ "dep/root", "dep/a", "dep/b", "dep/d", "dep/leaf", "dep/c" };
+    for (want, mods) |w, m| try std.testing.expectEqualStrings(w, m.path);
+}
+
 const Boundary = struct {
     /// Logical path of the declaring module whose subtree the target is private
     /// to; the target is importable only from within this subtree.

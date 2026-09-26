@@ -1,0 +1,36 @@
+//// An `f64` field of a record holds its value: read directly, through a
+//// function's return, compared, destructured by name and by constructor, and
+//// through a method that takes and answers an `f64`.
+////
+//// The wasm gap this pins (`00 · 05-wasm`): a record slot is four bytes, so a
+//// float field was narrowed to an `f32` on the way in (`1e-320` became `0`)
+//// and read back as an `i32` — `p.x` printed the float's bits (`1069547520`
+//// for `1.5`) and `p.x == 1.5` answered `false`; a method declared `-> f64`
+//// had an `i32` result and truncated its answer. And on erlang and beam
+//// (`00 · 02-erlang`, `03-beam`): `val Pt(y, _) = …` lowered to the value
+//// alone (erlang, `variable 'Y' is unbound`) or to a comment (beam), so the
+//// program did not compile.
+
+type Pt(x: f64, n: i32) {
+    pub fn scaled(self: Self, by: f64) -> f64 {
+        return self.x * by;
+    }
+}
+
+fn origin() -> Pt {
+    return Pt(x: 2.25, n: 0);
+}
+
+pub fn main() {
+    val p = Pt(x: 1.5, n: 3);
+    @print(p.x);
+    @print(p.x == 1.5);
+    @print(origin().x + p.x);
+    val tiny = Pt(x: 1e-320, n: 1);
+    @print(tiny.x > 0.0);
+    @print(p.scaled(0.5));
+    val {x, n} = p;
+    @print(x * 3.0, n);
+    val Pt(y, _) = origin();
+    @print(y);
+}

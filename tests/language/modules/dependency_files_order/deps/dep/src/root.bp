@@ -1,0 +1,7 @@
+//// The package root. `files` lists every importer BEFORE the module it
+//// imports: `c` → `leaf` (a bare `import {Leaf};`), `b` → `a` (`from "a"`).
+
+pub mod a;
+pub mod b;
+pub mod c;
+pub mod leaf;

@@ -1,0 +1,5 @@
+import {base} from "a";
+
+pub fn derived() -> i32 {
+    return base() + 1;
+}

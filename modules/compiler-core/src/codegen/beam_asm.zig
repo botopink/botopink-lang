@@ -597,6 +597,8 @@ fn destructYSlots(pattern: ast.ParamDestruct) u32 {
         // `erlang:element/2` is called once per binding (a `call_ext` frees
         // every x-register, so an x-scratch would not survive the first one).
         .tuple_ => |bindings| @intCast(bindings.len + 1),
+        // `val Pt(y, m) = p;` — one slot per name, as `.names`.
+        .ctor => |pat| if (pat == .variant and pat.variant.payload == .literals) @intCast(pat.variant.payload.literals.len) else 0,
         else => 0,
     };
 }
@@ -4821,8 +4823,60 @@ const Emitter = struct {
                 }
                 try beamEmitter.writeMoveOp(self.out, Op.yr(subj_y), Dst.xr(0));
             },
+            // `val Pt(y, m) = p;` over a RECORD — the checker accepts only a
+            // constructor that cannot fail (decision 67's R5), so each name is
+            // the field at its position, `erlang:element(N + 1, V)` as for
+            // `.names`. It used to lower to a comment, and every name it bound
+            // was an unknown register.
+            .ctor => |pat| {
+                if (!self.isRecordCtorBind(pat)) {
+                    try beamEmitter.writeComment(self.out, "unsupported destructure pattern", .{});
+                    return;
+                }
+                const lits = pat.variant.payload.literals;
+                const type_name = bareVariantName(pat.variant.name);
+                const declared = self.record_fields.get(type_name).?;
+                const tag = try self.recordTagAtom(type_name);
+                var tag_buf: [512]u8 = undefined;
+                const not_rec = self.allocLabel();
+                const done = self.allocLabel();
+                const first_y = self.next_y;
+                try beamEmitter.writeTest(self.out, .is_tagged_tuple, not_rec, &.{
+                    Op.xr(0),
+                    .{ .untagged = @as(i64, @intCast(declared.len + 1)) },
+                    Op.atom(try atomName(tag, &tag_buf)),
+                });
+                for (lits, 0..) |lit, i| {
+                    const y_idx = self.next_y;
+                    self.next_y += 1;
+                    if (lit == .ident) try self.reg_map.put(lit.ident, .{ .y = y_idx });
+                    try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), i + 1, Dst.yr(y_idx));
+                }
+                // Both paths write every slot, as for `.names`.
+                try beamEmitter.writeJump(self.out, done);
+                try beamEmitter.writeLabel(self.out, not_rec);
+                for (0..lits.len) |k| {
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.yr(first_y + k));
+                }
+                try beamEmitter.writeLabel(self.out, done);
+            },
             else => try beamEmitter.writeComment(self.out, "unsupported destructure pattern", .{}),
         }
+    }
+
+    /// A record constructor pattern written positionally with names and `_`
+    /// only — `Pt(y, _)` — and no more of them than the record has fields.
+    /// False for a variant, a nested or a labelled pattern.
+    fn isRecordCtorBind(self: *Emitter, pat: ast.Pattern) bool {
+        if (pat != .variant or pat.variant.payload != .literals) return false;
+        const declared = self.record_fields.get(bareVariantName(pat.variant.name)) orelse return false;
+        const lits = pat.variant.payload.literals;
+        if (lits.len > declared.len) return false;
+        for (lits) |l| switch (l) {
+            .wildcard, .ident => {},
+            else => return false,
+        };
+        return true;
     }
 
     /// Lower `val name = value`: evaluate `value` into `{x, 0}`, then move it

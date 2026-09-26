@@ -1,0 +1,21 @@
+//// `val assert` over a RECORD's constructor pattern binds the record's fields
+//// by position when the subject is one, and takes the handler's value when it
+//// is not (decision 8 §9).
+////
+//// The gaps this pins: commonJS destructured the binders by their own names —
+//// `const { n, a } = _assert0`, fields the record does not have — and printed
+//// `null null`; erlang tested the bare `'Person'` tag, which no constructor
+//// builds (a record is `{'<pkg>@<path>@@Person', …}`, decision 109), so the
+//// pattern never matched.
+
+type Person(name: string, age: i32)
+
+fn describe(p: Person | i32) -> string {
+    val assert Person(n, a) = p catch Person(name: "none", age: 0);
+    return n + " " + a.toString();
+}
+
+pub fn main() {
+    @print(describe(Person(name: "ann", age: 3)));
+    @print(describe(7));
+}

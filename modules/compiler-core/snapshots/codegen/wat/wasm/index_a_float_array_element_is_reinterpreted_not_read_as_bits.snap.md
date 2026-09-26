@@ -26,10 +26,12 @@ fn main() {
     i32.const 2
     i32.store
     local.get $__mem0
-    f32.const 1.5
+    f64.const 1.5
+    f32.demote_f64
     f32.store offset=4
     local.get $__mem0
-    f32.const 2.5
+    f64.const 2.5
+    f32.demote_f64
     f32.store offset=8
     local.get $__mem0
     local.set $fs

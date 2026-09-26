@@ -818,6 +818,10 @@ fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
         const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — `{s}` is a local of `{s}`, and a local ends with its body", .{ name, name, owner });
         return TypeError.custom(msg, "Declare it where it is used, or pass it in as a parameter.").withLoc(loc);
     }
+    for ([_][]const u8{ "print", "println", "debug" }) |b| if (std.mem.eql(u8, name, b)) {
+        const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — printing is the builtin `@{s}`", .{ name, name });
+        return TypeError.custom(msg, "Write `@print(…)`: a builtin is spelled with `@`, and every backend lowers it.").withLoc(loc);
+    };
     return TypeError.unboundVariable(name).withLoc(loc);
 }
 

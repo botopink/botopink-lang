@@ -1379,10 +1379,12 @@ pub const Env = struct {
             const ty = try self.namedType(p);
             try self.bind(p, ty);
         }
-        // Built-in functions bound with placeholder void type.
-        // These are runtime functions — actual types are resolved during codegen.
-        try self.bind("print", try self.namedType("void"));
-        try self.bind("println", try self.namedType("void"));
+        // No `print` / `println` binding: printing is the builtin `@print`
+        // (`@println`, `@debug`), which every backend lowers. A bare
+        // `print(x)` type-checked here and then lowered on commonJS alone —
+        // erlang emitted a call to an undefined local, beam an unresolved
+        // call, wasm a trap — so it is unbound, and `unboundAt` names the
+        // builtin.
     }
 
     // ── level management ──────────────────────────────────────────────────────

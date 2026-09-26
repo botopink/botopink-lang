@@ -1,0 +1,1 @@
+{ "name": "dep", "version": "0.0.1", "src": "src/", "entry": "root.bp", "files": ["root.bp", "c.bp", "b.bp", "leaf.bp", "a.bp"] }

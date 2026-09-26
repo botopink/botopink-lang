@@ -20,10 +20,12 @@
 ////
 //// Measured 2026-09-21. commonJS is right throughout. erlang and beam differ in
 //// ONE way — an empty optional prints the atom `undefined` rather than `null`,
-//// decision 47's row (C-18) — and wasm carries a `?T` whose `T` is not a scalar
-//// badly (a raw heap address for `?i32[]`, `16777216` for a `?i32`), which is
-//// the same answer it gives when the two methods are called BY NAME, byte for
-//// byte: the index expression only reaches them.
+//// decision 47's row (C-18). wasm prints the four lines too: a method's
+//// `return` boxes into its declared `?i32` (it returned the bare index, and the
+//// reader loaded through it — `16777216` for `1`), and a `?i32[]` prints as
+//// the array or `null` (it printed the row's heap address). Calling the two
+//// methods BY NAME answers the same, byte for byte: the index expression only
+//// reaches them.
 
 type Matrix(rows: i32[][]) implement Index<i32, i32[]>, Slice<Matrix> {
     pub fn at(self: Self, key: i32) -> ?i32[] {

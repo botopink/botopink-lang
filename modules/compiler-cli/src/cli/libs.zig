@@ -23,6 +23,7 @@ const bp = @import("botopink");
 const manifest = @import("manifest");
 const config = @import("./config.zig");
 const diagnostics = @import("./diagnostics.zig");
+const resolver = @import("./resolver.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
 /// `build.zig` gives this module to the test modules alone.
@@ -560,6 +561,7 @@ fn loadOne(
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
 
+    const first = out.items.len;
     for (m.files) |file| {
         const file_path = try std.fs.path.join(arena, &.{ dir, m.src, file });
         const source = std.Io.Dir.cwd().readFileAlloc(io, file_path, gpa, .unlimited) catch |err| switch (err) {
@@ -584,6 +586,9 @@ fn loadOne(
 
         try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file), .srcPath = src_path });
     }
+    // `files` lists what the package ships, not a build order: each module
+    // compiles after the siblings it imports.
+    resolver.orderPackageModules(arena, dep, out.items[first..]);
 }
 
 /// The package a sidecar is shipped from: the directory, and the manifest whose
@@ -1012,7 +1017,9 @@ pub fn shipMjsSidecars(
         }
 
         if (rewrites.items.len > 0) {
-            const emitted = std.Io.Dir.cwd().readFileAlloc(io, emitted_rel, arena, .unlimited) catch continue;
+            // The file this run just wrote: failing to read it back is an I/O
+            // error of the run, never a module left with its old `require`s.
+            const emitted = try std.Io.Dir.cwd().readFileAlloc(io, emitted_rel, arena, .unlimited);
             var text: []const u8 = emitted;
             for (rewrites.items) |r| {
                 for ([_]u8{ '"', '\'' }) |q| {
@@ -1064,11 +1071,20 @@ pub fn shipErlSidecars(
     const arena = arena_inst.allocator();
 
     // Module atoms this build emits — a qualifier naming one of them is a
-    // project or dependency module, never a host module.
+    // project or dependency module, never a host module: every `-module(…)`
+    // an output declares (decision 109's `<package>@<path>`, and each unit
+    // `<…>@@<Decl>` a `type` becomes). Not the output's BASENAME: no emitted
+    // atom is one any more, and matching it skipped a sidecar named like a
+    // module of the build (`runtime.erl` beside `rakun/runtime`), which was
+    // then never shipped and died `undef`.
     var emitted = std.StringHashMapUnmanaged(void){};
     for (outputs) |o| {
         if (o.result.failed()) continue;
-        try emitted.put(arena, std.fs.path.basename(o.name), {});
+        try putModuleAtoms(arena, &emitted, o.result.js);
+        for (o.result.units) |u| {
+            try emitted.put(arena, u.atom, {});
+            try putModuleAtoms(arena, &emitted, u.code);
+        }
     }
 
     // Resolved lazily on the first unknown qualifier (most builds have none).
@@ -1089,56 +1105,150 @@ pub fn shipErlSidecars(
     // changed.
     var owners = std.StringHashMapUnmanaged(?SidecarOwner){};
     var misses = std.StringHashMapUnmanaged(void){};
+    // Every atom no sidecar answers, with the first module that calls it —
+    // asked of the Erlang code path once, after the scan.
+    var unresolved: std.StringArrayHashMapUnmanaged(ErlMiss) = .empty;
+    var guarded = std.StringHashMapUnmanaged(void){};
     for (outputs) |o| {
         if (o.result.failed()) continue;
         // The owning lib is the first path segment of a dependency module name
         // (`rakun/http` → `rakun`); a project-own module has no such prefix.
         const owner: ?[]const u8 = if (std.mem.indexOfScalar(u8, o.name, '/')) |i| o.name[0..i] else null;
 
-        var it = QualifierIterator{ .text = o.result.js };
-        while (it.next()) |atom| {
-            if (emitted.contains(atom)) continue;
-            if (shipped.contains(atom)) continue;
-            const miss_key = try std.fmt.allocPrint(arena, "{s}\x00{s}", .{ owner orelse "", atom });
-            if (misses.contains(miss_key)) continue;
+        // Comments out: a `%%` line quoting `std@erlang:self()` is prose.
+        var texts: std.ArrayListUnmanaged([]const u8) = .empty;
+        try texts.append(arena, try blankErlComments(arena, o.result.js));
+        for (o.result.units) |u| try texts.append(arena, try blankErlComments(arena, u.code));
+        for (texts.items) |text| {
+            var it = QualifierIterator{ .text = text };
+            while (it.next()) |atom| {
+                if (emitted.contains(atom)) continue;
+                // `case code:ensure_loaded(m) of {module, _} -> m:f(); _ -> … end`
+                // handles the module's absence itself — an optional host module
+                // another package of the program may ship (`rakun-web` reaching
+                // `rakun-app`'s `rakun_file_router`). It is shipped when a
+                // package of this build carries it, and never refused.
+                if (ensuresLoaded(text, atom)) try guarded.put(arena, try arena.dupe(u8, atom), {});
+                if (shipped.contains(atom)) continue;
+                const miss_key = try std.fmt.allocPrint(arena, "{s}\x00{s}", .{ owner orelse "", atom });
+                if (misses.contains(miss_key)) continue;
 
-            const base = try std.fmt.allocPrint(arena, "{s}.erl", .{atom});
-            const target = try std.fs.path.join(arena, &.{ out_dir, base });
+                const base = try std.fmt.allocPrint(arena, "{s}.erl", .{atom});
+                const target = try std.fs.path.join(arena, &.{ out_dir, base });
 
-            const src_path: ?[]const u8 = blk: {
-                if (owner) |lib| {
-                    if (roots == null) roots = try resolveLibRoots(gpa, io, env_map);
-                    // Same owner lookup as the `.mjs` shipper: the directory the
-                    // build resolved the dependency to, and that package's `src`.
-                    const found = owners.get(lib) orelse found: {
-                        var oerr: ?manifest.Located = null;
-                        const f = try sidecarOwner(gpa, arena, io, roots.?, env_map, project.get(arena, io), lib, &oerr);
-                        try owners.put(arena, lib, f);
-                        break :found f;
-                    };
-                    const pkg = found orelse break :blk null;
-                    const src_dir = try pkg.srcDir(arena);
-                    const sidecar = try std.fs.path.join(arena, &.{ src_dir, "sidecars", base });
-                    if (fileExists(io, sidecar)) break :blk sidecar;
-                    const cand = try std.fs.path.join(arena, &.{ src_dir, base });
-                    if (fileExists(io, cand)) break :blk cand;
+                var probed: [2][]const u8 = undefined;
+                var pkg_manifest: ?manifest.Manifest = null;
+                var src_dir_of_owner: ?[]const u8 = null;
+                const src_path: ?[]const u8 = blk: {
+                    if (owner) |lib| {
+                        if (roots == null) roots = try resolveLibRoots(gpa, io, env_map);
+                        // Same owner lookup as the `.mjs` shipper: the directory the
+                        // build resolved the dependency to, and that package's `src`.
+                        const found = owners.get(lib) orelse found: {
+                            var oerr: ?manifest.Located = null;
+                            const f = try sidecarOwner(gpa, arena, io, roots.?, env_map, project.get(arena, io), lib, &oerr);
+                            if (f == null) if (oerr) |located| return refuseSidecar(located);
+                            try owners.put(arena, lib, f);
+                            break :found f;
+                        };
+                        // No package by that name: the first segment is a
+                        // folder of the project's own tree (`unit/calc_test`)
+                        // or the embedded `std`, whose sources are in the
+                        // binary — both probe the project's `src` below, and
+                        // an atom found nowhere is asked of the code path.
+                        if (found) |pkg| {
+                            pkg_manifest = pkg.package;
+                            const src_dir = try pkg.srcDir(arena);
+                            src_dir_of_owner = src_dir;
+                            probed = .{ try std.fs.path.join(arena, &.{ src_dir, "sidecars", base }), try std.fs.path.join(arena, &.{ src_dir, base }) };
+                        }
+                    }
+                    if (src_dir_of_owner == null) {
+                        const own_src = if (project.get(arena, io)) |p| p.src else "src/";
+                        src_dir_of_owner = own_src;
+                        probed = .{ try std.fs.path.join(arena, &.{ own_src, "sidecars", base }), try std.fs.path.join(arena, &.{ own_src, base }) };
+                    }
+                    for (probed) |cand| if (fileExists(io, cand)) break :blk cand;
                     break :blk null;
+                };
+                const src = src_path orelse {
+                    try misses.put(arena, miss_key, {});
+                    const gop = try unresolved.getOrPut(arena, try arena.dupe(u8, atom));
+                    if (!gop.found_existing) gop.value_ptr.* = .{
+                        .module = o.name,
+                        .source = o.src,
+                        .src_dir = src_dir_of_owner.?,
+                        // A package the build resolved; a project folder
+                        // and the embedded `std` name none.
+                        .owner = if (pkg_manifest != null) owner else null,
+                        .owner_pkg = pkg_manifest,
+                        .probed = probed,
+                    };
+                    continue;
+                };
+
+                const data = std.Io.Dir.cwd().readFileAlloc(io, src, arena, .unlimited) catch |err|
+                    return refuseSidecar(try unreadableSidecar(arena, project.get(arena, io), owner, o.name, base, src, err));
+                if (std.fs.path.dirname(target)) |parent| {
+                    std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
+                        error.PathAlreadyExists => {},
+                        else => return err,
+                    };
                 }
-                const own_src = if (project.get(arena, io)) |p| p.src else "src/";
-                const sidecar = try std.fs.path.join(arena, &.{ own_src, "sidecars", base });
-                if (fileExists(io, sidecar)) break :blk sidecar;
-                const cand = try std.fs.path.join(arena, &.{ own_src, base });
-                if (fileExists(io, cand)) break :blk cand;
-                break :blk null;
+                try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = data });
+                try shipped.put(arena, try arena.dupe(u8, atom), {});
+            }
+        }
+    }
+
+    // An atom that is neither a module of this build nor a sidecar of its
+    // owner must be a module of the Erlang code path (`lists`, `crypto`, a
+    // preloaded `erlang`). One that is not is a sidecar the library names and
+    // does not carry: the program would die with `undef` at the first call.
+    //
+    // A host module is the BUILD's, not only its caller's package's: a
+    // `rakun-web` template reaching `rakun_file_router` (which `rakun` keeps)
+    // is answered by the package that carries it. So an atom still unresolved
+    // is looked for under every package of the build before the code path is
+    // asked, and shipped from the first that has it.
+    if (unresolved.count() > 0) {
+        var pkgs: std.ArrayListUnmanaged(SidecarOwner) = .empty;
+        var seen_libs = std.StringHashMapUnmanaged(void){};
+        for (outputs) |o| {
+            if (o.result.failed()) continue;
+            const i = std.mem.indexOfScalar(u8, o.name, '/') orelse continue;
+            const lib = o.name[0..i];
+            if (seen_libs.contains(lib)) continue;
+            try seen_libs.put(arena, lib, {});
+            const found = owners.get(lib) orelse found: {
+                if (roots == null) roots = try resolveLibRoots(gpa, io, env_map);
+                var oerr: ?manifest.Located = null;
+                const f = try sidecarOwner(gpa, arena, io, roots.?, env_map, project.get(arena, io), lib, &oerr);
+                try owners.put(arena, lib, f);
+                break :found f;
             };
-            // An unresolved atom here is an OTP or unknown module, not a sidecar
-            // the library named — the `.mjs` shipper's refusal has no twin here.
-            const src = src_path orelse {
-                try misses.put(arena, miss_key, {});
+            if (found) |pkg| try pkgs.append(arena, pkg);
+        }
+        var still: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (unresolved.keys()) |atom| {
+            if (shipped.contains(atom)) continue;
+            const is_guarded = guarded.contains(atom);
+            const base = try std.fmt.allocPrint(arena, "{s}.erl", .{atom});
+            const src: ?[]const u8 = blk: for (pkgs.items) |pkg| {
+                const src_dir = try pkg.srcDir(arena);
+                for ([_][]const u8{ try std.fs.path.join(arena, &.{ src_dir, "sidecars", base }), try std.fs.path.join(arena, &.{ src_dir, base }) }) |cand| {
+                    if (fileExists(io, cand)) break :blk cand;
+                }
+            } else null;
+            const from = src orelse {
+                if (!is_guarded) try still.append(arena, atom);
                 continue;
             };
-
-            const data = std.Io.Dir.cwd().readFileAlloc(io, src, arena, .unlimited) catch continue;
+            const data = std.Io.Dir.cwd().readFileAlloc(io, from, arena, .unlimited) catch |err| {
+                const miss = unresolved.get(atom).?;
+                return refuseSidecar(try unreadableSidecar(arena, project.get(arena, io), miss.owner, miss.module, base, from, err));
+            };
+            const target = try std.fs.path.join(arena, &.{ out_dir, base });
             if (std.fs.path.dirname(target)) |parent| {
                 std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
                     error.PathAlreadyExists => {},
@@ -1146,10 +1256,187 @@ pub fn shipErlSidecars(
                 };
             }
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = data });
-            try shipped.put(arena, try arena.dupe(u8, atom), {});
+            try shipped.put(arena, atom, {});
         }
+        if (still.items.len == 0) return shipped.count();
+        const absent = try absentFromCodePath(arena, io, still.items);
+        var refused = false;
+        for (absent) |atom| {
+            const miss = unresolved.get(atom).?;
+            locateErlMiss(arena, project.get(arena, io), atom, miss).print();
+            refused = true;
+        }
+        if (refused) return error.SidecarRefused;
     }
     return shipped.count();
+}
+
+/// `text` with every erlang comment — `%` to the end of the line, outside a
+/// string, a quoted atom and a `$c` character literal — and every string's
+/// contents blanked to spaces, so the qualifier scan reads code only: a CSS
+/// string `"from:var(…)"` is not a call to a module `from`. Same length, same
+/// line structure; a quoted atom is kept (it may be a module).
+fn blankErlComments(arena: std.mem.Allocator, text: []const u8) ![]const u8 {
+    const out = try arena.dupe(u8, text);
+    var i: usize = 0;
+    var quote: u8 = 0;
+    while (i < out.len) : (i += 1) {
+        const c = out[i];
+        if (quote != 0) {
+            if (c == '\\') {
+                if (quote == '"') {
+                    out[i] = ' ';
+                    if (i + 1 < out.len and out[i + 1] != '\n') out[i + 1] = ' ';
+                }
+                i += 1;
+            } else if (c == quote) {
+                quote = 0;
+            } else if (quote == '"' and c != '\n') out[i] = ' ';
+            continue;
+        }
+        switch (c) {
+            '"', '\'' => quote = c,
+            '$' => i += if (i + 1 < out.len and out[i + 1] == '\\') 2 else 1,
+            '%' => while (i < out.len and out[i] != '\n') : (i += 1) {
+                out[i] = ' ';
+            },
+            else => {},
+        }
+    }
+    return out;
+}
+
+test "blankErlComments: comments and string contents go, char literals and quoted atoms stay" {
+    const a = std.testing.allocator;
+    var arena_inst = std.heap.ArenaAllocator.init(a);
+    defer arena_inst.deinit();
+    const got = try blankErlComments(arena_inst.allocator(), "%% std@erlang:self()\nf() -> io:format(\"a:b(%\\\"\"), $%, 'm':y(). % z:w()\n");
+    try std.testing.expectEqualStrings("                    \nf() -> io:format(\"       \"), $%, 'm':y().        \n", got);
+}
+
+/// Whether `text` guards calls into `atom` with `code:ensure_loaded(atom)` —
+/// the code answers the module's absence itself.
+fn ensuresLoaded(text: []const u8, atom: []const u8) bool {
+    const key = "code:ensure_loaded(";
+    var i: usize = 0;
+    while (std.mem.indexOfPos(u8, text, i, key)) |at| {
+        const start = at + key.len;
+        i = start;
+        if (std.mem.startsWith(u8, text[start..], atom) and start + atom.len < text.len and text[start + atom.len] == ')') return true;
+    }
+    return false;
+}
+
+test "ensuresLoaded: the guard names the atom exactly" {
+    try std.testing.expect(ensuresLoaded("case code:ensure_loaded(rk_fr) of {module, _} -> rk_fr:t(); _ -> 0 end", "rk_fr"));
+    try std.testing.expect(!ensuresLoaded("case code:ensure_loaded(rk_frx) of _ -> 0 end", "rk_fr"));
+    try std.testing.expect(!ensuresLoaded("rk_fr:t()", "rk_fr"));
+}
+
+/// The first module of a build that calls a host module no sidecar answers.
+const ErlMiss = struct {
+    /// The emitted module's name (`rakun/http`, `main`).
+    module: []const u8,
+    /// Its botopink source, to locate the call.
+    source: []const u8,
+    /// The `src` directory of the package the module belongs to.
+    src_dir: []const u8,
+    owner: ?[]const u8,
+    owner_pkg: ?manifest.Manifest,
+    /// Where the sidecar was looked for: `<src>/sidecars/<atom>.erl`, then `<src>/<atom>.erl`.
+    probed: [2][]const u8,
+};
+
+/// Every `-module(<atom>).` attribute of an emitted erlang text.
+fn putModuleAtoms(arena: std.mem.Allocator, set: *std.StringHashMapUnmanaged(void), text: []const u8) !void {
+    const key = "-module(";
+    var i: usize = 0;
+    while (std.mem.indexOfPos(u8, text, i, key)) |at| {
+        const start = at + key.len;
+        const close = std.mem.indexOfScalarPos(u8, text, start, ')') orelse return;
+        var atom = text[start..close];
+        if (atom.len >= 2 and atom[0] == '\'' and atom[atom.len - 1] == '\'') atom = atom[1 .. atom.len - 1];
+        try set.put(arena, atom, {});
+        i = close;
+    }
+}
+
+/// The atoms of `atoms` the Erlang code path does not hold — asked of `erl`
+/// itself, once (`code:which/1` answers `non_existing`). A missing `erl` is a
+/// refusal: without it no qualifier can be told from a missing sidecar, and
+/// the program could not run anyway.
+fn absentFromCodePath(arena: std.mem.Allocator, io: std.Io, atoms: []const []const u8) ![]const []const u8 {
+    var expr: std.ArrayListUnmanaged(u8) = .empty;
+    try expr.appendSlice(arena, "lists:foreach(fun(M) -> case code:which(M) of non_existing -> io:format(\"~s~n\", [M]); _ -> ok end end, [");
+    for (atoms, 0..) |a, i| {
+        if (i > 0) try expr.append(arena, ',');
+        try expr.append(arena, '\'');
+        try expr.appendSlice(arena, a);
+        try expr.append(arena, '\'');
+    }
+    try expr.appendSlice(arena, "]), halt().");
+    const result = std.process.run(arena, io, .{
+        .argv = &.{ "erl", "-noshell", "-noinput", "-eval", expr.items },
+        .stdout_limit = .limited(1024 * 1024),
+        .stderr_limit = .limited(1024 * 1024),
+    }) catch |err| {
+        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: the emitted erlang calls host modules ({d}), and `erl` could not be run to tell an OTP module from a missing sidecar: {s}\n", .{ atoms.len, @errorName(err) });
+        return error.SidecarRefused;
+    };
+    const ok = switch (result.term) {
+        .exited => |c| c == 0,
+        else => false,
+    };
+    if (!ok) {
+        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: `erl` failed while looking up the host modules the emitted erlang calls:\n{s}\n", .{result.stderr});
+        return error.SidecarRefused;
+    }
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    var it = std.mem.tokenizeAny(u8, result.stdout, "\r\n");
+    while (it.next()) |line| {
+        for (atoms) |a| if (std.mem.eql(u8, a, line)) {
+            try out.append(arena, a);
+            break;
+        };
+    }
+    return out.items;
+}
+
+/// The refusal for a host module that is neither shipped nor in the code
+/// path, located on the botopink line that names it — the `"<atom>"` of an
+/// `#[@External.Erlang("<atom>", …)]`, or an `<atom>:` in a template — and on
+/// the manifest when the source spells it nowhere.
+fn locateErlMiss(arena: std.mem.Allocator, proj: ?manifest.Manifest, atom: []const u8, miss: ErlMiss) manifest.Located {
+    const whose = if (miss.owner) |lib|
+        std.fmt.allocPrint(arena, "dependency '{s}'", .{lib}) catch "its dependency"
+    else
+        "this project";
+    const fixed = std.fmt.allocPrint(
+        arena,
+        "module '{s}' calls the erlang module '{s}', which is not a module of this build, not in the Erlang code path, and not a sidecar of {s} (looked at {s}, then {s})",
+        .{ miss.module, atom, whose, miss.probed[0], miss.probed[1] },
+    ) catch "an erlang host module is neither shipped nor in the code path";
+    const quoted = std.fmt.allocPrint(arena, "\"{s}\"", .{atom}) catch atom;
+    const colon = std.fmt.allocPrint(arena, "{s}:", .{atom}) catch atom;
+    const hit: ?struct { at: usize, len: usize } = if (std.mem.indexOf(u8, miss.source, quoted)) |at|
+        .{ .at = at + 1, .len = atom.len }
+    else if (std.mem.indexOf(u8, miss.source, colon)) |at|
+        .{ .at = at, .len = atom.len }
+    else
+        null;
+    if (hit) |h| {
+        const stem = if (miss.owner) |lib| miss.module[lib.len + 1 ..] else miss.module;
+        const file = std.fs.path.join(arena, &.{ miss.src_dir, stem }) catch stem;
+        const with_ext = std.fmt.allocPrint(arena, "{s}.bp", .{file}) catch file;
+        var line: usize = 1;
+        var line_start: usize = 0;
+        for (miss.source[0..h.at], 0..) |c, i| if (c == '\n') {
+            line += 1;
+            line_start = i + 1;
+        };
+        return .{ .message = fixed, .file = with_ext, .source = miss.source, .line = line, .col = h.at - line_start + 1, .span = h.len };
+    }
+    return sidecarLocation(proj, miss.owner, miss.owner_pkg, fixed);
 }
 
 /// Walks the `atom:` qualifiers of emitted erlang text. An erlang module atom

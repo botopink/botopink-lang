@@ -1,0 +1,19 @@
+//// A host module the project keeps in `src/sidecars/` is shipped with the
+//// build: `botopink run --target erlang` compiles it beside the emitted
+//// modules, and `#[@External.Erlang("lt_greeter", "hello")]` reaches it.
+////
+//// The gap this pins (`00 · 10-cli-residuals`): only `botopink test` shipped
+//// an `.erl` sidecar; `botopink build` / `run` copied none, so the program
+//// died with `undef` at the first call.
+////
+//// commonJS and wasm refuse an `@External.Erlang`-only function
+//// (`commonJS.expect`, `wasm.expect`). beam is listed in
+//// `expected-failures.txt`: its `.S` output calls `lt_greeter:hello/1` and
+//// its build ships no host module, so the run dies with `undef`.
+
+#[@External.Erlang("lt_greeter", "hello")]
+declare fn hello(name: string) -> string;
+
+pub fn main() {
+    @print(hello("sidecar"));
+}

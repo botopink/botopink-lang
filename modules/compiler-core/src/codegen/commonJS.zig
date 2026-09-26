@@ -4026,8 +4026,13 @@ const Emitter = struct {
         else
             try self.b.ifStmt(cond, then_block));
 
+        const items = try seq.toOwnedSlice(self.arena());
+        // A branch that `await`s cannot sit in a plain arrow (`await` does not
+        // parse there): the `if` becomes `await (async function() { … })()`,
+        // legal because only an async body writes `await`.
+        if (AwaitScan.stmts(items)) return self.iife(items);
         return self.b.call(
-            try self.b.paren(try self.b.arrowBlock(&.{}, .{ .stmts = try seq.toOwnedSlice(self.arena()), .layout = .spaced })),
+            try self.b.paren(try self.b.arrowBlock(&.{}, .{ .stmts = items, .layout = .spaced })),
             &.{},
         );
     }
@@ -5516,7 +5521,11 @@ const Emitter = struct {
                 }
                 if (v.shape == .range) return;
                 const bare = bareVariantName(v.name);
-                const declared = if (isResultPath(v.name)) null else self.variant_fields.get(bare);
+                // A RECORD's constructor pattern reads its fields by their
+                // declared names too, as `buildPattern` does: `val assert
+                // Person(n, a) = p catch …` destructured `{ n, a }` — names the
+                // record does not have — and printed `null null`.
+                const declared = if (isResultPath(v.name)) null else self.variant_fields.get(bare) orelse self.record_fields.get(bare);
                 if (declared == null) if (resultKey(bare)) |key| {
                     switch (v.payload) {
                         .binding => |binding| try body.append(self.arena(), .{ .decl = .{

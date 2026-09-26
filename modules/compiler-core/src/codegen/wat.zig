@@ -58,6 +58,10 @@ fn opOf(ty: []const u8, name: []const u8) Instr {
 /// pointer and every construct it cannot lower.
 const zero: Instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } };
 
+/// The payload name a caller reads for a `?V` over a type parameter
+/// (`Emitter.eraseOptTypeParam`): a name no program can declare.
+const tparam_marker = "__tparam";
+
 /// `i32.const 1` — the true carrier.
 const one: Instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } };
 
@@ -170,6 +174,37 @@ fn isNamedTypeRef(t: ast.TypeRef, name: []const u8) bool {
     };
 }
 
+/// The wasm type of a method's parameter or result: a declared float is the
+/// float it names, everything else the `i32` word a method has always passed.
+/// A method declared `-> f64` had an `(result i32)` and truncated its answer
+/// (`self.x / 2.0` returned `0`).
+fn memberValType(t: ast.TypeRef) []const u8 {
+    const w = watType(t);
+    return if (w[0] == 'f') w else "i32";
+}
+
+/// `i` / `f` for an array of integers / floats (`i32[]`, `Array<f64>`), the
+/// two flat element kinds with a printer of their own; null otherwise.
+fn arrayScalarCode(t: ast.TypeRef) ?u8 {
+    const elem: ast.TypeRef = switch (t) {
+        .array => |ie| ie.*,
+        .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else return null,
+        else => return null,
+    };
+    const n = switch (elem) {
+        .named => |x| x,
+        else => return null,
+    };
+    if (std.mem.eql(u8, n, "i32") or std.mem.eql(u8, n, "int")) return 'i';
+    if (isFloatTypeName(n)) return 'f';
+    return null;
+}
+
+/// A declared float type name — `f64`, `f32` or `float`.
+fn isFloatTypeName(n: []const u8) bool {
+    return std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "float");
+}
+
 fn isStringTypeRef(t: ast.TypeRef) bool {
     return isNamedTypeRef(t, "string");
 }
@@ -257,6 +292,8 @@ pub fn codegenEmit(
 /// tables its own lowering needs (locs are per source file, so the consumer's
 /// tables would answer for the wrong nodes).
 const Linked = struct {
+    /// The module's path (`sec/jwt`) — what a mangled name starts with.
+    name: []const u8,
     program: ast.Program,
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
@@ -308,6 +345,7 @@ fn collectLinks(
                 try visited.put(o.name, {});
                 try collectLinks(alloc, outputs, cross, ok.transformed, visited, out);
                 try out.append(alloc, .{
+                    .name = o.name,
                     .program = ok.transformed,
                     .rewrites = ok.dispatch_rewrites,
                     .instance_lowerings = ok.instance_lowerings,
@@ -315,6 +353,93 @@ fn collectLinks(
             }
         }
     }
+}
+
+/// `link_mangled`'s key: the module that declares `name`, then the name.
+fn linkKey(arena: std.mem.Allocator, module: []const u8, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ module, name });
+}
+
+/// The calls module `module_name` (whose declarations are `program`) writes
+/// that mean a MANGLED function: its own function of that name, and every
+/// import — an alias, a namespace call's synthesised alias
+/// (`__bp_ns_jwt__sign`) — whose owner's function was mangled. Local name →
+/// mangled name.
+fn linkRenames(
+    arena: std.mem.Allocator,
+    mangled: *const std.StringHashMapUnmanaged([]const u8),
+    cross: ?*const CrossModule,
+    module_name: []const u8,
+    program: ast.Program,
+    out: *std.StringHashMapUnmanaged([]const u8),
+) !void {
+    for (program.decls) |d| switch (d) {
+        .@"fn" => |f| if (mangled.get(try linkKey(arena, module_name, f.name))) |m| try out.put(arena, f.name, m),
+        .use => |u| for (u.imports) |imp| {
+            const c = cross orelse continue;
+            const src = try u.leafSource(imp, arena, false);
+            const info = c.picked(imp.leaf(), src, null) orelse continue;
+            const m = mangled.get(try linkKey(arena, info.module, imp.leaf())) orelse continue;
+            try out.put(arena, imp.alias orelse imp.leaf(), m);
+        },
+        else => {},
+    };
+}
+
+/// A copy of `value` in which every plain call (`name(…)` — no receiver, no
+/// callee expression, not a builtin) whose name `renames` holds calls the
+/// mangled name instead. Reflective over the AST, like `alias_erase`; the
+/// strings and the nodes no rename reaches are shared, never mutated.
+fn renameLinkedCalls(comptime T: type, arena: std.mem.Allocator, value: T, renames: *const std.StringHashMapUnmanaged([]const u8)) error{OutOfMemory}!T {
+    switch (@typeInfo(T)) {
+        .@"struct" => |st| {
+            var out: T = value;
+            inline for (st.fields) |f| {
+                if (f.is_comptime) continue;
+                @field(out, f.name) = try renameLinkedCalls(f.type, arena, @field(value, f.name), renames);
+            }
+            if (comptime @hasField(T, "callee") and @hasField(T, "receiver") and @hasField(T, "calleeExpr") and @hasField(T, "is_builtin")) {
+                if (out.receiver == null and out.calleeExpr == null and !out.is_builtin) {
+                    if (renames.get(out.callee)) |m| out.callee = m;
+                }
+            }
+            return out;
+        },
+        .@"union" => |u| {
+            if (u.tag_type == null) return value;
+            switch (value) {
+                inline else => |payload, tag| return @unionInit(T, @tagName(tag), try renameLinkedCalls(@TypeOf(payload), arena, payload, renames)),
+            }
+        },
+        .optional => |o| return if (value) |v| try renameLinkedCalls(o.child, arena, v, renames) else null,
+        .pointer => |p| switch (p.size) {
+            .one => {
+                if (comptime !isAstNodeType(p.child)) return value;
+                const n = try arena.create(p.child);
+                n.* = try renameLinkedCalls(p.child, arena, value.*, renames);
+                return n;
+            },
+            .slice => {
+                if (comptime !isAstNodeType(p.child)) return value;
+                const n = try arena.alloc(p.child, value.len);
+                for (value, 0..) |e, i| n[i] = try renameLinkedCalls(p.child, arena, e, renames);
+                return n;
+            },
+            else => return value,
+        },
+        else => return value,
+    }
+}
+
+/// Whether the rename walk descends into `T`: a struct, union or optional —
+/// an AST node — and not a byte string or a pointer to anything else.
+fn isAstNodeType(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .@"struct" => T != std.mem.Allocator,
+        .@"union", .optional => true,
+        .pointer => |p| p.size == .slice and isAstNodeType(p.child),
+        else => false,
+    };
 }
 
 /// The name a top-level declaration binds, when it binds one.
@@ -391,13 +516,25 @@ fn emitWat(
         const n = declName(d) orelse continue;
         if (own_names.contains(n)) {
             // Two modules of the program declare `n`, and this backend links
-            // them into ONE namespace: the first declaration won and every
-            // call — the other module's own included — reached it
-            // (`import {parse as parse2} from "two"` answered `one`'s `parse`
-            // at exit 0). Until the link mangles per module, a call to such a
-            // name traps (`lowerPlainCall`).
+            // them into ONE namespace. A FUNCTION is mangled per module: the
+            // first declaration keeps `n`, this one is `<module>/<n>`, and
+            // every call that means it — its own module's, an importer's
+            // alias, a namespace call — is rewritten to that name
+            // (`renameLinkedCalls`). Before, the first declaration won and a
+            // call to the other answered it (`import {parse as parse2} from
+            // "two"` printed `one`'s `parse` at exit 0), and then trapped.
+            // A module-level `val` still traps at its use (`lowerPlainCall`).
             switch (d) {
-                .@"fn", .val => try em.ambiguous_names.put(em.alloc, n, {}),
+                .@"fn" => |f| {
+                    const mangled = try std.fmt.allocPrint(ar0, "{s}/{s}", .{ l.name, n });
+                    try em.link_mangled.put(em.alloc, try linkKey(ar0, l.name, n), mangled);
+                    var g = f;
+                    g.isPub = false;
+                    g.name = mangled;
+                    try decls.append(ar0, .{ .@"fn" = g });
+                    try owner.append(ar0, li);
+                },
+                .val => try em.ambiguous_names.put(em.alloc, n, {}),
                 else => {},
             }
             continue;
@@ -423,6 +560,22 @@ fn emitWat(
     for (own_program.decls) |d| {
         try decls.append(ar0, d);
         try owner.append(ar0, linked.len);
+    }
+    // Every module whose calls reach a mangled function gets those calls
+    // rewritten to the mangled name, in a copy of its declarations (the
+    // module's own program is shared with its own emission).
+    if (em.link_mangled.count() > 0) {
+        var maps = try ar0.alloc(std.StringHashMapUnmanaged([]const u8), linked.len + 1);
+        for (maps, 0..) |*m, i| {
+            m.* = .empty;
+            const mod_name = if (i < linked.len) linked[i].name else module_name;
+            const prog = if (i < linked.len) linked[i].program else own_program;
+            try linkRenames(ar0, &em.link_mangled, cross, mod_name, prog, m);
+        }
+        for (decls.items, owner.items) |*d, from| {
+            if (maps[from].count() == 0) continue;
+            d.* = try renameLinkedCalls(ast.DeclKind, ar0, d.*, &maps[from]);
+        }
     }
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
@@ -580,6 +733,11 @@ const Emitter = struct {
     cv: std.StringHashMap([]const u8),
 
     cur_result: []const u8 = "i32",
+    /// The type parameters in scope while a body is emitted: the owner type's
+    /// (`Dict<K, V>`) and the function's or method's own (`first<T>`). A `?V`
+    /// over one of them is boxed (`optInfoOfTypeRef`).
+    owner_tparams: []const ast.GenericParam = &.{},
+    fn_tparams: []const ast.GenericParam = &.{},
     /// Whether the function being emitted has a `(result …)`. Drives the
     /// value/void normalisation of the body's tail and of `return <expr>`.
     fn_has_result: bool = false,
@@ -647,8 +805,8 @@ const Emitter = struct {
     global_types: std.StringHashMap([]const u8),
     str_globals: std.StringHashMap(void),
     /// Names known to hold an `[len][e0][e1]…` array blob. `for (xs) {…}`
-    /// only walks the layout for these; anything else keeps the honest
-    /// `;; loop over unknown iterable` no-op rather than reading garbage.
+    /// only walks the layout for these; anything else traps (`lowerLoop`)
+    /// rather than reading garbage or running the body zero times.
     arr_locals: std.StringHashMap(void),
     /// Local name → the `$__print_shaped_raw` shape of its value, when it is
     /// an array or a tuple (`printShapeOf`).
@@ -746,6 +904,9 @@ const Emitter = struct {
     /// Names two linked modules both declare (`emitWat`): one namespace here,
     /// so a call to one cannot know which it means, and traps.
     ambiguous_names: std.StringHashMapUnmanaged(void) = .empty,
+    /// `<module>\x00<name>` → `<module>/<name>`: a linked FUNCTION whose name
+    /// an earlier declaration of the program already took (`emitWat`).
+    link_mangled: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// `<anon record>.<field>` for each behavior-literal field whose lambda
     /// takes `self` first (`ensureAnonRecord`).
     self_method_fields: std.StringHashMapUnmanaged(void) = .empty,
@@ -953,6 +1114,7 @@ const Emitter = struct {
         self.deferred_globals.deinit(self.alloc);
         self.deferred_stmts.deinit(self.alloc);
         self.ambiguous_names.deinit(self.alloc);
+        self.link_mangled.deinit(self.alloc);
         self.self_method_fields.deinit(self.alloc);
         self.field_lambdas.deinit(self.alloc);
         self.unknown_subjects.deinit(self.alloc);
@@ -1001,7 +1163,11 @@ const Emitter = struct {
             // extension methods (same `$<target>_<method>` mangling); `self` is the
             // record pointer + a method body's `self.field` walks the declared
             // layout via `self_type`.
-            .type_ => |r| try self.emitInterfaceMethods(r.name, try self.methodsWithDefaults(r)),
+            .type_ => |r| {
+                self.owner_tparams = r.genericParams;
+                defer self.owner_tparams = &.{};
+                try self.emitInterfaceMethods(r.name, try self.methodsWithDefaults(r));
+            },
             // An import is linked statically: `emitWat` has already put the
             // owner's declarations in front of this module's.
             // A type alias is erased: the checker substituted its target.
@@ -1049,7 +1215,7 @@ const Emitter = struct {
                     if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(f.name, ek);
                     if (resultOfString(rt)) try self.result_str_fns.put(f.name, {});
                     if (resultShapeOfTypeRef(rt)) |shape| try self.result_shape_fns.put(f.name, shape);
-                    try self.fn_ret_typerefs.put(f.name, rt);
+                    try self.fn_ret_typerefs.put(f.name, try self.eraseOptTypeParam(&.{}, f.genericParams, rt));
                 } else if (f.returnType == null and self.bodyReturnsString(f.body)) {
                     // The specialisation pass clears the return type of the
                     // fns it injects; a body that returns a string still does.
@@ -1093,7 +1259,7 @@ const Emitter = struct {
             // An enum's methods too: `Shape.Rect(…).counts(3)` is
             // `$Shape_counts(self, 3)` exactly as a record's is — it used to
             // be an `unresolved call` trap.
-            .type_ => |r| try self.registerInterfaceSigs(r.name, try self.methodsWithDefaults(r)),
+            .type_ => |r| try self.registerInterfaceSigs(r.name, r.genericParams, try self.methodsWithDefaults(r)),
             .behavior => |i| for (i.methods) |m| {
                 try self.behavior_methods.put(self.alloc, try std.fmt.allocPrint(ra, "{s}.{s}", .{ i.name, m.name }), m);
                 const body = m.body orelse continue;
@@ -1182,7 +1348,7 @@ const Emitter = struct {
         }
     }
 
-    fn registerInterfaceSigs(self: *Emitter, owner: []const u8, methods: []const ast.BehaviorMethod) !void {
+    fn registerInterfaceSigs(self: *Emitter, owner: []const u8, owner_tparams: []const ast.GenericParam, methods: []const ast.BehaviorMethod) !void {
         const ra = self.reg_arena.allocator();
         for (methods) |m| {
             const body = m.body orelse continue;
@@ -1196,9 +1362,11 @@ const Emitter = struct {
             const n = m.params.len + @as(usize, if (needs_self) 1 else 0);
             const params = try ra.alloc([]const u8, n);
             for (params) |*t| t.* = "i32";
+            const first: usize = if (needs_self) 1 else 0;
+            for (m.params, 0..) |p, i| params[first + i] = memberValType(p.typeRef);
             try self.fn_sigs.put(sym, .{
                 .params = params,
-                .result = if (m.returnType != null or methodHasResult(body)) "i32" else null,
+                .result = if (m.returnType) |rt| memberValType(rt) else if (methodHasResult(body)) "i32" else null,
             });
             // A method's declared return type, under the symbol the call
             // emits. `typeRefOf` asks for it so the *reader* of a `?T` agrees
@@ -1214,7 +1382,7 @@ const Emitter = struct {
             // `$__print_i32`, which writes a **pointer** (`276` for `"doc:hi"`,
             // `444` for `["a", "b"]`) or `0`/`1` for a bool.
             if (m.returnType) |rt| {
-                try self.fn_ret_typerefs.put(sym, rt);
+                try self.fn_ret_typerefs.put(sym, try self.eraseOptTypeParam(owner_tparams, m.genericParams, rt));
                 if (isStringTypeRef(rt)) try self.str_fns.put(sym, {});
                 if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
                 if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(sym, ek);
@@ -1361,6 +1529,14 @@ const Emitter = struct {
         for (fields, 0..) |fn_, i| {
             if (std.mem.eql(u8, fn_, field)) return @intCast(i * 4);
         }
+        return null;
+    }
+
+    /// Declared type of `field` inside `record`, when both are known.
+    fn fieldTypeRefIn(self: *Emitter, record: []const u8, field: []const u8) ?ast.TypeRef {
+        const fields = self.records.get(record) orelse return null;
+        const trefs = self.record_field_typerefs.get(record) orelse return null;
+        for (fields, 0..) |f, i| if (std.mem.eql(u8, f, field) and i < trefs.len) return trefs[i];
         return null;
     }
 
@@ -2265,6 +2441,8 @@ const Emitter = struct {
         }
         const has_result = fnHasResult(f);
         self.resetFnState(if (has_result) watTypeOpt(f.returnType) else null);
+        self.fn_tparams = f.genericParams;
+        defer self.fn_tparams = &.{};
         self.fn_returns_result = (f.effect != null and f.effect.? == .result) or
             (if (f.returnType) |rt| resultShapeOfTypeRef(rt) != null else false);
 
@@ -2396,8 +2574,15 @@ const Emitter = struct {
 
     fn emitMemberFn(self: *Emitter, owner: []const u8, m: ast.BehaviorMethod) !void {
         const body = m.body orelse return;
+        self.fn_tparams = m.genericParams;
+        defer self.fn_tparams = &.{};
         const has_result = m.returnType != null or methodHasResult(body);
-        self.resetFnState(if (has_result) "i32" else null);
+        const result_ty: []const u8 = if (m.returnType) |rt| memberValType(rt) else "i32";
+        self.resetFnState(if (has_result) result_ty else null);
+        // What `return v` coerces to — a `-> ?i32` method boxes its scalar,
+        // as a fn does (`emitFn`). Unset here, `Registry.at` returned the bare
+        // index and its reader loaded through it as a box (`16777216` for `1`).
+        self.cur_ret_typeref = m.returnType;
         self.fn_returns_result = if (m.returnType) |rt| resultShapeOfTypeRef(rt) != null else false;
         self.self_type = if (self.records.contains(owner)) owner else null;
         defer self.self_type = null;
@@ -2419,7 +2604,7 @@ const Emitter = struct {
         }
         for (m.params, 0..) |p, i| {
             const sym = try self.paramSymbol(p, i);
-            try self.locals.put(sym, "i32");
+            try self.locals.put(sym, memberValType(p.typeRef));
             if (std.mem.eql(u8, p.name, "self")) {
                 if (self.self_type) |st| try self.local_types.put("self", st);
             } else {
@@ -2447,12 +2632,12 @@ const Emitter = struct {
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
         if (needs_self) try params.append(ar, wat.Builder.param("self", .i32));
         for (m.params, 0..) |p, i| {
-            try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), .i32));
+            try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), vt(memberValType(p.typeRef))));
         }
         try self.item(.{ .func = try self.builder().func(.{
             .name = try std.fmt.allocPrint(ar, "{s}_{s}", .{ owner, m.name }),
             .params = params.items,
-            .result = if (has_result) .i32 else null,
+            .result = if (has_result) vt(result_ty) else null,
             .locals = try self.localLines(),
             .body = seq,
         }) });
@@ -2889,13 +3074,15 @@ const Emitter = struct {
                             .names => |n| {
                                 const recv_rty = self.recordTypeOfExpr(lb.value.*);
                                 for (n.fields) |fld| {
+                                    var float_field = false;
                                     if (recv_rty) |rty| {
                                         if (self.fieldTypeIn(rty, fld.field_name)) |ft| {
                                             if (self.resolveRecordName(ft)) |sub|
                                                 try self.local_types.put(fld.bind_name, sub);
+                                            float_field = isFloatTypeName(ft);
                                         }
                                     }
-                                    try self.declareLocal(fld.bind_name, "i32");
+                                    try self.declareLocal(fld.bind_name, if (float_field) "f64" else "i32");
                                 }
                             },
                             .tuple_ => |bindings| {
@@ -3031,7 +3218,7 @@ const Emitter = struct {
         // does not validate against.
         if (self.folded_globals.get(v.name)) |text| {
             if (isNumericLiteral(text)) {
-                try self.item(.{ .global = .{ .name = v.name, .ty = vt(t), .mutable = v.mutable, .init = text } });
+                try self.item(.{ .global = .{ .name = v.name, .ty = vt(t), .mutable = v.mutable, .init = try numeralText(self.arena(), text) } });
                 return;
             }
             if (quotedString(text)) |str| {
@@ -3058,7 +3245,7 @@ const Emitter = struct {
                         .exports = if (v.isPub) try self.arena().dupe([]const u8, &.{v.name}) else &.{},
                         .ty = vt(t),
                         .mutable = v.mutable,
-                        .init = n,
+                        .init = try numeralText(self.arena(), n),
                     } });
                     return;
                 },
@@ -3150,6 +3337,7 @@ const Emitter = struct {
     /// comptime folder's rendered non-numeric values (arrays, records, strings).
     fn isNumericLiteral(n: []const u8) bool {
         if (n.len == 0) return false;
+        if (radixOf(n)) |r| return radixValue(n, r) != null;
         var i: usize = 0;
         if (n[0] == '-' or n[0] == '+') i = 1;
         if (i >= n.len) return false;
@@ -3169,7 +3357,7 @@ const Emitter = struct {
         if (v.typeAnnotation) |ta| return watType(ta);
         // A folded float is an f64 — the value the comptime pass computed.
         if (self.folded_globals.get(v.name)) |text| {
-            if (isNumericLiteral(text)) return if (std.mem.indexOfAny(u8, text, ".eE") != null) "f64" else "i32";
+            if (isNumericLiteral(text)) return numLitType(text);
         }
         return switch (v.value.*) {
             .literal => |lit| switch (lit.kind) {
@@ -3314,6 +3502,12 @@ const Emitter = struct {
                             try self.lowerValue(val.*);
                             try self.emit(.drop);
                         }
+                    } else if (self.fn_has_result) {
+                        // A bare `return;` in a function that still has a
+                        // `(result …)` — a `@Task<void>` carries a word —
+                        // leaves with the neutral value, or the module fails
+                        // validation ("expected i32 but nothing on stack").
+                        try self.pushZero();
                     }
                     try self.emit(.@"return");
                     return .terminated;
@@ -3392,6 +3586,13 @@ const Emitter = struct {
                     if (lb.typeAnnotation == null) if (self.optInfoOf(lb.value.*)) |oi| try self.opt_locals.put(lb.name, oi);
                     if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
                     if (self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
+                    // The written type says it too, where the value cannot: a
+                    // generic call (`val s: string = first<string>(…)`) answers
+                    // a `T`, whose word printed as an address (`276`).
+                    if (lb.typeAnnotation) |ta| if (ta == .named) {
+                        if (std.mem.eql(u8, ta.named, "string")) try self.str_locals.put(lb.name, {});
+                        if (std.mem.eql(u8, ta.named, "bool")) try self.bool_locals.put(lb.name, {});
+                    };
                     try self.noteArrayLocal(lb.name, lb.value.*);
                     if (self.resultShapeOf(lb.value.*)) |shape| try self.result_shape_locals.put(lb.name, shape);
                     if (self.recordTypeOfExpr(lb.value.*)) |rty| try self.local_types.put(lb.name, rty);
@@ -3501,6 +3702,9 @@ const Emitter = struct {
                                 else
                                     @as(u32, @intCast(i * 4));
                                 try self.emitLoadOffset(off);
+                                // A float field is a boxed `f64` (`storeBoxedF64`).
+                                if (recv_rty) |rty| if (isFloatTypeName(self.fieldTypeIn(rty, fld.field_name) orelse ""))
+                                    try self.emit(.{ .load = .{ .ty = .f64 } });
                                 try self.emit(.{ .local_set = fld.bind_name });
                             }
                         },
@@ -3522,7 +3726,8 @@ const Emitter = struct {
                             if (self.ctorRecordFields(pat)) |r| {
                                 for (r.binds, 0..) |bind, i| {
                                     if (bind.len == 0) continue;
-                                    try self.declareLocal(bind, "i32");
+                                    const float_field = isFloatTypeName(self.fieldTypeIn(r.record, r.fields[i]) orelse "");
+                                    try self.declareLocal(bind, if (float_field) "f64" else "i32");
                                     if (self.fieldTypeIn(r.record, r.fields[i])) |ft| {
                                         if (std.mem.eql(u8, ft, "string")) try self.str_locals.put(bind, {});
                                         if (std.mem.eql(u8, ft, "bool")) try self.bool_locals.put(bind, {});
@@ -3530,6 +3735,8 @@ const Emitter = struct {
                                     }
                                     try self.emit(.{ .local_get = mem });
                                     try self.emitLoadOffset(@intCast(i * 4));
+                                    // A float field is a boxed `f64` (`storeBoxedF64`).
+                                    if (float_field) try self.emit(.{ .load = .{ .ty = .f64 } });
                                     try self.emit(.{ .local_set = bind });
                                 }
                             } else if (try self.ctorAsFieldsPattern(pat)) |fp| {
@@ -3696,7 +3903,7 @@ const Emitter = struct {
                         const seg = try self.internString(n);
                         try self.emitC(try self.constInt(seg.offset), "folded non-numeric literal");
                     } else {
-                        try self.emit(constOf(numLitType(n), n));
+                        try self.emit(try numLitConst(self.arena(), n));
                     }
                 },
                 .null_ => try self.emit(zero),
@@ -3852,7 +4059,7 @@ const Emitter = struct {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
                     if (r) |val| if (try self.lowerSelfTailCall(val.*)) return;
-                    if (r) |val| try self.lowerExpr(val.*);
+                    if (r) |val| try self.lowerExpr(val.*) else if (self.fn_has_result) try self.pushZero();
                     try self.emit(.@"return");
                 },
                 .throw_ => |val| try self.lowerThrow(val),
@@ -4116,6 +4323,30 @@ const Emitter = struct {
             return;
         }
         if (self.optInfoOf(arg)) |oi| {
+            // A `?T[]` of a scalar `T` — `m.at(1)` on a `Matrix` whose `at`
+            // answers `?i32[]`: the value is the array's own pointer and `0`
+            // its absence, so it prints `null` or the array. Through the
+            // integer printer it answered the row's address (`384`).
+            if (!oi.boxed and !oi.str) if (oi.inner) |inner| if (arrayScalarCode(inner)) |code| {
+                const tmp = try self.declRes();
+                try self.lowerValue(arg);
+                try self.emit(.{ .local_tee = tmp });
+                try self.emit(opOf("i32", "eqz"));
+                var then_c: Capture = .{};
+                self.open(&then_c);
+                try self.emit(self.builder().helper(.print_null));
+                if (last) try self.emit(self.builder().helper(.print_nl));
+                const then_seq = self.seal(&then_c, .none);
+                var else_c: Capture = .{};
+                self.open(&else_c);
+                try self.emit(.{ .local_get = tmp });
+                try self.emit(self.builder().helper(if (code == 'f')
+                    (if (last) .print_arr_f32 else .print_arr_f32_raw)
+                else if (last) .print_arr_i32 else .print_arr_i32_raw));
+                const else_seq = self.seal(&else_c, .none);
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+                return;
+            };
             try self.lowerValue(arg);
             const b = self.builder();
             try self.emit(if (oi.boxed)
@@ -4896,7 +5127,7 @@ const Emitter = struct {
                 if (t[0] == 'f') {
                     try self.emit(constOf("f64", n));
                     try self.emit(.{ .convert = "i32.trunc_f64_s" });
-                } else try self.emit(constOf(t, n));
+                } else try self.emit(try numLitConst(self.arena(), n));
                 try self.emit(opOf("i32", "eq"));
             },
             .stringLit => |lit| {
@@ -4965,7 +5196,7 @@ const Emitter = struct {
                 if (t[0] == 'f') {
                     try self.emit(constOf("f64", n));
                     try self.emit(.{ .convert = "i32.trunc_f64_s" });
-                } else try self.emit(constOf(t, n));
+                } else try self.emit(try numLitConst(self.arena(), n));
                 try self.emit(opOf("i32", cmp));
             },
             else => try self.emitC(zero, "range pattern over a non-numeric bound"),
@@ -5198,6 +5429,22 @@ const Emitter = struct {
             .ty = if (is_float) .f32 else .i32,
             .offset = offset,
         } });
+    }
+
+    /// Store a float field of a named record: the 4-byte slot holds the
+    /// address of an 8-byte `f64` cell, so the field keeps the precision its
+    /// declared `f64` promises. Narrowed into the slot as an `f32`, `5e-324`
+    /// was `0`, and a read that loaded the slot as an `i32` answered the float's
+    /// bits (`1069547520` for `1.5`). `lowerIdentAccess` reads it back
+    /// (`i32.load`, then `f64.load`).
+    fn storeBoxedF64(self: *Emitter, base: []const u8, offset: u32, value: ast.Expr) !void {
+        try self.emit(.{ .local_get = base });
+        const cell = try self.allocSlots(8);
+        try self.emit(.{ .local_get = cell });
+        try self.lowerCoerced(value, "f64");
+        try self.emit(.{ .store = .{ .ty = .f64 } });
+        try self.emitC(.{ .local_get = cell }, "boxed f64 field");
+        try self.emit(.{ .store = .{ .offset = offset } });
     }
 
     fn storeSlotConst(self: *Emitter, base: []const u8, offset: u32, value: i64) !void {
@@ -6428,6 +6675,16 @@ const Emitter = struct {
 
     fn arrayTypeShape(self: *Emitter, elem: ast.TypeRef) anyerror!?[]const u8 {
         if (try self.typeRefShape(elem)) |inner| return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
+        // An array OF arrays of a scalar — `i32[][]` — is a container whose
+        // elements are pointers (`elemIsPointer`), whatever its innermost
+        // code: without the shape, `rows.at(1)` boxed the row's address and
+        // printed it as a number.
+        const nested: ?ast.TypeRef = switch (elem) {
+            .array => |ie| ie.*,
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else null,
+            else => null,
+        };
+        if (nested) |ie| if (scalarCode(ie)) |c| return try std.fmt.allocPrint(self.arena(), "[[{c}", .{c});
         return switch (scalarCode(elem) orelse return null) {
             's' => "[s",
             else => null,
@@ -6557,6 +6814,7 @@ const Emitter = struct {
                 else => .i32,
             },
             .loop => |lp| self.yieldElemKind(lp.body),
+            .jump => if (self.tryPayloadTypeRef(e)) |t| arrayElemOfTypeRef(t) orelse .i32 else .i32,
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| self.elemKindOf(inner.*),
                 .arrayLit => |al| blk: {
@@ -7228,11 +7486,18 @@ const Emitter = struct {
         inner: ?ast.TypeRef = null,
     };
 
-    fn optInfoOfTypeRef(t: ast.TypeRef) ?OptInfo {
+    fn optInfoOfTypeRef(self: *Emitter, t: ast.TypeRef) ?OptInfo {
         const inner = switch (t) {
             .optional => |i| i.*,
             else => return null,
         };
+        // A `?V` over a type parameter is ALWAYS a box: nothing here
+        // monomorphises, so the payload may be a scalar, and a present `0` has
+        // to differ from absence. Its writer (inside the generic body, where
+        // `V` is in scope) and its reader (at the call, where the method's
+        // registered return reads `?__tparam`) agree on the box; unboxed,
+        // `Dict.at`'s absent key printed `0` and a present `0` was absent
+        // (C-18).
         return switch (inner) {
             .named => |n| if (std.mem.eql(u8, n, "string"))
                 .{ .boxed = false, .str = true, .inner = inner }
@@ -7240,10 +7505,43 @@ const Emitter = struct {
                 .{ .boxed = true, .bool_ = true, .inner = inner }
             else if (isScalarName(n))
                 .{ .boxed = true, .inner = inner }
+            else if (std.mem.eql(u8, n, tparam_marker) or self.isTypeParamName(n))
+                .{ .boxed = true, .inner = inner }
             else
                 .{ .boxed = false, .inner = inner },
             else => .{ .boxed = false, .inner = inner },
         };
+    }
+
+    fn isTypeParamName(self: *Emitter, n: []const u8) bool {
+        for (self.owner_tparams) |gp| if (std.mem.eql(u8, gp.name, n)) return true;
+        for (self.fn_tparams) |gp| if (std.mem.eql(u8, gp.name, n)) return true;
+        return false;
+    }
+
+    /// A declared return type as a CALLER reads it: `?V` over one of `owner` /
+    /// `own`'s type parameters becomes `?__tparam`, which `optInfoOfTypeRef`
+    /// knows is boxed wherever it is asked — at a call site the parameter
+    /// names nothing.
+    fn eraseOptTypeParam(self: *Emitter, owner: []const ast.GenericParam, own: []const ast.GenericParam, rt: ast.TypeRef) !ast.TypeRef {
+        const inner = switch (rt) {
+            .optional => |i| i.*,
+            else => return rt,
+        };
+        const n = switch (inner) {
+            .named => |x| x,
+            else => return rt,
+        };
+        const is_param = for (owner) |gp| {
+            if (std.mem.eql(u8, gp.name, n)) break true;
+        } else for (own) |gp| {
+            if (std.mem.eql(u8, gp.name, n)) break true;
+        } else false;
+        if (!is_param) return rt;
+        const ra = self.reg_arena.allocator();
+        const boxed = try ra.create(ast.TypeRef);
+        boxed.* = .{ .named = tparam_marker };
+        return .{ .optional = boxed };
     }
 
     fn isScalarName(n: []const u8) bool {
@@ -7258,7 +7556,18 @@ const Emitter = struct {
     /// callee expression of `adder(3)(4)` or a local/global declared (or bound
     /// to a call declared) `fn(…) -> R` — or null.
     fn valueCallTypeRef(self: *Emitter, cc: anytype) ?ast.TypeRef {
-        if (cc.receiver != null) return null;
+        // `w.write("a")` where `write` is a record's FUNCTION-TYPED FIELD: the
+        // call answers the field type's return. Without it a string answered
+        // through the field printed as its heap address.
+        if (cc.receiver) |r| {
+            const rty = self.recordTypeOfExpr(r.*) orelse return null;
+            if (self.fn_sigs.contains(std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rty, cc.callee }) catch return null)) return null;
+            const ft = self.fieldTypeRefIn(rty, cc.callee) orelse return null;
+            return switch (ft) {
+                .function => |f| f.returnType.*,
+                else => null,
+            };
+        }
         const ft: ast.TypeRef = if (cc.calleeExpr) |ce|
             self.typeRefOf(ce.*) orelse return null
         else blk: {
@@ -7486,7 +7795,7 @@ const Emitter = struct {
             else => {},
         }
         const t = self.typeRefOf(e) orelse return null;
-        return optInfoOfTypeRef(t);
+        return self.optInfoOfTypeRef(t);
     }
 
     /// The bare name `e` reads, when it reads one and nothing else.
@@ -7523,7 +7832,7 @@ const Emitter = struct {
         // An `unknown` / union slot: every value but one that already is one
         // goes in `lowerAsUnknown`'s box (`lowerBoxedInto`).
         if (isUnknownTypeRef(t)) return !isNullLit(value) and !self.isUnknownExpr(value) and !self.isTaggedValue(value);
-        const oi = optInfoOfTypeRef(t) orelse return false;
+        const oi = self.optInfoOfTypeRef(t) orelse return false;
         if (!oi.boxed) return false;
         if (isNullLit(value)) return false;
         return self.optInfoOf(value) == null;
@@ -7633,7 +7942,17 @@ const Emitter = struct {
                     try self.emit(.{ .local_get = base });
                     try self.lowerBoxedInto(ftref, arg.value.*);
                     try self.emit(.{ .store = .{ .offset = off } });
-                } else try self.storeSlotExpr(base, off, arg.value.*);
+                } else if (isFloatTypeName(self.fieldTypeIn(cc.callee, fname) orelse "")) {
+                    try self.storeBoxedF64(base, off, arg.value.*);
+                } else {
+                    // A lambda stored in a function-typed field takes its
+                    // parameter types from the field's declaration, as one
+                    // bound to an annotated `val` does: `{ s -> prefix + s }`
+                    // in a `fn(s: string) -> string` field concatenates.
+                    if (arg.value.* == .function) self.expected_fn = ftref;
+                    defer self.expected_fn = null;
+                    try self.storeSlotExpr(base, off, arg.value.*);
+                }
             } else {
                 try self.storeSlotConst(base, off, 0);
             }
@@ -7754,6 +8073,8 @@ const Emitter = struct {
                 }
                 try self.lowerExpr(ia.receiver.*);
                 try self.emitCf(.{ .load = .{ .offset = off } }, ".{s}", .{ia.member});
+                // A float field is a boxed `f64` (`storeBoxedF64`).
+                if (isFloatTypeName(self.fieldTypeIn(rty, ia.member) orelse "")) try self.emit(.{ .load = .{ .ty = .f64 } });
                 return;
             }
         }
@@ -8117,6 +8438,20 @@ const Emitter = struct {
         };
     }
 
+    /// The payload type a `try <call>` binds — the `Ok` type of the call's
+    /// declared `@Result` — or null for anything else.
+    fn tryPayloadTypeRef(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
+        const inner = switch (e) {
+            .jump => |j| switch (j.kind) {
+                .try_ => |v| v orelse return null,
+                else => return null,
+            },
+            else => return null,
+        };
+        const shape = self.resultShapeOf(inner.*) orelse return null;
+        return shape.ok;
+    }
+
     fn resultShapeOf(self: *Emitter, e: ast.Expr) ?ResultShape {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
@@ -8350,9 +8685,11 @@ const Emitter = struct {
             else => {},
         }
         if (self.isArrayExpr(lp.iter.*)) return self.lowerCollectionLoop(lp, result);
-        // Iterating a lambda-backed iterator or an opaque value has no wasm
-        // lowering yet; a no-op is at least loadable.
-        try self.emitC(zero, "loop over unknown iterable");
+        // An iterable this backend cannot tell is an array — a lambda-backed
+        // iterator, an opaque value — has no wasm lowering, and it TRAPS: the
+        // no-op it used to be ran the body zero times at exit 0, which is how
+        // `for (try items(n))` summed nothing and printed `6` for `9`.
+        try self.emitC(.@"unreachable", "loop over an iterable wasm cannot walk");
     }
 
     /// `#[@generator] loop { … }` (decision 105) — eager on wasm: the body
@@ -8539,6 +8876,10 @@ const Emitter = struct {
             },
             // only the annotated loop has a value, and it is an array
             .loop => |lp| lp.generator != null,
+            // `try items(n)` over a `-> @Result<i32[], E>`: the payload is the
+            // array. Unrecognised, `for (try items(n))` was the unknown-iterable
+            // no-op and a `val xs = try items(n)` printed its address.
+            .jump => if (self.tryPayloadTypeRef(e)) |t| arrayElemOfTypeRef(t) != null else false,
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .arr;
@@ -8868,6 +9209,13 @@ const Emitter = struct {
             },
             .identifier => |id| switch (id.kind) {
                 .ident => |n| self.locals.get(self.resolveName(n)) orelse self.global_types.get(n) orelse "i32",
+                // A named record's float field reads as the `f64` its box holds.
+                .identAccess => |ia| blk: {
+                    if (ia.optional) break :blk "i32";
+                    const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk "i32";
+                    if (self.fieldOffsetIn(rty, ia.member) == null) break :blk "i32";
+                    break :blk if (isFloatTypeName(self.fieldTypeIn(rty, ia.member) orelse "")) "f64" else "i32";
+                },
                 else => "i32",
             },
             .unaryOp => |un| switch (un.op) {
@@ -9372,9 +9720,57 @@ const Emitter = struct {
 
 // ── small helpers ────────────────────────────────────────────────────────────
 
+/// A number token's wasm type. A float literal is an `f64` — the type the
+/// language gives it (`1e3`, `2.5`), and the only one that holds `5e-324` or
+/// `1.7976931348623157e308`; it was an `f32.const`, where the first is `0`. A
+/// radix integer (`0xFE`) is an `i32` whatever letters its digits use.
 fn numLitType(n: []const u8) []const u8 {
-    for (n) |c| if (c == '.' or c == 'e' or c == 'E') return "f32";
+    if (radixOf(n) != null) return "i32";
+    for (n) |c| if (c == '.' or c == 'e' or c == 'E') return "f64";
     return "i32";
+}
+
+/// The base of a radix integer token — `0x` / `0b` / `0o`, after an optional
+/// sign — or null for a decimal one.
+fn radixOf(n: []const u8) ?u8 {
+    const body = if (n.len > 0 and (n[0] == '-' or n[0] == '+')) n[1..] else n;
+    if (body.len < 3 or body[0] != '0') return null;
+    return switch (body[1]) {
+        'x', 'X' => 16,
+        'b', 'B' => 2,
+        'o', 'O' => 8,
+        else => null,
+    };
+}
+
+/// A radix token's value (`_` separators allowed), or null when its digits
+/// are not the base's.
+fn radixValue(n: []const u8, base: u8) ?i64 {
+    const neg = n[0] == '-';
+    const body = if (n[0] == '-' or n[0] == '+') n[1..] else n;
+    var v: i64 = 0;
+    var any = false;
+    for (body[2..]) |c| {
+        if (c == '_') continue;
+        const d = std.fmt.charToDigit(c, base) catch return null;
+        v = std.math.mul(i64, v, base) catch return null;
+        v = std.math.add(i64, v, d) catch return null;
+        any = true;
+    }
+    if (!any) return null;
+    return if (neg) -v else v;
+}
+
+/// The `const` of a numeral token: its `numLitType`, and its text as wat
+/// writes it — a radix integer in decimal (wat has no `0b` / `0o`), which it
+/// had been interned as a string for, so `0xFF` printed the address `256`.
+fn numLitConst(arena: std.mem.Allocator, n: []const u8) !Instr {
+    return constOf(numLitType(n), try numeralText(arena, n));
+}
+
+fn numeralText(arena: std.mem.Allocator, n: []const u8) ![]const u8 {
+    const r = radixOf(n) orelse return n;
+    return std.fmt.allocPrint(arena, "{d}", .{radixValue(n, r).?});
 }
 
 fn exprNumType(e: ast.Expr) []const u8 {
