@@ -18,7 +18,7 @@ fn toInt(o: Order) -> i32 {
 fn describe(n: i32) -> string {
     return case n {
         0 { "zero" }
-        1..9 { "digit" }
+        1...9 { "digit" }
         _ { v -> "big " + v.toString() }
     };
 }

@@ -182,9 +182,11 @@ target by `<target>.expect`), `modules/import_ambiguous_unused` (the same import
 `run/std_decorator_through_namespace` (`#[mocks.mock]` after `import {testing.mocks} from "std"`
 synthesizes `mockRepo()` and its stubs answer; wasm refuses the import by `.wasm.expect`),
 `reject/std_decorator_unknown_through_handle` (`#[mocks.mokc]` is `unknown-annotation`),
-`reject/std_decorator_leaf_import` (`import {testing.mocks.mock}` is `std-decorator-leaf-import`) and
+`reject/std_decorator_leaf_import` (`import {testing.mocks.mock}` is `std-decorator-leaf-import`),
 `run/pipeline_call_fill` (`lhs |> f(args…)` is `f(lhs, args…)` on every target, and a pipeline takes
-defaults and labels, at expression and statement position).
+defaults and labels, at expression and statement position) and `run/case_bool_literal_arms` (`true` /
+`false` arms are the bool literals, beside a guard — every backend bound them as names). C-16's
+`test/case_arms.bp` writes its range arm `1...9` (decision 53) and passes on commonJS and erlang.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

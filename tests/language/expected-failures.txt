@@ -101,16 +101,14 @@
 
 # ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is closing ──
 # `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
-# so no line below names a parse error. The exception is `test/case_arms.bp`, which
-# decision 20 turned back into a parser row.
+# so no line below names a parse error. `test/case_arms.bp` writes its range arm
+# `1...9`, decision 53's pattern spelling (decision 20's `1..9` was amended).
 #
 # The section is no longer one front's. Front 01's step 4 unwraps a lambda arm body
 # and resolves a `.Variant` arm against the matched value's type, which is why the
 # four `erlang | test/case_*.bp` lines that name tests read `02 step 3` — erlang's
 # pattern emission — and not `01 step 4`. The path-only lines here are still 01's:
 # they are cells that do not compile in this tree.
-commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
-erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
 
