@@ -97,6 +97,9 @@ pub fn evaluate(
     arena: std.mem.Allocator,
     io: std.Io,
     build_root: []const u8,
+    /// The module path `tfn` was declared in (`Env.comptimeOwnerOf`); "" when
+    /// no module owns it. Named in the module atom (`ownerId`).
+    owner: []const u8,
     tfn: ast.FnDecl,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
@@ -105,7 +108,7 @@ pub fn evaluate(
 ) EvalError!Outcome {
     _ = build_root;
     var unsupported: erlang.UnsupportedMethod = .{};
-    const source = buildModule(arena, tfn, captures, plainArgs, &unsupported) catch |err| switch (err) {
+    const source = buildModule(arena, owner, tfn, captures, plainArgs, &unsupported) catch |err| switch (err) {
         error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "template", tfn.name, unsupported) },
         else => |e| return e,
     };
@@ -373,19 +376,27 @@ pub fn listingWithArgument(arena: std.mem.Allocator, listing: []const u8, argume
     return out.written();
 }
 
-/// The owning module of a comptime-evaluated body, for A2's atom.
+/// The owning module of a comptime-evaluated body, for A2's atom (C-01; 13
+/// half 1, step 5).
 ///
-/// It SHOULD be the path of the `.bp` file the template was declared in
-/// (`ui/panel` → `ui@panel__tpl__<decl>__<hash>`), which is what makes a stack
-/// trace and a `.botopinkbuild/tmp/template/` listing traceable back to source.
-/// That path does not reach here: the evaluator is handed the declaration
-/// (`ast.FnDecl`, whose `Loc` carries a line and a column and no file) and the
-/// template registry (`comptime.zig`, a `StringHashMap(ast.FnDecl)`) records no
-/// owner either, so threading it needs the module name on
-/// `env.TemplateEvalCtx` — `src/comptime/env.zig` and `src/comptime.zig`, which
-/// this front does not own. Until that carve-out, every comptime body is owned
-/// by one synthetic path, and the atom still names WHICH template it came from,
-/// which `template_<hash>` did not.
+/// The evaluator's modules live in the compiler's own namespace (`bp`, which no
+/// `botopink.json` may take), under `comptime/` followed by the path of the
+/// `.bp` module the declaration was written in — `ui/panel` renders
+/// `bp@comptime@ui@panel__tpl__panel__<hash>`, so a stack trace and a
+/// `.botopinkbuild/tmp/template/` listing name the FILE as well as the
+/// template, and `crossModule.decodeAtom` reads both back. The owner comes from
+/// `Env.comptimeOwnerOf`, which the importing module fills from the registry
+/// that exported the declaration. A declaration no module owns (the compiler's
+/// own unit tests) keeps `bp@comptime__…`. The package namespace stays `bp`
+/// rather than the owner's package: a comptime module is content-addressed
+/// scratch loaded into one node for every package of the build, and a package
+/// prefix would let it share a prefix with the modules a package emits.
+pub fn ownerId(arena: std.mem.Allocator, owner: []const u8) std.mem.Allocator.Error!crossModule.ModuleId {
+    if (owner.len == 0) return comptime_owner;
+    return .inPackage(crossModule.COMPILER_PACKAGE, try std.fmt.allocPrint(arena, "comptime/{s}", .{owner}));
+}
+
+/// The atom's owner when no module owns the declaration.
 pub const comptime_owner: crossModule.ModuleId = .inPackage(crossModule.COMPILER_PACKAGE, "comptime");
 
 const placeholder_module = "template_module";
@@ -455,6 +466,7 @@ fn mainForms(b: Ast.Builder, tfn: ast.FnDecl, plans: []const ArgPlan) EvalError!
 
 fn buildModule(
     arena: std.mem.Allocator,
+    owner: []const u8,
     tfn: ast.FnDecl,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
@@ -482,10 +494,10 @@ fn buildModule(
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
         return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
     const argument = try argumentTerm(arena, plans);
-    // A2: `bp@comptime__tpl__<template>__<16 hex>`. The Wyhash is unchanged, so
-    // an identical generated body is still the identical module and re-loading
-    // it is still a no-op (`runtime/persistent_beam.zig`).
-    const module = crossModule.erlDeclAtom(arena, comptime_owner, .tpl, tfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
+    // A2: `bp@comptime@<owner path>__tpl__<template>__<16 hex>`. The Wyhash is
+    // unchanged, so an identical generated body is still the identical module
+    // and re-loading it is still a no-op (`runtime/persistent_beam.zig`).
+    const module = crossModule.erlDeclAtom(arena, try ownerId(arena, owner), .tpl, tfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return error.EvalFailed,
     };
@@ -841,8 +853,8 @@ test "template module: one module per declaration, the capture as the argument" 
     var unsupported: erlang.UnsupportedMethod = .{};
     const one = try capture(arena, "alpha");
     const two = try capture(arena, "a much longer literal");
-    const first = try buildModule(arena, tfn, &.{one}, &.{}, &unsupported);
-    const second = try buildModule(arena, tfn, &.{two}, &.{}, &unsupported);
+    const first = try buildModule(arena, "", tfn, &.{one}, &.{}, &unsupported);
+    const second = try buildModule(arena, "", tfn, &.{two}, &.{}, &unsupported);
 
     // Two call sites with different literals, one module — the difference is
     // entirely in `main/1`'s argument.
@@ -859,6 +871,23 @@ test "template module: one module per declaration, the capture as the argument" 
     // The listing keeps showing the capture, which is no longer in the module.
     try std.testing.expect(std.mem.indexOf(u8, first.listing, "%% main/1 argument") != null);
     try std.testing.expect(std.mem.indexOf(u8, first.listing, "alpha") != null);
+
+    // C-01 — the owning module's path is in the atom and decodes back; the
+    // same body declared in another module is another module, and one no
+    // module owns keeps the compiler's own `bp@comptime`.
+    try std.testing.expect(std.mem.startsWith(u8, first.module, "bp@comptime__tpl__shout__"));
+    const owned = try buildModule(arena, "ui/panel", tfn, &.{one}, &.{}, &unsupported);
+    try std.testing.expect(std.mem.startsWith(u8, owned.module, "bp@comptime@ui@panel__tpl__shout__"));
+    try std.testing.expect(std.mem.startsWith(u8, owned.code, "-module(bp@comptime@ui@panel__tpl__shout__"));
+    const decoded = try crossModule.decodeAtom(arena, owned.module);
+    try std.testing.expectEqualStrings("bp", decoded.package);
+    try std.testing.expectEqualStrings("comptime/ui/panel", decoded.path);
+    try std.testing.expectEqualStrings("tpl", decoded.kind);
+    try std.testing.expectEqualStrings("shout", decoded.decl);
+    const elsewhere = try buildModule(arena, "ui/card", tfn, &.{one}, &.{}, &unsupported);
+    try std.testing.expect(!std.mem.eql(u8, owned.module, elsewhere.module));
+    // The hash segment is the body's, whoever owns it.
+    try std.testing.expectEqualStrings(first.module[first.module.len - 16 ..], owned.module[owned.module.len - 16 ..]);
 }
 
 test "template outcome: every reply kind" {

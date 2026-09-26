@@ -6,10 +6,10 @@ val Color = type {
     Blue,
 };
 val name = fn(c: Color) -> string {
-    case c {
+    return case c {
         Red -> "red";
         _ -> "other";
-    }
+    };
 };
 ```
 
@@ -45,7 +45,7 @@ val name = fn(c: Color) -> string {
       "return_type": "string",
       "body": [
         {
-          "source": "case c {"
+          "source": "return case c {"
         }
       ]
     }

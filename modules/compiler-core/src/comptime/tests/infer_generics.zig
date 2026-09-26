@@ -92,7 +92,7 @@ test "infer: generic enum Result<T> with Ok and Err" {
         \\    Ok(value: T),
         \\    Err(message: string),
         \\};
-        \\pub fn isOk(r: Result) -> bool {
+        \\pub fn isOk<T>(r: Result<T>) -> bool {
         \\    return true;
         \\}
         \\val r = Result.Ok(value: 42);
@@ -150,8 +150,8 @@ test "infer: generic fn ---- referenced as a value instantiates fresh vars" {
 test "infer: generic interface Container<T>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Container = behavior <T> {
-        \\    fn fetch(self: Self) -> T;
-        \\    fn store(self: Self, value: T);
+        \\    fn fetch(self: Self<T>) -> T;
+        \\    fn store(self: Self<T>, value: T);
         \\}
     );
 }

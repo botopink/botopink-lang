@@ -309,7 +309,7 @@ test "codegen ---- inline implement context base erased at runtime" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element> { }
         \\fn render() -> Element {
-        \\    Element();
+        \\    return Element();
         \\}
     );
 }
@@ -756,7 +756,7 @@ test "js: enum ---- method with case on self" {
         \\    Red,
         \\    Green,
         \\    Blue,
-        \\    fn name() -> string {
+        \\    fn name(self: Self) -> string {
         \\        case (self) {
         \\            Red -> "red";
         \\            Green -> "green";

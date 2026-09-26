@@ -26,9 +26,9 @@ test "exhaustiveness error: missing enum patterns" {
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -41,11 +41,11 @@ test "exhaustiveness: all enum patterns covered" {
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
         \\        Green -> "green";
         \\        Blue -> "blue";
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -58,10 +58,10 @@ test "exhaustiveness: wildcard covers remaining patterns" {
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
         \\        _ -> "other";
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -69,9 +69,9 @@ test "exhaustiveness: wildcard covers remaining patterns" {
 test "exhaustiveness error: missing string patterns (with wildcard)" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val categorize = fn(s: string) -> string {
-        \\    case s {
+        \\    return case s {
         \\        "hello" -> "greeting";
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -83,10 +83,10 @@ test "exhaustiveness: nested pattern matching" {
         \\    Err(error: E),
         \\};
         \\val unwrap_or = fn(r: Result<i32, string>, fallback: i32) -> i32 {
-        \\    case r {
+        \\    return case r {
         \\        Ok(v) -> v,
         \\        Err(_) -> fallback,
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -99,10 +99,10 @@ test "exhaustiveness: or-pattern covers multiple variants" {
         \\    Blue,
         \\};
         \\val warm = fn(c: Color) -> bool {
-        \\    case c {
+        \\    return case c {
         \\        Red | Green -> true;
         \\        Blue -> false;
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -115,11 +115,11 @@ test "exhaustiveness: guarded arm does not cover its variant" {
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
         \\        Green -> "green";
         \\        Blue if false -> "blue";
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -132,11 +132,11 @@ test "exhaustiveness error: unreachable arm after wildcard" {
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
         \\        _ -> "other";
         \\        Blue -> "blue";
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -222,12 +222,12 @@ test "exhaustiveness error: duplicate variant arm" {
         \\    Blue,
         \\};
         \\val name = fn(c: Color) -> string {
-        \\    case c {
+        \\    return case c {
         \\        Red -> "red";
         \\        Green -> "green";
         \\        Red -> "again";
         \\        Blue -> "blue";
-        \\    }
+        \\    };
         \\};
     );
 }

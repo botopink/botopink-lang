@@ -733,7 +733,7 @@ pub fn parseImplementBody(
     shorthand: bool,
     genericParams: []GenericParam,
 ) ParseError!ImplementDecl {
-    _ = try this.consume(.implement);
+    const kwTok = try this.consume(.implement);
 
     // Interfaces are full type refs so generic interfaces (`Iface<A, B>`,
     // `@Context<…>`) parse, not just bare identifiers.
@@ -767,6 +767,7 @@ pub fn parseImplementBody(
         .interfaces = ifaceSlice,
         .target = target,
         .methods = methods,
+        .loc = parser.Parser.locFromToken(kwTok),
     };
 }
 
@@ -799,7 +800,7 @@ pub fn parseExtendBody(
     shorthand: bool,
     genericParams: []GenericParam,
 ) ParseError!ExtendDecl {
-    _ = try this.consume(.extend);
+    const kwTok = try this.consume(.extend);
     const target = (try this.consume(.identifier)).lexeme;
     const methods = try this.parseImplementMethods(alloc);
     return ExtendDecl{
@@ -809,6 +810,7 @@ pub fn parseExtendBody(
         .genericParams = genericParams,
         .target = target,
         .methods = methods,
+        .loc = parser.Parser.locFromToken(kwTok),
     };
 }
 
@@ -836,7 +838,8 @@ pub fn parseImplementMethods(this: *This, alloc: std.mem.Allocator) ParseError![
 pub fn parseImplementMethod(this: *This, alloc: std.mem.Allocator) ParseError!ImplementMethod {
     _ = try this.consume(.@"fn");
 
-    const first = (try this.consume(.identifier)).lexeme;
+    const firstTok = try this.consume(.identifier);
+    const first = firstTok.lexeme;
     var qualifier: ?[]const u8 = null;
     var methodName: []const u8 = first;
 
@@ -867,6 +870,7 @@ pub fn parseImplementMethod(this: *This, alloc: std.mem.Allocator) ParseError!Im
         .name = methodName,
         .params = params,
         .body = body,
+        .loc = parser.Parser.locFromToken(firstTok),
     };
 }
 
@@ -1344,6 +1348,8 @@ pub fn parseShorthandTypeDecl(this: *This, alloc: std.mem.Allocator) ParseError!
 /// optional body. Decides the shape from what it consumed (type-grammar.md
 /// § Shape resolution).
 pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!TypeDecl {
+    // The token just consumed — the name (shorthand) or `type` (val form).
+    const declLoc = parser.Parser.locFromToken(this.tokens[this.current - 1]);
     const genericParams = try this.parseGenericParams(alloc);
     errdefer alloc.free(genericParams);
 
@@ -1446,6 +1452,7 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
     }
     const methodSlice = try methods.toOwnedSlice(alloc);
     return TypeDecl{
+        .loc = declLoc,
         .name = name,
         .id = this.nextId("type"),
         .isPub = isPub,

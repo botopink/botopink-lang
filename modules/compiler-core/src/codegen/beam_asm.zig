@@ -2207,7 +2207,7 @@ const Emitter = struct {
             .behavior => |i| for (i.methods) |m| {
                 const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ i.name, m.name });
                 if (m.returnType) |rt| {
-                    if (rt == .named and std.mem.eql(u8, rt.named, "Self")) try self.self_returns.put(key, {});
+                    if (rt.isSelf()) try self.self_returns.put(key, {});
                 }
                 if (!m.is_default or m.body == null) continue;
                 if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
@@ -6016,12 +6016,6 @@ const Emitter = struct {
         }
         // A bodied interface `default fn` (`Array.fold`, `Number.clamp`).
         if (try self.callIfaceDefault(k, callee, recv_expr, cc, mode)) return true;
-        // The host spelling of a primitive method (`toUpperCase` for
-        // `String.toUpper`), after every other lowering missed — erlang's
-        // `primNodeAliasIn`, the same table.
-        if (primIfaceForKind(k)) |iface| {
-            if (erlangBackend.primNodeAliasIn(iface, callee)) |canon| return self.emitPrimMethod(k, canon, recv_expr, cc, mode);
-        }
         return false;
     }
 

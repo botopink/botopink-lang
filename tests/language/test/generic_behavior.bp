@@ -8,8 +8,8 @@ behavior Sized {
 }
 
 type Bag<T>(items: Array<T>) implement Sized {
-    pub fn size(self: Self) -> i32 { return self.items.length; }
-    pub fn map<U>(self: Self, f: fn(x: T) -> U) -> Bag<U> { return Bag(items: self.items.map(f)); }
+    pub fn size(self: Self<T>) -> i32 { return self.items.length; }
+    pub fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Bag<U> { return Bag(items: self.items.map(f)); }
 }
 
 test "a generic type carries its argument through a method" {

@@ -1,8 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print("aB".toUpperCase());
-    @print("aB".toLowerCase());
     @print("aB".toUpper());
     @print("aB".toLower());
 }
@@ -14,8 +12,6 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
-    '__bp_print'([string:uppercase(<<"aB">>)]),
-    '__bp_print'([string:lowercase(<<"aB">>)]),
     '__bp_print'([string:uppercase(<<"aB">>)]),
     '__bp_print'([string:lowercase(<<"aB">>)]).
 
@@ -48,8 +44,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-AB
-ab
 AB
 ab
 ```

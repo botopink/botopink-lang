@@ -5616,17 +5616,11 @@ const Emitter = struct {
                 .{ "findIndex", 1, .i32 },  .{ "fold", 2, .i32 },
             },
             .string => &.{
-                .{ "length", 0, .i32 },      .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
-                .{ "contains", 1, .bool_ },  .{ "startsWith", 1, .bool_ }, .{ "endsWith", 1, .bool_ },
-                .{ "indexOf", 1, .i32 },     .{ "trim", 0, .str },         .{ "trimStart", 0, .str },
-                .{ "trimEnd", 0, .str },     .{ "split", 1, .arr },        .{ "slice", 1, .str },
-                .{ "slice", 2, .str },       .{ "repeat", 1, .str },       .{ "toString", 0, .str },
-                // The host spellings `primitives.bp` gives `toUpper`/`toLower`
-                // through `#[@External.Node(…)]`. Source writes them
-                // (`tests/language/test/string_case_conversion.bp`), commonJS
-                // answers them because they are JavaScript's own, and this
-                // backend used to trap on an unlowered primitive method.
-                .{ "toUpperCase", 0, .str }, .{ "toLowerCase", 0, .str },
+                .{ "length", 0, .i32 },     .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
+                .{ "contains", 1, .bool_ }, .{ "startsWith", 1, .bool_ }, .{ "endsWith", 1, .bool_ },
+                .{ "indexOf", 1, .i32 },    .{ "trim", 0, .str },         .{ "trimStart", 0, .str },
+                .{ "trimEnd", 0, .str },    .{ "split", 1, .arr },        .{ "slice", 1, .str },
+                .{ "slice", 2, .str },      .{ "repeat", 1, .str },       .{ "toString", 0, .str },
                 // `Index<i32, string>.at` (decision 63's amendment) — a
                 // `?string`, absent as the pointer 0. `.str` is its stack
                 // shape; `optInfoOf` is what routes the print through
@@ -5784,10 +5778,8 @@ const Emitter = struct {
         try self.lowerCoerced(recv, "i32");
         if (eq(u8, name, "length")) {
             try self.emitC(.{ .load = .{} }, "string length");
-        } else if (eq(u8, name, "toUpper") or eq(u8, name, "toLower") or
-            eq(u8, name, "toUpperCase") or eq(u8, name, "toLowerCase"))
-        {
-            const upper = eq(u8, name, "toUpper") or eq(u8, name, "toUpperCase");
+        } else if (eq(u8, name, "toUpper") or eq(u8, name, "toLower")) {
+            const upper = eq(u8, name, "toUpper");
             try self.emit(try self.constInt(if (upper) @as(i32, 'a') else 'A'));
             try self.emit(try self.constInt(if (upper) @as(i32, 'z') else 'Z'));
             try self.emit(try self.constInt(if (upper) @as(i32, -32) else 32));

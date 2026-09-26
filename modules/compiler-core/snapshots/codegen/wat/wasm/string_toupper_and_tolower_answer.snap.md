@@ -1,8 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    @print("aB".toUpperCase());
-    @print("aB".toLowerCase());
     @print("aB".toUpper());
     @print("aB".toLower());
 }
@@ -16,18 +14,6 @@ fn main() {
   (data (i32.const 256) "\02\00\00\00aB")
   (global $__heap_ptr (mut i32) (i32.const 264))
   (func $main
-    i32.const 256
-    i32.const 97
-    i32.const 122
-    i32.const -32
-    call $__str_case
-    call $__print_str
-    i32.const 256
-    i32.const 65
-    i32.const 90
-    i32.const 32
-    call $__str_case
-    call $__print_str
     i32.const 256
     i32.const 97
     i32.const 122
@@ -318,8 +304,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-AB
-ab
 AB
 ab
 ```

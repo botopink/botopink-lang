@@ -142,8 +142,10 @@ extension as `collections.ArraySets*` — and on a node that opens braces they
 are a syntax error (`import-group-modifier`). Two items binding one name are
 `import-name-collision` at the second item (`import {url.parse, json.parse}`);
 an alias on either side clears it (`url.parse as parseUrl, json: {parse as
-parseJson}`). A type keeps its declared name (`import-alias-on-type`), and an
-activation cannot be renamed (`import-alias-on-activation`).
+parseJson}`). An alias reaches a type and a type alias too (decision 110):
+`import {collections.Dict as D}` brings `D`, a name for `Dict` in the program's
+own text — the emitted code keeps `Dict`. An activation cannot be renamed
+(`import-alias-on-activation`).
 
 <!-- docs-check: project import_tree src/main.bp -->
 ```botopink
@@ -295,6 +297,10 @@ fn add(x: i32, y: i32) -> i32 {
     return x + y;
 }
 ```
+
+A value leaves a function through `return`: a block is a statement, not a value, so a `fn` whose
+return type has a value must end every path with `return` (or `@panic` / `@todo`) —
+`fn f() -> i32 { val x = 1; }` is refused at `-> i32`.
 
 ## Types
 
@@ -486,6 +492,26 @@ type Tree<T> {
 Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Task<T>`,
 `@Iterator<T>`, `@Expr<T>`. Optionals are `?T`; tuples are `#(A, B)`.
 
+A written generic type carries all of its type arguments — `fn get(b: Box)` for a
+`type Box<T>` is `error: Box needs 1 type argument`, and `Pair<i32>` for a
+`Pair<A, B>` names both counts. Inside a declaration with type parameters `Self`
+carries them too: `Self<T>`, and `Self<U>` for the same type over another
+argument. A declaration without type parameters writes `Self`, and so does a
+non-generic type implementing a generic behavior — the behavior's `Self<…>` is
+that type:
+
+```botopink
+type Box<T>(value: T) {
+    pub fn get(self: Self<T>) -> T { return self.value; }
+    pub fn map<U>(self: Self<T>, f: fn(x: T) -> U) -> Self<U> { return Box(value: f(self.value)); }
+}
+
+fn main() {
+    val b: Box<string> = Box(value: 1).map({ x -> "one" });
+    @print(b.get());
+}
+```
+
 ### Type aliases
 
 ```botopink
@@ -582,7 +608,7 @@ pub fn main() {
 Three shapes do **not** narrow, and each for its own reason:
 
 * `if (x)` on a `?T` with no binder is refused — "type mismatch: expected bool,
-  got optional". There is no truthiness on an optional; write `if (x) { v -> … }`
+  got ?string". There is no truthiness on an optional; write `if (x) { v -> … }`
   or `if (x != null)`.
 * `while (x != null) { … }` leaves its body alone. A condition loop reassigns the
   name it tests, and a narrowed name could not be assigned the optional again.
@@ -638,8 +664,8 @@ Which methods those are comes from two **ambient** behaviors — ambient like
 
 <!-- docs-check: skip the two behaviors as libs/std declares them, not a module -->
 ```botopink
-pub behavior Index<K, V> { fn at(self: Self, key: K) -> ?V; }
-pub behavior Slice<V>    { fn slice(self: Self, start: i32, end: ?i32) -> V; }
+pub behavior Index<K, V> { fn at(self: Self<K, V>, key: K) -> ?V; }
+pub behavior Slice<V>    { fn slice(self: Self<V>, start: i32, end: ?i32) -> V; }
 ```
 
 So indexing is not a privilege of the three built-in collections. `Array<T>`
@@ -732,6 +758,9 @@ content only: a hand-broken list that fits is joined.
 val x = 1;
 val s = if (x > 0) { "positive" } else { "negative" };
 ```
+
+An `if` used as a value needs its `else`: `val s = if (x > 0) { "positive" };` has no value when
+the condition is false and is refused at the `if`.
 
 A condition is a whole expression, `&&` and `||` included — the grammar's own
 parentheses close it, so nothing has to be bound to a `val` first:
@@ -2101,7 +2130,6 @@ closes it, or says that it has none yet. Every row below was re-derived by
 
 | Rule | Today | Closes with |
 |---|---|---|
-| `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.10-beta C-15 (`01-checker` step 6) |
 | A block-shaped statement ends itself: **no** `;` after the closing brace of an `if`, a loop or a `case` in statement position | the `;` is **optional** there: the parser accepts both, `botopink format` prints none, and the compiler's own trees are migrated — a library or a `tests/language` cell that still writes it compiles | 1.0.10-beta C-13, in decision 132's order: each library drops the `;` (`botopink format`), then `tests/language`, then the parser refuses it (`blockStatementSemicolon`) |
 
 A row leaves this table when the compiler accepts the form, and the form is then

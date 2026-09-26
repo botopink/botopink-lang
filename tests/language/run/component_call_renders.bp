@@ -1,0 +1,36 @@
+//// Decisions 104, 118 and 128 — a component is CALLED, and called inside a
+//// component body with the same base it renders within that render: the call
+//// answers its `T` (the context owner), not the `@Component<C, T>` wrapper.
+//// `div([title(), Counter()])` used to red "expected Element, got Component"
+//// with no location. A hook is still `use`d.
+
+pub type ElementBase {}
+
+pub type Element(tag: string, kids: Element[]) implement @Context<ElementBase>
+
+fn div(children: Element[]) -> Element {
+    return Element(tag: "div", kids: children);
+}
+
+fn text(s: string) -> Element {
+    return Element(tag: s, kids: []);
+}
+
+pub fn Counter() -> @Component<ElementBase, Element> {
+    return text("counter");
+}
+
+pub fn Page() -> @Component<ElementBase, Element> {
+    return div([text("title"), Counter()]);
+}
+
+fn render(e: Element) -> string {
+    var out = e.tag;
+    for (e.kids) { k -> out = out + "," + render(k); };
+    return out;
+}
+
+pub fn main() -> @Task<void> {
+    val page = await Page();
+    @print(render(page));
+}

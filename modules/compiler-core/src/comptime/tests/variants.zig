@@ -175,10 +175,10 @@ test "variant inference: field access after pattern matching" {
         \\    Error(message: string),
         \\};
         \\val get_value = fn(r: Result) -> i32 {
-        \\    case r {
+        \\    return case r {
         \\        Ok(v) -> v;
         \\        Error(_) -> 0;
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -219,11 +219,11 @@ test "variant inference: multiple variants with different fields" {
         \\    Point,
         \\};
         \\val area = fn(s: Shape) -> f64 {
-        \\    case s {
+        \\    return case s {
         \\        Circle(r) -> 3.14 * r * r;
         \\        Rectangle(w, h) -> w * h;
         \\        Point -> 0.0;
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -276,10 +276,10 @@ test "record update error: field type mismatch" {
 test "pattern: non-empty list pattern" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val first_or_default = fn(list: i32[], fallback: i32) -> i32 {
-        \\    case list {
+        \\    return case list {
         \\        [first, ..] -> first;
         \\        [] -> fallback;
-        \\    }
+        \\    };
         \\};
         \\fn main() {
         \\    @print(first_or_default([1, 2], 0));
@@ -306,11 +306,11 @@ test "pattern: complex nested patterns" {
         \\    Multiple(Result<i32, string>[]),
         \\};
         \\val extract = fn(c: Container) -> i32 {
-        \\    case c {
+        \\    return case c {
         \\        Single(Ok(v)) -> v;
         \\        Multiple([Ok(v), ..]) -> v;
         \\        _ -> 0;
-        \\    }
+        \\    };
         \\};
     );
 }
@@ -322,7 +322,7 @@ test "variant inference: access variant-specific field after matching" {
         \\    Square(side: f64),
         \\};
         \\val scale = fn(s: Shape, factor: f64) -> Shape {
-        \\    case s {
+        \\    return case s {
         \\        Circle(r) -> Circle(radius: r * factor);
         \\        Square(s) -> Square(side: s * factor);
         \\    };
@@ -337,7 +337,7 @@ test "variant inference: pattern matching on generic enum" {
         \\    None,
         \\};
         \\val map = fn(opt: Option<i32>, f: fn(i32) -> i32) -> Option<i32> {
-        \\    case opt {
+        \\    return case opt {
         \\        Some(v) -> Some(value: f(v));
         \\        None -> None;
         \\    };

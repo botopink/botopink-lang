@@ -2,31 +2,20 @@
 ```botopink
 val Counter = type(
     count: i32 = 0) {
-    fn inc() {
+    fn inc(self: Self) {
         self.count += 1;
     }
 };
 ```
 
------ JAVASCRIPT -- main.js
-```javascript
-class Counter {
-    constructor(count) {
-        this.count = count;
-    }
+----- COMPILE DIAGNOSTIC -- main
+```text
+error: a `Counter` is immutable — its field `count` cannot be assigned
+  ┌─ :4:9
+  │
+4 │         self.count += 1;
+  │         ^
 
-    static inc() {
-        this.count += 1;
-    }
-}
-Counter.prototype.__bp = "Counter";
+  hint: Build a new value instead: `Counter(..self, count: <value>)`.
 ```
 
------ TYPESCRIPT TYPEDEF -- main.d.ts
-```typescript
-
-```
-
------ RUN LOG -----
-```logs
-```

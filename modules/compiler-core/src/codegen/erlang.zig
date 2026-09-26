@@ -2457,38 +2457,6 @@ const PrimIfaceWalker = struct {
     }
 };
 
-/// The declared name of the primitive method whose `#[@External.Node("<name>")]`
-/// host spelling is `callee` — `toUpperCase` → `toUpper` — on the receiver's
-/// interface or one it extends; null when no method declares that spelling, or
-/// when `callee` is itself a declared method. Read from `prelude_cache`'s
-/// `primitives.bp`, which lives for the process, so the answer borrows it.
-pub fn primNodeAliasIn(head_iface: []const u8, callee: []const u8) ?[]const u8 {
-    const prim_program = prelude_cache.primitives() orelse return null;
-    var iface: ?[]const u8 = head_iface;
-    var guard: usize = 0;
-    while (iface) |name| : (guard += 1) {
-        if (guard >= 16) return null;
-        var parent: ?[]const u8 = null;
-        for (prim_program.decls) |decl| {
-            if (decl != .behavior or !std.mem.eql(u8, decl.behavior.name, name)) continue;
-            const bh = decl.behavior;
-            for (bh.methods) |m| if (std.mem.eql(u8, m.name, callee)) return null;
-            for (bh.methods) |m| {
-                const ref = m.externalFor("node") orelse continue;
-                if (ref.module.len == 0 and std.mem.eql(u8, ref.symbol, callee)) return m.name;
-            }
-            if (bh.extends.len > 0) parent = bh.extends[0];
-        }
-        iface = parent;
-    }
-    return null;
-}
-
-fn primNodeAlias(this: *const Emitter, k: envMod.PrimKind, callee: []const u8) ?[]const u8 {
-    _ = this;
-    return primNodeAliasIn(primIfaceForKind(k) orelse return null, callee);
-}
-
 /// `@print` / `@println` / `@debug` — the builtins lowered to `'__bp_print'/1`.
 fn isPrintBuiltin(callee: []const u8) bool {
     return std.mem.eql(u8, callee, "print") or std.mem.eql(u8, callee, "println") or std.mem.eql(u8, callee, "debug");
@@ -3358,7 +3326,7 @@ const Emitter = struct {
                 try this.local_behaviors.put(i.name, i);
                 for (i.methods) |m| {
                     if (m.returnType) |rt| {
-                        if (rt == .named and std.mem.eql(u8, rt.named, "Self")) {
+                        if (rt.isSelf()) {
                             const sq = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ i.name, m.name });
                             try this.iface_self_returns.put(sq, {});
                         }
@@ -3398,7 +3366,7 @@ const Emitter = struct {
                 var key_buf: [256]u8 = undefined;
                 const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ i.name, m.name }) catch continue;
                 if (m.returnType) |rt| {
-                    if (rt == .named and std.mem.eql(u8, rt.named, "Self") and !this.iface_self_returns.contains(key)) {
+                    if (rt.isSelf() and !this.iface_self_returns.contains(key)) {
                         try this.iface_self_returns.put(try this.alloc.dupe(u8, key), {});
                     }
                 }
@@ -8449,11 +8417,6 @@ const Emitter = struct {
         // Pure-botopink instance `default fn` (`xs.all(pred)`, `n.clamp(lo, hi)`):
         // the local form emitted on demand at the end of the module.
         if (try this.ifaceDefaultNode(b, k, callee, recv, cc)) |node| return node;
-        // The host spelling of a primitive method (`toUpperCase`, the
-        // `#[@External.Node(…)]` name of `String.toUpper`) reaches the method it
-        // spells, as it does on commonJS and wasm — only after every other
-        // lowering missed, so it can only turn an undefined call into a call.
-        if (primNodeAlias(this, k, callee)) |canon| return this.primMethodNode(b, k, canon, recv, cc);
         var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         try args.append(b.arena, try this.exprNode(b, recv.*));
         for (cc.args) |arg| try args.append(b.arena, try this.exprNode(b, arg.value.*));

@@ -379,19 +379,19 @@ behavior Array<T> {
     // `Index<i32, T>.at` — the reader `xs[0]` rewrites to.
     #[@External.Erlang("(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)($0, $1)")]
     #[@External.Node("at")]
-    fn at(self: Self, index: i32) -> ?T;
+    fn at(self: Self<T>, index: i32) -> ?T;
 
     #[@External.Erlang("($0 ++ [$1])")]
     #[@External.Node("push")]
-    fn push(self: Self, item: T);
+    fn push(self: Self<T>, item: T);
 
     #[@External.Erlang("lists", "last")]
     #[@External.Node("pop")]
-    fn pop(self: Self) -> ?T;
+    fn pop(self: Self<T>) -> ?T;
 
     // `Slice<T[]>.slice` — `end` is `?i32` so an open-ended `xs[1..]` can pass
     // `null` in the second argument (there is no `Range` type to pass).
-    default fn slice(self: Self, start: i32, end: ?i32 = null) -> Self {
+    default fn slice(self: Self<T>, start: i32, end: ?i32 = null) -> Self<T> {
         if (end != null) return arraySlice1(self, start, end) else return arraySlice0(
             self,
             start
@@ -400,7 +400,7 @@ behavior Array<T> {
 
     #[@External.Erlang("""iolist_to_binary(lists:join($1, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> $stringify(__E) end end, $0)))""")]
     #[@External.Node("join")]
-    fn join(self: Self, sep: string) -> string;
+    fn join(self: Self<T>, sep: string) -> string;
 
     // `reverse` ANSWERS a reversed array and leaves the receiver alone, on
     // every target. Native `Array.prototype.reverse` reverses in place and
@@ -413,23 +413,23 @@ behavior Array<T> {
     #[@External.Erlang("lists", "reverse")]
     #[@External.Beam("""    {call_ext, 1, {extfunc, lists, reverse, 1}}.""")]
     #[@External.Node("toReversed")]
-    fn reverse(self: Self) -> Self;
+    fn reverse(self: Self<T>) -> Self<T>;
 
     #[@External.Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)($0, $1)")]
     #[@External.Node("indexOf")]
-    fn indexOf(self: Self, item: T) -> i32;
+    fn indexOf(self: Self<T>, item: T) -> i32;
 
     #[@External.Erlang("lists", "foreach(action, self)")]
     #[@External.Node("forEach")]
-    fn forEach(self: Self, action: fn(item: T));
+    fn forEach(self: Self<T>, action: fn(item: T));
 
     #[@External.Erlang("lists", "map(transform, self)")]
     #[@External.Node("map")]
-    fn map<U>(self: Self, transform: fn(item: T) -> U) -> Array<U>;
+    fn map<U>(self: Self<T>, transform: fn(item: T) -> U) -> Array<U>;
 
     #[@External.Erlang("lists", "filter(pred, self)")]
     #[@External.Node("filter")]
-    fn filter(self: Self, pred: fn(item: T) -> bool) -> Self;
+    fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>;
 
     // `zip` pairs the receiver's items with `other`'s by index, truncating to
     // the shorter array. Template form: erlang uses `lists:zipwith` with a
@@ -438,7 +438,7 @@ behavior Array<T> {
     // gap; falls through to the inline allow-list as today).
     #[@External.Erlang("lists:zipwith(fun(__X, __Y) -> {__X, __Y} end, lists:sublist($0, length($1)), lists:sublist($1, length($0)))")]
     #[@External.Node("$0.map((__x, __i) => [__x, ($1)[__i]]).slice(0, Math.min($0.length, ($1).length))")]
-    fn zip<U>(self: Self, other: Array<U>) -> Array<#(T, U)>;
+    fn zip<U>(self: Self<T>, other: Array<U>) -> Array<#(T, U)>;
 
     // ── producers (associated — no receiver) ──
     // Pure botopink (no host backing): the host `lists:seq`/`duplicate` have the
@@ -465,33 +465,33 @@ behavior Array<T> {
 
     // ── derived ops (default implementations over the primitives) ──
     #[@External.Erlang("($0 =:= [])")]
-    default fn isEmpty(self: Self) -> bool {
+    default fn isEmpty(self: Self<T>) -> bool {
         return self.length == 0;
     }
 
     #[@External.Erlang("lists:member($1, $0)")]
-    default fn contains(self: Self, x: T) -> bool {
+    default fn contains(self: Self<T>, x: T) -> bool {
         return self.indexOf(x) != -1;
     }
 
-    default fn first(self: Self) -> ?T {
+    default fn first(self: Self<T>) -> ?T {
         return self.at(0);
     }
 
-    default fn rest(self: Self) -> Self {
+    default fn rest(self: Self<T>) -> Self<T> {
         return self.slice(1, self.length);
     }
 
-    default fn take(self: Self, n: i32) -> Self {
+    default fn take(self: Self<T>, n: i32) -> Self<T> {
         return self.slice(0, n);
     }
 
-    default fn drop(self: Self, n: i32) -> Self {
+    default fn drop(self: Self<T>, n: i32) -> Self<T> {
         return self.slice(n, self.length);
     }
 
     default fn fold<A>(
-        self: Self,
+        self: Self<T>,
         initial: A,
         f: fn(acc: A, item: T) -> A,
     ) -> A {
@@ -503,32 +503,32 @@ behavior Array<T> {
     }
 
     #[@External.Node("find")]
-    default fn find(self: Self, pred: fn(item: T) -> bool) -> ?T {
+    default fn find(self: Self<T>, pred: fn(item: T) -> bool) -> ?T {
         return self.filter(pred).at(0);
     }
 
-    default fn count(self: Self, pred: fn(item: T) -> bool) -> i32 {
+    default fn count(self: Self<T>, pred: fn(item: T) -> bool) -> i32 {
         return self.filter(pred).length;
     }
 
-    default fn all(self: Self, pred: fn(item: T) -> bool) -> bool {
+    default fn all(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.filter(pred).length == self.length;
     }
 
-    default fn any(self: Self, pred: fn(item: T) -> bool) -> bool {
+    default fn any(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.filter(pred).length != 0;
     }
 
     #[@External.Erlang("($0 ++ $1)")]
     #[@External.Node("concat")]
-    default fn append(self: Self, other: Self) -> Self {
+    default fn append(self: Self<T>, other: Self<T>) -> Self<T> {
         var out = self.slice(0, self.length);
         other.forEach({ y -> out.push(y) });
         return out;
     }
 
     #[@External.Erlang("[$1 | $0]")]
-    default fn prepend(self: Self, item: T) -> Self {
+    default fn prepend(self: Self<T>, item: T) -> Self<T> {
         var out = [item];
         self.forEach({ x -> out.push(x) });
         return out;
@@ -536,8 +536,8 @@ behavior Array<T> {
 
     // NOTE: nested trailing lambdas don't parse yet (catalogued gap) — the inner
     // copy goes through `append` rather than a nested `forEach`.
-    default fn flatten<E>(self: Self) -> Array<E> {
-        var out = [];
+    default fn flatten<E>(self: Self<T>) -> Array<E> {
+        var out: E[] = [];
         self.forEach({ inner ->
             out = out.append(inner);
         });
@@ -545,11 +545,11 @@ behavior Array<T> {
     }
 
     #[@External.Node("flatMap")]
-    default fn flatMap<U>(self: Self, transform: fn(item: T) -> U) -> Array<U> {
+    default fn flatMap<U>(self: Self<T>, transform: fn(item: T) -> U) -> Array<U> {
         return self.map(transform).flatten();
     }
 
-    default fn toList(self: Self) -> Self {
+    default fn toList(self: Self<T>) -> Self<T> {
         return self;
     }
 
@@ -558,22 +558,22 @@ behavior Array<T> {
     // (different camelCase name, identical semantics — chosen to mirror the
     // Node Array prototype). The originals stay so existing callers don't
     // break.
-    default fn some(self: Self, pred: fn(item: T) -> bool) -> bool {
+    default fn some(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.any(pred);
     }
 
-    default fn every(self: Self, pred: fn(item: T) -> bool) -> bool {
+    default fn every(self: Self<T>, pred: fn(item: T) -> bool) -> bool {
         return self.all(pred);
     }
 
-    default fn flat<E>(self: Self) -> Array<E> {
+    default fn flat<E>(self: Self<T>) -> Array<E> {
         return self.flatten();
     }
 
     // First index where `pred` holds, or -1 when no element matches. Pure
     // botopink — recurses over indices through a fold that captures the
     // first hit (`-1` is preserved once set).
-    default fn findIndex(self: Self, pred: fn(item: T) -> bool) -> i32 {
+    default fn findIndex(self: Self<T>, pred: fn(item: T) -> bool) -> i32 {
         var out = -1;
         var i = 0;
         self.forEach({ x ->
@@ -586,15 +586,15 @@ behavior Array<T> {
     // Build a fresh array of `length` copies of `value` — equivalent to
     // `Array.repeat(value, self.length)`, but the receiver-method form
     // matches the JS prototype signature callers expect.
-    default fn fill<E>(self: Self, value: E) -> Array<E> {
+    default fn fill<E>(self: Self<T>, value: E) -> Array<E> {
         return Array.repeat(value, self.length);
     }
 
     // Partition the array into consecutive chunks of `n` elements; the last
     // chunk may be shorter when `self.length` is not divisible by `n`.
     // Negative or zero `n` returns an empty array (no infinite loop).
-    default fn chunked(self: Self, n: i32) -> Array<Self> {
-        var out = [];
+    default fn chunked(self: Self<T>, n: i32) -> Array<Self<T>> {
+        var out: Array<Self<T>> = [];
         if (n <= 0) return out;
         val len = self.length;
         for (0..len) { k ->
@@ -606,8 +606,8 @@ behavior Array<T> {
     // Sliding window of length `n` over the array. Returns one window per
     // valid start offset (`self.length - n + 1` windows). Negative or zero
     // `n`, or `n > self.length`, returns an empty array.
-    default fn sliding(self: Self, n: i32) -> Array<Self> {
-        var out = [];
+    default fn sliding(self: Self<T>, n: i32) -> Array<Self<T>> {
+        var out: Array<Self<T>> = [];
         if (n <= 0) return out;
         val windows = self.length - n + 1;
         if (windows <= 0) return out;
@@ -620,21 +620,24 @@ behavior Array<T> {
     // Drop consecutive duplicates. Matches the Node Array convention —
     // non-consecutive de-dup is `xs.fold([], …)` (left to callers since it
     // needs an equality predicate that interacts with generic `T`).
-    default fn unique(self: Self) -> Self {
-        var out = [];
-        var seenLast = false;
+    //
+    // Decision 9 (1.0.5): the body calls no method on an optional — it used to
+    // write `prev.unwrapOr(x)` inside this `default fn`, a shape no backend
+    // lowers (`prev.unwrapOr is not a function` on node, `unwrapOr/2 undefined`
+    // on erlang). `prev` is compared directly: absent only before the first
+    // element, which `first` guards.
+    default fn unique(self: Self<T>) -> Self<T> {
+        var out: T[] = [];
+        var first = true;
         var prev = self.at(0);
         self.forEach({ x ->
-            if (seenLast) {
-                if (prev.unwrapOr(x) != x) {
-                    out = out.append([x]);
-                    prev = self.at(out.length);
-                }
-            } else {
+            if (first) {
                 out = out.append([x]);
-                seenLast = true;
-                prev = self.at(0);
-            }
+                first = false;
+            } else if (prev != x) {
+                out = out.append([x]);
+            };
+            prev = x;
         });
         return out;
     }

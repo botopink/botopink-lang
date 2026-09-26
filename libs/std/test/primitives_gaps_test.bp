@@ -83,3 +83,16 @@ test "array sliding window of 2" {
     val ws = ns.sliding(2);
     assert ws.length == 3;
 }
+
+// Decision 9 (1.0.5): `unique` drops consecutive duplicates and calls no method
+// on an optional inside its `default fn` body — it failed on node and erlang.
+test "array unique drops consecutive duplicates" {
+    val ns = [1, 1, 2, 2, 3, 1];
+    val u = ns.unique();
+    assert u.length == 4;
+    assert u[0] == 1;
+    assert u[2] == 3;
+    assert u[3] == 1;
+    val none: i32[] = [];
+    assert none.unique().length == 0;
+}

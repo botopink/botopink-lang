@@ -1,0 +1,25 @@
+//// The spelling that has no answer (the other half of `run/variant_name_collision.bp`).
+////
+//// `Circle` is a variant of `Shape` and a variant of `Hole`, and `.Circle`
+//// bound with no annotation says which of the two only if something at the
+//// site does — and nothing here does. The checker refuses it for every target
+//// (01 step 12, decision 67); until then only the erlang emitter refused, and
+//// erlang before it tagged the value with one of the two and died at a `case`
+//// with `{case_clause, …Shape__v__circle}`. Where the position does say — a
+//// typed parameter, an annotation — `.Circle` is that enum's
+//// (`run/variant_leading_dot_expected.bp`).
+
+pub type Shape {
+    Circle,
+    Square,
+}
+
+pub type Hole {
+    Circle,
+    Slot,
+}
+
+pub fn main() {
+    val c = .Circle;
+    @print(0);
+}

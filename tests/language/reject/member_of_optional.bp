@@ -1,0 +1,10 @@
+//// Decision 45 (1.0.5) — a member read off a `?T` is an error naming `?.`.
+//// `rs.at(0)` answers `?#(a: i32, b: string)`; `.b` on it used to check, and
+//// then answered `undefined` on commonJS and raised `bad map` on erlang,
+//// because the label rewrite never fired on an optional receiver. Written
+//// `rs.at(0)?.b` it is the label it names (`test/tuple_labels.bp` §6 T4).
+
+pub fn main() {
+    val rs: #(a: i32, b: string)[] = [#(1, "x")];
+    @print(rs.at(0).b);
+}

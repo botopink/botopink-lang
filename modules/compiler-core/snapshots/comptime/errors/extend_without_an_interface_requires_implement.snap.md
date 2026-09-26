@@ -8,6 +8,10 @@ val PatoVoa = extend Pato {
 
 ----- ERROR
 error: extend requires a behavior
+  ┌─ :2:15
+  │
+2 │ val PatoVoa = extend Pato {
+  │               ^
 
   `extend Pato` adds methods without a contract
   hint: use `implement <Behavior> for Pato` so the methods satisfy a behavior

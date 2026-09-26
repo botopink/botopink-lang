@@ -6,7 +6,7 @@
 pub type Query<T>(
     items: Array<T>,
 ) {
-    pub fn toArray(self: Self) -> Array<T> {
+    pub fn toArray(self: Self<T>) -> Array<T> {
         return self.items;
     }
 }
@@ -15,7 +15,7 @@ pub type Grouping<K, V>(
     key: K,
     items: Array<V>,
 ) {
-    pub fn toArray(self: Self) -> Array<V> {
+    pub fn toArray(self: Self<K, V>) -> Array<V> {
         return self.items;
     }
 }

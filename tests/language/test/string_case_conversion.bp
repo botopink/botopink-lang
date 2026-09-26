@@ -1,6 +1,7 @@
-//// String case conversion: `toUpperCase` and `toLowerCase` answer the same on
-//// every backend.
+//// String case conversion: `toUpper` and `toLower` answer the same on every
+//// backend. The host spellings (`toUpperCase`) are not methods of `string`:
+//// `reject/primitive_method_undeclared.bp` pins the refusal.
 
-test "toUpperCase raises every letter" { assert "abc".toUpperCase() == "ABC"; }
+test "toUpper raises every letter" { assert "abc".toUpper() == "ABC"; }
 
-test "toLowerCase lowers every letter" { assert "ABC".toLowerCase() == "abc"; }
+test "toLower lowers every letter" { assert "ABC".toLower() == "abc"; }

@@ -1,10 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val first_or_default = fn(list: i32[], fallback: i32) -> i32 {
-    case list {
+    return case list {
         [first, ..] -> first;
         [] -> fallback;
-    }
+    };
 };
 fn main() {
     @print(first_or_default([1, 2], 0));
@@ -33,7 +33,7 @@ fn main() {
       "return_type": "i32",
       "body": [
         {
-          "source": "case list {"
+          "source": "return case list {"
         }
       ]
     },

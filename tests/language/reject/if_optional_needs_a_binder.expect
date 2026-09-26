@@ -1,2 +1,2 @@
-type mismatch: expected bool, got optional
+type mismatch: expected bool, got ?string
 15:5

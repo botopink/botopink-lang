@@ -9,7 +9,7 @@ val y = xs.filter({ x -> true });
 kind: markdown
 
 ```botopink
-fn filter(self: Self, pred: fn(item: T) -> bool) -> Self
+fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>
 ```
 
 *from `behavior Array`*

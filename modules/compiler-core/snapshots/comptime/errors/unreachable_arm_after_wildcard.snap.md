@@ -5,11 +5,11 @@ val Color = type {
     Blue,
 };
 val name = fn(c: Color) -> string {
-    case c {
+    return case c {
         Red -> "red";
         _ -> "other";
         Blue -> "blue";
-    }
+    };
 };
 
 ----- ERROR

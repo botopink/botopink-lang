@@ -5,10 +5,10 @@ val Result = type {
     Error(message: string),
 };
 val get_value = fn(r: Result) -> i32 {
-    case r {
+    return case r {
         Ok(v) -> v;
         Error(_) -> 0;
-    }
+    };
 };
 ```
 
@@ -47,7 +47,7 @@ val get_value = fn(r: Result) -> i32 {
       "return_type": "i32",
       "body": [
         {
-          "source": "case r {"
+          "source": "return case r {"
         }
       ]
     }

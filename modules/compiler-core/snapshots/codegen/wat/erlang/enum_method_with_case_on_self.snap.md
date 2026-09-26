@@ -4,7 +4,7 @@ val Color = type {
     Red,
     Green,
     Blue,
-    fn name() -> string {
+    fn name(self: Self) -> string {
         case (self) {
             Red -> "red";
             Green -> "green";
@@ -27,9 +27,9 @@ val Color = type {
 ----- ERLANG -- test@main@@Color.erl
 ```erlang
 -module(test@main@@Color).
--export([name/0, '__bp_format'/1]).
+-export([name/1, '__bp_format'/1]).
 
-name() ->
+name(Self) ->
     case Self of
         test@main@@Color__v__red ->
             <<"red">>;

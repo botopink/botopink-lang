@@ -74,8 +74,11 @@ test "js: case ---- or patterns with numbers" {
 // value of an `if` with no `else` when the condition is false. commonJS prints
 // `undefined`, erlang `ok`; decision 2 (a block's value comes from `break`)
 // makes this program a checker error, 07-checker's to land.
+// Decision 2 (01 R7): an `if` without `else` has no value on its false side.
+// This compiled and printed `positive` then `undefined` on commonJS, wasm and
+// beam and `ok` on erlang for `sign(-3)`; it is refused at the `if` now.
 test "js: if ---- simple conditional in fn body" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
+    try h.assertJsCompileError(std.testing.allocator, @src(),
         \\fn sign(n: i32) -> string {
         \\    val r = if (n > 0) { "positive"; };
         \\    @print(r);

@@ -2,7 +2,7 @@
 val Element = type implement @Context<Element> { }
 val Plain = type(x: i32)
 fn make() -> Plain {
-    Plain(x: 0);
+    return Plain(x: 0);
 }
 fn comp() -> @Component<Element, i32> {
     val p = use make();

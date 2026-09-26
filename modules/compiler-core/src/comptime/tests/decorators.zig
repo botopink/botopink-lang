@@ -157,7 +157,7 @@ test "decorator body: @compilerError aborts compilation" {
     // needed, reads like `@panic`. Preferred over `decl.fail`/`decl.failAt`.
     try h.assertInfersOk(std.testing.allocator,
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != .Record) {
+        \\    if (decl.kind != .Type) {
         \\        @compilerError("#[service] must annotate a type with fields");
         \\    }
         \\}
@@ -168,11 +168,14 @@ test "decorator body: @compilerError aborts compilation" {
 }
 
 test "decorator body: reads decl.kind and calls decl.fail" {
-    // The body must type-check: `decl.kind` (a `DeclKind`), the `.Record`
-    // member literal, and the `decl.fail(string)` diagnostic call.
+    // The body must type-check: `decl.kind` (a `DeclKind`), the `.Type`
+    // member literal — resolved against `DeclKind`, the left operand's type
+    // (it read `.Record` until 01 step 12, a member of `TypeInfoKind` and of
+    // `TypeInfo` but not of `DeclKind`, taken from the flat variant table) —
+    // and the `decl.fail(string)` diagnostic call.
     try h.assertInfersOk(std.testing.allocator,
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != .Record) {
+        \\    if (decl.kind != .Type) {
         \\        decl.fail("#[service] must annotate a type with fields");
         \\    }
         \\}

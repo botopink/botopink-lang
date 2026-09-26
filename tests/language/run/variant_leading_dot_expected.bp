@@ -1,0 +1,40 @@
+//// 01 step 12 — a leading-dot variant takes its enum from the position's
+//// expected type, so two enums declaring `Circle` are no ambiguity where the
+//// position says which: `holeOf(.Circle)` is `Hole.Circle` because `holeOf`
+//// takes a `Hole`, `val s: Shape = .Circle;` is `Shape.Circle`, and the
+//// fully qualified `Shape.Circle(…)` is Shape's whatever `Hole` declares.
+//// Before the step the bare name was the flat table's last writer: the
+//// annotation reds `expected Shape, got Hole` and `Shape.Round(r: 3)`'s
+//// sibling `Shape.Circle` typed as `Hole`.
+
+pub type Shape {
+    Circle,
+    Round(r: i32),
+}
+
+pub type Hole {
+    Circle,
+    Round(r: i32),
+}
+
+pub fn holeOf(h: Hole) -> string {
+    return case h {
+        .Circle { "hole-circle" }
+        .Round(r) { "hole-round" }
+    };
+}
+
+pub fn shapeOf(s: Shape) -> string {
+    return case s {
+        .Circle { "shape-circle" }
+        .Round(r) { "shape-round" }
+    };
+}
+
+pub fn main() {
+    @print(holeOf(.Circle));
+    val s: Shape = .Circle;
+    @print(shapeOf(s));
+    @print(shapeOf(Shape.Round(r: 3)));
+    @print(holeOf(Hole.Round(r: 4)));
+}
