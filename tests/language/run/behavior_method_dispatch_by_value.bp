@@ -1,0 +1,41 @@
+//// A method called through a `behavior`-typed value is answered by the
+//// value's own type — a parameter, an annotated `val`, a function's answer
+//// and the elements of an `Array<Request>` holding two implementers. wasm
+//// trapped (`unreachable ;; unresolved call: path/0`) at the first such call,
+//// the limit `docs.md` stated for every behavior dispatch there; commonJS,
+//// erlang and beam dispatched. It now reads the type from the value's header
+//// and calls that type's method (`$__bdispatch_<method>_<n>`), and no longer
+//// reads every element of the array as the first literal's `Page`.
+
+behavior Request {
+    fn path(self: Self) -> string;
+    fn weight(self: Self, factor: i32) -> i32;
+}
+
+type Page(route: string) implement Request {
+    fn path(self: Self) -> string { return self.route; }
+    fn weight(self: Self, factor: i32) -> i32 { return factor; }
+}
+
+type Api(version: i32) implement Request {
+    fn path(self: Self) -> string { return "/api/v" + self.version.toString(); }
+    fn weight(self: Self, factor: i32) -> i32 { return self.version * factor; }
+}
+
+fn describe(req: Request) -> string {
+    return "at " + req.path();
+}
+
+fn home() -> Request {
+    return Page(route: "/home");
+}
+
+pub fn main() {
+    @print(describe(Page(route: "/about")));
+    val r: Request = Api(version: 2);
+    @print(r.path());
+    @print(r.weight(10));
+    @print(home().path());
+    val all: Array<Request> = [Page(route: "/p"), Api(version: 3)];
+    @print(all.map({ q -> q.weight(2) }));
+}

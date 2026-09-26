@@ -126,13 +126,55 @@ const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d",
 
 const print_tagged = func("__print_tagged", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_tagged_raw"), call("__print_nl") });
 
-/// `s.charCodeAt(i)`: the byte at `i`, or `-1` outside `0..len` — the answer
-/// the Node and Erlang templates give out of range. One unsigned compare
-/// catches a negative `i` too. Bytes, not code points: an ASCII string answers
-/// as the other backends do.
-const str_char_code = func("__str_char_code", &.{ "s", "i" }, .i32, &.{}, &.{
-    get("i"), get("s"), load(0),   op("ge_u"), when(&.{ c32(-1), ret }),
-    get("s"), get("i"), op("add"), load8(4),
+/// `s.charCodeAt(i)`: the code point at code-point index `i`, or `-1`
+/// outside `0..count` — the answer the Erlang template gives (and Node's
+/// `codePointAt` for every character of the Basic Multilingual Plane). The
+/// string is UTF-8, so the walk steps a sequence at a time — its width from
+/// the lead byte — and decodes the one it stops on. It answered the BYTE at
+/// `i`: `"héllo".charCodeAt(1)` was `195` where the other targets said `233`.
+const str_char_code = func("__str_char_code", &.{ "s", "i" }, .i32, i32s(&.{ "n", "p", "b", "w" }), &.{
+    get("i"), c32(0),  op("lt_s"), when(&.{ c32(-1), ret }),
+    get("s"), load(0), set("n"),
+    loop(&.{
+        get("p"),  get("n"),   op("ge_u"),                   when(&.{ c32(-1), ret }),
+        get("s"),  get("p"),   op("add"),                    load8(4),
+        set("b"),  c32(1),     set("w"),                     get("b"),
+        c32(0xC0), op("ge_u"), when(&.{ c32(2), set("w") }), get("b"),
+        c32(0xE0), op("ge_u"), when(&.{ c32(3), set("w") }), get("b"),
+        c32(0xF0), op("ge_u"), when(&.{ c32(4), set("w") }), get("i"),
+        op("eqz"),
+        when(&.{
+            get("w"), c32(1),    op("eq"),   when(&.{ get("b"), ret }),
+            get("b"), c32(0x80), get("w"),   op("shr_u"),
+            c32(1),   op("sub"), op("and"),  set("b"),
+            get("w"), c32(1),    op("gt_u"),
+            when(&.{
+                get("b"), c32(6),    op("shl"), get("s"),
+                get("p"), op("add"), c32(1),    op("add"),
+                load8(4), c32(0x3F), op("and"), op("or"),
+                set("b"),
+            }),
+            get("w"), c32(2),    op("gt_u"),
+            when(&.{
+                get("b"), c32(6),    op("shl"), get("s"),
+                get("p"), op("add"), c32(2),    op("add"),
+                load8(4), c32(0x3F), op("and"), op("or"),
+                set("b"),
+            }),
+            get("w"), c32(3),    op("gt_u"),
+            when(&.{
+                get("b"), c32(6),    op("shl"), get("s"),
+                get("p"), op("add"), c32(3),    op("add"),
+                load8(4), c32(0x3F), op("and"), op("or"),
+                set("b"),
+            }),
+            get("b"), ret,
+        }),
+        get("i"),  c32(1),     op("sub"),                    set("i"),
+        get("p"),  get("w"),   op("add"),                    set("p"),
+        again,
+    }),
+    c32(-1),
 });
 
 /// `s.lastIndexOf(sub)`: the last byte offset of `sub`, `-1` when absent, and
@@ -1443,6 +1485,25 @@ const arr_index_of_str = func("__arr_index_of_str", &.{ "xs", "x" }, .i32, i32s(
     loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk } ++ slot("xs", "i") ++ [_]Instr{
         load(0),  get("x"), call("__str_eq"), when(&.{ get("i"), ret }),
         get("i"), c32(1),   op("add"),        set("i"),
+        again,
+    })),
+    c32(-1),
+});
+
+/// `xs.lastIndexOf(x)`: `indexOf` walked from the last slot down.
+const arr_last_index_of_i32 = func("__arr_last_index_of_i32", &.{ "xs", "x" }, .i32, i32s(&.{"i"}), &.{
+    get("xs"), load(0), set("i"),
+    loop(&([_]Instr{ get("i"), op("eqz"), brk, get("i"), c32(1), op("sub"), set("i") } ++ slot("xs", "i") ++ [_]Instr{
+        load(0), get("x"), op("eq"), when(&.{ get("i"), ret }),
+        again,
+    })),
+    c32(-1),
+});
+
+const arr_last_index_of_str = func("__arr_last_index_of_str", &.{ "xs", "x" }, .i32, i32s(&.{"i"}), &.{
+    get("xs"), load(0), set("i"),
+    loop(&([_]Instr{ get("i"), op("eqz"), brk, get("i"), c32(1), op("sub"), set("i") } ++ slot("xs", "i") ++ [_]Instr{
+        load(0), get("x"), call("__str_eq"), when(&.{ get("i"), ret }),
         again,
     })),
     c32(-1),

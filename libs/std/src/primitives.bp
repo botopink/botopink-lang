@@ -424,6 +424,16 @@ behavior Array<T> {
     #[@External.Node("indexOf")]
     fn indexOf(self: Self<T>, item: T) -> i32;
 
+    // The last index of `item`, `-1` when absent — `indexOf` from the other
+    // end, with `indexOf`'s equality on every target. erlang and node answer
+    // natively; the other targets search the reversed copy.
+    #[@External.Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T], __Last) -> __F(__I + 1, __T, case (__H =:= __X) of true -> __I; false -> __Last end); __F(_, [], __Last) -> __Last end, __Find(0, __L, -1) end)($0, $1)")]
+    #[@External.Node("lastIndexOf")]
+    default fn lastIndexOf(self: Self<T>, item: T) -> i32 {
+        val fromEnd = self.reverse().indexOf(item);
+        return if (fromEnd == -1) -1 else self.length - 1 - fromEnd;
+    }
+
     #[@External.Erlang("lists", "foreach(action, self)")]
     #[@External.Node("forEach")]
     fn forEach(self: Self<T>, action: fn(item: T));

@@ -657,6 +657,7 @@ fn emitWat(
     } });
 
     try items.appendSlice(ar, em.items.items);
+    for (em.behavior_dispatch.values()) |bd| try items.append(ar, .{ .func = try em.behaviorDispatchFunc(bd) });
 
     for (prelude.order) |group| {
         if (!em.b.helpers.has(group)) continue;
@@ -718,8 +719,14 @@ const Capture = struct {
 /// arguments to the declared parameter types.
 const FnSig = struct { params: []const []const u8, result: ?[]const u8 };
 
+/// A dispatcher `$__bdispatch_<method>_<n>` a behavior-typed call asked for
+/// (`Emitter.lowerBehaviorDispatch`), written once the module is lowered.
+const BehaviorDispatch = struct { method: []const u8, argc: usize, sig: FnSig };
+
 const Emitter = struct {
     alloc: std.mem.Allocator,
+    /// The behavior dispatchers the module's calls named, by symbol.
+    behavior_dispatch: std.StringArrayHashMapUnmanaged(BehaviorDispatch) = .empty,
     /// Node factory: owns the arena every built node borrows from and the set
     /// of runtime helpers the lowering has asked for. Set up in `init` once
     /// `reg_arena` exists.
@@ -1631,7 +1638,7 @@ const Emitter = struct {
                     // the reader fell back to the unique-field guess and, when
                     // the value was a box, read one indirection short.
                     if (self.primKindAt(cc, c.loc)) |k| {
-                        if (k == .array and (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first") or std.mem.eql(u8, cc.callee, "find"))) {
+                        if (k == .array and (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first") or std.mem.eql(u8, cc.callee, "find") or std.mem.eql(u8, cc.callee, "pop"))) {
                             if (cc.receiver) |r| if (self.elemRecordOf(r.*)) |rec| break :blk rec;
                         }
                     }
@@ -1754,16 +1761,31 @@ const Emitter = struct {
         try self.emit(try self.constInt(heap_floor));
         try self.emit(opOf("i32", "ge_u"));
         for (descs, 0..) |d, i| {
-            try self.emit(.{ .local_get = subj });
-            try self.emit(try self.constInt(tag_header_bytes));
-            try self.emit(opOf("i32", "sub"));
-            try self.emit(.{ .load = .{} });
+            try self.emitHeaderLoad(subj);
             try self.emit(try self.constInt(d));
             try self.emit(opOf("i32", "eq"));
             if (i > 0) try self.emit(opOf("i32", "or"));
         }
         try self.emit(opOf("i32", "and"));
         return true;
+    }
+
+    /// The descriptor word behind the value in `subj`, read where a caller
+    /// has already pushed the heap-floor guard it `and`s the answer with.
+    /// wasm's `and` does not short-circuit, so an ordinal below the floor (an
+    /// all-unit variant, `0`) would still be loaded from `subj - 4` — below
+    /// address 0 for the first few, an out-of-bounds trap. The address is
+    /// `(subj - 4) * (subj >= floor)`: a value below the floor reads word 0,
+    /// whose answer the guard discards.
+    fn emitHeaderLoad(self: *Emitter, subj: []const u8) anyerror!void {
+        try self.emit(.{ .local_get = subj });
+        try self.emit(try self.constInt(tag_header_bytes));
+        try self.emit(opOf("i32", "sub"));
+        try self.emit(.{ .local_get = subj });
+        try self.emit(try self.constInt(heap_floor));
+        try self.emit(opOf("i32", "ge_u"));
+        try self.emit(opOf("i32", "mul"));
+        try self.emit(.{ .load = .{} });
     }
 
     /// Decision 8 §4.2 — `x is T` on wasm. The identity is the descriptor
@@ -1801,10 +1823,7 @@ const Emitter = struct {
         try self.emit(try self.constInt(heap_floor));
         try self.emit(opOf("i32", "ge_u"));
         for (descs, 0..) |d, i| {
-            try self.emit(.{ .local_get = mem });
-            try self.emit(try self.constInt(tag_header_bytes));
-            try self.emit(opOf("i32", "sub"));
-            try self.emit(.{ .load = .{} });
+            try self.emitHeaderLoad(mem);
             try self.emit(try self.constInt(d));
             try self.emit(opOf("i32", "eq"));
             if (i > 0) try self.emit(opOf("i32", "or"));
@@ -3471,6 +3490,139 @@ const Emitter = struct {
         });
     }
 
+    /// The types that may answer `method` with `argc` arguments: every record
+    /// and enum of the (linked) module declaring `<Type>_<method>` taking the
+    /// receiver and `argc` more, sorted so two runs emit the same module.
+    fn behaviorImplementers(self: *Emitter, method: []const u8, argc: usize) ![]const []const u8 {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        var rit = self.records.keyIterator();
+        while (rit.next()) |k| try names.append(self.arena(), k.*);
+        var eit = self.enums.keyIterator();
+        while (eit.next()) |k| try names.append(self.arena(), k.*);
+        std.mem.sort([]const u8, names.items, {}, struct {
+            fn lt(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lt);
+        var out: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (names.items) |t| {
+            const sym = try std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ t, method });
+            const sig = self.fn_sigs.get(sym) orelse continue;
+            if (sig.params.len != argc + 1) continue;
+            try out.append(self.arena(), t);
+        }
+        return out.items;
+    }
+
+    /// `recv.method(…)` where `recv` is typed by a `behavior`: no declaration
+    /// is known at the call, so the VALUE answers — its header names its type,
+    /// and `$__bdispatch_<method>_<n>` calls that type's `<Type>_<method>`.
+    /// It trapped (`unresolved call`) where commonJS, erlang and beam
+    /// dispatched. False when no type of the module declares the method.
+    fn lowerBehaviorDispatch(self: *Emitter, cc: anytype) anyerror!bool {
+        const impls = try self.behaviorImplementers(cc.callee, cc.args.len);
+        if (impls.len == 0) return false;
+        const first = try std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ impls[0], cc.callee });
+        const sig = self.fn_sigs.get(first).?;
+        const sym = try std.fmt.allocPrint(self.reg_arena.allocator(), "__bdispatch_{s}_{d}", .{ cc.callee, cc.args.len });
+        if (!self.behavior_dispatch.contains(sym)) try self.behavior_dispatch.put(self.reg_arena.allocator(), sym, .{
+            .method = try self.reg_arena.allocator().dupe(u8, cc.callee),
+            .argc = cc.args.len,
+            .sig = sig,
+        });
+        try self.lowerCoerced(cc.receiver.?.*, "i32");
+        try self.lowerCallArgs(cc.args, sig, 1);
+        try self.emit(.{ .call = sym });
+        return true;
+    }
+
+    /// `$__bdispatch_<method>_<n>(self, a0, …)`: one header compare per
+    /// descriptor of each implementer (a record's, or each variant's of a
+    /// payload enum) that some value of the module was built with, calling
+    /// that type's method; a value no implementer built traps. Written after
+    /// lowering, as `$__display_of` is, because a descriptor exists only once
+    /// a value of its type was built.
+    fn behaviorDispatchFunc(self: *Emitter, bd: BehaviorDispatch) !wat.Func {
+        const impls = try self.behaviorImplementers(bd.method, bd.argc);
+        var params: std.ArrayListUnmanaged(wat.Param) = .empty;
+        try params.append(self.arena(), wat.Builder.param("self", .i32));
+        var arg_names: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (0..bd.argc) |i| {
+            const n = try std.fmt.allocPrint(self.arena(), "a{d}", .{i});
+            try arg_names.append(self.arena(), n);
+            try params.append(self.arena(), wat.Builder.param(n, vt(bd.sig.params[i + 1])));
+        }
+        var c: Capture = .{};
+        self.open(&c);
+        for (impls) |t| {
+            const sym = try std.fmt.allocPrint(self.arena(), "{s}_{s}", .{ t, bd.method });
+            const sig = self.fn_sigs.get(sym).?;
+            // An implementer whose method does not take and answer what the
+            // dispatcher does cannot be called from it.
+            if (!sameSig(sig, bd.sig)) continue;
+            var descs: std.ArrayListUnmanaged(u32) = .empty;
+            if (self.records.contains(t)) {
+                if (self.type_descs.get(t)) |d| try descs.append(self.arena(), d);
+            } else if (self.enums.get(t)) |variants| {
+                for (variants) |v| {
+                    const key = try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ t, v.name });
+                    if (self.type_descs.get(key)) |d| try descs.append(self.arena(), d);
+                }
+            }
+            for (descs.items) |d| {
+                var hit: Capture = .{};
+                self.open(&hit);
+                try self.emit(.{ .local_get = "self" });
+                for (arg_names.items) |n| try self.emit(.{ .local_get = n });
+                try self.emit(.{ .call = sym });
+                try self.emit(.@"return");
+                const hit_seq = self.seal(&hit, .terminated);
+                var guard: Capture = .{};
+                self.open(&guard);
+                try self.emit(.{ .local_get = "self" });
+                try self.emit(try self.constInt(tag_header_bytes));
+                try self.emit(opOf("i32", "sub"));
+                try self.emit(.{ .load = .{} });
+                try self.emit(try self.constInt(d));
+                try self.emit(opOf("i32", "eq"));
+                try self.emitC(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } }, t);
+                const guard_seq = self.seal(&guard, .none);
+                try self.emit(.{ .local_get = "self" });
+                try self.emit(try self.constInt(heap_floor));
+                try self.emit(opOf("i32", "ge_u"));
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = guard_seq } } });
+            }
+        }
+        try self.emitC(.@"unreachable", "no implementer of this behavior method built the value");
+        const body = self.seal(&c, .terminated);
+        return try self.builder().func(.{
+            .name = try std.fmt.allocPrint(self.arena(), "__bdispatch_{s}_{d}", .{ bd.method, bd.argc }),
+            .params = params.items,
+            .result = if (bd.sig.result) |r| vt(r) else null,
+            .body = body,
+        });
+    }
+
+    /// Whether a method call at `loc` is answered by its receiver's own type
+    /// at run time: inference placed it on a behavior-typed value, named a
+    /// type this module declares no record or enum of (the behavior itself),
+    /// or placed it nowhere.
+    fn dispatchesByValue(self: *Emitter, loc: ast.Loc) bool {
+        const il = self.instance_lowerings.get(loc) orelse return true;
+        return switch (il) {
+            .by_value => true,
+            .type_, .unplaced_type => |tn| !self.records.contains(tn) and !self.enums.contains(tn),
+            else => false,
+        };
+    }
+
+    fn sameSig(a: FnSig, b: FnSig) bool {
+        if (a.params.len != b.params.len) return false;
+        for (a.params, b.params) |x, y| if (!std.mem.eql(u8, x, y)) return false;
+        if (a.result == null or b.result == null) return a.result == null and b.result == null;
+        return std.mem.eql(u8, a.result.?, b.result.?);
+    }
+
     fn emitEntrypointWrapper(self: *Emitter, main_returns_value: bool) !void {
         var c: Capture = .{};
         self.open(&c);
@@ -3624,7 +3776,14 @@ const Emitter = struct {
                     };
                     try self.declareLocal(lb.name, self.inferExprType(lb.value.*));
                     if (lb.typeAnnotation orelse self.typeRefOf(lb.value.*)) |tr| try self.local_typerefs.put(lb.name, tr);
-                    if (lb.typeAnnotation == null) if (self.optInfoOf(lb.value.*)) |oi| try self.opt_locals.put(lb.name, oi);
+                    // A written `?T` says the local is optional; how the value
+                    // carries its absence (boxed or not) is the VALUE's, so it
+                    // is asked too: `val c: ?Color = cs[1]` holds a box around
+                    // an all-unit enum's ordinal, and read as the bare ordinal
+                    // it compared unequal to `Color.Green` and printed the
+                    // box's address.
+                    const ann_optional = if (lb.typeAnnotation) |ta| ta == .optional else true;
+                    if (ann_optional) if (self.optInfoOf(lb.value.*)) |oi| try self.opt_locals.put(lb.name, oi);
                     if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
                     if (self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
                     // The written type says it too, where the value cannot: a
@@ -5153,7 +5312,20 @@ const Emitter = struct {
                     else
                         try self.emitCf(zero, "unknown variant pattern: {s}", .{n});
                 } else if (self.findVariant(n)) |fv| {
-                    try self.emitTagTest(.{ .user = fv }, subj);
+                    // One spelling can be BOTH a `type` this module places and
+                    // a variant some enum declares (`type Block(…)` beside
+                    // `Token.Layout { Block, … }`). §5.3b: the SUBJECT's type
+                    // says which one the arm means, and this emitter has no
+                    // subject type, so the arm tests both, each by a test that
+                    // is false for the other's values: the record's header,
+                    // `or` the variant's own identity. Tested by the tag alone,
+                    // a `case` over `Block | Vec` never matched a `Block`
+                    // record, and a payload enum's tag load read a record's
+                    // first field as a tag.
+                    if (self.records.contains(n) and try self.emitNamedTypeTest(n, subj)) {
+                        try self.emitVariantIdentityTest(fv, subj);
+                        try self.emit(opOf("i32", "or"));
+                    } else try self.emitTagTest(.{ .user = fv }, subj);
                 } else if (try self.emitNamedTypeTest(n, subj)) {
                     // Decision 8 §3.3 — an arm naming a `type` is chosen by the
                     // VALUE's own declaration, which half 3 put in its header.
@@ -5242,6 +5414,32 @@ const Emitter = struct {
             },
             else => try self.emitC(zero, "range pattern over a non-numeric bound"),
         }
+    }
+
+    /// A user variant's identity over a subject that may not be a value of its
+    /// enum at all: an all-unit enum's member is its ordinal, which no pointer
+    /// equals (a pointer is at least the heap floor); a payload enum's member
+    /// is allocated and carries its variant's descriptor, so the test is the
+    /// header one, never a load of what would be a record's first field.
+    fn emitVariantIdentityTest(self: *Emitter, fv: FoundVariant, subj: []const u8) anyerror!void {
+        if (enumHasPayload(fv.variants)) {
+            var it = self.enums.iterator();
+            while (it.next()) |entry| {
+                if (entry.value_ptr.*.ptr != fv.variants.ptr) continue;
+                const d = try self.variantDescriptorAddr(entry.key_ptr.*, fv.variant) orelse break;
+                try self.emit(.{ .local_get = subj });
+                try self.emit(try self.constInt(heap_floor));
+                try self.emit(opOf("i32", "ge_u"));
+                try self.emitHeaderLoad(subj);
+                try self.emit(try self.constInt(d));
+                try self.emit(opOf("i32", "eq"));
+                try self.emit(opOf("i32", "and"));
+                return;
+            }
+            try self.emitCf(zero, "no descriptor for variant {s}", .{fv.variant.name});
+            return;
+        }
+        try self.emitTagTest(.{ .user = fv }, subj);
     }
 
     fn emitTagTest(self: *Emitter, ref: VariantRef, subj: []const u8) anyerror!void {
@@ -5660,7 +5858,17 @@ const Emitter = struct {
     /// (`444` for `["a", "b"]`) for an array.
     fn resolvedCallSym(self: *Emitter, cc: anytype, loc: ast.Loc) ?[]const u8 {
         if (self.recordMethodSym(cc, loc)) |sym| return sym;
-        return self.calleeSymbol(cc, loc);
+        if (self.calleeSymbol(cc, loc)) |sym| return sym;
+        // A behavior-typed receiver dispatches (`lowerBehaviorDispatch`) to
+        // implementers that all answer the method's one declared type, so
+        // the first one says what the call answers — a string, a bool, an
+        // array's elements.
+        if (cc.receiver != null and !cc.is_builtin and self.dispatchesByValue(loc)) {
+            const impls = self.behaviorImplementers(cc.callee, cc.args.len) catch return null;
+            if (impls.len == 0) return null;
+            return std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ impls[0], cc.callee }) catch null;
+        }
+        return null;
     }
 
     fn calleeSymbol(self: *Emitter, cc: anytype, loc: ast.Loc) ?[]const u8 {
@@ -5740,6 +5948,12 @@ const Emitter = struct {
             }
             try self.emit(.{ .call = self.import_aliases.get(cc.callee) orelse cc.callee });
             return;
+        }
+        // A method on a behavior-typed value — or on a receiver inference
+        // placed nowhere (a lambda parameter typed by an alias naming the
+        // behavior) — is answered by the value's own type at run time.
+        if (cc.receiver != null and !cc.is_builtin and self.dispatchesByValue(loc)) {
+            if (try self.lowerBehaviorDispatch(cc)) return;
         }
         if (try self.lowerCollectionMethod(cc)) return;
         if (try self.lowerValueCall(cc)) return;
@@ -5942,7 +6156,8 @@ const Emitter = struct {
                 .{ "toList", 0, .arr },     .{ "map", 1, .arr },       .{ "filter", 1, .arr },
                 .{ "forEach", 1, .none },   .{ "all", 1, .bool_ },     .{ "every", 1, .bool_ },
                 .{ "any", 1, .bool_ },      .{ "some", 1, .bool_ },    .{ "count", 1, .i32 },
-                .{ "findIndex", 1, .i32 },  .{ "fold", 2, .i32 },
+                .{ "findIndex", 1, .i32 },  .{ "fold", 2, .i32 },      .{ "lastIndexOf", 1, .i32 },
+                .{ "pop", 0, .i32 },
             },
             .string => &.{
                 .{ "length", 0, .i32 },     .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
@@ -6177,6 +6392,7 @@ const Emitter = struct {
             return self.lowerArrayHof(@intFromEnum(h), recv, lam, if (h == .fold) callArg(cc, 0) else null);
         }
         if (eq(u8, name, "push")) return self.lowerArrayPush(cc);
+        if (eq(u8, name, "pop")) return self.lowerArrayPop(cc);
         // `xs.find(pred)` is `xs.filter(pred).at(0)` — `primitives.bp`'s own
         // body — as the `?T` `at` answers (`arrayElemOpt`: a scalar boxed, a
         // pointer as itself).
@@ -6229,6 +6445,9 @@ const Emitter = struct {
             if (eq(u8, name, "join")) {
                 try self.lowerCoerced(arg, "i32");
                 try self.emit(b.helper(if (elem == .str) .arr_join_str else .arr_join_i32));
+            } else if (eq(u8, name, "lastIndexOf")) {
+                try self.lowerCoerced(arg, "i32");
+                try self.emit(b.helper(if (elem == .str or self.isStringExpr(arg)) .arr_last_index_of_str else .arr_last_index_of_i32));
             } else if (eq(u8, name, "indexOf") or eq(u8, name, "contains")) {
                 try self.lowerCoerced(arg, "i32");
                 try self.emit(b.helper(if (elem == .str or self.isStringExpr(arg)) .arr_index_of_str else .arr_index_of_i32));
@@ -6312,6 +6531,38 @@ const Emitter = struct {
     /// `xs.push(v)` — the blob has a fixed size, so the receiver is rebound to
     /// a copy with `v` appended (the erlang backend threads the same way). A
     /// receiver that is not a name or a record field cannot be rebound.
+    /// `xs.pop()` on a local: the last element as the `?T` `xs.at(-1)`
+    /// answers (`arrayElemOpt` decides the box, as for `at`), then the local
+    /// rebound to `xs.slice(0, len - 1)` — `pop` SHRINKS the array, and a
+    /// blob is a value here, as `push` rebinds it to a grown copy. An empty
+    /// array answers absent and stays empty (`arr_slice` clamps `-1` to 0).
+    fn lowerArrayPop(self: *Emitter, cc: anytype) anyerror!void {
+        const recv = cc.receiver.?.*;
+        const n = switch (recv) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| if (self.locals.contains(n) or self.globals.contains(n)) n else null,
+                else => null,
+            },
+            else => null,
+        } orelse {
+            try self.emitC(.@"unreachable", "pop on a receiver that cannot be rebound");
+            return;
+        };
+        const b = self.builder();
+        const get: Instr = if (self.locals.contains(n)) .{ .local_get = n } else .{ .global_get = n };
+        try self.emit(get);
+        try self.emit(try self.constInt(-1));
+        try self.emit(b.helper(if (self.arrayElemOpt(recv).boxed) .arr_at_box else .arr_at));
+        try self.emit(get);
+        try self.emit(zero);
+        try self.emit(get);
+        try self.emitC(.{ .load = .{} }, "element count");
+        try self.emit(one);
+        try self.emit(opOf("i32", "sub"));
+        try self.emit(b.helper(.arr_slice));
+        try self.emit(if (self.locals.contains(n)) .{ .local_set = n } else .{ .global_set = n });
+    }
+
     fn lowerArrayPush(self: *Emitter, cc: anytype) anyerror!void {
         const recv = cc.receiver.?.*;
         const arg = callArg(cc, 0) orelse {
@@ -6990,6 +7241,10 @@ const Emitter = struct {
         /// (`lowerValueCall`). The program type-checked, so one proven string
         /// argument makes the parameter a string.
         param_str: []bool = &.{},
+        /// Per parameter: the record type the declared function type the
+        /// lambda is written against gives it, so `out.tag` reads the slot
+        /// `Out` declares rather than guessing one by the field's name.
+        param_rec: []const ?[]const u8 = &.{},
         /// Set for a trampoline standing for a top-level fn used as a value.
         fn_ref: ?[]const u8 = null,
     };
@@ -7033,10 +7288,15 @@ const Emitter = struct {
         // `i32` and `p + x` wrote the number (`a264`, exit 0).
         const expected = self.expected_fn;
         self.expected_fn = null;
+        const param_rec = try ra.alloc(?[]const u8, params.len);
+        @memset(param_rec, null);
         if (expected) |et| if (et == .function) {
             const pts = et.function.params;
             for (param_str, 0..) |*ps, i| {
                 if (i < pts.len and isStringTypeRef(pts[i])) ps.* = true;
+            }
+            for (param_rec, 0..) |*pr, i| {
+                if (i < pts.len and pts[i] == .named) pr.* = self.resolveRecordName(pts[i].named);
             }
         };
         const expected_params = self.expected_params;
@@ -7050,6 +7310,7 @@ const Emitter = struct {
             .body = body,
             .captures = caps.items,
             .param_str = param_str,
+            .param_rec = param_rec,
         });
         try self.emitClosureCell(idx, caps.items);
     }
@@ -7330,6 +7591,7 @@ const Emitter = struct {
                 try params.append(ar, wat.Builder.param(p, .i32));
                 try self.locals.put(p, "i32");
                 if (i < l.param_str.len and l.param_str[i]) try self.str_locals.put(p, {});
+                if (i < l.param_rec.len) if (l.param_rec[i]) |r| try self.local_types.put(p, r);
             }
             for (l.captures, 0..) |cp, i| {
                 try self.declareLocal(cp.name, cp.ty);
@@ -7810,7 +8072,7 @@ const Emitter = struct {
                     return .{ .boxed = true };
                 } else if (self.primKindAt(cc, c.loc)) |k| {
                     if (k == .array and
-                        (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first") or std.mem.eql(u8, cc.callee, "find")))
+                        (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first") or std.mem.eql(u8, cc.callee, "find") or std.mem.eql(u8, cc.callee, "pop")))
                     {
                         return self.arrayElemOpt(cc.receiver.?.*);
                     }
@@ -7936,8 +8198,16 @@ const Emitter = struct {
         const rec = if (self.instance_lowerings.get(loc)) |il| switch (il) {
             // A type this module never imported is linked in all the same.
             .type_, .unplaced_type => |r| r,
-            // A behavior-typed receiver keeps the recovery below.
-            .by_value => self.recordTypeOfExpr(cc.receiver.?.*) orelse return null,
+            // A behavior-typed receiver is answered by the value's own type
+            // (`lowerBehaviorDispatch`) whenever some type of the module
+            // declares the method: a record recovered from the expression is
+            // a guess — `Array<Request>`'s elements were all read as the
+            // first literal's `Page`, and `Api(3).weight(2)` answered `2`.
+            .by_value => blk: {
+                const impls = self.behaviorImplementers(cc.callee, cc.args.len) catch return null;
+                if (impls.len > 0) return null;
+                break :blk self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
+            },
             .prim, .field_of, .sequence_next, .division => return null,
         } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
@@ -9665,6 +9935,14 @@ const Emitter = struct {
         }
     }
 
+    const BinderFlags = struct { name: []const u8, str: bool, bool_: bool, rec: ?[]const u8 };
+
+    fn restoreBinderFlags(self: *Emitter, bp: BinderFlags) !void {
+        if (bp.str) try self.str_locals.put(bp.name, {}) else _ = self.str_locals.remove(bp.name);
+        if (bp.bool_) try self.bool_locals.put(bp.name, {}) else _ = self.bool_locals.remove(bp.name);
+        if (bp.rec) |r| try self.local_types.put(bp.name, r) else _ = self.local_types.remove(bp.name);
+    }
+
     fn lowerIfExpr(self: *Emitter, i: anytype) !void {
         // F2 (Optionals tail) — distinguish statement-form `if` (both
         // branches end in void calls / valueless returns) from value-form
@@ -9691,6 +9969,17 @@ const Emitter = struct {
 
         var then_c: Capture = .{};
         self.open(&then_c);
+        // The binder is the then-arm's name only. What its payload made it (a
+        // string, a bool, a record) is put back as it was when the arm ends:
+        // every `a ?? b` binds the same `__bp_nullish`, and a string payload
+        // left behind made the next `??` over an `i32` print as a string — a
+        // trap on the integer read as a pointer.
+        const binder_prev: ?BinderFlags = if (i.binding) |name| .{
+            .name = name,
+            .str = self.str_locals.contains(name),
+            .bool_ = self.bool_locals.contains(name),
+            .rec = self.local_types.get(name),
+        } else null;
         if (i.binding) |name| {
             const oi = self.optInfoOf(i.cond.*);
             try self.declareLocal(name, "i32");
@@ -9719,6 +10008,7 @@ const Emitter = struct {
         const then_tail = try self.emitBody(i.then_, !as_stmt);
         self.dropUnknownNarrowing(unknown_narrowed);
         self.dropNarrowing(then_marked);
+        if (binder_prev) |bp| try self.restoreBinderFlags(bp);
         const then_seq = self.seal(&then_c, stackOf(then_tail, self.cur_result));
 
         var else_seq: ?Seq = null;

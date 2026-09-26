@@ -1,0 +1,28 @@
+//// C-02 / decision 63 (amended) — `xs[k]` is `xs.at(k)`, so the index has the
+//// method's answer, `?T`, for a primitive element and a user enum's alike, and
+//// a name written `?T` holds it (`reject/index_answer_is_optional` refuses the
+//// `T` spelling). Two wasm defects sat on this path: a `val c: ?Color` read a
+//// box around an all-unit enum's ordinal as the bare ordinal, so `c ==
+//// Color.Green` answered `false`; and every `a ?? b` binds the same
+//// `__bp_nullish`, so a string payload in one `??` made the next `??` over an
+//// `i32` print as a string — a trap on the integer read as a pointer.
+
+type Color { Red, Green }
+
+pub fn main() {
+    val ts: Array<i32> = [1, 2];
+    val x: ?i32 = ts[0];
+    @print(x);
+    @print(x == 1);
+    val cs: Array<Color> = [Color.Red, Color.Green];
+    val c: ?Color = cs[1];
+    @print(c == Color.Green);
+    val d: Color = cs[0] ?? Color.Green;
+    @print(d == Color.Red);
+    @print(cs[5] == Color.Red);
+    val ss = ["a", "b"];
+    val s: string = ss[-1] ?? "none";
+    @print(s);
+    val y: i32 = ts[5] ?? 7;
+    @print(y);
+}

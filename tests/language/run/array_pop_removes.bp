@@ -1,0 +1,35 @@
+//// `Array.pop` answers the last element and SHRINKS the array (rakun front 05's
+//// configuration reader). On erlang and beam it was `lists:last/1` alone: it read
+//// the element and left the list as it was, so a `while (xs.length() > 0)` over
+//// `xs.pop()` never ended; wasm had no lowering and trapped. A pop in a `val`,
+//// as a call argument, as a statement in a branch, under `??` in a loop body,
+//// on an empty array (absent, and the array stays empty), and before a `push`.
+
+fn drain(start: Array<i32>) -> i32 {
+    var xs = start;
+    var sum = 0;
+    while (xs.length() > 0) {
+        val x = xs.pop() ?? 0;
+        sum = sum * 10 + x;
+    }
+    return sum;
+}
+
+pub fn main() {
+    var xs = [1, 2, 3];
+    val last = xs.pop();
+    @print(last);
+    @print(xs);
+    @print(xs.pop());
+    @print(xs.length());
+    if (xs.length() > 0) {
+        xs.pop();
+    }
+    @print(xs);
+    @print(xs.pop());
+    @print(drain([4, 5, 6]));
+    var names = ["a", "b"];
+    names.pop();
+    names.push("c");
+    @print(names);
+}

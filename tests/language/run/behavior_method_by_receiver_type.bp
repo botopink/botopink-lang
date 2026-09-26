@@ -10,8 +10,8 @@
 //// from a call answering `Source`, with no annotation, took the same bare
 //// local call — and so did beam, which asked `element(1, V)` of a value it
 //// never placed. The receiver's static type now decides.
-//// Not scheduled on wasm: a method called through a behavior-typed value traps
-//// there (`docs.md` § the limits, 05-wasm's row).
+//// On all four targets: wasm, which trapped at a method called through a
+//// behavior-typed value, reads the type from the value's header.
 
 pub behavior Source {
     fn query(self: Self, name: string) -> string;

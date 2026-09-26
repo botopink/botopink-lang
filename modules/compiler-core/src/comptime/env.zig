@@ -448,6 +448,12 @@ pub const ResultJumpLowering = enum { wrap_ok, wrap_error, unwrap_passthrough, y
 /// `break`, and a `break <value>` anywhere else needs a generator scope.
 pub const BreakScope = enum { none, loop, valueBlock };
 
+/// See `Env.stdTargetGates`.
+pub const StdTargetGate = struct {
+    module: []const u8,
+    loc: ast.Loc,
+};
+
 pub const Env = struct {
     /// Arena allocator ---- all Type and TypeCell nodes are allocated here.
     arena: std.mem.Allocator,
@@ -796,6 +802,14 @@ pub const Env = struct {
     /// `@external(<target>, …)` match. Owns nothing — the FnDecl slices
     /// point into the arena where `registerStdlib` parsed them.
     stdModuleFns: std.StringHashMap([]const ast.FnDecl),
+    /// STD-001 — a namespace import of a std module some of whose host-bound
+    /// declares have no binding for the active target, keyed by the local
+    /// name it binds. The refusal belongs to the CALL of such a function, so
+    /// it waits here: a qualified call of one reds at the call, naming it
+    /// (`checkStdGatedCall`), and an import none of whose unsupported
+    /// functions is called reds at the import once the program is inferred
+    /// (`reportStdTargetGates`). Arena-owned.
+    stdTargetGates: std.StringArrayHashMapUnmanaged(StdTargetGate) = .empty,
     /// STD-001 — active codegen target name when this env is on the
     /// project-side compile path (null in tests / LSP / std-prelude
     /// inference). Set via `setTarget`; consumed by `markStdImports`.

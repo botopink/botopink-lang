@@ -6,7 +6,10 @@
 //// `const { n, a } = _assert0`, fields the record does not have — and printed
 //// `null null`; erlang tested the bare `'Person'` tag, which no constructor
 //// builds (a record is `{'<pkg>@<path>@@Person', …}`, decision 109), so the
-//// pattern never matched.
+//// pattern never matched. beam did the same and bound the names in the
+//// matching arm only, so `erlc +from_asm` refused the module
+//// (`{unassigned, {y, 2}}`): the names are bound from the value either path
+//// answers.
 
 type Person(name: string, age: i32)
 

@@ -14,6 +14,7 @@ slice  [Method]  detail: fn slice(self: Self<T>, start: i32, end: ?i32 = null) -
 join  [Method]  detail: fn join(self: Self<T>, sep: string) -> string
 reverse  [Method]  detail: fn reverse(self: Self<T>) -> Self<T>
 indexOf  [Method]  detail: fn indexOf(self: Self<T>, item: T) -> i32
+lastIndexOf  [Method]  detail: fn lastIndexOf(self: Self<T>, item: T) -> i32
 forEach  [Method]  detail: fn forEach(self: Self<T>, action: fn(item: T))
 map  [Method]  detail: fn map<U>(self: Self<T>, transform: fn(item: T) -> U) -> Array<U>
 filter  [Method]  detail: fn filter(self: Self<T>, pred: fn(item: T) -> bool) -> Self<T>

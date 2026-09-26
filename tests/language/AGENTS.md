@@ -70,6 +70,20 @@ C-03's beam half adds `run/std_template_host_fns_across_modules` — std host fu
 `encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's
 module through a folder namespace and a leaf import, on commonJS, erlang and beam (`.targets`: wasm
 refuses std's own call sites of those cells).
+The backend rows of `status.md` (`front/backend-rows-2`) add, each failing on the parent binary
+on the targets named: `run/case_arm_record_named_like_a_variant` (a `case` over `Block | Vec` naming
+a record an enum section also declares as a variant — erlang `case_clause`, wasm a trap, beam the
+subject itself), `run/array_last_index_of` (all four; `Array` declared no `lastIndexOf`),
+`run/array_pop_removes` (erlang and beam read without removing, wasm trapped),
+`modules/module_var_self_registration` and its `_test` twin (a module-level `var` grown by `push` at
+module load — erlang and beam dropped the write), `run/index_answer_typed_optional` and
+`reject/index_answer_is_optional` (`xs[k]` is `?T`; wasm's `?Color` compare and `??` binder),
+`run/integer_literal_labelled_field` (a literal in a labelled `i64` field, every target),
+`run/std_unsupported_names_the_call` (STD-001 names the function called, at the call),
+`run/behavior_method_dispatch_by_value` (wasm dispatches a behavior-typed call),
+`run/string_char_code_non_ascii` (wasm answered bytes), `run/val_assert_variant_pattern` (commonJS
+`ReferenceError`, beam `{unassigned, …}`) and `run/is_enum_variant` and
+`modules/renderer_record_field_shapes` (shapes the rows measured, which no longer reproduce — pinned).
 `00 · 03-beam`'s split row adds `run/string_split_empty_separator` — `split("")` cuts into UTF-8
 codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator and an empty separator
 held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).
@@ -121,8 +135,8 @@ module is the arity error, on every target (`<target>.expect`).
 The rakun rows of `language-gaps.md` (the language-gaps sweep, `front/compiler-gaps-rakun`) add a
 cell each, every one failing on the parent binary: `run/behavior_method_by_receiver_type` and
 `run/behavior_method_host_value` (a method a `behavior` declares is the VALUE's, beside another type
-declaring the same name — an implementer's, a host-built one, on an unannotated local; `.targets`
-`commonJS erlang beam`, wasm traps on behavior dispatch), `modules/behavior_method_imported` (the
+declaring the same name — an implementer's, a host-built one, on an unannotated local; the
+host-built one's `.targets` is `commonJS erlang beam`, wasm having no host vocabulary for it), `modules/behavior_method_imported` (the
 same for an imported behavior; `wasm.expect`), `run/behavior_value_from_implementer` (an implementer
 converts to its behavior at an annotated `val` and a `var`), `modules/behavior_across_modules` (an
 imported behavior is the same type in its importer; an imported fn-type alias resolves its names in
@@ -539,11 +553,12 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 | `modules/<name>/<target>.expect` | the `.<target>.expect` claim for a whole project: that target **refuses** it | exit ≠ 0 and the diagnostic contains line 1 (and ` --> <line 2>` when present — `src/<file>.bp:<L:C>`, the file named because a project has several). `modules/external_method_imported/wasm.expect` is the live one |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **Eighteen cells carry
-`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `behavior_array_of_implementers`, `behavior_method_by_receiver_type`, `behavior_method_host_value`, `behavior_value_from_implementer`, `external_erlang_host_module_missing`, `external_host_record`, `external_method_on_host_record`, `external_template_refused_on_beam`, `host_array_slice_without_start`, `host_erlang_task_result`, `host_node_task_result`, `std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `task_throw_resolves_error`). The one the paragraph below was written about is
-`run/string_char_code_after_slice.bp`, which names `commonJS erlang` because
-`String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
-(`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it
+Any other content in `.exit` is a malformed claim and fails the cell. **Fifteen cells carry
+`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `behavior_method_host_value`, `external_erlang_host_module_missing`, `external_host_record`, `external_method_on_host_record`, `external_template_refused_on_beam`, `host_array_slice_without_start`, `host_erlang_task_result`, `host_node_task_result`, `std_default_fn_in_a_std_module`, `std_template_host_fns_across_modules` and `task_throw_resolves_error`). `run/string_char_code_after_slice.bp`
+named `commonJS erlang` until wasm and beam lowered `String.charCodeAt`, and the three behavior
+cells (`behavior_array_of_implementers`, `behavior_method_by_receiver_type`,
+`behavior_value_from_implementer`) kept wasm out until a method called through a behavior-typed
+value dispatched there; all four run on every target now. Before it
 the only one was `run/external_erlang_only.bp`, which kept wasm out because wasm did
 not refuse a host-backed `declare fn` with no wasm host — `wat.zig`'s `lowerPlainCall` lowered it to
 `unreachable` on purpose ("so the module still loads") and the program trapped at run time where
@@ -1394,8 +1409,10 @@ rules they pinned — a function has one return, so it has one effect.
   prints `nonode@nohost` on erlang (C-03's erlang half, `a8db11e4`); commonJS and wasm **refuse** it
   with `std-unsupported-on-target` (two `.expect` sidecars); beam prints it too since front 17 step 5
   wired `beam_asm.zig`'s wrapper for a plain `module:symbol` target (C-03's beam half, for
-  that form only). A wording defect in passing: the commonJS/wasm diagnostic names
-  `std/erlang.abs` — the module's first declaration — not the function that was called.
+  that form only). The commonJS/wasm diagnostic names the function called, at the call
+  (`std/erlang.node`, at `erlang.node()`); a namespace import none of whose unsupported functions is called
+  is refused at the import, naming the module and the functions it lacks
+  (`modules/import_std_folder_namespace/wasm.expect`).
 - **65** (the formatter measures width) — **no cell here**, and none can be: the suite runs programs,
   and decision 65 is about the text `botopink format` writes. Its evidence lives in the formatter's
   own tests (`modules/compiler-core/src/format/`, C-12's rows). This suite meets it only as a

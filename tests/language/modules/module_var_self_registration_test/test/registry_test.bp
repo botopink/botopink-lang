@@ -1,0 +1,11 @@
+//// `modules/module_var_self_registration` under `botopink test`: the test
+//// imports the component, so its module-level `val` runs before the test
+//// reads what it registered.
+
+import {registered} from "registry";
+import {componentName} from "component";
+
+test "a module-level val with a side effect runs before a test reads its effect" {
+    assert componentName() == "component";
+    assert registered().length == 1;
+}

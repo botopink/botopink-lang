@@ -1,0 +1,25 @@
+//// `val assert` over an ENUM variant's pattern — bare (`Circle(r)`) and
+//// qualified (`Shape.Circle(r)`) — takes the value when the variant matches
+//// and the `catch` fallback when it does not. commonJS tested the variant with
+//// `instanceof Circle`, a class no module emits, and died `ReferenceError:
+//// Circle is not defined`; a variant's identity is its `tag`, which is what a
+//// `case` arm tests. `run/val_assert_record_pattern` is the record's half.
+
+type Shape { Circle(r: i32), Square(side: i32) }
+
+fn radius(s: Shape) -> i32 {
+    val assert Circle(r) = s catch Shape.Circle(r: 0 - 1);
+    return r;
+}
+
+fn radiusQualified(s: Shape) -> i32 {
+    val assert Shape.Circle(r) = s catch Shape.Circle(r: 0);
+    return r;
+}
+
+pub fn main() {
+    @print(radius(Shape.Circle(r: 3)));
+    @print(radius(Shape.Square(side: 2)));
+    @print(radiusQualified(Shape.Circle(r: 5)));
+    @print(radiusQualified(Shape.Square(side: 5)));
+}

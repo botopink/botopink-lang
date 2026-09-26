@@ -156,7 +156,7 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
             if (env.stdModuleTypes.get(whole)) |decls| {
                 for (decls) |d| try registerTypeDecl(env, d);
             }
-            try checkStdTargetSupport(env, whole);
+            try gateStdTargetSupport(env, whole, imp.name(), imp.loc);
             continue;
         }
         // The leaf is a symbol of the module the prefix names.
@@ -192,7 +192,7 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
                 };
                 try env.bind(imp.name(), ty);
             }
-            try checkStdTargetSupport(env, mod_name);
+            try checkStdTargetSupport(env, mod_name, leaf, imp.loc);
             continue;
         }
         env.lastError = TypeError.custom(
@@ -209,17 +209,77 @@ fn markStdImports(env: *Env, u: ast.ImportDecl) InferError!bool {
 /// `@external(<target>, …)` match. Pure-bp `pub fn` (with body) ship
 /// on every target without a host binding, so they're skipped. Only
 /// host-bound `pub declare fn` are gated.
-fn checkStdTargetSupport(env: *Env, mod_name: []const u8) InferError!void {
+///
+/// The diagnostic names the function the program reaches, never merely the
+/// module's first unsupported declaration: a symbol import names its leaf when
+/// the leaf is one, and a namespace import waits for its calls
+/// (`gateStdTargetSupport`).
+fn checkStdTargetSupport(env: *Env, mod_name: []const u8, leaf: []const u8, loc: ast.Loc) InferError!void {
     const tgt = env.target orelse return;
-    const fns = env.stdModuleFns.get(mod_name) orelse return;
-    for (fns) |f| {
-        if (f.body.len > 0) continue;
-        if (!f.isExternal()) continue;
-        if (f.externalFor(tgt) != null) continue;
-        const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `@external` for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, f.name, tgt });
-        env.lastError = TypeError.custom(msg, "Either add a per-target `@external` to the declare, or pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).");
+    if (stdFnUnsupported(env, mod_name, leaf, tgt)) return refuseStdUnsupported(env, mod_name, leaf, tgt, loc);
+    const first = firstStdUnsupported(env, mod_name, tgt) orelse return;
+    return refuseStdUnsupported(env, mod_name, first, tgt, loc);
+}
+
+/// A namespace import of a std module with an unsupported declare: recorded,
+/// and refused where one of those functions is called or, if none is, at the
+/// import when the program has been inferred.
+fn gateStdTargetSupport(env: *Env, mod_name: []const u8, local: []const u8, loc: ast.Loc) InferError!void {
+    const tgt = env.target orelse return;
+    if (firstStdUnsupported(env, mod_name, tgt) == null) return;
+    try env.stdTargetGates.put(env.arena, local, .{ .module = mod_name, .loc = loc });
+}
+
+/// `recv.callee(…)` on a gated namespace import: refused at the call when the
+/// callee is one of the module's functions with no binding for the target.
+fn checkStdGatedCall(env: *Env, recv: []const u8, callee: []const u8, loc: ast.Loc) InferError!void {
+    const gate = env.stdTargetGates.get(recv) orelse return;
+    const tgt = env.target orelse return;
+    if (!stdFnUnsupported(env, gate.module, callee, tgt)) return;
+    return refuseStdUnsupported(env, gate.module, callee, tgt, loc);
+}
+
+/// The gated imports no refused call reached: the module still has no
+/// binding for the target (STD-001 refuses the import), so each is refused at
+/// its import, naming the module and every function it lacks.
+fn reportStdTargetGates(env: *Env) InferError!void {
+    const tgt = env.target orelse return;
+    var it = env.stdTargetGates.iterator();
+    while (it.next()) |entry| {
+        const gate = entry.value_ptr.*;
+        var names: std.ArrayListUnmanaged(u8) = .empty;
+        const fns = env.stdModuleFns.get(gate.module) orelse continue;
+        for (fns) |f| {
+            if (!stdDeclUnsupported(f, tgt)) continue;
+            if (names.items.len > 0) try names.appendSlice(env.arena, ", ");
+            try names.appendSlice(env.arena, f.name);
+        }
+        const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s} has no `@external` for target '{s}' (for {s})", .{ diagnostics.std_unsupported_on_target, gate.module, tgt, names.items });
+        env.lastError = TypeError.custom(msg, "The import is refused: the module's host functions listed have no binding for this target. Pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).").withLoc(gate.loc);
         return error.TypeError;
     }
+}
+
+fn stdDeclUnsupported(f: ast.FnDecl, tgt: []const u8) bool {
+    return f.body.len == 0 and f.isExternal() and f.externalFor(tgt) == null;
+}
+
+fn stdFnUnsupported(env: *Env, mod_name: []const u8, name: []const u8, tgt: []const u8) bool {
+    const fns = env.stdModuleFns.get(mod_name) orelse return false;
+    for (fns) |f| if (std.mem.eql(u8, f.name, name)) return stdDeclUnsupported(f, tgt);
+    return false;
+}
+
+fn firstStdUnsupported(env: *Env, mod_name: []const u8, tgt: []const u8) ?[]const u8 {
+    const fns = env.stdModuleFns.get(mod_name) orelse return null;
+    for (fns) |f| if (stdDeclUnsupported(f, tgt)) return f.name;
+    return null;
+}
+
+fn refuseStdUnsupported(env: *Env, mod_name: []const u8, name: []const u8, tgt: []const u8, loc: ast.Loc) InferError!void {
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: std/{s}.{s} has no `@external` for target '{s}'", .{ diagnostics.std_unsupported_on_target, mod_name, name, tgt });
+    env.lastError = TypeError.custom(msg, "Either add a per-target `@external` to the declare, or pick a target the module supports (see libs/std/src/examples.md per-target coverage matrix).").withLoc(loc);
+    return error.TypeError;
 }
 
 /// Append one `TypedBinding` per imported symbol in a `use` decl so the LSP's
@@ -293,6 +353,7 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
     // Pass 3: semantic validation of `implement` blocks and struct accessors.
     // (Decorators already ran above, before body inference.)
     try validateProgram(env, program);
+    try reportStdTargetGates(env);
 
     return list.toOwnedSlice(env.arena);
 }
@@ -416,6 +477,7 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
     // Semantic validation of `implement` blocks and struct accessors. (Decorators
     // already ran above, before body inference.)
     try validateProgram(env, program);
+    try reportStdTargetGates(env);
 
     return list.toOwnedSlice(env.arena);
 }
@@ -10398,7 +10460,22 @@ fn argumentParamSlots(
     const unknown = try env.arena.alloc(usize, args.len);
     @memset(unknown, params.len);
     const planned = envMod.planDefaultFill(env.arena, params, labels) catch return unknown;
-    const fill = planned orelse return unknown;
+    const fill = planned orelse {
+        // A complete call: nothing to fill, and a label still names its
+        // parameter — `Event(name: "a", ts: 0)` writes `ts` from its second
+        // argument, whatever order the labels come in. Without it an integer
+        // literal read no expectation there and stayed `i32` against an
+        // `i64` field, where the same literal in a `val x: i64` widened.
+        for (args, 0..) |a, ai| {
+            if (a.label) |l| {
+                for (params, 0..) |p, pi| if (std.mem.eql(u8, p.name, l)) {
+                    unknown[ai] = pi;
+                    break;
+                };
+            } else if (ai < params.len) unknown[ai] = ai;
+        }
+        return unknown;
+    };
 
     const slots = try env.arena.alloc(usize, args.len);
     @memset(slots, params.len);
@@ -12151,6 +12228,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 if (recvExpr.* == .identifier and recvExpr.*.identifier.kind == .ident) {
                     const recvName = recvExpr.*.identifier.kind.ident;
                     if (env.stdImports.get(recvName)) |std_key| {
+                        try checkStdGatedCall(env, recvName, call.callee, loc);
                         if (env.stdModules.get(std_key)) |exports| {
                             const exported = exports.get(call.callee) orelse {
                                 var e = TypeError.custom(

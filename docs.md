@@ -2234,16 +2234,10 @@ names, and fatal when the match fails), a `//` comment inside a loop body, a
 and `await` inside a `@Component` body (an `async function` on commonJS, awaited
 by every caller).
 
-Two limits worth stating here, because a library meets them before it meets a
-rule. The checker half is `00 · 01-checker`'s:
-
-- A default on an **imported function** is not filled. The cross-module export
-  registry carries no plain `fn` declaration, so `import { greet } from "helper";
-  greet("w")` reds `'greet' expects 2 argument(s), got 1` where the same `greet`
-  called inside `helper` fills. An imported record's field default is filled.
-- On wasm a method called through a **behavior-typed** value traps
-  (`unreachable`) at run time; commonJS, erlang and beam dispatch it
-  (`00 · 05-wasm`'s).
+A default on an **imported function** is filled at the call like a local
+one's (`import { greet } from "helper"; greet("w")`), and a method called
+through a **behavior-typed** value is answered by the value's own type on all
+four backends.
 
 These forms are **deliberately absent**, so that none reads as unfinished work:
 
