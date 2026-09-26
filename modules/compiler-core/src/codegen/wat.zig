@@ -386,7 +386,19 @@ fn emitWat(
             else => {},
         }
         const n = declName(d) orelse continue;
-        if (own_names.contains(n)) continue;
+        if (own_names.contains(n)) {
+            // Two modules of the program declare `n`, and this backend links
+            // them into ONE namespace: the first declaration won and every
+            // call — the other module's own included — reached it
+            // (`import {parse as parse2} from "two"` answered `one`'s `parse`
+            // at exit 0). Until the link mangles per module, a call to such a
+            // name traps (`lowerPlainCall`).
+            switch (d) {
+                .@"fn", .val => try em.ambiguous_names.put(em.alloc, n, {}),
+                else => {},
+            }
+            continue;
+        }
         try own_names.put(n, {});
         // A linked declaration is not this module's export.
         const copy: ast.DeclKind = switch (d) {
@@ -728,6 +740,9 @@ const Emitter = struct {
     /// The entries of `deferred_globals` that are `_`-named top-level
     /// statements: run for their effect in `$__init_globals`, stored nowhere.
     deferred_stmts: std.StringHashMapUnmanaged(void) = .empty,
+    /// Names two linked modules both declare (`emitWat`): one namespace here,
+    /// so a call to one cannot know which it means, and traps.
+    ambiguous_names: std.StringHashMapUnmanaged(void) = .empty,
     /// `<anon record>.<field>` for each behavior-literal field whose lambda
     /// takes `self` first (`ensureAnonRecord`).
     self_method_fields: std.StringHashMapUnmanaged(void) = .empty,
@@ -928,6 +943,7 @@ const Emitter = struct {
         self.data_segments.deinit(self.alloc);
         self.deferred_globals.deinit(self.alloc);
         self.deferred_stmts.deinit(self.alloc);
+        self.ambiguous_names.deinit(self.alloc);
         self.self_method_fields.deinit(self.alloc);
         self.field_lambdas.deinit(self.alloc);
         self.unknown_subjects.deinit(self.alloc);
@@ -5274,6 +5290,13 @@ const Emitter = struct {
     /// the same cut commonJS makes (`externals_missing` is filled only for an
     /// `isExternal()` fn).
     fn lowerPlainCall(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!void {
+        if (cc.receiver == null and cc.calleeExpr == null) {
+            const target = self.import_aliases.get(cc.callee) orelse cc.callee;
+            if (self.ambiguous_names.contains(target)) {
+                try self.emitCf(.@"unreachable", "two linked modules declare `{s}` and wasm links them into one namespace", .{target});
+                return;
+            }
+        }
         if (self.fn_sigs.get(cc.callee)) |sig| {
             var base: usize = 0;
             // `recv.m(a)` against a top-level `fn m(self, a)`: the receiver is

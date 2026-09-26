@@ -471,6 +471,13 @@ answered, and each had its own `expected-failures.txt` line:
   declaration of the method (`lowerBehaviorLit` → `expected_params`), and the
   call's result is judged by the lambda's body (`fieldLambdaCallIsString`) — it
   printed the string's address.
+- **A name two linked modules declare traps where it is called**
+  (`ambiguous_names`, `lowerPlainCall`). This backend links every module the
+  program imports into ONE namespace, and the first declaration of a name won:
+  `import {parse as parse2} from "two"` called `one`'s `parse` — and so did
+  `two`'s own calls to it — at exit 0. Mangling per module is the fix and is
+  not done (every name table keys by the bare name); until then the call is a
+  `RUNTIME TRAP`, not a wrong module's answer.
 - **A variant reached through its enum is the enum's** (`callKind`):
   `__Token__Layout.Size(…)` — what a section path desugars to — built the
   RECORD `Size` when one of that name was in scope, and `.Layout.Size.Large`

@@ -463,10 +463,12 @@ test "js: import ---- two modules whose files share a basename" {
 // the leaf enters scope, under its alias when one is written, and the four
 // backends resolve the owner through the path, not through the bare name (the
 // two `label`s below live in different modules and both answer on commonJS,
-// erlang and beam). KNOWN-WRONG (wasm): the wasm backend links every imported
-// module statically into one flat namespace, so the second `label` is the
-// first one's function — the same single-module limit the dispatch cells
-// record; the alias itself maps back to `$name` correctly.
+// erlang and beam). KNOWN (wasm): the wasm backend links every imported
+// module statically into one flat namespace, so the second `label` WAS the
+// first one's function — `shapes/circle` twice at exit 0. Since `00 · 05-wasm`
+// a call to a name two linked modules declare traps instead (the recorded
+// RUNTIME TRAP), until the link mangles per module; the alias itself maps back
+// to `$name` correctly.
 test "js: import ---- a dotted path and a group bind their leaves across a module tree" {
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "shapes/circle", .source =

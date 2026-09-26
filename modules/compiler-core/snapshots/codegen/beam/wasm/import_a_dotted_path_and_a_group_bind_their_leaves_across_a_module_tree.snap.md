@@ -100,9 +100,9 @@ fn main() {
     call $__print_str
     call $seven
     call $__print_i32
-    call $label
+    unreachable ;; two linked modules declare `label` and wasm links them into one namespace
     call $__print_str
-    call $label
+    unreachable ;; two linked modules declare `label` and wasm links them into one namespace
     call $__print_str
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -317,6 +317,6 @@ fn main() {
 ```logs
 circle
 7
-shapes/circle
-shapes/circle
+RUNTIME TRAP (wasmtime):
+wasm trap: wasm `unreachable` instruction executed
 ```
