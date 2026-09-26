@@ -192,18 +192,55 @@ test "format: list ---- trailing comments" {
     );
 }
 
-test "format: list ---- compact wrapping integers" {
-    try h.assertFormat(std.testing.allocator,
+// A list that does not fit breaks one element per line with the trailing comma
+// (decision 65: all-or-nothing, no fill); it stayed on one line of 117 columns
+// while every group was pinned.
+test "format: list ---- a list past the width breaks one element per line" {
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
-        \\    [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000];
+        \\    [
+        \\        100,
+        \\        200,
+        \\        300,
+        \\        400,
+        \\        500,
+        \\        600,
+        \\        700,
+        \\        800,
+        \\        900,
+        \\        1000,
+        \\        1100,
+        \\        1200,
+        \\        1300,
+        \\        1400,
+        \\        1500,
+        \\        1600,
+        \\        1700,
+        \\        1800,
+        \\        1900,
+        \\        2000,
+        \\    ];
         \\}
     );
 }
 
-test "format: list ---- compact wrapping strings" {
-    try h.assertFormat(std.testing.allocator,
+test "format: list ---- a list of strings past the width breaks the same way" {
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
-        \\    ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+        \\    [
+        \\        "one",
+        \\        "two",
+        \\        "three",
+        \\        "four",
+        \\        "five",
+        \\        "six",
+        \\        "seven",
+        \\        "eight",
+        \\        "nine",
+        \\        "ten",
+        \\        "eleven",
+        \\        "twelve",
+        \\    ];
         \\}
     );
 }
@@ -336,7 +373,11 @@ test "format: interface literal ---- multiple fields" {
 test "format: interface literal ---- with array" {
     try h.assertFormat(std.testing.allocator,
         \\fn main() {
-        \\    val decl = @Decl(kind: "Record", name: "Service", fields: [Field(name: "x", typeName: "i32")]);
+        \\    val decl = @Decl(
+        \\        kind: "Record",
+        \\        name: "Service",
+        \\        fields: [Field(name: "x", typeName: "i32")],
+        \\    );
         \\}
     );
 }
@@ -387,7 +428,8 @@ test "format: array literal ---- the last element's comment without a comma stay
         \\];
     ,
         \\val ys = [
-        \\    1, 2, // both on one line
+        \\    1,
+        \\    2, // both on one line
         \\    3, // last, no comma
         \\];
     );

@@ -1043,3 +1043,127 @@ test "format: method chain ---- round trip is idempotent and lossless" {
         \\}
     );
 }
+
+// ── C-12: the constructs under `fits`, enclosing ones first (decision 65) ──────
+//
+// The argument list could not be enabled alone: about half the lists it opened
+// closed on a line that went on with an operator (`) != -1;`), opened for what
+// FOLLOWED them because the binary expression and the brace-less `if` around
+// them were pinned — the middle decision 65 calls wrong. So the enclosing
+// constructs measure too: a binary run, a brace-less `if`, the argument list,
+// the array / tuple / behavior literal. Each is all-or-nothing; the outer one
+// decides first, and an inner one is measured where the outer one put it.
+
+test "format: C-12 ---- a call that fits stays on one line, 80 columns exactly" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f() {
+        \\    val entry = ThemeEntry(name: "--text-3xl--line-height", value: "calc(2)");
+        \\}
+    );
+}
+
+test "format: C-12 ---- an argument list past the width takes one argument per line" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f() {
+        \\    val entry = ThemeEntry(
+        \\        name: "--text-3xl--line-height",
+        \\        value: "calc(2.25 / 1.875)",
+        \\    );
+        \\}
+    );
+}
+
+test "format: C-12 ---- an open argument list that fits is joined (a pure function of the content)" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f() {
+        \\    g(
+        \\        1,
+        \\        2,
+        \\    );
+        \\}
+    ,
+        \\fn f() {
+        \\    g(1, 2);
+        \\}
+    );
+}
+
+test "format: C-12 ---- a binary run breaks before every operator, +4" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(title: string, known: string[]) -> string {
+        \\    return reportTitle()
+        \\        + "\n\n"
+        \\        + notAppliedLine()
+        \\        + "\n"
+        \\        + known.length
+        \\        + " registered, none evaluated";
+        \\}
+    );
+}
+
+test "format: C-12 ---- the binary breaks before the argument list inside it" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(doc: string, a: string) {
+        \\    assert doc.indexOf(
+        \\        "." + a + "{background-attachment:fixed;background-attachment:local}",
+        \\    )
+        \\        != -1;
+        \\}
+    );
+}
+
+test "format: C-12 ---- a brace-less if puts its branch on the next line, not its condition" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(absDiff: f64, tolerance: f64) -> @Result<void, string> {
+        \\    if (absDiff > tolerance)
+        \\        throw "asserts.approxEquals: values differ by more than tolerance";
+        \\    return;
+        \\}
+    );
+}
+
+test "format: C-12 ---- an else-if chain breaks at every else or at none" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn kindLabel(kind: string) -> string {
+        \\    if (kind == "L")
+        \\        return "layout"
+        \\    else if (kind == "T")
+        \\        return "template"
+        \\    else if (kind == "P")
+        \\        return "page"
+        \\    else
+        \\        return "";
+        \\}
+        \\
+        \\fn short(k: string) -> string {
+        \\    if (k == "L") return "layout" else return "";
+        \\}
+    );
+}
+
+test "format: C-12 ---- a braced else stays outside the measured if" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn pick(xs: Array<i32>) -> i32 {
+        \\    return if (xs.isEmpty()) 0 else {
+        \\        val head = xs.length;
+        \\        head + 1;
+        \\    };
+        \\}
+    );
+}
+
+test "format: C-12 ---- a tuple and a behavior literal break like an argument list" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f() {
+        \\    val t = #(
+        \\        "the first element is long enough",
+        \\        "and the second one pushes it over",
+        \\    );
+        \\    val decl = @Decl(
+        \\        kind: "Record",
+        \\        name: "ServiceWithALongName",
+        \\        fields: [Field(name: "x", typeName: "i32")],
+        \\    );
+        \\}
+    );
+}

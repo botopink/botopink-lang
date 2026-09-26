@@ -647,25 +647,7 @@ pub const Formatter = struct {
                     try this.text(ia.member),
                 }),
             },
-            .binaryOp => |bin| this.fmtBinop(
-                bin.lhs.*,
-                switch (bin.op) {
-                    .add => " + ",
-                    .sub => " - ",
-                    .mul => " * ",
-                    .div => " / ",
-                    .mod => " % ",
-                    .lt => " < ",
-                    .gt => " > ",
-                    .lte => " <= ",
-                    .gte => " >= ",
-                    .eq => " == ",
-                    .ne => " != ",
-                    .@"and" => " && ",
-                    .@"or" => " || ",
-                },
-                bin.rhs.*,
-            ),
+            .binaryOp => this.fmtBinaryChain(expr),
             .unaryOp => |un| switch (un.op) {
                 .not => this.concat(try this.text("!"), try this.fmtExpr(un.expr.*)),
                 .neg => this.concat(try this.text("-"), try this.fmtExpr(un.expr.*)),
@@ -706,65 +688,7 @@ pub const Formatter = struct {
                     try this.text(" catch "),
                     try this.fmtExpr(tc.handler.*),
                 }),
-                .if_ => |i| blk: {
-                    // `a ?? b` — decision 28's nullish default, which the parser
-                    // desugars into exactly this `if` (`ast.nullish_binding_name`
-                    // says why: no `BinOp` variant, no new node). Printing the
-                    // desugaring gave back a program nobody wrote and lost the
-                    // `??` token with it.
-                    if (nullishDefaultFallback(i)) |fallback| {
-                        break :blk this.concatAll(&.{
-                            try this.fmtExpr(i.cond.*),
-                            try this.text(" ?? "),
-                            try this.fmtExpr(fallback),
-                        });
-                    }
-                    const condDoc = try this.fmtExpr(i.cond.*);
-                    // Build then block: with or without binding
-                    const thenDoc = if (i.binding) |b| blk2: {
-                        const body = try this.fmtStmtSeq(i.then_);
-                        const inner = try this.concatAll(&.{
-                            try this.text(b),
-                            try this.text(" ->"),
-                            this.hardline(),
-                            body,
-                        });
-                        break :blk2 try this.surroundBreak("{", inner, "}");
-                    } else blk2: {
-                        // Single expression body — format without braces, unless it
-                        // is itself an `if` and an `else` follows (the `else` would
-                        // bind to the inner `if`).
-                        const nestedIf = i.then_.len == 1 and i.then_[0].expr == .branch and i.then_[0].expr.branch.kind == .if_;
-                        if (i.then_.len == 1 and !(nestedIf and i.else_ != null)) {
-                            break :blk2 try this.fmtExpr(i.then_[0].expr);
-                        }
-                        // Multi-statement block: one statement per line, as written.
-                        const inner = try this.fmtStmtSeq(i.then_);
-                        break :blk2 try this.surroundBreak("{", inner, "}");
-                    };
-                    if (i.else_) |els| {
-                        const elseDoc = if (els.len == 1)
-                            try this.fmtExpr(els[0].expr)
-                        else blk2: {
-                            const inner = try this.fmtStmtSeq(els);
-                            break :blk2 try this.surroundBreak("{", inner, "}");
-                        };
-                        break :blk this.concatAll(&.{
-                            try this.text("if ("),
-                            condDoc,
-                            try this.text(") "),
-                            thenDoc,
-                            try this.text(" else "),
-                            elseDoc,
-                        });
-                    }
-                    break :blk this.concatAll(&.{
-                        try this.text("if ("),
-                        condDoc,
-                        try this.text(") "),
-                        thenDoc,
-                    });
-                },
+                .if_ => |i| try this.fmtIf(i),
             },
             .loop => |lp| blk: {
                 // Decision 105's three keywords, printed back as written:
@@ -922,17 +846,27 @@ pub const Formatter = struct {
                     try this.text(")"),
                 }),
                 // `record { name: value, … }` — anonymous record literal.
+                // The argument list's shape: one measured group, a field per
+                // line with the trailing comma when it does not fit.
                 .behaviorLit => |il| blk: {
-                    var doc: *const Doc = try this.text("@");
-                    doc = try this.concat(doc, try this.text(il.name));
-                    doc = try this.concat(doc, try this.text("("));
-                    for (il.fields, 0..) |f, i| {
-                        if (i > 0) doc = try this.concat(doc, try this.text(", "));
-                        doc = try this.concat(doc, try this.text(f.name));
-                        doc = try this.concat(doc, try this.text(": "));
-                        doc = try this.concat(doc, try this.fmtExpr(f.value.*));
-                    }
-                    break :blk try this.concat(doc, try this.text(")"));
+                    const head = try this.text(try std.fmt.allocPrint(this.arena, "@{s}", .{il.name}));
+                    if (il.fields.len == 0) break :blk try this.concat(head, try this.text("()"));
+                    const fields = try this.arena.alloc(*const Doc, il.fields.len);
+                    for (il.fields, 0..) |f, i| fields[i] = try this.concatAll(&.{
+                        try this.text(f.name),
+                        try this.text(": "),
+                        try this.fmtExpr(f.value.*),
+                    });
+                    break :blk try this.concat(head, try this.groupMeasured(try this.concatAll(&.{
+                        try this.text("("),
+                        try this.nest(INDENT, try this.concatAll(&.{
+                            this.softline(),
+                            try this.join(fields, try this.concat(try this.text(","), this.line())),
+                            try this.ifBreak(","),
+                        })),
+                        this.softline(),
+                        try this.text(")"),
+                    })));
                 },
                 .case => |c| try this.fmtCase(c.subjects, c.arms, c.trailingComments),
                 .arrayLit => |al| blk: {
@@ -971,18 +905,14 @@ pub const Formatter = struct {
                             try this.concat(elemDoc, try this.text(","))
                         else
                             elemDoc, al.trailingPerElem, i);
-                        // Group this element with the previous one if they share the same source line
-                        // and this element has no preceding comments — and the previous one
-                        // does not end its line with a comment.
-                        const sameLineAsPrev = i > 0 and numCommentsBefore == 0 and
-                            e.getLoc().line == al.elems[i - 1].getLoc().line and
-                            !(i - 1 < al.trailingPerElem.len and al.trailingPerElem[i - 1] != null);
-                        if (sameLineAsPrev and docs.items.len > 0) {
-                            const prev = docs.items[docs.items.len - 1];
-                            docs.items[docs.items.len - 1] = try this.concat(prev, try this.concat(try this.text(" "), elemWithComma));
-                        } else {
-                            try docs.append(this.arena, elemWithComma);
-                        }
+                        // One element per line in the open form. Elements written
+                        // on one source line used to be kept on one output line,
+                        // which made the layout a function of the source's layout
+                        // (decision 65 part 2 rules that out) and, once the list
+                        // measures width, was not idempotent: the joined line ran
+                        // past the width, a call inside it broke, and the next
+                        // pass read a different layout.
+                        try docs.append(this.arena, elemWithComma);
                     }
                     // Emit spread comments (commentsPerElem[elems.len])
                     const spreadCommentCount: usize = if (hasCounts and al.commentsPerElem.len > al.elems.len)
@@ -1046,12 +976,18 @@ pub const Formatter = struct {
                         }));
                     }
 
-                    // Otherwise, use group for flexible inline/multi-line
-                    const inner = try this.join(docs.items, this.line());
-                    break :blk this.group(try this.concatAll(&.{
+                    // Otherwise one measured group (decision 65): the list on one
+                    // line when it fits, what follows it counted; otherwise one
+                    // element per line, `+4`, with the trailing comma of the open
+                    // form, the spread included, `]` on its own line.
+                    var inner = try this.join(docs.items, this.line());
+                    if (hasSpread) inner = if (docs.items.len > 0)
+                        try this.concatAll(&.{ inner, this.line(), spreadDoc })
+                    else
+                        spreadDoc;
+                    break :blk this.groupMeasured(try this.concatAll(&.{
                         try this.text("["),
-                        try this.nest(INDENT, try this.concat(this.softline(), inner)),
-                        if (spreadDoc != this.nil()) try this.concatAll(&.{ this.line(), spreadDoc }) else this.nil(),
+                        try this.nest(INDENT, try this.concatAll(&.{ this.softline(), inner, try this.ifBreak(",") })),
                         this.softline(),
                         try this.text("]"),
                     }));
@@ -1142,9 +1078,10 @@ pub const Formatter = struct {
                         try parts.append(this.arena, item);
                     }
                     const inner = try this.concatAll(parts.items);
-                    break :blk this.group(try this.concatAll(&.{
+                    // One measured group, as the array literal's.
+                    break :blk this.groupMeasured(try this.concatAll(&.{
                         try this.text("#("),
-                        try this.nest(INDENT, try this.concat(this.softline(), inner)),
+                        try this.nest(INDENT, try this.concatAll(&.{ this.softline(), inner, try this.ifBreak(",") })),
                         this.softline(),
                         try this.text(")"),
                     }));
@@ -1201,12 +1138,188 @@ pub const Formatter = struct {
         };
     }
 
-    fn fmtBinop(this: *Formatter, lhs: ast.Expr, op: []const u8, rhs: ast.Expr) !*const Doc {
-        return this.concatAll(&.{
-            try this.fmtExpr(lhs),
-            try this.text(op),
-            try this.fmtExpr(rhs),
-        });
+    /// An `if` expression or statement.
+    fn fmtIf(this: *Formatter, i: anytype) anyerror!*const Doc {
+        const parts = try this.fmtIfParts(i);
+        return parts.whole(this);
+    }
+
+    /// An `if` in two halves: `head`, which holds every break a bare branch
+    /// adds, and `tail`, a braced `else` body that follows it. `tail` stays
+    /// outside the measured group: its `{` block always breaks, and inside the
+    /// group that would break every bare branch before it too.
+    const IfParts = struct {
+        head: *const Doc,
+        tail: *const Doc,
+        measured: bool,
+
+        fn whole(p: IfParts, f: *Formatter) !*const Doc {
+            const h = if (p.measured) try f.groupMeasured(p.head) else p.head;
+            return f.concat(h, p.tail);
+        }
+    };
+
+    fn fmtIfParts(this: *Formatter, i: anytype) anyerror!IfParts {
+        // `a ?? b` — decision 28's nullish default, which the parser
+        // desugars into exactly this `if` (`ast.nullish_binding_name`
+        // says why: no `BinOp` variant, no new node). Printing the
+        // desugaring gave back a program nobody wrote and lost the
+        // `??` token with it.
+        if (nullishDefaultFallback(i)) |fallback| {
+            return .{ .head = try this.concatAll(&.{
+                try this.fmtExpr(i.cond.*),
+                try this.text(" ?? "),
+                try this.fmtExpr(fallback),
+            }), .tail = this.nil(), .measured = false };
+        }
+        const condDoc = try this.fmtExpr(i.cond.*);
+        // Build then block: with or without binding
+        const thenDoc = if (i.binding) |b| blk2: {
+            const body = try this.fmtStmtSeq(i.then_);
+            const inner = try this.concatAll(&.{
+                try this.text(b),
+                try this.text(" ->"),
+                this.hardline(),
+                body,
+            });
+            break :blk2 try this.surroundBreak("{", inner, "}");
+        } else blk2: {
+            // Single expression body — format without braces, unless it
+            // is itself an `if` and an `else` follows (the `else` would
+            // bind to the inner `if`).
+            const nestedIf = i.then_.len == 1 and i.then_[0].expr == .branch and i.then_[0].expr.branch.kind == .if_;
+            if (i.then_.len == 1 and !(nestedIf and i.else_ != null)) {
+                break :blk2 try this.fmtExpr(i.then_[0].expr);
+            }
+            // Multi-statement block: one statement per line, as written.
+            const inner = try this.fmtStmtSeq(i.then_);
+            break :blk2 try this.surroundBreak("{", inner, "}");
+        };
+        // A bare (brace-less) then-branch has a break before it: an
+        // `if` whose one line does not fit puts the branch on the
+        // next line, `+4`, and a bare `else` branch on the line
+        // after that — one measured group, all-or-nothing
+        // (decision 65). Without it the condition's own groups were
+        // the only place to break, and they broke for the branch
+        // that FOLLOWED them (`if (absDiff` / `    > tolerance) throw
+        // "…"`), the wrong middle. A braced branch keeps `) {` and
+        // `} else {` exactly as before; an `else if` keeps its `if`
+        // on the `else` line.
+        const thenBare = !(i.binding != null or i.then_.len != 1 or
+            (i.then_[0].expr == .branch and i.then_[0].expr.branch.kind == .if_ and i.else_ != null));
+        const thenPart: *const Doc = if (thenBare)
+            try this.concat(try this.text(")"), try this.nest(INDENT, try this.concat(this.line(), thenDoc)))
+        else
+            try this.concat(try this.text(") "), thenDoc);
+        if (i.else_) |els| {
+            const elseIsIf = els.len == 1 and els[0].expr == .branch and els[0].expr.branch.kind == .if_ and
+                nullishDefaultFallback(els[0].expr.branch.kind.if_) == null;
+            if (!thenBare) {
+                const elseDoc = if (els.len == 1)
+                    try this.fmtExpr(els[0].expr)
+                else
+                    try this.surroundBreak("{", try this.fmtStmtSeq(els), "}");
+                return .{
+                    .head = try this.concatAll(&.{ try this.text("if ("), condDoc, thenPart, try this.text(" else "), elseDoc }),
+                    .tail = this.nil(),
+                    .measured = false,
+                };
+            }
+            const head = try this.concatAll(&.{ try this.text("if ("), condDoc, thenPart, this.line(), try this.text("else") });
+            if (els.len != 1) {
+                // `else {` — the braced body is the tail.
+                return .{
+                    .head = head,
+                    .tail = try this.concat(try this.text(" "), try this.surroundBreak("{", try this.fmtStmtSeq(els), "}")),
+                    .measured = true,
+                };
+            }
+            if (elseIsIf) {
+                // An `else if` under a bare then-branch is the same chain: its
+                // breaks join this group, so the chain breaks at every `else`
+                // or at none (a last `else if (…) a else b` left flat was the
+                // middle). Its own braced `else`, if any, is the tail of all.
+                const child = try this.fmtIfParts(els[0].expr.branch.kind.if_);
+                if (child.measured) return .{
+                    .head = try this.concatAll(&.{ head, try this.text(" "), child.head }),
+                    .tail = child.tail,
+                    .measured = true,
+                };
+                return .{ .head = head, .tail = try this.concat(try this.text(" "), try child.whole(this)), .measured = true };
+            }
+            return .{
+                .head = try this.concat(head, try this.nest(INDENT, try this.concat(this.line(), try this.fmtExpr(els[0].expr)))),
+                .tail = this.nil(),
+                .measured = true,
+            };
+        }
+        return .{ .head = try this.concatAll(&.{ try this.text("if ("), condDoc, thenPart }), .tail = this.nil(), .measured = thenBare };
+    }
+
+    fn binOpText(op: anytype) []const u8 {
+        return switch (op) {
+            .add => "+",
+            .sub => "-",
+            .mul => "*",
+            .div => "/",
+            .mod => "%",
+            .lt => "<",
+            .gt => ">",
+            .lte => "<=",
+            .gte => ">=",
+            .eq => "==",
+            .ne => "!=",
+            .@"and" => "&&",
+            .@"or" => "||",
+        };
+    }
+
+    /// The parser's precedence level of `op` (`parser/exprs.zig`'s
+    /// `precedence_table`, lowest first). Operands of one level form one chain.
+    fn binOpLevel(op: anytype) u8 {
+        return switch (op) {
+            .@"or" => 0,
+            .@"and" => 1,
+            .eq, .ne => 2,
+            .lt, .gt, .lte, .gte => 3,
+            .add, .sub => 4,
+            .mul, .div, .mod => 5,
+        };
+    }
+
+    /// A binary expression — **one** `groupMeasured` over the run of operands
+    /// that share a precedence level (`a + b - c` is one run; `a + b * c` is a
+    /// run of two whose second operand is a run of its own). All-or-nothing
+    /// (decision 65): one line when the flat spelling fits, what follows on the
+    /// line counted; otherwise the first operand stays on the line and every
+    /// other one starts a line of its own, **operator first**, `+4` from the
+    /// statement — the method chain's shape, the operator where the chain puts
+    /// its `.`. The parser is left-associative, so the run is the left spine.
+    fn fmtBinaryChain(this: *Formatter, expr: ast.Expr) !*const Doc {
+        const top = expr.binaryOp;
+        const level = binOpLevel(top.op);
+        var rest: std.ArrayList(ast.BinOpExpr) = .empty;
+        var head: ast.Expr = expr;
+        while (head == .binaryOp and binOpLevel(head.binaryOp.op) == level) {
+            try rest.append(this.arena, head.binaryOp);
+            head = head.binaryOp.lhs.*;
+        }
+        var links: std.ArrayList(*const Doc) = .empty;
+        var i = rest.items.len;
+        while (i > 0) {
+            i -= 1;
+            const b = rest.items[i];
+            try links.append(this.arena, try this.concatAll(&.{
+                this.line(),
+                try this.text(binOpText(b.op)),
+                try this.text(" "),
+                try this.fmtExpr(b.rhs.*),
+            }));
+        }
+        return this.groupMeasured(try this.concat(
+            try this.fmtExpr(head),
+            try this.nest(INDENT, try this.concatAll(links.items)),
+        ));
     }
 
     /// A builtin call the **parser** synthesised for a form that has its own
@@ -1494,9 +1607,10 @@ pub const Formatter = struct {
                 // pinned and cannot break first: the middle decision 65 calls
                 // wrong. Measured and parked (`format/AGENTS.md`); the enabling
                 // is `groupMeasured` plus `ifBreak(",")` before the softline.
-                break :blk try this.group(try this.concatAll(&.{
+                break :blk try this.groupMeasured(try this.concatAll(&.{
                     try this.text("("),
                     try this.nest(INDENT, try this.concat(this.softline(), inner)),
+                    try this.ifBreak(","),
                     this.softline(),
                     try this.text(")"),
                 }));

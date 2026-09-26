@@ -661,6 +661,34 @@ val total = xs
 
 The pipe operator `|>` is left-associative.
 
+### Line width
+
+`botopink format` keeps lines within 80 columns where a break exists, and every
+construct breaks **all or nothing**: it fits on one line, or each of its parts
+takes a line of its own, `+4` from the statement. The outer construct decides
+first, so a list never breaks for what follows it:
+
+<!-- docs-check: skip a layout sample, not a program -->
+```botopink
+val entry = ThemeEntry(
+    name: "--text-3xl--line-height",
+    value: "calc(2.25 / 1.875)",
+);
+
+return reportTitle()
+    + "\n\n"
+    + notAppliedLine()
+    + known.length;
+
+if (absDiff > tolerance)
+    throw "values differ by more than tolerance";
+```
+
+A method chain breaks before every `.call`, a binary run before every operator, an
+argument list or a literal after its opening bracket with a trailing comma, and an
+`if` with a brace-less branch before that branch. Formatting is a function of the
+content only: a hand-broken list that fits is joined.
+
 ### If / else
 
 <!-- docs-check: body -->
