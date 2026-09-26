@@ -819,6 +819,20 @@ fn locatedAt(err: TypeError, loc: ast.Loc) TypeError {
 /// already inferred (`Env.closedLocals`), the message names that body: the
 /// name existed, in another function, and a local ends with its body.
 fn unboundAt(env: *Env, name: []const u8, loc: ast.Loc) InferError!TypeError {
+    if (env.namespaces.ambiguous.get(name)) |owners| {
+        var names: std.ArrayListUnmanaged(u8) = .empty;
+        for (owners, 0..) |o, i| {
+            if (i > 0) try names.appendSlice(env.arena, if (i + 1 == owners.len) " and by " else ", by ");
+            try names.print(env.arena, "`{s}`", .{o});
+        }
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `{s}` is imported from two declarations — declared `pub` by {s} — and this use does not say which",
+            .{ diagnostics.ambiguous_import_use, name, names.items },
+        );
+        const hint = try std.fmt.allocPrint(env.arena, "Import it from the module that declares it (`import {{{s}}} from \"{s}\"`), or through the module as a namespace.", .{ name, owners[0] });
+        return TypeError.custom(msg, hint).withLoc(loc);
+    }
     if (env.closedLocals.get(name)) |owner| {
         const msg = try std.fmt.allocPrint(env.arena, "unbound variable '{s}' — `{s}` is a local of `{s}`, and a local ends with its body", .{ name, name, owner });
         return TypeError.custom(msg, "Declare it where it is used, or pass it in as a parameter.").withLoc(loc);
@@ -7612,6 +7626,7 @@ fn inferTupleLabelCall(
                 env.lastError = TypeError.arityMismatch(callee, f.params.len, total).withLoc(loc);
                 return error.TypeError;
             }
+            try refuseLabelsOnFunctionValue(env, callee, typedArgs);
             for (typedArgs, f.params[0..typedArgs.len]) |ta, p| {
                 try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
             }
@@ -10425,11 +10440,13 @@ fn calleeParams(env: *Env, callee: []const u8) ?[]const ast.Param {
 ///
 /// `null` is the ordinary answer and means "argument `i` is parameter `i`":
 /// every call that writes its arguments positionally, which is nearly all of
-/// them, allocates nothing here. A returned slice carries a parameter index
-/// per argument, or `params.len` for an argument whose parameter is not
-/// knowable — a full-arity labelled call, which the arity arm below zips
-/// positionally and which a reordered label would not survive either. Reading
-/// no expectation is right there: a wrong one would pick an enum.
+/// them, allocates nothing here — nor does a labelled call whose labels name
+/// the parameters in order (the plan is the identity). A returned slice
+/// carries a parameter index per argument — a complete labelled call that
+/// moves an argument is planned as a reorder, like a short one — or
+/// `params.len` for an argument whose parameter is not knowable (a label that
+/// names no parameter, one named twice: the call is refused below). Reading no
+/// expectation is right there: a wrong one would pick an enum.
 fn argumentParamSlots(
     env: *Env,
     params: []const ast.Param,
@@ -10449,7 +10466,7 @@ fn argumentParamSlots(
     const unknown = try env.arena.alloc(usize, args.len);
     @memset(unknown, params.len);
     const planned = envMod.planDefaultFill(env.arena, params, labels) catch return unknown;
-    const fill = planned orelse return unknown;
+    const fill = planned orelse return if (args.len == params.len) null else unknown;
 
     const slots = try env.arena.alloc(usize, args.len);
     @memset(slots, params.len);
@@ -10458,6 +10475,92 @@ fn argumentParamSlots(
         if (ai < slots.len) slots[ai] = pi;
     }
     return slots;
+}
+
+/// A default an importer can materialise at its own call site: it names no
+/// binding of the declaring module. Literals (a string without a `${…}` hole),
+/// `true` / `false`, `null`, a sign, and array / tuple literals of those.
+pub fn isClosedDefault(e: ast.Expr) bool {
+    return switch (e) {
+        .literal => |l| switch (l.kind) {
+            .stringLit, .numberLit, .null_ => true,
+            else => false,
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false"),
+            else => false,
+        },
+        .unaryOp => |op| isClosedDefault(op.expr.*),
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| isClosedDefault(inner.*),
+            .arrayLit => |al| for (al.elems) |x| {
+                if (!isClosedDefault(x)) break false;
+            } else true,
+            .tupleLit => |tl| for (tl.elems) |x| {
+                if (!isClosedDefault(x)) break false;
+            } else true,
+            else => false,
+        },
+        else => false,
+    };
+}
+
+/// A label on a call whose callee has a function TYPE and no declaration —
+/// a parameter, a local, a record's function-typed field, a tuple element —
+/// is `label-on-function-value`, at the labelled argument.
+fn refuseLabelsOnFunctionValue(env: *Env, callee: []const u8, typedArgs: []const ast.CallArgOf(.typed)) InferError!void {
+    for (typedArgs) |ta| {
+        const l = ta.label orelse continue;
+        if (std.mem.eql(u8, l, "..")) continue;
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: `{s}` is a function value, whose parameters have no names — `{s}:` names nothing",
+            .{ diagnostics.label_on_function_value, callee, l },
+        );
+        env.lastError = TypeError.custom(msg, "A function type is positional (`fn(i32, string) -> string`): pass the arguments in its order, without labels.").withLoc(ta.value.getLoc());
+        return error.TypeError;
+    }
+}
+
+/// A qualified call's plan (a namespace import's `ns.f(…)`, a `"std"`
+/// module's `bool.negate(…)`): the reorder a complete labelled call needs, or
+/// the fill of a short one, against the parameters as written. `null` when
+/// there is nothing to plan — the call is then zipped by position and its
+/// arity judged by the caller, as before.
+fn planQualifiedCall(
+    env: *Env,
+    callee: []const u8,
+    declared: ?[]const ast.Param,
+    paramTypes: []const *T.Type,
+    typedArgs: []ast.CallArgOf(.typed),
+    trailing: usize,
+    loc: ast.Loc,
+) InferError!?envMod.DefaultFill {
+    const d = declared orelse return null;
+    if (trailing != 0 or d.len != paramTypes.len or typedArgs.len > d.len) return null;
+    const plan = (if (typedArgs.len == d.len)
+        try planLabelledCall(env, callee, d, typedArgs, loc)
+    else
+        try recordDefaultFill(env, loc, d, typedArgs)) orelse return null;
+    try env.defaultInjections.put(loc, plan);
+    try unifyFilledArgs(env, plan, paramTypes, typedArgs);
+    return plan;
+}
+
+/// The parameters as written of the `pub fn` `callee` of the `"std"` module
+/// `std_key`, a default that is not closed dropped (it names a binding of the
+/// std module, which the call site cannot write).
+fn stdFnParams(env: *Env, std_key: []const u8, callee: []const u8) InferError!?[]const ast.Param {
+    const fns = env.stdModuleFns.get(std_key) orelse return null;
+    for (fns) |f| {
+        if (!f.isPub or !std.mem.eql(u8, f.name, callee)) continue;
+        const params = try env.arena.dupe(ast.Param, f.params);
+        for (params) |*p| if (p.default) |dv| if (!isClosedDefault(dv)) {
+            p.default = null;
+        };
+        return params;
+    }
+    return null;
 }
 
 /// C-04 — plan the fill for a short call and record it under the call's loc for
@@ -10671,6 +10774,7 @@ fn associatedCallReturnType(
     callee: []const u8,
     typedArgs: []ast.CallArgOf(.typed),
     typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
 ) InferError!?*T.Type {
     if (!env.hasInherentMethod(typeName, callee)) return null;
     const sigRaw = env.getInherentMethodType(typeName, callee) orelse return null;
@@ -10684,6 +10788,15 @@ fn associatedCallReturnType(
     // arity is the plain-call path's diagnostic, not this one's — leave both to
     // the fallback rather than unify against the wrong slots.
     if (typedTrailing.len > 0 or fn_.func.params.len != typedArgs.len) return null;
+    // 01 — a label names the parameter it fills: `Box.make(count: 5,
+    // label: "a")` is checked and lowered in declaration order, never zipped.
+    if (env.getInherentMethodParams(typeName, callee)) |declared| if (declared.len == fn_.func.params.len) {
+        if (try planLabelledCall(env, callee, declared, typedArgs, loc)) |plan| {
+            try env.defaultInjections.put(loc, plan);
+            try unifyFilledArgs(env, plan, fn_.func.params, typedArgs);
+            return fn_.func.ret;
+        }
+    };
     for (typedArgs, fn_.func.params) |ta, p| {
         try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
     }
@@ -12180,7 +12293,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     // `registerInherentMethodTypes` (with `Self` resolved to the
                     // type) — it was simply never read for the type-qualified form.
                     if (env.lookupTypeDef(recvName) != null) {
-                        if (try associatedCallReturnType(env, recvName, call.callee, typedArgs, typedTrailing)) |ret| {
+                        if (try associatedCallReturnType(env, recvName, call.callee, typedArgs, typedTrailing, loc)) |ret| {
                             return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
                                 .receiver = typedReceiver,
                                 .callee = call.callee,
@@ -12217,6 +12330,10 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             const instantiated = try instantiateType(env, exported, &seen, .allVars);
                             const retType: *T.Type = switch (instantiated.deref().*) {
                                 .func => |f| blk: {
+                                    // 01 / C-04 — by label, and short calls
+                                    // filled, against the std fn as written.
+                                    const declared = try stdFnParams(env, std_key, call.callee);
+                                    if (try planQualifiedCall(env, call.callee, declared, f.params, typedArgs, typedTrailing.len, loc) != null) break :blk f.ret;
                                     const total = typedArgs.len + typedTrailing.len;
                                     if (f.params.len != total) {
                                         env.lastError = TypeError.arityMismatch(call.callee, f.params.len, total).withLoc(loc);
@@ -12268,12 +12385,19 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             },
                         };
                         const total = typedArgs.len + typedTrailing.len;
-                        if (f.params.len != total) {
-                            env.lastError = TypeError.arityMismatch(call.callee, f.params.len, total).withLoc(loc);
-                            return error.TypeError;
-                        }
-                        for (typedArgs, f.params[0..typedArgs.len]) |ta, p| {
-                            try unifyArgument(env, p, ta.value.getType(), ta.value.getLoc());
+                        // The parameters as written travel with the export:
+                        // a label names the one it fills (01) and a short call
+                        // takes the declared defaults (C-04), as for a leaf
+                        // import.
+                        const declared = env.namespaces.params.get(try envMod.NamespaceImports.paramsKey(env.arena, ns, call.callee));
+                        if (try planQualifiedCall(env, call.callee, declared, f.params, typedArgs, typedTrailing.len, loc) == null) {
+                            if (f.params.len != total) {
+                                env.lastError = TypeError.arityMismatch(call.callee, f.params.len, total).withLoc(loc);
+                                return error.TypeError;
+                            }
+                            for (typedArgs, f.params[0..typedArgs.len]) |ta, p| {
+                                try unifyArgument(env, p, ta.value.getType(), ta.value.getLoc());
+                            }
                         }
                         try env.namespaces.calls.put(env.arena, loc, .{ .namespace = ns, .callee = call.callee });
                         return TypedExpr{ .call = .{ .loc = loc, .type_ = f.ret, .kind = .{ .call = .{
@@ -12635,6 +12759,30 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                     break :blk f.ret;
                                 }
                             };
+                            // A function VALUE (a parameter, a local, a field)
+                            // has a type and no parameter names: a label there
+                            // names nothing, and zipping it by position would
+                            // let `f(s: "x", n: 1)` mean `f("x", 1)`. Refused.
+                            if (declParamsAst == null) {
+                                // A constructor reached under another name (an
+                                // import alias, `D(pairs: [])` for std's
+                                // `Dict`) is its type's: the labels name its
+                                // fields.
+                                const aliasedCtor: ?[]const ast.Param = ctorBlk: {
+                                    if (call.callee.len == 0 or !std.ascii.isUpper(call.callee[0])) break :ctorBlk null;
+                                    const r = f.ret.deref();
+                                    if (r.* != .named) break :ctorBlk null;
+                                    const ps = env.ctorParams.get(r.named.name) orelse break :ctorBlk null;
+                                    break :ctorBlk if (ps.len == f.params.len) ps else null;
+                                };
+                                if (aliasedCtor) |declared| {
+                                    if (try planLabelledCall(env, call.callee, declared, typedArgs, loc)) |plan| {
+                                        try env.defaultInjections.put(loc, plan);
+                                        try unifyFilledArgs(env, plan, f.params, typedArgs);
+                                        break :blk f.ret;
+                                    }
+                                } else try refuseLabelsOnFunctionValue(env, call.callee, typedArgs);
+                            }
                         }
                         // Look up the template fn before the loop so non-@Expr
                         // params can also be collected as plain arg bindings.

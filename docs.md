@@ -142,7 +142,11 @@ extension as `collections.ArraySets*` — and on a node that opens braces they
 are a syntax error (`import-group-modifier`). Two items binding one name are
 `import-name-collision` at the second item (`import {url.parse, json.parse}`);
 an alias on either side clears it (`url.parse as parseUrl, json: {parse as
-parseJson}`). An alias reaches a type and a type alias too (decision 110):
+parseJson}`). One item that reaches two declarations — a bare `import {parse};`
+while two modules of the package declare `pub fn parse` — is not refused itself:
+every **use** of the name is, where it is written, naming both
+(`ambiguous-import-use`), and the item that says which (`import {parse} from
+"a"`) is the way out. An alias reaches a type and a type alias too (decision 110):
 `import {collections.Dict as D}` brings `D`, a name for `Dict` in the program's
 own text — the emitted code keeps `Dict`. An activation cannot be renamed
 (`import-alias-on-activation`). A leaf that names a folder is a namespace of
@@ -1334,6 +1338,13 @@ connect();   // error: 'connect' expects 2 argument(s), got 0
 
 Defaults are filled in by the checker, so every backend receives a call with
 every argument written out; no backend emits a default of its own.
+
+A label names the parameter it fills on every call — a free function, a
+constructor, a method, an associated function (`Box.make(count: 3, label: "b")`),
+one imported from another module or reached through a namespace
+(`helper.pad(width: 7, s: "q")`) — so the arguments may be written in any order.
+A function **value** (a parameter, a local, a field) has a positional type with
+no names, so a label in a call of one is refused (`error[label-on-function-value]`).
 
 ### Effects
 

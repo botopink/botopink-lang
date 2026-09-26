@@ -195,6 +195,13 @@ pub const unknown_builtin: []const u8 = "unknown-builtin";
 /// A builtin `builtins.d.bp` declares that no target lowers (`@module()`):
 /// refused at the `@` instead of typed `void` and emitted verbatim.
 pub const builtin_not_lowered: []const u8 = "builtin-not-lowered";
+/// A labelled argument in a call of a function VALUE (a parameter, a local, a
+/// field): its type is positional and names no parameter (01).
+pub const label_on_function_value: []const u8 = "label-on-function-value";
+/// A use of an imported name the import resolved to two different
+/// declarations (`00 · 01-std`: the refusal of a duplicate `pub` name belongs
+/// to the consumer's unqualified use).
+pub const ambiguous_import_use: []const u8 = "ambiguous-import-use";
 /// A method a primitive receiver's interface does not declare
 /// (`"abc".toUpperCase()` — `String` declares `toUpper`). Used to type as a
 /// fresh variable and reach the host under its own spelling (pending 0203-a,

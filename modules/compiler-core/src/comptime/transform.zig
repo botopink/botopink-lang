@@ -350,7 +350,7 @@ pub fn transform(
                 if (p0.modifier == .@"comptime" and p0.typeRef.isDeclType()) continue;
             }
         }
-        if (decl == .use and namespaces.modules.count() > 0) {
+        if (decl == .use and (namespaces.modules.count() > 0 or namespaces.ambiguous.count() > 0)) {
             try filtered.append(allocator, .{ .use = try rewriteNamespaceImports(agg.spec_cache.arena, decl.use, namespaces) });
             continue;
         }
@@ -865,6 +865,13 @@ fn rewriteNamespaceImports(arena: std.mem.Allocator, u: ast.ImportDecl, namespac
     var changed = false;
     for (u.imports) |imp| {
         const local = imp.name();
+        // A name two modules declare, imported with nothing saying which: every
+        // use was refused by inference, so the item binds nothing any code
+        // reads (`NamespaceImports.ambiguous`).
+        if (!imp.activate and namespaces.ambiguous.contains(local)) {
+            changed = true;
+            continue;
+        }
         if (imp.activate or !namespaces.modules.contains(local)) {
             try items.append(arena, imp);
             continue;

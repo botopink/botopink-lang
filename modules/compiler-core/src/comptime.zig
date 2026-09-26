@@ -1099,6 +1099,12 @@ fn resolveImports(
                     if (!imp.activate and !names_symbol) switch (try u.leafSource(imp, env.arena, true)) {
                         .module => |path| if (!isStdPkgPath(path)) if (registry.get(path)) |exports| {
                             try env.namespaces.modules.put(env.arena, local, exports);
+                            var eit = exports.keyIterator();
+                            while (eit.next()) |fname| {
+                                if (templateRegistry.get(try defaultParamsKey(env.arena, path, fname.*))) |pfn| {
+                                    try env.namespaces.params.put(env.arena, try envMod.NamespaceImports.paramsKey(env.arena, local, fname.*), pfn.params);
+                                }
+                            }
                             continue;
                         },
                         .root => {},
@@ -1181,7 +1187,37 @@ fn resolveImports(
                         }
                     }
                     var bound_value = false;
-                    if (!bound_type_decl) {
+                    // `00 · 01-std` — the refusal of a duplicate `pub` name
+                    // belongs to the consumer's unqualified USE: when the
+                    // first scan that finds the name finds it in two modules
+                    // (a bare `import {parse};`, a package handle that narrows
+                    // to no module), the name is two identities, and nothing
+                    // here says which. It stays unbound, and every use of it is
+                    // refused where it is written, naming both
+                    // (`infer.unboundAt` reads `NamespaceImports.ambiguous`).
+                    if (!bound_type_decl) ambiguity: {
+                        for ([2]bool{ true, false }) |named_only| {
+                            var owners: std.ArrayListUnmanaged([]const u8) = .empty;
+                            var ait = registry.iterator();
+                            while (ait.next()) |e| {
+                                if (isStdPkgPath(e.key_ptr.*)) continue;
+                                if (named_only and !leaf_src.namesModule(e.key_ptr.*)) continue;
+                                if (e.value_ptr.contains(name)) try owners.append(env.arena, e.key_ptr.*);
+                            }
+                            if (owners.items.len == 0) continue;
+                            if (owners.items.len == 1) break :ambiguity;
+                            std.mem.sort([]const u8, owners.items, {}, struct {
+                                fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                                    return std.mem.order(u8, a, b) == .lt;
+                                }
+                            }.lessThan);
+                            try env.namespaces.ambiguous.put(env.arena, local, owners.items);
+                            bound_value = true;
+                            owner = "";
+                            break :ambiguity;
+                        }
+                    }
+                    if (!bound_type_decl and !bound_value) {
                         for ([2]bool{ true, false }) |named_only| {
                             if (bound_value) break;
                             var it = registry.iterator();
@@ -1318,38 +1354,10 @@ fn conflictCarrier(message: []const u8) ast.FnDecl {
 }
 
 /// The `templateRegistry` key of the parameter list, as written, of the `pub fn`
-/// `name` of module `path` whose parameters declare a default (C-04 across a
-/// module boundary). No import item can spell it: it holds two NULs.
+/// `name` of module `path` (C-04 across a module boundary, and the labels of a
+/// labelled call). No import item can spell it: it holds two NULs.
 fn defaultParamsKey(arena: std.mem.Allocator, path: []const u8, name: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena, "{s}\x00{s}\x00params", .{ path, name });
-}
-
-/// A default an importer can materialise at its own call site: it names no
-/// binding of the declaring module. Literals (a string without a `${…}` hole),
-/// `true` / `false`, `null`, a sign, and array / tuple literals of those.
-fn isClosedDefault(e: ast.Expr) bool {
-    return switch (e) {
-        .literal => |l| switch (l.kind) {
-            .stringLit, .numberLit, .null_ => true,
-            else => false,
-        },
-        .identifier => |id| switch (id.kind) {
-            .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false"),
-            else => false,
-        },
-        .unaryOp => |op| isClosedDefault(op.expr.*),
-        .collection => |col| switch (col.kind) {
-            .grouped => |inner| isClosedDefault(inner.*),
-            .arrayLit => |al| for (al.elems) |x| {
-                if (!isClosedDefault(x)) break false;
-            } else true,
-            .tupleLit => |tl| for (tl.elems) |x| {
-                if (!isClosedDefault(x)) break false;
-            } else true,
-            else => false,
-        },
-        else => false,
-    };
 }
 
 /// The package key for a module path: the segment before the first `/` (a lib
@@ -1490,18 +1498,16 @@ fn registerExports(
                 if (f.returnType) |rt| {
                     if (rt.isTemplateReturnType()) try templateRegistry.put(try comptimeRegistryKey(arena, path, b.name), f);
                 }
-                // C-04 across a module boundary — a function whose parameters
-                // declare a default exports them as written, so an importer's
-                // short call is filled like a local one. A default that names a
-                // binding of this module cannot be written at the importer's
+                // C-04 across a module boundary — a function exports its
+                // parameters as written, so an importer's short call is filled
+                // like a local one and a labelled call is checked and lowered
+                // by label (01), never zipped by position. A default that names
+                // a binding of this module cannot be written at the importer's
                 // call site: that parameter travels without it, and a call
                 // omitting it stays the arity error it was.
-                const has_default = for (f.params) |p| {
-                    if (p.default != null) break true;
-                } else false;
-                if (has_default and !infer.isDecoratorParams(f.params)) {
+                if (!infer.isDecoratorParams(f.params)) {
                     const params = try arena.dupe(ast.Param, f.params);
-                    for (params) |*p| if (p.default) |d| if (!isClosedDefault(d)) {
+                    for (params) |*p| if (p.default) |d| if (!infer.isClosedDefault(d)) {
                         p.default = null;
                     };
                     var carried = f;

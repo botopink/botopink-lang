@@ -168,9 +168,17 @@ targets), `reject/builtin_module_not_lowered` (`@module()` is `builtin-not-lower
 `After(inner: Token[])`, each reached by its path or its position's type from another module —
 the checker half already held; wasm is listed, its `case` reads the leaf's tag),
 `run/variant_leading_dot_two_enums_case` (two enums declaring `Red`, `.Red` by the position's type
-and a `case` over each — the checker half already held; wasm is listed) and
+and a `case` over each — the checker half already held; wasm is listed),
 `reject/section_path_es4_expected_enum` / `reject/section_path_es4_every_head` (ES4 names the
-expected enum, or every enum carrying the head, sorted — it named the hash walk's first).
+expected enum, or every enum carrying the head, sorted — it named the hash walk's first),
+`modules/labelled_call_by_label` (a complete labelled call by label on the associated, imported,
+namespace and `"std"` call paths, and a namespace call filled from its default),
+`reject/label_on_function_value` (a label in a call of a function value, `label-on-function-value`),
+`modules/behavior_from_host_declare` (a host `declare fn -> Greeter`, here and in a third module,
+meets a `Greeter` parameter of the behavior's module — the checker half already held; wasm refuses
+the host templates by `wasm.expect`), `modules/import_ambiguous_use` (a bare `import {parse};` over two
+modules declaring `pub fn parse` — the use is `ambiguous-import-use`, located, naming both, on every
+target by `<target>.expect`) and `modules/import_ambiguous_unused` (the same import unread compiles).
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names
