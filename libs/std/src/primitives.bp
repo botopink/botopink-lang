@@ -620,21 +620,24 @@ behavior Array<T> {
     // Drop consecutive duplicates. Matches the Node Array convention —
     // non-consecutive de-dup is `xs.fold([], …)` (left to callers since it
     // needs an equality predicate that interacts with generic `T`).
+    //
+    // Decision 9 (1.0.5): the body calls no method on an optional — it used to
+    // write `prev.unwrapOr(x)` inside this `default fn`, a shape no backend
+    // lowers (`prev.unwrapOr is not a function` on node, `unwrapOr/2 undefined`
+    // on erlang). `prev` is compared directly: absent only before the first
+    // element, which `first` guards.
     default fn unique(self: Self<T>) -> Self<T> {
         var out: T[] = [];
-        var seenLast = false;
+        var first = true;
         var prev = self.at(0);
         self.forEach({ x ->
-            if (seenLast) {
-                if (prev.unwrapOr(x) != x) {
-                    out = out.append([x]);
-                    prev = self.at(out.length);
-                };
-            } else {
+            if (first) {
                 out = out.append([x]);
-                seenLast = true;
-                prev = self.at(0);
+                first = false;
+            } else if (prev != x) {
+                out = out.append([x]);
             };
+            prev = x;
         });
         return out;
     }

@@ -190,10 +190,11 @@ Array.prototype.sliding = function(n) {
 };
 Array.prototype.unique = function() {
     let out = [];
-    let seenLast = false;
+    let first = true;
     let prev = this.at(0);
     this.forEach((x) => {
-    return (() => { if (seenLast) { return (() => { if ((prev.unwrapOr(x) !== x)) { out = out.concat([x]); return prev = this.at(out.length); } })(); } else { out = out.concat([x]); seenLast = true; return prev = this.at(0); } })();
+    (() => { if (first) { out = out.concat([x]); return first = false; } else { return (() => { if ((prev !== x)) { return out = out.concat([x]); } })(); } })();
+    prev = x;
 });
     return out;
 };
