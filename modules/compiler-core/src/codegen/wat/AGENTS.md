@@ -351,10 +351,33 @@ without walking past the variants before it.
   keeps the trap, and `is` over such an enum answers no test. Boxing it would
   make `Color.Red == Color.Red` a pointer comparison, which is a worse answer
   than none.
-* **`is` over a primitive.** Every value here is an `i32` in linear memory;
-  `is i32` and `is string` cannot be told apart at run time. `lowerIsCall`
-  traps with a note instead of answering `i32.const 0`, which would be a silent
-  wrong answer.
+* **A value whose type nothing proves cannot go in the box** — a type
+  parameter's slot (`Maybe.Some(value: v)` over a `T`: nothing monomorphises
+  here, so `v` is a raw `i32` that may be a pointer), a result nothing typed.
+  `lowerAsUnknown` traps (`unknown: no static type to box this value by`)
+  rather than boxing a guess, which would answer `is` and `==` wrongly.
+
+**Decision 8 §11's box — `unknown` and unions over primitives** (`00 · 05-wasm`
+step 2 D1–D4). A value entering an `unknown` or union slot (`boxesInto` /
+`lowerBoxedInto` — a `val` annotation, an argument, a return, a field, an
+assignment) carries a header behind its pointer, the SAME header C-01 gave a
+declared value: a record or a variant already has one and goes in as it is; a
+primitive is boxed — `[descriptor][payload]` (`lowerAsUnknown`), the descriptor
+`'P' <n> name` (`primDescriptorAddr`; `i32`, `f64` with an 8-byte payload,
+`bool`, `string`, `array`, `tuple`) — and `null` is `0`. One field answers both
+"which primitive" and "which declaration", so 13's named-type tests read an
+`unknown` value unchanged. The readers are the prelude's `unknown` group:
+`$__unknown_kind` (the descriptor's tag, or the primitive name's first letter),
+`$__unknown_int_in` (§4.1 by value: a boxed `i32` in range, or a boxed `f64`
+that is a whole number in range — `3.0 is i32`, `300 is i8` false),
+`$__unknown_as_i32` / `_f64`, `$__unknown_eq` (§2.3: numbers by value, strings
+by content), and `$__print_unknown` (+`_raw`). `x is T` over a primitive puts
+its operand in the box and asks (`lowerIsCall` → `emitPrimTest`); `if (x is T)`
+reads an unboxed alias of `x` inside the branch (`narrowUnknown`); a `case` over
+an `unknown` subject tests a primitive-type arm and binds its payload unboxed
+(`unknown_subjects`, `arm_unbox`) — as a plain identifier it was a binding that
+matched everything (`number 364`, a heap address). `tests/language/run/unknown_by_value.bp`
+pins it on four targets.
 
 **§7's `Display` half is answered by the module, not the descriptor**
 (`00 · 05-wasm` step 1 F4). `$__print_tagged_raw` first asks `$__display_of(v)`

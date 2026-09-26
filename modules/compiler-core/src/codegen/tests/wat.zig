@@ -1144,3 +1144,33 @@ test "wat: prim method ---- a primitive method with no wasm lowering traps, neve
         \\}
     , trap);
 }
+
+// Decision 8 §11's box on wasm (`00 · 05-wasm` step 2): a value entering an
+// `unknown` slot carries a header naming what it holds, and `is`, a type arm,
+// `==` and `@print` read it — `tests/language/run/unknown_by_value.bp` pins the
+// answers on four targets. What this pins is the one refusal: a value whose
+// type nothing proves — here a type parameter's slot, which this backend does
+// not monomorphise — is not boxed by a guess. Boxed as the `i32` it is at run
+// time, `v is string` answered `false` for `"abc"` at exit 0 (`-1` where the
+// other backends answer `3`).
+test "wat: unknown ---- a type parameter's slot is not boxed by a guess" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Maybe<T> {
+        \\    Some(value: T),
+        \\    None,
+        \\}
+        \\fn innerLength(b: unknown) -> i32 {
+        \\    return case b {
+        \\        Maybe.Some(value: v) when (v is string) { v.length }
+        \\        Maybe.Some(value: v) { -1 }
+        \\        _ { -2 }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    val x: unknown = 1;
+        \\    @print(innerLength(x));
+        \\    val s: unknown = Maybe.Some(value: "abc");
+        \\    @print(innerLength(s));
+        \\}
+    , "-2\nRUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n");
+}

@@ -451,6 +451,12 @@ pub const HelperGroup = enum {
     str_pad,
     /// `$__str_replace(s, pat, with, all)` — `replace` (`all = 0`) / `replaceAll`.
     str_replace,
+    /// The readers of decision 8 §11's box — a value in an `unknown` or union
+    /// slot: `$__unknown_kind`, `$__unknown_int_in`, `$__unknown_as_i32`,
+    /// `$__unknown_as_f64`, `$__unknown_eq`.
+    unknown,
+    /// `$__print_unknown` (+`_raw`) — such a value printed by what it holds.
+    print_unknown,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -478,6 +484,8 @@ pub const HelperGroup = enum {
             .str_last_index_of => &.{.mem_eq},
             .str_pad => &.{.alloc},
             .str_replace => &.{ .alloc, .str_concat, .str_slice, .str_index_of },
+            .unknown => &.{.str_eq},
+            .print_unknown => &.{ .print, .print_bool, .print_f64, .print_str, .print_opt, .print_shaped, .unknown },
             else => &.{},
         };
     }
@@ -557,6 +565,13 @@ pub const Helper = enum {
     str_last_index_of,
     str_pad,
     str_replace,
+    unknown_kind,
+    unknown_int_in,
+    unknown_as_i32,
+    unknown_as_f64,
+    unknown_eq,
+    print_unknown,
+    print_unknown_raw,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -578,6 +593,8 @@ pub const Helper = enum {
             .print_opt_f32, .print_opt_f32_raw => .print_opt_f32,
             .print_tagged_raw, .print_tagged => .print_shaped,
             .print_opt_tagged, .print_opt_tagged_raw => .print_opt_tagged,
+            .unknown_kind, .unknown_int_in, .unknown_as_i32, .unknown_as_f64, .unknown_eq => .unknown,
+            .print_unknown, .print_unknown_raw => .print_unknown,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

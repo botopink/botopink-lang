@@ -735,6 +735,12 @@ const Emitter = struct {
     /// a call through the field can be judged by the lambda's body
     /// (`fieldLambdaCallIsString`).
     field_lambdas: std.StringHashMapUnmanaged(FieldLambda) = .empty,
+    /// The `case` subject locals holding an `unknown` / union value, whose
+    /// arms may name a primitive type (`i32 { n -> … }`, §5.2).
+    unknown_subjects: std.StringHashMapUnmanaged(void) = .empty,
+    /// Set for the one arm body a primitive-type arm opens: its binder is the
+    /// payload the test proved, unboxed (`lowerArmBody` reads and clears it).
+    arm_unbox: ?PrimTest = null,
     /// `<Behavior>.<method>` → its declaration: what a behavior literal's
     /// field lambda is written against.
     behavior_methods: std.StringHashMapUnmanaged(ast.BehaviorMethod) = .empty,
@@ -924,6 +930,7 @@ const Emitter = struct {
         self.deferred_stmts.deinit(self.alloc);
         self.self_method_fields.deinit(self.alloc);
         self.field_lambdas.deinit(self.alloc);
+        self.unknown_subjects.deinit(self.alloc);
         self.behavior_methods.deinit(self.alloc);
         self.ext_by_name.deinit();
         self.arr_elem_locals.deinit();
@@ -1439,6 +1446,15 @@ const Emitter = struct {
     fn lowerIsCall(self: *Emitter, cc: anytype) anyerror!void {
         const t = cc.isType orelse return error.InvalidArgs;
         if (cc.args.len != 1) return error.InvalidArgs;
+        // §4.1 / §4.2 over a primitive — by VALUE: the operand goes in the
+        // box an `unknown` slot holds (a no-op when it already is one), and
+        // the box's header answers. `300 is i8` is `false`, `3.0 is i32` is
+        // `true`, `2 is f64` is `true`.
+        if (primTestOf(t)) |pt| {
+            try self.lowerAsUnknown(cc.args[0].value.*);
+            try self.emitPrimTest(pt);
+            return;
+        }
         const descs = try self.typeDescriptors(t);
         if (descs.len == 0) {
             try self.emitCf(.@"unreachable", "§4.2 `is`: no run-time test for this type on wasm", .{});
@@ -1459,6 +1475,187 @@ const Emitter = struct {
             if (i > 0) try self.emit(opOf("i32", "or"));
         }
         try self.emit(opOf("i32", "and"));
+    }
+
+    // ── decision 8 §11's box (`00 · 05-wasm` step 2 D1–D3) ─────────────────
+    //
+    // A value entering an `unknown` or union slot carries a header behind its
+    // pointer — the header C-01 gave every value a declaration builds. A record
+    // or a variant already has one and goes in as it is; a primitive is boxed
+    // (`[descriptor][payload]`, descriptor `'P' <n> name`), so the readers in
+    // `wat_prelude.zig`'s `unknown` group can ask the value what it holds.
+
+    const PrimTest = union(enum) {
+        /// An integer type: a whole number in `lo..=hi`.
+        int: struct { lo: i32, hi: i32 },
+        /// A float type: any number.
+        float,
+        bool_,
+        string,
+    };
+
+    fn primTestOf(t: ast.TypeRef) ?PrimTest {
+        const n = switch (t) {
+            .named => |n| n,
+            else => return null,
+        };
+        const eq = std.mem.eql;
+        if (eq(u8, n, "i8")) return .{ .int = .{ .lo = -128, .hi = 127 } };
+        if (eq(u8, n, "i16")) return .{ .int = .{ .lo = -32768, .hi = 32767 } };
+        if (eq(u8, n, "u8")) return .{ .int = .{ .lo = 0, .hi = 255 } };
+        if (eq(u8, n, "u16")) return .{ .int = .{ .lo = 0, .hi = 65535 } };
+        // An `i32` slot is this backend's integer: `i64`/`u32`/`u64` values
+        // it holds fit the `i32` range (`u32`/`u64` from 0).
+        if (eq(u8, n, "i32") or eq(u8, n, "i64") or eq(u8, n, "int") or eq(u8, n, "isize"))
+            return .{ .int = .{ .lo = std.math.minInt(i32), .hi = std.math.maxInt(i32) } };
+        if (eq(u8, n, "u32") or eq(u8, n, "u64") or eq(u8, n, "uint") or eq(u8, n, "usize"))
+            return .{ .int = .{ .lo = 0, .hi = std.math.maxInt(i32) } };
+        if (eq(u8, n, "f32") or eq(u8, n, "f64") or eq(u8, n, "float")) return .float;
+        if (eq(u8, n, "bool")) return .bool_;
+        if (eq(u8, n, "string")) return .string;
+        return null;
+    }
+
+    /// With an `unknown` value on the stack, leave whether it holds `pt`.
+    fn emitPrimTest(self: *Emitter, pt: PrimTest) anyerror!void {
+        const b = self.builder();
+        switch (pt) {
+            .int => |r| {
+                try self.emit(try self.constInt(r.lo));
+                try self.emit(try self.constInt(r.hi));
+                try self.emit(b.helper(.unknown_int_in));
+            },
+            .float => {
+                const k = try self.memName(self.nextMem());
+                try self.emit(b.helper(.unknown_kind));
+                try self.emit(.{ .local_tee = k });
+                try self.emit(try self.constInt(@as(i32, 'i')));
+                try self.emit(opOf("i32", "eq"));
+                try self.emit(.{ .local_get = k });
+                try self.emit(try self.constInt(@as(i32, 'f')));
+                try self.emit(opOf("i32", "eq"));
+                try self.emit(opOf("i32", "or"));
+            },
+            .bool_, .string => {
+                try self.emit(b.helper(.unknown_kind));
+                try self.emit(try self.constInt(@as(i32, if (pt == .bool_) 'b' else 's')));
+                try self.emit(opOf("i32", "eq"));
+            },
+        }
+    }
+
+    fn isUnknownTypeRef(t: ast.TypeRef) bool {
+        return switch (t) {
+            .named => |n| std.mem.eql(u8, n, ast.unknown_type_name),
+            .generic => |g| std.mem.eql(u8, g.name, ast.union_type_name),
+            else => false,
+        };
+    }
+
+    /// Whether `e` already is an `unknown` / union value — a box or a tagged
+    /// value by construction.
+    fn isUnknownExpr(self: *Emitter, e: ast.Expr) bool {
+        const t = self.typeRefOf(e) orelse return false;
+        return isUnknownTypeRef(t);
+    }
+
+    /// The descriptor a boxed primitive carries: `'P' <n> name`, interned once.
+    fn primDescriptorAddr(self: *Emitter, name: []const u8) anyerror!u32 {
+        const key = try std.fmt.allocPrint(self.reg_arena.allocator(), "#{s}", .{name});
+        if (self.type_descs.get(key)) |addr| return addr;
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        try out.append(self.arena(), 'P');
+        try out.append(self.arena(), @intCast(name.len));
+        try out.appendSlice(self.arena(), name);
+        const seg = try self.internString(out.items);
+        const addr = seg.offset + 4;
+        try self.type_descs.put(key, addr);
+        return addr;
+    }
+
+    /// Lower `value` as the `unknown` value it becomes in such a slot: as it
+    /// is when it already is one or carries its own header, `0` for `null`,
+    /// else boxed by its static shape.
+    fn lowerAsUnknown(self: *Emitter, value: ast.Expr) anyerror!void {
+        if (isNullLit(value) or self.isUnknownExpr(value) or self.isTaggedValue(value)) {
+            try self.lowerCoerced(value, "i32");
+            return;
+        }
+        const Kind = enum { i32_, f64_, bool_, str, arr, tuple };
+        const kind: Kind = if (self.isStringExpr(value))
+            .str
+        else if (self.isBoolExpr(value))
+            .bool_
+        else if (self.wasmTypeOf(value)[0] == 'f')
+            .f64_
+        else if (self.isArrayExpr(value))
+            .arr
+        else if (isTupleLit(value) or self.typeRefIsTuple(value))
+            .tuple
+        else if (self.isKnownInteger(value))
+            .i32_
+        else {
+            // Nothing proves what the value is — a type parameter's slot
+            // (`Maybe.Some(value: v)` over a `T`), a result nothing typed —
+            // and every value here is an `i32`: a guess would answer `is`
+            // and `==` wrongly at exit 0 (decision 67).
+            try self.emitC(.@"unreachable", "unknown: no static type to box this value by (a type parameter's slot?)");
+            return;
+        };
+        const name = switch (kind) {
+            .i32_ => "i32",
+            .f64_ => "f64",
+            .bool_ => "bool",
+            .str => "string",
+            .arr => "array",
+            .tuple => "tuple",
+        };
+        const desc = try self.primDescriptorAddr(name);
+        const base = try self.allocTagged(desc, if (kind == .f64_) 8 else 4);
+        try self.emit(.{ .local_get = base });
+        if (kind == .f64_) {
+            try self.lowerCoerced(value, "f64");
+            try self.emitC(.{ .store = .{ .ty = .f64, .offset = tag_header_bytes } }, "unknown: box an f64");
+        } else {
+            try self.lowerCoerced(value, "i32");
+            try self.emitCf(.{ .store = .{ .offset = tag_header_bytes } }, "unknown: box a{s} {s}", .{ if (kind == .arr) "n" else "", name });
+        }
+        try self.loadTaggedBase(base);
+    }
+
+    /// Whether `e` is known to be an integer: a numeral, an integer-typed
+    /// declaration, an arithmetic result, an enum ordinal.
+    fn isKnownInteger(self: *Emitter, e: ast.Expr) bool {
+        switch (e) {
+            .literal => |lit| return lit.kind == .numberLit,
+            .binaryOp, .unaryOp => return true,
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.isKnownInteger(inner.*),
+                else => {},
+            },
+            else => {},
+        }
+        const t = self.typeRefOf(e) orelse return false;
+        return switch (t) {
+            .named => |n| (primTestOf(t) != null and primTestOf(t).? == .int) or self.enums.contains(n),
+            else => false,
+        };
+    }
+
+    fn isTupleLit(e: ast.Expr) bool {
+        return switch (e) {
+            .collection => |col| switch (col.kind) {
+                .tupleLit => true,
+                .grouped => |inner| isTupleLit(inner.*),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    fn typeRefIsTuple(self: *Emitter, e: ast.Expr) bool {
+        const t = self.typeRefOf(e) orelse return false;
+        return t.tupleElems() != null;
     }
 
     /// Every descriptor a value of `t` may carry: one for a record, one per
@@ -2543,6 +2740,14 @@ const Emitter = struct {
             switch (stmt.expr) {
                 .binding => |b| switch (b.kind) {
                     .localBind => |lb| {
+                        // An `unknown` / union slot holds the box's pointer,
+                        // whatever the value's own shape.
+                        if (lb.typeAnnotation) |ta| if (isUnknownTypeRef(ta)) {
+                            try self.local_typerefs.put(lb.name, ta);
+                            try self.declareLocal(lb.name, "i32");
+                            try self.declareNestedLocals(lb.value.*);
+                            continue;
+                        };
                         const t = self.inferExprType(lb.value.*);
                         if (self.recordTypeOfExpr(lb.value.*)) |rty| {
                             try self.local_types.put(lb.name, rty);
@@ -2781,7 +2986,7 @@ const Emitter = struct {
                 continue;
             }
             if (self.boxesInto(v.typeAnnotation, v.value.*))
-                try self.lowerBoxed(v.value.*)
+                try self.lowerBoxedInto(v.typeAnnotation, v.value.*)
             else
                 try self.lowerCoerced(v.value.*, self.globalValType(v));
             try self.emit(.{ .global_set = v.name });
@@ -2975,7 +3180,7 @@ const Emitter = struct {
                         if (val.* == .function) self.expected_fn = self.cur_ret_typeref;
                         defer self.expected_fn = null;
                         if (self.fn_has_result and self.boxesInto(self.cur_ret_typeref, val.*))
-                            try self.lowerBoxed(val.*)
+                            try self.lowerBoxedInto(self.cur_ret_typeref, val.*)
                         else if (self.fn_has_result)
                             try self.lowerCoerced(val.*, self.cur_result)
                         else {
@@ -3041,6 +3246,16 @@ const Emitter = struct {
             },
             .binding => |b| switch (b.kind) {
                 .localBind => |lb| {
+                    if (lb.typeAnnotation) |ta| if (isUnknownTypeRef(ta)) {
+                        try self.declareLocal(lb.name, "i32");
+                        try self.local_typerefs.put(lb.name, ta);
+                        if (self.boxesInto(ta, lb.value.*))
+                            try self.lowerAsUnknown(lb.value.*)
+                        else
+                            try self.lowerCoerced(lb.value.*, "i32");
+                        try self.emit(.{ .local_set = lb.name });
+                        return .none;
+                    };
                     try self.declareLocal(lb.name, self.inferExprType(lb.value.*));
                     if (lb.typeAnnotation orelse self.typeRefOf(lb.value.*)) |tr| try self.local_typerefs.put(lb.name, tr);
                     if (lb.typeAnnotation == null) if (self.optInfoOf(lb.value.*)) |oi| try self.opt_locals.put(lb.name, oi);
@@ -3056,7 +3271,7 @@ const Emitter = struct {
                     if (lb.value.* == .function) self.expected_fn = lb.typeAnnotation;
                     defer self.expected_fn = null;
                     if (self.boxesInto(lb.typeAnnotation, lb.value.*))
-                        try self.lowerBoxed(lb.value.*)
+                        try self.lowerBoxedInto(lb.typeAnnotation, lb.value.*)
                     else
                         try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse "i32");
                     try self.emit(.{ .local_set = lb.name });
@@ -3082,7 +3297,7 @@ const Emitter = struct {
                                 break :blk self.global_typerefs.get(n);
                             };
                             if (self.boxesInto(tr, a.value.*))
-                                try self.lowerBoxed(a.value.*)
+                                try self.lowerBoxedInto(tr, a.value.*)
                             else
                                 // The slot's declared type wins over the value's.
                                 try self.lowerCoerced(a.value.*, self.locals.get(name) orelse
@@ -3751,6 +3966,12 @@ const Emitter = struct {
                 return;
             }
         }
+        // An `unknown` / union value prints by what its box says it holds.
+        if (self.isUnknownExpr(arg)) {
+            try self.lowerCoerced(arg, "i32");
+            try self.emit(self.builder().helper(if (last) .print_unknown else .print_unknown_raw));
+            return;
+        }
         if (self.optInfoOf(arg)) |oi| {
             try self.lowerValue(arg);
             const b = self.builder();
@@ -4292,6 +4513,7 @@ const Emitter = struct {
         try self.declareLocal(subj_local, "i32");
         try self.lowerCoerced(c.subjects[0], "i32");
         try self.emit(.{ .local_set = subj_local });
+        if (self.isUnknownExpr(c.subjects[0])) try self.unknown_subjects.put(self.alloc, subj_local, {});
         const subj_is_str = self.isStringExpr(c.subjects[0]);
         if (subj_is_str) try self.str_locals.put(subj_local, {});
         if (self.resultShapeOf(c.subjects[0])) |shape| try self.result_subjects.put(subj_local, shape);
@@ -4305,6 +4527,35 @@ const Emitter = struct {
             return;
         }
         const arm = arms[idx];
+        // §5.2 — an arm naming a primitive type over an `unknown` subject
+        // tests the value's box (by value: `3.0` takes an `i32` arm), and its
+        // binder is the unboxed payload. As a plain identifier it was a
+        // binding that matched everything: `number 364`, a heap address.
+        if (self.unknown_subjects.contains(subj) and arm.pattern == .ident) if (primTestOf(.{ .named = arm.pattern.ident })) |pt| {
+            try self.emit(.{ .local_get = subj });
+            try self.emitPrimTest(pt);
+            const ty = vt(self.cur_result);
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            self.arm_unbox = pt;
+            if (arm.guard) |g| {
+                try self.emitGuardChain(arms, subj, idx, g);
+            } else {
+                try self.lowerArmBody(arm.body, subj);
+            }
+            self.arm_unbox = null;
+            const then_seq = self.seal(&then_c, .{ .value = ty });
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emitCaseArms(arms, subj, idx + 1);
+            const else_seq = self.seal(&else_c, .{ .value = ty });
+            try self.emit(.{ .@"if" = .{
+                .result = ty,
+                .then = .{ .seq = then_seq },
+                .@"else" = .{ .seq = else_seq },
+            } });
+            return;
+        };
         if (self.patternIsIrrefutable(arm.pattern)) {
             try self.bindPattern(arm.pattern, subj);
             // A guard makes even `_` refutable: a failing guard falls through
@@ -4366,12 +4617,30 @@ const Emitter = struct {
 
     /// The arm's value, coerced to the case's result type.
     fn lowerArmBody(self: *Emitter, body: ast.Expr, subj: []const u8) anyerror!void {
+        const unbox = self.arm_unbox;
+        self.arm_unbox = null;
         const lam = armLambda(body) orelse {
             try self.lowerCoerced(body, self.cur_result);
             return;
         };
-        // P1: the single parameter binds the whole matched value.
-        if (lam.params.len == 1) {
+        // P1: the single parameter binds the whole matched value — for a
+        // primitive-type arm over an `unknown` subject, the payload its test
+        // proved.
+        if (unbox) |pt| if (lam.params.len == 1) {
+            const p = lam.params[0];
+            const b = self.builder();
+            try self.declareLocal(p, if (pt == .float) "f64" else "i32");
+            try self.emit(.{ .local_get = subj });
+            switch (pt) {
+                .int => try self.emit(b.helper(.unknown_as_i32)),
+                .float => try self.emit(b.helper(.unknown_as_f64)),
+                .bool_, .string => try self.emitC(.{ .load = .{} }, "unknown: the proven payload"),
+            }
+            try self.emit(.{ .local_set = p });
+            if (pt == .string) try self.str_locals.put(p, {});
+            if (pt == .bool_) try self.bool_locals.put(p, {});
+        };
+        if (unbox == null and lam.params.len == 1) {
             const p = lam.params[0];
             try self.declareLocal(p, "i32");
             if (self.str_locals.contains(subj)) try self.str_locals.put(p, {});
@@ -5014,7 +5283,7 @@ const Emitter = struct {
                 }
                 const ptref: ?ast.TypeRef = if (ptrefs) |ps| (if (base + i < ps.len) ps[base + i] else null) else null;
                 if (self.boxesInto(ptref, arg.value.*))
-                    try self.lowerBoxed(arg.value.*)
+                    try self.lowerBoxedInto(ptref, arg.value.*)
                 else
                     try self.lowerCoerced(arg.value.*, sig.params[base + i]);
             }
@@ -7086,6 +7355,9 @@ const Emitter = struct {
     /// already an optional.
     fn boxesInto(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) bool {
         const t = target orelse return false;
+        // An `unknown` / union slot: every value but one that already is one
+        // goes in `lowerAsUnknown`'s box (`lowerBoxedInto`).
+        if (isUnknownTypeRef(t)) return !isNullLit(value) and !self.isUnknownExpr(value) and !self.isTaggedValue(value);
         const oi = optInfoOfTypeRef(t) orelse return false;
         if (!oi.boxed) return false;
         if (isNullLit(value)) return false;
@@ -7117,7 +7389,10 @@ const Emitter = struct {
         return self.isStringExpr(v) or self.recordTypeOfExpr(v) != null or self.isArrayExpr(v) or self.optInfoOf(v) != null;
     }
 
-    fn lowerBoxed(self: *Emitter, value: ast.Expr) anyerror!void {
+    /// The box `boxesInto` asked for: `lowerAsUnknown`'s for an `unknown` /
+    /// union slot, a `?T`'s `$__box_i32` cell otherwise.
+    fn lowerBoxedInto(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) anyerror!void {
+        if (target) |t| if (isUnknownTypeRef(t)) return self.lowerAsUnknown(value);
         try self.lowerCoerced(value, "i32");
         try self.emit(self.builder().helper(.box_i32));
     }
@@ -7188,7 +7463,7 @@ const Emitter = struct {
                 const ftref: ?ast.TypeRef = if (self.record_field_typerefs.get(cc.callee)) |ts| (if (i < ts.len) ts[i] else null) else null;
                 if (self.boxesInto(ftref, arg.value.*)) {
                     try self.emit(.{ .local_get = base });
-                    try self.lowerBoxed(arg.value.*);
+                    try self.lowerBoxedInto(ftref, arg.value.*);
                     try self.emit(.{ .store = .{ .offset = off } });
                 } else try self.storeSlotExpr(base, off, arg.value.*);
             } else {
@@ -8270,7 +8545,7 @@ const Emitter = struct {
         // `count(n - 1, acc + n)` reads the old `n` in both.
         for (cc.args, 0..) |arg, i| {
             if (self.boxesInto(ts.typerefs[i], arg.value.*))
-                try self.lowerBoxed(arg.value.*)
+                try self.lowerBoxedInto(ts.typerefs[i], arg.value.*)
             else
                 try self.lowerCoerced(arg.value.*, ts.types[i]);
         }
@@ -8548,6 +8823,15 @@ const Emitter = struct {
             try self.emit(opOf("i32", if (op == Op.eq) "eq" else "ne"));
             return;
         }
+        // Decision 8 §2.3: `==` with an `unknown` operand compares by what
+        // the values hold — numbers by value (`2.0 == 2`), strings by content.
+        if ((op == Op.eq or op == Op.ne) and (self.isUnknownExpr(lhs) or self.isUnknownExpr(rhs))) {
+            try self.lowerAsUnknown(lhs);
+            try self.lowerAsUnknown(rhs);
+            try self.emit(self.builder().helper(.unknown_eq));
+            if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
+            return;
+        }
         // A boxed optional against a value: equal only when present and its
         // payload is equal (`null == 0` is false, as on the other targets).
         const lopt = self.optInfoOf(lhs);
@@ -8696,6 +8980,51 @@ const Emitter = struct {
     /// put it back. A `?string`, a `?bool` and a `?Record` also take the shape
     /// their payload has, because inside the branch every reader asks about a
     /// plain value and no longer about an optional.
+    const UnknownNarrowing = struct { name: []const u8, previous: ?[]const u8 };
+
+    /// `if (x is i32) { … x … }` over an `unknown` `x`: inside the branch `x`
+    /// IS the payload the test proved — the checker types it so (§4.1) — so
+    /// the branch reads an unboxed copy (an alias `resolveName` answers),
+    /// converted when the box holds the other numeric kind (`3.0` read as
+    /// `3`). Written at the top of the branch the test opens.
+    fn narrowUnknown(self: *Emitter, cond: ast.Expr) anyerror!?UnknownNarrowing {
+        const cc = switch (cond) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc,
+                else => return null,
+            },
+            else => return null,
+        };
+        if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, ast.is_builtin_name) or cc.args.len != 1) return null;
+        const pt = primTestOf(cc.isType orelse return null) orelse return null;
+        const n0 = plainIdentName(cc.args[0].value.*) orelse return null;
+        if (!self.isUnknownExpr(cc.args[0].value.*)) return null;
+        const n = self.resolveName(n0);
+        const alias = try std.fmt.allocPrint(self.arena(), "{s}__is{d}", .{ n0, self.alias_seq });
+        self.alias_seq += 1;
+        const b = self.builder();
+        try self.declareLocal(alias, if (pt == .float) "f64" else "i32");
+        try self.emit(.{ .local_get = n });
+        switch (pt) {
+            .int => try self.emit(b.helper(.unknown_as_i32)),
+            .float => try self.emit(b.helper(.unknown_as_f64)),
+            .bool_, .string => try self.emitC(.{ .load = .{} }, "unknown: the proven payload"),
+        }
+        try self.emit(.{ .local_set = alias });
+        if (pt == .string) try self.str_locals.put(alias, {});
+        if (pt == .bool_) try self.bool_locals.put(alias, {});
+        const previous = self.aliases.get(n0);
+        try self.aliases.put(n0, alias);
+        return .{ .name = n0, .previous = previous };
+    }
+
+    fn dropUnknownNarrowing(self: *Emitter, un: ?UnknownNarrowing) void {
+        const u = un orelse return;
+        if (u.previous) |p| {
+            self.aliases.put(u.name, p) catch {};
+        } else _ = self.aliases.remove(u.name);
+    }
+
     fn applyNarrowing(self: *Emitter, names: []const []const u8) anyerror![]const Narrowing {
         var marked: std.ArrayListUnmanaged(Narrowing) = .empty;
         for (names) |n0| {
@@ -8780,7 +9109,9 @@ const Emitter = struct {
         var then_names: std.ArrayListUnmanaged([]const u8) = .empty;
         try self.collectNullTestNames(i.cond.*, true, &then_names);
         const then_marked = try self.applyNarrowing(then_names.items);
+        const unknown_narrowed = try self.narrowUnknown(i.cond.*);
         const then_tail = try self.emitBody(i.then_, !as_stmt);
+        self.dropUnknownNarrowing(unknown_narrowed);
         self.dropNarrowing(then_marked);
         const then_seq = self.seal(&then_c, stackOf(then_tail, self.cur_result));
 

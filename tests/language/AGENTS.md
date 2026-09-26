@@ -277,6 +277,13 @@ module exports, so its classes are re-emitted per module and the consumer's valu
 exit 0. The cell prints four values through one dispatcher: a uniquely-named variant, a repeated one
 (`Lg` is declared twice, which is why it always worked), and one of each section head.
 
+`run/unknown_by_value.bp` (1.0.10-beta `00 · 05-wasm` step 2) runs decision 8 §2, §4.1 and §5.2
+through `unknown` on every target — `test/case_unknown.bp` states the same rules, and `botopink test`
+does not reach wasm; it prints no unknown float, because commonJS stores nothing extra (§11) and
+prints `2.0` in an `unknown` slot as `2`. `run/optional_chain_method.bp` (05 step 9) is a method on
+the rest of a `?.` chain, its absent probes read through `??`; erlang and beam are listed against 02
+and 03.
+
 `modules/sibling_import_in_a_dependency` is a local-dependency cell for 1.0.10-beta `00 · 04-js`
 step 5: a `mod` sibling imported with no `from` (`pub mod leaf; import {Twig};`), once in the
 project and once inside `deps/tree/` (`api.bp`'s `import {Leaf};`). commonJS used to write the

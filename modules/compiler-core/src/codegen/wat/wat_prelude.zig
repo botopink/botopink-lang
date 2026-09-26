@@ -42,6 +42,8 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw } },
         .print_opt_f32 => &.{ .{ .func = print_opt_f32_raw }, .{ .func = print_opt_f32 } },
         .print_opt_tagged => &.{ .{ .func = print_opt_tagged_raw }, .{ .func = print_opt_tagged } },
+        .unknown => &.{ .{ .func = unknown_kind }, .{ .func = unknown_int_in }, .{ .func = unknown_as_i32 }, .{ .func = unknown_as_f64 }, .{ .func = unknown_eq } },
+        .print_unknown => &.{ .{ .func = print_unknown_raw }, .{ .func = print_unknown } },
         .print_opt => &.{
             .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -221,6 +223,93 @@ const str_replace = func("__str_replace", &.{ "s", "pat", "with", "all" }, .i32,
     }),
     get("out"), get("rest"),     call("__str_concat"),
 });
+
+// ── decision 8 §11's box: a value in an `unknown` or union slot ──────────────
+//
+// A value entering such a slot carries a header behind its pointer, as a value
+// a declaration built does (decision 22): a record or a variant already has one
+// and goes in as it is; a primitive is boxed — `[descriptor][payload]`, the
+// value being the payload's address — with the descriptor `'P' <n> name`
+// (`i32`, `f64`, `bool`, `string`, `array`, `tuple`). The readers below ask the
+// header, never the slot's static type, which is what `unknown` does not have.
+
+/// What an `unknown` value holds: `0` for absence, the descriptor's tag for a
+/// value that carries its own declaration (`R` / `V`), or the first letter of a
+/// boxed primitive's name (`i`, `f`, `b`, `s`, `a`, `t`).
+const unknown_kind = func("__unknown_kind", &.{"v"}, .i32, i32s(&.{"d"}), &.{
+    get("v"), c32(256),                            op("lt_u"), when(&.{ c32(0), ret }),
+    get("v"), c32(4),                              op("sub"),  load(0),
+    set("d"), get("d"),                            load8(0),   c32('P'),
+    op("ne"), when(&.{ get("d"), load8(0), ret }), get("d"),   load8(2),
+});
+
+/// `v is <an integer type>` by value (decision 8 §4.1): a boxed `i32` inside
+/// `lo..=hi`, or a boxed `f64` that is a whole number inside it.
+const unknown_int_in = typedFunc("__unknown_int_in", &.{ .{ .name = "v", .ty = .i32 }, .{ .name = "lo", .ty = .i32 }, .{ .name = "hi", .ty = .i32 } }, .i32, &.{
+    .{ .name = "k", .ty = .i32 }, .{ .name = "x", .ty = .f64 },
+}, &.{
+    get("v"),                                                                                                       call("__unknown_kind"),              set("k"),
+    get("k"),                                                                                                       c32('i'),                            op("eq"),
+    when(&.{ get("v"), load(0), get("lo"), op("ge_s"), get("v"), load(0), get("hi"), op("le_s"), op("and"), ret }), get("k"),                            c32('f'),
+    op("ne"),                                                                                                       when(&.{ c32(0), ret }),             get("v"),
+    .{ .load = .{ .ty = .f64 } },                                                                                   set("x"),                            getF("x"),
+    opF("floor"),                                                                                                   getF("x"),                           opF("ne"),
+    when(&.{ c32(0), ret }),                                                                                        getF("x"),                           get("lo"),
+    .{ .convert = "f64.convert_i32_s" },                                                                            opF("ge"),                           getF("x"),
+    get("hi"),                                                                                                      .{ .convert = "f64.convert_i32_s" }, opF("le"),
+    op("and"),
+});
+
+/// The payload of a boxed number read as an `i32` (a whole `f64` converted).
+const unknown_as_i32 = func("__unknown_as_i32", &.{"v"}, .i32, &.{}, &.{
+    get("v"),                                                                                   call("__unknown_kind"), c32('f'), op("eq"),
+    when(&.{ get("v"), .{ .load = .{ .ty = .f64 } }, .{ .convert = "i32.trunc_f64_s" }, ret }), get("v"),               load(0),
+});
+
+/// The payload of a boxed number read as an `f64`.
+const unknown_as_f64 = typedFunc("__unknown_as_f64", &.{.{ .name = "v", .ty = .i32 }}, .f64, &.{}, &.{
+    get("v"),                                                                call("__unknown_kind"), c32('i'),                     op("eq"),
+    when(&.{ get("v"), load(0), .{ .convert = "f64.convert_i32_s" }, ret }), get("v"),               .{ .load = .{ .ty = .f64 } },
+});
+
+/// `a == b` with an `unknown` operand (decision 8 §2.3): two numbers compare by
+/// value (`2.0 == 2`), two strings by content, two bools by value, anything
+/// else by identity.
+const unknown_eq = func("__unknown_eq", &.{ "a", "b" }, .i32, i32s(&.{ "ka", "kb" }), &.{
+    get("a"),                                                                                           call("__unknown_kind"),                                          set("ka"),
+    get("b"),                                                                                           call("__unknown_kind"),                                          set("kb"),
+    get("ka"),                                                                                          c32('i'),                                                        op("eq"),
+    get("ka"),                                                                                          c32('f'),                                                        op("eq"),
+    op("or"),                                                                                           get("kb"),                                                       c32('i'),
+    op("eq"),                                                                                           get("kb"),                                                       c32('f'),
+    op("eq"),                                                                                           op("or"),                                                        op("and"),
+    when(&.{ get("a"), call("__unknown_as_f64"), get("b"), call("__unknown_as_f64"), opF("eq"), ret }), get("ka"),                                                       c32('s'),
+    op("eq"),                                                                                           get("kb"),                                                       c32('s'),
+    op("eq"),                                                                                           op("and"),                                                       when(&.{ get("a"), load(0), get("b"), load(0), call("__str_eq"), ret }),
+    get("ka"),                                                                                          c32('b'),                                                        op("eq"),
+    get("kb"),                                                                                          c32('b'),                                                        op("eq"),
+    op("and"),                                                                                          when(&.{ get("a"), load(0), get("b"), load(0), op("eq"), ret }), get("a"),
+    get("b"),                                                                                           op("eq"),
+});
+
+/// An `unknown` value printed by what it holds (decision 8 §7). A boxed array
+/// or tuple has no printed form here — its element shapes are not in the box —
+/// and traps rather than printing an address.
+const print_unknown_raw = func("__print_unknown_raw", &.{"v"}, null, i32s(&.{"k"}), &.{
+    get("v"),                                                    op("eqz"),                                                                        when(&.{ call("__print_null"), ret }),
+    get("v"),                                                    call("__unknown_kind"),                                                           set("k"),
+    get("k"),                                                    c32('i'),                                                                         op("eq"),
+    when(&.{ get("v"), load(0), call("__print_i32_raw"), ret }), get("k"),                                                                         c32('f'),
+    op("eq"),                                                    when(&.{ get("v"), .{ .load = .{ .ty = .f64 } }, call("__print_f64_raw"), ret }), get("k"),
+    c32('b'),                                                    op("eq"),                                                                         when(&.{ get("v"), load(0), call("__print_bool_raw"), ret }),
+    get("k"),                                                    c32('s'),                                                                         op("eq"),
+    when(&.{ get("v"), load(0), call("__print_str_raw"), ret }), get("k"),                                                                         c32('R'),
+    op("eq"),                                                    get("k"),                                                                         c32('V'),
+    op("eq"),                                                    op("or"),                                                                         when(&.{ get("v"), call("__print_tagged_raw"), ret }),
+    .@"unreachable",
+});
+
+const print_unknown = func("__print_unknown", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_unknown_raw"), call("__print_nl") });
 
 /// The `Display` hook's default: no value answers its own text. `wat.zig`
 /// replaces it with the module's dispatch when some type declares `display`.
