@@ -37,9 +37,9 @@ array_repeat(Value, Times) ->
     end.
 
 lookup(Pairs, Key) ->
-    (fun(O) -> case O of undefined -> undefined; V -> (fun(Pair) ->
+    (fun(__BpO) -> case __BpO of undefined -> undefined; __BpV0 -> (fun(Pair) ->
         element(2, Pair)
-    end)(V) end end)(array_find(Pairs, fun(Pair) ->
+    end)(__BpV0) end end)(array_find(Pairs, fun(Pair) ->
         (element(1, Pair) =:= Key)
     end)).
 

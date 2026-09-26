@@ -2515,6 +2515,9 @@ const Emitter = struct {
     cv: std.StringHashMap([]const u8),
     indent: usize = 0,
     try_seq: usize = 0,
+    /// Numbers the payload variable of a `@Result`/`@Option` op's fun
+    /// (`__BpV<n>`, `resultOptionNode`); reset per function like `try_seq`.
+    opt_seq: usize = 0,
     /// The statements of the function body being lowered. A `try` in THAT
     /// sequence propagates by nesting the rest in its Ok arm (Erlang has no
     /// early return); one anywhere else — a loop's fun, an `if` arm, an
@@ -4861,6 +4864,7 @@ const Emitter = struct {
         this.indent = 1;
         defer this.indent = saved;
         this.try_seq = 0;
+        this.opt_seq = 0;
         const saved_top = this.fn_top_body;
         this.fn_top_body = f.body;
         defer this.fn_top_body = saved_top;
@@ -4963,6 +4967,7 @@ const Emitter = struct {
         this.indent = 1;
         defer this.indent = saved;
         this.try_seq = 0;
+        this.opt_seq = 0;
         // Decision 74 — the body is a fallible context whose failure channel
         // is the runner (`propagateTryExpr`).
         const saved_in_test = this.in_test_body;
@@ -6170,22 +6175,35 @@ const Emitter = struct {
         if (eq(u8, callee, "__bp_ok")) return b.tuple(&.{ A("ok"), try this.exprNode(b, recv.*) });
         if (eq(u8, callee, "__bp_error")) return b.tuple(&.{ A("error"), try this.exprNode(b, recv.*) });
 
-        const ok_v = try b.tuple(&.{ A("ok"), V("V") });
-        var subject = V("R");
+        // The fun's parameter and the payload variable are names no program
+        // writes. They were `R`/`O` and `V`: a program's own `v` is `V`, and
+        // Erlang's case pattern MATCHES a bound variable instead of binding
+        // it — `val v = load(5); v.unwrapOr(1)` became
+        // `(fun(R) -> case R of {ok, V} -> V; _ -> (1) end end)(V)`, which
+        // compares the payload with the whole result (`1` for `5`, a
+        // `case_clause` on an option, `beam_ssa_opt` crashing on a record
+        // default), and `x.unwrapOr(r)` read the fun's own `R`. The payload
+        // is numbered per function, since a fun nested in the first clause
+        // (a `map`'s lambda) sees the outer one bound.
+        const payload_name = try std.fmt.allocPrint(b.arena, "__BpV{d}", .{this.opt_seq});
+        this.opt_seq += 1;
+        const payload = V(payload_name);
+        const ok_v = try b.tuple(&.{ A("ok"), payload });
+        var subject = V("__BpR");
         var clauses: [2]Ast.Clause = undefined;
         if (eq(u8, callee, "__bp_result_map")) {
             clauses = .{
-                try b.clause(&.{ok_v}, &.{}, &.{try b.tuple(&.{ A("ok"), try b.applyParen(try this.opArg(b, args), &.{V("V")}) })}),
+                try b.clause(&.{ok_v}, &.{}, &.{try b.tuple(&.{ A("ok"), try b.applyParen(try this.opArg(b, args), &.{payload}) })}),
                 try b.clause(&.{V("_")}, &.{}, &.{subject}),
             };
         } else if (eq(u8, callee, "__bp_result_flatMap")) {
             clauses = .{
-                try b.clause(&.{ok_v}, &.{}, &.{try b.applyParen(try this.opArg(b, args), &.{V("V")})}),
+                try b.clause(&.{ok_v}, &.{}, &.{try b.applyParen(try this.opArg(b, args), &.{payload})}),
                 try b.clause(&.{V("_")}, &.{}, &.{subject}),
             };
         } else if (eq(u8, callee, "__bp_result_unwrapOr")) {
             clauses = .{
-                try b.clause(&.{ok_v}, &.{}, &.{V("V")}),
+                try b.clause(&.{ok_v}, &.{}, &.{payload}),
                 try b.clause(&.{V("_")}, &.{}, &.{try b.paren(try this.opArg(b, args))}),
             };
         } else if (eq(u8, callee, "__bp_result_isOk") or eq(u8, callee, "__bp_result_isError")) {
@@ -6195,16 +6213,16 @@ const Emitter = struct {
                 try b.clause(&.{V("_")}, &.{}, &.{A("false")}),
             };
         } else if (eq(u8, callee, "__bp_option_map") or eq(u8, callee, "__bp_option_flatMap")) {
-            subject = V("O");
+            subject = V("__BpO");
             clauses = .{
                 try b.clause(&.{A("undefined")}, &.{}, &.{A("undefined")}),
-                try b.clause(&.{V("V")}, &.{}, &.{try b.applyParen(try this.opArg(b, args), &.{V("V")})}),
+                try b.clause(&.{payload}, &.{}, &.{try b.applyParen(try this.opArg(b, args), &.{payload})}),
             };
         } else if (eq(u8, callee, "__bp_option_unwrapOr")) {
-            subject = V("O");
+            subject = V("__BpO");
             clauses = .{
                 try b.clause(&.{A("undefined")}, &.{}, &.{try b.paren(try this.opArg(b, args))}),
-                try b.clause(&.{V("V")}, &.{}, &.{V("V")}),
+                try b.clause(&.{payload}, &.{}, &.{payload}),
             };
         } else {
             return error.UnknownResultOptionOp;

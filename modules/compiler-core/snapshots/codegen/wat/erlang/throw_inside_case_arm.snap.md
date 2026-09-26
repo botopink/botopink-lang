@@ -31,8 +31,8 @@ check(S) ->
     end}.
 
 main() ->
-    '__bp_print'([(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(check(test@main@@Status__v__ok))]),
-    '__bp_print'([(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(check(test@main@@Status__v__fail))]).
+    '__bp_print'([(fun(__BpR) -> case __BpR of {ok, _} -> true; _ -> false end end)(check(test@main@@Status__v__ok))]),
+    '__bp_print'([(fun(__BpR) -> case __BpR of {ok, _} -> true; _ -> false end end)(check(test@main@@Status__v__fail))]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

@@ -22,11 +22,11 @@ validate(N) ->
     erlang:error({todo, <<"not implemented">>}).
 
 main() ->
-    R = (fun(R) -> case R of {ok, V} -> V; _ -> (0) end end)((fun(R) -> case R of {ok, V} -> (fun(N) ->
+    R = (fun(__BpR) -> case __BpR of {ok, __BpV0} -> __BpV0; _ -> (0) end end)((fun(__BpR) -> case __BpR of {ok, __BpV1} -> (fun(N) ->
         validate(N)
-    end)(V); _ -> R end end)((fun(R) -> case R of {ok, V} -> {ok, (fun(N) ->
+    end)(__BpV1); _ -> __BpR end end)((fun(__BpR) -> case __BpR of {ok, __BpV2} -> {ok, (fun(N) ->
         (N + 1)
-    end)(V)}; _ -> R end end)(parseAge(<<"42">>)))).
+    end)(__BpV2)}; _ -> __BpR end end)(parseAge(<<"42">>)))).
 
 '_botopink_main'() ->
     main().

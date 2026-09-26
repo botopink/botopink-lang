@@ -24,11 +24,11 @@ shout(S) ->
     erlang:error({todo, <<"not implemented">>}).
 
 greet(P) ->
-    (fun(O) -> case O of undefined -> (<<"Hello stranger">>); V -> V end end)((fun(O) -> case O of undefined -> undefined; V -> (fun(N) ->
+    (fun(__BpO) -> case __BpO of undefined -> (<<"Hello stranger">>); __BpV0 -> __BpV0 end end)((fun(__BpO) -> case __BpO of undefined -> undefined; __BpV1 -> (fun(N) ->
         shout(N)
-    end)(V) end end)((fun(O) -> case O of undefined -> undefined; V -> (fun(N) ->
+    end)(__BpV1) end end)((fun(__BpO) -> case __BpO of undefined -> undefined; __BpV2 -> (fun(N) ->
         <<"Hello ", ('__bp_text'(N))/binary>>
-    end)(V) end end)(firstName(P)))).
+    end)(__BpV2) end end)(firstName(P)))).
 
 '__bp_text'(Value) when is_binary(Value) -> Value;
 '__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).

@@ -22,7 +22,7 @@ parseInt(S) ->
 
 main() ->
     R = (fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)(<<"42">>),
-    '__bp_print'([(fun(R) -> case R of {ok, V} -> V; _ -> ((-1)) end end)(R)]).
+    '__bp_print'([(fun(__BpR) -> case __BpR of {ok, __BpV0} -> __BpV0; _ -> ((-1)) end end)(R)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

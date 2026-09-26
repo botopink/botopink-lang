@@ -48,7 +48,7 @@ firstAndRest(Xs) ->
 main() ->
     Result = firstAndRest([1, 2, 3]),
     Head = element(2, Result),
-    '__bp_print'([(fun(O) -> case O of undefined -> ((-1)); V -> V end end)(Head)]),
+    '__bp_print'([(fun(__BpO) -> case __BpO of undefined -> ((-1)); __BpV0 -> __BpV0 end end)(Head)]),
     Empty = firstAndRest([]),
     '__bp_print'([(element(2, Empty) =:= undefined)]).
 

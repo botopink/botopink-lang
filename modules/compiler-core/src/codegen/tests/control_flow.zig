@@ -1304,6 +1304,31 @@ test "beam: a return inside a loop's body leaves the function" {
     , "8\n2\n-1\n10\n-1\n[10, 20]\n", &.{"'__bp_try'"});
 }
 
+// A `@Result`/`@Option` op's fun used the names `R`/`O` and `V`, and a
+// program's own `v` is `V`: Erlang's case pattern MATCHED the bound variable,
+// so `v.unwrapOr(1)` over `{ok, 5}` answered `1` and `o.unwrapOr(9)` raised a
+// `case_clause`; `x.unwrapOr(r)` read the fun's own `R` (other threads saw
+// `beam_ssa_opt` crash on the same shape with a record default).
+test "erlang: a @Result/@Option op does not capture the program's own names" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Conf(name: string, port: i32)
+        \\fn load(n: i32) -> @Result<i32, string> { if (n < 0) { throw "neg"; }; return n; }
+        \\fn conf(n: i32) -> @Result<Conf, string> { if (n < 0) { throw "neg"; }; return Conf(name: "a", port: n); }
+        \\fn main() {
+        \\  val v = load(5);
+        \\  @print(v.unwrapOr(1));
+        \\  val r = 7;
+        \\  @print(load(-1).unwrapOr(r));
+        \\  val o: ?i32 = 3;
+        \\  val u = o;
+        \\  @print(u.unwrapOr(9));
+        \\  @print(v.map({ x -> load(x + 1).unwrapOr(0) }).unwrapOr(0));
+        \\  val c = conf(-1);
+        \\  @print(c.unwrapOr(Conf(name: "dflt", port: 1)).port);
+        \\}
+    , "5\n7\n3\n6\n1\n", &.{"__BpV0"});
+}
+
 test "erlang: calling the result of a call applies it (`calleeExpr`)" {
     // `test/curried_call.bp` (C-09's backend half): `adder(3)(4)` carries its
     // callee as an expression, and lowered as a name it was `''(4)`, which

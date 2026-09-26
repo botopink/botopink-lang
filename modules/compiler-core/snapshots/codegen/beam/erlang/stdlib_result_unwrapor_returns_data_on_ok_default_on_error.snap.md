@@ -15,7 +15,7 @@ parseAge(S) ->
     erlang:error({todo, <<"not implemented">>}).
 
 main() ->
-    N = (fun(R) -> case R of {ok, V} -> V; _ -> (0) end end)(parseAge(<<"42">>)).
+    N = (fun(__BpR) -> case __BpR of {ok, __BpV0} -> __BpV0; _ -> (0) end end)(parseAge(<<"42">>)).
 
 '_botopink_main'() ->
     main().

@@ -25,10 +25,10 @@ parse(N) ->
     end.
 
 main() ->
-    R = (fun(R) -> case R of {ok, V} -> {ok, (fun(X) ->
+    R = (fun(__BpR) -> case __BpR of {ok, __BpV0} -> {ok, (fun(X) ->
         (X * 2)
-    end)(V)}; _ -> R end end)(parse(21)),
-    '__bp_print'([(fun(R) -> case R of {ok, V} -> V; _ -> (0) end end)(R)]).
+    end)(__BpV0)}; _ -> __BpR end end)(parse(21)),
+    '__bp_print'([(fun(__BpR) -> case __BpR of {ok, __BpV1} -> __BpV1; _ -> (0) end end)(R)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

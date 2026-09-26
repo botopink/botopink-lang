@@ -618,6 +618,12 @@ codegen/
   bound the loop's variables in one arm only — `variable unsafe in 'case'`.
   The beam twin is `emitLoopReturn` (`in_loop_lambda`), caught by
   `guardLoopCall`, which `bodyPropagates` now asks for on any `return`.
+- **A `@Result`/`@Option` op's fun names nothing a program writes**
+  (`resultOptionNode`): `(fun(__BpR) -> case __BpR of {ok, __BpV<n>} -> …)`,
+  the payload numbered per function (`opt_seq`, reset with `try_seq`) because a
+  fun nested in the first clause (a `map`'s lambda) sees the outer one bound.
+  They were `R`/`O`/`V`, and a program's `v` is `V`: the case pattern MATCHED
+  the bound variable, so `val v = load(5); v.unwrapOr(1)` answered `1`.
 - **Calling the result of a call** (`adder(3)(4)`, `cc.calleeExpr` with
   `callee == ""`): `(adder(3))(4)` — `applyParen` over the callee expression's
   node, first thing in `plainCallNode`. Read as a name it was `''(4)`, which

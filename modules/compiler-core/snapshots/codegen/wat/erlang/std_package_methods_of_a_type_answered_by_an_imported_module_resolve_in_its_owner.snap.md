@@ -370,7 +370,7 @@ fn main() {
 
 main() ->
     D = std@dict@@Dict:insert(std@dict:empty(), <<"a">>, 1),
-    '__bp_print'([(fun(O) -> case O of undefined -> (0); V -> V end end)(std@dict@@Dict:at(D, <<"a">>))]),
+    '__bp_print'([(fun(__BpO) -> case __BpO of undefined -> (0); __BpV0 -> __BpV0 end end)(std@dict@@Dict:at(D, <<"a">>))]),
     '__bp_print'([std@dict@@Dict:size(std@dict@@Dict:insert(D, <<"b">>, 2))]).
 
 '__bp_print'(Values) ->
