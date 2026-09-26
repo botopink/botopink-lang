@@ -31,7 +31,9 @@ leaves in scope, on commonJS/erlang/wasm — and three `reject/` cells: `import_
 second item) and `import_group_modifier` (`*` on a node that opens braces); the third,
 `import_alias_on_type`, is now `modules/import_alias_on_type` — decision 110 made `as` legal on a type
 and a type alias (`01-checker`), and the cell imports `Point as P`, `Pair as Two` and std's
-`Dict as D` and runs on commonJS, erlang and wasm.
+`Dict as D` and runs on all four targets; `modules/import_alias_static_call` covers the alias in
+expression position — an associated call (`P.origin()`) and a unit and a payload variant (`S.Dark`,
+`S.Custom(9)`) — which inference renames to the declared type for the backends.
 `00 · 01-checker` step 8 R2 adds `modules/import_type_closure` — `import { User, makeUser }` where
 `User(role: Role)`, `Role` not named, on commonJS/erlang.
 Front 24's type aliases (decision 118 rule 1) add `run/type_alias` — `Id`, `Pair<A, B>`, `Ids` and

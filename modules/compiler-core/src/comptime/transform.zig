@@ -842,6 +842,15 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             if (rewrite.* == .identifier) expr_ptr.* = rewrite.*;
         }
     }
+    // Decision 110 rule 1 — an imported type's `as` alias in expression
+    // position (`D` in `D.empty()`, a bare `P`): inference recorded the
+    // declared name under the alias's loc. Only a plain name replaces a plain
+    // name.
+    if (expr_ptr.* == .identifier and expr_ptr.identifier.kind == .ident) {
+        if (agg.index_rewrites.get(expr_ptr.identifier.loc)) |rewrite| {
+            if (rewrite.* == .identifier and rewrite.identifier.kind == .ident) expr_ptr.* = rewrite.*;
+        }
+    }
     // 06 N24 — a tuple element of function type called by its LABEL
     // (`c.set(9)` on `#(value: i32, set: fn(…))`). Inference stashed the
     // positional callee under the call's loc; only the name moves, the
