@@ -1366,10 +1366,11 @@ fn applyExplicitTypeArgs(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExp
 /// `await` would answer, and the transform splices the `await` in so the
 /// backends lower it as they lower `await c()` (on commonJS a component is an
 /// `async function`). Everywhere else — outside a component body, under
-/// another base, as `use`'s operand (refused there by name) — the call keeps
-/// its `@Component<C, T>` type. A hook is not a component and is `use`d.
+/// another base, as `use`'s operand (refused there by name), as `await`'s own
+/// operand (the `await` is written) — the call keeps its `@Component<C, T>` type. A hook is not a component and is `use`d.
 fn inferComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!TypedExpr {
     if (env.inUseOperand) return typed;
+    if (env.awaitOperandLoc) |at| if (std.meta.eql(at, c.loc)) return typed;
     if (typed != .call) return typed;
     const fc = env.fnContext orelse return typed;
     if (!fc.annotated or env.starFn == null) return typed;
@@ -9351,7 +9352,17 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 ).withLoc(loc);
                 return error.TypeError;
             }
-            const valPtr = try makeTypedPtr(env, try inferExprTyped(env, e.*));
+            // A component call written as `await`'s own operand keeps its
+            // `@Component<C, T>` — the `await` is written, not spliced
+            // (`inferComponentCall`); a call nested in its arguments still renders.
+            const prevAwaitOperand = env.awaitOperandLoc;
+            env.awaitOperandLoc = if (e.* == .call) e.call.loc else null;
+            const valTyped = inferExprTyped(env, e.*) catch |err| {
+                env.awaitOperandLoc = prevAwaitOperand;
+                return err;
+            };
+            env.awaitOperandLoc = prevAwaitOperand;
+            const valPtr = try makeTypedPtr(env, valTyped);
             const rawTy = valPtr.getType();
             // `await @Task<T>` answers `T` and propagates nothing (decision
             // 120). A resolved non-Task named type is an error; an unresolved

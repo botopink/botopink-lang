@@ -746,6 +746,9 @@ pub const Env = struct {
     /// True while the operand of a `use` is inferred: a component call there
     /// is `use`'s to refuse, not an implicit render (`inferComponentCall`).
     inUseOperand: bool = false,
+    /// The location of the call written as `await`'s operand: a component call
+    /// there keeps its wrapper, the `await` being written (`inferComponentCall`).
+    awaitOperandLoc: ?ast.Loc = null,
     /// Decision 110 — an imported type's `as` name → the declared name
     /// (`registerImportedTypeAlias`); a constructor call through the alias is
     /// renamed at the call so no backend sees the alias.

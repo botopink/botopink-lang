@@ -608,8 +608,10 @@ parsed yet.
   inside a body whose return is `@Component<C, _>` with the same base, as `T`, and splices `await`
   around it through the index channel (`transform.zig` wraps the call and leaves the copy it wraps
   alone) — on commonJS a component is an `async function`. As `use`'s operand (`Env.inUseOperand`)
-  the call keeps its wrapper, so `use Counter()` is still refused by name; outside a component body
-  or under another base it keeps it too. An array literal's elements unify located at the element
+  the call keeps its wrapper, so `use Counter()` is still refused by name; as `await`'s own operand
+  (`Env.awaitOperandLoc`, the call's location — a component call in its arguments still renders) it
+  keeps it so a written `await view(props)` answers `T` (`run/component_call_awaited`); outside a
+  component body or under another base it keeps it too. An array literal's elements unify located at the element
   that disagrees.
 
 ## A label names the parameter it fills, in a complete call too

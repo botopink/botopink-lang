@@ -488,7 +488,11 @@ pub behavior Expr<E> {
     fn build<R>(self: Self<E>, source: string) -> Expr<R>;
     // Pack a reference tree + the executable code into the custom return — a
     // template fn opts into tooling visibility by returning `ExprCustom<T>`.
-    fn custom<R>(self: Self<E>, ast: CustomNode, code: Expr<R>) -> CustomExpr<R>;
+    fn custom<R>(
+        self: Self<E>,
+        ast: CustomNode,
+        code: Expr<R>,
+    ) -> CustomExpr<R>;
     fn fail(self: Self<E>, message: string);
     fn failAt(self: Self<E>, span: Span, message: string);
 }
