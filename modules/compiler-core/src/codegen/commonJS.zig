@@ -92,7 +92,7 @@ pub fn codegenEmit(
                 // driver as a located diagnostic naming the function, not as
                 // the bare error name that aborted the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const js_src = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, &cross, &missing) catch |err| {
+                const js_src = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, ct.srcPath, &cross, &missing) catch |err| {
                     const me = missing orelse return err;
                     try results.append(alloc, .{
                         .name = ct.name,
@@ -139,11 +139,14 @@ fn emitJs(
     lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
     module_name: []const u8,
+    /// The package-relative source path a test or `assert` location names
+    /// (`src/main.bp`, `ComptimeOutput.srcPath`); empty → `<module>.bp`.
+    src_file: []const u8,
     cross: ?*const CrossModule,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
 ) ![]u8 {
-    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, cross, missing);
+    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, src_file, cross, missing);
 }
 
 fn emitTypeDef(
@@ -283,7 +286,7 @@ pub fn emitProgramOpts(
     test_mode: bool,
     module_name: []const u8,
 ) ![]u8 {
-    return emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, null);
+    return emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, "", null, null);
 }
 
 /// The test-mode preamble: a throwing assert helper the runner can catch.
@@ -369,6 +372,7 @@ fn emitProgramOptsX(
     lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
     module_name: []const u8,
+    src_file: []const u8,
     cross: ?*const CrossModule,
     missing: ?*?moduleOutput.MissingExternal,
 ) ![]u8 {
@@ -383,6 +387,7 @@ fn emitProgramOptsX(
     em.lowerings = lowerings;
     em.test_mode = test_mode;
     em.module_name = module_name;
+    em.src_file = if (src_file.len > 0) src_file else try std.fmt.allocPrint(arena.allocator(), "{s}.bp", .{module_name});
     em.cross = cross;
     try em.collectExternals(program);
     try em.collectClassNames(program);
@@ -531,8 +536,8 @@ fn emitProgramOptsX(
                 const gop = try seen_names.getOrPut(n);
                 if (gop.found_existing) {
                     std.debug.print(
-                        "warning: duplicate test name \"{s}\" in {s}.bp:{d}\n",
-                        .{ n, module_name, t.line },
+                        "warning: duplicate test name \"{s}\" in {s}:{d}\n",
+                        .{ n, em.src_file, t.line },
                     );
                 }
             }
@@ -543,7 +548,7 @@ fn emitProgramOptsX(
             entries[i] = try em.b.object(&.{
                 .{ .kv = .{ .key = "name", .value = .{ .quoted = name } } },
                 .{ .kv = .{ .key = "fn", .value = .{ .name = try std.fmt.allocPrint(arena_alloc, "__bp_test_{d}", .{t.idx}) } } },
-                .{ .kv = .{ .key = "loc", .value = .{ .quoted = try std.fmt.allocPrint(arena_alloc, "{s}.bp:{d}", .{ module_name, t.line }) } } },
+                .{ .kv = .{ .key = "loc", .value = .{ .quoted = try std.fmt.allocPrint(arena_alloc, "{s}:{d}", .{ em.src_file, t.line }) } } },
             });
         }
         try items.append(arena_alloc, .{ .stmt = .{ .decl = .{
@@ -1215,9 +1220,12 @@ const Emitter = struct {
     /// `botopink test` compilation: `assert` lowers to the throwing
     /// `__bp_assert` helper instead of `console.assert`.
     test_mode: bool = false,
-    /// Module name, used for `<module>.bp:<line>` source locations in
-    /// test-mode assert failures.
+    /// Module name (`lib/db`): the atom, the `require` depth.
     module_name: []const u8 = "main",
+    /// The package-relative source path (`src/main.bp`) a test's and an
+    /// `assert`'s `<file>:<line>` names; `<module>.bp` when the driver gave
+    /// none (the snapshot harness).
+    src_file: []const u8 = "main.bp",
     /// `#[@External.Node("module", "symbol")]` fns: name → host import.
     /// The decl lowers to `const { symbol: name } = require("module");`,
     /// or `const name = Module.symbol;` for JS global namespaces (`Math`, …).
@@ -3906,7 +3914,7 @@ const Emitter = struct {
                         return self.b.call(.{ .name = "__bp_assert" }, &.{
                             cond,
                             if (a.message) |msg| try self.buildExpr(msg.*) else .null_,
-                            .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}.bp:{d}", .{ self.module_name, ct.loc.line }) },
+                            .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}:{d}", .{ self.src_file, ct.loc.line }) },
                         });
                     }
                     // Outside test mode an `assert` is always fatal and names
@@ -3915,7 +3923,7 @@ const Emitter = struct {
                     return self.b.call(self.helper(.assert_fatal), &.{
                         cond,
                         if (a.message) |msg| try self.buildExpr(msg.*) else .null_,
-                        .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}.bp:{d}", .{ self.module_name, ct.loc.line }) },
+                        .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}:{d}", .{ self.src_file, ct.loc.line }) },
                     });
                 },
                 .assertPattern => |ap| {

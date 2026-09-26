@@ -96,6 +96,11 @@ pub const ComptimeOutput = struct {
     name: []const u8,
     src: []const u8,
     outcome: Outcome,
+    /// The driver's package-relative source path (`Module.srcPath`,
+    /// `src/main.bp`), empty when it gave none: the file a test's and an
+    /// `assert`'s `<file>:<line>` names, as `@src().file` does
+    /// (`displaySrcPath`) — a backend falls back to `<name>.bp`.
+    srcPath: []const u8 = "",
 
     pub const Outcome = union(enum) {
         ok: OkData,
@@ -1862,6 +1867,7 @@ pub fn compileTypesOnly(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .parseError = se },
                 });
             },
@@ -1869,6 +1875,7 @@ pub fn compileTypesOnly(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .validationError = verr.info },
                 });
             },
@@ -1876,6 +1883,7 @@ pub fn compileTypesOnly(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .typeError = te },
                 });
             },
@@ -1987,6 +1995,7 @@ pub fn compileTypesOnly(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .ok = .{
                         .bindings = succ.bindings,
                         .comptime_script = null,
@@ -2061,6 +2070,7 @@ pub fn compile(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .parseError = se },
                 });
             },
@@ -2068,6 +2078,7 @@ pub fn compile(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .validationError = verr.info },
                 });
             },
@@ -2075,6 +2086,7 @@ pub fn compile(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .typeError = te },
                 });
             },
@@ -2176,6 +2188,7 @@ pub fn compile(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .ok = .{
                         .bindings = succ.bindings,
                         .comptime_script = ct.comptime_script,

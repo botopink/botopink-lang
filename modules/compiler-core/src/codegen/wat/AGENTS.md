@@ -85,6 +85,21 @@ fixtures moved from a `WASM TEXT` block with that trap to a
 `refused_on_wasm` expectation, which still requires commonJS, erlang and beam to
 compile and fails if wasm ever starts accepting one.
 
+**A function that reaches such a cell is refused where IT is called**
+(`wat.zig`'s `collectHostBound` → `host_bound`). A bodied function whose body
+calls an `external_missing` cell — directly or through another such function,
+to a fixpoint — cannot run on wasm either; it is not emitted, and a call of it,
+bare or module-qualified, is the located refusal
+`` `deepEquals` calls `canonical`, which has no `#[@External.<Target>(…)]` for
+the wasm backend `` (`MissingExternal.via`). `main/0` is never host-bound: its
+body is the program, so a cell it calls is refused inside it as above. The rule
+is the one a host METHOD already follows (`hostMethods.zig`), and it is what
+lets a module import on wasm when some of its functions need a host:
+refusing inside `testing.asserts`' `deepEquals` failed every program that
+imported the module, called or not
+(`tests/language/run/std_asserts_on_every_target.bp`,
+`run/std_asserts_host_cell_on_wasm.bp`).
+
 A **bodyless `declare fn` with no `#[@External.<Target>(…)]` at all** keeps the
 old trap. That is the same cut commonJS makes — its `externals_missing` is filled
 only for an `isExternal()` fn — and it is what an interface's bodyless method
@@ -529,7 +544,7 @@ member `libs/std/src/primitives.bp` declares:
 
 | Family | Lowered | Traps (pinned one program each by `tests/wat.zig` `a primitive method with no wasm lowering traps, never answers`) |
 |---|---|---|
-| `String` | every member but two — `charCodeAt` (`$__str_char_code`, `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte) and `chars` (`$__str_split` on `""`) since this row | `lines`, `words` — a split on a character class |
+| `String` | every member but two — `charCodeAt` (`$__str_char_code`, `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte) and `chars` (`$__str_split` on `""`, which cuts before every UTF-8 codepoint, as `split("")` does) since this row | `lines`, `words` — a split on a character class |
 | `Array` | the rest — `find` (`filter` then `at(0)`, the `?T` `at` answers) since this row | `pop` (mutates the blob in place), `flatMap` (a function value the inlined HOF path does not reach), `flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique` (grow through `append`) |
 | `Integer`, `Bool` | all | — |
 | `Float` | all — `toString` (`$__f64_to_str`, `5.0` → `5` as on node) since this row | — |

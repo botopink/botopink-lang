@@ -21,7 +21,9 @@ compiler-cli/
 │   │                          examples/modules); `zig build test-backends`
 │   ├── backend_exec/        ← numeric + records fixture projects
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
-│   │                          (multi / none), assert message, mixed pass/fail exit;
+│   │                          (multi / none), assert message, a failing `try`, the
+│   │                          FAIL line's `src/main.bp:<line>` (commonJS + erlang),
+│   │                          mixed pass/fail exit, the `.snap.new` candidate list;
 │   │                          `botopink-lib-test` compiles a test-less library,
 │   │                          and prints under `--jobs 4` what `--jobs 1` prints;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
@@ -375,6 +377,25 @@ TEST <file>:<line> <name>
 (monotonic clock around the test body); parsers that don't recognise it skip it.
 The runner closes with a single summary line: `<P> passed, <F> failed`.
 Exit code is non-zero when any test fails.
+
+`<file>` is the package-relative source path the driver scanned
+(`src/main.bp`, `test/foo_test.bp` — `Module.srcPath`, the file `@src().file`
+names), on the TEST line, the FAIL line and an `assert`'s location alike; a
+dependency's is `<its src>/<file>` with a trailing `/` of `src` dropped
+(`libs.loadOne`).
+
+After the results the run lists every snapshot candidate the project holds —
+each `*.snap.new` `testing.snapshots` wrote for a missing or a mismatched
+snapshot, package-relative, dot directories and `node_modules` not entered
+(`snapshotCandidates`):
+
+```
+----- SNAPSHOT CANDIDATES — a mismatch or a missing snapshot; record one by renaming it without `.new`, never commit it -----
+  src/__snapshots__/snap/first.snap.new
+```
+
+Under `--json` the same block goes to stderr, so stdout stays JSONL. The
+pre-commit gate refuses a staged candidate (`scripts/gate.sh --staged`).
 
 **Backends**: `botopink test` runs only `commonJS` (via `node`; stdout captured
 per test through a `process.stdout.write` override) and `erlang` (via `escript`;

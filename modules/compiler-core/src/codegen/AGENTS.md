@@ -355,10 +355,15 @@ codegen/
   patches`, which walks the embedded prelude. Pinned end to end by
   `tests/language/run/string_char_code_after_slice.bp`.
 - **`assert`** (semantics decision 4): outside test mode it is always fatal —
-  `__bp_assert_fatal(cond, msg, "<module>.bp:<line>")`, a prelude helper that
+  `__bp_assert_fatal(cond, msg, "<file>:<line>")`, a prelude helper that
   throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a
   message), so node exits non-zero naming both. Test mode is unchanged: the
   `__bp_assert` harness helper throws for the runner to catch per test.
+  `<file>` — in the `TEST`, `FAIL` and assert locations of commonJS and
+  erlang — is the driver's package-relative path (`ComptimeOutput.srcPath`,
+  `src/main.bp`, the file `@src().file` names), else `<module>.bp` (the
+  snapshot harness passes none); `modules/compiler-cli/tests/test_tooling.sh`
+  pins `at src/main.bp:<line>` on both targets.
 - **`try` inside a `test` body** (1.0.10-beta decision 74): `buildTryStmt`'s
   `.propagate` arm emits `throw new Error(typeof e === "string" ? e :
   JSON.stringify(e))` while `Emitter.in_test_body` is set (by `buildTestFn`;
@@ -387,7 +392,7 @@ codegen/
   the top of the module. Interface default-fn bodies are not inferred, so a
   `at` inside one stays native.
 - **Duplicate test names**: two `test "x"` blocks in one module print
-  `warning: duplicate test name "x" in <mod>.bp:<line>` to stderr; both run.
+  `warning: duplicate test name "x" in <file>:<line>` to stderr; both run.
 - **Cross-module linking** (`crossModule.zig`): `from "<pkg>"` imports become
   `require("./<path>.js")` of the owning file (declaration-only names such as
   decorators emit nothing); imported records are marked as classes so
@@ -1005,11 +1010,13 @@ codegen/
   `'Lt'` for a payload-less variant — exactly what the constructor builds), list/cons
   and multi-subject tuples), binding expressions (`bindingNode`), `use` and comptime
   forms (`comptimeNode`: `assert` as an inline `case` raising
-  `erlang:error({bp_assert, Msg, <<"mod.bp:Line">>})` — always fatal, in and out of
-  test mode (semantics decision 4); the test runner is what catches it).
+  `erlang:error({bp_assert, Msg, <<"File:Line">>})` — always fatal, in and out of
+  test mode (semantics decision 4); the test runner is what catches it. `File`
+  is `Emitter.srcFile`: the package-relative `src/main.bp` the driver gave,
+  else `mod.bp`).
   A `try` without `catch` inside a `test` body (`Emitter.in_test_body`, set by
   `testFunction`, cleared in a `fun`) raises the same shape on its Error arm —
-  `{error, E} -> erlang:error({bp_assert, E, <<"mod.bp:Line">>})` with the test's
+  `{error, E} -> erlang:error({bp_assert, E, <<"File:Line">>})` with the test's
   own line (`test_loc`) — so the runner prints `FAIL <name>  (<E>)  at …`
   (1.0.10-beta decision 74); elsewhere the arm stays `{error, E}`.
   A `val assert P = e [catch h];` whose pattern binds names is lowered at STATEMENT
@@ -1883,16 +1890,22 @@ codegen/
   140) — there is no run-time evaluation of Erlang source. Every template
   std and the bundled libraries ship lowers (`tests/beam_templates.zig`).
   Details and the re-measured cost in [`beam/AGENTS.md`](beam/AGENTS.md).
-  Decision 64's beam half, for the plain form only: a `pub` host-backed fn
-  whose erlang target is `module:symbol` (`hostWrapperRef`, over
-  `hostDeclareWrapperNeeded`) gets a wrapper of its own — reserved, exported,
-  and emitted as `{call_ext_only, N, {extfunc, M, S, N}}` (`emitHostWrapper`)
-  — so a qualified call from another module (`erlang.node()`,
-  `std@beam:pdGet/1` from a module `var`) answers. Front 17 step 5 wired it
-  because the module-`var` lowering calls `std@beam`. A template target, arity
-  branches or an `@External.Beam` body still has no wrapper: its call sites
-  inline it, and a qualified call into it is still `undef` (C-03's open beam
-  bullet, narrowed).
+  Decision 64's beam half (C-03): a `pub` host-backed top-level fn
+  (`hostDeclareWrapperNeeded`) gets a wrapper of its own —
+  `hostWrapperFor` decides, and the reservation, the export list and
+  `emitHostWrapper` all ask it. A plain `module:symbol` erlang target is
+  `{call_ext_only, N, {extfunc, M, S, N}}`; an `@External.Erlang` template
+  (or the arity branch for the declared parameter count) is compiled at
+  build time into the module's `'__bp_tpl_<k>'` helper (the same
+  `compiledTemplate` cache the call sites use) and tail-called locally — so a
+  qualified call from another module (`erlang.node()`, `std@beam:pdGet/1`
+  from a module `var`, `fs.exists(p)`, `os.eol()`) answers. No wrapper: a
+  `self`-first declaration, an `@External.Beam` template body (its call
+  sites inline it), a `module:template` target and a template the lowering
+  refuses (each call site is then the located build error). Every
+  `@External.Erlang`-bodied `pub declare fn` of std gets one;
+  `tests/language/run/std_template_host_fns_across_modules.bp` calls several
+  on beam.
   No beam or erlang target raises `MissingExternalTarget`. A call to an
   external another module declares lowers the same way.
 - **Primitive methods** (`emitPrimMethod`), walking the receiver kind's
@@ -2413,7 +2426,10 @@ first three are now enforced by the model, not by discipline:
   erlang and beam raise (06 C13), threaded out of `emitWat` by its `missing`
   slot and collected by `codegenEmit`, so only that module fails. `registerSymbols`
   fills `external_missing` (the `isExternal()` subset of `host_fns`) and
-  `lowerPlainCall` reads it. It used to be a **documented trap** —
+  `lowerPlainCall` reads it. A bodied function reaching such a cell
+  (`collectHostBound`, transitively; never `main/0`) is not emitted and its
+  CALL is refused the same way, naming the cell (`MissingExternal.via`) — see
+  [`wat/AGENTS.md`](wat/AGENTS.md). It used to be a **documented trap** —
   `unreachable ;; host-backed declare fn <name>/<n>: no wasm host` — on the
   argument that "the other three targets compile the same module, and a program
   that never reaches the call still runs"; the first half is false (commonJS
@@ -2612,10 +2628,13 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
      time — is `lists:nthtail/2`, tested at run time unless the operand is a
      literal; it was `badarith`), `at`/`indexOf`/`join`
      (synthesized helper fns `ensureAtHelper`/`ensureIndexOfHelper`/
-     `ensureStringifyHelper`); string `split`, 1-arg `slice`,
+     `ensureStringifyHelper`); string 1-arg `slice`,
      `contains`/`startsWith` (`primCmpAgainstNomatch`). Returning `false` falls
      back to the local-call path. The template grammar has no label / `gc_bif` /
-     helper-fn markers, so these stay inline.
+     helper-fn markers, so these stay inline. String `split` is not among
+     them: it runs std's `@External.Erlang` template (compiled at build time),
+     whose empty-separator clause cuts into codepoints — `string:split/3`
+     answered the whole string as one piece.
    - erlang: array `len`/`length`/`size` → `length/1`, int/float `toString`
      fallback, and BIF-shaped fallbacks for un-annotated default fns
      (`forEach`, `fold`, `drop`, `take`, `toList`).

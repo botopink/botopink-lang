@@ -1,0 +1,31 @@
+//// 00 · 03-beam C-03 (decision 64's beam half) — a `pub` std host function
+//// whose `@External.Erlang` body is a template, called from another module.
+//// Its module answers it with a wrapper: on erlang the template rendered over
+//// the wrapper's parameters, on beam the template compiled at build time into
+//// the module's `'__bp_tpl_<k>'` helper and tail-called. Before the beam
+//// wrapper, `fs.exists("/")` was `undef std@io@fs:exists/1` under `erl`.
+//// Covered: a one-argument (`fs.exists`, `encoding.hexEncode`, `hash.sha256`,
+//// `json.quote`), a two-argument (`regex.matches`) and a nullary template
+//// (`os.eol`, `process.platform`), and one that answers a `@Result`
+//// (`fs.readText`) — through `import {io}`'s folder namespace and through a
+//// leaf import. Not scheduled on wasm (`.targets`): std's `io/fs`, `json`,
+//// `encoding` and `hash` host cells have no wasm binding, and the build refuses
+//// each module that calls one — the refusal names std's own call sites, not
+//// this program.
+
+import {io} from "std";
+import {io.fs, io.os} from "std";
+import {encoding, hash, json, regex} from "std";
+
+pub fn main() {
+    @print(fs.exists("/"));
+    @print(io.fs.exists("/"));
+    @print(fs.exists("/no/such/path/for/c03"));
+    @print(fs.readText("/no/such/path/for/c03").isError());
+    @print(os.eol().length);
+    @print(io.process.platform().length > 0);
+    @print(encoding.hexEncode("hi"));
+    @print(hash.sha256("abc").length);
+    @print(json.quote("a"));
+    @print(regex.matches("a+", "caat"));
+}

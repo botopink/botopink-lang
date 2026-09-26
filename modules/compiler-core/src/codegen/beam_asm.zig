@@ -219,21 +219,15 @@ fn hostDeclareWrapperNeeded(f: ast.FnDecl) bool {
     return f.isPub and isHostDeclare(f);
 }
 
-/// The `module:symbol` a wrapper for `f` tail-calls, when `f` needs one
-/// (`hostDeclareWrapperNeeded`) and its erlang target is that plain form. A
-/// template target (`erlang:monotonic_time(1000)`, `$0`, arity branches) or an
-/// `@External.Beam` body has no wrapper yet — its call sites still inline it,
-/// and a qualified call into it from another module is still `undef`.
-fn hostWrapperRef(f: ast.FnDecl) ?ast.ExternalRef {
-    if (!hostDeclareWrapperNeeded(f)) return null;
-    if (f.externalFor("beam") != null) return null;
-    if (ast.externalHasArityBranches(f.annotations, "erlang")) return null;
-    if (f.params.len > 0 and std.mem.eql(u8, f.params[0].name, "self")) return null;
-    const ref = f.externalFor("erlang") orelse return null;
-    if (ref.module.len == 0 or primOpTemplate.looksLikeTemplate(ref.symbol)) return null;
-    if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
-    return ref;
-}
+/// What the wrapper of a `pub` host-backed `declare fn` calls
+/// (`Emitter.hostWrapperFor`): a plain `module:symbol` erlang target, tail-called
+/// as a `call_ext`, or an `@External.Erlang` template (a template body or the
+/// arity branch for the declared parameter count) compiled at build time into
+/// the module's `'__bp_tpl_<k>'` helper (BR5), tail-called locally.
+const HostWrapper = union(enum) {
+    ext: ast.ExternalRef,
+    template: FnLabels,
+};
 
 /// Front 17 — the helper functions a module with a module `var` carries
 /// (`emitPdSet`, `emitEtsHelpers`, `emitLoad`) and the box a `ProcessDict`
@@ -1687,10 +1681,11 @@ fn emitBeamAsm(
         try em.reserveFn(MEM_ETS_SET, 3);
     }
     if (pt_vars.items.len > 0) try em.reserveFn(MEM_LOAD, 0);
-    // Decision 64's beam half (C-03): a `pub` host-backed `declare fn` whose
-    // target is a plain `module:symbol` is answered by a wrapper of its own.
+    // Decision 64's beam half (C-03): a `pub` host-backed `declare fn` is
+    // answered by a wrapper of its own — a plain `module:symbol` target or a
+    // template compiled at build time (`hostWrapperFor`).
     for (program.decls) |decl| switch (decl) {
-        .@"fn" => |f| if (hostWrapperRef(f) != null) try em.reserveFn(f.name, f.params.len),
+        .@"fn" => |f| if (try em.hostWrapperFor(f) != null) try em.reserveFn(f.name, f.params.len),
         else => {},
     };
 
@@ -1713,7 +1708,7 @@ fn emitBeamAsm(
         switch (decl) {
             .@"fn" => |f| if (f.isPub and !isHostDeclare(f)) {
                 try exports.append(alloc, .{ .name = f.name, .arity = fnArityNoSelf(f) });
-            } else if (hostWrapperRef(f) != null) {
+            } else if (try em.hostWrapperFor(f) != null) {
                 try exports.append(alloc, .{ .name = f.name, .arity = f.params.len });
             },
             // A `pub val` is reached from an importing module as a remote
@@ -1735,7 +1730,7 @@ fn emitBeamAsm(
     // Pass 2: emit each fn body into body_buf.
     for (program.decls) |decl| {
         switch (decl) {
-            .@"fn" => |f| if (!isHostDeclare(f)) try em.emitFn(f) else if (hostWrapperRef(f)) |ref| try em.emitHostWrapper(f, ref),
+            .@"fn" => |f| if (!isHostDeclare(f)) try em.emitFn(f) else if (try em.hostWrapperFor(f)) |w| try em.emitHostWrapper(f, w),
             .val => |v| {
                 if (!isSyntheticEntrypointVal(v)) {
                     try em.emitTopVal(v);
@@ -4154,12 +4149,47 @@ const Emitter = struct {
         self.cur_line += 1;
     }
 
-    /// `f(Args) -> Module:Symbol(Args).` — decision 64's wrapper for a `pub`
-    /// host-backed `declare fn`, so a qualified call from another module
-    /// (`erlang.self()`, `std@beam:pdGet/1` from a module `var`) finds it.
-    fn emitHostWrapper(self: *Emitter, f: ast.FnDecl, ref: ast.ExternalRef) !void {
+    /// The wrapper `f` needs (`hostDeclareWrapperNeeded`), or null when it has
+    /// none: a `self`-first declaration, an `@External.Beam` template body (its
+    /// call sites inline it), an arity-branched set with no branch for the
+    /// declared count, a `module:template` target (every call site refuses it)
+    /// and a template the build-time lowering refuses (decision 141 — each call
+    /// site of it is then the located build error). A template is compiled here,
+    /// once per module (`compiledTemplate` caches it), so the reservation, the
+    /// export list and the emission all see the same answer.
+    fn hostWrapperFor(self: *Emitter, f: ast.FnDecl) anyerror!?HostWrapper {
+        if (!hostDeclareWrapperNeeded(f)) return null;
+        if (f.params.len > 0 and std.mem.eql(u8, f.params[0].name, "self")) return null;
+        if (f.externalFor("beam")) |b| if (b.module.len == 0) return null;
+        const template_raw = if (ast.externalHasArityBranches(f.annotations, "erlang"))
+            ast.externalArityBranchFor(f.annotations, "erlang", f.params.len) orelse return null
+        else blk: {
+            const ref = f.externalFor("erlang") orelse return null;
+            if (ref.module.len > 0) {
+                if (primOpTemplate.looksLikeTemplate(ref.symbol) or std.mem.indexOfScalar(u8, ref.symbol, '(') != null) return null;
+                return .{ .ext = ref };
+            }
+            break :blk ref.symbol;
+        };
+        const src = try templateBody(self.alloc, template_raw, f.params.len);
+        defer self.alloc.free(src);
+        const saved_refusal = self.template_refusal;
+        defer self.template_refusal = saved_refusal;
+        const labels = (try self.compiledTemplate(src, false, f.params.len)) orelse return null;
+        return .{ .template = labels };
+    }
+
+    /// Decision 64's wrapper for a `pub` host-backed `declare fn`, so a
+    /// qualified call from another module (`erlang.self()`, `std@beam:pdGet/1`
+    /// from a module `var`, `fs.exists(p)`) finds it: `f(Args) ->
+    /// Module:Symbol(Args).`, or `f(Args) -> '__bp_tpl_<k>'(Args).` for a
+    /// template — the arguments are already in `{x,0}..`, in declaration order.
+    fn emitHostWrapper(self: *Emitter, f: ast.FnDecl, w: HostWrapper) !void {
         try self.beginHelper(f.name, f.params.len);
-        try beamEmitter.writeCall(self.out, .only, f.params.len, .{ .ext = .{ .module = ref.module, .function = ref.symbol } }, 0);
+        switch (w) {
+            .ext => |ref| try beamEmitter.writeCall(self.out, .only, f.params.len, .{ .ext = .{ .module = ref.module, .function = ref.symbol } }, 0),
+            .template => |labels| try beamEmitter.writeCall(self.out, .only, f.params.len, .{ .local = labels.entry }, 0),
+        }
     }
 
     /// The reader `name/0` of a module `var`, per mode — `ProcessDict`: this
@@ -6259,7 +6289,7 @@ const Emitter = struct {
     //
     //   • recv-only        `fn(Recv)`            → `lists:reverse`, `string:length`
     //   • fun-then-list    `fn(Fun, Recv)`       → `lists:map/filter/foreach`
-    //   • recv-then-args   `fn(Recv, Arg…[Lit])` → `string:split`, `string:slice/2`
+    //   • recv-then-args   `fn(Recv, Arg…[Lit])` → `string:slice/2`
     //   • arg-then-list    `fn(Arg, Recv)`       → `lists:member`
     //
     // The fun-then-list layout exploits that a `move {x,0},{x,1}` leaves the list
@@ -6318,7 +6348,7 @@ const Emitter = struct {
                 return true;
             },
             .string => {
-                if (eq(u8, callee, "split")) try self.primRecvThenArgs("string", "split", recv_expr, cc, Op.atom("all"), mode) else if (eq(u8, callee, "slice") and cc.args.len + cc.trailing.len == 1) try self.primRecvThenArgs("string", "slice", recv_expr, cc, null, mode) else if (eq(u8, callee, "contains")) try self.primCmpAgainstNomatch("binary", "match", recv_expr, cc, mode) else if (eq(u8, callee, "startsWith")) try self.primCmpAgainstNomatch("string", "prefix", recv_expr, cc, mode) else return false;
+                if (eq(u8, callee, "slice") and cc.args.len + cc.trailing.len == 1) try self.primRecvThenArgs("string", "slice", recv_expr, cc, mode) else if (eq(u8, callee, "contains")) try self.primCmpAgainstNomatch("binary", "match", recv_expr, cc, mode) else if (eq(u8, callee, "startsWith")) try self.primCmpAgainstNomatch("string", "prefix", recv_expr, cc, mode) else return false;
                 return true;
             },
             .bool, .int, .float => return false,
@@ -6882,7 +6912,7 @@ const Emitter = struct {
                 return true;
             }
             if (args.len == 2 and std.mem.eql(u8, args[0], "self") and cc.args.len + cc.trailing.len == 1) {
-                try self.primRecvThenArgs(call.module, call.symbol, recv_expr, cc, null, mode);
+                try self.primRecvThenArgs(call.module, call.symbol, recv_expr, cc, mode);
                 return true;
             }
             return false;
@@ -6893,7 +6923,7 @@ const Emitter = struct {
             return true;
         }
         if (cc.args.len + cc.trailing.len == 1) {
-            try self.primRecvThenArgs(call.module, call.symbol, recv_expr, cc, null, mode);
+            try self.primRecvThenArgs(call.module, call.symbol, recv_expr, cc, mode);
             return true;
         }
         return false;
@@ -7431,18 +7461,13 @@ const Emitter = struct {
         try self.primFunThenList(mod, fn_name, recv_expr, cc, mode);
     }
 
-    /// `fn(Recv, Arg [, Lit])` — receiver stays in `x0`; the (simple) arg goes to
-    /// `x1`, with an optional literal in `x2` (`string:split(S, Sep, all)`). A
-    /// non-simple arg would need to clobber `x0`, so it falls back to the limit.
-    fn primRecvThenArgs(self: *Emitter, mod: []const u8, fn_name: []const u8, recv_expr: *const ast.Expr, cc: anytype, extra_lit: ?Op, mode: CallMode) anyerror!void {
+    /// `fn(Recv, Arg…)` — receiver stays in `x0`; the (simple) args go to
+    /// `x1…` (`string:slice(S, Start)`). A non-simple arg would need to clobber
+    /// `x0`, so it falls back to the limit.
+    fn primRecvThenArgs(self: *Emitter, mod: []const u8, fn_name: []const u8, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
         try self.placeStaged(&st);
-        var arity: usize = st.len;
-        if (extra_lit) |lit| {
-            try beamEmitter.writeMoveOp(self.out, lit, Dst.xr(arity));
-            arity += 1;
-        }
-        try self.emitPrimCallExt(mod, fn_name, arity, mode);
+        try self.emitPrimCallExt(mod, fn_name, st.len, mode);
     }
 
     fn emitPrimCallExt(self: *Emitter, mod: []const u8, fn_name: []const u8, arity: usize, mode: CallMode) anyerror!void {

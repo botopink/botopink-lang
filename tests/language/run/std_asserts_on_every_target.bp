@@ -1,0 +1,18 @@
+//// 01-std step 2 — `import {testing.asserts} from "std"` builds and runs on
+//// all four targets. The module's host-backed assertions (`deepEquals`,
+//// `matches`, `throws`, `throwsWith`) reach private cells with Node and Erlang
+//// templates only; on wasm the module is emitted without them and only a CALL
+//// of one is refused (`std_asserts_host_cell_on_wasm`). Before, wasm refused
+//// the import itself at `canonical`'s call inside `deepEquals`.
+
+import {testing.asserts} from "std";
+
+pub fn main() {
+    @print(asserts.errorText(asserts.isTrue(false)));
+    @print(asserts.errorText(asserts.equals(1, 1)).length);
+    @print(asserts.errorText(asserts.approxEquals(1.0, 1.5, 0.1)));
+    @print(asserts.errorText(asserts.approxEquals(1.5, 1.0, 0.1)));
+    @print(asserts.errorText(asserts.approxEquals(1.0, 1.05, 0.1)).length);
+    @print(asserts.errorText(asserts.contains("abc", "z")));
+    @print(asserts.errorText(asserts.lengthIs([1, 2], 3)));
+}

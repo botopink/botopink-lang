@@ -4,8 +4,11 @@
 #   • an empty `test "x" {}` block passes
 #   • `--filter` matching MULTIPLE tests runs all of them
 #   • `--filter` matching NONE produces a clear `0 passed, 0 failed` and exits 0
-#   • a failing `assert cond, "msg"` surfaces the custom message
+#   • a failing `assert cond, "msg"` surfaces the custom message, a failing
+#     `try` the error string, each at the package-relative `src/main.bp:<line>`
+#     (commonJS, and erlang when `escript` is on PATH)
 #   • a mixed pass/fail run still runs every test AND exits non-zero
+#   • a run lists every `*.snap.new` snapshot candidate it leaves
 #   • botopink-lib-test compiles a library with no test block (`–` when it
 #     compiles, `✗` when it does not)
 #
@@ -69,17 +72,53 @@ echo "$out"
 [[ "$(count_tests "$out")" -eq 0 ]] || fail "a no-match filter should run no test"
 grep -q "0 passed, 0 failed" <<<"$out" || fail "a no-match filter should report '0 passed, 0 failed'"
 
-# ── failing assert surfaces its message; mixed run exits non-zero ────────────
-echo "==> [fail] botopink test (one pass, one failing assert with a message)"
+# ── failing assert / try surface their message at src/<file>; mixed run exits non-zero
+# The FAIL line names the package-relative path (`src/main.bp:<line>`), the
+# spelling `@src().file` and every diagnostic use — not the bare `main.bp`.
+failrun() { # failrun <target>
+  echo "==> [fail] botopink test --target $1 (one pass, a failing assert, a failing try)"
+  set +e
+  out="$( cd "$FAIL" && "$BP_BIN" test --target "$1" )"
+  code=$?
+  set -e
+  echo "$out"
+  [[ $code -ne 0 ]] || fail "$1: a run with a failing test must exit non-zero"
+  grep -q "ok   this one passes" <<<"$out" || fail "$1: the passing test should still run"
+  grep -qF "FAIL this one fails with a custom message  (double(2) should be five)  at src/main.bp:22" <<<"$out" ||
+    fail "$1: the assert's FAIL line should carry its message at src/main.bp:22"
+  grep -qF "FAIL t: fails  (went wrong)  at src/main.bp:25" <<<"$out" ||
+    fail "$1: the try's FAIL line should carry the error string at src/main.bp:25"
+  grep -qF "TEST src/main.bp:17 this one passes" <<<"$out" || fail "$1: the TEST line should name src/main.bp"
+  grep -q "1 passed, 2 failed" <<<"$out" || fail "$1: expected a 1-pass / 2-fail summary"
+}
+failrun commonJS
+if command -v escript >/dev/null 2>&1; then failrun erlang; fi
+
+# ── botopink test names every snapshot candidate it leaves ─────────────────────
+# `testing.snapshots` writes `<path>.new` for a missing or a mismatched snapshot;
+# the run lists each one after the results (stderr under --json).
+echo "==> [snapshots] botopink test lists the .snap.new candidates"
+SNAPWORK="$(mktemp -d)"
+mkdir -p "$SNAPWORK/src"
+printf '{ "name": "snapdemo", "version": "0.0.1", "src": "src/" }\n' >"$SNAPWORK/botopink.json"
+cat >"$SNAPWORK/src/main.bp" <<'BP'
+import {testing.snapshots} from "std";
+
+test "snap: first" {
+    try snapshots.assertText(@src(), "hello");
+}
+BP
 set +e
-out="$( cd "$FAIL" && "$BP_BIN" test --target commonJS )"
-code=$?
+out="$( cd "$SNAPWORK" && "$BP_BIN" test --target commonJS )"
 set -e
 echo "$out"
-[[ $code -ne 0 ]] || fail "a run with a failing test must exit non-zero"
-grep -q "ok   this one passes" <<<"$out" || fail "the passing test should still run"
-grep -q "double(2) should be five" <<<"$out" || fail "the custom assert message should surface"
-grep -q "1 passed, 1 failed" <<<"$out" || fail "expected a 1-pass / 1-fail summary"
+grep -qF "SNAPSHOT CANDIDATES" <<<"$out" || fail "the run should announce its snapshot candidates"
+grep -qxF "  src/__snapshots__/snap/first.snap.new" <<<"$out" || fail "the candidate's package-relative path should be listed"
+set +e
+err="$( cd "$SNAPWORK" && "$BP_BIN" test --target commonJS --json 2>&1 >/dev/null )"
+set -e
+grep -qxF "  src/__snapshots__/snap/first.snap.new" <<<"$err" || fail "under --json the candidates go to stderr"
+rm -rf "$SNAPWORK"
 
 # ── botopink-lib-test compiles a library that has no test block ──────────────
 echo "==> [libs] a test-less library is still compiled: – when it compiles, ✗ when it does not"

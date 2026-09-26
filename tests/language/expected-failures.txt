@@ -247,3 +247,6 @@ beam     | modules/erlang_sidecar_named_like_a_module | 03-beam | the same as `m
 wasm     | run/val_assert_record_pattern.bp | 05-wasm | `val assert Person(n, a) = p catch …` binds nothing: the assert lowers the subject into `$__assert_0` and neither tests the record nor reads its fields, so `n` is an unbound identifier (`i32.const 0 ;; unbound identifier n`) and `a.toString()` traps (`unresolved call: toString/0`, exit 134); commonJS and erlang print both lines
 beam     | run/val_assert_record_pattern.bp | 03-beam | `erlc +from_asm` refuses the module: `{unassigned,{y,2}}` — the assert's binders are read from a y-register one path left unwritten; commonJS and erlang print both lines
 
+
+# ── a host wrapper on wasm: two rules meet (decisions-pending ck-host) ──────
+wasm     | run/external_wrapper_keeps_refusal.bp | 05-wasm | the strict rule (a wrapper around a host call with no wasm binding is refused even if nothing calls it; docs.md § host bindings) meets wasm's `collectHostBound`, which drops such a function and refuses only a call to it (what lets `testing.asserts` build on wasm): wasm now accepts the cell and prints `up`. Which rule holds is decisions-pending ck-host

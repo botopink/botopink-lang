@@ -7,7 +7,9 @@
 # the gate stops at the first red one IN THAT ORDER — the stage, the output and
 # the exit status the one-at-a-time gate printed (§ side by side, below).
 #
-#   1. staged files: no conflict markers, `zig fmt --check` on staged .zig (--staged)
+#   1. staged files: no conflict markers, `zig fmt --check` on staged .zig, no
+#                           snapshot candidate (`*.snap.new`, `*.snap.md.new`)
+#                           staged (--staged)
 #   2. zig build            the CLI, the LSP and the runners link
 #   3. format-check.sh      `botopink format --check` over the compiler's own
 #                           canonical `.bp` trees (decision 66 — the scan has a
@@ -67,20 +69,28 @@ fail() { printf "${RED}✗ %s${NC}\n" "$1" >&2; exit 1; }
 
 if [ "$staged" -eq 1 ]; then
     stage "staged files"
-    files="$(git diff --cached --name-only --diff-filter=ACM)"
+    files="$(git diff --cached --name-only --diff-filter=ACMR)"
     lt7=$(printf '<%.0s' {1..7}); eq7=$(printf '=%.0s' {1..7}); gt7=$(printf '>%.0s' {1..7})
     marker_re="^(${lt7} |${eq7}\$|${gt7} )"
-    hits=""; bad_fmt=""
+    hits=""; bad_fmt=""; candidates=""
     while IFS= read -r f; do
-        [ -n "$f" ] && [ -f "$f" ] || continue
+        [ -n "$f" ] || continue
+        # A snapshot candidate is written by a mismatch or a missing snapshot
+        # and recorded by renaming it; the candidate itself is never committed,
+        # `.gitignore` or not (`git add -f` gets past that).
+        case "$f" in
+            *.snap.new|*.snap.md.new) candidates="$candidates $f" ;;
+        esac
+        [ -f "$f" ] || continue
         if grep -qE "$marker_re" "$f" 2>/dev/null; then hits="$hits $f"; fi
         case "$f" in
             *.zig) zig fmt --check "$f" >/dev/null 2>&1 || bad_fmt="$bad_fmt $f" ;;
         esac
     done <<<"$files"
+    [ -z "$candidates" ] || fail "snapshot candidates staged:$candidates (record one by renaming it without .new; never commit the candidate)"
     [ -z "$hits" ] || fail "conflict markers in:$hits"
     [ -z "$bad_fmt" ] || fail "zig fmt --check failed for:$bad_fmt (run: zig fmt <file>)"
-    pass "no conflict markers, staged .zig formatted"
+    pass "no conflict markers, staged .zig formatted, no snapshot candidate staged"
 fi
 
 # A hook runs with the committing repository's GIT_DIR, GIT_INDEX_FILE, … in

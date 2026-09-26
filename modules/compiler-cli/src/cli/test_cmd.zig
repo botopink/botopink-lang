@@ -723,6 +723,27 @@ pub fn run(
         reporter.stdout(io, footer);
     }
 
+    // `testing.snapshots` writes `<path>.new` on a mismatch or a missing
+    // snapshot, and nothing else says so: name every candidate the project
+    // holds, after the results (stderr under `--json`, which keeps stdout
+    // JSONL).
+    if (any_tests) {
+        const candidates = snapshotCandidates(arena, io) catch &.{};
+        if (candidates.len > 0) {
+            var text: std.ArrayListUnmanaged(u8) = .empty;
+            try text.appendSlice(arena, "----- SNAPSHOT CANDIDATES — a mismatch or a missing snapshot; record one by renaming it without `.new`, never commit it -----\n");
+            for (candidates) |c| {
+                try text.appendSlice(arena, "  ");
+                try text.appendSlice(arena, c);
+                try text.append(arena, '\n');
+            }
+            if (opts.json)
+                std.Io.File.stderr().writeStreamingAll(io, text.items) catch {}
+            else
+                reporter.stdout(io, text.items);
+        }
+    }
+
     diagnostics.reportOrphans(arena, src_loaded.orphans.len);
 
     if (!any_tests) reporter.stdout(io, "no test blocks found\n");
@@ -764,6 +785,36 @@ test "hasRunnerSummary: a finished runner's line, and a crash without one" {
     try std.testing.expect(!hasRunnerSummary("SyntaxError: await is only valid in async functions\n"));
     try std.testing.expect(!hasRunnerSummary("x passed, 0 failed\n"));
     try std.testing.expect(!hasRunnerSummary(""));
+}
+
+/// Every `*.snap.new` under the project (the cwd), package-relative with `/`
+/// separators, sorted — the candidates `testing.snapshots` wrote. Dot
+/// directories (`.botopinkbuild`, `.git`) and `node_modules` are not entered.
+fn snapshotCandidates(arena: std.mem.Allocator, io: std.Io) ![]const []const u8 {
+    var root = try std.Io.Dir.cwd().openDir(io, ".", .{ .iterate = true });
+    defer root.close(io);
+    var walker = try root.walkSelectively(arena);
+    defer walker.deinit();
+    var out: std.ArrayListUnmanaged([]const u8) = .empty;
+    while (try walker.next(io)) |entry| switch (entry.kind) {
+        .directory => {
+            if (entry.basename.len > 0 and entry.basename[0] == '.') continue;
+            if (std.mem.eql(u8, entry.basename, "node_modules")) continue;
+            try walker.enter(io, entry);
+        },
+        .file => if (std.mem.endsWith(u8, entry.basename, ".snap.new")) {
+            const p = try arena.dupe(u8, entry.path);
+            std.mem.replaceScalar(u8, p, '\\', '/');
+            try out.append(arena, p);
+        },
+        else => {},
+    };
+    std.mem.sort([]const u8, out.items, {}, struct {
+        fn lt(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lt);
+    return out.items;
 }
 
 const JsonCounts = struct { passed: usize, failed: usize };
