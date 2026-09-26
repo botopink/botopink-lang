@@ -16,7 +16,7 @@ const h = @import("helpers.zig");
 /// is kept alive until after the assertion (its arena backs the outcome).
 fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(loc);
+    const build_root = h.buildRootPathFromSrc(io, loc);
     var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[0].outcome;
@@ -38,7 +38,7 @@ fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, need
 /// `assertRejects`, also checking the diagnostic's `line:col` when given.
 fn assertRejectsAt(comptime loc: std.builtin.SourceLocation, src: []const u8, needle: []const u8, at: ?[2]usize) !void {
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(loc);
+    const build_root = h.buildRootPathFromSrc(io, loc);
     var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[0].outcome;
@@ -176,7 +176,7 @@ test "decorator invocation: @emit contributes a top-level declaration" {
     // The decorator body builds wiring as ordinary code; `@emit(source)` splices
     // it into the module, where it is inferred + emitted like hand-written decls.
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(@src());
+    const build_root = h.buildRootPathFromSrc(io, @src());
     const src =
         \\fn singleton(comptime decl: @Decl) {
         \\    @emit("pub val wiredMarker = 99;");
@@ -206,7 +206,7 @@ test "decorator invocation: the body runs on the compilation target's runtime (d
     // commonJS or wasm compilation's decorators on wat and an erlang or
     // no-target one on the BEAM; a driver cannot forget to select.
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(@src());
+    const build_root = h.buildRootPathFromSrc(io, @src());
     const src =
         \\fn singleton(comptime decl: @Decl) {
         \\    @emit("pub val wiredMarker = 99;");

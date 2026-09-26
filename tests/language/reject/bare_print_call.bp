@@ -1,0 +1,17 @@
+//// Printing is the builtin `@print` (`@println`, `@debug`); a bare `print(x)`
+//// is an unbound name, and the refusal names the builtin.
+////
+//// The gap this pins (`00 · 01-checker`, `00 · 02-erlang` / `11-tooling`):
+//// `print` and `println` were bound as placeholders, so the call type-checked
+//// and only commonJS lowered it — erlang emitted a call to an undefined local
+//// (`erlc` refused the module, and a library module holding one was skipped
+//// by the test runner's loader), beam an unresolved call, wasm a trap.
+
+fn shout(line: string) -> string {
+    println(line);
+    return line;
+}
+
+pub fn main() {
+    @print(shout("hi"));
+}

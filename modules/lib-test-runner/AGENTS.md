@@ -34,7 +34,8 @@ lib-test-runner/
     ├── main.zig         ← entry: resolve roots/binary → discover → plan cells → worker pool → emit in order → matrix → exit
     ├── args.zig         ← CLI parsing (Target enum, node alias, =-form, all)  + unit tests
     ├── discovery.zig    ← `manifest.scanRoots` over the roots (packages + workspace members), "has tests" probe, `libSupportsTarget`/`libRunsTarget`, problems + unit tests (fixtures: ../manifest/tests/fixtures)
-    ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib), split into `capture*` (spawn, capture, classify — thread-safe, writes nothing) and `emit*` (the cell's output, exactly as a serial run wrote it) + the cell's failed-test tally
+    ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib), split into `capture*` (spawn, capture, classify — thread-safe, writes nothing) and `emit*` (the cell's output, exactly as a serial run wrote it) + the cell's failed-test tally, read from the child's run total
+    ├── doc_quotes.zig   ← a workspace document quoting the tool's member list is checked against the tool + unit tests
     └── matrix.zig       ← Status enum, lib×target matrix render, summary + unit tests
 ```
 
@@ -135,7 +136,9 @@ non-zero. Only the wrapper reads the pin.
 **Exit non-zero iff at least one cell is `✗`.** A skipped target (`~`) never
 reddens the gate. A lib with no `test` block is still **compiled** on each
 target it does not opt out of (`runner.compileCell` spawns `botopink build
---target <t> --out .botopinkbuild/lib-test-build/<t>` in the lib's directory):
+--target <t> --out .botopinkbuild/lib-test-build/<t>/<id>` in the lib's
+directory — `<id>` is 64 random bits per cell run, and the directory is removed
+when the cell ends):
 `–` when it compiles, `✗` when it does not — a library that never wrote a test
 cannot break silently. A project whose `src/` holds no `.bp` file at all (a
 tooling repository carrying a `botopink.json`, e.g. `vscode-extension`) has
@@ -157,6 +160,14 @@ TEST <file>:<line> <name>
   duration <ms>ms
   ok | FAIL <name>  …
 ```
+
+**The cell's count is the child's run total**, never a module's own
+summary: `botopink test` prints one `<P> passed, <F> failed` per module
+and ends with `total: <P> passed, <F> failed in <N> module(s)` in text
+mode, or one aggregated `{"event":"summary",…}` under `--json`
+(`runner.parseChildSummary`, `parseTextTotal`). A test cell whose child
+exited 0 with **no** run total is a `✗` with the line `botopink test
+exited 0 but printed no run total` — nothing says how many tests ran.
 
 In text mode (no flag) the runner **re-emits the child's stdout
 untouched**: a downstream tool that needs to attribute the envelope
@@ -199,6 +210,17 @@ text matrix):
   build has no test count, and conflating the two is what let a restricted
   erlang row read as green.
 
+Before any cell, one record per discovered library names the directory
+its cells run in — `scripts/test-libs.sh` asks git for that checkout's
+commit to hold a known-red line to the commit it pins:
+
+```
+{"event":"lib","lib":"<name>","dir":"<dir>"}
+```
+
+and, when a workspace document disagrees with the tool (§ Documents
+that quote the tool), one `{"event":"doc_quote_mismatch"}`.
+
 The run terminates with a single aggregated record:
 
 ```
@@ -215,6 +237,32 @@ the upstream contract from
 [`../compiler-cli/AGENTS.md`](../compiler-cli/AGENTS.md) (`--json`
 section). Forward-compatible: a JSON consumer that does not recognise
 a key should ignore it.
+
+## Documents that quote the tool
+
+A workspace root's documents (`*.md` directly in the workspace
+directory) quote the refusal `botopink build` prints there, and that
+refusal enumerates every member. A list kept as prose is merged as
+prose: emilia front 39's merge took one side's copy of it whole and
+dropped the member the other side had added, in a hunk git resolved
+without a conflict. So `doc_quotes.check` reads every quote of `…run
+this command inside one of its members: <list>` (up to the closing
+backtick, whitespace collapsed — a quote may wrap) and compares it with
+`manifest.Workspace.memberList`, the list the tool renders. An elided
+quote (`…`) enumerates nothing and is not checked. A mismatch prints
+`<file>:<line>: the workspace refusal is quoted with the members …, but
+the tool prints …` and fails the run (exit 1, both modes); no flag turns
+it off.
+
+## Stale binary
+
+`botopink-lib-test` refuses to start when the checkout it (and the
+`botopink` beside it) was built from has changed since the build
+(`source_stamp.checkFresh` over `build_stamp`, embedded by `build.zig` —
+[`../source-stamp/AGENTS.md`](../source-stamp/AGENTS.md)): a library run
+against a stale compiler measures the previous compiler. `botopink
+test` makes the same check of its own binary, so a hand-run cell is
+covered too. Exit 1, naming the checkout and `run zig build there`.
 
 ## Parallel cells
 
@@ -246,8 +294,9 @@ other gates forever; without `/proc/loadavg` nothing waits.
 Concurrency inside one library directory was already the contract: two gates
 over one checkout run the same cells side by side, so `botopink test` writes to
 `.botopinkbuild/test-out/<target>/<id>/`, the comptime module cache is written
-by rename, and `compileCell` writes per target — two cells of one library in
-one run are never the same (lib, target) pair.
+by rename, and `compileCell` writes `.botopinkbuild/lib-test-build/<target>/<id>/`,
+per target and per run: a per-target directory alone was shared by two gates
+reaching the same (lib, target) cell.
 
 The two cells of one library DO run side by side with one cwd, so a library's
 tests must not write under it: `botopink test` hands every test runner its own
@@ -266,8 +315,8 @@ the other cell's write and compile: `rakun-data·commonJS` measured 6, `build`,
   own `.botopinkbuild/test-out/`. No global-cwd juggling. Per-lib is NOT
   per-run, though: that directory belongs to the checkout, which two gates
   share, so the child scopes its output one level further — per target and per
-  run, `.botopinkbuild/test-out/<target>/<id>/`, the way `compileCell` already
-  writes `.botopinkbuild/lib-test-build/<target>`.
+  run, `.botopinkbuild/test-out/<target>/<id>/`, and `compileCell` writes
+  `.botopinkbuild/lib-test-build/<target>/<id>/` the same way.
 - **Unsupported-target detection is child-driven**, not a hard-coded list: the
   runner scans the child's output for `"currently supports only"`. The moment
   `botopink test` learns `beam`/`wasm`, that target stops being skipped here with

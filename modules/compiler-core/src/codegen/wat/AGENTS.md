@@ -85,6 +85,21 @@ fixtures moved from a `WASM TEXT` block with that trap to a
 `refused_on_wasm` expectation, which still requires commonJS, erlang and beam to
 compile and fails if wasm ever starts accepting one.
 
+**A function that reaches such a cell is refused where IT is called**
+(`wat.zig`'s `collectHostBound` → `host_bound`). A bodied function whose body
+calls an `external_missing` cell — directly or through another such function,
+to a fixpoint — cannot run on wasm either; it is not emitted, and a call of it,
+bare or module-qualified, is the located refusal
+`` `deepEquals` calls `canonical`, which has no `#[@External.<Target>(…)]` for
+the wasm backend `` (`MissingExternal.via`). `main/0` is never host-bound: its
+body is the program, so a cell it calls is refused inside it as above. The rule
+is the one a host METHOD already follows (`hostMethods.zig`), and it is what
+lets a module import on wasm when some of its functions need a host:
+refusing inside `testing.asserts`' `deepEquals` failed every program that
+imported the module, called or not
+(`tests/language/run/std_asserts_on_every_target.bp`,
+`run/std_asserts_host_cell_on_wasm.bp`).
+
 A **bodyless `declare fn` with no `#[@External.<Target>(…)]` at all** keeps the
 old trap. That is the same cut commonJS makes — its `externals_missing` is filled
 only for an `isExternal()` fn — and it is what an interface's bodyless method
@@ -125,12 +140,25 @@ defect the front's step 3 names, and *not* the `forEach` accumulator it suspecte
   printed `0`/`1` for a `bool`, `values()` and a `string`-returning method printed
   a **pointer**.
 
-**The generic-parameter limit this leaves, deliberately.** Nothing here
-monomorphises, so `Array<K>` and `?V` carry `K`/`V` as declared: `keys()` on a
-`Dict<string, i32>` prints `[256,272]`, and `?V` with `V = string` prints an
-address. `elemKindOfTypeRef` reads a type parameter as `.i32`, which is right for
-the *slot* and wrong for the *text*. Fixing it needs the instantiated type at the
-call site, which this backend does not have.
+**A `?V` over a type parameter is always a box** (`optInfoOfTypeRef`, C-18's
+wasm half). Nothing here monomorphises, so the payload of `Dict<K, V>.at`'s `?V`
+may be a scalar, and a present `0` has to differ from absence: the writer —
+inside the generic body, where `owner_tparams` / `fn_tparams` put `V` in scope —
+boxes into `$__box_i32`, and the reader — at the call, where the method's
+registered return reads `?__tparam` (`eraseOptTypeParam`) — unboxes. Unboxed,
+the absent key printed `0` (`run/index_dict`, `run/index_at_optional`). A method
+declared `-> ?i32` boxes its `return` like a fn (`cur_ret_typeref` is set in
+`emitMemberFn`), and a `?T[]` of a scalar prints as the array or `null`
+(`arrayScalarCode`, `run/index_user_type`).
+
+**The generic-parameter limit this leaves, deliberately.** `Array<K>` carries
+`K` as declared: `keys()` on a `Dict<string, i32>` prints `[256,272]`.
+`elemKindOfTypeRef` reads a type parameter as `.i32`, which is right for the
+*slot* and wrong for the *text*; and `==` between two type-parameter values
+compares their WORDS, so `Dict.at` finds a string key only when both sides are
+one interned literal (`modules/method_on_unimported_type`, listed). Fixing it
+needs the instantiated type at the call site, which this backend does not
+have.
 
 **A tuple element is printed by its own shape, not by its address**
 (`tupleElemShapeOf`). This was the last silent wrong-answer class the directory
@@ -486,13 +514,20 @@ answered, and each had its own `expected-failures.txt` line:
   declaration of the method (`lowerBehaviorLit` → `expected_params`), and the
   call's result is judged by the lambda's body (`fieldLambdaCallIsString`) — it
   printed the string's address.
-- **A name two linked modules declare traps where it is called**
-  (`ambiguous_names`, `lowerPlainCall`). This backend links every module the
-  program imports into ONE namespace, and the first declaration of a name won:
-  `import {parse as parse2} from "two"` called `one`'s `parse` — and so did
-  `two`'s own calls to it — at exit 0. Mangling per module is the fix and is
-  not done (every name table keys by the bare name); until then the call is a
-  `RUNTIME TRAP`, not a wrong module's answer.
+- **A function two linked modules declare is mangled per module**
+  (`emitWat`, `link_mangled`, `linkRenames`, `renameLinkedCalls`). This backend
+  links every module the program imports into ONE namespace: the first
+  declaration keeps its name, a later one is emitted as `<module>/<name>`
+  (`two/parse`), and every call that means it — its own module's, an
+  importer's plain or aliased import, a namespace call's synthesised alias
+  (`__bp_ns_jwt__sign`) — is rewritten to that name in a COPY of the calling
+  module's declarations (a linked module's program is shared with its own
+  emission). The rewrite is a reflective walk over the AST, like
+  `alias_erase`, and touches plain calls only. Before, the first declaration
+  won and `import {parse as parse2} from "two"` answered `one`'s `parse`
+  (`modules/linked_fn_name_collision`, `modules/namespace_import_module`). A
+  module-level `val` two modules declare still traps where it is read
+  (`ambiguous_names`, `lowerPlainCall`).
 - **A variant reached through its enum is the enum's** (`callKind`):
   `__Token__Layout.Size(…)` — what a section path desugars to — built the
   RECORD `Size` when one of that name was in scope, and `.Layout.Size.Large`
@@ -509,7 +544,7 @@ member `libs/std/src/primitives.bp` declares:
 
 | Family | Lowered | Traps (pinned one program each by `tests/wat.zig` `a primitive method with no wasm lowering traps, never answers`) |
 |---|---|---|
-| `String` | every member but two — `charCodeAt` (`$__str_char_code`, `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte) and `chars` (`$__str_split` on `""`) since this row | `lines`, `words` — a split on a character class |
+| `String` | every member but two — `charCodeAt` (`$__str_char_code`, `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte) and `chars` (`$__str_split` on `""`, which cuts before every UTF-8 codepoint, as `split("")` does) since this row | `lines`, `words` — a split on a character class |
 | `Array` | the rest — `find` (`filter` then `at(0)`, the `?T` `at` answers) since this row | `pop` (mutates the blob in place), `flatMap` (a function value the inlined HOF path does not reach), `flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique` (grow through `append`) |
 | `Integer`, `Bool` | all | — |
 | `Float` | all — `toString` (`$__f64_to_str`, `5.0` → `5` as on node) since this row | — |

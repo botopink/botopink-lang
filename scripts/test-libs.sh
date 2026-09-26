@@ -17,7 +17,10 @@
 #   FAIL          a module did not compile or a test failed — the diagnostic is
 #                 printed above the cell line
 #   known red     FAIL on a cell listed in scripts/known-red-libs.txt, named with
-#                 the front that owns the fix; counted, does not fail the run
+#                 the front that owns the fix; counted, does not fail the run.
+#                 The line names the library commit it measured; when the
+#                 library's checkout is at any other commit the line is stale
+#                 and fails the run, red or green — re-measure it
 #   restricted    the library's `targets` list excludes this target, so the
 #                 cell is invisible to that library's own gate. It is run
 #                 anyway (`--include-unsupported`) and its FAILED-test count
@@ -32,8 +35,10 @@
 #   0  every cell passed, was skipped, is a listed known red, or is a restricted
 #      cell whose failed count is exactly what the ledger pins
 #   1  a runtime pre-flight failed, an unlisted cell failed, a listed known red
-#      passed (delete its line in scripts/known-red-libs.txt), or the ledger was
-#      refused (the three refusals below)
+#      passed (delete its line in scripts/known-red-libs.txt), a known-red line
+#      pins a commit its library has moved from (or names no commit), the ledger
+#      was refused (the three refusals below), or a workspace document quotes
+#      the tool's member list and disagrees with it
 #   N  the runner's own error exit (bad arguments, no library root)
 #
 # The restricted-targets ledger is strict in BOTH directions:
@@ -93,14 +98,56 @@ done
 
 # BOTOPINK_KNOWN_RED_LIBS overrides the list (used to test this script).
 known_file="${BOTOPINK_KNOWN_RED_LIBS:-$core_dir/scripts/known-red-libs.txt}"
+# A line is `<lib> <target> <commit> <owner> <reason…>`: `<commit>` is the
+# library checkout's HEAD the red was measured at (at least 12 hex digits).
 # known_owner <lib> <target> — prints "<owner> <reason>" for a listed cell.
 known_owner() {
     [ -f "$known_file" ] || return 1
     awk -v lib="$1" -v target="$2" '
         /^[[:space:]]*(#|$)/ { next }
-        $1 == lib && $2 == target { $1 = ""; $2 = ""; sub(/^[[:space:]]+/, ""); print; found = 1; exit }
+        $1 == lib && $2 == target { $1 = ""; $2 = ""; $3 = ""; sub(/^[[:space:]]+/, ""); print; found = 1; exit }
         END { exit found ? 0 : 1 }
     ' "$known_file"
+}
+# known_commit <lib> <target> — prints the pinned commit of a listed cell.
+known_commit() {
+    [ -f "$known_file" ] || return 1
+    awk -v lib="$1" -v target="$2" '
+        /^[[:space:]]*(#|$)/ { next }
+        $1 == lib && $2 == target { print $3; found = 1; exit }
+        END { exit found ? 0 : 1 }
+    ' "$known_file"
+}
+# known_cells — prints "<lib> <target>" for every known-red line, in file order.
+known_cells() {
+    [ -f "$known_file" ] || return 0
+    awk '/^[[:space:]]*(#|$)/ { next } { print $1, $2 }' "$known_file"
+}
+# Every library's directory, from the runner's `{"event":"lib"}` records:
+# one `<lib>\t<dir>` line each.
+lib_dirs=""
+lib_dir() { # lib_dir <lib> → its directory
+    awk -F '\t' -v lib="$1" '$1 == lib { print $2; exit }' <<<"$lib_dirs"
+}
+# known_stale <lib> <target> — prints why the line's pinned commit does not
+# hold (exit 0), or nothing (exit 1) when the library's checkout is at it.
+known_stale() {
+    local pin dir head
+    pin="$(known_commit "$1" "$2")" || return 1
+    if ! printf '%s' "$pin" | grep -Eq '^[0-9a-f]{12,40}$'; then
+        printf 'the line names no library commit (third field `%s`, want the 12+ hex digits of the checkout it was measured at)' "$pin"
+        return 0
+    fi
+    dir="$(lib_dir "$1")"
+    if [ -z "$dir" ] || ! head="$(git -C "$dir" rev-parse HEAD 2>/dev/null)"; then
+        printf 'pinned at %s, and the library has no git checkout to compare it with' "$pin"
+        return 0
+    fi
+    case "$head" in
+        "$pin"*) return 1 ;;
+    esac
+    printf 'pinned at %s, but the library is at %s' "$pin" "${head:0:12}"
+    return 0
 }
 
 field() { # field <json-line> <key>
@@ -146,6 +193,7 @@ jnum() { # jnum <json-line> <key> → decimal
 }
 
 passed=0; failed=0; known=0; skipped=0; no_tests=0; fixed=0; pinned=0
+known_moved=""; seen_known=""; doc_quotes_bad=0
 runner_exit=0
 unexpected=""; promoted=""
 # Ledger bookkeeping. `seen_restricted` / `seen_plain` are space-separated
@@ -170,6 +218,11 @@ while IFS= read -r line; do
             fi
             ;;
         '{"lib":'*) ;; # per-cell test summary — the cell_summary carries the verdict
+        '{"event":"lib"'*)
+            lib_dirs="$lib_dirs$(field "$line" lib)	$(field "$line" dir)
+"
+            ;;
+        '{"event":"doc_quote_mismatch"'*) doc_quotes_bad=1 ;;
         '{"event":"cell_summary"'*)
             lib="$(field "$line" lib)"; target="$(field "$line" target)"
             status="$(field "$line" status)"
@@ -221,6 +274,20 @@ while IFS= read -r line; do
                 seen_restricted="$seen_restricted $lib#$target"
             else
                 seen_plain="$seen_plain $lib#$target"
+            fi
+            # A known-red line is a measurement of one library commit. When the
+            # library has moved, the line says nothing about what runs now —
+            # red or green, it is stale, and the run fails until it is
+            # re-measured (deleted when the cell passes, re-pinned when not).
+            if [ $listed -eq 0 ]; then
+                seen_known="$seen_known $lib#$target"
+                if why_stale="$(known_stale "$lib" "$target")"; then
+                    known_moved="$known_moved $lib·$target"
+                    printf '\033[1;31m── %s · %s: %s, known-red line stale — %s\033[0m\n' "$lib" "$target" "$status" "$why_stale"
+                    printf '   → re-measure the cell: delete its line in scripts/known-red-libs.txt when it passes,\n'
+                    printf '     or re-pin it to the library commit it is still red at.\n'
+                    continue
+                fi
             fi
             case "$status" in
                 pass)
@@ -287,6 +354,20 @@ done <<EOF
 $(ledger_cells)
 EOF
 
+# A known-red line whose cell did not run in a full run names a cell that no
+# longer exists.
+if [ "$full_run" -eq 1 ]; then
+    while read -r k_lib k_target; do
+        [ -n "$k_lib" ] || continue
+        case " $seen_known " in *" $k_lib#$k_target "*) continue ;; esac
+        known_moved="$known_moved $k_lib·$k_target"
+        printf '\033[1;31m── %s · %s: a known-red line with no such cell in a full run\033[0m\n' "$k_lib" "$k_target"
+        printf '   → the member is gone or renamed; delete its line in scripts/known-red-libs.txt.\n'
+    done <<EOF
+$(known_cells)
+EOF
+fi
+
 echo
 printf 'test-libs: %d passed, %d failed, %d known red, %d restricted (pinned), %d skipped, %d without tests' \
     "$passed" "$failed" "$known" "$pinned" "$skipped" "$no_tests"
@@ -308,7 +389,13 @@ fi
 if [ -n "$ledger_stale" ]; then
     echo "test-libs: stale lines in scripts/restricted-targets.txt:$ledger_stale" >&2
 fi
-if [ "$failed" -gt 0 ] || [ "$fixed" -gt 0 ] ||
+if [ -n "$known_moved" ]; then
+    echo "test-libs: stale lines in scripts/known-red-libs.txt (re-measure each):$known_moved" >&2
+fi
+if [ "$doc_quotes_bad" -ne 0 ]; then
+    echo "test-libs: a workspace document quotes the tool's member list and disagrees with it (named above)" >&2
+fi
+if [ "$failed" -gt 0 ] || [ "$fixed" -gt 0 ] || [ -n "$known_moved" ] || [ "$doc_quotes_bad" -ne 0 ] ||
     [ -n "$ledger_missing" ] || [ -n "$ledger_moved" ] || [ -n "$ledger_stale" ]; then
     exit 1
 fi

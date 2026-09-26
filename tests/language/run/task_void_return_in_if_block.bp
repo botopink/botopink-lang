@@ -1,0 +1,40 @@
+//// A bare `return;` inside an `if` block of a `@Task<void>` body leaves the
+//// function: nothing after the block runs. The same one level deeper, and
+//// in the `else` branch.
+////
+//// The erlang gap this pins (`00 · 02-erlang`): the statements after the
+//// block still ran, so `early(true)` printed `after`.
+
+fn early(stop: bool) -> @Task<void> {
+    if (stop) {
+        return;
+    };
+    @print("after");
+}
+
+fn deeper(a: bool, b: bool) -> @Task<void> {
+    if (a) {
+        if (b) {
+            return;
+        };
+        @print("a, not b");
+    } else {
+        @print("not a");
+        return;
+    };
+    @print("end of deeper");
+}
+
+fn run() -> @Task<void> {
+    await early(true);
+    @print("--");
+    await early(false);
+    @print("--");
+    await deeper(true, true);
+    @print("--");
+    await deeper(true, false);
+    @print("--");
+    await deeper(false, true);
+}
+
+pub fn main() { run(); }

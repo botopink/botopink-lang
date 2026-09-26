@@ -18,15 +18,18 @@ val Invoice = type(
   (memory (export "memory") 1)
   (data (i32.const 256) "\0f\00\00\00invalid invoice")
   (global $__heap_ptr (mut i32) (i32.const 276))
-  (func $Invoice_total (param $self i32) (result i32)
+  (func $Invoice_total (param $self i32) (result f64)
     local.get $self
     i32.load ;; .subtotal
+    f64.load
     local.get $self
     i32.load ;; .subtotal
+    f64.load
     local.get $self
     i32.load offset=4 ;; .taxRate
-    i32.mul
-    i32.add
+    f64.load
+    f64.mul
+    f64.add
     return
   )
   (func $Invoice_validate (param $self i32)

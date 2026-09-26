@@ -1,0 +1,12 @@
+//// C-04 across a module boundary — a default that names a binding of the
+//// declaring module (`fallback()`, private to `greet`) cannot be written at
+//// the importer's call site, so it does not travel: omitting that argument
+//// from another module is the arity error of a required parameter, never a
+//// call to a function the importer cannot see.
+
+pub mod greet;
+import {greet} from "greet";
+
+pub fn main() {
+    @print(greet("hello"));
+}

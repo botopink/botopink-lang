@@ -20,7 +20,7 @@ val Shape = type {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $Shape_area (param $shape i32) (result i32)
+  (func $Shape_area (param $shape i32) (result f64)
     (local $radius f64)
     (local $side f64)
     (local $base f64)
@@ -32,7 +32,7 @@ val Shape = type {
     i32.load ;; variant tag
     i32.const 0 ;; Circle
     i32.eq
-    (if (result i32)
+    (if (result f64)
       (then
     local.get $__case_0
     f32.load offset=4
@@ -41,17 +41,15 @@ val Shape = type {
     local.get $radius
     local.get $radius
     f64.mul
-    f32.const 3.14
-    f64.promote_f32
+    f64.const 3.14
     f64.mul
-    i32.trunc_f64_s
       )
       (else
     local.get $__case_0
     i32.load ;; variant tag
     i32.const 1 ;; Square
     i32.eq
-    (if (result i32)
+    (if (result f64)
       (then
     local.get $__case_0
     f32.load offset=4
@@ -60,14 +58,13 @@ val Shape = type {
     local.get $side
     local.get $side
     f64.mul
-    i32.trunc_f64_s
       )
       (else
     local.get $__case_0
     i32.load ;; variant tag
     i32.const 2 ;; Triangle
     i32.eq
-    (if (result i32)
+    (if (result f64)
       (then
     local.get $__case_0
     f32.load offset=4
@@ -80,14 +77,11 @@ val Shape = type {
     local.get $base
     local.get $height
     f64.mul
-    f32.const 0.5
-    f64.promote_f32
+    f64.const 0.5
     f64.mul
-    i32.trunc_f64_s
       )
       (else
-    f32.const 0.0
-    i32.trunc_f32_s
+    f64.const 0.0
       )
     )
       )

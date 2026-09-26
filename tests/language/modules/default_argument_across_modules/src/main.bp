@@ -1,0 +1,20 @@
+//// C-04 across a module boundary — a call that omits trailing parameters with
+//// a declared default is filled like a local one, whether the function is a
+//// sibling module's or a dependency's, and a label claims the parameter it
+//// names. Only a closed default travels: a literal, `true` / `false`, a sign,
+//// or an array / tuple literal of those.
+
+pub mod pad;
+import {pad} from "pad";
+import {tag, pair} from "tags";
+
+pub fn main() {
+    @print(pad("7"));
+    @print(pad("7", 2));
+    @print(pad("7", fill: "0"));
+    @print(tag("a"));
+    @print(tag("b", ["x", "y"]));
+    @print(tag("c", closed: true));
+    @print(pair());
+    @print(pair(at: [1, 2]));
+}

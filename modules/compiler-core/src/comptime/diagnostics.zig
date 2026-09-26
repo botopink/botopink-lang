@@ -86,6 +86,13 @@ pub const gen_infer_conflicting_errors: []const u8 = "gen-infer-conflicting-erro
 /// and broken at run time.
 pub const option_expect_removed: []const u8 = "option-expect-removed";
 
+/// A member of a `@Result` value that is not one of its builtin methods
+/// (`map`, `flatMap`, `unwrapOr`, `isOk`, `isError`): `parse(q).length` read a
+/// field off the `{ok, V}` / `{ok: V}` carrier — `null` on commonJS, a crash on
+/// erlang. The payload is reached through `try` or `unwrapOr` (`infer.zig`
+/// `refuseResultMemberAccess`).
+pub const result_member_not_a_method: []const u8 = "result-member-not-a-method";
+
 // ── decision 105 — the three loops and the generator scope ───────────────────
 
 /// `break <value>` outside a generator scope (an annotated fn or an annotated
@@ -371,6 +378,7 @@ pub const all_codes = [_][]const u8{
     fn_param_default_trailing_only_parse,
     fn_param_arity_exceeded,
     option_expect_removed,
+    result_member_not_a_method,
     break_value_outside_generator,
     break_outside_loop,
     continue_outside_loop,

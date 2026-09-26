@@ -22,7 +22,7 @@ const h = @import("helpers.zig");
 /// `lowering` (e.g. `{extfunc, lists, foreach, 2}`) — the lowering the test guards.
 fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8, lowering: []const u8) !void {
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(loc);
+    const build_root = h.buildRootPathFromSrc(io, loc);
     var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[0].outcome;
@@ -39,7 +39,7 @@ fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8, lowe
 /// decorator whose effect is what it contributes (`@emit`).
 fn assertAcceptsWithReply(comptime loc: std.builtin.SourceLocation, src: []const u8, lowering: []const u8, reply: []const u8) !void {
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(loc);
+    const build_root = h.buildRootPathFromSrc(io, loc);
     var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[0].outcome;
@@ -63,7 +63,7 @@ fn expectLowering(traces: []const comptimeMod.trace.Entry, lowering: []const u8)
 /// The decorator rejects the declaration with exactly `expected` as its message.
 fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, expected: []const u8) !void {
     const io = std.testing.io;
-    const build_root = comptime h.buildRootPathFromSrc(loc);
+    const build_root = h.buildRootPathFromSrc(io, loc);
     var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[0].outcome;

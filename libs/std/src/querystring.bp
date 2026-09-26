@@ -68,9 +68,8 @@ fn isControlEscape(h1: string, h2: string) -> bool {
 }
 
 // The first problem in one raw component from index `i`, or `""` when it may
-// be decoded. Walks the string by `at`, not by `split("")` or `chars()`:
-// beam's `split("")` answers the whole string as one piece, and `chars()` is
-// a default fn a dependency's copy loses on commonJS.
+// be decoded. Walks the string by `at`: a `%` reads its two digits by index,
+// which a `split("")` piece list would only re-index.
 fn scan(s: string, i: i32) -> string {
     if (i >= s.length) return "";
     val c = s.at(i).unwrapOr("");

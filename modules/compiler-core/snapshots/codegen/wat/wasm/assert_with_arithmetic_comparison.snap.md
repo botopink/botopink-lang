@@ -13,11 +13,11 @@ fn f() {
   (data (i32.const 256) "\09\00\00\00main.bp:2")
   (global $__heap_ptr (mut i32) (i32.const 272))
   (func $f
-    f32.const 1.0
-    f32.const 2.0
-    f32.add
-    f32.const 3.0
-    f32.eq
+    f64.const 1.0
+    f64.const 2.0
+    f64.add
+    f64.const 3.0
+    f64.eq
     i32.eqz
     (if
       (then

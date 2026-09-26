@@ -1,0 +1,2 @@
+`deepEquals` calls `canonical`, which has no `#[@External.<Target>(…)]` for the wasm backend
+11:38

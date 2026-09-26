@@ -89,10 +89,21 @@ pub const MissingExternal = struct {
     /// not compile for the beam backend: the construct the reader or the
     /// lowering refused, by name (decision 141).
     refusal: ?[]const u8 = null,
+    /// Set when the called function has a body but reaches a host cell with
+    /// no target for this backend: that cell's name (wasm's `host_bound`).
+    via: ?[]const u8 = null,
 
     /// This as the diagnostic a failed module carries. The message is owned by
     /// `allocator`, like every other `Diagnostic.type`.
     pub fn diagnostic(self: MissingExternal, allocator: std.mem.Allocator) !Diagnostic {
+        if (self.via) |cell| return .{ .type = .{
+            .message = try std.fmt.allocPrint(
+                allocator,
+                "`{s}` calls `{s}`, which has no `#[@External.<Target>(…)]` for the {s} backend",
+                .{ self.name, cell, self.target },
+            ),
+            .loc = self.loc,
+        } };
         if (self.refusal) |why| return .{ .type = .{
             .message = try std.fmt.allocPrint(
                 allocator,

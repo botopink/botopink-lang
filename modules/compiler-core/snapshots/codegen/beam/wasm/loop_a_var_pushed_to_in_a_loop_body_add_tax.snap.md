@@ -23,7 +23,7 @@ fn main() {
     (local $precosBrutos i32)
     (local $precosComTaxa i32)
     (local $valor i32)
-    (local $taxa f32)
+    (local $taxa f64)
     (local $__iter0 i32)
     (local $__idx0 i32)
     (local $__len0 i32)
@@ -79,16 +79,16 @@ fn main() {
         i32.load offset=4
         local.set $valor
     local.get $valor
-    f32.convert_i32_s
-    f32.const 0.15
-    f32.mul
+    f64.convert_i32_s
+    f64.const 0.15
+    f64.mul
     local.set $taxa
     local.get $precosComTaxa
     local.get $valor
-    f32.convert_i32_s
+    f64.convert_i32_s
     local.get $taxa
-    f32.add
-    i32.trunc_f32_s
+    f64.add
+    i32.trunc_f64_s
     call $__arr_push
     local.set $precosComTaxa
         local.get $__idx0

@@ -48,8 +48,7 @@ an `@Result` alias typing a function that only passes the value along, on all fo
 `modules/import_type_alias` — a `pub` alias imported like a type, the types its target names with it.
 Decision 137 (`try` / `await` begin an expression) adds `run/try_start_positions` — a `val`
 initializer, a call argument, an array and a tuple element, an `if` condition, a `case` subject, a
-`for` iterable, `x = …`, a `return` and `try … catch` in an argument, on all four targets (wasm listed:
-an array out of a `@Result` payload iterates as empty) — and three `reject/` cells, one per operand
+`for` iterable, `x = …`, a `return` and `try … catch` in an argument, on all four targets — and three `reject/` cells, one per operand
 shape: `try_operand_of_operator` (`total + try r`), `try_in_parentheses` (`(try r).toString()`) and
 `await_operand_of_unary` (`!await ready()`).
 Decision 138 (the empty record is `type Name()`) adds `run/type_empty_record` — `type Marker()` and
@@ -66,6 +65,20 @@ before `main`, dependencies first, and a val read twice is evaluated once — on
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
+C-03's beam half adds `run/std_template_host_fns_across_modules` — std host functions whose
+`@External.Erlang` body is a template (`fs.exists`, `fs.readText`, `os.eol`, `process.platform`,
+`encoding.hexEncode`, `hash.sha256`, `json.quote`, `regex.matches`) called from the program's
+module through a folder namespace and a leaf import, on commonJS, erlang and beam (`.targets`: wasm
+refuses std's own call sites of those cells).
+`00 · 03-beam`'s split row adds `run/string_split_empty_separator` — `split("")` cuts into UTF-8
+codepoints (`"%0Aéz"` → 5 pieces, `""` → none) beside a non-empty separator and an empty separator
+held in a `val`, on all four targets (beam lowered it to `string:split/3`, wasm cut between bytes).
+01-std step 2 adds `run/std_asserts_on_every_target` — `import {testing.asserts}` and its pure
+assertions on all four targets — and `run/std_asserts_host_cell_on_wasm` — `asserts.deepEquals`
+on commonJS, erlang and beam, refused on wasm at the call (`.wasm.expect`: `deepEquals` calls
+`canonical`, which has no wasm binding). The same front's `reject/result_field_read` and
+`reject/result_unknown_method` refuse a member of a `@Result` that is not one of its methods
+(`result-member-not-a-method`).
 The onze front's compiler findings (`specs/1.0.10-beta/06-onze/49-onze-stand-up`, F1–F10) add a
 cell each: `modules/pub_val_in_a_test` (F1 — a sibling's `pub val` read by a TEST: the erlang runner
 did not load the sibling; the first project cell of the test kind), `modules/import_type_closure_across_modules`
@@ -79,9 +92,32 @@ truncates toward zero on every target, float `/` stays float) and `modules/lexer
 (F8 — every target refuses the project with `bad string escape` located in the imported module, via
 `<target>.expect`). The erlang float-literal item adds `run/float_literal_spellings.bp` (`1e3`,
 `2.5E3`, `3e+2`, `5e-1`, `1_000.5` are `f64` on all four targets) and
-`run/number_literal_erlang_spellings.bp` (`5e-324`, the largest `f64`, and `0xFF + 0b101 + 0o17`;
-`.targets` is `commonJS erlang beam` — wasm lowers a float literal to `f32.const` and interns a radix
-literal as a string, gaps of its own).
+`run/number_literal_erlang_spellings.bp` (`5e-324`, the largest `f64`, an `f64` record field and
+`0xFF + 0b101 + 0o17`, on all four targets — wasm since its float literal is an `f64.const` and its
+radix literal a decimal `i32.const`).
+The backend and runtime rows of `00` (`front/codegen-rows`) add a cell each, every one failing on the
+parent binary: `run/task_await_in_if_block` (an `if` block that `await`s without returning, inside a
+`@Task` body — commonJS lowered it into a plain arrow and the module did not load),
+`run/task_void_return_in_if_block` (a bare `return;` in an `if` block of a `@Task<void>` body — wasm
+emitted a `return` with nothing on the stack), `modules/dependency_files_order` (a dependency whose
+`files` lists every importer before what it imports, `from "a"` and a bare `import {Leaf};`),
+`run/external_erlang_host_module_missing` (`.targets` `erlang`: an `@External.Erlang` module that is
+neither shipped nor in the Erlang code path is a located build error, `.erlang.expect`),
+`modules/erlang_host_sidecar_shipped` (a project's `src/sidecars/*.erl` reached by `botopink run`;
+`commonJS.expect` / `wasm.expect`, beam listed), `modules/erlang_sidecar_named_like_a_module` (a
+sidecar `text.erl` beside the module `text.bp` is shipped — the shipper skipped a basename match), `reject/bare_print_call` (`println(x)` is unbound
+and the refusal names `@println`), `run/float_record_field` (an `f64` record field read, compared,
+destructured by name and by constructor, and through a method taking and answering an `f64` — wasm
+narrowed and bit-read it, erlang and beam did not lower `val Pt(y, _) = p`) and
+`modules/linked_fn_name_collision` (two modules each declaring `parse`, reached by their own calls, a
+plain import and an aliased one — wasm's one flat namespace). `run/val_assert_record_pattern` (a
+`val assert` over a record's constructor pattern — commonJS destructured the binders' own names,
+erlang tested a tag no constructor builds) came out of the same work; wasm and beam are listed.
+C-04 across a module boundary adds `modules/default_argument_across_modules` — a call omitting
+trailing defaulted parameters of a sibling module's and of a path dependency's function, one label
+claiming its parameter, on all four targets — and `modules/default_argument_open_across_modules`: a
+default that names a private function of its module does not travel, so omitting it from another
+module is the arity error, on every target (`<target>.expect`).
 The rakun rows of `language-gaps.md` (the language-gaps sweep, `front/compiler-gaps-rakun`) add a
 cell each, every one failing on the parent binary: `run/behavior_method_by_receiver_type` and
 `run/behavior_method_host_value` (a method a `behavior` declares is the VALUE's, beside another type
@@ -504,7 +540,7 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `modules/<name>/<target>.expect` | the `.<target>.expect` claim for a whole project: that target **refuses** it | exit ≠ 0 and the diagnostic contains line 1 (and ` --> <line 2>` when present — `src/<file>.bp:<L:C>`, the file named because a project has several). `modules/external_method_imported/wasm.expect` is the live one |
 
 Any other content in `.exit` is a malformed claim and fails the cell. **Eighteen cells carry
-`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `behavior_array_of_implementers`, `behavior_method_by_receiver_type`, `behavior_method_host_value`, `behavior_value_from_implementer`, `external_host_record`, `external_method_on_host_record`, `external_template_refused_on_beam`, `host_array_slice_without_start`, `host_erlang_task_result`, `host_node_task_result`, `number_literal_erlang_spellings`, `std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `task_throw_resolves_error`). The one the paragraph below was written about is
+`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `behavior_array_of_implementers`, `behavior_method_by_receiver_type`, `behavior_method_host_value`, `behavior_value_from_implementer`, `external_erlang_host_module_missing`, `external_host_record`, `external_method_on_host_record`, `external_template_refused_on_beam`, `host_array_slice_without_start`, `host_erlang_task_result`, `host_node_task_result`, `std_default_fn_in_a_std_module`, `string_char_code_after_slice` and `task_throw_resolves_error`). The one the paragraph below was written about is
 `run/string_char_code_after_slice.bp`, which names `commonJS erlang` because
 `String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
 (`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it

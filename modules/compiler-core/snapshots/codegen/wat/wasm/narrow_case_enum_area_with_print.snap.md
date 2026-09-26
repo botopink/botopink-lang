@@ -37,8 +37,7 @@ fn main() {
     f32.load offset=4
     f64.promote_f32
     local.set $r
-    f32.const 3.14
-    f64.promote_f32
+    f64.const 3.14
     local.get $r
     f64.mul
     local.get $r
@@ -83,7 +82,8 @@ fn main() {
     i32.const 0
     i32.store offset=4
     local.get $__mem0
-    f32.const 2.0
+    f64.const 2.0
+    f32.demote_f64
     f32.store offset=8
     local.get $__mem0
     i32.const 4
@@ -103,7 +103,8 @@ fn main() {
     i32.const 1
     i32.store offset=4
     local.get $__mem1
-    f32.const 3.0
+    f64.const 3.0
+    f32.demote_f64
     f32.store offset=8
     local.get $__mem1
     i32.const 4

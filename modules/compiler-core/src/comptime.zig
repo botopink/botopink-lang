@@ -96,6 +96,11 @@ pub const ComptimeOutput = struct {
     name: []const u8,
     src: []const u8,
     outcome: Outcome,
+    /// The driver's package-relative source path (`Module.srcPath`,
+    /// `src/main.bp`), empty when it gave none: the file a test's and an
+    /// `assert`'s `<file>:<line>` names, as `@src().file` does
+    /// (`displaySrcPath`) — a backend falls back to `<name>.bp`.
+    srcPath: []const u8 = "",
 
     pub const Outcome = union(enum) {
         ok: OkData,
@@ -1198,6 +1203,11 @@ fn resolveImports(
                         try infer.registerImportedTemplateFn(env, local, tfn, owner);
                         if (registry.getPtr(owner)) |ex| try env.templateOwnerExports.put(env.arena, owner, ex);
                     };
+                    // C-04 — an imported function's parameters as written, so
+                    // a call here that omits a trailing default is filled.
+                    if (owner.len > 0) if (templateRegistry.get(try defaultParamsKey(env.arena, owner, name))) |pfn| {
+                        try env.fnParams.put(local, pfn.params);
+                    };
                     // Imported decorators (`comptime _: @Decl` first param) carry
                     // their decl across modules too, so `#[name(args)]` sites in
                     // THIS module argument-check against the marker and run its
@@ -1305,6 +1315,41 @@ fn decoratorConflictKey(arena: std.mem.Allocator, path: []const u8, name: []cons
 
 fn conflictCarrier(message: []const u8) ast.FnDecl {
     return .{ .name = message, .isPub = false, .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{} };
+}
+
+/// The `templateRegistry` key of the parameter list, as written, of the `pub fn`
+/// `name` of module `path` whose parameters declare a default (C-04 across a
+/// module boundary). No import item can spell it: it holds two NULs.
+fn defaultParamsKey(arena: std.mem.Allocator, path: []const u8, name: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, "{s}\x00{s}\x00params", .{ path, name });
+}
+
+/// A default an importer can materialise at its own call site: it names no
+/// binding of the declaring module. Literals (a string without a `${…}` hole),
+/// `true` / `false`, `null`, a sign, and array / tuple literals of those.
+fn isClosedDefault(e: ast.Expr) bool {
+    return switch (e) {
+        .literal => |l| switch (l.kind) {
+            .stringLit, .numberLit, .null_ => true,
+            else => false,
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false"),
+            else => false,
+        },
+        .unaryOp => |op| isClosedDefault(op.expr.*),
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| isClosedDefault(inner.*),
+            .arrayLit => |al| for (al.elems) |x| {
+                if (!isClosedDefault(x)) break false;
+            } else true,
+            .tupleLit => |tl| for (tl.elems) |x| {
+                if (!isClosedDefault(x)) break false;
+            } else true,
+            else => false,
+        },
+        else => false,
+    };
 }
 
 /// The package key for a module path: the segment before the first `/` (a lib
@@ -1444,6 +1489,24 @@ fn registerExports(
                 const f = b.decl.@"fn";
                 if (f.returnType) |rt| {
                     if (rt.isTemplateReturnType()) try templateRegistry.put(try comptimeRegistryKey(arena, path, b.name), f);
+                }
+                // C-04 across a module boundary — a function whose parameters
+                // declare a default exports them as written, so an importer's
+                // short call is filled like a local one. A default that names a
+                // binding of this module cannot be written at the importer's
+                // call site: that parameter travels without it, and a call
+                // omitting it stays the arity error it was.
+                const has_default = for (f.params) |p| {
+                    if (p.default != null) break true;
+                } else false;
+                if (has_default and !infer.isDecoratorParams(f.params)) {
+                    const params = try arena.dupe(ast.Param, f.params);
+                    for (params) |*p| if (p.default) |d| if (!isClosedDefault(d)) {
+                        p.default = null;
+                    };
+                    var carried = f;
+                    carried.params = params;
+                    try templateRegistry.put(try defaultParamsKey(arena, path, b.name), carried);
                 }
                 // Decorators (`comptime _: @Decl` first param) export their decl
                 // too, so importing modules can run the body over their annotated
@@ -1804,6 +1867,7 @@ pub fn compileTypesOnly(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .parseError = se },
                 });
             },
@@ -1811,6 +1875,7 @@ pub fn compileTypesOnly(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .validationError = verr.info },
                 });
             },
@@ -1818,6 +1883,7 @@ pub fn compileTypesOnly(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .typeError = te },
                 });
             },
@@ -1929,6 +1995,7 @@ pub fn compileTypesOnly(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .ok = .{
                         .bindings = succ.bindings,
                         .comptime_script = null,
@@ -2003,6 +2070,7 @@ pub fn compile(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .parseError = se },
                 });
             },
@@ -2010,6 +2078,7 @@ pub fn compile(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .validationError = verr.info },
                 });
             },
@@ -2017,6 +2086,7 @@ pub fn compile(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .typeError = te },
                 });
             },
@@ -2118,6 +2188,7 @@ pub fn compile(
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
+                    .srcPath = mod.srcPath,
                     .outcome = .{ .ok = .{
                         .bindings = succ.bindings,
                         .comptime_script = ct.comptime_script,

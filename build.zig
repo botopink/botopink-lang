@@ -8,6 +8,7 @@
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
 const wasm3 = @import("modules/wasm3/build.zig");
+const source_stamp = @import("modules/source-stamp/src/root.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -114,6 +115,33 @@ pub fn build(b: *std.Build) void {
     const run_test_scratch_tests = b.addRunArtifact(test_scratch_tests);
     // Its own tests write a scratch tree — under its own package directory.
     run_test_scratch_tests.setCwd(b.path("modules/test-scratch"));
+
+    // ── source_stamp (the stale-binary refusal) ───────────────────────────────
+    // The content hash of the sources `botopink` and `botopink-lib-test` are
+    // built from, computed HERE, when the build is configured, and embedded
+    // with the checkout's absolute path. A library run (`botopink test`,
+    // `botopink-lib-test`) hashes the same files again and refuses to start
+    // when they differ: the binary is older than its sources, and would
+    // measure the previous compiler. See `modules/source-stamp/src/root.zig`.
+    const stamp_hash = source_stamp.hash(b.allocator, b.graph.io, b.build_root.handle) catch |err|
+        std.debug.panic("source_stamp: cannot hash the checkout's sources: {s}", .{@errorName(err)});
+    const stamp_root = b.build_root.handle.realPathFileAlloc(b.graph.io, ".", b.allocator) catch |err|
+        std.debug.panic("source_stamp: cannot resolve the checkout's path: {s}", .{@errorName(err)});
+    const stamp_options = b.addOptions();
+    stamp_options.addOption([]const u8, "source_root", stamp_root);
+    stamp_options.addOption([]const u8, "source_hash", &stamp_hash);
+    const source_stamp_mod = b.addModule("source_stamp", .{
+        .root_source_file = b.path("modules/source-stamp/src/root.zig"),
+        .target = target,
+    });
+    const source_stamp_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/source-stamp/src/root.zig"),
+            .target = target,
+        }),
+        .filters = test_filters,
+    });
+    const run_source_stamp_tests = b.addRunArtifact(source_stamp_tests);
 
     // ── manifest (shared `botopink.json` model) ───────────────────────────────
     // The one reading of the manifest — packages, workspaces, the dependency
@@ -298,6 +326,7 @@ pub fn build(b: *std.Build) void {
     }
     test_step.dependOn(&run_manifest_tests.step);
     test_step.dependOn(&run_test_scratch_tests.step);
+    test_step.dependOn(&run_source_stamp_tests.step);
 
     // ── shared-checkout gate (front 00 · 11-tooling) ──────────────────────────
     // HARD RULE: a test may not name a cwd-anchored `.botopinkbuild` path. Each
@@ -356,6 +385,8 @@ pub fn build(b: *std.Build) void {
             .{ .name = "botopink", .module = core_mod },
             .{ .name = "manifest", .module = manifest_mod },
             .{ .name = "test_scratch", .module = test_scratch_mod },
+            .{ .name = "source_stamp", .module = source_stamp_mod },
+            .{ .name = "build_stamp", .module = stamp_options.createModule() },
         },
     });
 
@@ -378,6 +409,8 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "botopink", .module = core_mod },
                 .{ .name = "manifest", .module = manifest_mod },
+                .{ .name = "source_stamp", .module = source_stamp_mod },
+                .{ .name = "build_stamp", .module = stamp_options.createModule() },
             },
         }),
     });
@@ -416,6 +449,8 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "manifest", .module = manifest_mod },
+                .{ .name = "source_stamp", .module = source_stamp_mod },
+                .{ .name = "build_stamp", .module = stamp_options.createModule() },
             },
         }),
     });
@@ -430,6 +465,8 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "manifest", .module = manifest_mod },
                 .{ .name = "test_scratch", .module = test_scratch_mod },
+                .{ .name = "source_stamp", .module = source_stamp_mod },
+                .{ .name = "build_stamp", .module = stamp_options.createModule() },
             },
         }),
         .filters = test_filters,

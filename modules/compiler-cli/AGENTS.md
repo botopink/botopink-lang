@@ -21,7 +21,9 @@ compiler-cli/
 │   │                          examples/modules); `zig build test-backends`
 │   ├── backend_exec/        ← numeric + records fixture projects
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
-│   │                          (multi / none), assert message, mixed pass/fail exit;
+│   │                          (multi / none), assert message, a failing `try`, the
+│   │                          FAIL line's `src/main.bp:<line>` (commonJS + erlang),
+│   │                          mixed pass/fail exit, the `.snap.new` candidate list;
 │   │                          `botopink-lib-test` compiles a test-less library,
 │   │                          and prints under `--jobs 4` what `--jobs 1` prints;
 │   │                          a dependency's erlang host `.erl` is shipped and reached
@@ -201,10 +203,10 @@ What each command promises. A row the code does not meet yet is marked
 
 | Command | Reads | Writes | Spawns | Exit 0 | Exit 1 |
 |---|---|---|---|---|---|
-| `build [--target T] [--out D] [--typescript]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<stem><ext>` for every module that compiled (+ `.d.ts`, + `.mjs` sidecars on commonJS); the previous artifact of a module that did not compile is deleted. The **stem** is the module ATOM under `D/erl/` or `D/beam/` for the erlang and BEAM targets (`std/math` → `D/erl/std@math.erl`), because `erlc` refuses a `-module` atom that differs from its file's basename; commonJS, its `.d.ts` and wasm keep the mirrored `D/<module path>` tree, because a `require` target and a wasm import segment ARE the module path (`cli/build.zig` `artifactPath`/`targetSubdir`) | nothing — `codegen.generateWith(…, .{ .execute = false })` emits without running the program | every module compiled and its artifact is on disk | no project, unsupported target, unresolvable tree or dependency, or **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` |
+| `build [--target T] [--out D] [--typescript]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<stem><ext>` for every module that compiled (+ `.d.ts`, + `.mjs` sidecars on commonJS); the previous artifact of a module that did not compile is deleted. The **stem** is the module ATOM under `D/erl/` or `D/beam/` for the erlang and BEAM targets (`std/math` → `D/erl/std@math.erl`), because `erlc` refuses a `-module` atom that differs from its file's basename; commonJS, its `.d.ts` and wasm keep the mirrored `D/<module path>` tree, because a `require` target and a wasm import segment ARE the module path (`cli/build.zig` `artifactPath`/`targetSubdir`) | the program is never run — `codegen.generateWith(…, .{ .execute = false })` emits only; on **erlang** one `erl` compiles every written `.erl` in memory with the OTP compiler (`checkErlang`), because a build that only transpiled proved nothing about erlang | every module compiled, its artifact is on disk, and on erlang the OTP compiler accepted every emitted module | no project, unsupported target, unresolvable tree or dependency, **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` — or, on erlang, the OTP compiler refused an emitted module (each refusal printed `<file>:<line>:<col>: <message>`, then `the OTP compiler refused emitted erlang`) or `erl` could not be run |
 | `run [--target T] [--module M] [--out D] [-- args…]` | what `build` reads | what `build` writes, into `D` | `node` / `wasmtime` on `D/M.<ext>`; on **erlang** `erlc -o D/erl` over every emitted `.erl` and then `erl -noshell -pa D/erl -eval "M:main([]), halt()."` (`beam` only prints the `erlc +from_asm` hint) | the program's own 0 | `build`'s code, or the program's — on erlang a **crash is `1`**, `erl`'s status, where `escript` used to exit `127` (see "the erlang runner reaches one module") |
 | `check [<path>]` | `botopink.json`, `src/` **and** `test/`, dependencies — in `<path>` when given | nothing | `erl` (comptime) | every module type-checks | at least one diagnostic, each with file, line and excerpt; failing modules named |
-| `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/<target>/<id>/**` — one directory per RUN and per TARGET (`id` is 64 random bits), removed again when the run ends; its `tmp/` is the tests' scratch directory, named in `BOTOPINK_TEST_TMPDIR`. Never the shared `test-out/` root: `botopink-lib-test` runs every cell with `cwd = <lib dir>`, so two gates over one library checkout used to empty each other's output mid-run and red a library nobody owned | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed | a module failed to compile, or a test failed; the modules that compiled still ran their tests and are reported |
+| `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/<target>/<id>/**` — one directory per RUN and per TARGET (`id` is 64 random bits), removed again when the run ends; its `tmp/` is the tests' scratch directory, named in `BOTOPINK_TEST_TMPDIR`. Never the shared `test-out/` root: `botopink-lib-test` runs every cell with `cwd = <lib dir>`, so two gates over one library checkout used to empty each other's output mid-run and red a library nobody owned | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed; the last stdout line is the run's total, `total: <P> passed, <F> failed in <N> module(s)` | a module failed to compile, a test failed, a module's runner printed no summary line (it stopped before its tests finished — named), or the binary is **stale**: its checkout's sources changed since it was built (`source_stamp`, refused before anything runs); the modules that compiled still ran their tests and are reported |
 | `format [paths…]` | the files and directories named, else the current directory — every `.bp` **and** `.d.bp` under it (`src/**`, `test/**`, `examples/**`, the projects nested inside), not entering hidden directories or `node_modules`, and not reaching a `reject/<n>.bp` that has its `<n>.expect` beside it (the language suite's rejected program — decision 66; the exemption is the directory's shape, decision 67: no skip list, pragma or environment variable) | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
 | `format --check [paths…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change (one `Formatted <path>` line each, then `N file(s) would be reformatted`), or could not be read, lexed or parsed. `scripts/format-check.sh` (gate stage 3, CI) calls it over the compiler's canonical trees |
 | `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
@@ -376,6 +378,25 @@ TEST <file>:<line> <name>
 The runner closes with a single summary line: `<P> passed, <F> failed`.
 Exit code is non-zero when any test fails.
 
+`<file>` is the package-relative source path the driver scanned
+(`src/main.bp`, `test/foo_test.bp` — `Module.srcPath`, the file `@src().file`
+names), on the TEST line, the FAIL line and an `assert`'s location alike; a
+dependency's is `<its src>/<file>` with a trailing `/` of `src` dropped
+(`libs.loadOne`).
+
+After the results the run lists every snapshot candidate the project holds —
+each `*.snap.new` `testing.snapshots` wrote for a missing or a mismatched
+snapshot, package-relative, dot directories and `node_modules` not entered
+(`snapshotCandidates`):
+
+```
+----- SNAPSHOT CANDIDATES — a mismatch or a missing snapshot; record one by renaming it without `.new`, never commit it -----
+  src/__snapshots__/snap/first.snap.new
+```
+
+Under `--json` the same block goes to stderr, so stdout stays JSONL. The
+pre-commit gate refuses a staged candidate (`scripts/gate.sh --staged`).
+
 **Backends**: `botopink test` runs only `commonJS` (via `node`; stdout captured
 per test through a `process.stdout.write` override) and `erlang` (via `escript`;
 `io:format` output lands inside the fence through the group leader). Other
@@ -393,6 +414,10 @@ stdout, parses the envelope above, and re-emits one JSON object per line
   three `error_*` keys appear only on `"status":"fail"`; `duration_ms` appears
   only when the envelope carries a `duration` line. Strings are RFC 8259 §7
   escaped.
+- per module that did not finish (its runner printed no `<P> passed, <F>
+  failed` line — it did not load, or died mid-run):
+  `{"event":"module_crashed","module":"<src-name>","exit":<n>}`; it counts as
+  ONE failure in the summary, so a crashed module never reads as `"failed":0`.
 - end of run: `{"event":"summary","passed":<P>,"failed":<F>}` — one record
   aggregated across every module the run touched.
 

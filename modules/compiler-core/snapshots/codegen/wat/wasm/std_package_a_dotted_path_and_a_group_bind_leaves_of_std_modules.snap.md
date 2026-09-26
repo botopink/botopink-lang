@@ -703,6 +703,7 @@ test "order case over Order" {
       (then
     local.get $p
     i32.load offset=4
+    call $__box_i32
     local.set $found
     i32.const 0
       )
@@ -3037,6 +3038,7 @@ fn main() {
       (then
     local.get $p
     i32.load offset=4
+    call $__box_i32
     local.set $found
     i32.const 0
       )

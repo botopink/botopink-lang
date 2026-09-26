@@ -1,0 +1,7 @@
+pub fn parse(s: string) -> i32 {
+    return s.length();
+}
+
+pub fn viaOne(s: string) -> i32 {
+    return parse(s) * 10;
+}

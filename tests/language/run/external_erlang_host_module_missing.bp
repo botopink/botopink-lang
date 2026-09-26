@@ -1,0 +1,25 @@
+//// A host module an `#[@External.Erlang("<module>", "<fn>")]` names must exist:
+//// shipped as a sidecar (`src/sidecars/<module>.erl` or `src/<module>.erl`),
+//// or a module of the Erlang code path (`lists`, `crypto`, the preloaded
+//// `erlang`). `nosuchhost` is neither, and the erlang build refuses the program,
+//// located on the string that names it — `lists:sum` beside it is an OTP
+//// module and passes.
+////
+//// The gap this pins (`00 · 10-cli-residuals`): the sidecar shipper skipped
+//// every qualifier it could not find, so the build exited 0 and the program
+//// died with `undef` at the first call.
+////
+//// `.targets` is `erlang`: commonJS and wasm refuse any `@External.Erlang`-only
+//// function (`run/external_erlang_only.bp`), and beam ships no host modules of
+//// any kind — its `.S` output has no sidecar step to check against.
+
+#[@External.Erlang("lists", "sum")]
+declare fn total(xs: i32[]) -> i32;
+
+#[@External.Erlang("nosuchhost", "answer")]
+declare fn answer() -> i32;
+
+pub fn main() {
+    @print(total([1, 2]));
+    @print(answer());
+}

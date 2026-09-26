@@ -45,7 +45,8 @@ while the server answered `null` for every document that did not type-check
 `completionItems`, so no JSON frame is written; the framing itself is not covered.
 
 `sublanguage.zig` uses `helpers.compileEval` (template-eval context on, unique
-scratch root `.botopinkbuild/lsp-test/<n>` per call) so the `@ExprCustom`
+scratch root `<test_scratch root>/lsp-test/<n>` per call — per process and per
+call, `test_scratch.path`) so the `@ExprCustom`
 `CustomNode` trees actually exist — template bodies run through compiler-core's
 persistent `erl` comptime runtime, so `erl` must be on `PATH`.
 

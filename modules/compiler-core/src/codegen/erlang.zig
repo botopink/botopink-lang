@@ -530,7 +530,7 @@ pub fn codegenEmit(
                         else => {},
                     }
                 };
-                const emitted = emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, import_inits.items, &missing, &ambiguous) catch |err| {
+                const emitted = emitErlang(alloc, ct.name, ct.srcPath, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, import_inits.items, &missing, &ambiguous) catch |err| {
                     const diag: moduleOutput.Diagnostic = if (missing) |me|
                         try me.diagnostic(alloc)
                     else if (ambiguous) |av|
@@ -1369,7 +1369,7 @@ pub fn emitComptimeModule(
     defer instance_lowerings.deinit();
     // A comptime module keeps its methods inline (`Emitter.type_units`), so
     // it never has units to hand back.
-    const emitted = try emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, &.{}, module, null, null);
+    const emitted = try emitErlangModule(alloc, module_name, "", program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, &.{}, module, null, null);
     return emitted.code;
 }
 
@@ -1414,6 +1414,9 @@ pub fn primErlangDispatchCount(alloc: std.mem.Allocator) !usize {
 fn emitErlang(
     alloc: std.mem.Allocator,
     module_name: []const u8,
+    /// The package-relative source path (`ComptimeOutput.srcPath`) a test's
+    /// and an `assert`'s `<file>:<line>` names; empty → `<module>.bp`.
+    src_file: []const u8,
     program: ast.Program,
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
@@ -1431,7 +1434,7 @@ fn emitErlang(
     /// name two enums of the program declare, written where nothing says which.
     ambiguous: ?*?moduleOutput.AmbiguousVariant,
 ) !EmittedModule {
-    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, import_inits, null, missing, ambiguous);
+    return emitErlangModule(alloc, module_name, src_file, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, import_inits, null, missing, ambiguous);
 }
 
 /// What one source file emits on this backend: its own module and, under
@@ -1445,6 +1448,7 @@ pub const EmittedModule = struct {
 fn emitErlangModule(
     alloc: std.mem.Allocator,
     module_name: []const u8,
+    src_file: []const u8,
     program: ast.Program,
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
@@ -1478,6 +1482,7 @@ fn emitErlangModule(
     }
     em.test_mode = test_mode;
     em.module_name = module_name;
+    em.src_file = src_file;
     em.cross = cross;
 
     // Test registry entries collected while emitting decls (test mode only).
@@ -2006,7 +2011,7 @@ fn emitErlangModule(
             tests[i] = try b.tuple(&.{
                 .{ .lexeme_binary = name },
                 .{ .fun_ref = .{ .name = try std.fmt.allocPrint(b.arena, "__bp_test_{d}", .{t.idx}), .arity = 0 } },
-                .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ module_name, t.line }) },
+                .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}:{d}", .{ try em.srcFile(b.arena), t.line }) },
             });
         }
         // Only a module that calls into another needs the sibling loader: a
@@ -2666,9 +2671,11 @@ const Emitter = struct {
     /// `botopink test` compilation: `assert` lowers to a `bp_assert` error the
     /// test runner catches per test instead of a hard `true = (...)` badmatch.
     test_mode: bool = false,
-    /// Module name, used for `<module>.bp:<line>` source locations in
-    /// test-mode assert failures.
+    /// Module name (`lib/db`), the atom's source.
     module_name: []const u8 = "main",
+    /// The package-relative source path (`src/main.bp`) a test's and an
+    /// `assert`'s `<file>:<line>` names (`srcFile`); empty → `<module>.bp`.
+    src_file: []const u8 = "",
     /// True while emitting a `test { … }` body (decision 74): a `try` whose
     /// operand is `{error, E}` there raises `{bp_assert, E, Loc}` — the shape
     /// the runner already catches — instead of becoming the function's value.
@@ -5171,6 +5178,13 @@ const Emitter = struct {
 
     /// A `test { … }` body as `'__bp_test_<idx>'() -> Body.`, registered with
     /// the runner.
+    /// The file a test's and an `assert`'s `<file>:<line>` names:
+    /// `src_file`, else `<module>.bp` (the snapshot harness gives no path).
+    fn srcFile(this: *const Emitter, arena: std.mem.Allocator) ![]const u8 {
+        if (this.src_file.len > 0) return this.src_file;
+        return std.fmt.allocPrint(arena, "{s}.bp", .{this.module_name});
+    }
+
     fn testFunction(this: *Emitter, b: Ast.Builder, t: ast.TestDecl, idx: usize) !Ast.Form {
         this.resetLocals();
         const saved = this.indent;
@@ -5183,7 +5197,7 @@ const Emitter = struct {
         const saved_in_test = this.in_test_body;
         const saved_test_loc = this.test_loc;
         this.in_test_body = true;
-        this.test_loc = try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ this.module_name, t.loc.line });
+        this.test_loc = try std.fmt.allocPrint(b.arena, "{s}:{d}", .{ try this.srcFile(b.arena), t.loc.line });
         defer {
             this.in_test_body = saved_in_test;
             this.test_loc = saved_test_loc;
@@ -5363,14 +5377,14 @@ const Emitter = struct {
         const tmp = try std.fmt.allocPrint(b.arena, "BpAssert{d}_{d}", .{ loc.line, loc.col });
         const subject = try this.exprNode(b, ap.expr.*);
         this.pattern_discard = true;
-        const check = try this.patternNode(b, ap.pattern);
+        const check = try this.ctorBindPattern(b, ap.pattern);
         this.pattern_discard = false;
         const handler = try this.exprNode(b, ap.handler.*);
         const decided = try b.caseInline(Ast.Expr.v(tmp), &.{
             try b.clause(&.{check}, &.{}, &.{Ast.Expr.v(tmp)}),
             try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{handler}),
         });
-        const bind = try this.patternNode(b, ap.pattern);
+        const bind = try this.ctorBindPattern(b, ap.pattern);
         const stmts = try b.arena.alloc(Ast.Stmt, 2);
         stmts[0] = .{ .expr = try b.match(Ast.Expr.v(tmp), subject) };
         stmts[1] = .{ .expr = try b.match(bind, decided) };
@@ -6383,7 +6397,11 @@ const Emitter = struct {
                     const value = try this.exprNode(b, lb.value.*);
                     return switch (lb.pattern) {
                         .names, .tuple_ => b.match(try this.destructPatternExpr(b, lb.pattern), value),
-                        .list, .ctor => value,
+                        // `val Pt(y, m) = p;` — the checker accepts only a
+                        // constructor that cannot fail (decision 67's R5), so
+                        // it is the arm's pattern matched once.
+                        .ctor => |pat| b.match(try this.ctorBindPattern(b, pat), value),
+                        .list => value,
                     };
                 },
             },
@@ -7465,8 +7483,17 @@ const Emitter = struct {
                     const value = try this.exprNode(b, lb.value.*);
                     return b.match(try this.destructPatternExpr(b, lb.pattern), value);
                 },
-                // List / constructor patterns are not lowered yet: the value alone.
-                .list, .ctor => return this.exprNode(b, lb.value.*),
+                // `val Pt(y, m) = p;` — the checker accepts only a constructor
+                // that cannot fail (decision 67's R5), so it is the arm's
+                // pattern matched once. It used to lower to the value alone,
+                // and every name it bound was unbound (`variable 'Y' is
+                // unbound`, the module refused by `erlc`).
+                .ctor => |pat| {
+                    const value = try this.exprNode(b, lb.value.*);
+                    return b.match(try this.ctorBindPattern(b, pat), value);
+                },
+                // A list pattern is not lowered yet: the value alone.
+                .list => return this.exprNode(b, lb.value.*),
             },
         }
     }
@@ -7513,7 +7540,7 @@ const Emitter = struct {
                 // The test runner catches it per test and continues; outside
                 // test mode nothing does. `true = (Cond)` dropped both.
                 const message = if (a.message) |msg| try this.exprNode(b, msg.*) else Ast.str("assertion failed");
-                const where: Ast.Expr = .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ this.module_name, ct.loc.line }) };
+                const where: Ast.Expr = .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}:{d}", .{ try this.srcFile(b.arena), ct.loc.line }) };
                 const raise = try b.remote("erlang", "error", &.{try b.tuple(&.{ A("bp_assert"), message, where })});
                 return b.caseInline(cond, &.{
                     try b.clause(&.{A("true")}, &.{}, &.{A("ok")}),
@@ -7523,7 +7550,7 @@ const Emitter = struct {
             // `case E of Pat -> E; _ -> Handler end`.
             .assertPattern => |ap| {
                 const subject = try this.exprNode(b, ap.expr.*);
-                const pattern = try this.patternNode(b, ap.pattern);
+                const pattern = try this.ctorBindPattern(b, ap.pattern);
                 const matched = try this.exprNode(b, ap.expr.*);
                 const handler = try this.exprNode(b, ap.handler.*);
                 return b.caseInline(subject, &.{
@@ -7681,6 +7708,29 @@ const Emitter = struct {
         /// `X = element(1, T)` matches the clause body opens with.
         binds: std.ArrayListUnmanaged(Ast.Expr) = .empty,
     };
+
+    /// The pattern of a constructor in BINDING position (`val Pt(y, _) = p;`,
+    /// `val assert Person(n, a) = v catch …`).
+    /// A record's is tagged with the record's own atom — `{'<pkg>@<path>@@Pt',
+    /// Y, _}`, what its constructor builds (decision 109) — where a `case`
+    /// arm's `patternNode` writes a variant's bare `'Pt'`; a variant keeps
+    /// that. Only here: in a `case`, `Size(_inner)` may name a section variant
+    /// beside a record `Size`, and the arm means the variant.
+    fn ctorBindPattern(this: *Emitter, b: Ast.Builder, pat: ast.Pattern) anyerror!Ast.Expr {
+        if (pat == .variant and pat.variant.shape == .variant) {
+            const v = pat.variant;
+            if (!this.enum_variant_names.contains(v.name) and this.record_fields.contains(v.name)) {
+                var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                try items.append(b.arena, Ast.Expr.a(try this.recordTagAtom(v.name)));
+                switch (v.payload) {
+                    .binding => |binding| try items.append(b.arena, Ast.Expr.v(try this.patternBindVar(b, binding))),
+                    .fields, .literals => try items.appendSlice(b.arena, try this.variantPayloadSlots(b, v, null)),
+                }
+                return .{ .tuple = items.items };
+            }
+        }
+        return this.patternNode(b, pat);
+    }
 
     fn patternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern) anyerror!Ast.Expr {
         return this.patternNodeExtra(b, pat, null);

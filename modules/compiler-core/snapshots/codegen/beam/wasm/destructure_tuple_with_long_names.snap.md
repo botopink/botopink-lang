@@ -22,10 +22,12 @@ fn extract_coordinates() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    f32.const 0.0
+    f64.const 0.0
+    f32.demote_f64
     f32.store
     local.get $__mem0
-    f32.const 0.0
+    f64.const 0.0
+    f32.demote_f64
     f32.store offset=4
     local.get $__mem0
     return

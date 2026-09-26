@@ -363,7 +363,8 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem11
-    f32.const 1.5
+    f64.const 1.5
+    f32.demote_f64
     f32.store
     local.get $__mem11
     i32.const 1
@@ -377,7 +378,8 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem12
-    f32.const 1.5
+    f64.const 1.5
+    f32.demote_f64
     f32.store
     local.get $__mem12
     i32.const 1
@@ -391,7 +393,8 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem13
-    f32.const 1.5
+    f64.const 1.5
+    f32.demote_f64
     f32.store
     local.get $__mem13
     i32.const 0

@@ -2,6 +2,7 @@
 //! Pure harness module: imports + `pub fn`/data helpers, no test blocks.
 
 const std = @import("std");
+const test_scratch = @import("test_scratch");
 const lexerMod = @import("../../lexer.zig");
 const parserMod = @import("../../parser.zig");
 const snapMod = @import("../../utils/snap.zig");
@@ -76,9 +77,11 @@ pub fn slugFromSrc(comptime loc: std.builtin.SourceLocation) []const u8 {
     return slugify(desc);
 }
 
-pub fn buildRootPathFromSrc(comptime loc: std.builtin.SourceLocation) []const u8 {
-    const slug = comptime slugFromSrc(loc);
-    return comptime std.fmt.comptimePrint(".botopinkbuild/comptime/{s}", .{slug});
+/// The build root of the test at `loc`: `comptime/<slug>` under this
+/// process's `test_scratch` root, so two processes running the suite over one
+/// checkout never share it (`scripts/check-test-scratch.sh`).
+pub fn buildRootPathFromSrc(io: std.Io, comptime loc: std.builtin.SourceLocation) []const u8 {
+    return test_scratch.path(io, "comptime/" ++ comptime slugFromSrc(loc));
 }
 
 /// Whether a comptime snapshot test tolerates a module that does not compile.
@@ -126,8 +129,7 @@ pub fn assertComptimeAstExpecting(
     const io = std.testing.io;
     const base_slug = comptime slugFromSrc(loc);
 
-    var build_root_buf: [512]u8 = undefined;
-    const build_root_path = try std.fmt.bufPrint(&build_root_buf, ".botopinkbuild/comptime/{s}", .{base_slug});
+    const build_root_path = buildRootPathFromSrc(io, loc);
 
     // The session is compiled once per comptime runtime (front 18 step 4):
     // the AST is recorded from the BEAM pass and must be the same text on

@@ -16,7 +16,7 @@ fn f() {
 f() ->
     R = {test@main@@Person, <<"ann">>, 30},
     BpAssert4_9 = R,
-    {'Person', Name, Age} = case BpAssert4_9 of {'Person', _, _} -> BpAssert4_9; _ -> {test@main@@Person, <<"bob">>, 12} end.
+    {test@main@@Person, Name, Age} = case BpAssert4_9 of {test@main@@Person, _, _} -> BpAssert4_9; _ -> {test@main@@Person, <<"bob">>, 12} end.
 ```
 
 ----- ERLANG -- test@main@@Person.erl

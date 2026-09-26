@@ -1,0 +1,22 @@
+//// A host module whose name is also the basename of a module of the build —
+//// `src/sidecars/text.erl` beside `src/text.bp` — is shipped and called. The
+//// erlang atom of the botopink module is `language_tests@text` (decision
+//// 109), so the two never meet.
+////
+//// The gap this pins (`00 · 10-cli-residuals`, `language-gaps.md`'s sidecar
+//// row): the shipper skipped every qualifier matching an emitted module's
+//// BASENAME, so `text.erl` was never shipped and `text:shout/1` died `undef`.
+////
+//// commonJS and wasm refuse an `@External.Erlang`-only function
+//// (`commonJS.expect`, `wasm.expect`); beam is listed in
+//// `expected-failures.txt` with `modules/erlang_host_sidecar_shipped`.
+
+pub mod text;
+import {greet} from "text";
+
+#[@External.Erlang("text", "shout")]
+declare fn shout(s: string) -> string;
+
+pub fn main() {
+    @print(shout(greet("sidecar")));
+}

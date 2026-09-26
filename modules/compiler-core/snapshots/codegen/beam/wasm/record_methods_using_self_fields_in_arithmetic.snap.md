@@ -17,25 +17,30 @@ val Vec2 = type(
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $Vec2_lengthSq (param $self i32) (result i32)
+  (func $Vec2_lengthSq (param $self i32) (result f64)
     local.get $self
     i32.load ;; .x
+    f64.load
     local.get $self
     i32.load ;; .x
-    i32.mul
+    f64.load
+    f64.mul
     local.get $self
     i32.load offset=4 ;; .y
+    f64.load
     local.get $self
     i32.load offset=4 ;; .y
-    i32.mul
-    i32.add
+    f64.load
+    f64.mul
+    f64.add
     return
   )
-  (func $Vec2_scale (param $self i32) (param $factor i32) (result i32)
+  (func $Vec2_scale (param $self i32) (param $factor f64) (result f64)
     local.get $self
     i32.load ;; .x
+    f64.load
     local.get $factor
-    i32.mul
+    f64.mul
     return
   )
 )

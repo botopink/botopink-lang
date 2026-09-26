@@ -20,6 +20,9 @@ const args = @import("args.zig");
 const discovery = @import("discovery.zig");
 const matrix = @import("matrix.zig");
 const runner = @import("runner.zig");
+const doc_quotes = @import("doc_quotes.zig");
+const source_stamp = @import("source_stamp");
+const build_stamp = @import("build_stamp");
 
 const HELP =
     \\botopink-lib-test — run every discovered project's tests per backend
@@ -93,6 +96,16 @@ fn run(init: std.process.Init) !u8 {
         return 2;
     };
 
+    // A library run against a stale build measures the previous compiler:
+    // refuse to start when the checkout this runner (and the `botopink` built
+    // beside it) was built from has changed since (`source_stamp`). A
+    // `botopink test` child makes the same check of its own binary.
+    if (try source_stamp.checkFresh(gpa, io, build_stamp.source_root, build_stamp.source_hash)) |stale| {
+        var msg_buf: [1024]u8 = undefined;
+        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: {s}", .{source_stamp.render(&msg_buf, stale, "botopink-lib-test")});
+        return 1;
+    }
+
     // Resolve the cwd, the library roots, and the botopink binary — all as
     // absolute paths so each child's `cwd = <lib_dir>` stays consistent.
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -124,6 +137,24 @@ fn run(init: std.process.Init) !u8 {
         }
         std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: no libs found across the library roots\n", .{});
         return 1;
+    }
+
+    // A workspace document that quotes the tool's member list is checked
+    // against the tool (`doc_quotes.zig`): a quote that drifted fails the run.
+    // Printed on stderr in both modes; `--json` also carries one
+    // `{"event":"doc_quote_mismatch"}` record so the wrapper counts it.
+    const doc_problems = try doc_quotes.check(gpa, io, roots);
+    defer gpa.free(doc_problems);
+    if (doc_problems.len > 0) {
+        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: a document quotes the tool and disagrees with it\n{s}", .{doc_problems});
+        if (opts.json) std.Io.File.stdout().writeStreamingAll(io, "{\"event\":\"doc_quote_mismatch\"}\n") catch {};
+    }
+
+    // Under `--json`, one `{"event":"lib","lib":…,"dir":…}` record per
+    // library first: the wrapper reads each library's directory from it to
+    // check a known-red line's pinned commit against the library's checkout.
+    if (opts.json) {
+        for (libs) |lib| try runner.emitLibRecord(arena, io, lib.name, lib.dir);
     }
 
     // Plan every (lib, target) cell in discovery order, then run the ones that
@@ -222,7 +253,7 @@ fn run(init: std.process.Init) !u8 {
         // One final aggregate record so a JSON consumer sees exactly one
         // run-terminating record per invocation.
         try runner.emitRunSummary(arena, io, summary);
-        return summary.exitCode();
+        return if (doc_problems.len > 0) 1 else summary.exitCode();
     }
 
     // Render the text matrix (text mode only).
@@ -231,7 +262,9 @@ fn run(init: std.process.Init) !u8 {
     const text = try matrix.render(arena, lib_names, opts.targets, cells_const, summary);
     std.Io.File.stdout().writeStreamingAll(io, text) catch {};
 
-    // Exit non-zero iff any cell failed (skips / no-tests do not).
+    // Exit non-zero iff any cell failed (skips / no-tests do not), or a
+    // document's quote of the tool disagrees with it.
+    if (doc_problems.len > 0) return 1;
     return summary.exitCode();
 }
 
@@ -397,4 +430,5 @@ test {
     _ = discovery;
     _ = matrix;
     _ = runner;
+    _ = doc_quotes;
 }

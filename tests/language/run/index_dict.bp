@@ -15,10 +15,10 @@
 ////
 //// Both halves have landed — `libs/std` at `e065b564` (the behaviors, `Dict`'s
 //// `lookup` → `at`) and the checker's rewrite (C-02) — and the PRESENT key
-//// answers `1` on all four backends, measured 2026-09-21. What the three
-//// non-commonJS targets still get wrong is how an empty optional PRINTS
-//// (`undefined` on erlang and beam, `0` on wasm), which is decision 47's own
-//// row, C-18, and is listed per target in `expected-failures.txt`.
+//// answers `1` on all four backends. An empty optional prints `null` on all
+//// four too: erlang and beam write the atom `undefined` as `null`, and wasm
+//// boxes a `?V` over a type parameter (C-18's wasm half) — unboxed, the absent
+//// key printed `0`.
 
 import {collections.Dict} from "std";
 

@@ -7,7 +7,7 @@
 /// directory, exactly as CI would do it. Isolation BETWEEN runs is the child's:
 /// two gates share one library checkout, so `botopink test` writes to
 /// `.botopinkbuild/test-out/<target>/<id>/` (per target, per run) and
-/// `compileCell` below to `.botopinkbuild/lib-test-build/<target>`.
+/// `compileCell` below to `.botopinkbuild/lib-test-build/<target>/<id>/`.
 const std = @import("std");
 const args = @import("args.zig");
 const matrix = @import("matrix.zig");
@@ -168,11 +168,22 @@ fn spawnCaptured(
         .exited => |c| c,
         .signal, .stopped, .unknown => 1,
     };
+    var status = classifyWith(ok_status, code, result.stdout, result.stderr, strict);
+    // A test cell reads its count from the child's run total — the JSONL
+    // `summary` record, or the text-mode `total:` line — never from a
+    // module's own summary. A test cell that exited 0 with no total is not a
+    // pass: nothing says how many tests ran.
+    const counts = if (ok_status == .pass) parseChildSummary(result.stdout, json) else CellCounts{};
+    var stderr = result.stderr;
+    if (ok_status == .pass and status == .pass and !counts.ran) {
+        status = .fail;
+        stderr = std.fmt.allocPrint(gpa, "{s}error: `botopink test` exited 0 but printed no run total, so no count of this cell's tests exists\n", .{result.stderr}) catch result.stderr;
+    }
     return .{
         .stdout = result.stdout,
-        .stderr = result.stderr,
-        .status = classifyWith(ok_status, code, result.stdout, result.stderr, strict),
-        .counts = if (json) parseChildSummary(result.stdout) else .{},
+        .stderr = stderr,
+        .status = status,
+        .counts = counts,
     };
 }
 
@@ -193,11 +204,19 @@ pub const CellCounts = struct {
     ran: bool = false,
 };
 
-/// Scan a child's `--json` stdout for its terminating
-/// `{"event":"summary","passed":P,"failed":F}` record and return `F`.
-/// Last record wins (there is one per `botopink test` run). A stdout with no
-/// such record yields `.{ .failed = 0, .ran = false }`.
-fn parseChildSummary(child_stdout: []const u8) CellCounts {
+/// The first bytes of `botopink test`'s text-mode run total, its last line:
+/// `total: <P> passed, <F> failed in <N> module(s)` (`TOTAL_PREFIX` in
+/// `compiler-cli/src/cli/test_cmd.zig`). Every module before it printed its
+/// own `<P> passed, <F> failed`; only this line is the cell's count.
+const TEXT_TOTAL_PREFIX = "total: ";
+
+/// Scan a child's stdout for its run total and return its `F`: under `--json`
+/// the terminating `{"event":"summary","passed":P,"failed":F}` record, in text
+/// mode the `total: P passed, F failed in N module(s)` line. Last one wins
+/// (there is one per `botopink test` run). A stdout with neither yields
+/// `.{ .failed = 0, .ran = false }`.
+fn parseChildSummary(child_stdout: []const u8, json: bool) CellCounts {
+    if (!json) return parseTextTotal(child_stdout);
     var counts: CellCounts = .{};
     var it = std.mem.splitScalar(u8, child_stdout, '\n');
     while (it.next()) |line| {
@@ -218,9 +237,29 @@ fn parseChildSummary(child_stdout: []const u8) CellCounts {
     return counts;
 }
 
+/// The text-mode half of `parseChildSummary`.
+fn parseTextTotal(child_stdout: []const u8) CellCounts {
+    var counts: CellCounts = .{};
+    var it = std.mem.splitScalar(u8, child_stdout, '\n');
+    while (it.next()) |raw| {
+        const line = std.mem.trimEnd(u8, raw, "\r");
+        if (!std.mem.startsWith(u8, line, TEXT_TOTAL_PREFIX)) continue;
+        const rest = line[TEXT_TOTAL_PREFIX.len..];
+        const mid = " passed, ";
+        const at = std.mem.indexOf(u8, rest, mid) orelse continue;
+        _ = std.fmt.parseUnsigned(usize, rest[0..at], 10) catch continue;
+        const after = rest[at + mid.len ..];
+        const sp = std.mem.indexOf(u8, after, " failed in ") orelse continue;
+        const failed = std.fmt.parseUnsigned(usize, after[0..sp], 10) catch continue;
+        counts = .{ .failed = failed, .ran = true };
+    }
+    return counts;
+}
+
 /// Build directory, relative to the lib's own directory, that `compileCell`
-/// writes to — next to `botopink test`'s `.botopinkbuild/test-out/`, and scoped
-/// per target for the same reason: the checkout is shared, so the path a run
+/// writes under — next to `botopink test`'s `.botopinkbuild/test-out/`, and
+/// scoped per target and per run (`<root>/<target>/<id>`, removed when the
+/// cell ends) for the same reason: the checkout is shared, so the path a run
 /// writes to must not be.
 const COMPILE_OUT_DIR = ".botopinkbuild/lib-test-build";
 
@@ -248,9 +287,9 @@ pub fn compileCell(
     return emitCompile(arena, io, bin, lib_name, target, json, restricted, cap);
 }
 
-/// Spawn `botopink build --target <t> --out <COMPILE_OUT_DIR>/<t>` in
-/// `lib_dir` and capture its output and verdict. Writes nothing to this
-/// process's stdout/stderr.
+/// Spawn `botopink build --target <t> --out <COMPILE_OUT_DIR>/<t>/<id>` in
+/// `lib_dir`, capture its output and verdict, and remove the output. Writes
+/// nothing to this process's stdout/stderr.
 pub fn captureCompile(
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -259,10 +298,23 @@ pub fn captureCompile(
     target: Target,
     strict: bool,
 ) Captured {
-    const out_dir = std.fmt.allocPrint(gpa, "{s}/{s}", .{ COMPILE_OUT_DIR, target.toString() }) catch |err|
+    // Per target AND per run: two gates over one library checkout reach the
+    // same (lib, target) cell, and a per-target directory alone was one both
+    // wrote — the half-written module set of one read as the other's red. The
+    // id is 64 random bits, `botopink test`'s own `test-out/<target>/<id>`.
+    var rand_bytes: [8]u8 = undefined;
+    io.random(&rand_bytes);
+    const id = std.mem.readInt(u64, &rand_bytes, .little);
+    const out_dir = std.fmt.allocPrint(gpa, "{s}/{s}/{x:0>16}", .{ COMPILE_OUT_DIR, target.toString(), id }) catch |err|
         return .{ .spawn_err = err };
     const argv = [_][]const u8{ bin, "build", "--target", target.toString(), "--out", out_dir };
-    return spawnCaptured(gpa, io, &argv, lib_dir, .no_tests, strict, false);
+    const cap = spawnCaptured(gpa, io, &argv, lib_dir, .no_tests, strict, false);
+    // The build's output belongs to this run and nothing reads it afterwards:
+    // the verdict is the exit status and the captured diagnostics.
+    if (std.fs.path.join(gpa, &.{ lib_dir, out_dir })) |abs| {
+        std.Io.Dir.cwd().deleteTree(io, abs) catch {};
+    } else |_| {}
+    return cap;
 }
 
 /// Write a captured compile-only cell out, as the serial runner did.
@@ -391,6 +443,23 @@ fn statusName(s: Status) []const u8 {
     };
 }
 
+/// `{"event":"lib","lib":…,"dir":…}` — one per discovered library, before any
+/// cell, under `--json`. `dir` is the directory the cells run in; the wrapper
+/// asks git for the commit of the checkout holding it.
+pub fn emitLibRecord(arena: std.mem.Allocator, io: std.Io, lib_name: []const u8, dir: []const u8) !void {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(arena);
+    try buf.appendSlice(arena, "{\"event\":\"lib\",\"lib\":\"");
+    try buf.appendSlice(arena, lib_name);
+    try buf.appendSlice(arena, "\",\"dir\":\"");
+    for (dir) |c| {
+        if (c == '"' or c == '\\') try buf.append(arena, '\\');
+        try buf.append(arena, c);
+    }
+    try buf.appendSlice(arena, "\"}\n");
+    std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
+}
+
 /// Public wrapper around `emitCellSummary` for the no-tests path in `main.zig`
 /// — which never spawns a child but still wants a structured record in JSON
 /// mode so consumers don't have to infer "missing" cells.
@@ -491,13 +560,13 @@ test "parseChildSummary: the child's summary record carries the failure count" {
         "{\"event\":\"test\",\"name\":\"a\",\"status\":\"ok\"}\n" ++
         "{\"event\":\"test\",\"name\":\"b\",\"status\":\"fail\"}\n" ++
         "{\"event\":\"summary\",\"passed\":1,\"failed\":9}\n";
-    const counts = parseChildSummary(stdout);
+    const counts = parseChildSummary(stdout, true);
     try testing.expect(counts.ran);
     try testing.expectEqual(@as(usize, 9), counts.failed);
 }
 
 test "parseChildSummary: a green cell is 0 failures, and it ran" {
-    const counts = parseChildSummary("{\"event\":\"summary\",\"passed\":17,\"failed\":0}\n");
+    const counts = parseChildSummary("{\"event\":\"summary\",\"passed\":17,\"failed\":0}\n", true);
     try testing.expect(counts.ran);
     try testing.expectEqual(@as(usize, 0), counts.failed);
 }
@@ -505,12 +574,28 @@ test "parseChildSummary: a green cell is 0 failures, and it ran" {
 test "parseChildSummary: no summary record is `did not run`, not zero failures" {
     // A cell that did not compile prints diagnostics on stderr and no summary.
     // `ran = false` is what keeps the ledger from reading it as green.
-    const counts = parseChildSummary("error: parse error\n");
+    const counts = parseChildSummary("error: parse error\n", true);
     try testing.expect(!counts.ran);
     try testing.expectEqual(@as(usize, 0), counts.failed);
 
-    const empty = parseChildSummary("");
+    const empty = parseChildSummary("", true);
     try testing.expect(!empty.ran);
+}
+
+test "parseChildSummary: in text mode the count is the run total, never a module's own line" {
+    const text =
+        "----- TESTS OF a -----\n" ++
+        "0 passed, 3 failed\n" ++
+        "----- TESTS OF b -----\n" ++
+        "5 passed, 0 failed\n" ++
+        "total: 5 passed, 3 failed in 2 module(s)\n";
+    const counts = parseChildSummary(text, false);
+    try testing.expect(counts.ran);
+    try testing.expectEqual(@as(usize, 3), counts.failed);
+
+    // Module summaries alone are no total: the run did not finish its report.
+    const partial = parseChildSummary("5 passed, 0 failed\n", false);
+    try testing.expect(!partial.ran);
 }
 
 test "classifyWith: exit 0 is the ok status, the unsupported mark a skip unless strict, else a fail" {

@@ -2,6 +2,7 @@
 //! Pure harness module: imports + `pub fn`/data helpers, no test blocks.
 
 const std = @import("std");
+const test_scratch = @import("test_scratch");
 const Allocator = std.mem.Allocator;
 const codegen = @import("../../codegen.zig");
 const snap = @import(".././snapshot.zig");
@@ -155,9 +156,11 @@ pub fn slugFromSrc(comptime loc: std.builtin.SourceLocation) []const u8 {
     return slugify(desc);
 }
 
-pub fn buildRootPathFromSrc(comptime loc: std.builtin.SourceLocation) []const u8 {
-    const slug = comptime slugFromSrc(loc);
-    return comptime std.fmt.comptimePrint(".botopinkbuild/codegen/{s}", .{slug});
+/// The build root of the test at `loc`: `codegen/<slug>` under this
+/// process's `test_scratch` root, so two processes running the suite over one
+/// checkout never share it (`scripts/check-test-scratch.sh`).
+pub fn buildRootPathFromSrc(io: std.Io, comptime loc: std.builtin.SourceLocation) []const u8 {
+    return test_scratch.path(io, "codegen/" ++ comptime slugFromSrc(loc));
 }
 
 pub fn freshEnv(arena_alloc: std.mem.Allocator, gpa: Allocator) !comptimeMod.Env_ {
@@ -329,7 +332,7 @@ pub fn assertJsExpecting(
     const trace_prev = snapUtil.traceEnter(loc);
     defer snapUtil.traceLeave(trace_prev);
     const io = std.testing.io;
-    const build_root_path = comptime buildRootPathFromSrc(loc);
+    const build_root_path = buildRootPathFromSrc(io, loc);
     const slug = comptime slugFromSrc(loc);
 
     // H10 — compare every backend before failing, so one suite round writes
@@ -580,7 +583,7 @@ pub fn assertJsTestMode(allocator: Allocator, comptime loc: std.builtin.SourceLo
     const trace_prev = snapUtil.traceEnter(loc);
     defer snapUtil.traceLeave(trace_prev);
     const io = std.testing.io;
-    const build_root_path = comptime buildRootPathFromSrc(loc);
+    const build_root_path = buildRootPathFromSrc(io, loc);
     const slug = comptime slugFromSrc(loc);
     const modules = [_]Module{.{ .path = "", .source = src }};
 
@@ -683,7 +686,7 @@ pub fn assertErlangTestModeContains(
     const io = std.testing.io;
     var cfg = configs[1]; // erlang
     cfg.test_mode = true;
-    cfg.build_root = ".botopinkbuild/codegen/erlang_test_mode_contains";
+    cfg.build_root = test_scratch.path(io, "codegen/erlang_test_mode_contains");
     var outputs = try generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg);
     defer {
         for (outputs.items) |*o| o.result.deinit(allocator);
@@ -909,7 +912,7 @@ pub fn assertTestModeRunLog(allocator: Allocator, src: []const u8, expected: []c
     for (configs[0..2]) |c| {
         var cfg = c;
         cfg.test_mode = true;
-        cfg.build_root = ".botopinkbuild/codegen/test_mode_run_log";
+        cfg.build_root = test_scratch.path(io, "codegen/test_mode_run_log");
         var outputs = try generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg);
         defer {
             for (outputs.items) |*o| o.result.deinit(allocator);
