@@ -933,6 +933,9 @@ fn parseEnumItem(
     if (this.check(.numberLiteral)) {
         if (!allow_numeric) return raiseUnexpected(this, this.peek());
         const tok = this.advance();
+        for (variants.items) |existing| {
+            if (std.mem.eql(u8, existing.name, tok.lexeme)) return failAt(this, .enumVariantDuplicate, tok);
+        }
         // Numeric variants cannot carry payload — they are terminal leaves.
         if (this.check(.leftParenthesis)) return raiseUnexpected(this, this.peek());
         // ES3 — section names must be identifiers (numeric names cannot open a section).
@@ -1011,6 +1014,9 @@ fn parseEnumItem(
     // check above.)
     for (sections.items) |existing| {
         if (std.mem.eql(u8, existing.name, itemName)) return raiseUnexpected(this, head);
+    }
+    for (variants.items) |existing| {
+        if (std.mem.eql(u8, existing.name, itemName)) return failAt(this, .enumVariantDuplicate, head);
     }
 
     // Variant with payload: `Variant(field: T, ...)`.
@@ -1501,6 +1507,9 @@ fn parsePayloadVariant(
     const head = try this.consume(.identifier);
     for (sections.items) |existing| {
         if (std.mem.eql(u8, existing.name, head.lexeme)) return failAt(this, .unexpectedToken, head);
+    }
+    for (variants.items) |existing| {
+        if (std.mem.eql(u8, existing.name, head.lexeme)) return failAt(this, .enumVariantDuplicate, head);
     }
     const fl = try parseFieldList(this, alloc);
     errdefer {

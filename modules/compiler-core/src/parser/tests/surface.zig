@@ -215,6 +215,12 @@ test "surface: a record without its field list is type-without-field-list, where
     try expectError("val P = type {}", .typeWithoutFieldList, 1, 14);
 }
 
+test "surface: a variant declared twice at one level is enum-variant-duplicate, at the second" {
+    try expectError("type C { Red, Green, Red }", .enumVariantDuplicate, 1, 22);
+    try expectError("type C { S { A, A } }", .enumVariantDuplicate, 1, 17);
+    try expectError("type C { A(x: i32), A }", .enumVariantDuplicate, 1, 21);
+}
+
 test "surface: a variant after a method is type-variant-after-method" {
     try expectError("type S { fn f(self: Self) {} A }", .typeVariantAfterMethod, 1, 30);
 }

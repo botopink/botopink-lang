@@ -1,0 +1,21 @@
+//// Status row "an enum section head silently captures a top-level variant of
+//// the same name": the leaf `Layout.Break.After` captured `Token.After(inner)`
+//// in a module that never named `Layout` (emilia front 54). Each position
+//// answers the member its path or its expected type names: `Token.After(…)`
+//// and `.After(…)` under `Token` build the payload variant, `.After` under
+//// `Token.Layout.Break` the leaf, and a `case` over `Token` matches the
+//// top-level `After` while one over the section matches the leaf.
+
+pub mod tokens;
+import {Token, render, breakToCss} from "tokens";
+
+pub fn main() {
+    @print(render(Token.After([Token.Plain])));
+    @print(render(Token.After(inner: [])));
+    val b: Token = .After([Token.Plain, Token.Plain]);
+    @print(render(b));
+    @print(render(Token.Layout.Break.After));
+    @print(breakToCss(.After));
+    val leaf: Token.Layout.Break = .Before;
+    @print(breakToCss(leaf));
+}

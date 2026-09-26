@@ -426,6 +426,14 @@ fn main() {
 }
 ```
 
+A variant name is declared once per level of the body (`enum-variant-duplicate`
+at the second). The same name at two levels is two members, told apart by the
+path and by the position's expected type: with `Layout { Break { After } }`
+beside `After(inner: Token[])`, `Token.After(…)` — and `.After(…)` where a
+`Token` is expected — is the payload variant, `.After` where a
+`Token.Layout.Break` is expected is the leaf, and a `case` over a `Token` matches
+the top-level `After` while one over the section matches the leaf.
+
 **Which enum a leading-dot path names is decided by the type the position
 expects.** More than one enum can carry the same path, so the answer is read
 from the position the path is written in — a `val`'s annotation, a declared

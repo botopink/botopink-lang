@@ -12936,7 +12936,16 @@ fn appendUnionMember(
 /// test is a member-signature walk this front has not built; until it exists
 /// those members stay side by side, which refuses more than §3.4 and is never
 /// wrong. Arrays never join at all — that is §3.4's own rule.
-fn finishUnion(env: *Env, members: []*T.Type) InferError!*T.Type {
+fn finishUnion(env: *Env, all: []*T.Type) InferError!*T.Type {
+    // `noreturn` is the bottom type: a branch or an arm that never returns adds
+    // no alternative (`if (c) { a } else { @todo() }` is `a`'s type).
+    var kept: usize = 0;
+    for (all) |m| {
+        if (m.deref().isNamed("noreturn")) continue;
+        all[kept] = m;
+        kept += 1;
+    }
+    const members = if (kept > 0) all[0..kept] else all;
     if (members.len == 0) return env.namedType("void");
     if (members.len == 1) return members[0];
     for (members, 0..) |m, idx| {
@@ -12961,15 +12970,6 @@ fn finishUnion(env: *Env, members: []*T.Type) InferError!*T.Type {
 fn unionOf(env: *Env, members: []const *T.Type) InferError!*T.Type {
     var flat: std.ArrayListUnmanaged(*T.Type) = .empty;
     for (members) |m| try appendUnionMember(env, &flat, m);
-    // `noreturn` is the bottom type: a branch that never returns adds no
-    // alternative (`if (c) { a } else { @todo() }` is `a`'s type).
-    var kept: usize = 0;
-    for (flat.items) |m| {
-        if (m.deref().isNamed("noreturn")) continue;
-        flat.items[kept] = m;
-        kept += 1;
-    }
-    if (kept > 0) flat.items.len = kept;
     return finishUnion(env, flat.items);
 }
 
