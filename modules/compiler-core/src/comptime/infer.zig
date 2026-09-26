@@ -10597,6 +10597,42 @@ fn refuseLabelsOnFunctionValue(env: *Env, callee: []const u8, typedArgs: []const
     }
 }
 
+/// `lhs |> f(args…)` / `lhs |> f` against the declared parameters of `f`: the
+/// piped value is the first argument, and a call that leaves out defaulted
+/// parameters or labels one is planned like any call (C-04, 01) and recorded
+/// under the PIPELINE's loc, which `transform.zig` rewrites into the call
+/// `f(lhs, args…)` before the fill. Null when there is nothing to plan: a
+/// complete positional pipeline, or a callee with no declaration.
+fn planPipelineFill(
+    env: *Env,
+    callee: []const u8,
+    f: anytype,
+    lhsPtr: *ast.TypedExpr,
+    args: []const ast.CallArg,
+    loc: ast.Loc,
+) InferError!?*T.Type {
+    const declared = calleeParams(env, callee) orelse return null;
+    if (declared.len != f.params.len) return null;
+    var labelled = false;
+    for (args) |a| if (a.label != null) {
+        labelled = true;
+    };
+    if (!labelled and args.len + 1 == declared.len) return null;
+    const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), args.len + 1);
+    typedArgs[0] = .{ .label = null, .value = lhsPtr };
+    for (args, 1..) |a, i| {
+        const val = try inferExprTyped(env, a.value.*);
+        typedArgs[i] = .{ .label = a.label, .value = try makeTypedPtr(env, val) };
+    }
+    const plan = (if (typedArgs.len == declared.len)
+        try planLabelledCall(env, callee, declared, typedArgs, loc)
+    else
+        try recordDefaultFill(env, loc, declared, typedArgs)) orelse return null;
+    try env.defaultInjections.put(loc, plan);
+    try unifyFilledArgs(env, plan, f.params, typedArgs);
+    return f.ret;
+}
+
 /// A qualified call's plan (a namespace import's `ns.f(…)`, a `"std"`
 /// module's `bool.negate(…)`): the reorder a complete labelled call needs, or
 /// the fill of a short one, against the parameters as written. `null` when
@@ -13001,6 +13037,11 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 const retType: *T.Type = switch (resolved.*) {
                     .func => |f| blk: {
                         const totalArgs = call.args.len + 1 + call.trailing.len;
+                        // C-04 / 01 — `lhs |> f(b: 1)` is the call `f(lhs, b: 1)`:
+                        // a short one takes the declared defaults and a label
+                        // names its parameter, planned under the pipeline's loc
+                        // (`transform.zig` rewrites the pipeline into that call).
+                        if (call.trailing.len == 0) if (try planPipelineFill(env, call.callee, f, lhsPtr, call.args, loc)) |ret| break :blk ret;
                         // C12: a pipeline whose RHS does not take the piped
                         // value plus its own arguments is an arity error at
                         // the RHS, not a silently skipped unification.
@@ -13041,9 +13082,13 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             const rhsTyped = try inferExprTyped(env, p.rhs.*);
             const rhsPtr = try makeTypedPtr(env, rhsTyped);
             // C12: `lhs |> f` with `f` a function is the call `f(lhs)`: its
-            // type is `f`'s return, and `f` must take exactly one argument.
+            // type is `f`'s return, and `f` must take exactly one argument —
+            // or declare a default for every other one (C-04).
             const pipeType: *T.Type = switch (rhsTyped.getType().deref().*) {
                 .func => |f| blk: {
+                    if (f.params.len != 1) if (p.rhs.* == .identifier and p.rhs.*.identifier.kind == .ident) {
+                        if (try planPipelineFill(env, p.rhs.*.identifier.kind.ident, f, lhsPtr, &.{}, loc)) |ret| break :blk ret;
+                    };
                     if (f.params.len != 1) {
                         const name = switch (p.rhs.*) {
                             .identifier => |id| switch (id.kind) {

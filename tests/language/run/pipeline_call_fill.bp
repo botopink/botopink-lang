@@ -1,0 +1,28 @@
+//// `lhs |> f(args…)` is the call `f(lhs, args…)` — the checker has always
+//// typed it so — and C-04 reaches it: a pipeline may leave out defaulted
+//// parameters and label the ones it writes, at expression and at statement
+//// position, with a call or a bare function on the right. Before, a complete
+//// call on the right lowered as `f(args…)(lhs)` (commonJS called the result,
+//// erlang's emitter crashed), and a short one was `'greet' expects 3
+//// argument(s), got 1`.
+
+fn greet(name: string, greeting: string = "hi", mark: string = "!") -> string {
+    return greeting + " " + name + mark;
+}
+
+fn log(s: string, prefix: string = "> ") {
+    @print(prefix + s);
+}
+
+fn full(name: string, greeting: string, mark: string) -> string {
+    return greeting + " " + name + mark;
+}
+
+pub fn main() {
+    @print("w" |> full("yo", "."));
+    @print("w" |> greet);
+    @print("w" |> greet("yo"));
+    @print("w" |> greet(mark: "?"));
+    "x" |> log;
+    "y" |> log(prefix: "# ");
+}

@@ -717,7 +717,12 @@ fn rewriteStmt(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             }
         }
     }
-    // C-04 — the same fill at statement position (`b.bump();`).
+    // C-04 — the same fill at statement position (`b.bump();`, `x |> log;`).
+    if (stmt.expr == .call and stmt.expr.call.kind == .pipeline) {
+        if (pipelineIsCall(agg, stmt.expr.call.kind.pipeline, stmt.expr.call.loc)) {
+            pipelineAsCall(agg, &stmt.expr) catch return ScanError.OutOfMemory;
+        }
+    }
     if (stmt.expr == .call and stmt.expr.call.kind == .call) {
         if (agg.default_injections.get(stmt.expr.call.loc)) |fill| {
             applyDefaultFill(agg, fill, &stmt.expr.call.kind.call) catch return ScanError.OutOfMemory;
@@ -1019,6 +1024,14 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // and neither can skip the other: they act on disjoint node kinds (a `.call`
     // and a `case` `.collection`), and the `if` the swap produces is walked by
     // this same function, so a call inside a swapped arm still reaches its fill.
+    // `lhs |> f(args…)` IS the call `f(lhs, args…)` — inference types it so —
+    // and is written out as that call, so the fill below (a default, a
+    // labelled argument) completes it like any other call.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .pipeline) {
+        if (pipelineIsCall(agg, expr_ptr.call.kind.pipeline, expr_ptr.call.loc)) {
+            pipelineAsCall(agg, expr_ptr) catch return ScanError.OutOfMemory;
+        }
+    }
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
         if (agg.default_injections.get(expr_ptr.call.loc)) |fill| {
             applyDefaultFill(agg, fill, &expr_ptr.call.kind.call) catch return ScanError.OutOfMemory;
@@ -1233,6 +1246,47 @@ fn expandTrailingDefaults(agg: *Aggregator, fn_decl: ast.FnDecl, c: anytype) !vo
 /// Nothing is trusted: the plan is applied only when it still describes the
 /// call in front of us. Inference wrote it against this very AST, so a mismatch
 /// means something else rewrote the call first, and then the call is left alone.
+/// Whether a pipeline is written out as a call: every `lhs |> f(args…)` whose
+/// RHS is a plain call (inference makes `lhs` its first argument, and the
+/// backends read the node as `f(args…)(lhs)` — commonJS called the result,
+/// erlang's emitter crashed), and `lhs |> f` when inference planned a fill
+/// for it under the pipeline's loc.
+fn pipelineIsCall(agg: *Aggregator, p: anytype, loc: ast.Loc) bool {
+    if (p.rhs.* == .call and p.rhs.call.kind == .call) {
+        const cc = p.rhs.call.kind.call;
+        return cc.receiver == null and cc.trailing.len == 0 and !cc.is_builtin;
+    }
+    return agg.default_injections.contains(loc);
+}
+
+/// `lhs |> f(a)` → `f(lhs, a)` and `lhs |> f` → `f(lhs)`, keeping the
+/// pipeline's loc (the key its fill was recorded under).
+fn pipelineAsCall(agg: *Aggregator, expr_ptr: *ast.Expr) !void {
+    const p = expr_ptr.call.kind.pipeline;
+    const arena = agg.spec_cache.arena;
+    const callee: []const u8, const rest: []const ast.CallArg = switch (p.rhs.*) {
+        .call => |rc| switch (rc.kind) {
+            .call => |cc| if (cc.receiver == null and cc.trailing.len == 0) .{ cc.callee, cc.args } else return,
+            else => return,
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| .{ n, &.{} },
+            else => return,
+        },
+        else => return,
+    };
+    const args = try arena.alloc(ast.CallArg, rest.len + 1);
+    args[0] = .{ .label = null, .value = p.lhs };
+    @memcpy(args[1..], rest);
+    expr_ptr.* = .{ .call = .{ .loc = expr_ptr.call.loc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = callee,
+        .is_builtin = false,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+}
+
 fn applyDefaultFill(agg: *Aggregator, fill: envMod.DefaultFill, c: anytype) !void {
     // A complete call is planned only to reorder labelled arguments (01).
     if (c.args.len > fill.params.len) return;

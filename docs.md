@@ -1345,6 +1345,8 @@ one imported from another module or reached through a namespace
 (`helper.pad(width: 7, s: "q")`) — so the arguments may be written in any order.
 A function **value** (a parameter, a local, a field) has a positional type with
 no names, so a label in a call of one is refused (`error[label-on-function-value]`).
+A pipeline is a call: `x |> f(a)` is `f(x, a)` and `x |> f` is `f(x)`, so it
+takes defaults and labels like one (`"w" |> greet(mark: "?")`).
 
 ### Effects
 
