@@ -41,7 +41,7 @@ model exists so none of them can be written again:
 | `wat_ast.zig` | **Types**: `ValType` (`i32`/`i64`/`f32`/`f64`, with `parse` for the backend's spelled type names), `Stack` (`none`/`value`/`terminated`, with `fits(?ValType)`), `Width` (`full`/`byte` — `…8_u` / `…8`), `MemArg` (`ty`, `width`, `offset`). **Instructions**: `Instr` (`const` with the numeral as spelled, `local_get`/`local_set`/`local_tee`, `global_get`/`global_set`, `op` = `<ty>.<name>`, `convert` (a fully-spelled conversion opcode), `load`/`store`, `call`, `call_indirect` (an inline `FuncType`), `br`/`br_if`, `drop`, `return`, `unreachable`, `memory_copy`, `if`, `block` (`block` or `loop`), `comment`). **Layout**: `Line` (instruction + `indent` + trailing `;; comment` + `folded`), `Seq` (lines + stack), `If.Arm.Layout` (`block` vs one-line `inline_`). **Forms**: `Param`, `Local`, `Func` (name, exports, params, result, `locals` as *lines* so a helper can group several, body), `Global`, `FuncType`/`Import`, `Memory`, `DataSegment` (offset + length prefix + raw bytes), `Item` (import/memory/start/table/data/global/func/comment — `table` is `(table funcref (elem $f …))`, each name checked against the module's functions), `Module` (items). **Invariants**: `Invalid`, `validateFunc`, `validateModule`, `declaresCall`. **Helpers**: `Helper` (every symbol is `__<tag>`; `group`), `HelperGroup` (`deps` — the groups a group's functions call into), `HelperSet` (an `EnumSet`; `require` closes over `deps`). **`Builder`**: arena + `seq`/`param`/`localLines`/`func` (which validates) + `helper`. |
 | `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point). Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
 | `wasm_binary_emitter.zig` | `encodeModule(alloc, Module) → []u8`: the binary format of the module the text emitter renders — validated first (`validateModule`), then sections type · import · function · table · memory · global · export · start · element · code · data, LEB128, one type per distinct signature (imports' and functions' types first, then each `call_indirect`'s), locals as runs of one type, no custom section. Every name the text spells is resolved to an index — functions (imports first, then definitions, in item order), globals, locals (params then declared), branch labels (depth, every `if` counted) — and a name that resolves to nothing (`UnknownName`), an operator the MVP table (`opcodes`: numeric, conversions, sign extension, `trunc_sat`) does not know (`UnknownOp`) or a numeral that does not parse (`BadNumeral`, the text format's spellings: sign, `0x`, `_`, `inf`/`nan`) is an error, never a guess. `wat.zig`'s `emitWat` renders both from one `Module` (`GenerateResult.js` the text, `.wasm` the binary); `codegen/runtime.zig`'s `executeWat` runs the **binary**, so every wasm RUN LOG is the binary emitter's answer checked against the recorded fixture. The browser build's page instantiates the same bytes. `Encoder` (with `typeIndex`/`funcIndex`/`funcBody`), `Bytes`, `section`, `uleb`/`sleb`, `name`, `valType`, `funcType` and `constInstr` are public for `comptime/runtime/wat/link.zig`, which pre-seeds an `Encoder` with a prebuilt module's index spaces and encodes a lowered comptime program's functions against the merged numbering. |
-| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_undefined` — the bytes of `undefined` through scratch `176..185` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), and `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `undefined` for `0`, `$__print_tagged_raw` otherwise; its own group, last in declaration order, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
+| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str` (`$__print_str_raw` traps on a pointer below the data floor — decision 67, § below), `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `str_char_code`, `str_last_index_of`, `str_pad`, `str_replace` (§ The primitive method table), `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_null` — the bytes of `null`, decision 47's one spelling of absent, through scratch `176..180` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures), `print_opt_tagged` (`$__print_opt_tagged` +`_raw` — a `?T` whose `T` is a record: `null` for `0`, `$__print_tagged_raw` otherwise; its own group, because the tagged printer reads a header four bytes behind the value and absence has to be answered before it is called), and `display_of` (`$__display_of(v)` answering `0` — the `Display` hook `$__print_tagged_raw` calls first, which `wat.zig` replaces with the module's dispatch, § below). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
 
 ## Consumers
 
@@ -282,9 +282,19 @@ a binder nothing typed, and requiring both arms made `["x", "yz"].at(1) ??
 "none"` print the string's address. `run/map_record_field_strings.bp` and
 `run/map_record_field_length.bp` pin both.
 
-**Still open, measured here and left.** `es.at(1)?.key.length().toString()`
-traps (`unresolved call: toString/0`): a `?.` chain loses the receiver's type
-for the SECOND method.
+**A method on the rest of a `?.` chain runs under the chain's guard**
+(`lowerChainedCall`, `00 · 05-wasm` step 9). `?.` short-circuits everything
+after it, but only the link written with `?.` carried the guard: in
+`es.at(1)?.key.length().toString()` the `length()` read a length from address 0
+when the entry was absent (the WASI iovec, exit 0) and `toString()` found no
+receiver type at all and trapped. A primitive method whose receiver continues a
+`?.` chain (`isOptionalChain`) is now lowered as `recv; tee; eqz; if (result
+i32) 0 else <unbox a boxed receiver; the method on it; box a scalar result>`,
+the receiver's family read off the chain (`chainPayloadKind`: the previous
+guarded link's result, a field's declared type, a string). The whole expression
+is the `?T` the checker typed — `optInfoOf` answers it (`chainedCallOpt`) — and
+prints `null` or its value. A float result has no box here and keeps the
+unguarded path. `run/optional_chain_method.bp` pins it.
 
 ## Two run-time rules this backend implements first (2026-09-19)
 
@@ -341,17 +351,47 @@ without walking past the variants before it.
   keeps the trap, and `is` over such an enum answers no test. Boxing it would
   make `Color.Red == Color.Red` a pointer comparison, which is a worse answer
   than none.
-* **`is` over a primitive.** Every value here is an `i32` in linear memory;
-  `is i32` and `is string` cannot be told apart at run time. `lowerIsCall`
-  traps with a note instead of answering `i32.const 0`, which would be a silent
-  wrong answer.
-* **§7's `Display` half.** `$__print_tagged_raw` would have to reach the type's
-  `display/1` through the value — the descriptor carrying its table index and
-  the printer using `call_indirect`. The table is built from the lifted-lambda
-  list, whose indices are handed out as lambdas are lifted, so an index interned
-  into a descriptor during lowering would shift. `tests/language/run/display_print.bp`
-  prints `Money(cents: 5)` where the other three backends print `$5`, and the
-  expected-failures line names `05-wasm` and this paragraph.
+* **A value whose type nothing proves cannot go in the box** — a type
+  parameter's slot (`Maybe.Some(value: v)` over a `T`: nothing monomorphises
+  here, so `v` is a raw `i32` that may be a pointer), a result nothing typed.
+  `lowerAsUnknown` traps (`unknown: no static type to box this value by`)
+  rather than boxing a guess, which would answer `is` and `==` wrongly.
+
+**Decision 8 §11's box — `unknown` and unions over primitives** (`00 · 05-wasm`
+step 2 D1–D4). A value entering an `unknown` or union slot (`boxesInto` /
+`lowerBoxedInto` — a `val` annotation, an argument, a return, a field, an
+assignment) carries a header behind its pointer, the SAME header C-01 gave a
+declared value: a record or a variant already has one and goes in as it is; a
+primitive is boxed — `[descriptor][payload]` (`lowerAsUnknown`), the descriptor
+`'P' <n> name` (`primDescriptorAddr`; `i32`, `f64` with an 8-byte payload,
+`bool`, `string`, `array`, `tuple`) — and `null` is `0`. One field answers both
+"which primitive" and "which declaration", so 13's named-type tests read an
+`unknown` value unchanged. The readers are the prelude's `unknown` group:
+`$__unknown_kind` (the descriptor's tag, or the primitive name's first letter),
+`$__unknown_int_in` (§4.1 by value: a boxed `i32` in range, or a boxed `f64`
+that is a whole number in range — `3.0 is i32`, `300 is i8` false),
+`$__unknown_as_i32` / `_f64`, `$__unknown_eq` (§2.3: numbers by value, strings
+by content), and `$__print_unknown` (+`_raw`). `x is T` over a primitive puts
+its operand in the box and asks (`lowerIsCall` → `emitPrimTest`); `if (x is T)`
+reads an unboxed alias of `x` inside the branch (`narrowUnknown`); a `case` over
+an `unknown` subject tests a primitive-type arm and binds its payload unboxed
+(`unknown_subjects`, `arm_unbox`) — as a plain identifier it was a binding that
+matched everything (`number 364`, a heap address). `tests/language/run/unknown_by_value.bp`
+pins it on four targets.
+
+**§7's `Display` half is answered by the module, not the descriptor**
+(`00 · 05-wasm` step 1 F4). `$__print_tagged_raw` first asks `$__display_of(v)`
+for the text `v`'s own `display(self) -> string` answers and writes it when it
+is not `0`. The prelude's `display_of` group answers `0` for every value, so the
+group renders alone; `wat.zig`'s `displayDispatch` substitutes the module's own
+form whenever a record type has both a descriptor (some value of it was built)
+and a `<Type>_display` method: one `v >= 256 && load(v - 4) == <descriptor>`
+compare per such type, calling the method. It is written after lowering, from
+the interned descriptor addresses, rather than as a table index stored in the
+descriptor — table indices are handed out as lambdas are lifted, so one interned
+during lowering would shift. `tests/language/run/display_print.bp` prints `$5`
+and `[$1, $2]` on all four targets. An enum's methods are not consulted, as on
+commonJS (`js/AGENTS.md` § What a value is).
 
 ## Function values, and the lowering that is not there
 
@@ -365,6 +405,23 @@ passed or bound, and — since front 05 step 7 — one read out of an **aggregat
 slot**, `t._1(2)` / `o.step(10)` / a labelled element the checker resolved to its
 position (`c.set` → `_1`). That last was the only gap, and the reason the trap it
 left read as "wasm has no function values".
+
+**Calling the result of a call** — `adder(3)(4)` (01 handover 15) arrives with
+the callee in `calleeExpr` and `callee == ""`; `lowerValueCall` lowers that
+expression and applies it like any other function value. What the call answers
+is the function type's return (`valueCallTypeRef`, for a `calleeExpr` and for a
+local or global declared — or bound to a call declared — `fn(…) -> R`), which
+is how `greeter("a")("b")` and `f("b")` after `val f = greeter("a")` are strings
+to the printer rather than their heap address. The lambda such a fn returns is
+typed from the declared return: `expected_fn`, set at a `return { … }` and at an
+annotated `val f: fn(…) -> … = { … }`, gives `lowerLambdaValue` its parameter
+types, so `{ x -> p + x }` under `-> fn(x: string) -> string` concatenates.
+
+**A pattern in binding position** — `val Circle(r) = s;` / `val Sq(side) = q;`
+— reads each binding off the slot of the declared field at its position (a
+record from offset 0, a variant through `bindPattern` from offset 4). The checker
+(01 R5) lets through only a pattern that cannot fail, so there is no test. It
+used to fall to "unsupported destructure pattern" and bind nothing — `0`, exit 0.
 
 **A lambda handed straight to an array method is not lifted**: `lowerArrayHof`
 inlines its body into a counted walk, which is what lets `forEach` assign an outer
@@ -386,6 +443,77 @@ the table and left the arm answering a closure-cell address
 `lowerArmBody` inlines it instead. `@block { … }` is inlined by `lowerBuiltin`,
 and a bare `{ 1 + 2 }` in value position does not parse at all ("this token cannot
 appear here"). So decision 2's enforcement leaves nothing dead here.
+
+## Methods, binders and the module body (`00 · 05-wasm`, the rows no step named)
+
+Each of these answered `0` at exit 0 or trapped where the other three backends
+answered, and each had its own `expected-failures.txt` line:
+
+- **An enum's methods are emitted** (`registerInterfaceSigs` / `emitInterfaceMethods`
+  take every `type`, not only records): `Shape.Rect(…).counts(3)` was an
+  `unresolved call` trap. An enum's associated fn called on the type
+  (`Shape.unit()`) is `assocSym`'s, as a record's is — it took the variant path
+  and answered `0 ;; unknown variant`. `exprReferencesSelf` walks a `case`'s
+  subject and arms, so `fn name() { case (self) { … } }` gets its `$self`.
+- **A method declared `-> @Iterator<T>` / `-> @Stream<T>` accumulates its
+  yields** (`methodYieldsEagerly` → `renderAccumulatingBody`), as a fn does; its
+  body was rendered plain, every `yield` dropped.
+- **`opt.map({ x -> … })` is a registered optional** (`optInfoOf`): boxed when
+  the closure answers a scalar, a pointer otherwise — what
+  `lowerResultOptionOp` builds. Unregistered, a `return` into `-> ?i32` boxed
+  the box (an address printed), and a `map` answering a string was read one
+  indirection too far by the `flatMap` after it.
+- **A type adopts its behaviors' `default fn`s** (`adoptedDefaults`,
+  `methodsWithDefaults`): each one the type does not write is emitted as its own
+  `$<Type>_<method>`, through `extends` too — `Money(…).clamp(lo, hi)` over
+  `Bounded`'s default and `Bag(…).isEmpty()` through `Counted extends Sized`
+  were `unresolved call` traps. A method call on a record value answers the
+  record its declared return names (`recordTypeOfExpr`), so `self.max(lo).min(hi)`
+  finds `Money_min` — and `Stub(n: 1).where().file` read the `SourceLocation`
+  fields as numbers (`308 3 16 320`, exit 0) until it did.
+- **A method on a value of an IMPORTED type** resolves through the receiver's
+  record type (`recordMethodSym`'s fallback to `recordTypeOfExpr`): inference
+  records no note for it, so `queryOf(xs).toArray().length` answered `0`.
+- **The optional binder takes the payload's record type** (`lowerIfExpr`,
+  `local_types`), so `if (hitOf()) { h -> h.rest.length }` reads the declared
+  slot instead of `0`.
+- **A behavior literal's `self` method is called with its receiver**
+  (`self_method_fields`, `lowerValueCall`): `g.greet(who)` over `@Greeter(greet:
+  { self, who -> … })` passed one argument fewer than the lifted lambda takes (a
+  trap). The lambda's parameters take their types from the behavior's
+  declaration of the method (`lowerBehaviorLit` → `expected_params`), and the
+  call's result is judged by the lambda's body (`fieldLambdaCallIsString`) — it
+  printed the string's address.
+- **A name two linked modules declare traps where it is called**
+  (`ambiguous_names`, `lowerPlainCall`). This backend links every module the
+  program imports into ONE namespace, and the first declaration of a name won:
+  `import {parse as parse2} from "two"` called `one`'s `parse` — and so did
+  `two`'s own calls to it — at exit 0. Mangling per module is the fix and is
+  not done (every name table keys by the bare name); until then the call is a
+  `RUNTIME TRAP`, not a wrong module's answer.
+- **A variant reached through its enum is the enum's** (`callKind`):
+  `__Token__Layout.Size(…)` — what a section path desugars to — built the
+  RECORD `Size` when one of that name was in scope, and `.Layout.Size.Large`
+  answered the section's first arm (`display:block`).
+- **A `_`-named top-level statement runs at module load**, in `$__init_globals`
+  in source order with the named `val`s (`deferred_stmts`); it was dropped. A
+  synthetic statement that only calls `main()` is skipped, as on the BEAM.
+
+## The primitive method table (`00 · 05-wasm` step 6)
+
+`primCallRes` is the table of what a primitive method lowers to; a method it
+does not list traps (`prim method not lowered on wasm`). Audited against every
+member `libs/std/src/primitives.bp` declares:
+
+| Family | Lowered | Traps (pinned one program each by `tests/wat.zig` `a primitive method with no wasm lowering traps, never answers`) |
+|---|---|---|
+| `String` | every member but two — `charCodeAt` (`$__str_char_code`, `-1` out of range), `lastIndexOf` (`$__str_last_index_of`), `padStart`/`padEnd` (`$__str_pad`, the pad cycled), `replace`/`replaceAll` (`$__str_replace`; an empty pattern matches before every byte) and `chars` (`$__str_split` on `""`) since this row | `lines`, `words` — a split on a character class |
+| `Array` | the rest — `find` (`filter` then `at(0)`, the `?T` `at` answers) since this row | `pop` (mutates the blob in place), `flatMap` (a function value the inlined HOF path does not reach), `flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique` (grow through `append`) |
+| `Integer`, `Bool` | all | — |
+| `Float` | all — `toString` (`$__f64_to_str`, `5.0` → `5` as on node) since this row | — |
+
+Byte-level, like every string helper here: an ASCII string answers as the
+other backends do, a multi-byte one by bytes.
 
 ## Self-recursion in tail position (`00 · 05-wasm` step 9)
 

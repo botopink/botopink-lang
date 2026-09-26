@@ -37,7 +37,7 @@ export declare function loadOne(x: number): Promise<number>;
 export declare function count(): IterableIterator<number>;
 
 
-export declare function pulses(): AsyncGenerator<{ tag: "Ok"; result: number } | { tag: "Error"; error: string }>;
+export declare function pulses(): AsyncGenerator<{ ok: number } | { error: string }>;
 
 ```
 

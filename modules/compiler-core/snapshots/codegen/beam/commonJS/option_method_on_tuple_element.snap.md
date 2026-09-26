@@ -17,6 +17,8 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }
+
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
@@ -38,6 +40,7 @@ function __bp_show(v, s, top, a) {
         const k = Object.keys(v);
         return (((typeof v.tag === "string") ? ((v.__bp + ".") + v.tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
     }
+    if ((v === undefined)) return "null";
     a.push(v);
     return "%O";
 }
@@ -199,7 +202,7 @@ Array.prototype.unique = function() {
 };
 
 function firstAndRest(xs) {
-    const head = xs.at(0);
+    const head = __bp_array_at(xs, 0);
     const rest = xs.slice(1, xs.length);
     return [rest, head];
 }

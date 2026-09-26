@@ -17,6 +17,8 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }
+
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
@@ -38,6 +40,7 @@ function __bp_show(v, s, top, a) {
         const k = Object.keys(v);
         return (((typeof v.tag === "string") ? ((v.__bp + ".") + v.tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
     }
+    if ((v === undefined)) return "null";
     a.push(v);
     return "%O";
 }
@@ -201,15 +204,15 @@ Array.prototype.unique = function() {
 function main() {
     const rows = [[1, 2], [3, 4]];
     __bp_print(rows);
-    __bp_print(rows.at(1));
-    __bp_print(rows.at(1).at(0));
-    __bp_print(rows.at(0).length);
+    __bp_print(__bp_array_at(rows, 1));
+    __bp_print(__bp_array_at(rows, 1).at(0));
+    __bp_print(__bp_array_at(rows, 0).length);
     const xs = [10, 20, 30];
     __bp_print(xs.slice(0, 2).length);
     const sl = xs.slice(0, 2);
     __bp_print(sl.length);
     const ps = [[1, "a"], [2, "b"]];
-    __bp_print(ps.at(1));
+    __bp_print(__bp_array_at(ps, 1));
 }
 
 function _botopink_main() {

@@ -531,6 +531,8 @@ test "order case over Order" {
 
 ----- JAVASCRIPT -- std/collections.js
 ```javascript
+function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }
+
 //// std/collections — the four collection types, one namespace each (decision
 
 //// 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
@@ -597,9 +599,9 @@ class Dict {
     }
 
     hasKey(key) {
-        return (this.pairs.filter((p) => {
+        return (__bp_array_at(this.pairs.filter((p) => {
     return (p[0] === key);
-}).at(0) != null);
+}), 0) != null);
     }
 
     size() {
@@ -792,13 +794,13 @@ class Queue {
     }
 
     dequeue() {
-        const head = this.items.at(0);
+        const head = __bp_array_at(this.items, 0);
         const rest = this.items.slice(1, this.items.length);
         return [new Queue(rest), head];
     }
 
     peek() {
-        return this.items.at(0);
+        return __bp_array_at(this.items, 0);
     }
 
     toList() {
@@ -885,7 +887,7 @@ exports.reverse = reverse;
 
 ----- TYPESCRIPT TYPEDEF -- std/collections.d.ts
 ```typescript
-export declare class Dict {
+export declare class Dict<K, V> {
     readonly pairs: Array<[K, V]>;
     constructor(pairs: Array<[K, V]>);
     at(key: K): V | null;
@@ -897,13 +899,13 @@ export declare class Dict {
     insert(key: K, value: V): Dict<K, V>;
     delete(key: K): Dict<K, V>;
     merge(other: Dict<K, V>): Dict<K, V>;
-    fold(initial: A, f: (A, K, V) => A): A;
-    mapValues(f: (V) => W): Dict<K, W>;
+    fold<A>(initial: A, f: (acc: A, key: K, value: V) => A): A;
+    mapValues<W>(f: (value: V) => W): Dict<K, W>;
     empty(): Dict<K, V>;
 }
 
 
-export declare class Set {
+export declare class Set<T> {
     readonly items: Array<T>;
     constructor(items: Array<T>);
     contains(x: T): boolean;
@@ -920,7 +922,7 @@ export declare class Set {
 }
 
 
-export declare class Queue {
+export declare class Queue<T> {
     readonly items: Array<T>;
     constructor(items: Array<T>);
     size(): number;
@@ -996,6 +998,7 @@ function __bp_show(v, s, top, a) {
         const k = Object.keys(v);
         return (((typeof v.tag === "string") ? ((v.__bp + ".") + v.tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
     }
+    if ((v === undefined)) return "null";
     a.push(v);
     return "%O";
 }
@@ -1022,16 +1025,13 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Dict, gt, reverse, rank } from "std";
+import { Dict, gt, reverse, toInt as rank } from "./std/collections";
 
 
-import { Dict, gt, reverse, rank } from "std";
 
 
-import { Dict, gt, reverse, rank } from "std";
 
 
-import { Dict, gt, reverse, rank } from "std";
 
 
 

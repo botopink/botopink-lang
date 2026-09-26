@@ -19,6 +19,8 @@ fn main() {
 ```javascript
 function __bp_string_char_at(s, i) { return (i >= 0 && i < s.length) ? s.charAt(i) : null; }
 
+function __bp_array_at(xs, i) { return (i >= 0 && i < xs.length) ? xs[i] : null; }
+
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
@@ -40,6 +42,7 @@ function __bp_show(v, s, top, a) {
         const k = Object.keys(v);
         return (((typeof v.tag === "string") ? ((v.__bp + ".") + v.tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
     }
+    if ((v === undefined)) return "null";
     a.push(v);
     return "%O";
 }
@@ -237,10 +240,10 @@ Array.prototype.unique = function() {
 function main() {
     const xs = [10, 20, 30];
     const i = 1;
-    __bp_print(xs.at(0));
-    __bp_print(xs.at((i + 1)));
+    __bp_print(__bp_array_at(xs, 0));
+    __bp_print(__bp_array_at(xs, (i + 1)));
     const names = ["ana", "bo"];
-    __bp_print(names.at(1));
+    __bp_print(__bp_array_at(names, 1));
     const s = "hello";
     __bp_print(__bp_string_char_at(s, 1));
     __bp_print(s.slice(1, 3));

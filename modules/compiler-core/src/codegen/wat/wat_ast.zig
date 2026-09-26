@@ -414,7 +414,7 @@ pub const HelperGroup = enum {
     print_arr_f32,
     box_i32,
     arr_at_box,
-    /// `$__print_undefined`, and `$__print_opt_{i32,bool,str}` (+`_raw`).
+    /// `$__print_null`, and `$__print_opt_{i32,bool,str}` (+`_raw`).
     print_opt,
     /// `$__print_opt_f32` (+`_raw`) — a `?T` box holding an `f32` slot. Its own
     /// group and not part of `print_opt`, so a module that prints a plain
@@ -437,6 +437,26 @@ pub const HelperGroup = enum {
     /// has to be answered before it is called. Last in declaration order, so
     /// every module that does not call it renders exactly as before it existed.
     print_opt_tagged,
+    /// `$__display_of(v) -> i32` — the hook `$__print_tagged_raw` asks first:
+    /// the string a value's own `display(self) -> string` answers, or `0`. The
+    /// prelude's form answers `0` for every value; `wat.zig` substitutes the
+    /// module's own dispatch (one descriptor compare per type declaring
+    /// `display`), so the group renders alone and a module gets its answer.
+    display_of,
+    /// `$__str_char_code(s, i)` — the byte at `i`, `-1` outside `0..len`.
+    str_char_code,
+    /// `$__str_last_index_of(s, sub)` — the last byte offset of `sub`, `-1` when absent.
+    str_last_index_of,
+    /// `$__str_pad(s, width, pad, start)` — `padStart` (`start = 1`) / `padEnd`.
+    str_pad,
+    /// `$__str_replace(s, pat, with, all)` — `replace` (`all = 0`) / `replaceAll`.
+    str_replace,
+    /// The readers of decision 8 §11's box — a value in an `unknown` or union
+    /// slot: `$__unknown_kind`, `$__unknown_int_in`, `$__unknown_as_i32`,
+    /// `$__unknown_as_f64`, `$__unknown_eq`.
+    unknown,
+    /// `$__print_unknown` (+`_raw`) — such a value printed by what it holds.
+    print_unknown,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -450,7 +470,7 @@ pub const HelperGroup = enum {
             .print_opt_f32 => &.{ .print, .print_f64, .print_opt },
             .print_opt_tagged => &.{ .print, .print_opt, .print_shaped },
             .assert_fail => &.{.print},
-            .print_shaped => &.{ .print, .print_bool, .print_f64 },
+            .print_shaped => &.{ .print, .print_bool, .print_f64, .display_of },
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
             .f64_to_str => &.{ .i32_to_str, .alloc },
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
@@ -461,6 +481,11 @@ pub const HelperGroup = enum {
             .arr_index_of_str => &.{.str_eq},
             .arr_join_str => &.{.alloc},
             .arr_join_i32 => &.{ .arr_new, .i32_to_str, .arr_join_str },
+            .str_last_index_of => &.{.mem_eq},
+            .str_pad => &.{.alloc},
+            .str_replace => &.{ .alloc, .str_concat, .str_slice, .str_index_of },
+            .unknown => &.{.str_eq},
+            .print_unknown => &.{ .print, .print_bool, .print_f64, .print_str, .print_opt, .print_shaped, .unknown },
             else => &.{},
         };
     }
@@ -517,7 +542,7 @@ pub const Helper = enum {
     print_arr_f32_raw,
     box_i32,
     arr_at_box,
-    print_undefined,
+    print_null,
     print_opt_i32,
     print_opt_i32_raw,
     print_opt_bool,
@@ -535,6 +560,18 @@ pub const Helper = enum {
     print_tagged,
     print_opt_tagged,
     print_opt_tagged_raw,
+    display_of,
+    str_char_code,
+    str_last_index_of,
+    str_pad,
+    str_replace,
+    unknown_kind,
+    unknown_int_in,
+    unknown_as_i32,
+    unknown_as_f64,
+    unknown_eq,
+    print_unknown,
+    print_unknown_raw,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -552,10 +589,12 @@ pub const Helper = enum {
             .print_arr_f32, .print_arr_f32_raw => .print_arr_f32,
             .write_err, .assert_fail => .assert_fail,
             .print_quoted_raw, .print_shaped_raw => .print_shaped,
-            .print_undefined, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
+            .print_null, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
             .print_opt_f32, .print_opt_f32_raw => .print_opt_f32,
             .print_tagged_raw, .print_tagged => .print_shaped,
             .print_opt_tagged, .print_opt_tagged_raw => .print_opt_tagged,
+            .unknown_kind, .unknown_int_in, .unknown_as_i32, .unknown_as_f64, .unknown_eq => .unknown,
+            .print_unknown, .print_unknown_raw => .print_unknown,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

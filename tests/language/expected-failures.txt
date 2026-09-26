@@ -147,7 +147,6 @@ erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only
 # run/ and modules/ cells reach wasm. The rows below are the same defects the
 # commonJS and erlang lines above name, seen from the third backend.
-wasm     | run/display_print.bp       | 05-wasm | re-measured 2026-09-21 by running, after C-01 half 3 step 17: the trap is GONE and the record prints — `Money(cents: 5)` and `[Money(cents: 1), Money(cents: 2)]`, decision 8 §7's record text read from the value's own header. What is left is §7's `Display` half, which on this backend needs a function the printer can reach through the value: the descriptor would have to carry the table index of `display/1` and `$__print_tagged_raw` would `call_indirect` it, and the table is built from the lifted-lambda list, whose indices are assigned as lambdas are lifted. 05-wasm owns the table; the other three backends answer `$5` / `[$1, $2]`
 
 # ── the forms front 15 landed, that nothing lowers or types yet ─────────────
 # `109f6c9` made five forms parse. Three of them run everywhere and are pinned by
@@ -164,7 +163,6 @@ wasm     | run/display_print.bp       | 05-wasm | re-measured 2026-09-21 by runn
 # fails silently" is gone, because nothing is dropped any more. wasm keeps one
 # line below, and it is a different defect: not the index, but `Array.at` on an
 # array OF arrays.
-commonJS | test/curried_call.bp::calling the result of a call ;; calling the result of a call whose result is chosen at run time | C-09 (backend half) | 01 types `adder(3)(4)` now (the callee in `calleeExpr` is inferred and applied); commonJS does not read `calleeExpr` and emits `(4)`, dropping the callee
 erlang   | test/curried_call.bp       | C-09 (backend half) | 01 types it; erlang does not read `calleeExpr` and emits `''(4)`, which `erlc` refuses — the cell does not compile
 
 # ── run-time type identity (front 12 step 4.1) ────────────────────────────────
@@ -212,21 +210,20 @@ erlang   | test/curried_call.bp       | C-09 (backend half) | 01 types it; erlan
 #
 # What is left below is decision 47's spelling of ABSENCE, which is C-18's row
 # and not this one: on erlang and beam an absent optional prints the atom
-# `undefined`, on wasm it prints `0`, and `Array.at` past the end answers
-# `undefined` on commonJS too. Every line names what it measured.
-commonJS | run/index_past_the_end_is_null.bp | C-18 | decision 47: `xs[9]` is `xs.at(9)` and reaches `Array.at`, which answers `undefined` where `null` is owed — `10` / `undefined` / `after`. The route is right and the spelling of absent is not (measured 2026-09-21)
+# `undefined`, on wasm a `Dict`'s absent `?V` prints `0`. `Array.at` past the
+# end answers `null` on commonJS (`__bp_array_at`) and on wasm (`$__print_null`)
+# since `00 · 04-js` / `05-wasm`. Every line names what it measured.
 commonJS | run/map_record_field_length.bp | 04-js (the commonJS half of 05-wasm step 9's `map` row) | `ks.at(...)?.length is not a function`, exit 1: with nothing between `es.map({ e -> e.key })` and `ks.at(0)?.length()` the element type is unresolved at the read, and `length` is emitted as a property-then-call. wasm, erlang and beam answer `3`; `run/map_record_field_strings.bp` shows the same read answering once `ks.at(1) ?? "none"` has resolved the type (measured 2026-09-25)
-erlang   | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`, the atom
-wasm     | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`. It used to print `0` here, from wasm's own `$__arr_at`; through `Array.at` the four backends now disagree with the language in ONE way instead of two
+erlang   | run/index_past_the_end_is_null.bp | C-18 | decision 47: `xs[9]` is `xs.at(9)` and reaches `Array.at`, which answers the atom `undefined` where `null` is owed (commonJS and wasm print `null` since `00 · 04-js` / `05-wasm`)
 beam     | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`, the erlang shape through `erlc +from_asm`
 erlang   | run/index_dict.bp | C-18 | decision 47: the PRESENT key is right (`1`); the two absent probes print the atom `undefined` where `null` is owed. `Dict.at` itself answers correctly — the atom is how an empty optional prints (measured 2026-09-21)
-wasm     | run/index_dict.bp | C-18 | decision 47: the present key is right (`1`); the two absent probes print `0`
+wasm     | run/index_dict.bp | C-18 | decision 47: the present key is right (`1`); the two absent probes print `0` — `Dict.at`'s `?V` over a type parameter is carried unboxed on wasm (the generic-parameter limit, `src/codegen/wat/AGENTS.md`), so the empty optional is never seen as one
 beam     | run/index_dict.bp | C-18 | decision 47: the erlang shape — `1`, then `undefined` twice
 erlang   | run/index_user_type.bp | C-18 | decision 47: the user type is reached — `m[1]` runs `Matrix.at` and `r["bo"]` runs `Registry.at`, with no compiler change — and ONE thing is left: an absent `?i32` prints the atom `undefined` where `null` is owed. Re-measured 2026-09-21 after C-01 half 3: the array now prints `[3, 4]` WITH decision 8 §7's separator space, so the half of this line that named §7 is gone
 wasm     | run/index_user_type.bp | C-18 (decision 47 on wasm) | the user type is reached and the SHAPE is right — four lines, the slice's length is `2` — but a `?T` whose `T` is not a scalar is carried as a raw value: `m[1]` prints a heap address (`384` at this tip; the number drifts with the layout, the wrongness does not) and `r["bo"]` prints `16777216` for `1`. Spelling the two methods by name (`m.at(1)`, `r.at("bo")`) prints the same four lines byte for byte, which is what says the index is not the defect. Re-measured 2026-09-21 after C-01 half 3
 beam     | run/index_user_type.bp | C-18 | decision 47: the user type is reached, the array prints WITH the separator's space, and the one difference left is the absent `?i32` — the atom `undefined` where `null` is owed. Measured 2026-09-21
 erlang   | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` prints the atom `undefined`, not `null` — `1` / `undefined` / `b` / `undefined`; `Dict.at` and `String.at` themselves answer correctly
-wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent optional prints as `0` for `d.at("zz")` and as `undefined` for `s.at(7)`, where `null` is owed — re-measured at `fix/wasm-refusals`: `1` / `0` / `b` / `undefined`, exit 0. The second half this line used to carry is gone: `String.at` has a wasm lowering now (`$__str_at`), `s.at(1)` answers `b` instead of trapping, and `run/string_at.bp` pins that on all four targets
+wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` out of `Dict.at` prints as `0` — `1` / `0` / `b` / `null`, exit 0. `s.at(7)` prints `null` since `00 · 05-wasm` spelled the empty `?T` `null` (`$__print_null`); what is left is that `Dict<K, V>.at` answers a `?V` whose `V` is a type parameter, which this backend carries unboxed (no monomorphisation — `src/codegen/wat/AGENTS.md` § the generic-parameter limit), so absence and a present `0` are the same word
 beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `undefined` twice for the two absent probes
 
 
@@ -234,34 +231,10 @@ beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `
 # A module-level `val` is the module body: evaluated once, in declaration order,
 # at module load — before `main`. commonJS has always done that and erlang does
 # since `fix/erlang-module-load` (front 00 · 02-erlang), which is what
-# `run/module_init_order.bp` pins. wasm still misses half of it, measured at
-# that branch with OTP 29 / node v25; beam runs it since front 03 (the module
-# body in `'_botopink_main'/0`, an effectful `val` cached in `persistent_term`).
-wasm     | run/module_init_order.bp | 05 (no step; the module body on wasm) | a `_`-named top-level statement is dropped: `first` / `main` / `1` / `1` — `second` never runs. The named `val` is already evaluated once at load, so only the statement half is owed
-
-# ── a field read whose receiver lost its type, on wasm ───────────────────────
-# `modules/field_name_collision` pins decision 21's positional read against the
-# name-alone guess that places it: the name only identifies a record when nothing
-# else in the PROGRAM declares it, and counting only what one file imports read a
-# `Hit` at a `Ctx`'s offset (erlang answered `1` where commonJS answered `2`).
-# The wasm backend resolves a field to an offset the same way and has a wider gap
-# underneath it: measured on this branch with NO name collision at all — one
-# record in the program, one field called `rest` — wasm answers `0` for a read off
-# the optional binder and `2` for the same read through a typed parameter, so what
-# it is missing is the receiver's type at the binder, not this cell's collision.
-wasm     | modules/field_name_collision | 05-wasm | a field read off an optional binder answers `0`: `0` / `0` where the other two rows answer `2` / `0`. Measured with the collision removed as well, so it is the binder's lost type and not the offset guess
-
-# ── a method call whose receiver lost its type, on wasm ──────────────────────
-# `modules/method_name_collision` is the method axis of the cell above: policy 3
-# puts a method in its type's module on erlang, so a call on a receiver inference
-# left untyped needs an owner, and the owner came from the method's name alone —
-# over the modules one file happens to import from, keyed by the name with no
-# arity and no dissent check, so the export index's hash iteration order picked
-# it. The wasm backend stays single-module and never reaches that question:
-# measured on this branch with NO name collision at all (`Grouping.toArray`
-# renamed to `toList`), wasm answers the same `0` / `0`, so what it is missing is
-# the imported receiver, not this cell's collision.
-wasm     | modules/method_name_collision | 05-wasm | a method call on a value answered by an imported fn answers `0`: `0` / `0` / `4` where the other two rows answer `3` / `2` / `4`. The local collision (the third line) is right on every row. Measured with the collision removed as well, so it is the imported receiver and not the owner guess
+# `run/module_init_order.bp` pins. beam runs it since front 03 (the module body
+# in `'_botopink_main'/0`, an effectful `val` cached in `persistent_term`) and
+# wasm since `00 · 05-wasm` (a `_`-named statement runs in `$__init_globals`,
+# in order with the named `val`s). No line is left.
 
 # ── a labelled argument claims its slot, on erlang ───────────────────────────
 # `run/labelled_arguments.bp` writes a record constructor and an enum variant
@@ -277,17 +250,6 @@ wasm     | modules/method_name_collision | 05-wasm | a method call on a value an
 # Exit 0 either way, with nothing said — measured 2026-09-21.
 erlang   | run/labelled_arguments.bp | 02-erlang (no step; an enum variant's labelled payload, reported 2026-09-21) | an enum variant's payload is zipped positionally even when every argument is labelled: `205` where the declared order asks for `502`. The record-constructor row of the same cell is right, which is what says it is the variant path and not the label
 
-# ── a method call and a loop over a field, on wasm ────────────────────────────
-# `run/effect_method.bp` puts an effect annotation on a method — a record's, an
-# `implement` block's and an enum's. commonJS and erlang both run it. wasm
-# answers `0` for the first row and TRAPS on the third, and neither has anything
-# to do with the effect: measured on this branch with every `#[@<effect>]` and
-# every `yield` removed, a plain record method that loops over its own
-# `Array<i32>` field still answers `0`, and a plain method declared in an enum's
-# body still traps (`wasm trap: unreachable`). The cell is listed whole because
-# the first failing row stops the run.
-wasm     | run/effect_method.bp | 05-wasm | a record method looping over its own array field answers `0`, and a method declared in an enum's body traps (`unreachable`). Measured with the effect annotations removed as well, so it is the method call and not the effect
-
 # ── decision 103 cells on the eager generator lowerings (front 21) ───────────
 # Measured after merging 22-loops (`52843fd5`): commonJS's `function*` and beam
 # run both cells; the eager erlang and wasm generator scopes do not yet.
@@ -301,3 +263,11 @@ wasm     | run/generator_break_value.bp | C-30 (22-loops' eager generator scope)
 # The host rows of decision 126 are deferred: a `@External.Node` declared
 # `-> @Task<@Result<T, E>>` is still called as a bare Promise, so a rejection is
 # not turned into `Error(e)` and the resolved raw value reaches a `case` as is.
+
+# ── a method on the rest of a `?.` chain (05-wasm step 9's `?.` row) ─────────
+# `?.` short-circuits the whole chain. wasm lowers each further link under the
+# guard since `00 · 05-wasm` (the cell passes there and on commonJS); erlang
+# and beam guard only the link written with `?.`, so the next method runs on
+# the absent value.
+erlang   | run/optional_chain_method.bp | 02-erlang | `es.at(9)?.key.length() ?? 42` raises `{bp_unsupported_method, <<"length">>, 0, undefined}` in `'__bp_prim_length'/1` after printing `2` and `3`: the method after the `?.` link is called on `undefined` instead of short-circuiting (measured 2026-09-26)
+beam     | run/optional_chain_method.bp | 03-beam | the erlang shape through `erlc +from_asm` — `2`, `3`, then the run fails at the absent probe (measured 2026-09-26)

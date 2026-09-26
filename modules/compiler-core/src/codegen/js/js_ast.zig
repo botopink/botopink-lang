@@ -223,10 +223,6 @@ pub const Pattern = union(enum) {
     name: []const u8,
     object: ObjectPattern,
     array: ArrayPattern,
-    /// BRIDGE — a botopink match pattern (a variant, a literal, an
-    /// alternation) used as a binding target. JavaScript has no such form, so
-    /// this renders botopink's own spelling. See `AGENTS.md` (defect JS-4).
-    match: MatchPattern,
 };
 
 /// A rest element. It is a field of the pattern, never an element of the
@@ -249,6 +245,9 @@ pub const ObjectPattern = struct {
         /// `{ key: key_ }` when `key` is a reserved word and the shorthand
         /// would be a SyntaxError.
         bind: ?[]const u8 = null,
+        /// A nested pattern the property destructures into (`key: { a, b }`,
+        /// `key: [x, y]`) — `val Pair(Circle(r), n) = p;`. Wins over `bind`.
+        nested: ?*const Pattern = null,
     };
 };
 
@@ -257,22 +256,6 @@ pub const ArrayPattern = struct {
     rest: ?Rest = null,
     /// `[ a, b ]` instead of `[a, b]`.
     spaced: bool = false,
-};
-
-/// botopink's match-pattern spelling, reachable only through `Pattern.match`.
-pub const MatchPattern = union(enum) {
-    /// `Name binding`.
-    variant_binding: struct { name: []const u8, binding: []const u8 },
-    /// `Name(a, b)` — field binds.
-    variant_fields: struct { name: []const u8, fields: []const []const u8 },
-    /// `Name(p, q)` — nested patterns.
-    variant_patterns: struct { name: []const u8, args: []const Pattern },
-    number: []const u8,
-    string: []const u8,
-    /// `a | b`.
-    alt: []const Pattern,
-    /// `a, b`.
-    multi: []const Pattern,
 };
 
 /// A parameter: a binding target plus an optional default.
@@ -534,8 +517,10 @@ pub const TsDecl = union(enum) {
     enum_: struct { name: []const u8, members: []const TsMember },
     /// `export declare type Name = T;`
     type_alias: struct { name: []const u8, type: TsType },
-    /// `import { a, b } from "src";`
+    /// `import { a, b as c } from "src";` — a name is written as given.
     import: struct { names: []const []const u8, source: []const u8 },
+    /// `import * as name from "src";` — a whole module bound to one name.
+    import_namespace: struct { name: []const u8, source: []const u8 },
     /// Several declarations with no blank line between them.
     group: []const TsDecl,
     /// Nothing at all — a binding with no `.d.ts` surface.

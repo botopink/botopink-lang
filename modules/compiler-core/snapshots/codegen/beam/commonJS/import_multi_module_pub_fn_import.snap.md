@@ -38,7 +38,7 @@ const result = double(21);
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { double } from "math";
+import { double } from "./math";
 
 
 

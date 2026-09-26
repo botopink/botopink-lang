@@ -96,6 +96,34 @@ fn isSyntheticEntrypointVal(v: ast.ValDecl) bool {
     return std.mem.startsWith(u8, v.name, "_");
 }
 
+/// A synthetic statement that only calls `main()` — the entrypoint wrapper
+/// already does, so it is not run a second time (`beam_asm.zig`'s
+/// `isSyntheticMainCall`, erlang's `isSyntheticMainEntrypointCall`).
+fn isSyntheticMainCall(v: ast.ValDecl) bool {
+    if (std.mem.startsWith(u8, v.name, "_main")) return true;
+    return isSyntheticEntrypointVal(v) and isZeroArgMainCall(v.value.*);
+}
+
+fn isZeroArgMainCall(e: ast.Expr) bool {
+    return switch (e) {
+        .call => |c| switch (c.kind) {
+            .call => |cc| !cc.is_builtin and cc.receiver == null and cc.args.len == 0 and
+                cc.trailing.len == 0 and std.mem.eql(u8, cc.callee, "main"),
+            else => false,
+        },
+        .jump => |j| switch (j.kind) {
+            .@"return" => |r| if (r) |rp| isZeroArgMainCall(rp.*) else false,
+            .try_ => |t| if (t) |tp| isZeroArgMainCall(tp.*) else false,
+            else => false,
+        },
+        .collection => |col| switch (col.kind) {
+            .grouped => |g| isZeroArgMainCall(g.*),
+            else => false,
+        },
+        else => false,
+    };
+}
+
 /// The value an eager effect wrapper carries. wasm runs a `@Task<T>` and a
 /// `@Component<C, T>` in place (`await` and `use` are identity), so a value of
 /// either type IS its `T`: every question about its representation — a string,
@@ -358,7 +386,19 @@ fn emitWat(
             else => {},
         }
         const n = declName(d) orelse continue;
-        if (own_names.contains(n)) continue;
+        if (own_names.contains(n)) {
+            // Two modules of the program declare `n`, and this backend links
+            // them into ONE namespace: the first declaration won and every
+            // call — the other module's own included — reached it
+            // (`import {parse as parse2} from "two"` answered `one`'s `parse`
+            // at exit 0). Until the link mangles per module, a call to such a
+            // name traps (`lowerPlainCall`).
+            switch (d) {
+                .@"fn", .val => try em.ambiguous_names.put(em.alloc, n, {}),
+                else => {},
+            }
+            continue;
+        }
         try own_names.put(n, {});
         // A linked declaration is not this module's export.
         const copy: ast.DeclKind = switch (d) {
@@ -463,7 +503,14 @@ fn emitWat(
     try items.appendSlice(ar, em.items.items);
 
     for (prelude.order) |group| {
-        if (em.b.helpers.has(group)) try items.appendSlice(ar, prelude.items(group));
+        if (!em.b.helpers.has(group)) continue;
+        // `$__print_tagged_raw` asks the module which of its types answers its
+        // own text (decision 8 §7's `Display`); the answer is this module's.
+        if (group == .display_of) if (try em.displayDispatch()) |f| {
+            try items.append(ar, .{ .func = f });
+            continue;
+        };
+        try items.appendSlice(ar, prelude.items(group));
     }
 
     // One model, two renderings: the text the snapshot records and the binary
@@ -582,6 +629,11 @@ const Emitter = struct {
     record_field_typerefs: std.StringHashMap([]const ast.TypeRef),
     /// The declared return type of the fn being emitted.
     cur_ret_typeref: ?ast.TypeRef = null,
+    /// The declared function type a lambda about to be lifted is written
+    /// against — the enclosing fn's `-> fn(x: string) -> string` at a
+    /// `return { x -> … }`, or a `val f: fn(…) -> … = { … }` annotation. Read
+    /// (and cleared) by `lowerLambdaValue`, which types the parameters from it.
+    expected_fn: ?ast.TypeRef = null,
     /// Top-level `val` → the text the comptime pass folded its initialiser to.
     folded_globals: std.StringHashMap([]const u8),
     /// Top-level `val` → record type name, when recovered (`val cfg = record
@@ -685,6 +737,35 @@ const Emitter = struct {
     /// which the module's `(start …)` runs before anything else. They used to
     /// stay at the `(i32.const 0)` placeholder, so every read saw 0.
     deferred_globals: std.ArrayListUnmanaged(ast.ValDecl) = .empty,
+    /// The entries of `deferred_globals` that are `_`-named top-level
+    /// statements: run for their effect in `$__init_globals`, stored nowhere.
+    deferred_stmts: std.StringHashMapUnmanaged(void) = .empty,
+    /// Names two linked modules both declare (`emitWat`): one namespace here,
+    /// so a call to one cannot know which it means, and traps.
+    ambiguous_names: std.StringHashMapUnmanaged(void) = .empty,
+    /// `<anon record>.<field>` for each behavior-literal field whose lambda
+    /// takes `self` first (`ensureAnonRecord`).
+    self_method_fields: std.StringHashMapUnmanaged(void) = .empty,
+    /// `<anon record>.<field>` → the lambda a record literal's field holds, so
+    /// a call through the field can be judged by the lambda's body
+    /// (`fieldLambdaCallIsString`).
+    field_lambdas: std.StringHashMapUnmanaged(FieldLambda) = .empty,
+    /// The `case` subject locals holding an `unknown` / union value, whose
+    /// arms may name a primitive type (`i32 { n -> … }`, §5.2).
+    unknown_subjects: std.StringHashMapUnmanaged(void) = .empty,
+    /// Set for the one arm body a primitive-type arm opens: its binder is the
+    /// payload the test proved, unboxed (`lowerArmBody` reads and clears it).
+    arm_unbox: ?PrimTest = null,
+    /// `<Behavior>.<method>` → its declaration: what a behavior literal's
+    /// field lambda is written against.
+    behavior_methods: std.StringHashMapUnmanaged(ast.BehaviorMethod) = .empty,
+    /// Every behavior the program declares, by name (`registerTypes`): where a
+    /// type that implements one finds the `default fn`s it adopts.
+    behavior_decls: std.StringHashMapUnmanaged(ast.BehaviorDecl) = .empty,
+    /// The parameters a lambda about to be lifted is written against when
+    /// they come from a declaration rather than a function type — a behavior
+    /// literal's method (`expected_fn`'s twin).
+    expected_params: ?[]const ast.Param = null,
 
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
@@ -864,6 +945,13 @@ const Emitter = struct {
         self.reg_arena.deinit();
         self.data_segments.deinit(self.alloc);
         self.deferred_globals.deinit(self.alloc);
+        self.deferred_stmts.deinit(self.alloc);
+        self.ambiguous_names.deinit(self.alloc);
+        self.self_method_fields.deinit(self.alloc);
+        self.field_lambdas.deinit(self.alloc);
+        self.unknown_subjects.deinit(self.alloc);
+        self.behavior_methods.deinit(self.alloc);
+        self.behavior_decls.deinit(self.alloc);
         self.ext_by_name.deinit();
         self.arr_elem_locals.deinit();
         self.arr_elem_globals.deinit();
@@ -888,7 +976,15 @@ const Emitter = struct {
         switch (decl) {
             .@"fn" => |f| if (!f.isHost()) try self.emitFn(f),
             .val => |v| {
-                if (!isSyntheticEntrypointVal(v)) try self.emitGlobalVal(v);
+                if (!isSyntheticEntrypointVal(v)) {
+                    try self.emitGlobalVal(v);
+                } else if (!isSyntheticMainCall(v)) {
+                    // A `_`-named top-level statement runs at module load, in
+                    // source order with the named `val`s around it — what
+                    // commonJS, erlang and beam do. It used to be dropped.
+                    try self.deferred_stmts.put(self.alloc, v.name, {});
+                    try self.deferred_globals.append(self.alloc, v);
+                }
             },
             .comment => |c| try self.itemComment(c.text),
             // Extension methods lower to linear-memory functions named
@@ -899,7 +995,7 @@ const Emitter = struct {
             // extension methods (same `$<target>_<method>` mangling); `self` is the
             // record pointer + a method body's `self.field` walks the declared
             // layout via `self_type`.
-            .type_ => |r| if (r.isRecord()) try self.emitInterfaceMethods(r.name, r.methods),
+            .type_ => |r| try self.emitInterfaceMethods(r.name, try self.methodsWithDefaults(r)),
             // An import is linked statically: `emitWat` has already put the
             // owner's declarations in front of this module's.
             // A type alias is erased: the checker substituted its target.
@@ -988,8 +1084,12 @@ const Emitter = struct {
             },
             .implement => |im| try self.registerMethodSigs(im.target, im.methods),
             .extend => |ex| try self.registerMethodSigs(ex.target, ex.methods),
-            .type_ => |r| if (r.isRecord()) try self.registerInterfaceSigs(r.name, r.methods),
+            // An enum's methods too: `Shape.Rect(…).counts(3)` is
+            // `$Shape_counts(self, 3)` exactly as a record's is — it used to
+            // be an `unresolved call` trap.
+            .type_ => |r| try self.registerInterfaceSigs(r.name, try self.methodsWithDefaults(r)),
             .behavior => |i| for (i.methods) |m| {
+                try self.behavior_methods.put(self.alloc, try std.fmt.allocPrint(ra, "{s}.{s}", .{ i.name, m.name }), m);
                 const body = m.body orelse continue;
                 if (!m.is_default or m.is_declare or m.isExternal() or m.isHost()) continue;
                 if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
@@ -1141,8 +1241,60 @@ const Emitter = struct {
                     if (tn.len > 0) try self.fn_return_types.put(f.name, tn);
                 }
             },
+            .behavior => |b| try self.behavior_decls.put(self.alloc, b.name, b),
             else => {},
         };
+        // A `default fn` a record adopts returns `Self` as the record.
+        for (program.decls) |decl| switch (decl) {
+            .type_ => |tdecl| if (tdecl.isRecord()) {
+                for (try self.adoptedDefaults(tdecl)) |m| if (m.returnType) |rt| {
+                    const tn = typeRefName(rt);
+                    if (tn.len > 0) try self.fn_return_types.put(try std.fmt.allocPrint(ra, "{s}_{s}", .{ tdecl.name, m.name }), if (std.mem.eql(u8, tn, "Self")) tdecl.name else tn);
+                };
+            },
+            else => {},
+        };
+    }
+
+    /// The `default fn`s a type adopts from the behaviors it implements (and
+    /// the ones those extend) and does not write itself. They are emitted as
+    /// its own `$<Type>_<method>` — `Money(…).clamp(lo, hi)` over `Bounded`'s
+    /// default was an `unresolved call` trap.
+    fn adoptedDefaults(self: *Emitter, t: ast.TypeDecl) ![]const ast.BehaviorMethod {
+        var out: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+        var seen: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (t.implement) |tr| try self.collectDefaults(typeRefName(tr), t, &out, &seen);
+        return out.items;
+    }
+
+    fn collectDefaults(
+        self: *Emitter,
+        name: []const u8,
+        t: ast.TypeDecl,
+        out: *std.ArrayListUnmanaged(ast.BehaviorMethod),
+        seen: *std.ArrayListUnmanaged([]const u8),
+    ) !void {
+        for (seen.items) |n| if (std.mem.eql(u8, n, name)) return;
+        try seen.append(self.arena(), name);
+        const b = self.behavior_decls.get(name) orelse return;
+        outer: for (b.methods) |m| {
+            if (!m.is_default or m.body == null) continue;
+            if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+            for (t.methods) |own| if (std.mem.eql(u8, own.name, m.name)) continue :outer;
+            for (out.items) |got| if (std.mem.eql(u8, got.name, m.name)) continue :outer;
+            try out.append(self.arena(), m);
+        }
+        for (b.extends) |e| try self.collectDefaults(e, t, out, seen);
+    }
+
+    /// A type's own methods followed by the defaults it adopts.
+    fn methodsWithDefaults(self: *Emitter, t: ast.TypeDecl) ![]const ast.BehaviorMethod {
+        const adopted = try self.adoptedDefaults(t);
+        if (adopted.len == 0) return t.methods;
+        const all = try self.arena().alloc(ast.BehaviorMethod, t.methods.len + adopted.len);
+        @memcpy(all[0..t.methods.len], t.methods);
+        @memcpy(all[t.methods.len..], adopted);
+        return all;
     }
 
     /// Bare type-name behind a `TypeRef`, stripping `?T` and generic args.
@@ -1224,13 +1376,21 @@ const Emitter = struct {
                     // the reader fell back to the unique-field guess and, when
                     // the value was a box, read one indirection short.
                     if (self.primKindAt(cc, c.loc)) |k| {
-                        if (k == .array and (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first"))) {
+                        if (k == .array and (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first") or std.mem.eql(u8, cc.callee, "find"))) {
                             if (cc.receiver) |r| if (self.elemRecordOf(r.*)) |rec| break :blk rec;
                         }
                     }
                     switch (self.callKind(cc)) {
                         .record_ctor => break :blk self.resolveRecordName(cc.callee),
                         .plain => {
+                            // A method on a record value answers its declared
+                            // return — `self.max(lo)` is a `Money` when
+                            // `Money_max` returns `Self` — so a chained
+                            // `.min(hi)` finds its owner.
+                            if (cc.receiver != null) if (self.recordMethodSym(cc, c.loc)) |sym| {
+                                const tn = self.fn_return_types.get(sym) orelse break :blk null;
+                                break :blk self.resolveRecordName(tn);
+                            };
                             const key = self.assocSym(cc) orelse cc.callee;
                             const tn = self.fn_return_types.get(key) orelse break :blk null;
                             break :blk self.resolveRecordName(tn);
@@ -1366,6 +1526,15 @@ const Emitter = struct {
     fn lowerIsCall(self: *Emitter, cc: anytype) anyerror!void {
         const t = cc.isType orelse return error.InvalidArgs;
         if (cc.args.len != 1) return error.InvalidArgs;
+        // §4.1 / §4.2 over a primitive — by VALUE: the operand goes in the
+        // box an `unknown` slot holds (a no-op when it already is one), and
+        // the box's header answers. `300 is i8` is `false`, `3.0 is i32` is
+        // `true`, `2 is f64` is `true`.
+        if (primTestOf(t)) |pt| {
+            try self.lowerAsUnknown(cc.args[0].value.*);
+            try self.emitPrimTest(pt);
+            return;
+        }
         const descs = try self.typeDescriptors(t);
         if (descs.len == 0) {
             try self.emitCf(.@"unreachable", "§4.2 `is`: no run-time test for this type on wasm", .{});
@@ -1388,6 +1557,187 @@ const Emitter = struct {
         try self.emit(opOf("i32", "and"));
     }
 
+    // ── decision 8 §11's box (`00 · 05-wasm` step 2 D1–D3) ─────────────────
+    //
+    // A value entering an `unknown` or union slot carries a header behind its
+    // pointer — the header C-01 gave every value a declaration builds. A record
+    // or a variant already has one and goes in as it is; a primitive is boxed
+    // (`[descriptor][payload]`, descriptor `'P' <n> name`), so the readers in
+    // `wat_prelude.zig`'s `unknown` group can ask the value what it holds.
+
+    const PrimTest = union(enum) {
+        /// An integer type: a whole number in `lo..=hi`.
+        int: struct { lo: i32, hi: i32 },
+        /// A float type: any number.
+        float,
+        bool_,
+        string,
+    };
+
+    fn primTestOf(t: ast.TypeRef) ?PrimTest {
+        const n = switch (t) {
+            .named => |n| n,
+            else => return null,
+        };
+        const eq = std.mem.eql;
+        if (eq(u8, n, "i8")) return .{ .int = .{ .lo = -128, .hi = 127 } };
+        if (eq(u8, n, "i16")) return .{ .int = .{ .lo = -32768, .hi = 32767 } };
+        if (eq(u8, n, "u8")) return .{ .int = .{ .lo = 0, .hi = 255 } };
+        if (eq(u8, n, "u16")) return .{ .int = .{ .lo = 0, .hi = 65535 } };
+        // An `i32` slot is this backend's integer: `i64`/`u32`/`u64` values
+        // it holds fit the `i32` range (`u32`/`u64` from 0).
+        if (eq(u8, n, "i32") or eq(u8, n, "i64") or eq(u8, n, "int") or eq(u8, n, "isize"))
+            return .{ .int = .{ .lo = std.math.minInt(i32), .hi = std.math.maxInt(i32) } };
+        if (eq(u8, n, "u32") or eq(u8, n, "u64") or eq(u8, n, "uint") or eq(u8, n, "usize"))
+            return .{ .int = .{ .lo = 0, .hi = std.math.maxInt(i32) } };
+        if (eq(u8, n, "f32") or eq(u8, n, "f64") or eq(u8, n, "float")) return .float;
+        if (eq(u8, n, "bool")) return .bool_;
+        if (eq(u8, n, "string")) return .string;
+        return null;
+    }
+
+    /// With an `unknown` value on the stack, leave whether it holds `pt`.
+    fn emitPrimTest(self: *Emitter, pt: PrimTest) anyerror!void {
+        const b = self.builder();
+        switch (pt) {
+            .int => |r| {
+                try self.emit(try self.constInt(r.lo));
+                try self.emit(try self.constInt(r.hi));
+                try self.emit(b.helper(.unknown_int_in));
+            },
+            .float => {
+                const k = try self.memName(self.nextMem());
+                try self.emit(b.helper(.unknown_kind));
+                try self.emit(.{ .local_tee = k });
+                try self.emit(try self.constInt(@as(i32, 'i')));
+                try self.emit(opOf("i32", "eq"));
+                try self.emit(.{ .local_get = k });
+                try self.emit(try self.constInt(@as(i32, 'f')));
+                try self.emit(opOf("i32", "eq"));
+                try self.emit(opOf("i32", "or"));
+            },
+            .bool_, .string => {
+                try self.emit(b.helper(.unknown_kind));
+                try self.emit(try self.constInt(@as(i32, if (pt == .bool_) 'b' else 's')));
+                try self.emit(opOf("i32", "eq"));
+            },
+        }
+    }
+
+    fn isUnknownTypeRef(t: ast.TypeRef) bool {
+        return switch (t) {
+            .named => |n| std.mem.eql(u8, n, ast.unknown_type_name),
+            .generic => |g| std.mem.eql(u8, g.name, ast.union_type_name),
+            else => false,
+        };
+    }
+
+    /// Whether `e` already is an `unknown` / union value — a box or a tagged
+    /// value by construction.
+    fn isUnknownExpr(self: *Emitter, e: ast.Expr) bool {
+        const t = self.typeRefOf(e) orelse return false;
+        return isUnknownTypeRef(t);
+    }
+
+    /// The descriptor a boxed primitive carries: `'P' <n> name`, interned once.
+    fn primDescriptorAddr(self: *Emitter, name: []const u8) anyerror!u32 {
+        const key = try std.fmt.allocPrint(self.reg_arena.allocator(), "#{s}", .{name});
+        if (self.type_descs.get(key)) |addr| return addr;
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        try out.append(self.arena(), 'P');
+        try out.append(self.arena(), @intCast(name.len));
+        try out.appendSlice(self.arena(), name);
+        const seg = try self.internString(out.items);
+        const addr = seg.offset + 4;
+        try self.type_descs.put(key, addr);
+        return addr;
+    }
+
+    /// Lower `value` as the `unknown` value it becomes in such a slot: as it
+    /// is when it already is one or carries its own header, `0` for `null`,
+    /// else boxed by its static shape.
+    fn lowerAsUnknown(self: *Emitter, value: ast.Expr) anyerror!void {
+        if (isNullLit(value) or self.isUnknownExpr(value) or self.isTaggedValue(value)) {
+            try self.lowerCoerced(value, "i32");
+            return;
+        }
+        const Kind = enum { i32_, f64_, bool_, str, arr, tuple };
+        const kind: Kind = if (self.isStringExpr(value))
+            .str
+        else if (self.isBoolExpr(value))
+            .bool_
+        else if (self.wasmTypeOf(value)[0] == 'f')
+            .f64_
+        else if (self.isArrayExpr(value))
+            .arr
+        else if (isTupleLit(value) or self.typeRefIsTuple(value))
+            .tuple
+        else if (self.isKnownInteger(value))
+            .i32_
+        else {
+            // Nothing proves what the value is — a type parameter's slot
+            // (`Maybe.Some(value: v)` over a `T`), a result nothing typed —
+            // and every value here is an `i32`: a guess would answer `is`
+            // and `==` wrongly at exit 0 (decision 67).
+            try self.emitC(.@"unreachable", "unknown: no static type to box this value by (a type parameter's slot?)");
+            return;
+        };
+        const name = switch (kind) {
+            .i32_ => "i32",
+            .f64_ => "f64",
+            .bool_ => "bool",
+            .str => "string",
+            .arr => "array",
+            .tuple => "tuple",
+        };
+        const desc = try self.primDescriptorAddr(name);
+        const base = try self.allocTagged(desc, if (kind == .f64_) 8 else 4);
+        try self.emit(.{ .local_get = base });
+        if (kind == .f64_) {
+            try self.lowerCoerced(value, "f64");
+            try self.emitC(.{ .store = .{ .ty = .f64, .offset = tag_header_bytes } }, "unknown: box an f64");
+        } else {
+            try self.lowerCoerced(value, "i32");
+            try self.emitCf(.{ .store = .{ .offset = tag_header_bytes } }, "unknown: box a{s} {s}", .{ if (kind == .arr) "n" else "", name });
+        }
+        try self.loadTaggedBase(base);
+    }
+
+    /// Whether `e` is known to be an integer: a numeral, an integer-typed
+    /// declaration, an arithmetic result, an enum ordinal.
+    fn isKnownInteger(self: *Emitter, e: ast.Expr) bool {
+        switch (e) {
+            .literal => |lit| return lit.kind == .numberLit,
+            .binaryOp, .unaryOp => return true,
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.isKnownInteger(inner.*),
+                else => {},
+            },
+            else => {},
+        }
+        const t = self.typeRefOf(e) orelse return false;
+        return switch (t) {
+            .named => |n| (primTestOf(t) != null and primTestOf(t).? == .int) or self.enums.contains(n),
+            else => false,
+        };
+    }
+
+    fn isTupleLit(e: ast.Expr) bool {
+        return switch (e) {
+            .collection => |col| switch (col.kind) {
+                .tupleLit => true,
+                .grouped => |inner| isTupleLit(inner.*),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    fn typeRefIsTuple(self: *Emitter, e: ast.Expr) bool {
+        const t = self.typeRefOf(e) orelse return false;
+        return t.tupleElems() != null;
+    }
+
     /// Every descriptor a value of `t` may carry: one for a record, one per
     /// variant for an enum, none for anything wasm cannot place.
     fn typeDescriptors(self: *Emitter, t: ast.TypeRef) anyerror![]const u32 {
@@ -1400,6 +1750,33 @@ const Emitter = struct {
             const only = try self.arena().alloc(u32, 1);
             only[0] = d;
             return only;
+        }
+        // `x is Token.Num` / `x is .Num` — ONE variant, the descriptor its
+        // values carry (the enum's other variants carry their own).
+        if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+            const vname = name[dot + 1 ..];
+            const ename = name[0..dot];
+            const en: []const u8 = if (ename.len > 0 and self.enums.contains(ename)) ename else blk: {
+                // A leading dot names the variant alone: the one enum that
+                // declares it, or no test at all when two do — never a guess.
+                var found: ?[]const u8 = null;
+                var it = self.enums.iterator();
+                while (it.next()) |entry| for (entry.value_ptr.*) |v| {
+                    if (!std.mem.eql(u8, v.name, vname)) continue;
+                    if (found != null) return &.{};
+                    found = entry.key_ptr.*;
+                };
+                break :blk found orelse return &.{};
+            };
+            const vs = self.enums.get(en) orelse return &.{};
+            if (!enumHasPayload(vs)) return &.{};
+            for (vs) |v| if (std.mem.eql(u8, v.name, vname)) {
+                const d = try self.variantDescriptorAddr(en, v) orelse return &.{};
+                const only = try self.arena().alloc(u32, 1);
+                only[0] = d;
+                return only;
+            };
+            return &.{};
         }
         const variants = self.enums.get(name) orelse return &.{};
         if (!enumHasPayload(variants)) return &.{};
@@ -1481,6 +1858,17 @@ const Emitter = struct {
         }
         try self.records.put(name, names);
         try self.record_field_types.put(name, types);
+        // A behavior literal's method — a field whose lambda takes `self`
+        // first — is called on the literal (`g.greet(who)`), so the call
+        // passes the receiver as that parameter (`lowerValueCall`).
+        for (rl.fields) |f| {
+            const v = f.value.*;
+            if (v != .function or v.function.kind.syntax != .lambda) continue;
+            const key = try std.fmt.allocPrint(ra, "{s}.{s}", .{ name, f.name });
+            try self.field_lambdas.put(self.alloc, key, .{ .params = v.function.kind.params, .body = v.function.kind.body });
+            if (v.function.kind.params.len > 0 and std.mem.eql(u8, v.function.kind.params[0], "self"))
+                try self.self_method_fields.put(self.alloc, key, {});
+        }
         return name;
     }
 
@@ -2007,7 +2395,15 @@ const Emitter = struct {
         try self.declareScratch("__mem", self.countMems(body));
         try self.emitLocalDecls(body);
 
-        const seq = try self.renderBody(body, null);
+        // A method declared `-> @Iterator<T>` / `-> @Stream<T>` runs eagerly
+        // like a fn does (`emitFn`): every `yield` is appended to one array,
+        // which is what it returns. Rendered as a plain body, each `yield` was
+        // dropped and the method answered `0` — or whatever its last
+        // statement left.
+        const seq = if (has_result and methodYieldsEagerly(m) and bodyYieldsDeep(body))
+            try self.renderAccumulatingBody(body)
+        else
+            try self.renderBody(body, null);
 
         const ar = self.arena();
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
@@ -2022,6 +2418,16 @@ const Emitter = struct {
             .locals = try self.localLines(),
             .body = seq,
         }) });
+    }
+
+    /// A method whose declared return is an `@Iterator<T>` / `@Stream<T>` —
+    /// what `FnDecl.effect` says for a fn (a method carries no effect field).
+    fn methodYieldsEagerly(m: ast.BehaviorMethod) bool {
+        const rt = m.returnType orelse return false;
+        return switch (rt) {
+            .generic => |g| g.is_builtin and (std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "Stream")),
+            else => false,
+        };
     }
 
     /// True when any `self` identifier appears anywhere in `body` (used to
@@ -2077,6 +2483,21 @@ const Emitter = struct {
                 else => false,
             },
             .loop => |lp| exprReferencesSelf(lp.iter.*) or bodyReferencesSelf(lp.body),
+            // `case (self) { … }` in an enum's method — the subject and every
+            // arm. Missed, the method got no `$self` and read `0` for it.
+            .collection => |col| switch (col.kind) {
+                .case => |cs| blk: {
+                    for (cs.subjects) |sub| if (exprReferencesSelf(sub)) break :blk true;
+                    for (cs.arms) |arm| {
+                        if (exprReferencesSelf(arm.body)) break :blk true;
+                        if (arm.guard) |g| if (exprReferencesSelf(g)) break :blk true;
+                    }
+                    break :blk false;
+                },
+                .grouped => |inner| exprReferencesSelf(inner.*),
+                else => false,
+            },
+            .function => |f| bodyReferencesSelf(f.kind.body),
             else => false,
         };
     }
@@ -2205,6 +2626,13 @@ const Emitter = struct {
 
     fn callKind(self: *Emitter, cc: anytype) CallKind {
         if (cc.is_builtin) return .builtin;
+        // A variant reached through its enum (`__Token__Layout.Size(…)`, what a
+        // section path desugars to) is that enum's, even when a record of the
+        // same name is in scope (`type Size(px: i32)`): it used to build the
+        // record, and `.Layout.Size.Large` answered the section's first arm.
+        if (receiverName(cc)) |rcv| if (self.enums.get(rcv)) |vs| {
+            for (vs) |v| if (std.mem.eql(u8, v.name, cc.callee)) return .enum_ctor;
+        };
         if (self.records.contains(cc.callee)) return .record_ctor;
         if (receiverName(cc)) |rcv| {
             if (self.enums.contains(rcv)) return .enum_ctor;
@@ -2399,6 +2827,14 @@ const Emitter = struct {
             switch (stmt.expr) {
                 .binding => |b| switch (b.kind) {
                     .localBind => |lb| {
+                        // An `unknown` / union slot holds the box's pointer,
+                        // whatever the value's own shape.
+                        if (lb.typeAnnotation) |ta| if (isUnknownTypeRef(ta)) {
+                            try self.local_typerefs.put(lb.name, ta);
+                            try self.declareLocal(lb.name, "i32");
+                            try self.declareNestedLocals(lb.value.*);
+                            continue;
+                        };
                         const t = self.inferExprType(lb.value.*);
                         if (self.recordTypeOfExpr(lb.value.*)) |rty| {
                             try self.local_types.put(lb.name, rty);
@@ -2632,8 +3068,12 @@ const Emitter = struct {
         var c: Capture = .{};
         self.open(&c);
         for (self.deferred_globals.items) |v| {
+            if (self.deferred_stmts.contains(v.name)) {
+                _ = try self.emitStmt(.{ .expr = v.value.* }, false);
+                continue;
+            }
             if (self.boxesInto(v.typeAnnotation, v.value.*))
-                try self.lowerBoxed(v.value.*)
+                try self.lowerBoxedInto(v.typeAnnotation, v.value.*)
             else
                 try self.lowerCoerced(v.value.*, self.globalValType(v));
             try self.emit(.{ .global_set = v.name });
@@ -2704,6 +3144,66 @@ const Emitter = struct {
         };
     }
 
+    /// `$__display_of(v) -> i32`: the string a record's own `display(self)
+    /// -> string` answers for `v`, or `0` when `v`'s type declares none — the
+    /// hook `$__print_tagged_raw` calls first. Null when no record qualifies:
+    /// the prelude's `display_of` group (`0`) is then the module's answer. One compare per record type that
+    /// has both a descriptor (some value of it was built) and a `display`
+    /// method: `v` is a pointer past the data floor and the header four bytes
+    /// behind it is that type's descriptor. A dispatch written after lowering,
+    /// not a table index interned into the descriptor, because table indices
+    /// are handed out as lambdas are lifted and would shift under it.
+    fn displayDispatch(self: *Emitter) !?wat.Func {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        var it = self.records.keyIterator();
+        while (it.next()) |k| try names.append(self.arena(), k.*);
+        std.mem.sort([]const u8, names.items, {}, struct {
+            fn lt(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lt);
+        var c: Capture = .{};
+        self.open(&c);
+        var any = false;
+        for (names.items) |rec| {
+            const desc = self.type_descs.get(rec) orelse continue;
+            const sym = try std.fmt.allocPrint(self.arena(), "{s}_display", .{rec});
+            const sig = self.fn_sigs.get(sym) orelse continue;
+            if (sig.params.len != 1 or sig.result == null) continue;
+            any = true;
+            var hit: Capture = .{};
+            self.open(&hit);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .call = sym });
+            try self.emit(.@"return");
+            const hit_seq = self.seal(&hit, .terminated);
+            var guard: Capture = .{};
+            self.open(&guard);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "4" } });
+            try self.emit(opOf("i32", "sub"));
+            try self.emit(.{ .load = .{} });
+            try self.emit(try self.constInt(desc));
+            try self.emit(opOf("i32", "eq"));
+            try self.emitC(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } }, rec);
+            const guard_seq = self.seal(&guard, .none);
+            try self.emit(.{ .local_get = "v" });
+            try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "256" } });
+            try self.emit(opOf("i32", "ge_u"));
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = guard_seq } } });
+        }
+        try self.emit(.{ .@"const" = .{ .ty = .i32, .text = "0" } });
+        const body = self.seal(&c, .{ .value = .i32 });
+        // No type declares `display`: the prelude's form (`0`) is the answer.
+        if (!any) return null;
+        return try self.builder().func(.{
+            .name = "__display_of",
+            .params = &.{wat.Builder.param("v", .i32)},
+            .result = .i32,
+            .body = body,
+        });
+    }
+
     fn emitEntrypointWrapper(self: *Emitter, main_returns_value: bool) !void {
         var c: Capture = .{};
         self.open(&c);
@@ -2764,8 +3264,10 @@ const Emitter = struct {
                         // Coerce to the *declared* result: `fn area(…) -> f64`
                         // whose body multiplies f32 literals produced an f32
                         // and the `(result f64)` rejected the whole module.
+                        if (val.* == .function) self.expected_fn = self.cur_ret_typeref;
+                        defer self.expected_fn = null;
                         if (self.fn_has_result and self.boxesInto(self.cur_ret_typeref, val.*))
-                            try self.lowerBoxed(val.*)
+                            try self.lowerBoxedInto(self.cur_ret_typeref, val.*)
                         else if (self.fn_has_result)
                             try self.lowerCoerced(val.*, self.cur_result)
                         else {
@@ -2831,6 +3333,16 @@ const Emitter = struct {
             },
             .binding => |b| switch (b.kind) {
                 .localBind => |lb| {
+                    if (lb.typeAnnotation) |ta| if (isUnknownTypeRef(ta)) {
+                        try self.declareLocal(lb.name, "i32");
+                        try self.local_typerefs.put(lb.name, ta);
+                        if (self.boxesInto(ta, lb.value.*))
+                            try self.lowerAsUnknown(lb.value.*)
+                        else
+                            try self.lowerCoerced(lb.value.*, "i32");
+                        try self.emit(.{ .local_set = lb.name });
+                        return .none;
+                    };
                     try self.declareLocal(lb.name, self.inferExprType(lb.value.*));
                     if (lb.typeAnnotation orelse self.typeRefOf(lb.value.*)) |tr| try self.local_typerefs.put(lb.name, tr);
                     if (lb.typeAnnotation == null) if (self.optInfoOf(lb.value.*)) |oi| try self.opt_locals.put(lb.name, oi);
@@ -2843,8 +3355,10 @@ const Emitter = struct {
                     // `emitLocalDecls` runs before the body, so its guess can
                     // differ from what lowering ends up pushing.
                     const lambda_idx: u32 = @intCast(self.lambdas.items.len);
+                    if (lb.value.* == .function) self.expected_fn = lb.typeAnnotation;
+                    defer self.expected_fn = null;
                     if (self.boxesInto(lb.typeAnnotation, lb.value.*))
-                        try self.lowerBoxed(lb.value.*)
+                        try self.lowerBoxedInto(lb.typeAnnotation, lb.value.*)
                     else
                         try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse "i32");
                     try self.emit(.{ .local_set = lb.name });
@@ -2870,7 +3384,7 @@ const Emitter = struct {
                                 break :blk self.global_typerefs.get(n);
                             };
                             if (self.boxesInto(tr, a.value.*))
-                                try self.lowerBoxed(a.value.*)
+                                try self.lowerBoxedInto(tr, a.value.*)
                             else
                                 // The slot's declared type wins over the value's.
                                 try self.lowerCoerced(a.value.*, self.locals.get(name) orelse
@@ -2954,7 +3468,40 @@ const Emitter = struct {
                                 try self.emit(.{ .local_set = name });
                             }
                         },
-                        else => try self.note("unsupported destructure pattern"),
+                        // `val Circle(r) = s;` — decision 67's R5: the checker
+                        // accepts it only where it cannot fail, so there is no
+                        // test, only the reads. A record reads each binding off
+                        // the declared field at its position; a variant takes
+                        // the `case` arm's binder (`bindPattern`), payload
+                        // slots from offset 4.
+                        .ctor => |pat| {
+                            if (self.ctorRecordFields(pat)) |r| {
+                                for (r.binds, 0..) |bind, i| {
+                                    if (bind.len == 0) continue;
+                                    try self.declareLocal(bind, "i32");
+                                    if (self.fieldTypeIn(r.record, r.fields[i])) |ft| {
+                                        if (std.mem.eql(u8, ft, "string")) try self.str_locals.put(bind, {});
+                                        if (std.mem.eql(u8, ft, "bool")) try self.bool_locals.put(bind, {});
+                                        if (self.resolveRecordName(ft)) |sub| try self.local_types.put(bind, sub);
+                                    }
+                                    try self.emit(.{ .local_get = mem });
+                                    try self.emitLoadOffset(@intCast(i * 4));
+                                    try self.emit(.{ .local_set = bind });
+                                }
+                            } else if (try self.ctorAsFieldsPattern(pat)) |fp| {
+                                try self.bindPattern(fp, mem);
+                            } else try self.note("unsupported destructure pattern");
+                        },
+                        // A spread-only list is the one list the checker lets
+                        // through: `[..rest]` is the whole value.
+                        .list => |pat| if (pat == .list and pat.list.elems.len == 0) {
+                            if (pat.list.spread) |sp| if (sp.len > 0) {
+                                try self.declareLocal(sp, "i32");
+                                try self.noteArrayLocal(sp, lb.value.*);
+                                try self.emit(.{ .local_get = mem });
+                                try self.emit(.{ .local_set = sp });
+                            };
+                        } else try self.note("unsupported destructure pattern"),
                     }
                 },
             },
@@ -3181,6 +3728,7 @@ const Emitter = struct {
                         try self.lowerSequenceNext(cc);
                         return;
                     };
+                    if (try self.lowerChainedCall(cc, c.loc)) return;
                     if (self.primKindAt(cc, c.loc)) |k| {
                         try self.lowerPrimMethod(k, cc);
                         return;
@@ -3247,7 +3795,7 @@ const Emitter = struct {
                 .case => |c| try self.lowerCase(c),
                 .tupleLit => |tl| try self.lowerTupleLit(tl),
                 .arrayLit => |al| try self.lowerArrayLit(al),
-                .behaviorLit => |il| try self.lowerRecordLit(.{ .fields = il.fields }),
+                .behaviorLit => |il| try self.lowerBehaviorLit(il),
                 .range => try self.emitC(zero, "range"),
             },
             .jump => |j| switch (j.kind) {
@@ -3504,6 +4052,12 @@ const Emitter = struct {
                 });
                 return;
             }
+        }
+        // An `unknown` / union value prints by what its box says it holds.
+        if (self.isUnknownExpr(arg)) {
+            try self.lowerCoerced(arg, "i32");
+            try self.emit(self.builder().helper(if (last) .print_unknown else .print_unknown_raw));
+            return;
         }
         if (self.optInfoOf(arg)) |oi| {
             try self.lowerValue(arg);
@@ -4046,6 +4600,7 @@ const Emitter = struct {
         try self.declareLocal(subj_local, "i32");
         try self.lowerCoerced(c.subjects[0], "i32");
         try self.emit(.{ .local_set = subj_local });
+        if (self.isUnknownExpr(c.subjects[0])) try self.unknown_subjects.put(self.alloc, subj_local, {});
         const subj_is_str = self.isStringExpr(c.subjects[0]);
         if (subj_is_str) try self.str_locals.put(subj_local, {});
         if (self.resultShapeOf(c.subjects[0])) |shape| try self.result_subjects.put(subj_local, shape);
@@ -4059,6 +4614,35 @@ const Emitter = struct {
             return;
         }
         const arm = arms[idx];
+        // §5.2 — an arm naming a primitive type over an `unknown` subject
+        // tests the value's box (by value: `3.0` takes an `i32` arm), and its
+        // binder is the unboxed payload. As a plain identifier it was a
+        // binding that matched everything: `number 364`, a heap address.
+        if (self.unknown_subjects.contains(subj) and arm.pattern == .ident) if (primTestOf(.{ .named = arm.pattern.ident })) |pt| {
+            try self.emit(.{ .local_get = subj });
+            try self.emitPrimTest(pt);
+            const ty = vt(self.cur_result);
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            self.arm_unbox = pt;
+            if (arm.guard) |g| {
+                try self.emitGuardChain(arms, subj, idx, g);
+            } else {
+                try self.lowerArmBody(arm.body, subj);
+            }
+            self.arm_unbox = null;
+            const then_seq = self.seal(&then_c, .{ .value = ty });
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emitCaseArms(arms, subj, idx + 1);
+            const else_seq = self.seal(&else_c, .{ .value = ty });
+            try self.emit(.{ .@"if" = .{
+                .result = ty,
+                .then = .{ .seq = then_seq },
+                .@"else" = .{ .seq = else_seq },
+            } });
+            return;
+        };
         if (self.patternIsIrrefutable(arm.pattern)) {
             try self.bindPattern(arm.pattern, subj);
             // A guard makes even `_` refutable: a failing guard falls through
@@ -4120,12 +4704,30 @@ const Emitter = struct {
 
     /// The arm's value, coerced to the case's result type.
     fn lowerArmBody(self: *Emitter, body: ast.Expr, subj: []const u8) anyerror!void {
+        const unbox = self.arm_unbox;
+        self.arm_unbox = null;
         const lam = armLambda(body) orelse {
             try self.lowerCoerced(body, self.cur_result);
             return;
         };
-        // P1: the single parameter binds the whole matched value.
-        if (lam.params.len == 1) {
+        // P1: the single parameter binds the whole matched value — for a
+        // primitive-type arm over an `unknown` subject, the payload its test
+        // proved.
+        if (unbox) |pt| if (lam.params.len == 1) {
+            const p = lam.params[0];
+            const b = self.builder();
+            try self.declareLocal(p, if (pt == .float) "f64" else "i32");
+            try self.emit(.{ .local_get = subj });
+            switch (pt) {
+                .int => try self.emit(b.helper(.unknown_as_i32)),
+                .float => try self.emit(b.helper(.unknown_as_f64)),
+                .bool_, .string => try self.emitC(.{ .load = .{} }, "unknown: the proven payload"),
+            }
+            try self.emit(.{ .local_set = p });
+            if (pt == .string) try self.str_locals.put(p, {});
+            if (pt == .bool_) try self.bool_locals.put(p, {});
+        };
+        if (unbox == null and lam.params.len == 1) {
             const p = lam.params[0];
             try self.declareLocal(p, "i32");
             if (self.str_locals.contains(subj)) try self.str_locals.put(p, {});
@@ -4353,6 +4955,47 @@ const Emitter = struct {
     }
 
     /// Bind the names a pattern introduces, from the subject held in `subj`.
+    /// A record constructor in binding position (`val Circle(r) = s;`): the
+    /// record's declared field names and, per position, the name each binds
+    /// (`""` for `_`). Null when the pattern names no record of this module or
+    /// nests a pattern (the checker refuses a nested one as refutable).
+    fn ctorRecordFields(self: *Emitter, pat: ast.Pattern) ?struct { record: []const u8, fields: []const []const u8, binds: []const []const u8 } {
+        if (pat != .variant) return null;
+        const v = pat.variant;
+        const name = bareVariantName(v.name);
+        const fields = self.records.get(name) orelse return null;
+        if (v.payload != .literals) return null;
+        const lits = v.payload.literals;
+        if (lits.len > fields.len) return null;
+        const binds = self.arena().alloc([]const u8, lits.len) catch return null;
+        for (lits, 0..) |l, i| binds[i] = switch (l) {
+            .wildcard => "",
+            .ident => |n| n,
+            else => return null,
+        };
+        return .{ .record = name, .fields = fields, .binds = binds };
+    }
+
+    /// A variant constructor in binding position (`val Sq(side) = q;`) as the
+    /// `case` arm pattern `bindPattern` already reads — its positional names
+    /// as `.fields`. Null for a nested pattern or an unknown variant.
+    fn ctorAsFieldsPattern(self: *Emitter, pat: ast.Pattern) !?ast.Pattern {
+        if (pat != .variant) return null;
+        const v = pat.variant;
+        if (self.variantRef(v.name) == null) return null;
+        if (v.payload != .literals) return pat;
+        const lits = v.payload.literals;
+        const names = try self.arena().alloc([]const u8, lits.len);
+        for (lits, 0..) |l, i| names[i] = switch (l) {
+            .wildcard => "_",
+            .ident => |n| n,
+            else => return null,
+        };
+        var out = v;
+        out.payload = .{ .fields = names };
+        return .{ .variant = out };
+    }
+
     fn bindPattern(self: *Emitter, p: ast.Pattern, subj: []const u8) anyerror!void {
         switch (p) {
             .ident => |n| if (!isVariantPath(n) and self.findVariant(n) == null) {
@@ -4579,6 +5222,24 @@ const Emitter = struct {
         try self.loadBase(base);
     }
 
+    /// `@Greeter(greet: { self, who -> … })` — a record literal whose lambda
+    /// fields take their parameter types from the behavior's declaration of
+    /// the method, so `who` is a string inside the lifted lambda.
+    fn lowerBehaviorLit(self: *Emitter, il: anytype) anyerror!void {
+        _ = self.ensureAnonRecordFromLit(.{ .fields = il.fields }) catch {};
+        const base = try self.allocSlots(@intCast(il.fields.len * 4));
+        for (il.fields, 0..) |f, i| {
+            var buf: [256]u8 = undefined;
+            const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ il.name, f.name }) catch "";
+            if (self.behavior_methods.get(key)) |m| {
+                if (f.value.* == .function) self.expected_params = m.params;
+            }
+            defer self.expected_params = null;
+            try self.storeSlotExpr(base, @intCast(i * 4), f.value.*);
+        }
+        try self.loadBase(base);
+    }
+
     /// `lowerRecordLit` has no `Loc` in hand (`lowerExpr` calls the arm with
     /// just the kind payload). We synthesise a loc from the first field's
     /// loc as a stable identity — a literal with N fields will produce the
@@ -4693,6 +5354,13 @@ const Emitter = struct {
     /// the same cut commonJS makes (`externals_missing` is filled only for an
     /// `isExternal()` fn).
     fn lowerPlainCall(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!void {
+        if (cc.receiver == null and cc.calleeExpr == null) {
+            const target = self.import_aliases.get(cc.callee) orelse cc.callee;
+            if (self.ambiguous_names.contains(target)) {
+                try self.emitCf(.@"unreachable", "two linked modules declare `{s}` and wasm links them into one namespace", .{target});
+                return;
+            }
+        }
         if (self.fn_sigs.get(cc.callee)) |sig| {
             var base: usize = 0;
             // `recv.m(a)` against a top-level `fn m(self, a)`: the receiver is
@@ -4709,7 +5377,7 @@ const Emitter = struct {
                 }
                 const ptref: ?ast.TypeRef = if (ptrefs) |ps| (if (base + i < ps.len) ps[base + i] else null) else null;
                 if (self.boxesInto(ptref, arg.value.*))
-                    try self.lowerBoxed(arg.value.*)
+                    try self.lowerBoxedInto(ptref, arg.value.*)
                 else
                     try self.lowerCoerced(arg.value.*, sig.params[base + i]);
             }
@@ -4765,6 +5433,144 @@ const Emitter = struct {
         };
     }
 
+    // ── a method on the rest of a `?.` chain ─────────────────────────────────
+    //
+    // `es.at(1)?.key.length().toString()`: the `?.` makes EVERYTHING after it
+    // conditional — absent short-circuits the whole chain — but only the link
+    // written with `?.` carried the guard. The next method started from a
+    // carrier that may be `0` and read it as a string (`length` loaded a
+    // length from address 0, the WASI iovec, at exit 0) or found no receiver
+    // type at all (`unresolved call: toString/0`, a trap). A primitive method
+    // whose receiver is such a chain is lowered under the same guard: absent
+    // stays `0`, present unboxes the receiver, runs the method on it, and
+    // boxes a scalar result — so the whole expression is the `?T` the checker
+    // typed it as, and prints `null` or its value.
+
+    /// Whether `e` is, or continues, a `?.` chain.
+    fn isOptionalChain(e: ast.Expr) bool {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| ia.optional or isOptionalChain(ia.receiver.*),
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc.optional or (if (cc.receiver) |r| isOptionalChain(r.*) else false),
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| isOptionalChain(inner.*),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// The primitive family of the PAYLOAD of an optional-chain receiver:
+    /// what inference recorded for it, what the previous guarded link answers,
+    /// or a string field read through `?.`.
+    fn chainPayloadKind(self: *Emitter, recv: ast.Expr) ?envMod.PrimKind {
+        switch (recv) {
+            .call => |c| switch (c.kind) {
+                .call => |inner| if (self.chainedCallKind(inner, c.loc)) |k| {
+                    return switch (primCallRes(k, inner) orelse return null) {
+                        .i32 => .int,
+                        .bool_ => .bool,
+                        .str => .string,
+                        .arr => .array,
+                        .f64, .none => null,
+                    };
+                },
+                else => {},
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.chainPayloadKind(inner.*),
+                else => {},
+            },
+            // `x?.n` — a field read through the chain: its declared type. A
+            // float field has no box here (`OptInfo.float_` is an `f32` slot
+            // of an array), so it is left to the unguarded path.
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| if (self.recordTypeOfExpr(ia.receiver.*)) |rty| {
+                    if (self.fieldTypeIn(rty, ia.member)) |ft| {
+                        if (std.mem.eql(u8, ft, "string")) return .string;
+                        if (std.mem.eql(u8, ft, "bool")) return .bool;
+                        for ([_][]const u8{ "i32", "i64", "u32", "u64", "int" }) |n| {
+                            if (std.mem.eql(u8, ft, n)) return .int;
+                        }
+                        return null;
+                    }
+                },
+                else => {},
+            },
+            else => {},
+        }
+        if (self.isStringExpr(recv)) return .string;
+        return null;
+    }
+
+    /// The family `cc`'s receiver has once the chain is present — only for a
+    /// call that continues a `?.` chain and is not itself the `?.` link.
+    fn chainedCallKind(self: *Emitter, cc: anytype, loc: ast.Loc) ?envMod.PrimKind {
+        if (cc.optional or cc.is_builtin) return null;
+        const recv = cc.receiver orelse return null;
+        if (!isOptionalChain(recv.*)) return null;
+        if (self.primKindAt(cc, loc)) |k| return k;
+        return self.chainPayloadKind(recv.*);
+    }
+
+    /// What a guarded chain link leaves: a boxed scalar or a pointer (`0` is
+    /// absence either way). Null when the link is not one this lowers — a
+    /// float result has no box here.
+    fn chainedCallOpt(self: *Emitter, cc: anytype, loc: ast.Loc) ?OptInfo {
+        const k = self.chainedCallKind(cc, loc) orelse return null;
+        return switch (primCallRes(k, cc) orelse return null) {
+            .i32 => .{ .boxed = true },
+            .bool_ => .{ .boxed = true, .bool_ = true },
+            .str => .{ .boxed = false, .str = true },
+            .arr => .{ .boxed = false },
+            .f64, .none => null,
+        };
+    }
+
+    fn lowerChainedCall(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!bool {
+        const res = self.chainedCallOpt(cc, loc) orelse return false;
+        const k = self.chainedCallKind(cc, loc).?;
+        const recv = cc.receiver.?.*;
+        const recv_boxed = if (self.optInfoOf(recv)) |oi| oi.boxed else false;
+        const mem = try self.memName(self.nextMem());
+        try self.lowerValue(recv);
+        try self.emit(.{ .local_tee = mem });
+        try self.emit(opOf("i32", "eqz"));
+
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.emitC(zero, "?. chain: absent");
+        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        if (recv_boxed) {
+            try self.emit(.{ .local_get = mem });
+            try self.emitC(.{ .load = .{} }, "?. chain: unbox");
+            try self.emit(.{ .local_set = mem });
+        }
+        if (k == .string) try self.str_locals.put(mem, {});
+        const payload = try self.arena().create(ast.Expr);
+        payload.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = mem } } };
+        var link = cc;
+        link.receiver = payload;
+        try self.lowerPrimMethod(k, link);
+        if (res.boxed) try self.emit(self.builder().helper(.box_i32));
+        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+
+        try self.emit(.{ .@"if" = .{
+            .result = .i32,
+            .then = .{ .seq = then_seq },
+            .@"else" = .{ .seq = else_seq },
+        } });
+        return true;
+    }
+
     /// What a primitive method leaves on the stack. Null: no wasm lowering.
     const PrimRes = enum { i32, f64, bool_, str, arr, none };
 
@@ -4774,16 +5580,16 @@ const Emitter = struct {
         const Row = struct { []const u8, usize, PrimRes };
         const rows: []const Row = switch (k) {
             .array => &.{
-                .{ "length", 0, .i32 },    .{ "at", 1, .i32 },      .{ "first", 0, .i32 },
-                .{ "join", 1, .str },      .{ "indexOf", 1, .i32 }, .{ "contains", 1, .bool_ },
-                .{ "isEmpty", 0, .bool_ }, .{ "reverse", 0, .arr }, .{ "prepend", 1, .arr },
-                .{ "append", 1, .arr },    .{ "push", 1, .none },   .{ "zip", 1, .arr },
-                .{ "slice", 1, .arr },     .{ "slice", 2, .arr },   .{ "rest", 0, .arr },
-                .{ "take", 1, .arr },      .{ "drop", 1, .arr },    .{ "toList", 0, .arr },
-                .{ "map", 1, .arr },       .{ "filter", 1, .arr },  .{ "forEach", 1, .none },
-                .{ "all", 1, .bool_ },     .{ "every", 1, .bool_ }, .{ "any", 1, .bool_ },
-                .{ "some", 1, .bool_ },    .{ "count", 1, .i32 },   .{ "findIndex", 1, .i32 },
-                .{ "fold", 2, .i32 },
+                .{ "length", 0, .i32 },     .{ "at", 1, .i32 },        .{ "first", 0, .i32 },
+                .{ "find", 1, .i32 },       .{ "join", 1, .str },      .{ "indexOf", 1, .i32 },
+                .{ "contains", 1, .bool_ }, .{ "isEmpty", 0, .bool_ }, .{ "reverse", 0, .arr },
+                .{ "prepend", 1, .arr },    .{ "append", 1, .arr },    .{ "push", 1, .none },
+                .{ "zip", 1, .arr },        .{ "slice", 1, .arr },     .{ "slice", 2, .arr },
+                .{ "rest", 0, .arr },       .{ "take", 1, .arr },      .{ "drop", 1, .arr },
+                .{ "toList", 0, .arr },     .{ "map", 1, .arr },       .{ "filter", 1, .arr },
+                .{ "forEach", 1, .none },   .{ "all", 1, .bool_ },     .{ "every", 1, .bool_ },
+                .{ "any", 1, .bool_ },      .{ "some", 1, .bool_ },    .{ "count", 1, .i32 },
+                .{ "findIndex", 1, .i32 },  .{ "fold", 2, .i32 },
             },
             .string => &.{
                 .{ "length", 0, .i32 },      .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
@@ -4802,6 +5608,11 @@ const Emitter = struct {
                 // shape; `optInfoOf` is what routes the print through
                 // `$__print_opt_str`, and `$__str_at` is the lowering.
                  .{ "at", 1, .str },
+                // `00 · 05-wasm` step 6's audit: the rest of `primitives.bp`'s
+                // `String` that has a byte-level answer.
+                .{ "charCodeAt", 1, .i32 },  .{ "lastIndexOf", 1, .i32 },  .{ "padStart", 2, .str },
+                .{ "padEnd", 2, .str },      .{ "replace", 2, .str },      .{ "replaceAll", 2, .str },
+                .{ "chars", 0, .arr },
             },
             .bool => &.{
                 .{ "negate", 0, .bool_ },      .{ "nor", 1, .bool_ },          .{ "nand", 1, .bool_ },
@@ -4815,7 +5626,7 @@ const Emitter = struct {
             .float => &.{
                 .{ "abs", 0, .f64 },   .{ "min", 1, .f64 },        .{ "max", 1, .f64 },
                 .{ "clamp", 2, .f64 }, .{ "floor", 0, .f64 },      .{ "ceil", 0, .f64 },
-                .{ "round", 0, .f64 }, .{ "squareRoot", 0, .f64 },
+                .{ "round", 0, .f64 }, .{ "squareRoot", 0, .f64 }, .{ "toString", 0, .str },
             },
         };
         for (rows) |r| {
@@ -4928,6 +5739,8 @@ const Emitter = struct {
                     try self.emit(opOf("f64", "floor"));
                 } else if (eq(u8, name, "squareRoot")) {
                     try self.emit(opOf("f64", "sqrt"));
+                } else if (eq(u8, name, "toString")) {
+                    try self.emit(b.helper(.f64_to_str));
                 } else {
                     // abs / floor / ceil are opcodes of the same name.
                     try self.emit(opOf("f64", name));
@@ -4961,6 +5774,22 @@ const Emitter = struct {
             try self.emit(b.helper(.str_trim));
         } else if (eq(u8, name, "toString")) {
             // already the string
+        } else if (eq(u8, name, "chars")) {
+            // One fresh string per byte: `$__str_split` with an empty
+            // separator cuts between every byte.
+            const empty = try self.internString("");
+            try self.emit(try self.constInt(empty.offset));
+            try self.emit(b.helper(.str_split));
+        } else if (eq(u8, name, "padStart") or eq(u8, name, "padEnd")) {
+            try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            try self.lowerCoerced(callArg(cc, 1).?, "i32");
+            try self.emit(try self.constInt(@as(i32, if (eq(u8, name, "padStart")) 1 else 0)));
+            try self.emit(b.helper(.str_pad));
+        } else if (eq(u8, name, "replace") or eq(u8, name, "replaceAll")) {
+            try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            try self.lowerCoerced(callArg(cc, 1).?, "i32");
+            try self.emit(try self.constInt(@as(i32, if (eq(u8, name, "replaceAll")) 1 else 0)));
+            try self.emit(b.helper(.str_replace));
         } else {
             try self.lowerCoerced(callArg(cc, 0).?, "i32");
             if (eq(u8, name, "at")) {
@@ -4977,6 +5806,10 @@ const Emitter = struct {
                 try self.emit(b.helper(.str_ends_with));
             } else if (eq(u8, name, "split")) {
                 try self.emit(b.helper(.str_split));
+            } else if (eq(u8, name, "charCodeAt")) {
+                try self.emit(b.helper(.str_char_code));
+            } else if (eq(u8, name, "lastIndexOf")) {
+                try self.emit(b.helper(.str_last_index_of));
             } else {
                 try self.emit(b.helper(.str_repeat));
             }
@@ -4999,6 +5832,19 @@ const Emitter = struct {
             return self.lowerArrayHof(@intFromEnum(h), recv, lam, if (h == .fold) callArg(cc, 0) else null);
         }
         if (eq(u8, name, "push")) return self.lowerArrayPush(cc);
+        // `xs.find(pred)` is `xs.filter(pred).at(0)` — `primitives.bp`'s own
+        // body — as the `?T` `at` answers (`arrayElemOpt`: a scalar boxed, a
+        // pointer as itself).
+        if (eq(u8, name, "find")) {
+            const lam = lambdaAt(cc, 0) orelse {
+                try self.emitCf(.@"unreachable", "{s} needs a literal lambda on wasm (no function values)", .{name});
+                return;
+            };
+            try self.lowerArrayHof(@intFromEnum(Hof.filter), recv, lam, null);
+            try self.emit(zero);
+            try self.emit(b.helper(if (self.arrayElemOpt(recv).boxed) .arr_at_box else .arr_at));
+            return;
+        }
 
         try self.lowerCoerced(recv, "i32");
         const elem = self.elemKindOf(recv);
@@ -5028,7 +5874,9 @@ const Emitter = struct {
                 try self.lowerCoerced(callArg(cc, 0).?, "i32");
             } else {
                 try self.lowerCoerced(callArg(cc, 0).?, "i32");
-                if (callArg(cc, 1)) |end| try self.lowerCoerced(end, "i32") else try self.emit(whole);
+                if (callArg(cc, 1)) |end| {
+                    if (isNullLit(end)) try self.emit(whole) else try self.lowerSliceEnd(end, .max);
+                } else try self.emit(whole);
             }
             try self.emit(b.helper(.arr_slice));
         } else {
@@ -5775,6 +6623,8 @@ const Emitter = struct {
 
     const ParamShape = struct { names: []const []const u8, str: []const bool };
 
+    const FieldLambda = struct { params: []const []const u8, body: []const ast.Stmt };
+
     const Lifted = struct {
         name: []const u8,
         params: []const []const u8,
@@ -5821,6 +6671,23 @@ const Emitter = struct {
         const idx: u32 = @intCast(self.lambdas.items.len);
         const param_str = try ra.alloc(bool, params.len);
         @memset(param_str, false);
+        // A declared function type the lambda is written against types its
+        // parameters: `fn greeter(p: string) -> fn(x: string) -> string {
+        // return { x -> p + x }; }` concatenates, where an untyped `x` was an
+        // `i32` and `p + x` wrote the number (`a264`, exit 0).
+        const expected = self.expected_fn;
+        self.expected_fn = null;
+        if (expected) |et| if (et == .function) {
+            const pts = et.function.params;
+            for (param_str, 0..) |*ps, i| {
+                if (i < pts.len and isStringTypeRef(pts[i])) ps.* = true;
+            }
+        };
+        const expected_params = self.expected_params;
+        self.expected_params = null;
+        if (expected_params) |eps| for (param_str, 0..) |*ps, i| {
+            if (i < eps.len and isStringTypeRef(eps[i].typeRef)) ps.* = true;
+        };
         try self.lambdas.append(self.alloc, .{
             .name = try std.fmt.allocPrint(ra, "__lambda{d}", .{idx}),
             .params = params,
@@ -5882,6 +6749,7 @@ const Emitter = struct {
             }
         }.f;
         const is_value = blk: {
+            if (cc.calleeExpr != null) break :blk true;
             if (cc.receiver) |recv| break :blk slotOffset(self, recv.*, cc.callee) != null;
             break :blk self.locals.contains(cc.callee) or self.globals.contains(cc.callee);
         };
@@ -5890,9 +6758,25 @@ const Emitter = struct {
         const tmp = try std.fmt.allocPrint(ra, "__fnv{d}", .{self.loop_seq});
         self.loop_seq += 1;
         try self.declareLocal(tmp, "i32");
-        if (cc.receiver) |recv| {
+        // A behavior literal's `self` method: the receiver is its first
+        // argument, held here between the slot load and the call.
+        const self_recv: ?[]const u8 = if (cc.calleeExpr == null) if (cc.receiver) |recv| blk: {
+            const rty = self.recordTypeOfExpr(recv.*) orelse break :blk null;
+            const key = try std.fmt.allocPrint(ra, "{s}.{s}", .{ rty, cc.callee });
+            if (!self.self_method_fields.contains(key)) break :blk null;
+            const rt = try std.fmt.allocPrint(ra, "__self{d}", .{self.loop_seq});
+            self.loop_seq += 1;
+            try self.declareLocal(rt, "i32");
+            break :blk rt;
+        } else null else null;
+        if (cc.calleeExpr) |ce| {
+            // `adder(3)(4)` — the callee is the VALUE of an expression (01
+            // handover 15), the function value the inner call answered.
+            try self.lowerValue(ce.*);
+        } else if (cc.receiver) |recv| {
             const off = slotOffset(self, recv.*, cc.callee).?;
             try self.lowerValue(recv.*);
+            if (self_recv) |rt| try self.emit(.{ .local_tee = rt });
             try self.emitCf(.{ .load = .{ .offset = off } }, ".{s}", .{cc.callee});
         } else if (self.locals.contains(cc.callee)) {
             try self.emit(.{ .local_get = cc.callee });
@@ -5900,7 +6784,7 @@ const Emitter = struct {
             try self.emit(.{ .global_get = cc.callee });
         }
         try self.emit(.{ .local_set = tmp });
-        const closure: ?Lifted = if (cc.receiver == null and self.locals.contains(cc.callee))
+        const closure: ?Lifted = if (cc.calleeExpr == null and cc.receiver == null and self.locals.contains(cc.callee))
             if (self.closure_locals.get(cc.callee)) |li| self.lambdas.items[li] else null
         else
             null;
@@ -5911,9 +6795,10 @@ const Emitter = struct {
             try self.syncCaptures(tmp, l.captures, .into_env);
         }
         try self.emit(.{ .local_get = tmp });
+        if (self_recv) |rt| try self.emit(.{ .local_get = rt });
         for (cc.args) |a| try self.lowerCoerced(a.value.*, "i32");
         for (cc.trailing) |t| try self.lowerLambdaValue(t.params, t.body);
-        try self.emitIndirect(tmp, cc.args.len + cc.trailing.len);
+        try self.emitIndirect(tmp, cc.args.len + cc.trailing.len + @as(usize, if (self_recv != null) 1 else 0));
         if (closure) |l| try self.syncCaptures(tmp, l.captures, .out_of_env);
         return true;
     }
@@ -5998,6 +6883,21 @@ const Emitter = struct {
             },
             else => false,
         };
+    }
+
+    fn fieldLambdaCallIsString(self: *Emitter, cc: anytype) bool {
+        const recv = cc.receiver orelse return false;
+        const rty = self.recordTypeOfExpr(recv.*) orelse return false;
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ rty, cc.callee }) catch return false;
+        const fl = self.field_lambdas.get(key) orelse return false;
+        const skip: usize = if (self.self_method_fields.contains(key)) 1 else 0;
+        const flags = self.arena().alloc(bool, fl.params.len) catch return false;
+        for (flags, 0..) |*f, i| f.* = i >= skip and i - skip < cc.args.len and self.isStringExpr(cc.args[i - skip].value.*);
+        const saved = self.param_shape;
+        defer self.param_shape = saved;
+        self.param_shape = .{ .names = fl.params, .str = flags };
+        return self.bodyIsString(fl.body);
     }
 
     /// Whether a call through the closure local bound to lifted lambda `li`
@@ -6113,10 +7013,11 @@ const Emitter = struct {
         const rn = receiverName(cc) orelse return null;
         if (self.locals.contains(rn) or self.globals.contains(rn)) return null;
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rn, cc.callee }) catch return null;
-        // An interface associated `default fn`, or a record's own fn called on
-        // the type (`Response.ok(…)`).
+        // An interface associated `default fn`, or a record's or an enum's own
+        // fn called on the type (`Response.ok(…)`, `Shape.unit()` — which took
+        // the variant path and answered `0 ;; unknown variant`).
         if (self.iface_assoc.contains(sym)) return sym;
-        if (self.records.contains(rn) and self.fn_sigs.contains(sym)) return sym;
+        if ((self.records.contains(rn) or self.enums.contains(rn)) and self.fn_sigs.contains(sym)) return sym;
         return null;
     }
 
@@ -6305,6 +7206,24 @@ const Emitter = struct {
     }
 
     /// The declared type an expression carries, when a declaration names it.
+    /// The return type of a call whose callee is a function VALUE — the
+    /// callee expression of `adder(3)(4)` or a local/global declared (or bound
+    /// to a call declared) `fn(…) -> R` — or null.
+    fn valueCallTypeRef(self: *Emitter, cc: anytype) ?ast.TypeRef {
+        if (cc.receiver != null) return null;
+        const ft: ast.TypeRef = if (cc.calleeExpr) |ce|
+            self.typeRefOf(ce.*) orelse return null
+        else blk: {
+            const n = self.resolveName(cc.callee);
+            break :blk self.local_typerefs.get(n) orelse
+                (if (self.locals.contains(n)) return null else self.global_typerefs.get(n) orelse return null);
+        };
+        return switch (ft) {
+            .function => |f| f.returnType.*,
+            else => null,
+        };
+    }
+
     fn typeRefOf(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
@@ -6348,6 +7267,10 @@ const Emitter = struct {
                         const sym = self.calleeSymbol(cc, c.loc) orelse break :blk null;
                         break :blk self.fn_ret_typerefs.get(sym);
                     }
+                    // A function VALUE applied — `adder(3)(4)`, or `f(4)` over
+                    // a local bound to one: the call answers the function
+                    // type's return.
+                    if (self.valueCallTypeRef(cc)) |t| break :blk t;
                     break :blk self.fn_ret_typerefs.get(cc.callee);
                 },
                 else => null,
@@ -6468,9 +7391,19 @@ const Emitter = struct {
             },
 
             .call => |c| switch (c.kind) {
-                .call => |cc| if (self.primKindAt(cc, c.loc)) |k| {
+                .call => |cc| if (self.chainedCallOpt(cc, c.loc)) |oi| {
+                    return oi;
+                } else if (cc.is_builtin and std.mem.eql(u8, cc.callee, "__bp_option_map") and cc.args.len > 1 and lambdaArg(cc.args[1].value) != null) {
+                    // `opt.map({ x -> … })` is an optional again, boxed when
+                    // the closure answers a scalar (`lowerResultOptionOp`).
+                    // Unregistered, a `return` into `-> ?i32` boxed the box
+                    // (`lookup(pairs, "b")` printed its address).
+                    const body = lambdaArg(cc.args[1].value).?.function.kind.body;
+                    if (self.lambdaTailIsPointer(body)) return .{ .boxed = false, .str = self.bodyIsString(body) };
+                    return .{ .boxed = true };
+                } else if (self.primKindAt(cc, c.loc)) |k| {
                     if (k == .array and
-                        (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first")))
+                        (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first") or std.mem.eql(u8, cc.callee, "find")))
                     {
                         return self.arrayElemOpt(cc.receiver.?.*);
                     }
@@ -6539,6 +7472,9 @@ const Emitter = struct {
     /// already an optional.
     fn boxesInto(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) bool {
         const t = target orelse return false;
+        // An `unknown` / union slot: every value but one that already is one
+        // goes in `lowerAsUnknown`'s box (`lowerBoxedInto`).
+        if (isUnknownTypeRef(t)) return !isNullLit(value) and !self.isUnknownExpr(value) and !self.isTaggedValue(value);
         const oi = optInfoOfTypeRef(t) orelse return false;
         if (!oi.boxed) return false;
         if (isNullLit(value)) return false;
@@ -6570,7 +7506,10 @@ const Emitter = struct {
         return self.isStringExpr(v) or self.recordTypeOfExpr(v) != null or self.isArrayExpr(v) or self.optInfoOf(v) != null;
     }
 
-    fn lowerBoxed(self: *Emitter, value: ast.Expr) anyerror!void {
+    /// The box `boxesInto` asked for: `lowerAsUnknown`'s for an `unknown` /
+    /// union slot, a `?T`'s `$__box_i32` cell otherwise.
+    fn lowerBoxedInto(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) anyerror!void {
+        if (target) |t| if (isUnknownTypeRef(t)) return self.lowerAsUnknown(value);
         try self.lowerCoerced(value, "i32");
         try self.emit(self.builder().helper(.box_i32));
     }
@@ -6581,11 +7520,16 @@ const Emitter = struct {
     /// receiver as a record value and the module emitted that method.
     fn recordMethodSym(self: *Emitter, cc: anytype, loc: ast.Loc) ?[]const u8 {
         if (cc.receiver == null or cc.is_builtin) return null;
-        const il = self.instance_lowerings.get(loc) orelse return null;
-        const rec = switch (il) {
+        // Inference records no note for a method on a value of an IMPORTED
+        // type (`queryOf(xs).toArray()` with `Query` declared in `shapes`), so
+        // the receiver's record is recovered here as it is for a field read —
+        // the modules are linked into this one, so its `<Type>_<method>` is
+        // emitted beside the local ones. Without it the call fell through and
+        // `.length` on its result answered `0` at exit 0.
+        const rec = if (self.instance_lowerings.get(loc)) |il| switch (il) {
             .type_ => |r| r,
             .prim, .field_of, .sequence_next => return null,
-        };
+        } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
         if (!self.fn_sigs.contains(sym)) return null;
         return sym;
@@ -6636,7 +7580,7 @@ const Emitter = struct {
                 const ftref: ?ast.TypeRef = if (self.record_field_typerefs.get(cc.callee)) |ts| (if (i < ts.len) ts[i] else null) else null;
                 if (self.boxesInto(ftref, arg.value.*)) {
                     try self.emit(.{ .local_get = base });
-                    try self.lowerBoxed(arg.value.*);
+                    try self.lowerBoxedInto(ftref, arg.value.*);
                     try self.emit(.{ .store = .{ .offset = off } });
                 } else try self.storeSlotExpr(base, off, arg.value.*);
             } else {
@@ -7049,6 +7993,16 @@ const Emitter = struct {
                     if (self.resolvedCallSym(cc, c.loc)) |sym| {
                         if (self.str_fns.contains(sym)) break :blk true;
                     }
+                    // A call through a record literal's lambda field — a
+                    // behavior literal's method — is a string when the
+                    // lambda's body is, its parameters shaped by the call's
+                    // arguments (the receiver first for a `self` method).
+                    if (self.fieldLambdaCallIsString(cc)) break :blk true;
+                    // A function value whose declared type returns a string:
+                    // `greeter("a")("b")`, or `f("b")` after `val f =
+                    // greeter("a")`. Without it the result printed as the
+                    // string's heap address at exit 0.
+                    if (self.valueCallTypeRef(cc)) |t| break :blk isStringTypeRef(t);
                     break :blk false;
                 },
                 else => false,
@@ -7275,14 +8229,46 @@ const Emitter = struct {
             try self.lowerExpr(cc.args[0].value.*)
         else
             try self.emit(zero);
-        if (cc.args.len > 1) {
-            try self.lowerExpr(cc.args[1].value.*);
+        if (cc.args.len > 1 and !isNullLit(cc.args[1].value.*)) {
+            try self.lowerSliceEnd(cc.args[1].value.*, .{ .str_len_of = cc.receiver.?.* });
         } else {
-            // No end argument: slice to the end (load the source length prefix).
+            // No end argument — or a written `null` (`s.slice(2, null)`, what
+            // `s[2..]` passes): slice to the end (the source length prefix).
+            // `null` lowered as `0` made the end fall before the start and
+            // `$__str_slice` read out of bounds (a trap).
             try self.lowerExpr(cc.receiver.?.*);
             try self.emitC(.{ .load = .{} }, "source length");
         }
         try self.emit(self.builder().helper(.str_slice));
+    }
+
+    const SliceWhole = union(enum) { str_len_of: ast.Expr, max };
+
+    /// A slice's `end: ?i32` that is not the literal `null`: a plain `i32`, or
+    /// an optional whose absence means "to the end" — `whole` then.
+    fn lowerSliceEnd(self: *Emitter, end: ast.Expr, whole: SliceWhole) anyerror!void {
+        const oi = self.optInfoOf(end) orelse return self.lowerCoerced(end, "i32");
+        if (!oi.boxed) return self.lowerCoerced(end, "i32");
+        const tmp = try self.memName(self.nextMem());
+        try self.lowerCoerced(end, "i32");
+        try self.emit(.{ .local_tee = tmp });
+        try self.emit(opOf("i32", "eqz"));
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        switch (whole) {
+            .str_len_of => |recv| {
+                try self.lowerExpr(recv);
+                try self.emitC(.{ .load = .{} }, "source length");
+            },
+            .max => try self.emit(try self.constInt(std.math.maxInt(i32))),
+        }
+        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emit(.{ .local_get = tmp });
+        try self.emitC(.{ .load = .{} }, "slice end");
+        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+        try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
     }
 
     /// `a == b` / `a != b` on strings → byte comparison via `$__str_eq`. The
@@ -7708,7 +8694,7 @@ const Emitter = struct {
         // `count(n - 1, acc + n)` reads the old `n` in both.
         for (cc.args, 0..) |arg, i| {
             if (self.boxesInto(ts.typerefs[i], arg.value.*))
-                try self.lowerBoxed(arg.value.*)
+                try self.lowerBoxedInto(ts.typerefs[i], arg.value.*)
             else
                 try self.lowerCoerced(arg.value.*, ts.types[i]);
         }
@@ -7986,6 +8972,15 @@ const Emitter = struct {
             try self.emit(opOf("i32", if (op == Op.eq) "eq" else "ne"));
             return;
         }
+        // Decision 8 §2.3: `==` with an `unknown` operand compares by what
+        // the values hold — numbers by value (`2.0 == 2`), strings by content.
+        if ((op == Op.eq or op == Op.ne) and (self.isUnknownExpr(lhs) or self.isUnknownExpr(rhs))) {
+            try self.lowerAsUnknown(lhs);
+            try self.lowerAsUnknown(rhs);
+            try self.emit(self.builder().helper(.unknown_eq));
+            if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
+            return;
+        }
         // A boxed optional against a value: equal only when present and its
         // payload is equal (`null == 0` is false, as on the other targets).
         const lopt = self.optInfoOf(lhs);
@@ -8134,6 +9129,51 @@ const Emitter = struct {
     /// put it back. A `?string`, a `?bool` and a `?Record` also take the shape
     /// their payload has, because inside the branch every reader asks about a
     /// plain value and no longer about an optional.
+    const UnknownNarrowing = struct { name: []const u8, previous: ?[]const u8 };
+
+    /// `if (x is i32) { … x … }` over an `unknown` `x`: inside the branch `x`
+    /// IS the payload the test proved — the checker types it so (§4.1) — so
+    /// the branch reads an unboxed copy (an alias `resolveName` answers),
+    /// converted when the box holds the other numeric kind (`3.0` read as
+    /// `3`). Written at the top of the branch the test opens.
+    fn narrowUnknown(self: *Emitter, cond: ast.Expr) anyerror!?UnknownNarrowing {
+        const cc = switch (cond) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc,
+                else => return null,
+            },
+            else => return null,
+        };
+        if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, ast.is_builtin_name) or cc.args.len != 1) return null;
+        const pt = primTestOf(cc.isType orelse return null) orelse return null;
+        const n0 = plainIdentName(cc.args[0].value.*) orelse return null;
+        if (!self.isUnknownExpr(cc.args[0].value.*)) return null;
+        const n = self.resolveName(n0);
+        const alias = try std.fmt.allocPrint(self.arena(), "{s}__is{d}", .{ n0, self.alias_seq });
+        self.alias_seq += 1;
+        const b = self.builder();
+        try self.declareLocal(alias, if (pt == .float) "f64" else "i32");
+        try self.emit(.{ .local_get = n });
+        switch (pt) {
+            .int => try self.emit(b.helper(.unknown_as_i32)),
+            .float => try self.emit(b.helper(.unknown_as_f64)),
+            .bool_, .string => try self.emitC(.{ .load = .{} }, "unknown: the proven payload"),
+        }
+        try self.emit(.{ .local_set = alias });
+        if (pt == .string) try self.str_locals.put(alias, {});
+        if (pt == .bool_) try self.bool_locals.put(alias, {});
+        const previous = self.aliases.get(n0);
+        try self.aliases.put(n0, alias);
+        return .{ .name = n0, .previous = previous };
+    }
+
+    fn dropUnknownNarrowing(self: *Emitter, un: ?UnknownNarrowing) void {
+        const u = un orelse return;
+        if (u.previous) |p| {
+            self.aliases.put(u.name, p) catch {};
+        } else _ = self.aliases.remove(u.name);
+    }
+
     fn applyNarrowing(self: *Emitter, names: []const []const u8) anyerror![]const Narrowing {
         var marked: std.ArrayListUnmanaged(Narrowing) = .empty;
         for (names) |n0| {
@@ -8203,13 +9243,24 @@ const Emitter = struct {
                 if (o.str) try self.str_locals.put(name, {});
                 if (o.bool_) try self.bool_locals.put(name, {});
                 if (o.inner) |tr| try self.local_typerefs.put(name, tr);
+                // A record payload types the binder, so `h.rest` reads the
+                // declared slot rather than guessing one by the field's name
+                // (`modules/field_name_collision` answered `0` / `0`).
+                const rec: ?[]const u8 = o.rec orelse if (o.inner) |tr| switch (tr) {
+                    .named => |n| self.resolveRecordName(n),
+                    .generic => |g| self.resolveRecordName(g.name),
+                    else => null,
+                } else null;
+                if (rec) |r| try self.local_types.put(name, r);
             }
             try self.emit(.{ .local_set = name });
         }
         var then_names: std.ArrayListUnmanaged([]const u8) = .empty;
         try self.collectNullTestNames(i.cond.*, true, &then_names);
         const then_marked = try self.applyNarrowing(then_names.items);
+        const unknown_narrowed = try self.narrowUnknown(i.cond.*);
         const then_tail = try self.emitBody(i.then_, !as_stmt);
+        self.dropUnknownNarrowing(unknown_narrowed);
         self.dropNarrowing(then_marked);
         const then_seq = self.seal(&then_c, stackOf(then_tail, self.cur_result));
 

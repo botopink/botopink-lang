@@ -21,7 +21,8 @@ fn main() {
     local.set $s
     local.get $s
     i32.const 2
-    i32.const 0
+    local.get $s
+    i32.load ;; source length
     call $__str_slice
     local.set $tail
     local.get $tail
@@ -248,6 +249,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-RUNTIME TRAP (wasmtime):
-wasm trap: out of bounds memory access
+3
 ```

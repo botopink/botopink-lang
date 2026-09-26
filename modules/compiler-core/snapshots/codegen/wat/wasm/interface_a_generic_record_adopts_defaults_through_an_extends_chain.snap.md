@@ -34,11 +34,26 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\0d\00\00\00R\03Bag\01\05itemsi")
+  (global $__heap_ptr (mut i32) (i32.const 276))
   (func $Bag_size (param $self i32) (result i32)
     local.get $self
     i32.load ;; .items
     i32.load ;; .length
+    return
+  )
+  (func $Bag_twiceSize (param $self i32) (result i32)
+    local.get $self
+    call $Bag_size
+    i32.const 2
+    i32.mul
+    return
+  )
+  (func $Bag_isEmpty (param $self i32) (result i32)
+    local.get $self
+    call $Bag_size
+    i32.const 0
+    i32.eq
     return
   )
   (func $main
@@ -48,11 +63,92 @@ fn main() {
     (local $__mem3 i32)
     (local $__mem4 i32)
     (local $__mem5 i32)
-    unreachable ;; unresolved call: isEmpty/0
-    call $__print_i32
-    unreachable ;; unresolved call: isEmpty/0
-    call $__print_i32
-    unreachable ;; unresolved call: twiceSize/0
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 260
+    i32.store
+    local.get $__mem0
+    global.get $__heap_ptr
+    local.set $__mem1
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 0
+    i32.store
+    local.get $__mem1
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    call $Bag_isEmpty
+    call $__print_bool
+    global.get $__heap_ptr
+    local.set $__mem2
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem2
+    i32.const 260
+    i32.store
+    local.get $__mem2
+    global.get $__heap_ptr
+    local.set $__mem3
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem3
+    i32.const 1
+    i32.store
+    local.get $__mem3
+    i32.const 1
+    i32.store offset=4
+    local.get $__mem3
+    i32.store offset=4
+    local.get $__mem2
+    i32.const 4
+    i32.add
+    call $Bag_isEmpty
+    call $__print_bool
+    global.get $__heap_ptr
+    local.set $__mem4
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem4
+    i32.const 260
+    i32.store
+    local.get $__mem4
+    global.get $__heap_ptr
+    local.set $__mem5
+    global.get $__heap_ptr
+    i32.const 12
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem5
+    i32.const 2
+    i32.store
+    local.get $__mem5
+    i32.const 1
+    i32.store offset=4
+    local.get $__mem5
+    i32.const 2
+    i32.store offset=8
+    local.get $__mem5
+    i32.store offset=4
+    local.get $__mem4
+    i32.const 4
+    i32.add
+    call $Bag_twiceSize
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -238,11 +334,43 @@ fn main() {
       )
     )
   )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-RUNTIME TRAP (wasmtime):
-wasm trap: wasm `unreachable` instruction executed
+true
+false
+4
 ```

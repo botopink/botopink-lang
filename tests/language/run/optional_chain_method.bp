@@ -1,0 +1,24 @@
+//// 05-wasm step 9, the `?.` row — a method on the REST of a `?.` chain.
+////
+//// `?.` makes everything after it conditional: absent short-circuits the whole
+//// chain. On wasm only the link written with `?.` carried the guard, so the
+//// next method started from a carrier that may be `0` — `length()` read a
+//// length from address 0 (the WASI iovec) and `toString()` found no receiver
+//// type at all (`unresolved call: toString/0`, a trap). Each further link is
+//// lowered under the same guard now: absent stays absent, present runs the
+//// method on the payload.
+////
+//// The absent probes go through `??`, because an empty optional still PRINTS
+//// differently on the four backends (decision 47's spelling — `null` on wasm,
+//// `undefined` on commonJS's native `?.`, the atom on erlang and beam; C-18).
+
+type Entry(key: string, n: i32)
+
+pub fn main() {
+    val es = [Entry(key: "abc", n: 7), Entry(key: "de", n: 0)];
+    @print(es.at(1)?.key.length().toString());
+    @print(es.at(0)?.key.length() ?? 0);
+    @print(es.at(9)?.key.length() ?? 42);
+    @print(es.at(0)?.n.toString() ?? "none");
+    @print(es.at(9)?.n.toString() ?? "none");
+}

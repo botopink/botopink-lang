@@ -89,7 +89,7 @@ exports.make = make;
 export declare class Counter {
     readonly n: number;
     constructor(n: number);
-    zero(): Self;
+    zero(): Counter;
     bump(): number;
 }
 
@@ -144,6 +144,7 @@ function __bp_show(v, s, top, a) {
         const k = Object.keys(v);
         return (((typeof v.tag === "string") ? ((v.__bp + ".") + v.tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
     }
+    if ((v === undefined)) return "null";
     a.push(v);
     return "%O";
 }
@@ -171,13 +172,11 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { Counter, Shape, make } from "geometry";
+import { Counter, Shape, make } from "./geometry";
 
 
-import { Counter, Shape, make } from "geometry";
 
 
-import { Counter, Shape, make } from "geometry";
 
 
 

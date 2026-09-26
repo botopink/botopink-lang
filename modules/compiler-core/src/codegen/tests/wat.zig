@@ -83,9 +83,9 @@ test "wat: string slice copies bytes into a new buffer" {
 // `libs/std/src/primitives.bp` declares `default fn slice(self, start: i32,
 // end: ?i32 = null)`, so the one-argument call is legal — and now the checker
 // fills the declared default in, so all four snapshots hold the same lowering
-// as the two-argument call and a RUN LOG of `3`. No backend changed: the
-// argument reaches them written out, and `end` is the `null` the declaration
-// gives it.
+// as the two-argument call and a RUN LOG of `3`. The argument reaches the
+// backends written out — `end` is the `null` the declaration gives it — and wasm
+// read that `null` as `0` and trapped until `00 · 05-wasm` made it the end.
 test "wat: string slice without end arg slices to source length" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -611,9 +611,9 @@ test "wat: case ---- a failing guard falls through to the next arm" {
 //
 //   wasm   `rows.at(1)` on an array OF arrays answers a raw heap address (`308`),
 //          and `.at(0)` / `.length` of that is `0`; `s.slice(3, null)` — an open
-//          end — traps with `out of bounds memory access`. Decision 47's `?T` on
-//          wasm carries a non-scalar badly; that is C-18's row and `05-wasm`'s
-//          file, not this one.
+//          end — trapped with `out of bounds memory access` until `00 · 05-wasm`
+//          read a `null` end as the end (`a null end, written or at run time,
+//          is the end`); it answers `lo` / `[20, 30]` now.
 //   beam   `xs.slice(1, null)` and `s.slice(1, 3)` do not assemble:
 //          `beam_asm` folds `Array.slice`'s `default fn` body to its
 //          `end != null` arm with no test emitted (the `.S` calls
@@ -649,10 +649,9 @@ test "wat: index ---- an array element, a string character and a slice" {
 }
 
 // An index past the end is `xs.at(9)`, whose type is `?i32`, and decision 47
-// spells absent `null`. Three backends print the empty optional as `undefined`
-// and wasm prints it as `0` — C-18's row, one row for four targets instead of
-// the two different wrong answers this fixture used to hold (wasm answered `0`
-// from its own `$__arr_at` while the other three answered `undefined`).
+// spells absent `null`. commonJS (`__bp_array_at`) and wasm (`$__print_null`)
+// print it so since 1.0.10-beta `00 · 04-js` / `05-wasm`; erlang and beam still
+// print the atom `undefined` — C-18's row, theirs.
 test "wat: index ---- an index past the end answers zero" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -926,9 +925,10 @@ test "wat: print ---- a record and a variant have no printed form yet, so they t
 // wasm's log is now **byte-identical to erlang's**, and to beam's but for §7's
 // separator (`[6,8]` on wasm and erlang, `[6, 8]` on commonJS and beam, which is
 // the text §7 wants — this front's step 1 F1 and 02's). The one text where wasm
-// is with the majority and commonJS is the outlier: `undefined` for absence on
-// three backends against commonJS's `null`, which decision 8 §7 names neither of.
-// Reported, not changed here: it is one text on four backends, not this front's.
+// was with the majority and commonJS the outlier: `undefined` for absence on
+// three backends against commonJS's `null`. Decision 47 settles it — absent is
+// spelled `null` — and wasm prints `null` since 1.0.10-beta `00 · 05-wasm`
+// (`$__print_null`); erlang and beam are C-18's.
 //
 // The `Dict` cells this row was found through live in `std_package.zig`, where
 // erlang's and beam's own cross-module rows are pinned.
@@ -1036,7 +1036,7 @@ test "wat: prim method ---- String.at answers a one-character string, and null o
         \\    @print(s.at(0 - 1));
         \\    @print("hello world".at(6));
         \\}
-    , "a\nc\nundefined\nundefined\nw\n");
+    , "a\nc\nnull\nnull\nw\n");
 }
 
 // A self-call in `return` position is a branch to the function's own loop head
@@ -1066,4 +1066,139 @@ test "wat: tail call ---- a self-call in return position runs in one frame" {
         \\    @print(sumTo(1000, 0));
         \\}
     , "1000000\n500500\n");
+}
+
+// `00 · 05-wasm` step 6's audit of `primitives.bp` against `primCallRes`: the
+// `String` and `Float` members with a byte-level answer are lowered, each
+// answering what commonJS answers for the same program (measured side by
+// side). `5.0.toString()` is `5`, as on node; `charCodeAt` out of range is
+// `-1`, the answer both host templates give; the pad cycles as JavaScript's
+// does; an empty pattern matches before every byte.
+test "wat: prim method ---- the String and Float members step 6's audit lowered" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val f = 2.5;
+        \\    @print(f.toString());
+        \\    val g = 5.0;
+        \\    @print(g.toString());
+        \\    @print("abc".charCodeAt(1));
+        \\    @print("abc".charCodeAt(7));
+        \\    @print("a-b-c".lastIndexOf("-"));
+        \\    @print("a-b-c".lastIndexOf("z"));
+        \\    @print("ab".padStart(5, "*-"));
+        \\    @print("ab".padEnd(5, "*-"));
+        \\    @print("abcdef".padStart(3, "*"));
+        \\    @print("a-b-c".replace("-", "+"));
+        \\    @print("a-b-c".replaceAll("-", "+="));
+        \\    @print("ab".replaceAll("", "-"));
+        \\    @print("xy".chars());
+        \\    @print([1, 2, 3].find({ x -> x > 1 }));
+        \\    @print([1, 2, 3].find({ x -> x > 5 }));
+        \\}
+    ,
+        \\2.5
+        \\5
+        \\98
+        \\-1
+        \\3
+        \\-1
+        \\*-*ab
+        \\ab*-*
+        \\abcdef
+        \\a+b-c
+        \\a+=b+=c
+        \\-a-b-
+        \\["x", "y"]
+        \\2
+        \\null
+        \\
+    );
+}
+
+// The rest of step 6's audit: every primitive method `primitives.bp` declares
+// that has NO wasm lowering traps (`prim method not lowered on wasm`) rather
+// than answering — one program per method, so a lowering that lands later
+// fails here and has to move its row into the test above. `words`/`lines`
+// split on a character class, `pop` mutates the array blob in place, and the
+// rest are `default fn`s whose bodies call a function value the inlined HOF
+// path does not reach (`flatMap`) or grow an array through
+// `append` (`flatten`, `flat`, `chunked`, `sliding`, `fill`, `unique`).
+test "wat: prim method ---- a primitive method with no wasm lowering traps, never answers" {
+    const trap = "RUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n";
+    const calls = [_][]const u8{
+        "\"a b\".words()",
+        "\"a\\nb\".lines()",
+        "[3, 1, 3].unique()",
+        "[[1], [2, 3]].flatten()",
+        "[[1], [2, 3]].flat()",
+        "[1, 2].flatMap({ x -> [x, x] })",
+        "[1, 2, 3].chunked(2)",
+        "[1, 2, 3].sliding(2)",
+        "[1, 2].fill(0)",
+    };
+    inline for (calls) |c| {
+        try h.assertWasmRunLog(std.testing.allocator, "fn main() {\n    @print(" ++ c ++ ");\n}\n", trap);
+    }
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var xs = [1, 2, 3];
+        \\    val p = xs.pop();
+        \\    @print(p);
+        \\}
+    , trap);
+}
+
+// Decision 8 §11's box on wasm (`00 · 05-wasm` step 2): a value entering an
+// `unknown` slot carries a header naming what it holds, and `is`, a type arm,
+// `==` and `@print` read it — `tests/language/run/unknown_by_value.bp` pins the
+// answers on four targets. What this pins is the one refusal: a value whose
+// type nothing proves — here a type parameter's slot, which this backend does
+// not monomorphise — is not boxed by a guess. Boxed as the `i32` it is at run
+// time, `v is string` answered `false` for `"abc"` at exit 0 (`-1` where the
+// other backends answer `3`).
+test "wat: unknown ---- a type parameter's slot is not boxed by a guess" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Maybe<T> {
+        \\    Some(value: T),
+        \\    None,
+        \\}
+        \\fn innerLength(b: unknown) -> i32 {
+        \\    return case b {
+        \\        Maybe.Some(value: v) when (v is string) { v.length }
+        \\        Maybe.Some(value: v) { -1 }
+        \\        _ { -2 }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    val x: unknown = 1;
+        \\    @print(innerLength(x));
+        \\    val s: unknown = Maybe.Some(value: "abc");
+        \\    @print(innerLength(s));
+        \\}
+    , "-2\nRUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n");
+}
+
+// A slice's `end: ?i32` written out as `null` — or an optional that is absent
+// at run time — means "to the end". Lowered as the `0` a `null` is, the end
+// fell before the start and `$__str_slice` read out of bounds (a trap), where
+// commonJS and erlang answer `cdef`; an optional `end` was read as its box's
+// ADDRESS. (status.md's `slice(2, null)` row.)
+test "wat: slice ---- a null end, written or at run time, is the end" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn cut(s: string, end: ?i32) -> string {
+        \\    return s.slice(1, end);
+        \\}
+        \\fn main() {
+        \\    @print("abcdef".slice(2, null));
+        \\    @print([1, 2, 3, 4].slice(1, null));
+        \\    @print(cut("abcdef", 3));
+        \\    @print(cut("abcdef", null));
+        \\}
+    ,
+        \\cdef
+        \\[2, 3, 4]
+        \\bc
+        \\bcdef
+        \\
+    );
 }

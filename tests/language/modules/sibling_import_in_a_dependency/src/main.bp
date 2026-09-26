@@ -1,0 +1,18 @@
+//// 04-js step 5 — a `mod` sibling imported with no `from` clause. The import
+//// statement names no module, and commonJS used to write the literal word as
+//// the path: `require("./module")` in a project and `require("../module")`
+//// inside a dependency — a program that built and then died with `Cannot find
+//// module`. Both shapes are here: `Twig` from this project's own sibling, and
+//// `seven` from a dependency whose `api.bp` imports its sibling `Leaf` the same
+//// way. The needle half is `src/codegen/tests/features.zig`'s
+//// `a sibling module imported with no from requires its own path`.
+
+pub mod leaf;
+
+import {Twig};
+import {seven} from "tree/api";
+
+pub fn main() {
+    @print(Twig(n: 3).n);
+    @print(seven());
+}

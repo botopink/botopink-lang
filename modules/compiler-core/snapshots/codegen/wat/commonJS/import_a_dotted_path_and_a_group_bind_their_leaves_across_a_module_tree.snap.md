@@ -107,6 +107,7 @@ function __bp_show(v, s, top, a) {
         const k = Object.keys(v);
         return (((typeof v.tag === "string") ? ((v.__bp + ".") + v.tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
     }
+    if ((v === undefined)) return "null";
     a.push(v);
     return "%O";
 }
@@ -135,16 +136,14 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
+import { name as circleName, label as circleLabel } from "./shapes/circle";
 import { seven, label } from "./shapes/helpers";
 
 
-import { seven, label } from "./shapes/helpers";
 
 
-import { seven, label } from "./shapes/helpers";
 
 
-import { seven, label } from "./shapes/helpers";
 
 
 

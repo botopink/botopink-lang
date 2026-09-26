@@ -430,7 +430,11 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
 // the method answers, and `tests/language/run/index_*` pins that by running.
 //
 // A tuple keeps a bare JS index, because a tuple's rewrite is `t._0` and a
-// tuple is a JS array.
+// tuple is a JS array. `Array.at` goes through `__bp_array_at`, which answers
+// decision 47's `null` past the end where native `.at` answers `undefined`; the
+// inner `.at(0)` of `[[1, 2], [3, 4]][1][0]` stays native, because its
+// receiver is the `?T` the outer one answered and inference records no array
+// lowering for it.
 test "js: index ---- element, slice, open slice, string and tuple" {
     const src =
         \\fn main() {
@@ -449,14 +453,14 @@ test "js: index ---- element, slice, open slice, string and tuple" {
         \\}
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
-        "__bp_print(xs.at(0));",
+        "__bp_print(__bp_array_at(xs, 0));",
         "__bp_print(xs.slice(0, 2));",
         "__bp_print(xs.slice(1, null));",
         "__bp_print(__bp_string_char_at(s, 1));",
         "__bp_print(s.slice(1, 3));",
         "__bp_print(t[0]);",
-        "__bp_print(xs.at((i + 1)));",
-        "__bp_print([[1, 2], [3, 4]].at(1).at(0));",
+        "__bp_print(__bp_array_at(xs, (i + 1)));",
+        "__bp_print(__bp_array_at([[1, 2], [3, 4]], 1).at(0));",
     });
     // An open-ended range is `.slice(start, null)` here and the lazy
     // `__bp_range_from` generator everywhere else, so the helper is not pulled
@@ -473,4 +477,94 @@ test "js: index ---- element, slice, open slice, string and tuple" {
         \\3
         \\
     );
+}
+
+test "js: destructure ---- a constructor in binding position is a plain destructure (JS-4)" {
+    // `val Circle(r) = s;` — 01 R5 accepts the bare form only where the pattern
+    // cannot fail (a record's own constructor, the variant of a one-variant
+    // type), so the lowering is a destructure with no test: commonJS reads each
+    // binding off the declared field at its position, wasm off its slot. It
+    // used to write botopink's spelling into JS (`const Circle(r) = s;`, a
+    // SyntaxError) and bind nothing on wasm (`0`, exit 0). erlang and beam are
+    // 02's and 03's rows, hence two RUN LOGs rather than a snapshot.
+    const src =
+        \\type P(name: string, n: i32)
+        \\type Tag { Label(text: string, weight: i32) }
+        \\fn main() {
+        \\    val P(nm, k) = P(name: "x", n: 2);
+        \\    @print(nm);
+        \\    @print(k);
+        \\    val P(_, only) = P(name: "y", n: 5);
+        \\    @print(only);
+        \\    val Label(t, w) = Tag.Label(text: "hi", weight: 7);
+        \\    @print(t + "!");
+        \\    @print(w);
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "const { name: nm, n: k } = new P(\"x\", 2);",
+        "const { n: only } = new P(\"y\", 5);",
+        "const { text: t, weight: w } = Tag.Label(\"hi\", 7);",
+    });
+    const log =
+        \\x
+        \\2
+        \\5
+        \\hi!
+        \\7
+        \\
+    ;
+    try h.assertJsRunLog(std.testing.allocator, src, log);
+    try h.assertWasmRunLog(std.testing.allocator, src, log);
+}
+
+test "js: call ---- the result of a call is called (curried)" {
+    // `adder(3)(4)` — 01 types it through `calleeExpr` (01 handover 15), with
+    // `callee == ""`. commonJS wrote the empty callee and emitted `(4)`; wasm
+    // fell into the unresolved-call trap. A string-returning function value
+    // (`greeter("a")("b")`, or through a local bound to one) is also a string
+    // to wasm's printer — it wrote the heap address at exit 0 — and the lambda
+    // `greeter` returns takes its parameter types from the declared
+    // `-> fn(x: string) -> string`, so `p + x` concatenates. erlang and beam
+    // are 02's and 03's rows (`test/curried_call.bp`).
+    const src =
+        \\fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
+        \\fn greeter(p: string) -> fn(x: string) -> string { return { x -> p + x }; }
+        \\fn main() {
+        \\    @print(adder(3)(4));
+        \\    @print(greeter("a")("b"));
+        \\    val g = greeter("c");
+        \\    @print(g("d") + "!");
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{"__bp_print(adder(3)(4));"});
+    const log =
+        \\7
+        \\ab
+        \\cd!
+        \\
+    ;
+    try h.assertJsRunLog(std.testing.allocator, src, log);
+    try h.assertWasmRunLog(std.testing.allocator, src, log);
+}
+
+test "js: behavior literal ---- a method taking self is called on the literal" {
+    // `@Greeter(greet: { self, who -> … })` called `g.greet("bo")`: the
+    // receiver is `self`, as it is for a record's method. commonJS built an
+    // arrow `(self, who) => …`, so `self` bound `"bo"` and `who` nothing
+    // (`hi undefined`); wasm's indirect call passed one argument fewer than the
+    // lifted lambda takes (a trap), then — with the receiver passed — printed
+    // the string's address and concatenated one (`hi 256`), because the lambda's
+    // `who` had no type: it takes it from the behavior's declaration now. The
+    // erlang half (`greet/2 undefined`) is 02's.
+    const src =
+        \\behavior Greeter { fn greet(self: Self, who: string) -> string; }
+        \\fn main() {
+        \\    val g = @Greeter(greet: { self, who -> "hi " + who });
+        \\    @print(g.greet("bo"));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{"greet(who) {"});
+    try h.assertJsRunLog(std.testing.allocator, src, "hi bo\n");
+    try h.assertWasmRunLog(std.testing.allocator, src, "hi bo\n");
 }

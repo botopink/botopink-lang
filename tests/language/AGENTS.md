@@ -277,6 +277,19 @@ module exports, so its classes are re-emitted per module and the consumer's valu
 exit 0. The cell prints four values through one dispatcher: a uniquely-named variant, a repeated one
 (`Lg` is declared twice, which is why it always worked), and one of each section head.
 
+`run/unknown_by_value.bp` (1.0.10-beta `00 · 05-wasm` step 2) runs decision 8 §2, §4.1 and §5.2
+through `unknown` on every target — `test/case_unknown.bp` states the same rules, and `botopink test`
+does not reach wasm; it prints no unknown float, because commonJS stores nothing extra (§11) and
+prints `2.0` in an `unknown` slot as `2`. `run/optional_chain_method.bp` (05 step 9) is a method on
+the rest of a `?.` chain, its absent probes read through `??`; erlang and beam are listed against 02
+and 03.
+
+`modules/sibling_import_in_a_dependency` is a local-dependency cell for 1.0.10-beta `00 · 04-js`
+step 5: a `mod` sibling imported with no `from` (`pub mod leaf; import {Twig};`), once in the
+project and once inside `deps/tree/` (`api.bp`'s `import {Leaf};`). commonJS used to write the
+literal word `module` as the path — `require("./module")` / `require("../module")` — so such a
+program built and then died with `Cannot find module`. Green on all four targets.
+
 `modules/field_name_collision` is the third cell that needs two modules to say anything, and the
 defect it pins is **invisible in one file**. A record is a tagged tuple on erlang, so a field read is
 a POSITION, and the position comes from the field's NAME alone when the receiver's type was lost —
@@ -287,8 +300,8 @@ field 0), so `rest` looked unique and the read landed one slot over — erlang p
 of a neighbouring field, where commonJS printed `2`, at exit 0 with nothing said. Put the two
 declarations one slot further apart and the same guess reads past the tuple and the program dies with
 `{error, badarg}`; the cell keeps the quieter half, because a wrong answer is the harder one to
-notice. wasm is an expected failure here for a wider reason, measured with the collision removed: a
-field read off the optional binder answers `0` there whatever the names are.
+notice. wasm passes since 1.0.10-beta `00 · 05-wasm`: its optional binder takes the payload's record
+type, where it used to answer `0` for a field read off it whatever the names were.
 
 `modules/method_name_collision` is the same defect one axis over, and the fourth cell that needs two
 modules. Policy 3 puts a method in its TYPE's module on erlang, so a call on a receiver inference
@@ -300,9 +313,9 @@ Both defect shapes follow from the one guess: `Grouping`'s body over a `Query` r
 and dies with `{error, badarg}` — which is how it was measured here, on the first line — while
 `Query`'s body over a `Grouping` reads the neighbouring `key` and answers `1` where commonJS answers
 `2`. The third line is the control: the same collision declared LOCALLY has always been counted by
-`name/arity` and cleared on dissent, and it is right on every row. wasm is an expected failure for a
-wider reason, measured with the collision removed: a method call on a value an imported fn answered
-answers `0` there whatever the names are. The library measurement behind the cell is erika's
+`name/arity` and cleared on dissent, and it is right on every row. wasm passes since 1.0.10-beta
+`00 · 05-wasm`: a method on a value an imported fn answered is resolved through the receiver's record
+type, where inference records no note — it used to answer `0` whatever the names were. The library measurement behind the cell is erika's
 `examples/erika-linq`, 1 passed / 8 failed → 9 / 0 on erlang.
 
 `modules/export_name_collision` and `modules/type_name_collision` are the fifth and sixth cells that

@@ -463,10 +463,12 @@ test "js: import ---- two modules whose files share a basename" {
 // the leaf enters scope, under its alias when one is written, and the four
 // backends resolve the owner through the path, not through the bare name (the
 // two `label`s below live in different modules and both answer on commonJS,
-// erlang and beam). KNOWN-WRONG (wasm): the wasm backend links every imported
-// module statically into one flat namespace, so the second `label` is the
-// first one's function — the same single-module limit the dispatch cells
-// record; the alias itself maps back to `$name` correctly.
+// erlang and beam). KNOWN (wasm): the wasm backend links every imported
+// module statically into one flat namespace, so the second `label` WAS the
+// first one's function — `shapes/circle` twice at exit 0. Since `00 · 05-wasm`
+// a call to a name two linked modules declare traps instead (the recorded
+// RUNTIME TRAP), until the link mangles per module; the alias itself maps back
+// to `$name` correctly.
 test "js: import ---- a dotted path and a group bind their leaves across a module tree" {
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "shapes/circle", .source =
@@ -640,6 +642,40 @@ test "js: import ---- disk-lib namespace merges across the lib's modules" {
         "mlib.make(1)",
         "mlib.twice(3)",
     }, &.{});
+}
+
+test "js: import ---- a sibling module imported with no `from` requires its own path" {
+    // `pub mod leaf; import { Leaf };` — the import names no module, and the
+    // emitter used to write the literal word: `require("./module")` in a
+    // project, `require("../module")` inside a dependency, which is how
+    // a library's examples built and then died (04-js step 5). The path is the
+    // sibling's own, relative to the importing module, in both shapes; the
+    // RUN LOG is `tests/language/modules/sibling_import_in_a_dependency`'s.
+    try h.assertConsumerJs(std.testing.allocator, &.{
+        .{ .path = "leaf", .source = "pub type Leaf(v: i32)\n" },
+        .{ .path = "", .source =
+        \\pub mod leaf;
+        \\import { Leaf };
+        \\fn main() {
+        \\    @print(Leaf(v: 7).v);
+        \\}
+        },
+    }, &.{"const { Leaf } = require(\"./leaf.js\");"}, &.{"./module"});
+    try h.assertModuleJs(std.testing.allocator, &.{
+        .{ .path = "tree/leaf", .source = "pub type Leaf(v: i32)\n" },
+        .{ .path = "tree/api", .source =
+        \\import { Leaf };
+        \\pub fn seven() -> i32 {
+        \\    return Leaf(v: 7).v;
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import { seven } from "tree/api";
+        \\fn main() {
+        \\    @print(seven());
+        \\}
+        },
+    }, "tree/api", &.{"const { Leaf } = require(\"../tree/leaf.js\");"});
 }
 
 test "js: pipeline ---- simple chain" {

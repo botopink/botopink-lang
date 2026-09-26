@@ -42,10 +42,9 @@ const port = PORT;
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { PORT, HOST } from "config";
+import { PORT, HOST } from "./config";
 
 
-import { PORT, HOST } from "config";
 
 
 

@@ -330,7 +330,11 @@ pub fn writePattern(w: *Writer, pat: Ast.Pattern, indent: usize) Error!void {
             try w.writeAll("{ ");
             for (o.props, 0..) |p, i| {
                 if (i > 0) try w.writeAll(", ");
-                if (p.bind) |b| {
+                if (p.nested) |n| {
+                    try w.writeAll(p.key);
+                    try w.writeAll(": ");
+                    try writePattern(w, n.*, indent);
+                } else if (p.bind) |b| {
                     try w.writeAll(p.key);
                     try w.writeAll(": ");
                     try w.writeAll(b);
@@ -362,7 +366,6 @@ pub fn writePattern(w: *Writer, pat: Ast.Pattern, indent: usize) Error!void {
             }
             try w.writeAll(if (a.spaced) " ]" else "]");
         },
-        .match => |m| try writeMatchPattern(w, m, indent),
     }
 }
 
@@ -370,48 +373,6 @@ fn writeRest(w: *Writer, r: Ast.Rest) Error!void {
     try w.writeAll("...");
     switch (r) {
         .binding => |n| try w.writeAll(ident(n)),
-    }
-}
-
-fn writeMatchPattern(w: *Writer, m: Ast.MatchPattern, indent: usize) Error!void {
-    switch (m) {
-        .variant_binding => |v| {
-            try w.writeAll(v.name);
-            try w.writeByte(' ');
-            try w.writeAll(ident(v.binding));
-        },
-        .variant_fields => |v| {
-            try w.writeAll(v.name);
-            try w.writeByte('(');
-            for (v.fields, 0..) |f, i| {
-                if (i > 0) try w.writeAll(", ");
-                try w.writeAll(ident(f));
-            }
-            try w.writeByte(')');
-        },
-        .variant_patterns => |v| {
-            try w.writeAll(v.name);
-            try w.writeByte('(');
-            for (v.args, 0..) |a, i| {
-                if (i > 0) try w.writeAll(", ");
-                try writePattern(w, a, indent);
-            }
-            try w.writeByte(')');
-        },
-        .number => |n| try w.writeAll(n),
-        .string => |s| {
-            try w.writeByte('"');
-            try w.writeAll(s);
-            try w.writeByte('"');
-        },
-        .alt => |pats| for (pats, 0..) |p, i| {
-            if (i > 0) try w.writeAll(" | ");
-            try writePattern(w, p, indent);
-        },
-        .multi => |pats| for (pats, 0..) |p, i| {
-            if (i > 0) try w.writeAll(", ");
-            try writePattern(w, p, indent);
-        },
     }
 }
 
@@ -868,10 +829,14 @@ test "js_emitter: a module separates declarations with a blank line" {
     , aw.written());
 }
 
-test "js_emitter: the bridges render the shapes the model would otherwise forbid" {
-    // A botopink match pattern used as a binding target.
-    try expectStmt("const Circle(r) = p;", .{ .decl = .{
-        .pattern = .{ .match = .{ .variant_fields = .{ .name = "Circle", .fields = &.{"r"} } } },
+test "js_emitter: a destructuring binding nests an object or an array pattern under a key" {
+    // `val Pair(Circle(r), n) = p;` — no botopink spelling reaches the text.
+    const inner: Ast.Pattern = .{ .object = .{ .props = &.{.{ .key = "r" }} } };
+    try expectStmt("const { a: { r }, b: n } = p;", .{ .decl = .{
+        .pattern = .{ .object = .{ .props = &.{
+            .{ .key = "a", .nested = &inner },
+            .{ .key = "b", .bind = "n" },
+        } } },
         .value = Ast.Expr.id("p"),
     } });
 }

@@ -42,8 +42,10 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw } },
         .print_opt_f32 => &.{ .{ .func = print_opt_f32_raw }, .{ .func = print_opt_f32 } },
         .print_opt_tagged => &.{ .{ .func = print_opt_tagged_raw }, .{ .func = print_opt_tagged } },
+        .unknown => &.{ .{ .func = unknown_kind }, .{ .func = unknown_int_in }, .{ .func = unknown_as_i32 }, .{ .func = unknown_as_f64 }, .{ .func = unknown_eq } },
+        .print_unknown => &.{ .{ .func = print_unknown_raw }, .{ .func = print_unknown } },
         .print_opt => &.{
-            .{ .func = print_undefined },    .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
+            .{ .func = print_null },         .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
             .{ .func = print_opt_str },
         },
@@ -84,20 +86,27 @@ fn putPair(comptime a: comptime_int, comptime b: comptime_int) [8]Instr {
 /// descriptor needs no length for it. A record's fields start at the pointer;
 /// a variant's start one slot in, because slot 0 holds the variant ordinal the
 /// `case` arms test.
-const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d", "p", "k", "i", "n", "b" }), &.{
-    get("v"),                                          c32(4),                                                   op("sub"), load(0),                                                  set("d"),
-    get("d"),                                          c32(1),                                                   op("add"), set("p"),
+const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d", "p", "k", "i", "n", "b", "s" }), &.{
+    // Decision 8 §7's `Display` half: a type whose `display(self) -> string`
+    // the module declares answers its own text. `$__display_of` is written by
+    // `wat.zig` per module (a descriptor compare per such type, `0` for none).
+    get("v"),                                                                               call("__display_of"),                                     set("s"),              get("s"),
+    when(&.{ get("s"), c32(4), op("add"), get("s"), load(0), call("__write_bytes"), ret }), get("v"),                                                 c32(4),                op("sub"),
+    load(0),                                                                                set("d"),                                                 get("d"),              c32(1),
+    op("add"),                                                                              set("p"),
     // 'V' (86) puts the fields one slot in; 'R' leaves them at the pointer.
-                                                    get("v"),
-    set("b"),                                          get("d"),                                                 load8(0),  c32('V'),                                                 op("eq"),
+                                                    get("v"),              set("b"),
+    get("d"),                                                                               load8(0),                                                 c32('V'),              op("eq"),
     when(&.{ get("v"), c32(4), op("add"), set("b") }),
     // The declaration's name.
-    get("p"),                                                 load8(0),  set("n"),                                                 get("p"),
-    c32(1),                                            op("add"),                                                set("p"),  get("p"),                                                 get("n"),
-    call("__write_bytes"),                             get("p"),                                                 get("n"),  op("add"),                                                set("p"),
+                                         get("p"),                                                 load8(0),              set("n"),
+    get("p"),                                                                               c32(1),                                                   op("add"),             set("p"),
+    get("p"),                                                                               get("n"),                                                 call("__write_bytes"), get("p"),
+    get("n"),                                                                               op("add"),                                                set("p"),
     // The field count, then one `label: value` per field.
-    get("p"),                                          load8(0),                                                 set("k"),  get("p"),                                                 c32(1),
-    op("add"),                                         set("p"),                                                 get("k"),  when(&(putByte('(') ++ [_]Instr{call("__write_bytes")})),
+                 get("p"),
+    load8(0),                                                                               set("k"),                                                 get("p"),              c32(1),
+    op("add"),                                                                              set("p"),                                                 get("k"),              when(&(putByte('(') ++ [_]Instr{call("__write_bytes")})),
     loop(&([_]Instr{
         get("i"), get("k"),                                             op("ge_u"), brk,
         get("i"), when(&(putSep() ++ [_]Instr{call("__write_bytes")})), get("p"),   load8(0),
@@ -112,10 +121,199 @@ const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d",
         set("p"),  get("i"),  c32(1),
         op("add"), set("i"),  again,
     })),
-    get("k"),                                          when(&(putByte(')') ++ [_]Instr{call("__write_bytes")})),
+    get("k"),                                                                               when(&(putByte(')') ++ [_]Instr{call("__write_bytes")})),
 });
 
 const print_tagged = func("__print_tagged", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_tagged_raw"), call("__print_nl") });
+
+/// `s.charCodeAt(i)`: the byte at `i`, or `-1` outside `0..len` — the answer
+/// the Node and Erlang templates give out of range. One unsigned compare
+/// catches a negative `i` too. Bytes, not code points: an ASCII string answers
+/// as the other backends do.
+const str_char_code = func("__str_char_code", &.{ "s", "i" }, .i32, &.{}, &.{
+    get("i"), get("s"), load(0),   op("ge_u"), when(&.{ c32(-1), ret }),
+    get("s"), get("i"), op("add"), load8(4),
+});
+
+/// `s.lastIndexOf(sub)`: the last byte offset of `sub`, `-1` when absent, and
+/// the length for an empty `sub` (JavaScript's answer).
+const str_last_index_of = func("__str_last_index_of", &.{ "s", "sub" }, .i32, i32s(&.{ "n", "m", "i" }), &.{
+    get("s"),   load(0),  set("n"),
+    get("sub"), load(0),  set("m"),
+    get("n"),   get("m"), op("sub"),
+    set("i"),
+    loop(&.{
+        get("i"),  c32(0),           op("lt_s"),                brk,
+        get("s"),  c32(4),           op("add"),                 get("i"),
+        op("add"), get("sub"),       c32(4),                    op("add"),
+        get("m"),  call("__mem_eq"), when(&.{ get("i"), ret }), get("i"),
+        c32(1),    op("sub"),        set("i"),                  again,
+    }),
+    c32(-1),
+});
+
+/// `s.padStart(width, pad)` (`start = 1`) / `padEnd` (`start = 0`): `s` when it
+/// is already `width` long or the pad is empty, else a fresh string of `width`
+/// bytes with the pad repeated into the gap (JavaScript's cycling).
+const str_pad = func("__str_pad", &.{ "s", "width", "pad", "start" }, .i32, i32s(&.{ "n", "pl", "k", "p", "i", "at" }), &.{
+    get("s"),                  load(0),         set("n"),
+    get("pad"),                load(0),         set("pl"),
+    get("width"),              get("n"),        op("le_s"),
+    get("pl"),                 op("eqz"),       op("or"),
+    when(&.{ get("s"), ret }), get("width"),    c32(4),
+    op("add"),                 call("__alloc"), set("p"),
+    get("p"),                  get("width"),    store(0),
+    get("width"),              get("n"),        op("sub"),
+    set("k"),
+    // the text lands after the gap on `padStart`, at the front on `padEnd`
+                     get("p"),        c32(4),
+    op("add"),                 get("start"),    get("k"),
+    op("mul"),                 op("add"),       get("s"),
+    c32(4),                    op("add"),       get("n"),
+    copy,
+    // the gap starts at 0 on `padStart`, after the text on `padEnd`
+                         get("start"),    op("eqz"),
+    get("n"),                  op("mul"),       set("at"),
+    loop(&.{
+        get("i"),    get("k"),   op("ge_u"), brk,
+        get("p"),    get("at"),  op("add"),  get("i"),
+        op("add"),   get("pad"), get("i"),   get("pl"),
+        op("rem_u"), op("add"),  load8(4),   store8(4),
+        get("i"),    c32(1),     op("add"),  set("i"),
+        again,
+    }),
+    get("p"),
+});
+
+/// `s.replace(pat, with)` (`all = 0`: the first occurrence) / `replaceAll`
+/// (`all = 1`). An empty `pat` matches before every byte and at the end, as
+/// JavaScript's does: `replace` puts `with` in front, `replaceAll` around
+/// every byte.
+const str_replace = func("__str_replace", &.{ "s", "pat", "with", "all" }, .i32, i32s(&.{ "m", "n", "out", "rest", "idx", "i" }), &.{
+    get("pat"), load(0),         set("m"),
+    get("s"),   load(0),         set("n"),
+    get("m"),   op("eqz"),
+    when(&.{
+        get("with"),                                                        set("out"),
+        get("all"),
+        when(&.{loop(&.{
+            get("i"),   get("n"),   op("ge_u"),          brk,
+            get("out"), get("s"),   get("i"),            get("i"),
+            c32(1),     op("add"),  call("__str_slice"), call("__str_concat"),
+            set("out"), get("out"), get("with"),         call("__str_concat"),
+            set("out"), get("i"),   c32(1),              op("add"),
+            set("i"),   again,
+        })}),
+        get("all"),                                                         op("eqz"),
+        when(&.{ get("out"), get("s"), call("__str_concat"), set("out") }), get("out"),
+        ret,
+    }),
+    c32(4),     call("__alloc"), set("out"),
+    get("out"), c32(0),          store(0),
+    get("s"),   set("rest"),
+    loop(&.{
+        get("rest"),         get("pat"),           call("__str_index_of"), set("idx"),
+        get("idx"),          c32(-1),              op("eq"),               brk,
+        get("out"),          get("rest"),          c32(0),                 get("idx"),
+        call("__str_slice"), call("__str_concat"), set("out"),             get("out"),
+        get("with"),         call("__str_concat"), set("out"),             get("rest"),
+        get("idx"),          get("m"),             op("add"),              get("rest"),
+        load(0),             call("__str_slice"),  set("rest"),            get("all"),
+        op("eqz"),           brk,                  again,
+    }),
+    get("out"), get("rest"),     call("__str_concat"),
+});
+
+// ── decision 8 §11's box: a value in an `unknown` or union slot ──────────────
+//
+// A value entering such a slot carries a header behind its pointer, as a value
+// a declaration built does (decision 22): a record or a variant already has one
+// and goes in as it is; a primitive is boxed — `[descriptor][payload]`, the
+// value being the payload's address — with the descriptor `'P' <n> name`
+// (`i32`, `f64`, `bool`, `string`, `array`, `tuple`). The readers below ask the
+// header, never the slot's static type, which is what `unknown` does not have.
+
+/// What an `unknown` value holds: `0` for absence, the descriptor's tag for a
+/// value that carries its own declaration (`R` / `V`), or the first letter of a
+/// boxed primitive's name (`i`, `f`, `b`, `s`, `a`, `t`).
+const unknown_kind = func("__unknown_kind", &.{"v"}, .i32, i32s(&.{"d"}), &.{
+    get("v"), c32(256),                            op("lt_u"), when(&.{ c32(0), ret }),
+    get("v"), c32(4),                              op("sub"),  load(0),
+    set("d"), get("d"),                            load8(0),   c32('P'),
+    op("ne"), when(&.{ get("d"), load8(0), ret }), get("d"),   load8(2),
+});
+
+/// `v is <an integer type>` by value (decision 8 §4.1): a boxed `i32` inside
+/// `lo..=hi`, or a boxed `f64` that is a whole number inside it.
+const unknown_int_in = typedFunc("__unknown_int_in", &.{ .{ .name = "v", .ty = .i32 }, .{ .name = "lo", .ty = .i32 }, .{ .name = "hi", .ty = .i32 } }, .i32, &.{
+    .{ .name = "k", .ty = .i32 }, .{ .name = "x", .ty = .f64 },
+}, &.{
+    get("v"),                                                                                                       call("__unknown_kind"),              set("k"),
+    get("k"),                                                                                                       c32('i'),                            op("eq"),
+    when(&.{ get("v"), load(0), get("lo"), op("ge_s"), get("v"), load(0), get("hi"), op("le_s"), op("and"), ret }), get("k"),                            c32('f'),
+    op("ne"),                                                                                                       when(&.{ c32(0), ret }),             get("v"),
+    .{ .load = .{ .ty = .f64 } },                                                                                   set("x"),                            getF("x"),
+    opF("floor"),                                                                                                   getF("x"),                           opF("ne"),
+    when(&.{ c32(0), ret }),                                                                                        getF("x"),                           get("lo"),
+    .{ .convert = "f64.convert_i32_s" },                                                                            opF("ge"),                           getF("x"),
+    get("hi"),                                                                                                      .{ .convert = "f64.convert_i32_s" }, opF("le"),
+    op("and"),
+});
+
+/// The payload of a boxed number read as an `i32` (a whole `f64` converted).
+const unknown_as_i32 = func("__unknown_as_i32", &.{"v"}, .i32, &.{}, &.{
+    get("v"),                                                                                   call("__unknown_kind"), c32('f'), op("eq"),
+    when(&.{ get("v"), .{ .load = .{ .ty = .f64 } }, .{ .convert = "i32.trunc_f64_s" }, ret }), get("v"),               load(0),
+});
+
+/// The payload of a boxed number read as an `f64`.
+const unknown_as_f64 = typedFunc("__unknown_as_f64", &.{.{ .name = "v", .ty = .i32 }}, .f64, &.{}, &.{
+    get("v"),                                                                call("__unknown_kind"), c32('i'),                     op("eq"),
+    when(&.{ get("v"), load(0), .{ .convert = "f64.convert_i32_s" }, ret }), get("v"),               .{ .load = .{ .ty = .f64 } },
+});
+
+/// `a == b` with an `unknown` operand (decision 8 §2.3): two numbers compare by
+/// value (`2.0 == 2`), two strings by content, two bools by value, anything
+/// else by identity.
+const unknown_eq = func("__unknown_eq", &.{ "a", "b" }, .i32, i32s(&.{ "ka", "kb" }), &.{
+    get("a"),                                                                                           call("__unknown_kind"),                                          set("ka"),
+    get("b"),                                                                                           call("__unknown_kind"),                                          set("kb"),
+    get("ka"),                                                                                          c32('i'),                                                        op("eq"),
+    get("ka"),                                                                                          c32('f'),                                                        op("eq"),
+    op("or"),                                                                                           get("kb"),                                                       c32('i'),
+    op("eq"),                                                                                           get("kb"),                                                       c32('f'),
+    op("eq"),                                                                                           op("or"),                                                        op("and"),
+    when(&.{ get("a"), call("__unknown_as_f64"), get("b"), call("__unknown_as_f64"), opF("eq"), ret }), get("ka"),                                                       c32('s'),
+    op("eq"),                                                                                           get("kb"),                                                       c32('s'),
+    op("eq"),                                                                                           op("and"),                                                       when(&.{ get("a"), load(0), get("b"), load(0), call("__str_eq"), ret }),
+    get("ka"),                                                                                          c32('b'),                                                        op("eq"),
+    get("kb"),                                                                                          c32('b'),                                                        op("eq"),
+    op("and"),                                                                                          when(&.{ get("a"), load(0), get("b"), load(0), op("eq"), ret }), get("a"),
+    get("b"),                                                                                           op("eq"),
+});
+
+/// An `unknown` value printed by what it holds (decision 8 §7). A boxed array
+/// or tuple has no printed form here — its element shapes are not in the box —
+/// and traps rather than printing an address.
+const print_unknown_raw = func("__print_unknown_raw", &.{"v"}, null, i32s(&.{"k"}), &.{
+    get("v"),                                                    op("eqz"),                                                                        when(&.{ call("__print_null"), ret }),
+    get("v"),                                                    call("__unknown_kind"),                                                           set("k"),
+    get("k"),                                                    c32('i'),                                                                         op("eq"),
+    when(&.{ get("v"), load(0), call("__print_i32_raw"), ret }), get("k"),                                                                         c32('f'),
+    op("eq"),                                                    when(&.{ get("v"), .{ .load = .{ .ty = .f64 } }, call("__print_f64_raw"), ret }), get("k"),
+    c32('b'),                                                    op("eq"),                                                                         when(&.{ get("v"), load(0), call("__print_bool_raw"), ret }),
+    get("k"),                                                    c32('s'),                                                                         op("eq"),
+    when(&.{ get("v"), load(0), call("__print_str_raw"), ret }), get("k"),                                                                         c32('R'),
+    op("eq"),                                                    get("k"),                                                                         c32('V'),
+    op("eq"),                                                    op("or"),                                                                         when(&.{ get("v"), call("__print_tagged_raw"), ret }),
+    .@"unreachable",
+});
+
+const print_unknown = func("__print_unknown", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_unknown_raw"), call("__print_nl") });
+
+/// The `Display` hook's default: no value answers its own text. `wat.zig`
+/// replaces it with the module's dispatch when some type declares `display`.
+const display_of = func("__display_of", &.{"v"}, .i32, &.{}, &.{c32(0)});
 
 /// `fd_write`, the one host function the print helpers need.
 pub const fd_write_import = ast.Import{
@@ -1445,29 +1643,28 @@ const arr_at_box = func("__arr_at_box", &.{ "xs", "i" }, .i32, &.{}, &([_]Instr{
     when(&.{ c32(0), ret }),
 } ++ slot("xs", "i") ++ [_]Instr{ load(0), call("__box_i32") }));
 
-/// `undefined` — what none prints as on the other targets. Written through
-/// scratch `176..185`.
-const print_undefined = func("__print_undefined", &.{}, null, &.{}, &.{
-    c32(176), .{ .@"const" = .{ .ty = .i64, .text = "7308895133777555061" } }, .{ .store = .{ .ty = .i64 } },
-    c32(184), c32(100),                                                        store8(0),
-    c32(176), c32(9),                                                          call("__write_bytes"),
+/// `null` — decision 47's one spelling of absent (1.0.5-beta), what an empty
+/// `?T` prints as on every target. Written through scratch `176..180`.
+const print_null = func("__print_null", &.{}, null, &.{}, &.{
+    c32(176), c32(1819047278), .{ .store = .{ .ty = .i32 } },
+    c32(176), c32(4),          call("__write_bytes"),
 });
 
 const print_opt_i32_raw = func("__print_opt_i32_raw", &.{"p"}, null, &.{}, &.{
-    get("p"),                                                                                  op("eqz"),
-    whenElse(&.{call("__print_undefined")}, &.{ get("p"), load(0), call("__print_i32_raw") }),
+    get("p"),                                                                             op("eqz"),
+    whenElse(&.{call("__print_null")}, &.{ get("p"), load(0), call("__print_i32_raw") }),
 });
 const print_opt_i32 = func("__print_opt_i32", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_i32_raw"), call("__print_nl") });
 
 const print_opt_bool_raw = func("__print_opt_bool_raw", &.{"p"}, null, &.{}, &.{
-    get("p"),                                                                                   op("eqz"),
-    whenElse(&.{call("__print_undefined")}, &.{ get("p"), load(0), call("__print_bool_raw") }),
+    get("p"),                                                                              op("eqz"),
+    whenElse(&.{call("__print_null")}, &.{ get("p"), load(0), call("__print_bool_raw") }),
 });
 const print_opt_bool = func("__print_opt_bool", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_bool_raw"), call("__print_nl") });
 
 const print_opt_str_raw = func("__print_opt_str_raw", &.{"s"}, null, &.{}, &.{
-    get("s"),                                                                         op("eqz"),
-    whenElse(&.{call("__print_undefined")}, &.{ get("s"), call("__print_str_raw") }),
+    get("s"),                                                                    op("eqz"),
+    whenElse(&.{call("__print_null")}, &.{ get("s"), call("__print_str_raw") }),
 });
 const print_opt_str = func("__print_opt_str", &.{"s"}, null, &.{}, &.{ get("s"), call("__print_opt_str_raw"), call("__print_nl") });
 
@@ -1475,8 +1672,8 @@ const print_opt_str = func("__print_opt_str", &.{"s"}, null, &.{}, &.{ get("s"),
 /// Reading it with `$__print_opt_i32` printed the float's **bits** (`1069547520`
 /// for `1.5`) with exit 0.
 const print_opt_f32_raw = func("__print_opt_f32_raw", &.{"p"}, null, &.{}, &.{
-    get("p"),                                                                                                                                          op("eqz"),
-    whenElse(&.{call("__print_undefined")}, &.{ get("p"), .{ .load = .{ .ty = .f32 } }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw") }),
+    get("p"),                                                                                                                                     op("eqz"),
+    whenElse(&.{call("__print_null")}, &.{ get("p"), .{ .load = .{ .ty = .f32 } }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw") }),
 });
 const print_opt_f32 = func("__print_opt_f32", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_f32_raw"), call("__print_nl") });
 
@@ -1485,8 +1682,8 @@ const print_opt_f32 = func("__print_opt_f32", &.{"p"}, null, &.{}, &.{ get("p"),
 /// bytes behind it. Without the guard the tagged printer read that header out
 /// of the scratch area below address 0.
 const print_opt_tagged_raw = func("__print_opt_tagged_raw", &.{"v"}, null, &.{}, &.{
-    get("v"),                                                                            op("eqz"),
-    whenElse(&.{call("__print_undefined")}, &.{ get("v"), call("__print_tagged_raw") }),
+    get("v"),                                                                       op("eqz"),
+    whenElse(&.{call("__print_null")}, &.{ get("v"), call("__print_tagged_raw") }),
 });
 const print_opt_tagged = func("__print_opt_tagged", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_opt_tagged_raw"), call("__print_nl") });
 
