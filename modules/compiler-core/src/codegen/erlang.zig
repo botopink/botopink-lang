@@ -1138,9 +1138,16 @@ const show_helper_form: Ast.Form = .{
                 } } }}),
                 .layout = .inline_,
             },
+            // Absent (`undefined`, botopink's `null`) is written `null` —
+            // decision 47's one spelling; `~p` wrote the atom's name.
+            .{
+                .patterns = &.{ Ast.Expr.a("undefined"), Ast.Expr.v("_") },
+                .body = Ast.Body.of(&.{.{ .expr = .{ .string = "null" } }}),
+                .layout = .inline_,
+            },
             // A unit variant is a bare atom (options § 4, "qualify the tag"), so the
-            // same dispatch reads it; `true`, `false` and `undefined` are not values
-            // any declaration builds and keep the `~p` they had.
+            // same dispatch reads it; `true` and `false` are not values any
+            // declaration builds and keep the `~p` they had.
             .{
                 .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
                 .guards = &.{

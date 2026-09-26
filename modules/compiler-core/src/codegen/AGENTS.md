@@ -1366,8 +1366,10 @@ codegen/
   through `'__bp_render'/1`: `{record, "Point", [{"x", 1}, …]}` →
   `Point(x: 1, y: 2)`, `{variant, "Shape.Dot", []}` → `Shape.Dot`, and
   `{text, …}` → a `Display` implementation's own string, nested containers
-  included. Everything else — a Result `{ok, V}`, a host tuple, a plain atom,
-  `true`/`false`/`undefined` — keeps the `~p` it had. Numeric formatting is
+  included. **Absent — the atom `undefined` — prints `null`** (decision 47's
+  one spelling, a `'__bp_show'(undefined, _)` clause; it printed the atom's
+  name). Everything else — a Result `{ok, V}`, a host tuple, a plain atom,
+  `true`/`false` — keeps the `~p` it had. Numeric formatting is
   `~p`: `1.0` prints `1.0`, decision 8 §7's text on every backend.
 - **Every `type` has a module, and it answers about its own values** (half 3):
   `recordIdentityForms` / `enumIdentityForms` put `'__bp_format'/1` — and
@@ -1546,8 +1548,9 @@ codegen/
   (`{record, "Point", [{"x", 1}, …]}` → `Point(x: 1, y: 2)`,
   `{variant, "Shape.Dot", []}` → `Shape.Dot`, `{text, …}` → a `Display`
   implementation's own string) with `'-bp_render_pair-'/1` rendering one
-  `label: value` through `'__bp_show'/2`. Everything else is `~p`: an integer, a
-  float (which keeps its `.0`), `true`/`false`/`undefined`, a `@Result`
+  `label: value` through `'__bp_show'/2`. Absent (`undefined`) is `null`
+  (decision 47; the `absent` label). Everything else is `~p`: an integer, a
+  float (which keeps its `.0`), `true`/`false`, a `@Result`
   `{ok, V}`, a host tuple, and any atom no loadable module formats.
   It replaced the per-value format-verb machinery (`'__bp_print_fmt'/1` +
   `'__bp_print_sep'/1`, `~ts` for a binary and `~p` for everything else), which

@@ -396,14 +396,14 @@ test "erlang: index ---- a list, a string and a tuple answer by position" {
     , "10\n30\nb\n1\n", &.{ "lists:nth(__I + 1, __L)", "element(1, T)" });
 }
 
-test "erlang: index ---- out of range answers undefined, not an error" {
-    // `xs[5]` is `xs.at(5)`, whose type is `?i32`; decision 47 spells absent
-    // `null` and erlang prints an empty optional as the atom `undefined`, which
-    // is C-18's row rather than this one's. What this cell pins is that the
-    // index reaches `Array.at` at all and does not abort.
+test "erlang: index ---- out of range answers null, not an error" {
+    // `xs[5]` is `xs.at(5)`, whose type is `?i32`: the index reaches
+    // `Array.at` and does not abort, and the empty optional prints as decision
+    // 47's `null` (the print prelude's `'__bp_show'(undefined, _)` clause; it
+    // printed the atom `undefined` before 00 · 02-erlang).
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() { val xs = [10, 20]; @print(xs[5]); }
-    , "undefined\n", &.{});
+    , "null\n", &.{});
 }
 
 test "erlang: index ---- a range second argument is a slice, open end included" {

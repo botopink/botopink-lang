@@ -7686,6 +7686,7 @@ const Emitter = struct {
         const not_tuple = self.allocLabel();
         const tagged = self.allocLabel();
         const generic = self.allocLabel();
+        const absent = self.allocLabel();
         try beamEmitter.writeBlankLine(w);
         try beamEmitter.writeFunctionHeader(w, show_name, 2, show_l.entry);
         try beamEmitter.writeLabel(w, show_l.func_info);
@@ -7763,7 +7764,7 @@ const Emitter = struct {
         try beamEmitter.writeTest(w, .is_atom, generic, &.{Op.xr(0)});
         try beamEmitter.writeTest(w, .is_ne_exact, generic, &.{ Op.xr(0), Op.atom("true") });
         try beamEmitter.writeTest(w, .is_ne_exact, generic, &.{ Op.xr(0), Op.atom("false") });
-        try beamEmitter.writeTest(w, .is_ne_exact, generic, &.{ Op.xr(0), Op.atom("undefined") });
+        try beamEmitter.writeTest(w, .is_ne_exact, absent, &.{ Op.xr(0), Op.atom("undefined") });
 
         try beamEmitter.writeLabel(w, tagged);
         try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
@@ -7775,6 +7776,13 @@ const Emitter = struct {
         try beamEmitter.writePutList(w, Op.xr(0), Op.nil, Dst.xr(1));
         try beamEmitter.writeMoveOp(w, Op.str("~p"), Dst.xr(0));
         try beamEmitter.writeCall(w, .last, 2, .{ .ext = .{ .module = "io_lib", .function = "format" } }, 2);
+
+        // Absent (`undefined`, botopink's `null`) is written `null` —
+        // decision 47's one spelling; `~p` wrote the atom's name.
+        try beamEmitter.writeLabel(w, absent);
+        try beamEmitter.writeMoveOp(w, Op.str("null"), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
+        try beamEmitter.writeReturn(w);
 
         try self.emitTaggedHelpers(w, tagged_name, tagged_l, render_name, render_l, pair_name, pair_l, show_l);
 
