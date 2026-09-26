@@ -461,7 +461,8 @@ const named_branch: ast.Stmt = .{ .if_ = .{
 /// `function __bp_show(v, s, top, a) { … }` — see `Helper.show`. It answers the
 /// `console.log` format of `v` and pushes the values its `%s` / `%O` verbs
 /// consume onto `a`: a string through `%s` (quoted when nested), an array or a
-/// tuple as its brackets around its elements' formats, anything else through
+/// tuple as its brackets around its elements' formats, JavaScript's `undefined`
+/// as `null` (decision 47 — absent has one spelling), anything else through
 /// `%O` — `util.inspect`, the text `console.log` gives it — so the helper needs
 /// no `require`.
 const show: ast.Stmt = .{ .function = .{
@@ -485,6 +486,13 @@ const show: ast.Stmt = .{ .function = .{
             }, .layout = .indented, .indent = 1 } },
         } },
         named_branch,
+        // Decision 47: absent has ONE spelling, `null`. JavaScript has two
+        // nones, and `?.` / an `if` with no `else` answer the other one —
+        // printed through `%O` it read `undefined`.
+        .{ .if_ = .{
+            .cond = .{ .binary = .{ .op = "===", .lhs = &v, .rhs = &.{ .name = "undefined" } } },
+            .then = &.{ .return_ = .{ .quoted = "null" } },
+        } },
         .{ .expr = callOn(&args_a, "push", &.{v}) },
         .{ .return_ = .{ .quoted = "%O" } },
     } },
