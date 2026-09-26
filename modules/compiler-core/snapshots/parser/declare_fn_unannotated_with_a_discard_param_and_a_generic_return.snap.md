@@ -35,7 +35,7 @@
                 "named": "T"
               },
               {
-                "named": "any"
+                "named": "unknown"
               }
             ],
             "is_builtin": false

@@ -1890,12 +1890,29 @@ fn inferAssociatedFnCall(
     }
     const fp = inst.func.params;
     const total = typedArgs.len + typedTrailing.len;
-    if (total != fp.len) {
-        env.lastError = TypeError.arityMismatch(callee, fp.len, total).withLoc(loc);
-        return error.TypeError;
-    }
-    for (typedArgs, 0..) |arg, i| {
-        try unifyAt(env, fp[i], arg.value.getType(), arg.value.getLoc());
+    // C-04 — the associated fn's declared defaults fill a short call, and a
+    // label names its parameter, as on every other call path: the site holds
+    // only the instantiated `T.func`, so the parameters as written come from
+    // the behavior's declaration.
+    const fill: ?envMod.DefaultFill = fillBlk: {
+        if (typedTrailing.len != 0) break :fillBlk null;
+        const declared = associatedFnParams(env, recvName, callee) orelse break :fillBlk null;
+        if (declared.len != fp.len or typedArgs.len > declared.len) break :fillBlk null;
+        if (typedArgs.len < declared.len) break :fillBlk try recordDefaultFill(env, loc, declared, typedArgs);
+        const plan = try planLabelledCall(env, callee, declared, typedArgs, loc) orelse break :fillBlk null;
+        try env.defaultInjections.put(loc, plan);
+        break :fillBlk plan;
+    };
+    if (fill) |plan| {
+        try unifyFilledArgs(env, plan, fp, typedArgs);
+    } else {
+        if (total != fp.len) {
+            env.lastError = TypeError.arityMismatch(callee, fp.len, total).withLoc(loc);
+            return error.TypeError;
+        }
+        for (typedArgs, 0..) |arg, i| {
+            try unifyAt(env, fp[i], arg.value.getType(), arg.value.getLoc());
+        }
     }
     // Trailing lambdas fill the remaining params; unify a fresh fn shape.
     for (typedTrailing, 0..) |tl, i| {
@@ -1910,6 +1927,18 @@ fn inferAssociatedFnCall(
         .args = typedArgs,
         .trailing = typedTrailing,
     } } } };
+}
+
+/// The parameters as written of the behavior `ifaceName`'s associated fn
+/// `callee` (a member with no `self`), or null.
+fn associatedFnParams(env: *Env, ifaceName: []const u8, callee: []const u8) ?[]const ast.Param {
+    const decl = env.assocInterfaceDecls.get(ifaceName) orelse return null;
+    for (decl.methods) |m| {
+        if (!std.mem.eql(u8, m.name, callee)) continue;
+        if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
+        return m.params;
+    }
+    return null;
 }
 
 fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
@@ -3463,13 +3492,6 @@ fn checkDecoratorAnnotations(env: *Env, anns: []const ast.Annotation, owner: []c
 /// (honoring trailing defaults) + a per-argument lexical kind check (string /
 /// numeric / bool / enum-member), mirroring `validateExternalAnnotation`.
 fn checkDecoratorArgs(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, owner: []const u8) InferError!void {
-    const fail = struct {
-        fn fail(e_: *Env, msg: []const u8, hint: []const u8) InferError {
-            e_.lastError = TypeError.custom(msg, hint);
-            return error.TypeError;
-        }
-    }.fail;
-
     // Arity: required params ≤ args ≤ total params. A parameter is optional
     // only when its default is closed (`comptimeMod.isClosedDefault`): the
     // decorator body runs in its own module, where a default naming a binding
@@ -3497,7 +3519,8 @@ fn checkDecoratorArgs(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, ow
         const want = paramTypeName(sig.params[i].typeRef) orelse continue; // non-simple type → lenient
         if (!argMatchesType(arg, want)) {
             const msg = try std.fmt.allocPrint(env.arena, "`#[{s}]` argument {d} must be {s}", .{ a.name, i + 1, want });
-            return fail(env, msg, "Decorator arguments are type-checked against the decorator's signature.");
+            // C-21 — located at the annotation, as every decorator refusal is.
+            return decoratorError(env, a, msg, "Decorator arguments are type-checked against the decorator's signature.");
         }
     }
 }
@@ -6154,7 +6177,7 @@ fn inferBuiltinCallReturnType(
         env.lastError = TypeError.custom(
             "comptime error",
             "@comptimeError called without a message.",
-        );
+        ).withLoc(loc);
         return error.TypeError;
     }
     // `@panic` / `@todo` / `@trap` never return: each is declared `-> noreturn`
@@ -7069,6 +7092,19 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             // (`comptime.zig`, `withSourceLocationDecl`).
             if (std.mem.eql(u8, n, source_location_type_name)) env.usesSourceLocation = true;
             if (std.mem.eql(u8, n, yield_step_type_name)) env.usesYieldStep = true;
+            // 1.0.5 decision 31 — `any` is deleted. It was a closed type no
+            // botopink value inhabited (`val a: any = 1` read "expected any,
+            // got i32"); what a host parameter or handle means by it is
+            // `unknown`, which holds any value and is tested before use.
+            if (std.mem.eql(u8, n, "any") and !genericMap.contains(n) and env.lookupTypeDef(n) == null and env.typeAliases.get(n) == null) {
+                var err = TypeError.custom(
+                    diagnostics.any_type_removed ++ ": there is no type `any`",
+                    "`any` was removed (1.0.5 decision 31). A value of any type is `unknown`: it takes every value, and is tested with `is` before it is used as another type.",
+                );
+                if (env.typeRefLoc) |l| err = err.withLoc(l);
+                env.lastError = err;
+                return error.TypeError;
+            }
             if (!genericMap.contains(n)) {
                 if (env.typeAliases.get(n)) |alias| return expandTypeAlias(env, alias, &.{}, genericMap);
                 // Decision 8 §1.1 — a written generic type carries all of its
@@ -7471,6 +7507,13 @@ const TypedStmt = ast.StmtOf(.typed);
 const PatternBindingSnapshot = struct {
     name: []const u8,
     previous: ?*T.Type,
+    /// Set by `bindNarrowed`: the name was a `val` before it was narrowed and
+    /// is restored as one (a plain `bind` would make it assignable).
+    wasVal: bool = false,
+    /// Set by `bindNarrowed`: the snapshot is a narrowing, and `prevDecl` is
+    /// the `narrowedDecl` entry the name had before it (null: none).
+    narrowed: bool = false,
+    prevDecl: ?*T.Type = null,
 };
 
 /// Allocate a heap-owned TypedExpr in env.arena.
@@ -7641,8 +7684,14 @@ fn restorePatternBindings(env: *Env, snapshots: []const PatternBindingSnapshot) 
     while (i > 0) {
         i -= 1;
         const snapshot = snapshots[i];
+        if (snapshot.narrowed) {
+            if (snapshot.prevDecl) |d|
+                try env.narrowedDecl.put(env.arena, snapshot.name, d)
+            else
+                _ = env.narrowedDecl.remove(snapshot.name);
+        }
         if (snapshot.previous) |old| {
-            try env.bind(snapshot.name, old);
+            if (snapshot.wasVal) try env.bindVal(snapshot.name, old) else try env.bind(snapshot.name, old);
         } else {
             _ = env.bindings.remove(snapshot.name);
         }
@@ -8014,7 +8063,7 @@ fn warnAlwaysFalseIs(env: *Env, valueType: *T.Type, tested: ast.TypeRef, loc: as
     if (v.* != .named) return;
     const vname = v.named.name;
     const eq = std.mem.eql;
-    if (eq(u8, vname, ast.unknown_type_name) or eq(u8, vname, "optional") or eq(u8, vname, "any")) return;
+    if (eq(u8, vname, ast.unknown_type_name) or eq(u8, vname, "optional")) return;
     const v_scalar = for (scalar_type_names) |n| {
         if (eq(u8, n, vname)) break true;
     } else false;
@@ -8190,8 +8239,17 @@ fn bindNarrowed(
     ty: *T.Type,
     snapshots: *std.ArrayListUnmanaged(PatternBindingSnapshot),
 ) InferError!void {
-    try snapshots.append(env.arena, .{ .name = name, .previous = env.lookup(name) });
-    if (env.isVal(name)) try env.bindVal(name, ty) else try env.bind(name, ty);
+    const wasVal = env.isVal(name);
+    const previous = env.lookup(name);
+    const prevDecl = env.narrowedDecl.get(name);
+    try snapshots.append(env.arena, .{ .name = name, .previous = previous, .wasVal = wasVal, .narrowed = true, .prevDecl = prevDecl });
+    if (wasVal) {
+        try env.bindVal(name, ty);
+    } else {
+        // A `var` keeps the type it was declared with for its assignments.
+        if (prevDecl orelse previous) |declared| try env.narrowedDecl.put(env.arena, name, declared);
+        try env.bind(name, ty);
+    }
 }
 
 /// A statement list that cannot fall through: its last statement is a `return`,
@@ -8281,8 +8339,8 @@ fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) I
 /// permissive (a forward reference, or an imported type).
 const scalar_type_names = [_][]const u8{
     "i8",    "u8",       "i16", "u16", "i32",  "u32",    "i64",  "u64",
-    "isize", "usize",    "f32", "f64", "bool", "string", "void", "v128",
-    "any",   "noreturn",
+    "isize", "usize", "f32", "f64", "bool", "string", "void", "v128",
+    "noreturn",
 };
 
 /// Decision 8 § 9 — a `val assert` variant pattern must name a variant the
@@ -9428,10 +9486,23 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     else
         try inferExprTyped(env, binop.lhs.*);
 
-    // AND condition narrowing: `x && x.field` — if LHS is an optional variable,
-    // narrow it before inferring the RHS so `.field` access resolves.
+    // The right operand of `&&` runs only where the left one held, and the
+    // right operand of `||` only where it failed: `x != null && x.f` and
+    // `x == null || x.f` read `x` narrowed, by the same rules an `if`
+    // condition narrows its branches with (`collectCondNarrowings`).
     var andSnapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
     defer andSnapshots.deinit(env.arena);
+    if (binop.op == .@"and" or binop.op == .@"or") {
+        var lhsNarrowings: std.ArrayListUnmanaged(CondNarrowing) = .empty;
+        defer lhsNarrowings.deinit(env.arena);
+        try collectCondNarrowings(env, binop.lhs.*, &lhsNarrowings);
+        for (lhsNarrowings.items) |n| {
+            const side = if (binop.op == .@"and") n.then_ else n.else_;
+            if (side) |ty| try bindNarrowed(env, n.name, ty, &andSnapshots);
+        }
+    }
+    // `x && x.field` — if LHS is an optional variable, narrow it before
+    // inferring the RHS so `.field` access resolves.
     if (binop.op == .@"and") {
         if (binop.lhs.* == .identifier and binop.lhs.identifier.kind == .ident) {
             const varName = binop.lhs.identifier.kind.ident;
@@ -10246,9 +10317,20 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
     // is iterable, and a `bool` is a `while`. An unresolved type variable
     // stays lenient, as every effect check does.
     var itemTy: ?*T.Type = null;
+    // `while (x != null) { … }` — the body runs only where the condition
+    // held, so it reads the names the condition narrows as an `if`'s
+    // then-branch does; restored when the body ends.
+    var whileSnapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    defer whileSnapshots.deinit(env.arena);
     if (lp.condition) {
         // `while (cond) { … }` / `loop { … }` — the condition is a `bool`.
         try unifyAt(env, try env.namedType("bool"), iterTyped.getType(), loc);
+        var narrowings: std.ArrayListUnmanaged(CondNarrowing) = .empty;
+        defer narrowings.deinit(env.arena);
+        try collectCondNarrowings(env, lp.iter.*, &narrowings);
+        for (narrowings.items) |n| {
+            if (n.then_) |ty| try bindNarrowed(env, n.name, ty, &whileSnapshots);
+        }
     } else if (lp.awaitLoop) {
         // `for await (s) { x -> … }` — a `@Stream<T>` where there is an await
         // channel (decision 122); the loop param binds `T`, a `@Result` when
@@ -10311,6 +10393,7 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         env.breakScope = prevBreakScope;
     }
     const typedBody = try inferStmtsTyped(env, lp.body);
+    if (whileSnapshots.items.len > 0) try restorePatternBindings(env, whileSnapshots.items);
     return TypedExpr{ .loop = .{
         .loc = loc,
         .type_ = try env.namedType("void"),
@@ -10468,8 +10551,12 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                                     if (env.lookup(name)) |ty| {
                                         try refuseValAssign(env, name, loc);
                                         try refuseMemoryWrite(env, name, a.op == .plusAssign, a.value, loc);
+                                        // A narrowed `var` is assigned its DECLARED type, and
+                                        // the assignment ends the narrowing.
+                                        const declared = env.narrowedDecl.get(name);
                                         // A `var` typed by a behavior takes an implementer.
-                                        try unifyArgument(env, ty, valTyped.getType(), loc);
+                                        try unifyArgument(env, declared orelse ty, valTyped.getType(), loc);
+                                        if (declared) |d| try env.bind(name, d);
                                     } else {
                                         env.lastError = try unboundAt(env, name, loc);
                                         return error.TypeError;

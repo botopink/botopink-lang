@@ -36,6 +36,8 @@ fn expectDecoratorError(src: []const u8, needle: []const u8) !void {
     const result = inferMod.inferProgram(&env, program);
     try std.testing.expectError(error.TypeError, result);
     const err = env.lastError orelse return error.TestExpectedEqual;
+    // C-21 — every type error carries a location.
+    try std.testing.expect(err.loc != null);
     const msg = switch (err.kind) {
         .custom => |c| c.message,
         else => return error.TestUnexpectedError,

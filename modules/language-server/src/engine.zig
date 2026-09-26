@@ -4181,18 +4181,16 @@ fn fnReturnsEffectWrapper(tokens: []const Token, name_idx: usize) bool {
 /// The list is `Env.registerBuiltins` in `compiler-core/src/comptime/env.zig`,
 /// minus `Self` (a keyword token of its own). `char`, `byte` and `never` were
 /// painted here and are registered nowhere: the editor marked three words as
-/// standard-library types that no program can name. `any` stays because the
-/// checker still registers it (the prelude's `getContext` answers
-/// `Component<T, any>`), even though decision 8 §2.5 gives the user no `any`;
-/// the error-channel default it once filled left with `@Future` (decision 120).
-/// `unknown` is decision 8 §2's type; front 06 registers it, and painting it
+/// standard-library types that no program can name. `any` left with decision
+/// 31 (the checker refuses it as `any-type-removed`); `unknown` is decision 8
+/// §2's type; front 06 registers it, and painting it
 /// early costs nothing — no other declaration may be called `unknown`.
 fn isPrimitiveType(name: []const u8) bool {
     const prims = [_][]const u8{
         "bool", "string", "void", "v128",    "noreturn",
         "i8",   "i16",    "i32",  "i64",     "isize",
         "u8",   "u16",    "u32",  "u64",     "usize",
-        "f32",  "f64",    "any",  "unknown",
+        "f32",  "f64",    "unknown",
     };
     for (prims) |p| if (std.mem.eql(u8, name, p)) return true;
     return false;

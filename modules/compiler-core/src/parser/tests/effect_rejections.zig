@@ -263,6 +263,21 @@ test "decision 137: `try` / `await` as an operand is `try-await-operand`, at the
     try expectErrorAt("fn f() -> @Task<i32> { return xs[try r()]; }", .tryAwaitOperand, 1, 34);
 }
 
+test "an `if` expression as an operand is `if-operand`, at the `if` (decision 137's reading)" {
+    try expectErrorAt("fn f(c: bool) -> i32 { return 1 + if (c) { 2 } else { 3 }; }", .ifOperand, 1, 35);
+    try expectErrorAt("fn f(c: bool) -> i32 { return -if (c) 1 else 2; }", .ifOperand, 1, 32);
+    try expectErrorAt("fn f(c: bool) -> i32 { return (if (c) 1 else 2) + 1; }", .ifOperand, 1, 32);
+    try expectErrorAt("fn f(c: bool) -> i32 { return x ?? if (c) 1 else 2; }", .ifOperand, 1, 36);
+    try expectErrorAt("fn f(c: bool) -> i32 { return xs[if (c) 1 else 0]; }", .ifOperand, 1, 34);
+}
+
+test "an `if` expression stands where an expression begins" {
+    try expectParses("fn f(c: bool) -> i32 { val x = if (c) 1 else 2; return x; }");
+    try expectParses("fn f(c: bool) -> i32 { return if (c) 1 else 2; }");
+    try expectParses("fn f(c: bool) -> i32 { return g(if (c) 1 else 2); }");
+    try expectParses("fn f(c: bool) -> i32[] { return [if (c) 1 else 2, 3]; }");
+}
+
 test "RI6 — legacy `yield break <expr>` is rejected at parse" {
     try expectKind(
         \\fn it() -> @Iterator<@Result<i32, string>> {

@@ -1,0 +1,20 @@
+//// An imported function used as a value: bound by a `val` (inferred and
+//// annotated) and passed as an argument. Each names the imported module's
+//// function, never a local variable of the importer. The checker types the
+//// name as the imported function; erlang and beam lower it as a variable of
+//// the importer (`variable 'Twice' is unbound`).
+
+pub mod lib;
+import {twice, greet} from "lib";
+
+fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
+    return f(x);
+}
+
+pub fn main() {
+    val f = twice;
+    @print(f(2));
+    @print(apply(twice, 3));
+    val g: fn(string) -> string = greet;
+    @print(g("bo"));
+}

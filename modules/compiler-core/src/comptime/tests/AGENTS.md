@@ -59,6 +59,7 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 | `std_target_gating.zig` | `from "std"` imports rejected on targets without `@external` coverage. |
 | `type_alias.zig` | Type aliases (decision 118 rule 1): substitution in params / returns / fields / `val`s, forward reference from a field, alias of an alias, caller generics, an `@Result` alias on a value-passing return; refusals located (`type-alias-arity`, `-recursive`, `-name-taken`, an unknown target); `Env.aliasedWrapper`. |
 | `eval_pipeline.zig` | Source → infer → `evaluateComptime` for comptime vals. |
+| `located_errors.zig` | C-21 — walks every `tests/language/reject/*.bp` through `comptime.compile` and requires each type error to carry a location (114 type errors of 171 cells when it landed). The same line is held by the harness: `assertTypeErrorSnap`, `assertComptimeCompileError` (through `assertComptimeAstExpecting`), `typeErrorMessage` and the decorator helper refuse an unlocated type error. |
 
 ## Pass/fail contract (spec 06, H3/H9)
 

@@ -21,7 +21,7 @@ rewrite a test to match current behaviour.
 |---|---|---|
 | `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` | every test reports `ok` |
 | `run/<name>.bp` + `<name>.out` | a whole program (`pub fn main`), run by `botopink run --target <t>` | exit 0 and stdout equals `.out` byte for byte — or, with a sidecar, § the sidecars of a `run/` cell |
-| `reject/<name>.bp` + `<name>.expect` | a program that must not compile, run by `botopink check` | exit ≠ 0, stderr contains `.expect` line 1, and ` --> src/main.bp:<line 2>` when line 2 is present |
+| `reject/<name>.bp` + `<name>.expect` | a program that must not compile, run by `botopink check` | exit ≠ 0, stderr contains `.expect` line 1, and ` --> src/main.bp:<line 2>` — line 2 is required (C-21: every refusal is located) |
 | `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a second project inside it can be a `{ "path": "…" }` dependency | exit 0 and stdout equals `expected.out` byte for byte — or, with `<target>.expect`, § the sidecars of a `run/` cell |
 | `modules/<name>/` with a `test/` tree and no `expected.out` | the `test/` kind over a whole project, run by `botopink test --target <t> --json` on commonJS and erlang; results are keyed `modules/<name>::<test>` | every test reports `ok` |
 | `expected-failures.txt` | the list of known failures | — |
@@ -51,6 +51,23 @@ initializer, a call argument, an array and a tuple element, an `if` condition, a
 `for` iterable, `x = …`, a `return` and `try … catch` in an argument, on all four targets — and three `reject/` cells, one per operand
 shape: `try_operand_of_operator` (`total + try r`), `try_in_parentheses` (`(try r).toString()`) and
 `await_operand_of_unary` (`!await ready()`).
+`residual-checker-3` reads decision 137 onto `if`: an `if` expression is never an operand, and
+three `reject/` cells refuse it as `if-operand` at the `if` — `if_operand_of_operator`
+(`1 + if (c) { 2 } else { 3 }`), `if_in_parentheses` (`(if (c) a else b).v`) and
+`if_operand_of_unary` (`-if (c) 1 else 2`). The same front adds `run/narrow_in_logical_operands`
+(the right operand of `&&` / `||` and a `while` body read the names the left operand's null test
+narrows; a narrowed `var` is assigned its declared type, on all four targets) with
+`reject/narrow_or_keeps_optional` and `reject/narrow_ends_at_assignment`, and two cells whose
+checker half is right and whose backend halves are listed in `expected-failures.txt` for
+`residual-backend-3`: `modules/imported_fn_as_value` (an imported `pub fn` bound by a `val` and
+passed as an argument) and `run/enum_implements_behavior` (an enum's behavior method called
+through a behavior-typed parameter). C-04's last call path adds `run/associated_fn_default` (a
+behavior's associated fn filled and reordered by label, generic included) and
+`reject/associated_fn_missing_required`; decision 31 (`any` deleted) adds `reject/any_type_removed`
+and `run/host_unknown_parameter` (`std/erlang`'s host vocabulary typed `unknown` takes an `i32`,
+erlang and beam); C-21 adds `reject/decorator_argument_kind` (the one decorator refusal that had no
+location), and the runner now requires every `reject/` cell's `.expect` to carry its `<L:C>` line —
+every refusal is located.
 Decision 138 (the empty record is `type Name()`) adds `run/type_empty_record` — `type Marker()` and
 `type MathOps() { … }` constructed and called on all four targets — and two `reject/` cells,
 `type_empty_braces` (`type Marker {}`) and `type_without_field_list` (`type MathOps { fn … }`), both

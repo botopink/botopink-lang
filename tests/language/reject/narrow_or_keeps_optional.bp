@@ -1,0 +1,13 @@
+//// `x != null || x.v` — the right operand of `||` runs only where the left one
+//// FAILED, which is where `x` is `null`: nothing narrows it, and the read is
+//// the optional-member error.
+
+type Node(v: i32)
+
+fn f(x: ?Node) -> bool {
+    return x != null || x.v > 0;
+}
+
+pub fn main() {
+    @print(f(null));
+}

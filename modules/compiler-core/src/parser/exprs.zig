@@ -1188,6 +1188,12 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         this.parseError = ParseErrorInfo.fromToken(.tryAwaitOperand, this.peek());
         return ParseError.UnexpectedToken;
     }
+    // An `if` expression begins an expression too (`parseExpr`), and is never
+    // an operand for the same reason: `1 + if (c) { 2 } else { 3 }`.
+    if (this.check(.@"if")) {
+        this.parseError = ParseErrorInfo.fromToken(.ifOperand, this.peek());
+        return ParseError.UnexpectedToken;
+    }
 
     // Unary `-` — negation of any expression (-x, -123, -(a+b), etc.)
     if (this.check(.minus)) {
@@ -1522,6 +1528,11 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // `try` / `await` inside one is the operand form decision 137 refuses.
         if (this.check(.@"try") or this.check(.await)) {
             this.parseError = ParseErrorInfo.fromToken(.tryAwaitOperand, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+        // …and so is an `if` inside one: `(if (c) a else b).v`.
+        if (this.check(.@"if")) {
+            this.parseError = ParseErrorInfo.fromToken(.ifOperand, this.peek());
             return ParseError.UnexpectedToken;
         }
         const inner = try this.parseExpr(alloc);
