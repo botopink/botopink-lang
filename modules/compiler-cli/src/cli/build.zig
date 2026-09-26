@@ -60,7 +60,7 @@ pub fn run(
     // core never names a lib; it only sees these as ordinary `Module[]` and
     // resolves `from "<lib>"` through the shared import registry. `std` is the
     // embedded exception and is not loaded here.
-    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
+    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map, &.{project_modules}) catch |err| {
         reportDependencyError(err);
         return 1;
     };
@@ -144,6 +144,8 @@ pub fn reportDependencyError(err: anyerror) void {
         error.LibManifestInvalid => {},
         // Already rendered with the path and the manifest line.
         error.LibFileNotFound => {},
+        // Already rendered, located at the `dependencies` entry.
+        error.BundledDependency => {},
         else => reporter.errMsg("failed to load project dependencies"),
     }
 }

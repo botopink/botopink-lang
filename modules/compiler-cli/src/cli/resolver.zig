@@ -617,8 +617,10 @@ fn checkImportSources(
     if (analysis.sources.len != mods.len) return;
     for (analysis.sources, 0..) |srcs, importer| {
         for (srcs) |ref| {
-            if (std.mem.eql(u8, ref.raw, "std")) continue;
             if (firstSegment(ref.raw).len == 0) continue; // malformed; the parser reports it
+            // `std` and every other bundled package resolve with no
+            // `dependencies` entry (decisions 115–117).
+            if (bp.comptime_pipeline.bundledPackage(firstSegment(ref.raw)) != null) continue;
             if (symbolInList(deps, firstSegment(ref.raw))) continue;
             var slashed_buf: [512]u8 = undefined;
             const slashed = slashPath(&slashed_buf, ref.raw) orelse continue;

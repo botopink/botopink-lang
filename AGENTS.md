@@ -32,7 +32,8 @@ botopink-lang/                 ← language core (this project)
 │   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
 │   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
 ├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
-│   └── std/                   ← standard library
+│   ├── std/                   ← standard library
+│   └── routing/               ← bundled route matcher + routing wires (decision 115)
 ├── examples/                  ← non-framework .bp example programs
 ├── tests/language/            ← botopink language tests of decision 8 (case, tuples, loop) — see tests/language/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks

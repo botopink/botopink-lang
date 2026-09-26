@@ -1,0 +1,145 @@
+//// routing/url_rules — the boundary half of the URL rules: `basePath`,
+//// `trailingSlash`, and the redirect table the browser reads.
+////
+//// `canonicalize` turns a request path into the path the route table is
+//// written in: strip `basePath`, normalise the trailing slash, percent-decode
+//// ONCE (`/a%252Fb` becomes `/a%2Fb`, never `/a/b` — a second decode is a
+//// path-traversal primitive). `clientHref` is its inverse: percent-encode each
+//// segment, apply the trailing-slash rule, prefix `basePath`. The query string
+//// and the fragment (from the first `?` or `#`) are carried through untouched
+//// by both — decoding a query is the form codec's job, not the path's.
+////
+//// A path outside `basePath` is not this application's: `canonicalize` answers
+//// it unchanged. A path whose percent escapes do not decode keeps its raw
+//// text, so it can only match a route spelled with that raw text.
+////
+//// The redirect table is `source|destination|permanent`, one rule per line,
+//// `permanent` `1` or `0`. Reading is tolerant (a line that is not exactly
+//// that is skipped); writing is strict (a `|` or a newline in a source or a
+//// destination halts, naming the rule). The rule engine that evaluates the
+//// table stays on the server.
+
+import {encoding} from "std";
+
+pub type PathRules(basePath: string, trailingSlash: bool)
+
+pub type RedirectRule(source: string, destination: string, permanent: bool)
+
+// ── helpers (private) ───────────────────────────────────────────────────────
+
+fn charOf(s: string, i: i32) -> string {
+    return s.at(i).unwrapOr("");
+}
+
+fn sub(s: string, begin: i32, end: i32) -> string {
+    var out = "";
+    var i = begin;
+    val stop = if (end > s.length()) s.length() else end;
+    while (i < stop) {
+        out = out + charOf(s, i);
+        i = i + 1;
+    };
+    return out;
+}
+
+// The index of the first `?` or `#`, or the length when there is neither.
+fn suffixAt(p: string) -> i32 {
+    val n = p.length();
+    var at = n;
+    var i = 0;
+    while (i < n) {
+        val c = charOf(p, i);
+        if ((at == n && (c == "?" || c == "#"))) at = i;
+        i = i + 1;
+    };
+    return at;
+}
+
+// `basePath` without a trailing slash; `""` and `"/"` both mean "no base".
+fn baseOf(rules: PathRules) -> string {
+    var b = rules.basePath;
+    while (b.endsWith("/")) {
+        b = sub(b, 0, b.length() - 1);
+    };
+    return b;
+}
+
+fn withTrailing(rules: PathRules, path: string) -> string {
+    if (path == "/") return path else if (rules.trailingSlash) {
+        if (path.endsWith("/")) return path else return path + "/";
+    } else {
+        var out = path;
+        while ((out.endsWith("/") && out.length() > 1)) {
+            out = sub(out, 0, out.length() - 1);
+        };
+        return out;
+    };
+}
+
+// ── canonicalize / clientHref ───────────────────────────────────────────────
+
+pub fn canonicalize(rules: PathRules, pathname: string) -> string {
+    val cut = suffixAt(pathname);
+    val raw = sub(pathname, 0, cut);
+    val suffix = sub(pathname, cut, pathname.length());
+    val base = baseOf(rules);
+    var inside = true;
+    var path = raw;
+    if (base != "") if (raw == base) path = "/" else if (raw.startsWith(base + "/")) path = sub(
+        raw,
+        base.length(),
+        raw.length()
+    ) else inside = false;
+    if (inside) {
+        val trimmed = withTrailing(rules, path);
+        val decoded = encoding.percentDecode(trimmed).unwrapOr(trimmed);
+        return decoded + suffix;
+    } else return pathname;
+}
+
+pub fn clientHref(rules: PathRules, pathname: string) -> string {
+    val cut = suffixAt(pathname);
+    val raw = sub(pathname, 0, cut);
+    val suffix = sub(pathname, cut, pathname.length());
+    val encoded = raw
+        .split("/")
+        .map({ s -> encoding.percentEncode(s) })
+        .join("/");
+    val path = withTrailing(rules, encoded);
+    val base = baseOf(rules);
+    if (base == "") return path + suffix else if (path == "/") {
+        if (rules.trailingSlash) return base + "/" + suffix else return base + suffix;
+    } else return base + path + suffix;
+}
+
+// ── the redirect table ──────────────────────────────────────────────────────
+
+fn separatorFree(s: string) -> bool {
+    return (s.contains("|") || s.contains("\n")).negate();
+}
+
+pub fn writeRedirectTable(rs: Array<RedirectRule>) -> string {
+    var lines: string[] = [];
+    for (rs) { r ->
+        assert (separatorFree(r.source) && separatorFree(r.destination)), "routing: url_rules: the redirect `" + r.source + "` -> `" + r.destination + "` holds a `|` or a newline, which the redirect table uses as separators";
+        val flag = if (r.permanent) "1" else "0";
+        lines.push(r.source + "|" + r.destination + "|" + flag);
+    };
+    return lines.join("\n");
+}
+
+pub fn parseRedirectTable(wire: string) -> Array<RedirectRule> {
+    var out: Array<RedirectRule> = [];
+    for (wire.split("\n")) { line ->
+        val f: string[] = line.split("|");
+        if (f.length == 3) {
+            val flag = f.at(2).unwrapOr("");
+            if ((flag == "1" || flag == "0")) out.push(RedirectRule(source: f
+                        .at(0)
+                        .unwrapOr(""), destination: f
+                        .at(1)
+                        .unwrapOr(""), permanent: flag == "1"));
+        };
+    };
+    return out;
+}

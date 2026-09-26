@@ -1,0 +1,116 @@
+//// routing/navigation — the navigation-signal vocabulary (decision 116 rule 1).
+////
+//// A navigation signal is a raised reason: `notFound()` raises
+//// `nav:not-found`, a redirect raises `nav:redirect:<loc>` (307),
+//// `nav:permanent-redirect:<loc>` (308) or `nav:see-other:<loc>` (303). Any
+//// reason `isSignalReason` accepts is a signal — a boundary re-raises it and
+//// never renders or logs it. The prefix is neutral: no reason carries a
+//// framework's name.
+////
+//// The `n` wire form is what an action envelope carries: `""` for no signal,
+//// `N` for not-found, `R|<status>|<location>` for a redirect — the location is
+//// everything after the second `|`, so it may itself hold a `|`. Reading the
+//// wire is TOLERANT (anything else is `None`: it arrives from the network);
+//// reading a REASON is STRICT (a `nav:` reason with an unknown verb halts,
+//// naming the verb — it can only come from code that spelled a reason by hand).
+
+pub type NavKind {
+    None,
+    NotFound,
+    Redirect,
+}
+
+pub type NavOutcome(kind: NavKind, location: string, status: i32)
+
+// ── helpers (private) ───────────────────────────────────────────────────────
+
+fn charOf(s: string, i: i32) -> string {
+    return s.at(i).unwrapOr("");
+}
+
+fn sub(s: string, begin: i32, end: i32) -> string {
+    var out = "";
+    var i = begin;
+    val stop = if (end > s.length()) s.length() else end;
+    while (i < stop) {
+        out = out + charOf(s, i);
+        i = i + 1;
+    };
+    return out;
+}
+
+fn after(s: string, prefix: string) -> string {
+    return sub(s, prefix.length(), s.length());
+}
+
+fn kindWord(k: NavKind) -> string {
+    return case k {
+        None -> "None";
+        NotFound -> "NotFound";
+        Redirect -> "Redirect";
+    };
+}
+
+fn none() -> NavOutcome {
+    return NavOutcome(kind: NavKind.None, location: "", status: 0);
+}
+
+// ── reasons ─────────────────────────────────────────────────────────────────
+
+pub fn signalPrefixes() -> string[] {
+    return ["nav:not-found", "nav:redirect:", "nav:permanent-redirect:", "nav:see-other:"];
+}
+
+pub fn isSignalReason(reason: string) -> bool {
+    return (reason == "nav:not-found" || reason.startsWith("nav:redirect:")) || (reason.startsWith(
+        "nav:permanent-redirect:"
+    ) || reason.startsWith("nav:see-other:"));
+}
+
+// The raised reason of an outcome. `None` is not a signal and a redirect
+// status outside 303 / 307 / 308 has no reason — both halt, naming what was
+// asked.
+pub fn signalReason(out: NavOutcome) -> string {
+    val k = kindWord(out.kind);
+    assert k != "None", "routing: navigation: a `None` outcome is not a signal and has no reason";
+    if (k == "NotFound") return "nav:not-found" else if (out.status == 307) return "nav:redirect:" + out.location else if (out.status == 308) return "nav:permanent-redirect:" + out.location else if (out.status == 303) return "nav:see-other:" + out.location else @panic(
+        "routing: navigation: a redirect status must be 303, 307 or 308, not " + out.status.toString()
+    );
+}
+
+// The outcome a raised reason names. A reason that is not a `nav:` signal,
+// and a `nav:` reason with an unknown verb, halt — naming the verb.
+pub fn signalFromReason(reason: string) -> NavOutcome {
+    if (reason == "nav:not-found") return NavOutcome(kind: NavKind.NotFound, location: "", status: 404) else if (reason.startsWith(
+        "nav:redirect:"
+    )) return NavOutcome(kind: NavKind.Redirect, location: after(reason, "nav:redirect:"), status: 307) else if (reason.startsWith(
+        "nav:permanent-redirect:"
+    )) return NavOutcome(kind: NavKind.Redirect, location: after(reason, "nav:permanent-redirect:"), status: 308) else if (reason.startsWith(
+        "nav:see-other:"
+    )) return NavOutcome(kind: NavKind.Redirect, location: after(reason, "nav:see-other:"), status: 303) else {
+        val rest = after(reason, "nav:");
+        val verb = rest.split(":").at(0).unwrapOr("");
+        if (reason.startsWith("nav:")) @panic("routing: navigation: unknown signal verb `" + verb + "` in `" + reason + "` - the verbs are not-found, redirect, permanent-redirect and see-other") else @panic(
+            "routing: navigation: `" + reason + "` is not a navigation signal reason"
+        );
+    };
+}
+
+// ── the `n` wire ────────────────────────────────────────────────────────────
+
+pub fn signalToWire(out: NavOutcome) -> string {
+    val k = kindWord(out.kind);
+    if (k == "None") return "" else if (k == "NotFound") return "N" else return "R|" + out.status.toString() + "|" + out.location;
+}
+
+pub fn signalFromWire(wire: string) -> NavOutcome {
+    if (wire == "N") return NavOutcome(kind: NavKind.NotFound, location: "", status: 404) else {
+        val head = if (wire.startsWith("R|307|")) 307 else if (wire.startsWith("R|308|")) 308 else if (wire.startsWith(
+            "R|303|"
+        )) 303 else 0;
+        if (head == 0) return none() else return NavOutcome(kind: NavKind.Redirect, location: after(
+                wire,
+                "R|000|"
+            ), status: head);
+    };
+}

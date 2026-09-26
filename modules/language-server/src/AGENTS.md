@@ -20,7 +20,7 @@ src/
 ├── feedback.zig       ← tracks active diagnostics → clears stale editor feedback
 ├── lsp_types.zig      ← position/offset, URI ↔ path helpers
 ├── project_index.zig  ← lazy project-wide pub symbol index (cross-module features)
-├── project_graph.zig  ← per-project dependency graph (libs + mod siblings) for the project-graph compile
+├── project_graph.zig  ← per-project dependency graph (libs + bundled packages + mod siblings) for the project-graph compile
 ├── test_root.zig      ← test aggregator used by both build.zig files
 └── tests/             ← feature-level tests — see tests/AGENTS.md
 ```

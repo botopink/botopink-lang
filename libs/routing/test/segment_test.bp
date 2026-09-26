@@ -1,0 +1,93 @@
+//// routing: the segment grammar, on both targets (moved with the matcher,
+//// decision 115). Every expected text is a literal.
+
+import {asserts} from "std";
+import {parseSegment, parsePath, patternOf, slotOf, pathProblem, kindName, trimSlashes} from "segment";
+
+// ── step 1: the segment grammar ─────────────────────────────────────────────
+
+test "routing: a static folder is a static segment" {
+    val s = parseSegment("blog");
+    assert kindName(s.kind) == "Static";
+    assert s.name == "blog";
+    assert s.raw == "blog";
+}
+
+test "routing: [slug] is a dynamic segment" {
+    val s = parseSegment("[slug]");
+    assert kindName(s.kind) == "Dynamic";
+    assert s.name == "slug";
+    assert s.raw == "[slug]";
+}
+
+test "routing: the catch-all and the optional catch-all are told apart" {
+    val required = parseSegment("[...slug]");
+    val optional = parseSegment("[[...slug]]");
+    assert kindName(required.kind) == "CatchAll";
+    assert required.name == "slug";
+    assert kindName(optional.kind) == "OptionalCatchAll";
+    assert optional.name == "slug";
+    assert kindName(optional.kind) != kindName(required.kind);
+    assert optional.raw != required.raw;
+}
+
+test "routing: a group, a slot and a private folder" {
+    val g = parseSegment("(marketing)");
+    assert kindName(g.kind) == "Group";
+    assert g.name == "marketing";
+    val s = parseSegment("@team");
+    assert kindName(s.kind) == "Slot";
+    assert s.name == "team";
+    val p = parseSegment("_components");
+    assert kindName(p.kind) == "Private";
+    assert p.name == "components";
+}
+
+test "routing: a group contributes no URL segment" {
+    assert patternOf(parsePath("(marketing)/about")) == "/about";
+    assert patternOf(parsePath("")) == "/";
+    assert patternOf(parsePath("blog")) == "/blog";
+    assert patternOf(parsePath("blog/[slug]")) == "/blog/[slug]";
+}
+
+test "routing: a slot contributes no URL segment and names itself" {
+    val segs = parsePath("dashboard/@team/settings");
+    assert patternOf(segs) == "/dashboard/settings";
+    assert slotOf(segs) == "team";
+    assert slotOf(parsePath("dashboard/settings")) == "";
+}
+
+test "routing: a private folder may not appear on a registered path" {
+    val problem = pathProblem("blog/_drafts/[slug]");
+    assert problem != "";
+    assert problem.contains("_drafts");
+    assert pathProblem("blog/[slug]") == "";
+}
+
+test "routing: a `|` or a newline in a segment is refused by name" {
+    val bar = pathProblem("blog/a|b");
+    assert bar != "";
+    assert bar.contains("a|b");
+    val nl = pathProblem("blog/a\nb");
+    assert nl != "";
+    assert nl.contains("newline");
+}
+
+test "routing: a leading or trailing slash is not a segment" {
+    assert trimSlashes("/blog/") == "blog";
+    assert patternOf(parsePath("/blog/[slug]/")) == "/blog/[slug]";
+}
+
+test "routing: parsePath halts on a private folder, naming it" {
+    try asserts.throwsWith({ ->
+        parsePath("blog/_drafts/[slug]");
+        0;
+    }, "routing: `_drafts` in `blog/_drafts/[slug]` is a private folder");
+}
+
+test "routing: parsePath halts on a `|` in a segment, naming the segment" {
+    try asserts.throwsWith({ ->
+        parsePath("blog/a|b");
+        0;
+    }, "routing: segment `a|b` in `blog/a|b` holds a `|`");
+}

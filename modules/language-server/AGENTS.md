@@ -99,6 +99,12 @@ resolves the dependency set with the same rules the CLI driver uses:
   for go-to-def but excluded from the compile (the CLI drops them too).
 - `mod` / `pub mod` siblings → every `.bp` under the project's `src/`.
 - `from "std"` → embedded, expanded inside the compiler.
+- `from "<bundled>"` (decisions 115–117 — every non-std name of
+  `comptime.bundled_packages`, generated from `build.zig`'s list) → the
+  package's `.bp` modules embedded in the compiler, prepended when a loaded
+  module imports it (`ProjectGraph.appendBundled`, the CLI's rule), never read
+  from disk and never a `dependencies` entry. They have no file, so their URI is
+  the virtual `file:///botopink-bundled/<package>/src/<file>`.
 
 The active document stays the hot in-memory copy (appended **last** so it can
 import from every dep); open buffers overlay their file on disk; closed files are
