@@ -43,6 +43,7 @@ TREES=(
     examples/modules
     libs/routing
     libs/actions
+    libs/validation
 )
 
 status=0

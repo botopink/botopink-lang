@@ -690,7 +690,7 @@ fn libcResolvedTarget(b: *std.Build, requested: std.Build.ResolvedTarget) std.Bu
 /// The bundled packages besides `std` (decisions 115–117) — the ONE list of
 /// their names in the toolchain. compiler-core, the CLI and the language server
 /// read them from the generated `bundled_packages` table, never by name.
-const bundled_packages = [_][]const u8{ "std", "routing", "actions" };
+const bundled_packages = [_][]const u8{ "std", "routing", "actions", "validation" };
 
 const BundledPkg = struct { name: []const u8, src: []const u8, files: []const []const u8 };
 

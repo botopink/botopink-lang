@@ -1,0 +1,22 @@
+{
+  "name": "validation",
+  "version": "0.0.1",
+  "description": "Constraint markers, #[validated], the violation report and typed coercion — one source for erlang and commonJS (bundled with the compiler)",
+  "src": "src/",
+  "entry": "root.bp",
+  "target": "erlang",
+  "targets": [
+    "erlang",
+    "commonJS"
+  ],
+  "files": [
+    "root.bp",
+    "report.bp",
+    "table.bp",
+    "messages.bp",
+    "spi.bp",
+    "constraints.bp",
+    "binding.bp",
+    "decorators.bp"
+  ]
+}

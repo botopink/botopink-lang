@@ -1,0 +1,127 @@
+//// validation — the constraint SPI. Moved from rakun front 14's
+//// validation member (decision 116 rule 5).
+////
+//// An application adds its own constraint without touching this module: it
+//// writes a type implementing `Constraint`, registers it under a name, and
+//// reaches it from a field with `#[constraint("cpf")]`.
+////
+//// `check` answers a `string` rather than a `?Violation` on purpose: an empty
+//// string is unambiguous, and it keeps the SPI free of optionals, which are the
+//// thing most likely to behave differently under a comptime body. A non-empty
+//// answer is the MESSAGE TEMPLATE, so an application constraint interpolates
+//// through the same path as a built-in one.
+////
+//// THE REGISTRY IS IN THE HOST. botopink has no top-level mutable state, and
+//// what a registration holds is a CLOSURE — no string table holds one. The
+//// seven cells below are the two halves as inline templates; neither decides
+//// anything, they hold a table.
+////
+//// AN UNREGISTERED NAME IS A VIOLATION, NOT A PASS. Decision 67: a validator
+//// that silently accepts what it cannot check is the failure this module is
+//// written to design out. `#[constraint("cpf")]` with nothing registered under
+//// `cpf` makes the report INVALID, with the name in the message, at the first
+//// validation call.
+
+import {Violation, violation, noViolation, oneViolation} from "report";
+import {message, builtInTemplate, arg, noArgs} from "messages";
+
+pub behavior Constraint {
+    fn code(self: Self) -> string;
+    // "" when the value is acceptable; otherwise the message template.
+    fn check(self: Self, field: string, value: string) -> string;
+}
+
+// ── the host table ──────────────────────────────────────────────────────────
+//
+// Inline templates only — a bundled library ships `.bp` files (decision 117
+// rule 8). Erlang: ONE `persistent_term` entry keyed `{validation,
+// constraints}` holding `{Order, Funs, Codes}` — the names in registration
+// order, name → check closure, name → code. Written at registration (module
+// load), read per validation from every process. Node: the `constraints` and
+// `codes` Maps of the one `globalThis.__bp_validation` cell `messages.bp` and
+// `binding.bp` share, created by whichever cell runs first — the init literal
+// is identical in every cell and must stay so.
+
+#[@External.Node("""(function(__N, __C){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); __V.constraints.set(__N, __C); return __V.constraints.size; })($0, $1)""")]
+#[@External.Erlang("""(fun(VaN__, VaC__) -> {VaO__, VaF__, VaK__} = persistent_term:get({validation, constraints}, {[], #{}, #{}}), VaO2__ = case lists:member(VaN__, VaO__) of true -> VaO__; false -> VaO__ ++ [VaN__] end, VaF2__ = maps:put(VaN__, VaC__, VaF__), persistent_term:put({validation, constraints}, {VaO2__, VaF2__, VaK__}), maps:size(VaF2__) end)($0, $1)""")]
+declare fn rkvPut(
+    name: string,
+    c: fn(field: string, value: string) -> string,
+) -> i32;
+
+#[@External.Node("""(function(__N){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); return __V.constraints.has(__N); })($0)""")]
+#[@External.Erlang("""(fun(VaN__) -> maps:is_key(VaN__, element(2, persistent_term:get({validation, constraints}, {[], #{}, #{}}))) end)($0)""")]
+declare fn rkvHas(name: string) -> bool;
+
+#[@External.Node("""(function(__N){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); return __V.constraints.get(__N); })($0)""")]
+#[@External.Erlang("""(fun(VaN__) -> maps:get(VaN__, element(2, persistent_term:get({validation, constraints}, {[], #{}, #{}}))) end)($0)""")]
+declare fn rkvGet(name: string) -> fn(field: string, value: string) -> string;
+
+#[@External.Node("""(function(__N, __C){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); __V.codes.set(__N, __C); return __V.codes.size; })($0, $1)""")]
+#[@External.Erlang("""(fun(VaN__, VaC__) -> {VaO__, VaF__, VaK__} = persistent_term:get({validation, constraints}, {[], #{}, #{}}), VaK2__ = maps:put(VaN__, VaC__, VaK__), persistent_term:put({validation, constraints}, {VaO__, VaF__, VaK2__}), maps:size(VaK2__) end)($0, $1)""")]
+declare fn rkvPutCode(name: string, code: string) -> i32;
+
+#[@External.Node("""(function(__N){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); return __V.codes.has(__N) ? __V.codes.get(__N) : ""; })($0)""")]
+#[@External.Erlang("""(fun(VaN__) -> maps:get(VaN__, element(3, persistent_term:get({validation, constraints}, {[], #{}, #{}})), <<>>) end)($0)""")]
+declare fn rkvCode(name: string) -> string;
+
+#[@External.Node("""(function(){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); return Array.from(__V.constraints.keys()).join(","); })()""")]
+#[@External.Erlang("""(fun() -> {VaO__, VaF__, _} = persistent_term:get({validation, constraints}, {[], #{}, #{}}), iolist_to_binary(lists:join(<<",">>, [VaN__ || VaN__ <- VaO__, maps:is_key(VaN__, VaF__)])) end)()""")]
+declare fn rkvNames() -> string;
+
+#[@External.Node("""(function(){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); __V.constraints.clear(); __V.codes.clear(); return 0; })()""")]
+#[@External.Erlang("""(fun() -> persistent_term:erase({validation, constraints}), 0 end)()""")]
+declare fn rkvClear() -> i32;
+
+// ── the surface ─────────────────────────────────────────────────────────────
+
+pub fn registerConstraint(
+    name: string,
+    code: string,
+    check: fn(field: string, value: string) -> string,
+) -> i32 {
+    val _c = rkvPutCode(name, code);
+    return rkvPut(name, check);
+}
+
+pub fn constraintRegistered(name: string) -> bool {
+    return rkvHas(name);
+}
+
+// Comma-joined, in registration order — the list an error message names when a
+// `#[constraint(...)]` does not resolve.
+pub fn registeredConstraints() -> string {
+    return rkvNames();
+}
+
+// Drops every registration. For a test that has to start from an empty table;
+// nothing in the validation path calls it.
+pub fn clearConstraints() -> i32 {
+    return rkvClear();
+}
+
+pub fn unknownConstraintMessage(name: string) -> string {
+    return "validation: no constraint is registered under \"" + name + "\" — registered: [" + rkvNames() + "]";
+}
+
+// `#[constraint("cpf")]` lowers to this. An unregistered name is a violation
+// coded `unknownConstraint`; a registered one is asked, and its non-empty
+// answer is interpolated as the message template it is.
+pub fn vConstraint(
+    field: string,
+    name: string,
+    value: string,
+) -> Array<Violation> {
+    if (rkvHas(name) == false) return oneViolation(violation(field, "unknownConstraint", message(
+                "unknownConstraint",
+                builtInTemplate("unknownConstraint"),
+                field,
+                value,
+                [arg("name", "\"" + name + "\""), arg("registered", rkvNames())]
+            ), value));
+    val check = rkvGet(name);
+    val template = check(field, value);
+    if (template == "") return noViolation();
+    val code = rkvCode(name);
+    return oneViolation(violation(field, code, message(code, template, field, value, noArgs()), value));
+}

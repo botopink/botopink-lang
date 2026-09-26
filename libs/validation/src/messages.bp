@@ -1,0 +1,157 @@
+//// validation — message templates and their interpolation. Moved from rakun
+//// front 14's validation member (decision 116 rule 5), with ONE
+//// change: where a template comes from is handed in.
+////
+//// A violation's `message` is a TEMPLATE resolved at validation time, not a
+//// string frozen at compile time, so an application can restate every
+//// `sizeBetween` message once instead of per field. The resolution ORDER is
+//// the library's; the KEYS are the message source's:
+////
+////   1. `template(<locale> + "." + <code>)` — only when `locale()` is not `""`
+////   2. `template(<code>)`
+////   3. the built-in default for that code
+////
+//// A `""` from the source means "no entry". With no source set, only step 3
+//// answers (`builtInOnly()`). The library spells no property key: a framework
+//// sets the source over its own keys at boot — the server framework over its
+//// property table (rakun front 14 Step 7), the client entry over a shipped
+//// table (onze front 68) — and the texts it answered before are unchanged.
+////
+//// THE SOURCE IS HOST STATE, like the constraint registry (`spi.bp`): botopink
+//// has no top-level mutable state. Erlang keeps it in `persistent_term` under
+//// `{validation, messages}` — set once at boot, read by every request process;
+//// node keeps it on the one `globalThis.__bp_validation` cell `spi.bp` and
+//// `binding.bp` share.
+////
+//// Placeholders are `{field}`, `{value}` and the constraint's own parameters
+//// (`{min}`, `{max}`, `{regex}`, `{name}`), substituted BY NAME. A template
+//// naming a placeholder the constraint does not have is left as written rather
+//// than blanked: a visible `{limit}` in an error message is a bug report, and
+//// an empty string is not.
+
+// Where message templates come from. `locale()` answers the current locale
+// (`""` for none); `template(key)` answers the template stored under `key`,
+// `""` when there is none.
+pub type MessageSource(
+    locale: fn() -> string,
+    template: fn(key: string) -> string,
+)
+
+// The source in force until one is set: no locale, no entry for any key — so
+// every message is the built-in text.
+pub fn builtInOnly() -> MessageSource {
+    return MessageSource(locale: { -> "" }, template: { key -> "" });
+}
+
+#[@External.Node("""(function(__S){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); __V.messages = __S; return 0; })($0)""")]
+#[@External.Erlang("""(fun(VaS__) -> persistent_term:put({validation, messages}, VaS__), 0 end)($0)""")]
+declare fn putMessageSource(source: MessageSource) -> i32;
+
+#[@External.Node("""(function(__D){ var __V = (globalThis.__bp_validation ||= { constraints: new Map(), codes: new Map(), acc: [], messages: null }); return __V.messages === null ? __D : __V.messages; })($0)""")]
+#[@External.Erlang("""persistent_term:get({validation, messages}, $0)""")]
+declare fn messageSourceOr(fallback: MessageSource) -> MessageSource;
+
+// Install `source` for every later message, in every process. Answers 0.
+pub fn setMessageSource(source: MessageSource) -> i32 {
+    return putMessageSource(source);
+}
+
+// The source in force: the last one set, or `builtInOnly()`.
+pub fn messageSource() -> MessageSource {
+    return messageSourceOr(builtInOnly());
+}
+
+// One placeholder binding. `name` is written without the braces.
+pub type Arg(
+    name: string,
+    value: string,
+)
+
+pub fn arg(name: string, value: string) -> Arg {
+    return Arg(name: name, value: value);
+}
+
+pub fn currentLocale() -> string {
+    val src = messageSource();
+    val loc = src.locale;
+    return loc();
+}
+
+// The template for `code`, in resolution order. `builtIn` is step 3 and is
+// always non-empty, so this never answers `""` for a known code.
+pub fn templateFor(code: string, builtIn: string) -> string {
+    val src = messageSource();
+    val loc = src.locale;
+    val lookup = src.template;
+    val current = loc();
+    val localized = if (current == "") "" else lookup(current + "." + code);
+    if (localized != "") return localized;
+    val global = lookup(code);
+    if (global != "") return global else return builtIn;
+}
+
+// Substitution by name. Unknown placeholders survive verbatim because nothing
+// here scans for braces — only the bindings the constraint actually passed are
+// replaced.
+pub fn interpolate(template: string, args: Array<Arg>) -> string {
+    return args.fold(template, { acc, a -> acc.replaceAll("{" + a.name + "}", a.value) });
+}
+
+// The message a constraint reports: its template, resolved, with `{field}` and
+// `{value}` always bound and the constraint's own parameters appended.
+pub fn message(
+    code: string,
+    builtIn: string,
+    field: string,
+    value: string,
+    params: Array<Arg>,
+) -> string {
+    val base: Array<Arg> = [arg("field", field), arg("value", value)];
+    return interpolate(templateFor(code, builtIn), base.append(params));
+}
+
+pub fn noArgs() -> Array<Arg> {
+    val none: Array<Arg> = [];
+    return none;
+}
+
+// ── the built-in defaults ───────────────────────────────────────────────────
+//
+// One function rather than a table, because a decorator body cannot reach a
+// table and a test can read every arm from here.
+
+pub fn builtInTemplate(code: string) -> string {
+    if (code == "notNull") return "must not be null";
+    if (code == "notBlank") return "must not be blank";
+    if (code == "notEmpty") return "must not be empty";
+    if (code == "sizeBetween") return "size must be between {min} and {max}";
+    if (code == "minValue") return "must be at least {min}";
+    if (code == "maxValue") return "must be at most {max}";
+    if (code == "positive") return "must be greater than 0";
+    if (code == "positiveOrZero") return "must be greater than or equal to 0";
+    if (code == "email") return "must be a well-formed email address";
+    if (code == "pattern") return "must match {regex}";
+    if (code == "pastDate") return "must be in the past";
+    if (code == "futureDate") return "must be in the future";
+    if (code == "unknownConstraint") return "names the constraint {name}, which is not registered - registered: [{registered}]";
+    if (code == "typeMismatch") return "must be a {type}";
+    if (code == "required") return "must be present";
+    return "is not valid";
+}
+
+// An i32 rendered as a decimal string by `Array<i32>.join("")`: node's `join`
+// calls `String(n)` per element and erlang's maps `is_integer(__E) ->
+// integer_to_binary(__E)`, so the single-element array is a cross-backend
+// `int_to_string` with no hand-rolled walk. The same shape answers for `i64`
+// and `f64`.
+pub fn showI32(n: i32) -> string {
+    return [n].join("");
+}
+
+pub fn showI64(n: i64) -> string {
+    return [n].join("");
+}
+
+pub fn showF64(n: f64) -> string {
+    return [n].join("");
+}
