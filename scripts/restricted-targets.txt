@@ -51,9 +51,9 @@
 # --include-unsupported`. 18 cells, 17 members.
 
 # ── examples that declare one target (`02-packaging`'s examples row) ─────────
-emilia-card             erlang    0      02-packaging          `"targets": ["commonJS"]`; the erlang row is green today — the restriction outlived its reason
 jhonstart-counter       erlang    0      00/02-erlang          `"targets": ["commonJS"]`; was `build` while a `fn`-typed field called across a module boundary lowered to an undefined local (`set/2`) — `ExportInfo.fn_fields` carries the field types now (compiler `847add1c`), and the cell passes; the restriction outlived its reason
 jhonstart-todo          erlang    0      04-jhonstart          `"targets": ["commonJS"]`; was `build` while the example wrote bare `print(…)`, which type-checks everywhere and only commonJS lowers — jhonstart `bef57e2` spells it `@print`, and the cell now passes 3/3
+jhonstart-dom-test      erlang    1      04-jhonstart          `"targets": ["commonJS"]` — the member asserts front 30's browser functions against a minimal document (`fake_dom.mjs`, node-only cells); there is no DOM on the BEAM (04-jhonstart 30-g)
 
 # ── erika (no track this milestone; `09-ecosystem-residuals` keeps the tree) ─
 erika-linq              erlang    0      00/09-ecosystem-residuals  `"targets": ["commonJS"]`; the erlang row is green today — 9 pass, 0 fail, re-measured on `fix/erl-imported-method-owner`. The 8 reds were one compiler defect and not erika's: `Query` and `Grouping` both declare `toArray`, and an imported method was resolved by its NAME alone, so `Grouping`'s body ran `element(3, …)` over a `Query` tuple of size 2 (`{error, badarg}`). `00/02-erlang` counted the owner over the program instead — the method axis of `fcc0244b`'s field count — and the restriction outlived its reason

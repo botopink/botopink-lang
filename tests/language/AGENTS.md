@@ -99,6 +99,11 @@ narrowed and bit-read it, erlang and beam did not lower `val Pt(y, _) = p`) and
 plain import and an aliased one — wasm's one flat namespace). `run/val_assert_record_pattern` (a
 `val assert` over a record's constructor pattern — commonJS destructured the binders' own names,
 erlang tested a tag no constructor builds) came out of the same work; wasm and beam are listed.
+C-04 across a module boundary adds `modules/default_argument_across_modules` — a call omitting
+trailing defaulted parameters of a sibling module's and of a path dependency's function, one label
+claiming its parameter, on all four targets — and `modules/default_argument_open_across_modules`: a
+default that names a private function of its module does not travel, so omitting it from another
+module is the arity error, on every target (`<target>.expect`).
 The rakun rows of `language-gaps.md` (the language-gaps sweep, `front/compiler-gaps-rakun`) add a
 cell each, every one failing on the parent binary: `run/behavior_method_by_receiver_type` and
 `run/behavior_method_host_value` (a method a `behavior` declares is the VALUE's, beside another type

@@ -1,0 +1,7 @@
+pub fn pad(s: string, width: i32 = 3, fill: string = ".") -> string {
+    var out = s;
+    while (out.length() < width) {
+        out = fill + out;
+    };
+    return out;
+}

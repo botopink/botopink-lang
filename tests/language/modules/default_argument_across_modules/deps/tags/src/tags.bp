@@ -1,0 +1,9 @@
+//// A dependency's functions whose trailing parameters declare a default.
+
+pub fn tag(name: string, attrs: Array<string> = [], closed: bool = false, depth: i32 = -1) -> string {
+    return name + ":" + attrs.length.toString() + ":" + closed.toString() + ":" + depth.toString();
+}
+
+pub fn pair(label: string = "p", at: Array<i32> = [0, 0]) -> string {
+    return label + at.map({ n -> n.toString() }).join("");
+}
