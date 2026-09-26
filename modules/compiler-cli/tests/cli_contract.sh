@@ -251,6 +251,53 @@ if have node; then
     skip "C3b concurrent runs (escript not installed)"
   fi
 
+  # ── C3c — a test's scratch directory is the run's own ──────────────────────
+  # `botopink test` names `<run dir>/tmp` in `BOTOPINK_TEST_TMPDIR` for every
+  # runner it spawns. rakun's build tests wrote their fixture projects under
+  # the member's own `.botopinkbuild/tmp/`, which its commonJS and erlang cells
+  # (run side by side, same cwd) both `rm -rf` and rewrite: the pinned counts of
+  # `rakun-data·commonJS` read 6, `build`, 1 on three consecutive gates. Each
+  # test here writes its target's name into the directory and prints the path;
+  # the two concurrent runs must see two different, absolute, existing
+  # directories, and neither may survive its run.
+  if have escript; then
+    echo "==> C3c BOTOPINK_TEST_TMPDIR is absolute, per run, and removed with it"
+    P="$(project c3c)"
+    printf '%s\n' \
+      'import {io: {env, fs}} from "std";' '' \
+      'test "scratch" {' \
+      '    val d = env.read("BOTOPINK_TEST_TMPDIR").unwrapOr("");' \
+      '    @print("scratch=" + d);' \
+      '    assert d.startsWith("/");' \
+      '    val _w = fs.writeText(d + "/mine.txt", "x");' \
+      '    assert fs.readText(d + "/mine.txt").unwrapOr("") == "x";' \
+      '}' >"$P/src/main.bp"
+    ( set +e; cd "$P"; "$BP" test --target commonJS >"$WORK/c3c-js.log" 2>&1; echo "$?" >"$WORK/c3c-js.code" ) &
+    ( set +e; cd "$P"; "$BP" test --target erlang >"$WORK/c3c-erl.log" 2>&1; echo "$?" >"$WORK/c3c-erl.code" ) &
+    wait
+    c3c_js="$(sed -n 's/^scratch=//p' "$WORK/c3c-js.log")"
+    c3c_erl="$(sed -n 's/^scratch=//p' "$WORK/c3c-erl.log")"
+    for t in js erl; do
+      if [[ "$(cat "$WORK/c3c-$t.code")" == 0 ]]; then
+        ok "the $t run's test wrote and read its scratch file"
+      else
+        fail "the $t run failed"; sed 's/^/      /' "$WORK/c3c-$t.log" | tail -20 >&2
+      fi
+    done
+    [[ -n "$c3c_js" && -n "$c3c_erl" && "$c3c_js" != "$c3c_erl" ]] \
+      && ok "two concurrent runs got two scratch directories" \
+      || fail "scratch directories not distinct: '$c3c_js' vs '$c3c_erl'"
+    c3c_real="$(cd "$P" && pwd -P)"
+    [[ "$c3c_js" == "$c3c_real"/.botopinkbuild/test-out/commonJS/*/tmp && "$c3c_erl" == "$c3c_real"/.botopinkbuild/test-out/erlang/*/tmp ]] \
+      && ok "each is the tmp/ of its own run directory" \
+      || fail "scratch directories outside their run: '$c3c_js' / '$c3c_erl'"
+    [[ ! -e "$c3c_js" && ! -e "$c3c_erl" ]] \
+      && ok "both scratch directories were removed with their runs" \
+      || fail "a scratch directory survived its run"
+  else
+    skip "C3c test scratch directory (escript not installed)"
+  fi
+
   echo "==> C4 a from \"std\" import does not mask a broken module"
   P="$(project c4)"
   printf 'import {math} from "std";\npub mod broken;\n\n%s\ntest "passes" {\n    assert 1 == 1;\n}\n' "$MAIN_OK" >"$P/src/main.bp"

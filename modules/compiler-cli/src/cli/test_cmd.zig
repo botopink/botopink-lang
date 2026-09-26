@@ -71,6 +71,47 @@ fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) !
     return std.fmt.allocPrint(arena, TEST_OUT_ROOT ++ "/{s}/{x}", .{ target.toString(), id });
 }
 
+/// The environment variable that names THIS run's scratch directory to the
+/// tests it runs: `<cwd>/<test_out>/tmp`, absolute, empty when the first test
+/// starts, and removed with the rest of the run's directory when the run ends.
+///
+/// A test that writes files — a fixture project it then compiles, a pid file,
+/// a certificate — needs a place no other process writes to. The library's own
+/// directory is not one: `botopink-lib-test` runs the commonJS and the erlang
+/// cell of one library side by side with the same `cwd`, and two gates share a
+/// checkout. rakun's build tests wrote their fixture projects to
+/// `.botopinkbuild/tmp/<member>-fixtures/<name>` and `rm -rf`'d each one before
+/// writing it, so the erlang cell deleted the commonJS cell's fixture between
+/// its write and its compile: one full `zig build test-libs` measured
+/// `rakun-data·commonJS` at 6 failed, the next at 0, the next at 1. This run's
+/// directory is already unique per run and per target (`makeTestOutDir`), so
+/// its `tmp/` is too, with nothing to reap.
+pub const TEST_TMPDIR_ENV = "BOTOPINK_TEST_TMPDIR";
+
+/// The runners' environment: this process's own plus `TEST_TMPDIR_ENV`, whose
+/// directory is created here. The absolute path is spelled from the process's
+/// cwd because a test may `cd` (a fixture build does) before it uses it.
+fn testTmpEnv(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    test_out: []const u8,
+    env_map: libs.EnvMap,
+) !*const std.process.Environ.Map {
+    const rel = try std.fs.path.join(arena, &.{ test_out, "tmp" });
+    try std.Io.Dir.cwd().createDirPath(io, rel);
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try std.process.currentPath(io, &cwd_buf);
+    const abs = try std.fs.path.join(arena, &.{ cwd_buf[0..n], rel });
+
+    const map = try arena.create(std.process.Environ.Map);
+    map.* = std.process.Environ.Map.init(arena);
+    if (env_map) |m| {
+        for (m.keys(), m.values()) |k, v| try map.put(k, v);
+    }
+    try map.put(TEST_TMPDIR_ENV, abs);
+    return map;
+}
+
 /// Compile every `.erl` under `dir` ONCE, in one `erl` (a process per file),
 /// writing `<name>.beam` beside each source that compiled.
 ///
@@ -423,6 +464,10 @@ pub fn run(
         else => return err,
     };
 
+    // The run's scratch directory, handed to every test runner as
+    // `BOTOPINK_TEST_TMPDIR` (see `TEST_TMPDIR_ENV`).
+    const child_env = try testTmpEnv(arena, io, test_out, env_map);
+
     const ext: []const u8 = switch (target) {
         .commonJS => ".js",
         .erlang => ".erl",
@@ -576,6 +621,7 @@ pub fn run(
             // inherit-stdio so live streaming is unchanged when --json is off.
             const result = std.process.run(arena, io, .{
                 .argv = argv.items,
+                .environ_map = child_env,
                 .stdout_limit = .limited(16 * 1024 * 1024),
                 .stderr_limit = .limited(16 * 1024 * 1024),
             }) catch |err| {
@@ -607,7 +653,7 @@ pub fn run(
         reporter.stdout(io, banner);
 
         // Spawn and wait — stdio is inherited so the runner reports directly.
-        var child = std.process.spawn(io, .{ .argv = argv.items }) catch |err| {
+        var child = std.process.spawn(io, .{ .argv = argv.items, .environ_map = child_env }) catch |err| {
             const msg = try std.fmt.allocPrint(arena, "failed to spawn '{s}': {s}", .{ runner, @errorName(err) });
             reporter.errMsg(msg);
             return 1;

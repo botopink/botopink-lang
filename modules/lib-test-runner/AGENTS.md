@@ -249,6 +249,15 @@ over one checkout run the same cells side by side, so `botopink test` writes to
 by rename, and `compileCell` writes per target — two cells of one library in
 one run are never the same (lib, target) pair.
 
+The two cells of one library DO run side by side with one cwd, so a library's
+tests must not write under it: `botopink test` hands every test runner its own
+scratch directory in `BOTOPINK_TEST_TMPDIR` (`<run dir>/tmp`, removed with the
+run). rakun's build tests used to write their fixture projects to the member's
+`.botopinkbuild/tmp/`, and each cell's `rm -rf` of a fixture landed between
+the other cell's write and compile: `rakun-data·commonJS` measured 6, `build`,
+1 failed on three consecutive gates, and the erlang cells of `rakun-data` and
+`rakun-security` went red now and then.
+
 ## Design contract
 
 - **Orchestrate, don't reimplement.** Per-lib isolation falls out of spawning a
