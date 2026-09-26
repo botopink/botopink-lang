@@ -893,7 +893,17 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             isPathReceiver(expr_ptr.call.kind.call.receiver)))
     {
         if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
-            expr_ptr.* = rewrite.*;
+            if (rewrite.* != .jump) expr_ptr.* = rewrite.*;
+        }
+    }
+    // 01 — a component called inside a component body renders there: the
+    // `await` inference spliced around it. Its operand is the rewrite's own
+    // copy of the call, which is not wrapped a second time.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
+        if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
+            if (rewrite.* == .jump and rewrite.jump.kind == .await_ and rewrite.jump.kind.await_ != expr_ptr) {
+                expr_ptr.* = rewrite.*;
+            }
         }
     }
     // C-04 / 01 step 7 N1 — a call that omitted an argument whose parameter

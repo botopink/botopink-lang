@@ -743,6 +743,9 @@ pub const Env = struct {
     warnings: std.ArrayListUnmanaged(@import("error.zig").TypeError) = .empty,
     /// 01 step 13 — the undo log of the body being inferred (`openBodyScope`).
     bodyScope: ?*std.ArrayListUnmanaged(BindUndo) = null,
+    /// True while the operand of a `use` is inferred: a component call there
+    /// is `use`'s to refuse, not an implicit render (`inferComponentCall`).
+    inUseOperand: bool = false,
     /// Decision 8 §3.2 — where an inferred union was born: the `if` or `case`
     /// whose branches disagreed. A use the union refuses names it, so the
     /// author sees the widening and not only the refusal.

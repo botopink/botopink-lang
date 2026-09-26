@@ -567,6 +567,25 @@ binding list handed back is built tolerantly from imports, type declarations, `f
 `val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
 well-typed one binds, so the language server still lists it.
 
+## Three rules the effects guide's page needs (maintainer, 24-box-1)
+
+- **`try x catch null` is a `?U`.** The handler is the other way the expression ends: a `null`
+  (any `?U`) handler makes the whole an optional of the success value — `val post = try await
+  loadPost(id) catch null;` is a `?Post` — and any other handler must be the success type, the
+  mismatch located at the handler (`tryCatch` arm of `inferBranchExpr`).
+- **A `noreturn` call ends a branch.** `stmtsAlwaysExit(env, …)` also answers true for a branch
+  whose last statement calls a builtin `@panic`/`@todo`/`@trap`/`@compilerError` or any function
+  declared `-> noreturn` (`callNeverReturns`), so `if (post == null) { notFound(); }` narrows
+  `post` below; `refuseFallingOffTheEnd` reads the same predicate.
+- **A component called inside a component body renders there** (decisions 104, 118, 128):
+  `inferComponentCall` types a call answering `@Component<C, T>` whose `T` owns the context, made
+  inside a body whose return is `@Component<C, _>` with the same base, as `T`, and splices `await`
+  around it through the index channel (`transform.zig` wraps the call and leaves the copy it wraps
+  alone) — on commonJS a component is an `async function`. As `use`'s operand (`Env.inUseOperand`)
+  the call keeps its wrapper, so `use Counter()` is still refused by name; outside a component body
+  or under another base it keeps it too. An array literal's elements unify located at the element
+  that disagrees.
+
 ## A label names the parameter it fills, in a complete call too
 
 `env.planDefaultFill` planned a call only when it omitted an argument; a COMPLETE call was zipped

@@ -1292,6 +1292,37 @@ fn hookBaseOfType(env: *Env, ty: *T.Type) ?[]const u8 {
     };
 }
 
+/// Decisions 104, 118 and 128 — a component is CALLED, and called inside a
+/// body whose return is `@Component<C, _>` with the same base `C` it renders
+/// within that render: the call's value is its `T` (the context owner), as
+/// `await` would answer, and the transform splices the `await` in so the
+/// backends lower it as they lower `await c()` (on commonJS a component is an
+/// `async function`). Everywhere else — outside a component body, under
+/// another base, as `use`'s operand (refused there by name) — the call keeps
+/// its `@Component<C, T>` type. A hook is not a component and is `use`d.
+fn inferComponentCall(env: *Env, c: ast.CallExprOf(.untyped), typed: TypedExpr) InferError!TypedExpr {
+    if (env.inUseOperand) return typed;
+    if (typed != .call) return typed;
+    const fc = env.fnContext orelse return typed;
+    if (!fc.annotated or env.starFn == null) return typed;
+    const fnBase = fc.base orelse return typed;
+    const ty = typed.getType().deref();
+    if (!isComponentType(env, ty)) return typed;
+    const callBase = baseNameOfType(ty.named.args[0]) orelse return typed;
+    if (!std.mem.eql(u8, callBase, fnBase)) return typed;
+    // Splice `await <call>` for the backends; the operand is a copy of the
+    // call at the same location, which the transform recognises and does
+    // not wrap again.
+    const inner = try env.arena.create(ast.Expr);
+    inner.* = .{ .call = c };
+    const wrapped = try env.arena.create(ast.Expr);
+    wrapped.* = .{ .jump = .{ .loc = c.loc, .kind = .{ .await_ = inner } } };
+    try env.indexRewrites.put(c.loc, wrapped);
+    var out = typed;
+    out.call.type_ = ty.named.args[1];
+    return out;
+}
+
 /// True when `ty` is a component: `@Component<C, T>` whose `T` owns a
 /// context (`T: @Context<_>`, decision 128). A hook's `T` owns none.
 fn isComponentType(env: *Env, ty: *T.Type) bool {
@@ -4194,7 +4225,7 @@ fn refuseFallingOffTheEnd(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError
     for (f.annotations) |a| if (std.mem.startsWith(u8, a.name, "External")) return;
     const rt = retType.deref();
     if (rt.* == .named and (std.mem.eql(u8, rt.named.name, "void") or std.mem.eql(u8, rt.named.name, "noreturn"))) return;
-    if (!stmtsMayFallThrough(f.body)) return;
+    if (!stmtsMayFallThrough(env, f.body)) return;
     const rendered = try snapshotMod.typeNameOf(env.arena, rt);
     const msg = try std.fmt.allocPrint(env.arena, "`{s}` declares `-> {s}` and its body can reach its end without a `return`", .{ f.name, rendered });
     var err = TypeError.custom(msg, "A value leaves a function through `return` (decision 2): end every path with `return <value>;`, or `@panic(…)` / `@todo()` where it cannot happen.");
@@ -4208,18 +4239,18 @@ fn refuseFallingOffTheEnd(env: *Env, f: ast.FnDecl, retType: *T.Type) InferError
 /// way, a `loop { }` (left only by `break` or `return`), or a call to a
 /// `noreturn` builtin. Conservative the right way: anything it cannot read is
 /// "may fall through" only where the statement plainly has no exit.
-fn stmtsMayFallThrough(stmts: []const ast.Stmt) bool {
+fn stmtsMayFallThrough(env: *Env, stmts: []const ast.Stmt) bool {
     // A trailing comment is kept as a statement by the parser and is not one.
     var n = stmts.len;
     while (n > 0) : (n -= 1) {
         const e = stmts[n - 1].expr;
         if (e == .literal and e.literal.kind == .comment) continue;
-        return exprMayFallThrough(e);
+        return exprMayFallThrough(env, e);
     }
     return true;
 }
 
-fn exprMayFallThrough(e: ast.Expr) bool {
+fn exprMayFallThrough(env: *Env, e: ast.Expr) bool {
     return switch (e) {
         .jump => |j| switch (j.kind) {
             .@"return", .throw_, .@"break", .@"continue" => false,
@@ -4228,7 +4259,7 @@ fn exprMayFallThrough(e: ast.Expr) bool {
         .branch => |b| switch (b.kind) {
             .if_ => |i| blk: {
                 const els = i.else_ orelse break :blk true;
-                break :blk stmtsMayFallThrough(i.then_) or stmtsMayFallThrough(els);
+                break :blk stmtsMayFallThrough(env, i.then_) or stmtsMayFallThrough(env, els);
             },
             else => true,
         },
@@ -4240,15 +4271,15 @@ fn exprMayFallThrough(e: ast.Expr) bool {
         .collection => |c| switch (c.kind) {
             .case => |cs| blk: {
                 if (cs.arms.len == 0) break :blk true;
-                for (cs.arms) |arm| if (exprMayFallThrough(arm.body)) break :blk true;
+                for (cs.arms) |arm| if (exprMayFallThrough(env, arm.body)) break :blk true;
                 break :blk false;
             },
-            .grouped => |g| exprMayFallThrough(g.*),
+            .grouped => |g| exprMayFallThrough(env, g.*),
             else => true,
         },
-        .function => |fe| stmtsMayFallThrough(fe.kind.body),
+        .function => |fe| stmtsMayFallThrough(env, fe.kind.body),
         .call => |c| switch (c.kind) {
-            .call => |cc| !(cc.is_builtin and (std.mem.eql(u8, cc.callee, "panic") or std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "trap") or std.mem.eql(u8, cc.callee, "compilerError"))),
+            .call => |cc| !callNeverReturns(env, cc),
             else => true,
         },
         else => true,
@@ -7469,14 +7500,38 @@ fn bindNarrowed(
 /// A statement list that cannot fall through: its last statement is a `return`,
 /// `throw`, `break` or `continue`. That is all the early-return shape needs —
 /// a body ending any other way reaches the code below its `if`.
-fn stmtsAlwaysExit(stmts: []const ast.Stmt) bool {
-    if (stmts.len == 0) return false;
-    const last = stmts[stmts.len - 1].expr;
-    if (last != .jump) return false;
-    return switch (last.jump.kind) {
-        .@"return", .throw_, .@"break", .@"continue" => true,
-        else => false,
-    };
+///
+/// A call that never returns ends a branch too (maintainer, 24-box-1): a
+/// builtin `@panic` / `@todo` / `@trap` / `@compilerError`, or any function
+/// whose declared return is `noreturn` — a framework's `notFound()` and
+/// `redirect(…)` — so `if (post == null) { notFound(); }` narrows `post` below.
+fn stmtsAlwaysExit(env: *Env, stmts: []const ast.Stmt) bool {
+    var n = stmts.len;
+    while (n > 0) : (n -= 1) {
+        const last = stmts[n - 1].expr;
+        if (last == .literal and last.literal.kind == .comment) continue;
+        if (last == .call and last.call.kind == .call) return callNeverReturns(env, last.call.kind.call);
+        if (last != .jump) return false;
+        return switch (last.jump.kind) {
+            .@"return", .throw_, .@"break", .@"continue" => true,
+            else => false,
+        };
+    }
+    return false;
+}
+
+/// Whether a call's callee is declared `-> noreturn` (or is one of the
+/// builtins that are).
+fn callNeverReturns(env: *Env, cc: anytype) bool {
+    if (cc.is_builtin) {
+        const names = [_][]const u8{ "panic", "todo", "trap", "compilerError" };
+        for (names) |n| if (std.mem.eql(u8, n, cc.callee)) return true;
+        return false;
+    }
+    if (cc.receiver != null) return false;
+    const ty = env.lookup(cc.callee) orelse return false;
+    const d = ty.deref();
+    return d.* == .func and d.func.ret.isNamed("noreturn");
 }
 
 /// The early-exit shape: `if (x == null) { return …; }` and then the REST of
@@ -7495,7 +7550,7 @@ fn narrowAfterEarlyExit(
     if (stmt != .branch or stmt.branch.kind != .if_) return;
     const i = stmt.branch.kind.if_;
     if (i.binding != null or i.else_ != null) return;
-    if (!stmtsAlwaysExit(i.then_)) return;
+    if (!stmtsAlwaysExit(env, i.then_)) return;
     var narrowings: std.ArrayListUnmanaged(CondNarrowing) = .empty;
     defer narrowings.deinit(env.arena);
     try collectCondNarrowings(env, i.cond.*, &narrowings);
@@ -8323,7 +8378,7 @@ fn inferExprTypedInner(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         .useHook => |uh| inferUseHookExpr(env, uh, uh.loc),
 
         // ── call expressions ───────────────────────────────────────────────────
-        .call => |c| inferCallExpr(env, c, c.loc),
+        .call => |c| inferComponentCall(env, c, try inferCallExpr(env, c, c.loc)),
 
         // ── function definition expressions ────────────────────────────────────
         .function => |f| inferFunctionExpr(env, f, f.loc),
@@ -9457,10 +9512,25 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 .func => |f| f.ret,
                 else => handlerTyped.getType(),
             };
+            // The handler's value is the other way the expression ends. A
+            // `null` (or any `?U`) handler makes the whole an optional of the
+            // success value — `try await loadPost(id) catch null` is a `?Post`
+            // (maintainer, 24-box-1): the success value is a present `Post`,
+            // the handler the absent one. Any other handler must be the
+            // success type, and a mismatch is located at the handler.
+            var outTy = resultTy;
             if (!effectiveTy.isNamed("void")) {
-                try unify(env, resultTy, effectiveTy);
+                const eff = effectiveTy.deref();
+                const isOpt = eff.* == .named and std.mem.eql(u8, eff.named.name, "optional") and eff.named.args.len == 1;
+                const resIsOpt = resultTy.deref().* == .named and std.mem.eql(u8, resultTy.deref().named.name, "optional");
+                if (isOpt and !resIsOpt) {
+                    try unifyAt(env, eff.named.args[0], resultTy, tc.handler.getLoc());
+                    outTy = effectiveTy;
+                } else {
+                    try unifyAt(env, resultTy, effectiveTy, tc.handler.getLoc());
+                }
             }
-            return TypedExpr{ .branch = .{ .loc = loc, .type_ = resultTy, .kind = .{ .tryCatch = .{
+            return TypedExpr{ .branch = .{ .loc = loc, .type_ = outTy, .kind = .{ .tryCatch = .{
                 .expr = exprPtr,
                 .handler = handlerPtr,
             } } } };
@@ -10994,7 +11064,13 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     // `use <hookcall>` — infer the wrapped call, check it yields the right
     // ContextBase, and expose its Return type `R` as the prefix's type. Any
     // binding/destructuring is performed by the enclosing `val`/`var`.
-    const valTyped = try inferExprTyped(env, uh.kind.inner.*);
+    const prevInUse = env.inUseOperand;
+    env.inUseOperand = true;
+    const valTyped = inferExprTyped(env, uh.kind.inner.*) catch |err| {
+        env.inUseOperand = prevInUse;
+        return err;
+    };
+    env.inUseOperand = prevInUse;
     const valPtr = try makeTypedPtr(env, valTyped);
     try validateUseBase(env, valTyped.getType(), fc, loc);
     const srcTy = bindingSourceType(valTyped.getType());
@@ -12621,7 +12697,8 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             }
             const elemType = if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
             for (typedElems) |elem| {
-                try unify(env, elemType, elem.getType());
+                // Located at the element that disagrees (01 step 9).
+                try unifyAt(env, elemType, elem.getType(), elem.getLoc());
             }
             const arrayArgs = try env.arena.alloc(*T.Type, 1);
             arrayArgs[0] = elemType;
