@@ -25,7 +25,6 @@ pub const TemplateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr);
 /// to their value-construction lowering, produced by inference.
 pub const ResultJumpLowerings = std.AutoHashMap(ast.Loc, envMod.ResultJumpLowering);
 
-
 /// Map of stdlib-module method calls on builtin-array receivers (by source loc).
 pub const StdArrayLowerings = std.AutoHashMap(ast.Loc, envMod.StdArrayLowering);
 

@@ -58,7 +58,6 @@ pub const effect_wrapper_behind_alias: []const u8 = "effect-wrapper-behind-alias
 
 /// Decision 119 — a `return` whose value fits two layers of a nested wrapper
 /// (`-> @Result<@Result<i32, E>, E>`); asks for an explicit `Ok(…)`.
-
 pub const effect_return_ambiguous_nesting: []const u8 = "effect-return-ambiguous-nesting";
 
 /// Decision 121 — `throw` or bare `try` (the propagating form) in a body whose
