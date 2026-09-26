@@ -30,6 +30,7 @@ botopink-lang/                 ← language core (this project)
 │   ├── lib-test-runner/       ← `botopink-lib-test` (test-libs gate)
 │   ├── manifest/              ← the shared `botopink.json` model (std only; imported by the four above)
 │   ├── test-scratch/          ← `test_scratch` — per-process scratch paths; the test modules only
+│   ├── test-shard/            ← the compiler-core test runner: the suite split across processes (`-Dtest-shards`)
 │   └── wasm3/                 ← vendored wasm3 (C): the wat comptime runtime runs on it, in-process
 ├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
 │   └── std/                   ← standard library
@@ -49,6 +50,7 @@ Golden snapshots live inside the owning package (`modules/compiler-core/snapshot
 zig build               # botopink + botopink-lsp + botopink-lib-test + bpmp
 zig build test          # compiler-core + language-server + compiler-cli + lib-test-runner + manifest + test-scratch tests
 zig build test -Dtest-filter=<name>   # only tests whose name matches
+zig build test -Dtest-shards=<n>      # compiler-core as n processes side by side (default: CPUs, at most 8) — modules/test-shard
 zig build run           # build and run the CLI
 zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, recursion, backend parity)
 zig build test-libs     # every visible .bp library's tests per backend (libs/ + sibling repository/*)
