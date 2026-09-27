@@ -6,17 +6,17 @@
 // which wasm doesn't carry) and the cross-backend numeric-parity case in one.
 
 fn sumTo(n: i32, acc: i32) -> i32 {
-  if (n == 0) { return acc; };
-  return sumTo(n - 1, acc + n);
+    if (n == 0) return acc;
+    return sumTo(n - 1, acc + n);
 }
 
 pub fn main() -> i32 {
-  return sumTo(10, 0);
+    return sumTo(10, 0);
 }
 
 test "tail-recursive sum agrees on every backend that runs tests" {
-  assert sumTo(0, 0) == 0;
-  assert sumTo(1, 0) == 1;
-  assert sumTo(10, 0) == 55;
-  assert main() == 55;
+    assert sumTo(0, 0) == 0;
+    assert sumTo(1, 0) == 1;
+    assert sumTo(10, 0) == 55;
+    assert main() == 55;
 }

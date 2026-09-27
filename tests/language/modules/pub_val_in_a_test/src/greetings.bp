@@ -2,4 +2,5 @@
 //// one calls into this module, so `botopink test` has to load it.
 
 pub val greeting: string = "hi";
+
 pub val sizes: Array<i32> = [1, 2, 3];

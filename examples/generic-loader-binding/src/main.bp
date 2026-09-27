@@ -24,9 +24,12 @@ val cities = [
 
 // 1) bare value/fn — `of` is reached unqualified.
 fn adultsByName() -> string {
-    return of(cities).where({ c -> c.pop >= 5 }).orderBy({ c -> c.name }).select({ c -> c.name }).toArray().join(
-        ", "
-    );
+    return of(cities)
+        .where({ c -> c.pop >= 5 })
+        .orderBy({ c -> c.name })
+        .select({ c -> c.name })
+        .toArray()
+        .join(", ");
 }
 
 // 2) bare template fn — `erika "…"` captures the SQL-subset string and expands
@@ -38,9 +41,12 @@ fn bigCities() -> string {
 
 // 3) namespace member — `erika.of(…)` resolves through the lib's namespace object.
 fn squaredEvens() -> string {
-    return erika.of([1, 2, 3, 4, 5, 6]).where({ n -> n % 2 == 0 }).select({ n -> n * n }).toArray().join(
-        "-"
-    );
+    return erika
+        .of([1, 2, 3, 4, 5, 6])
+        .where({ n -> n % 2 == 0 })
+        .select({ n -> n * n })
+        .toArray()
+        .join("-");
 }
 
 fn main() {

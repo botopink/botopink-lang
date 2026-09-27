@@ -12,9 +12,7 @@ pub fn raw(t: string) -> Node {
 }
 
 pub fn open<El>(v: ElementView<El>, e: El) -> string {
-    if (v.isVoid(v.tagOf(e))) {
-        return "<" + v.tagOf(e) + "/>";
-    }
+    if (v.isVoid(v.tagOf(e))) return "<" + v.tagOf(e) + "/>";
     return "<" + v.tagOf(e) + ">";
 }
 

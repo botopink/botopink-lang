@@ -4187,9 +4187,9 @@ fn fnReturnsEffectWrapper(tokens: []const Token, name_idx: usize) bool {
 /// early costs nothing — no other declaration may be called `unknown`.
 fn isPrimitiveType(name: []const u8) bool {
     const prims = [_][]const u8{
-        "bool", "string", "void", "v128",    "noreturn",
-        "i8",   "i16",    "i32",  "i64",     "isize",
-        "u8",   "u16",    "u32",  "u64",     "usize",
+        "bool", "string", "void",    "v128", "noreturn",
+        "i8",   "i16",    "i32",     "i64",  "isize",
+        "u8",   "u16",    "u32",     "u64",  "usize",
         "f32",  "f64",    "unknown",
     };
     for (prims) |p| if (std.mem.eql(u8, name, p)) return true;

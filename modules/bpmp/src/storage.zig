@@ -109,9 +109,9 @@ pub fn resolvePaths(gpa: std.mem.Allocator, env_map: EnvMap) !Paths {
 /// `mkdir -p` every directory the layout needs. Idempotent.
 pub fn ensureLayout(io: std.Io, p: Paths) !void {
     const dirs = [_][]const u8{
-        p.home,                                                                          p.bin_dir,
-        p.botopink_versions,                                                             p.packages,
-        p.cache_tarballs,                                                                p.cache_manifests,
+        p.home,              p.bin_dir,
+        p.botopink_versions, p.packages,
+        p.cache_tarballs,    p.cache_manifests,
     };
     for (dirs) |d| {
         std.Io.Dir.cwd().createDirPath(io, d) catch |err| switch (err) {

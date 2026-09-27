@@ -12,6 +12,12 @@ fn double(x: i32) -> i32 {
 
 pub default fn shapesdsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     val code = e.build("double(" + e.text() + ")");
-    val root = CustomNode(kind: "call", span: Span(0, 4, 1), label: "keyword", ref: null, children: []);
+    val root = CustomNode(
+        kind: "call",
+        span: Span(0, 4, 1),
+        label: "keyword",
+        ref: null,
+        children: [],
+    );
     return e.custom(root, code);
 }

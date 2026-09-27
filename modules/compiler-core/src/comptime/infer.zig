@@ -8424,8 +8424,8 @@ fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) I
 /// against one of them can never match. Every other unregistered name stays
 /// permissive (a forward reference, or an imported type).
 const scalar_type_names = [_][]const u8{
-    "i8",    "u8",       "i16", "u16", "i32",  "u32",    "i64",  "u64",
-    "isize", "usize", "f32", "f64", "bool", "string", "void", "v128",
+    "i8",       "u8",    "i16", "u16", "i32",  "u32",    "i64",  "u64",
+    "isize",    "usize", "f32", "f64", "bool", "string", "void", "v128",
     "noreturn",
 };
 

@@ -8,5 +8,7 @@ pub fn writer(prefix: string) -> ChunkWriter {
 }
 
 pub type File(path: string) {
-    pub fn write(self: Self, s: string) -> string { return "file " + s; }
+    pub fn write(self: Self, s: string) -> string {
+        return "file " + s;
+    }
 }

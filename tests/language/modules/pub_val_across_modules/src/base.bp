@@ -9,4 +9,5 @@ fn note(what: string) -> i32 {
 }
 
 val _baseLoaded = note("base body");
+
 pub val unit = 10;

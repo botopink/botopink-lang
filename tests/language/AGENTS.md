@@ -1512,12 +1512,22 @@ rules they pinned — a function has one return, so it has one effect.
   red (`mod_tree`, `std_import`, `two_modules`) are **formatted**: `botopink format` inside each
   (brace bodies expanded, `import {a, b}` spacing) and `botopink format --check` exits 0 in all four
   `modules/*` roots and in `deps/shapesdsl`. The cells' output did not move. Nothing in this suite
-  *calls* `format --check`: the caller is `scripts/format-check.sh`, stage 3 of `scripts/gate.sh`, and
-  `tests/language` is not in its `TREES` yet — its header names the tree's reds, re-measured
-  2026-09-21 at `361d255d` as `modules/*` **green** (all 11 files, this row) and the single-file cells
-  red (`run/` 9 of 22, `test/` 42 of 49; `run/optional_null_pattern.bp` and `test/case_arms.bp` do not
-  parse, which is front 12's row and not the formatter's). `reject/**`'s structural exemption is
-  `format_cmd.zig`'s arm. Until the tree joins `TREES`, the single-file cells can drift.
+  *calls* `format --check`: the caller is `scripts/format-check.sh`, stage 3 of `scripts/gate.sh`.
+  `tests/language/modules` is canonical but for one file (front 112 of 1.0.11-beta: 36 of the 37
+  files decision 65 had moved were reformatted by `botopink format`, the cells' output unchanged;
+  `modules/decorator_imported_function_name_conflict/src/main.bp` is not, because its four
+  `.expect` files pin the refusal at `src/main.bp:17:3` and the reformat moves that line to 21 —
+  the cell's owner moves the four lines to `src/main.bp:21:3`, reformats the file, and the tree
+  joins `TREES`); `modules/lexer_error_in_imported_module/src/pattern.bp` — the bad escape the cell
+  exists to refuse — is left out of the walk by `format_cmd.zig`'s second structural arm (gate-c:
+  a `.bp` under `modules/<cell>/` that the cell's `.expect` files name and that does not lex or
+  parse), the way `reject/<n>.bp` beside its `<n>.expect` is by the first. `run/` and `test/` are
+  **not** in `TREES`: their reformat does not round-trip on two cells — `run/record_update.bp`
+  (`Cfg(..base, revalidate: 60)` is printed `Cfg(..: base, …)`, which does not parse) and
+  `test/effect_result.bp` (`assert (parse(7) catch -1) == 7` is printed with a `try` inserted
+  under the parentheses, which the parser refuses as `try-await-operand`) — both the printer's
+  (`modules/compiler-core/src/format.zig`, `01-compiler/16-formatter`); the two trees join
+  `TREES` when the printer round-trips them and the 160 other files are reformatted.
 
 **Two step-4.3 measurements worth keeping.** `@panic` and `@todo` abort with stdout intact and a
 non-zero status on all four backends (`run/panic_aborts.bp`, `run/todo_aborts.bp`, `.exit` =

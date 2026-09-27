@@ -782,7 +782,6 @@ pub fn run(
         reporter.stdout(io, footer);
     }
 
-
     diagnostics.reportOrphans(arena, src_loaded.orphans.len);
 
     if (!any_tests) reporter.stdout(io, "no test blocks found\n");

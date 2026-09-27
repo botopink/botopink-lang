@@ -7,6 +7,6 @@ pub fn queryDict(q: string) -> Dict<string, string> {
     for (q.split("&")) { pair ->
         val kv = pair.split("=");
         d = d.insert(kv.at(0) ?? "", kv.at(1) ?? "");
-    };
+    }
     return d;
 }
