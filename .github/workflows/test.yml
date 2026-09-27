@@ -2,14 +2,18 @@
 # (scripts/gate.sh), minus the staged-file checks.
 #
 #   test  `zig build test` from a cold runtime cache, `zig build test-bpmp`,
-#         `scripts/beam_export_audit.sh` (ubuntu + macos), then `zig build
-#         test-cli` (the CLI command contract, test tooling, mutual recursion and
-#         backend execution parity scripts), `scripts/format-check.sh` (decision
-#         66: `botopink format --check` over the compiler's canonical `.bp`
-#         trees), then `zig build test-language`
-#         (tests/language, ubuntu + macos) and `zig build test-docs` (every
-#         `botopink` fence of the user docs). ubuntu + macos hard, windows
-#         allow-fail.
+#         `scripts/beam_export_audit.sh`, then `zig build test-cli` (the CLI
+#         command contract, test tooling, mutual recursion and backend
+#         execution parity scripts), `scripts/format-check.sh` (decision 66:
+#         `botopink format --check` over the compiler's canonical `.bp` trees),
+#         then `zig build test-language` (tests/language) and `zig build
+#         test-docs` (every `botopink` fence of the user docs compiles, every
+#         `reject` fence is refused). Every row runs every step and every row
+#         is hard: ubuntu + macos. There is no windows row (1.0.11-beta
+#         00-gate, gate-f): the snapshot capture carries CRLF / path-separator
+#         drift there, and a row that cannot fail measures nothing — the gap
+#         is listed in the milestone's status.md and the row returns hard, or
+#         not at all.
 #   libs  every sibling library checked out next to botopink-lang
 #         (emilia, erika, jhonstart, onze, rakun at `feat`) plus libs/std,
 #         compiled and tested on every runnable target by `zig build test-libs`
@@ -40,18 +44,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: ubuntu-22.04
-            allow_fail: false
-          - runner: macos-14
-            allow_fail: false
-          # Windows snapshot tests carry CRLF / path-separator drift the same
-          # way test-libs does; pinned-red until a follow-up spec normalises
-          # the snapshot capture for Windows. The hard gate is ubuntu+macos.
-          - runner: windows-2022
-            allow_fail: true
+        runner: [ubuntu-22.04, macos-14]
     runs-on: ${{ matrix.runner }}
-    continue-on-error: ${{ matrix.allow_fail }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -67,13 +61,12 @@ jobs:
       # via `std.process.run`. Install Erlang/OTP 27+ — the comptime runtime
       # writes JSON via `json:encode/1`, which only landed in OTP 27.
       # `erlef/setup-beam` pins the version cleanly on linux; macos goes
-      # through Homebrew (current bottle is OTP 27 / OTP 28). Windows needs
-      # it too, allow-fail or not: `zig build` itself runs `erlc` (front 18,
-      # decision 83 — the resident comptime modules are compiled at build time
-      # and embedded), so without OTP the windows job stops at `run erlc` and
-      # never reaches the vendored wasm3 (modules/wasm3) it is there to build.
-      - name: Install Erlang/OTP (linux, windows)
-        if: matrix.runner != 'macos-14'
+      # through Homebrew (current bottle is OTP 27 / OTP 28). `zig build`
+      # itself runs `erlc` (front 18, decision 83 — the resident comptime
+      # modules are compiled at build time and embedded), so every row needs
+      # OTP before the build.
+      - name: Install Erlang/OTP (linux)
+        if: matrix.runner == 'ubuntu-22.04'
         uses: erlef/setup-beam@v1
         with:
           # OTP 28 (BEAM 16.x) — matches the dev workstation BEAM. OTP 27
@@ -91,8 +84,7 @@ jobs:
       # 26 wasm-codegen snapshot tests embed the wasmtime `RUN LOG`
       # (stdout of the generated `.wat` evaluated against wasmtime) into
       # the snapshot itself. Without wasmtime on PATH the run log is
-      # empty and every wasm snapshot mismatches. Windows: skipped — the
-      # snapshot framework's CRLF gap shadows this anyway.
+      # empty and every wasm snapshot mismatches.
       #
       # We pin a specific release tarball instead of running the
       # `wasmtime.dev/install.sh` shell installer — that script's
@@ -154,9 +146,8 @@ jobs:
 
       # Every beam snapshot module assembled with every function exported: a
       # rejected module prints `REJECTED <slug> <module>` with the validator's
-      # function, offset and reason. Needs erlc — not installed on windows.
+      # function, offset and reason. Needs erlc.
       - name: beam export audit
-        if: matrix.runner != 'windows-2022'
         shell: bash
         run: bash scripts/beam_export_audit.sh
 
@@ -173,14 +164,20 @@ jobs:
 
       # Decision 8's language tests on commonJS and erlang; the expected
       # failures in tests/language/expected-failures.txt name their owner.
-      # Needs node and erl — not installed on windows.
+      # Needs node and erl.
       - name: zig build test-language
-        if: matrix.runner != 'windows-2022'
         shell: bash
         run: zig build test-language
 
-      # Every `botopink` fence in docs.md and README.md compiles
-      # (scripts/check-docs.sh). Needs only the CLI.
+      # Every `botopink` fence in docs.md and README.md compiles and every
+      # `reject` fence is refused (scripts/check-docs.sh). docs.md's
+      # library-dependency example declares `erika`, which the harness
+      # resolves by name under `repository/` — the same place the libs job
+      # puts the sibling libraries — so erika is checked out there first.
+      - name: Checkout erika (docs.md's library-dependency fence)
+        uses: actions/checkout@v5
+        with: { repository: botopink/erika, ref: feat, path: repository/erika }
+
       - name: zig build test-docs
         shell: bash
         run: zig build test-docs

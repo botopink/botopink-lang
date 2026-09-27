@@ -321,22 +321,35 @@ examples and `erika-linq` on erlang).
 
 ## check-docs.sh
 
-`scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list] [--jobs <n>]`
+`scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list] [--jobs <n>] [--self-test]`
 (`zig build test-docs`) — extracts every ```` ```botopink ```` fence of the user
 docs (default `docs.md README.md`) into a scratch project and runs `botopink
 check` on it. An HTML comment on the line above the fence chooses the treatment:
-none (a whole module), `<!-- docs-check: body -->` (statements wrapped in `fn
-main() { … }`), `<!-- docs-check: project <name> <path> -->` (one file of a
-multi-file project — every fence with the same `<name>` is written at its
-`<path>` and the project is checked once, one of them at `src/main.bp`) and
-`<!-- docs-check: skip <reason> -->` (the only escape, for a fence that is a
-table rather than a module; the reason is required and printed). A failing
-fence, an unknown directive, a `skip` with no reason and a named project with no
-`src/main.bp` each fail the run and name the doc and the fence's line. `--list`
-prints every fence with its directive and compiles nothing. State for a named
-project lives in the scratch tree (`.name`, `.origin`, `src/main.bp`), not in an
-associative array, so the script runs under the macOS runner's bash 3.2.
-The checks run on `lib/pool.sh` (`--jobs`, default one per CPU bounded by
+
+| Directive | Treatment | Verdict |
+|---|---|---|
+| none | a whole module, `src/main.bp` | must compile |
+| `<!-- docs-check: body -->` | statements wrapped in `fn main() { … }` | must compile |
+| `<!-- docs-check: project <name> <path> -->` | one file of a multi-file project — every fence with the same `<name>` is written at its `<path>` and the project is checked once, one of them at `src/main.bp`; the fence may be of any language (a ```` ```json ```` fence at `botopink.json` is the manifest, whose `dependencies` resolve by name through the library roots the script sets: `libs/`, the sibling checkouts next to the repository and under `repository/`) | the project must compile; its verdict counts for every fence written into it |
+| `<!-- docs-check: reject [body] <expectation> -->` | code the compiler must refuse; `body` wraps it in `fn main` first | `botopink check` must exit non-zero and its first `error` line must contain `<expectation>` verbatim — an error id (`iter-await`) or a message (`'f' expects 2 argument(s), got 0`); a fence that compiles, or is refused with another first diagnostic, fails (the doc claims a refusal the compiler does not make); one refusal per fence, the checker stops at the first |
+
+There is no directive that skips a fence (1.0.11-beta decision gate-e): a table,
+a grammar or a layout sample is not code and is fenced as ```` ```text ````. A
+failing fence, an unknown directive, a directive on a fence that is not
+```` ```botopink ```` (`project` excepted), a `reject` with no expectation and a
+named project with no `src/main.bp` each fail the run and name the doc and the
+fence's line. `--list` prints every fence with its directive and compiles
+nothing. Every run starts with the harness's own contract — a synthetic doc of
+nine fences with known verdicts (a `reject` that compiles ✗, one refused with
+another diagnostic ✗, the right one ✓, a `reject body` ✓, a `skip` directive ✗, a
+module that does not compile ✗, one that does ✓, a `reject` with no expectation
+✗, a `body` directive on a ```` ```text ```` fence ✗); a verdict that differs
+fails the run before the docs are judged, and `--self-test` runs only it. The
+exit line is `docs: <N> fences — <N> checked, 0 skipped, <F> failed` with
+`checked + failed = fences` (`0 skipped` is a constant). State for a named
+project lives in the scratch tree (`.name`, `.origin`, `.files`, `src/main.bp`),
+not in an associative array, so the script runs under the macOS runner's bash
+3.2. The checks run on `lib/pool.sh` (`--jobs`, default one per CPU bounded by
 memory): the report is written in fence order with a `\001CHECK <k>`
 placeholder per check, and printed after the pool has drained with each
 placeholder replaced by its verdict line, so any `--jobs` prints the serial

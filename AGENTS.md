@@ -208,10 +208,12 @@ meta worktree under `.tasks/<name>` sees only its own libraries (decision 143).
   build test-docs`; an HTML comment on the line above the fence says how
   (`<!-- docs-check: body -->` wraps statements in `fn main`,
   `<!-- docs-check: project <name> <path> -->` writes one file of a multi-file
-  project, `<!-- docs-check: skip <reason> -->` is the only escape and its
-  reason is required and printed). A doc claim that the compiler does not yet
-  honour belongs in the reference's "Decided, not yet implemented" table, with
-  the front that closes it — never as an uncompiled example.
+  project, `<!-- docs-check: reject <expectation> -->` asserts that the
+  compiler refuses the fence with the named error id or message). There is no
+  directive that skips a fence: a table or a grammar is fenced as ```` ```text ````.
+  A doc claim that the compiler does not yet honour belongs in the reference's
+  "Decided, not yet implemented" table, with the front that closes it — never
+  as an uncompiled example.
 - **English only** for source, comments, commits and compiler docs.
 - **One fact, one source.** Each fact lives in a single file; others link to it.
 - `Parser.init(tokens)` and `Lexer.init(source)` do **not** store an
