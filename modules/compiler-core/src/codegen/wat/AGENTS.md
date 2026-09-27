@@ -632,7 +632,24 @@ answered, and each had its own `expected-failures.txt` line:
   answers the mangled global for a name no local holds — so every shape
   predicate and every `global.get` / `global.set` reads the module's own. It
   read the first declaration's value at exit 0
-  (`modules/linked_val_name_collision`).
+  (`modules/linked_val_name_collision`). A `type` (record or enum), a
+  `behavior`, an `implement` and an `extend` block two modules declare are
+  mangled the same way (`link_mangled_types`, `linkTypeRenames`,
+  `renameLinkedTypes`): the later declaration is registered as
+  `<module>/<Name>` and every reference its module and its importers write is
+  renamed in the same reflective walk — a type in a signature, an annotation
+  or a type argument, a constructor call, an `Enum.Variant` read or call, a
+  `case` arm's path (`<module>/Shape.Circle`), an `extend`/`implement`
+  target. The registries stay keyed by that name, so `fieldOffsetIn`,
+  `findVariant` and the descriptors see two types; only the text a value
+  prints under is the bare name again (`displayTypeName`). Before, such a
+  declaration was DROPPED at link time: two packages each declaring `type
+  Response` linked the first one's layout into both and `ok().html` printed
+  `0` at exit 0 (`modules/import_same_name_from_two_packages`,
+  `modules/import_same_enum_name_from_two_packages`). A plain call of a
+  function declared to answer an enum is a variant to the print path
+  (`enumReturnedBy`, `namedShapeOf`, `isTaggedValue`): `@print(stop())` over
+  a linked module's `fn stop() -> Signal` printed the value's address.
 - **A variant reached through its enum is the enum's** (`callKind`):
   `__Token__Layout.Size(…)` — what a section path desugars to — built the
   RECORD `Size` when one of that name was in scope, and `.Layout.Size.Large`

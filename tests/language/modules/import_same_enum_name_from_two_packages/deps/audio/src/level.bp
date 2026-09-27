@@ -1,0 +1,19 @@
+pub type Signal {
+    Low,
+    High(db: i32),
+}
+
+pub fn quiet() -> Signal {
+    return Signal.Low;
+}
+
+pub fn loud(db: i32) -> Signal {
+    return Signal.High(db);
+}
+
+pub fn level(s: Signal) -> i32 {
+    return case s {
+        Signal.Low -> 0;
+        Signal.High(db) -> db;
+    };
+}

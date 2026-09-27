@@ -364,6 +364,14 @@ fn linkKey(arena: std.mem.Allocator, module: []const u8, name: []const u8) ![]co
 /// that mean a MANGLED function: its own function of that name, and every
 /// import — an alias, a namespace call's synthesised alias
 /// (`__bp_ns_jwt__sign`) — whose owner's function was mangled. Local name →
+/// The name a value of a linked type prints under: a mangled `<module>/<Name>`
+/// (or `<module>/<Enum>.<Variant>`) is its declaration's `Name` again — the
+/// mangling is this backend's namespace, not the program's.
+fn displayTypeName(name: []const u8) []const u8 {
+    if (std.mem.lastIndexOfScalar(u8, name, '/')) |i| return name[i + 1 ..];
+    return name;
+}
+
 /// mangled name.
 fn linkRenames(
     arena: std.mem.Allocator,
@@ -418,6 +426,120 @@ fn renameLinkedCalls(comptime T: type, arena: std.mem.Allocator, value: T, renam
         .@"struct" => |st| {
             var out: T = value;
             inline for (st.fields) |f| {
+/// `linkRenames` for the named types: the module's own `type`, `behavior`,
+/// `implement` or `extend` whose declaration was mangled, and every import of
+/// a record or an enum whose owner's was. Local name → mangled.
+fn linkTypeRenames(
+    arena: std.mem.Allocator,
+    mangled: *const std.StringHashMapUnmanaged([]const u8),
+    cross: ?*const CrossModule,
+    module_name: []const u8,
+    program: ast.Program,
+    out: *std.StringHashMapUnmanaged([]const u8),
+) !void {
+    for (program.decls) |d| switch (d) {
+        .type_ => |t| if (mangled.get(try linkKey(arena, module_name, t.name))) |m| try out.put(arena, t.name, m),
+        .behavior => |b| if (mangled.get(try linkKey(arena, module_name, b.name))) |m| try out.put(arena, b.name, m),
+        .implement => |im| if (mangled.get(try linkKey(arena, module_name, im.name))) |m| try out.put(arena, im.name, m),
+        .extend => |ex| if (mangled.get(try linkKey(arena, module_name, ex.name))) |m| try out.put(arena, ex.name, m),
+        .use => |u| for (u.imports) |imp| {
+            const c = cross orelse continue;
+            const src = try u.leafSource(imp, arena, false);
+            const info = c.picked(imp.leaf(), src, null) orelse continue;
+            if (info.kind != .record and info.kind != .@"enum") continue;
+            const m = mangled.get(try linkKey(arena, info.module, imp.leaf())) orelse continue;
+            try out.put(arena, imp.alias orelse imp.leaf(), m);
+        },
+        else => {},
+    };
+}
+
+/// The `Enum` half of a written variant path (`Shape.Circle` → `Shape`),
+/// renamed when `renames` holds it: `<module>/Shape.Circle`.
+fn renameVariantPath(arena: std.mem.Allocator, name: []const u8, renames: *const std.StringHashMapUnmanaged([]const u8)) error{OutOfMemory}![]const u8 {
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return name;
+    const m = renames.get(name[0..dot]) orelse return name;
+    return std.fmt.allocPrint(arena, "{s}{s}", .{ m, name[dot..] });
+}
+
+/// A copy of `value` in which every reference to a type `renames` holds names
+/// the mangled type instead: a type written in a signature, an annotation or
+/// a type argument (`Response`, `Response<T>`), a constructor call
+/// (`Response(html: …)`), the type of an `Enum.Variant` access or call, a
+/// `case` arm's path (`Shape.Circle`), an `extend`/`implement` target. The
+/// walk `renameLinkedCalls` takes: the strings and the nodes no rename reaches
+/// are shared, never mutated.
+fn renameLinkedTypes(comptime T: type, arena: std.mem.Allocator, value: T, renames: *const std.StringHashMapUnmanaged([]const u8)) error{OutOfMemory}!T {
+    if (T == ast.TypeRef) switch (value) {
+        .named => |n| return if (renames.get(n)) |m| .{ .named = m } else value,
+        .generic => |g| {
+            var out = g;
+            if (renames.get(g.name)) |m| out.name = m;
+            out.args = try renameLinkedTypes(@TypeOf(g.args), arena, g.args, renames);
+            return .{ .generic = out };
+        },
+        else => {},
+    };
+    if (T == ast.Pattern) switch (value) {
+        .ident => |n| return .{ .ident = try renameVariantPath(arena, n, renames) },
+        .variant => |v| {
+            var out = v;
+            out.name = try renameVariantPath(arena, v.name, renames);
+            out.payload = try renameLinkedTypes(@TypeOf(v.payload), arena, v.payload, renames);
+            return .{ .variant = out };
+        },
+        else => {},
+    };
+    switch (@typeInfo(T)) {
+        .@"struct" => |st| {
+            var out: T = value;
+            inline for (st.fields) |f| {
+                if (f.is_comptime) continue;
+                @field(out, f.name) = try renameLinkedTypes(f.type, arena, @field(value, f.name), renames);
+            }
+            // A plain call names a record constructor; `Enum.Variant(…)` is
+            // reached through its receiver, an identifier renamed below.
+            if (comptime @hasField(T, "callee") and @hasField(T, "receiver") and @hasField(T, "calleeExpr") and @hasField(T, "is_builtin")) {
+                if (out.receiver == null and out.calleeExpr == null and !out.is_builtin) {
+                    if (renames.get(out.callee)) |m| out.callee = m;
+                }
+            }
+            // An `extend` / `implement` block's target type.
+            if (comptime @hasField(T, "target") and @hasField(T, "methods") and @hasField(T, "shorthand") and @FieldType(T, "target") == []const u8) {
+                if (renames.get(out.target)) |m| out.target = m;
+            }
+            return out;
+        },
+        .@"union" => |u| {
+            if (u.tag_type == null) return value;
+            // `Enum.Variant` reads and calls, and a type named as a value.
+            if (comptime @hasField(T, "ident") and @hasField(T, "dotIdent") and @hasField(T, "identAccess")) {
+                if (value == .ident) if (renames.get(value.ident)) |m| return .{ .ident = m };
+            }
+            switch (value) {
+                inline else => |payload, tag| return @unionInit(T, @tagName(tag), try renameLinkedTypes(@TypeOf(payload), arena, payload, renames)),
+            }
+        },
+        .optional => |o| return if (value) |v| try renameLinkedTypes(o.child, arena, v, renames) else null,
+        .pointer => |p| switch (p.size) {
+            .one => {
+                if (comptime !isAstNodeType(p.child)) return value;
+                const n = try arena.create(p.child);
+                n.* = try renameLinkedTypes(p.child, arena, value.*, renames);
+                return n;
+            },
+            .slice => {
+                if (comptime !isAstNodeType(p.child)) return value;
+                const n = try arena.alloc(p.child, value.len);
+                for (value, 0..) |e, i| n[i] = try renameLinkedTypes(p.child, arena, e, renames);
+                return n;
+            },
+            else => return value,
+        },
+        else => return value,
+    }
+}
+
                 if (f.is_comptime) continue;
                 @field(out, f.name) = try renameLinkedCalls(f.type, arena, @field(value, f.name), renames);
             }
@@ -658,27 +780,64 @@ fn emitWat(
             // A module-level `val` is mangled the same way; its reads are
             // resolved while its module is emitted (`global_renames`), where
             // a parameter or a local of the same name still shadows it.
-            switch (d) {
-                .@"fn" => |f| {
-                    const mangled = try std.fmt.allocPrint(ar0, "{s}/{s}", .{ l.name, n });
-                    try em.link_mangled.put(em.alloc, try linkKey(ar0, l.name, n), mangled);
+            // A `type` (record or enum), a `behavior`, an `implement` and an
+            // `extend` block are mangled the same way, and every reference
+            // their module and its importers write — a constructor call, a
+            // type annotation, a `case` arm's path, `Enum.Variant`, an `is`
+            // test — is renamed with them (`renameLinkedTypes`). Before, such
+            // a declaration was DROPPED: two packages each declaring `type
+            // Response` linked the first one's layout into both, and
+            // `ok().html` printed `0` at exit 0.
+            const mangled = try std.fmt.allocPrint(ar0, "{s}/{s}", .{ l.name, n });
+            const key = try linkKey(ar0, l.name, n);
+            const renamed: ast.DeclKind = switch (d) {
+                .@"fn" => |f| blk: {
+                    try em.link_mangled.put(em.alloc, key, mangled);
                     var g = f;
                     g.isPub = false;
                     g.name = mangled;
-                    try decls.append(ar0, .{ .@"fn" = g });
-                    try owner.append(ar0, li);
+                    break :blk .{ .@"fn" = g };
                 },
-                .val => |v| {
-                    const mangled = try std.fmt.allocPrint(ar0, "{s}/{s}", .{ l.name, n });
-                    try em.link_mangled_vals.put(em.alloc, try linkKey(ar0, l.name, n), mangled);
+                .val => |v| blk: {
+                    try em.link_mangled_vals.put(em.alloc, key, mangled);
                     var w = v;
                     w.isPub = false;
                     w.name = mangled;
-                    try decls.append(ar0, .{ .val = w });
-                    try owner.append(ar0, li);
+                    break :blk .{ .val = w };
                 },
-                else => {},
-            }
+                .type_ => |t| blk: {
+                    try em.link_mangled_types.put(em.alloc, key, mangled);
+                    var u = t;
+                    u.isPub = false;
+                    u.name = mangled;
+                    break :blk .{ .type_ = u };
+                },
+                .behavior => |b| blk: {
+                    try em.link_mangled_types.put(em.alloc, key, mangled);
+                    var c = b;
+                    c.isPub = false;
+                    c.name = mangled;
+                    break :blk .{ .behavior = c };
+                },
+                .implement => |im| blk: {
+                    try em.link_mangled_types.put(em.alloc, key, mangled);
+                    var c = im;
+                    c.isPub = false;
+                    c.name = mangled;
+                    break :blk .{ .implement = c };
+                },
+                .extend => |ex| blk: {
+                    try em.link_mangled_types.put(em.alloc, key, mangled);
+                    var c = ex;
+                    c.isPub = false;
+                    c.name = mangled;
+                    break :blk .{ .extend = c };
+                },
+                // `declName` answers null for these, and they were skipped above.
+                .use, .mod, .comment, .@"test", .typeAlias, .delegate => unreachable,
+            };
+            try decls.append(ar0, renamed);
+            try owner.append(ar0, li);
             continue;
         }
         try own_names.put(n, {});
@@ -735,6 +894,22 @@ fn emitWat(
     try em.collectExtensions(program);
 
     var has_main_0 = false;
+    // The named types the same way: every module that declares or imports a
+    // mangled `type`, `behavior`, `implement` or `extend` has its references
+    // renamed in a copy of its declarations.
+    if (em.link_mangled_types.count() > 0) {
+        var maps = try ar0.alloc(std.StringHashMapUnmanaged([]const u8), linked.len + 1);
+        for (maps, 0..) |*m, i| {
+            m.* = .empty;
+            const mod_name = if (i < linked.len) linked[i].name else module_name;
+            const prog = if (i < linked.len) linked[i].program else own_program;
+            try linkTypeRenames(ar0, &em.link_mangled_types, cross, mod_name, prog, m);
+        }
+        for (decls.items, owner.items) |*d, from| {
+            if (maps[from].count() == 0) continue;
+            d.* = try renameLinkedTypes(ast.DeclKind, ar0, d.*, &maps[from]);
+        }
+    }
     var main_returns_value = false;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| if (isMain0(f)) {
@@ -1133,6 +1308,11 @@ const Emitter = struct {
     /// parameters, bare (`fn ident<T>(x: T) -> T`) → the index of the first
     /// argument declared with that parameter. There is one body for every
     /// instance, so what such a call answers has the shape of that argument
+    /// `linkKey(module, name)` → `<module>/<name>` for every linked `type`,
+    /// `behavior`, `implement` and `extend` block whose name an earlier
+    /// declaration of the program already took (`emitWat`); the references
+    /// are renamed by `renameLinkedTypes` before anything is registered.
+    link_mangled_types: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// (`genericResultArg`): the shape predicates read the argument, where
     /// the declared `T` said nothing and a string printed as its address.
     generic_result_arg: std.StringHashMapUnmanaged(usize) = .empty,
@@ -1400,6 +1580,7 @@ const Emitter = struct {
     fn emitDecl(self: *Emitter, decl: ast.DeclKind) !void {
         switch (decl) {
             .@"fn" => |f| if (!f.isHost() and !self.host_bound.contains(f.name)) try self.emitFn(f),
+        self.link_mangled_types.deinit(self.alloc);
             .val => |v| {
                 if (!isSyntheticEntrypointVal(v)) {
                     try self.emitGlobalVal(v);
@@ -1974,7 +2155,14 @@ const Emitter = struct {
             // `Shape.Square(side: 4)`, and the bare `Square(side: 4)` whose
             // name uniquely finds a payload-bearing variant.
             .call => |c| switch (c.kind) {
-                .call => |cc| return if (self.callKind(cc) == .enum_ctor) .variant else null,
+                .call => |cc| {
+                    if (self.callKind(cc) == .enum_ctor) return .variant;
+                    // `stop()` — a function declared to answer an enum. Its
+                    // value is a variant like the constructor's; the numeric
+                    // printer answered its address.
+                    if (self.enumReturnedBy(cc) != null) return .variant;
+                    return null;
+                },
                 else => return null,
             },
             // `Shape.Nothing` — a unit variant, read as a qualified member.
@@ -1994,6 +2182,19 @@ const Emitter = struct {
                 else => return null,
             },
             else => return null,
+    /// The enum a plain call (`stop()`, an import's alias included) is declared
+    /// to answer, when its callee's return type names one this program holds.
+    /// A `?Enum` is not one: an optional prints by its own path.
+    fn enumReturnedBy(self: *Emitter, cc: anytype) ?[]const u8 {
+        if (cc.receiver != null or cc.calleeExpr != null or cc.is_builtin) return null;
+        const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
+        const rt = switch (self.fn_ret_typerefs.get(callee) orelse return null) {
+            .named => |n| n,
+            else => return null,
+        };
+        return if (self.enums.contains(rt)) rt else null;
+    }
+
         }
     }
 
@@ -2329,7 +2530,14 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| {
-                    if (self.callKind(cc) != .enum_ctor) return false;
+                    if (self.callKind(cc) != .enum_ctor) {
+                        // A call of a function declared to answer an enum
+                        // with payloads: the value carries its variant's
+                        // descriptor exactly as the constructor's does.
+                        // `@print(stop())` printed the pointer.
+                        if (self.enumReturnedBy(cc)) |en| if (self.enums.get(en)) |variants| return enumHasPayload(variants);
+                        return false;
+                    }
                     if (receiverName(cc)) |rcv| {
                         if (self.enums.get(rcv)) |variants| return enumHasPayload(variants);
                     }
@@ -9000,7 +9208,7 @@ const Emitter = struct {
         // the modules are linked into this one, so its `<Type>_<method>` is
         // emitted beside the local ones. Without it the call fell through and
         // `.length` on its result answered `0` at exit 0.
-        const rec = if (self.instance_lowerings.get(loc)) |il| switch (il) {
+        const rec0 = if (self.instance_lowerings.get(loc)) |il| switch (il) {
             // A type this module never imported is linked in all the same.
             .type_, .unplaced_type => |r| r,
             // A behavior-typed receiver is answered by the value's own type
@@ -9027,6 +9235,20 @@ const Emitter = struct {
     /// `specializedCallee` for a method of a generic `type`: the receiver's
     /// written type arguments (`Dict<string, string>`) and the arguments'
     /// shapes bind the owner's and the method's type parameters, and the call
+    /// Inference names a receiver's type by its bare name. When two linked
+    /// modules declare that name, the later one is registered as
+    /// `<module>/<Name>` (`link_mangled_types`), and the value's own module
+    /// says which of the two a method call means — recovered from the
+    /// expression as a field read's receiver is. Without this,
+    /// `netOutcome().describe()` called the FIRST declaration's `describe`
+    /// over the second one's layout and printed the neighbouring field.
+    fn ownerAmongTwins(self: *Emitter, rec: []const u8, recv: ast.Expr) []const u8 {
+        if (self.link_mangled_types.count() == 0) return rec;
+        const own = self.recordTypeOfExpr(recv) orelse return rec;
+        if (!std.mem.eql(u8, own, rec) and std.mem.eql(u8, displayTypeName(own), rec)) return own;
+        return rec;
+    }
+
     /// goes to a copy of the method with them substituted
     /// (`Dict_at__K_string__V_string`). One body compared two `K` keys as
     /// WORDS — a key `split` built at run time never equalled the literal
@@ -9050,6 +9272,7 @@ const Emitter = struct {
                     try subs.append(ar, .{ .name = gp.name, .to = arg });
                     if (std.mem.eql(u8, n, "string") or std.mem.eql(u8, n, "bool") or n[0] == 'f') needed = true;
                 },
+        const rec = self.ownerAmongTwins(rec0, cc.receiver.?.*);
                 else => {},
             },
             else => {},
@@ -9444,7 +9667,7 @@ const Emitter = struct {
         try out.append(a, 'E');
         try out.append(a, @intCast(variants.len));
         for (variants) |v| {
-            const text = try std.fmt.allocPrint(a, "{s}.{s}", .{ ename, v.name });
+            const text = try std.fmt.allocPrint(a, "{s}.{s}", .{ displayTypeName(ename), v.name });
             if (text.len > 255) return error.NameTooLong;
             try out.append(a, @intCast(text.len));
             try out.appendSlice(a, text);
@@ -9485,9 +9708,10 @@ const Emitter = struct {
         refs: ?[]const ast.TypeRef,
     ) anyerror!void {
         const a = self.arena();
-        if (name.len > 255 or fields.len > 255) return error.NameTooLong;
-        try out.append(a, @intCast(name.len));
-        try out.appendSlice(a, name);
+        const shown = displayTypeName(name);
+        if (shown.len > 255 or fields.len > 255) return error.NameTooLong;
+        try out.append(a, @intCast(shown.len));
+        try out.appendSlice(a, shown);
         try out.append(a, @intCast(fields.len));
         for (fields, 0..) |fname, i| {
             if (fname.len > 255) return error.NameTooLong;
