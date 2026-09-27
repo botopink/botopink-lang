@@ -54,10 +54,21 @@ model exists so none of them can be written again:
 
 wasm is the only backend that can answer **wrongly and silently** — a number,
 exit 0, no diagnostic — because every value here is an `i32` and a pointer is a
-number like any other. The rule this directory holds to: *where wasm cannot do a
-shape, it traps*; a wrong value with exit 0 is a bug even when a fixture records
-it. `Instr.unreachable` plus a `;;` comment naming the shape is the mechanism,
-and 24 fixtures already use it.
+number like any other. The rule this directory holds to: *where wasm cannot
+lower a construct, it refuses at compile time; where it cannot do a shape at
+run time, it traps*; a wrong value with exit 0 is a bug even when a fixture
+records it. A lowering that cannot proceed — a name nothing binds, a field on
+a receiver nothing types, a pattern naming no variant, a dispatch with no
+function, a builtin or an expression kind with no lowering — is
+`Emitter.refuse(loc, …)`: `error.WasmLoweringRefused`, carried to the driver as
+a located diagnostic that fails the module (`Emitter.Refusal`, the slot
+`emitWat` fills beside `MissingExternal`'s). Every such site used to write
+`i32.const 0` with a `;; note` and go on, so the program ran and printed a
+wrong value at exit 0 (`00 · 110-gate-wasm`); no `i32.const 0` stands for a
+value this backend could not produce any more, and the three `emitC(zero, …)`
+left are the `0` a `null` IS (`?.` on an absent receiver, an absent optional
+compared or propagated). `Instr.unreachable` plus a `;;` comment naming the
+shape is the run-time half, and 24 fixtures use it.
 
 **A host-backed `declare fn` with no wasm host is REFUSED, not trapped**
 (`wat.zig`'s `external_missing` + `lowerPlainCall`). A `declare fn` carrying
@@ -699,8 +710,10 @@ keep `call`. `tests/language/run/tail_self_call.bp` pins it on four targets.
   `snapshots/codegen/beam/wasm/` is byte-compared, and 280 `WASM TEXT` blocks are
   expected to keep passing `wasmtime compile`.
 - **Never widen a `raw` escape hatch into the model.** There is deliberately no
-  raw-text instruction: a construct wat cannot lower yet emits an honest
-  `Instr.comment` (`;; unsupported expr: …`) plus the `i32.const 0` carrier.
+  raw-text instruction, and no placeholder value either: a construct wat cannot
+  lower is `Emitter.refuse(loc, …)` — a located compile error — never an
+  `Instr.comment` plus an `i32.const 0` carrier (§ Where this backend refuses to
+  answer).
 - **A helper is requested, never named.** Use `Builder.helper(.print_str)`, not
   a `call` with a literal `"__print_str"`. Adding a helper means adding it to
   `Helper`/`HelperGroup`/`HelperSet` and to `wat_prelude.items`/`order`.

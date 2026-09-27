@@ -255,15 +255,24 @@ pub fn codegenEmit(
                 // driver as a located diagnostic naming the function, not as
                 // the bare error name that would abort the whole build.
                 var missing: ?moduleOutput.MissingExternal = null;
-                const emitted = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &cross, &missing) catch |err| {
-                    const me = missing orelse return err;
+                var refused: ?Emitter.Refusal = null;
+                const emitted = emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, linked.items, &cross, &missing, &refused) catch |err| {
+                    // A construct this backend cannot lower reaches the
+                    // driver the same way: located, naming the construct,
+                    // failing only this module.
+                    const diagnostic: moduleOutput.Diagnostic = if (missing) |me|
+                        try me.diagnostic(alloc)
+                    else if (refused) |r|
+                        .{ .type = .{ .message = r.message, .loc = r.loc } }
+                    else
+                        return err;
                     try results.append(alloc, .{
                         .name = ct.name,
                         .src = ct.src,
                         .result = .{
                             .js = try alloc.dupe(u8, ""),
                             .comptime_script = null,
-                            .diagnostic = try me.diagnostic(alloc),
+                            .diagnostic = diagnostic,
                         },
                     });
                     continue;
@@ -355,6 +364,14 @@ fn collectLinks(
     }
 }
 
+/// The name a value of a linked type prints under: a mangled `<module>/<Name>`
+/// (or `<module>/<Enum>.<Variant>`) is its declaration's `Name` again — the
+/// mangling is this backend's namespace, not the program's.
+fn displayTypeName(name: []const u8) []const u8 {
+    if (std.mem.lastIndexOfScalar(u8, name, '/')) |i| return name[i + 1 ..];
+    return name;
+}
+
 /// `link_mangled`'s key: the module that declares `name`, then the name.
 fn linkKey(arena: std.mem.Allocator, module: []const u8, name: []const u8) ![]const u8 {
     return std.fmt.allocPrint(arena, "{s}\x00{s}", .{ module, name });
@@ -364,14 +381,6 @@ fn linkKey(arena: std.mem.Allocator, module: []const u8, name: []const u8) ![]co
 /// that mean a MANGLED function: its own function of that name, and every
 /// import — an alias, a namespace call's synthesised alias
 /// (`__bp_ns_jwt__sign`) — whose owner's function was mangled. Local name →
-/// The name a value of a linked type prints under: a mangled `<module>/<Name>`
-/// (or `<module>/<Enum>.<Variant>`) is its declaration's `Name` again — the
-/// mangling is this backend's namespace, not the program's.
-fn displayTypeName(name: []const u8) []const u8 {
-    if (std.mem.lastIndexOfScalar(u8, name, '/')) |i| return name[i + 1 ..];
-    return name;
-}
-
 /// mangled name.
 fn linkRenames(
     arena: std.mem.Allocator,
@@ -417,15 +426,6 @@ fn linkValRenames(
     };
 }
 
-/// A copy of `value` in which every plain call (`name(…)` — no receiver, no
-/// callee expression, not a builtin) whose name `renames` holds calls the
-/// mangled name instead. Reflective over the AST, like `alias_erase`; the
-/// strings and the nodes no rename reaches are shared, never mutated.
-fn renameLinkedCalls(comptime T: type, arena: std.mem.Allocator, value: T, renames: *const std.StringHashMapUnmanaged([]const u8)) error{OutOfMemory}!T {
-    switch (@typeInfo(T)) {
-        .@"struct" => |st| {
-            var out: T = value;
-            inline for (st.fields) |f| {
 /// `linkRenames` for the named types: the module's own `type`, `behavior`,
 /// `implement` or `extend` whose declaration was mangled, and every import of
 /// a record or an enum whose owner's was. Local name → mangled.
@@ -540,6 +540,15 @@ fn renameLinkedTypes(comptime T: type, arena: std.mem.Allocator, value: T, renam
     }
 }
 
+/// A copy of `value` in which every plain call (`name(…)` — no receiver, no
+/// callee expression, not a builtin) whose name `renames` holds calls the
+/// mangled name instead. Reflective over the AST, like `alias_erase`; the
+/// strings and the nodes no rename reaches are shared, never mutated.
+fn renameLinkedCalls(comptime T: type, arena: std.mem.Allocator, value: T, renames: *const std.StringHashMapUnmanaged([]const u8)) error{OutOfMemory}!T {
+    switch (@typeInfo(T)) {
+        .@"struct" => |st| {
+            var out: T = value;
+            inline for (st.fields) |f| {
                 if (f.is_comptime) continue;
                 @field(out, f.name) = try renameLinkedCalls(f.type, arena, @field(value, f.name), renames);
             }
@@ -724,12 +733,19 @@ fn emitWat(
     cross: ?*const CrossModule,
     /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
     missing: ?*?moduleOutput.MissingExternal,
+    /// Set when the emit fails with `error.WasmLoweringRefused`: the slot
+    /// takes the message's ownership.
+    refused: ?*?Emitter.Refusal,
 ) !Emitted {
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     defer em.deinit();
     em.cross = cross;
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
+    };
+    errdefer if (refused) |slot| {
+        slot.* = em.refusal;
+        em.refusal = null;
     };
     em.module_name = module_name;
     em.instance_lowerings = own_instance_lowerings;
@@ -878,22 +894,6 @@ fn emitWat(
             d.* = try renameLinkedCalls(ast.DeclKind, ar0, d.*, &maps[from]);
         }
     }
-    // The module-level `val`s the same way, read by the emitter per module.
-    var val_maps: []std.StringHashMapUnmanaged([]const u8) = &.{};
-    if (em.link_mangled_vals.count() > 0) {
-        val_maps = try ar0.alloc(std.StringHashMapUnmanaged([]const u8), linked.len + 1);
-        for (val_maps, 0..) |*m, i| {
-            m.* = .empty;
-            const mod_name = if (i < linked.len) linked[i].name else module_name;
-            const prog = if (i < linked.len) linked[i].program else own_program;
-            try linkValRenames(ar0, &em.link_mangled_vals, cross, mod_name, prog, m);
-        }
-    }
-    const program: ast.Program = .{ .decls = decls.items };
-    try em.registerTypes(program);
-    try em.collectExtensions(program);
-
-    var has_main_0 = false;
     // The named types the same way: every module that declares or imports a
     // mangled `type`, `behavior`, `implement` or `extend` has its references
     // renamed in a copy of its declarations.
@@ -910,6 +910,22 @@ fn emitWat(
             d.* = try renameLinkedTypes(ast.DeclKind, ar0, d.*, &maps[from]);
         }
     }
+    // The module-level `val`s the same way, read by the emitter per module.
+    var val_maps: []std.StringHashMapUnmanaged([]const u8) = &.{};
+    if (em.link_mangled_vals.count() > 0) {
+        val_maps = try ar0.alloc(std.StringHashMapUnmanaged([]const u8), linked.len + 1);
+        for (val_maps, 0..) |*m, i| {
+            m.* = .empty;
+            const mod_name = if (i < linked.len) linked[i].name else module_name;
+            const prog = if (i < linked.len) linked[i].program else own_program;
+            try linkValRenames(ar0, &em.link_mangled_vals, cross, mod_name, prog, m);
+        }
+    }
+    const program: ast.Program = .{ .decls = decls.items };
+    try em.registerTypes(program);
+    try em.collectExtensions(program);
+
+    var has_main_0 = false;
     var main_returns_value = false;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| if (isMain0(f)) {
@@ -1292,6 +1308,11 @@ const Emitter = struct {
     /// whose name an earlier declaration of the program already took
     /// (`emitWat`).
     link_mangled_vals: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// `linkKey(module, name)` → `<module>/<name>` for every linked `type`,
+    /// `behavior`, `implement` and `extend` block whose name an earlier
+    /// declaration of the program already took (`emitWat`); the references
+    /// are renamed by `renameLinkedTypes` before anything is registered.
+    link_mangled_types: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// While a declaration is emitted, its module's reads of a mangled `val`:
     /// local name → mangled global (`resolveName`).
     global_renames: ?*const std.StringHashMapUnmanaged([]const u8) = null,
@@ -1308,11 +1329,6 @@ const Emitter = struct {
     /// parameters, bare (`fn ident<T>(x: T) -> T`) → the index of the first
     /// argument declared with that parameter. There is one body for every
     /// instance, so what such a call answers has the shape of that argument
-    /// `linkKey(module, name)` → `<module>/<name>` for every linked `type`,
-    /// `behavior`, `implement` and `extend` block whose name an earlier
-    /// declaration of the program already took (`emitWat`); the references
-    /// are renamed by `renameLinkedTypes` before anything is registered.
-    link_mangled_types: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// (`genericResultArg`): the shape predicates read the argument, where
     /// the declared `T` said nothing and a string printed as its address.
     generic_result_arg: std.StringHashMapUnmanaged(usize) = .empty,
@@ -1418,6 +1434,13 @@ const Emitter = struct {
     /// the driver gets a located diagnostic naming the fn and this backend
     /// instead of the bare error name.
     missing_external: ?moduleOutput.MissingExternal = null,
+    /// Set when the emit fails with `error.WasmLoweringRefused` (`refuse`):
+    /// a construct this backend cannot lower, reported to the driver as a
+    /// located diagnostic. Before, such a site wrote `i32.const 0` and a
+    /// `;; note` and went on, so the program ran and printed a wrong value at
+    /// exit 0 — the one outcome decision 67 rules out. Every site that used
+    /// to do that refuses now; a `;; note` documents only a correct lowering.
+    refusal: ?Refusal = null,
     assoc_needed: std.ArrayListUnmanaged([]const u8) = .empty,
     assoc_emitted: std.StringHashMap(void),
     /// Extension block name → target type + methods (for resolving the mangled
@@ -1428,6 +1451,21 @@ const Emitter = struct {
     sym_buf: [256]u8 = undefined,
 
     const ExtInfo = struct { target: []const u8, methods: []const ast.ImplementMethod };
+
+    /// A lowering this backend refused: the located message the driver reports
+    /// in place of the module. `message` is owned by the emitter's `alloc` and
+    /// handed to the diagnostic (`codegenEmit`).
+    pub const Refusal = struct { message: []u8, loc: ?ast.Loc };
+
+    /// Stop the emit at a construct this backend cannot lower: records the
+    /// located message and answers the error every lowering path propagates.
+    /// Written `return self.refuse(loc, "…", .{…})`.
+    fn refuse(self: *Emitter, loc: ?ast.Loc, comptime f: []const u8, args: anytype) anyerror {
+        const message = std.fmt.allocPrint(self.alloc, f, args) catch |err| return err;
+        if (self.refusal) |old| self.alloc.free(old.message);
+        self.refusal = .{ .message = message, .loc = loc };
+        return error.WasmLoweringRefused;
+    }
 
     fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         const em: Emitter = .{
@@ -1542,6 +1580,7 @@ const Emitter = struct {
         self.deferred_globals.deinit(self.alloc);
         self.deferred_stmts.deinit(self.alloc);
         self.link_mangled_vals.deinit(self.alloc);
+        self.link_mangled_types.deinit(self.alloc);
         self.deferred_renames.deinit(self.alloc);
         self.link_mangled.deinit(self.alloc);
         self.self_method_fields.deinit(self.alloc);
@@ -1580,7 +1619,6 @@ const Emitter = struct {
     fn emitDecl(self: *Emitter, decl: ast.DeclKind) !void {
         switch (decl) {
             .@"fn" => |f| if (!f.isHost() and !self.host_bound.contains(f.name)) try self.emitFn(f),
-        self.link_mangled_types.deinit(self.alloc);
             .val => |v| {
                 if (!isSyntheticEntrypointVal(v)) {
                     try self.emitGlobalVal(v);
@@ -2137,6 +2175,19 @@ const Emitter = struct {
     /// bound to such a container (the element shapes tracked for a local are
     /// `i32`/`f32`/`str`, and a record is an `i32` slot like any pointer), and a
     /// record read out of one.
+    /// The enum a plain call (`stop()`, an import's alias included) is declared
+    /// to answer, when its callee's return type names one this program holds.
+    /// A `?Enum` is not one: an optional prints by its own path.
+    fn enumReturnedBy(self: *Emitter, cc: anytype) ?[]const u8 {
+        if (cc.receiver != null or cc.calleeExpr != null or cc.is_builtin) return null;
+        const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
+        const rt = switch (self.fn_ret_typerefs.get(callee) orelse return null) {
+            .named => |n| n,
+            else => return null,
+        };
+        return if (self.enums.contains(rt)) rt else null;
+    }
+
     fn namedShapeOf(self: *Emitter, e: ast.Expr) ?NamedShape {
         if (self.recordTypeOfExpr(e)) |_| return .record;
         switch (e) {
@@ -2182,19 +2233,6 @@ const Emitter = struct {
                 else => return null,
             },
             else => return null,
-    /// The enum a plain call (`stop()`, an import's alias included) is declared
-    /// to answer, when its callee's return type names one this program holds.
-    /// A `?Enum` is not one: an optional prints by its own path.
-    fn enumReturnedBy(self: *Emitter, cc: anytype) ?[]const u8 {
-        if (cc.receiver != null or cc.calleeExpr != null or cc.is_builtin) return null;
-        const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
-        const rt = switch (self.fn_ret_typerefs.get(callee) orelse return null) {
-            .named => |n| n,
-            else => return null,
-        };
-        return if (self.enums.contains(rt)) rt else null;
-    }
-
         }
     }
 
@@ -2858,7 +2896,7 @@ const Emitter = struct {
     /// Bind a destructuring parameter's field names to locals at function
     /// entry: the parameter holds a pointer to a run of 4-byte slots, so each
     /// bound name is an `i32.load` at the field's declared offset.
-    fn bindParamDestructure(self: *Emitter, p: ast.Param, symbol: []const u8) !void {
+    fn bindParamDestructure(self: *Emitter, p: ast.Param, symbol: []const u8, loc: ast.Loc) !void {
         const d = p.destruct orelse return;
         const rty = self.resolveRecordName(typeRefName(p.typeRef));
         switch (d) {
@@ -2884,7 +2922,7 @@ const Emitter = struct {
                 try self.emitLoadOffset(@intCast(i * 4));
                 try self.emit(.{ .local_set = name });
             },
-            else => try self.note("unsupported param destructure pattern"),
+            .list, .ctor => return self.refuse(loc, "the wasm backend has no lowering for a list or a constructor pattern in the parameter `{s}`", .{p.name}),
         }
     }
 
@@ -2910,7 +2948,10 @@ const Emitter = struct {
         if (prologue) |f| {
             for (f.params, 0..) |p, i| {
                 if (p.destruct == null) continue;
-                try self.bindParamDestructure(p, try self.paramSymbol(p, i));
+                // A parameter carries no location of its own: the body's first
+                // statement stands for the signature.
+                const loc: ast.Loc = if (body.len > 0) body[0].expr.getLoc() else f.returnTypeLoc;
+                try self.bindParamDestructure(p, try self.paramSymbol(p, i), loc);
             }
         }
         const tail_type: ?[]const u8 = if (self.fn_has_result and body.len > 0)
@@ -4361,7 +4402,7 @@ const Emitter = struct {
                                 try self.emit(opOf("i32", "add"));
                                 try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} +=", .{fa.field});
                             },
-                        } else try self.note("field assign (unknown receiver type)");
+                        } else return self.refuse(stmt.expr.getLoc(), "the wasm backend cannot place `.{s} =`: the receiver's type is not known here", .{fa.field});
                     },
                 },
                 .localBindDestruct => |lb| {
@@ -4422,7 +4463,7 @@ const Emitter = struct {
                                 }
                             } else if (try self.ctorAsFieldsPattern(pat)) |fp| {
                                 try self.bindPattern(fp, mem);
-                            } else try self.note("unsupported destructure pattern");
+                            } else return self.refuse(stmt.expr.getLoc(), "the wasm backend has no lowering for this constructor pattern in a binding", .{});
                         },
                         // A spread-only list is the one list the checker lets
                         // through: `[..rest]` is the whole value.
@@ -4433,7 +4474,7 @@ const Emitter = struct {
                                 try self.emit(.{ .local_get = mem });
                                 try self.emit(.{ .local_set = sp });
                             };
-                        } else try self.note("unsupported destructure pattern"),
+                        } else return self.refuse(stmt.expr.getLoc(), "the wasm backend has no lowering for a list pattern with elements in a binding", .{}),
                     }
                 },
             },
@@ -4626,9 +4667,9 @@ const Emitter = struct {
                     } else {
                         // Neither a local nor a module global: a `global.get`
                         // here would make the whole module unloadable
-                        // ("unknown global"). Emit the zero carrier instead and
-                        // record the gap.
-                        try self.emitCf(zero, "unbound identifier {s}", .{n});
+                        // ("unknown global"), and a `0` in its place printed
+                        // a wrong value at exit 0.
+                        return self.refuse(id.loc, "`{s}` is not bound here: the wasm backend found no local, global, function or variant of that name", .{n});
                     }
                 },
                 .dotIdent => |name| {
@@ -4637,7 +4678,7 @@ const Emitter = struct {
                     if (self.findVariant(name)) |fv| {
                         try self.emitUnitVariant(fv.variants, fv.tag, "", name);
                     } else {
-                        try self.emitCf(zero, ".{s}", .{name});
+                        return self.refuse(id.loc, "`.{s}` names no variant of an enum this program declares", .{name});
                     }
                 },
                 .identAccess => |ia| try self.lowerIdentAccess(ia, id.loc),
@@ -4690,7 +4731,7 @@ const Emitter = struct {
                         return;
                     }
                     switch (self.callKind(cc)) {
-                        .builtin => try self.lowerBuiltin(cc),
+                        .builtin => try self.lowerBuiltin(cc, c.loc),
                         .record_ctor => try self.lowerRecordCtor(cc, self.records.get(cc.callee).?),
                         .enum_ctor => {
                             if (receiverName(cc)) |rcv| {
@@ -4701,7 +4742,7 @@ const Emitter = struct {
                                         return;
                                     }
                                 }
-                                try self.emitC(zero, "unknown variant");
+                                return self.refuse(c.loc, "`{s}.{s}` names no variant of `{s}`", .{ rcv, cc.callee, rcv });
                             } else if (self.findVariant(cc.callee)) |fv| {
                                 try self.lowerEnumCtor(cc, fv.tag, fv.variant);
                             }
@@ -4718,10 +4759,10 @@ const Emitter = struct {
                                     try self.emit(.{ .call = self.import_aliases.get(name) orelse name });
                                     if (sig.result == null) try self.pushZero();
                                 } else {
-                                    try self.emitCf(zero, "unresolved pipeline target {s}", .{name});
+                                    return self.refuse(c.loc, "`{s}` is not a function the wasm backend can pipe into", .{name});
                                 }
                             },
-                            else => try self.emitC(zero, "unsupported pipeline rhs"),
+                            else => return self.refuse(c.loc, "the wasm backend pipes only into a named function", .{}),
                         },
                         else => try self.lowerValue(pl.rhs.*),
                     }
@@ -4735,9 +4776,9 @@ const Emitter = struct {
                 .grouped => |inner| try self.lowerExpr(inner.*),
                 .case => |c| try self.lowerCase(c),
                 .tupleLit => |tl| try self.lowerTupleLit(tl),
-                .arrayLit => |al| try self.lowerArrayLit(al),
+                .arrayLit => |al| try self.lowerArrayLit(al, e.getLoc()),
                 .behaviorLit => |il| try self.lowerBehaviorLit(il),
-                .range => try self.emitC(zero, "range"),
+                .range => return self.refuse(e.getLoc(), "the wasm backend has no lowering for a range outside an index or a pattern", .{}),
             },
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
@@ -4771,19 +4812,19 @@ const Emitter = struct {
                 .@"continue" => if (self.loop_depth > 0)
                     try self.emit(.{ .br = next_label })
                 else
-                    try self.note("continue outside a loop"),
+                    return self.refuse(e.getLoc(), "`continue` outside a loop", .{}),
             },
             .comptime_ => |ct| switch (ct.kind) {
                 .assert => |a| try self.lowerAssert(a, ct.loc),
-                .assertPattern => |ap| try self.lowerAssertPattern(ap),
-                else => try self.emit(zero),
+                .assertPattern => |ap| try self.lowerAssertPattern(ap, ct.loc),
+                else => return self.refuse(ct.loc, "the wasm backend has no lowering for the comptime construct `{s}`", .{@tagName(ct.kind)}),
             },
             .function => |f| if (f.kind.syntax == .asyncBlock)
                 try self.lowerAsyncBlock(f.kind.body)
             else
                 try self.lowerLambdaValue(f.kind.params, f.kind.body),
             .loop => |lp| try self.lowerLoop(lp),
-            else => try self.noteF("unsupported expr: {s}", .{@tagName(e)}),
+            else => return self.refuse(e.getLoc(), "the wasm backend has no lowering for a `{s}` expression", .{@tagName(e)}),
         }
     }
 
@@ -4840,7 +4881,7 @@ const Emitter = struct {
         };
     }
 
-    fn lowerAssertPattern(self: *Emitter, ap: anytype) anyerror!void {
+    fn lowerAssertPattern(self: *Emitter, ap: anytype, loc: ast.Loc) anyerror!void {
         const slot = try std.fmt.allocPrint(self.arena(), "__assert_{d}", .{self.assert_seq});
         self.assert_seq += 1;
         try self.declareLocal(slot, "i32");
@@ -4850,7 +4891,7 @@ const Emitter = struct {
         if (self.resultShapeOf(ap.expr.*)) |shape| try self.result_subjects.put(slot, shape);
 
         if (!self.patternIsIrrefutable(ap.pattern) and self.patternTestIsReal(ap.pattern)) {
-            try self.emitPatternTest(ap.pattern, slot);
+            try self.emitPatternTest(ap.pattern, slot, loc);
             try self.emit(opOf("i32", "eqz"));
             var then_c: Capture = .{};
             self.open(&then_c);
@@ -5115,7 +5156,7 @@ const Emitter = struct {
         try self.emit(self.builder().helper(if (last) .print_i32 else .print_i32_raw));
     }
 
-    fn lowerBuiltin(self: *Emitter, cc: anytype) anyerror!void {
+    fn lowerBuiltin(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!void {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
             try self.emit(.@"unreachable");
             return;
@@ -5147,7 +5188,7 @@ const Emitter = struct {
             return;
         }
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) {
-            try self.lowerResultOptionOp(cc.callee, cc.args);
+            try self.lowerResultOptionOp(cc.callee, cc.args, loc);
             return;
         }
         // Decorator / template builtins (`@emit`, `@compilerError`,
@@ -5162,7 +5203,7 @@ const Emitter = struct {
             try self.emitCf(.@"unreachable", "comptime-only builtin: {s}", .{cc.callee});
             return;
         }
-        try self.note("builtin stub");
+        return self.refuse(loc, "the wasm backend has no lowering for the builtin `@{s}`", .{cc.callee});
     }
 
     /// Decision 30's index expression, which the parser lands as the reserved
@@ -5355,7 +5396,7 @@ const Emitter = struct {
     /// `@Option` is the bare value, with `0` standing for absence. `map`/`flatMap`
     /// inline the closure body (there are no first-class funs here); the other
     /// ops are pure tag tests / payload loads.
-    fn lowerResultOptionOp(self: *Emitter, callee: []const u8, args: anytype) anyerror!void {
+    fn lowerResultOptionOp(self: *Emitter, callee: []const u8, args: anytype, loc: ast.Loc) anyerror!void {
         const recv = args[0].value;
         const arg1: ?*ast.Expr = if (args.len > 1) args[1].value else null;
 
@@ -5390,11 +5431,7 @@ const Emitter = struct {
 
         if (std.mem.eql(u8, callee, "__bp_result_map") or std.mem.eql(u8, callee, "__bp_result_flatMap")) {
             const is_map = std.mem.eql(u8, callee, "__bp_result_map");
-            const le = lambdaArg(arg1) orelse {
-                try self.note("map/flatMap needs a literal closure on WASM — receiver passed through");
-                try self.lowerExpr(recv.*);
-                return;
-            };
+            const le = lambdaArg(arg1) orelse return self.refuse(loc, "`Result.{s}` on the wasm backend takes a closure written at the call; a function value is not lowered", .{if (is_map) "map" else "flatMap"});
             const lam = le.function.kind;
             const slot = try self.declRes();
             try self.lowerExpr(recv.*);
@@ -5481,14 +5518,10 @@ const Emitter = struct {
         }
 
         if (std.mem.eql(u8, callee, "__bp_option_map") or std.mem.eql(u8, callee, "__bp_option_flatMap")) {
-            const le = lambdaArg(arg1) orelse {
-                try self.note("map/flatMap needs a literal closure on WASM — receiver passed through");
-                try self.lowerExpr(recv.*);
-                return;
-            };
+            const is_map = std.mem.eql(u8, callee, "__bp_option_map");
+            const le = lambdaArg(arg1) orelse return self.refuse(loc, "`Option.{s}` on the wasm backend takes a closure written at the call; a function value is not lowered", .{if (is_map) "map" else "flatMap"});
             const lam = le.function.kind;
             const boxed = self.optionIsBoxed(recv.*, null);
-            const is_map = std.mem.eql(u8, callee, "__bp_option_map");
             const slot = try self.declRes();
             try self.lowerExpr(recv.*);
             try self.emit(.{ .local_set = slot });
@@ -5547,7 +5580,7 @@ const Emitter = struct {
             return;
         }
 
-        try self.noteF("unsupported Result/Option op: {s}", .{callee});
+        return self.refuse(loc, "the wasm backend has no lowering for `{s}`", .{callee});
     }
 
     /// True when `e` evaluates to the 0/1 boolean carrier: the `true`/`false`
@@ -5683,7 +5716,7 @@ const Emitter = struct {
             self.aliases.clearRetainingCapacity();
             return;
         }
-        try self.emitPatternTest(arm.pattern, subj);
+        try self.emitPatternTest(arm.pattern, subj, arm.patternLoc);
         try self.emitArmChain(arms, subj, idx, arm.body);
     }
 
@@ -5843,7 +5876,7 @@ const Emitter = struct {
         };
     }
 
-    fn emitPatternTest(self: *Emitter, p: ast.Pattern, subj: []const u8) anyerror!void {
+    fn emitPatternTest(self: *Emitter, p: ast.Pattern, subj: []const u8, loc: ast.Loc) anyerror!void {
         const prev_hint = self.case_enum_hint;
         self.case_enum_hint = self.subject_enums.get(subj);
         defer self.case_enum_hint = prev_hint;
@@ -5862,7 +5895,7 @@ const Emitter = struct {
                         try self.emit(opOf("i32", "and"));
                         continue;
                     };
-                    try self.emitPatternTest(sub, local);
+                    try self.emitPatternTest(sub, local, loc);
                     try self.emit(opOf("i32", "and"));
                 }
             },
@@ -5874,7 +5907,7 @@ const Emitter = struct {
                     if (self.variantRef(n)) |ref|
                         try self.emitTagTest(ref, subj)
                     else
-                        try self.emitCf(zero, "unknown variant pattern: {s}", .{n});
+                        return self.refuse(loc, "`{s}` names no variant of an enum this program declares", .{n});
                 } else if (self.findVariant(n)) |fv| {
                     // One spelling can be BOTH a `type` this module places and
                     // a variant some enum declares (`type Block(…)` beside
@@ -5887,7 +5920,7 @@ const Emitter = struct {
                     // record, and a payload enum's tag load read a record's
                     // first field as a tag.
                     if (self.records.contains(n) and try self.emitNamedTypeTest(n, subj)) {
-                        try self.emitVariantIdentityTest(fv, subj);
+                        try self.emitVariantIdentityTest(fv, subj, loc);
                         try self.emit(opOf("i32", "or"));
                     } else try self.emitTagTest(.{ .user = fv }, subj);
                 } else if (try self.emitNamedTypeTest(n, subj)) {
@@ -5916,7 +5949,7 @@ const Emitter = struct {
             .@"or" => |pats| {
                 try self.emit(zero);
                 for (pats) |sub| {
-                    try self.emitPatternTest(sub, subj);
+                    try self.emitPatternTest(sub, subj, loc);
                     try self.emit(opOf("i32", "or"));
                 }
             },
@@ -5928,8 +5961,8 @@ const Emitter = struct {
                     // this arm the shape fell into the variant path below, found
                     // no variant named `""` and answered `0` for every value.
                     const bounds = v.payload.literals;
-                    try self.emitRangeBound(bounds[0], subj, "ge_s");
-                    try self.emitRangeBound(bounds[1], subj, "le_s");
+                    try self.emitRangeBound(bounds[0], subj, "ge_s", loc);
+                    try self.emitRangeBound(bounds[1], subj, "le_s", loc);
                     try self.emit(opOf("i32", "and"));
                     return;
                 }
@@ -5939,13 +5972,10 @@ const Emitter = struct {
                 // variant, no enum declared the name and the pattern tested
                 // nothing and bound nothing (`unbound identifier n`).
                 if (self.recordPatternType(v)) |rty| {
-                    if (!try self.emitNamedTypeTest(rty, subj)) try self.emitC(zero, "a record this module cannot place");
+                    if (!try self.emitNamedTypeTest(rty, subj)) return self.refuse(loc, "the wasm backend has no descriptor for `{s}`, so its constructor pattern cannot be tested", .{rty});
                     if (v.payload == .literals) for (v.payload.literals, 0..) |sub, i| {
-                        const fname = self.recordPatternField(rty, v, i) orelse {
-                            try self.emit(.drop);
-                            try self.emitC(zero, "a label the record does not declare");
-                            return;
-                        };
+                        const fname = self.recordPatternField(rty, v, i) orelse
+                            return self.refuse(loc, "the constructor pattern names a field `{s}` does not declare", .{rty});
                         const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
                         self.case_depth += 1;
                         var then_c: Capture = .{};
@@ -5955,7 +5985,7 @@ const Emitter = struct {
                         try self.lowerValue(acc);
                         try self.emit(.{ .local_set = field });
                         try self.noteFieldBinder(field, rty, fname);
-                        try self.emitPatternTest(sub, field);
+                        try self.emitPatternTest(sub, field, loc);
                         const then_seq = self.seal(&then_c, .{ .value = .i32 });
                         var else_c: Capture = .{};
                         self.open(&else_c);
@@ -5965,10 +5995,8 @@ const Emitter = struct {
                     };
                     return;
                 }
-                const ref = self.variantRef(v.name) orelse {
-                    try self.emitC(zero, "unknown variant pattern");
-                    return;
-                };
+                const ref = self.variantRef(v.name) orelse
+                    return self.refuse(loc, "`{s}` names no variant of an enum this program declares", .{v.name});
                 try self.emitTagTest(ref, subj);
                 switch (v.payload) {
                     .literals => |lits| for (lits, 0..) |sub, i| {
@@ -5981,7 +6009,7 @@ const Emitter = struct {
                         try self.emit(.{ .local_get = subj });
                         try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
                         try self.emit(.{ .local_set = field });
-                        try self.emitPatternTest(sub, field);
+                        try self.emitPatternTest(sub, field, loc);
                         const then_seq = self.seal(&then_c, .{ .value = .i32 });
                         var else_c: Capture = .{};
                         self.open(&else_c);
@@ -5997,7 +6025,7 @@ const Emitter = struct {
 
     /// One end of a range pattern: `subj <op> bound`, the bound a number
     /// literal (a string bound has no wasm ordering yet and answers `0`).
-    fn emitRangeBound(self: *Emitter, bound: ast.Pattern, subj: []const u8, cmp: []const u8) anyerror!void {
+    fn emitRangeBound(self: *Emitter, bound: ast.Pattern, subj: []const u8, cmp: []const u8, loc: ast.Loc) anyerror!void {
         switch (bound) {
             .numberLit => |n| {
                 try self.emit(.{ .local_get = subj });
@@ -6008,7 +6036,7 @@ const Emitter = struct {
                 } else try self.emit(try numLitConst(self.arena(), n));
                 try self.emit(opOf("i32", cmp));
             },
-            else => try self.emitC(zero, "range pattern over a non-numeric bound"),
+            else => return self.refuse(loc, "the wasm backend tests a range pattern against a number literal bound only", .{}),
         }
     }
 
@@ -6017,7 +6045,7 @@ const Emitter = struct {
     /// equals (a pointer is at least the heap floor); a payload enum's member
     /// is allocated and carries its variant's descriptor, so the test is the
     /// header one, never a load of what would be a record's first field.
-    fn emitVariantIdentityTest(self: *Emitter, fv: FoundVariant, subj: []const u8) anyerror!void {
+    fn emitVariantIdentityTest(self: *Emitter, fv: FoundVariant, subj: []const u8, loc: ast.Loc) anyerror!void {
         if (enumHasPayload(fv.variants)) {
             var it = self.enums.iterator();
             while (it.next()) |entry| {
@@ -6032,8 +6060,7 @@ const Emitter = struct {
                 try self.emit(opOf("i32", "and"));
                 return;
             }
-            try self.emitCf(zero, "no descriptor for variant {s}", .{fv.variant.name});
-            return;
+            return self.refuse(loc, "the wasm backend has no descriptor for the variant `{s}`, so the arm cannot be tested", .{fv.variant.name});
         }
         try self.emitTagTest(.{ .user = fv }, subj);
     }
@@ -6443,9 +6470,11 @@ const Emitter = struct {
     /// prefix. Layout: `[len i32][elem0 i32][elem1 i32]...`. `.len` reads
     /// the prefix (`i32.load` at offset 0); element access via `arr[N]`
     /// is `i32.load offset=(N+1)*4`. Matches the string layout convention
-    /// so `.len` is uniform across both. Spread is still deferred.
-    fn lowerArrayLit(self: *Emitter, al: anytype) anyerror!void {
-        if (al.spread != null) try self.note("note: array spread not lowered");
+    /// so `.len` is uniform across both. A trailing spread (`[1, 2, ..rest]`
+    /// — the parser admits no other position) is the literal's elements
+    /// followed by the spread value's, through `$__arr_concat`; before, the
+    /// spread was dropped with a `;; note` and the array was two short.
+    fn lowerArrayLit(self: *Emitter, al: anytype, loc: ast.Loc) anyerror!void {
         const total: u32 = @intCast((al.elems.len + 1) * 4);
         const base = try self.allocSlots(total);
         try self.storeSlotConst(base, 0, @intCast(al.elems.len));
@@ -6454,6 +6483,16 @@ const Emitter = struct {
             try self.storeSlotExpr(base, off, el);
         }
         try self.loadBase(base);
+        if (al.spreadExpr) |se| {
+            try self.lowerCoerced(se.*, "i32");
+            try self.emit(self.builder().helper(.arr_concat));
+        } else if (al.spread) |name| {
+            if (name.len == 0) return self.refuse(loc, "a bare `..` in an array literal spreads nothing", .{});
+            const rest = try self.arena().create(ast.Expr);
+            rest.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = name } } };
+            try self.lowerCoerced(rest.*, "i32");
+            try self.emit(self.builder().helper(.arr_concat));
+        }
     }
 
     /// `record { a: 1, b: "x" }` → contiguous 4-byte slots in source-text order.
@@ -6514,10 +6553,8 @@ const Emitter = struct {
         // as the first argument, then the explicit args.
         if (self.rewrites.get(loc)) |sym| {
             const mangled = self.extMangledName(&nbuf, sym, cc.callee) orelse return false;
-            const sig = self.fn_sigs.get(mangled) orelse {
-                try self.emitCf(zero, "unresolved dispatch: {s}", .{mangled});
-                return true;
-            };
+            const sig = self.fn_sigs.get(mangled) orelse
+                return self.refuse(loc, "`{s}` resolves to a method the wasm backend emitted no function for", .{mangled});
             var base: usize = 0;
             if (cc.receiver) |recv| if (sig.params.len > 0) {
                 try self.lowerCoerced(recv.*, sig.params[0]);
@@ -6533,10 +6570,8 @@ const Emitter = struct {
         if (receiverName(cc)) |rn| {
             if (self.ext_by_name.contains(rn)) {
                 const mangled = self.extMangledName(&nbuf, rn, cc.callee) orelse return false;
-                const sig = self.fn_sigs.get(mangled) orelse {
-                    try self.emitCf(zero, "unresolved dispatch: {s}", .{mangled});
-                    return true;
-                };
+                const sig = self.fn_sigs.get(mangled) orelse
+                    return self.refuse(loc, "`{s}` resolves to a method the wasm backend emitted no function for", .{mangled});
                 try self.lowerCallArgs(cc.args, sig, 0);
                 try self.emit(.{ .call = try self.arena().dupe(u8, mangled) });
                 return true;
@@ -6686,8 +6721,8 @@ const Emitter = struct {
         // A user enum variant of the same name was matched before this.
         if (cc.receiver == null and cc.args.len == 1 and cc.trailing.len == 0 and self.findVariant(cc.callee) == null) {
             if (self.variantRef(cc.callee)) |ref| switch (ref) {
-                .result_ok => return self.lowerResultOptionOp("__bp_ok", cc.args),
-                .result_err => return self.lowerResultOptionOp("__bp_error", cc.args),
+                .result_ok => return self.lowerResultOptionOp("__bp_ok", cc.args, loc),
+                .result_err => return self.lowerResultOptionOp("__bp_error", cc.args, loc),
                 .user => {},
             };
         }
@@ -9200,6 +9235,20 @@ const Emitter = struct {
 
     /// `$<Record>_<method>` for `recv.method(…)` when inference tagged the
     /// receiver as a record value and the module emitted that method.
+    /// Inference names a receiver's type by its bare name. When two linked
+    /// modules declare that name, the later one is registered as
+    /// `<module>/<Name>` (`link_mangled_types`), and the value's own module
+    /// says which of the two a method call means — recovered from the
+    /// expression as a field read's receiver is. Without this,
+    /// `netOutcome().describe()` called the FIRST declaration's `describe`
+    /// over the second one's layout and printed the neighbouring field.
+    fn ownerAmongTwins(self: *Emitter, rec: []const u8, recv: ast.Expr) []const u8 {
+        if (self.link_mangled_types.count() == 0) return rec;
+        const own = self.recordTypeOfExpr(recv) orelse return rec;
+        if (!std.mem.eql(u8, own, rec) and std.mem.eql(u8, displayTypeName(own), rec)) return own;
+        return rec;
+    }
+
     fn recordMethodSym(self: *Emitter, cc: anytype, loc: ast.Loc) ?[]const u8 {
         if (cc.receiver == null or cc.is_builtin) return null;
         // Inference records no note for a method on a value of an IMPORTED
@@ -9223,6 +9272,7 @@ const Emitter = struct {
             },
             .prim, .field_of, .sequence_next, .division => return null,
         } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
+        const rec = self.ownerAmongTwins(rec0, cc.receiver.?.*);
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
         if (!self.fn_sigs.contains(sym)) return null;
         if (self.generic_methods.contains(sym)) {
@@ -9235,20 +9285,6 @@ const Emitter = struct {
     /// `specializedCallee` for a method of a generic `type`: the receiver's
     /// written type arguments (`Dict<string, string>`) and the arguments'
     /// shapes bind the owner's and the method's type parameters, and the call
-    /// Inference names a receiver's type by its bare name. When two linked
-    /// modules declare that name, the later one is registered as
-    /// `<module>/<Name>` (`link_mangled_types`), and the value's own module
-    /// says which of the two a method call means — recovered from the
-    /// expression as a field read's receiver is. Without this,
-    /// `netOutcome().describe()` called the FIRST declaration's `describe`
-    /// over the second one's layout and printed the neighbouring field.
-    fn ownerAmongTwins(self: *Emitter, rec: []const u8, recv: ast.Expr) []const u8 {
-        if (self.link_mangled_types.count() == 0) return rec;
-        const own = self.recordTypeOfExpr(recv) orelse return rec;
-        if (!std.mem.eql(u8, own, rec) and std.mem.eql(u8, displayTypeName(own), rec)) return own;
-        return rec;
-    }
-
     /// goes to a copy of the method with them substituted
     /// (`Dict_at__K_string__V_string`). One body compared two `K` keys as
     /// WORDS — a key `split` built at run time never equalled the literal
@@ -9272,7 +9308,6 @@ const Emitter = struct {
                     try subs.append(ar, .{ .name = gp.name, .to = arg });
                     if (std.mem.eql(u8, n, "string") or std.mem.eql(u8, n, "bool") or n[0] == 'f') needed = true;
                 },
-        const rec = self.ownerAmongTwins(rec0, cc.receiver.?.*);
                 else => {},
             },
             else => {},
@@ -9512,14 +9547,10 @@ const Emitter = struct {
             try self.emitLoadOffset(off);
             return;
         }
-        // Both heuristics failed — keep the historical `i32.const 0` placeholder
-        // so wasmtime still executes the surrounding fn. `0` matches the
-        // BEAM/erlang null-guard on missing fields.
-        if (ia.optional) {
-            try self.emitCf(zero, "optional field access .{s} (unknown receiver type)", .{ia.member});
-            return;
-        }
-        try self.emitCf(zero, "field access .{s} (unknown receiver type)", .{ia.member});
+        // Both heuristics failed. This used to write `i32.const 0` "so
+        // wasmtime still executes the surrounding fn" — the program then
+        // printed `0` for a field it never read, at exit 0.
+        return self.refuse(loc, "the wasm backend cannot place `{s}.{s}`: the receiver's type is not known here", .{ if (ia.optional) "?" else "", ia.member });
     }
 
     /// `recv?.field` → stash the receiver, test it for null, and load the slot
@@ -10995,9 +11026,9 @@ const Emitter = struct {
         if (opname) |on| {
             try self.emit(opOf(t, on));
         } else {
-            // No opcode for this pair (float `%`, float `&&`): discard the rhs
-            // and keep the lhs so the stack stays balanced.
-            try self.emitCf(.drop, "unsupported binary op for {s}", .{t});
+            // No opcode for this pair (float `%`, float `&&`). It used to drop
+            // the right operand and answer the left one at exit 0.
+            return self.refuse(lhs.getLoc(), "the wasm backend has no `{s}` for `{s}` operands", .{ @tagName(op), t });
         }
     }
 
