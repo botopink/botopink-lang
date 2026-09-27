@@ -391,7 +391,7 @@ pub type Host implement Annotation {
 // Declared `comptime` in its sole type argument because the base check runs
 // at compile time; the runtime side is the inside-out walk inserted by the
 // lowering.
-pub declare fn getContext<T>(comptime _: type) -> Component<T, any>;
+pub declare fn getContext<T>(comptime _: type) -> Component<T, unknown>;
 
 // ── Expr template model (std.syntax) ─────────────────────────────────────────
 // Data model for `Expr` templates. Interfaces are pure behaviour contracts, so

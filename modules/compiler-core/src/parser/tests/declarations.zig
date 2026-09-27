@@ -1073,7 +1073,7 @@ test "parser: declare fn ---- unannotated with generic params and a comptime par
 
 test "parser: declare fn ---- unannotated with a discard param and a generic return" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub declare fn getContext<T>(comptime _: type) -> Component<T, any>;
+        \\pub declare fn getContext<T>(comptime _: type) -> Component<T, unknown>;
     );
 }
 

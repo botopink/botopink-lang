@@ -184,6 +184,11 @@ pub fn assertComptimeAstExpecting(
     for (outputs.items) |output| {
         if (output.outcome != .ok) {
             failed = true;
+            // C-21 — a type error the checker raises carries a location.
+            if (output.outcome == .typeError and output.outcome.typeError.loc == null) {
+                std.debug.print("\n{s}: module '{s}' raised an unlocated type error\n", .{ base_slug, output.name });
+                if (first_err == null) first_err = error.UnlocatedTypeError;
+            }
             if (expectation == .must_compile) {
                 const file = try snapshot.moduleFile(allocator, output.name);
                 defer allocator.free(file);
@@ -269,6 +274,8 @@ pub fn assertTypeErrorSnap(
     const result = inferMod.inferProgram(&env, program);
     try std.testing.expectError(error.TypeError, result);
     const err = env.lastError orelse return error.TestExpectedEqual;
+    // C-21 — every type error carries a location; the snapshot's box is it.
+    try std.testing.expect(err.loc != null);
 
     const desc = try renderTypeError(allocator, src, err);
     defer allocator.free(desc);

@@ -43,8 +43,9 @@
 #                                            comment says why a target is missing
 #   reject/<name>.bp   `botopink check`; must exit non-zero, stderr must contain
 #                      the first line of <name>.expect and ` --> src/main.bp:<L:C>`
-#                      where <L:C> is its second line (target-independent: runs
-#                      once, reported as target `*`)
+#                      where <L:C> is its second line — required: every refusal
+#                      is located (C-21) (target-independent: runs once,
+#                      reported as target `*`)
 #   modules/<name>/    a whole project — its own `botopink.json` and `src/` tree;
 #                      `botopink run --target <t>`; stdout must equal
 #                      <name>/expected.out — or, with <name>/<t>.expect, target
@@ -344,7 +345,10 @@ run_one() { # <path> <target>
                 printf '*\t%s\t%s\t%s\n' "$path" fail "missing ${path%.bp}.expect" >"$out"
             else
                 local msg loc; msg="$(sed -n 1p "$expect")"; loc="$(sed -n 2p "$expect")"
-                if [ $code -eq 0 ]; then
+                if [ -z "$loc" ]; then
+                    # C-21: every refusal is located, so every reject cell pins where.
+                    printf '*\t%s\t%s\t%s\n' "$path" fail "${path%.bp}.expect names no location (line 2, <L:C>)" >"$out"
+                elif [ $code -eq 0 ]; then
                     printf '*\t%s\t%s\t%s\n' "$path" fail "accepted (exit 0); expected: $msg" >"$out"
                 elif ! grep -qF -- "$msg" "$dir/all.txt"; then
                     local first; first="$(grep -m1 -E '^error' "$dir/all.txt" | tr '\t' ' ')"

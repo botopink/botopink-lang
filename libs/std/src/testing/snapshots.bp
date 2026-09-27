@@ -77,7 +77,7 @@ fn slugStep(chars: string[], i: i32, acc: string, pending: bool) -> string {
     val c = chars.slice(i, i + 1).join("");
     val kept = slugChar(c);
     if (kept == "") return slugStep(chars, i + 1, acc, true);
-    val glue = if (pending) (if (acc == "") "" else "_") else "";
+    val glue = if (pending && acc != "") "_" else "";
     return slugStep(chars, i + 1, [acc, glue, kept].join(""), false);
 }
 

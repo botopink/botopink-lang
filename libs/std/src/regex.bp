@@ -98,7 +98,7 @@ pub declare fn matchAll(pattern: string, input: string) -> Array<Match>;
 // A compiled pattern: the host's own compiled form (a `RegExp` on Node, the
 // `re:compile/1` result on Erlang) behind an opaque field, so a hot path
 // compiles once and runs many times.
-pub type Regex(handle: any) {
+pub type Regex(handle: unknown) {
     // True when the compiled pattern matches anywhere in `input` — the module's
     // `matches(pattern, input)` without re-compiling.
     // Node: `RegExp#test` on a pattern without the `g` flag (no `lastIndex`

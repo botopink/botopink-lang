@@ -483,6 +483,12 @@ pub const Env = struct {
     /// every other binding: `val n = 5; val x: n = 7;` names a value.
     typeValueNames: std.StringHashMap(void),
     valNames: std.StringHashMap(void),
+    /// The `var`s a condition has narrowed in the scope being walked, by name
+    /// → the type the `var` was declared with. An assignment to a narrowed
+    /// `var` is checked against that declared type (`x = x.next` inside
+    /// `while (x != null)` assigns a `?Node`) and ends the narrowing: the name
+    /// takes its declared type back for the rest of the scope.
+    narrowedDecl: std.StringHashMapUnmanaged(*T.Type) = .empty,
     /// Front 17 — every module `var` of this module, by name → its
     /// `@BeamMemory` storage and the type it was bound with. The type pointer
     /// is how an assignment tells the module binding from a local that
@@ -1476,11 +1482,9 @@ pub const Env = struct {
             "f32", "f64",
             // other primitives
             "bool", "string", "void", "v128",
-            // §1G — `any` is the unconstrained default for effect-wrapper error
-            // channels (`@Future<T, E = any>` / `@ResultGenerator<T, E = any>`).
-            // It is treated as opaque at the type level — no operations beyond
-            // being threaded through generics.
-            "any",
+            // No `any` (1.0.5 decision 31): a written `any` is refused by
+            // `resolveTypeRefInContext` as `any-type-removed`, naming
+            // `unknown`, the type that holds any value.
             // The declared return of `@panic` / `todo` / `trap`
             // (`libs/std/src/builtins_fns.d.bp`, `builtins.d.bp`): a type no
             // module declares, so C10's second pass needs it named here.

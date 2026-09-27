@@ -1,0 +1,12 @@
+//// 1.0.5 decision 31 — `any` is deleted. It was a closed type no botopink
+//// value inhabited (`val a: any = 1` read "expected any, got i32"); a written
+//// `any` is `any-type-removed` at the annotation, naming `unknown`, the type
+//// that takes any value.
+
+fn keep(x: any) -> i32 {
+    return 1;
+}
+
+pub fn main() {
+    @print(keep(3));
+}

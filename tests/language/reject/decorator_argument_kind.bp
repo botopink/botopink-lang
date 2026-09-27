@@ -1,0 +1,12 @@
+//// C-21 — a decorator argument of the wrong kind is refused AT the
+//// annotation. It was the one decorator refusal raised with no location: the
+//// message named the argument and the reader had to find the annotation.
+
+fn value(comptime decl: @Decl, key: string) { }
+
+#[value(42)]
+type A(x: i32)
+
+pub fn main() {
+    @print(A(x: 1).x);
+}

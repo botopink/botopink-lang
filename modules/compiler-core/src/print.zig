@@ -61,6 +61,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "bind it first: `val x = try …;`",
             .hint = "`try` / `await` stand where an expression begins — a statement, a `val` / `var` initializer, the right side of `=`, a `return` / `yield` / `break` / `throw` operand, a call argument, an element of an array, tuple or record literal, an `if` / `while` condition, a `case` subject or a `for` iterable — and take the whole expression after them. Under an operator, a unary `-` / `!`, parentheses or a `.` chain, bind the value first: `val x = try r; total + x`.",
         },
+        .ifOperand => .{
+            .code = "if-operand",
+            .message = "an `if` expression begins an expression; it is not an operand",
+            .caretCaption = "bind it first: `val x = if …;`",
+            .hint = "An `if` used as a value stands where an expression begins — a statement, a `val` / `var` initializer, the right side of `=`, a `return` / `yield` / `break` / `throw` operand, a call argument, or an element of an array, tuple or record literal. Under an operator, a unary `-` / `!`, parentheses or a `.` chain, bind it first: `val x = if (c) { a } else { b }; 1 + x`.",
+        },
         .ternaryAbsent => .{
             .code = "ternary-absent",
             .message = "there is no `c ? a : b`",

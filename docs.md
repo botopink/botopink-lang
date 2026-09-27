@@ -836,7 +836,10 @@ val s = if (x > 0) { "positive" } else { "negative" };
 ```
 
 An `if` used as a value needs its `else`: `val s = if (x > 0) { "positive" };` has no value when
-the condition is false and is refused at the `if`.
+the condition is false and is refused at the `if`. It stands where an expression begins — a `val` /
+`var` initializer, the right side of `=`, a `return`, a call argument, a literal's element — and is
+never an operand: `1 + if (c) { 2 } else { 3 }`, `-if (c) 1 else 2` and `(if (c) a else b).v` are
+`error[if-operand]` at the `if`; bind it first (`val x = if (c) { 2 } else { 3 }; 1 + x`).
 
 A condition is a whole expression, `&&` and `||` included — the grammar's own
 parentheses close it, so nothing has to be bound to a `val` first:
@@ -1832,7 +1835,7 @@ pub declare fn parse(input: string) -> i32;
 A declaration takes the signature a `fn` does — generic parameters, `comptime`
 parameters, any return type — with or without an annotation. A parameter it
 has no name for is written `_` (`declare fn getContext<T>(comptime _: type) ->
-Component<T, any>;`); `_` is a bodyless declaration's placeholder, and a
+Component<T, unknown>;`); `_` is a bodyless declaration's placeholder, and a
 function with a body refuses it (`discard-param-with-body`).
 
 A binding may also be a template, where `$0`, `$1`, … are the declared
@@ -2313,6 +2316,8 @@ These forms are **deliberately absent**, so that none reads as unfinished work:
 | `type Shape { Circle(i32) }` — a variant payload with no field name | `error[field-needs-name]`: a field with no name, at the payload, naming `Variant(field: T)`. A payload nobody can name is a payload no `case` arm can bind |
 | `val assert Ok(v) = parse("42") catch 0` | ``after `catch` the value is not a @Result — a `val assert` over a `@Result` takes no `catch` `` — the match is fatal, and `try … catch` is the form that supplies a fallback |
 | `c ? a : b` | `error[ternary-absent]` — `if` is an expression: `val x = if (c) { a } else { b };` |
+| `1 + if (c) { 2 } else { 3 }` — an `if` as an operand | `error[if-operand]`, at the `if`: an `if` begins an expression, as `try` / `await` do; bind it first |
+| `x: any` — a type that takes anything | `any-type-removed`, at the annotation: the type that holds any value is `unknown`, tested with `is` before use |
 | `<<` `>>` `&` `^` | `error[bitwise-operator-absent]` — there are no bitwise operators; `&&` and `\|\|` are the boolean ones, and a bit operation is a host function |
 | `'a'` | `error[char-literal-absent]` — a character is a one-character string, `"a"` |
 | `fn inner(…) { … }` inside a body | `error[nested-fn-decl]` — inside a body a function is a value: `val inner = { x -> … };` |

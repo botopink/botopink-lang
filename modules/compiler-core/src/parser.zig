@@ -254,6 +254,10 @@ pub const ParseErrorType = enum {
     /// `await` begin an expression and are never an operand (decision 137).
     /// Located at the keyword.
     tryAwaitOperand,
+    /// `1 + if (c) { 2 } else { 3 }`, `-if (…) …`, `(if (c) a else b).v` —
+    /// an `if` expression begins an expression and is never an operand, by
+    /// decision 137's reading of `try` / `await`. Located at the `if`.
+    ifOperand,
     /// `c ? 1 : 2` — there is no ternary; `if` is an expression (front 15
     /// step 3). Located at the `?`.
     ternaryAbsent,

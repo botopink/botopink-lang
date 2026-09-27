@@ -4,7 +4,9 @@
 //// `unwrapOr` (commonJS "is not a function", erlang `unwrapOr/2 undefined`);
 //// and a parenthesised expression was not walked at all, so an `if` branch
 //// read through `( … ).v` kept it too, as did the operand of a unary `-` /
-//// `!`. Each line prints a value.
+//// `!`. Each line prints a value. An `if` is never an operand, parenthesised
+//// or not (`if-operand`): the branch is bound by a `val` and the group reads
+//// `( … unwrapOr … ).v`.
 
 type R(v: string)
 
@@ -19,7 +21,8 @@ type Box(items: Array<R>, sizes: Array<i32>) {
     }
 
     pub fn pick(self: Self, flag: bool) -> string {
-        return (if (flag) self.items.at(0).unwrapOr(R(v: "d")) else R(v: "e")).v;
+        val r = if (flag) self.items.at(0).unwrapOr(R(v: "d")) else R(v: "e");
+        return (r).v;
     }
 
     pub fn nested(self: Self) -> i32 {
@@ -38,7 +41,8 @@ type Box(items: Array<R>, sizes: Array<i32>) {
 }
 
 fn pick(xs: Array<R>, flag: bool) -> string {
-    return (if (flag) xs.at(0).unwrapOr(R(v: "d")) else R(v: "e")).v;
+    val r = if (flag) xs.at(0).unwrapOr(R(v: "d")) else R(v: "e");
+    return (xs.at(1).unwrapOr(r)).v;
 }
 
 fn nested(xs: Array<i32>, ys: Array<i32>) -> i32 {

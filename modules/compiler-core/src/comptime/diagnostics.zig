@@ -416,3 +416,6 @@ test "codes are unique (the table is the contract)" {
         for (all_codes[i + 1 ..]) |d| try std.testing.expect(!std.mem.eql(u8, c, d));
     }
 }
+
+/// 1.0.5 decision 31 — `any` is deleted; a written `any` names `unknown`.
+pub const any_type_removed: []const u8 = "any-type-removed";

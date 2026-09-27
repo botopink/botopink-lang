@@ -515,8 +515,8 @@ fn rejectNonPatternArm(this: *This, pat: Pattern, tok: Token, afterNullArm: bool
 fn isPrimitiveTypeName(name: []const u8) bool {
     const prims = [_][]const u8{
         "i8",    "u8",       "i16", "u16", "i32",  "u32",    "i64",  "u64",
-        "isize", "usize",    "f32", "f64", "bool", "string", "void", "v128",
-        "any",   "noreturn",
+        "isize", "usize", "f32", "f64", "bool", "string", "void", "v128",
+        "noreturn",
     };
     for (prims) |p| if (std.mem.eql(u8, name, p)) return true;
     return false;

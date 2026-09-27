@@ -87,7 +87,8 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   nowhere must not be in it. `unknown` (decision 8 §2) became a keyword token with
   06 N19 — it is in `isKeyword` now, and the keyword branch of the semantic-token
   walk paints it `type [defaultLibrary]` like `Self`, so `isPrimitiveType` never
-  sees it; `any` stays while the checker still registers it.
+  sees it. `any` is not in it: decision 31 deleted it, and the checker refuses it as
+  `any-type-removed`.
 - **Completion hides what the cursor cannot see** (`cursorScope`): the binding
   whose own initialiser the cursor sits in (`val x = ▮` never offers `x`) and
   every `val`/`var` declared below it. A `fn` is not hidden — it may be called

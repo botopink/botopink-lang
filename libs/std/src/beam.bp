@@ -25,22 +25,16 @@
 //// exits). Which process then owns the table is layer 2's, and it is the
 //// registered-owner question the front tracks; nothing here decides it.
 ////
-//// Why `any` on every parameter and every return: the precedent is
+//// Why `unknown` on every parameter and every return: the precedent is
 //// `erlang.bp`, which types every one of its declarations the same way,
 //// and these arguments are host terms with no botopink type — an ETS
 //// table identifier, a registered name atom, the `{Key, Value}` tuple
-//// `ets:insert` takes, the option list `ets:new` takes.
-////
-//// What `any` actually is, measured: a closed type that unifies only with
-//// itself. `beam.pdPut("k", 1)` is `type mismatch: expected any, got
-//// string`, and so is `val a: any = 1;`; `beam.pdPut(t, t)` where
-//// `t = erlang.self()` checks green. So an `any` is producible only by
-//// another host call — which is right for a host vocabulary, and is why
-//// `erlang.bp`'s header claim that it is "also callable when explicitly
-//// imported" holds for host terms and not for botopink values. Decision
-//// 31 deleted `any` "for now" over one use (`builtins.d.bp:88`); these
-//// two modules are the rest of the count, and they are rewritten together
-//// when that lands, not with a second spelling invented here.
+//// `ets:insert` takes, the option list `ets:new` takes. `unknown` takes
+//// any value (`beam.pdPut("k", 1)` checks), and what a call answers is
+//// tested with `is` before it is used as another type. The spelling was
+//// `any` until decision 31 (1.0.5) deleted it: `any` was a closed type no
+//// botopink value inhabited, so `beam.pdPut("k", 1)` read `expected any,
+//// got string`.
 ////
 //// Targets: `@External.Erlang` covers **both** BEAM targets — `codegen.zig:74-77`
 //// maps `.erlang` and `.beam` alike to the `"erlang"` lookup name. On
@@ -65,41 +59,41 @@
 //// reads and writes onto these ten calls on both BEAM targets.
 ////
 //// Adding a primitive: one `#[@External.Erlang("<mod>", "<symbol>")] pub
-//// declare fn <camelCase>(…) -> any;`. `root.bp` already declares this
+//// declare fn <camelCase>(…) -> unknown;`. `root.bp` already declares this
 //// module, and `build.zig` derives the std module set from `root.bp`.
 
 // ── the process dictionary — per-process, no setup, erased with the process
 
 #[@External.Erlang("erlang", "get")]
-pub declare fn pdGet(key: any) -> any;
+pub declare fn pdGet(key: unknown) -> unknown;
 
 #[@External.Erlang("erlang", "put")]
-pub declare fn pdPut(key: any, value: any) -> any;
+pub declare fn pdPut(key: unknown, value: unknown) -> unknown;
 
 #[@External.Erlang("erlang", "erase")]
-pub declare fn pdErase(key: any) -> any;
+pub declare fn pdErase(key: unknown) -> unknown;
 
 // ── ETS — shared across processes, created by the first caller, owned by one
 
 #[@External.Erlang("ets", "whereis")]
-pub declare fn etsWhereis(name: any) -> any;
+pub declare fn etsWhereis(name: unknown) -> unknown;
 
 #[@External.Erlang("ets", "new")]
-pub declare fn etsNew(name: any, opts: any) -> any;
+pub declare fn etsNew(name: unknown, opts: unknown) -> unknown;
 
 #[@External.Erlang("ets", "lookup_element")]
-pub declare fn etsGet(tid: any, key: any, pos: any) -> any;
+pub declare fn etsGet(tid: unknown, key: unknown, pos: unknown) -> unknown;
 
 #[@External.Erlang("ets", "insert")]
-pub declare fn etsPut(tid: any, tuple: any) -> any;
+pub declare fn etsPut(tid: unknown, tuple: unknown) -> unknown;
 
 #[@External.Erlang("ets", "update_counter")]
-pub declare fn etsBump(tid: any, key: any, incr: any) -> any;
+pub declare fn etsBump(tid: unknown, key: unknown, incr: unknown) -> unknown;
 
 // ── persistent_term — read-cheap, write-expensive, written at load time
 
 #[@External.Erlang("persistent_term", "get")]
-pub declare fn ptGet(key: any) -> any;
+pub declare fn ptGet(key: unknown) -> unknown;
 
 #[@External.Erlang("persistent_term", "put")]
-pub declare fn ptPut(key: any, value: any) -> any;
+pub declare fn ptPut(key: unknown, value: unknown) -> unknown;

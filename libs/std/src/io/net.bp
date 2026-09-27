@@ -31,7 +31,7 @@
 //// `ssl` application is started on demand (`ssl:start/0` is idempotent).
 
 // A listening TCP socket.
-pub type Listener(handle: any) {
+pub type Listener(handle: unknown) {
     // The port the listener is bound to — the one the host chose for
     // `listen(0, _)`.
     #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
@@ -51,7 +51,7 @@ pub type Listener(handle: any) {
 }
 
 // A connected TCP socket.
-pub type Socket(handle: any) {
+pub type Socket(handle: unknown) {
     // Receive exactly `length` bytes (`0`: whatever is available), waiting up to
     // `timeoutMillis`. A peer that closed is `Error("closed")`.
     #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
@@ -75,7 +75,7 @@ pub type Socket(handle: any) {
 }
 
 // A listening TLS socket.
-pub type TlsListener(handle: any) {
+pub type TlsListener(handle: unknown) {
     // The port the TLS listener is bound to — the one the host chose for
     // `tlsListen(0, …)`.
     #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
@@ -90,7 +90,7 @@ pub type TlsListener(handle: any) {
 }
 
 // A connected TLS socket, handshake complete.
-pub type TlsSocket(handle: any) {
+pub type TlsSocket(handle: unknown) {
     // `recv` over TLS: exactly `length` decrypted bytes (`0`: whatever is
     // available), waiting up to `timeoutMillis`.
     #[@External.Node("""({ error: 'std/io/net: server-only' })""")]
@@ -177,7 +177,7 @@ fn errText<T>(r: @Result<T, string>) -> string {
 // never reads it.
 #[@External.Node("""null""")]
 #[@External.Erlang("""undefined""")]
-declare fn noHandle() -> any;
+declare fn noHandle() -> unknown;
 
 // Remove a scratch directory tree.
 #[@External.Node("""undefined""")]

@@ -513,6 +513,7 @@ reaches**, never per arm:
 | `[...a]` | `listSpreadDotDotDot` | `parseArrayLitExpr`, at the `...` |
 | `type P(…)` then `implement A for P { … }` | `implementClauseFor` | `types.zig` `parseImplementClause`, at the `for` — the bodyless type took `implement A` as its clause |
 | `total + try r`, `-try x`, `(try r).len`, `!await t` | `tryAwaitOperand` | `parsePrimary`'s `try` / `await` arm and the group's `(` — at the keyword (decision 137; § *`try` and `await` begin an expression*) |
+| `1 + if (c) { 2 } else { 3 }`, `-if (c) 1 else 2`, `(if (c) a else b).v` | `ifOperand` | `parsePrimary`'s `if` arm and the group's `(` — at the `if` (decision 137's reading applied to `if`; § *`try` and `await` begin an expression*) |
 | `#(x: 1, y: 2)` | `tupleLiteralLabel` | `parseTupleLitExpr`, at the label — the labeled construction is `01-checker`'s §6, and this replaces `novalBinding` at the value |
 
 **The infix refusals are hoisted the way the chain links are.** Every receiver
@@ -555,6 +556,15 @@ after its `(`: a group exists to become an operand, so `(try r).length` and
 `tests/effect_rejections.zig` ("decision 137: …") and the
 `tests/language/reject/{try_operand_of_operator,try_in_parentheses,await_operand_of_unary}`
 cells.
+
+An **`if` expression** is read in the same place, `parseExpr`'s prefix arm, and follows the same
+rule: it stands where an expression begins and is never an operand. `parsePrimary` and a group's
+`(` refuse it as `ifOperand` (`if-operand`, at the `if`, fix-it "bind it first: `val x = if …;`")
+— `1 + if (c) { 2 } else { 3 }` was the catch-all "this token cannot appear here". A brace-less
+branch is a start position, so `if (a) x else if (b) y else z` and a nested `if` as a branch stay
+legal. Pinned by `tests/effect_rejections.zig` ("an `if` expression as an operand …") and
+`tests/language/reject/{if_operand_of_operator,if_in_parentheses,if_operand_of_unary}`;
+decisions-pending `rc3-a` holds the reading for the maintainer.
 
 ## `${…}` interpolation holes
 

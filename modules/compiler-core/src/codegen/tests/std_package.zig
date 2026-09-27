@@ -111,11 +111,10 @@ test "erlang: std package ---- a std math import and the OTP math module in one 
 // program resolved, type-checked and emitted a correct call. Every `pub`
 // host-backed `declare fn` now gets its wrapper and export whether or not the
 // build reaches it. RUNNING is the assertion: the snapshot of an attribute-only
-// module looks fine. `node/0` is chosen because `erlang.bp` types every
-// parameter `any`, a closed type no botopink value unifies with (`erlang.abs(-3)`
-// is `expected any, got i32`), and because `nonode@nohost` is deterministic
-// where `self()` is not; it is also an auto-imported BIF, so the wrapper is the
-// shadow case `erlang.bp` exists to detect.
+// module looks fine. `node/0` is chosen because it takes no argument and
+// `nonode@nohost` is deterministic where `self()` is not; it is also an
+// auto-imported BIF, so the wrapper is the shadow case `erlang.bp` exists to
+// detect.
 test "erlang: std package ---- a qualified std host call reaches its owner's wrapper" {
     try h.assertErlangRunLog(std.testing.allocator,
         \\import {erlang} from "std";
