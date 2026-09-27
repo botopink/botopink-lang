@@ -36,6 +36,9 @@ pub const Operand = union(enum) {
     term: Term,
     /// A string literal's lexer content → `{literal, <<"…">>}`.
     lexeme: []const u8,
+    /// An external function value → `{literal, fun Module:Name/Arity}`: a
+    /// literal, so it clobbers no register (`erlang:make_fun/3` is a call).
+    ext_fun: struct { module: []const u8, name: []const u8, arity: usize },
     /// A bare integer written with no wrapper — a tuple arity in
     /// `is_tagged_tuple`, an element index in `get_tuple_element`.
     untagged: i64,
@@ -188,6 +191,13 @@ pub fn writeArg(w: *Writer, o: Operand) Error!void {
         .f => |n| try writeReg(w, "f", n),
         .term => |t| try writeOperand(w, t),
         .lexeme => |s| try writeLexemeBinaryOperand(w, s),
+        .ext_fun => |f| {
+            try w.writeAll("{literal, fun ");
+            try erl.writeAtom(w, f.module);
+            try w.writeByte(':');
+            try erl.writeAtom(w, f.name);
+            try w.print("/{d}}}", .{f.arity});
+        },
         .untagged => |n| try w.print("{d}", .{n}),
         .number => |n| {
             try w.print("{{{s}, {s}", .{

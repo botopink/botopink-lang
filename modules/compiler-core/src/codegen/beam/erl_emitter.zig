@@ -725,6 +725,10 @@ pub fn writeComment(w: *Writer, c: Ast.Comment) Writer.Error!void {
 }
 
 fn writeFnRef(w: *Writer, ref: Ast.FnRef) Error!void {
+    if (ref.module) |m| {
+        try writeAtom(w, m);
+        try w.writeByte(':');
+    }
     try writeAtom(w, ref.name);
     try w.print("/{d}", .{ref.arity});
 }

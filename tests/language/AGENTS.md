@@ -217,6 +217,30 @@ synthesizes `mockRepo()` and its stubs answer; wasm refuses the import by `.wasm
 defaults and labels, at expression and statement position) and `run/case_bool_literal_arms` (`true` /
 `false` arms are the bool literals, beside a guard — every backend bound them as names). C-16's
 `test/case_arms.bp` writes its range arm `1...9` (decision 53) and passes on commonJS and erlang.
+The residual backend rows (`front/residual-backend-3`) add a cell each, every one failing on the
+parent binary on the targets named: `run/generic_call_result_shape` (a generic `-> T` call answers
+its argument's shape, `unwrapOr` its default's — wasm printed a string's address),
+`run/unit_enum_print_by_name` (an all-unit enum's value by name, a field, an array, a `?Color` whose
+present first variant is not absent — wasm printed the ordinal or trapped),
+`run/case_multi_subject_patterns` (a multi-subject `case` over literals, strings, type arms, variant
+binders and guards — wasm answered the first arm, beam matched a string or a type arm on anything,
+commonJS never bound a variant's payload), `run/behavior_implemented_by_enum` (an enum implementing a
+behavior, called through a value of the behavior — commonJS, erlang and beam),
+`run/behavior_method_result_chained` and `reject/behavior_method_result_typed` (a behavior method's
+call answers its declared type, so a primitive method chains on it — commonJS called `length`,
+wasm trapped), `run/external_template_escaped_quote` (a `\"` in an `@External.Node` template is a
+quote of the JavaScript; `.targets` without wasm), `run/std_path_relative` (a std module calling an
+`Array` `default fn` — commonJS had no prototype method), `run/if_value_float` (an `f64` value `if`
+outside an `f64` function — wasm refused the module, commonJS printed `0`) and
+`modules/linked_val_name_collision` (a module-level `val` and `var` two linked modules declare, read,
+written, imported under an alias and shadowed by a parameter — wasm read the first one).
+`run/val_assert_record_pattern` gained the labelled form (erlang bound it by position).
+`modules/hof_named_function` (a local, an imported and a bound function named as an array method's
+argument — wasm trapped), `run/generic_body_specialized` (a method on a type-parameter value, a float
+through one, a behavior's generic associated fn and `Dict<string, string>.at` over a key built at
+run time — wasm answered from one word-typed body) and `modules/imported_fn_as_value` (handed over by
+`front/residual-checker-3`: erlang and beam lowered the name as an unbound variable) close the
+backend halves the checker front listed.
 | `run.sh` | the runner | — |
 
 Every cell is copied into its own scratch project, so a parse error fails only that cell. Test names

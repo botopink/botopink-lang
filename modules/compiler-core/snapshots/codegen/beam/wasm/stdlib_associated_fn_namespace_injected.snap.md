@@ -25,7 +25,7 @@ fn main() {
     (local $__fnv0 i32)
     i32.const 1
     i32.const 256
-    call $Pair_of
+    call $Pair_of__A_i32__B_string
     local.set $p
     local.get $p
     call $Pair_first
@@ -64,17 +64,7 @@ fn main() {
     call_indirect (param i32 i32) (result i32)
     call $__print_i32
   )
-  (func $__lambda0 (param $__env i32) (param $x i32) (result i32)
-    local.get $x
-    i32.const 1
-    i32.add
-  )
-  (func $__lambda1 (param $__env i32) (param $y i32) (result i32)
-    local.get $y
-    i32.const 2
-    i32.mul
-  )
-  (func $Pair_of (param $first i32) (param $second i32) (result i32)
+  (func $Pair_of__A_i32__B_string (param $first i32) (param $second i32) (result i32)
     (local $__mem0 i32)
     global.get $__heap_ptr
     local.set $__mem0
@@ -90,6 +80,16 @@ fn main() {
     i32.store offset=4
     local.get $__mem0
     return
+  )
+  (func $__lambda0 (param $__env i32) (param $x i32) (result i32)
+    local.get $x
+    i32.const 1
+    i32.add
+  )
+  (func $__lambda1 (param $__env i32) (param $y i32) (result i32)
+    local.get $y
+    i32.const 2
+    i32.mul
   )
   (func $Pair_first (param $p i32) (result i32)
     local.get $p

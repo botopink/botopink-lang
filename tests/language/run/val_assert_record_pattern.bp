@@ -9,7 +9,10 @@
 //// pattern never matched. beam did the same and bound the names in the
 //// matching arm only, so `erlc +from_asm` refused the module
 //// (`{unassigned, {y, 2}}`): the names are bound from the value either path
-//// answers.
+//// answers. wasm tested nothing and bound nothing (`unbound identifier n`), and
+//// the checker left the binders untyped, so `a.toString()` had no lowering
+//// there; each binder takes the field it stands at, by label when one is
+//// written.
 
 type Person(name: string, age: i32)
 
@@ -18,7 +21,14 @@ fn describe(p: Person | i32) -> string {
     return n + " " + a.toString();
 }
 
+fn byLabel(p: Person | i32) -> string {
+    val assert Person(age: years, name: who) = p catch Person(name: "none", age: 0);
+    return who + " is " + years.toString();
+}
+
 pub fn main() {
     @print(describe(Person(name: "ann", age: 3)));
     @print(describe(7));
+    @print(byLabel(Person(name: "bo", age: 9)));
+    @print(byLabel(1));
 }

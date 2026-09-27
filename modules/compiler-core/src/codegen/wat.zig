@@ -386,6 +386,29 @@ fn linkRenames(
     };
 }
 
+/// `linkRenames` for the module-level `val`s: the module's own `val` whose
+/// declaration was mangled, and every import of one. Local name → mangled.
+fn linkValRenames(
+    arena: std.mem.Allocator,
+    mangled: *const std.StringHashMapUnmanaged([]const u8),
+    cross: ?*const CrossModule,
+    module_name: []const u8,
+    program: ast.Program,
+    out: *std.StringHashMapUnmanaged([]const u8),
+) !void {
+    for (program.decls) |d| switch (d) {
+        .val => |v| if (mangled.get(try linkKey(arena, module_name, v.name))) |m| try out.put(arena, v.name, m),
+        .use => |u| for (u.imports) |imp| {
+            const c = cross orelse continue;
+            const src = try u.leafSource(imp, arena, false);
+            const info = c.picked(imp.leaf(), src, null) orelse continue;
+            const m = mangled.get(try linkKey(arena, info.module, imp.leaf())) orelse continue;
+            try out.put(arena, imp.alias orelse imp.leaf(), m);
+        },
+        else => {},
+    };
+}
+
 /// A copy of `value` in which every plain call (`name(…)` — no receiver, no
 /// callee expression, not a builtin) whose name `renames` holds calls the
 /// mangled name instead. Reflective over the AST, like `alias_erase`; the
@@ -428,6 +451,115 @@ fn renameLinkedCalls(comptime T: type, arena: std.mem.Allocator, value: T, renam
             else => return value,
         },
         else => return value,
+    }
+}
+
+/// A generic `fn` and the per-module maps its body is lowered under.
+const GenericFn = struct {
+    decl: ast.FnDecl,
+    rewrites: std.AutoHashMap(ast.Loc, []const u8),
+    lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
+    renames: ?*const std.StringHashMapUnmanaged([]const u8),
+};
+
+/// A method of a generic `type`, its owner and the owner's type parameters,
+/// and the per-module maps its body is lowered under.
+const GenericMethod = struct {
+    owner: []const u8,
+    tparams: []const ast.GenericParam,
+    method: ast.BehaviorMethod,
+    rewrites: std.AutoHashMap(ast.Loc, []const u8),
+    lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
+    renames: ?*const std.StringHashMapUnmanaged([]const u8),
+};
+
+/// A type parameter's name and the type a specialisation writes for it.
+const TypeSub = struct { name: []const u8, to: ast.TypeRef };
+
+/// A copy of `value` in which every written type naming one of `subs`'s
+/// type parameters names its type instead — `x: T`, `-> ?T`, `Array<T>`, a
+/// `val` annotation in the body. The nodes no substitution reaches and every
+/// string are shared, never mutated (the walk `renameLinkedCalls` takes).
+fn substTypeParams(comptime T: type, arena: std.mem.Allocator, value: T, subs: []const TypeSub) error{OutOfMemory}!T {
+    if (T == ast.TypeRef) switch (value) {
+        .named => |n| {
+            for (subs) |sub| if (std.mem.eql(u8, sub.name, n)) return sub.to;
+            return value;
+        },
+        else => {},
+    };
+    switch (@typeInfo(T)) {
+        .@"struct" => |st| {
+            var out: T = value;
+            inline for (st.fields) |f| {
+                if (f.is_comptime) continue;
+                @field(out, f.name) = try substTypeParams(f.type, arena, @field(value, f.name), subs);
+            }
+            return out;
+        },
+        .@"union" => |u| {
+            if (u.tag_type == null) return value;
+            switch (value) {
+                inline else => |payload, tag| return @unionInit(T, @tagName(tag), try substTypeParams(@TypeOf(payload), arena, payload, subs)),
+            }
+        },
+        .optional => |o| return if (value) |v| try substTypeParams(o.child, arena, v, subs) else null,
+        .pointer => |p| switch (p.size) {
+            .one => {
+                if (comptime !isAstNodeType(p.child)) return value;
+                const n = try arena.create(p.child);
+                n.* = try substTypeParams(p.child, arena, value.*, subs);
+                return n;
+            },
+            .slice => {
+                if (comptime !isAstNodeType(p.child)) return value;
+                const n = try arena.alloc(p.child, value.len);
+                for (value, 0..) |e, i| n[i] = try substTypeParams(p.child, arena, e, subs);
+                return n;
+            },
+            else => return value,
+        },
+        else => return value,
+    }
+}
+
+/// Whether `value` holds a method call whose receiver is one of `names`
+/// (`x.toString()` with `x: T`).
+fn callsMethodOn(comptime T: type, value: T, names: []const []const u8) bool {
+    if (names.len == 0) return false;
+    switch (@typeInfo(T)) {
+        .@"struct" => |st| {
+            if (comptime @hasField(T, "callee") and @hasField(T, "receiver") and @hasField(T, "is_builtin")) {
+                if (value.receiver) |r| if (r.* == .identifier and r.identifier.kind == .ident) {
+                    for (names) |n| if (std.mem.eql(u8, n, r.identifier.kind.ident)) return true;
+                };
+            }
+            inline for (st.fields) |f| {
+                if (f.is_comptime) continue;
+                if (callsMethodOn(f.type, @field(value, f.name), names)) return true;
+            }
+            return false;
+        },
+        .@"union" => |u| {
+            if (u.tag_type == null) return false;
+            switch (value) {
+                inline else => |payload| return callsMethodOn(@TypeOf(payload), payload, names),
+            }
+        },
+        .optional => |o| return if (value) |v| callsMethodOn(o.child, v, names) else false,
+        .pointer => |p| switch (p.size) {
+            .one => {
+                if (comptime !isAstNodeType(p.child)) return false;
+                return callsMethodOn(p.child, value.*, names);
+            },
+            .slice => {
+                if (comptime !isAstNodeType(p.child)) return false;
+                for (value) |e| if (callsMethodOn(p.child, e, names)) return true;
+                return false;
+            },
+            else => return false,
+        },
+        else => return false,
     }
 }
 
@@ -523,7 +655,9 @@ fn emitWat(
             // (`renameLinkedCalls`). Before, the first declaration won and a
             // call to the other answered it (`import {parse as parse2} from
             // "two"` printed `one`'s `parse` at exit 0), and then trapped.
-            // A module-level `val` still traps at its use (`lowerPlainCall`).
+            // A module-level `val` is mangled the same way; its reads are
+            // resolved while its module is emitted (`global_renames`), where
+            // a parameter or a local of the same name still shadows it.
             switch (d) {
                 .@"fn" => |f| {
                     const mangled = try std.fmt.allocPrint(ar0, "{s}/{s}", .{ l.name, n });
@@ -534,7 +668,15 @@ fn emitWat(
                     try decls.append(ar0, .{ .@"fn" = g });
                     try owner.append(ar0, li);
                 },
-                .val => try em.ambiguous_names.put(em.alloc, n, {}),
+                .val => |v| {
+                    const mangled = try std.fmt.allocPrint(ar0, "{s}/{s}", .{ l.name, n });
+                    try em.link_mangled_vals.put(em.alloc, try linkKey(ar0, l.name, n), mangled);
+                    var w = v;
+                    w.isPub = false;
+                    w.name = mangled;
+                    try decls.append(ar0, .{ .val = w });
+                    try owner.append(ar0, li);
+                },
                 else => {},
             }
             continue;
@@ -577,6 +719,17 @@ fn emitWat(
             d.* = try renameLinkedCalls(ast.DeclKind, ar0, d.*, &maps[from]);
         }
     }
+    // The module-level `val`s the same way, read by the emitter per module.
+    var val_maps: []std.StringHashMapUnmanaged([]const u8) = &.{};
+    if (em.link_mangled_vals.count() > 0) {
+        val_maps = try ar0.alloc(std.StringHashMapUnmanaged([]const u8), linked.len + 1);
+        for (val_maps, 0..) |*m, i| {
+            m.* = .empty;
+            const mod_name = if (i < linked.len) linked[i].name else module_name;
+            const prog = if (i < linked.len) linked[i].program else own_program;
+            try linkValRenames(ar0, &em.link_mangled_vals, cross, mod_name, prog, m);
+        }
+    }
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
     try em.collectExtensions(program);
@@ -595,12 +748,57 @@ fn emitWat(
     // They used to be dropped when a `main` existed, which left every reference
     // to one as a dangling `global.get`.
     try em.registerSymbols(program, true);
+    for (program.decls, owner.items) |decl, from| switch (decl) {
+        .@"fn" => |f| if (f.genericParams.len > 0 and f.body.len > 0 and !f.isDeclare) {
+            try em.generic_fns.put(em.alloc, f.name, .{
+                .decl = f,
+                .rewrites = if (from < linked.len) linked[from].rewrites else rewrites,
+                .lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings,
+                .renames = if (val_maps.len > 0) &val_maps[from] else null,
+            });
+        },
+        // A method of a generic `type` (`Dict<K, V>.at`), by the symbol its
+        // calls emit.
+        .type_ => |t| if (t.genericParams.len > 0) for (try em.methodsWithDefaults(t)) |m| {
+            if (m.body == null or m.is_declare or m.isExternal() or m.isHost()) continue;
+            const sym = try std.fmt.allocPrint(ar0, "{s}_{s}", .{ t.name, m.name });
+            try em.generic_methods.put(em.alloc, sym, .{
+                .owner = t.name,
+                .tparams = t.genericParams,
+                .method = m,
+                .rewrites = if (from < linked.len) linked[from].rewrites else rewrites,
+                .lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings,
+                .renames = if (val_maps.len > 0) &val_maps[from] else null,
+            });
+        },
+        // A behavior's generic associated `default fn` (`Seq<A>.firstOr`),
+        // by the symbol its calls emit.
+        .behavior => |b| for (b.methods) |m| {
+            const body = m.body orelse continue;
+            if (!m.is_default or m.is_declare or m.isExternal() or m.isHost()) continue;
+            if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
+            if (b.genericParams.len + m.genericParams.len == 0) continue;
+            const gps = try ar0.alloc(ast.GenericParam, b.genericParams.len + m.genericParams.len);
+            @memcpy(gps[0..b.genericParams.len], b.genericParams);
+            @memcpy(gps[b.genericParams.len..], m.genericParams);
+            const sym = try std.fmt.allocPrint(ar0, "{s}_{s}", .{ b.name, m.name });
+            try em.generic_fns.put(em.alloc, sym, .{
+                .decl = .{ .isPub = false, .name = sym, .genericParams = gps, .params = m.params, .returnType = m.returnType, .body = body },
+                .rewrites = if (from < linked.len) linked[from].rewrites else rewrites,
+                .lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings,
+                .renames = if (val_maps.len > 0) &val_maps[from] else null,
+            });
+        },
+        else => {},
+    };
 
     for (program.decls, owner.items) |decl, from| {
         em.rewrites = if (from < linked.len) linked[from].rewrites else rewrites;
         em.instance_lowerings = if (from < linked.len) linked[from].instance_lowerings else own_instance_lowerings;
+        em.global_renames = if (val_maps.len > 0) &val_maps[from] else null;
         try em.emitDecl(decl);
     }
+    em.global_renames = null;
     em.rewrites = rewrites;
     em.instance_lowerings = own_instance_lowerings;
 
@@ -892,6 +1090,13 @@ const Emitter = struct {
     /// Record/struct name whose method body is currently being emitted. Drives
     /// `self.field` lookup. Null at top level.
     self_type: ?[]const u8 = null,
+    /// A `case` subject local → the enum its subject is a value of
+    /// (`enumOfSubject`), which a bare or dot-shorthand arm name is read in.
+    subject_enums: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// The enum the pattern being tested or bound is read in: set from
+    /// `subject_enums` for the WHOLE subject only, so a payload's own
+    /// pattern keeps the program-wide lookup.
+    case_enum_hint: ?[]const u8 = null,
     /// Top-level fn name → declared return-type record name (`mk` → "E" given
     /// `fn mk() -> E {...}`). Powers `mk().n` field access.
     fn_return_types: std.StringHashMap([]const u8),
@@ -908,15 +1113,45 @@ const Emitter = struct {
     /// The entries of `deferred_globals` that are `_`-named top-level
     /// statements: run for their effect in `$__init_globals`, stored nowhere.
     deferred_stmts: std.StringHashMapUnmanaged(void) = .empty,
-    /// Names two linked modules both declare (`emitWat`): one namespace here,
-    /// so a call to one cannot know which it means, and traps.
-    ambiguous_names: std.StringHashMapUnmanaged(void) = .empty,
+    /// `<module>\x00<name>` → `<module>/<name>`: a linked module-level `val`
+    /// whose name an earlier declaration of the program already took
+    /// (`emitWat`).
+    link_mangled_vals: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// While a declaration is emitted, its module's reads of a mangled `val`:
+    /// local name → mangled global (`resolveName`).
+    global_renames: ?*const std.StringHashMapUnmanaged([]const u8) = null,
+    /// The `global_renames` each `deferred_globals` entry was declared under,
+    /// so `$__init_globals` reads its initialiser in its own module.
+    deferred_renames: std.ArrayListUnmanaged(?*const std.StringHashMapUnmanaged([]const u8)) = .empty,
     /// `<module>\x00<name>` → `<module>/<name>`: a linked FUNCTION whose name
     /// an earlier declaration of the program already took (`emitWat`).
     link_mangled: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// `<anon record>.<field>` for each behavior-literal field whose lambda
     /// takes `self` first (`ensureAnonRecord`).
     self_method_fields: std.StringHashMapUnmanaged(void) = .empty,
+    /// A generic function whose return type is one of its own type
+    /// parameters, bare (`fn ident<T>(x: T) -> T`) → the index of the first
+    /// argument declared with that parameter. There is one body for every
+    /// instance, so what such a call answers has the shape of that argument
+    /// (`genericResultArg`): the shape predicates read the argument, where
+    /// the declared `T` said nothing and a string printed as its address.
+    generic_result_arg: std.StringHashMapUnmanaged(usize) = .empty,
+    /// A generic `fn` with a body → its declaration and the per-module maps
+    /// it is lowered under (`specializedCallee`).
+    generic_fns: std.StringHashMapUnmanaged(GenericFn) = .empty,
+    /// Specialisations created by a call, emitted after the declarations
+    /// (`emitPendingFns`), and the names already created.
+    spec_pending: std.ArrayListUnmanaged(GenericFn) = .empty,
+    spec_names: std.StringHashMapUnmanaged(void) = .empty,
+    /// A method of a generic `type` → the method, its owner and the owner's
+    /// type parameters (`specializeMethod`); the specialised copies to emit.
+    generic_methods: std.StringHashMapUnmanaged(GenericMethod) = .empty,
+    mspec_pending: std.ArrayListUnmanaged(GenericMethod) = .empty,
+    /// Set while a specialisation's body is emitted: a method on a value
+    /// whose declared type the substitution made a primitive takes that
+    /// primitive's lowering (`primKindAt`) — inference saw a type variable
+    /// there and recorded none.
+    in_spec: bool = false,
     /// `<anon record>.<field>` → the lambda a record literal's field holds, so
     /// a call through the field can be judged by the lambda's body
     /// (`fieldLambdaCallIsString`).
@@ -1126,11 +1361,19 @@ const Emitter = struct {
         self.data_segments.deinit(self.alloc);
         self.deferred_globals.deinit(self.alloc);
         self.deferred_stmts.deinit(self.alloc);
-        self.ambiguous_names.deinit(self.alloc);
+        self.link_mangled_vals.deinit(self.alloc);
+        self.deferred_renames.deinit(self.alloc);
         self.link_mangled.deinit(self.alloc);
         self.self_method_fields.deinit(self.alloc);
+        self.generic_result_arg.deinit(self.alloc);
+        self.generic_fns.deinit(self.alloc);
+        self.spec_pending.deinit(self.alloc);
+        self.spec_names.deinit(self.alloc);
+        self.generic_methods.deinit(self.alloc);
+        self.mspec_pending.deinit(self.alloc);
         self.field_lambdas.deinit(self.alloc);
         self.unknown_subjects.deinit(self.alloc);
+        self.subject_enums.deinit(self.alloc);
         self.behavior_methods.deinit(self.alloc);
         self.behavior_decls.deinit(self.alloc);
         self.ext_by_name.deinit();
@@ -1166,6 +1409,7 @@ const Emitter = struct {
                     // commonJS, erlang and beam do. It used to be dropped.
                     try self.deferred_stmts.put(self.alloc, v.name, {});
                     try self.deferred_globals.append(self.alloc, v);
+                    try self.deferred_renames.append(self.alloc, self.global_renames);
                 }
             },
             .comment => |c| try self.itemComment(c.text),
@@ -1228,49 +1472,57 @@ const Emitter = struct {
     /// name the module does not define (wasmtime rejects the whole module on
     /// the first such reference) and so arguments can be coerced to the
     /// declared parameter types.
+    /// A function's signature and the shapes its return spells — every
+    /// declared `fn`, and each specialisation of a generic one
+    /// (`specializedCallee`).
+    fn registerFn(self: *Emitter, f: ast.FnDecl) !void {
+        const ra = self.reg_arena.allocator();
+        if (f.isHost() or f.isDeclare or f.body.len == 0) {
+            try self.host_fns.put(f.name, {});
+            // Decision 67 — a host-backed `declare fn` that names some
+            // other target and no `wasm` one has no symbol here and
+            // never claimed to: `lowerPlainCall` refuses the call
+            // rather than lowering it to a trap.
+            if (f.isExternal() and f.externalFor("wasm") == null)
+                try self.external_missing.put(f.name, {});
+            return;
+        }
+        const has_result = fnHasResult(f);
+        var params: std.ArrayListUnmanaged([]const u8) = .empty;
+        var ptrefs: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            try params.append(ra, watType(p.typeRef));
+            try ptrefs.append(ra, p.typeRef);
+        }
+        try self.fn_param_typerefs.put(f.name, ptrefs.items);
+        try self.fn_sigs.put(f.name, .{
+            .params = try params.toOwnedSlice(ra),
+            .result = if (has_result) watTypeOpt(f.returnType) else null,
+        });
+        if (f.returnType != null and f.typeGuardParam == null) {
+            const rt = f.returnType.?;
+            if (isStringTypeRef(rt)) try self.str_fns.put(f.name, {});
+            if (isBoolTypeRef(rt)) try self.bool_fns.put(f.name, {});
+            if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(f.name, ek);
+            if (resultOfString(rt)) try self.result_str_fns.put(f.name, {});
+            if (resultShapeOfTypeRef(rt)) |shape| try self.result_shape_fns.put(f.name, shape);
+            try self.fn_ret_typerefs.put(f.name, try self.eraseOptTypeParam(&.{}, f.genericParams, rt));
+            if (genericResultIndex(f.genericParams, ptrefs.items, rt)) |ix|
+                try self.generic_result_arg.put(self.alloc, f.name, ix);
+        } else if (f.returnType == null and self.bodyReturnsString(f.body)) {
+            // The specialisation pass clears the return type of the
+            // fns it injects; a body that returns a string still does.
+            try self.str_fns.put(f.name, {});
+        }
+        // `fn isPositive(n: i32) -> n is i32` answers a bool.
+        if (f.typeGuardParam != null) try self.bool_fns.put(f.name, {});
+    }
+
     fn registerSymbols(self: *Emitter, program: ast.Program, emit_globals: bool) !void {
         const ra = self.reg_arena.allocator();
         for (program.decls) |decl| switch (decl) {
-            .@"fn" => |f| {
-                if (f.isHost() or f.isDeclare or f.body.len == 0) {
-                    try self.host_fns.put(f.name, {});
-                    // Decision 67 — a host-backed `declare fn` that names some
-                    // other target and no `wasm` one has no symbol here and
-                    // never claimed to: `lowerPlainCall` refuses the call
-                    // rather than lowering it to a trap.
-                    if (f.isExternal() and f.externalFor("wasm") == null)
-                        try self.external_missing.put(f.name, {});
-                    continue;
-                }
-                const has_result = fnHasResult(f);
-                var params: std.ArrayListUnmanaged([]const u8) = .empty;
-                var ptrefs: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
-                for (f.params) |p| {
-                    if (std.mem.eql(u8, p.name, "self")) continue;
-                    try params.append(ra, watType(p.typeRef));
-                    try ptrefs.append(ra, p.typeRef);
-                }
-                try self.fn_param_typerefs.put(f.name, ptrefs.items);
-                try self.fn_sigs.put(f.name, .{
-                    .params = try params.toOwnedSlice(ra),
-                    .result = if (has_result) watTypeOpt(f.returnType) else null,
-                });
-                if (f.returnType != null and f.typeGuardParam == null) {
-                    const rt = f.returnType.?;
-                    if (isStringTypeRef(rt)) try self.str_fns.put(f.name, {});
-                    if (isBoolTypeRef(rt)) try self.bool_fns.put(f.name, {});
-                    if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(f.name, ek);
-                    if (resultOfString(rt)) try self.result_str_fns.put(f.name, {});
-                    if (resultShapeOfTypeRef(rt)) |shape| try self.result_shape_fns.put(f.name, shape);
-                    try self.fn_ret_typerefs.put(f.name, try self.eraseOptTypeParam(&.{}, f.genericParams, rt));
-                } else if (f.returnType == null and self.bodyReturnsString(f.body)) {
-                    // The specialisation pass clears the return type of the
-                    // fns it injects; a body that returns a string still does.
-                    try self.str_fns.put(f.name, {});
-                }
-                // `fn isPositive(n: i32) -> n is i32` answers a bool.
-                if (f.typeGuardParam != null) try self.bool_fns.put(f.name, {});
-            },
+            .@"fn" => |f| try self.registerFn(f),
             .val => |v| if (emit_globals and !isSyntheticEntrypointVal(v)) {
                 try self.globals.put(v.name, {});
                 try self.global_types.put(v.name, self.globalValType(v));
@@ -1351,6 +1603,7 @@ const Emitter = struct {
                 try self.fn_sigs.put(alias, sig);
                 if (self.fn_param_typerefs.get(leaf)) |v| try self.fn_param_typerefs.put(alias, v);
                 if (self.fn_ret_typerefs.get(leaf)) |v| try self.fn_ret_typerefs.put(alias, v);
+                if (self.generic_result_arg.get(leaf)) |v| try self.generic_result_arg.put(self.alloc, alias, v);
                 if (self.fn_arr_elem.get(leaf)) |v| try self.fn_arr_elem.put(alias, v);
                 if (self.result_shape_fns.get(leaf)) |v| try self.result_shape_fns.put(alias, v);
                 if (self.str_fns.contains(leaf)) try self.str_fns.put(alias, {});
@@ -1610,6 +1863,7 @@ const Emitter = struct {
     /// every anon literal in source maps to a unique `__anon_L{line}_C{col}`
     /// entry in `records`/`record_field_types`, registered on first sight).
     fn recordTypeOfExpr(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        if (self.genericResultOf(e)) |a| return self.recordTypeOfExpr(a);
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |name0| blk: {
@@ -2973,6 +3227,17 @@ const Emitter = struct {
     fn findVariant(self: *Emitter, name: []const u8) ?FoundVariant {
         const bare = bareVariantName(name);
         const ename = variantPathEnum(name);
+        // A bare or dot-shorthand arm (`Red`, `.After`) over a subject whose
+        // enum is known is that enum's variant (§5.1 P8). Searched through one
+        // flat table, the first enum declaring the name answered: `case c {
+        // Red -> … }` over a `Cool` tested `Warm.Red`'s tag, and a section
+        // leaf `Layout.Break.After` was taken for `Token.After(inner)`.
+        if (ename.len == 0) if (self.case_enum_hint) |hint| if (self.enums.get(hint)) |variants| {
+            for (variants, 0..) |v, i| {
+                if (std.mem.eql(u8, v.name, bare))
+                    return .{ .variants = variants, .tag = @intCast(i), .variant = v };
+            }
+        };
         if (ename.len > 0) {
             if (self.enums.get(ename)) |variants| {
                 for (variants, 0..) |v, i| {
@@ -3271,6 +3536,7 @@ const Emitter = struct {
         if (self.boxesInto(v.typeAnnotation, v.value.*)) {
             try self.item(.{ .global = .{ .name = v.name, .ty = .i32, .mutable = true, .init = "0" } });
             try self.deferred_globals.append(self.alloc, v);
+            try self.deferred_renames.append(self.alloc, self.global_renames);
             return;
         }
         // A `var` (front 17 step 2) is a mutable global on every path: the two
@@ -3332,6 +3598,7 @@ const Emitter = struct {
             .init = "0",
         } });
         try self.deferred_globals.append(self.alloc, v);
+        try self.deferred_renames.append(self.alloc, self.global_renames);
     }
 
     /// Emit `$__init_globals`, the body of the module's `(start …)`: every
@@ -3352,7 +3619,9 @@ const Emitter = struct {
 
         var c: Capture = .{};
         self.open(&c);
-        for (self.deferred_globals.items) |v| {
+        for (self.deferred_globals.items, self.deferred_renames.items) |v, renames| {
+            self.global_renames = renames;
+            defer self.global_renames = null;
             if (self.deferred_stmts.contains(v.name)) {
                 _ = try self.emitStmt(.{ .expr = v.value.* }, false);
                 continue;
@@ -3813,8 +4082,11 @@ const Emitter = struct {
                         _ = self.closure_locals.remove(lb.name);
                 },
                 .assign => |a| switch (a.target) {
-                    .name => |name| switch (a.op) {
+                    // A `var` two linked modules declare is written in the
+                    // module the statement is in (`resolveName`).
+                    .name => |name0| switch (a.op) {
                         .assign => {
+                            const name = self.resolveName(name0);
                             // A scalar flowing into a declared `?T` goes in a
                             // box, exactly as it does at the binding that
                             // declared the slot. Without this, `var h: ?i32 =
@@ -3841,6 +4113,7 @@ const Emitter = struct {
                             try self.writeBackCapture(name);
                         },
                         .plusAssign => {
+                            const name = self.resolveName(name0);
                             try self.emit(if (self.locals.contains(name))
                                 .{ .local_get = name }
                             else
@@ -4193,10 +4466,12 @@ const Emitter = struct {
                     }
                     if (try self.lowerRecordMethod(cc, c.loc)) return;
                     if (self.assocSym(cc)) |sym_tmp| {
-                        const sym = try self.arena().dupe(u8, sym_tmp);
+                        const generic = try self.arena().dupe(u8, sym_tmp);
+                        const spec = try self.specializeFor(generic, cc.args);
+                        const sym = spec orelse generic;
                         try self.lowerCallArgs(cc.args, self.fn_sigs.get(sym).?, 0);
                         try self.emit(.{ .call = sym });
-                        if (self.iface_assoc.contains(sym) and !self.assoc_emitted.contains(sym))
+                        if (spec == null and self.iface_assoc.contains(sym) and !self.assoc_emitted.contains(sym))
                             try self.assoc_needed.append(self.alloc, sym);
                         return;
                     }
@@ -4346,7 +4621,7 @@ const Emitter = struct {
     /// what the construct did before it was lowered at all.
     fn patternTestIsReal(self: *Emitter, p: ast.Pattern) bool {
         return switch (p) {
-            .variant => |v| self.variantRef(v.name) != null,
+            .variant => |v| self.variantRef(v.name) != null or self.recordPatternType(v) != null,
             .@"or" => |pats| blk: {
                 for (pats) |sub| {
                     if (!self.patternTestIsReal(sub)) break :blk false;
@@ -4523,6 +4798,32 @@ const Emitter = struct {
             return;
         }
         if (self.optInfoOf(arg)) |oi| {
+            // A `?Color` of an all-unit enum: a box around the ordinal, which
+            // prints `null` or the variant's name. Through `$__print_opt_i32`
+            // it printed the ordinal.
+            if (oi.boxed and !oi.bool_ and !oi.float_) if (try self.optUnitEnumShape(arg, oi)) |shape| {
+                const tmp = try self.declRes();
+                try self.lowerValue(arg);
+                try self.emit(.{ .local_tee = tmp });
+                try self.emit(opOf("i32", "eqz"));
+                var then_c: Capture = .{};
+                self.open(&then_c);
+                try self.emit(self.builder().helper(.print_null));
+                const then_seq = self.seal(&then_c, .none);
+                var else_c: Capture = .{};
+                self.open(&else_c);
+                try self.emit(.{ .local_get = tmp });
+                try self.emitC(.{ .load = .{} }, "optional payload");
+                const seg = try self.internString(shape);
+                try self.emit(try self.constInt(seg.offset + 4));
+                try self.emit(try self.constInt(1));
+                try self.emit(self.builder().helper(.print_shaped_raw));
+                try self.emit(.drop);
+                const else_seq = self.seal(&else_c, .none);
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+                if (last) try self.emit(self.builder().helper(.print_nl));
+                return;
+            };
             // A `?T[]` of a scalar `T` — `m.at(1)` on a `Matrix` whose `at`
             // answers `?i32[]`: the value is the array's own pointer and `0`
             // its absence, so it prints `null` or the array. Through the
@@ -5048,7 +5349,7 @@ const Emitter = struct {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false") or
-                    self.bool_locals.contains(self.resolveName(n)) or self.bool_globals.contains(n),
+                    self.bool_locals.contains(self.resolveName(n)) or self.bool_globals.contains(self.resolveName(n)),
                 else => false,
             },
             .unaryOp => |un| un.op == .not,
@@ -5063,10 +5364,12 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    if (isUnwrapOr(cc)) break :blk self.isBoolExpr(cc.args[1].value.*);
                     if (cc.is_builtin) break :blk std.mem.eql(u8, cc.callee, "__bp_result_isOk") or
                         std.mem.eql(u8, cc.callee, "__bp_result_isError") or
                         (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null);
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .bool_;
+                    if (self.genericResultArg(cc)) |a| break :blk self.isBoolExpr(a);
                     if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.bool_fns.contains(sym);
                     break :blk false;
                 },
@@ -5085,12 +5388,36 @@ const Emitter = struct {
         const subj_local = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
         self.case_depth += 1;
         try self.declareLocal(subj_local, "i32");
-        try self.lowerCoerced(c.subjects[0], "i32");
-        try self.emit(.{ .local_set = subj_local });
+        // A multi-subject `case` lowers each subject once, into its own
+        // local below; the first one's is copied into `subj_local` there.
+        if (c.subjects.len == 1) {
+            try self.lowerCoerced(c.subjects[0], "i32");
+            try self.emit(.{ .local_set = subj_local });
+        }
         if (self.isUnknownExpr(c.subjects[0])) try self.unknown_subjects.put(self.alloc, subj_local, {});
         const subj_is_str = self.isStringExpr(c.subjects[0]);
         if (subj_is_str) try self.str_locals.put(subj_local, {});
         if (self.resultShapeOf(c.subjects[0])) |shape| try self.result_subjects.put(subj_local, shape);
+        if (self.enumOfSubject(c.subjects[0])) |en| try self.subject_enums.put(self.alloc, subj_local, en) else _ = self.subject_enums.remove(subj_local);
+        // `case a, n { 0, "x" -> … }`: every subject in its own local,
+        // `<subject local>_<i>`, which the `.multi` pattern's i-th pattern is
+        // tested against and binds from. Only the first was lowered, and the
+        // `.multi` pattern tested nothing — the first arm answered every call.
+        if (c.subjects.len > 1) for (c.subjects, 0..) |subj, i| {
+            const sub = try multiSubjectLocal(self.arena(), subj_local, i);
+            try self.declareLocal(sub, "i32");
+            try self.lowerCoerced(subj, "i32");
+            try self.emit(.{ .local_set = sub });
+            if (self.isUnknownExpr(subj)) try self.unknown_subjects.put(self.alloc, sub, {});
+            if (self.isStringExpr(subj)) try self.str_locals.put(sub, {});
+            if (self.resultShapeOf(subj)) |shape| try self.result_subjects.put(sub, shape);
+            if (self.recordTypeOfExpr(subj)) |rty| try self.local_types.put(sub, rty);
+            if (self.enumOfSubject(subj)) |en| try self.subject_enums.put(self.alloc, sub, en) else _ = self.subject_enums.remove(sub);
+            if (i == 0) {
+                try self.emit(.{ .local_get = sub });
+                try self.emit(.{ .local_set = subj_local });
+            }
+        };
 
         try self.emitCaseArms(c.arms, subj_local, 0);
     }
@@ -5130,7 +5457,13 @@ const Emitter = struct {
             } });
             return;
         };
-        if (self.patternIsIrrefutable(arm.pattern)) {
+        const irrefutable = blk: {
+            const prev_hint = self.case_enum_hint;
+            self.case_enum_hint = self.subject_enums.get(subj);
+            defer self.case_enum_hint = prev_hint;
+            break :blk self.patternIsIrrefutable(arm.pattern);
+        };
+        if (irrefutable) {
             try self.bindPattern(arm.pattern, subj);
             // A guard makes even `_` refutable: a failing guard falls through
             // to the next arm (§5.3), so there is still a chain to emit.
@@ -5293,15 +5626,38 @@ const Emitter = struct {
             // that is a `type` this module declares is decision 8 §3.3's arm,
             // tested by the value's own header, not a binding either
             .ident => |n| !isVariantPath(n) and self.findVariant(n) == null and !self.namesATestableType(n),
-            // no wasm test for these yet: the arm runs as before
-            .list, .multi => true,
+            .multi => |pats| for (pats) |sub| {
+                if (!self.patternIsIrrefutable(sub)) break false;
+            } else true,
+            // no wasm test for this yet: the arm runs as before
+            .list => true,
             else => false,
         };
     }
 
     fn emitPatternTest(self: *Emitter, p: ast.Pattern, subj: []const u8) anyerror!void {
+        const prev_hint = self.case_enum_hint;
+        self.case_enum_hint = self.subject_enums.get(subj);
+        defer self.case_enum_hint = prev_hint;
         switch (p) {
-            .wildcard, .list, .multi => try self.emit(one),
+            .wildcard, .list => try self.emit(one),
+            // Every pattern against its own subject (`lowerCase`), all of them
+            // holding. A primitive type over an `unknown` / union subject
+            // tests the value's box, as a whole-subject arm does.
+            .multi => |pats| {
+                try self.emit(one);
+                for (pats, 0..) |sub, i| {
+                    const local = try multiSubjectLocal(self.arena(), subj, i);
+                    if (sub == .ident and self.unknown_subjects.contains(local)) if (primTestOf(.{ .named = sub.ident })) |pt| {
+                        try self.emit(.{ .local_get = local });
+                        try self.emitPrimTest(pt);
+                        try self.emit(opOf("i32", "and"));
+                        continue;
+                    };
+                    try self.emitPatternTest(sub, local);
+                    try self.emit(opOf("i32", "and"));
+                }
+            },
             .ident => |n| {
                 // A written path is a variant, never a binding (§5.1 P8), so
                 // `.Ok` and `Shape.Circle` test a tag; a path no enum here
@@ -5367,6 +5723,38 @@ const Emitter = struct {
                     try self.emitRangeBound(bounds[0], subj, "ge_s");
                     try self.emitRangeBound(bounds[1], subj, "le_s");
                     try self.emit(opOf("i32", "and"));
+                    return;
+                }
+                // A RECORD's constructor pattern (`val assert Person(n, a) =
+                // p catch …`): the value's header names the record, and a
+                // nested pattern tests the field it stands at. Read as a
+                // variant, no enum declared the name and the pattern tested
+                // nothing and bound nothing (`unbound identifier n`).
+                if (self.recordPatternType(v)) |rty| {
+                    if (!try self.emitNamedTypeTest(rty, subj)) try self.emitC(zero, "a record this module cannot place");
+                    if (v.payload == .literals) for (v.payload.literals, 0..) |sub, i| {
+                        const fname = self.recordPatternField(rty, v, i) orelse {
+                            try self.emit(.drop);
+                            try self.emitC(zero, "a label the record does not declare");
+                            return;
+                        };
+                        const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
+                        self.case_depth += 1;
+                        var then_c: Capture = .{};
+                        self.open(&then_c);
+                        const acc = try self.recordFieldAccess(subj, rty, fname);
+                        try self.declareLocal(field, self.wasmTypeOf(acc));
+                        try self.lowerValue(acc);
+                        try self.emit(.{ .local_set = field });
+                        try self.noteFieldBinder(field, rty, fname);
+                        try self.emitPatternTest(sub, field);
+                        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+                        var else_c: Capture = .{};
+                        self.open(&else_c);
+                        try self.emit(zero);
+                        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+                        try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+                    };
                     return;
                 }
                 const ref = self.variantRef(v.name) orelse {
@@ -5459,7 +5847,11 @@ const Emitter = struct {
     }
 
     fn resolveName(self: *Emitter, n: []const u8) []const u8 {
-        return self.aliases.get(n) orelse n;
+        if (self.aliases.get(n)) |a| return a;
+        // A module-level `val` two linked modules declare: this module's
+        // read means its own (mangled) one, unless a local shadows it.
+        if (self.global_renames) |m| if (m.get(n)) |g| if (!self.locals.contains(n)) return g;
+        return n;
     }
 
     /// The local a pattern binding `n` of wasm type `ty` is stored in: `n`
@@ -5522,8 +5914,91 @@ const Emitter = struct {
         return .{ .variant = out };
     }
 
+    /// The enum `subject` is a value of, when its declared type names one:
+    /// a parameter, a local, a field or a call typed by the enum, `self`
+    /// inside the enum's own method, and a section written as a path
+    /// (`Token.Layout.Break`), declared under the F1 mangling
+    /// (`__Token__Layout__Break`).
+    fn enumOfSubject(self: *Emitter, subject: ast.Expr) ?[]const u8 {
+        const written: []const u8 = blk: {
+            if (subject == .identifier and subject.identifier.kind == .ident and
+                std.mem.eql(u8, subject.identifier.kind.ident, "self"))
+            {
+                if (self.self_type) |st| break :blk st;
+            }
+            const tr = self.typeRefOf(subject) orelse return null;
+            break :blk switch (tr) {
+                .named => |n| n,
+                .generic => |g| g.name,
+                else => return null,
+            };
+        };
+        if (self.enums.contains(written)) return written;
+        if (std.mem.indexOfScalar(u8, written, '.') == null) return null;
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        var it = std.mem.splitScalar(u8, written, '.');
+        while (it.next()) |seg| {
+            buf.appendSlice(self.arena(), "__") catch return null;
+            buf.appendSlice(self.arena(), seg) catch return null;
+        }
+        if (self.enums.getKey(buf.items)) |declared| return declared;
+        return null;
+    }
+
+    /// The record a constructor pattern names (`Person(n, a)`), when no enum
+    /// declares a variant of that name: the pattern is then the record's.
+    fn recordPatternType(self: *Emitter, v: anytype) ?[]const u8 {
+        if (v.shape != .variant or isResultPath(v.name)) return null;
+        if (isVariantPath(v.name)) return null;
+        if (self.findVariant(v.name) != null) return null;
+        return self.resolveRecordName(v.name);
+    }
+
+    /// The field the i-th element of a record pattern stands at: its label,
+    /// else the declared field at that position.
+    fn recordPatternField(self: *Emitter, rty: []const u8, v: anytype, i: usize) ?[]const u8 {
+        const fields = self.records.get(rty) orelse return null;
+        if (v.labels.len > i and v.labels[i].len > 0) {
+            for (fields) |f| if (std.mem.eql(u8, f, v.labels[i])) return f;
+            return null;
+        }
+        return if (i < fields.len) fields[i] else null;
+    }
+
+    /// `subj.field` over the record `rty` in `subj`, as the source would
+    /// write it — lowered by the field read every other access takes, a boxed
+    /// float field included.
+    fn recordFieldAccess(self: *Emitter, subj: []const u8, rty: []const u8, fname: []const u8) !ast.Expr {
+        try self.local_types.put(subj, rty);
+        const recv = try self.arena().create(ast.Expr);
+        recv.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = subj } } };
+        return .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .identAccess = .{ .receiver = recv, .member = fname } } } };
+    }
+
+    /// A local bound from a record field carries the field's declared shape.
+    fn noteFieldBinder(self: *Emitter, n: []const u8, rty: []const u8, fname: []const u8) !void {
+        const ft = self.fieldTypeIn(rty, fname) orelse return;
+        if (std.mem.eql(u8, ft, "string")) try self.str_locals.put(n, {});
+        if (std.mem.eql(u8, ft, "bool")) try self.bool_locals.put(n, {});
+        if (self.resolveRecordName(ft)) |r| try self.local_types.put(n, r);
+    }
+
+    /// The local a multi-subject `case` holds its i-th subject in.
+    fn multiSubjectLocal(a: std.mem.Allocator, subj: []const u8, i: usize) ![]const u8 {
+        return std.fmt.allocPrint(a, "{s}_{d}", .{ subj, i });
+    }
+
     fn bindPattern(self: *Emitter, p: ast.Pattern, subj: []const u8) anyerror!void {
+        const prev_hint = self.case_enum_hint;
+        self.case_enum_hint = self.subject_enums.get(subj);
+        defer self.case_enum_hint = prev_hint;
         switch (p) {
+            .multi => |pats| for (pats, 0..) |sub, i| {
+                const local = try multiSubjectLocal(self.arena(), subj, i);
+                // A primitive type names no binder.
+                if (sub == .ident and self.unknown_subjects.contains(local) and primTestOf(.{ .named = sub.ident }) != null) continue;
+                try self.bindPattern(sub, local);
+            },
             .ident => |n| if (!isVariantPath(n) and self.findVariant(n) == null) {
                 try self.declareLocal(n, "i32");
                 if (self.str_locals.contains(subj)) try self.str_locals.put(n, {});
@@ -5531,6 +6006,36 @@ const Emitter = struct {
                 try self.emit(.{ .local_set = n });
             },
             .variant => |v| {
+                // A record's constructor pattern binds each name from the
+                // field it stands at — by label when the pattern wrote one.
+                if (self.recordPatternType(v)) |rty| {
+                    switch (v.payload) {
+                        .binding => |bn| try self.bindPattern(.{ .ident = bn }, subj),
+                        .fields => |fs| for (fs, 0..) |n0, i| {
+                            if (std.mem.eql(u8, n0, "_")) continue;
+                            const fname = self.recordPatternField(rty, v, i) orelse continue;
+                            const acc = try self.recordFieldAccess(subj, rty, fname);
+                            const ty = self.wasmTypeOf(acc);
+                            const n = try self.bindName(n0, ty);
+                            try self.lowerValue(acc);
+                            try self.emitConvert(ty, self.locals.get(n) orelse ty);
+                            try self.emit(.{ .local_set = n });
+                            try self.noteFieldBinder(n, rty, fname);
+                        },
+                        .literals => |lits| for (lits, 0..) |sub, i| {
+                            const fname = self.recordPatternField(rty, v, i) orelse continue;
+                            const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
+                            self.case_depth += 1;
+                            const acc = try self.recordFieldAccess(subj, rty, fname);
+                            try self.declareLocal(field, self.wasmTypeOf(acc));
+                            try self.lowerValue(acc);
+                            try self.emit(.{ .local_set = field });
+                            try self.noteFieldBinder(field, rty, fname);
+                            try self.bindPattern(sub, field);
+                        },
+                    }
+                    return;
+                }
                 const ref = self.variantRef(v.name) orelse return;
                 const names: []const []const u8 = switch (v.payload) {
                     .binding => |b| &.{b},
@@ -5879,8 +6384,12 @@ const Emitter = struct {
             if (self.ext_by_name.contains(rn)) {
                 if (self.extMangledName(&self.sym_buf, rn, cc.callee)) |m| return m;
             }
-            if (self.assocSym(cc)) |m| return m;
+            if (self.assocSym(cc)) |m| {
+                const generic = self.arena().dupe(u8, m) catch return m;
+                return (self.specializeFor(generic, cc.args) catch null) orelse generic;
+            }
         }
+        if (self.specializedCallee(cc) catch null) |sym| return sym;
         if (self.fn_sigs.contains(cc.callee)) return cc.callee;
         return null;
     }
@@ -5906,12 +6415,10 @@ const Emitter = struct {
     /// the same cut commonJS makes (`externals_missing` is filled only for an
     /// `isExternal()` fn).
     fn lowerPlainCall(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!void {
-        if (cc.receiver == null and cc.calleeExpr == null) {
-            const target = self.import_aliases.get(cc.callee) orelse cc.callee;
-            if (self.ambiguous_names.contains(target)) {
-                try self.emitCf(.@"unreachable", "two linked modules declare `{s}` and wasm links them into one namespace", .{target});
-                return;
-            }
+        if (try self.specializedCallee(cc)) |sym| {
+            var spec = cc;
+            spec.callee = sym;
+            return self.lowerPlainCall(spec, loc);
         }
         // A call of a function that reaches a host cell (`host_bound`): bare,
         // or qualified by its module (`asserts.deepEquals(a, b)` — the
@@ -5993,6 +6500,18 @@ const Emitter = struct {
     /// recorded one.
     fn primKindAt(self: *Emitter, cc: anytype, loc: ast.Loc) ?envMod.PrimKind {
         if (cc.receiver == null or cc.is_builtin) return null;
+        // In a specialisation the substituted type is the answer: inference
+        // saw a type variable (`x: T`, `xs: Array<A>`) and recorded nothing,
+        // or a dispatch by value where the type is now a primitive.
+        if (self.in_spec) if (self.typeRefOf(cc.receiver.?.*)) |tr| {
+            const k: ?envMod.PrimKind = switch (tr) {
+                .named => |n| primKindOfName(n),
+                .array => .array,
+                .generic => |g| if (std.mem.eql(u8, g.name, "Array")) .array else null,
+                else => null,
+            };
+            if (k) |kk| return kk;
+        };
         const il = self.instance_lowerings.get(loc) orelse return null;
         return switch (il) {
             .prim => |k| k,
@@ -6219,6 +6738,43 @@ const Emitter = struct {
         return null;
     }
 
+    /// `lambdaAt`, and a FUNCTION NAMED as the argument (`xs.map(inc)`, a
+    /// local or an imported fn, or a local holding a function value): the
+    /// lambda `{ p0, … -> name(p0, …) }` with the `arity` parameters the
+    /// method hands it, inlined like any other. It trapped — `map needs a
+    /// literal lambda`.
+    fn hofLambdaAt(self: *Emitter, cc: anytype, i: usize, arity: usize) !?LambdaView {
+        if (lambdaAt(cc, i)) |l| return l;
+        if (i >= cc.args.len) return null;
+        const a = cc.args[i].value.*;
+        const name = switch (a) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| n,
+                else => return null,
+            },
+            else => return null,
+        };
+        const ar = self.arena();
+        const params = try ar.alloc([]const u8, arity);
+        const args = try ar.alloc(ast.CallArg, arity);
+        for (params, args, 0..) |*p, *arg, k| {
+            p.* = try std.fmt.allocPrint(ar, "__hof{d}_{d}", .{ self.loop_seq, k });
+            const v = try ar.create(ast.Expr);
+            v.* = .{ .identifier = .{ .loc = a.identifier.loc, .kind = .{ .ident = p.* } } };
+            arg.* = .{ .label = null, .value = v };
+        }
+        self.loop_seq += 1;
+        const body = try ar.alloc(ast.Stmt, 1);
+        body[0] = .{ .expr = .{ .call = .{ .loc = a.identifier.loc, .kind = .{ .call = .{
+            .receiver = null,
+            .callee = name,
+            .is_builtin = false,
+            .args = args,
+            .trailing = &.{},
+        } } } } };
+        return .{ .params = params, .body = body };
+    }
+
     fn primNotLowered(self: *Emitter, k: envMod.PrimKind, cc: anytype) !void {
         try self.emitCf(.@"unreachable", "prim method not lowered on wasm: {s}.{s}/{d}", .{
             @tagName(k), cc.callee, cc.args.len + cc.trailing.len,
@@ -6385,7 +6941,7 @@ const Emitter = struct {
         const Hof = enum { map, filter, for_each, all, any, count, find_index, fold };
         const hof: ?Hof = if (eq(u8, name, "map")) .map else if (eq(u8, name, "filter")) .filter else if (eq(u8, name, "forEach")) .for_each else if (eq(u8, name, "all") or eq(u8, name, "every")) .all else if (eq(u8, name, "any") or eq(u8, name, "some")) .any else if (eq(u8, name, "count")) .count else if (eq(u8, name, "findIndex")) .find_index else if (eq(u8, name, "fold")) .fold else null;
         if (hof) |h| {
-            const lam = lambdaAt(cc, if (h == .fold) 1 else 0) orelse {
+            const lam = (try self.hofLambdaAt(cc, if (h == .fold) 1 else 0, if (h == .fold) 2 else 1)) orelse {
                 try self.emitCf(.@"unreachable", "{s} needs a literal lambda on wasm (no function values)", .{name});
                 return;
             };
@@ -6397,7 +6953,7 @@ const Emitter = struct {
         // body — as the `?T` `at` answers (`arrayElemOpt`: a scalar boxed, a
         // pointer as itself).
         if (eq(u8, name, "find")) {
-            const lam = lambdaAt(cc, 0) orelse {
+            const lam = (try self.hofLambdaAt(cc, 0, 1)) orelse {
                 try self.emitCf(.@"unreachable", "{s} needs a literal lambda on wasm (no function values)", .{name});
                 return;
             };
@@ -6540,7 +7096,10 @@ const Emitter = struct {
         const recv = cc.receiver.?.*;
         const n = switch (recv) {
             .identifier => |id| switch (id.kind) {
-                .ident => |n| if (self.locals.contains(n) or self.globals.contains(n)) n else null,
+                .ident => |n0| blk: {
+                    const n = self.resolveName(n0);
+                    break :blk if (self.locals.contains(n) or self.globals.contains(n)) n else null;
+                },
                 else => null,
             },
             else => null,
@@ -6571,7 +7130,8 @@ const Emitter = struct {
         };
         switch (recv) {
             .identifier => |id| switch (id.kind) {
-                .ident => |n| if (self.locals.contains(n) or self.globals.contains(n)) {
+                .ident => |n0| if (self.locals.contains(self.resolveName(n0)) or self.globals.contains(self.resolveName(n0))) {
+                    const n = self.resolveName(n0);
                     try self.lowerCoerced(recv, "i32");
                     try self.lowerCoerced(arg, "i32");
                     try self.emit(self.builder().helper(.arr_push));
@@ -6894,6 +7454,8 @@ const Emitter = struct {
     /// `X`, `(XY…)` a tuple. Null when `e` is not known to be an array or a
     /// tuple.
     fn printShapeOf(self: *Emitter, e: ast.Expr) anyerror!?[]const u8 {
+        if (self.genericResultOf(e)) |a| return self.printShapeOf(a);
+        if (self.unitEnumOf(e)) |en| return try self.unitEnumShape(en);
         switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| if (self.print_shape_locals.get(self.resolveName(n))) |shape| return shape,
@@ -6968,7 +7530,10 @@ const Emitter = struct {
             .array => |inner| return self.arrayTypeShape(inner.*),
             .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) return self.arrayTypeShape(g.args[0]),
             // A written record type: the element carries its own declaration.
-            .named => |n| if (self.records.contains(n)) return "T",
+            .named => |n| {
+                if (self.records.contains(n)) return "T";
+                if (self.isAllUnitEnum(n)) return try self.unitEnumShape(n);
+            },
             else => {},
         }
         return null;
@@ -7099,9 +7664,10 @@ const Emitter = struct {
     /// Best-effort element shape of an array-valued expression. `i32` covers
     /// integers, bools and pointers alike.
     fn elemKindOf(self: *Emitter, e: ast.Expr) ElemKind {
+        if (self.genericResultOf(e)) |a| return self.elemKindOf(a);
         return switch (e) {
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.arr_elem_locals.get(self.resolveName(n)) orelse self.arr_elem_globals.get(n) orelse .i32,
+                .ident => |n| self.arr_elem_locals.get(self.resolveName(n)) orelse self.arr_elem_globals.get(self.resolveName(n)) orelse .i32,
                 // A record FIELD declared as an array: its element shape is in
                 // the field's declared type, and reading it is what tells
                 // `self.cells.at(0)` it is a `?string` and not a boxed `?i32`.
@@ -7134,7 +7700,19 @@ const Emitter = struct {
                         .array => {
                             const recv = cc.receiver.?.*;
                             if (std.mem.eql(u8, cc.callee, "map")) {
-                                const lam = lambdaAt(cc, 0) orelse break :blk .i32;
+                                const lam = lambdaAt(cc, 0) orelse {
+                                    // `xs.map(inc)`: the named function's
+                                    // declared return.
+                                    const fname = if (cc.args.len == 1) switch (cc.args[0].value.*) {
+                                        .identifier => |id| switch (id.kind) {
+                                            .ident => |n| n,
+                                            else => break :blk .i32,
+                                        },
+                                        else => break :blk .i32,
+                                    } else break :blk .i32;
+                                    const rt = self.fn_ret_typerefs.get(self.import_aliases.get(fname) orelse fname) orelse break :blk .i32;
+                                    break :blk elemKindOfTypeRef(rt);
+                                };
                                 if (lam.body.len == 0) break :blk .i32;
                                 const last = lam.body[lam.body.len - 1].expr;
                                 const v = switch (last) {
@@ -7548,7 +8126,41 @@ const Emitter = struct {
     fn emitPendingFns(self: *Emitter) anyerror!void {
         var li: usize = 0;
         var ai: usize = 0;
-        while (li < self.lambdas.items.len or ai < self.assoc_needed.items.len) {
+        var si: usize = 0;
+        var mi: usize = 0;
+        while (li < self.lambdas.items.len or ai < self.assoc_needed.items.len or si < self.spec_pending.items.len or mi < self.mspec_pending.items.len) {
+            while (mi < self.mspec_pending.items.len) : (mi += 1) {
+                const sp = self.mspec_pending.items[mi];
+                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames, self.owner_tparams };
+                self.rewrites = sp.rewrites;
+                self.instance_lowerings = sp.lowerings;
+                self.global_renames = sp.renames;
+                self.owner_tparams = sp.tparams;
+                self.in_spec = true;
+                defer {
+                    self.rewrites = saved[0];
+                    self.instance_lowerings = saved[1];
+                    self.global_renames = saved[2];
+                    self.owner_tparams = saved[3];
+                    self.in_spec = false;
+                }
+                try self.emitMemberFn(sp.owner, sp.method);
+            }
+            while (si < self.spec_pending.items.len) : (si += 1) {
+                const sp = self.spec_pending.items[si];
+                const saved = .{ self.rewrites, self.instance_lowerings, self.global_renames };
+                self.rewrites = sp.rewrites;
+                self.instance_lowerings = sp.lowerings;
+                self.global_renames = sp.renames;
+                self.in_spec = true;
+                defer {
+                    self.rewrites = saved[0];
+                    self.instance_lowerings = saved[1];
+                    self.global_renames = saved[2];
+                    self.in_spec = false;
+                }
+                try self.emitFn(sp.decl);
+            }
             while (li < self.lambdas.items.len) : (li += 1) try self.emitLifted(self.lambdas.items[li]);
             while (ai < self.assoc_needed.items.len) : (ai += 1) {
                 const sym = self.assoc_needed.items[ai];
@@ -7817,6 +8429,11 @@ const Emitter = struct {
                 .{ .boxed = true, .bool_ = true, .inner = inner }
             else if (isScalarName(n))
                 .{ .boxed = true, .inner = inner }
+                // An all-unit enum's value is its ordinal — `0` for the first
+                // variant — so `?Color` is a box as `?i32` is. Unboxed, a present
+                // `Color.Red` was absent, and printed as its ordinal.
+            else if (self.isAllUnitEnum(n))
+                .{ .boxed = true, .inner = inner }
             else if (std.mem.eql(u8, n, tparam_marker) or self.isTypeParamName(n))
                 .{ .boxed = true, .inner = inner }
             else
@@ -7854,6 +8471,187 @@ const Emitter = struct {
         const boxed = try ra.create(ast.TypeRef);
         boxed.* = .{ .named = tparam_marker };
         return .{ .optional = boxed };
+    }
+
+    /// `o.unwrapOr(d)` over an `@Option` or a `@Result`, its default written
+    /// — the builtin `__bp_*_unwrapOr(o, d)`, whose second argument is `d`.
+    fn isUnwrapOr(cc: anytype) bool {
+        if (!cc.is_builtin or cc.args.len != 2) return false;
+        return std.mem.eql(u8, cc.callee, "__bp_option_unwrapOr") or std.mem.eql(u8, cc.callee, "__bp_result_unwrapOr");
+    }
+
+    /// `fn f<T>(…, x: T, …) -> T`: the index of the first parameter declared
+    /// `T`, when the return type is that bare type parameter.
+    fn genericResultIndex(gps: []const ast.GenericParam, ptrefs: []const ast.TypeRef, rt: ast.TypeRef) ?usize {
+        const n = switch (rt) {
+            .named => |x| x,
+            else => return null,
+        };
+        for (gps) |gp| {
+            if (!std.mem.eql(u8, gp.name, n)) continue;
+            for (ptrefs, 0..) |pt, i| switch (pt) {
+                .named => |pn| if (std.mem.eql(u8, pn, n)) return i,
+                else => {},
+            };
+            return null;
+        }
+        return null;
+    }
+
+    /// The argument whose shape a generic call answers (`generic_result_arg`):
+    /// `ident("a")` is a string, `ident(true)` a bool.
+    fn genericResultArg(self: *Emitter, cc: anytype) ?ast.Expr {
+        if (cc.receiver != null or cc.is_builtin or cc.calleeExpr != null) return null;
+        const ix = self.generic_result_arg.get(cc.callee) orelse return null;
+        for (cc.args) |a| if (a.label != null) return null;
+        return if (ix < cc.args.len) cc.args[ix].value.* else null;
+    }
+
+    /// The name of a primitive type's family, when it is one.
+    fn primKindOfName(n: []const u8) ?envMod.PrimKind {
+        const eq = std.mem.eql;
+        if (eq(u8, n, "string")) return .string;
+        if (eq(u8, n, "bool")) return .bool;
+        if (eq(u8, n, "f64") or eq(u8, n, "f32")) return .float;
+        if (eq(u8, n, "i32") or eq(u8, n, "i64") or eq(u8, n, "u32") or eq(u8, n, "u64")) return .int;
+        return null;
+    }
+
+    /// The type an argument binds a type parameter to, when its shape says:
+    /// a primitive, a record, an all-unit enum.
+    fn concreteTypeOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        if (self.isStringExpr(e)) return "string";
+        if (self.isBoolExpr(e)) return "bool";
+        if (self.recordTypeOfExpr(e)) |r| return r;
+        if (self.unitEnumOf(e)) |en| return en;
+        if (self.typeRefOf(e)) |tr| switch (tr) {
+            .named => |n| if (primKindOfName(n) != null) return n,
+            else => {},
+        };
+        switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| if (isNumericLiteral(n)) return numLitType(n),
+                else => {},
+            },
+            else => {},
+        }
+        if (self.wasmTypeOf(e)[0] == 'f') return "f64";
+        return null;
+    }
+
+    /// The type parameter a parameter is written as — `x: T`, or the element
+    /// of `xs: Array<T>` / `xs: T[]` — and the type the argument binds it to.
+    const ParamBinding = struct { name: []const u8, ty: []const u8 };
+
+    fn bindParam(self: *Emitter, t: ast.TypeRef, arg: ast.Expr, isParam: *const fn ([]const u8, []const ast.GenericParam, []const ast.GenericParam) bool, a: []const ast.GenericParam, b: []const ast.GenericParam) ?ParamBinding {
+        switch (t) {
+            .named => |n| {
+                if (!isParam(n, a, b)) return null;
+                return .{ .name = n, .ty = self.concreteTypeOf(arg) orelse return null };
+            },
+            .array, .generic => {
+                const elem: ast.TypeRef = switch (t) {
+                    .array => |inner| inner.*,
+                    .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) g.args[0] else return null,
+                    else => unreachable,
+                };
+                const n = switch (elem) {
+                    .named => |x| x,
+                    else => return null,
+                };
+                if (!isParam(n, a, b) or !self.isArrayExpr(arg)) return null;
+                if (self.elemRecordOf(arg)) |r| return .{ .name = n, .ty = r };
+                return .{ .name = n, .ty = switch (self.elemKindOf(arg)) {
+                    .str => "string",
+                    .f32 => return null,
+                    .i32 => "i32",
+                } };
+            },
+            else => return null,
+        }
+    }
+
+    fn isGenericParamName(n: []const u8, a: []const ast.GenericParam, b: []const ast.GenericParam) bool {
+        for (a) |gp| if (std.mem.eql(u8, gp.name, n)) return true;
+        for (b) |gp| if (std.mem.eql(u8, gp.name, n)) return true;
+        return false;
+    }
+
+    /// A generic `fn` has ONE body here, where every type parameter is an
+    /// `i32` word: a string, a bool or a float bound to one printed as a
+    /// word, compared as a word and narrowed, and a method on a value of one
+    /// found no lowering (`x.toString()` trapped). A call whose arguments say
+    /// what a type parameter is — `describe("s")`, `pair(1.5, 2.5)` — calls
+    /// a copy of the function with the type parameters it binds substituted
+    /// in every written type (`<name>__<T>_<type>`), lowered like any other
+    /// function. Only when it matters: a string, a bool or a float bound, or
+    /// a method called on a value of the parameter.
+    fn specializedCallee(self: *Emitter, cc: anytype) !?[]const u8 {
+        if (cc.receiver != null or cc.is_builtin or cc.calleeExpr != null) return null;
+        return self.specializeFor(self.import_aliases.get(cc.callee) orelse cc.callee, cc.args);
+    }
+
+    /// `specializedCallee` for the function `target` (a free `fn`, or a
+    /// behavior's associated `default fn` by its symbol `Seq_firstOr`)
+    /// called with `args`.
+    fn specializeFor(self: *Emitter, target: []const u8, args: anytype) !?[]const u8 {
+        const g = self.generic_fns.get(target) orelse return null;
+        const f = g.decl;
+        const cc = .{ .args = args };
+        for (cc.args) |a| if (a.label != null) return null;
+        const ar = self.reg_arena.allocator();
+        var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
+        var needed = false;
+        var params_of: std.ArrayListUnmanaged([]const u8) = .empty;
+        var pi: usize = 0;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            defer pi += 1;
+            if (pi >= cc.args.len) break;
+            const bnd = self.bindParam(p.typeRef, cc.args[pi].value.*, &isGenericParamName, f.genericParams, &.{}) orelse continue;
+            try params_of.append(ar, p.name);
+            var bound = false;
+            for (subs.items) |sub| if (std.mem.eql(u8, sub.name, bnd.name)) {
+                bound = true;
+            };
+            if (bound) continue;
+            try subs.append(ar, .{ .name = bnd.name, .to = .{ .named = bnd.ty } });
+            if (std.mem.eql(u8, bnd.ty, "string") or std.mem.eql(u8, bnd.ty, "bool") or bnd.ty[0] == 'f') needed = true;
+        }
+        if (subs.items.len == 0) return null;
+        if (!needed and !callsMethodOn(ast.FnDecl, f, params_of.items)) return null;
+        var name: std.ArrayListUnmanaged(u8) = .empty;
+        try name.appendSlice(ar, target);
+        for (subs.items) |sub| try name.print(ar, "__{s}_{s}", .{ sub.name, sub.to.named });
+        const sym = name.items;
+        if (self.spec_names.contains(sym)) return sym;
+        try self.spec_names.put(self.alloc, sym, {});
+        var copy = try substTypeParams(ast.FnDecl, ar, f, subs.items);
+        copy.name = sym;
+        copy.isPub = false;
+        var left: std.ArrayListUnmanaged(ast.GenericParam) = .empty;
+        for (f.genericParams) |gp| {
+            const done = for (subs.items) |sub| {
+                if (std.mem.eql(u8, sub.name, gp.name)) break true;
+            } else false;
+            if (!done) try left.append(ar, gp);
+        }
+        copy.genericParams = left.items;
+        try self.registerFn(copy);
+        try self.spec_pending.append(self.alloc, .{ .decl = copy, .rewrites = g.rewrites, .lowerings = g.lowerings, .renames = g.renames });
+        return sym;
+    }
+
+    /// `e` itself when it is a generic call answering its argument's shape
+    /// (`genericResultArg`), that argument.
+    fn genericResultOf(self: *Emitter, e: ast.Expr) ?ast.Expr {
+        return switch (e) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| self.genericResultArg(cc),
+                else => null,
+            },
+            else => null,
+        };
     }
 
     fn isScalarName(n: []const u8) bool {
@@ -7903,6 +8701,9 @@ const Emitter = struct {
                     break :blk self.global_typerefs.get(n);
                 },
                 .identAccess => |ia| blk: {
+                    // `Color.Red` of an all-unit enum: a value of `Color`,
+                    // which is what prints it by name once it is in a local.
+                    if (self.unitEnumMember(ia)) |en| break :blk .{ .named = en };
                     if (tupleIndex(ia.member)) |idx| {
                         const rt = self.typeRefOf(ia.receiver.*) orelse break :blk null;
                         const elems = rt.tupleElems() orelse break :blk null;
@@ -7940,6 +8741,8 @@ const Emitter = struct {
                     // a local bound to one: the call answers the function
                     // type's return.
                     if (self.valueCallTypeRef(cc)) |t| break :blk t;
+                    if (self.specializedCallee(cc) catch null) |sym| break :blk self.fn_ret_typerefs.get(sym);
+                    if (self.genericResultArg(cc)) |a| break :blk self.typeRefOf(a);
                     break :blk self.fn_ret_typerefs.get(cc.callee);
                 },
                 else => null,
@@ -7988,6 +8791,7 @@ const Emitter = struct {
     /// bound to one, a declared `Entry[]`, and the array methods that keep
     /// their receiver's elements.
     fn elemRecordOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        if (self.genericResultOf(e)) |a| return self.elemRecordOf(a);
         switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n0| {
@@ -8048,6 +8852,7 @@ const Emitter = struct {
 
     /// The optional an expression evaluates to, when it is one.
     fn optInfoOf(self: *Emitter, e: ast.Expr) ?OptInfo {
+        if (self.genericResultOf(e)) |a| return self.optInfoOf(a);
         switch (e) {
             // An `if` with no `else` in value position: absent when the
             // condition is false (its value when false is the language
@@ -8212,7 +9017,81 @@ const Emitter = struct {
         } else self.recordTypeOfExpr(cc.receiver.?.*) orelse return null;
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
         if (!self.fn_sigs.contains(sym)) return null;
+        if (self.generic_methods.contains(sym)) {
+            const generic = self.reg_arena.allocator().dupe(u8, sym) catch return null;
+            return (self.specializeMethod(generic, cc) catch null) orelse generic;
+        }
         return sym;
+    }
+
+    /// `specializedCallee` for a method of a generic `type`: the receiver's
+    /// written type arguments (`Dict<string, string>`) and the arguments'
+    /// shapes bind the owner's and the method's type parameters, and the call
+    /// goes to a copy of the method with them substituted
+    /// (`Dict_at__K_string__V_string`). One body compared two `K` keys as
+    /// WORDS — a key `split` built at run time never equalled the literal
+    /// (C-18) — and read a `?V` as a box whatever `V` was.
+    fn specializeMethod(self: *Emitter, sym: []const u8, cc: anytype) !?[]const u8 {
+        const gm = self.generic_methods.get(sym) orelse return null;
+        const m = gm.method;
+        const ar = self.reg_arena.allocator();
+        var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
+        var needed = false;
+        const Local = struct {
+            fn has(list: []const TypeSub, n: []const u8) bool {
+                for (list) |sub| if (std.mem.eql(u8, sub.name, n)) return true;
+                return false;
+            }
+        };
+        // The receiver's written type arguments, in the owner's order.
+        if (self.typeRefOf(cc.receiver.?.*)) |tr| switch (tr) {
+            .generic => |g| if (g.args.len == gm.tparams.len) for (g.args, gm.tparams) |arg, gp| switch (arg) {
+                .named => |n| if (primKindOfName(n) != null or self.records.contains(n)) {
+                    try subs.append(ar, .{ .name = gp.name, .to = arg });
+                    if (std.mem.eql(u8, n, "string") or std.mem.eql(u8, n, "bool") or n[0] == 'f') needed = true;
+                },
+                else => {},
+            },
+            else => {},
+        };
+        // The arguments, for a parameter written as a bare type parameter.
+        var params_of: std.ArrayListUnmanaged([]const u8) = .empty;
+        var pi: usize = 0;
+        for (m.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            defer pi += 1;
+            if (pi >= cc.args.len) break;
+            const bnd = self.bindParam(p.typeRef, cc.args[pi].value.*, &isGenericParamName, gm.tparams, m.genericParams) orelse continue;
+            try params_of.append(ar, p.name);
+            if (Local.has(subs.items, bnd.name)) continue;
+            try subs.append(ar, .{ .name = bnd.name, .to = .{ .named = bnd.ty } });
+            if (std.mem.eql(u8, bnd.ty, "string") or std.mem.eql(u8, bnd.ty, "bool") or bnd.ty[0] == 'f') needed = true;
+        }
+        if (subs.items.len == 0) return null;
+        if (!needed and !callsMethodOn(ast.BehaviorMethod, m, params_of.items)) return null;
+        var name: std.ArrayListUnmanaged(u8) = .empty;
+        try name.appendSlice(ar, m.name);
+        for (subs.items) |sub| try name.print(ar, "__{s}_{s}", .{ sub.name, sub.to.named });
+        const out = try std.fmt.allocPrint(ar, "{s}_{s}", .{ gm.owner, name.items });
+        if (self.spec_names.contains(out)) return out;
+        try self.spec_names.put(self.alloc, out, {});
+        var copy = try substTypeParams(ast.BehaviorMethod, ar, m, subs.items);
+        copy.name = name.items;
+        var left_owner: std.ArrayListUnmanaged(ast.GenericParam) = .empty;
+        for (gm.tparams) |gp| if (!Local.has(subs.items, gp.name)) try left_owner.append(ar, gp);
+        var left_own: std.ArrayListUnmanaged(ast.GenericParam) = .empty;
+        for (m.genericParams) |gp| if (!Local.has(subs.items, gp.name)) try left_own.append(ar, gp);
+        copy.genericParams = left_own.items;
+        try self.registerInterfaceSigs(gm.owner, left_owner.items, &.{copy});
+        try self.mspec_pending.append(self.alloc, .{
+            .owner = gm.owner,
+            .tparams = left_owner.items,
+            .method = copy,
+            .rewrites = gm.rewrites,
+            .lowerings = gm.lowerings,
+            .renames = gm.renames,
+        });
+        return out;
     }
 
     /// `c.atual()` on a record value → `call $Contador_atual` with the receiver
@@ -8472,6 +9351,107 @@ const Emitter = struct {
         return addr;
     }
 
+    /// An enum every variant of which is a unit variant: its value is the
+    /// ordinal, with no allocation and no header.
+    fn isAllUnitEnum(self: *Emitter, name: []const u8) bool {
+        const variants = self.enums.get(name) orelse return false;
+        return variants.len > 0 and !enumHasPayload(variants);
+    }
+
+    /// `Color.Red` written against an all-unit enum: the enum's name.
+    fn unitEnumMember(self: *Emitter, ia: anytype) ?[]const u8 {
+        const ename = switch (ia.receiver.*) {
+            .identifier => |rid| switch (rid.kind) {
+                .ident => |n| n,
+                else => return null,
+            },
+            else => return null,
+        };
+        if (!self.isAllUnitEnum(ename)) return null;
+        for (self.enums.get(ename).?) |v| if (std.mem.eql(u8, v.name, ia.member)) return ename;
+        return null;
+    }
+
+    /// The all-unit enum `e` is a value of, when a declaration says so: a
+    /// member written by its path, a name, a field or a call whose declared
+    /// type is the enum. Its value is an ordinal, so it prints by the shape
+    /// `unitEnumShape` spells, never through the numeric printer.
+    fn unitEnumOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| if (self.unitEnumMember(ia)) |en| return en,
+                else => {},
+            },
+            // `if (c) { Color.Green } else { Color.Red }`: both arms answer one
+            // type, and an arm's tail says which.
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| {
+                    const els = i.else_ orelse return null;
+                    if (i.then_.len > 0) if (self.unitEnumOf(i.then_[i.then_.len - 1].expr)) |en| return en;
+                    if (els.len > 0) return self.unitEnumOf(els[els.len - 1].expr);
+                    return null;
+                },
+                else => {},
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.unitEnumOf(inner.*),
+                else => {},
+            },
+            else => {},
+        }
+        const tr = self.typeRefOf(e) orelse return null;
+        return switch (tr) {
+            .named => |n| if (self.isAllUnitEnum(n)) n else null,
+            else => null,
+        };
+    }
+
+    /// The print shape of the payload of a boxed `?E` over an all-unit enum:
+    /// a declared `?Color`, or `cs.at(i)` / `cs.first()` over an array whose
+    /// elements print by such a shape.
+    fn optUnitEnumShape(self: *Emitter, e: ast.Expr, oi: OptInfo) anyerror!?[]const u8 {
+        if (oi.inner) |inner| switch (inner) {
+            .named => |n| if (self.isAllUnitEnum(n)) return try self.unitEnumShape(n),
+            else => {},
+        };
+        if (self.typeRefOf(e)) |tr| switch (tr) {
+            .optional => |i| switch (i.*) {
+                .named => |n| if (self.isAllUnitEnum(n)) return try self.unitEnumShape(n),
+                else => {},
+            },
+            else => {},
+        };
+        const cc = switch (e) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc,
+                else => return null,
+            },
+            else => return null,
+        };
+        const recv = cc.receiver orelse return null;
+        const shape = (try self.printShapeOf(recv.*)) orelse return null;
+        if (shape.len > 1 and shape[0] == '[' and shape[1] == 'E') return shape[1..];
+        return null;
+    }
+
+    /// `E k [ <n> Enum.Variant ] * k` — the print shape of an all-unit enum's
+    /// value (`$__print_shaped_raw`): the ordinal picks the name.
+    fn unitEnumShape(self: *Emitter, ename: []const u8) anyerror![]const u8 {
+        const variants = self.enums.get(ename) orelse return error.UnknownEnum;
+        if (variants.len > 255) return error.NameTooLong;
+        const a = self.arena();
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        try out.append(a, 'E');
+        try out.append(a, @intCast(variants.len));
+        for (variants) |v| {
+            const text = try std.fmt.allocPrint(a, "{s}.{s}", .{ ename, v.name });
+            if (text.len > 255) return error.NameTooLong;
+            try out.append(a, @intCast(text.len));
+            try out.appendSlice(a, text);
+        }
+        return out.items;
+    }
+
     /// The same for ONE variant — its name is written `Enum.Variant`, which is
     /// the text decision 8 §7 wants, and its fields start one slot in because
     /// slot 0 holds the ordinal the `case` arms test.
@@ -8617,7 +9597,7 @@ const Emitter = struct {
                     if (self.param_shape) |ps| for (ps.names, 0..) |pn, i| {
                         if (std.mem.eql(u8, pn, n)) break :blk ps.str[i];
                     };
-                    break :blk self.str_locals.contains(self.resolveName(n)) or self.str_globals.contains(n);
+                    break :blk self.str_locals.contains(self.resolveName(n)) or self.str_globals.contains(self.resolveName(n));
                 },
                 .identAccess => |ia| blk: {
                     // A **tuple element** whose type is a string: `t._1`, and a
@@ -8678,7 +9658,11 @@ const Emitter = struct {
                         true
                     else
                         self.isArrayExpr(ix.recv) and !ix.is_slice and self.elemKindOf(ix.recv) == .str;
+                    // `o.unwrapOr(d)` / `r.unwrapOr(d)`: the payload and
+                    // the default share one type, and the default says it.
+                    if (isUnwrapOr(cc)) break :blk self.isStringExpr(cc.args[1].value.*);
                     if (cc.is_builtin) break :blk false;
+                    if (self.genericResultArg(cc)) |a| break :blk self.isStringExpr(a);
                     if (cc.receiver == null and self.locals.contains(cc.callee)) {
                         if (self.closure_locals.get(cc.callee)) |li| break :blk self.closureCallIsString(li, cc);
                     }
@@ -9177,9 +10161,10 @@ const Emitter = struct {
     /// one. Deliberately narrow — walking the layout of something else would
     /// read its first word as an element count and trap.
     fn isArrayExpr(self: *Emitter, e: ast.Expr) bool {
+        if (self.genericResultOf(e)) |a| return self.isArrayExpr(a);
         return switch (e) {
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.arr_locals.contains(self.resolveName(n)) or self.arr_globals.contains(n),
+                .ident => |n| self.arr_locals.contains(self.resolveName(n)) or self.arr_globals.contains(self.resolveName(n)),
                 // A record field (or tuple element) declared as an array, an
                 // `Array<T>` or an eager `@Iterator<T>` / `@Stream<T>` holds
                 // the `[len][e0]…` blob its initialiser built — a `stream loop`
@@ -9528,7 +10513,7 @@ const Emitter = struct {
                 else => "i32",
             },
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.locals.get(self.resolveName(n)) orelse self.global_types.get(n) orelse "i32",
+                .ident => |n| self.locals.get(self.resolveName(n)) orelse self.global_types.get(self.resolveName(n)) orelse "i32",
                 // A named record's float field reads as the `f64` its box holds.
                 .identAccess => |ia| blk: {
                     if (ia.optional) break :blk "i32";
@@ -9556,7 +10541,7 @@ const Emitter = struct {
                 else => "i32",
             },
             .branch => |b| switch (b.kind) {
-                .if_ => |i| if (ifIsStatementForm(i)) "i32" else self.cur_result,
+                .if_ => |i| if (ifIsStatementForm(i)) "i32" else self.ifValueType(i),
                 .tryCatch => self.cur_result,
             },
             .call => |c| switch (c.kind) {
@@ -9965,7 +10950,14 @@ const Emitter = struct {
             try self.lowerCoerced(i.cond.*, "i32");
             try self.emit(.{ .local_tee = t });
         } else try self.lowerExpr(i.cond.*);
-        const result: ?ValType = if (as_stmt) null else vt(self.cur_result);
+        // The value's own type: an arm answering a float makes the whole `if`
+        // one (`ifValueType`). It was the enclosing function's result type
+        // whatever the arms answered, so `val m = if (d < 0.0) { 0.0 - d }
+        // else { d }` in a function answering nothing was `(if (result i32)`
+        // around two `f64`s — invalid code, the module refused.
+        const ty: []const u8 = if (as_stmt) self.cur_result else self.ifValueType(i);
+        const own_ty = !std.mem.eql(u8, ty, self.cur_result);
+        const result: ?ValType = if (as_stmt) null else vt(ty);
 
         var then_c: Capture = .{};
         self.open(&then_c);
@@ -10005,11 +10997,11 @@ const Emitter = struct {
         try self.collectNullTestNames(i.cond.*, true, &then_names);
         const then_marked = try self.applyNarrowing(then_names.items);
         const unknown_narrowed = try self.narrowUnknown(i.cond.*);
-        const then_tail = try self.emitBody(i.then_, !as_stmt);
+        const then_tail = if (own_ty) try self.emitBranchValue(i.then_, ty) else try self.emitBody(i.then_, !as_stmt);
         self.dropUnknownNarrowing(unknown_narrowed);
         self.dropNarrowing(then_marked);
         if (binder_prev) |bp| try self.restoreBinderFlags(bp);
-        const then_seq = self.seal(&then_c, stackOf(then_tail, self.cur_result));
+        const then_seq = self.seal(&then_c, stackOf(then_tail, ty));
 
         var else_seq: ?Seq = null;
         if (i.else_) |els| {
@@ -10018,15 +11010,15 @@ const Emitter = struct {
             var else_names: std.ArrayListUnmanaged([]const u8) = .empty;
             try self.collectNullTestNames(i.cond.*, false, &else_names);
             const else_marked = try self.applyNarrowing(else_names.items);
-            const else_tail = try self.emitBody(els, !as_stmt);
+            const else_tail = if (own_ty) try self.emitBranchValue(els, ty) else try self.emitBody(els, !as_stmt);
             self.dropNarrowing(else_marked);
-            else_seq = self.seal(&else_c, stackOf(else_tail, self.cur_result));
+            else_seq = self.seal(&else_c, stackOf(else_tail, ty));
         } else if (!as_stmt) {
             // A value-form `if` must fill its `(result …)` on both paths.
             var else_c: Capture = .{};
             self.open(&else_c);
-            try self.emitAt(8, constOf(self.cur_result, "0"));
-            else_seq = self.seal(&else_c, .{ .value = vt(self.cur_result) });
+            try self.emitAt(8, constOf(ty, "0"));
+            else_seq = self.seal(&else_c, .{ .value = vt(ty) });
         }
 
         try self.emit(.{ .@"if" = .{
@@ -10034,6 +11026,46 @@ const Emitter = struct {
             .then = .{ .seq = then_seq },
             .@"else" = if (else_seq) |s| .{ .seq = s } else null,
         } });
+    }
+
+    /// The type a value-form `if` answers: a float when an arm that yields a
+    /// value yields one, else the enclosing result type every other value
+    /// `if` has always taken (its arms are coerced to it by their context).
+    fn ifValueType(self: *Emitter, i: anytype) []const u8 {
+        var t: []const u8 = "";
+        for ([_]?[]const ast.Stmt{ i.then_, i.else_ }) |maybe| {
+            const body = maybe orelse continue;
+            if (body.len == 0) continue;
+            const last = body[body.len - 1].expr;
+            if (self.exprTail(last) != .value) continue;
+            const lt = self.wasmTypeOf(last);
+            if (lt[0] == 'f') t = if (t.len == 0) lt else self.unifyNum(t, lt);
+        }
+        return if (t.len > 0) t else self.cur_result;
+    }
+
+    /// One arm of an `if` whose value type is its own (`ifValueType`): the
+    /// arm's tail converted to `ty`, a zero of `ty` where it yields nothing.
+    fn emitBranchValue(self: *Emitter, body: []const ast.Stmt, ty: []const u8) anyerror!Tail {
+        if (body.len == 0) {
+            try self.emit(constOf(ty, "0"));
+            return .value;
+        }
+        for (body[0 .. body.len - 1]) |stmt| _ = try self.emitStmt(stmt, false);
+        const last = body[body.len - 1];
+        const from = self.wasmTypeOf(last.expr);
+        const tail = try self.emitStmtRaw(last, true);
+        switch (tail) {
+            .none => {
+                try self.emit(constOf(ty, "0"));
+                return .value;
+            },
+            .value => {
+                try self.emitConvert(from, ty);
+                return .value;
+            },
+            .terminated => return .terminated,
+        }
     }
 
     /// True when an if-branch body ends in a void expression (a void

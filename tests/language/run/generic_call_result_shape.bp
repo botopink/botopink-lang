@@ -1,0 +1,50 @@
+//// A generic function answering one of its own type parameters (`-> T`) has
+//// one body on wasm, so what a call answers has the shape of the argument
+//// that type parameter was read from: a string, a bool, a record, an array.
+//// wasm read the declared `T`, which says nothing, and printed a string as
+//// its address (`256`) and a bool as `1`. `unwrapOr` over an `@Option` or a
+//// `@Result` answers the default's shape: a concatenation with it wrote the
+//// string's address (`x272`).
+
+type P(name: string)
+
+fn ident<T>(x: T) -> T {
+    return x;
+}
+
+fn pick<T>(c: bool, a: T, b: T) -> T {
+    if (c) {
+        return a;
+    }
+    return b;
+}
+
+fn okOf(s: string) -> @Result<string, string> {
+    return s;
+}
+
+pub fn main() {
+    @print(ident("a"));
+    @print(ident(true));
+    @print(ident(7));
+    val v = ident("loc");
+    @print(v);
+    @print(ident("a") + "b");
+    @print(ident(ident("n")));
+    @print(pick(false, "p", "q"));
+    @print(ident(1 < 2));
+    @print(ident(P(name: "r")).name);
+    @print(ident([1, 2]));
+    @print(ident(["s", "t"]));
+    val s: ?string = null;
+    @print("x" + s.unwrapOr("d"));
+    val o: ?string = "v";
+    @print("y" + o.unwrapOr("d") + "z");
+    @print(okOf("k").unwrapOr("e"));
+    @print("r=" + okOf("k").unwrapOr("e"));
+    val b: ?bool = null;
+    @print(b.unwrapOr(false));
+    val w: ?string = "w";
+    val d = "dflt";
+    @print(w.unwrapOr(d) + "!");
+}

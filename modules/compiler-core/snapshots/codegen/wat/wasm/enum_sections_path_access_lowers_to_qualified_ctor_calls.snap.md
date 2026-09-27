@@ -15,8 +15,8 @@ fn red500() -> Token {
 (module
   (memory (export "memory") 1)
   (data (i32.const 256) "\16\00\00\00V\0bToken.Color\01\06_inneri")
-  (data (i32.const 284) "\1d\00\00\00V\12__Token__Color.Red\01\06_inneri")
-  (global $__heap_ptr (mut i32) (i32.const 320))
+  (data (i32.const 284) "\52\00\00\00V\12__Token__Color.Red\01\06_innerE\02\19__Token__Color__Red.__100\19__Token__Color__Red.__500")
+  (global $__heap_ptr (mut i32) (i32.const 372))
   (func $red500 (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)

@@ -4424,11 +4424,11 @@ fn main() {
     call $Dict_empty
     i32.const 364
     i32.const 1
-    call $Dict_insert
+    call $Dict_insert__K_string__V_i32
     local.set $d
     local.get $d
     i32.const 364
-    call $Dict_at
+    call $Dict_at__K_string__V_i32
     local.set $_res0
     local.get $_res0 ;; Option (0 = None, else Some payload)
     (if (result i32)
@@ -4444,9 +4444,191 @@ fn main() {
     local.get $d
     i32.const 372
     i32.const 2
-    call $Dict_insert
-    call $Dict_size
+    call $Dict_insert__K_string__V_i32
+    call $Dict_size__K_string__V_i32
     call $__print_i32
+  )
+  (func $Dict_insert__K_string__V_i32 (param $self i32) (param $key i32) (param $value i32) (result i32)
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $__mem2 i32)
+    (local $filtered i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $__out0 i32)
+    (local $p i32)
+    local.get $self
+    i32.load ;; .pairs
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    local.get $__len0
+    call $__arr_new
+    local.set $__out0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $p
+    local.get $p
+    i32.load
+    local.get $key
+    call $__str_eq
+    i32.eqz
+    (if
+      (then
+    local.get $__out0
+    local.get $__acc0
+    i32.const 4
+    i32.mul
+    i32.add
+    local.get $__iter0
+    local.get $__idx0
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load offset=4
+    i32.store offset=4
+    local.get $__acc0
+    i32.const 1
+    i32.add
+    local.set $__acc0
+      )
+    )
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $__out0
+    local.get $__acc0
+    i32.store ;; kept count
+    local.get $__out0
+    local.set $filtered
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 296
+    i32.store
+    local.get $__mem0
+    local.get $filtered
+    global.get $__heap_ptr
+    local.set $__mem1
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 1
+    i32.store
+    local.get $__mem1
+    global.get $__heap_ptr
+    local.set $__mem2
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem2
+    local.get $key
+    i32.store
+    local.get $__mem2
+    local.get $value
+    i32.store offset=4
+    local.get $__mem2
+    i32.store offset=4
+    local.get $__mem1
+    call $__arr_concat
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
+    return
+  )
+  (func $Dict_at__K_string__V_i32 (param $self i32) (param $key i32) (result i32)
+    (local $found i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    (local $__acc0 i32)
+    (local $p i32)
+    i32.const 0
+    local.set $found
+    local.get $self
+    i32.load ;; .pairs
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    i32.const 0
+    local.set $__acc0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $p
+    local.get $p
+    i32.load
+    local.get $key
+    call $__str_eq
+    (if (result i32)
+      (then
+    local.get $p
+    i32.load offset=4
+    call $__box_i32
+    local.set $found
+    i32.const 0
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    local.get $found
+    return
+  )
+  (func $Dict_size__K_string__V_i32 (param $self i32) (result i32)
+    local.get $self
+    i32.load ;; .pairs
+    i32.load ;; .length
+    return
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)

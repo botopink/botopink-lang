@@ -1,0 +1,41 @@
+//// An ENUM that implements a behavior answers the behavior's calls through a
+//// value of the behavior, for a unit variant and a payload variant alike — an
+//// argument typed by the behavior, and the elements of an `Array` of it.
+//// commonJS emitted the enum's methods as statics only (`r.path is not a
+//// function`); erlang and beam applied the method to the VARIANT's tag as if
+//// it were a module (`undef` on `…Route__v__page`, a `badarg` for a unit
+//// variant's atom), where the enum's module owns the methods.
+
+behavior Req {
+    fn path(self: Self) -> string;
+    fn weight(self: Self) -> i32;
+}
+
+type Route implement Req {
+    Home,
+    Page(slug: string),
+
+    fn path(self: Self) -> string {
+        return case self {
+            Home -> "/";
+            Page(slug) -> "/p/" + slug;
+        };
+    }
+
+    fn weight(self: Self) -> i32 {
+        return 1;
+    }
+}
+
+fn describe(r: Req) -> string {
+    return r.path() + " " + r.weight().toString();
+}
+
+pub fn main() {
+    @print(Route.Home.path());
+    @print(Route.Page(slug: "a").path());
+    @print(describe(Route.Page(slug: "b")));
+    @print(describe(Route.Home));
+    val rs: Array<Req> = [Route.Home, Route.Page(slug: "c")];
+    for (rs) { r -> @print(r.path()); }
+}

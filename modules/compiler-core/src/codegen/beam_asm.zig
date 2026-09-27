@@ -671,6 +671,21 @@ fn exprPropagates(e: ast.Expr) bool {
     };
 }
 
+/// Whether `e` is, or continues, a `?.` chain.
+fn isOptionalChain(e: ast.Expr) bool {
+    return switch (e) {
+        .identifier => |id| switch (id.kind) {
+            .identAccess => |ia| ia.optional or isOptionalChain(ia.receiver.*),
+            else => false,
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| cc.optional or (if (cc.receiver) |r| isOptionalChain(r.*) else false),
+            else => false,
+        },
+        else => false,
+    };
+}
+
 /// Whether `emitSubPattern` lowers `p` — every shape but a list, an
 /// alternation or a multi-subject pattern, at any depth.
 fn subPatternLowered(p: ast.Pattern) bool {
@@ -700,14 +715,13 @@ fn patternYSlots(p: ast.Pattern) u32 {
             },
         },
         .list => |lst| if (lst.spread) |s| (if (s.len > 0) @as(u32, 1) else 0) else 0,
+        // Lowered as the tuple pattern of its patterns (`lowerCase`), so
+        // every binder at any depth takes a slot: `Shape.Circle(r), 1` binds
+        // `r`, which counting the top-level names alone left unallocated
+        // (`invalid_store`).
         .multi => |pats| blk: {
             var n: u32 = 0;
-            for (pats) |sp| switch (sp) {
-                .ident => |nm| {
-                    if (!std.mem.eql(u8, nm, "_")) n += 1;
-                },
-                else => {},
-            };
+            for (pats) |sp| n += patternYSlots(sp);
             break :blk n;
         },
     };
@@ -848,6 +862,11 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
         .call => |c| switch (c.kind) {
             .call => |cc| {
                 if (cc.receiver) |r| countLocalsInExpr(em, r.*, count);
+                // The present receiver of a method continuing a `?.` chain
+                // (`lowerCall`).
+                if (!cc.is_builtin and !cc.optional) if (cc.receiver) |r| if (isOptionalChain(r.*)) {
+                    count.* += 1;
+                };
                 for (cc.args) |arg| countLocalsInExpr(em, arg.value.*, count);
                 countCallStaging(em, if (cc.receiver) |r| r.* else null, cc.args, count);
                 // `@print(a, b, …)` builds its argument list on the stack.
@@ -1898,7 +1917,7 @@ fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bo
 
 /// An imported `pub fn` as this module calls it: the owner's atom and the
 /// declared name it exports (decision 107 — the local name may be an alias).
-const ImportedFn = struct { owner: []const u8, exported: []const u8 };
+const ImportedFn = struct { owner: []const u8, exported: []const u8, arity: usize = 0 };
 
 const Emitter = struct {
     alloc: std.mem.Allocator,
@@ -2690,7 +2709,7 @@ const Emitter = struct {
                             else => {},
                         };
                     },
-                    .@"fn" => try self.imported_fn_owners.put(imp.name(), .{ .owner = owner, .exported = name }),
+                    .@"fn" => try self.imported_fn_owners.put(imp.name(), .{ .owner = owner, .exported = name, .arity = info.arity }),
                     .val => try self.imported_val_owners.put(self.alloc, imp.name(), .{ .owner = owner, .exported = name }),
                 }
             },
@@ -5177,6 +5196,14 @@ const Emitter = struct {
                             return;
                         } else |_| {}
                     }
+                    // An imported `pub fn` named as a value (`val f = twice;`,
+                    // `apply(twice, 3)`): the owner's exported function, the
+                    // literal `fun lib:twice/1` — a literal, so no staged
+                    // register is clobbered. It was an unresolved name.
+                    if (self.imported_fn_owners.get(n)) |f| if (self.top_fns.get(n) == null) {
+                        try beamEmitter.writeMoveOp(self.out, .{ .ext_fun = .{ .module = f.owner, .name = f.exported, .arity = f.arity } }, Dst.xr(0));
+                        return;
+                    };
                     // Nothing binds the name. It used to become the atom of its
                     // own name — a value, so the program printed the word. Now
                     // the site aborts: `erlang:error({unresolved_identifier, N})`.
@@ -5698,6 +5725,34 @@ const Emitter = struct {
             try self.lowerBuiltinCall(cc, mode);
             return;
         }
+        // `es.at(9)?.key.length()`: `?.` makes the REST of the chain
+        // conditional, so a method whose receiver continues one runs only on
+        // a present value — `undefined` otherwise, as erlang's guarding fun
+        // answers. Only the link written with `?.` carried the guard, and
+        // `length` ran on `undefined`. The present receiver is parked in a
+        // slot of its own (`countLocalsInExpr`) and the call reads it by name.
+        if (!cc.optional) if (cc.receiver) |r| if (isOptionalChain(r.*)) {
+            const present_l = self.allocLabel();
+            const end_l = self.allocLabel();
+            try self.lowerExprIntoX0(r.*);
+            try beamEmitter.writeTest(self.out, .is_eq, present_l, &.{ Op.xr(0), Op.atom("undefined") });
+            try beamEmitter.writeJump(self.out, end_l);
+            try beamEmitter.writeLabel(self.out, present_l);
+            const y = self.next_y;
+            self.next_y += 1;
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y));
+            const ar = self.atom_arena.allocator();
+            const name = try std.fmt.allocPrint(ar, "bp__chain{d}", .{y});
+            try self.reg_map.put(name, .{ .y = y });
+            const recv = try ar.create(ast.Expr);
+            recv.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = name } } };
+            var inner = cc;
+            inner.receiver = recv;
+            try self.lowerCall(inner, .non_tail, loc);
+            try beamEmitter.writeLabel(self.out, end_l);
+            if (mode == .tail) try self.emitReturn();
+            return;
+        };
         if (cc.receiver) |recv_expr| {
             // A host-backed method of the receiver's type with no beam binding:
             // its module has no such function, so the call is refused here.
@@ -9224,7 +9279,18 @@ const Emitter = struct {
         if (subjects.len == 1) {
             if (self.enumOfSubject(subjects[0])) |en| self.enum_hint = en;
         }
-        try self.lowerExprIntoX0(subjects[0]);
+        // `case a, n { 0, "x" -> … }` matches the TUPLE of its subjects, as
+        // erlang's `case {A, N} of` does, and each `.multi` arm is the tuple
+        // pattern of its patterns (`emitPatternArm`). Only the first subject
+        // was lowered and a `.multi` arm tested its numbers alone: a string
+        // or a type pattern matched every value (`i32, 0` took a string).
+        if (subjects.len > 1) {
+            const tuple: ast.Expr = .{ .collection = .{
+                .loc = .{ .line = 0, .col = 0 },
+                .kind = .{ .tupleLit = .{ .elems = @constCast(subjects) } },
+            } };
+            try self.lowerExprIntoX0(tuple);
+        } else try self.lowerExprIntoX0(subjects[0]);
 
         // One stack slot holds the subject for every `{ n -> … }` arm that
         // binds it; allocated only when some arm asks, so a `case` without a
@@ -9403,33 +9469,13 @@ const Emitter = struct {
                     try beamEmitter.writeLabel(self.out, next);
                 },
                 .multi => |pats| {
-                    const next = self.allocLabel();
-                    for (pats, 0..) |p, i| {
-                        if (i < subjects.len) {
-                            switch (p) {
-                                .numberLit => |n| {
-                                    const subj_term = self.simpleTerm(subjects[i]) orelse blk: {
-                                        try self.lowerExprIntoX0(subjects[i]);
-                                        break :blk Op.xr(0);
-                                    };
-                                    try beamEmitter.writeTest(self.out, .is_eq, next, &.{ subj_term, Op.num(n) });
-                                },
-                                .wildcard => {},
-                                .ident => |name| {
-                                    if (!std.mem.eql(u8, name, "_")) {
-                                        try self.lowerExprIntoX0(subjects[i]);
-                                        const y_idx = self.next_y;
-                                        self.next_y += 1;
-                                        try self.reg_map.put(name, .{ .y = y_idx });
-                                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
-                                    }
-                                },
-                                else => {},
-                            }
-                        }
-                    }
-                    try self.emitArmTail(arm, subj_y, end_label);
-                    try beamEmitter.writeLabel(self.out, next);
+                    var tuple_arm = arm;
+                    tuple_arm.pattern = .{ .variant = .{
+                        .name = "",
+                        .payload = .{ .literals = @constCast(pats) },
+                        .shape = .tuple,
+                    } };
+                    try self.emitPatternArm(tuple_arm, subj_y, end_label);
                 },
             }
         }
@@ -10626,8 +10672,10 @@ const Emitter = struct {
 
     /// `'-bp_method-'(M, V, All)` (once per module), `All` being `[V | Args]`:
     /// a map is a host-built behavior value and holds the function —
-    /// `apply(map_get(M, V), All)`; anything else is a record whose element 1
-    /// is its type's module (decision 21) — `apply(element(1, V), M, All)`.
+    /// `apply(map_get(M, V), All)`; anything else carries its type's tag
+    /// (decision 21) — element 1 of a record or a payload variant, the atom of
+    /// a unit variant — and the owner module is that tag with any `__v__`
+    /// variant segment cut off: `apply(Owner, M, All)`.
     /// The erlang backend's `'__bp_method'/3`, one argument wider.
     fn ensureMethodHelper(self: *Emitter) anyerror![]const u8 {
         if (self.method_helper_name) |n| return n;
@@ -10649,11 +10697,46 @@ const Emitter = struct {
         try beamEmitter.writeBif(w, "map_get", 0, &.{ Op.xr(0), Op.xr(1) }, Dst.xr(0));
         try beamEmitter.writeMoveOp(w, Op.xr(2), Dst.xr(1));
         try beamEmitter.writeCall(w, .only, 2, .{ .ext = .{ .module = "erlang", .function = "apply" } }, 0);
+        // The value's tag: element 1 of a record or a payload variant, the
+        // atom itself for a unit variant. A variant's tag is
+        // `<Enum module>__v__<variant>`, and its methods are the ENUM
+        // module's, so the owner is the tag with the `__v__` segment cut off
+        // (erlang's `'__bp_method'/3`). Applied to the tag as is, a variant
+        // was `undef` and a unit variant a `badarg`.
+        const not_tuple = self.allocLabel();
+        const have_tag = self.allocLabel();
+        const owner_is_tag = self.allocLabel();
+        const split_found = self.allocLabel();
+        const do_apply = self.allocLabel();
         try beamEmitter.writeLabel(w, not_map);
-        try beamEmitter.writeBif(w, "element", 0, &.{ Op.int(1), Op.xr(1) }, Dst.xr(3));
-        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1));
-        try beamEmitter.writeMoveOp(w, Op.xr(3), Dst.xr(0));
-        try beamEmitter.writeCall(w, .only, 3, .{ .ext = .{ .module = "erlang", .function = "apply" } }, 0);
+        try beamEmitter.writeAllocate(w, 3, 3);
+        try beamEmitter.writeInitYregs(w, 3);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(0));
+        try beamEmitter.writeMoveOp(w, Op.xr(2), Dst.yr(1));
+        try beamEmitter.writeTest(w, .is_tuple, not_tuple, &.{Op.xr(1)});
+        try beamEmitter.writeBif(w, "element", 0, &.{ Op.int(1), Op.xr(1) }, Dst.xr(0));
+        try beamEmitter.writeJump(w, have_tag);
+        try beamEmitter.writeLabel(w, not_tuple);
+        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.xr(0));
+        try beamEmitter.writeLabel(w, have_tag);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(2));
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "atom_to_binary" } }, 3);
+        try beamEmitter.writeMoveOp(w, Op.str("__v__"), Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "binary", .function = "split" } }, 3);
+        try beamEmitter.writeTest(w, .is_nonempty_list, owner_is_tag, &.{Op.xr(0)});
+        try beamEmitter.writeGetList(w, Op.xr(0), Dst.xr(1), Dst.xr(2));
+        try beamEmitter.writeTest(w, .is_nil, split_found, &.{Op.xr(2)});
+        try beamEmitter.writeJump(w, owner_is_tag);
+        try beamEmitter.writeLabel(w, split_found);
+        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "binary_to_atom" } }, 3);
+        try beamEmitter.writeJump(w, do_apply);
+        try beamEmitter.writeLabel(w, owner_is_tag);
+        try beamEmitter.writeMoveOp(w, Op.yr(2), Dst.xr(0));
+        try beamEmitter.writeLabel(w, do_apply);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.yr(1), Dst.xr(2));
+        try beamEmitter.writeCall(w, .last, 3, .{ .ext = .{ .module = "erlang", .function = "apply" } }, 3);
         self.out = saved_out;
         try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
         buf.deinit();

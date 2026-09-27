@@ -7668,8 +7668,16 @@ fn bindPatternNamesForSubject(
         },
         .variant => |v| {
             // C8 — each payload binding takes the variant field's declared type,
-            // instantiated against the subject's generic args.
-            const payload = try variantPayloadTypes(env, subjectType, v.name);
+            // instantiated against the subject's generic args. A record's
+            // constructor pattern (`val assert Person(n, a) = p catch …`, the
+            // subject a `Person | i32`) takes the record's field types: left
+            // fresh, `a.toString()` had no lowering on wasm.
+            const payload = try variantPayloadTypes(env, subjectType, v.name) orelse
+                if (v.shape == .variant) try recordPatternFieldTypes(env, v.name, v.labels, switch (v.payload) {
+                    .binding => 1,
+                    .fields => |f| f.len,
+                    .literals => |l| l.len,
+                }) else null;
             switch (v.payload) {
                 .binding => |binding| {
                     const ty = if (payload) |p| (if (p.len == 1) p[0] else try env.freshVar()) else try env.freshVar();
@@ -7734,6 +7742,30 @@ fn bindPatternNamesForSubject(
         },
         .multi => {},
     }
+}
+
+/// The types of the `count` elements of a record's constructor pattern: the
+/// field each stands at — its label, else its position. A non-generic record
+/// the module can open, written bare and filled completely; null otherwise,
+/// and the bindings stay fresh.
+fn recordPatternFieldTypes(env: *Env, writtenName: []const u8, labels: []const []const u8, count: usize) InferError!?[]*T.Type {
+    if (std.mem.indexOfScalar(u8, writtenName, '.') != null) return null;
+    const td = env.lookupTypeDef(writtenName) orelse return null;
+    const r = switch (td) {
+        .record => |r| r,
+        else => return null,
+    };
+    if (r.genericParams.len != 0 or count != r.fields.len) return null;
+    const out = try env.arena.alloc(*T.Type, count);
+    for (out, 0..) |*o, i| {
+        if (labels.len > i and labels[i].len > 0) {
+            const at = for (r.fields, 0..) |f, k| {
+                if (std.mem.eql(u8, f.name, labels[i])) break k;
+            } else return null;
+            o.* = r.fields[at].type_;
+        } else o.* = r.fields[i].type_;
+    }
+    return out;
 }
 
 /// C8 — the declared payload field types of `variantName` for a value of
@@ -7825,6 +7857,60 @@ fn behaviorDeclaresBodyless(env: *Env, iface: []const u8, method: []const u8, de
         if (behaviorDeclaresBodyless(env, parent, method, depth + 1)) return true;
     }
     return false;
+}
+
+const BehaviorMethodFound = struct { decl: ast.BehaviorDecl, method: ast.BehaviorMethod };
+
+/// The bodyless method `iface` — or anything it extends — declares under
+/// `method`, with the behavior that declares it.
+fn behaviorBodylessMethod(env: *Env, iface: []const u8, method: []const u8, depth: usize) ?BehaviorMethodFound {
+    if (depth >= 16) return null;
+    const decl = env.assocInterfaceDecls.get(iface) orelse env.importedBehaviorDecls.get(iface) orelse return null;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, method)) {
+            if (m.is_default or m.is_declare or m.body != null) return null;
+            return .{ .decl = decl, .method = m };
+        }
+    }
+    for (decl.extends) |parent| {
+        if (behaviorBodylessMethod(env, parent, method, depth + 1)) |found| return found;
+    }
+    return null;
+}
+
+/// The type a call of a behavior's bodyless method answers on a value of the
+/// behavior `iface`: the declared return, `Self` being the receiver and the
+/// behavior's own type parameters its type arguments, each argument unified
+/// with the parameter it fills. Null when the declaration names no return, or
+/// the call is not the plain positional shape this reads.
+fn behaviorMethodCallType(
+    env: *Env,
+    iface: []const u8,
+    recvPtr: *ast.TypedExpr,
+    method: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+) InferError!?*T.Type {
+    const found = behaviorBodylessMethod(env, iface, method, 0) orelse return null;
+    const rt = found.method.returnType orelse return null;
+    const params = found.method.params;
+    const rest = if (params.len > 0 and std.mem.eql(u8, params[0].name, "self")) params[1..] else params;
+    if (typedTrailing.len != 0 or rest.len != typedArgs.len) return null;
+    for (typedArgs) |ta| if (ta.label != null) return null;
+    var gm = std.StringHashMap(*T.Type).init(env.arena);
+    defer gm.deinit();
+    const recvTy = recvPtr.getType();
+    try gm.put("Self", recvTy);
+    const named = recvTy.deref();
+    for (found.decl.genericParams, 0..) |gp, i| {
+        const arg = if (named.* == .named and i < named.named.args.len) named.named.args[i] else try env.freshVar();
+        try gm.put(gp.name, arg);
+    }
+    for (found.method.genericParams) |gp| try gm.put(gp.name, try env.freshVar());
+    for (rest, typedArgs) |p, ta| {
+        try unifyAt(env, try paramTypeInContext(env, p, gm), ta.value.getType(), ta.value.getLoc());
+    }
+    return try resolveTypeRefInContext(env, rt, gm);
 }
 
 /// Whether `iface` — or anything it extends — declares `member`. `depth` bounds
@@ -11543,8 +11629,12 @@ fn resolveStdArrayMethod(
     loc: ast.Loc,
 ) InferError!?TypedExpr {
     _ = recv;
-    // Don't dispatch inside stdlib modules themselves — they implement the methods.
-    if (std.mem.startsWith(u8, env.modulePath, "std/")) return null;
+    // Don't dispatch inside the module that implements the methods. Every
+    // other std module is a caller like any program: skipped as well, a
+    // `default fn` it calls (`std/path`'s `makeUps(n - 1).prepend("..")`)
+    // never marked its interface used, so commonJS emitted no prototype
+    // method for it and the call was `… .prepend is not a function`.
+    if (std.mem.eql(u8, env.modulePath, "std/primitives")) return null;
     const rp = recvPtr orelse return null;
     const recvType = rp.getType().deref();
     if (recvType.* != .named) return null;
@@ -11643,7 +11733,7 @@ fn primKindOfName(typeName: []const u8) ?envMod.PrimKind {
 /// Two intrinsic shapes don't map to a `fn` slot: a `val name: T` interface field
 /// (e.g. `Array.length` — a property, not a fn) and the `len`/`size` aliases for
 /// that same length property — both are read off the interface field directly.
-fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8) InferError!?*T.Type {
+fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8, typedArgs: []ast.CallArgOf(.typed)) InferError!?*T.Type {
     const ifaceName = primitiveInterfaceName(recvTy.named.name) orelse return null;
     var current: ?[]const u8 = ifaceName;
     var guard: usize = 0;
@@ -11663,6 +11753,41 @@ fn primMethodReturnTypeFromIface(env: *Env, recvTy: *T.Type, callee: []const u8)
             try gm.put("Self", recvTy);
             if (recvTy.named.args.len >= 1) try gm.put("T", recvTy.named.args[0]);
             for (m.genericParams) |gp| try gm.put(gp.name, try env.freshVar());
+            // A method-level type parameter is what the ARGUMENT says it is:
+            // `map<U>(self, f: fn(T) -> U)` answers `Array<U>` with `U` the
+            // lambda's own return, `fold<A>(self, init: A, …)` an `A` of the
+            // initial value. Left fresh, `es.map({ e -> e.key })` was an array
+            // of nothing known, so `ks.at(0)?.length()` never took the
+            // `length` rename and commonJS called the property. Only a
+            // parameter that IS the type parameter, or a function parameter
+            // RETURNING it, binds it — a `fn(item: T)` declared `void` is
+            // never held to its return (`forEach`'s value-bodied lambdas).
+            for (m.params[1..], 0..) |p, i| {
+                if (i >= typedArgs.len) break;
+                if (typedArgs[i].label != null) break;
+                const argTy = typedArgs[i].value.getType();
+                const target: ?[]const u8, const from: *T.Type = switch (p.typeRef) {
+                    .named => |n| .{ n, argTy },
+                    .function => |f| blk: {
+                        const d = argTy.deref();
+                        if (d.* != .func) continue;
+                        break :blk switch (f.returnType.*) {
+                            .named => |n| .{ n, d.func.ret },
+                            else => .{ null, argTy },
+                        };
+                    },
+                    else => continue,
+                };
+                const name = target orelse continue;
+                // A lambda whose body ends in `return` statements is typed
+                // `void` here; its returns say nothing this could hold it to.
+                const fd = from.deref();
+                if (fd.* == .named and (std.mem.eql(u8, fd.named.name, "void") or std.mem.eql(u8, fd.named.name, "noreturn"))) continue;
+                for (m.genericParams) |gp| if (std.mem.eql(u8, gp.name, name)) {
+                    try unifyAt(env, gm.get(name).?, from, typedArgs[i].value.getLoc());
+                    break;
+                };
+            }
             return if (m.returnType) |rt|
                 try resolveTypeRefInContext(env, rt, gm)
             else
@@ -12896,6 +13021,21 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     // shared the name, or a local no module defined).
                     if (behaviorDeclaresBodyless(env, tn, call.callee, 0)) {
                         try env.instanceLowerings.put(loc, .{ .by_value = tn });
+                        // The call answers what the behavior DECLARES, `Self`
+                        // being the receiver. Typed as a fresh variable, the
+                        // result reached a chained primitive method untyped:
+                        // `x.name().length()` lowered as a call of a property
+                        // on commonJS (`length is not a function`), and
+                        // `toUpper` / `toString` found no lowering on wasm.
+                        if (try behaviorMethodCallType(env, tn, recvPtr, call.callee, typedArgs, typedTrailing)) |ret| {
+                            return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+                                .receiver = recvPtr,
+                                .callee = call.callee,
+                                .is_builtin = false,
+                                .args = typedArgs,
+                                .trailing = typedTrailing,
+                            } } } };
+                        }
                     }
                     // A FIELD of function type called like a method
                     // (`out.write(x)`): recorded as the record's, so a backend
@@ -12943,7 +13083,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         if (try primMethodNodeRename(env, recvTy, call.callee)) |rn| {
                             try env.jsMethodRenames.put(loc, rn);
                         }
-                        if (try primMethodReturnTypeFromIface(env, recvTy, call.callee)) |ret| {
+                        if (try primMethodReturnTypeFromIface(env, recvTy, call.callee, typedArgs)) |ret| {
                             return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
                                 .receiver = recvPtr,
                                 .callee = call.callee,

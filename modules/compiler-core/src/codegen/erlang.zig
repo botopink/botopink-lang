@@ -732,8 +732,11 @@ const field_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_field", .cla
 /// there is no one owner module to write into the call. It is the method axis
 /// of `'__bp_field'/2` and asks the same question the same way: under decision
 /// 21 a record/enum value is `{TypeAtom, …}` and a type module exports every
-/// method it emits, so the value names its own owner —
-/// `apply(element(1, V), M, [V | Args])`.
+/// method it emits, so the value names its own owner: its tag — element 1 of
+/// a record or a payload variant, the atom of a unit variant — with any
+/// `__v__` variant segment cut off, since a variant's methods are its enum
+/// module's (`apply(Owner, M, [V | Args])`). The tag as is made an enum that
+/// implements a behavior `undef` on the variant's module.
 ///
 /// A map receiver keeps the dispatch `behaviorMethodNode` writes: a host-built
 /// `behavior` value IS its own table, and it carries no tag to ask.
@@ -752,15 +755,51 @@ const method_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_method", .c
     },
     .{
         .patterns = &.{ Ast.Expr.v("M"), Ast.Expr.v("V"), Ast.Expr.v("Args") },
-        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "apply", .args = &.{
-            .{ .call = .{ .name = "element", .args = &.{ .{ .number = "1" }, Ast.Expr.v("V") } } },
-            Ast.Expr.v("M"),
-            .{ .cons = .{
-                .heads = &.{Ast.Expr.v("V")},
-                .tail = &Ast.Expr{ .variable = "Args" },
-            } },
-        } } } }}),
-        .layout = .inline_,
+        .body = Ast.Body.of(&.{
+            .{ .expr = .{ .match = .{ .pattern = &Ast.Expr.v("T"), .value = &Ast.Expr{ .case_ = .{
+                .subject = &Ast.Expr{ .call = .{ .name = "is_tuple", .args = &.{Ast.Expr.v("V")} } },
+                .clauses = &.{
+                    .{
+                        .patterns = &.{Ast.Expr.a("true")},
+                        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "element", .args = &.{ .{ .number = "1" }, Ast.Expr.v("V") } } } }}),
+                        .layout = .inline_,
+                    },
+                    .{
+                        .patterns = &.{Ast.Expr.a("false")},
+                        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("V") }}),
+                        .layout = .inline_,
+                    },
+                },
+                .layout = .inline_,
+            } } } } },
+            .{ .expr = .{ .match = .{ .pattern = &Ast.Expr.v("O"), .value = &Ast.Expr{ .case_ = .{
+                .subject = &Ast.Expr{ .call = .{ .module = "string", .name = "split", .args = &.{
+                    .{ .call = .{ .name = "atom_to_list", .args = &.{Ast.Expr.v("T")} } },
+                    .{ .string = "__v__" },
+                } } },
+                .clauses = &.{
+                    .{
+                        .patterns = &.{.{ .list = &.{ Ast.Expr.v("P"), Ast.Expr.v("_") } }},
+                        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "list_to_atom", .args = &.{Ast.Expr.v("P")} } } }}),
+                        .layout = .inline_,
+                    },
+                    .{
+                        .patterns = &.{Ast.Expr.v("_")},
+                        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("T") }}),
+                        .layout = .inline_,
+                    },
+                },
+                .layout = .inline_,
+            } } } } },
+            .{ .expr = .{ .call = .{ .name = "apply", .args = &.{
+                Ast.Expr.v("O"),
+                Ast.Expr.v("M"),
+                .{ .cons = .{
+                    .heads = &.{Ast.Expr.v("V")},
+                    .tail = &Ast.Expr{ .variable = "Args" },
+                } },
+            } } } },
+        }),
     },
 } } };
 
@@ -1653,6 +1692,7 @@ fn emitErlangModule(
         }
         em.enum_variant_names.deinit();
         em.imported_fns.deinit();
+        em.imported_fn_arities.deinit(em.alloc);
         em.import_aliases.deinit();
         var ftf_it = em.fn_typed_fields.keyIterator();
         while (ftf_it.next()) |k| alloc.free(k.*);
@@ -2746,6 +2786,9 @@ const Emitter = struct {
     /// definition of the same name/arity wins (an `@emit`ed mock body defines
     /// `find/2` next to the imported `find`).
     imported_fns: std.StringHashMap([]const u8),
+    /// An imported `pub fn`'s arity, keyed like `imported_fns` — what its name
+    /// used as a value needs (`fun lib:twice/1`).
+    imported_fn_arities: std.StringHashMapUnmanaged(usize) = .empty,
     /// `"<Record>.<field>"` of every field declared with a function type, and
     /// the bare field names — inference records no instance lowering for a call
     /// on a field, so the untyped fallback matches on the name alone.
@@ -3805,6 +3848,16 @@ const Emitter = struct {
                 }) };
             }
         }
+        // An imported `pub fn` named as a value (`val f = twice;`,
+        // `apply(twice, 3)`): the owner's exported function,
+        // `fun lib:twice/1`. It was a variable of the importer — `variable
+        // 'Twice' is unbound`, and `erlc` refused the module.
+        if (!this.locals.contains(name) and !this.untyped) if (this.imported_fn_arities.get(name)) |arity| {
+            if (this.importedFnOwner(name, arity)) |owner| {
+                const leaf = this.import_aliases.get(name) orelse name;
+                return .{ .fun_ref = .{ .module = owner, .name = leaf, .arity = arity } };
+            }
+        };
         return Ast.Expr.v(try this.varRef(b, name));
     }
 
@@ -4222,6 +4275,7 @@ const Emitter = struct {
                     // (see AGENTS.md).
                     .@"fn" => if (!info.is_external or info.erlang_backed) {
                         try self.imported_fns.put(imp.name(), owner);
+                        try self.imported_fn_arities.put(self.alloc, imp.name(), info.arity);
                         if (imp.alias != null) try self.import_aliases.put(imp.name(), name);
                     },
                     // A method is reached in the TYPE's module (policy 3).
@@ -6966,8 +7020,46 @@ const Emitter = struct {
     fn callNode(this: *Emitter, b: Ast.Builder, c: anytype) anyerror!Ast.Expr {
         return switch (c.kind) {
             .pipeline => |p| this.pipelineNode(b, p),
-            .call => |cc| if (cc.is_builtin) this.builtinCallNode(b, cc) else this.plainCallNode(b, c.loc, cc),
+            .call => |cc| if (cc.is_builtin)
+                this.builtinCallNode(b, cc)
+            else if (!cc.optional and cc.receiver != null and isOptionalChain(cc.receiver.?.*))
+                this.chainedCallNode(b, c.loc, cc)
+            else
+                this.plainCallNode(b, c.loc, cc),
         };
+    }
+
+    /// Whether `e` is, or continues, a `?.` chain.
+    fn isOptionalChain(e: ast.Expr) bool {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| ia.optional or isOptionalChain(ia.receiver.*),
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc.optional or (if (cc.receiver) |r| isOptionalChain(r.*) else false),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// `es.at(9)?.key.length()`: `?.` makes the REST of the chain
+    /// conditional, so a method whose receiver continues one runs only on a
+    /// present value — `(fun(undefined) -> undefined; (R) -> <call on R>
+    /// end)(<receiver>)`. Only the link written with `?.` carried the guard,
+    /// and `length` ran on `undefined` (`bp_unsupported_method`).
+    fn chainedCallNode(this: *Emitter, b: Ast.Builder, loc: ast.Loc, cc: anytype) anyerror!Ast.Expr {
+        const n = this.try_seq;
+        this.try_seq += 1;
+        const local = try std.fmt.allocPrint(b.arena, "bp__chain{d}", .{n});
+        try this.locals.put(local, {});
+        const recv = try b.arena.create(ast.Expr);
+        recv.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = local } } };
+        var inner = cc;
+        inner.receiver = recv;
+        const access = try this.plainCallNode(b, loc, inner);
+        return this.optionalAccess(b, Ast.Expr.v(try this.varRef(b, local)), access, cc.receiver.?.*);
     }
 
     /// `a |> f |> g` → `g(f(A))`: the chain flattened and applied inside out.
@@ -7875,7 +7967,10 @@ const Emitter = struct {
             .literals => |l| l.len,
             .binding => 1,
         };
-        const declared = this.variant_fields.get(bareVariantName(v.name));
+        // A RECORD's constructor pattern (`Person(age: a, name: n)`) places
+        // its labels by the record's declared fields, as a variant's do.
+        const declared = this.variant_fields.get(bareVariantName(v.name)) orelse
+            if (!isVariantPath(v.name)) this.record_fields.get(v.name) else null;
         var count = written;
         if (v.rest) if (declared) |d| if (d.len > count) {
             count = d.len;

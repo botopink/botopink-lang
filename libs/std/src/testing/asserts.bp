@@ -81,11 +81,12 @@ pub fn notEquals<T>(actual: T, expected: T) -> @Result<void, string> {
 }
 
 // Fails when `|actual - expected| > tolerance`. Pick a tolerance that fits the
-// operation's numerical budget, not `0.0`. `|d| > t` is written `d > t || -d >
-// t` rather than through `math.abs` — a std module does not import another.
+// operation's numerical budget, not `0.0`. The absolute value is an inline
+// `if` rather than `math.abs` — a std module does not import another.
 pub fn approxEquals(actual: f64, expected: f64, tolerance: f64) -> @Result<void, string> {
     val diff = actual - expected;
-    if (diff > tolerance || 0.0 - diff > tolerance) {
+    val absDiff = if (diff >= 0.0) diff else 0.0 - diff;
+    if (absDiff > tolerance) {
         throw "asserts.approxEquals: values differ by more than tolerance";
     }
     return;

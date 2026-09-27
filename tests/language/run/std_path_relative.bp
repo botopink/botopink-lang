@@ -1,0 +1,14 @@
+//// `std/path`'s `relative` climbs out of the source with `makeUps`, which
+//// builds its `..` list by `makeUps(n - 1).prepend("..")` — a `default fn` of
+//// `Array`. A std module calling one never marked `Array`'s interface used, so
+//// commonJS emitted no prototype method for it and the call crashed
+//// (`makeUps(...).prepend is not a function`); the other three answered.
+
+import {path} from "std";
+
+pub fn main() {
+    @print(path.relative("/a/b/c", "/a/d"));
+    @print(path.relative("/a/b", "/a/b/c/d"));
+    @print(path.relative("/x/y/z", "/p"));
+    @print(path.relative("/same", "/same"));
+}
