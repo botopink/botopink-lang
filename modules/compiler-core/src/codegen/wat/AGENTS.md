@@ -151,14 +151,27 @@ declared `-> ?i32` boxes its `return` like a fn (`cur_ret_typeref` is set in
 `emitMemberFn`), and a `?T[]` of a scalar prints as the array or `null`
 (`arrayScalarCode`, `run/index_user_type`).
 
-**The generic-parameter limit this leaves, deliberately.** `Array<K>` carries
-`K` as declared: `keys()` on a `Dict<string, i32>` prints `[256,272]`.
-`elemKindOfTypeRef` reads a type parameter as `.i32`, which is right for the
-*slot* and wrong for the *text*; and `==` between two type-parameter values
-compares their WORDS, so `Dict.at` finds a string key only when both sides are
-one interned literal (`modules/method_on_unimported_type`, listed). Fixing it
-needs the instantiated type at the call site, which this backend does not
-have.
+**A call that binds a type parameter to a string, a bool or a float calls a
+specialisation** (`specializedCallee` / `specializeFor` for a free `fn` and a
+behavior's generic associated `default fn`, `specializeMethod` for a method of
+a generic `type`). One body answers for every type here, each type parameter an
+`i32` word, so a string bound to one printed and compared as a word (`Dict.at`
+found a key `split` built only when it was the same pointer as the literal) and
+a float was narrowed. The call's arguments (`x: T`, the elements of
+`xs: Array<T>`, `bindParam`) and a method's receiver type arguments
+(`Dict<string, i32>`) bind the type parameters, and the call goes to a copy of
+the declaration with them substituted in every written type
+(`substTypeParams`: `x: T`, `-> ?T`, a body's annotations) —
+`Dict_at__K_string__V_i32`, lowered like any other function, emitted by
+`emitPendingFns` under the declaring module's maps. A copy is made too when
+the body calls a method on a value of the parameter (`x.toString()`,
+`xs.at(0)`, `callsMethodOn`) whatever it binds: inference saw a type variable
+there and recorded no lowering, so inside a copy (`in_spec`) `primKindAt`
+reads the receiver's substituted type. A call whose arguments say nothing
+keeps the one generic body, and with it the limit: `==` between two
+type-parameter values compares WORDS, and `elemKindOfTypeRef` reads a type
+parameter as `.i32` (`run/generic_body_specialized.bp`,
+`modules/method_on_unimported_type`).
 
 **A tuple element is printed by its own shape, not by its address**
 (`tupleElemShapeOf`). This was the last silent wrong-answer class the directory
@@ -202,7 +215,7 @@ printed a record or a variant**, which is why the trap above re-recorded no
 existing file — the addresses §7 owes were only ever in the language cells. Any
 new fixture whose log holds such a number is worth re-reading against this table.
 
-What is left in this class is the **generic-parameter limit** below, which is a
+What is left in this class is the **generic-parameter limit** above, which is a
 different cause: there the declared type is a type parameter, so no shape exists
 to slice — and one more, reported on `fix/wasm-refusals` and not fixed there:
 
@@ -456,6 +469,57 @@ header, `or` the variant's identity (`emitVariantIdentityTest`: an all-unit
 ordinal, or a payload variant's descriptor, never a load of a record's first
 field as a tag); `tests/language/run/case_arm_record_named_like_a_variant.bp`.
 
+**An all-unit enum's value prints by name** (`unitEnumOf`,
+`unitEnumShape`): its value is the ordinal, with no header, so the print shape
+carries the names — `E k [ <n> Enum.Variant ] * k`, which `$__print_shaped_raw`
+indexes by the ordinal. A member written by its path, a name, a parameter, a
+field, a call and an `if` value typed by the enum take it, as do an array, a
+tuple and a record field of one (`typeRefShape`). `?Color` is a BOX like
+`?i32` (`optInfoOfTypeRef`): unboxed, a present `Color.Red` (ordinal `0`) was
+absent. A literal trapped and a name printed the ordinal
+(`tests/language/run/unit_enum_print_by_name.bp`).
+
+**A `case` reads a bare or dot-shorthand arm in its subject's enum**
+(`enumOfSubject` → `subject_enums` → `case_enum_hint`, read by
+`findVariant`): a parameter, a local, a call typed by the enum, `self`, and a
+section written as a path (`Token.Layout.Break` → `__Token__Layout__Break`).
+Set for the WHOLE subject only — a payload's own pattern keeps the
+program-wide lookup. One flat table answered the first enum declaring the name
+(`run/variant_leading_dot_two_enums_case`,
+`modules/enum_section_leaf_beside_variant`).
+
+**A multi-subject `case a, n { … }`** lowers each subject once, into
+`<subject local>_<i>` (`multiSubjectLocal`); a `.multi` arm tests and binds
+each pattern against its own subject, a primitive type over an `unknown`
+subject by its box. It tested nothing, and the first arm answered every call
+(`run/case_multi_subject_patterns.bp`).
+
+**A record's constructor pattern** (`val assert Person(n, a) = p catch …`)
+tests the value's header (`recordPatternType`, `emitNamedTypeTest`) and binds
+each name from the field it stands at, by label when one is written
+(`recordPatternField`, `recordFieldAccess` — the ordinary field read, a boxed
+float included). It tested and bound nothing
+(`run/val_assert_record_pattern.bp`).
+
+**A generic call answers its argument's shape** (`generic_result_arg`,
+`genericResultArg`): `fn ident<T>(x: T) -> T` has one body, so `ident("a")`
+is a string, `ident(true)` a bool, `ident(P(…))` a `P` — every shape predicate
+asks the argument. `o.unwrapOr(d)` answers the default's shape. A string
+printed as its address (`run/generic_call_result_shape.bp`); a string, a bool
+or a float bound to a type parameter calls a specialisation (above).
+
+**A function named as an array method's argument** (`xs.map(inc)`, an imported
+fn, a local holding one) is inlined as the lambda `{ p -> inc(p) }`
+(`hofLambdaAt`), the arity the method hands it. It trapped (`map needs a literal
+lambda`; `modules/hof_named_function`).
+
+**A value `if` has its own type** (`ifValueType`, `emitBranchValue`): an arm
+yielding a float makes it an `f64` wherever it stands, each arm converted to
+it. It took the enclosing function's result type, so an `f64` `if` in a
+function answering nothing was `(if (result i32)` around two `f64`s — the
+module refused (`run/if_value_float.bp`; `testing.asserts.approxEquals` binds
+one).
+
 ## Function values, and the lowering that is not there
 
 **This backend has function values.** A lambda used as a value is lifted into
@@ -559,8 +623,16 @@ answered, and each had its own `expected-failures.txt` line:
   `alias_erase`, and touches plain calls only. Before, the first declaration
   won and `import {parse as parse2} from "two"` answered `one`'s `parse`
   (`modules/linked_fn_name_collision`, `modules/namespace_import_module`). A
-  module-level `val` two modules declare still traps where it is read
-  (`ambiguous_names`, `lowerPlainCall`).
+  module-level `val` / `var` two modules declare is mangled the same way
+  (`link_mangled_vals`), but its reads are not rewritten in the AST — a
+  parameter or a local of the same name must still shadow it. They resolve
+  while their module is emitted: `global_renames` (the module's own mangled
+  `val`s and every import of one, `linkValRenames`) is set per declaration
+  and per `$__init_globals` entry (`deferred_renames`), and `resolveName`
+  answers the mangled global for a name no local holds — so every shape
+  predicate and every `global.get` / `global.set` reads the module's own. It
+  read the first declaration's value at exit 0
+  (`modules/linked_val_name_collision`).
 - **A variant reached through its enum is the enum's** (`callKind`):
   `__Token__Layout.Size(…)` — what a section path desugars to — built the
   RECORD `Size` when one of that name was in scope, and `.Layout.Size.Large`

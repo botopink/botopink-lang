@@ -26,13 +26,13 @@ fn main() {
     (local $p i32)
     i32.const 1
     i32.const 256
-    call $Pairish_of
+    call $Pairish_of__A_i32__B_string
     local.set $p
     local.get $p
     call $Pairish_first
     call $__print_i32
   )
-  (func $Pairish_of (param $first i32) (param $second i32) (result i32)
+  (func $Pairish_of__A_i32__B_string (param $first i32) (param $second i32) (result i32)
     (local $__mem0 i32)
     global.get $__heap_ptr
     local.set $__mem0

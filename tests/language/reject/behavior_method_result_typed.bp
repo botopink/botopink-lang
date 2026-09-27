@@ -1,0 +1,22 @@
+//// A behavior method called on a value of the behavior answers its declared
+//// type: `x.name()` is a `string`, and binding it to an `i32` is refused. It
+//// was a fresh variable and checked.
+
+behavior Named {
+    fn name(self: Self) -> string;
+}
+
+type Dog(n: string) implement Named {
+    fn name(self: Self) -> string {
+        return self.n;
+    }
+}
+
+fn show(x: Named) {
+    val s: i32 = x.name();
+    @print(s);
+}
+
+pub fn main() {
+    show(Dog(n: "rex"));
+}

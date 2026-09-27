@@ -735,9 +735,23 @@ fn HostTemplate(comptime Holes: type) type {
         pub fn writeAll(self: *Self, s: []const u8) anyerror!void {
             try self.buf.appendSlice(self.arena, s);
         }
+        /// A literal run as the JavaScript it carries. An annotation's
+        /// argument is the string literal's raw LEXEME, so a quote inside the
+        /// host text is still written botopink-escaped (`(\"say \" + $0)`) and
+        /// went into the `.js` verbatim — a stray backslash outside any JS
+        /// string, `SyntaxError: Invalid or unexpected token`. `\"` becomes
+        /// `"`; every other escape belongs to the JavaScript the template
+        /// carries and passes through, as erlang's `unescapeTemplate` does.
         fn flush(self: *Self) !void {
             if (self.buf.items.len == 0) return;
-            try self.parts.append(self.arena, .{ .text = try self.arena.dupe(u8, self.buf.items) });
+            var text: std.ArrayListUnmanaged(u8) = .empty;
+            const raw = self.buf.items;
+            var i: usize = 0;
+            while (i < raw.len) : (i += 1) {
+                if (raw[i] == '\\' and i + 1 < raw.len and raw[i + 1] == '"') continue;
+                try text.append(self.arena, raw[i]);
+            }
+            try self.parts.append(self.arena, .{ .text = text.items });
             self.buf.clearRetainingCapacity();
         }
         pub fn emitRecv(self: *Self) anyerror!void {
@@ -2487,6 +2501,28 @@ const Emitter = struct {
                 .is_async = shape.is_async,
                 .is_generator = shape.is_generator,
             });
+            // An enum that implements a behavior is reached through a value
+            // of the behavior, whose call is `r.path()` — the receiver's own
+            // method, as for a record. The static takes the receiver first,
+            // so the instance method forwards `this` to it. Without it the
+            // call answered `r.path is not a function`.
+            if (e.implement.len > 0 and recv_first) {
+                const fwd_params = try self.arena().alloc(js.Param, m.params.len - 1);
+                const args = try self.arena().alloc(js.Expr, m.params.len);
+                args[0] = .this;
+                for (m.params[1..], 0..) |p, i| {
+                    fwd_params[i] = .{ .pattern = .{ .name = p.name } };
+                    args[i + 1] = .{ .name = p.name };
+                }
+                try members.append(self.arena(), .{
+                    .kind = .method,
+                    .name = m.name,
+                    .params = fwd_params,
+                    .body = .{ .stmts = try self.b.stmts(&.{
+                        .{ .return_ = try self.b.call(try self.b.member(.{ .name = e.name }, m.name), args) },
+                    }), .indent = 1 },
+                });
+            }
         }
 
         var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
@@ -4364,6 +4400,26 @@ const Emitter = struct {
                 .ident => |n| self.print_shapes.get(n),
                 else => null,
             },
+            // `d - 1.0`, `0.0 - d`: arithmetic with a float operand is a
+            // float, and prints as one (`-1.5`, `0.0` — not `0`).
+            .binaryOp => |bin| switch (bin.op) {
+                .sub, .mul, .div, .mod => if (try self.isFloatShaped(bin.lhs.*) or try self.isFloatShaped(bin.rhs.*)) float_shape else null,
+                .add => if (try self.isFloatShaped(bin.lhs.*) and try self.isFloatShaped(bin.rhs.*)) float_shape else null,
+                else => null,
+            },
+            // `if (d > 0.0) { d } else { 0.0 }`: the arms answer one type, and
+            // a float one prints with its decimal part.
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| blk: {
+                    const els = i.else_ orelse break :blk null;
+                    for ([_][]const ast.Stmt{ i.then_, els }) |body| {
+                        if (body.len == 0) continue;
+                        if (try self.printShape(body[body.len - 1].expr)) |sh| break :blk sh;
+                    }
+                    break :blk null;
+                },
+                else => null,
+            },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (cc.is_builtin) break :blk null;
@@ -4388,6 +4444,11 @@ const Emitter = struct {
             },
             else => null,
         };
+    }
+
+    fn isFloatShaped(self: *Emitter, e: ast.Expr) anyerror!bool {
+        const sh = (try self.printShape(e)) orelse return false;
+        return sh == .quoted and std.mem.eql(u8, sh.quoted, "f");
     }
 
     /// The print shape a declared type spells (see `printShape`).
@@ -5409,6 +5470,28 @@ const Emitter = struct {
                 return try self.armReturn(arm.body);
             },
 
+            // `case a, n { Shape.Circle(r), 1 -> … }` matches the ARRAY of its
+            // subjects (`buildCaseStmts`): each pattern is tested AND binds
+            // from its own element. Tested alone, a binder was never declared
+            // (`r is not defined`). A multi arm that binds nothing keeps the
+            // shared test-and-return path below.
+            .multi => |pats| multi: {
+                var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+                for (pats, 0..) |p, i| try self.appendPatternBinds(
+                    &body,
+                    p,
+                    try self.b.index(subject, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{i}) }, false),
+                );
+                if (body.items.len == 0) break :multi;
+                for (try self.buildMatchedBody(arm, indent + 1)) |st| try body.append(self.arena(), st);
+                const block = js.Stmt{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } };
+                const cond = try self.buildCondExpr(arm.pattern) orelse return block;
+                return self.b.ifStmt(cond, block);
+            },
+            else => {},
+        }
+        switch (arm.pattern) {
+            .wildcard => unreachable,
             .ident, .numberLit, .stringLit, .@"or", .multi => {
                 if (arm.pattern == .ident and arm.guard != null and self.isBindingName(arm.pattern.ident)) {
                     // A guarded identifier binds the subject, then tests the guard.

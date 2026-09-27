@@ -559,7 +559,62 @@ test "order case over Order" {
 {module, std@collections}.
 {exports, [{lt, 0}, {eq, 0}, {gt, 0}, {toInt, 1}, {reverse, 1}, {shown, 1}]}.
 {attributes, []}.
-{labels, 27}.
+{labels, 35}.
+
+{function, 'Array_range', 2, 3}.
+  {label, 2}.
+    {line, [{location, "std@collections.erl", 1}]}.
+    {func_info, {atom, std@collections}, {atom, 'Array_range'}, 2}.
+  {label, 3}.
+    {allocate, 4, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test, is_ge, {f, 18}, [{y, 0}, {y, 1}]}.
+    {move, nil, {x, 0}}.
+    {jump, {f, 19}}.
+  {label, 18}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call, 2, {f, 3}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+  {label, 19}.
+    {deallocate, 4}.
+    return.
+
+{function, 'Array_repeat', 2, 5}.
+  {label, 4}.
+    {line, [{location, "std@collections.erl", 2}]}.
+    {func_info, {atom, std@collections}, {atom, 'Array_repeat'}, 2}.
+  {label, 5}.
+    {allocate, 4, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test, is_ge, {f, 20}, [{integer, 0}, {y, 1}]}.
+    {move, nil, {x, 0}}.
+    {jump, {f, 21}}.
+  {label, 20}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 2, {f, 5}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+  {label, 21}.
+    {deallocate, 4}.
+    return.
 %%% std/collections — the four collection types, one namespace each (decision
 %%% 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules
 %%% `dict`, `sets`, `queue` and `order`; the type is the namespace now, so a
@@ -587,22 +642,22 @@ test "order case over Order" {
 % One key or value of `Dict.display`: a string quoted, anything else as it
 % interpolates.
 
-{function, shown, 1, 3}.
-  {label, 2}.
-    {line, [{location, "std@collections.erl", 14}]}.
+{function, shown, 1, 7}.
+  {label, 6}.
+    {line, [{location, "std@collections.erl", 16}]}.
     {func_info, {atom, std@collections}, {atom, shown}, 1}.
-  {label, 3}.
+  {label, 7}.
     {allocate, 3, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 15}, [{x, 0}]}.
+    {test, is_binary, {f, 23}, [{x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 16}}.
-  {label, 15}.
+    {jump, {f, 24}}.
+  {label, 23}.
     {move, {atom, false}, {x, 0}}.
-  {label, 16}.
-    {test, is_eq, {f, 14}, [{x, 0}, {atom, true}]}.
+  {label, 24}.
+    {test, is_eq, {f, 22}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {literal, <<"\"">>}, {x, 0}}.
@@ -621,12 +676,12 @@ test "order case over Order" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 18}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 26}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {deallocate, 3}.
     return.
-  {label, 14}.
+  {label, 22}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
@@ -640,7 +695,7 @@ test "order case over Order" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 18}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 26}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {deallocate, 3}.
@@ -673,99 +728,99 @@ test "order case over Order" {
 % Construct via the module fns (`collections.lt()`); `toInt`/`reverse` operate on
 % an `Order`. Enums are concrete types, not interfaces.
 
-{function, lt, 0, 5}.
-  {label, 4}.
-    {line, [{location, "std@collections.erl", 34}]}.
-    {func_info, {atom, std@collections}, {atom, lt}, 0}.
-  {label, 5}.
-    {allocate, 0, 0}.
-    {move, {atom, std@collections@@Order__v__lt}, {x, 0}}.
-    {deallocate, 0}.
-    return.
-
-{function, eq, 0, 7}.
-  {label, 6}.
-    {line, [{location, "std@collections.erl", 35}]}.
-    {func_info, {atom, std@collections}, {atom, eq}, 0}.
-  {label, 7}.
-    {allocate, 0, 0}.
-    {move, {atom, std@collections@@Order__v__eq}, {x, 0}}.
-    {deallocate, 0}.
-    return.
-
-{function, gt, 0, 9}.
+{function, lt, 0, 9}.
   {label, 8}.
     {line, [{location, "std@collections.erl", 36}]}.
-    {func_info, {atom, std@collections}, {atom, gt}, 0}.
+    {func_info, {atom, std@collections}, {atom, lt}, 0}.
   {label, 9}.
+    {allocate, 0, 0}.
+    {move, {atom, std@collections@@Order__v__lt}, {x, 0}}.
+    {deallocate, 0}.
+    return.
+
+{function, eq, 0, 11}.
+  {label, 10}.
+    {line, [{location, "std@collections.erl", 37}]}.
+    {func_info, {atom, std@collections}, {atom, eq}, 0}.
+  {label, 11}.
+    {allocate, 0, 0}.
+    {move, {atom, std@collections@@Order__v__eq}, {x, 0}}.
+    {deallocate, 0}.
+    return.
+
+{function, gt, 0, 13}.
+  {label, 12}.
+    {line, [{location, "std@collections.erl", 38}]}.
+    {func_info, {atom, std@collections}, {atom, gt}, 0}.
+  {label, 13}.
     {allocate, 0, 0}.
     {move, {atom, std@collections@@Order__v__gt}, {x, 0}}.
     {deallocate, 0}.
     return.
 
-{function, toInt, 1, 11}.
-  {label, 10}.
-    {line, [{location, "std@collections.erl", 37}]}.
+{function, toInt, 1, 15}.
+  {label, 14}.
+    {line, [{location, "std@collections.erl", 39}]}.
     {func_info, {atom, std@collections}, {atom, toInt}, 1}.
-  {label, 11}.
+  {label, 15}.
     {allocate, 4, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq, {f, 22}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
+    {test, is_eq, {f, 30}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
     {move, {integer, -1}, {x, 0}}.
-    {jump, {f, 21}}.
-  {label, 22}.
-    {test, is_eq, {f, 23}, [{x, 0}, {atom, std@collections@@Order__v__eq}]}.
+    {jump, {f, 29}}.
+  {label, 30}.
+    {test, is_eq, {f, 31}, [{x, 0}, {atom, std@collections@@Order__v__eq}]}.
     {move, {integer, 0}, {x, 0}}.
-    {jump, {f, 21}}.
-  {label, 23}.
+    {jump, {f, 29}}.
+  {label, 31}.
     {move, {integer, 1}, {x, 0}}.
-    {jump, {f, 21}}.
-  {label, 21}.
+    {jump, {f, 29}}.
+  {label, 29}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, reverse, 1, 13}.
-  {label, 12}.
-    {line, [{location, "std@collections.erl", 38}]}.
+{function, reverse, 1, 17}.
+  {label, 16}.
+    {line, [{location, "std@collections.erl", 40}]}.
     {func_info, {atom, std@collections}, {atom, reverse}, 1}.
-  {label, 13}.
+  {label, 17}.
     {allocate, 4, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq, {f, 25}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
+    {test, is_eq, {f, 33}, [{x, 0}, {atom, std@collections@@Order__v__lt}]}.
     {move, {atom, std@collections@@Order__v__gt}, {x, 0}}.
-    {jump, {f, 24}}.
-  {label, 25}.
-    {test, is_eq, {f, 26}, [{x, 0}, {atom, std@collections@@Order__v__gt}]}.
+    {jump, {f, 32}}.
+  {label, 33}.
+    {test, is_eq, {f, 34}, [{x, 0}, {atom, std@collections@@Order__v__gt}]}.
     {move, {atom, std@collections@@Order__v__lt}, {x, 0}}.
-    {jump, {f, 24}}.
-  {label, 26}.
+    {jump, {f, 32}}.
+  {label, 34}.
     {move, {atom, std@collections@@Order__v__eq}, {x, 0}}.
-    {jump, {f, 24}}.
-  {label, 24}.
+    {jump, {f, 32}}.
+  {label, 32}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, '-bp_stringify-', 1, 18}.
-  {label, 17}.
-    {line, [{location, "std@collections.erl", 15}]}.
+{function, '-bp_stringify-', 1, 26}.
+  {label, 25}.
+    {line, [{location, "std@collections.erl", 17}]}.
     {func_info, {atom, std@collections}, {atom, '-bp_stringify-'}, 1}.
-  {label, 18}.
+  {label, 26}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 19}, [{x, 0}]}.
+    {test, is_binary, {f, 27}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 19}.
-    {test, is_integer, {f, 20}, [{x, 0}]}.
+  {label, 27}.
+    {test, is_integer, {f, 28}, [{x, 0}]}.
     {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
-  {label, 20}.
+  {label, 28}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -781,7 +836,7 @@ test "order case over Order" {
 
 {function, display, 1, 3}.
   {label, 2}.
-    {line, [{location, "std@collections@@Dict.erl", 1}]}.
+    {line, [{location, "std@collections@@Dict.erl", 3}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, display}, 1}.
   {label, 3}.
     {allocate, 3, 1}.
@@ -828,7 +883,7 @@ test "order case over Order" {
 
 {function, at, 2, 5}.
   {label, 4}.
-    {line, [{location, "std@collections@@Dict.erl", 2}]}.
+    {line, [{location, "std@collections@@Dict.erl", 4}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, at}, 2}.
   {label, 5}.
     {allocate, 3, 2}.
@@ -853,7 +908,7 @@ test "order case over Order" {
 
 {function, hasKey, 2, 7}.
   {label, 6}.
-    {line, [{location, "std@collections@@Dict.erl", 3}]}.
+    {line, [{location, "std@collections@@Dict.erl", 5}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, hasKey}, 2}.
   {label, 7}.
     {allocate, 4, 2}.
@@ -881,7 +936,7 @@ test "order case over Order" {
 
 {function, size, 1, 9}.
   {label, 8}.
-    {line, [{location, "std@collections@@Dict.erl", 4}]}.
+    {line, [{location, "std@collections@@Dict.erl", 6}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, size}, 1}.
   {label, 9}.
     {allocate, 1, 1}.
@@ -897,7 +952,7 @@ test "order case over Order" {
 
 {function, isEmpty, 1, 11}.
   {label, 10}.
-    {line, [{location, "std@collections@@Dict.erl", 5}]}.
+    {line, [{location, "std@collections@@Dict.erl", 7}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, isEmpty}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
@@ -919,7 +974,7 @@ test "order case over Order" {
 
 {function, keys, 1, 13}.
   {label, 12}.
-    {line, [{location, "std@collections@@Dict.erl", 6}]}.
+    {line, [{location, "std@collections@@Dict.erl", 8}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, keys}, 1}.
   {label, 13}.
     {allocate, 1, 1}.
@@ -936,7 +991,7 @@ test "order case over Order" {
 
 {function, values, 1, 15}.
   {label, 14}.
-    {line, [{location, "std@collections@@Dict.erl", 7}]}.
+    {line, [{location, "std@collections@@Dict.erl", 9}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, values}, 1}.
   {label, 15}.
     {allocate, 1, 1}.
@@ -953,7 +1008,7 @@ test "order case over Order" {
 
 {function, insert, 3, 17}.
   {label, 16}.
-    {line, [{location, "std@collections@@Dict.erl", 8}]}.
+    {line, [{location, "std@collections@@Dict.erl", 10}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, insert}, 3}.
   {label, 17}.
     {allocate, 5, 3}.
@@ -987,7 +1042,7 @@ test "order case over Order" {
 
 {function, delete, 2, 19}.
   {label, 18}.
-    {line, [{location, "std@collections@@Dict.erl", 9}]}.
+    {line, [{location, "std@collections@@Dict.erl", 11}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, delete}, 2}.
   {label, 19}.
     {allocate, 2, 2}.
@@ -1009,7 +1064,7 @@ test "order case over Order" {
 
 {function, merge, 2, 21}.
   {label, 20}.
-    {line, [{location, "std@collections@@Dict.erl", 10}]}.
+    {line, [{location, "std@collections@@Dict.erl", 12}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, merge}, 2}.
   {label, 21}.
     {allocate, 3, 2}.
@@ -1034,7 +1089,7 @@ test "order case over Order" {
 
 {function, fold, 3, 23}.
   {label, 22}.
-    {line, [{location, "std@collections@@Dict.erl", 11}]}.
+    {line, [{location, "std@collections@@Dict.erl", 13}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, fold}, 3}.
   {label, 23}.
     {allocate, 4, 3}.
@@ -1060,7 +1115,7 @@ test "order case over Order" {
 
 {function, mapValues, 2, 25}.
   {label, 24}.
-    {line, [{location, "std@collections@@Dict.erl", 12}]}.
+    {line, [{location, "std@collections@@Dict.erl", 14}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, mapValues}, 2}.
   {label, 25}.
     {allocate, 3, 2}.
@@ -1086,7 +1141,7 @@ test "order case over Order" {
 
 {function, empty, 0, 27}.
   {label, 26}.
-    {line, [{location, "std@collections@@Dict.erl", 13}]}.
+    {line, [{location, "std@collections@@Dict.erl", 15}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, empty}, 0}.
   {label, 27}.
     {allocate, 0, 0}.
@@ -1098,7 +1153,7 @@ test "order case over Order" {
 
 {function, '__bp_get', 2, 83}.
   {label, 82}.
-    {line, [{location, "std@collections@@Dict.erl", 14}]}.
+    {line, [{location, "std@collections@@Dict.erl", 16}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '__bp_get'}, 2}.
   {label, 83}.
     {test, is_eq_exact, {f, 84}, [{x, 1}, {atom, pairs}]}.
@@ -1111,7 +1166,7 @@ test "order case over Order" {
 
 {function, '__bp_format', 1, 86}.
   {label, 85}.
-    {line, [{location, "std@collections@@Dict.erl", 14}]}.
+    {line, [{location, "std@collections@@Dict.erl", 16}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '__bp_format'}, 1}.
   {label, 86}.
     {allocate, 0, 1}.
@@ -1123,7 +1178,7 @@ test "order case over Order" {
 
 {function, '-bp_stringify-', 1, 31}.
   {label, 30}.
-    {line, [{location, "std@collections@@Dict.erl", 2}]}.
+    {line, [{location, "std@collections@@Dict.erl", 4}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-bp_stringify-'}, 1}.
   {label, 31}.
     {allocate, 0, 1}.
@@ -1141,7 +1196,7 @@ test "order case over Order" {
 
 {function, '-/1-fun-0-', 2, 29}.
   {label, 28}.
-    {line, [{location, "std@collections@@Dict.erl", 2}]}.
+    {line, [{location, "std@collections@@Dict.erl", 4}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/1-fun-0-'}, 2}.
   {label, 29}.
     {allocate, 5, 2}.
@@ -1188,7 +1243,7 @@ test "order case over Order" {
 
 {function, '-bp_join-', 2, 36}.
   {label, 35}.
-    {line, [{location, "std@collections@@Dict.erl", 2}]}.
+    {line, [{location, "std@collections@@Dict.erl", 4}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-bp_join-'}, 2}.
   {label, 36}.
     {allocate, 1, 2}.
@@ -1205,7 +1260,7 @@ test "order case over Order" {
 
 {function, '-/2-fun-1-', 3, 38}.
   {label, 37}.
-    {line, [{location, "std@collections@@Dict.erl", 3}]}.
+    {line, [{location, "std@collections@@Dict.erl", 5}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-1-'}, 3}.
   {label, 38}.
     {allocate, 3, 3}.
@@ -1232,7 +1287,7 @@ test "order case over Order" {
 
 {function, '-/2-fun-2-', 2, 44}.
   {label, 43}.
-    {line, [{location, "std@collections@@Dict.erl", 4}]}.
+    {line, [{location, "std@collections@@Dict.erl", 6}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-2-'}, 2}.
   {label, 44}.
     {allocate, 2, 2}.
@@ -1254,7 +1309,7 @@ test "order case over Order" {
 
 {function, '-bp_at-', 2, 48}.
   {label, 47}.
-    {line, [{location, "std@collections@@Dict.erl", 4}]}.
+    {line, [{location, "std@collections@@Dict.erl", 6}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-bp_at-'}, 2}.
   {label, 48}.
     {allocate, 2, 2}.
@@ -1281,7 +1336,7 @@ test "order case over Order" {
 
 {function, '-/1-fun-3-', 1, 59}.
   {label, 58}.
-    {line, [{location, "std@collections@@Dict.erl", 7}]}.
+    {line, [{location, "std@collections@@Dict.erl", 9}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/1-fun-3-'}, 1}.
   {label, 59}.
     {allocate, 1, 1}.
@@ -1296,7 +1351,7 @@ test "order case over Order" {
 
 {function, '-/1-fun-4-', 1, 62}.
   {label, 61}.
-    {line, [{location, "std@collections@@Dict.erl", 8}]}.
+    {line, [{location, "std@collections@@Dict.erl", 10}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/1-fun-4-'}, 1}.
   {label, 62}.
     {allocate, 1, 1}.
@@ -1311,7 +1366,7 @@ test "order case over Order" {
 
 {function, '-/3-fun-5-', 2, 65}.
   {label, 64}.
-    {line, [{location, "std@collections@@Dict.erl", 9}]}.
+    {line, [{location, "std@collections@@Dict.erl", 11}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/3-fun-5-'}, 2}.
   {label, 65}.
     {allocate, 2, 2}.
@@ -1333,7 +1388,7 @@ test "order case over Order" {
 
 {function, '-/2-fun-6-', 2, 70}.
   {label, 69}.
-    {line, [{location, "std@collections@@Dict.erl", 10}]}.
+    {line, [{location, "std@collections@@Dict.erl", 12}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-6-'}, 2}.
   {label, 70}.
     {allocate, 2, 2}.
@@ -1355,7 +1410,7 @@ test "order case over Order" {
 
 {function, '-/2-fun-7-', 2, 74}.
   {label, 73}.
-    {line, [{location, "std@collections@@Dict.erl", 11}]}.
+    {line, [{location, "std@collections@@Dict.erl", 13}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-7-'}, 2}.
   {label, 74}.
     {allocate, 5, 2}.
@@ -1382,7 +1437,7 @@ test "order case over Order" {
 
 {function, '-/3-fun-8-', 3, 77}.
   {label, 76}.
-    {line, [{location, "std@collections@@Dict.erl", 12}]}.
+    {line, [{location, "std@collections@@Dict.erl", 14}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/3-fun-8-'}, 3}.
   {label, 77}.
     {allocate, 6, 3}.
@@ -1411,7 +1466,7 @@ test "order case over Order" {
 
 {function, '-/2-fun-9-', 3, 80}.
   {label, 79}.
-    {line, [{location, "std@collections@@Dict.erl", 13}]}.
+    {line, [{location, "std@collections@@Dict.erl", 15}]}.
     {func_info, {atom, std@collections@@Dict}, {atom, '-/2-fun-9-'}, 3}.
   {label, 80}.
     {allocate, 7, 3}.
@@ -1451,7 +1506,7 @@ test "order case over Order" {
 
 {function, contains, 2, 3}.
   {label, 2}.
-    {line, [{location, "std@collections@@Set.erl", 15}]}.
+    {line, [{location, "std@collections@@Set.erl", 17}]}.
     {func_info, {atom, std@collections@@Set}, {atom, contains}, 2}.
   {label, 3}.
     {allocate, 2, 2}.
@@ -1476,7 +1531,7 @@ test "order case over Order" {
 
 {function, size, 1, 5}.
   {label, 4}.
-    {line, [{location, "std@collections@@Set.erl", 16}]}.
+    {line, [{location, "std@collections@@Set.erl", 18}]}.
     {func_info, {atom, std@collections@@Set}, {atom, size}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
@@ -1492,7 +1547,7 @@ test "order case over Order" {
 
 {function, isEmpty, 1, 7}.
   {label, 6}.
-    {line, [{location, "std@collections@@Set.erl", 17}]}.
+    {line, [{location, "std@collections@@Set.erl", 19}]}.
     {func_info, {atom, std@collections@@Set}, {atom, isEmpty}, 1}.
   {label, 7}.
     {allocate, 1, 1}.
@@ -1514,7 +1569,7 @@ test "order case over Order" {
 
 {function, toList, 1, 9}.
   {label, 8}.
-    {line, [{location, "std@collections@@Set.erl", 18}]}.
+    {line, [{location, "std@collections@@Set.erl", 20}]}.
     {func_info, {atom, std@collections@@Set}, {atom, toList}, 1}.
   {label, 9}.
     {allocate, 1, 1}.
@@ -1529,7 +1584,7 @@ test "order case over Order" {
 
 {function, insert, 2, 11}.
   {label, 10}.
-    {line, [{location, "std@collections@@Set.erl", 19}]}.
+    {line, [{location, "std@collections@@Set.erl", 21}]}.
     {func_info, {atom, std@collections@@Set}, {atom, insert}, 2}.
   {label, 11}.
     {allocate, 3, 2}.
@@ -1570,7 +1625,7 @@ test "order case over Order" {
 
 {function, delete, 2, 13}.
   {label, 12}.
-    {line, [{location, "std@collections@@Set.erl", 20}]}.
+    {line, [{location, "std@collections@@Set.erl", 22}]}.
     {func_info, {atom, std@collections@@Set}, {atom, delete}, 2}.
   {label, 13}.
     {allocate, 2, 2}.
@@ -1592,7 +1647,7 @@ test "order case over Order" {
 
 {function, union, 2, 15}.
   {label, 14}.
-    {line, [{location, "std@collections@@Set.erl", 21}]}.
+    {line, [{location, "std@collections@@Set.erl", 23}]}.
     {func_info, {atom, std@collections@@Set}, {atom, union}, 2}.
   {label, 15}.
     {allocate, 3, 2}.
@@ -1617,7 +1672,7 @@ test "order case over Order" {
 
 {function, intersection, 2, 17}.
   {label, 16}.
-    {line, [{location, "std@collections@@Set.erl", 22}]}.
+    {line, [{location, "std@collections@@Set.erl", 24}]}.
     {func_info, {atom, std@collections@@Set}, {atom, intersection}, 2}.
   {label, 17}.
     {allocate, 2, 2}.
@@ -1639,7 +1694,7 @@ test "order case over Order" {
 
 {function, difference, 2, 19}.
   {label, 18}.
-    {line, [{location, "std@collections@@Set.erl", 23}]}.
+    {line, [{location, "std@collections@@Set.erl", 25}]}.
     {func_info, {atom, std@collections@@Set}, {atom, difference}, 2}.
   {label, 19}.
     {allocate, 2, 2}.
@@ -1661,7 +1716,7 @@ test "order case over Order" {
 
 {function, empty, 0, 21}.
   {label, 20}.
-    {line, [{location, "std@collections@@Set.erl", 24}]}.
+    {line, [{location, "std@collections@@Set.erl", 26}]}.
     {func_info, {atom, std@collections@@Set}, {atom, empty}, 0}.
   {label, 21}.
     {allocate, 0, 0}.
@@ -1673,7 +1728,7 @@ test "order case over Order" {
 
 {function, fromList, 1, 23}.
   {label, 22}.
-    {line, [{location, "std@collections@@Set.erl", 25}]}.
+    {line, [{location, "std@collections@@Set.erl", 27}]}.
     {func_info, {atom, std@collections@@Set}, {atom, fromList}, 1}.
   {label, 23}.
     {allocate, 2, 1}.
@@ -1696,7 +1751,7 @@ test "order case over Order" {
 
 {function, '__bp_get', 2, 63}.
   {label, 62}.
-    {line, [{location, "std@collections@@Set.erl", 26}]}.
+    {line, [{location, "std@collections@@Set.erl", 28}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '__bp_get'}, 2}.
   {label, 63}.
     {test, is_eq_exact, {f, 64}, [{x, 1}, {atom, items}]}.
@@ -1709,7 +1764,7 @@ test "order case over Order" {
 
 {function, '__bp_format', 1, 66}.
   {label, 65}.
-    {line, [{location, "std@collections@@Set.erl", 26}]}.
+    {line, [{location, "std@collections@@Set.erl", 28}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '__bp_format'}, 1}.
   {label, 66}.
     {allocate, 2, 1}.
@@ -1729,7 +1784,7 @@ test "order case over Order" {
 
 {function, '-bp_indexOf-', 3, 26}.
   {label, 25}.
-    {line, [{location, "std@collections@@Set.erl", 16}]}.
+    {line, [{location, "std@collections@@Set.erl", 18}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '-bp_indexOf-'}, 3}.
   {label, 26}.
     {test, is_nonempty_list, {f, 27}, [{x, 0}]}.
@@ -1747,7 +1802,7 @@ test "order case over Order" {
 
 {function, '-shown/2-fun-0-', 2, 42}.
   {label, 41}.
-    {line, [{location, "std@collections@@Set.erl", 21}]}.
+    {line, [{location, "std@collections@@Set.erl", 23}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '-shown/2-fun-0-'}, 2}.
   {label, 42}.
     {allocate, 2, 2}.
@@ -1765,7 +1820,7 @@ test "order case over Order" {
 
 {function, '-shown/2-fun-1-', 2, 46}.
   {label, 45}.
-    {line, [{location, "std@collections@@Set.erl", 22}]}.
+    {line, [{location, "std@collections@@Set.erl", 24}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '-shown/2-fun-1-'}, 2}.
   {label, 46}.
     {allocate, 2, 2}.
@@ -1782,7 +1837,7 @@ test "order case over Order" {
 
 {function, '-shown/2-fun-2-', 2, 50}.
   {label, 49}.
-    {line, [{location, "std@collections@@Set.erl", 23}]}.
+    {line, [{location, "std@collections@@Set.erl", 25}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '-shown/2-fun-2-'}, 2}.
   {label, 50}.
     {allocate, 2, 2}.
@@ -1807,7 +1862,7 @@ test "order case over Order" {
 
 {function, '-shown/2-fun-3-', 2, 56}.
   {label, 55}.
-    {line, [{location, "std@collections@@Set.erl", 24}]}.
+    {line, [{location, "std@collections@@Set.erl", 26}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '-shown/2-fun-3-'}, 2}.
   {label, 56}.
     {allocate, 2, 2}.
@@ -1832,7 +1887,7 @@ test "order case over Order" {
 
 {function, '-shown/1-fun-4-', 2, 61}.
   {label, 60}.
-    {line, [{location, "std@collections@@Set.erl", 26}]}.
+    {line, [{location, "std@collections@@Set.erl", 28}]}.
     {func_info, {atom, std@collections@@Set}, {atom, '-shown/1-fun-4-'}, 2}.
   {label, 61}.
     {allocate, 2, 2}.
@@ -1857,7 +1912,7 @@ test "order case over Order" {
 
 {function, size, 1, 3}.
   {label, 2}.
-    {line, [{location, "std@collections@@Queue.erl", 26}]}.
+    {line, [{location, "std@collections@@Queue.erl", 28}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, size}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
@@ -1873,7 +1928,7 @@ test "order case over Order" {
 
 {function, isEmpty, 1, 5}.
   {label, 4}.
-    {line, [{location, "std@collections@@Queue.erl", 27}]}.
+    {line, [{location, "std@collections@@Queue.erl", 29}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, isEmpty}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
@@ -1895,7 +1950,7 @@ test "order case over Order" {
 
 {function, enqueue, 2, 7}.
   {label, 6}.
-    {line, [{location, "std@collections@@Queue.erl", 28}]}.
+    {line, [{location, "std@collections@@Queue.erl", 30}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, enqueue}, 2}.
   {label, 7}.
     {allocate, 3, 2}.
@@ -1924,7 +1979,7 @@ test "order case over Order" {
 
 {function, dequeue, 1, 9}.
   {label, 8}.
-    {line, [{location, "std@collections@@Queue.erl", 29}]}.
+    {line, [{location, "std@collections@@Queue.erl", 31}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, dequeue}, 1}.
   {label, 9}.
     {allocate, 3, 1}.
@@ -1969,7 +2024,7 @@ test "order case over Order" {
 
 {function, peek, 1, 11}.
   {label, 10}.
-    {line, [{location, "std@collections@@Queue.erl", 30}]}.
+    {line, [{location, "std@collections@@Queue.erl", 32}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, peek}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
@@ -1984,7 +2039,7 @@ test "order case over Order" {
 
 {function, toList, 1, 13}.
   {label, 12}.
-    {line, [{location, "std@collections@@Queue.erl", 31}]}.
+    {line, [{location, "std@collections@@Queue.erl", 33}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, toList}, 1}.
   {label, 13}.
     {allocate, 1, 1}.
@@ -1999,7 +2054,7 @@ test "order case over Order" {
 
 {function, empty, 0, 15}.
   {label, 14}.
-    {line, [{location, "std@collections@@Queue.erl", 32}]}.
+    {line, [{location, "std@collections@@Queue.erl", 34}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, empty}, 0}.
   {label, 15}.
     {allocate, 0, 0}.
@@ -2011,7 +2066,7 @@ test "order case over Order" {
 
 {function, fromList, 1, 17}.
   {label, 16}.
-    {line, [{location, "std@collections@@Queue.erl", 33}]}.
+    {line, [{location, "std@collections@@Queue.erl", 35}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, fromList}, 1}.
   {label, 17}.
     {allocate, 1, 1}.
@@ -2024,7 +2079,7 @@ test "order case over Order" {
 
 {function, '__bp_get', 2, 35}.
   {label, 34}.
-    {line, [{location, "std@collections@@Queue.erl", 34}]}.
+    {line, [{location, "std@collections@@Queue.erl", 36}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, '__bp_get'}, 2}.
   {label, 35}.
     {test, is_eq_exact, {f, 36}, [{x, 1}, {atom, items}]}.
@@ -2037,7 +2092,7 @@ test "order case over Order" {
 
 {function, '__bp_format', 1, 38}.
   {label, 37}.
-    {line, [{location, "std@collections@@Queue.erl", 34}]}.
+    {line, [{location, "std@collections@@Queue.erl", 36}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, '__bp_format'}, 1}.
   {label, 38}.
     {allocate, 2, 1}.
@@ -2057,7 +2112,7 @@ test "order case over Order" {
 
 {function, '-bp_at-', 2, 25}.
   {label, 24}.
-    {line, [{location, "std@collections@@Queue.erl", 30}]}.
+    {line, [{location, "std@collections@@Queue.erl", 32}]}.
     {func_info, {atom, std@collections@@Queue}, {atom, '-bp_at-'}, 2}.
   {label, 25}.
     {allocate, 2, 2}.
@@ -2092,7 +2147,7 @@ test "order case over Order" {
 
 {function, '__bp_format', 1, 3}.
   {label, 2}.
-    {line, [{location, "std@collections@@Order.erl", 34}]}.
+    {line, [{location, "std@collections@@Order.erl", 36}]}.
     {func_info, {atom, std@collections@@Order}, {atom, '__bp_format'}, 1}.
   {label, 3}.
     {allocate, 2, 1}.

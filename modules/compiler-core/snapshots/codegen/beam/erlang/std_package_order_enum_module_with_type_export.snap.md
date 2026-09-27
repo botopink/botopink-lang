@@ -559,6 +559,26 @@ test "order case over Order" {
 -module(std@collections).
 -export([lt/0, eq/0, gt/0, toInt/1, reverse/1, shown/1]).
 
+%% behavior Array
+
+array_range(Start, Stop) ->
+    case (Start >= Stop) of
+        true ->
+            [];
+        false ->
+            Head = Start,
+            [Head] ++ (array_range((Start + 1), Stop))
+    end.
+
+array_repeat(Value, Times) ->
+    case (Times =< 0) of
+        true ->
+            [];
+        false ->
+            Head = Value,
+            [Head] ++ (array_repeat(Value, (Times - 1)))
+    end.
+
 %%% std/collections — the four collection types, one namespace each (decision
 
 %%% 106): `Dict<K, V>`, `Set<T>`, `Queue<T>` and `Order`. Was the four modules

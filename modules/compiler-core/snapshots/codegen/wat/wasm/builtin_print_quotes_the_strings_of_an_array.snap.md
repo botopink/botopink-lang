@@ -840,6 +840,62 @@ fn main() {
       )
     )
     local.get $c
+    i32.const 69
+    i32.eq
+    (if
+      (then
+        local.get $sh
+        i32.const 1
+        i32.add
+        i32.load8_u
+        local.set $n
+        local.get $sh
+        i32.const 2
+        i32.add
+        local.set $p
+        (block $brk
+          (loop $cont
+            local.get $i
+            local.get $n
+            i32.ge_u
+            br_if $brk
+            local.get $go
+            (if
+              (then
+                local.get $i
+                local.get $v
+                i32.eq
+                (if
+                  (then
+                    local.get $p
+                    i32.const 1
+                    i32.add
+                    local.get $p
+                    i32.load8_u
+                    call $__write_bytes
+                  )
+                )
+              )
+            )
+            local.get $p
+            local.get $p
+            i32.load8_u
+            i32.add
+            i32.const 1
+            i32.add
+            local.set $p
+            local.get $i
+            i32.const 1
+            i32.add
+            local.set $i
+            br $cont
+          )
+        )
+        local.get $p
+        return
+      )
+    )
+    local.get $c
     i32.const 40
     i32.eq
     (if

@@ -1659,10 +1659,12 @@ const print_quoted_raw = func("__print_quoted_raw", &.{"s"}, null, i32s(&.{ "n",
 
 /// The text of `v` by the shape at `sh`, answering the address just past that
 /// shape (semantics decision 1a). Shape codes: `i` an i32, `b` a bool, `f` an
-/// f32 slot, `s` a string (quoted), `[X` an array of `X` — `[e1, e2]` —, and
-/// `(XY…)` a tuple — `#(e1, e2)`. With `go` = 0 nothing is written and nothing
-/// is read through `v`: the call only measures a shape, which is how an array
-/// finds the end of its element shape when it has no element.
+/// f32 slot, `s` a string (quoted), `[X` an array of `X` — `[e1, e2]` —,
+/// `(XY…)` a tuple — `#(e1, e2)` —, and `E k [ <n> Enum.Variant ] * k` a value
+/// of an all-unit enum, whose ordinal picks one of the `k` names. With `go` =
+/// 0 nothing is written and nothing is read through `v`: the call only
+/// measures a shape, which is how an array finds the end of its element shape
+/// when it has no element.
 const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &.{
     get("sh"),                                                                                                  load8(0),                                                                                                   set("c"),
     get("c"),                                                                                                   c32('i'),                                                                                                   op("eq"),
@@ -1699,6 +1701,22 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
         get("go"),                               when(&(putByte(']') ++ [_]Instr{call("__write_bytes")})),
         get("p"),                                ret,
     })),
+    // `E k [ <n> Enum.Variant ] * k` — an all-unit enum's value is its
+    // ordinal, with no header to read, so the shape carries the names and
+    // the ordinal picks one.
+    get("c"),                                                                                                   c32('E'),                                                                                                   op("eq"),
+    when(&[_]Instr{
+        get("sh"), c32(1), op("add"), load8(0), set("n"),
+        get("sh"), c32(2), op("add"), set("p"),
+        loop(&[_]Instr{
+            get("i"),  get("n"),                                                                                                                     op("ge_u"), brk,
+            get("go"), when(&.{ get("i"), get("v"), op("eq"), when(&.{ get("p"), c32(1), op("add"), get("p"), load8(0), call("__write_bytes") }) }), get("p"),   get("p"),
+            load8(0),  op("add"),                                                                                                                    c32(1),     op("add"),
+            set("p"),  get("i"),                                                                                                                     c32(1),     op("add"),
+            set("i"),  again,
+        }),
+        get("p"),  ret,
+    }),
     get("c"),                                                                                                   c32('('),                                                                                                   op("eq"),
     when(&([_]Instr{
         get("go"), when(&(putByte('#') ++ [_]Instr{call("__write_bytes")} ++ putByte('(') ++ [_]Instr{call("__write_bytes")})),

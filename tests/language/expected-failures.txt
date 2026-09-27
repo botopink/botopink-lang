@@ -204,7 +204,6 @@
 # `null`), and wasm boxes a `?V` over a type parameter since C-18's wasm half
 # (`optInfoOfTypeRef`), so `Dict.at`'s absent key is `null` there too. Every line
 # names what it measured.
-commonJS | run/map_record_field_length.bp | 04-js (the commonJS half of 05-wasm step 9's `map` row) | `ks.at(...)?.length is not a function`, exit 1: with nothing between `es.map({ e -> e.key })` and `ks.at(0)?.length()` the element type is unresolved at the read, and `length` is emitted as a property-then-call. wasm, erlang and beam answer `3`; `run/map_record_field_strings.bp` shows the same read answering once `ks.at(1) ?? "none"` has resolved the type (measured 2026-09-25)
 
 
 # ── the module body on wasm and on the BEAM ──────────────────────────────────
@@ -230,29 +229,15 @@ commonJS | run/map_record_field_length.bp | 04-js (the commonJS half of 05-wasm 
 # guard since `00 · 05-wasm` (the cell passes there and on commonJS); erlang
 # and beam guard only the link written with `?.`, so the next method runs on
 # the absent value.
-erlang   | run/optional_chain_method.bp | 02-erlang | `es.at(9)?.key.length() ?? 42` raises `{bp_unsupported_method, <<"length">>, 0, undefined}` in `'__bp_prim_length'/1` after printing `2` and `3`: the method after the `?.` link is called on `undefined` instead of short-circuiting (measured 2026-09-26)
-beam     | run/optional_chain_method.bp | 03-beam | the erlang shape through `erlc +from_asm` — `2`, `3`, then the run fails at the absent probe (measured 2026-09-26)
 
 # ── wasm, the remaining rows of `00 · 05-wasm` ───────────────────────────────
-wasm     | modules/method_on_unimported_type | C-18 | `queryDict(q).at("y") ?? "none"` prints `none` for a present key: `Dict.at` compares `p._0 == key` with `K` a type parameter, and nothing here monomorphises, so the `==` compares the two WORDS — a key built at run time by `split` is a different pointer from the literal `"y"`, and no string key equals it (`Dict.empty().insert("y", "2").at("y")` answers `2`: both are the one interned literal). The `?V` itself is boxed and reads right; the other four lines agree with commonJS, erlang and beam (measured 2026-09-26)
 
 # ── an erlang host module on beam ────────────────────────────────────────────
 beam     | modules/erlang_host_sidecar_shipped | 03-beam | the project's `src/sidecars/lt_greeter.erl` is shipped by the erlang build (and `botopink test`), but the beam build ships no host module: the `.S` output calls `lt_greeter:hello/1` and the run dies with `undef` (`Failed to eval`); commonJS and wasm refuse the program by `.expect`, erlang prints `hello, sidecar`
 beam     | modules/erlang_sidecar_named_like_a_module | 03-beam | the same as `modules/erlang_host_sidecar_shipped`: the beam build ships no host module, so `text:shout/1` is `undef` (`Failed to eval`); erlang prints `HELLO, SIDECAR`
 
 # ── `val assert` over a record's constructor pattern ─────────────────────────
-wasm     | run/val_assert_record_pattern.bp | 05-wasm | `val assert Person(n, a) = p catch …` binds nothing: the assert lowers the subject into `$__assert_0` and neither tests the record nor reads its fields, so `n` is an unbound identifier (`i32.const 0 ;; unbound identifier n`) and `a.toString()` traps (`unresolved call: toString/0`, exit 134); commonJS and erlang print both lines
 
 
 # ── a host wrapper on wasm: two rules meet (decisions-pending ck-host) ──────
 wasm     | run/external_wrapper_keeps_refusal.bp | 05-wasm | the strict rule (a wrapper around a host call with no wasm binding is refused even if nothing calls it; docs.md § host bindings) meets wasm's `collectHostBound`, which drops such a function and refuses only a call to it (what lets `testing.asserts` build on wasm): wasm now accepts the cell and prints `up`. Which rule holds is decisions-pending ck-host
-
-wasm     | modules/enum_section_leaf_beside_variant | 05-wasm | a `case` over `Token` compares the subject itself with the tag of the section LEAF `Layout.Break.After` (`i32.const 1 ;; After`, no `i32.load`) instead of loading the payload variant's tag: `wat.zig` resolves the pattern's bare name through one flat variant table, and the run traps in `__print_str` (`unreachable`); commonJS, erlang and beam print all six lines, and renaming the leaf makes wasm print them too (measured 2026-09-26)
-wasm     | run/variant_leading_dot_two_enums_case.bp | 05-wasm | a `case` over `Cool` and one over `Warm` each compare with a variant tag read from one flat bare-name table, and the run traps in `__print_str` (`unreachable`) at the first print; commonJS, erlang and beam print the four lines (measured 2026-09-26)
-
-# ── residual-checker-3: the checker types these right; the backend halves are residual-backend-3's ──
-erlang   | modules/imported_fn_as_value | residual-backend-3 (00 · 02-erlang) | an imported `pub fn` named as a value (`val f = twice;`, `apply(twice, 3)`) is lowered as a variable of the importer: `erlc` refuses `variable 'Twice' is unbound`. The checker types the name as the imported function; `erlang.zig` `nameRefNode` answers a `fun` for a file-local fn only and never asks `imported_fns` (measured 2026-09-26)
-beam     | modules/imported_fn_as_value | residual-backend-3 (00 · 03-beam) | the erlang shape on beam: the imported name is read as an unbound register and the run fails (`Failed to eval`) (measured 2026-09-26)
-commonJS | run/enum_implements_behavior.bp | residual-backend-3 (00 · 04-js) | a call through a behavior-typed parameter on an enum value is `r.path is not a function`: the checker records it as the value's (`InstanceLowering.by_value`), but `commonJS.zig` emits an enum's methods `static` on its class, so the variant instance answers none (the direct `m.path()` is `.type_` and prints) (measured 2026-09-26)
-erlang   | run/enum_implements_behavior.bp | residual-backend-3 (00 · 02-erlang) | the same call is `undef`: `'__bp_method'/3` applies `element(1, V)`, which for a variant is its qualified tag (`…@@Msg__v__get`), not the enum's module `…@@Msg` (measured 2026-09-26)
-beam     | run/enum_implements_behavior.bp | residual-backend-3 (00 · 03-beam) | the erlang shape on beam (`Failed to eval` after the first line) (measured 2026-09-26)

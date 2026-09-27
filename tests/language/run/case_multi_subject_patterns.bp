@@ -1,0 +1,77 @@
+//// A multi-subject `case a, n { … }` matches every subject against its own
+//// pattern: a literal, a string, a primitive type over a union, a variant that
+//// binds its payload, a binder a guard reads, `true` / `false`. wasm lowered
+//// the first subject alone and tested no `.multi` pattern, so the first arm
+//// answered every call; beam tested the numbers alone, so a string pattern and
+//// a type arm matched every value (`i32, 0` took `"s"`); commonJS tested a
+//// variant's tag and never bound its payload (`r is not defined`).
+
+type Shape {
+    Circle(r: i32),
+    Square(side: i32),
+    Empty,
+}
+
+fn classify(a: i32, n: string) -> string {
+    return case a, n {
+        0, "x" -> "zero-x";
+        0, _ -> "zero";
+        _, "x" -> "x";
+        _, _ -> "other";
+    };
+}
+
+fn kind(v: i32 | string, n: i32) -> string {
+    return case v, n {
+        i32, 0 -> "int0";
+        string, 0 -> "str0";
+        _, _ -> "any";
+    };
+}
+
+fn area(s: Shape, k: i32) -> i32 {
+    return case s, k {
+        Shape.Circle(r), 1 -> r * 100;
+        Shape.Square(side), m -> side * m;
+        Shape.Empty, _ -> -1;
+        _, _ -> 0;
+    };
+}
+
+fn guarded(a: i32, b: i32) -> string {
+    return case a, b {
+        x, y when (x > y) -> "gt " + x.toString();
+        x, y when (x == y) -> "eq " + y.toString();
+        _, y -> "lt " + y.toString();
+    };
+}
+
+fn flags(a: bool, b: bool) -> string {
+    return case a, b {
+        true, true -> "both";
+        true, false -> "first";
+        false, true -> "second";
+        false, false -> "none";
+    };
+}
+
+pub fn main() {
+    @print(classify(0, "x"));
+    @print(classify(0, "y"));
+    @print(classify(1, "x"));
+    @print(classify(1, "y"));
+    @print(kind(1, 0));
+    @print(kind("s", 0));
+    @print(kind(1, 1));
+    @print(area(Shape.Circle(r: 2), 1));
+    @print(area(Shape.Circle(r: 2), 2));
+    @print(area(Shape.Square(side: 3), 4));
+    @print(area(Shape.Empty, 9));
+    @print(guarded(5, 2));
+    @print(guarded(3, 3));
+    @print(guarded(1, 7));
+    @print(flags(true, true));
+    @print(flags(true, false));
+    @print(flags(false, true));
+    @print(flags(false, false));
+}

@@ -89,6 +89,8 @@ pub const Expr = union(enum) {
 
 /// `name/Arity` — a function reference in `fun`, `-export` and `-compile`.
 pub const FnRef = struct {
+    /// Set for a remote function value, `fun Module:Name/Arity`.
+    module: ?[]const u8 = null,
     name: []const u8,
     arity: usize,
 };

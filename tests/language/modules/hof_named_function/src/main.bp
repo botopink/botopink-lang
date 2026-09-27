@@ -1,0 +1,39 @@
+//// A function NAMED as the argument of an array method — a local one, an
+//// imported one, and a local bound to one — is applied to every element, as a
+//// lambda there would be: `map`, `filter`, `fold`, `all`, `any`, `find`,
+//// `forEach`. wasm inlined a literal lambda only and trapped on a name (`map
+//// needs a literal lambda`).
+
+pub mod lib;
+import {shout, double} from "lib";
+
+fn inc(x: i32) -> i32 {
+    return x + 1;
+}
+
+fn isEven(x: i32) -> bool {
+    return x % 2 == 0;
+}
+
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn show(x: i32) {
+    @print(x);
+}
+
+pub fn main() {
+    val xs = [1, 2, 3];
+    @print(xs.map(inc));
+    @print(xs.map(double));
+    @print(["a", "b"].map(shout));
+    @print(xs.filter(isEven));
+    @print(xs.fold(0, add));
+    @print(xs.all(isEven));
+    @print(xs.any(isEven));
+    @print(xs.find(isEven) ?? 0);
+    val f = inc;
+    @print(xs.map(f));
+    xs.forEach(show);
+}
