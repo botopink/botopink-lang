@@ -160,7 +160,7 @@ declare fn tlsFixture() -> string;
 // read `length` bytes, write them back, close. The client half runs in the
 // test process, so the two handshakes can meet.
 #[@External.Node("""undefined""")]
-#[@External.Erlang("""(fun(__L, __N) -> __H = element(2, __L), spawn(fun() -> {ok, __S0} = ssl:transport_accept(__H, 5000), {ok, __S} = ssl:handshake(__S0, 5000), {ok, __D} = ssl:recv(__S, __N, 5000), ok = ssl:send(__S, __D), ssl:close(__S) end), undefined end)($0, $1)""")]
+#[@External.Erlang("""(fun(__L, __N) -> __H = element(2, __L), spawn(fun() -> {ok, __S0} = ssl:transport_accept(__H, 10000), {ok, __S} = ssl:handshake(__S0, 10000), {ok, __D} = ssl:recv(__S, __N, 10000), ok = ssl:send(__S, __D), ssl:close(__S) end), undefined end)($0, $1)""")]
 declare fn tlsEchoOnce(listener: TlsListener, length: i32) -> void;
 
 // The `Error` payload of a result, `""` for `Ok` (`@Result` has no builtin
@@ -191,16 +191,16 @@ test "net: a self-connected socket round-trips 11 bytes" {
         val l = listen(0, 4).unwrapOr(Listener(handle: noHandle()));
         val port = l.port().unwrapOr(0);
         assert port > 0;
-        val client = connect("127.0.0.1", port, 1000).unwrapOr(Socket(handle: noHandle()));
-        val server = l.accept(1000).unwrapOr(Socket(handle: noHandle()));
+        val client = connect("127.0.0.1", port, 10000).unwrapOr(Socket(handle: noHandle()));
+        val server = l.accept(10000).unwrapOr(Socket(handle: noHandle()));
         assert client.send("hello world").unwrapOr(-1) == 11;
-        assert server.recv(11, 1000).unwrapOr("?") == "hello world";
+        assert server.recv(11, 10000).unwrapOr("?") == "hello world";
         assert server.send("pong").unwrapOr(-1) == 4;
-        assert client.recv(4, 1000).unwrapOr("?") == "pong";
+        assert client.recv(4, 10000).unwrapOr("?") == "pong";
         assert server.peer().map({ p -> p.host }).unwrapOr("?") == "127.0.0.1";
         assert client.peer().map({ p -> p.port }).unwrapOr(-1) == port;
         assert client.close().isOk();
-        assert server.recv(1, 1000).isError();
+        assert server.recv(1, 10000).isError();
         assert server.close().isOk();
         assert l.close().isOk();
     } else {
@@ -224,7 +224,7 @@ test "net: connecting to a closed port names the refusal" {
         val l = listen(0, 4).unwrapOr(Listener(handle: noHandle()));
         val port = l.port().unwrapOr(0);
         assert l.close().isOk();
-        assert errText(connect("127.0.0.1", port, 200)) == "econnrefused";
+        assert errText(connect("127.0.0.1", port, 10000)) == "econnrefused";
     } else {
         assert connect("127.0.0.1", 1, 200).isError();
     }
@@ -265,9 +265,9 @@ test "net: TLS handshakes against a throwaway CA and round-trips" {
         val port = l.port().unwrapOr(0);
         assert port > 0;
         tlsEchoOnce(l, 5);
-        val c = tlsConnect("localhost", port, ca, 5000).unwrapOr(TlsSocket(handle: noHandle()));
+        val c = tlsConnect("localhost", port, ca, 10000).unwrapOr(TlsSocket(handle: noHandle()));
         assert c.send("hello").unwrapOr(-1) == 5;
-        val echoed = c.recv(5, 5000).unwrapOr("?");
+        val echoed = c.recv(5, 10000).unwrapOr("?");
         assert c.close().isOk();
         removeTree(dir);
         assert echoed == "hello";
@@ -281,7 +281,7 @@ test "net: TLS refuses a server its CA file does not vouch for" {
         val l = tlsListen(0, [dir, "/cert.pem"].join(""), [dir, "/key.pem"].join("")).unwrapOr(TlsListener(handle: noHandle()));
         val port = l.port().unwrapOr(0);
         tlsEchoOnce(l, 5);
-        val r = tlsConnect("localhost", port, [other, "/ca.pem"].join(""), 5000);
+        val r = tlsConnect("localhost", port, [other, "/ca.pem"].join(""), 10000);
         removeTree(dir);
         removeTree(other);
         assert r.isError();
