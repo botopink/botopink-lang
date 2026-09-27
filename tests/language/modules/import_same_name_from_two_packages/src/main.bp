@@ -1,0 +1,14 @@
+//// Two packages of one build each declare `Response` and `ok` in a module
+//// (rakun's `Response` and jhonstart's, both loaded by onze). `from "<pkg>"`
+//// names the package, and a name the package declares once is that
+//// package's — in the consumer and inside a dependency alike. Before, a
+//// package handle narrowed nothing: `webapp`'s own `import {Response, ok}
+//// from "web"` was refused as ambiguous the moment `ui` was in the build.
+
+import {served} from "webapp";
+import {ok} from "ui";
+
+pub fn main() {
+    @print(served());
+    @print(ok().html);
+}

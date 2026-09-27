@@ -152,6 +152,34 @@ pub const ImportSource = union(enum) {
         const base = if (std.mem.lastIndexOfScalar(u8, path, '/')) |i| path[i + 1 ..] else path;
         return std.mem.eql(u8, m, base);
     }
+
+    /// Whether `path` is a module of the PACKAGE this source names: a handle
+    /// (`web`, `ui`) covers every `<handle>/…` path. A name-keyed lookup that
+    /// finds nothing in the module the source names widens to this before it
+    /// widens to the whole program — two libraries of one build may each
+    /// declare a name (a server library's `Response` and an HTML library's,
+    /// both loaded by an application that uses the two), and `from "web"`
+    /// inside `web`'s own modules says which. Without this pass a package
+    /// handle narrowed nothing, and every such name in either library was
+    /// refused as ambiguous (`tests/language/modules/import_same_name_from_two_packages`).
+    pub fn inPackage(this: ImportSource, path: []const u8) bool {
+        const m = switch (this) {
+            .root => return false,
+            .module => |name| name,
+        };
+        return path.len > m.len and std.mem.startsWith(u8, path, m) and path[m.len] == '/';
+    }
+
+    /// The three widening passes of a name-keyed import lookup: 0 — the module
+    /// the source names (`namesModule`), 1 — the package it names
+    /// (`inPackage`), 2 — the whole program.
+    pub fn admits(this: ImportSource, path: []const u8, pass: u2) bool {
+        return switch (pass) {
+            0 => this.namesModule(path),
+            1 => this.inPackage(path),
+            else => true,
+        };
+    }
 };
 
 pub const ImportDecl = struct {
