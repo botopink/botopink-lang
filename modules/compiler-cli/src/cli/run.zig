@@ -5,6 +5,7 @@ const reporter = @import("./reporter.zig");
 const config = @import("./config.zig");
 const build_cmd = @import("./build.zig");
 const libs = @import("./libs.zig");
+const arglist = @import("./arglist.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -81,8 +82,7 @@ pub fn run(
 
     // Spawn and wait — stdio is inherited from the parent process.
     var child = std.process.spawn(io, .{ .argv = argv.items }) catch |err| {
-        const msg = try std.fmt.allocPrint(arena, "failed to spawn '{s}': {s}", .{ runner, @errorName(err) });
-        reporter.errMsg(msg);
+        reporter.errMsg(arglist.spawnError(arena, runner, argv.items, err));
         return 1;
     };
     defer child.kill(io);
@@ -128,12 +128,7 @@ fn runErlang(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []
         return 1;
     }
     {
-        var argv: std.ArrayListUnmanaged([]const u8) = .empty;
-        try argv.append(arena, "erlc");
-        try argv.append(arena, "-o");
-        try argv.append(arena, dir);
-        for (erls.items) |f| try argv.append(arena, f);
-        const code = try spawnWait(arena, io, argv.items);
+        const code = try compileAll(arena, io, dir, .erlang, erls.items);
         if (code != 0) return code;
     }
 
@@ -168,19 +163,41 @@ fn runBeam(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []co
         return 1;
     }
     {
-        var argv: std.ArrayListUnmanaged([]const u8) = .empty;
-        try argv.append(arena, "erlc");
-        try argv.append(arena, "+from_asm");
-        try argv.append(arena, "-o");
-        try argv.append(arena, dir);
-        for (asms.items) |f| try argv.append(arena, f);
-        const code = try spawnWait(arena, io, argv.items);
+        const code = try compileAll(arena, io, dir, .beam, asms.items);
         if (code != 0) return code;
     }
 
     const eval = try std.fmt.allocPrint(arena, "'{s}':main([]), halt().", .{entry_atom});
     return spawnWait(arena, io, &.{ "erl", "-noshell", "-pa", dir, "-eval", eval });
 }
+
+/// `erlc -o <dir> <files…>` (`+from_asm` for BEAM assembly), without a command
+/// line that grows with the program: the files go through a list file
+/// (`arglist.write`) and one `erl` compiles each with the options `erlc` gives
+/// it — `report` prints every error and warning as `erlc` does, on stderr
+/// (the group leader is `standard_error`), so the program's stdout stays its
+/// own — into `dir`.
+/// `erlc` itself takes its files on the command line only, and one argument
+/// per module passed macOS's 1 MiB `ARG_MAX` at ~200 modules with a deep
+/// `--out`. Exit 1 when any file does not compile.
+fn compileAll(arena: std.mem.Allocator, io: std.Io, dir: []const u8, kind: enum { erlang, beam }, files: []const []const u8) !u8 {
+    const list = try arglist.write(arena, io, files);
+    defer arglist.remove(io, list);
+    const mode: []const u8 = switch (kind) {
+        .erlang => "erl",
+        .beam => "asm",
+    };
+    return spawnWait(arena, io, &.{ "erl", "-noshell", "-eval", COMPILE_EVAL, "-extra", dir, mode, list });
+}
+
+const COMPILE_EVAL =
+    \\[OutDir, Mode, ListFile] = init:get_plain_arguments(),
+++ arglist.READ_LIST("Files", "ListFile") ++
+    \\group_leader(whereis(standard_error), self()),
+    \\Opts = case Mode of "asm" -> [from_asm, report, {outdir, OutDir}]; _ -> [report, {outdir, OutDir}] end,
+    \\Bad = [F || F <- Files, case compile:file(F, Opts) of {ok, _} -> false; {ok, _, _} -> false; _ -> true end],
+    \\halt(case Bad of [] -> 0; _ -> 1 end).
+;
 
 /// Every file under `dir` whose name ends with `ext`, recursively, as paths
 /// relative to the process cwd. Sorted, so a build is reproducible.
@@ -211,8 +228,7 @@ fn collectByExt(
 /// Spawn `argv` with inherited stdio and return its exit status.
 fn spawnWait(arena: std.mem.Allocator, io: std.Io, argv: []const []const u8) !u8 {
     var child = std.process.spawn(io, .{ .argv = argv }) catch |err| {
-        const msg = try std.fmt.allocPrint(arena, "failed to spawn '{s}': {s}", .{ argv[0], @errorName(err) });
-        reporter.errMsg(msg);
+        reporter.errMsg(arglist.spawnError(arena, argv[0], argv, err));
         return 1;
     };
     defer child.kill(io);

@@ -23,6 +23,7 @@ const bp = @import("botopink");
 const manifest = @import("manifest");
 const config = @import("./config.zig");
 const diagnostics = @import("./diagnostics.zig");
+const arglist = @import("./arglist.zig");
 const resolver = @import("./resolver.zig");
 /// Test-only: the one way a test spells a path it writes to (per process, so a
 /// second `zig build test` over this checkout cannot empty it mid-test).
@@ -1528,21 +1529,18 @@ test "putModuleAtoms reads the module form of each emitted text" {
 /// refusal: without it no qualifier can be told from a missing sidecar, and
 /// the program could not run anyway.
 fn absentFromCodePath(arena: std.mem.Allocator, io: std.Io, atoms: []const []const u8) ![]const []const u8 {
-    var expr: std.ArrayListUnmanaged(u8) = .empty;
-    try expr.appendSlice(arena, "lists:foreach(fun(M) -> case code:which(M) of non_existing -> io:format(\"~s~n\", [M]); _ -> ok end end, [");
-    for (atoms, 0..) |a, i| {
-        if (i > 0) try expr.append(arena, ',');
-        try expr.append(arena, '\'');
-        try expr.appendSlice(arena, a);
-        try expr.append(arena, '\'');
-    }
-    try expr.appendSlice(arena, "]), halt().");
+    // The atoms go through a list file: one per host module on the `-eval`
+    // made a single argument that grows with the program, and Linux refuses
+    // one above 128 KiB (`arglist.zig`).
+    const list = try arglist.write(arena, io, atoms);
+    defer arglist.remove(io, list);
+    const argv: []const []const u8 = &.{ "erl", "-noshell", "-noinput", "-eval", CODE_PATH_EVAL, "-extra", list };
     const result = std.process.run(arena, io, .{
-        .argv = &.{ "erl", "-noshell", "-noinput", "-eval", expr.items },
+        .argv = argv,
         .stdout_limit = .limited(1024 * 1024),
         .stderr_limit = .limited(1024 * 1024),
     }) catch |err| {
-        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: the emitted erlang calls host modules ({d}), and `erl` could not be run to tell an OTP module from a missing sidecar: {s}\n", .{ atoms.len, @errorName(err) });
+        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: the emitted erlang calls host modules ({d}), and {s} to tell an OTP module from a missing sidecar\n", .{ atoms.len, arglist.spawnError(arena, "erl", argv, err) });
         return error.SidecarRefused;
     };
     const ok = switch (result.term) {
@@ -1563,6 +1561,15 @@ fn absentFromCodePath(arena: std.mem.Allocator, io: std.Io, atoms: []const []con
     }
     return out.items;
 }
+
+/// `absentFromCodePath`'s `erl`: the one plain argument is the list file of
+/// atoms; each one `code:which/1` does not find is printed on its own line.
+const CODE_PATH_EVAL =
+    \\[ListFile] = init:get_plain_arguments(),
+++ arglist.READ_LIST("Atoms", "ListFile") ++
+    \\lists:foreach(fun(A) -> M = list_to_atom(A), case code:which(M) of non_existing -> io:format("~s~n", [M]); _ -> ok end end, Atoms),
+    \\halt().
+;
 
 /// The refusal for a host module that is neither shipped nor in the code
 /// path, located on the botopink line that names it — the `"<atom>"` of an

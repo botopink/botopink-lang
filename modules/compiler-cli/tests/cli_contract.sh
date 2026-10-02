@@ -143,12 +143,12 @@ for target in commonJS erlang beam wasm; do
     expect_code 0 "build --target $target with runtime shims on PATH"
   fi
 done
-# The OTP compiler check's `erl -noshell -eval Files = …` and the host-module
+# The OTP compiler check's `erl -noshell -eval [ListFile] = …, Files = …` and the host-module
 # probe (`code:which` over the `@External.Erlang` modules no package ships) are
 # the only spawns allowed.
-OTHER="$(grep -v -e '^erl -noshell -eval Files = init:get_plain_arguments()' -e '^erl -noshell -noinput -eval lists:foreach(fun(M) -> case code:which(M)' "$SPAWNED" || true)"
+OTHER="$(grep -v -e '^erl -noshell -eval \[ListFile\] = init:get_plain_arguments(),Files = ' -e '^erl -noshell -noinput -eval \[ListFile\] = init:get_plain_arguments(),Atoms = ' "$SPAWNED" || true)"
 [[ -z "$OTHER" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build but the erlang compile check" || fail "build spawned a runtime: $(tr '\n' ';' <<<"$OTHER")"
-[[ "$(grep -c -e '^erl -noshell -eval Files = init:get_plain_arguments()' -e '^erl -noshell -noinput -eval lists:foreach(fun(M) -> case code:which(M)' "$SPAWNED")" -eq 2 ]] && ok "the erlang and the beam build each ran one erl check, and a failing erl stopped it there" || fail "the erlang and the beam build did not run one erl check each: $(grep -c '^erl ' "$SPAWNED") erl spawn(s)"
+[[ "$(grep -c -e '^erl -noshell -eval \[ListFile\] = init:get_plain_arguments(),Files = ' -e '^erl -noshell -noinput -eval \[ListFile\] = init:get_plain_arguments(),Atoms = ' "$SPAWNED")" -eq 2 ]] && ok "the erlang and the beam build each ran one erl check, and a failing erl stopped it there" || fail "the erlang and the beam build did not run one erl check each: $(grep -c '^erl ' "$SPAWNED") erl spawn(s)"
 
 # ── build --target erlang compiles what it emits ─────────────────────────────
 # A build that only transpiled proved nothing about erlang: a module the OTP
@@ -759,6 +759,40 @@ if have erl && have erlc; then
   done
 else
   skip "built erlang / beam program (erl / erlc not on PATH)"
+fi
+
+# ── no command line grows with the number of modules ─────────────────────────
+# `checkErlang` put every emitted `.erl` on `erl`'s argv and `run` every `.erl`
+# / `.S` on `erlc`'s: a 203-module build with a 167-char `--out` passed
+# macOS's 1 MiB ARG_MAX (execve E2BIG, reported as `SystemResources`) and the
+# onze-cli builds failed on macos-14 only. The lists now go through a file
+# (`cli/arglist.zig`). `ulimit -s 4096` sets Linux's ARG_MAX to 1 MiB, the
+# macOS figure. 1 200 modules under a ~900-char `--out` (macOS's PATH_MAX is
+# 1 024, so the depth stays below it) are ~1.1 MB of artifact paths, which the
+# parent binary cannot hand to `erl` or `erlc` on either system.
+echo "==> 1 200 modules under a deep --out build and run within a 1 MiB ARG_MAX"
+if have erl && have erlc; then
+  P="$(project manymods erlang)"
+  {
+    for i in $(seq 0 1199); do echo "pub mod m$i;"; done
+    printf 'import {f7} from "m7";\n\npub fn main() {\n    @print(f7());\n}\n'
+  } >"$P/src/main.bp"
+  for i in $(seq 0 1199); do printf 'pub fn f%d() -> i32 {\n    return %d;\n}\n' "$i" "$i" >"$P/src/m$i.bp"; done
+  SEG="$(printf 'd%.0s' $(seq 1 100))"
+  DEEP="$P/out"; while [[ ${#DEEP} -lt 880 ]]; do DEEP="$DEEP/$SEG"; done
+  for args in "run --target erlang" "run --target beam"; do
+    set +e
+    # shellcheck disable=SC2086
+    OUT="$(cd "$P" && { ulimit -s 4096 2>/dev/null || true; "$BP" $args --out "$DEEP" 2>&1; })"
+    CODE=$?
+    set -e
+    expect_code 0 "$args --out <${#DEEP} chars> with 1 200 modules"
+    expect_no_out "SystemResources" "$args: no spawn failed"
+    [[ "$(tail -n 1 <<<"$OUT")" == "7" ]] && ok "$args prints the program's output" || fail "$args: last line is '$(tail -n 1 <<<"$OUT")', not 7"
+  done
+  [[ -z "$(ls -A "$P/.botopinkbuild/tmp/arglist" 2>/dev/null)" ]] && ok "no list file is left behind" || fail "list files left in .botopinkbuild/tmp/arglist"
+else
+  skip "1 200 modules under a deep --out (erl / erlc not on PATH)"
 fi
 
 echo

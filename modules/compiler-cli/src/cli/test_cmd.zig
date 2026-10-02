@@ -17,6 +17,7 @@ const config = @import("./config.zig");
 const manifest = @import("manifest");
 const scanner = @import("./scanner.zig");
 const sources = @import("./sources.zig");
+const arglist = @import("./arglist.zig");
 const libs = @import("./libs.zig");
 const build_cmd = @import("./build.zig");
 const diagnostics = @import("./diagnostics.zig");
@@ -670,7 +671,7 @@ pub fn run(
                 .stdout_limit = .limited(16 * 1024 * 1024),
                 .stderr_limit = .limited(16 * 1024 * 1024),
             }) catch |err| {
-                const msg = try std.fmt.allocPrint(arena, "failed to spawn '{s}': {s}", .{ runner, @errorName(err) });
+                const msg = arglist.spawnError(arena, runner, argv.items, err);
                 reporter.errMsg(msg);
                 return 1;
             };
@@ -717,7 +718,7 @@ pub fn run(
         // as it arrives (the report stays live) and scanned for the module's
         // summary line, which the run's total is summed from.
         var child = std.process.spawn(io, .{ .argv = argv.items, .environ_map = child_env, .stdout = .pipe }) catch |err| {
-            const msg = try std.fmt.allocPrint(arena, "failed to spawn '{s}': {s}", .{ runner, @errorName(err) });
+            const msg = arglist.spawnError(arena, runner, argv.items, err);
             reporter.errMsg(msg);
             return 1;
         };

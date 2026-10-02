@@ -6,6 +6,7 @@ const config = @import("./config.zig");
 const sources = @import("./sources.zig");
 const libs = @import("./libs.zig");
 const diagnostics = @import("./diagnostics.zig");
+const arglist = @import("./arglist.zig");
 
 const Module = bp.Module;
 
@@ -153,26 +154,30 @@ fn checkErlang(
     out_dir: []const u8,
     packages: bp.codegen.crossModule.Packages,
 ) !bool {
-    var argv = std.ArrayListUnmanaged([]const u8).empty;
-    try argv.appendSlice(arena, &.{ "erl", "-noshell", "-eval", ERLANG_CHECK_EVAL, "-extra" });
-    const first_file = argv.items.len;
+    // The files go through a list file, never the command line: one path per
+    // module made `erl`'s argv grow with the program, and a 203-module build
+    // with a deep `--out` passed macOS's 1 MiB `ARG_MAX` (`arglist.zig`).
+    var files = std.ArrayListUnmanaged([]const u8).empty;
     for (outputs) |o| {
         if (o.result.failed()) continue;
-        try argv.append(arena, try artifactPath(arena, out_dir, .erlang, packages, o.name, ".erl"));
+        try files.append(arena, try artifactPath(arena, out_dir, .erlang, packages, o.name, ".erl"));
         for (o.result.units) |u| {
-            try argv.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}{s}.erl", .{ out_dir, targetSubdir(.erlang), u.atom }));
+            try files.append(arena, try std.fmt.allocPrint(arena, "{s}/{s}{s}.erl", .{ out_dir, targetSubdir(.erlang), u.atom }));
         }
     }
-    if (argv.items.len == first_file) return true;
+    if (files.items.len == 0) return true;
+    const list = try arglist.write(arena, io, files.items);
+    defer arglist.remove(io, list);
 
+    const argv: []const []const u8 = &.{ "erl", "-noshell", "-eval", ERLANG_CHECK_EVAL, "-extra", list };
     const result = std.process.run(arena, io, .{
-        .argv = argv.items,
+        .argv = argv,
         .stdout_limit = .limited(16 * 1024 * 1024),
         .stderr_limit = .limited(16 * 1024 * 1024),
     }) catch |err| {
-        const msg = try std.fmt.allocPrint(arena, "`botopink build --target erlang` compiles what it emits with the OTP compiler, and `erl` could not be run: {s}", .{@errorName(err)});
+        const msg = try std.fmt.allocPrint(arena, "`botopink build --target erlang` compiles what it emits with the OTP compiler, and {s}", .{arglist.spawnError(arena, "erl", argv, err)});
         reporter.errMsg(msg);
-        reporter.hintMsg("install Erlang/OTP 28+ and put `erl` on PATH");
+        if (err == error.FileNotFound) reporter.hintMsg("install Erlang/OTP 28+ and put `erl` on PATH");
         return false;
     };
     if (result.stdout.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stdout) catch {};
@@ -186,12 +191,13 @@ fn checkErlang(
     return false;
 }
 
-/// The check `checkErlang` runs in one `erl`: the plain arguments are the
-/// files; they are dealt round-robin to one process per online scheduler,
+/// The check `checkErlang` runs in one `erl`: the one plain argument is the
+/// list file naming the files (`arglist.write`); they are dealt round-robin to one process per online scheduler,
 /// each compiling its share in memory; every refusal is printed as
 /// `<file>:<line>: <message>`; exit 1 when there is any.
 const ERLANG_CHECK_EVAL =
-    \\Files = init:get_plain_arguments(),
+    \\[ListFile] = init:get_plain_arguments(),
+++ arglist.READ_LIST("Files", "ListFile") ++
     \\N = erlang:max(1, erlang:system_info(schedulers_online)),
     \\Indexed = lists:zip(lists:seq(0, length(Files) - 1), Files),
     \\Parts = [[F || {I, F} <- Indexed, I rem N =:= K] || K <- lists:seq(0, N - 1)],
