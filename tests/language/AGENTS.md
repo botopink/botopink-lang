@@ -169,6 +169,12 @@ Step 8 (decision 45) adds `reject/tuple_label_on_optional` (`rs.at(0).b` names `
 `run/tuple_label_through_optional` (`rs.at(0)?.b` reads the label through the optional, four
 targets); both pass on the parent binary — the checker half landed with decision 45 — and pin it. The
 absent half (`?.b` on a `null`) traps on wasm and raises `badarg` on beam (the backends' rows).
+Step 15 (report L, R3) adds `modules/imported_type_field_closure` (package `a`'s `Client(life:
+Life, …)` with `Life` in a sibling module, imported by package `b` as `Client` alone and called from
+the root, four targets) and `modules/imported_declaration_error_location` (a type error inside the
+dependency's declaration is located at `a/client.bp`, by `<target>.expect`). Both pass on the parent
+binary — the row no longer reproduces at this base, and rakun-metrics' `export_test` passes with its
+`CacheLife` workaround removed — and pin it.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
