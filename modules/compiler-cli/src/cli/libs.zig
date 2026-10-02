@@ -1060,11 +1060,19 @@ pub fn shipMjsSidecars(
 // — so `lists:foldl`, `base64:encode` and every other OTP call is a no-op, as
 // is a call to another module of this build. Idempotent; writes only inside
 // `out_dir`. Returns how many host modules it shipped.
+//
+// The BEAM target calls the same host modules — an `#[@External.Erlang("host",
+// "fn")]` lowers to `{extfunc, host, fn, N}` in the `.S` — so its build ships
+// the same files, into `out/beam/`, where the assembled entry's
+// `'__bp_load_siblings'/0` (`codegen/beam_asm.zig`) compiles and loads every
+// `.erl` beside the module. `text` says which of the two emitted texts
+// `outputs` holds; everything after the scan is one code path.
 pub fn shipErlSidecars(
     gpa: std.mem.Allocator,
     io: std.Io,
     outputs: []const bp.codegen.ModuleOutput,
     out_dir: []const u8,
+    text: HostText,
     env_map: EnvMap,
 ) !usize {
     var arena_inst = std.heap.ArenaAllocator.init(gpa);
@@ -1081,10 +1089,10 @@ pub fn shipErlSidecars(
     var emitted = std.StringHashMapUnmanaged(void){};
     for (outputs) |o| {
         if (o.result.failed()) continue;
-        try putModuleAtoms(arena, &emitted, o.result.js);
+        try putModuleAtoms(arena, &emitted, o.result.js, text);
         for (o.result.units) |u| {
             try emitted.put(arena, u.atom, {});
-            try putModuleAtoms(arena, &emitted, u.code);
+            try putModuleAtoms(arena, &emitted, u.code, text);
         }
     }
 
@@ -1120,8 +1128,8 @@ pub fn shipErlSidecars(
         var texts: std.ArrayListUnmanaged([]const u8) = .empty;
         try texts.append(arena, try blankErlComments(arena, o.result.js));
         for (o.result.units) |u| try texts.append(arena, try blankErlComments(arena, u.code));
-        for (texts.items) |text| {
-            var it = QualifierIterator{ .text = text };
+        for (texts.items) |emitted_text| {
+            var it = HostModuleIterator{ .text = emitted_text, .kind = text };
             while (it.next()) |atom| {
                 if (emitted.contains(atom)) continue;
                 // `case code:ensure_loaded(m) of {module, _} -> m:f(); _ -> … end`
@@ -1129,7 +1137,7 @@ pub fn shipErlSidecars(
                 // another package of the program may ship (`rakun-web` reaching
                 // `rakun-app`'s `rakun_file_router`). It is shipped when a
                 // package of this build carries it, and never refused.
-                if (ensuresLoaded(text, atom)) try guarded.put(arena, try arena.dupe(u8, atom), {});
+                if (ensuresLoaded(emitted_text, atom, text)) try guarded.put(arena, try arena.dupe(u8, atom), {});
                 if (shipped.contains(atom)) continue;
                 const miss_key = try std.fmt.allocPrint(arena, "{s}\x00{s}", .{ owner orelse "", atom });
                 if (misses.contains(miss_key)) continue;
@@ -1316,22 +1324,61 @@ test "blankErlComments: comments and string contents go, char literals and quote
 }
 
 /// Whether `text` guards calls into `atom` with `code:ensure_loaded(atom)` —
-/// the code answers the module's absence itself.
-fn ensuresLoaded(text: []const u8, atom: []const u8) bool {
-    const key = "code:ensure_loaded(";
-    var i: usize = 0;
-    while (std.mem.indexOfPos(u8, text, i, key)) |at| {
-        const start = at + key.len;
-        i = start;
-        if (std.mem.startsWith(u8, text[start..], atom) and start + atom.len < text.len and text[start + atom.len] == ')') return true;
+/// the code answers the module's absence itself. In BEAM assembly the same
+/// guard is the atom moved into `{x, 0}` by the instruction right before the
+/// `{extfunc, code, ensure_loaded, 1}` call.
+fn ensuresLoaded(text: []const u8, atom: []const u8, kind: HostText) bool {
+    switch (kind) {
+        .erlang => {
+            const key = "code:ensure_loaded(";
+            var i: usize = 0;
+            while (std.mem.indexOfPos(u8, text, i, key)) |at| {
+                const start = at + key.len;
+                i = start;
+                if (std.mem.startsWith(u8, text[start..], atom) and start + atom.len < text.len and text[start + atom.len] == ')') return true;
+            }
+            return false;
+        },
+        .beam => {
+            const key = "{extfunc, code, ensure_loaded, 1}";
+            var i: usize = 0;
+            while (std.mem.indexOfPos(u8, text, i, key)) |at| {
+                i = at + key.len;
+                // The instruction before the call: the previous line.
+                const line_start = if (std.mem.lastIndexOfScalar(u8, text[0..at], '\n')) |nl| nl else continue;
+                const prev_start = if (std.mem.lastIndexOfScalar(u8, text[0..line_start], '\n')) |nl| nl + 1 else 0;
+                const prev = text[prev_start..line_start];
+                const lead = "{atom, ";
+                const a = std.mem.indexOf(u8, prev, lead) orelse continue;
+                const rest = prev[a + lead.len ..];
+                if (std.mem.startsWith(u8, rest, atom) and rest.len > atom.len and rest[atom.len] == '}') return true;
+            }
+            return false;
+        },
     }
-    return false;
 }
 
 test "ensuresLoaded: the guard names the atom exactly" {
-    try std.testing.expect(ensuresLoaded("case code:ensure_loaded(rk_fr) of {module, _} -> rk_fr:t(); _ -> 0 end", "rk_fr"));
-    try std.testing.expect(!ensuresLoaded("case code:ensure_loaded(rk_frx) of _ -> 0 end", "rk_fr"));
-    try std.testing.expect(!ensuresLoaded("rk_fr:t()", "rk_fr"));
+    try std.testing.expect(ensuresLoaded("case code:ensure_loaded(rk_fr) of {module, _} -> rk_fr:t(); _ -> 0 end", "rk_fr", .erlang));
+    try std.testing.expect(!ensuresLoaded("case code:ensure_loaded(rk_frx) of _ -> 0 end", "rk_fr", .erlang));
+    try std.testing.expect(!ensuresLoaded("rk_fr:t()", "rk_fr", .erlang));
+}
+
+test "ensuresLoaded: in BEAM assembly the guard is the atom moved right before the call" {
+    const guarded =
+        \\    {move, {atom, rk_fr}, {x, 0}}.
+        \\    {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
+        \\    {call_ext, 0, {extfunc, rk_fr, t, 0}}.
+        \\
+    ;
+    try std.testing.expect(ensuresLoaded(guarded, "rk_fr", .beam));
+    try std.testing.expect(!ensuresLoaded(guarded, "rk_f", .beam));
+    const unguarded =
+        \\    {move, {atom, rk_fr}, {x, 0}}.
+        \\    {call_ext, 0, {extfunc, rk_fr, t, 0}}.
+        \\
+    ;
+    try std.testing.expect(!ensuresLoaded(unguarded, "rk_fr", .beam));
 }
 
 /// The first module of a build that calls a host module no sidecar answers.
@@ -1348,18 +1395,48 @@ const ErlMiss = struct {
     probed: [2][]const u8,
 };
 
-/// Every `-module(<atom>).` attribute of an emitted erlang text.
-fn putModuleAtoms(arena: std.mem.Allocator, set: *std.StringHashMapUnmanaged(void), text: []const u8) !void {
-    const key = "-module(";
+/// Every module an emitted text declares: the `-module(<atom>).` attribute of
+/// erlang source, the `{module, <atom>}.` form of BEAM assembly.
+fn putModuleAtoms(arena: std.mem.Allocator, set: *std.StringHashMapUnmanaged(void), text: []const u8, kind: HostText) !void {
+    const key, const close_char: u8 = switch (kind) {
+        .erlang => .{ "-module(", ')' },
+        .beam => .{ "{module, ", '}' },
+    };
     var i: usize = 0;
     while (std.mem.indexOfPos(u8, text, i, key)) |at| {
         const start = at + key.len;
-        const close = std.mem.indexOfScalarPos(u8, text, start, ')') orelse return;
+        const close = std.mem.indexOfScalarPos(u8, text, start, close_char) orelse return;
+        i = close;
+        // The assembly's form starts its line; an operand `{module, …}` of a
+        // literal does not.
+        if (kind == .beam and at > 0 and text[at - 1] != '\n') continue;
         var atom = text[start..close];
         if (atom.len >= 2 and atom[0] == '\'' and atom[atom.len - 1] == '\'') atom = atom[1 .. atom.len - 1];
         try set.put(arena, atom, {});
-        i = close;
     }
+}
+
+test "putModuleAtoms reads the module form of each emitted text" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    var set = std.StringHashMapUnmanaged(void){};
+    try putModuleAtoms(arena, &set,
+        \\-module(app@main).
+        \\-export([main/0]).
+    , .erlang);
+    try putModuleAtoms(arena, &set,
+        \\{module, app@text}.
+        \\{exports, []}.
+        \\    {move, {literal, {module, not_a_form}}, {x, 0}}.
+    , .beam);
+    try putModuleAtoms(arena, &set,
+        \\{module, 'app@main@@Shape'}.
+    , .beam);
+    try std.testing.expect(set.contains("app@main"));
+    try std.testing.expect(set.contains("app@text"));
+    try std.testing.expect(set.contains("app@main@@Shape"));
+    try std.testing.expectEqual(@as(u32, 3), set.count());
 }
 
 /// The atoms of `atoms` the Erlang code path does not hold — asked of `erl`
@@ -1438,6 +1515,87 @@ fn locateErlMiss(arena: std.mem.Allocator, proj: ?manifest.Manifest, atom: []con
         return .{ .message = fixed, .file = with_ext, .source = miss.source, .line = line, .col = h.at - line_start + 1, .span = h.len };
     }
     return sidecarLocation(proj, miss.owner, miss.owner_pkg, fixed);
+}
+
+/// Which emitted text `shipErlSidecars` reads its host modules out of.
+pub const HostText = enum {
+    /// Erlang source: a host call is `host:fn(…)`.
+    erlang,
+    /// BEAM assembly: a host call is `{extfunc, host, fn, N}`.
+    beam,
+};
+
+/// The host module of every remote call in an emitted text, whichever of the
+/// two it is.
+const HostModuleIterator = struct {
+    text: []const u8,
+    kind: HostText,
+    pos: usize = 0,
+
+    fn next(self: *HostModuleIterator) ?[]const u8 {
+        switch (self.kind) {
+            .erlang => {
+                var it = QualifierIterator{ .text = self.text, .pos = self.pos };
+                defer self.pos = it.pos;
+                return it.next();
+            },
+            .beam => {
+                var it = ExtfuncIterator{ .text = self.text, .pos = self.pos };
+                defer self.pos = it.pos;
+                return it.next();
+            },
+        }
+    }
+};
+
+/// Walks the `{extfunc, <module>, <function>, <arity>}` operands of emitted
+/// BEAM assembly and yields each module atom — unquoted, or the contents of a
+/// quoted one. Comments and string contents are blanked before the walk
+/// (`blankErlComments`), so a literal that spells the operand is not one.
+const ExtfuncIterator = struct {
+    text: []const u8,
+    pos: usize = 0,
+
+    const lead = "{extfunc, ";
+
+    fn next(self: *ExtfuncIterator) ?[]const u8 {
+        while (std.mem.indexOfPos(u8, self.text, self.pos, lead)) |at| {
+            var i = at + lead.len;
+            self.pos = i;
+            if (i >= self.text.len) return null;
+            if (self.text[i] == '\'') {
+                const close = std.mem.indexOfScalarPos(u8, self.text, i + 1, '\'') orelse return null;
+                self.pos = close + 1;
+                if (close + 1 < self.text.len and self.text[close + 1] == ',') return self.text[i + 1 .. close];
+                continue;
+            }
+            const start = i;
+            while (i < self.text.len and isAtomChar(self.text[i])) i += 1;
+            self.pos = i;
+            if (i == start or !std.ascii.isLower(self.text[start])) continue;
+            if (i < self.text.len and self.text[i] == ',') return self.text[start..i];
+        }
+        self.pos = self.text.len;
+        return null;
+    }
+};
+
+test "ExtfuncIterator yields the module atom of every remote call" {
+    var it = HostModuleIterator{ .kind = .beam, .text =
+        \\    {call_ext, 1, {extfunc, hostlib_native, greet, 1}}.
+        \\    {call, 1, {f, 9}}.
+        \\    {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
+        \\    {call_ext, 0, {extfunc, 'app@main@@Shape', '__bp_format', 1}}.
+        \\    {call_ext_only, 0, {extfunc, std@beam, ptPut, 2}}.
+    };
+    var seen: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer seen.deinit(std.testing.allocator);
+    while (it.next()) |a| try seen.append(std.testing.allocator, a);
+    try std.testing.expectEqual(@as(usize, 4), seen.items.len);
+    try std.testing.expectEqualStrings("hostlib_native", seen.items[0]);
+    try std.testing.expectEqualStrings("io", seen.items[1]);
+    try std.testing.expectEqualStrings("app@main@@Shape", seen.items[2]);
+    try std.testing.expectEqualStrings("std@beam", seen.items[3]);
 }
 
 /// Walks the `atom:` qualifiers of emitted erlang text. An erlang module atom

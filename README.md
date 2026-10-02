@@ -36,7 +36,7 @@ zig-out/bin/botopink new hello && cd hello
 |------------|--------|---------------------------------|
 | `commonJS` | `.js`  | `node` ≥ 20                     |
 | `erlang`   | `.erl` | `escript` (OTP)                 |
-| `beam`     | `.S`   | artifact — `erlc +from_asm`     |
+| `beam`     | `.S`   | `erlc +from_asm` + `erl` (OTP)  |
 | `wasm`     | `.wat` | `wasmtime`                      |
 
 ## Project structure

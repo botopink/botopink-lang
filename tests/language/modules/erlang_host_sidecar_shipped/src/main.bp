@@ -7,9 +7,9 @@
 //// died with `undef` at the first call.
 ////
 //// commonJS and wasm refuse an `@External.Erlang`-only function
-//// (`commonJS.expect`, `wasm.expect`). beam is listed in
-//// `expected-failures.txt`: its `.S` output calls `lt_greeter:hello/1` and
-//// its build ships no host module, so the run dies with `undef`.
+//// (`commonJS.expect`, `wasm.expect`). beam calls `lt_greeter:hello/1` from
+//// its `.S`: the build ships the same `.erl` into `out/beam/` and the entry's
+//// `'__bp_load_siblings'/0` compiles and loads it before `main` runs.
 
 #[@External.Erlang("lt_greeter", "hello")]
 declare fn hello(name: string) -> string;

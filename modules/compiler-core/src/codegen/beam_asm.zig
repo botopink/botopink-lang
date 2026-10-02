@@ -219,6 +219,34 @@ fn hostDeclareWrapperNeeded(f: ast.FnDecl) bool {
     return f.isPub and isHostDeclare(f);
 }
 
+/// The record a host-backed declaration's return type names, looked through
+/// the containers a host answer can arrive in: `?T`, `T[]`, and the builtin
+/// `@Result<T, E>` / `@Future<T>` / `@Option<T>` / `Array<T>` wrappers. A user
+/// generic is NOT looked through — its payload is not the value the host hands
+/// back. The erlang backend's function of the same name, on the same rule.
+fn recordNameOfReturn(t: ast.TypeRef) ?[]const u8 {
+    return switch (t) {
+        .named => |n| n,
+        .optional => |inner| recordNameOfReturn(inner.*),
+        .array => |inner| recordNameOfReturn(inner.*),
+        .generic => |g| {
+            if (g.args.len == 0) return null;
+            const looks_through = (g.is_builtin and (std.mem.eql(u8, g.name, "Result") or
+                std.mem.eql(u8, g.name, "Future") or std.mem.eql(u8, g.name, "Option"))) or
+                std.mem.eql(u8, g.name, "Array");
+            return if (looks_through) recordNameOfReturn(g.args[0]) else null;
+        },
+        else => null,
+    };
+}
+
+/// The record a host answer is adopted into (`Emitter.hostAdoption`): decision
+/// 21's tag and the declared field order.
+const HostAdoption = struct {
+    tag: []const u8,
+    fields: []const []const u8,
+};
+
 /// What the wrapper of a `pub` host-backed `declare fn` calls
 /// (`Emitter.hostWrapperFor`): a plain `module:symbol` erlang target, tail-called
 /// as a `call_ext`, or an `@External.Erlang` template (a template body or the
@@ -240,6 +268,60 @@ const MEM_ETS_ADD = "'__bp_ets_add'";
 const MEM_ETS_SET = "'__bp_ets_set'";
 const MEM_LOAD = "'__bp_load'";
 const MEM_BOX = "__bp_var";
+
+/// The entry's host-module loader and its per-file step (`emitLoadSiblings`).
+const LOAD_SIBLINGS = "'__bp_load_siblings'";
+const LOAD_SIBLING = "'-bp_load_sibling-'";
+
+/// A character list as a literal operand — `"*.erl"` where the OTP file
+/// functions want a string and `Op.str` would hand them a binary.
+fn charlist(comptime text: []const u8) Op {
+    const chars = comptime blk: {
+        var items: [text.len]Term = undefined;
+        for (text, 0..) |c, i| items[i] = Term.int(c);
+        const frozen = items;
+        break :blk frozen;
+    };
+    return .{ .term = Term.listOf(&chars) };
+}
+
+/// Whether `annotations` bind a host the BEAM calls — `#[@External.Erlang(…)]`
+/// or `#[@External.Beam(…)]`.
+fn bindsBeamHost(annotations: []const ast.Annotation) bool {
+    for (annotations) |a| {
+        if (!std.mem.startsWith(u8, a.name, "External.")) continue;
+        const target = a.name["External.".len..];
+        if (std.ascii.eqlIgnoreCase(target, "erlang") or std.ascii.eqlIgnoreCase(target, "beam")) return true;
+    }
+    return false;
+}
+
+/// Whether some module of the build binds a BEAM host of its own: a
+/// `declare fn`, or a `type` (or one of its methods), carrying
+/// `#[@External.Erlang(…)]` / `#[@External.Beam(…)]`. Only then can an emitted
+/// `call_ext` name a module the build ships as an `.erl` sidecar, so only then
+/// does the entry carry `'__bp_load_siblings'/0`.
+///
+/// A `behavior`'s bindings are not read: a host-bound behavior method is the
+/// prelude's vocabulary (`primitives.bp`, spliced into a program that calls a
+/// primitive `default fn`), and the prelude names OTP alone.
+fn buildBindsBeamHost(all_outputs: []const ComptimeOutput) bool {
+    for (all_outputs) |*o| {
+        const program = switch (o.outcome) {
+            .ok => |*ok| ok.transformed,
+            else => continue,
+        };
+        for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| if (bindsBeamHost(f.annotations)) return true,
+            .type_ => |t| {
+                if (bindsBeamHost(t.annotations)) return true;
+                for (t.methods) |m| if (bindsBeamHost(m.annotations)) return true;
+            },
+            else => {},
+        };
+    }
+    return false;
+}
 
 fn isMain0(f: ast.FnDecl) bool {
     return std.mem.eql(u8, f.name, "main") and fnArityNoSelf(f) == 0;
@@ -1695,6 +1777,14 @@ fn emitBeamAsm(
         try em.reserveFn("'_botopink_main'", 0);
         try em.reserveFn("main", 1);
     }
+    // A host `.erl` the build ships beside the assembled modules is compiled
+    // and loaded by the entry, before the module body runs — when a module of
+    // the build binds a host at all (`emitLoadSiblings`).
+    if (has_main_0 and buildBindsBeamHost(all_outputs)) {
+        em.load_siblings = true;
+        try em.reserveFn(LOAD_SIBLINGS, 0);
+        try em.reserveFn(LOAD_SIBLING, 1);
+    }
     // Decision 140 — a module without `main/0` runs its body when a program
     // that imports it starts: `'_botopink_init'/0`, called by the entry.
     const emit_init = !has_main_0 and em.entry_stmts.items.len > 0;
@@ -1805,6 +1895,7 @@ fn emitBeamAsm(
     if (has_main_0) {
         try em.emitEntrypointWrappers();
     }
+    if (em.load_siblings) try em.emitLoadSiblings();
     if (emit_init) try em.emitInitFunction();
 
     // Front 17 — the storage the module `var`s above lower onto.
@@ -2148,6 +2239,9 @@ const Emitter = struct {
     indexOf_helper_name: ?[]const u8 = null,
     stringify_helper_name: ?[]const u8 = null,
     print_helper_name: ?[]const u8 = null,
+    /// The entry module of a build that binds a BEAM host: `'_botopink_main'/0`
+    /// calls `'__bp_load_siblings'/0` first (`emitLoadSiblings`).
+    load_siblings: bool = false,
     add_helper_name: ?[]const u8 = null,
     /// BR5: `<arity>:<template text>` → the labels of the helper function
     /// `compiledTemplate` emitted for it in THIS module (a unit gets its own).
@@ -2165,6 +2259,9 @@ const Emitter = struct {
     yield_step_helper_name: ?[]const u8 = null,
     /// `'-bp_pop-'/1` (`primPop`), emitted once per module on first use.
     pop_helper_name: ?[]const u8 = null,
+    /// `'__bp_adopt'/3` — a host answer adopted into the record its
+    /// declaration names (`ensureAdoptHelper`), emitted once per module.
+    adopt_helper_name: ?[]const u8 = null,
     /// Owns the parsed `primitives.bp` prelude (and every key string built for
     /// the tables below) for the whole emission.
     prelude_arena: std.heap.ArenaAllocator,
@@ -2355,6 +2452,7 @@ const Emitter = struct {
         if (self.method_helper_name) |n| self.alloc.free(n);
         if (self.yield_step_helper_name) |n| self.alloc.free(n);
         if (self.pop_helper_name) |n| self.alloc.free(n);
+        if (self.adopt_helper_name) |n| self.alloc.free(n);
     }
 
     /// §A5: collect `#[@External.Erlang(…)]` annotations on primitive behavior
@@ -3765,6 +3863,7 @@ const Emitter = struct {
         method: ?[]const u8,
         yield_step: ?[]const u8,
         pop: ?[]const u8,
+        adopt: ?[]const u8,
     };
 
     fn takeHelperNames(self: *Emitter) HelperNames {
@@ -3781,6 +3880,7 @@ const Emitter = struct {
             .method = self.method_helper_name,
             .yield_step = self.yield_step_helper_name,
             .pop = self.pop_helper_name,
+            .adopt = self.adopt_helper_name,
         };
         self.at_helper_name = null;
         self.index_helper_name = null;
@@ -3794,6 +3894,7 @@ const Emitter = struct {
         self.method_helper_name = null;
         self.yield_step_helper_name = null;
         self.pop_helper_name = null;
+        self.adopt_helper_name = null;
         return saved;
     }
 
@@ -3822,6 +3923,8 @@ const Emitter = struct {
         self.yield_step_helper_name = saved.yield_step;
         if (self.pop_helper_name) |n| self.alloc.free(n);
         self.pop_helper_name = saved.pop;
+        if (self.adopt_helper_name) |n| self.alloc.free(n);
+        self.adopt_helper_name = saved.adopt;
     }
 
     /// Open `type_name`'s module: its bodies write into `buf`, its labels start
@@ -4236,12 +4339,182 @@ const Emitter = struct {
     /// from a module `var`, `fs.exists(p)`) finds it: `f(Args) ->
     /// Module:Symbol(Args).`, or `f(Args) -> '__bp_tpl_<k>'(Args).` for a
     /// template — the arguments are already in `{x,0}..`, in declaration order.
+    /// A declaration whose return type names a record adopts the host's answer
+    /// into it before returning (`hostAdoption`), like the erlang wrapper.
     fn emitHostWrapper(self: *Emitter, f: ast.FnDecl, w: HostWrapper) !void {
+        // Before the header: the adoption helper reserves its own labels.
+        const adoption = try self.hostAdoption(f);
+        const adopt_entry = if (adoption != null) try self.ensureAdoptHelper() else 0;
         try self.beginHelper(f.name, f.params.len);
+        const kind: beamEmitter.CallKind = if (adoption != null) .normal else .only;
+        if (adoption != null) try beamEmitter.writeAllocate(self.out, 0, f.params.len);
         switch (w) {
-            .ext => |ref| try beamEmitter.writeCall(self.out, .only, f.params.len, .{ .ext = .{ .module = ref.module, .function = ref.symbol } }, 0),
-            .template => |labels| try beamEmitter.writeCall(self.out, .only, f.params.len, .{ .local = labels.entry }, 0),
+            .ext => |ref| try beamEmitter.writeCall(self.out, kind, f.params.len, .{ .ext = .{ .module = ref.module, .function = ref.symbol } }, 0),
+            .template => |labels| try beamEmitter.writeCall(self.out, kind, f.params.len, .{ .local = labels.entry }, 0),
         }
+        if (adoption) |a| try self.writeAdoptCall(a, adopt_entry, .last, 0);
+    }
+
+    /// The record `f`'s host answer is adopted into, or null: `f` declares no
+    /// return type, the type names no record through the containers
+    /// `recordNameOfReturn` looks through, or this emit cannot place the
+    /// record's declared field order.
+    fn hostAdoption(self: *Emitter, f: ast.FnDecl) !?HostAdoption {
+        const rt = f.returnType orelse return null;
+        const rec = recordNameOfReturn(rt) orelse return null;
+        const fields = self.record_fields.get(rec) orelse return null;
+        return .{ .tag = try self.recordTagAtom(rec), .fields = fields };
+    }
+
+    /// `'__bp_adopt'({x, 0}, Tag, [Field…])` — the host answer in `{x, 0}`
+    /// adopted into `a`'s record, left in `{x, 0}`.
+    fn writeAdoptCall(self: *Emitter, a: HostAdoption, entry: u32, kind: beamEmitter.CallKind, num_y: usize) !void {
+        const keys = try self.atom_arena.allocator().alloc(Term, a.fields.len);
+        for (a.fields, 0..) |name, i| keys[i] = Term.atomOf(name);
+        try beamEmitter.writeMoveOp(self.out, Op.atom(a.tag), Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, .{ .term = Term.listOf(keys) }, Dst.xr(2));
+        try beamEmitter.writeCall(self.out, kind, 3, .{ .local = entry }, num_y);
+    }
+
+    /// Emit (once per module) `'__bp_adopt'/3` and its two walkers: decision
+    /// 21's shape applied at the HOST boundary, the BEAM twin of the erlang
+    /// backend's function of the same name (`erlang.zig`, `adopt_helper_form`).
+    ///
+    /// A `declare fn` bound to a host answers whatever the host builds, and the
+    /// compiler cannot rewrite the host: an `.erl` sidecar a library ships, or a
+    /// template that builds `#{field => V}`, hands back a bare map, and a
+    /// positional read of it is `badarg` (a `+` over two of them `badarith`).
+    /// So the call adopts the answer into the record its declaration names:
+    ///
+    /// ```erlang
+    /// '__bp_adopt'(V, T, Ks) when is_map(V) -> list_to_tuple([T | '-bp_adopt_fields-'(Ks, V)]);
+    /// '__bp_adopt'(V, T, Ks) when is_list(V) -> '-bp_adopt_each-'(V, T, Ks);
+    /// '__bp_adopt'({ok, V}, T, Ks) -> {ok, '__bp_adopt'(V, T, Ks)};
+    /// '__bp_adopt'(V, _, _) -> V.
+    ///
+    /// '-bp_adopt_fields-'([K | Ks], V) -> [maps:get(K, V, undefined) | '-bp_adopt_fields-'(Ks, V)];
+    /// '-bp_adopt_fields-'(_, _) -> [].
+    ///
+    /// '-bp_adopt_each-'([E | Es], T, Ks) -> ['__bp_adopt'(E, T, Ks) | '-bp_adopt_each-'(Es, T, Ks)];
+    /// '-bp_adopt_each-'(_, _, _) -> [].
+    /// ```
+    ///
+    /// A map becomes `{Tag, F1, …, Fn}` in declared field order (a key the map
+    /// omits is `undefined`), a list adopts element by element, an `{ok, V}`
+    /// adopts inside the ok arm, and a value that already carries its tag — or
+    /// is absent — passes through untouched, so adopting twice is adopting
+    /// once. Returns the helper's entry label.
+    fn ensureAdoptHelper(self: *Emitter) anyerror!u32 {
+        const adopt_name = "'__bp_adopt'";
+        const fields_name = "'-bp_adopt_fields-'";
+        const each_name = "'-bp_adopt_each-'";
+        if (self.adopt_helper_name) |n| return (try self.fnLabelsFor(n, 3)).entry;
+        const name = try self.alloc.dupe(u8, adopt_name);
+        errdefer self.alloc.free(name);
+        try self.reserveFn(adopt_name, 3);
+        try self.reserveFn(fields_name, 2);
+        try self.reserveFn(each_name, 3);
+        const adopt_l = try self.fnLabelsFor(adopt_name, 3);
+        const fields_l = try self.fnLabelsFor(fields_name, 2);
+        const each_l = try self.fnLabelsFor(each_name, 3);
+
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const w = &buf.writer;
+
+        // '__bp_adopt'(V, T, Ks).
+        const not_map = self.allocLabel();
+        const not_list = self.allocLabel();
+        const as_is = self.allocLabel();
+        try beamEmitter.writeBlankLine(w);
+        try beamEmitter.writeFunctionHeader(w, adopt_name, 3, adopt_l.entry);
+        try beamEmitter.writeLabel(w, adopt_l.func_info);
+        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(w, self.module_name, adopt_name, 3);
+        try beamEmitter.writeLabel(w, adopt_l.entry);
+        try beamEmitter.writeTest(w, .is_map, not_map, &.{Op.xr(0)});
+        try beamEmitter.writeAllocate(w, 1, 3);
+        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.yr(0)); // y0 = T
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1)); // x1 = V
+        try beamEmitter.writeMoveOp(w, Op.xr(2), Dst.xr(0)); // x0 = Ks
+        try beamEmitter.writeCall(w, .normal, 2, .{ .local = fields_l.entry }, 0);
+        try beamEmitter.writeTestHeap(w, 2, 1);
+        try beamEmitter.writePutList(w, Op.yr(0), Op.xr(0), Dst.xr(0));
+        try beamEmitter.writeCall(w, .last, 1, .{ .ext = .{ .module = "erlang", .function = "list_to_tuple" } }, 1);
+        try beamEmitter.writeLabel(w, not_map);
+        try beamEmitter.writeTest(w, .is_list, not_list, &.{Op.xr(0)});
+        try beamEmitter.writeCall(w, .only, 3, .{ .local = each_l.entry }, 0);
+        try beamEmitter.writeLabel(w, not_list);
+        try beamEmitter.writeTest(w, .is_tagged_tuple, as_is, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom("ok") });
+        try beamEmitter.writeAllocate(w, 0, 3);
+        try beamEmitter.writeGetTupleElement(w, Op.xr(0), 1, Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 3, .{ .local = adopt_l.entry }, 0);
+        try beamEmitter.writeTestHeap(w, 3, 1);
+        try beamEmitter.writePutTuple2(w, Dst.xr(0), &.{ Op.atom("ok"), Op.xr(0) });
+        try beamEmitter.writeDeallocate(w, 0);
+        try beamEmitter.writeReturn(w);
+        try beamEmitter.writeLabel(w, as_is);
+        try beamEmitter.writeReturn(w);
+
+        // '-bp_adopt_fields-'(Ks, V): `{y, 0}` = the keys left, `{y, 1}` = V,
+        // then the value read.
+        const no_keys = self.allocLabel();
+        try beamEmitter.writeBlankLine(w);
+        try beamEmitter.writeFunctionHeader(w, fields_name, 2, fields_l.entry);
+        try beamEmitter.writeLabel(w, fields_l.func_info);
+        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(w, self.module_name, fields_name, 2);
+        try beamEmitter.writeLabel(w, fields_l.entry);
+        try beamEmitter.writeTest(w, .is_nonempty_list, no_keys, &.{Op.xr(0)});
+        try beamEmitter.writeAllocate(w, 2, 2);
+        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.yr(1));
+        try beamEmitter.writeGetList(w, Op.xr(0), Dst.xr(0), Dst.yr(0));
+        try beamEmitter.writeMoveOp(w, Op.atom("undefined"), Dst.xr(2));
+        try beamEmitter.writeCall(w, .normal, 3, .{ .ext = .{ .module = "maps", .function = "get" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(1));
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .local = fields_l.entry }, 0);
+        try beamEmitter.writeTestHeap(w, 2, 1);
+        try beamEmitter.writePutList(w, Op.yr(1), Op.xr(0), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
+        try beamEmitter.writeReturn(w);
+        try beamEmitter.writeLabel(w, no_keys);
+        try beamEmitter.writeMoveOp(w, Op.nil, Dst.xr(0));
+        try beamEmitter.writeReturn(w);
+
+        // '-bp_adopt_each-'(Es, T, Ks): `{y, 0}` = the elements left, then the
+        // adopted element; `{y, 1}` = T, `{y, 2}` = Ks.
+        const no_elems = self.allocLabel();
+        try beamEmitter.writeBlankLine(w);
+        try beamEmitter.writeFunctionHeader(w, each_name, 3, each_l.entry);
+        try beamEmitter.writeLabel(w, each_l.func_info);
+        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(w, self.module_name, each_name, 3);
+        try beamEmitter.writeLabel(w, each_l.entry);
+        try beamEmitter.writeTest(w, .is_nonempty_list, no_elems, &.{Op.xr(0)});
+        try beamEmitter.writeAllocate(w, 3, 3);
+        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.yr(1));
+        try beamEmitter.writeMoveOp(w, Op.xr(2), Dst.yr(2));
+        try beamEmitter.writeGetList(w, Op.xr(0), Dst.xr(0), Dst.yr(0));
+        try beamEmitter.writeCall(w, .normal, 3, .{ .local = adopt_l.entry }, 0);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(3));
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(0));
+        try beamEmitter.writeMoveOp(w, Op.xr(3), Dst.xr(0));
+        try beamEmitter.writeMoveOp(w, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.yr(2), Dst.xr(2));
+        try beamEmitter.writeCall(w, .normal, 3, .{ .local = each_l.entry }, 0);
+        try beamEmitter.writeTestHeap(w, 2, 1);
+        try beamEmitter.writePutList(w, Op.yr(0), Op.xr(0), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 3);
+        try beamEmitter.writeReturn(w);
+        try beamEmitter.writeLabel(w, no_elems);
+        try beamEmitter.writeMoveOp(w, Op.nil, Dst.xr(0));
+        try beamEmitter.writeReturn(w);
+
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.adopt_helper_name = name;
+        return adopt_l.entry;
     }
 
     /// The reader `name/0` of a module `var`, per mode — `ProcessDict`: this
@@ -4519,6 +4792,125 @@ const Emitter = struct {
         try self.emitReturn();
     }
 
+    // ── host `.erl` modules shipped beside the assembled program ─────────────
+
+    /// `'__bp_load_siblings'/0` and its step `'-bp_load_sibling-'/1`: the BEAM
+    /// twin of the erlang test runner's function of the same name
+    /// (`erlang.zig`, `testRunnerForms`).
+    ///
+    /// `botopink build --target beam` copies the `<host>.erl` of every
+    /// `#[@External.Erlang("<host>", …)]` a package keeps beside its sources
+    /// into `out/beam/` (`cli/libs.zig`, `shipErlSidecars`), and the `.S` calls
+    /// it as `{extfunc, <host>, …}`. Nothing assembles an `.erl`, so the entry
+    /// compiles and loads each one itself, first thing in
+    /// `'_botopink_main'/0` — a built program runs wherever its directory is
+    /// put on the code path, with no runner in between:
+    ///
+    /// ```erlang
+    /// '__bp_load_siblings'() ->
+    ///     case code:which(?MODULE) of
+    ///         Path when is_list(Path) ->
+    ///             '-bp_load_sibling-'(filelib:wildcard(
+    ///                 filename:join(filename:dirname(Path), "*.erl")));
+    ///         _ -> ok
+    ///     end.
+    ///
+    /// '-bp_load_sibling-'([Src | Rest]) ->
+    ///     case code:ensure_loaded(list_to_atom(filename:basename(Src, ".erl"))) of
+    ///         {module, _} -> ok;
+    ///         _ ->
+    ///             case compile:file(Src, [binary, return_errors]) of
+    ///                 {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
+    ///                 Bad ->
+    ///                     file:write(standard_error, io_lib:format(
+    ///                         "error: ~ts does not compile - refusing to run~n  ~p~n",
+    ///                         [Src, Bad])),
+    ///                     erlang:halt(1)
+    ///             end
+    ///     end,
+    ///     '-bp_load_sibling-'(Rest);
+    /// '-bp_load_sibling-'(_) -> ok.
+    /// ```
+    ///
+    /// The directory is the one the running module's `.beam` was loaded from —
+    /// `erlc +from_asm -o out/beam out/beam/*.S` puts it beside the `.S` and
+    /// the shipped `.erl` — and a module loaded from no file (`code:which/1`
+    /// answers an atom) has no directory to read. A host module that is
+    /// already loadable (an `.erl` somebody compiled beside it) is left alone.
+    /// One that does not compile REFUSES THE RUN, named, with the compiler's
+    /// diagnostic (decision 67): skipped, its first call would be `undef` at
+    /// the caller's location. The message goes through `file:write/2`, not
+    /// `io:format`, so a module's text names `io, format` only when the
+    /// program itself prints (`runtime.zig`, `beamAsmCodeWritesOutput`).
+    fn emitLoadSiblings(self: *Emitter) !void {
+        const step = try self.fnLabelsFor(LOAD_SIBLING, 1);
+        const w = self.out;
+
+        const no_dir = self.allocLabel();
+        try self.beginHelper(LOAD_SIBLINGS, 0);
+        try beamEmitter.writeAllocate(w, 0, 0);
+        try beamEmitter.writeMoveOp(w, Op.atom(self.fileModuleAtom()), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "code", .function = "which" } }, 0);
+        try beamEmitter.writeTest(w, .is_list, no_dir, &.{Op.xr(0)});
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "filename", .function = "dirname" } }, 0);
+        try beamEmitter.writeMoveOp(w, charlist("*.erl"), Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "filename", .function = "join" } }, 0);
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "filelib", .function = "wildcard" } }, 0);
+        try beamEmitter.writeCall(w, .last, 1, .{ .local = step.entry }, 0);
+        try beamEmitter.writeLabel(w, no_dir);
+        try beamEmitter.writeMoveOp(w, Op.atom("ok"), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 0);
+        try beamEmitter.writeReturn(w);
+
+        // `{y, 0}` = Rest, `{y, 1}` = Src.
+        const done = self.allocLabel();
+        const compile = self.allocLabel();
+        const dead = self.allocLabel();
+        const next = self.allocLabel();
+        try self.beginHelper(LOAD_SIBLING, 1);
+        try beamEmitter.writeTest(w, .is_nonempty_list, done, &.{Op.xr(0)});
+        try beamEmitter.writeAllocate(w, 2, 1);
+        try beamEmitter.writeGetList(w, Op.xr(0), Dst.yr(1), Dst.yr(0));
+        try beamEmitter.writeMoveOp(w, charlist(".erl"), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.yr(1), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "filename", .function = "basename" } }, 0);
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "list_to_atom" } }, 0);
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "code", .function = "ensure_loaded" } }, 0);
+        try beamEmitter.writeTest(w, .is_tagged_tuple, compile, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom("module") });
+        try beamEmitter.writeJump(w, next);
+
+        try beamEmitter.writeLabel(w, compile);
+        try beamEmitter.writeMoveOp(w, .{ .term = Term.listOf(&.{ Term.atomOf("binary"), Term.atomOf("return_errors") }) }, Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.yr(1), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "compile", .function = "file" } }, 0);
+        try beamEmitter.writeTest(w, .is_tagged_tuple, dead, &.{ Op.xr(0), .{ .untagged = 3 }, Op.atom("ok") });
+        try beamEmitter.writeGetTupleElement(w, Op.xr(0), 2, Dst.xr(2));
+        try beamEmitter.writeGetTupleElement(w, Op.xr(0), 1, Dst.xr(0));
+        try beamEmitter.writeMoveOp(w, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 3, .{ .ext = .{ .module = "code", .function = "load_binary" } }, 0);
+        try beamEmitter.writeJump(w, next);
+
+        try beamEmitter.writeLabel(w, dead);
+        try beamEmitter.writeTestHeap(w, 4, 1);
+        try beamEmitter.writePutList(w, Op.xr(0), Op.nil, Dst.xr(0));
+        try beamEmitter.writePutList(w, Op.yr(1), Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.str("error: ~ts does not compile - refusing to run~n  ~p~n"), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "io_lib", .function = "format" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.atom("standard_error"), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "file", .function = "write" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.int(1), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "halt" } }, 0);
+
+        try beamEmitter.writeLabel(w, next);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeCall(w, .last, 1, .{ .local = step.entry }, 2);
+
+        try beamEmitter.writeLabel(w, done);
+        try beamEmitter.writeMoveOp(w, Op.atom("ok"), Dst.xr(0));
+        try beamEmitter.writeReturn(w);
+    }
+
     // ── entrypoint wrappers when main/0 exists ───────────────────────────────
 
     fn emitEntrypointWrappers(self: *Emitter) !void {
@@ -4534,7 +4926,7 @@ const Emitter = struct {
         try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
         try beamEmitter.writeFuncInfo(self.out, self.module_name, "'_botopink_main'", 0);
         try beamEmitter.writeLabel(self.out, wrapper.entry);
-        if (self.entry_stmts.items.len == 0 and self.import_inits.items.len == 0) {
+        if (self.entry_stmts.items.len == 0 and self.import_inits.items.len == 0 and !self.load_siblings) {
             try beamEmitter.writeCall(self.out, .only, 0, .{ .local = main0.entry }, 0);
         } else {
             self.resetFnState(0);
@@ -4545,6 +4937,12 @@ const Emitter = struct {
             }
             self.num_y = n;
             try self.emitFrame(0);
+            // The host modules shipped beside this one, before any module's
+            // body can call into them.
+            if (self.load_siblings) {
+                const loader = try self.fnLabelsFor(LOAD_SIBLINGS, 0);
+                try beamEmitter.writeCall(self.out, .normal, 0, .{ .local = loader.entry }, 0);
+            }
             // Decision 140 — the imported modules' bodies first.
             for (self.import_inits.items) |dep| {
                 try beamEmitter.writeCall(self.out, .normal, 0, .{ .ext = .{ .module = dep, .function = "'_botopink_init'" } }, 0);
@@ -5996,6 +6394,32 @@ const Emitter = struct {
                 }
             }
             const total_arity = 1 + cc.args.len;
+            // A method exactly one type of this file declares, on a receiver
+            // inference left untyped (`r.map({ p -> p.at(0) })`: the lambda
+            // parameter carries no lowering): the call goes into that type's
+            // module, and a file function of the same name and arity does not
+            // take it — the erlang backend's `method_owners` rule. A second
+            // type of the PROGRAM declaring the method leaves it to the value.
+            if (cc.trailing.len == 0 and self.instanceLowering(loc, recv_expr.*) == null) {
+                if (self.soleOwnTypeOfMethod(cc.callee, total_arity)) |type_name| {
+                    if (self.programMethodDeclarers(cc.callee, total_arity) > 1) {
+                        try self.lowerDynamicMethodCall(recv_expr, cc, mode);
+                        return;
+                    }
+                    if (try self.typeMethodModule(type_name, cc.callee, total_arity)) |owner| {
+                        const st = try self.stageCall(recv_expr, cc.args, &[_]ast.TrailingLambda{});
+                        try self.placeStaged(&st);
+                        try beamEmitter.writeCall(
+                            self.out,
+                            if (mode == .tail) .last else .normal,
+                            total_arity,
+                            .{ .ext = .{ .module = owner, .function = cc.callee } },
+                            self.num_y,
+                        );
+                        return;
+                    }
+                }
+            }
             // A value-receiver call answered by one of the FILE module's
             // functions, made from inside a type's: a `call_ext`, because
             // policy 3 put the two in separate modules.
@@ -6788,7 +7212,22 @@ const Emitter = struct {
     /// a template compiled at build time into a helper (BR5). A fn with no beam or
     /// erlang target fails the lowering (`MissingExternalTarget`), like the
     /// other backends.
+    ///
+    /// A declaration whose return type names a record adopts the answer into
+    /// it (`hostAdoption`, `ensureAdoptHelper`): the host call is then never
+    /// the tail call, the adoption is.
     fn lowerExternalCall(self: *Emitter, f: ast.FnDecl, cc: anytype, mode: CallMode, loc: ast.Loc) anyerror!void {
+        const adoption = try self.hostAdoption(f) orelse return self.lowerHostCall(f, cc, mode, loc);
+        try self.lowerHostCall(f, cc, .non_tail, loc);
+        const entry = try self.ensureAdoptHelper();
+        switch (mode) {
+            .non_tail => try self.writeAdoptCall(adoption, entry, .normal, 0),
+            .tail => try self.writeAdoptCall(adoption, entry, .last, self.num_y),
+        }
+    }
+
+    /// `lowerExternalCall` without the adoption: the host's answer as it is.
+    fn lowerHostCall(self: *Emitter, f: ast.FnDecl, cc: anytype, mode: CallMode, loc: ast.Loc) anyerror!void {
         // 06 C13 — every exit below is `error.MissingExternalTarget`; naming the
         // fn and the call site here is what turns it into a located diagnostic
         // upstream.
@@ -8857,9 +9296,17 @@ const Emitter = struct {
     }
 
     /// Build an Erlang list from an array literal. Elements are consed
-    /// right-to-left via `{put_list, Elem, Tail, {x, 0}}`.
+    /// right-to-left via `{put_list, Elem, Tail, {x, 0}}`, onto the trailing
+    /// spread's value when the literal has one. The spread arrives in one of
+    /// two fields: `spreadExpr` for an expression, `spread` for a bare name
+    /// (`[1, 2, ..rest]`) — which used to be dropped, so the literal was its
+    /// own elements and `list[3]` read past the end (`run/array_spread_literal`).
     fn lowerArrayLit(self: *Emitter, al: anytype) anyerror!void {
-        try self.lowerListOf(al.elems, if (al.spreadExpr) |se| se.* else null);
+        if (al.spreadExpr) |se| return self.lowerListOf(al.elems, se.*);
+        if (al.spread) |name| if (name.len > 0) {
+            return self.lowerListOf(al.elems, shimIdent(name));
+        };
+        try self.lowerListOf(al.elems, null);
     }
 
     /// Build the list `[elems… | tail]` (`tail` defaults to `[]`) into `{x, 0}`.
@@ -10605,6 +11052,49 @@ const Emitter = struct {
             };
         }
         return false;
+    }
+
+    /// How many types of the program declare a method `method` taking `arity`
+    /// arguments, the receiver included — `programDeclaresMethod`'s population,
+    /// counted.
+    fn programMethodDeclarers(self: *const Emitter, method: []const u8, arity: usize) usize {
+        var count: usize = 0;
+        for (self.all_outputs) |*other| {
+            const ok = switch (other.outcome) {
+                .ok => |*o| o,
+                else => continue,
+            };
+            for (ok.transformed.decls) |d| switch (d) {
+                .type_ => |t| for (t.methods) |m| {
+                    if ((m.body == null or m.is_declare) and !(hostMethods.isHostMethod(m) and hostMethods.binds(m, .beam))) continue;
+                    if (std.mem.eql(u8, m.name, method) and methodArity(m) == arity) {
+                        count += 1;
+                        break;
+                    }
+                },
+                else => {},
+            };
+        }
+        return count;
+    }
+
+    /// The one `type` of this FILE whose module holds a method `method` taking
+    /// `arity` arguments, the receiver included (`own_type_methods`) — null
+    /// when none does, and when two do.
+    fn soleOwnTypeOfMethod(self: *const Emitter, method: []const u8, arity: usize) ?[]const u8 {
+        var found: ?[]const u8 = null;
+        var it = self.own_type_methods.keyIterator();
+        while (it.next()) |key| {
+            // `<Type>.<method>/<arity>`
+            const dot = std.mem.indexOfScalar(u8, key.*, '.') orelse continue;
+            const slash = std.mem.lastIndexOfScalar(u8, key.*, '/') orelse continue;
+            if (slash < dot or !std.mem.eql(u8, key.*[dot + 1 .. slash], method)) continue;
+            const declared = std.fmt.parseInt(usize, key.*[slash + 1 ..], 10) catch continue;
+            if (declared != arity) continue;
+            if (found != null) return null;
+            found = key.*[0..dot];
+        }
+        return found;
     }
 
     /// A method call the emitter cannot place on one module, answered by the

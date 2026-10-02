@@ -12,9 +12,9 @@
 //// regression's own shape; the node templates build the object node has always
 //// built. Both rows must answer the same numbers.
 ////
-//// wasm and beam are not in `.targets`: neither has a host vocabulary for these
-//// templates, and decision 67 makes the compiler refuse the program there
-//// rather than run it — which `run/external_erlang_only` already pins.
+//// wasm is not in `.targets`: it has no host vocabulary for these templates,
+//// and decision 67 makes the compiler refuse the program there rather than run
+//// it — which `run/external_erlang_only` already pins. beam reads the erlang row.
 
 pub type Point(x: i32, y: i32)
 

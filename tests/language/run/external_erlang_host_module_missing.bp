@@ -9,9 +9,9 @@
 //// every qualifier it could not find, so the build exited 0 and the program
 //// died with `undef` at the first call.
 ////
-//// `.targets` is `erlang`: commonJS and wasm refuse any `@External.Erlang`-only
-//// function (`run/external_erlang_only.bp`), and beam ships no host modules of
-//// any kind — its `.S` output has no sidecar step to check against.
+//// `.targets` is `erlang beam`: commonJS and wasm refuse any
+//// `@External.Erlang`-only function (`run/external_erlang_only.bp`); the beam
+//// build ships the same sidecars and refuses this one the same way.
 
 #[@External.Erlang("lists", "sum")]
 declare fn total(xs: i32[]) -> i32;

@@ -2215,7 +2215,7 @@ it would need a per-type default it cannot synthesize.
 |------------|--------|-----------------------------|
 | `commonJS` | `.js`  | `node` ≥ 20                 |
 | `erlang`   | `.erl` | `escript` (OTP)             |
-| `beam`     | `.S`   | artifact — `erlc +from_asm` |
+| `beam`     | `.S`   | `erlc +from_asm` + `erl`    |
 | `wasm`     | `.wat` | `wasmtime`                  |
 
 Select the target with `--target`:

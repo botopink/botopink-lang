@@ -22,7 +22,7 @@ rewrite a test to match current behaviour.
 | `test/<area>_<group>.bp` | `test "…" { … assert … }` blocks, run by `botopink test --target <t> --json` | every test reports `ok` |
 | `run/<name>.bp` + `<name>.out` | a whole program (`pub fn main`), run by `botopink run --target <t>` | exit 0 and stdout equals `.out` byte for byte — or, with a sidecar, § the sidecars of a `run/` cell |
 | `reject/<name>.bp` + `<name>.expect` | a program that must not compile, run by `botopink check` | exit ≠ 0, stderr contains `.expect` line 1, and ` --> src/main.bp:<line 2>` — line 2 is required (C-21: every refusal is located) |
-| `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a second project inside it can be a `{ "path": "…" }` dependency | exit 0 and stdout equals `expected.out` byte for byte — or, with `<target>.expect`, § the sidecars of a `run/` cell |
+| `modules/<name>/` | a whole **project** — its own `botopink.json`, `src/` tree and `expected.out` — run by `botopink run --target <t>`; a second project inside it can be a `{ "path": "…" }` dependency; `"targets"` in its `botopink.json` narrows it (§ Narrowing a cell) | exit 0 and stdout equals `expected.out` byte for byte — or, with `<target>.expect`, § the sidecars of a `run/` cell |
 | `modules/<name>/` with a `test/` tree and no `expected.out` | the `test/` kind over a whole project, run by `botopink test --target <t> --json` on commonJS and erlang; results are keyed `modules/<name>::<test>` | every test reports `ok` |
 | `expected-failures.txt` | the list of known failures | — |
 
@@ -137,10 +137,11 @@ parent binary: `run/task_await_in_if_block` (an `if` block that `await`s without
 `run/task_void_return_in_if_block` (a bare `return;` in an `if` block of a `@Task<void>` body — wasm
 emitted a `return` with nothing on the stack), `modules/dependency_files_order` (a dependency whose
 `files` lists every importer before what it imports, `from "a"` and a bare `import {Leaf};`),
-`run/external_erlang_host_module_missing` (`.targets` `erlang`: an `@External.Erlang` module that is
-neither shipped nor in the Erlang code path is a located build error, `.erlang.expect`),
-`modules/erlang_host_sidecar_shipped` (a project's `src/sidecars/*.erl` reached by `botopink run`;
-`commonJS.expect` / `wasm.expect`, beam listed), `modules/erlang_sidecar_named_like_a_module` (a
+`run/external_erlang_host_module_missing` (`.targets` `erlang beam`: an `@External.Erlang` module that is
+neither shipped nor in the Erlang code path is a located build error on both, `.erlang.expect` and
+`.beam.expect`),
+`modules/erlang_host_sidecar_shipped` (a project's `src/sidecars/*.erl` reached by `botopink run` on
+erlang and on beam; `commonJS.expect` / `wasm.expect`), `modules/erlang_sidecar_named_like_a_module` (a
 sidecar `text.erl` beside the module `text.bp` is shipped — the shipper skipped a basename match), `reject/bare_print_call` (`println(x)` is unbound
 and the refusal names `@println`), `run/float_record_field` (an `f64` record field read, compared,
 destructured by name and by constructor, and through a method taking and answering an `f64` — wasm
@@ -284,8 +285,9 @@ the whole of what the rule is for), `std_erlang_node` (decision 64),
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4),
 `external_host_record` (a host-backed `declare fn` whose return type names a record — the erlang
 templates deliberately build the pre-decision-21 `#{field => V}` map that an `.erl` sidecar in a
-consumer library still builds, and the boundary adopts it; `.targets` is `commonJS erlang` because
-neither wasm nor beam has a host vocabulary for these templates),
+consumer library still builds, and the boundary adopts it; `.targets` is `commonJS erlang beam`
+because wasm has no host vocabulary for these templates — beam compiles the erlang templates at build
+time and adopts the answer with its own `'__bp_adopt'/3`),
 `external_method_*` (host-backed METHODS — a `declare fn` with `#[@External.<Target>(…)]` inside a
 `type` body, lowered as a real method of the type: `run/external_method_local` — a record's template
 methods naming `$0` and `$1`/`$2`, one called from a bodied method on `self`, the `(module, symbol)`
@@ -293,7 +295,7 @@ form, `inline = true`, an enum's host method — on commonJS, erlang and beam, r
 `.wasm.expect`; `run/external_method_erlang_only` — bound to Erlang only, refused where it is CALLED on
 commonJS and wasm; `run/external_method_on_host_record` — a host method on a record the HOST built,
 adopted directly, through `@Result` and through an array, and a lambda-parameter receiver whose
-method shares `name/arity` with a module function (`.targets commonJS erlang`, as
+method shares `name/arity` with a module function (`.targets commonJS erlang beam`, as
 `external_host_record`'s); `modules/external_method_imported` — the method on an IMPORTED type,
 answered by its owner, with `wasm.expect`),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets),
@@ -461,11 +463,11 @@ Task eagerly, and inside one body the order is the same everywhere.
 | Return and effect mode | `test/effect_return_result`, `run/task_return_layers` (three layers), `run/effect_alias_passes_value`; `reject/effect_return_ambiguous_nesting`, `reject/effect_wrapper_behind_alias` |
 | `@Task` and failure | `run/task_await_no_try`, `run/task_await_result` (`await t` answers the `@Result`, `try await t`, `try await t catch x`), `run/task_throw_resolves_error` (`.targets commonJS`: the Promise resolves with `Error`, never rejects); `reject/task_throw_without_result`, `reject/task_try_await_without_result` |
 | Chain and `use` | `run/component_hook_and_component`, `run/component_result_try_await`; `reject/component_try_element`, `reject/await_under_result`, `reject/use_under_task`, `reject/component_two_bases`, `reject/use_of_component` |
-| `async { }` | `run/async_block_all_of` (`.targets commonJS erlang`: `std/async` is host-backed there only), `run/async_block_value_type`, `run/async_block_return`; `reject/async_block_use`, `reject/async_block_conflicting_errors` |
+| `async { }` | `run/async_block_all_of` (`.targets commonJS erlang beam`: `std/async` has no wasm host), `run/async_block_value_type`, `run/async_block_return`; `reject/async_block_use`, `reject/async_block_conflicting_errors` |
 | Iterators | `run/iterator_fibonacci`, `run/iterator_result_item`, `run/iterator_result_items` (step E4), `run/iterator_factory`, `test/yield_step_next` and `run/yield_step_next` (`.next()` by hand on an `@Iterator` and, awaited, on a `@Stream` — the `run/` half reaches beam and wasm, which a `test/` cell cannot, and steps a parameter inside a `while`); `reject/iterator_throw_without_result`, `reject/iter_await`, `reject/iter_mixed_yield_return`, `reject/iterator_error_param_removed` |
 | Streams | `run/stream_pages` (a simulated http failing mid-way), `run/stream_loop_no_failure`; `reject/for_await_without_task` |
 | Prefixed loops | `run/prefixed_loop_forms`, `run/prefixed_loop_result_item`, `run/prefixed_loop_break_value`, `run/prefixed_loop_nearest_scope`, `test/contextual_words`; `reject/prefixed_loop_break_outer` |
-| Host (decision 126) | `run/host_node_task_result` (`.targets commonJS`), `run/host_erlang_task_result` (`.targets erlang`) |
+| Host (decision 126) | `run/host_node_task_result` (`.targets commonJS`), `run/host_erlang_task_result` (`.targets erlang beam`) |
 | The E3.9 hint (a `@Result` used as its `U`, one hint per source) | `reject/result_hint_await` (`try await t`), `reject/result_hint_for_item` (`try r`), `reject/result_hint_inferred_async` (the `await` hint plus the `try` that made the block's value a `@Result`) and `reject/result_hint_inferred_iter` (the `for`-item hint plus the `throw` that made the `iter` items `@Result`s); the two `for` cells carry no location line — the mismatch is reported at the file |
 | Migration (decision 127, guide § 9's "Old names that left") | `effect-annotation-removed`: `reject/effect_annotation_removed_{result,future,use,generator,result_generator,future_generator}`, the three loop forms `…_{generator,result_generator,future_generator}_loop`, and the older `…_{context,iterator,async_generator}`; `effect-type-removed`: `reject/effect_type_removed_{future,future_no_error,use,generator,result_generator,future_generator}` and the older `…_{async_iterator,iterable,iterator_step,yield}`; the arity refusals `reject/component_one_type_argument` (`@Component<T>`), `reject/context_two_type_arguments` (`@Context<B, R>`), `reject/yield_step_error_param` (`YieldStep<T, E>`); and the existing refusals `reject/loop_condition_parenthesised`, `reject/loop_await_removed`, `reject/component_plain_return` |
 
@@ -608,7 +610,7 @@ emitted `string_slice/3`, which is why the defect needs a std module to say anyt
 
 | Cell | Pins |
 |---|---|
-| `run/std_default_fn_in_a_std_module.bp` | the VALUE, through four std modules and both interfaces. `botopink run --target erlang` compiles the whole output directory with `erlc` up front, so a dead std module is a hard error on this path. `.targets` is `commonJS erlang`: wasm inlines the std modules into the entry and prints heap addresses for `url.parse(…).host` and the queue's values, a wasm gap of its own |
+| `run/std_default_fn_in_a_std_module.bp` | the VALUE, through four std modules and both interfaces. `botopink run --target erlang` compiles the whole output directory with `erlc` up front, so a dead std module is a hard error on this path. `.targets` is `commonJS erlang beam`: wasm refuses the program — `std/encoding.percentEncode`, which `querystring` reaches, has no wasm binding |
 | `test/std_default_fn_in_a_std_module.bp` | the `botopink test` path, which does NOT run `erlc` over the output: the entry runs under `escript` and its emitted runner loads its own siblings. Its imports are namespace-only on purpose (`querystring`, `path` — no imported fn, no imported type), because the sibling loader was emitted for `imported_fns` / `imported_types` / a type module only and `from "std"` fills none of them |
 
 Both halves were invisible rather than red, and in different ways. The lowering half was invisible
@@ -640,78 +642,117 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 |---|---|---|
 | `<name>.exit` holding `nonzero` | the program **aborts** after printing `.out` (`@panic`, `@todo`, a failed index under decision 63) | stdout equals `.out` **and** the status is not 0. The number is never pinned: node 1, erl 1, wasmtime 134 are the runtimes' (§ Never pin an erlang exit status) |
 | `<name>.<target>.expect` | on that target the compiler **refuses** the program — `reject/`'s shape, per target | exit ≠ 0 and the diagnostic contains line 1 (and ` --> src/main.bp:<L:C>` when line 2 is present). `run/external_erlang_only.{commonJS,wasm}.expect` and `run/std_erlang_node.{commonJS,wasm}.expect` are the live ones |
-| `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
+| `<name>.targets` | the cell is scheduled only on these targets, **because every other target refuses it on a host binding** | the cell passes on each target it names, and `botopink build --target <t>` refuses it on a host binding on each target it leaves out — § Narrowing a cell |
 | `modules/<name>/<target>.expect` | the `.<target>.expect` claim for a whole project: that target **refuses** it | exit ≠ 0 and the diagnostic contains line 1 (and ` --> <line 2>` when present — `src/<file>.bp:<L:C>`, the file named because a project has several). `modules/external_method_imported/wasm.expect` is the live one |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **Fifteen cells carry
-`.targets`** (`async_block_all_of`, `beam_memory_ets`, `beam_memory_persistent_term`, `beam_memory_process_dict`, `behavior_method_host_value`, `external_erlang_host_module_missing`, `external_host_record`, `external_method_on_host_record`, `external_template_refused_on_beam`, `host_array_slice_without_start`, `host_erlang_task_result`, `host_node_task_result`, `std_default_fn_in_a_std_module`, `std_template_host_fns_across_modules` and `task_throw_resolves_error`). `run/string_char_code_after_slice.bp`
-named `commonJS erlang` until wasm and beam lowered `String.charCodeAt`, and the three behavior
-cells (`behavior_array_of_implementers`, `behavior_method_by_receiver_type`,
-`behavior_value_from_implementer`) kept wasm out until a method called through a behavior-typed
-value dispatched there; all four run on every target now. Before it
-the only one was `run/external_erlang_only.bp`, which kept wasm out because wasm did
-not refuse a host-backed `declare fn` with no wasm host — `wat.zig`'s `lowerPlainCall` lowered it to
-`unreachable` on purpose ("so the module still loads") and the program trapped at run time where
-commonJS, erlang and beam answered at compile time. That divergence was reported here for want of an
-owner row; it was closed on `fix/wasm-refusals` under decision 67 (a located refusal, no flag), so
-the sidecar is gone, `external_erlang_only.wasm.expect` carries wasm's half of the diagnostic and
-the cell runs on all four targets.
+Any other content in `.exit` is a malformed claim and fails the cell. The cells that carry
+`.targets`, and what each excluded target lacks, are listed in § Narrowing a cell.
 
 ## The targets
 
-Measured at `c2dd780`, OTP 29, node v25.8.0.
+Measured at front `111-gate-beam-and-targets` of 1.0.11-beta (`specs/1.0.11-beta/00-gate/` in the
+meta workspace), OTP 28, node v25.
 
 | Target | `botopink test` | `botopink run` | In the suite |
 |---|---|---|---|
 | commonJS | yes | yes | every kind |
 | erlang | yes | yes | every kind |
 | wasm | refused — "supports only the commonJS and erlang targets" | yes, it executes | `run/` and `modules/` only |
-| beam | refused — the same message | writes `out/*.S` and stops — BEAM Assembly is an artifact, not a run | `run/` and `modules/`, via `--target beam`; **not in `--target all` yet** |
+| beam | refused — the same message | yes: it builds `out/beam/*.S`, assembles each beside itself (`erlc +from_asm -o out/beam`) and runs the entry with `erl -pa out/beam` | `run/` and `modules/` only |
 
-The `run/` sidecars (§ above) apply on every target the cell reaches, beam included: `run.sh`'s beam
-path returns the assembled program's status, so an `.exit` claim is checked there too
+`--target all` is the four of them. A machine without `erlc` or `erl` fails the run before any cell
+starts (`run.sh: the beam target needs erlc`); it never runs three targets and reports "all"
+(decision 67).
+
+The `run/` sidecars (§ above) apply on every target the cell reaches, beam included: `botopink run`
+returns the assembled program's status, so an `.exit` claim is checked there too
 (`run/panic_aborts.bp` and `run/todo_aborts.bp` pass on beam — the second for a different reason,
 § Notes).
 
-`test/` cells therefore run on commonJS and erlang; `run/` and `modules/` cells run on those two and
-on wasm, and on beam when asked for; `reject/` runs once (target `*`, `botopink check` is
-target-independent).
-
-**beam executes, in two more commands** — decision 8 of `specs/1.0.5-beta/decisions-taken.md`,
-re-measured here:
-
-```bash
-$ botopink run --target beam
-wrote out/beam/language_tests@main.S — BEAM Assembly is an artifact; compile with `erlc +from_asm …` …
-$ find out -name '*.S' | while read s; do erlc +from_asm -o out "$s"; done
-$ erl -noshell -pa out -eval 'language_tests@main:main(), halt().'
-hi
-```
+`test/` cells therefore run on commonJS and erlang; `run/` and `modules/` cells run on all four;
+`reject/` runs once (target `*`, `botopink check` is target-independent).
 
 Every cell's `botopink.json` is named `language_tests`, and an erlang/BEAM module atom starts with
 its package (decision 109 of 1.0.10-beta): the entry is `language_tests@main`, and a host template
 that builds a record's tag spells it `'language_tests@main@@Point'` (`run/external_host_record.bp`).
 
-`run.sh`'s `exec_run` is exactly that path (see its `§ beam` comment). Every `.S` is assembled, not
-only `out/*.S`: a `mod` tree and a `from "std"` import emit nested directories today
-(`out/shapes/circle.S`, `out/std/…`), and a module left unassembled is an `undef` at run time rather
-than a compile error — `modules/mod_tree` passes only because of it. `erlc` and `erl` are already
-gate dependencies (every erlang cell; stage 5 `scripts/beam_export_audit.sh`), so beam costs the gate
-no new tool.
+**A beam program's host modules.** `botopink build --target beam` ships the `.erl` of every
+`#[@External.Erlang("<host>", …)]` a package keeps under `src/sidecars/` (or `src/`) into `out/beam/`,
+beside the `.S` files — the files the erlang build ships into `out/erl/` — and a host module that is
+neither shipped nor on the Erlang code path is the same located refusal on both
+(`run/external_erlang_host_module_missing.{erlang,beam}.expect`). Nothing assembles an `.erl`: the
+entry's `'__bp_load_siblings'/0` compiles and loads every `.erl` beside its own `.beam` before the
+module body runs, so the built program runs wherever `out/beam/` is put on the code path, with no
+runner in between. `modules/erlang_host_sidecar_shipped` and
+`modules/erlang_sidecar_named_like_a_module` pin it (`hello, sidecar`, `HELLO, SIDECAR`).
 
-beam is **not** in `--target all`, and that is scheduling rather than doubt: front 13's policy 3
-changes how many `.S` files a program emits and where they live, so a default-on runner would be
-written against a layout that is about to move. Flipping it on is one line of `run.sh`
-(`all) targets=(commonJS erlang wasm beam)`) plus a re-run of the beam cells; it belongs to 13's
-closing step. The beam rows of `expected-failures.txt` already exist and
-`tests/language/run.sh --target beam` is green. Re-measured at `b09bf9c6`: **42 results, 19 passed,
-23 expected failures, 0 failed** — 18 of them `run/` and `modules/` results (7 passing:
-`run/smoke.bp`, `run/tuple_print.bp`, `run/print_nested.bp`, the since-deleted
-`run/loop_yield_and_break.bp` and all three `modules/` cells) and 24 `reject/` results, which run once under `targets[0]` and are counted
-by both runs. Recounted from the file: the 11 beam lines are owned by `03 step 3` (5), `03 step 2` (3),
-`01 step 4` (2) and `03 handover 15` (1) — **no step 4 of `03-beam`, and three of them, not four,
-name `13 step 18`** as a second row, because a record and a variant cannot print their names before a
-value carries one.
+### Narrowing a cell
+
+A cell runs on every target its kind has — unless it narrows itself: `run/<name>.targets`
+(space-separated), or `"targets"` in a `modules/<name>/botopink.json`. A narrowing is a claim about
+the compiler, and `run.sh` checks it on every run (gate-d of `specs/1.0.11-beta/00-gate`): for each
+target of the run the cell leaves out, `botopink build --target <t>` in the cell must **refuse** the
+program on a host binding —
+
+```
+`f` has no `#[@External.<Target>(…)]` for the <t> backend
+std-unsupported-on-target: std/<m> has no `@external` for target '<t>'
+```
+
+— the one reason a program structurally has no row on a target. A target the build accepts, or
+refuses for another reason, fails the run and names the cell: the narrowing was hiding a gap of that
+backend, and a gap is a row of the backend's front, never a line in a `.targets` file. So does a
+narrowing that names an unknown target, a target its kind does not have, the same target twice, or
+every target of its kind (it narrows nothing — delete it). No flag, list or environment variable
+turns the audit off (decision 67).
+
+One host binding the compiler does not refuse: a module `var` under `#[@BeamMemory.<mode>]` binds
+BEAM storage, and decision 43 makes the annotation a silent no-op off the BEAM. A cell that declares
+one may leave out commonJS and wasm on its own source's evidence — never erlang or beam.
+`run/beam_memory_process_dict` is the one cell that does: its `.out` is the BEAM's by construction
+(one value per process), and `test/beam_memory_noop` pins the no-op.
+
+A target on which the cell must be refused for a reason that *is the cell's claim* is not narrowed
+away — it is pinned with `<name>.<t>.expect` (`modules/<name>/<t>.expect`), which runs the cell
+there and compares the diagnostic.
+
+The narrowed cells, and what each excluded target lacks (re-derived by the runner on every run; the
+refusal lines are in the front's README):
+
+| Cell | Runs on | Excluded — the binding it lacks |
+|---|---|---|
+| `run/async_block_all_of` | commonJS erlang beam | wasm — `std/async` |
+| `run/beam_memory_ets`, `run/beam_memory_persistent_term` | commonJS erlang beam | wasm — `std/async` |
+| `run/beam_memory_process_dict` | erlang beam | wasm — `std/async`; commonJS — `#[@BeamMemory.ProcessDict]` (decision 43) |
+| `run/behavior_method_host_value` | commonJS erlang beam | wasm — `makeGreeter` |
+| `run/external_erlang_host_module_missing` | erlang beam (each by `.expect`) | commonJS, wasm — `total` |
+| `run/external_host_record` | commonJS erlang beam | wasm — `hostPoint` |
+| `run/external_method_on_host_record` | commonJS erlang beam | wasm — `Pair.at` |
+| `run/external_template_escaped_quote` | commonJS erlang beam | wasm — `say` |
+| `run/external_template_refused_on_beam` | erlang beam | commonJS, wasm — `moduleNamed` |
+| `run/host_array_slice_without_start` | commonJS | erlang, wasm, beam — `copyAll` |
+| `run/host_erlang_task_result` | erlang beam | commonJS, wasm — `hostDouble` |
+| `run/host_node_task_result` | commonJS | erlang, wasm, beam — `hostDouble` |
+| `run/host_unknown_parameter` | erlang beam | commonJS, wasm — `std/erlang.element` |
+| `run/std_default_fn_in_a_std_module` | commonJS erlang beam | wasm — `std/encoding.percentEncode` |
+| `run/std_template_host_fns_across_modules` | commonJS erlang beam | wasm — `std/io/fs.exists` |
+| `run/task_throw_resolves_error` | commonJS | erlang, wasm, beam — `observe` |
+| `modules/manifest_targets_host_binding` | erlang beam (`"targets"`) | commonJS, wasm — `magnitude` |
+
+Thirty exclusions; the run prints `narrowings: 30 exclusions audited — each stands on a host binding
+the target does not have`. No other `modules/` manifest carries `"targets"`: the field used to be
+boilerplate (`["commonJS", "erlang", "wasm"]` in 33 cells, `["commonJS", "erlang"]` in 14) that the
+runner ignored — honoured as written it would have taken beam away from 33 passing cells — and a
+project that must be refused on a target says so with `<t>.expect`.
+
+**The runner proves its own audit.** `tests/language/run.sh --self-test` runs a synthetic suite
+through the same script (`--suite <dir>`): three narrowings that stand on a host binding, which must
+be scheduled on their declared targets alone, and one of each way a narrowing is refused — a target
+the build accepts, a refusal that is not a host binding, `#[@BeamMemory]` used to leave beam out, a
+list that narrows nothing, an unknown target, a manifest `"targets"` the build accepts, a test-kind
+project naming wasm. Its report must hold each refusal's line and the tally
+`13 passed, 0 expected failures, 11 failed`. A whole run of the suite (no `--only`) starts with it
+and stops there if it fails — a green run from a runner that no longer refuses says nothing.
 
 ## Running
 
@@ -720,7 +761,8 @@ zig build test-language                                   # the installed botopi
 zig build test-language -- --target erlang
 tests/language/run.sh --compiler <botopink> --only test/case_arms.bp
 tests/language/run.sh --compiler <botopink> --only modules/two_modules
-tests/language/run.sh --target beam                       # opt-in; needs erlc + erl
+tests/language/run.sh --target beam                       # one target; `all` includes it
+tests/language/run.sh --self-test                         # § Narrowing a cell — the runner's own audit
 ```
 
 `--lib-root` defaults to `<compiler>/../../libs` (where `from "std"` resolves).
@@ -738,8 +780,8 @@ cell writes its verdict to its own file and the verdicts are sorted before the r
 <target: commonJS | erlang | wasm | beam | *> | <key> | <owner row> | <reason>
 ```
 
-A line whose target is not in the current run is skipped, not failed — which is what lets the beam
-rows sit in the file while beam stays out of `--target all`.
+A line whose target is not in the current run is skipped, not failed (`--target erlang` does not
+judge a wasm line). `--target all` runs the four targets, so it exercises every line.
 
 **The tally is the runner's, not the header's** — decision 59 (b), landed by C-16 on 2026-09-20.
 Every run prints, before the results, one line recounted from the file:
@@ -824,6 +866,39 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
   path that is not a `test/` cell (only a `test/` cell has tests).
 
 ## Status and the gate
+
+**Front `111-gate-beam-and-targets` of 1.0.11-beta — the suite on four targets.** `--target all`
+is commonJS, erlang, wasm and beam; every narrowing is audited (§ Narrowing a cell); the two
+`beam |` lines of `expected-failures.txt` are gone (the beam build ships and loads a host `.erl`),
+and the one line left is wasm's, waiting on decisions-pending `ck-host`:
+
+```
+$ tests/language/run.sh --target all
+self-test: 8 malformed or unbacked narrowings refused, 3 backed ones scheduled on their declared targets alone
+expected-failures.txt: 1 lines, 1 exercised by --target commonJS,erlang,wasm,beam — by target: wasm 1; by first owner row: 05-wasm 1; 0 name tests rather than a path; 0 name a second row
+expected [wasm] run/external_wrapper_keeps_refusal.bp — 05-wasm: …
+narrowings: 30 exclusions audited — each stands on a host binding the target does not have
+language tests: 1474 passed, 1 expected failures, 0 failed
+
+$ tests/language/run.sh --target beam
+narrowings: 3 exclusions audited — each stands on a host binding the target does not have
+language tests: 393 passed, 0 expected failures, 0 failed
+```
+
+Recounted on disk: `ls test/*.bp | wc -l` 64 · `ls run/*.bp | wc -l` 167 (17 with a `.targets`,
+21 `.<target>.expect` files) · `ls reject/*.bp | wc -l` 173 · `ls -d modules/*/ | wc -l` 60 (24
+`<target>.expect` files, one `"targets"`). The 1474: the 1251 the three targets passed before, the
+220 `run/` and `modules/` results of beam (393 less the 173 `reject/` results, which run once),
+`run/beam_memory_ets` and `run/beam_memory_persistent_term` on commonJS, and
+`modules/manifest_targets_host_binding` on erlang. Beam's own +10 over the 383 it passed before:
+the two sidecar cells and `run/array_spread_literal` (it dropped a named trailing spread),
+`run/external_host_record` and `run/external_method_on_host_record` (a host answer is adopted into
+its record; an untyped receiver reaches its type's method), `run/async_block_all_of`,
+`run/host_erlang_task_result`, `run/std_default_fn_in_a_std_module` and
+`run/external_erlang_host_module_missing` (narrowed away from beam with no host reason), and the
+new `modules/` cell.
+
+The blocks below are the record of earlier fronts, each measured at the commit it names.
 
 **Front 00 · 03-beam (branch `front/03-beam`, on `feat` `0beaa1f9`) — `--target beam` only.**
 Each step that deletes a beam line re-quotes this run; no commonJS/erlang/wasm line moves:
@@ -1311,18 +1386,19 @@ delete its line" — the landing commit of that front deletes the line.
 
 Shapes that do not parse — **re-measured at `aab5489`** with `botopink check`, after front 15
 (`specs/1.0.5-beta/15-language-surface/README.md`) landed (`109f6c9`). Five of the seven rows this
-table carried are gone: they parse. What is left is two rows and one correction.
+table carried are gone: they parse, and so does the sixth since C-13. What is left is one row and one
+correction.
 
 | Shape | At `aab5489` | Decision |
 |---|---|---|
 | a module-level `var` | parses since front 17 (`8146d2b6`): `var` and `pub var`, with or without a `#[@BeamMemory.<member>]` above it; a `val` assigned anywhere is a located error naming `var` (decision 38) | **landed.** `run/module_var` and `test/beam_memory_noop` pin it; what is still absent is the erlang/beam lowering (C-10), which is why both carry an erlang line and the first a beam line |
-| a block-shaped statement not last in its block | `error: this token cannot appear here` at the statement **after** it — in any block, not only a decorator body: `if (1 > 0) { … }` then `@print("b");` reds at the `@print`. With a `;` after the `}` it checks | **decision 29** — the `;` goes. Front 15 wrote the 76-line parser half and deliberately did not commit it: rejecting the trailing `;` rejects `libs/std`'s embedded prelude, so no single front can land it green. 44 sites in this suite, counted by front 15 |
 
 **Struck, because they now parse.** Each was measured at `aab5489`:
 
 | Shape | Was listed as | Now |
 |---|---|---|
 | §5.1 `Pattern { body }` arms, and §5.3b section arms | `06 N22` | parse; `test/case_sections.bp` fails in inference like every other `case` cell (`expected string, got void`), not at the `{` |
+| a block-shaped statement not last in its block (`if (1 > 0) { … }` then `@print("b");`) | "decision 29 — the `;` goes", `error: this token cannot appear here` at the next statement | **parses and runs** since C-13 made the `;` after a braced block optional: the program prints both lines on commonJS (re-measured by front 111 of 1.0.11-beta) |
 | `adder(3)(4)` — calling the result of a call | "make it parse" (14) | **parses** (15's R2) and **checks** (01 handover 15: inference types the `calleeExpr` and applies it). No backend reads `calleeExpr` yet — commonJS emits `(4)`, erlang `''(4)` — so `test/curried_call.bp` carries two `C-09 (backend half)` lines |
 | `#(a: i32, b: string)[]` — an array of labeled tuples | "make it parse" (14) | **parses, checks and runs on all four targets** (15's R1), with `@Result<i32, string>[]` and `(i32 \| string)[]`. `test/type_suffix.bp` |
 | `??` | "deliberately absent (14) — it duplicates `catch` and `?.`" | **parses and runs on all four targets** (15's R8, decision 28). The premise was false as well as the verdict: `catch` is `@Result`-only — `val b = a catch 0;` on an `a: ?i32` reds with `` `try` requires a @Result<D, E> value, found 'optional' `` — so nothing else gives an optional a default. `test/nullish_default.bp` |

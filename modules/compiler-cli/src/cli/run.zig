@@ -55,24 +55,15 @@ pub fn run(
     const packages: bp.codegen.crossModule.Packages = .{ .root = proj.name };
     const entry_path = try build_cmd.artifactPath(arena, opts.out_dir, target, packages, opts.module, build_cmd.artifactExt(target));
 
-    // BEAM assembly is an artifact — direct execution requires `erlc +from_asm`
-    // followed by an `erl` invocation. Tooling integration arrives in Fase 9.
-    if (target == .beam) {
-        const msg = try std.fmt.allocPrint(
-            arena,
-            "wrote {s} — BEAM Assembly is an artifact; compile with `erlc +from_asm {s}` to produce a `.beam`.\n",
-            .{ entry_path, entry_path },
-        );
-        reporter.stdout(io, msg);
-        return 0;
-    }
-
-    // erlang needs three steps, not one: `escript <file>` compiles ONLY the file
-    // it is handed, so every cross-module call in a multi-module program is an
-    // `undef` at run time even when the emitted code is correct. Compile the
-    // whole output directory with `erlc` and run it on a code path that can see
-    // all of it — the shape `tests/language/run.sh` already uses for beam.
-    if (target == .erlang) return runErlang(arena, io, opts, try bp.codegen.crossModule.erlAtom(arena, packages.idOf(opts.module)));
+    // erlang and BEAM need two steps, not one. `escript <file>` compiles ONLY
+    // the file it is handed, so every cross-module call in a multi-module
+    // program is an `undef` at run time even when the emitted code is correct;
+    // BEAM assembly is not runnable until `erlc +from_asm` has assembled it.
+    // Compile the whole output directory and run it on a code path that can
+    // see all of it.
+    const entry_atom = try bp.codegen.crossModule.erlAtom(arena, packages.idOf(opts.module));
+    if (target == .erlang) return runErlang(arena, io, opts, entry_atom);
+    if (target == .beam) return runBeam(arena, io, opts, entry_atom);
 
     // Build argv.
     const runner: []const u8 = switch (target) {
@@ -147,6 +138,47 @@ fn runErlang(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []
     }
 
     const eval = try std.fmt.allocPrint(arena, "{s}:main([]), halt().", .{entry_atom});
+    return spawnWait(arena, io, &.{ "erl", "-noshell", "-pa", dir, "-eval", eval });
+}
+
+// ── the BEAM runner ───────────────────────────────────────────────────────────
+
+/// `botopink run --target beam`: assemble every emitted `.S` beside itself
+/// (`erlc +from_asm -o <out>/beam`), then run the entry module's `main/1` with
+/// `erl` on that directory.
+///
+/// The `.beam`s go where the `.S` files are, not one level up, because that is
+/// the directory the build ships a host `.erl` into (`libs.shipErlSidecars`)
+/// and the one the entry's `'__bp_load_siblings'/0` reads: it compiles and
+/// loads every `.erl` beside the module it runs in. Nothing here compiles a
+/// sidecar — the assembled program does, so it runs the same way outside this
+/// command.
+///
+/// `main([])` for the reason `runErlang` gives; on BEAM `main/1` is
+/// `'_botopink_main'/0`, which runs the module body and then `main/0`.
+fn runBeam(arena: std.mem.Allocator, io: std.Io, opts: Options, entry_atom: []const u8) !u8 {
+    const dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ opts.out_dir, std.mem.trimEnd(u8, build_cmd.targetSubdir(.beam), "/") });
+
+    // Every module, not just the entry: one left unassembled is an `undef` at
+    // run time rather than an assembler error.
+    var asms: std.ArrayListUnmanaged([]const u8) = .empty;
+    try collectByExt(arena, io, dir, ".S", &asms);
+    if (asms.items.len == 0) {
+        reporter.errMsg(try std.fmt.allocPrint(arena, "no .S artifact under {s}/ — nothing to run", .{dir}));
+        return 1;
+    }
+    {
+        var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+        try argv.append(arena, "erlc");
+        try argv.append(arena, "+from_asm");
+        try argv.append(arena, "-o");
+        try argv.append(arena, dir);
+        for (asms.items) |f| try argv.append(arena, f);
+        const code = try spawnWait(arena, io, argv.items);
+        if (code != 0) return code;
+    }
+
+    const eval = try std.fmt.allocPrint(arena, "'{s}':main([]), halt().", .{entry_atom});
     return spawnWait(arena, io, &.{ "erl", "-noshell", "-pa", dir, "-eval", eval });
 }
 
