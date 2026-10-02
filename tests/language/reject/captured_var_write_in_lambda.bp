@@ -1,0 +1,17 @@
+//// Decision 148 (lg-b) — a lambda that is neither a `forEach` body nor a
+//// local closure called at statement position may not write a `var` it
+//// captures: on the BEAM a closure gets a copy of what it captures, so the
+//// write would be lost. Refused at the write, on every target.
+
+fn run(f: fn() -> i32, x: i32) -> i32 {
+    return f() + x;
+}
+
+pub fn main() {
+    var n = 0;
+    val r = run({ ->
+        n = n + 1;
+        1;
+    }, 0);
+    @print(n);
+}

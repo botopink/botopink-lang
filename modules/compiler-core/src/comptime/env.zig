@@ -904,6 +904,24 @@ pub const Env = struct {
     /// fallible channel is its EXPECTED return's: the refusal of a `try` /
     /// `throw` there names the expected `fn(…) -> @Result<U, E>` form.
     inLambdaBody: bool = false,
+    /// Decision 148 (lg-b) — how many lambda bodies enclose the expression
+    /// being inferred (a `case` arm's block is not one), and, for each local
+    /// a body bound, the depth it was bound at with the type it was bound to
+    /// (a module-level binding is never noted). A write to a name bound at a
+    /// shallower depth is a write to a captured `var`.
+    lambdaDepth: u32 = 0,
+    localDepth: std.StringHashMapUnmanaged(LocalDepth) = .empty,
+    /// The lambda body being inferred may write captured `var`s: a `forEach`
+    /// body, or a local closure called only at statement position.
+    captureWriteOk: bool = true,
+    /// Set by the site that infers the next lambda when that lambda is one of
+    /// the two exempt shapes; consumed by `inferFunctionExprExpected`.
+    nextLambdaExempt: bool = false,
+    /// The `val f = { … }` names of the block being inferred whose every later
+    /// use is a call at statement position (`f();`).
+    statementClosures: std.StringHashMapUnmanaged(void) = .empty,
+    /// An assignment's re-bind (narrowing restore) does not move a depth.
+    suppressDepthNote: bool = false,
     /// A std module's `pub` type a namespace import did NOT register because
     /// `explicitTypeNames` holds its name → the std module key. A call into
     /// that namespace whose signature names the type is refused
@@ -1320,6 +1338,23 @@ pub const Env = struct {
         try self.noteBind(name);
         try self.bindings.put(name, ty);
         _ = self.valNames.remove(name);
+        try self.noteLocalDepth(name, ty);
+    }
+
+    pub const LocalDepth = struct { depth: u32, ty: *T.Type };
+
+    fn noteLocalDepth(self: *Env, name: []const u8, ty: *T.Type) !void {
+        if (self.bodyScope == null or self.suppressDepthNote) return;
+        try self.localDepth.put(self.arena, name, .{ .depth = self.lambdaDepth, .ty = ty });
+    }
+
+    /// The lambda depth `name`'s current binding was made at, when it is a
+    /// local of a body (null for a module-level binding or an unknown name).
+    pub fn localBindDepth(self: *Env, name: []const u8) ?u32 {
+        const ld = self.localDepth.get(name) orelse return null;
+        const cur = self.bindings.get(name) orelse return null;
+        if (cur != ld.ty) return null;
+        return ld.depth;
     }
 
     /// 01 step 13 — one entry of a body's undo log: what `name` was bound to
@@ -1379,6 +1414,7 @@ pub const Env = struct {
         try self.noteBind(name);
         try self.bindings.put(name, ty);
         try self.valNames.put(name, {});
+        try self.noteLocalDepth(name, ty);
     }
 
     /// Was `name`'s most recent binder a `val`?

@@ -1270,6 +1270,21 @@ lambda for this: it keeps the enclosing channel, so its `throw` is the function'
 lowers the arm's throw as a raw `throw`, its backend's row). Cells: `reject/try_in_lambda_without_result`,
 `run/lambda_result_return_try`.
 
+## A lambda writes a captured `var` only in two shapes (decision 148, lg-b)
+
+`Env.lambdaDepth` counts the lambda bodies around the expression (a `case` arm's block is not one),
+and `Env.localDepth` records, for every local a body binds (`bind` / `bindVal` with a body scope
+open), the depth and the type it was bound to — so a module-level binding, or a name whose current
+binding is another one, is never matched. An assignment to a local bound at a shallower depth is
+`captured-var-write` at the write (`refuseCapturedVarWrite`, on every target: on the BEAM a closure
+gets a copy of what it captures), unless the lambda is one of the two shapes the site that infers it
+marks through `Env.nextLambdaExempt` → `Env.captureWriteOk`: a `forEach` body (an array receiver,
+or one whose type is still open) and a local closure (`val f = { … }`) whose every later use in its
+block is a call at statement position, also inside an `if`, a loop or a `forEach` body
+(`noteStatementClosures`, `onlyStatementCalls`, `usesName` — `ast.exprMentions` counts any lambda as
+a use). A counter shared across calls is a module-level `var`
+(`reject/captured_var_write_in_lambda`, `run/closure_capture_statement_position`).
+
 ## A record value is not callable (`language-gaps.md` row 32)
 
 A plain call `g(…)` whose callee is a binding of a **record, enum or primitive** type — a value,

@@ -4106,6 +4106,155 @@ fn instantiateGenericType(env: *Env, ty: *T.Type) InferError!*T.Type {
 /// Decision 38 — a `val` is **immutable**, local or module-level. `val x = 0;
 /// x = 1;` checked and then threw on node (`const`) and ran on the other three
 /// targets; the rule moves to compile time, and the error names `var`.
+/// Decision 148 (lg-b) — a write to a captured `var` (a local of an
+/// enclosing body, bound outside the lambda being inferred) from a lambda
+/// that is neither a `forEach` body nor a local closure called only at
+/// statement position is refused at the write, on every target: on the BEAM
+/// a closure gets a COPY of what it captures, so the write is lost, while
+/// commonJS writes the shared cell. A counter shared across calls is a
+/// module-level `var` with its `#[@BeamMemory]` mode.
+fn refuseCapturedVarWrite(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
+    if (env.lambdaDepth == 0 or env.captureWriteOk) return;
+    const d = env.localBindDepth(name) orelse return;
+    if (d >= env.lambdaDepth) return;
+    const msg = try std.fmt.allocPrint(env.arena, "{s}: `{s}` is a `var` of the enclosing body, and this lambda writes it — a lambda gets a copy of what it captures on the BEAM, so the write would not reach `{s}`", .{ diagnostics.captured_var_write, name, name });
+    env.lastError = TypeError.custom(msg, "Write it in a `forEach` body or a local closure called as a statement (`val bump = { -> n = n + 1; }; bump();`), return the new value from the lambda, or keep a counter shared across calls in a module-level `var` with its `#[@BeamMemory]` mode.").withLoc(loc);
+    return error.TypeError;
+}
+
+/// Whether `e` reads or calls the bare name `name` anywhere, a lambda body
+/// included (`ast.exprMentions` answers true for any lambda, which would make
+/// every closure passed to a call a use).
+fn usesName(e: ast.Expr, name: []const u8) bool {
+    return switch (e) {
+        .function => |f| stmtsUseName(f.kind.body, name),
+        .call => |c| switch (c.kind) {
+            .call => |cc| blk: {
+                if (cc.receiver) |r| if (usesName(r.*, name)) break :blk true;
+                if (cc.receiver == null and !cc.is_builtin and std.mem.eql(u8, cc.callee, name)) break :blk true;
+                if (cc.calleeExpr) |ce| if (usesName(ce.*, name)) break :blk true;
+                for (cc.args) |a| if (usesName(a.value.*, name)) break :blk true;
+                for (cc.trailing) |t| if (stmtsUseName(t.body, name)) break :blk true;
+                break :blk false;
+            },
+            .pipeline => |p| usesName(p.lhs.*, name) or usesName(p.rhs.*, name),
+        },
+        .jump => |j| switch (j.kind) {
+            .@"return", .throw_, .try_ => |v| if (v) |x| usesName(x.*, name) else false,
+            .await_ => |x| usesName(x.*, name),
+            .@"break" => |b| if (b.value) |x| usesName(x.*, name) else false,
+            .yield => |y| if (y.value) |x| usesName(x.*, name) else false,
+            .@"continue" => false,
+        },
+        .loop => |lp| usesName(lp.iter.*, name) or stmtsUseName(lp.body, name),
+        .branch => |b| switch (b.kind) {
+            .if_ => |i| usesName(i.cond.*, name) or stmtsUseName(i.then_, name) or
+                (if (i.else_) |els| stmtsUseName(els, name) else false),
+            .tryCatch => |tc| usesName(tc.expr.*, name) or usesName(tc.handler.*, name),
+        },
+        .binding => |b| switch (b.kind) {
+            .localBind => |lb| usesName(lb.value.*, name),
+            .localBindDestruct => |lb| usesName(lb.value.*, name),
+            .assign => |a| usesName(a.value.*, name) or switch (a.target) {
+                .name => |n| std.mem.eql(u8, n, name),
+                .fieldAccess => |fa| usesName(fa.receiver.*, name),
+            },
+        },
+        .collection => |c| switch (c.kind) {
+            .case => |cs| blk: {
+                for (cs.subjects) |x| if (usesName(x, name)) break :blk true;
+                for (cs.arms) |arm| {
+                    if (usesName(arm.body, name)) break :blk true;
+                    if (arm.guard) |g| if (usesName(g, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            .arrayLit => |al| blk: {
+                for (al.elems) |x| if (usesName(x, name)) break :blk true;
+                if (al.spread) |sp| if (std.mem.eql(u8, sp, name)) break :blk true;
+                if (al.spreadExpr) |se| if (usesName(se.*, name)) break :blk true;
+                break :blk false;
+            },
+            .tupleLit => |tl| blk: {
+                for (tl.elems) |x| if (usesName(x, name)) break :blk true;
+                break :blk false;
+            },
+            .range => |r| usesName(r.start.*, name) or (if (r.end) |x| usesName(x.*, name) else false),
+            .grouped => |g| usesName(g.*, name),
+            else => true,
+        },
+        .useHook => |u| usesName(u.kind.inner.*, name),
+        else => ast.exprMentions(e, name),
+    };
+}
+
+/// Every use of `name` in `stmts` is a call at statement position (`f(…);`,
+/// its arguments not naming `f`) — in these statements or in the blocks of an
+/// `if`, a loop or a `case` arm among them.
+fn onlyStatementCalls(stmts: []const ast.Stmt, name: []const u8) bool {
+    for (stmts) |st| if (!stmtOnlyCalls(st.expr, name)) return false;
+    return true;
+}
+
+fn stmtOnlyCalls(e: ast.Expr, name: []const u8) bool {
+    switch (e) {
+        .call => |c| if (c.kind == .call) {
+            const cc = c.kind.call;
+            if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin and std.mem.eql(u8, cc.callee, name)) {
+                for (cc.args) |a| if (usesName(a.value.*, name)) return false;
+                return cc.trailing.len == 0;
+            }
+            // `xs.forEach({ x -> f(x); })` — a `forEach` body is itself a
+            // statement-position scope (decision 148's first exempt shape).
+            if (std.mem.eql(u8, cc.callee, "forEach") and cc.receiver != null and cc.trailing.len == 0) {
+                if (usesName(cc.receiver.?.*, name)) return false;
+                for (cc.args) |a| {
+                    if (a.value.* == .function) {
+                        if (!onlyStatementCalls(a.value.function.kind.body, name)) return false;
+                    } else if (usesName(a.value.*, name)) return false;
+                }
+                return true;
+            }
+        },
+        .loop => |lp| return !usesName(lp.iter.*, name) and onlyStatementCalls(lp.body, name),
+        .branch => |b| if (b.kind == .if_) {
+            const i = b.kind.if_;
+            if (usesName(i.cond.*, name)) return false;
+            if (!onlyStatementCalls(i.then_, name)) return false;
+            return if (i.else_) |els| onlyStatementCalls(els, name) else true;
+        },
+        else => {},
+    }
+    return !usesName(e, name);
+}
+
+fn stmtsUseName(stmts: []const ast.Stmt, name: []const u8) bool {
+    for (stmts) |st| if (usesName(st.expr, name)) return true;
+    return false;
+}
+
+fn isArrayType(t: *T.Type) bool {
+    const d = t.deref();
+    return d.* == .named and (std.mem.eql(u8, d.named.name, "array") or std.mem.eql(u8, d.named.name, "Array"));
+}
+
+/// Decision 148 — the `val f = { … }` statements of a block whose every later
+/// use is a call at statement position (`f();`, its arguments not naming
+/// `f`): the lambda they bind may write a captured `var`.
+fn noteStatementClosures(env: *Env, stmts: []const ast.Stmt) InferError!void {
+    for (stmts, 0..) |st, i| {
+        if (st.expr != .binding) continue;
+        const lb = switch (st.expr.binding.kind) {
+            .localBind => |lb| lb,
+            else => continue,
+        };
+        if (lb.value.* != .function) continue;
+        const name = lb.name;
+        const ok = onlyStatementCalls(stmts[i + 1 ..], name);
+        if (ok) try env.statementClosures.put(env.arena, name, {}) else _ = env.statementClosures.remove(name);
+    }
+}
+
 fn refuseValAssign(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
     if (!env.isVal(name)) return;
     var e = TypeError.custom(
@@ -4800,6 +4949,7 @@ fn inferTypeMethods(
         var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
         defer narrowed.deinit(env.arena);
         try refuseRedeclaredBindings(env, body, try paramNames(env, m.params));
+        try noteStatementClosures(env, body);
         for (body) |stmt| {
             const typed = try inferExprTyped(env, stmt.expr);
             try narrowAfterEarlyExit(env, stmt.expr, &narrowed);
@@ -7762,6 +7912,7 @@ fn paramNames(env: *Env, params: []const ast.Param) InferError![]const []const u
 
 fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
     try refuseRedeclaredBindings(env, body, &.{});
+    try noteStatementClosures(env, body);
     var narrowed: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
     defer narrowed.deinit(env.arena);
     for (body) |stmt| {
@@ -7773,6 +7924,7 @@ fn inferBodyStmts(env: *Env, body: []const ast.Stmt) InferError!void {
 
 fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
     try refuseRedeclaredBindings(env, stmts, &.{});
+    try noteStatementClosures(env, stmts);
     const out = try env.arena.alloc(TypedStmt, stmts.len);
     // The early-exit narrowing (`narrowAfterEarlyExit`) outlives the `if` that
     // states it, so this is where it is applied and where it ends: a name
@@ -10897,6 +11049,11 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                 null;
             // Feed a `fn(...) -> ...` annotation into a lambda RHS so its
             // params are typed from context (mirrors `inferDeclTyped`).
+            // Decision 148 — a local closure called only at statement
+            // position (`val bump = { -> n = n + 1; }; bump();`) may write a
+            // captured `var`.
+            if (lb.value.* == .function and env.statementClosures.contains(lb.name)) env.nextLambdaExempt = true;
+            defer env.nextLambdaExempt = false;
             const valTyped = if (annType != null and lb.value.* == .function)
                 try inferFunctionExprExpected(env, lb.value.function, lb.value.function.loc, annType, false)
             else
@@ -10936,12 +11093,20 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                                     if (env.lookup(name)) |ty| {
                                         try refuseValAssign(env, name, loc);
                                         try refuseMemoryWrite(env, name, a.op == .plusAssign, a.value, loc);
+                                        try refuseCapturedVarWrite(env, name, loc);
                                         // A narrowed `var` is assigned its DECLARED type, and
                                         // the assignment ends the narrowing.
                                         const declared = env.narrowedDecl.get(name);
                                         // A `var` typed by a behavior takes an implementer.
                                         try unifyArgument(env, declared orelse ty, valTyped.getType(), loc);
-                                        if (declared) |d| try env.bind(name, d);
+                                        if (declared) |d| {
+                                            const keepDepth = env.localDepth.get(name);
+                                            const prevSuppress = env.suppressDepthNote;
+                                            env.suppressDepthNote = true;
+                                            defer env.suppressDepthNote = prevSuppress;
+                                            try env.bind(name, d);
+                                            if (keepDepth) |kd| try env.localDepth.put(env.arena, name, .{ .depth = kd.depth, .ty = d });
+                                        }
                                     } else {
                                         env.lastError = try unboundAt(env, name, loc);
                                         return error.TypeError;
@@ -13090,10 +13255,14 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     if (pi >= ps.len) break :blk null;
                     break :blk ps[pi];
                 } else if (i == 0) unwrapOrDefaultExpected(typedReceiver, call.callee) else null;
+                // Decision 148 — a `forEach` body may write a captured `var`.
+                if (arg.value.* == .function and typedReceiver != null and std.mem.eql(u8, call.callee, "forEach") and (isArrayType(typedReceiver.?.getType()) or typedReceiver.?.getType().deref().* == .typeVar))
+                    env.nextLambdaExempt = true;
                 const val = if (expected != null and arg.value.* == .function)
                     try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, expected.?, true)
                 else
                     try inferExprTypedExpecting(env, arg.value.*, argExpected);
+                env.nextLambdaExempt = false;
                 typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
             }
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
@@ -14443,6 +14612,19 @@ fn inferFunctionExprExpected(
         env.throwContext = if (lambdaErr) |et| .{ .result = et } else .plain;
         env.inLambdaBody = true;
     }
+    // Decision 148 — one lambda deeper; its writes to captured `var`s are
+    // legal only in the two exempt shapes the site that infers it named.
+    const savedDepth = env.lambdaDepth;
+    const savedWriteOk = env.captureWriteOk;
+    defer {
+        env.lambdaDepth = savedDepth;
+        env.captureWriteOk = savedWriteOk;
+    }
+    if (!armBlock) {
+        env.lambdaDepth += 1;
+        env.captureWriteOk = env.nextLambdaExempt;
+    }
+    env.nextLambdaExempt = false;
 
     // A nested function gets its own async/label scope: it does not inherit
     // the enclosing fn's `await`/`yield`/label context.
