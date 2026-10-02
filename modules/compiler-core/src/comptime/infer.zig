@@ -299,6 +299,7 @@ fn stdModuleDeclaresType(env: *Env, mod: []const u8, name: []const u8) bool {
 }
 
 fn noteTypeSource(env: *Env, sources: *std.StringHashMapUnmanaged([]const u8), name: []const u8, src: []const u8, imp: ?ast.ImportPath) InferError!void {
+    if (!std.mem.startsWith(u8, src, "std/")) try env.explicitTypeNames.put(env.arena, name, {});
     if (sources.get(name)) |prev| {
         if (std.mem.eql(u8, prev, src)) return;
         const at = imp orelse return;
