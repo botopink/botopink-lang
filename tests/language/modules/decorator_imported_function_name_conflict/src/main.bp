@@ -11,7 +11,11 @@ fn wrap(s: string) -> string {
 }
 
 fn tag(comptime decl: @Decl) {
-    @emit("pub fn tagged() -> string { return \"" + wrap(shout(decl.name)) + "\"; }");
+    @emit(
+        "pub fn tagged() -> string { return \""
+            + wrap(shout(decl.name))
+            + "\"; }",
+    );
 }
 
 #[tag]
