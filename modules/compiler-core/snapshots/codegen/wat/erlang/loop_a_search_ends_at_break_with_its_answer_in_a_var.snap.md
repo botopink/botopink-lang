@@ -20,7 +20,7 @@ fn main() {
 find(Arr) ->
     Found = 0,
     Found@4 = try
-        (fun __Loop(__BpIter1, Found@1) ->
+        (fun __BpLoop(__BpIter1, Found@1) ->
             case __BpIter1 of
                 [X | __BpRest1] ->
                     Found@3 = case (X > 10) of
@@ -31,7 +31,7 @@ find(Arr) ->
                         _ ->
                             Found@1
                     end,
-                    __Loop(__BpRest1, Found@3);
+                    __BpLoop(__BpRest1, Found@3);
                 _ -> Found@1
             end
         end)(Arr, Found)

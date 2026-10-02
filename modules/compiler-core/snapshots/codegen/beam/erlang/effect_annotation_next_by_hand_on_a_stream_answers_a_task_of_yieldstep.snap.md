@@ -40,12 +40,12 @@ countdown(N) ->
     erlang:put(__BpGen1, []),
     try
         I = N,
-        I@3 = (fun __Loop(I@1) ->
+        I@3 = (fun __BpLoop(I@1) ->
             case (I@1 > 0) of
                 true ->
                     erlang:put(__BpGen1, [I@1 | erlang:get(__BpGen1)]),
                     I@2 = (I@1 - 1),
-                    __Loop(I@2);
+                    __BpLoop(I@2);
                 _ -> I@1
             end
         end)(I)

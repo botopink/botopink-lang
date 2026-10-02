@@ -751,8 +751,12 @@ const prim_shim_prefix = "__bp_prim_";
 
 /// The atom a bare `break` throws and its loop's `try` catches.
 const break_signal = "__bp_break";
-/// The named-fun variable an unbounded `for (x..)` and a recursive loop recurse through.
-const loop_fun_var = "__Loop";
+/// The named-fun variable an unbounded `for (x..)` and a recursive loop recurse
+/// through (a nested loop appends its depth, `__BpLoop1`). `__Bp` is the
+/// backend's own variable prefix: a host template is spliced into the same
+/// clause, so a name it may bind — `__Loop` was one — re-matched the bound fun
+/// (`{badmatch, …}`, language-gaps T14).
+const loop_fun_var = "__BpLoop";
 /// The throws a recursive loop (`while`, `loop`, a jumping `for`) catches: `{Signal, Group}`,
 /// the reassigned variables at the jump.
 const cond_break_signal = "__bp_cond_break";
@@ -2808,7 +2812,7 @@ const Emitter = struct {
     /// then wraps the body in the guard that answers the thrown Error.
     try_throw_used: bool = false,
     /// True while a loop's body is lowered — a fun (`lists:foreach`, a named
-    /// recursive `__Loop`) whose value is not the function's. A `return` there
+    /// recursive `__BpLoop`) whose value is not the function's. A `return` there
     /// throws `{'__bp_try', V}` to the function's guard (`returnNode`); a lambda
     /// resets it, since its `return` is its own.
     in_loop_body: bool = false,
@@ -5844,11 +5848,11 @@ const Emitter = struct {
     /// A condition loop (`while (c) { … }`, `loop { … }`) — or a `for` whose
     /// body jumps on its own (decision 105) — as a named fun that recurses:
     ///
-    ///     Group' = (fun __Loop(GroupIn) ->
-    ///                   case Cond of true -> Body, __Loop(GroupOut); _ -> GroupIn end
+    ///     Group' = (fun __BpLoop(GroupIn) ->
+    ///                   case Cond of true -> Body, __BpLoop(GroupOut); _ -> GroupIn end
     ///               end)(Group)
-    ///     Group' = (fun __Loop(__BpIter1, GroupIn) ->
-    ///                   case __BpIter1 of [X | __BpRest1] -> Body, __Loop(__BpRest1, GroupOut);
+    ///     Group' = (fun __BpLoop(__BpIter1, GroupIn) ->
+    ///                   case __BpIter1 of [X | __BpRest1] -> Body, __BpLoop(__BpRest1, GroupOut);
     ///                                     _ -> GroupIn end
     ///               end)(Xs, Group)
     ///

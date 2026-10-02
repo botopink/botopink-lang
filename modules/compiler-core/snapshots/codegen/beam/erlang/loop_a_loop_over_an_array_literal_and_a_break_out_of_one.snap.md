@@ -19,7 +19,7 @@ main() ->
     end, [1, 2, 3]),
     First = 0,
     First@4 = try
-        (fun __Loop(__BpIter1, First@1) ->
+        (fun __BpLoop(__BpIter1, First@1) ->
             case __BpIter1 of
                 [X@1 | __BpRest1] ->
                     First@3 = case (X@1 =:= 2) of
@@ -30,7 +30,7 @@ main() ->
                         _ ->
                             First@1
                     end,
-                    __Loop(__BpRest1, First@3);
+                    __BpLoop(__BpRest1, First@3);
                 _ -> First@1
             end
         end)([1, 2, 3], First)

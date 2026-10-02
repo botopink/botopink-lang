@@ -643,7 +643,7 @@ codegen/
   `<<0>>` — so `"ç" == "\u{e7}"` held only by accident and
   `escape.jsString("f(x)")` answered `f x ` (01-std's handover).
 - **A `return` inside a loop's body leaves the function** (`returnNode`): the
-  body is a fun (`lists:foreach`, the named `__Loop`), whose value is not the
+  body is a fun (`lists:foreach`, the named `__BpLoop`), whose value is not the
   function's, so inside one (`in_loop_body`, reset by a lambda, whose `return`
   is its own) `return v` is `erlang:throw({'__bp_try', V})` and the function's
   `guardTry` answers `V` — the path a failing `try` with no rest to nest
@@ -1303,13 +1303,16 @@ codegen/
     (`recursiveLoopCall`, the condition loop's machinery), because a fold cannot
     be stopped from inside;
   - an open-ended range `for (x..)` → a named fun that counts up and recurses
-    (`fun __Loop(I) -> …, __Loop(I + 1) end`), since `lists:seq/2` has no `infinity`;
+    (`fun __BpLoop(I) -> …, __BpLoop(I + 1) end`), since `lists:seq/2` has no `infinity`;
   - `while (cond) { … }` / `loop { … }` → a named fun that tests, runs the body
-    and recurses (`conditionLoopNode`): `{Out@3, I@3} = (fun __Loop({Out@1, I@1})
-    -> case Cond of true -> …, __Loop({Out@2, I@2}); _ -> {Out@1, I@1} end
+    and recurses (`conditionLoopNode`): `{Out@3, I@3} = (fun __BpLoop({Out@1, I@1})
+    -> case Cond of true -> …, __BpLoop({Out@2, I@2}); _ -> {Out@1, I@1} end
     end)({Out, I})`, threading the variables the body reassigns (with none it
-    answers `ok`; a nested one is `__Loop1`, …; `loop`'s literal `true` is not
-    tested). Inside it (`cond_loop`, cleared behind a fun boundary) a bare
+    answers `ok`; a nested one is `__BpLoop1`, …; `loop`'s literal `true` is not
+    tested). The fun's name carries the backend's own `__Bp` prefix because a
+    host template is spliced into the same clause: a template binding `__Loop`
+    re-matched the bound fun (language-gaps T14,
+    `run/host_template_binding_inside_while`). Inside it (`cond_loop`, cleared behind a fun boundary) a bare
     `break` throws `{'__bp_cond_break', Group}` caught around the call, and a
     `continue` throws `{'__bp_cond_continue', Group}` caught around the body, so
     the recursion carries the variables at the jump; each loop's `catch` binds

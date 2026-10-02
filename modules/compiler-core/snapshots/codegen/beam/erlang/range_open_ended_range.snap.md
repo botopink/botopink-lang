@@ -15,13 +15,13 @@ fn countUp(x: i32) {
 
 countUp(X) ->
     try
-        (fun __Loop(I) ->
+        (fun __BpLoop(I) ->
             case (I > 100) of
                 true ->
                     erlang:throw('__bp_break');
                 _ -> ok
             end,
-            __Loop(I + 1)
+            __BpLoop(I + 1)
         end)(X)
     catch
         throw:'__bp_break' -> ok

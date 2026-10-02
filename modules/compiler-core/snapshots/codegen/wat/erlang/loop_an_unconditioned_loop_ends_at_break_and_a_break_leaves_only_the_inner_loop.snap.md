@@ -34,14 +34,14 @@ fn main() {
 firstSquareOver(N) ->
     K = 0,
     K@3 = try
-        (fun __Loop(K@1) ->
+        (fun __BpLoop(K@1) ->
             K@2 = (K@1 + 1),
             case ((K@2 * K@2) > N) of
                 true ->
                     erlang:throw({'__bp_cond_break', K@2});
                 _ -> ok
             end,
-            __Loop(K@2)
+            __BpLoop(K@2)
         end)(K)
     catch
         throw:{'__bp_cond_break', __BpGroup1} -> __BpGroup1
@@ -51,20 +51,20 @@ firstSquareOver(N) ->
 nested() ->
     Outer = 0,
     Inner = 0,
-    {Outer@3, Inner@5} = (fun __Loop({Outer@1, Inner@1}) ->
+    {Outer@3, Inner@5} = (fun __BpLoop({Outer@1, Inner@1}) ->
         case (Outer@1 < 3) of
             true ->
                 Outer@2 = (Outer@1 + 1),
                 Inner@4 = try
-                    (fun __Loop1(Inner@2) ->
+                    (fun __BpLoop1(Inner@2) ->
                         Inner@3 = (Inner@2 + 1),
                         erlang:throw({'__bp_cond_break', Inner@3}),
-                        __Loop1(Inner@3)
+                        __BpLoop1(Inner@3)
                     end)(Inner@1)
                 catch
                     throw:{'__bp_cond_break', __BpGroup3} -> __BpGroup3
                 end,
-                __Loop({Outer@2, Inner@4});
+                __BpLoop({Outer@2, Inner@4});
             _ -> {Outer@1, Inner@1}
         end
     end)({Outer, Inner}),

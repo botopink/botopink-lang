@@ -35,12 +35,12 @@ fn main() {
 count(Limit) ->
     I = 0,
     Acc = <<"">>,
-    {Acc@3, I@3} = (fun __Loop({Acc@1, I@1}) ->
+    {Acc@3, I@3} = (fun __BpLoop({Acc@1, I@1}) ->
         case (I@1 < Limit) of
             true ->
                 Acc@2 = <<Acc@1/binary, ('__bp_text'(erlang:integer_to_binary(I@1)))/binary>>,
                 I@2 = (I@1 + 1),
-                __Loop({Acc@2, I@2});
+                __BpLoop({Acc@2, I@2});
             _ -> {Acc@1, I@1}
         end
     end)({Acc, I}),
@@ -50,10 +50,10 @@ count(Limit) ->
 evens(Limit) ->
     I = 0,
     Sum = 0,
-    {I@3, Sum@3} = (fun __Loop({I@1, Sum@1}) ->
+    {I@3, Sum@3} = (fun __BpLoop({I@1, Sum@1}) ->
         case (I@1 < Limit) of
             true ->
-                __Loop(try
+                __BpLoop(try
                     I@2 = (I@1 + 1),
                     case ((I@2 rem 2) =:= 1) of
                         true ->

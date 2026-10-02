@@ -1245,7 +1245,7 @@ test "beam: a non-ASCII string literal is its UTF-8 bytes" {
 
 // A `return` inside a loop's body leaves the FUNCTION (commonJS and wasm
 // answer `firstUnder(12, 10)` = `8`). A loop's body is a fun on erlang
-// (`lists:foreach`, the named `__Loop`) and on beam (`lists:foreach`), so the
+// (`lists:foreach`, the named `__BpLoop`) and on beam (`lists:foreach`), so the
 // value is thrown as `{'__bp_try', V}` to the function's guard / the loop's
 // call site — the path a failing `try` takes. erlang answered `12`, and a
 // `throw` (a `return` of `{error, E}` after the transform) inside an `if`

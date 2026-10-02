@@ -147,9 +147,9 @@ test "comptime module: a condition loop threads the variables its body reassigns
         \\    @emit(names);
         \\}
     , .{ .host_enums = &.{"DeclKind"} });
-    try expectContains(out, "{Names@3, I@3} = (fun __Loop({Names@1, I@1}) ->");
+    try expectContains(out, "{Names@3, I@3} = (fun __BpLoop({Names@1, I@1}) ->");
     try expectContains(out, "case (I@1 < 3) of");
-    try expectContains(out, "__Loop({Names@2, I@2});");
+    try expectContains(out, "__BpLoop({Names@2, I@2});");
     try expectContains(out, "_ -> {Names@1, I@1}");
     try expectContains(out, "end)({Names, I}),");
     try expectContains(out, "emit(Names@3)");

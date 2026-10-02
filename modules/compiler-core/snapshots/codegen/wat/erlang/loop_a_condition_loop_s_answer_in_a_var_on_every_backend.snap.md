@@ -26,7 +26,7 @@ main() ->
     I = 0,
     Found = 0,
     {Found@4, I@3} = try
-        (fun __Loop({Found@1, I@1}) ->
+        (fun __BpLoop({Found@1, I@1}) ->
             case (I@1 < 10) of
                 true ->
                     Found@3 = case (I@1 =:= 4) of
@@ -38,7 +38,7 @@ main() ->
                             Found@1
                     end,
                     I@2 = (I@1 + 1),
-                    __Loop({Found@3, I@2});
+                    __BpLoop({Found@3, I@2});
                 _ -> {Found@1, I@1}
             end
         end)({Found, I})
@@ -50,7 +50,7 @@ main() ->
     K = 0,
     R = 0,
     {K@3, R@4} = try
-        (fun __Loop({K@1, R@1}) ->
+        (fun __BpLoop({K@1, R@1}) ->
             K@2 = (K@1 + 1),
             R@3 = case (K@2 > 2) of
                 true ->
@@ -60,7 +60,7 @@ main() ->
                 _ ->
                     R@1
             end,
-            __Loop({K@2, R@3})
+            __BpLoop({K@2, R@3})
         end)({K, R})
     catch
         throw:{'__bp_cond_break', __BpGroup2} -> __BpGroup2
@@ -69,7 +69,7 @@ main() ->
     N = 0,
     Never = 0,
     {Never@4, N@3} = try
-        (fun __Loop({Never@1, N@1}) ->
+        (fun __BpLoop({Never@1, N@1}) ->
             case (N@1 < 3) of
                 true ->
                     Never@3 = case (N@1 =:= 99) of
@@ -81,7 +81,7 @@ main() ->
                             Never@1
                     end,
                     N@2 = (N@1 + 1),
-                    __Loop({Never@3, N@2});
+                    __BpLoop({Never@3, N@2});
                 _ -> {Never@1, N@1}
             end
         end)({Never, N})

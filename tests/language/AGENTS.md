@@ -392,6 +392,10 @@ Each was run with the parent binary and fails there as its row describes.
   `Array.at` past the end — on all four targets. The erlang module did not compile (`element/2`
   is illegal in the print helper's guard once it is the module's own fn) and, before the
   `no_auto_import` directive, read `p.y` through the module's `element/2`.
+- `run/host_template_binding_inside_while` (language-gaps T14, `.targets` erlang beam — commonJS
+  and wasm lack `bump`): an `#[@External.Erlang]` template binding `__Loop`, called in a `while`
+  body and in a `for` body. Erlang's `while` recursed through a named fun `__Loop`, and the
+  template's `__Loop = …` re-matched it — `{badmatch, 1}`.
 
 ### `narrowing_*`
 
