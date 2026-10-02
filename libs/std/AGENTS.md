@@ -440,15 +440,26 @@ method has accepted.
   boundary list (`5e-324`, `1.7976931348623157e308`, the halfway points, `9007199254740993`, …).
   `"-0".parseFloat()` is `-0.0`, which `==` tells from `0.0` on erlang (`=:=`) and not on commonJS.
 - **The cells** are free `declare fn`s beside the slice helpers: `stringIsDigits(s)`,
-  `stringToInteger(numeral, refusal)`, `stringToFloat(numeral, refusal)` and
-  `stringNumeralRefused<T>(refusal)` — the last three build the `@Result`, because of the first gap below.
-- **Two emitter gaps met writing them, each worked around here, neither std's.** In a `default fn`
-  of this file (1) commonJS emits `Ok(x)` / `Error(e)` as written (`ReferenceError: Ok is not
-  defined` at the first call), so the `@Result` is built by a host cell; (2) erlang emits
-  `opt.unwrapOr(d)` on an optional as a call to an undefined `unwrapOr/2` (`erlc` refuses the
-  module), so the body reads its pieces with `indexOf` and the slice helpers, never `split(…).at(i)`.
-  Reproduction of each: put `return Ok(1);` / `val x = self.split(".").at(0).unwrapOr("");` in a new
-  `default fn` of `behavior String` and call it from a scratch project.
+  `stringToInteger(numeral)`, `stringToFloat(text, whole, fraction, exponent)` and
+  `stringNumeralRefused<T>(before, text, after)` — the last three build the `@Result` and its text.
+- **The bodies call a method on `self` only** — `self.startsWith`, `self.indexOf` — and reach
+  everything else through those cells and the slice helpers. Three emitter gaps met writing them,
+  each worked around here, none std's:
+  1. commonJS emits `Ok(x)` / `Error(e)` of a `default fn` of this file as written
+     (`ReferenceError: Ok is not defined` at the first call) — the `@Result` is built by a cell.
+     Reproduction: `return Ok(1);` in a new `default fn` of `behavior String`, called from a
+     scratch project.
+  2. commonJS emits `self.length()` of such a body as written (`self.length is not a function`),
+     and erlang emits `opt.unwrapOr(d)` on an optional as a call to an undefined `unwrapOr/2`
+     (`erlc` refuses the module) — the body cuts with open-ended `stringSlice0` and never reads
+     `split(…).at(i)`.
+  3. erlang lowers a method called on a LOCAL of such a body (`exponent.startsWith("+")`) through a
+     lookup that another module's text can change: with `test/primitives_test.bp` grown by three
+     tests, the second of two calls on one line came out as the bare `startsWith(Exponent, <<"+">>)`
+     beside `'__bp_prim_startsWith'(Exponent, <<"-">>)`, and `erlc` refused the test module
+     (`function startsWith/2 undefined`). A call on `self` lowers from the receiver's own behavior
+     and is not exposed. Reproduction: the `parseFloat` body of this file at the commit that added
+     it, with the three "one unit for every string index" tests appended to the test file.
 - Runs on commonJS, erlang and beam (the Erlang templates). On wasm a call traps (`unreachable`),
   as `"a b".words()` and every other template-only `String` method does — the wasm front's.
 - Both are prototype patches on commonJS (`String.prototype.parseInt = …`), so the nine

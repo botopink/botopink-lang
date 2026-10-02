@@ -290,19 +290,19 @@ behavior String {
     // every target refuses the same inputs; the host cell converts digits it
     // is never asked to judge. The answer is an `i64` every target holds
     // exactly: a numeral beyond ±9007199254740991 (2^53 - 1, where a commonJS
-    // number stops counting by one) is an `Error` on every target.
+    // number stops counting by one) is an `Error` on every target
+    // (decision 176).
+    //
+    // The body calls a method on `self` only, and free cells for the rest —
+    // see `libs/std/AGENTS.md` § String numerals for the three emitter gaps
+    // that shape it.
     default fn parseInt(self: Self) -> @Result<i64, string> {
         val signed = self.startsWith("-") || self.startsWith("+");
         val digits = if (signed) stringSlice0(self, 1) else self;
         return if (stringIsDigits(digits))
-            stringToInteger(
-                self,
-                ["parseInt: \"", self, "\" is out of range"].join(""),
-            )
+            stringToInteger(self)
         else
-            stringNumeralRefused(
-                ["parseInt: \"", self, "\" is not an integer"].join(""),
-            );
+            stringNumeralRefused("parseInt: \"", self, "\" is not an integer");
     }
 
     // The `f64` nearest to a decimal numeral: an optional `+` or `-`, digits,
@@ -315,45 +315,45 @@ behavior String {
     // `f64` is an `Error`; one too small to tell from zero is `0.0`.
     default fn parseFloat(self: Self) -> @Result<f64, string> {
         val signed = self.startsWith("-") || self.startsWith("+");
-        val sign = if (self.startsWith("-")) "-" else "";
-        val unsigned = if (signed) stringSlice0(self, 1) else self;
-        val lowered = unsigned.replaceAll("E", "e");
-        val exponentAt = lowered.indexOf("e");
+        val start = if (signed) 1 else 0;
+        val lowerAt = self.indexOf("e");
+        val exponentAt = if (lowerAt < 0) self.indexOf("E") else lowerAt;
         val mantissa = if (exponentAt < 0)
-            lowered
+            stringSlice0(self, start)
         else
-            stringSlice1(lowered, 0, exponentAt);
+            stringSlice1(self, start, exponentAt);
+        val pointAt = self.indexOf(".");
+        val pointed = pointAt >= 0 && (exponentAt < 0 || pointAt < exponentAt);
+        val whole = if (pointed)
+            stringSlice1(self, start, pointAt)
+        else
+            mantissa;
+        val fraction = if (pointed == false)
+            "0"
+        else if (exponentAt < 0)
+            stringSlice0(self, pointAt + 1)
+        else
+            stringSlice1(self, pointAt + 1, exponentAt);
         val exponent = if (exponentAt < 0)
             "0"
         else
-            stringSlice0(lowered, exponentAt + 1);
-        val pointAt = mantissa.indexOf(".");
-        val whole = if (pointAt < 0)
-            mantissa
+            stringSlice0(self, exponentAt + 1);
+        val exponentMark = if (exponentAt < 0)
+            ""
         else
-            stringSlice1(mantissa, 0, pointAt);
-        val fraction = if (pointAt < 0)
-            "0"
-        else
-            stringSlice0(mantissa, pointAt + 1);
-        val exponentSigned = exponent.startsWith("-")
-            || exponent.startsWith("+");
+            stringSlice1(self, exponentAt + 1, exponentAt + 2);
+        val exponentSigned = exponentMark == "-" || exponentMark == "+";
         val exponentDigits = if (exponentSigned)
-            stringSlice0(exponent, 1)
+            stringSlice0(self, exponentAt + 2)
         else
             exponent;
         val wellFormed = stringIsDigits(whole)
             && stringIsDigits(fraction)
             && stringIsDigits(exponentDigits);
         return if (wellFormed)
-            stringToFloat(
-                [sign, whole, ".", fraction, "e", exponent].join(""),
-                ["parseFloat: \"", self, "\" overflows f64"].join(""),
-            )
+            stringToFloat(self, whole, fraction, exponent)
         else
-            stringNumeralRefused(
-                ["parseFloat: \"", self, "\" is not a number"].join(""),
-            );
+            stringNumeralRefused("parseFloat: \"", self, "\" is not a number");
     }
 }
 
@@ -375,35 +375,41 @@ declare fn stringSlice1(s: string, start: i32, end: ?i32) -> string;
 // ── string numerals ──────────────────────────────────────────────────────────
 // Host helpers behind `default fn parseInt` / `parseFloat`. The methods decide
 // in botopink which strings are numerals; these convert, and build the
-// `@Result` — a `default fn` body of this file is emitted as written on
-// commonJS, where `Ok(…)` / `Error(…)` name nothing.
+// `@Result` and its text — a `default fn` body of this file is emitted as
+// written on commonJS, where `Ok(…)` / `Error(…)` name nothing.
 
 // True when `s` is one or more of the digits `0`–`9` and nothing else.
 #[@External.Erlang("""(fun(__S) -> (__S =/= <<>>) andalso lists:all(fun(__C) -> (__C >= 48) andalso (__C =< 57) end, binary_to_list(__S)) end)($0)""")]
 #[@External.Node("""(/^[0-9]+$/.test($0))""")]
 declare fn stringIsDigits(s: string) -> bool;
 
-// The integer `<sign><digits>` spells; `Error(refusal)` beyond ±(2^53 - 1).
-#[@External.Erlang("""(fun(__N, __E) -> case abs(__N) =< 9007199254740991 of true -> {ok, __N}; false -> {error, __E} end end)(binary_to_integer($0), $1)""")]
-#[@External.Node("""((__n, __e) => Number.isSafeInteger(__n) ? { ok: __n + 0 } : { error: __e })(Number($0), $1)""")]
-declare fn stringToInteger(
-    numeral: string,
-    refusal: string,
-) -> @Result<i64, string>;
+// The integer `<sign><digits>` spells; the out-of-range `Error`, naming the
+// numeral, beyond ±(2^53 - 1).
+#[@External.Erlang("""(fun(__S) -> __N = binary_to_integer(__S), case abs(__N) =< 9007199254740991 of true -> {ok, __N}; false -> {error, <<"parseInt: ", 34, __S/binary, 34, " is out of range">>} end end)($0)""")]
+#[@External.Node("""((__s) => { const __n = Number(__s); return Number.isSafeInteger(__n) ? { ok: __n + 0 } : { error: 'parseInt: "' + __s + '" is out of range' } })($0)""")]
+declare fn stringToInteger(numeral: string) -> @Result<i64, string>;
 
-// The `f64` `<sign><digits>.<digits>e<sign><digits>` spells; `Error(refusal)`
-// when it overflows. `binary_to_float/1` raises on an overflow and answers
+// The `f64` the numeral `text` spells, read from its accepted pieces as
+// `<sign><whole>.<fraction>e<exponent>`; the overflow `Error`, naming `text`,
+// when it does not fit. `binary_to_float/1` raises on an overflow and answers
 // `0.0` on an underflow, which is what `Number` does with `Infinity` and `0`.
-#[@External.Erlang("""(fun(__S, __E) -> try {ok, binary_to_float(__S)} catch _:_ -> {error, __E} end end)($0, $1)""")]
-#[@External.Node("""((__n, __e) => Number.isFinite(__n) ? { ok: __n } : { error: __e })(Number($0), $1)""")]
+#[@External.Erlang("""(fun(__T, __W, __F, __X) -> __Sign = case __T of <<45, _/binary>> -> <<45>>; _ -> <<>> end, try {ok, binary_to_float(<<__Sign/binary, __W/binary, 46, __F/binary, 101, __X/binary>>)} catch _:_ -> {error, <<"parseFloat: ", 34, __T/binary, 34, " overflows f64">>} end end)($0, $1, $2, $3)""")]
+#[@External.Node("""((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })($0, $1, $2, $3)""")]
 declare fn stringToFloat(
-    numeral: string,
-    refusal: string,
+    text: string,
+    whole: string,
+    fraction: string,
+    exponent: string,
 ) -> @Result<f64, string>;
 
-#[@External.Erlang("""{error, $0}""")]
-#[@External.Node("""({ error: $0 })""")]
-declare fn stringNumeralRefused<T>(refusal: string) -> @Result<T, string>;
+// `Error(<before><text><after>)`.
+#[@External.Erlang("""{error, <<($0)/binary, ($1)/binary, ($2)/binary>>}""")]
+#[@External.Node("""({ error: $0 + $1 + $2 })""")]
+declare fn stringNumeralRefused<T>(
+    before: string,
+    text: string,
+    after: string,
+) -> @Result<T, string>;
 
 // ── function combinators ──────────────────────────────────────────────────────
 

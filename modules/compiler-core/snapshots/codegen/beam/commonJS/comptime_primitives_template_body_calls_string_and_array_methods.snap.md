@@ -1252,24 +1252,25 @@ String.prototype.parseInt = function() {
     const self = this.valueOf();
     const signed = (self.startsWith("-") || self.startsWith("+"));
     const digits = (() => { if (signed) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, 1); } else { return self; } })();
-    return (() => { if ((/^[0-9]+$/.test(digits))) { return ((__n, __e) => Number.isSafeInteger(__n) ? { ok: __n + 0 } : { error: __e })(Number(self), ["parseInt: \"", self, "\" is out of range"].join("")); } else { return ({ error: ["parseInt: \"", self, "\" is not an integer"].join("") }); } })();
+    return (() => { if ((/^[0-9]+$/.test(digits))) { return ((__s) => { const __n = Number(__s); return Number.isSafeInteger(__n) ? { ok: __n + 0 } : { error: 'parseInt: "' + __s + '" is out of range' } })(self); } else { return ({ error: "parseInt: \"" + self + "\" is not an integer" }); } })();
 };
 String.prototype.parseFloat = function() {
     const self = this.valueOf();
     const signed = (self.startsWith("-") || self.startsWith("+"));
-    const sign = (() => { if (self.startsWith("-")) { return "-"; } else { return ""; } })();
-    const unsigned = (() => { if (signed) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, 1); } else { return self; } })();
-    const lowered = unsigned.replaceAll("E", "e");
-    const exponentAt = lowered.indexOf("e");
-    const mantissa = (() => { if ((exponentAt < 0)) { return lowered; } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(lowered, 0, exponentAt); } })();
-    const exponent = (() => { if ((exponentAt < 0)) { return "0"; } else { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(lowered, (exponentAt + 1)); } })();
-    const pointAt = mantissa.indexOf(".");
-    const whole = (() => { if ((pointAt < 0)) { return mantissa; } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(mantissa, 0, pointAt); } })();
-    const fraction = (() => { if ((pointAt < 0)) { return "0"; } else { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(mantissa, (pointAt + 1)); } })();
-    const exponentSigned = (exponent.startsWith("-") || exponent.startsWith("+"));
-    const exponentDigits = (() => { if (exponentSigned) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(exponent, 1); } else { return exponent; } })();
+    const start = (() => { if (signed) { return 1; } else { return 0; } })();
+    const lowerAt = self.indexOf("e");
+    const exponentAt = (() => { if ((lowerAt < 0)) { return self.indexOf("E"); } else { return lowerAt; } })();
+    const mantissa = (() => { if ((exponentAt < 0)) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, start); } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, exponentAt); } })();
+    const pointAt = self.indexOf(".");
+    const pointed = ((pointAt >= 0) && (((exponentAt < 0) || (pointAt < exponentAt))));
+    const whole = (() => { if (pointed) { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, start, pointAt); } else { return mantissa; } })();
+    const fraction = (() => { if ((pointed === false)) { return "0"; } else { return (() => { if ((exponentAt < 0)) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (pointAt + 1)); } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (pointAt + 1), exponentAt); } })(); } })();
+    const exponent = (() => { if ((exponentAt < 0)) { return "0"; } else { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 1)); } })();
+    const exponentMark = (() => { if ((exponentAt < 0)) { return ""; } else { return ((__s, __a, __e) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })(self, (exponentAt + 1), (exponentAt + 2)); } })();
+    const exponentSigned = ((exponentMark === "-") || (exponentMark === "+"));
+    const exponentDigits = (() => { if (exponentSigned) { return ((__s, __a) => { const __n = __s.length; if (__a == null) __a = 0; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })(self, (exponentAt + 2)); } else { return exponent; } })();
     const wellFormed = (((/^[0-9]+$/.test(whole)) && (/^[0-9]+$/.test(fraction))) && (/^[0-9]+$/.test(exponentDigits)));
-    return (() => { if (wellFormed) { return ((__n, __e) => Number.isFinite(__n) ? { ok: __n } : { error: __e })(Number([sign, whole, ".", fraction, "e", exponent].join("")), ["parseFloat: \"", self, "\" overflows f64"].join("")); } else { return ({ error: ["parseFloat: \"", self, "\" is not a number"].join("") }); } })();
+    return (() => { if (wellFormed) { return ((__t, __w, __f, __x) => { const __n = Number((__t.startsWith('-') ? '-' : '') + __w + '.' + __f + 'e' + __x); return Number.isFinite(__n) ? { ok: __n } : { error: 'parseFloat: "' + __t + '" overflows f64' } })(self, whole, fraction, exponent); } else { return ({ error: "parseFloat: \"" + self + "\" is not a number" }); } })();
 };
 
 // behavior Array
