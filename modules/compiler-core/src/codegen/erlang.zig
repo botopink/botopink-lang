@@ -1746,6 +1746,7 @@ fn emitErlangModule(
         // Keys and values borrow the program AST — nothing to free.
         em.local_behaviors.deinit();
         em.local_types.deinit(em.alloc);
+        em.default_kinds.deinit(em.alloc);
         em.imported_behaviors.deinit(em.alloc);
         em.imported_vals.deinit(em.alloc);
     }
@@ -2667,7 +2668,24 @@ fn isNullableParam(p: ast.Param) bool {
 /// `self` and which carries a body. Unlike an associated default (`Array.range`)
 /// it is reached through a value receiver (`xs.all(pred)`), so the emitted form
 /// keeps `self` as its first parameter.
-const IfaceDefault = struct { iface: []const u8, method: ast.BehaviorMethod };
+/// `from_prelude`: the body is `prelude_cache`'s parse of `primitives.bp`, not
+/// a declaration of the module being emitted — see `instanceDefaultForm`.
+const IfaceDefault = struct { iface: []const u8, method: ast.BehaviorMethod, from_prelude: bool = false };
+
+/// True when `text` slices into the embedded `primitives.bp` — a declaration
+/// the compiler's std prelude carries into a module's program (its behaviors
+/// are registered from that source), not one the module's own file wrote.
+fn slicesIntoPrelude(text: []const u8) bool {
+    const src = prelude.primitives;
+    const at = @intFromPtr(text.ptr);
+    return at >= @intFromPtr(src.ptr) and at < @intFromPtr(src.ptr) + src.len;
+}
+
+/// What an interface `default fn` body's own lowering knows of a value
+/// (`Emitter.defaultValueKind`): a primitive kind, or an `@Option` / `@Result`.
+/// Inference records no lowering inside such a body, so the emitter derives it
+/// from the declared types the body is written against.
+const DefaultKind = union(enum) { prim: envMod.PrimKind, optional, result };
 
 /// One `'__bp_prim_<callee>'/<argc + 1>` runtime-dispatch shim a comptime body
 /// reached. `callee` borrows from the body's AST.
@@ -3059,6 +3077,10 @@ const Emitter = struct {
     /// may call a std prelude helper (`stringSlice1`) the consuming module never
     /// declares, so bare callees also resolve against the prelude template index.
     in_iface_default: bool = false,
+    /// Inside an interface `default fn` body: each local whose kind the body's
+    /// declared types give (`defaultValueKind`) — a parameter's type, a `val`'s
+    /// annotation, or its initialiser. Cleared with the locals.
+    default_kinds: std.StringHashMapUnmanaged(DefaultKind) = .empty,
     /// The variables the innermost recursive loop (`recursiveLoopCall`) threads,
     /// while its body is emitted; null outside one and behind a fun boundary
     /// (a collection loop, a lambda). A `break` / `continue` there throws them.
@@ -3666,7 +3688,7 @@ const Emitter = struct {
                     const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
                     const qn = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ i.name, m.name });
                     if (has_self) {
-                        try this.iface_instance_defaults.put(qn, .{ .iface = i.name, .method = m });
+                        try this.iface_instance_defaults.put(qn, .{ .iface = i.name, .method = m, .from_prelude = slicesIntoPrelude(m.name) });
                     } else {
                         try this.interface_assoc.put(qn, {});
                     }
@@ -3704,7 +3726,7 @@ const Emitter = struct {
                 if (!m.is_default or m.body == null) continue;
                 if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
                 if (this.iface_instance_defaults.contains(key)) continue;
-                try this.iface_instance_defaults.put(try this.alloc.dupe(u8, key), .{ .iface = i.name, .method = m });
+                try this.iface_instance_defaults.put(try this.alloc.dupe(u8, key), .{ .iface = i.name, .method = m, .from_prelude = true });
             }
         }
     }
@@ -3867,6 +3889,138 @@ const Emitter = struct {
     /// `Self`-typed receiver whose interface method is declared `-> Self`
     /// (`self.filter(pred)` on `Array`). Null everywhere else, including in
     /// every ordinary function, where inference records the lowering instead.
+    /// The kind of `e` inside an interface `default fn` body, from the types
+    /// the body is written against: `self` and a `-> Self` call on it
+    /// (`selfPrimKind`), a literal, a local `default_kinds` holds, a method
+    /// call on a value of known primitive kind (the behavior method's declared
+    /// return type), a call of a prelude or module fn (its declared return
+    /// type), and an `if` whose two branches agree. Null when none of them
+    /// answers — the call then dispatches on the receiver at run time.
+    fn defaultValueKind(this: *const Emitter, e: ast.Expr) ?DefaultKind {
+        if (this.selfPrimKind(e)) |k| return .{ .prim = k };
+        switch (e) {
+            .literal => |lit| return switch (lit.kind) {
+                .stringLit, .stringTemplate => .{ .prim = .string },
+                .numberLit => |n| .{ .prim = if (std.mem.indexOfAny(u8, n, ".eE") != null and !std.mem.startsWith(u8, n, "0x")) .float else .int },
+                else => null,
+            },
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| {
+                    if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) return .{ .prim = .bool };
+                    return this.default_kinds.get(n);
+                },
+                else => return null,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| {
+                    if (cc.is_builtin) return null;
+                    if (cc.receiver) |recv| {
+                        const rk = this.defaultValueKind(recv.*) orelse return null;
+                        if (rk != .prim) return null;
+                        const ret = this.primMethodReturn(rk.prim, cc.callee) orelse return null;
+                        return this.kindOfType(ret, rk.prim);
+                    }
+                    const ret = this.fnReturnType(cc.callee) orelse return null;
+                    return this.kindOfType(ret, null);
+                },
+                else => return null,
+            },
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| {
+                    const els = i.else_ orelse return null;
+                    if (i.then_.len == 0 or els.len == 0) return null;
+                    const a = this.defaultValueKind(i.then_[i.then_.len - 1].expr) orelse return null;
+                    const z = this.defaultValueKind(els[els.len - 1].expr) orelse return null;
+                    return if (std.meta.eql(a, z)) a else null;
+                },
+                else => return null,
+            },
+            else => return null,
+        }
+    }
+
+    /// The kind a declared type gives a value of a `default fn` body; `Self`
+    /// is `self_kind` (the receiver's), unknown outside one.
+    fn kindOfType(this: *const Emitter, t: ast.TypeRef, self_kind: ?envMod.PrimKind) ?DefaultKind {
+        if (t.isSelf()) return if (self_kind orelse this.self_prim_kind) |k| .{ .prim = k } else null;
+        return switch (t) {
+            .optional => .optional,
+            .array => .{ .prim = .array },
+            .generic => |g| if (g.is_builtin and std.mem.eql(u8, g.name, "Result"))
+                .result
+            else if (std.mem.eql(u8, g.name, "Array"))
+                .{ .prim = .array }
+            else
+                null,
+            .named => |n| if (std.mem.eql(u8, n, "string"))
+                .{ .prim = .string }
+            else if (std.mem.eql(u8, n, "bool"))
+                .{ .prim = .bool }
+            else if (numTypeKind(t)) |k| switch (k) {
+                .int => .{ .prim = .int },
+                .float => .{ .prim = .float },
+                .number => null,
+            } else null,
+            else => null,
+        };
+    }
+
+    /// Record `name`'s kind from its declared type, inside a `default fn` body.
+    fn rememberDefaultKind(this: *Emitter, name: []const u8, t: ast.TypeRef) !void {
+        if (!this.in_iface_default) return;
+        if (this.kindOfType(t, null)) |k| try this.default_kinds.put(this.alloc, name, k);
+    }
+
+    /// The declared return type of method `m` on primitive kind `k`: the first
+    /// behavior of `k`'s interface chain declaring it, the module's own
+    /// `behavior` before the embedded prelude's.
+    fn primMethodReturn(this: *const Emitter, k: envMod.PrimKind, m: []const u8) ?ast.TypeRef {
+        const head = primIfaceForKind(k) orelse return null;
+        var walk = PrimIfaceWalker.init(this, head, &this.prim_iface_chain);
+        while (walk.next()) |iface| {
+            if (this.local_behaviors.get(iface)) |bh| {
+                for (bh.methods) |method| if (std.mem.eql(u8, method.name, m)) return method.returnType;
+            }
+            const prim_program = prelude_cache.primitives() orelse continue;
+            for (prim_program.decls) |decl| {
+                if (decl != .behavior or !std.mem.eql(u8, decl.behavior.name, iface)) continue;
+                for (decl.behavior.methods) |method| if (std.mem.eql(u8, method.name, m)) return method.returnType;
+            }
+        }
+        return null;
+    }
+
+    /// The declared return type of the free fn `name` a `default fn` body
+    /// calls: one the module declares, else one of the embedded prelude's
+    /// (`stringSlice0`).
+    fn fnReturnType(this: *const Emitter, name: []const u8) ?ast.TypeRef {
+        _ = this;
+        const prim_program = prelude_cache.primitives() orelse return null;
+        for (prim_program.decls) |decl| {
+            if (decl != .@"fn" or !std.mem.eql(u8, decl.@"fn".name, name)) continue;
+            return decl.@"fn".returnType;
+        }
+        return null;
+    }
+
+    /// `recv.m(arg)` on an `@Option` / `@Result` value of a `default fn` body,
+    /// lowered as inference's rewrite of the same call in a function would be
+    /// (`__bp_option_unwrapOr` …, `resultOptionNode`). Null for a method the
+    /// wrapper does not declare, or one given a trailing lambda.
+    fn defaultWrapperMethodNode(this: *Emitter, b: Ast.Builder, dk: DefaultKind, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
+        if (cc.trailing.len > 0) return null;
+        const eq = std.mem.eql;
+        const m = cc.callee;
+        const known = eq(u8, m, "map") or eq(u8, m, "flatMap") or eq(u8, m, "unwrapOr") or
+            (dk == .result and (eq(u8, m, "isOk") or eq(u8, m, "isError")));
+        if (!known) return null;
+        const callee = try std.fmt.allocPrint(b.arena, "__bp_{s}_{s}", .{ if (dk == .optional) "option" else "result", m });
+        const args = try b.arena.alloc(ast.CallArg, cc.args.len + 1);
+        args[0] = .{ .label = null, .value = @constCast(recv) };
+        for (cc.args, 1..) |a, i| args[i] = a;
+        return try this.resultOptionNode(b, callee, args);
+    }
+
     fn selfPrimKind(this: *const Emitter, e: ast.Expr) ?envMod.PrimKind {
         const k = this.self_prim_kind orelse return null;
         switch (e) {
@@ -3917,6 +4071,7 @@ const Emitter = struct {
         this.string_locals.clearRetainingCapacity();
         this.num_locals.clearRetainingCapacity();
         this.local_types.clearRetainingCapacity();
+        this.default_kinds.clearRetainingCapacity();
     }
 
     /// Remembers a local's declared type name, for a receiver whose methods
@@ -4223,6 +4378,11 @@ const Emitter = struct {
         if (op != .plus_assign and this.isStringExpr(value)) try this.string_locals.put(name, {});
         if (op != .plus_assign) {
             if (this.numKind(value)) |k| try this.num_locals.put(this.alloc, name, k);
+        }
+        // A `default fn` body's local takes the kind of its first binding (a
+        // later assignment keeps the declared type).
+        if (this.in_iface_default and !this.locals.contains(name) and !this.default_kinds.contains(name)) {
+            if (this.defaultValueKind(value)) |k| try this.default_kinds.put(this.alloc, name, k);
         }
         if (!this.locals.contains(name)) {
             const vname = Ast.Expr.v(try this.arenaVar(b, name));
@@ -5283,6 +5443,7 @@ const Emitter = struct {
                 try params.append(b.arena, Ast.Expr.v(try this.arenaVar(b, p.name)));
                 this.addLocal(p.name);
                 this.rememberLocalType(p.name, p.typeRef);
+                try this.rememberDefaultKind(p.name, p.typeRef);
                 if (isNullableParam(p)) try this.nullable_locals.put(p.name, {});
                 if (isStringType(p.typeRef)) try this.string_locals.put(p.name, {});
                 if (numTypeKind(p.typeRef)) |k| try this.num_locals.put(this.alloc, p.name, k);
@@ -6633,7 +6794,10 @@ const Emitter = struct {
             .binding => |bind| switch (bind.kind) {
                 .localBind => |lb| {
                     if (lb.mutable) try this.mutable_locals.put(this.alloc, lb.name, {});
-                    if (lb.typeAnnotation) |ann| this.rememberLocalType(lb.name, ann);
+                    if (lb.typeAnnotation) |ann| {
+                        this.rememberLocalType(lb.name, ann);
+                        try this.rememberDefaultKind(lb.name, ann);
+                    }
                     return this.bindExpr(b, lb.name, .bind, lb.value.*);
                 },
                 .assign => |a| switch (a.target) {
@@ -7606,7 +7770,14 @@ const Emitter = struct {
         }
         // Inside an interface instance `default fn` the receiver's type is
         // `Self`, which inference leaves unlowered (it is generic over every
-        // implementor): dispatch on the owning interface's primitive kind.
+        // implementor): dispatch on the owning interface's primitive kind —
+        // and a local of the body on the kind its declared types give it
+        // (`defaultValueKind`): `tail.startsWith("+")` on a `string` local is
+        // the string op, `prev.unwrapOr(x)` on a `?T` the optional's.
+        if (this.in_iface_default) if (this.defaultValueKind(recv.*)) |dk| switch (dk) {
+            .prim => |k| return this.primMethodNode(b, k, cc.callee, recv, cc),
+            .optional, .result => if (try this.defaultWrapperMethodNode(b, dk, recv, cc)) |node| return node,
+        };
         if (this.selfPrimKind(recv.*)) |k| return this.primMethodNode(b, k, cc.callee, recv, cc);
         // A value receiver with no recorded lowering (inference bailed out, e.g.
         // on a chained call): try the Array primitive defaults and the universal
@@ -9447,6 +9618,22 @@ const Emitter = struct {
             this.in_iface_default = saved_in;
         }
         this.in_iface_default = true;
+        // A prelude body is `primitives.bp`'s text, and inference's tables are
+        // keyed by a source location with no file: a lookup at one of its
+        // locations answers whatever the CONSUMING module recorded at the same
+        // line and column (a `s.trim()` of the program at `out.append`'s
+        // place made it `append(Out, …)`, undefined). Nothing recorded there
+        // is the body's, so it is lowered without them.
+        const saved_lowerings = this.instance_lowerings;
+        const saved_rewrites = this.rewrites;
+        defer {
+            this.instance_lowerings = saved_lowerings;
+            this.rewrites = saved_rewrites;
+        }
+        if (d.from_prelude) {
+            this.instance_lowerings = .init(this.alloc);
+            this.rewrites = .init(this.alloc);
+        }
         var mbuf: [256]u8 = undefined;
         const mangled = interfaceAssocAtom(&mbuf, d.iface, d.method.name) catch return;
         this.self_prim_kind = this.primKindForIface(d.iface);

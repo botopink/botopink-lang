@@ -60,6 +60,7 @@ codegen/
     ├── wat.zig                 ← WAT backend codegen
     ├── dts_skips_templates.zig ← `.d.ts` drops `@Expr`/`@ExprCustom` template fns
     ├── runtime_scratch.zig     ← pins the `.botopinkbuild/tmp/<hex>/` scratch layout
+    ├── erlang.zig              ← the erlang backend's own rows (`assertErlangRunLog`): prelude `default fn` bodies
     └── comptime_module.zig     ← `emitComptimeModule` (untyped lowerings, primitive-method shims, host enums, variable versioning)
 ```
 
@@ -993,6 +994,25 @@ codegen/
   `erlang:length(…)` (`qualifyShadowedBifs`, over the template's text segments —
   strings, quoted atoms, `$c` and comments skipped); elsewhere it is unchanged.
   `run/module_fn_named_like_bif` pins it on four targets.
+- **A `default fn` body's locals have the kind its declared types give them**
+  (`defaultValueKind`, `default_kinds`). Inference records no lowering inside
+  an interface `default fn` body, so a method on one of its locals was the bare
+  local call (`unwrapOr(F, D)`, undefined) or a run-time dispatch shim. Inside
+  one (`in_iface_default`) a parameter's type, a `val`'s annotation and its
+  initialiser give the local a kind — a literal, `self` and a `-> Self` call on
+  it, a method of a primitive kind by the behavior method's declared return
+  type (`primMethodReturn`: `at` → `?T`, `slice` → `Self`), a prelude fn by its
+  own (`stringSlice0` → `string`), an `if` whose branches agree — and a method on
+  it is the primitive's (`primMethodNode`) or the `@Option` / `@Result` op
+  (`defaultWrapperMethodNode` → `resultOptionNode`). A local no rule answers
+  keeps the run-time shim. **A prelude body never reads inference's tables**: a
+  behavior whose text slices into the embedded `primitives.bp`
+  (`slicesIntoPrelude`, `IfaceDefault.from_prelude`) is lowered with empty
+  `instance_lowerings` and `rewrites`, because both are keyed by line and
+  column with no file — a lookup at a prelude body's location answered what
+  the consuming module recorded at the same place (a program's `s.trim()` at
+  `out.append`'s line and column made it `append(Out, …)`). Pinned by
+  `codegen/tests/erlang.zig`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`
   (`crossModule.erlAtom(module_path)` — the path joined with `@`),
@@ -2767,12 +2787,10 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 **The table audited (02 step 7, 2026-09-26):** one call of every method
 `primitives.bp` declares on `Number`/`Integer`/`Signed`/`Float`/`Bool`/`String`/
 `Array` (82 calls, `Array.range`/`Array.repeat` included) compiles on erlang
-and on beam and prints the same 84 lines on both. One method answers on
-neither — nor on commonJS or wasm: **`Array.unique`**, whose prelude body calls
-`prev.unwrapOr(x)` on an option the untyped prelude body never had rewritten to
-`__bp_option_unwrapOr` (erlang `unwrapOr/2 undefined`, beam
-`{unresolved_method, unwrapOr, 2}`). That is how a prelude `default fn` body is
-typed, not a backend lowering.
+and on beam and prints the same 84 lines on both. `Array.unique` (drop
+consecutive duplicates) answers on erlang since std's body stopped calling a
+method on an optional and the erlang emitter types a `default fn` body's locals
+(§ erlang, "A `default fn` body's locals"); wasm traps on it (05's row).
 
 ## Quick-reference rules
 
