@@ -18,6 +18,7 @@ const manifest = @import("manifest");
 const scanner = @import("./scanner.zig");
 const sources = @import("./sources.zig");
 const arglist = @import("./arglist.zig");
+const otp = @import("./otp.zig");
 const libs = @import("./libs.zig");
 const build_cmd = @import("./build.zig");
 const diagnostics = @import("./diagnostics.zig");
@@ -441,6 +442,9 @@ pub fn run(
         reporter.hintMsg("run with `--target commonJS` or set \"target\": \"commonJS\" in botopink.json");
         return 1;
     }
+    // erlang and beam: the `erl` on PATH runs the OTP release the compiler
+    // emits for, or no test runs (decision 228, `otp.zig`).
+    if ((target == .erlang or target == .beam) and !try otp.check(arena, io)) return 1;
 
     // Scan source files: `src/` (inline test blocks) plus `test/` (separate
     // `*_test.bp` suites). Test modules come last so `src/` exports are

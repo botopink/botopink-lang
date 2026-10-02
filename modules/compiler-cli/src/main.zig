@@ -24,6 +24,7 @@ const clean_cmd = @import("./cli/clean.zig");
 const test_cmd = @import("./cli/test_cmd.zig");
 const migrate_cmd = @import("./cli/migrate.zig");
 const cfg = @import("./cli/config.zig");
+const otp = @import("./cli/otp.zig");
 
 // ── Version ───────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ const HELP =
     \\  clean    Remove build artifacts
     \\  migrate  Generate the module tree (mod/pub mod) from the src/ layout
     \\  help     Show this message
-    \\  version  Show the compiler version
+    \\  version  Show the compiler version and the Erlang/OTP release it emits for
     \\
     \\Every `--flag <value>` option also accepts `--flag=<value>`. An unknown flag,
     \\an unexpected argument or an unsupported target is a usage error (exit 1).
@@ -137,7 +138,7 @@ fn dispatch(init: std.process.Init) !u8 {
     }
 
     if (std.mem.eql(u8, cmd, "version") or std.mem.eql(u8, cmd, "--version") or std.mem.eql(u8, cmd, "-v")) {
-        reporter.stdout(io, "botopink " ++ VERSION ++ "\n");
+        reporter.stdout(io, "botopink " ++ VERSION ++ "\notp: " ++ otp.RELEASE ++ "\n");
         return 0;
     }
 
@@ -435,6 +436,7 @@ test {
     _ = @import("./cli/libs.zig");
     _ = @import("./cli/migrate.zig");
     _ = @import("./cli/new.zig");
+    _ = @import("./cli/otp.zig");
     _ = @import("./cli/reporter.zig");
     _ = @import("./cli/resolver.zig");
     _ = @import("./cli/run.zig");

@@ -33,6 +33,17 @@ const std = @import("std");
 
 pub const FILENAME = "botopink.json";
 
+// ── The OTP release ────────────────────────────────────────────────────────────
+
+/// The one Erlang/OTP release the compiler emits for (decision 228 of
+/// 1.0.11-beta): one exact release, not a range. `botopink --version` prints
+/// it, every erlang and beam run of the CLI refuses an `erl` on `PATH` of
+/// another release, a manifest's `"otp"` must name it, and `scripts/gate.sh`
+/// and the CI workflows read it from here — it is written nowhere else. It
+/// lives in this module, not in the CLI, because the manifest refusal needs it
+/// and this module depends on `std` only.
+pub const OTP_RELEASE = "28";
+
 // ── Located errors ─────────────────────────────────────────────────────────────
 
 /// A manifest error with a place: the message, the manifest it is in, the raw
@@ -203,6 +214,63 @@ pub const DepEntry = struct {
 
 pub const Kind = enum { package, workspace };
 
+/// A manifest's `"otp": "<release>"` and the manifest that wrote it, so a
+/// refusal points at the value even when a member inherited it.
+pub const OtpPin = struct {
+    release: []const u8,
+    path: []const u8,
+    text: []const u8,
+
+    /// A diagnostic located at this pin's value.
+    pub fn locate(self: OtpPin, message: []const u8) Located {
+        return located(self.text, self.path, locateEntry(self.text, "otp", self.release), message);
+    }
+};
+
+/// Why `pin` cannot be a build's OTP release, or null: the compiler emits for
+/// one release, `OTP_RELEASE`, and a manifest may pin that one only.
+pub fn otpRefusal(arena: std.mem.Allocator, pin: OtpPin) std.mem.Allocator.Error!?Located {
+    if (std.mem.eql(u8, pin.release, OTP_RELEASE)) return null;
+    return pin.locate(try std.fmt.allocPrint(arena, "botopink emits Erlang for OTP " ++ OTP_RELEASE ++ "; \"otp\" names {s}", .{pin.release}));
+}
+
+/// The `"otp"` of `pin` against the one already in force, `first`: null when
+/// they agree, else a refusal located at `pin`'s value naming `first`'s file.
+fn otpDisagreement(arena: std.mem.Allocator, first: OtpPin, pin: OtpPin) std.mem.Allocator.Error!?Located {
+    if (std.mem.eql(u8, first.release, pin.release)) return null;
+    return pin.locate(try std.fmt.allocPrint(
+        arena,
+        "\"otp\" names {s} here, but {s} in {s} — every package of a build pins one OTP release",
+        .{ pin.release, first.release, first.path },
+    ));
+}
+
+/// The OTP pin of a build's closure (decision 228): `manifests` is every
+/// package the build compiles, the project first. Every one that declares
+/// `"otp"` must declare the release the first one did — a mismatch is refused
+/// at the later value, naming the earlier file — and that release must be
+/// `OTP_RELEASE` (`otpRefusal`). Null when none declares it: the compiler's
+/// release applies.
+pub fn closureOtp(arena: std.mem.Allocator, manifests: []const Manifest, out_err: *?Located) Error!?OtpPin {
+    var first: ?OtpPin = null;
+    for (manifests) |m| {
+        const pin = m.otp orelse continue;
+        if (first) |f| {
+            if (try otpDisagreement(arena, f, pin)) |refusal| {
+                out_err.* = refusal;
+                return error.Invalid;
+            }
+        } else first = pin;
+    }
+    if (first) |f| {
+        if (try otpRefusal(arena, f)) |refusal| {
+            out_err.* = refusal;
+            return error.Invalid;
+        }
+    }
+    return first;
+}
+
 /// A parsed `botopink.json`. Strings point into the arena the manifest was
 /// parsed with; `text` is the raw file so an error can be located in it.
 pub const Manifest = struct {
@@ -229,6 +297,10 @@ pub const Manifest = struct {
     dependencies: []const DepEntry = &.{},
     /// A workspace's member globs, verbatim (`modules/*`, `examples/acme-app`).
     workspaces: []const []const u8 = &.{},
+    /// The `"otp"` pin (decision 228), when declared; a member without one
+    /// inherits its workspace's (set by `expand`), which keeps pointing at the
+    /// workspace's manifest.
+    otp: ?OtpPin = null,
 
     pub fn isWorkspace(self: Manifest) bool {
         return self.kind == .workspace;
@@ -300,6 +372,7 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8, path: []const u8, out_e
     m.target = try optionalString(arena, obj, "target", text, path, out_err);
     m.targets = try optionalStringArray(arena, obj, "targets", text, path, out_err);
     if (try optionalStringArray(arena, obj, "files", text, path, out_err)) |f| m.files = f;
+    if (try optionalString(arena, obj, "otp", text, path, out_err)) |r| m.otp = .{ .release = r, .path = path, .text = text };
 
     if (obj.get("workspaces") != null) {
         m.kind = .workspace;
@@ -582,6 +655,7 @@ fn samePath(a: []const u8, b: []const u8) bool {
 ///   * two members with one `name` is an error;
 ///   * a member's `targets` may only restrict the workspace's; a member without
 ///     `targets` inherits them;
+///   * a member's `otp` must be the workspace's; a member without one inherits it;
 ///   * `{ "workspace": true }` names a sibling member; a `path` that lands on a
 ///     sibling member or on the workspace itself is refused.
 ///
@@ -695,6 +769,15 @@ pub fn expand(arena: std.mem.Allocator, io: std.Io, m: Manifest, out_err: *?Loca
                     }
                 }
             } else mm.targets = ws_targets;
+        }
+        // `otp`: inherit, or say the same release.
+        if (m.otp) |ws_otp| {
+            if (mm.otp) |own| {
+                if (try otpDisagreement(arena, ws_otp, own)) |refusal| {
+                    out_err.* = refusal;
+                    return error.Invalid;
+                }
+            } else mm.otp = ws_otp;
         }
     }
     ws.members = try members.toOwnedSlice(arena);
@@ -1415,6 +1498,86 @@ test "expand: a member may only restrict the workspace's targets" {
         try refuseWorkspace(arena_inst.allocator(), FIX ++ "/bad/target-widen"),
         "error: \"erlang\" is not one of the workspace's targets [\"commonJS\"] (tests/fixtures/bad/target-widen/botopink.json) — a member may only restrict the workspace's targets",
         "--> tests/fixtures/bad/target-widen/modules/wide/botopink.json:1:43",
+    );
+}
+
+/// `closureOtp` over manifests parsed from `texts`, each at its own path
+/// (`pkg<i>/botopink.json`), expecting a refusal; returns the rendered error.
+fn refuseClosureOtp(a: std.mem.Allocator, texts: []const []const u8) ![]const u8 {
+    var ms = try a.alloc(Manifest, texts.len);
+    for (texts, 0..) |t, i| {
+        var err: ?Located = null;
+        ms[i] = try parse(a, t, try std.fmt.allocPrint(a, "pkg{d}/botopink.json", .{i}), &err);
+    }
+    var err: ?Located = null;
+    try testing.expectError(error.Invalid, closureOtp(a, ms, &err));
+    return try err.?.renderAlloc(a);
+}
+
+test "otp: a release the compiler does not emit for is refused, located at the value (decision 228)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    try testing.expectEqualStrings("28", OTP_RELEASE);
+    try testing.expectEqualStrings(
+        \\error: botopink emits Erlang for OTP 28; "otp" names 26
+        \\ --> pkg0/botopink.json:1:27
+        \\  |
+        \\1 | { "name": "rakun", "otp": "26" }
+        \\  |                           ^^^^
+        \\
+        \\
+    , try refuseClosureOtp(a, &.{
+        \\{ "name": "rakun", "otp": "26" }
+    }));
+    // Not a string: the shape every string field is held to.
+    try expectHead(try refuse(a,
+        \\{ "name": "rakun", "otp": 28 }
+    ), "error: \"otp\" must be a string", "--> botopink.json:1:20");
+}
+
+test "otp: a closure whose packages pin two releases is refused, naming both manifests (decision 228)" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    try testing.expectEqualStrings(
+        \\error: "otp" names 29 here, but 28 in pkg0/botopink.json — every package of a build pins one OTP release
+        \\ --> pkg2/botopink.json:1:25
+        \\  |
+        \\1 | { "name": "dep", "otp": "29" }
+        \\  |                         ^^^^
+        \\
+        \\
+    , try refuseClosureOtp(a, &.{
+        \\{ "name": "rakun", "otp": "28" }
+        ,
+        \\{ "name": "quiet" }
+        ,
+        \\{ "name": "dep", "otp": "29" }
+    }));
+    // A closure that agrees answers its pin; one where nobody pins answers null.
+    var err: ?Located = null;
+    const agree = [_]Manifest{ try parseText(a, "{ \"name\": \"a\", \"otp\": \"28\" }"), try parseText(a, "{ \"name\": \"b\" }"), try parseText(a, "{ \"name\": \"c\", \"otp\": \"28\" }") };
+    try testing.expectEqualStrings("28", (try closureOtp(a, &agree, &err)).?.release);
+    const none = [_]Manifest{ try parseText(a, "{ \"name\": \"a\" }"), try parseText(a, "{ \"name\": \"b\" }") };
+    try testing.expect((try closureOtp(a, &none, &err)) == null);
+}
+
+test "expand: a member inherits the workspace's otp, and may not name another" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const a = arena_inst.allocator();
+    var err: ?Located = null;
+    const ws = try expand(a, testing.io, try read(a, testing.io, FIX ++ "/otp", &err), &err);
+    const plain = ws.member("plain").?.manifest.otp.?;
+    try testing.expectEqualStrings("28", plain.release);
+    // The inherited pin still points at the line that says it.
+    try testing.expectEqualStrings(FIX ++ "/otp/botopink.json", plain.path);
+    try testing.expectEqualStrings(FIX ++ "/otp/modules/same/botopink.json", ws.member("same").?.manifest.otp.?.path);
+    try expectHead(
+        try refuseWorkspace(a, FIX ++ "/bad/otp-member"),
+        "error: \"otp\" names 29 here, but 28 in tests/fixtures/bad/otp-member/botopink.json — every package of a build pins one OTP release",
+        "--> tests/fixtures/bad/otp-member/modules/other/botopink.json:1:27",
     );
 }
 

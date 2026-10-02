@@ -109,11 +109,13 @@ expect_no_out "stale build v1" "run does not execute the stale artifact"
 
 # ── build does not execute the program it compiles ───────────────────────────
 # erlang and beam are the targets whose build spawns anything, and it is `erl`
-# both times — never running the program. The erlang build compiles every
-# emitted `.erl` in memory with the OTP compiler (`build.zig`, `checkErlang`);
-# both ask the Erlang code path about the host modules no shipped sidecar
+# both times — never running the program. Both first ask `erl` for its OTP
+# release (`otp.zig`, decision 228); the erlang build then compiles every
+# emitted `.erl` in memory with the OTP compiler (`build.zig`, `checkErlang`),
+# and both ask the Erlang code path about the host modules no shipped sidecar
 # answers (`libs.zig`, `shipErlSidecars`). With a failing `erl` first on PATH
-# neither can run, and the build fails rather than claim what it did not check.
+# the release probe is the one spawn, and the build fails rather than claim
+# what it did not check.
 echo "==> build emits without running the program (no runtime spawn, no runtime cache)"
 SHIMS="$WORK/shims"; SPAWNED="$WORK/spawned.log"
 mkdir -p "$SHIMS"; : >"$SPAWNED"
@@ -135,20 +137,78 @@ for target in commonJS erlang beam wasm; do
   OUT="$(cd "$P" && PATH="$SHIMS:$PATH" "$BP" build 2>&1)"
   CODE=$?
   set -e
-  if [[ $target == erlang ]]; then
-    expect_code 1 "build --target erlang with a failing erl on PATH (the OTP compiler check cannot run)"
-  elif [[ $target == beam ]]; then
-    expect_code 1 "build --target beam with a failing erl on PATH (the host-module probe cannot run)"
+  if [[ $target == erlang || $target == beam ]]; then
+    expect_code 1 "build --target $target with a failing erl on PATH (the OTP release probe cannot run)"
+    expect_out "and \`erl\` on PATH did not name its release (exit 1) — install OTP" "build --target $target names the failed release probe"
   else
     expect_code 0 "build --target $target with runtime shims on PATH"
   fi
 done
-# The OTP compiler check's `erl -noshell -eval [ListFile] = …, Files = …` and the host-module
-# probe (`code:which` over the `@External.Erlang` modules no package ships) are
-# the only spawns allowed.
-OTHER="$(grep -v -e '^erl -noshell -eval \[ListFile\] = init:get_plain_arguments(),Files = ' -e '^erl -noshell -noinput -eval \[ListFile\] = init:get_plain_arguments(),Atoms = ' "$SPAWNED" || true)"
-[[ -z "$OTHER" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build but the erlang compile check" || fail "build spawned a runtime: $(tr '\n' ';' <<<"$OTHER")"
-[[ "$(grep -c -e '^erl -noshell -eval \[ListFile\] = init:get_plain_arguments(),Files = ' -e '^erl -noshell -noinput -eval \[ListFile\] = init:get_plain_arguments(),Atoms = ' "$SPAWNED")" -eq 2 ]] && ok "the erlang and the beam build each ran one erl check, and a failing erl stopped it there" || fail "the erlang and the beam build did not run one erl check each: $(grep -c '^erl ' "$SPAWNED") erl spawn(s)"
+# The OTP release probe (`erl -noshell -eval io:format(…otp_release…)`) is the
+# only spawn allowed: a failing `erl` stops the build there.
+OTP_PROBE='erl -noshell -eval io:format("~s",[erlang:system_info(otp_release)]),halt(). '
+OTHER="$(grep -vxF -e "$OTP_PROBE" "$SPAWNED" || true)"
+[[ -z "$OTHER" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build but the OTP release probe" || fail "build spawned a runtime: $(tr '\n' ';' <<<"$OTHER")"
+[[ "$(grep -cxF -e "$OTP_PROBE" "$SPAWNED")" -eq 2 ]] && ok "the erlang and the beam build each ran one release probe, and a failing erl stopped it there" || fail "the erlang and the beam build did not run one release probe each: $(grep -c '^erl ' "$SPAWNED") erl spawn(s)"
+
+# ── the OTP release the compiler emits for (decision 228) ────────────────────
+# `botopink --version` names the release; an erlang or beam build with another
+# `erl` first on PATH is refused before any `.erl` is written, and one with the
+# release builds. The shims answer the release probe and hand every other
+# `erl` call to the `erl` of the PATH the script started with.
+echo "==> the OTP release: --version names it, another erl on PATH is refused"
+run "$WORK" --version
+expect_code 0 "--version"
+expect_out "otp: 28" "--version prints the OTP release"
+for v in 28 29; do
+  mkdir -p "$WORK/otp$v"
+  printf '#!/bin/sh\nif [ "$*" = %s ]; then printf %%s %s; exit 0; fi\nPATH=%s exec erl "$@"\n' \
+    "'-noshell -eval io:format(\"~s\",[erlang:system_info(otp_release)]),halt().'" "$v" "'$PATH'" >"$WORK/otp$v/erl"
+  chmod +x "$WORK/otp$v/erl"
+done
+for target in erlang beam; do
+  P="$(project otp-$target "$target")"
+  printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+  set +e
+  OUT="$(cd "$P" && PATH="$WORK/otp29:$PATH" "$BP" build 2>&1)"
+  CODE=$?
+  set -e
+  expect_code 1 "build --target $target with OTP 29 first on PATH"
+  expect_out "botopink emits Erlang for OTP 28, and \`erl\` on PATH is OTP 29 — install OTP 28 and put it on PATH" "names both releases"
+  [[ ! -e "$P/out" ]] && ok "$target: nothing written before the refusal" || fail "$target: the refused build wrote $(find "$P/out" -type f | head -1)"
+  set +e
+  OUT="$(cd "$P" && PATH="$WORK/otp28:$PATH" "$BP" build 2>&1)"
+  CODE=$?
+  set -e
+  expect_code 0 "build --target $target with OTP 28 first on PATH"
+done
+P="$(project otp-test erlang)"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+set +e
+OUT="$(cd "$P" && PATH="$WORK/otp29:$PATH" "$BP" test 2>&1)"
+CODE=$?
+set -e
+expect_code 1 "test --target erlang with OTP 29 first on PATH"
+expect_out "and \`erl\` on PATH is OTP 29" "test names the refused release"
+
+# A manifest may pin the release, within what the compiler emits for.
+echo "==> the OTP release: a manifest's \"otp\" names 28, and a closure agrees"
+P="$(project otp-pin)"
+printf '{ "name": "otppin", "otp": "26" }\n' >"$P/botopink.json"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+run "$P" build
+expect_code 1 "build with \"otp\": \"26\""
+expect_out 'botopink emits Erlang for OTP 28; "otp" names 26' "the unsupported pin is refused"
+expect_out "botopink.json:1:" "located in the manifest"
+mkdir -p "$WORK/otp-dep/src"
+printf '{ "name": "otpdep", "otp": "29", "files": ["root.bp"] }\n' >"$WORK/otp-dep/botopink.json"
+printf 'pub fn one() -> i32 { return 1; }\n' >"$WORK/otp-dep/src/root.bp"
+printf '{ "name": "otppin", "otp": "28", "dependencies": { "otpdep": { "path": "../otp-dep" } } }\n' >"$P/botopink.json"
+run "$P" build
+expect_code 1 "build of a closure pinning 28 and 29"
+expect_out '"otp" names 29 here, but 28 in' "the disagreement is refused"
+expect_out "otp-dep/botopink.json:1:" "located at the dependency's pin"
+expect_out "but 28 in botopink.json" "naming the project's manifest"
 
 # ── build --target erlang compiles what it emits ─────────────────────────────
 # A build that only transpiled proved nothing about erlang: a module the OTP
