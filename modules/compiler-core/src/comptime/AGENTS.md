@@ -24,7 +24,7 @@ comptime/
 ├── specialize.zig     ← `SpecializedFn`, `SpecCache`, `specialize()`
 ├── transform.zig      ← `Aggregator` — drives the full transform pass
 ├── alias_erase.zig    ← type aliases erased for the backends (reflective `TypeRef` walk; a return alias of a wrapper stays)
-├── std_namespace.zig  ← decisions 110/111 on the use side: `io.fs.f()` through a std folder namespace and `collections.Dict.empty()` through a module one, rewritten on the parsed program into the one-dot forms (`analyzeSource`, `expandStdImports`)
+├── std_namespace.zig  ← decisions 110/111 on the use side: `io.fs.f()` through a std folder namespace, `collections.Dict.empty()` and a type's constructor `url.Url(…)` through a module one, rewritten on the parsed program into the one-dot / leaf forms (`analyzeSource`, `expandStdImports`)
 ├── template.zig       ← `@Expr` templates: CapturedExpr, PlainArg, ScopeSnapshot, CustomNode, fail diagnostics
 ├── template_eval.zig  ← runtime-backed template body evaluation (through runtime/runtime.zig's dispatcher)
 ├── decorator_eval.zig ← runtime-backed decorator body invocation (erl; the same refusal)

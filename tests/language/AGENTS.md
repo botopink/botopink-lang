@@ -141,6 +141,9 @@ inner value leaks out of the block) and beam (`unassigned`) miscompile it — th
 `run/unwrap_or_literal_width` (another front's finding) — an integer literal as `unwrapOr`'s default
 takes the payload's width over `?i64` and `@Result<i64, string>` (refused as `expected i32, got i64`
 by the parent binary).
+`run/std_type_ctor_through_namespace` (another front's finding) — `url.Url(…)` after `import {url}
+from "std"` constructs the type through the module namespace, as the leaf `Url(…)` does (`this "std"
+module has no such public function` on the parent binary), four targets.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
