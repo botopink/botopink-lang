@@ -1,6 +1,6 @@
 pub mod parse;
 
-import {Parser, Port, portOf} from "parse";
+import {parse.Parser, parse.Port, parse.portOf};
 
 // `Parser` and `Port` are imported like types; `ParseError`, which `Parser`'s
 // target names, comes with them (01 R2).

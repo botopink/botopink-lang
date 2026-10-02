@@ -6,7 +6,7 @@
 //// instances shared one `T` (`expected string[], got bool`).
 
 pub mod boxes;
-import {box} from "boxes";
+import {boxes.box};
 
 pub fn main() {
     val names = box(["a", "b"]);

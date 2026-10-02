@@ -5,7 +5,7 @@
 //// refuses the call where it is written (`wasm.expect`).
 
 pub mod meter;
-import {Meter, meter} from "meter";
+import {meter.Meter, meter.meter};
 
 pub fn main() {
     val m = meter(40);

@@ -64,7 +64,7 @@ pub val PatoNada = implement Swimmer for Pato {
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {Pato, PatoNada*} from "pond";
+import {pond.Pato, pond.PatoNada*};
 val donald = Pato(1);
 val splash = donald.swim();
 ```

@@ -31,7 +31,7 @@
 
 import {json} from "std";
 import {io.clock} from "std";
-import {Level, levelRank, rankName} from "levels";
+import {levels.Level, levels.levelRank, levels.rankName};
 
 pub type LogRecord(
     millis: i64,

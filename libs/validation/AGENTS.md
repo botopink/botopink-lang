@@ -114,8 +114,8 @@ from here, never rakun's placement-only `#[validated]`, and never both.
 ../../zig-out/bin/botopink format --check src test
 ```
 
-Tests import sibling modules by name (`from "report"`, `from "messages"`), as
-any package's tests do. Every test that depends on message templates sets its
+Tests import the package's modules by their path inside the braces
+(`import {report.Violation};`, decision 206), as any package's tests do. Every test that depends on message templates sets its
 own source first (`setMessageSource(builtInOnly())` or a table source) — the
 source is global host state and outlives a test. Every expected text is a
 literal.

@@ -29,7 +29,7 @@ export declare class Pato {
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {Pato} from "pond";
+import {pond.Pato};
 val Swimmer = behavior {
     fn swim(self: Self);
 }

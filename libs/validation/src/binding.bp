@@ -23,8 +23,8 @@
 //// field, which is what makes "all violations, not fail-fast" the default
 //// rather than an option.
 
-import {Violation, ValidationReport, violation} from "report";
-import {Arg, message, builtInTemplate, arg, noArgs} from "messages";
+import {report.Violation, report.ValidationReport, report.violation};
+import {messages.Arg, messages.message, messages.builtInTemplate, messages.arg, messages.noArgs};
 
 // ── the host accumulator ────────────────────────────────────────────────────
 //

@@ -2,7 +2,7 @@
 //// expected path is a literal.
 
 import {testing.asserts} from "std";
-import {PathRules, RedirectRule, canonicalize, clientHref, writeRedirectTable, parseRedirectTable} from "url_rules";
+import {url_rules.PathRules, url_rules.RedirectRule, url_rules.canonicalize, url_rules.clientHref, url_rules.writeRedirectTable, url_rules.parseRedirectTable};
 
 fn docs() -> PathRules {
     return PathRules(basePath: "/docs", trailingSlash: false);

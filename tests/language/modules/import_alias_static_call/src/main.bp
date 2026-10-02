@@ -5,7 +5,7 @@
 
 pub mod shapes;
 
-import {Point as P, Shade as S} from "shapes";
+import {shapes.Point as P, shapes.Shade as S};
 
 fn level(s: S) -> i32 {
     return case s {

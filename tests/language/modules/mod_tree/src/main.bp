@@ -2,7 +2,7 @@
 //// through it, and a private `mod` leaf only the index can see.
 
 pub mod shapes;
-import {describe, lucky} from "shapes";
+import {shapes.describe, shapes.lucky};
 
 pub fn main() {
     @print(describe());

@@ -133,7 +133,7 @@ pub type App(
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {Response, App} from "http";
+import {http.Response, http.App};
 
 fn main() {
     val r = Response.ok("hi");

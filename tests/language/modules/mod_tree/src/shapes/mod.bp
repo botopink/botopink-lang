@@ -1,7 +1,7 @@
 pub mod circle;
 mod helpers;
-import {name} from "shapes.circle";
-import {seven} from "shapes.helpers";
+import {shapes.circle.name};
+import {shapes.helpers.seven};
 
 pub fn describe() -> string {
     return name();

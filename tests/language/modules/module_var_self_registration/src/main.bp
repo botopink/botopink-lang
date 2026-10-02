@@ -1,7 +1,7 @@
 pub mod registry;
 pub mod component;
-import {registered, register, unregisterLast} from "registry";
-import {componentName} from "component";
+import {registry.registered, registry.register, registry.unregisterLast};
+import {component.componentName};
 
 pub fn main() {
     @print(componentName());

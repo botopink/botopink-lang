@@ -2,7 +2,7 @@
 //// wire — on both targets. Every expected text is a literal.
 
 import {testing.asserts} from "std";
-import {NavKind, NavOutcome, signalReason, signalFromReason, isSignalReason, signalPrefixes, signalToWire, signalFromWire} from "navigation";
+import {navigation.NavKind, navigation.NavOutcome, navigation.signalReason, navigation.signalFromReason, navigation.isSignalReason, navigation.signalPrefixes, navigation.signalToWire, navigation.signalFromWire};
 
 fn kindText(k: NavKind) -> string {
     return case k {

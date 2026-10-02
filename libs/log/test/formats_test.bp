@@ -8,8 +8,8 @@
 
 import {testing.asserts} from "std";
 import {io.clock} from "std";
-import {Level} from "levels";
-import {LogRecord, Format, renderRecord, renderPlain, parseFormat, formatName, gelfKey, isoTimestamp, gelfTimestamp} from "formats";
+import {levels.Level};
+import {formats.LogRecord, formats.Format, formats.renderRecord, formats.renderPlain, formats.parseFormat, formats.formatName, formats.gelfKey, formats.isoTimestamp, formats.gelfTimestamp};
 
 fn at(iso: string) -> i64 {
     return case clock.parseIso8601(iso) {

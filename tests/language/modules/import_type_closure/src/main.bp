@@ -1,6 +1,6 @@
 pub mod users;
 
-import {User, makeUser} from "users";
+import {users.User, users.makeUser};
 
 pub fn main() {
     val u: User = makeUser();

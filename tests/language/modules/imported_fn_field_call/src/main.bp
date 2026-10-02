@@ -8,7 +8,7 @@
 //// call its return type (`valueCallTypeRef`).
 
 pub mod sink;
-import {ChunkWriter, File, writer} from "sink";
+import {sink.ChunkWriter, sink.File, sink.writer};
 
 fn emit(out: ChunkWriter, x: string) -> string {
     return out.write(x);

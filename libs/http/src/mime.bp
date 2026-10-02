@@ -5,7 +5,7 @@
 //// `application/octet-stream` — the type that asks a browser to download
 //// rather than render, so an unlisted file is never executed as a guess.
 
-import {sub} from "lexical";
+import {lexical.sub};
 
 // The extension `pathOrExt` names, lowercase and without the dot: the text
 // after the last `.` of its last `/` segment (`a/b.min.JS` → `js`,

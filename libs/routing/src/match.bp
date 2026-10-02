@@ -5,8 +5,8 @@
 //// identically to agree on which route a URL is.
 
 import {collections.Dict} from "std";
-import {SegmentKind, parseSegment, kindName, trimSlashes} from "segment";
-import {RouteEntry} from "table";
+import {segment.SegmentKind, segment.parseSegment, segment.kindName, segment.trimSlashes};
+import {table.RouteEntry};
 
 // ── step 4: the matcher ─────────────────────────────────────────────────────
 //

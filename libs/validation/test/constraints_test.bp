@@ -17,11 +17,11 @@
 //// annotation-processor suite. The refusal TEXTS are in `src/decorators.bp`,
 //// beside the rule each one states.
 
-import {validated, notNull, notBlank, notEmpty, sizeBetween, minValue, maxValue, positive, positiveOrZero, email, pattern, pastDate, futureDate, constraint} from "decorators";
-import {ValidationReport, Violation} from "report";
-import {constraintTableJson} from "table";
-import {vNotNull, vNotBlank, vNotEmpty, vNotEmptyList, vSizeBetween, vSizeBetweenList, vMinValueI32, vMaxValueI32, vMinValueF64, vMaxValueF64, vPositiveI32, vPositiveOrZeroI32, vPositiveI64, vPositiveOrZeroI64, vPositiveF64, vPositiveOrZeroF64, vEmail, vPattern, vPastDate, vFutureDate, emailPattern} from "constraints";
-import {vConstraint} from "spi";
+import {decorators.validated, decorators.notNull, decorators.notBlank, decorators.notEmpty, decorators.sizeBetween, decorators.minValue, decorators.maxValue, decorators.positive, decorators.positiveOrZero, decorators.email, decorators.pattern, decorators.pastDate, decorators.futureDate, decorators.constraint};
+import {report.ValidationReport, report.Violation};
+import {table.constraintTableJson};
+import {constraints.vNotNull, constraints.vNotBlank, constraints.vNotEmpty, constraints.vNotEmptyList, constraints.vSizeBetween, constraints.vSizeBetweenList, constraints.vMinValueI32, constraints.vMaxValueI32, constraints.vMinValueF64, constraints.vMaxValueF64, constraints.vPositiveI32, constraints.vPositiveOrZeroI32, constraints.vPositiveI64, constraints.vPositiveOrZeroI64, constraints.vPositiveF64, constraints.vPositiveOrZeroF64, constraints.vEmail, constraints.vPattern, constraints.vPastDate, constraints.vFutureDate, constraints.emailPattern};
+import {spi.vConstraint};
 import {io.clock} from "std";
 
 // An `i64` cannot be written as a literal and an integer literal does not widen

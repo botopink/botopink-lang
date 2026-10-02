@@ -14,9 +14,9 @@
 pub mod web;
 pub mod ssr;
 pub mod pages;
-import {PageRenderer, render} from "ssr";
-import {home} from "web";
-import {about, held} from "pages";
+import {ssr.PageRenderer, ssr.render};
+import {web.home};
+import {pages.about, pages.held};
 
 pub fn main() {
     val renderer: PageRenderer = { req, out -> req.path() + " " + out.tag };

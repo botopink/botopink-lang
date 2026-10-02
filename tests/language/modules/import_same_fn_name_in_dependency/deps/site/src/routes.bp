@@ -2,7 +2,7 @@
 //// own root, as it would in a project of its own: `app.page` is
 //// `site/app/page` once the package is somebody's dependency.
 
-import {title} from "app.page";
+import {app.page.title};
 
 pub fn appTitle() -> string {
     return title();

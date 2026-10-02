@@ -114,7 +114,7 @@ test "js: dispatch ---- multi-module implement on an imported record" {
         \\pub type Pato(id: i32)
         },
         .{ .path = "", .source =
-        \\import {Pato} from "pond";
+        \\import {pond.Pato};
         \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
@@ -147,7 +147,7 @@ test "js: dispatch ---- multi-module extension activated via star import" {
         \\}
         },
         .{ .path = "", .source =
-        \\import {Pato, PatoNada*} from "pond";
+        \\import {pond.Pato, pond.PatoNada*};
         \\fn main() {
         \\    val donald = Pato(2);
         \\    @print(donald.swim());
@@ -224,7 +224,7 @@ test "js: dispatch ---- a method on an imported enum, an imported associated fn 
         \\pub fn make() -> Counter { return Counter(n: 41); }
         },
         .{ .path = "", .source =
-        \\import {Counter, Shape, make} from "geometry";
+        \\import {geometry.Counter, geometry.Shape, geometry.make};
         \\fn main() {
         \\    val c: Counter = Counter.zero();
         \\    @print(c.bump());
@@ -442,7 +442,7 @@ test "erlang: a field of function type of an IMPORTED record is applied" {
     try h.assertErlangRunLogModules(std.testing.allocator, &.{
         .{ .path = "shape", .source = shape },
         .{ .path = "main", .source =
-        \\import { cell, Cell } from "shape";
+        \\import {shape.cell, shape.Cell};
         \\pub fn main() {
         \\    val c = cell(3);
         \\    @print(c.set(5));
@@ -453,7 +453,7 @@ test "erlang: a field of function type of an IMPORTED record is applied" {
     try h.assertErlangRunLogModules(std.testing.allocator, &.{
         .{ .path = "shape", .source = shape },
         .{ .path = "main", .source =
-        \\import { cell } from "shape";
+        \\import {shape.cell};
         \\pub fn main() {
         \\    @print(cell(3).set(5));
         \\}

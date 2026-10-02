@@ -3,8 +3,8 @@
 //// both targets. Every expected text is a literal.
 
 import {testing.asserts, json.decode} from "std";
-import {ActionState} from "state";
-import {ActionEnvelope, writeEnvelope, readEnvelope, parseActionState} from "envelope";
+import {state.ActionState};
+import {envelope.ActionEnvelope, envelope.writeEnvelope, envelope.readEnvelope, envelope.parseActionState};
 
 fn env(
     ok: bool,

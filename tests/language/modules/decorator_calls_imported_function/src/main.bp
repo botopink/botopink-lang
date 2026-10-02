@@ -7,8 +7,8 @@
 
 pub mod text;
 pub mod sched;
-import {scheduled} from "sched";
-import {shout as yell} from "text";
+import {sched.scheduled};
+import {text.shout as yell};
 
 fn tag(comptime decl: @Decl) {
     @emit("pub fn tagged() -> string { return \"" + yell(decl.name) + "\"; }");

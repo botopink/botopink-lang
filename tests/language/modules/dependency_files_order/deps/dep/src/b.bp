@@ -1,4 +1,4 @@
-import {base} from "a";
+import {a.base};
 
 pub fn derived() -> i32 {
     return base() + 1;

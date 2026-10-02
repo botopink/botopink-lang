@@ -4,7 +4,7 @@
 //// (`call to undefined function describe/1`).
 
 pub mod sched;
-import {scheduled} from "sched";
+import {sched.scheduled};
 
 #[scheduled("* * * * *")]
 fn tick() -> i32 {

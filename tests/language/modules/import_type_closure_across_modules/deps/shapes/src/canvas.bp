@@ -1,5 +1,5 @@
-import {Point} from "point";
-import {Outline} from "outline";
+import {point.Point};
+import {outline.Outline};
 
 pub type Canvas(outlines: Array<Outline>, origin: Point) {
     pub fn count(self: Self) -> i32 {

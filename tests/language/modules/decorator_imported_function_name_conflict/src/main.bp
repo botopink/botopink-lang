@@ -4,7 +4,7 @@
 //// for the other; the decorator is refused where it is applied.
 
 pub mod text;
-import {shout} from "text";
+import {text.shout};
 
 fn wrap(s: string) -> string {
     return "[" + s + "]";

@@ -1,6 +1,6 @@
 //// validation — step 1: the report algebra.
 
-import {Violation, ValidationReport, violation, noViolation, oneViolation, violationJson} from "report";
+import {report.Violation, report.ValidationReport, report.violation, report.noViolation, report.oneViolation, report.violationJson};
 import {json} from "std";
 
 fn v(field: string, code: string, message: string) -> Violation {

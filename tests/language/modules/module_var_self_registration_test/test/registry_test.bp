@@ -2,8 +2,8 @@
 //// imports the component, so its module-level `val` runs before the test
 //// reads what it registered.
 
-import {registered} from "registry";
-import {componentName} from "component";
+import {registry.registered};
+import {component.componentName};
 
 test "a module-level val with a side effect runs before a test reads its effect" {
     assert componentName() == "component";

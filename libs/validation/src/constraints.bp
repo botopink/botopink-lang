@@ -20,8 +20,8 @@
 //// does not widen to `i64` in arithmetic, so `#[minValue]`/`#[maxValue]` are
 //// refused on an `i64` field rather than emitted as something that reds.
 
-import {Violation, violation, noViolation, oneViolation} from "report";
-import {Arg, arg, message, builtInTemplate, noArgs, showI32, showI64, showF64} from "messages";
+import {report.Violation, report.violation, report.noViolation, report.oneViolation};
+import {messages.Arg, messages.arg, messages.message, messages.builtInTemplate, messages.noArgs, messages.showI32, messages.showI64, messages.showF64};
 import {regex, io.clock} from "std";
 
 fn fail(

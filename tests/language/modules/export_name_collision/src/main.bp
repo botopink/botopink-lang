@@ -25,7 +25,7 @@
 
 pub mod one;
 pub mod two;
-import {parse} from "one";
+import {one.parse};
 
 pub fn main() {
     @print(parse("x"));

@@ -394,7 +394,7 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
         .{
             .path = "",
             .source =
-            \\import {html} from "view";
+            \\import {view.html};
             \\
             \\val name = "world";
             \\

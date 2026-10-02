@@ -88,12 +88,13 @@ package declaring it, in the consumer and inside a dependency, on commonJS and e
 were refused as `ambiguous-import-use` on the parent binary).
 `01-checker` (an import that names its module says which declaration it means) adds eight `modules/`
 cells, on all four targets. `import_same_fn_name_by_module` — `app/page` and `app/blog/page` each
-declare `pub fn title`; `main` imports it `from "app.page"` and a third module `from
-"app.blog.page"`, and the two answers differ; `import {page} from "app.blog"` binds the namespace
+declare `pub fn title`; `main` imports it as `app.page.title` and a third module as
+`app.blog.page.title` (decision 206's brace form — they were `from "app.page"` / `from
+"app.blog.page"`), and the two answers differ; `import {app.blog.page};` binds the namespace
 `app/blog/page` (an unbound `page` on the parent binary). `import_same_fn_name_two_aliases` — `NotFound` from
 `app.not_found` and from `app.blog.not_found` in one module, each under its own alias, both called
 (a generated route table's shape). `import_same_fn_name_in_dependency` — the same inside a
-dependency, whose own module names a sibling by the path below the package (`from "app.page"` for
+dependency, whose own module names a sibling by the path below the package (`app.page.title` for
 `site/app/page`), beside a consumer naming the other by the package-qualified path (`from
 "site.app.blog.page"`). The three were refused as `ambiguous-import-use` on the parent binary: a
 dotted source was compared byte for byte with the module's `/` path and named nothing, and a path
@@ -101,15 +102,15 @@ below the importer's package had no reading.
 `import_ambiguous_from_package` is the refusal that stays — `import {NotFound} from "site"` names a
 package two of whose modules declare the name, so the use is `ambiguous-import-use`, located, naming
 both, by `<target>.expect`. `import_sibling_path_beside_std_name` — a dependency's module imports a
-type and two functions `from "sort/queue"` (its sibling, `kit/sort/queue`) in a program that also
+type and two functions as `sort.queue.…` (its sibling, `kit/sort/queue`) in a program that also
 loads `std/collections`, which declares the three names: the dependency was refused ("`Queue` is
 declared `pub` by `std/collections` and by `kit/sort/queue`, and this import does not say which") while
 a path of several segments below the importer's package named nothing.
 `import_own_module_over_dependency_path` is that reading's boundary: the project's own `app/page` is
-what `from "app/page"` names although the dependency's `site/app/page` declares the name too — the
+what `import {app.page.title};` names although the dependency's `site/app/page` declares the name too — the
 full path is read first (it passes on the parent binary; it guards the order of the two readings).
-`import_same_name_twice_unaliased` is the use that cannot tell: `import {title} from "app.page";
-import {title} from "app.blog.page";` is `import-name-collision` at the second item, naming both
+`import_same_name_twice_unaliased` is the use that cannot tell: `import {app.page.title};
+import {app.blog.page.title};` is `import-name-collision` at the second item, naming both
 modules, by `<target>.expect` — the second import used to replace the first and commonJS answered
 `app` where erlang and wasm answered `blog`. `import_same_fn_name_std_and_package_aliases` — a package
 and `std/collections` both declare `lt` and `reverse`; one module imports each under an alias and
@@ -129,7 +130,10 @@ imports `{Level, levelName} from "log"` and reaches the bundled `log`, and `log.
 ownLevelName` reaches its module; `"targets"` excludes wasm, where `log` reaches host functions with
 no wasm binding (refused on the parent binary: `Level` "not exported by the named module" `log`).
 `import_module_path_in_braces` — nested paths (`components.card.Card`,
-`reliability.policy.nextDelay as policyDelay`) beside a local `nextDelay`, on all four targets.
+`reliability.policy.nextDelay as policyDelay`) beside a local `nextDelay`, on all four targets. The
+suite's own imports of a module of their package were migrated by
+`scripts/codemod-import-without-from.py`; `method_on_unimported_type` is the case that showed the
+need: its `import {logger} from "log";`, meant for its own `log.bp`, loaded the bundled `log`.
 Decision 141 adds `run/external_template_refused_on_beam` — an `@External.Erlang` template with a
 macro runs on erlang and is a located build error on beam naming the construct (`.beam.expect`); beam
 no longer evaluates a template it cannot compile from source at run time.
@@ -183,7 +187,7 @@ parent binary: `run/task_await_in_if_block` (an `if` block that `await`s without
 `@Task` body — commonJS lowered it into a plain arrow and the module did not load),
 `run/task_void_return_in_if_block` (a bare `return;` in an `if` block of a `@Task<void>` body — wasm
 emitted a `return` with nothing on the stack), `modules/dependency_files_order` (a dependency whose
-`files` lists every importer before what it imports, `from "a"` and a bare `import {Leaf};`),
+`files` lists every importer before what it imports, `import {a.base};` and a bare `import {Leaf};`),
 `run/external_erlang_host_module_missing` (`.targets` `erlang beam`: an `@External.Erlang` module that is
 neither shipped nor in the Erlang code path is a located build error on both, `.erlang.expect` and
 `.beam.expect`),

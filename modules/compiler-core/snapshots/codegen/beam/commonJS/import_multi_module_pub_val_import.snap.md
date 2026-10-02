@@ -30,7 +30,7 @@ export declare const HOST: string;
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {PORT, HOST} from "config";
+import {config.PORT, config.HOST};
 val addr = HOST;
 val port = PORT;
 ```

@@ -13,9 +13,9 @@
 //// `implement`s `Constraint`, so the compiler still checks the shape, and the
 //// closure is what crosses. The gap is recorded, not worked around silently.
 
-import {Constraint, registerConstraint, constraintRegistered, registeredConstraints, clearConstraints, vConstraint, unknownConstraintMessage} from "spi";
-import {ValidationReport, Violation} from "report";
-import {templateFor, interpolate, message, arg, noArgs, builtInTemplate, currentLocale, MessageSource, setMessageSource, builtInOnly} from "messages";
+import {spi.Constraint, spi.registerConstraint, spi.constraintRegistered, spi.registeredConstraints, spi.clearConstraints, spi.vConstraint, spi.unknownConstraintMessage};
+import {report.ValidationReport, report.Violation};
+import {messages.templateFor, messages.interpolate, messages.message, messages.arg, messages.noArgs, messages.builtInTemplate, messages.currentLocale, messages.MessageSource, messages.setMessageSource, messages.builtInOnly};
 
 // An application constraint. It `implement`s the SPI behavior, so `code` and
 // `check` are checked against it; `check` answers "" when the value is

@@ -31,7 +31,7 @@ pub fn double(x: i32) -> i32 {
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {double} from "math";
+import {math.double};
 val result = double(21);
 ```
 

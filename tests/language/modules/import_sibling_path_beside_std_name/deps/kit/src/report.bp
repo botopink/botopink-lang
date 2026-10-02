@@ -1,6 +1,6 @@
 //// A module of `kit` naming its sibling by the path below the package's root.
 
-import {Queue, lt, reverse} from "sort/queue";
+import {sort.queue.Queue, sort.queue.lt, sort.queue.reverse};
 
 pub fn report() -> string {
     val q = Queue(label: "kit", size: reverse(1, 2, 3));

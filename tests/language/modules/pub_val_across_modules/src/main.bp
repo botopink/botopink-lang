@@ -6,7 +6,7 @@
 
 pub mod base;
 pub mod config;
-import {Globals, Mode, globals, mode, sizes, limit as maxItems, scaled, name, twice, counted} from "config";
+import {config.Globals, config.Mode, config.globals, config.mode, config.sizes, config.limit as maxItems, config.scaled, config.name, config.twice, config.counted};
 
 type Box(n: i32) {
     pub fn fill(self: Self) -> string {

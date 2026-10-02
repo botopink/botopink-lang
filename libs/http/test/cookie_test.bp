@@ -2,7 +2,7 @@
 //// Every expected text is a literal.
 
 import {testing.asserts} from "std";
-import {parse, get, serialize, formatHeader, CookieAttributes} from "cookie";
+import {cookie.parse, cookie.get, cookie.serialize, cookie.formatHeader, cookie.CookieAttributes};
 
 fn lax(maxAge: ?i32) -> CookieAttributes {
     return CookieAttributes(

@@ -13,9 +13,9 @@
 pub mod app;
 pub mod routes;
 
-import {title} from "app.page";
-import {blogTitle} from "routes";
-import {page} from "app.blog";
+import {app.page.title};
+import {routes.blogTitle};
+import {app.blog.page};
 
 pub fn main() {
     @print(title());

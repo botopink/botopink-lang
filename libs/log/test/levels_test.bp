@@ -2,7 +2,7 @@
 //// reads.
 
 import {testing.asserts} from "std";
-import {Level, levelName, levelRank, otpLevel, rankOf, rankName, validLevels} from "levels";
+import {levels.Level, levels.levelName, levels.levelRank, levels.otpLevel, levels.rankOf, levels.rankName, levels.validLevels};
 
 test "levels: names, ranks and the OTP severities" {
     try asserts.equals(

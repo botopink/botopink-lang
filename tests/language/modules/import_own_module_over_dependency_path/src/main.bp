@@ -8,7 +8,7 @@
 
 pub mod app;
 
-import {title} from "app/page";
+import {app.page.title};
 import {other} from "site";
 
 pub fn main() {

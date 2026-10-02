@@ -5,7 +5,7 @@
 //// importer did not know `Request` was a behavior.
 
 pub mod web;
-import {Request, Response, hostRequest} from "web";
+import {web.Request, web.Response, web.hostRequest};
 
 pub fn main() {
     val req = hostRequest();

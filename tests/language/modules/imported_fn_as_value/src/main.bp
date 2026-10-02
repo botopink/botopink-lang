@@ -5,7 +5,7 @@
 //// the importer (`variable 'Twice' is unbound`).
 
 pub mod lib;
-import {twice, greet} from "lib";
+import {lib.twice, lib.greet};
 
 fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
     return f(x);

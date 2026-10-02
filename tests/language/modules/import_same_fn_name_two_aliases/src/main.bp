@@ -8,8 +8,8 @@
 
 pub mod app;
 
-import {NotFound as appNotFound} from "app.not_found";
-import {NotFound as blogNotFound} from "app.blog.not_found";
+import {app.not_found.NotFound as appNotFound};
+import {app.blog.not_found.NotFound as blogNotFound};
 
 pub fn main() {
     @print(appNotFound());

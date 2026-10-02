@@ -24,10 +24,10 @@
 
 import {io.clock, io.os} from "std";
 import {io.process as host} from "std";
-import {Level} from "levels";
-import {LogRecord} from "formats";
-import {currentSink} from "sink";
-import {errorDigest} from "digest";
+import {levels.Level};
+import {formats.LogRecord};
+import {sink.currentSink};
+import {digest.errorDigest};
 
 fn none() -> Array<#(string, string)> {
     val empty: Array<#(string, string)> = [];

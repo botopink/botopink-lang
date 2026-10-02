@@ -17,7 +17,7 @@
 
 import {json.Json, json.decode, json.quote, json.array, json.object} from "std";
 import {navigation.NavKind, navigation.signalFromWire} from "routing";
-import {ActionState, parseState} from "state";
+import {state.ActionState, state.parseState};
 
 pub type ActionEnvelope(
     ok: bool,

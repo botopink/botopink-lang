@@ -11,7 +11,7 @@
 //// backends' fronts, which this cell must not stand on.
 
 pub mod text;
-import {label} from "text";
+import {text.label};
 
 #[@External.Erlang("erlang", "abs")]
 declare fn magnitude(n: i32) -> i32;

@@ -5,11 +5,11 @@
 //// `defaultSink()` back before it asserts.
 
 import {testing.asserts} from "std";
-import {Level, levelName, levelRank} from "levels";
-import {LogRecord} from "formats";
-import {LogSink, setSink, defaultSink, currentSink} from "sink";
-import {Logger} from "logging";
-import {errorDigest} from "digest";
+import {levels.Level, levels.levelName, levels.levelRank};
+import {formats.LogRecord};
+import {sink.LogSink, sink.setSink, sink.defaultSink, sink.currentSink};
+import {logging.Logger};
+import {digest.errorDigest};
 
 #[@External.Node("""(function(){ globalThis.__bp_log_capture = []; return 0; })()""")]
 #[@External.Erlang("""(fun() -> put(lg_capture, []), 0 end)()""")]

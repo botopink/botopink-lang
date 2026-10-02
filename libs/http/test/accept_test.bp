@@ -2,7 +2,7 @@
 //// examples, on both targets.
 
 import {testing.asserts} from "std";
-import {qValue, parseAccept, mediaQuality, negotiateMedia, tokenQuality, negotiateToken, parseAcceptLanguage, MediaRange, LanguageRange} from "accept";
+import {accept.qValue, accept.parseAccept, accept.mediaQuality, accept.negotiateMedia, accept.tokenQuality, accept.negotiateToken, accept.parseAcceptLanguage, accept.MediaRange, accept.LanguageRange};
 
 fn rfcAccept() -> string {
     return "text/*;q=0.3, text/plain;q=0.7, text/plain;format=flowed, text/plain;format=fixed;q=0.4, */*;q=0.5";

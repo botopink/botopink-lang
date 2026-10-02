@@ -7,7 +7,7 @@
 pub mod a;
 pub mod b;
 import {parse};
-import {parse as parseA} from "a";
+import {a.parse as parseA};
 
 pub fn main() {
     @print(parseA("x"));

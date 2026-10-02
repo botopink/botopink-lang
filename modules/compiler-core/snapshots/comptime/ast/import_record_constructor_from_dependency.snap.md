@@ -22,7 +22,7 @@ type Point(x: i32, y: i32)
 
 ----- SOURCE CODE -- main.bp
 ```botopink
-import {Point} from "models";
+import {models.Point};
 val origin = Point(0, 0);
 ```
 

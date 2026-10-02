@@ -2,7 +2,7 @@
 //// expected text is a literal.
 
 import {testing.asserts} from "std";
-import {ActionState, newActionState, writeState, parseState} from "state";
+import {state.ActionState, state.newActionState, state.writeState, state.parseState};
 
 test "actions: writeState answers the pinned state literal" {
     val s = writeState(

@@ -134,7 +134,8 @@ refused at the first std cell without a wasm binding the package reaches
 ../../zig-out/bin/botopink format --check src test
 ```
 
-Tests import sibling modules by name (`from "formats"`). The sink is global host
+Tests import the package's modules by their path inside the braces
+(`import {formats.renderEcs};`, decision 206). The sink is global host
 state and outlives a test: every test that sets one puts `defaultSink()` back
 before it asserts; `test/logging_test.bp` captures through three test-local
 cells. An epoch reading is built with `clock.parseIso8601` (an `i64` has no

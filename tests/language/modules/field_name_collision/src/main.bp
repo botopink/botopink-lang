@@ -18,7 +18,7 @@
 //// same way, and closing that row is its own front's.
 
 pub mod shapes;
-import {Ctx, hitOf} from "shapes";
+import {shapes.Ctx, shapes.hitOf};
 
 pub fn main() {
     var n = 0 - 1;

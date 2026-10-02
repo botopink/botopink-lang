@@ -13,9 +13,9 @@
 //// a test that inherited another test's leftovers would be asserting the wrong
 //// thing.
 
-import {bindInt, bindBool, bindRequired, bindEpochMillis, bindingReport, bindingCount, bindingReset, bindingIsolated, isIntegerText, parseI32, parseI64} from "binding";
-import {ValidationReport, Violation} from "report";
-import {setMessageSource, builtInOnly} from "messages";
+import {binding.bindInt, binding.bindBool, binding.bindRequired, binding.bindEpochMillis, binding.bindingReport, binding.bindingCount, binding.bindingReset, binding.bindingIsolated, binding.isIntegerText, binding.parseI32, binding.parseI64};
+import {report.ValidationReport, report.Violation};
+import {messages.setMessageSource, messages.builtInOnly};
 
 fn fresh() -> i32 {
     val _s = setMessageSource(builtInOnly());

@@ -1,8 +1,8 @@
 //// http: HTTP-date, both directions, on both targets.
 
 import {testing.asserts} from "std";
-import {formatHttpDate, parseHttpDate} from "date";
-import {wide} from "lexical";
+import {date.formatHttpDate, date.parseHttpDate};
+import {lexical.wide};
 
 // Seconds as epoch milliseconds (an integer literal is `i32`).
 fn at(seconds: i32) -> i64 {

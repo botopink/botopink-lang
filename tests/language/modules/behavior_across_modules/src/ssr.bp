@@ -1,6 +1,6 @@
 //// An alias whose body names `Request` and `Out`, which THIS module imports.
 
-import {Request, Out} from "web";
+import {web.Request, web.Out};
 
 pub type PageRenderer = fn(req: Request, out: Out) -> string;
 

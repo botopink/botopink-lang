@@ -41,7 +41,7 @@ test "assertTypeAst: import single val from dependency module" {
         \\pub val MAX = 100;
         },
         .{ .path = "", .source =
-        \\import {MAX} from "constants";
+        \\import {constants.MAX};
         \\val limit = MAX;
         },
     });
@@ -54,7 +54,7 @@ test "assertTypeAst: import multiple vals from dependency module" {
         \\pub val port = 8080;
         },
         .{ .path = "", .source =
-        \\import {host, port} from "config";
+        \\import {config.host, config.port};
         \\val addr = host;
         \\val p = port;
         },
@@ -69,7 +69,7 @@ test "assertTypeAst: import fn from dependency module" {
         \\}
         },
         .{ .path = "", .source =
-        \\import {double} from "math";
+        \\import {math.double};
         \\val result = double(21);
         },
     });
@@ -81,11 +81,11 @@ test "assertTypeAst: three-level chain ---- a imports b, b imports c" {
         \\pub val VERSION = 1;
         },
         .{ .path = "mid", .source =
-        \\import {VERSION} from "base";
+        \\import {base.VERSION};
         \\pub val MAJOR = VERSION;
         },
         .{ .path = "", .source =
-        \\import {MAJOR} from "mid";
+        \\import {mid.MAJOR};
         \\val v = MAJOR;
         },
     });
@@ -108,7 +108,7 @@ test "assertTypeAst: import record constructor from dependency" {
         \\type Point(x: i32, y: i32)
         },
         .{ .path = "", .source =
-        \\import {Point} from "models";
+        \\import {models.Point};
         \\val origin = Point(0, 0);
         },
     });

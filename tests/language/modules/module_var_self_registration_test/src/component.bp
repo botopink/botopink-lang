@@ -1,4 +1,4 @@
-import {register} from "registry";
+import {registry.register};
 
 val _registered = register("component");
 

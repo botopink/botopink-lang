@@ -10,8 +10,8 @@
 
 pub mod one;
 pub mod two;
-import {parse, viaOne} from "one";
-import {parse as parse2, viaTwo} from "two";
+import {one.parse, one.viaOne};
+import {two.parse as parse2, two.viaTwo};
 
 pub fn main() {
     @print(parse("abc"));
