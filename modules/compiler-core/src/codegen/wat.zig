@@ -1407,6 +1407,9 @@ const Emitter = struct {
     /// substitution — `self.left == self.right` over `Pair<string>`
     /// compared WORDS while the fields read as `A` (`run/generic_string_equality`).
     field_subs_owner: []const u8 = "",
+    /// The names a tuple pattern bound (`bindTuplePattern`), whose element
+    /// type `primKindAt` reads when inference recorded no lowering. In `reg_arena`.
+    tuple_binders: std.StringHashMapUnmanaged(void) = .empty,
     field_subs: []const TypeSub = &.{},
     /// Set while a specialisation's body is emitted: a method on a value
     /// whose declared type the substitution made a primitive takes that
@@ -4947,9 +4950,17 @@ const Emitter = struct {
     /// the handler-less form to traps, a written `catch <value>` replaces the
     /// staged subject so the bindings come from it.
     ///
-    /// `bindPattern` covers identifier and variant patterns. A list pattern
-    /// binds nothing here, exactly as a `case` arm's does not — wasm has no
-    /// array test yet (`patternIsIrrefutable`).
+    /// The local a pattern is matched against, given what its subject is: a
+    /// tuple's shape (what a tuple pattern reads its elements by), an array's
+    /// shape and element kind (what a list pattern reads).
+    fn noteSubjectShape(self: *Emitter, local: []const u8, subject: ast.Expr) !void {
+        if (try self.printShapeOf(subject)) |sh| if (sh[0] == '(' or sh[0] == '[') try self.print_shape_locals.put(local, sh);
+        if (self.isArrayExpr(subject)) {
+            try self.arr_locals.put(local, {});
+            try self.arr_elem_locals.put(local, self.elemKindOf(subject));
+        }
+    }
+
     /// True when `emitPatternTest` produces a real test for `p`. A variant
     /// pattern naming neither an enum variant nor a `@Result` arm — a record
     /// constructor, say — falls back to a constant `0`, which as a `val
@@ -4977,6 +4988,7 @@ const Emitter = struct {
         try self.emit(.{ .local_set = slot });
         if (self.isStringExpr(ap.expr.*)) try self.str_locals.put(slot, {});
         if (self.resultShapeOf(ap.expr.*)) |shape| try self.result_subjects.put(slot, shape);
+        try self.noteSubjectShape(slot, ap.expr.*);
 
         if (!self.patternIsIrrefutable(ap.pattern) and self.patternTestIsReal(ap.pattern)) {
             try self.emitPatternTest(ap.pattern, slot, loc);
@@ -5752,6 +5764,7 @@ const Emitter = struct {
         if (subj_is_str) try self.str_locals.put(subj_local, {});
         if (self.resultShapeOf(c.subjects[0])) |shape| try self.result_subjects.put(subj_local, shape);
         if (self.enumOfSubject(c.subjects[0])) |en| try self.subject_enums.put(self.alloc, subj_local, en) else _ = self.subject_enums.remove(subj_local);
+        try self.noteSubjectShape(subj_local, c.subjects[0]);
         // `case a, n { 0, "x" -> … }`: every subject in its own local,
         // `<subject local>_<i>`, which the `.multi` pattern's i-th pattern is
         // tested against and binds from. Only the first was lowered, and the
@@ -5978,12 +5991,14 @@ const Emitter = struct {
             // a written path is a variant, never a binding (§5.1 P8); a name
             // that is a `type` this module declares is decision 8 §3.3's arm,
             // tested by the value's own header, not a binding either
-            .ident => |n| !isVariantPath(n) and self.findVariant(n) == null and !self.namesATestableType(n),
+            .ident => |n| !isBoolLitName(n) and !isVariantPath(n) and self.findVariant(n) == null and !self.namesATestableType(n),
             .multi => |pats| for (pats) |sub| {
                 if (!self.patternIsIrrefutable(sub)) break false;
             } else true,
-            // no wasm test for this yet: the arm runs as before
-            .list => true,
+            // `[..]` / `[..rest]` matches every array; any other list pattern
+            // is tested (`emitListPatternTest`). Every one of them used to be
+            // irrefutable here, so `[x]` took a `[]` arm before it.
+            .list => |l| l.elems.len == 0 and l.spread != null,
             else => false,
         };
     }
@@ -5993,7 +6008,8 @@ const Emitter = struct {
         self.case_enum_hint = self.subject_enums.get(subj);
         defer self.case_enum_hint = prev_hint;
         switch (p) {
-            .wildcard, .list => try self.emit(one),
+            .wildcard => try self.emit(one),
+            .list => |l| try self.emitListPatternTest(l, subj, loc),
             // Every pattern against its own subject (`lowerCase`), all of them
             // holding. A primitive type over an `unknown` / union subject
             // tests the value's box, as a whole-subject arm does.
@@ -6011,7 +6027,14 @@ const Emitter = struct {
                     try self.emit(opOf("i32", "and"));
                 }
             },
-            .ident => |n| {
+            // `true` / `false` in a pattern are the bool literals, never a
+            // binder: inside a tuple pattern (`#(a, b, true)`) the element was
+            // bound to a local named `true` and every arm matched.
+            .ident => |n| if (isBoolLitName(n)) {
+                try self.emit(.{ .local_get = subj });
+                try self.emit(if (n[0] == 't') one else zero);
+                try self.emit(opOf("i32", "eq"));
+            } else {
                 // A written path is a variant, never a binding (§5.1 P8), so
                 // `.Ok` and `Shape.Circle` test a tag; a path no enum here
                 // declares is an arm that can never match, not a catch-all.
@@ -6066,6 +6089,7 @@ const Emitter = struct {
                 }
             },
             .variant => |v| {
+                if (v.shape == .tuple) return self.emitTuplePatternTest(v, subj, loc);
                 if (v.shape == .range) {
                     // `A...B` (decision 53): both ends included. The bounds are
                     // `payload.literals[0..2]`, low then high; the subject local
@@ -6132,6 +6156,184 @@ const Emitter = struct {
                     else => {},
                 }
             },
+        }
+    }
+
+    /// The element patterns of a tuple pattern (`#(0, s)`, `#(a, ..)`).
+    fn tupleElems(v: anytype) []const ast.Pattern {
+        return switch (v.payload) {
+            .literals => |l| l,
+            else => &.{},
+        };
+    }
+
+    /// Whether a pattern only binds (or ignores) — it tests nothing.
+    fn patternOnlyBinds(self: *Emitter, p: ast.Pattern) bool {
+        return switch (p) {
+            .wildcard => true,
+            .ident => |n| !isBoolLitName(n) and !isVariantPath(n) and self.findVariant(n) == null and !self.records.contains(n),
+            else => false,
+        };
+    }
+
+    fn isBoolLitName(n: []const u8) bool {
+        return std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false");
+    }
+
+    /// Element `i` of the tuple `subj` holds — its shape code (`s`, `i`, `(…)`),
+    /// read off the subject's tuple shape. A tuple pattern needs it: the slot
+    /// is a word whatever it holds, and a string bound as an integer printed
+    /// its address.
+    fn tuplePatternElemShape(self: *Emitter, subj: []const u8, i: usize, loc: ast.Loc) anyerror![]const u8 {
+        const sh = self.print_shape_locals.get(subj) orelse
+            return self.refuse(loc, "the wasm backend does not know the element types of this tuple pattern's subject", .{});
+        return tupleShapeElem(sh, @intCast(i)) orelse
+            self.refuse(loc, "the tuple pattern has more elements than its subject's type", .{});
+    }
+
+    /// Decision 8 §5.1 P6/P7 — `#(0, s)`: each element that tests something
+    /// is read from its slot (`i * 4`, no header) and tested in a chain, as a
+    /// variant's payload literals are; a binder, `_` and the elements `..`
+    /// skips test nothing. A float element is an `f32` slot, which the `i32`
+    /// tests here cannot compare — refused, never compared as bits.
+    fn emitTuplePatternTest(self: *Emitter, v: anytype, subj: []const u8, loc: ast.Loc) anyerror!void {
+        try self.emit(one);
+        for (tupleElems(v), 0..) |sub, i| {
+            if (self.patternOnlyBinds(sub)) continue;
+            const code = try self.tuplePatternElemShape(subj, i, loc);
+            if (code[0] == 'f') return self.refuse(loc, "the wasm backend cannot test a float tuple element against a pattern", .{});
+            const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
+            self.case_depth += 1;
+            try self.declareLocal(field, "i32");
+            try self.noteTupleElemLocal(field, code);
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            try self.emit(.{ .local_get = subj });
+            try self.emit(.{ .load = .{ .offset = @intCast(i * 4) } });
+            try self.emit(.{ .local_set = field });
+            try self.emitPatternTest(sub, field, loc);
+            const then_seq = self.seal(&then_c, .{ .value = .i32 });
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emit(zero);
+            const else_seq = self.seal(&else_c, .{ .value = .i32 });
+            try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+        }
+    }
+
+    /// What a local holding one tuple element is, by the element's shape code.
+    fn noteTupleElemLocal(self: *Emitter, n: []const u8, code: []const u8) !void {
+        const scalar: ?[]const u8 = switch (code[0]) {
+            'i' => "i32",
+            's' => "string",
+            'b' => "bool",
+            'f' => "f64",
+            else => null,
+        };
+        if (scalar) |t| try self.local_typerefs.put(n, .{ .named = t });
+        switch (code[0]) {
+            's' => try self.str_locals.put(n, {}),
+            'b' => try self.bool_locals.put(n, {}),
+            '(' => try self.print_shape_locals.put(n, code),
+            '[' => {
+                try self.print_shape_locals.put(n, code);
+                try self.arr_locals.put(n, {});
+                try self.arr_elem_locals.put(n, if (code.len > 1 and code[1] == 's') .str else if (code.len > 1 and code[1] == 'f') .f32 else .i32);
+            },
+            else => {},
+        }
+    }
+
+    /// `[]`, `[x]`, `[4, ..]`, `[first, ..rest]`: the length — exactly the
+    /// elements written, or at least them with a spread — then each number
+    /// literal against its slot, in a chain. It matched every array (the
+    /// pattern answered `1`), so `[x]` took `[]`'s arm at exit 0.
+    fn emitListPatternTest(self: *Emitter, l: anytype, subj: []const u8, loc: ast.Loc) anyerror!void {
+        if (!self.arr_locals.contains(subj)) return self.refuse(loc, "the wasm backend tests a list pattern against an array subject only", .{});
+        try self.emit(.{ .local_get = subj });
+        try self.emitC(.{ .load = .{} }, "element count");
+        try self.emit(try self.constInt(@as(i32, @intCast(l.elems.len))));
+        try self.emit(opOf("i32", if (l.spread == null) "eq" else "ge_u"));
+        for (l.elems, 0..) |el, i| {
+            const n = switch (el) {
+                .numberLit => |n| n,
+                else => continue,
+            };
+            if (self.arr_elem_locals.get(subj) == .f32 or numLitType(n)[0] == 'f')
+                return self.refuse(loc, "the wasm backend cannot test a float list element against a pattern", .{});
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            try self.emit(.{ .local_get = subj });
+            try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
+            try self.emit(try numLitConst(self.arena(), n));
+            try self.emit(opOf("i32", "eq"));
+            const then_seq = self.seal(&then_c, .{ .value = .i32 });
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emit(zero);
+            const else_seq = self.seal(&else_c, .{ .value = .i32 });
+            try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+        }
+    }
+
+    /// Bind a list pattern's names: each `bind` from its slot, a named spread
+    /// to the rest of the array (`$__arr_slice`).
+    fn bindListPattern(self: *Emitter, l: anytype, subj: []const u8) anyerror!void {
+        const ek = self.arr_elem_locals.get(subj) orelse .i32;
+        const sh = self.print_shape_locals.get(subj);
+        for (l.elems, 0..) |el, i| {
+            const name = switch (el) {
+                .bind => |b| b,
+                else => continue,
+            };
+            const float = ek == .f32;
+            const n = try self.bindName(name, if (float) "f64" else "i32");
+            try self.emit(.{ .local_get = subj });
+            try self.emit(.{ .load = .{ .ty = if (float) .f32 else .i32, .offset = @intCast((i + 1) * 4) } });
+            try self.emitConvert(if (float) "f32" else "i32", self.locals.get(n) orelse "i32");
+            try self.emit(.{ .local_set = n });
+            if (sh) |shape| if (shape.len > 1) try self.noteTupleElemLocal(n, shape[1..]);
+            if (ek == .str) try self.str_locals.put(n, {});
+            if (ek != .f32) try self.tuple_binders.put(self.reg_arena.allocator(), n, {});
+        }
+        const rest = l.spread orelse return;
+        if (rest.len == 0) return;
+        const n = try self.bindName(rest, "i32");
+        try self.emit(.{ .local_get = subj });
+        try self.emit(try self.constInt(@as(i32, @intCast(l.elems.len))));
+        try self.emit(try self.constInt(std.math.maxInt(i32)));
+        try self.emit(self.builder().helper(.arr_slice));
+        try self.emit(.{ .local_set = n });
+        try self.arr_locals.put(n, {});
+        try self.arr_elem_locals.put(n, ek);
+        if (sh) |shape| try self.print_shape_locals.put(n, shape);
+    }
+
+    /// Bind the names a tuple pattern introduces, each from its slot.
+    fn bindTuplePattern(self: *Emitter, v: anytype, subj: []const u8) anyerror!void {
+        for (tupleElems(v), 0..) |sub, i| {
+            if (sub == .wildcard) continue;
+            const code = try self.tuplePatternElemShape(subj, i, .{ .line = 0, .col = 0 });
+            const float = code[0] == 'f';
+            if (sub == .ident and self.patternOnlyBinds(sub)) {
+                const n = try self.bindName(sub.ident, if (float) "f64" else "i32");
+                try self.emit(.{ .local_get = subj });
+                try self.emit(.{ .load = .{ .ty = if (float) .f32 else .i32, .offset = @intCast(i * 4) } });
+                try self.emitConvert(if (float) "f32" else "i32", self.locals.get(n) orelse "i32");
+                try self.emit(.{ .local_set = n });
+                try self.noteTupleElemLocal(n, code);
+                try self.tuple_binders.put(self.reg_arena.allocator(), n, {});
+                continue;
+            }
+            if (float or sub == .numberLit or sub == .stringLit) continue;
+            const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
+            self.case_depth += 1;
+            try self.declareLocal(field, "i32");
+            try self.noteTupleElemLocal(field, code);
+            try self.emit(.{ .local_get = subj });
+            try self.emit(.{ .load = .{ .offset = @intCast(i * 4) } });
+            try self.emit(.{ .local_set = field });
+            try self.bindPattern(sub, field);
         }
     }
 
@@ -6346,13 +6548,15 @@ const Emitter = struct {
                 if (sub == .ident and self.unknown_subjects.contains(local) and primTestOf(.{ .named = sub.ident }) != null) continue;
                 try self.bindPattern(sub, local);
             },
-            .ident => |n| if (!isVariantPath(n) and self.findVariant(n) == null) {
+            .ident => |n| if (!isBoolLitName(n) and !isVariantPath(n) and self.findVariant(n) == null) {
                 try self.declareLocal(n, "i32");
                 if (self.str_locals.contains(subj)) try self.str_locals.put(n, {});
                 try self.emit(.{ .local_get = subj });
                 try self.emit(.{ .local_set = n });
             },
+            .list => |l| try self.bindListPattern(l, subj),
             .variant => |v| {
+                if (v.shape == .tuple) return self.bindTuplePattern(v, subj);
                 // A record's constructor pattern binds each name from the
                 // field it stands at — by label when the pattern wrote one.
                 if (self.recordPatternType(v)) |rty| {
@@ -6864,7 +7068,19 @@ const Emitter = struct {
             };
             if (k) |kk| return kk;
         };
-        const il = self.instance_lowerings.get(loc) orelse return null;
+        const il = self.instance_lowerings.get(loc) orelse {
+            // A tuple pattern's binder (`#(n, "x") { n.toString() }`):
+            // inference recorded no lowering at its loc, and the binder's
+            // declared type — the element's, `noteTupleElemLocal` — says
+            // which primitive it is. It was an `unresolved call` trap.
+            const n = plainIdentName(cc.receiver.?.*) orelse return null;
+            if (!self.tuple_binders.contains(n)) return null;
+            const tr = self.local_typerefs.get(n) orelse return null;
+            return switch (tr) {
+                .named => |tn| primKindOfName(tn),
+                else => null,
+            };
+        };
         return switch (il) {
             .prim => |k| k,
             .type_, .field_of, .sequence_next, .division, .by_value, .unplaced_type => null,

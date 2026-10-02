@@ -1281,3 +1281,194 @@ test "wat: slice ---- a null end, written or at run time, is the end" {
         \\
     );
 }
+
+// `01-compiler/05-wasm` step 3 — C-07's wasm twins, one fixture per pattern
+// shape of decision 8 §5, each RUN LOG the value erlang and beam answer for
+// the same program (and commonJS, where it answers; the rows it does not are
+// named at the fixture). Before this step a tuple pattern in a `case` was
+// refused (`` `` names no variant``), every list pattern matched every array
+// (`[x]` took a `[]` arm), and `true` / `false` inside a tuple pattern were
+// binders, so every arm matched — the last two a wrong value at exit 0.
+
+// §5.1 P6: a tuple pattern is positional; a literal inside it is tested, a
+// name binds the element by its own shape (a string prints as text), and a
+// labelled tuple type is still matched by position.
+test "wat: case ---- a tuple pattern tests its literals and binds its elements" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn classify(p: #(i32, string)) -> string {
+        \\    return case p {
+        \\        #(0, s) { "zero " + s }
+        \\        #(n, "x") { "x " + n.toString() }
+        \\        #(_, s) { s }
+        \\    };
+        \\}
+        \\fn capital(r: #(name: string, pop: i32)) -> string {
+        \\    return case r {
+        \\        #("SP", p) { "capital " + p.toString() }
+        \\        #(n, _) { n }
+        \\    };
+        \\}
+        \\fn nested(t: #(#(i32, i32), string)) -> string {
+        \\    return case t {
+        \\        #(#(0, b), s) { s + b.toString() }
+        \\        #(#(a, _), s) { s + "!" + a.toString() }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(classify(#(0, "a")));
+        \\    @print(classify(#(7, "x")));
+        \\    @print(classify(#(7, "y")));
+        \\    @print(capital(#("SP", 12)));
+        \\    @print(capital(#("Rio", 6)));
+        \\    @print(nested(#(#(0, 7), "z")));
+        \\    @print(nested(#(#(5, 7), "z")));
+        \\}
+    ,
+        \\zero a
+        \\x 7
+        \\y
+        \\capital 12
+        \\Rio
+        \\z7
+        \\z!5
+        \\
+    );
+}
+
+// §5.1 P7: `..` ignores the rest — of a tuple, a variant's fields and a
+// record's — and `true` / `false` in a pattern are the bool literals. commonJS
+// emits `const true = _s[2]` for the last (a SyntaxError, `04-js`'s row), and
+// erlang binds it (`names(#("a", "b", false))` answers `ba`, `02-erlang`'s).
+test "wat: case ---- `..` skips the rest and a bool literal in a tuple pattern is tested" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Shape {
+        \\    Circle(radius: i32),
+        \\    Rect(w: i32, h: i32),
+        \\    Dot,
+        \\}
+        \\type Point(x: i32, y: i32)
+        \\fn first(t: #(i32, i32, i32)) -> i32 {
+        \\    return case t {
+        \\        #(a, ..) { a }
+        \\    };
+        \\}
+        \\fn width(s: Shape) -> i32 {
+        \\    return case s {
+        \\        Shape.Rect(w: w, ..) { w }
+        \\        Shape.Circle(..) { -1 }
+        \\        _ { 0 }
+        \\    };
+        \\}
+        \\fn px(p: Point) -> i32 {
+        \\    return case p {
+        \\        Point(x: 0, ..) { 0 }
+        \\        Point(x: x, ..) { x }
+        \\    };
+        \\}
+        \\fn names(t: #(string, string, bool)) -> string {
+        \\    return case t {
+        \\        #(a, b, true) { b + a }
+        \\        #(a, ..) { a }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(first(#(4, 5, 6)));
+        \\    @print(width(Shape.Rect(w: 4, h: 5)));
+        \\    @print(width(Shape.Circle(radius: 1)));
+        \\    @print(width(Shape.Dot));
+        \\    @print(px(Point(x: 0, y: 1)));
+        \\    @print(px(Point(x: 3, y: 1)));
+        \\    @print(names(#("a", "b", true)));
+        \\    @print(names(#("a", "b", false)));
+        \\}
+    ,
+        \\4
+        \\4
+        \\-1
+        \\0
+        \\0
+        \\3
+        \\ba
+        \\a
+        \\
+    );
+}
+
+// §5.2: an arm naming a type is chosen by the value — a primitive over an
+// `unknown` subject by its box (binding the unboxed payload), a record and an
+// enum by the value's header. commonJS answers `other` for `Shape { … }` over
+// a variant, where erlang and beam answer `shape` (`04-js`'s row).
+test "wat: case ---- a type pattern is chosen by the value" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Shape {
+        \\    Rect(w: i32, h: i32),
+        \\    Dot,
+        \\}
+        \\type Point(x: i32, y: i32)
+        \\fn kind(v: unknown) -> string {
+        \\    return case v {
+        \\        i32 { n -> "int " + n.toString() }
+        \\        string { s -> "string " + s }
+        \\        bool { "bool" }
+        \\        Point { "point" }
+        \\        Shape { "shape" }
+        \\        _ { "other" }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(kind(1));
+        \\    @print(kind("a"));
+        \\    @print(kind(true));
+        \\    @print(kind(Point(x: 1, y: 2)));
+        \\    @print(kind(Shape.Rect(w: 1, h: 1)));
+        \\    @print(kind(2.5));
+        \\}
+    ,
+        \\int 1
+        \\string a
+        \\bool
+        \\point
+        \\shape
+        \\other
+        \\
+    );
+}
+
+// §5.1 list patterns: the length — exactly the elements written, or at least
+// them with a spread — then each literal; a binder by the element's shape and
+// a named spread bound to the rest. erlang answers the same; commonJS tests no
+// literal (`pick([2, 9])` answers `9`) and a brace arm answers a function
+// (`04-js`'s rows); beam leaves the binders unresolved (`03-beam`'s).
+test "wat: case ---- a list pattern tests its length and literals and binds the rest" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn head(xs: string[]) -> string {
+        \\    return case xs {
+        \\        [] -> "none";
+        \\        [a, ..rest] -> a + "+" + rest.length.toString();
+        \\    };
+        \\}
+        \\fn pick(xs: i32[]) -> i32 {
+        \\    return case xs {
+        \\        [1, b] -> b;
+        \\        [_, _, c, ..] -> c;
+        \\        [..] -> -1;
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(head([]));
+        \\    @print(head(["x"]));
+        \\    @print(head(["x", "y", "z"]));
+        \\    @print(pick([1, 9]));
+        \\    @print(pick([2, 9]));
+        \\    @print(pick([5, 6, 7, 8]));
+        \\}
+    ,
+        \\none
+        \\x+0
+        \\x+2
+        \\9
+        \\-1
+        \\7
+        \\
+    );
+}

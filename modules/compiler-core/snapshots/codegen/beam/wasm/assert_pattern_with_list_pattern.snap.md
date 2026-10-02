@@ -10,11 +10,13 @@ fn f() {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\0a\00\00\00not a list")
+  (global $__heap_ptr (mut i32) (i32.const 272))
   (func $f (result i32)
     (local $__mem0 i32)
     (local $items i32)
     (local $__assert_0 i32)
+    (local $first i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -37,6 +39,21 @@ fn f() {
     local.set $items
     local.get $items
     local.set $__assert_0
+    local.get $__assert_0
+    i32.load ;; element count
+    i32.const 1
+    i32.ge_u
+    i32.eqz
+    (if
+      (then
+    i32.const 256
+    drop
+    unreachable
+      )
+    )
+    local.get $__assert_0
+    i32.load offset=4
+    local.set $first
     i32.const 0
   )
 )

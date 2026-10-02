@@ -583,6 +583,38 @@ function answering nothing was `(if (result i32)` around two `f64`s — the
 module refused (`run/if_value_float.bp`; `testing.asserts.approxEquals` binds
 one).
 
+## Decision 8 §5's pattern shapes (`01-compiler/05-wasm` step 3, C-07's wasm twins)
+
+Three pattern shapes had no wasm test, and two of them answered at exit 0:
+
+| Shape | Was | Is |
+|---|---|---|
+| a tuple pattern in a `case` (`#(0, s)`, `#(a, ..)`, `#(#(0, b), s)`) | refused — `` `` names no variant `` | `emitTuplePatternTest` / `bindTuplePattern`: each element that tests something is loaded from its slot (`i * 4`, no header) and tested in the chain a variant's payload literals use; a binder takes the element's shape (`noteTupleElemLocal`: a string prints as text, a float slot is read as `f32`); `..` skips the rest |
+| a list pattern (`[]`, `[x]`, `[1, b]`, `[a, ..rest]`) | **irrefutable** — `[x]` took a `[]` arm, exit 0 | `emitListPatternTest`: the length (exactly the elements, or at least them with a spread), then each number literal; `bindListPattern` binds each element by the array's element shape and a named spread to `$__arr_slice(xs, n, …)`. Only `[..]` / `[..rest]` is irrefutable (`patternIsIrrefutable`) |
+| `true` / `false` inside a pattern | a **binder** named `true` — every arm matched, exit 0 | the bool literal (`isBoolLitName`): `subj == 1` / `subj == 0` |
+
+The subject local carries what the patterns read (`noteSubjectShape`, in
+`lowerCase` and `lowerAssertPattern`): a tuple's or an array's print shape,
+an array's element kind. A tuple pattern over a subject whose element types
+nothing knows, and a float element or list element against a literal, are
+refused by name. A tuple or list binder has no instance lowering from
+inference at its loc, so `primKindAt` reads its declared element type
+(`tuple_binders`) — `#(n, "x") { n.toString() }` was an `unresolved call`
+trap. Five `val assert [..] = …` / `case_list_patterns_*` wasm snapshots moved
+(their text — the length test and the binders — not a RUN LOG; each program
+re-run with prints, answering erlang's values).
+
+The fixtures are `tests/wat.zig`'s `a tuple pattern tests its literals and
+binds its elements`, `` `..` skips the rest and a bool literal in a tuple
+pattern is tested ``, `a type pattern is chosen by the value` and `a list
+pattern tests its length and literals and binds the rest`, each RUN LOG
+erlang's and beam's for the program. The rows another backend answers
+differently are named at the fixture: commonJS emits `const true = …` for a
+bool in a tuple pattern, answers `other` for an enum type arm over a variant,
+tests no literal in a list pattern and answers a function for a brace arm
+over one (`04-js`); erlang binds `true` (`02-erlang`); beam leaves list
+binders unresolved (`03-beam`).
+
 ## Function values, and the lowering that is not there
 
 **This backend has function values.** A lambda used as a value is lifted into
